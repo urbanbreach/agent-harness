@@ -158,16 +158,133 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
         running_lines.extend(render.lines);
     }
     let running_text = transcript_test_line_texts(running_lines).join("\n");
-    assert!(running_text.contains("• audit transcript parity · Researcher Agent"));
+    assert!(running_text.contains("⠋ Researcher Task — audit transcript parity"));
     assert!(
-        !running_text.contains("↳ Read src/ui.rs"),
-        "running task row should stay to the reference inline title/subtitle shape\n{running_text}"
+        running_text.contains("↳ Read src/ui.rs"),
+        "running task row should show the active child tool detail\n{running_text}"
     );
+    assert!(!running_text.contains("Researcher Agent"));
     assert!(!running_text.contains("↳ 1 toolcalls"));
     assert!(!running_text.contains("1 toolcalls · 100ms"));
 
     app.ingest_event(event(
         7,
+        "2026-03-22T14:36:06Z",
+        harness_core::event::EventActor::new(
+            harness_core::event::ActorKind::Worker,
+            Some("agent_worker".to_string()),
+        ),
+        Some("req_child"),
+        harness_core::event::EventV1::ProviderRequestStarted(
+            harness_core::event::ProviderRequestStartedEvent {
+                request_id: "req_child".to_string(),
+                provider_id: "default".to_string(),
+                model_id: "model-1".to_string(),
+                prompt_summary: "Audit transcript parity".to_string(),
+                request_digest: "digest-child-retry".to_string(),
+                metadata: Some(harness_core::event::ProviderRequestStartedMetadata {
+                    retry: Some(harness_core::event::ProviderRequestRetryMetadata {
+                        attempt: 1,
+                        max_attempts: 3,
+                        delay_ms: Some(1_000),
+                        category: Some(harness_providers::ProviderErrorCategory::RateLimited),
+                    }),
+                    ..harness_core::event::ProviderRequestStartedMetadata::default()
+                }),
+            },
+        ),
+    ));
+
+    let retry_tool = &app.activities[0].tool_calls[0];
+    let retry_row = app.transcript_task_row_for_tool_call(retry_tool);
+    let retry_section = build_transcript_tool_call_section(
+        retry_tool,
+        &AppState::default(),
+        retry_row.as_ref(),
+        true,
+        false,
+        false,
+        false,
+        None,
+    );
+    let retry_text = transcript_test_line_texts(
+        append_tool_call_section_lines(
+            &retry_section,
+            &Theme::default(),
+            120,
+            Theme::default().surface.panel,
+        )
+        .lines,
+    )
+    .join("\n");
+    assert!(retry_text.contains("↳ Retrying (attempt 1) · rate_limited"));
+
+    app.ingest_event(event(
+        8,
+        "2026-03-22T14:36:06Z",
+        harness_core::event::EventActor::new(
+            harness_core::event::ActorKind::System,
+            Some("coordinator".to_string()),
+        ),
+        Some("req_parent"),
+        harness_core::event::EventV1::ToolCallFinished(
+            harness_core::event::ToolCallFinishedEvent {
+                tool_call_id: "tc_task".to_string(),
+                status: harness_core::event::ToolCallStatus::Succeeded,
+                output_summary: Some("foreground subagent moved to background".to_string()),
+                output_digest: Some("digest-task-backgrounded".to_string()),
+                output_json: Some(serde_json::json!({
+                    "background": true,
+                    "child_session_id": "agent_worker",
+                    "child_request_id": "req_child",
+                    "mode": "background",
+                    "status": "scheduled",
+                })),
+                metadata: Some(harness_core::event::ToolCallMetadata {
+                    canonical_tool_id: Some("task".to_string()),
+                    lineage: Some(harness_core::event::TaskLineageMetadata {
+                        parent_tool_call_id: Some("tc_task".to_string()),
+                        parent_request_id: Some("req_parent".to_string()),
+                        child_session_id: Some("agent_worker".to_string()),
+                        child_request_id: Some("req_child".to_string()),
+                        ..harness_core::event::TaskLineageMetadata::default()
+                    }),
+                    ..harness_core::event::ToolCallMetadata::default()
+                }),
+            },
+        ),
+    ));
+
+    let detached_active_tool = &app.activities[0].tool_calls[0];
+    let detached_active_row = app.transcript_task_row_for_tool_call(detached_active_tool);
+    let detached_active_section = build_transcript_tool_call_section(
+        detached_active_tool,
+        &AppState::default(),
+        detached_active_row.as_ref(),
+        true,
+        false,
+        false,
+        false,
+        None,
+    );
+    let detached_active_text = transcript_test_line_texts(
+        append_tool_call_section_lines(
+            &detached_active_section,
+            &Theme::default(),
+            120,
+            Theme::default().surface.panel,
+        )
+        .lines,
+    )
+    .join("\n");
+    assert!(
+        detached_active_text.contains("⠋ Researcher Task (background) — audit transcript parity")
+    );
+    assert!(detached_active_text.contains("↳ Retrying (attempt 1) · rate_limited"));
+    assert!(!detached_active_text.contains("↳ 1 toolcall ·"));
+
+    app.ingest_event(event(
+        9,
         "2026-03-22T14:36:06Z",
         harness_core::event::EventActor::new(
             harness_core::event::ActorKind::System,
@@ -185,7 +302,7 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
         ),
     ));
     app.ingest_event(event(
-        8,
+        10,
         "2026-03-22T14:36:07Z",
         harness_core::event::EventActor::new(
             harness_core::event::ActorKind::Worker,
@@ -200,7 +317,7 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
         ),
     ));
     app.ingest_event(event(
-        9,
+        11,
         "2026-03-22T14:36:07Z",
         harness_core::event::EventActor::new(
             harness_core::event::ActorKind::Worker,
@@ -229,29 +346,6 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
             }),
         }),
     ));
-    app.ingest_event(event(
-        10,
-        "2026-03-22T14:36:08Z",
-        harness_core::event::EventActor::new(
-            harness_core::event::ActorKind::System,
-            Some("coordinator".to_string()),
-        ),
-        Some("req_parent"),
-        harness_core::event::EventV1::ToolCallFinished(
-            harness_core::event::ToolCallFinishedEvent {
-                tool_call_id: "tc_task".to_string(),
-                status: harness_core::event::ToolCallStatus::Succeeded,
-                output_summary: Some("child session finished".to_string()),
-                output_digest: Some("digest-task-finished".to_string()),
-                output_json: Some(serde_json::json!({
-                    "background": true,
-                    "request_id": "req_child",
-                })),
-                metadata: None,
-            },
-        ),
-    ));
-
     let completed_tool = &app.activities[0].tool_calls[0];
     let completed_row = app.transcript_task_row_for_tool_call(completed_tool);
     let completed_section = build_transcript_tool_call_section(
@@ -275,12 +369,12 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
         completed_lines.extend(render.lines);
     }
     let completed_text = transcript_test_line_texts(completed_lines).join("\n");
-    assert!(completed_text.contains("✓ audit transcript parity · Researcher Agent"));
-    assert!(!completed_text.contains("2 toolcalls · 1.6s"));
+    assert!(completed_text.contains("✓ Researcher Task (background) — audit transcript parity"));
+    assert!(completed_text.contains("↳ 2 toolcalls · 1.6s"));
     assert!(!completed_text.contains("background_output("));
     assert!(!completed_text.contains("task(task_id=\"agent_worker\")"));
     assert!(!completed_text.contains("Found the inline transcript path."));
-    assert!(completed_text.contains("child session finished"));
+    assert!(!completed_text.contains("child session finished"));
 
     let expanded_completed_section = build_transcript_tool_call_section(
         completed_tool,
@@ -301,7 +395,8 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
     let expanded_completed_text =
         transcript_test_line_texts(expanded_completed_render.lines).join("\n");
     assert!(!expanded_completed_text.contains("Found the inline transcript path."));
-    assert!(expanded_completed_text.contains("child session finished"));
+    assert!(expanded_completed_text.contains("↳ 2 toolcalls · 1.6s"));
+    assert!(!expanded_completed_text.contains("child session finished"));
 
     let parent_transcript_text = transcript_test_line_texts(build_transcript_lines_for_width(
         &app,
@@ -309,8 +404,10 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
         120,
     ))
     .join("\n");
-    assert!(parent_transcript_text.contains("✓ audit transcript parity · Researcher Agent"));
-    assert!(!parent_transcript_text.contains("2 toolcalls · 1.6s"));
+    assert!(
+        parent_transcript_text.contains("✓ Researcher Task (background) — audit transcript parity")
+    );
+    assert!(parent_transcript_text.contains("↳ 2 toolcalls · 1.6s"));
     assert!(!parent_transcript_text.contains("background_output("));
     assert!(!parent_transcript_text.contains("task(task_id=\"agent_worker\")"));
     assert!(!parent_transcript_text.contains("view subagents"));
@@ -347,12 +444,12 @@ pub(crate) fn exact_test_transcript_task_rows_match_reference_inline_title_and_n
     let rendered = lines.join("\n");
 
     assert!(
-        rendered.contains("• audit transcript parity · Researcher Agent"),
-        "task row should use reference inline task title/subtitle shape\n{rendered}"
+        rendered.contains("⠋ Researcher Task — audit transcript parity"),
+        "task row should use Opencode task title shape\n{rendered}"
     );
     assert!(
-        !rendered.contains("Researcher Task — audit transcript parity"),
-        "task row should not duplicate the agent kind in the title\n{rendered}"
+        !rendered.contains("audit transcript parity · Researcher Agent"),
+        "task row should not use Harness title/subtitle wording\n{rendered}"
     );
     assert!(
         !rendered.contains("view subagents"),

@@ -20,7 +20,7 @@ pub(super) fn assistant_footer_label(value: &str) -> String {
     {
         return "Assistant".to_string();
     }
-    titlecase_label(value)
+    titlecase_label(value.trim())
 }
 
 fn titlecase_label(value: &str) -> String {

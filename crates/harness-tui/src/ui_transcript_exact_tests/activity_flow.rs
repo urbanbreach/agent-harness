@@ -874,7 +874,7 @@ fn task_row_renders_task_result_markdown_without_wrappers() {
     let (title, icon, visual_style, _) =
         build_agent_spawn_tool_row(&tool_call, None, &mut detail_blocks, 0);
     // assert
-    assert_eq!(title, "review streaming states");
+    assert_eq!(title, "Explore Task — review streaming states");
     assert_eq!(icon, Some("✓"));
     assert_eq!(visual_style, TranscriptToolCallVisualStyle::TaskInline);
     let detail_text = task_detail_blocks_text(&detail_blocks);
@@ -919,9 +919,12 @@ fn task_row_title_uses_partial_args_or_child_prompt_before_terminal_output() {
 
     let mut detail_blocks = Vec::new();
     let (title, icon, _, _) = build_agent_spawn_tool_row(&tool_call, None, &mut detail_blocks, 0);
-    assert_eq!(title, "review queued background completion wakeups");
+    assert_eq!(
+        title,
+        "Explore Task — review queued background completion wakeups"
+    );
     assert_ne!(title, "Delegating...");
-    assert_eq!(icon, Some("•"));
+    assert_eq!(icon, Some("⠋"));
 
     tool_call.args_summary = "{}".to_string();
     let task_row = crate::app::OrchestrationTaskRow {
@@ -949,7 +952,7 @@ fn task_row_title_uses_partial_args_or_child_prompt_before_terminal_output() {
     };
     let (title, _, _, _) =
         build_agent_spawn_tool_row(&tool_call, Some(&task_row), &mut Vec::new(), 0);
-    assert_eq!(title, "inspect task behavior");
+    assert_eq!(title, "General Task — inspect task behavior");
 
     let fallback_task_row = crate::app::OrchestrationTaskRow {
         result_summary: None,
@@ -958,7 +961,7 @@ fn task_row_title_uses_partial_args_or_child_prompt_before_terminal_output() {
     let (title, icon, _, _) =
         build_agent_spawn_tool_row(&tool_call, Some(&fallback_task_row), &mut Vec::new(), 0);
     assert_eq!(title, "General Task");
-    assert_eq!(icon, Some("•"));
+    assert_eq!(icon, Some("⠋"));
 }
 
 #[test]

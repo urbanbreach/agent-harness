@@ -226,8 +226,8 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_reference_timestamps_a
     );
     let task_lines = task_render.lines;
     let task_text = transcript_test_line_texts(task_lines).join("\n");
-    assert!(task_text.contains("✓ audit transcript parity · Researcher Agent"));
-    assert!(!task_text.contains("Researcher Task — audit transcript parity"));
+    assert!(task_text.contains("✓ Researcher Task — audit transcript parity"));
+    assert!(!task_text.contains("audit transcript parity · Researcher Agent"));
     assert!(!task_text.contains("3 toolcalls · 1.6s"));
     assert!(!task_text.contains("Found the inline transcript path."));
     assert!(!task_text.contains("Compat alias ·"));
