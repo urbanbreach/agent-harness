@@ -2,8 +2,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
 use std::sync::Arc;
-#[cfg(test)]
-use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
@@ -22,8 +20,8 @@ use crate::text::{non_empty_trimmed, trimmed_json_string_field};
 use crate::theme::Theme;
 use crate::ui::{
     OperatorSidebarKeyboardTarget, OperatorSidebarKeyboardTargetKind, OperatorSidebarSelection,
-    OperatorSidebarSelectionCell, TranscriptMouseTarget, TranscriptScrollbarHit,
-    TranscriptSelection, TranscriptSelectionCell, WheelTarget,
+    OperatorSidebarSelectionCell, SubagentFooterTarget, TranscriptMouseTarget,
+    TranscriptScrollbarHit, TranscriptSelection, TranscriptSelectionCell, WheelTarget,
 };
 use crate::view_model;
 use crate::{clipboard, ui};
@@ -55,6 +53,7 @@ mod prompt_stash;
 mod prompt_stash_actions;
 mod question_prompt;
 pub(crate) mod session_history;
+mod session_live_routing;
 pub(crate) mod session_navigation;
 mod session_pins;
 mod session_projection;
@@ -224,6 +223,9 @@ pub struct AppState {
     pub palette_log: Vec<palette_controller::PaletteLogEntry>,
     palette_focus_return: Option<Focus>,
     pub(crate) status_dialog_visible: bool,
+    pub(crate) subagent_actions_session_id: Option<String>,
+    pub(crate) hovered_subagent_footer_target: Option<SubagentFooterTarget>,
+    pub(crate) pending_subagent_footer_target: Option<SubagentFooterTarget>,
     error_details_visible: bool,
     pub startup_mode: bool,
     pub startup_launcher_action: StartupLauncherAction,
@@ -326,6 +328,9 @@ impl Default for AppState {
             palette_log: Vec::new(),
             palette_focus_return: None,
             status_dialog_visible: false,
+            subagent_actions_session_id: None,
+            hovered_subagent_footer_target: None,
+            pending_subagent_footer_target: None,
             error_details_visible: false,
             startup_mode: false,
             startup_launcher_action: StartupLauncherAction::default(),
@@ -473,6 +478,8 @@ impl AppState {
     pub fn replace_events(&mut self, events: Vec<EventEnvelopeV1>) {
         self.bump_transcript_render_epoch();
         self.projection.reset();
+        self.projection
+            .set_fallback_profile_label(self.active_profile().to_string());
         self.dismissed_permissions.clear();
         self.submitted_permission_id = None;
         self.permission_prompt.permission_id = None;
@@ -515,6 +522,10 @@ impl AppState {
     }
 
     fn ingest_event_internal(&mut self, event: EventEnvelopeV1, historical: bool) {
+        if !historical && self.route_live_event_while_viewing_child(&event) {
+            return;
+        }
+
         if self.projection.has_seen_seq(event.seq) {
             return;
         }
