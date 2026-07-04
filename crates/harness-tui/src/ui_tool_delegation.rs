@@ -62,33 +62,17 @@ pub(super) fn agent_spawn_title(tool_call: &ToolCallEntry, description: Option<S
             )
         });
 
+    let label = subagent_profile_label(profile.as_deref().unwrap_or("General"));
+    let background = agent_spawn_is_background(tool_call);
     match description {
-        Some(description) => description,
-        None => format!(
-            "{} Task",
-            subagent_profile_label(profile.as_deref().unwrap_or("General"))
-        ),
+        Some(description) => format_subagent_title(&label, &description, background),
+        None if background => format!("{label} Task (background)"),
+        None => format!("{label} Task"),
     }
 }
 
-pub(super) fn agent_spawn_subtitle(tool_call: &ToolCallEntry) -> Option<String> {
-    let _ = agent_spawn_description(tool_call)?;
-    let profile = tool_call
-        .output_json
-        .as_ref()
-        .and_then(|value| value.get("profile"))
-        .and_then(serde_json::Value::as_str)
-        .map(collapse_inline_whitespace)
-        .or_else(|| {
-            tool_summary_string(
-                &tool_call.args_summary,
-                &["profile_name", "profile", "subagent_type"],
-            )
-        });
-    Some(format!(
-        "{} Agent",
-        subagent_profile_label(profile.as_deref().unwrap_or("General"))
-    ))
+pub(super) fn agent_spawn_subtitle(_tool_call: &ToolCallEntry) -> Option<String> {
+    None
 }
 
 pub(super) fn agent_spawn_description(tool_call: &ToolCallEntry) -> Option<String> {
@@ -119,4 +103,30 @@ pub(super) fn subagent_profile_label(profile: &str) -> String {
         previous_was_word = is_word;
     }
     label
+}
+
+fn format_subagent_title(agent: &str, description: &str, background: bool) -> String {
+    format!(
+        "{agent} Task{} — {description}",
+        if background { " (background)" } else { "" }
+    )
+}
+
+pub(super) fn agent_spawn_is_background(tool_call: &ToolCallEntry) -> bool {
+    tool_call
+        .output_json
+        .as_ref()
+        .and_then(|value| value.get("background"))
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
+        || serde_json::from_str::<serde_json::Value>(&tool_call.args_summary)
+            .ok()
+            .and_then(|value| {
+                value
+                    .get("background")
+                    .or_else(|| value.get("run_in_background"))
+                    .cloned()
+            })
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false)
 }
