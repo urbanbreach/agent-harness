@@ -216,8 +216,8 @@ impl AppState {
     fn restore_session_snapshot(&mut self, snapshot: SessionNavigationSnapshot) {
         self.replay_mode = snapshot.replay_mode;
         self.session_path = Some(snapshot.session_path);
-        self.replace_events(snapshot.events);
         self.set_launch_metadata(snapshot.launch_metadata);
+        self.replace_events(snapshot.events);
         self.active_review_surface = None;
         self.active_tab = Tab::Run;
         self.focus = if self.replay_mode {

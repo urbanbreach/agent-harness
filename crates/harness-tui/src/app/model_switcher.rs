@@ -412,6 +412,8 @@ impl AppState {
     }
 
     pub fn set_launch_metadata(&mut self, launch_metadata: LaunchMetadata) {
+        self.projection
+            .set_fallback_profile_label(launch_metadata.profile().to_string());
         let refresh_runtime_context = self.startup_mode
             || self.replay_mode
             || self.runtime_context_metadata.is_none()

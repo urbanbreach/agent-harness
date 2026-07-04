@@ -113,6 +113,11 @@ impl SessionProjection {
                         if row.result_summary.is_none() {
                             row.result_summary = non_empty_preserved_string(&data.prompt_summary);
                         }
+                        row.warning = data
+                            .metadata
+                            .as_ref()
+                            .and_then(|metadata| metadata.retry)
+                            .map(provider_retry_detail);
                         row.last_seq = event.seq;
                         row.last_mono_ms = event.mono_ms;
                         row.last_timestamp = event.ts.clone();

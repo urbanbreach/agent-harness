@@ -19,7 +19,7 @@ use super::{
     OrchestrationTaskRow, OrchestrationTaskState, ToolCallDisplayStatus, ToolCallEntry,
     TOOL_OUTPUT_DISPLAY_MAX_CHARS,
 };
-use crate::text::non_empty_preserved_string;
+use crate::text::{has_trimmed_content, non_empty_preserved_string};
 use crate::view_model;
 
 #[path = "session_projection/background_notification.rs"]
@@ -43,6 +43,7 @@ pub struct SessionProjection {
     agent_profiles: BTreeMap<String, String>,
     child_agent_ids: BTreeSet<String>,
     child_request_agents: BTreeMap<String, String>,
+    fallback_profile_label: String,
     seen_seqs: BTreeSet<u64>,
     pub(crate) pending_permissions: BTreeMap<String, PendingPermission>,
     pub(crate) run_terminal_seen: bool,
@@ -66,6 +67,10 @@ impl SessionProjection {
         self.transcript_trimmed_count = 0;
     }
 
+    pub(crate) fn set_fallback_profile_label(&mut self, profile: impl Into<String>) {
+        self.fallback_profile_label = profile.into();
+    }
+
     pub(crate) fn has_seen_seq(&self, seq: u64) -> bool {
         self.seen_seqs.contains(&seq)
     }
@@ -87,7 +92,35 @@ impl SessionProjection {
             .as_deref()
             .and_then(|agent_id| self.agent_profiles.get(agent_id))
             .cloned()
+            .or_else(|| self.profile_label_for_request(event.correlation_id.as_deref()))
+            .or_else(|| self.single_root_profile_label())
+            .or_else(|| self.single_profile_label())
+            .or_else(|| {
+                has_trimmed_content(&self.fallback_profile_label)
+                    .then(|| self.fallback_profile_label.clone())
+            })
             .unwrap_or_else(|| "default".to_string())
+    }
+
+    fn profile_label_for_request(&self, request_id: Option<&str>) -> Option<String> {
+        let agent_id = self.child_request_agents.get(request_id?)?;
+        self.agent_profiles.get(agent_id).cloned()
+    }
+
+    fn single_root_profile_label(&self) -> Option<String> {
+        let mut labels = self
+            .agent_profiles
+            .iter()
+            .filter(|(agent_id, _)| !self.child_agent_ids.contains(*agent_id))
+            .map(|(_, profile)| profile);
+        let label = labels.next()?;
+        labels.next().is_none().then(|| label.clone())
+    }
+
+    fn single_profile_label(&self) -> Option<String> {
+        let mut labels = self.agent_profiles.values();
+        let label = labels.next()?;
+        labels.next().is_none().then(|| label.clone())
     }
 
     pub(crate) fn ingest_event(&mut self, event: EventEnvelopeV1, historical: bool) -> usize {
@@ -413,6 +446,7 @@ impl SessionProjection {
             if row.effective_child_request_id() == Some(request_id) {
                 row.child_tool_call_count = row.child_tool_call_count.saturating_add(1);
                 row.current_child_tool_title = Self::child_tool_call_title(data);
+                row.warning = None;
                 row.last_seq = event.seq;
                 row.last_mono_ms = event.mono_ms;
                 row.last_timestamp = event.ts.clone();
@@ -723,6 +757,14 @@ fn provider_error_detail(data: &ProviderRequestFinishedEvent) -> Option<String> 
         Some(remediation) => format!("{} · {remediation}", category.as_str()),
         None => category.as_str().to_string(),
     })
+}
+
+fn provider_retry_detail(retry: ProviderRequestRetryMetadata) -> String {
+    let category = retry
+        .category
+        .map(|category| format!(" · {}", category.as_str()))
+        .unwrap_or_default();
+    format!("Retrying (attempt {}){category}", retry.attempt)
 }
 
 fn titlecase_word(value: &str) -> String {
