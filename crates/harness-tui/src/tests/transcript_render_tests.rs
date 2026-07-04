@@ -582,7 +582,8 @@ pub(super) fn generic_tool_output_toggle_reveals_block_payload() {
     assert!(expanded.contains("background.cancel"));
     assert!(expanded.contains("[taskId=bg_123]"));
     assert!(expanded.contains("cancelled background task"));
-    assert!(expanded.contains("result: ok"));
+    assert!(!expanded.contains("result: ok"));
+    assert!(expanded.contains("Click to expand"));
 
     app::palette_controller::dispatch_palette_command(&mut app, "harness.expand_turn_results");
 

@@ -37,10 +37,6 @@ pub(super) fn question_tool_title(
     )
 }
 
-pub(super) fn todo_tool_title(_items: &[TranscriptTodoItem]) -> String {
-    "Todos".to_string()
-}
-
 pub(super) fn todo_items_from_tool_call(
     tool_call: &ToolCallEntry,
     session_path: Option<&Path>,

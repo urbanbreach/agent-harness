@@ -1,6 +1,6 @@
 use super::ui_transcript_tool_render::{
     append_assistant_error_box, append_tool_call_section_lines,
-    shell_tool_uses_reference_bash_block,
+    shell_tool_uses_harness_bash_card,
 };
 use super::*;
 
@@ -321,7 +321,7 @@ fn build_assistant_part_render_surface(
             )
         }
         TranscriptAssistantPart::ToolCall(tool_call) => {
-            let kind = if shell_tool_uses_reference_bash_block(tool_call) {
+            let kind = if shell_tool_uses_harness_bash_card(tool_call) {
                 TranscriptRenderSurfaceKind::AssistantCommandTool
             } else {
                 TranscriptRenderSurfaceKind::AssistantTool

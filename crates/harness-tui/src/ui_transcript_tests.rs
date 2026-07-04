@@ -817,8 +817,8 @@ fn assistant_tool_surfaces_keep_same_trailing_gap_as_text_boxes() {
     assert_eq!(tool_interactions[command_row], None);
     assert_eq!(tool_interactions[output_row], None);
     assert!(
-        tool_lines.iter().all(|line| !line.contains('┃')),
-        "reference shell blocks should not render the old Harness rail\n{tool_lines:#?}"
+        tool_lines.iter().any(|line| line.contains('┃')),
+        "harness shell blocks should render the split rail\n{tool_lines:#?}"
     );
     assert!(
         tool_surface

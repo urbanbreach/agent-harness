@@ -1,6 +1,5 @@
 ---
 source: crates/harness-tui/tests/deterministic_render_test.rs
-assertion_line: 80
 expression: trim_trailing_snapshot_whitespace(&rendered)
 ---
 
@@ -9,9 +8,9 @@ expression: trim_trailing_snapshot_whitespace(&rendered)
   ┃                                                                                                                                         ▼ Subagents
                                                                                                                                             • ✓ Researcher Task
      → Read src/ui.rs [offset=1, limit=24]
-     ← Patch · ui.rs  ▸                                                                                                                     ▼ MCP
-      crates/harness-tui/src                                                                                                                • No MCP servers configured
-      Remove diff review surface · Diff preview unavailable (artifacts/tool-lifecycle-inline.diff)
+     ┃ ← Patch · ui.rs  ▸                                                                                                                   ▼ MCP
+     ┃ crates/harness-tui/src                                                                                                               • No MCP servers configured
+     ┃ Remove diff review surface · Diff preview unavailable (artifacts/tool-lifecycle-inline.diff)
      ✓ Researcher Task — audit tool lifecycle parity                                                                                        ▼ LSP
       Found the whole-tool parity path.                                                                                                     • No active LSP servers
      $ cargo test -p harness-tui  ▸

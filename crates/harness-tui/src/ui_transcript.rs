@@ -30,7 +30,7 @@ use super::ui_tool_paths::{
 };
 use super::ui_tool_question_todo::{
     ordered_todo_items, question_tool_title, resolved_question_answer_items,
-    todo_items_from_tool_call, todo_tool_title, TranscriptTodoItem,
+    todo_items_from_tool_call, TranscriptTodoItem,
 };
 use super::ui_tool_style::{
     block_tool_color, block_tool_rail_color, generic_tool_visual_style, inline_tool_color,
@@ -50,8 +50,8 @@ use super::ui_tool_visibility::{
     tool_header_disclosure_glyph, tool_hidden_from_transcript, TranscriptToolCallDisclosureState,
 };
 use super::ui_transcript_bash::{
-    append_reference_bash_panel, shell_tool_command, shell_tool_output,
-    shell_tool_title_description, ReferenceBashPanel,
+    append_harness_bash_panel, shell_tool_command, shell_tool_output,
+    shell_tool_title_description, HarnessBashPanel, HARNESS_BASH_OUTPUT_LINE_CLAMP,
 };
 use super::ui_transcript_events::{
     activity_has_thinking_text, provider_event_matches_activity, turn_event_matches_activity,

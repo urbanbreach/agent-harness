@@ -607,9 +607,9 @@ pub(crate) fn exact_test_generic_tool_successful_output_prefers_inline_backgroun
     let visible_text = visible_rendered.join("\n");
     assert!(visible_text.contains("line 1"));
     assert!(visible_text.contains("line 3"));
-    assert!(visible_text.contains("line 4"));
-    assert!(!visible_text.contains("Click to expand"));
-    assert!(!visible_text.contains('…'));
+    assert!(!visible_text.contains("line 4"));
+    assert!(visible_text.contains("Click to expand"));
+    assert!(visible_text.contains('…'));
 
     let expanded = build_transcript_tool_call_section(
         &tool_call,
@@ -699,9 +699,9 @@ pub(crate) fn exact_test_lsp_tool_successful_output_stays_hidden_until_generic_o
     })
     .join("\n");
     assert!(visible_text.contains("result 1"));
-    assert!(!visible_text.contains("Click to expand"));
-    assert!(!visible_text.contains('…'));
-    assert!(visible_text.contains("result 4"));
+    assert!(visible_text.contains("Click to expand"));
+    assert!(visible_text.contains('…'));
+    assert!(!visible_text.contains("result 4"));
 }
 
 #[cfg(test)]
@@ -877,7 +877,7 @@ pub(crate) fn exact_test_todo_write_rows_render_open_checklist() {
             write_section.header.icon,
             write_section.header.title.as_str()
         ),
-        (Some("#"), "Todos")
+        (None, "# Todos")
     );
     assert_eq!(write_section.header.disclosure_state, None);
 

@@ -1,26 +1,35 @@
 use std::path::{Path, PathBuf};
 
 use ratatui::{
-    style::Style,
+    style::{Color, Style},
     text::{Line, Span},
 };
 
 use crate::app::{ToolCallDisplayStatus, ToolCallEntry};
 use crate::text::{
-    has_trimmed_content, replace_control_chars_except_tabs, strip_ansi_escapes,
-    trimmed_json_string_field,
+    collapse_inline_whitespace, has_trimmed_content, replace_control_chars_except_tabs,
+    strip_ansi_escapes, trimmed_json_string_field,
 };
 use crate::theme::Theme;
 
 use super::ui_chrome::{display_width, take_width_prefix};
 use super::ui_transcript::TranscriptToolCallDetailTone;
 use super::ui_transcript_surface::{
-    append_prebuilt_surface_lines, surface_span, transcript_surface_content_width,
+    append_prebuilt_surface_lines, surface_prefix_width, surface_span,
+    transcript_surface_content_width,
 };
 
 pub(super) const TRANSCRIPT_COMMAND_TOOL_INDENT: &str = "";
+pub(super) const HARNESS_BASH_OUTPUT_LINE_CLAMP: usize = 10;
+const HARNESS_BLOCK_TOOL_MARGIN_TOP: usize = 1;
+const HARNESS_BLOCK_TOOL_PADDING_TOP: usize = 1;
+const HARNESS_BLOCK_TOOL_PADDING_BOTTOM: usize = 1;
+const HARNESS_BLOCK_TOOL_PADDING_LEFT: usize = 2;
+const HARNESS_BLOCK_TOOL_GAP: usize = 1;
+pub(super) const HARNESS_SPLIT_RAIL_GLYPH: &str = "┃";
+const HARNESS_SPLIT_RAIL_WIDTH: usize = 1;
 
-pub(super) struct ReferenceBashPanel<'a> {
+pub(super) struct HarnessBashPanel<'a> {
     pub(super) command: &'a str,
     pub(super) output: &'a str,
     pub(super) description: Option<&'a str>,
@@ -28,27 +37,34 @@ pub(super) struct ReferenceBashPanel<'a> {
     pub(super) tone: TranscriptToolCallDetailTone,
 }
 
-pub(super) fn append_reference_bash_panel(
+pub(super) fn append_harness_bash_panel(
     lines: &mut Vec<Line<'static>>,
-    panel: ReferenceBashPanel<'_>,
+    panel: HarnessBashPanel<'_>,
     theme: &Theme,
     width: u16,
 ) {
     let available_width = transcript_surface_content_width(width, false);
-    let panel_width = usize::from(available_width).max(1);
-    let block_lines = reference_bash_block_lines(
+    let prefix_width = surface_prefix_width(TRANSCRIPT_COMMAND_TOOL_INDENT);
+    let panel_width = usize::from(available_width)
+        .saturating_sub(prefix_width)
+        .max(HARNESS_SPLIT_RAIL_WIDTH + HARNESS_BLOCK_TOOL_PADDING_LEFT + 1);
+    for _ in 0..HARNESS_BLOCK_TOOL_MARGIN_TOP {
+        lines.push(Line::default());
+    }
+    let card_lines = harness_bash_card_lines(
         panel.command,
         panel.output,
         panel.description,
         panel.expand_hint,
         panel.tone,
+        theme,
         panel_width,
     );
     append_prebuilt_surface_lines(
         lines,
         TRANSCRIPT_COMMAND_TOOL_INDENT,
         theme.surface.panel,
-        block_lines,
+        card_lines,
         available_width,
     );
 }
@@ -167,88 +183,162 @@ fn shell_tool_structured_output(output_json: Option<&serde_json::Value>) -> Opti
     Some(stripped.trim().to_string())
 }
 
-fn reference_bash_block_lines(
+fn harness_bash_card_lines(
     command: &str,
     output: &str,
     description: Option<&str>,
     expand_hint: Option<&str>,
     tone: TranscriptToolCallDetailTone,
+    theme: &Theme,
     panel_width: usize,
 ) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
-    if let Some(description) = description.filter(|description| has_trimmed_content(description)) {
-        append_reference_bash_rows(
-            &mut lines,
-            description.trim(),
-            Style::default(),
-            panel_width,
-        );
+    for _ in 0..HARNESS_BLOCK_TOOL_PADDING_TOP {
+        lines.push(harness_bash_padding_line(theme));
     }
-    append_reference_bash_rows(
+
+    let title = harness_bash_title(description);
+    append_harness_bash_rows(
+        &mut lines,
+        &title,
+        Style::default().fg(theme.text.secondary),
+        theme,
+        panel_width,
+        HARNESS_BLOCK_TOOL_PADDING_LEFT,
+    );
+
+    for _ in 0..HARNESS_BLOCK_TOOL_GAP {
+        lines.push(harness_bash_padding_line(theme));
+    }
+
+    let command_style = Style::default().fg(theme.text.primary);
+    append_harness_bash_rows(
         &mut lines,
         &format!("$ {command}"),
-        Style::default(),
+        command_style,
+        theme,
         panel_width,
+        HARNESS_BLOCK_TOOL_PADDING_LEFT,
     );
 
     let output = output.trim();
     if !output.is_empty() {
-        append_reference_bash_rows(
+        for _ in 0..HARNESS_BLOCK_TOOL_GAP {
+            lines.push(harness_bash_padding_line(theme));
+        }
+        append_harness_bash_rows(
             &mut lines,
             output,
-            reference_bash_output_style(tone),
+            harness_bash_output_style(tone, theme),
+            theme,
             panel_width,
+            HARNESS_BLOCK_TOOL_PADDING_LEFT,
         );
     }
 
     if let Some(expand_hint) = expand_hint.filter(|hint| has_trimmed_content(hint)) {
-        append_reference_bash_rows(
+        for _ in 0..HARNESS_BLOCK_TOOL_GAP {
+            lines.push(harness_bash_padding_line(theme));
+        }
+        append_harness_bash_rows(
             &mut lines,
             expand_hint.trim(),
-            Style::default(),
+            Style::default().fg(theme.text.secondary),
+            theme,
             panel_width,
+            HARNESS_BLOCK_TOOL_PADDING_LEFT,
         );
+    }
+
+    for _ in 0..HARNESS_BLOCK_TOOL_PADDING_BOTTOM {
+        lines.push(harness_bash_padding_line(theme));
     }
     lines
 }
 
-fn reference_bash_output_style(_tone: TranscriptToolCallDetailTone) -> Style {
-    Style::default()
+fn harness_bash_title(description: Option<&str>) -> String {
+    let description = description
+        .map(collapse_inline_whitespace)
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "Shell".to_string());
+    if description.starts_with("# ") {
+        description
+    } else {
+        format!("# {description}")
+    }
 }
 
-fn append_reference_bash_rows(
+fn harness_bash_output_style(_tone: TranscriptToolCallDetailTone, theme: &Theme) -> Style {
+    Style::default().fg(theme.text.primary)
+}
+
+fn append_harness_bash_rows(
     lines: &mut Vec<Line<'static>>,
     text: &str,
     style: Style,
+    theme: &Theme,
     panel_width: usize,
+    padding_left: usize,
 ) {
+    let content_width = panel_width
+        .saturating_sub(HARNESS_SPLIT_RAIL_WIDTH)
+        .saturating_sub(padding_left)
+        .max(1);
     let rows = if text.is_empty() {
         vec![String::new()]
     } else {
         text.split('\n')
-            .flat_map(|row| wrap_plain_terminal_row(row, panel_width))
+            .flat_map(|row| wrap_plain_terminal_row(row, content_width))
             .collect::<Vec<_>>()
     };
 
     for row in rows {
-        lines.push(reference_bash_content_line(&row, style, panel_width));
+        lines.push(harness_bash_content_line(
+            &row,
+            style,
+            theme,
+            padding_left,
+            content_width,
+        ));
     }
 }
 
-fn reference_bash_content_line(text: &str, style: Style, content_width: usize) -> Line<'static> {
-    let content = sanitize_reference_bash_text(text);
+fn harness_bash_content_line(
+    text: &str,
+    style: Style,
+    theme: &Theme,
+    padding_left: usize,
+    content_width: usize,
+) -> Line<'static> {
+    let content = sanitize_harness_bash_text(text);
     let remaining = content_width.saturating_sub(display_width(&content));
-    reference_bash_line(vec![
-        Span::styled(content, style),
-        Span::styled(" ".repeat(remaining), Style::default()),
-    ])
+    harness_bash_line(
+        vec![
+            harness_split_rail_span(theme),
+            Span::styled(" ".repeat(padding_left), Style::default()),
+            Span::styled(content, style),
+            Span::styled(" ".repeat(remaining), Style::default()),
+        ],
+        theme.surface.panel,
+    )
 }
 
-fn reference_bash_line(spans: Vec<Span<'static>>) -> Line<'static> {
+fn harness_bash_padding_line(theme: &Theme) -> Line<'static> {
+    harness_bash_line(vec![harness_split_rail_span(theme)], theme.surface.panel)
+}
+
+fn harness_split_rail_span(theme: &Theme) -> Span<'static> {
+    Span::styled(
+        HARNESS_SPLIT_RAIL_GLYPH.to_string(),
+        Style::default().fg(theme.surface.shell),
+    )
+}
+
+fn harness_bash_line(spans: Vec<Span<'static>>, surface: Color) -> Line<'static> {
     Line::from(
         spans
             .into_iter()
-            .map(|span| surface_span(span.content.into_owned(), span.style, Default::default()))
+            .map(|span| surface_span(span.content.into_owned(), span.style, surface))
             .collect::<Vec<_>>(),
     )
 }
@@ -274,6 +364,6 @@ fn wrap_plain_terminal_row(text: &str, width: usize) -> Vec<String> {
     rows
 }
 
-fn sanitize_reference_bash_text(text: &str) -> String {
+fn sanitize_harness_bash_text(text: &str) -> String {
     replace_control_chars_except_tabs(text)
 }

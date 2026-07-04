@@ -510,7 +510,7 @@ fn block_tool_cards_render_subtitle_inline_with_title() {
 }
 
 #[test]
-fn shell_tool_cards_use_reference_dollar_block_without_harness_chrome() {
+fn shell_tool_cards_render_harness_bash_panel_with_chrome_and_clamping() {
     // arrange
     let theme = Theme::default();
     let mut tool_call = transcript_section_model_test_tool_call("tc-shell-harness", "shell.run");
@@ -534,16 +534,16 @@ fn shell_tool_cards_use_reference_dollar_block_without_harness_chrome() {
         false,
         None,
     );
-    // assert
+    // assert - output is clamped to 10 lines with expand hint
     assert_eq!(
         section.detail_blocks[0],
         TranscriptToolCallDetailBlock::BashPanel {
             command: "echo hi".to_string(),
             output:
-                "line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\nline 11"
+                "line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\n…"
                     .to_string(),
             description: None,
-            expand_hint: None,
+            expand_hint: Some("Click to expand".to_string()),
             tone: TranscriptToolCallDetailTone::Primary,
         }
     );
@@ -556,17 +556,13 @@ fn shell_tool_cards_use_reference_dollar_block_without_harness_chrome() {
     });
     let rendered = text_lines.join("\n");
 
-    assert!(!rendered.contains('┃'));
-    assert!(!rendered.contains("● ● ●"));
-    assert!(!rendered.contains("# list files"));
-    assert!(!rendered.contains('╭'));
-    assert!(!rendered.contains('├'));
+    assert!(rendered.contains('┃'), "harness bash panel should have split rail");
+    assert!(rendered.contains("# Shell"), "harness bash panel should have title");
     assert!(rendered.contains("$ echo hi"));
     assert!(!rendered.contains("stdout>"));
     assert!(rendered.contains("line 10"));
-    assert!(rendered.contains("line 11"));
-    assert!(!rendered.contains("Click to expand"));
-    assert!(!rendered.contains('╰'));
+    assert!(!rendered.contains("line 11"), "output should be clamped at 10 lines");
+    assert!(rendered.contains("Click to expand"));
 }
 
 #[test]
@@ -829,11 +825,11 @@ fn shell_tool_cards_render_full_overflow_without_expand_hints() {
         false,
         None,
     );
-    // assert
+    // assert - output is clamped to 10 lines with expand hint
     assert!(matches!(
         &collapsed.detail_blocks[0],
         TranscriptToolCallDetailBlock::BashPanel { output, expand_hint, .. }
-            if output.contains("line 12") && expand_hint.is_none()
+            if !output.contains("line 12") && expand_hint.is_some()
     ));
 }
 

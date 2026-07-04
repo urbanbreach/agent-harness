@@ -36,7 +36,12 @@ pub(super) fn mouse_drag_copy_on_select_copies_shell_card_text() {
     })));
 
     let mut app = shell_card_selection_test_app();
-    drag_transcript_selection(&mut app, "copy target output");
+    let (column, row, width) = transcript_selection_text_bounds(&app, "copy target output");
+    drag_transcript_selection_range(
+        &mut app,
+        (column.saturating_sub(2), row),
+        (column + width.saturating_sub(1), row),
+    );
 
     assert_eq!(
         copied.lock().expect("lock copied text").clone(),

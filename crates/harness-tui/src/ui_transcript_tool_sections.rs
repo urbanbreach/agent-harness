@@ -1,6 +1,8 @@
 use super::ui_tool_delegation::agent_spawn_is_background;
 use super::*;
 
+const HARNESS_GENERIC_OUTPUT_LINE_CLAMP: usize = 3;
+
 #[expect(
     clippy::too_many_arguments,
     reason = "transcript tool-row assembly keeps the rendering toggles explicit at the call site"
@@ -136,6 +138,8 @@ pub(super) fn build_transcript_tool_call_section(
                         &cmd,
                         &output,
                         shell_tool_title_description(tool_call, session_path),
+                        HARNESS_BASH_OUTPUT_LINE_CLAMP,
+                        expanded,
                         TranscriptToolCallDetailTone::Primary,
                     );
                 }
@@ -333,8 +337,8 @@ pub(super) fn build_transcript_tool_call_section(
                 });
             }
             (
-                todo_tool_title(&todo_items),
-                Some("#"),
+                "# Todos".to_string(),
+                None,
                 TranscriptToolCallVisualStyle::Block,
                 false,
             )
@@ -470,6 +474,8 @@ pub(super) fn build_transcript_tool_call_section(
                     } else {
                         TranscriptToolCallDetailTone::Primary
                     },
+                    HARNESS_GENERIC_OUTPUT_LINE_CLAMP,
+                    expanded,
                 );
                 (title, None, TranscriptToolCallVisualStyle::Block, true)
             } else {
@@ -507,6 +513,8 @@ pub(super) fn build_transcript_tool_call_section(
             } else {
                 TranscriptToolCallDetailTone::Primary
             },
+            HARNESS_GENERIC_OUTPUT_LINE_CLAMP,
+            expanded,
         );
     }
 
@@ -946,8 +954,10 @@ fn push_collapsible_output_block(
     detail_blocks: &mut Vec<TranscriptToolCallDetailBlock>,
     output: &str,
     tone: TranscriptToolCallDetailTone,
+    max_lines: usize,
+    expanded: bool,
 ) {
-    let preview = collapsible_output_preview(output);
+    let preview = collapsible_output_preview(output, max_lines, expanded);
     detail_blocks.push(TranscriptToolCallDetailBlock::Message {
         text: preview.output,
         tone,
@@ -965,9 +975,11 @@ fn push_collapsible_bash_panel_block(
     command: &str,
     output: &str,
     description: Option<String>,
+    max_lines: usize,
+    expanded: bool,
     tone: TranscriptToolCallDetailTone,
 ) {
-    let preview = collapsible_bash_panel_preview(output);
+    let preview = collapsible_bash_panel_preview(output, max_lines, expanded);
 
     detail_blocks.push(TranscriptToolCallDetailBlock::BashPanel {
         command: command.to_string(),

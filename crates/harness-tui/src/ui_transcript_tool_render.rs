@@ -171,19 +171,17 @@ fn append_block_tool_section_lines(
     width: u16,
     base_surface: Color,
 ) {
-    if shell_tool_uses_reference_bash_block(tool_call) {
-        append_shell_tool_reference_block(render, tool_call, theme, width);
+    if shell_tool_uses_harness_bash_card(tool_call) {
+        append_shell_tool_harness_card(render, tool_call, theme, width);
         return;
     }
 
     let surface = base_surface;
-    let card_shell = (tool_call.header.status == ToolCallDisplayStatus::Failed).then_some(
-        TranscriptToolCardShell {
-            indent: TRANSCRIPT_ASSISTANT_BODY_PREFIX,
-            rail_color: block_tool_rail_color(tool_call.header.status, theme),
-            surface,
-        },
-    );
+    let card_shell = Some(TranscriptToolCardShell {
+        indent: TRANSCRIPT_ASSISTANT_BODY_PREFIX,
+        rail_color: block_tool_rail_color(tool_call.header.status, theme),
+        surface,
+    });
     let title_style = tool_call_header_style(
         tool_call.header.struck_out,
         block_tool_color(tool_call.header.status, theme),
@@ -266,7 +264,7 @@ fn append_block_tool_section_lines(
     append_tool_call_detail_blocks(render, tool_call, theme, width, base_surface, card_shell);
 }
 
-pub(super) fn shell_tool_uses_reference_bash_block(tool_call: &TranscriptToolCallSection) -> bool {
+pub(super) fn shell_tool_uses_harness_bash_card(tool_call: &TranscriptToolCallSection) -> bool {
     matches!(tool_call.header.tool_id.as_str(), "shell.run" | "bash")
         && tool_call.detail_blocks.iter().any(|detail_block| {
             matches!(
@@ -276,7 +274,7 @@ pub(super) fn shell_tool_uses_reference_bash_block(tool_call: &TranscriptToolCal
         })
 }
 
-fn append_shell_tool_reference_block(
+fn append_shell_tool_harness_card(
     render: &mut ToolSectionRender,
     tool_call: &TranscriptToolCallSection,
     theme: &Theme,
@@ -292,9 +290,9 @@ fn append_shell_tool_reference_block(
                 expand_hint,
                 tone,
             } => {
-                append_reference_bash_panel(
+                append_harness_bash_panel(
                     &mut render.lines,
-                    ReferenceBashPanel {
+                    HarnessBashPanel {
                         command,
                         output,
                         description: description.as_deref(),
@@ -402,9 +400,9 @@ fn append_tool_call_detail_blocks(
                 expand_hint,
                 tone,
             } => {
-                append_reference_bash_panel(
+                append_harness_bash_panel(
                     &mut render.lines,
-                    ReferenceBashPanel {
+                    HarnessBashPanel {
                         command,
                         output,
                         description: description.as_deref(),
