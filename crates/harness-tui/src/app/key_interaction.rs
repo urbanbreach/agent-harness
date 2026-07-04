@@ -34,6 +34,12 @@ impl AppState {
             return;
         }
 
+        if self.overlay_stack().top() == Some(OverlayKind::SubagentActions) {
+            self.handle_subagent_actions_key(key);
+            self.maybe_auto_exit();
+            return;
+        }
+
         if self.overlay_stack().top() == Some(OverlayKind::ThemeDialog) {
             self.handle_theme_dialog_key(key);
             self.maybe_auto_exit();
@@ -102,6 +108,11 @@ impl AppState {
         }
 
         if key.code == KeyCode::Esc && self.handle_interrupt_escape() {
+            self.maybe_auto_exit();
+            return;
+        }
+
+        if self.handle_prompt_reachable_session_key(key) {
             self.maybe_auto_exit();
             return;
         }
@@ -753,6 +764,18 @@ impl AppState {
             Action::SessionParent => {
                 self.navigate_to_parent_session();
             }
+            Action::SessionBackground => {
+                if self.replay_mode {
+                    self.status_banner = Some(
+                        "foreground subagent backgrounding unavailable: replay mode is read-only"
+                            .to_string(),
+                    );
+                } else {
+                    self.status_banner =
+                        Some("foreground subagent backgrounding requested".to_string());
+                    self.emit_ui_intent(UiIntent::BackgroundForegroundSubagents);
+                }
+            }
             Action::DiffHunkNext => {
                 self.navigate_diff_hunk(false);
             }
@@ -955,6 +978,16 @@ impl AppState {
         }
     }
 
+    fn handle_subagent_actions_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc => self.close_subagent_actions_dialog(),
+            KeyCode::Enter | KeyCode::Char('o') | KeyCode::Char('O') => {
+                self.open_selected_subagent_session();
+            }
+            _ => {}
+        }
+    }
+
     fn handle_prompt_stash_list_key(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Esc => {
@@ -1020,6 +1053,20 @@ impl AppState {
             && !self.details_drawer_open()
     }
 
+    fn handle_prompt_reachable_session_key(&mut self, key: KeyEvent) -> bool {
+        if self.focus != Focus::Prompt {
+            return false;
+        }
+
+        match self.keymap.get_session_action(&key) {
+            Some(Action::SessionBackground) => {
+                self.execute_action(Action::SessionBackground);
+                true
+            }
+            _ => false,
+        }
+    }
+
     fn handle_transcript_navigation_key(&mut self, key: KeyEvent) -> bool {
         if self.terminal_panel_surface_active() && key.modifiers == KeyModifiers::NONE {
             return match key.code {
@@ -1045,7 +1092,16 @@ impl AppState {
             };
         }
 
-        if !self.transcript_surface_active() || key.modifiers != KeyModifiers::NONE {
+        if !self.transcript_surface_active() {
+            return false;
+        }
+
+        if let Some(action) = self.keymap.get_session_action(&key) {
+            self.execute_action(action);
+            return true;
+        }
+
+        if key.modifiers != KeyModifiers::NONE {
             return false;
         }
 
