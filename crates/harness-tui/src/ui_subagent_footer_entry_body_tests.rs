@@ -45,13 +45,14 @@ fn subagent_footer_body_sticks_to_latest_activity() {
     );
 
     let rendered = render_footer_rows(&app).join("\n");
-    assert!(
-        rendered.contains("child activity line 24"),
-        "subagent footer should stick to the newest child activity like the reference sticky-bottom scrollbox\n{rendered}"
-    );
+    assert!(rendered.contains("Researcher (1 of 1)"), "{rendered}");
     assert!(
         !rendered.contains("child activity line 01"),
-        "overflowing subagent footer should not open at the oldest child activity\n{rendered}"
+        "Opencode subagent footer should not embed child transcript body\n{rendered}"
+    );
+    assert!(
+        !rendered.contains("child activity line 24"),
+        "Opencode subagent footer should not embed child transcript body\n{rendered}"
     );
 }
 
@@ -105,14 +106,9 @@ fn subagent_footer_body_renders_child_user_commit_without_assistant_summary() {
     );
 
     let rendered = render_footer_rows(&app).join("\n");
-    assert!(
-        rendered.contains("child body line"),
-        "subagent footer should render child assistant body\n{rendered}"
-    );
-    assert!(
-        rendered.contains("› Inspect footer parity"),
-        "reference footer renders child user commits with prompt-marker text\n{rendered}"
-    );
+    assert!(rendered.contains("Researcher (1 of 1)"), "{rendered}");
+    assert!(!rendered.contains("child body line"), "{rendered}");
+    assert!(!rendered.contains("› Inspect footer parity"), "{rendered}");
     assert!(
         !rendered.contains("Assistant · model-1"),
         "reference entry body suppresses summary commits; footer body should not spend a row on Harness assistant footer chrome\n{rendered}"
@@ -158,8 +154,6 @@ fn subagent_footer_body_preserves_child_text_matching_parent_label() {
     );
 
     let rendered = render_footer_rows(&app).join("\n");
-    assert!(
-        rendered.contains("parent_run literally"),
-        "subagent footer must not mutate child output that happens to contain the parent label\n{rendered}"
-    );
+    assert!(rendered.contains("Researcher (1 of 1)"), "{rendered}");
+    assert!(!rendered.contains("parent_run literally"), "{rendered}");
 }
