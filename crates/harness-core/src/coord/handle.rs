@@ -398,6 +398,11 @@ impl CoordinatorHandle {
         .await
     }
 
+    pub async fn background_foreground_child_tasks(&self) -> Result<usize, CoordinatorError> {
+        self.request(|respond_to| Command::BackgroundForegroundChildTasks { respond_to })
+            .await
+    }
+
     pub async fn wait_background_request_terminal(
         &self,
         request_id: impl Into<String>,

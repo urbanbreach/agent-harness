@@ -279,6 +279,13 @@ impl Coordinator {
                     .await;
                 warn_oneshot_send_failure(respond_to.send(result), "cancel_background_request");
             }
+            Command::BackgroundForegroundChildTasks { respond_to } => {
+                let result = self.background_foreground_child_tasks_internal().await;
+                warn_oneshot_send_failure(
+                    respond_to.send(result),
+                    "background_foreground_child_tasks",
+                );
+            }
             Command::JobFinished { task_id, outcome } => {
                 let _ = self.job_finished_internal_async(task_id, outcome).await;
             }

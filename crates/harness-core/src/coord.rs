@@ -437,6 +437,9 @@ pub enum Command {
         reason: String,
         respond_to: oneshot::Sender<Result<BackgroundRequestProjection, CoordinatorError>>,
     },
+    BackgroundForegroundChildTasks {
+        respond_to: oneshot::Sender<Result<usize, CoordinatorError>>,
+    },
     JobFinished {
         task_id: String,
         outcome: JobOutcome,

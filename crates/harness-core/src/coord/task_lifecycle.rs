@@ -1,6 +1,48 @@
 use super::*;
 
 impl Coordinator {
+    pub(in crate::coord) async fn background_foreground_child_tasks_internal(
+        &mut self,
+    ) -> Result<usize, CoordinatorError> {
+        let detachments = {
+            let Some(run_state) = self.run_state.as_mut() else {
+                return Err(CoordinatorError::RunNotStarted);
+            };
+            let parent_session_id = run_state.info.run_id.clone();
+            let foreground_children = foreground_child_tasks(run_state, &parent_session_id);
+            let mut detachments = Vec::new();
+
+            for child in foreground_children {
+                let Some(parent_task_id) = parent_task_id_for_child(run_state, &child) else {
+                    continue;
+                };
+                mark_child_task_backgrounded(run_state, &child.child_request_id);
+                detachments.push((parent_task_id, child));
+            }
+
+            detachments
+        };
+
+        if detachments.is_empty() {
+            return Err(CoordinatorError::UnknownTask(
+                "no foreground subagent is currently blocking this session".to_string(),
+            ));
+        }
+
+        let count = detachments.len();
+        for (parent_task_id, child) in detachments {
+            self.job_finished_internal_async(
+                parent_task_id,
+                JobOutcome::Succeeded {
+                    result: backgrounded_child_tool_result(&child),
+                },
+            )
+            .await?;
+        }
+
+        Ok(count)
+    }
+
     pub(in crate::coord) fn job_progress_internal(
         &mut self,
         task_id: String,
@@ -796,6 +838,82 @@ impl Coordinator {
 
         Ok(())
     }
+}
+
+fn foreground_child_tasks(
+    run_state: &RunState,
+    parent_session_id: &str,
+) -> Vec<ChildTaskTurnState> {
+    run_state
+        .running_agent_turns
+        .values()
+        .filter_map(|running| running.child_task.as_ref())
+        .chain(
+            run_state
+                .queued_agent_turns
+                .values()
+                .filter_map(|queued| queued.child_task.as_ref()),
+        )
+        .filter(|child| !child.run_in_background && child.parent_session_id == parent_session_id)
+        .cloned()
+        .collect()
+}
+
+fn parent_task_id_for_child(run_state: &RunState, child: &ChildTaskTurnState) -> Option<String> {
+    run_state
+        .tasks
+        .iter()
+        .find(|(_, task)| task.tool_call_id == child.parent_tool_call_id)
+        .map(|(task_id, _)| task_id.clone())
+}
+
+fn mark_child_task_backgrounded(run_state: &mut RunState, child_request_id: &str) {
+    for running in run_state.running_agent_turns.values_mut() {
+        if let Some(child) = running.child_task.as_mut() {
+            if child.child_request_id == child_request_id {
+                child.run_in_background = true;
+            }
+        }
+    }
+    for queued in run_state.queued_agent_turns.values_mut() {
+        if let Some(child) = queued.child_task.as_mut() {
+            if child.child_request_id == child_request_id {
+                child.run_in_background = true;
+            }
+        }
+    }
+}
+
+fn backgrounded_child_tool_result(child: &ChildTaskTurnState) -> ToolResult {
+    let display_text = format!(
+        "task_id: {} (for resuming to continue this task if needed)\nrequest_id: {}\n\n<task_result>Foreground subagent moved to background.</task_result>",
+        child.child_session_id, child.child_request_id
+    );
+    ToolResult::structured(
+        display_text,
+        json!({
+            "description": child.description,
+            "task_id": child.child_session_id,
+            "session_id": child.child_session_id,
+            "request_id": child.child_request_id,
+            "child_session_id": child.child_session_id,
+            "child_request_id": child.child_request_id,
+            "background": true,
+            "mode": "background",
+            "status": "scheduled",
+            "lineage": {
+                "parent_tool_call_id": child.parent_tool_call_id,
+                "parent_session_id": child.parent_session_id,
+                "parent_agent_id": child.parent_agent_id,
+                "child_session_id": child.child_session_id,
+                "child_request_id": child.child_request_id,
+            },
+            "next_actions": [
+                format!("background_output(request_id=\"{}\")", child.child_request_id),
+                format!("task(task_id=\"{}\")", child.child_session_id),
+            ],
+        }),
+    )
 }
 
 fn strip_bom(text: &str) -> &str {

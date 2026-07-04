@@ -14,7 +14,7 @@ use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
 
 use crate::agent::{
-    AgentProfile, ProviderCompactionFacts, ProviderCompactionSummarySource,
+    AgentModelSettings, AgentProfile, ProviderCompactionFacts, ProviderCompactionSummarySource,
     ProviderCompactionTailBoundary, ProviderContext, ProviderContextCheckpoint,
     ProviderContextCheckpointMetadata, ProviderConversationTurn, ProviderConversationTurnStatus,
     ProviderFileOperationFact,
@@ -706,6 +706,152 @@ fn stale_tool_task_late_result_preserves_owner_actor() {
                 if data.task_id == task_id
                     && event.actor == owner_actor
                     && event.correlation_id.as_deref() == request_correlation_id.as_deref()
+        )
+    }));
+}
+
+#[tokio::test]
+async fn background_foreground_child_tasks_releases_parent_task_and_keeps_child_running() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let config = test_config(temp_dir.path());
+    let clock = Arc::new(FakeClock::new());
+    let redactor = Arc::new(DefaultRedactor::default());
+    let (_command_tx, command_rx) = mpsc::channel(1);
+    let (job_tx, job_rx) = mpsc::channel(1);
+    let mut coordinator = Coordinator::new(config, clock, redactor, command_rx, job_tx, job_rx);
+
+    let run = coordinator
+        .start_run_internal_async(
+            "foreground_detach".to_string(),
+            temp_dir.path().to_path_buf(),
+        )
+        .await
+        .expect("start run");
+    let parent_task_id = "task_parent".to_string();
+    let parent_tool_call_id = "toolcall_parent".to_string();
+    let parent_request_id = "req_parent".to_string();
+    let child_task_id = "task_child".to_string();
+    let child_request_id = "req_child".to_string();
+    let child_session_id = "agent_child".to_string();
+    let queue_key = ConcurrencyKey::Tool {
+        tool_id: "task".to_string(),
+    };
+    let (respond_to, response_rx) = oneshot::channel();
+
+    {
+        let run_state = coordinator.run_state.as_mut().expect("run state");
+        assert!(matches!(
+            run_state
+                .scheduler
+                .schedule(parent_task_id.clone(), queue_key.clone()),
+            ScheduleDecision::Started(_)
+        ));
+        run_state.tasks.insert(
+            parent_task_id.clone(),
+            TaskState {
+                tool_call_id: parent_tool_call_id.clone(),
+                tool_metadata: None,
+                owner_actor: EventActor::new(ActorKind::Worker, Some("agent_parent".to_string())),
+                request_correlation_id: Some(parent_request_id.clone()),
+                queue_key: queue_key.clone(),
+                state: TaskExecutionState::Running,
+                cancellation_token: CancellationToken::new(),
+                started_mono_ms: 0,
+                last_progress_mono_ms: 0,
+                last_progress_kind: JobProgressKind::Heartbeat,
+                hashline_edit: None,
+                respond_to: Some(respond_to),
+            },
+        );
+        run_state.running_agent_turns.insert(
+            child_task_id.clone(),
+            RunningAgentTurn {
+                agent_id: child_session_id.clone(),
+                request_id: child_request_id.clone(),
+                request_prompt: "work in child".to_string(),
+                profile_name: "alpha".to_string(),
+                model_ref: "mock:model-1".to_string(),
+                model_settings: AgentModelSettings {
+                    variant: None,
+                    reasoning_effort: None,
+                    text_verbosity: None,
+                    reasoning_summary: None,
+                    thinking: None,
+                },
+                category: Some("alpha".to_string()),
+                queue_key: ConcurrencyKey::ProviderModel {
+                    provider_id: "mock".to_string(),
+                    model_id: "model-1".to_string(),
+                },
+                cancellation_token: CancellationToken::new(),
+                started_mono_ms: 0,
+                hook_executions: Vec::new(),
+                latest_provider_usage: None,
+                latest_provider_request_id: None,
+                latest_assistant_output: None,
+                latest_provider_id: None,
+                latest_model_id: None,
+                child_task: Some(ChildTaskTurnState {
+                    parent_tool_call_id: parent_tool_call_id.clone(),
+                    parent_session_id: run.run_id.clone(),
+                    parent_agent_id: Some("agent_parent".to_string()),
+                    child_session_id: child_session_id.clone(),
+                    child_request_id: child_request_id.clone(),
+                    task_id: child_task_id.clone(),
+                    description: "Long child work".to_string(),
+                    run_in_background: false,
+                }),
+            },
+        );
+    }
+
+    let count = coordinator
+        .background_foreground_child_tasks_internal()
+        .await
+        .expect("background foreground child");
+    assert_eq!(count, 1);
+
+    let response = response_rx
+        .await
+        .expect("parent task response sent")
+        .expect("parent task response ok");
+    assert!(response
+        .display_text
+        .contains("Foreground subagent moved to background"));
+    assert_eq!(
+        response
+            .structured_json
+            .as_ref()
+            .and_then(|json| json.get("background"))
+            .and_then(serde_json::Value::as_bool),
+        Some(true)
+    );
+
+    let run_state = coordinator.run_state.as_ref().expect("run state");
+    assert!(!run_state.tasks.contains_key(&parent_task_id));
+    let child = run_state
+        .running_agent_turns
+        .get(&child_task_id)
+        .and_then(|running| running.child_task.as_ref())
+        .expect("child turn still running");
+    assert!(child.run_in_background);
+    assert_eq!(child.child_request_id, child_request_id);
+
+    let events = read_events(&run.events_path);
+    assert!(events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::TaskCompleted(data)
+                if data.task_id == parent_task_id
+                    && data.result_summary.contains("Foreground subagent moved to background")
+        )
+    }));
+    assert!(events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::ToolCallFinished(data)
+                if data.tool_call_id == parent_tool_call_id
+                    && data.status == ToolCallStatus::Succeeded
         )
     }));
 }
