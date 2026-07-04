@@ -161,6 +161,19 @@ pub(super) async fn handle_ui_intents(
                 };
                 let _ = live_update_tx.send(LiveUpdate::OperatorNotice { message, level });
             }
+            UiIntent::BackgroundForegroundSubagents => {
+                let (message, level) = match coordinator.background_foreground_child_tasks().await {
+                    Ok(count) => (
+                        foreground_background_success_message(count),
+                        OperatorNoticeLevel::Info,
+                    ),
+                    Err(err) => (
+                        format!("foreground subagent backgrounding failed: {err}"),
+                        OperatorNoticeLevel::Error,
+                    ),
+                };
+                let _ = live_update_tx.send(LiveUpdate::OperatorNotice { message, level });
+            }
             UiIntent::OpenAuthManager { args, stdin } => {
                 spawn_tui_auth_backend_task(
                     args,
@@ -324,6 +337,14 @@ pub(super) async fn handle_ui_intents(
         }
     }
     Ok(())
+}
+
+pub(super) fn foreground_background_success_message(count: usize) -> String {
+    if count == 1 {
+        "foreground subagent moved to background".to_string()
+    } else {
+        format!("{count} foreground subagents moved to background")
+    }
 }
 
 pub(super) fn manual_compaction_success_message(

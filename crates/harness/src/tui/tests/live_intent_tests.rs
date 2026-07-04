@@ -100,6 +100,18 @@ fn manual_compaction_success_message_reports_active_context_delta() {
     );
 }
 
+#[test]
+fn foreground_background_success_message_reports_single_and_multiple_counts() {
+    assert_eq!(
+        foreground_background_success_message(1),
+        "foreground subagent moved to background"
+    );
+    assert_eq!(
+        foreground_background_success_message(2),
+        "2 foreground subagents moved to background"
+    );
+}
+
 #[tokio::test]
 async fn event_forwarder_stops_after_terminal_event_when_requested() {
     // arrange
@@ -282,6 +294,26 @@ fn live_ui_router_forwards_interrupt_intent_without_switching_workflow() {
         Some(UiIntent::InterruptSession {
             task_ids: vec!["task_active".to_string()],
         })
+    );
+}
+
+#[test]
+fn live_ui_router_forwards_foreground_background_intent_without_switching_workflow() {
+    let (intent_tx, mut intent_rx) = mpsc::unbounded_channel::<UiIntent>();
+    let launch_selection = Arc::new(Mutex::new(LaunchMetadata::default()));
+    let (selected_workflow, sink) = build_live_ui_intent_router(
+        intent_tx,
+        Arc::clone(&launch_selection),
+        false,
+        "test-digest".to_string(),
+    );
+
+    sink(UiIntent::BackgroundForegroundSubagents);
+
+    assert!(recover_mutex_lock(&selected_workflow).is_none());
+    assert_eq!(
+        intent_rx.try_recv().ok(),
+        Some(UiIntent::BackgroundForegroundSubagents)
     );
 }
 

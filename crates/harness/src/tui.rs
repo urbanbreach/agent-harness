@@ -99,11 +99,12 @@ use self::launch_metadata::interactive_launch_metadata;
 #[cfg(test)]
 use self::lineage::{materialize_tui_fork_child, materialize_tui_lineage_child};
 use self::live_events::{forward_events_to_tui, latest_request_id_for_agent};
-use self::live_intents::{handle_ui_intents, LiveAgentTarget};
 #[cfg(test)]
 use self::live_intents::{
-    manual_compaction_success_message, maybe_update_live_agent_target_for_plan_handoff,
+    foreground_background_success_message, manual_compaction_success_message,
+    maybe_update_live_agent_target_for_plan_handoff,
 };
+use self::live_intents::{handle_ui_intents, LiveAgentTarget};
 use self::live_options::{continue_live_tui_options, new_live_tui_options};
 #[cfg(test)]
 use self::live_settings::prepare_new_live_workspace;

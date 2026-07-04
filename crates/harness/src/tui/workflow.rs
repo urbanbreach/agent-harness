@@ -116,6 +116,7 @@ pub(super) fn map_startup_intent_to_workflow(intent: Option<UiIntent>) -> Intera
         | Some(UiIntent::ResolvePermission { .. })
         | Some(UiIntent::OpenAuthManager { .. })
         | Some(UiIntent::CompactSession)
+        | Some(UiIntent::BackgroundForegroundSubagents)
         | Some(UiIntent::InterruptSession { .. })
         | Some(UiIntent::ForkSession { .. })
         | Some(UiIntent::CloneSession { .. })
@@ -169,6 +170,7 @@ pub(super) fn live_workflow_from_intent(intent: &UiIntent) -> Option<Interactive
         | UiIntent::SubmitPrompt { .. }
         | UiIntent::OpenAuthManager { .. }
         | UiIntent::CompactSession
+        | UiIntent::BackgroundForegroundSubagents
         | UiIntent::InterruptSession { .. }
         | UiIntent::ForkSession { .. }
         | UiIntent::CloneSession { .. }
@@ -188,6 +190,7 @@ fn forward_intent_to_live_run(intent: &UiIntent) -> bool {
             | UiIntent::SubmitPrompt { .. }
             | UiIntent::OpenAuthManager { .. }
             | UiIntent::CompactSession
+            | UiIntent::BackgroundForegroundSubagents
             | UiIntent::InterruptSession { .. }
             | UiIntent::ForkSession { .. }
             | UiIntent::CloneSession { .. }
