@@ -93,7 +93,6 @@ use super::ui_transcript_surface::{
     nested_surface_prefix_width, surface_prefix_width, transcript_surface_content_width,
     transcript_surface_render_width, user_surface_line, TRANSCRIPT_RAIL_GLYPH,
 };
-
 #[path = "ui_transcript_types.rs"]
 mod ui_transcript_types;
 
@@ -109,8 +108,9 @@ mod ui_transcript_tool_sections;
 #[path = "ui_transcript_sections.rs"]
 mod ui_transcript_sections;
 
-use ui_transcript_render::{append_reasoning_block, build_transcript_render_surfaces};
+use ui_transcript_render::build_transcript_render_surfaces;
 use ui_transcript_sections::build_transcript_sections;
+#[cfg(test)]
 use ui_transcript_tool_render::append_tool_call_section_lines;
 #[cfg(test)]
 use ui_transcript_tool_sections::{
@@ -607,70 +607,6 @@ pub(crate) fn build_transcript_lines_for_width(
         theme.surface.shell,
         |layout| transcript_layout_lines(layout, theme),
     )
-}
-
-pub(crate) fn build_subagent_footer_lines_for_width(
-    app: &AppState,
-    theme: &Theme,
-    width: u16,
-    surface: Color,
-) -> Vec<Line<'static>> {
-    let mut lines = Vec::new();
-    for turn in build_transcript_sections(app) {
-        if let Some(user_message) = turn.user_message.as_ref() {
-            append_subagent_user_message_lines(&mut lines, &user_message.text, theme, width);
-        }
-        for part in &turn.assistant_parts {
-            match part {
-                TranscriptAssistantPart::Reasoning(reasoning) => append_reasoning_block(
-                    &mut lines,
-                    reasoning,
-                    theme,
-                    transcript_surface_content_width(width, false),
-                ),
-                TranscriptAssistantPart::Body(TranscriptBodyBlock::RichText(text)) => {
-                    append_rich_text_block(&mut lines, text, theme.text.primary, "", theme, width);
-                }
-                TranscriptAssistantPart::ToolCall(tool_call) => {
-                    let render = append_tool_call_section_lines(tool_call, theme, width, surface);
-                    lines.extend(render.lines);
-                }
-                TranscriptAssistantPart::Error(error) => lines.push(Line::from(Span::styled(
-                    error.text.clone(),
-                    Style::default().fg(theme.status.error).bg(surface),
-                ))),
-            }
-        }
-    }
-    lines
-}
-
-fn append_subagent_user_message_lines(
-    lines: &mut Vec<Line<'static>>,
-    text: &str,
-    theme: &Theme,
-    width: u16,
-) {
-    let style = Style::default().fg(theme.text.primary);
-    let text = subagent_user_body_text(text);
-    for row in text.lines() {
-        let spans = if row.is_empty() {
-            Vec::new()
-        } else {
-            vec![Span::styled(row.to_string(), style)]
-        };
-        append_prefixed_wrapped_spans_line(lines, "", style, spans, width);
-    }
-}
-
-fn subagent_user_body_text(raw: &str) -> std::borrow::Cow<'_, str> {
-    if raw.trim().is_empty() {
-        return std::borrow::Cow::Borrowed(raw);
-    }
-
-    let lead_len = raw.bytes().take_while(|byte| *byte == b'\n').count();
-    let (lead, body) = raw.split_at(lead_len);
-    std::borrow::Cow::Owned(format!("{lead}› {body}"))
 }
 
 #[cfg_attr(not(test), allow(dead_code))]

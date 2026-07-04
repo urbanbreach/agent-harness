@@ -1,3 +1,4 @@
+use super::ui_tool_delegation::agent_spawn_is_background;
 use super::*;
 
 #[expect(
@@ -778,7 +779,7 @@ pub(super) fn build_agent_spawn_tool_row(
     tool_call: &crate::app::ToolCallEntry,
     task_row: Option<&crate::app::OrchestrationTaskRow>,
     detail_blocks: &mut Vec<TranscriptToolCallDetailBlock>,
-    _animation_phase: usize,
+    animation_phase: usize,
 ) -> (
     String,
     Option<&'static str>,
@@ -792,21 +793,36 @@ pub(super) fn build_agent_spawn_tool_row(
             .filter(|value| !value.is_empty())
     });
     let title = agent_spawn_title(tool_call, description);
+    let background_child_running = tool_call.status == ToolCallDisplayStatus::Succeeded
+        && agent_spawn_is_background(tool_call)
+        && task_row.is_some_and(|row| !row.state.is_terminal());
+    let active_task_row =
+        tool_call.status == ToolCallDisplayStatus::Running || background_child_running;
     if matches!(
         tool_call.status,
         ToolCallDisplayStatus::Succeeded | ToolCallDisplayStatus::Running
     ) {
-        if tool_call.status == ToolCallDisplayStatus::Succeeded {
-            if let Some(result) = task_result_markdown(tool_call) {
+        if active_task_row {
+            push_running_subagent_detail(task_row, detail_blocks);
+        } else if tool_call.status == ToolCallDisplayStatus::Succeeded {
+            if let Some(row) = task_row {
+                push_completed_subagent_detail(row, detail_blocks);
+            } else if let Some(result) = task_result_markdown(tool_call) {
                 detail_blocks.push(TranscriptToolCallDetailBlock::Markdown { text: result });
             }
         }
     }
     let icon = match tool_call.status {
-        ToolCallDisplayStatus::Failed => Some("✗"),
+        ToolCallDisplayStatus::Failed => Some("│"),
         ToolCallDisplayStatus::Succeeded => Some("✓"),
-        ToolCallDisplayStatus::Running => Some("•"),
-        ToolCallDisplayStatus::PendingPermission | ToolCallDisplayStatus::Queued => Some("~"),
+        ToolCallDisplayStatus::Running
+        | ToolCallDisplayStatus::PendingPermission
+        | ToolCallDisplayStatus::Queued => Some("│"),
+    };
+    let icon = if active_task_row {
+        Some(transcript_streaming_spinner_frame(animation_phase))
+    } else {
+        icon
     };
     (
         title,
@@ -814,6 +830,61 @@ pub(super) fn build_agent_spawn_tool_row(
         TranscriptToolCallVisualStyle::TaskInline,
         false,
     )
+}
+
+fn push_running_subagent_detail(
+    task_row: Option<&crate::app::OrchestrationTaskRow>,
+    detail_blocks: &mut Vec<TranscriptToolCallDetailBlock>,
+) {
+    let Some(row) = task_row else {
+        return;
+    };
+    let detail = row
+        .warning
+        .as_deref()
+        .map(|warning| format!("↳ {warning}"))
+        .or_else(|| {
+            row.current_child_tool_title
+                .as_deref()
+                .map(|title| format!("↳ {title}"))
+        })
+        .or_else(|| {
+            (row.child_tool_call_count > 0)
+                .then(|| format!("↳ {}", format_subagent_toolcalls(row.child_tool_call_count)))
+        });
+    if let Some(detail) = detail {
+        detail_blocks.push(TranscriptToolCallDetailBlock::Message {
+            text: detail,
+            tone: TranscriptToolCallDetailTone::Primary,
+        });
+    }
+}
+
+fn push_completed_subagent_detail(
+    row: &crate::app::OrchestrationTaskRow,
+    detail_blocks: &mut Vec<TranscriptToolCallDetailBlock>,
+) {
+    let detail = format_completed_subagent_detail(
+        row.child_tool_call_count,
+        row.duration_ms()
+            .map(format_duration_ms)
+            .unwrap_or_default(),
+    );
+    detail_blocks.push(TranscriptToolCallDetailBlock::Message {
+        text: format!("↳ {detail}"),
+        tone: TranscriptToolCallDetailTone::Primary,
+    });
+}
+
+fn format_subagent_toolcalls(count: usize) -> String {
+    format!("{count} toolcall{}", if count == 1 { "" } else { "s" })
+}
+
+fn format_completed_subagent_detail(toolcalls: usize, duration: String) -> String {
+    if toolcalls == 0 {
+        return duration;
+    }
+    format!("{} · {duration}", format_subagent_toolcalls(toolcalls))
 }
 
 fn task_result_markdown(tool_call: &crate::app::ToolCallEntry) -> Option<String> {
