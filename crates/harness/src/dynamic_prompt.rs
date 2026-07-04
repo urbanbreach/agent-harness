@@ -227,7 +227,7 @@ fn environment_prompt(
 }
 
 fn task_delegation_prompt() -> &'static str {
-    "Task delegation reminder: if the `task` tool is available, use a structured delegation body with context, goal, downstream use, request, required tools, must-do, and must-not-do. `run_in_background=false` is synchronous; the child result returns directly in the current tool response and no `[BACKGROUND TASK ...]` reminder is emitted. Use `run_in_background=true` when testing background subagents, wakeups, completion reminders, or `background_output`."
+    "Task delegation reminder: if the `task` tool is available, use a structured delegation body with context, goal, downstream use, request, required tools, must-do, and must-not-do. `run_in_background=false` is synchronous; the child result returns directly in the current tool response and no `[BACKGROUND TASK ...]` reminder is emitted. Use `run_in_background=true` when testing background subagents, wakeups, completion reminders, or `background_output`. For `run_in_background=true`, use `background_output` for interim status checks, user-requested interim updates, or `cancel=true` anytime; for the final background result, wait for the coordinator/system completion notification before retrieving with `background_output`."
 }
 
 fn intent_gate_prompt() -> &'static str {
@@ -722,6 +722,11 @@ mod tests {
         assert!(prompt.contains("run_in_background=false` is synchronous"));
         assert!(prompt.contains("no `[BACKGROUND TASK ...]` reminder is emitted"));
         assert!(prompt.contains("Use `run_in_background=true` when testing background subagents"));
+        assert!(prompt.contains("completion notification"));
+        assert!(prompt.contains("wait for the coordinator"));
+        assert!(prompt.contains("interim status checks"));
+        assert!(prompt.contains("`cancel=true` anytime"));
+        assert!(prompt.contains("final background result"));
     }
 
     #[test]
