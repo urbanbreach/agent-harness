@@ -154,6 +154,40 @@ fn keymap_override_replaces_default_binding() {
 }
 
 #[test]
+fn keymap_invalid_override_preserves_default_binding() {
+    let mut overrides = BTreeMap::new();
+    overrides.insert("quit".to_string(), "not-a-key".to_string());
+
+    let mut keymap = KeyMap::with_defaults();
+    keymap.apply_overrides(&overrides);
+
+    assert_eq!(
+        keymap.get_action(&KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE)),
+        Some(Action::Quit)
+    );
+    assert_eq!(keymap.get_binding_str(Action::Quit), "q");
+}
+
+#[test]
+fn keymap_override_collision_removes_stale_session_label() {
+    let mut overrides = BTreeMap::new();
+    overrides.insert("session_child_cycle".to_string(), "left".to_string());
+
+    let mut keymap = KeyMap::with_defaults();
+    keymap.apply_overrides(&overrides);
+
+    assert_eq!(
+        keymap.get_session_action(&KeyEvent::new(KeyCode::Left, KeyModifiers::NONE)),
+        Some(Action::SessionChildCycle)
+    );
+    assert_eq!(keymap.get_binding_str(Action::SessionChildCycle), "←");
+    assert_eq!(
+        keymap.get_binding_str(Action::SessionChildCycleReverse),
+        "-"
+    );
+}
+
+#[test]
 fn keymap_returns_binding_str() {
     let keymap = KeyMap::with_defaults();
     let binding = keymap.get_binding_str(Action::Quit);
@@ -224,25 +258,36 @@ fn keymap_binds_child_session_navigation_to_default_bindings() {
     let keymap = KeyMap::with_defaults();
 
     assert_eq!(
-        keymap.get_action(&KeyEvent::new(KeyCode::Char(']'), KeyModifiers::CONTROL)),
+        keymap.leader_action(&KeyEvent::new(KeyCode::Down, KeyModifiers::NONE)),
         Some(Action::SessionChildFirst)
     );
     assert_eq!(
-        keymap.get_action(&KeyEvent::new(KeyCode::Char('\u{1d}'), KeyModifiers::NONE)),
-        Some(Action::SessionChildFirst)
-    );
-    assert_eq!(
-        keymap.get_action(&KeyEvent::new(KeyCode::Char(']'), KeyModifiers::NONE)),
+        keymap.get_session_action(&KeyEvent::new(KeyCode::Right, KeyModifiers::NONE)),
         Some(Action::SessionChildCycle)
     );
     assert_eq!(
-        keymap.get_action(&KeyEvent::new(KeyCode::Char('['), KeyModifiers::NONE)),
+        keymap.get_session_action(&KeyEvent::new(KeyCode::Left, KeyModifiers::NONE)),
         Some(Action::SessionChildCycleReverse)
     );
     assert_eq!(
-        keymap.get_action(&KeyEvent::new(KeyCode::Char('['), KeyModifiers::CONTROL)),
+        keymap.get_session_action(&KeyEvent::new(KeyCode::Up, KeyModifiers::NONE)),
         Some(Action::SessionParent)
     );
+    assert_eq!(
+        keymap.get_session_action(&KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL)),
+        Some(Action::SessionBackground)
+    );
+    assert_eq!(
+        keymap.get_binding_str(Action::SessionChildFirst),
+        "Ctrl+x ↓"
+    );
+    assert_eq!(keymap.get_binding_str(Action::SessionChildCycle), "→");
+    assert_eq!(
+        keymap.get_binding_str(Action::SessionChildCycleReverse),
+        "←"
+    );
+    assert_eq!(keymap.get_binding_str(Action::SessionParent), "↑");
+    assert_eq!(keymap.get_binding_str(Action::SessionBackground), "Ctrl+b");
 }
 
 #[test]
@@ -290,6 +335,7 @@ fn ws8_keyboard_surfaces_use_registry_actions_instead_of_hardcoded_keys() {
         Action::SessionChildCycle,
         Action::SessionChildCycleReverse,
         Action::SessionParent,
+        Action::SessionBackground,
         Action::DiffHunkNext,
         Action::DiffHunkPrevious,
     ];
@@ -384,6 +430,23 @@ fn keymap_accepts_variant_cycle_overrides() {
 }
 
 #[test]
+fn keymap_accepts_leader_sequence_overrides() {
+    let mut overrides = BTreeMap::new();
+    overrides.insert(
+        "session_child_first".to_string(),
+        "<leader>down".to_string(),
+    );
+
+    let mut keymap = KeyMap::with_defaults();
+    keymap.apply_overrides(&overrides);
+
+    assert_eq!(
+        keymap.leader_action(&KeyEvent::new(KeyCode::Down, KeyModifiers::NONE)),
+        Some(Action::SessionChildFirst)
+    );
+}
+
+#[test]
 fn keymap_binds_tab_to_agent_cycle_by_default() {
     let keymap = KeyMap::with_defaults();
 
@@ -455,6 +518,7 @@ fn palette_exposes_lineage_browser_and_child_session_commands() {
     assert!(command_ids.contains(&"session_child_cycle"));
     assert!(command_ids.contains(&"session_child_cycle_reverse"));
     assert!(command_ids.contains(&"session_parent"));
+    assert!(command_ids.contains(&"session_background"));
 
     for command_id in [
         "open_lineage_browser",
@@ -462,6 +526,7 @@ fn palette_exposes_lineage_browser_and_child_session_commands() {
         "session_child_cycle",
         "session_child_cycle_reverse",
         "session_parent",
+        "session_background",
     ] {
         let label = Action::palette_command_label(command_id);
         let description = Action::palette_command_description(command_id);
