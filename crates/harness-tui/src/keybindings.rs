@@ -112,6 +112,7 @@ pub enum Action {
     PromptStashPop,
     PromptStashList,
     OpenLineageBrowser,
+    SessionBackground,
 }
 
 impl Action {
@@ -188,6 +189,7 @@ impl Action {
             Action::PromptStashPop => Some("prompt_stash_pop"),
             Action::PromptStashList => Some("prompt_stash_list"),
             Action::OpenLineageBrowser => Some("open_lineage_browser"),
+            Action::SessionBackground => Some("session_background"),
         }
     }
 
@@ -283,6 +285,7 @@ impl Action {
             Action::PromptStashPop => "prompt_stash_pop",
             Action::PromptStashList => "prompt_stash_list",
             Action::OpenLineageBrowser => "open_lineage_browser",
+            Action::SessionBackground => "session_background",
         }
     }
 
@@ -401,6 +404,7 @@ impl FromStr for Action {
             "prompt_stash_pop" => Ok(Action::PromptStashPop),
             "prompt_stash_list" => Ok(Action::PromptStashList),
             "open_lineage_browser" => Ok(Action::OpenLineageBrowser),
+            "session_background" => Ok(Action::SessionBackground),
             _ => Err(format!("unknown action: {s}")),
         }
     }
@@ -501,6 +505,8 @@ fn parse_key_code(s: &str) -> Result<KeyCode, String> {
 pub struct KeyMap {
     bindings: HashMap<KeyBinding, Action>,
     reverse: HashMap<Action, Vec<KeyBinding>>,
+    session_bindings: HashMap<KeyBinding, Action>,
+    session_reverse: HashMap<Action, Vec<KeyBinding>>,
     leader_sequences: HashMap<KeyBinding, Action>,
     leader_pending: bool,
 }
@@ -517,6 +523,8 @@ impl KeyMap {
         let mut keymap = Self {
             bindings: HashMap::new(),
             reverse: HashMap::new(),
+            session_bindings: HashMap::new(),
+            session_reverse: HashMap::new(),
             leader_sequences: HashMap::new(),
             leader_pending: false,
         };
@@ -589,21 +597,21 @@ impl KeyMap {
             KeyBinding::new(KeyCode::Char('r'), KeyModifiers::NONE),
             Action::Reload,
         );
-        keymap.bind(
-            KeyBinding::new(KeyCode::Char(']'), KeyModifiers::CONTROL),
-            Action::SessionChildFirst,
-        );
-        keymap.bind(
-            KeyBinding::new(KeyCode::Char(']'), KeyModifiers::NONE),
+        keymap.bind_session(
+            KeyBinding::new(KeyCode::Right, KeyModifiers::NONE),
             Action::SessionChildCycle,
         );
-        keymap.bind(
-            KeyBinding::new(KeyCode::Char('['), KeyModifiers::NONE),
+        keymap.bind_session(
+            KeyBinding::new(KeyCode::Left, KeyModifiers::NONE),
             Action::SessionChildCycleReverse,
         );
-        keymap.bind(
-            KeyBinding::new(KeyCode::Char('['), KeyModifiers::CONTROL),
+        keymap.bind_session(
+            KeyBinding::new(KeyCode::Up, KeyModifiers::NONE),
             Action::SessionParent,
+        );
+        keymap.bind_session(
+            KeyBinding::new(KeyCode::Char('b'), KeyModifiers::CONTROL),
+            Action::SessionBackground,
         );
         keymap.bind(
             KeyBinding::new(KeyCode::Char('n'), KeyModifiers::ALT),
@@ -881,21 +889,16 @@ impl KeyMap {
     pub fn apply_overrides(&mut self, overrides: &BTreeMap<String, String>) {
         for (action_str, key_str) in overrides {
             if let Ok(action) = Action::from_str(action_str) {
-                if let Ok(binding) = KeyBinding::from_str(key_str) {
-                    if let Some(existing_bindings) = self.reverse.remove(&action) {
-                        for existing in existing_bindings {
-                            self.bindings.remove(&existing);
-                        }
+                if let Some(binding) = parse_leader_sequence(key_str) {
+                    self.unbind_action(action);
+                    self.bind_sequence(binding, action);
+                } else if let Ok(binding) = KeyBinding::from_str(key_str) {
+                    self.unbind_action(action);
+                    if session_surface_action(action) {
+                        self.bind_session(binding, action);
+                    } else {
+                        self.bind(binding, action);
                     }
-
-                    // Remove any existing binding for this key
-                    if let Some(old_action) = self.bindings.remove(&binding) {
-                        if let Some(bindings) = self.reverse.get_mut(&old_action) {
-                            bindings.retain(|b| b != &binding);
-                        }
-                    }
-                    // Add the new binding
-                    self.bind(binding, action);
                 }
             }
         }
@@ -903,8 +906,45 @@ impl KeyMap {
 
     /// Bind a key to an action.
     fn bind(&mut self, binding: KeyBinding, action: Action) {
+        self.unbind_global_binding(binding);
         self.bindings.insert(binding, action);
         self.reverse.entry(action).or_default().push(binding);
+    }
+
+    fn bind_session(&mut self, binding: KeyBinding, action: Action) {
+        self.unbind_session_binding(binding);
+        self.session_bindings.insert(binding, action);
+        self.session_reverse
+            .entry(action)
+            .or_default()
+            .push(binding);
+    }
+
+    fn unbind_action(&mut self, action: Action) {
+        if let Some(existing_bindings) = self.reverse.remove(&action) {
+            for existing in existing_bindings {
+                self.bindings.remove(&existing);
+            }
+        }
+        if let Some(existing_bindings) = self.session_reverse.remove(&action) {
+            for existing in existing_bindings {
+                self.session_bindings.remove(&existing);
+            }
+        }
+        self.leader_sequences
+            .retain(|_, candidate| *candidate != action);
+    }
+
+    fn unbind_global_binding(&mut self, binding: KeyBinding) {
+        if let Some(action) = self.bindings.remove(&binding) {
+            remove_reverse_binding(&mut self.reverse, action, binding);
+        }
+    }
+
+    fn unbind_session_binding(&mut self, binding: KeyBinding) {
+        if let Some(action) = self.session_bindings.remove(&binding) {
+            remove_reverse_binding(&mut self.session_reverse, action, binding);
+        }
     }
 
     /// Get the action for a key event, if any.
@@ -914,6 +954,19 @@ impl KeyMap {
             (event.code == KeyCode::Char('\u{1d}') && event.modifiers == KeyModifiers::NONE)
                 .then(|| {
                     self.bindings
+                        .get(&KeyBinding::new(KeyCode::Char(']'), KeyModifiers::CONTROL))
+                        .copied()
+                })
+                .flatten()
+        })
+    }
+
+    pub fn get_session_action(&self, event: &KeyEvent) -> Option<Action> {
+        let binding = KeyBinding::new(event.code, event.modifiers);
+        self.session_bindings.get(&binding).copied().or_else(|| {
+            (event.code == KeyCode::Char('\u{1d}') && event.modifiers == KeyModifiers::NONE)
+                .then(|| {
+                    self.session_bindings
                         .get(&KeyBinding::new(KeyCode::Char(']'), KeyModifiers::CONTROL))
                         .copied()
                 })
@@ -939,6 +992,10 @@ impl KeyMap {
     }
 
     fn register_default_leader_sequences(&mut self) {
+        self.bind_sequence(
+            KeyBinding::new(KeyCode::Down, KeyModifiers::NONE),
+            Action::SessionChildFirst,
+        );
         self.bind_sequence(
             KeyBinding::new(KeyCode::Char('t'), KeyModifiers::NONE),
             Action::OpenThemeDialog,
@@ -967,17 +1024,33 @@ impl KeyMap {
 
     /// Get all key bindings for an action.
     pub fn get_bindings(&self, action: Action) -> Vec<&KeyBinding> {
-        self.reverse
+        let mut bindings: Vec<&KeyBinding> = self
+            .reverse
             .get(&action)
             .map(|v| v.iter().collect())
-            .unwrap_or_default()
+            .unwrap_or_default();
+        bindings.extend(
+            self.session_reverse
+                .get(&action)
+                .into_iter()
+                .flat_map(|v| v.iter()),
+        );
+        bindings.extend(
+            self.leader_sequences
+                .iter()
+                .filter_map(|(binding, candidate)| (*candidate == action).then_some(binding)),
+        );
+        bindings
     }
 
     /// Get the primary key binding for an action as a string.
     pub fn get_binding_str(&self, action: Action) -> String {
-        self.get_bindings(action)
-            .first()
-            .map(|b| format_key_binding(b))
+        self.get_leader_binding(action)
+            .or_else(|| {
+                self.get_bindings(action)
+                    .first()
+                    .map(|b| format_key_binding(b))
+            })
             .unwrap_or_else(|| "-".to_string())
     }
 
@@ -995,12 +1068,20 @@ impl KeyMap {
     /// Get all current bindings as a sorted list of (key, action) pairs.
     pub fn all_bindings(&self) -> Vec<(&KeyBinding, &Action)> {
         let mut all: Vec<(&KeyBinding, &Action)> = self.bindings.iter().collect();
+        all.extend(self.session_bindings.iter());
         all.sort_by(|(left_key, left_action), (right_key, right_action)| {
             format_key_binding(left_key)
                 .cmp(&format_key_binding(right_key))
                 .then_with(|| left_action.as_str().cmp(right_action.as_str()))
         });
         all
+    }
+
+    fn get_leader_binding(&self, action: Action) -> Option<String> {
+        self.leader_sequences
+            .iter()
+            .find(|(_, candidate)| **candidate == action)
+            .map(|(binding, _)| format!("Ctrl+x {}", format_key_binding(binding)))
     }
 }
 
@@ -1041,6 +1122,43 @@ fn format_key_binding(binding: &KeyBinding) -> String {
 
     parts.push(&key_str);
     parts.join("+")
+}
+
+fn parse_leader_sequence(value: &str) -> Option<KeyBinding> {
+    let trimmed = value.trim();
+    let key = trimmed
+        .strip_prefix("<leader>")
+        .or_else(|| trimmed.strip_prefix("ctrl+x "))
+        .or_else(|| trimmed.strip_prefix("Ctrl+x "))
+        .or_else(|| trimmed.strip_prefix("ctrl+x+"))
+        .or_else(|| trimmed.strip_prefix("Ctrl+x+"))?;
+
+    KeyBinding::from_str(key).ok()
+}
+
+fn remove_reverse_binding(
+    reverse: &mut HashMap<Action, Vec<KeyBinding>>,
+    action: Action,
+    binding: KeyBinding,
+) {
+    let Some(bindings) = reverse.get_mut(&action) else {
+        return;
+    };
+    bindings.retain(|candidate| *candidate != binding);
+    if bindings.is_empty() {
+        reverse.remove(&action);
+    }
+}
+
+fn session_surface_action(action: Action) -> bool {
+    matches!(
+        action,
+        Action::SessionChildFirst
+            | Action::SessionChildCycle
+            | Action::SessionChildCycleReverse
+            | Action::SessionParent
+            | Action::SessionBackground
+    )
 }
 
 #[cfg(test)]
