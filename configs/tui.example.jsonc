@@ -13,9 +13,10 @@
     "agent_cycle": "tab",
     "agent_cycle_reverse": "shift-tab",
     "variant_cycle": "ctrl+t",
-    "session_child_first": "ctrl+]",
-    "session_child_cycle": "]",
-    "session_child_cycle_reverse": "[",
-    "session_parent": "ctrl+["
+    "session_background": "ctrl+b",
+    "session_child_first": "<leader>down",
+    "session_child_cycle": "right",
+    "session_child_cycle_reverse": "left",
+    "session_parent": "up"
   }
 }

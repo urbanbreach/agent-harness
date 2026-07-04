@@ -443,10 +443,11 @@ bindings, and `<leader>` expands to the configured leader key, for example
 | `toggle_terminal_panel` | `4` | Show or hide terminal output. |
 | `toggle_follow` | ` ` | Toggle transcript follow mode. |
 | `close_review_surface` | `1` | Return to the transcript-first session shell. |
-| `session_child_first` | `Ctrl+]` | Jump to the first child session. |
-| `session_child_cycle` | `]` | Cycle to the next child session. |
-| `session_child_cycle_reverse` | `[` | Cycle to the previous child session. |
-| `session_parent` | `Ctrl+[` | Return to the parent session. |
+| `session_background` | `Ctrl+b` | Move foreground subagents to the background. |
+| `session_child_first` | `Ctrl+x ↓` | Jump to the first child session. |
+| `session_child_cycle` | `→` | Cycle to the next child session. |
+| `session_child_cycle_reverse` | `←` | Cycle to the previous child session. |
+| `session_parent` | `↑` | Return to the parent session. |
 | `diff_hunk_next` | `Alt+n` | Jump to the next diff hunk. |
 | `diff_hunk_previous` | `Alt+p` | Jump to the previous diff hunk. |
 | `move_down` | `j` | Move down in the active list. |

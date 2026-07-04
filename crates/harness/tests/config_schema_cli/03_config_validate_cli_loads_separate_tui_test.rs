@@ -378,7 +378,7 @@ fn shipped_tui_example_parses_as_public_tui_config() {
     );
     assert_eq!(
         parsed.keybindings.get("session_child_first"),
-        Some(&"ctrl+]".to_string())
+        Some(&"<leader>down".to_string())
     );
 }
 #[test]
