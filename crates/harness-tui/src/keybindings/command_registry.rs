@@ -443,6 +443,11 @@ const COMMAND_METADATA: &[CommandMetadata] = &[
         description: "Return to the parent session",
     },
     CommandMetadata {
+        id: "session_background",
+        label: "Background subagents",
+        description: "Move foreground subagents to the background",
+    },
+    CommandMetadata {
         id: "variant_cycle",
         label: "Cycle variant",
         description: "Cycle to the next model variant",
@@ -791,25 +796,31 @@ const PALETTE_COMMANDS: &[PaletteCommand] = &[
     PaletteCommand {
         id: "session_child_first",
         metadata_id: "session_child_first",
-        shortcut: "ctrl+]",
+        shortcut: "ctrl+x ↓",
         section: PaletteCommandSection::Session,
     },
     PaletteCommand {
         id: "session_child_cycle",
         metadata_id: "session_child_cycle",
-        shortcut: "]",
+        shortcut: "right",
         section: PaletteCommandSection::Session,
     },
     PaletteCommand {
         id: "session_child_cycle_reverse",
         metadata_id: "session_child_cycle_reverse",
-        shortcut: "[",
+        shortcut: "left",
         section: PaletteCommandSection::Session,
     },
     PaletteCommand {
         id: "session_parent",
         metadata_id: "session_parent",
-        shortcut: "ctrl+[",
+        shortcut: "up",
+        section: PaletteCommandSection::Session,
+    },
+    PaletteCommand {
+        id: "session_background",
+        metadata_id: "session_background",
+        shortcut: "ctrl+b",
         section: PaletteCommandSection::Session,
     },
 ];

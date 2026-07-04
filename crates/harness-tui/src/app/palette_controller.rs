@@ -172,7 +172,8 @@ pub fn is_available(app: &AppState, entry: &PaletteCommandEntry) -> bool {
         | "harness.session_child_first"
         | "harness.session_child_cycle"
         | "harness.session_child_cycle_reverse"
-        | "harness.session_parent" => !app.startup_shell_visible(),
+        | "harness.session_parent"
+        | "harness.session_background" => !app.startup_shell_visible(),
 
         "prompt.stash" => !app.composer.prompt_buffer.is_empty(),
         "prompt.stash.pop" | "prompt.stash.list" => !app.prompt_stash.entries.is_empty(),

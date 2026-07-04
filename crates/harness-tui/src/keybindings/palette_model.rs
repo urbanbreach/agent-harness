@@ -427,6 +427,15 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         dispatch: PaletteDispatch::Action(Action::SessionParent),
     },
     PaletteCommandEntry {
+        id: "harness.session_background",
+        category: PaletteCategory::Session,
+        title: DynamicTitle::Static("Background subagents"),
+        description: "Move foreground subagents to the background",
+        suggested: SuggestedRule::Never,
+        harness_only: true,
+        dispatch: PaletteDispatch::Action(Action::SessionBackground),
+    },
+    PaletteCommandEntry {
         id: "harness.stack_transcript_diffs",
         category: PaletteCategory::Agent,
         title: DynamicTitle::Static("Use stacked diffs"),
