@@ -83,7 +83,7 @@ fn tool_lifecycle_rows_stay_ordered_without_pty() {
         "Inspect tool activity",
         "Read src/ui.rs",
         "Remove diff review surface",
-        "audit tool lifecycle parity · Researcher Agent",
+        "Researcher Task — audit tool lifecycle parity",
         "cargo test -p harness-tui",
         "snapshot mismatch",
         "Tool summaries are now easier to scan, and edits stay inline.",

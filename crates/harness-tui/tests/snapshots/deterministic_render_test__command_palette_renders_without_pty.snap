@@ -1,5 +1,6 @@
 ---
 source: crates/harness-tui/tests/deterministic_render_test.rs
+assertion_line: 145
 expression: snapshot.as_str()
 ---
 
@@ -19,7 +20,7 @@ expression: snapshot.as_str()
 
                                   Suggested
                                   New session Start a fresh live session
-                                  Switch model Browse available provider/model options
+                                  Switch model Browse available provider/mod… Ctrl+x m
                            “in    Connect provider Connect a provider                     test
 
                                   Session
