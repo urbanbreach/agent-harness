@@ -37,10 +37,17 @@ fn key_with_modifiers(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
 
 fn default_navigation_keybindings() -> BTreeMap<String, String> {
     BTreeMap::from([
-        ("session_child_first".to_string(), "ctrl+]".to_string()),
-        ("session_child_cycle".to_string(), "]".to_string()),
-        ("session_child_cycle_reverse".to_string(), "[".to_string()),
-        ("session_parent".to_string(), "ctrl+[".to_string()),
+        (
+            "session_child_first".to_string(),
+            "<leader>down".to_string(),
+        ),
+        ("session_child_cycle".to_string(), "right".to_string()),
+        (
+            "session_child_cycle_reverse".to_string(),
+            "left".to_string(),
+        ),
+        ("session_parent".to_string(), "up".to_string()),
+        ("session_background".to_string(), "ctrl+b".to_string()),
     ])
 }
 
@@ -217,19 +224,19 @@ fn child_session_navigation_keybinds_follow_default_contract() {
     for event in parent_events.clone() {
         parent_app.ingest_event(event);
     }
+    parent_app.focus = harness_tui::app::Focus::Details;
     parent_app.handle_key(key_with_modifiers(
-        KeyCode::Char(']'),
+        KeyCode::Char('x'),
         KeyModifiers::CONTROL,
     ));
+    parent_app.handle_key(key(KeyCode::Down));
     assert_eq!(
         parent_app.session_path.as_deref(),
         Some(child_a_dir.as_path())
     );
     assert!(parent_app.replay_mode);
-    parent_app.handle_key(key_with_modifiers(
-        KeyCode::Char('['),
-        KeyModifiers::CONTROL,
-    ));
+    parent_app.focus = harness_tui::app::Focus::Details;
+    parent_app.handle_key(key(KeyCode::Up));
     assert_eq!(
         parent_app.session_path.as_deref(),
         Some(parent_dir.as_path())
@@ -249,11 +256,13 @@ fn child_session_navigation_keybinds_follow_default_contract() {
         None,
         Some("parent"),
     ));
-    child_a_app.handle_key(key(KeyCode::Char(']')));
+    child_a_app.focus = harness_tui::app::Focus::Details;
     child_a_app.handle_key(key_with_modifiers(
-        KeyCode::Char('['),
+        KeyCode::Char('x'),
         KeyModifiers::CONTROL,
     ));
+    child_a_app.handle_key(key(KeyCode::Down));
+    child_a_app.handle_key(key(KeyCode::Up));
 
     let mut child_b_app = AppState::new_live(Some(child_b_dir.clone()), false, Some(sink));
     child_b_app.apply_keybindings(default_navigation_keybindings());
@@ -267,15 +276,12 @@ fn child_session_navigation_keybinds_follow_default_contract() {
         None,
         Some("parent"),
     ));
-    child_b_app.handle_key(key(KeyCode::Char('[')));
+    child_b_app.focus = harness_tui::app::Focus::Details;
+    child_b_app.handle_key(key(KeyCode::Left));
 
     assert_eq!(
         intents.lock().expect("lock intents").as_slice(),
         &[
-            UiIntent::ReplaySession {
-                run_id: "child_b".to_string(),
-                run_dir: child_b_dir.clone(),
-            },
             UiIntent::ReplaySession {
                 run_id: "parent".to_string(),
                 run_dir: parent_dir.clone(),
@@ -304,26 +310,21 @@ fn replay_child_navigation_does_not_emit_live_intents() {
     assert_eq!(app.active_profile(), "planner");
     assert_eq!(app.current_model_label(), "model-parent");
 
-    app.handle_key(key_with_modifiers(
-        KeyCode::Char(']'),
-        KeyModifiers::CONTROL,
-    ));
+    app.focus = harness_tui::app::Focus::Details;
+    app.handle_key(key(KeyCode::Right));
     assert_eq!(app.active_profile(), "worker-a");
     assert_eq!(app.current_model_label(), "model-child-a");
     assert!(app.replay_mode);
 
-    app.handle_key(key(KeyCode::Char(']')));
+    app.handle_key(key(KeyCode::Right));
     assert_eq!(app.active_profile(), "worker-b");
     assert_eq!(app.current_model_label(), "model-child-b");
 
-    app.handle_key(key(KeyCode::Char('[')));
+    app.handle_key(key(KeyCode::Left));
     assert_eq!(app.active_profile(), "worker-a");
     assert_eq!(app.current_model_label(), "model-child-a");
 
-    app.handle_key(key_with_modifiers(
-        KeyCode::Char('['),
-        KeyModifiers::CONTROL,
-    ));
+    app.handle_key(key(KeyCode::Up));
     assert_eq!(app.active_profile(), "planner");
     assert_eq!(app.current_model_label(), "model-parent");
     assert!(app.replay_mode);
