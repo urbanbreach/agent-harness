@@ -214,6 +214,7 @@ fn test_permission_pending_preempts_all_other_overlays() {
         lineage_browser_visible: true,
         fork_selector_visible: true,
         status_dialog_visible: true,
+        subagent_actions_visible: true,
         theme_dialog_visible: true,
         error_details_visible: true,
         prompt_stash_list_visible: true,

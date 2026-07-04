@@ -65,6 +65,9 @@ pub(super) fn render_overlays(
                 render_command_palette_overlay(frame, app, theme, plan.root, plan.palette_overlay)
             }
             OverlayKind::StatusDialog => render_status_dialog_overlay(frame, app, theme, plan.root),
+            OverlayKind::SubagentActions => {
+                render_subagent_actions_overlay(frame, app, theme, plan.root)
+            }
             OverlayKind::ThemeDialog => render_theme_dialog_overlay(frame, app, theme, plan.root),
             OverlayKind::PermissionModal => {}
             OverlayKind::ErrorDetails => render_error_details_overlay(frame, app, theme, plan.root),
@@ -74,6 +77,83 @@ pub(super) fn render_overlays(
             OverlayKind::AuthDialog => render_auth_dialog_overlay(frame, app, theme, plan.root),
         }
     }
+}
+
+fn render_subagent_actions_overlay(frame: &mut Frame, app: &AppState, theme: &Theme, root: Rect) {
+    if app.subagent_actions_session_id.is_none() {
+        return;
+    }
+
+    render_overlay_dim_backdrop(frame, root);
+
+    let width = 42.min(root.width.saturating_sub(4));
+    let height = 7.min(root.height.saturating_sub(4));
+    if width < 28 || height < 5 {
+        return;
+    }
+
+    let overlay = Rect::new(
+        root.x.saturating_add(root.width.saturating_sub(width) / 2),
+        root.y
+            .saturating_add(root.height.saturating_sub(height) / 2),
+        width,
+        height,
+    );
+    if !paint_command_palette_panel(frame, theme, overlay) {
+        return;
+    }
+
+    let content = inset_rect(overlay, 3.min(overlay.width.saturating_sub(1)), 1);
+    if content.width == 0 || content.height < 3 {
+        return;
+    }
+
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Min(0),
+        ])
+        .split(content);
+    render_command_palette_header(frame, theme, rows[0], "Subagent Actions");
+    render_subagent_action_row(frame, theme, rows[2]);
+}
+
+fn render_subagent_action_row(frame: &mut Frame, theme: &Theme, area: Rect) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+
+    let surface = ui_chrome::command_palette_surface(theme);
+    let row_style = Style::default()
+        .fg(ui_chrome::command_palette_selection_fg(theme))
+        .bg(ui_chrome::command_palette_selection_bg(theme));
+    frame.render_widget(Block::default().style(row_style), area);
+
+    let width = usize::from(area.width);
+    let label = "Open";
+    let description = "the subagent's session";
+    let gap = width.saturating_sub(
+        label
+            .chars()
+            .count()
+            .saturating_add(description.chars().count()),
+    );
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled(label, row_style.add_modifier(Modifier::BOLD)),
+            Span::styled(" ".repeat(gap), row_style),
+            Span::styled(
+                truncate_plain_text(description, width.saturating_sub(label.chars().count())),
+                Style::default()
+                    .fg(ui_chrome::command_palette_selection_fg(theme))
+                    .bg(surface),
+            ),
+        ])),
+        area,
+    );
 }
 
 fn render_command_palette_overlay(

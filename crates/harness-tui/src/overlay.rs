@@ -8,6 +8,7 @@ pub enum OverlayKind {
     LineageBrowser,
     ForkSelector,
     StatusDialog,
+    SubagentActions,
     PermissionModal,
     ThemeDialog,
     ErrorDetails,
@@ -22,6 +23,7 @@ pub struct OverlayState {
     pub file_mention_visible: bool,
     pub palette_visible: bool,
     pub status_dialog_visible: bool,
+    pub subagent_actions_visible: bool,
     pub session_history_visible: bool,
     pub model_switcher_visible: bool,
     pub toggles_menu_visible: bool,
@@ -76,6 +78,9 @@ impl OverlayStack {
         if state.status_dialog_visible && !state.permission_pending {
             overlays.push(OverlayKind::StatusDialog);
         }
+        if state.subagent_actions_visible && !state.permission_pending {
+            overlays.push(OverlayKind::SubagentActions);
+        }
         if state.theme_dialog_visible && !state.permission_pending {
             overlays.push(OverlayKind::ThemeDialog);
         }
@@ -113,6 +118,7 @@ impl OverlayStack {
                     | OverlayKind::LineageBrowser
                     | OverlayKind::ForkSelector
                     | OverlayKind::StatusDialog
+                    | OverlayKind::SubagentActions
                     | OverlayKind::PermissionModal
                     | OverlayKind::ThemeDialog
                     | OverlayKind::ErrorDetails

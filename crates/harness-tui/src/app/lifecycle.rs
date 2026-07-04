@@ -121,6 +121,7 @@ pub enum UiIntent {
         launch_metadata: LaunchMetadata,
     },
     CompactSession,
+    BackgroundForegroundSubagents,
     OpenAuthManager {
         args: Vec<String>,
         stdin: Option<String>,
@@ -672,6 +673,7 @@ impl AppState {
             file_mention_visible: self.file_mention_overlay_should_render(),
             palette_visible: self.palette_visible,
             status_dialog_visible: self.status_dialog_visible,
+            subagent_actions_visible: self.subagent_actions_session_id.is_some(),
             session_history_visible: self.session_history_visible,
             model_switcher_visible: self.model_switcher_visible,
             toggles_menu_visible: self.toggles_menu_visible,

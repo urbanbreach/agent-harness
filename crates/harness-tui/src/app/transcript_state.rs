@@ -472,6 +472,16 @@ impl AppState {
         }
     }
 
+    pub(in crate::app) fn close_subagent_actions_dialog(&mut self) {
+        self.subagent_actions_session_id = None;
+    }
+
+    pub(in crate::app) fn open_selected_subagent_session(&mut self) {
+        if let Some(session_id) = self.subagent_actions_session_id.take() {
+            self.navigate_to_child_session_id(session_id);
+        }
+    }
+
     fn task_tool_child_session_id(&self, tool_call_id: &str) -> Option<String> {
         let tool_call = self.tool_call_entry(tool_call_id)?;
         if !Self::tool_call_is_task_spawn(tool_call) {

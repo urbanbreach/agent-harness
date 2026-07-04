@@ -9,7 +9,9 @@ use crate::text::{
 pub(super) fn build_operator_rail_model(app: &AppState) -> OperatorRailModel {
     let mut sections = Vec::new();
     let subagent_groups = operator_sidebar_subagent_groups(app);
-    if !subagent_groups.is_empty() {
+    if !subagent_groups.is_empty()
+        && app.overlay_stack().top() != Some(crate::overlay::OverlayKind::SubagentActions)
+    {
         sections.push(OperatorRailBodySection::Subagents {
             groups: subagent_groups,
             disclosure: OperatorRailSectionDisclosure {
