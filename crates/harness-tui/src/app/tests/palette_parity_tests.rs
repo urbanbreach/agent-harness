@@ -1202,6 +1202,10 @@ pub(super) fn palette_exact_dispatch_targets() {
             PaletteDispatch::Action(Action::SessionParent),
         ),
         (
+            "harness.session_background",
+            PaletteDispatch::Action(Action::SessionBackground),
+        ),
+        (
             "harness.close_review_surface",
             PaletteDispatch::Action(Action::CloseReviewSurface),
         ),
@@ -1959,8 +1963,8 @@ pub(super) fn palette_harness_only_filtering_is_deliberate() {
         );
     }
     assert!(
-        palette_model::harness_only_ids().len() == 13,
-        "harness-only count must be 13, got {}",
+        palette_model::harness_only_ids().len() == 14,
+        "harness-only count must be 14, got {}",
         palette_model::harness_only_ids().len()
     );
 }
