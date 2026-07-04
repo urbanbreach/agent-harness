@@ -1,25 +1,18 @@
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
-    style::Style,
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Paragraph},
     Frame,
 };
 
-use crate::app::{AppState, OrchestrationTaskState, SubagentSessionInfo};
+use crate::app::{AppState, SubagentSessionInfo};
 use crate::theme::Theme;
 
-use super::{display_width, muted_meta_style};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SubagentStatus {
-    Running,
-    Completed,
-    Cancelled,
-    Error,
-}
-
-const SUBAGENT_SPINNER_FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+use super::muted_meta_style;
+use super::ui_subagent_footer_navigation::{
+    subagent_navigation_items, subagent_navigation_line, subagent_navigation_width,
+};
 
 pub(super) fn render_subagent_footer(
     frame: &mut Frame,
@@ -36,13 +29,13 @@ pub(super) fn render_subagent_footer(
         return;
     }
 
-    let content_y = if area.height >= 3 {
+    let content_y = if area.height > 1 {
         area.y.saturating_add(1)
     } else {
         area.y
     };
-    let content_x = area.x.saturating_add(1);
-    let content_right_padding = 3;
+    let content_x = area.x.saturating_add(2);
+    let content_right_padding = 1;
     let used_left = content_x.saturating_sub(area.x);
     let content_width = area
         .width
@@ -51,201 +44,64 @@ pub(super) fn render_subagent_footer(
     if content_width == 0 {
         return;
     }
-    let content_height = area.height.saturating_sub(content_y.saturating_sub(area.y));
-    let content_area = Rect::new(content_x, content_y, content_width, content_height);
 
-    let count_text = subagent_count_text(info);
-    let count_width = count_text
-        .as_deref()
-        .map(display_width)
-        .unwrap_or_default()
-        .min(usize::from(content_area.width));
+    let nav_items = subagent_navigation_items(app);
+    let nav_width = subagent_navigation_width(&nav_items).min(usize::from(content_width));
     let columns = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
             Constraint::Min(0),
-            Constraint::Length(u16::try_from(count_width).unwrap_or(u16::MAX)),
+            Constraint::Length(u16::try_from(nav_width).unwrap_or(u16::MAX)),
         ])
-        .split(Rect::new(
-            content_area.x,
-            content_area.y,
-            content_area.width,
-            1,
-        ));
-
-    let status = subagent_status(app);
-    let mut left_spans = vec![Span::styled(
-        status.icon(app.transcript_animation_phase()),
-        Style::default().fg(status.color(theme)).bg(surface),
-    )];
-    left_spans.push(Span::styled(" ", Style::default().bg(surface)));
-    left_spans.extend(subagent_title_spans(info, theme, surface));
+        .split(Rect::new(content_x, content_y, content_width, 1));
 
     if columns[0].width > 0 {
         frame.render_widget(
-            Paragraph::new(Line::from(left_spans)).style(style),
+            Paragraph::new(subagent_info_line(info, theme, surface)).style(style),
             columns[0],
         );
     }
     if columns[1].width > 0 {
-        if let Some(count_text) = count_text {
-            frame.render_widget(
-                Paragraph::new(count_text).style(muted_meta_style(theme).bg(surface)),
-                columns[1],
-            );
-        }
-    }
-
-    render_subagent_activity_body(frame, app, content_area, theme, info, surface);
-}
-
-fn subagent_status(app: &AppState) -> SubagentStatus {
-    if let Some(current_session_id) = app.current_session_id() {
-        if let Some(row) = app.orchestration_visible_rows().into_iter().find(|row| {
-            row.effective_child_session_id() == Some(current_session_id)
-                || row.task_id == current_session_id
-        }) {
-            return SubagentStatus::from_orchestration_state(row.state);
-        }
-    }
-
-    if app
-        .activities
-        .iter()
-        .any(|activity| matches!(activity.status, crate::app::ActivityStatus::Error))
-    {
-        return SubagentStatus::Error;
-    }
-
-    if app.activities.iter().any(|activity| {
-        matches!(
-            activity.status,
-            crate::app::ActivityStatus::Queued | crate::app::ActivityStatus::Streaming
-        )
-    }) {
-        SubagentStatus::Running
-    } else {
-        SubagentStatus::Completed
+        frame.render_widget(
+            Paragraph::new(subagent_navigation_line(
+                &nav_items,
+                app.hovered_subagent_footer_target,
+                theme,
+                surface,
+            ))
+            .style(Style::default().fg(theme.text.primary).bg(surface)),
+            columns[1],
+        );
     }
 }
 
-impl SubagentStatus {
-    const fn from_orchestration_state(state: OrchestrationTaskState) -> Self {
-        match state {
-            OrchestrationTaskState::Queued
-            | OrchestrationTaskState::Running
-            | OrchestrationTaskState::Stale => Self::Running,
-            OrchestrationTaskState::Completed | OrchestrationTaskState::LateResult => {
-                Self::Completed
-            }
-            OrchestrationTaskState::Cancelled => Self::Cancelled,
-            OrchestrationTaskState::Failed | OrchestrationTaskState::TimedOut => Self::Error,
-        }
-    }
-
-    fn icon(self, animation_phase: usize) -> &'static str {
-        match self {
-            Self::Running => {
-                SUBAGENT_SPINNER_FRAMES[animation_phase % SUBAGENT_SPINNER_FRAMES.len()]
-            }
-            Self::Completed => "●",
-            Self::Cancelled => "○",
-            Self::Error => "◍",
-        }
-    }
-
-    fn color(self, theme: &Theme) -> ratatui::style::Color {
-        match self {
-            Self::Running | Self::Completed => theme.text.accent,
-            Self::Cancelled => theme.text.secondary,
-            Self::Error => theme.status.error,
-        }
-    }
-}
-
-fn subagent_title_spans(
+fn subagent_info_line(
     info: &SubagentSessionInfo,
     theme: &Theme,
     surface: ratatui::style::Color,
-) -> Vec<Span<'static>> {
+) -> Line<'static> {
     let mut spans = vec![Span::styled(
-        info.title.clone(),
-        Style::default().fg(theme.text.primary).bg(surface),
+        info.label.clone(),
+        Style::default()
+            .fg(theme.text.primary)
+            .bg(surface)
+            .add_modifier(Modifier::BOLD),
     )];
-    if info.title != info.label {
+    if let Some(count) = subagent_count_text(info) {
         spans.push(Span::styled(
-            format!("  {}", info.label),
+            format!(" {count}"),
             muted_meta_style(theme).bg(surface),
         ));
     }
-    spans
+    if let Some(usage) = info.usage.as_deref() {
+        spans.push(Span::styled(
+            format!("  {usage}"),
+            muted_meta_style(theme).bg(surface),
+        ));
+    }
+    Line::from(spans)
 }
 
 fn subagent_count_text(info: &SubagentSessionInfo) -> Option<String> {
-    (info.total > 1 && info.index > 0).then(|| format!("{} of {}", info.index, info.total))
-}
-
-fn render_subagent_activity_body(
-    frame: &mut Frame,
-    app: &AppState,
-    content_area: Rect,
-    theme: &Theme,
-    info: &SubagentSessionInfo,
-    surface: ratatui::style::Color,
-) {
-    let body_y = content_area.y.saturating_add(2);
-    let body_height = content_area
-        .height
-        .saturating_sub(body_y.saturating_sub(content_area.y));
-    if body_height == 0 {
-        return;
-    }
-    let body_area = Rect::new(content_area.x, body_y, content_area.width, body_height);
-    let body = subagent_activity_body_lines(app, theme, info, body_area.width, surface);
-    let visible_start = body.len().saturating_sub(usize::from(body_area.height));
-    let body = body.into_iter().skip(visible_start).collect::<Vec<_>>();
-    frame.render_widget(
-        Paragraph::new(body).style(Style::default().bg(surface)),
-        body_area,
-    );
-}
-
-fn subagent_activity_body_lines(
-    app: &AppState,
-    theme: &Theme,
-    _info: &SubagentSessionInfo,
-    width: u16,
-    surface: ratatui::style::Color,
-) -> Vec<Line<'static>> {
-    if app.activities.is_empty() {
-        return subagent_empty_activity_lines(theme, surface);
-    }
-
-    let lines = super::super::ui_transcript::build_subagent_footer_lines_for_width(
-        app, theme, width, surface,
-    );
-    if lines.is_empty()
-        || (lines.len() == 1 && line_plain_text(&lines[0]) == "Waiting for first turn…")
-    {
-        subagent_empty_activity_lines(theme, surface)
-    } else {
-        lines
-    }
-}
-
-fn subagent_empty_activity_lines(
-    theme: &Theme,
-    surface: ratatui::style::Color,
-) -> Vec<Line<'static>> {
-    vec![Line::from(Span::styled(
-        "No subagent activity yet",
-        muted_meta_style(theme).bg(surface),
-    ))]
-}
-
-fn line_plain_text(line: &Line<'static>) -> String {
-    line.spans
-        .iter()
-        .map(|span| span.content.as_ref())
-        .collect()
+    (info.total > 0).then(|| format!("({} of {})", info.index, info.total))
 }

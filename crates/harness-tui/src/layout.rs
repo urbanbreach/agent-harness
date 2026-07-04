@@ -50,7 +50,7 @@ const STARTUP_COMPOSER_MAX_WIDTH: u16 = 75;
 const STARTUP_LOGO_TO_COMPOSER_GAP: u16 = 1;
 const OPENCODE_HOME_TOP_SPACER: u16 = 4;
 const OPENCODE_HOME_PROMPT_PADDING_TOP: u16 = 1;
-const SUBAGENT_INSPECTOR_ROWS: u16 = 14;
+const SUBAGENT_FOOTER_ROWS: u16 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SessionResponsiveMode {
@@ -147,7 +147,7 @@ impl FrameLayoutPlan {
         };
         let subagent_footer_visible = subagent_footer_visible(app);
         let footer_height = if subagent_footer_visible {
-            SUBAGENT_INSPECTOR_ROWS
+            SUBAGENT_FOOTER_ROWS
         } else if app.startup_shell_visible() || app.replay_mode {
             shell_tokens.spacing.heights.footer
         } else {
