@@ -3,10 +3,10 @@ use crate::layout::FrameLayoutPlan;
 use crate::overlay::OverlayKind;
 use crate::theme::Theme;
 use crate::ui::{
-    render_app, reset_transcript_selection_cache_metrics_for_test, transcript_mouse_target,
-    transcript_selection_cache_build_count_for_test, transcript_selection_cell,
-    transcript_selection_debug_snapshot, TranscriptMouseTarget, TranscriptScrollbarHit,
-    WheelTarget,
+    render_app, reset_transcript_selection_cache_metrics_for_test, subagent_footer_target_at,
+    transcript_mouse_target, transcript_selection_cache_build_count_for_test,
+    transcript_selection_cell, transcript_selection_debug_snapshot, SubagentFooterTarget,
+    TranscriptMouseTarget, TranscriptScrollbarHit, WheelTarget,
 };
 use crossterm::event::{MouseButton, MouseEvent};
 use harness_core::event::{
@@ -28,6 +28,7 @@ use ratatui::{backend::TestBackend, Terminal};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 
 const TEST_FRAME_AREA: Rect = Rect::new(0, 0, 140, 40);
 
@@ -89,6 +90,22 @@ fn render_debug(app: &AppState, width: u16, height: u16) -> String {
         .draw(|frame| render_app(frame, app))
         .expect("draw frame");
     format!("{:?}", terminal.backend().buffer())
+}
+
+fn render_text(app: &AppState, width: u16, height: u16) -> String {
+    let backend = TestBackend::new(width, height);
+    let mut terminal = Terminal::new(backend).expect("create terminal");
+    terminal
+        .draw(|frame| render_app(frame, app))
+        .expect("draw frame");
+    terminal
+        .backend()
+        .buffer()
+        .content
+        .chunks(usize::from(width))
+        .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 macro_rules! delegate_test {
@@ -195,12 +212,51 @@ fn rendered_cell_bg(app: &AppState, column: u16, row: u16) -> Color {
 
 fn default_navigation_keybindings() -> BTreeMap<String, String> {
     BTreeMap::from([
-        ("session_child_first".to_string(), "ctrl+]".to_string()),
-        ("session_child_cycle".to_string(), "]".to_string()),
-        ("session_child_cycle_reverse".to_string(), "[".to_string()),
-        ("session_parent".to_string(), "ctrl+[".to_string()),
+        (
+            "session_child_first".to_string(),
+            "<leader>down".to_string(),
+        ),
+        ("session_child_cycle".to_string(), "right".to_string()),
+        (
+            "session_child_cycle_reverse".to_string(),
+            "left".to_string(),
+        ),
+        ("session_parent".to_string(), "up".to_string()),
+        ("session_background".to_string(), "ctrl+b".to_string()),
         ("variant_cycle".to_string(), "tab".to_string()),
     ])
+}
+
+#[test]
+fn session_background_emits_intent_from_default_prompt_focus() {
+    // arrange
+    let intents = Arc::new(Mutex::new(Vec::new()));
+    let captured_intents = Arc::clone(&intents);
+    let mut app = AppState::new_live(
+        None,
+        false,
+        Some(Arc::new(move |intent| {
+            captured_intents.lock().expect("intent lock").push(intent);
+        })),
+    );
+    app.apply_keybindings(default_navigation_keybindings());
+    assert_eq!(app.focus, Focus::Prompt);
+
+    // act
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char('b'),
+        KeyModifiers::CONTROL,
+    ));
+
+    // assert
+    assert_eq!(
+        app.status_banner.as_deref(),
+        Some("foreground subagent backgrounding requested")
+    );
+    assert!(matches!(
+        intents.lock().expect("intent lock").as_slice(),
+        [UiIntent::BackgroundForegroundSubagents]
+    ));
 }
 
 #[cfg(test)]
@@ -223,6 +279,20 @@ delegate_test!(mouse_click_on_task_inline_row_uses_task_row_child_session => sub
 delegate_test!(mouse_up_on_completed_general_task_row_opens_child_session => subagent_navigation_tests::mouse_up_on_completed_general_task_row_opens_child_session);
 delegate_test!(mouse_click_on_task_row_uses_harness_session_metadata => subagent_navigation_tests::mouse_click_on_task_row_uses_harness_session_metadata);
 delegate_test!(slash_exit_from_inline_subagent_restores_parent_before_quit => subagent_navigation_tests::slash_exit_from_inline_subagent_restores_parent_before_quit);
+
+#[cfg(test)]
+#[path = "tests/subagent_footer_navigation_tests.rs"]
+mod subagent_footer_navigation_tests;
+
+delegate_test!(subagent_footer_hover_elevates_parent_target => subagent_footer_navigation_tests::subagent_footer_hover_elevates_parent_target);
+delegate_test!(subagent_footer_parent_click_restores_parent_session => subagent_footer_navigation_tests::subagent_footer_parent_click_restores_parent_session);
+delegate_test!(subagent_footer_sibling_clicks_switch_between_children => subagent_footer_navigation_tests::subagent_footer_sibling_clicks_switch_between_children);
+delegate_test!(subagent_footer_scrollbar_drag_release_does_not_navigate => subagent_footer_navigation_tests::subagent_footer_scrollbar_drag_release_does_not_navigate);
+delegate_test!(subagent_footer_up_only_release_does_not_activate => subagent_footer_navigation_tests::subagent_footer_up_only_release_does_not_activate);
+
+#[cfg(test)]
+#[path = "tests/opencode_subagent_parity_apps.rs"]
+mod opencode_subagent_parity_apps;
 
 fn write_events_jsonl(run_dir: &Path, events: &[EventEnvelopeV1]) {
     fs::create_dir_all(run_dir).expect("create run dir");
@@ -973,6 +1043,8 @@ delegate_test!(parent_child_navigation_ignores_nested_subagents_hidden_from_pare
 
 delegate_test!(live_inline_child_navigation_restores_live_parent_mode => session_navigation_tests::live_inline_child_navigation_restores_live_parent_mode);
 
+delegate_test!(live_parent_events_update_parent_snapshot_while_inline_child_is_selected => session_navigation_tests::live_parent_events_update_parent_snapshot_while_inline_child_is_selected);
+
 #[cfg(test)]
 #[path = "tests/slash_menu_tests.rs"]
 mod slash_menu_tests;
@@ -1124,3 +1196,13 @@ delegate_test!(palette_log_dispatch_failed_for_placeholder => palette_parity_tes
 delegate_test!(palette_golden_ranking_title_vs_category_weighting => palette_parity_tests::palette_golden_ranking_title_vs_category_weighting);
 delegate_test!(palette_golden_ranking_stable_tie_order => palette_parity_tests::palette_golden_ranking_stable_tie_order);
 delegate_test!(palette_inventory_comprehensive_fields => palette_parity_tests::palette_inventory_comprehensive_fields);
+
+#[cfg(test)]
+#[path = "tests/opencode_subagent_parity_evidence.rs"]
+mod opencode_subagent_parity_evidence;
+
+#[test]
+#[ignore = "manual evidence export; set HARNESS_TUI_OPENCODE_SUBAGENT_EVIDENCE_DIR"]
+fn opencode_subagent_parity_evidence_export() {
+    opencode_subagent_parity_evidence::opencode_subagent_parity_evidence_export();
+}
