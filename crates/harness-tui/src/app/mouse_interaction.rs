@@ -103,6 +103,14 @@ impl AppState {
         true
     }
 
+    fn activate_subagent_footer_target(&mut self, target: SubagentFooterTarget) {
+        match target {
+            SubagentFooterTarget::Parent => self.navigate_to_parent_session(),
+            SubagentFooterTarget::Previous => self.navigate_to_child_sibling(true),
+            SubagentFooterTarget::Next => self.navigate_to_child_sibling(false),
+        }
+    }
+
     pub(in crate::app) fn operator_sidebar_keyboard_active(&self) -> bool {
         self.active_review_surface.is_none()
             && self.focus == Focus::List
@@ -230,10 +238,13 @@ impl AppState {
         if self.overlay_stack().blocks_pointer_interaction() {
             let changed = self.transcript_view.transcript_scrollbar_drag.is_some()
                 || self.transcript_view.hovered_transcript_target.is_some()
+                || self.hovered_subagent_footer_target.is_some()
                 || self.transcript_view.transcript_selection.is_some()
                 || self.operator_sidebar.selection.is_some();
             self.transcript_view.transcript_scrollbar_drag = None;
             self.transcript_view.hovered_transcript_target = None;
+            self.hovered_subagent_footer_target = None;
+            self.pending_subagent_footer_target = None;
             self.clear_transcript_selection();
             self.clear_operator_sidebar_selection();
             return changed;
@@ -243,11 +254,18 @@ impl AppState {
 
         match mouse.kind {
             MouseEventKind::Moved => {
-                let hovered_transcript_target =
-                    ui::transcript_mouse_target(self, frame_area, mouse.column, mouse.row);
-                let changed =
-                    self.transcript_view.hovered_transcript_target != hovered_transcript_target;
+                let hovered_subagent_footer_target =
+                    ui::subagent_footer_target_at(self, frame_area, mouse.column, mouse.row);
+                let hovered_transcript_target = if hovered_subagent_footer_target.is_none() {
+                    ui::transcript_mouse_target(self, frame_area, mouse.column, mouse.row)
+                } else {
+                    None
+                };
+                let changed = self.transcript_view.hovered_transcript_target
+                    != hovered_transcript_target
+                    || self.hovered_subagent_footer_target != hovered_subagent_footer_target;
                 self.transcript_view.hovered_transcript_target = hovered_transcript_target;
+                self.hovered_subagent_footer_target = hovered_subagent_footer_target;
                 changed
             }
             MouseEventKind::Down(MouseButton::Right) => {
@@ -260,8 +278,21 @@ impl AppState {
             }
             MouseEventKind::Down(MouseButton::Left) => {
                 self.transcript_view.transcript_click_activated_on_down = false;
+                self.hovered_subagent_footer_target =
+                    ui::subagent_footer_target_at(self, frame_area, mouse.column, mouse.row);
+                self.pending_subagent_footer_target = self.hovered_subagent_footer_target;
                 self.transcript_view.hovered_transcript_target =
-                    ui::transcript_mouse_target(self, frame_area, mouse.column, mouse.row);
+                    if self.hovered_subagent_footer_target.is_none() {
+                        ui::transcript_mouse_target(self, frame_area, mouse.column, mouse.row)
+                    } else {
+                        None
+                    };
+                if self.hovered_subagent_footer_target.is_some() {
+                    self.transcript_view.transcript_scrollbar_drag = None;
+                    self.clear_transcript_selection();
+                    self.clear_operator_sidebar_selection();
+                    return true;
+                }
                 if let Some(scrollbar) = transcript_scrollbar_hit
                     .filter(|scrollbar| rect_contains(scrollbar.thumb, mouse.column, mouse.row))
                 {
@@ -355,10 +386,35 @@ impl AppState {
                     }
                     true
                 } else {
+                    if let Some(pending) = self.pending_subagent_footer_target {
+                        let current = ui::subagent_footer_target_at(
+                            self,
+                            frame_area,
+                            mouse.column,
+                            mouse.row,
+                        );
+                        if current != Some(pending) {
+                            self.pending_subagent_footer_target = None;
+                        }
+                    }
                     false
                 }
             }
             MouseEventKind::Up(MouseButton::Left) => {
+                let footer_target =
+                    ui::subagent_footer_target_at(self, frame_area, mouse.column, mouse.row);
+                let pending_footer_target = self.pending_subagent_footer_target.take();
+                if let Some(target) =
+                    footer_target.filter(|target| pending_footer_target == Some(*target))
+                {
+                    self.hovered_subagent_footer_target = Some(target);
+                    self.activate_subagent_footer_target(target);
+                    self.clear_transcript_selection();
+                    self.clear_operator_sidebar_selection();
+                    self.transcript_view.transcript_scrollbar_drag = None;
+                    self.transcript_view.transcript_click_activated_on_down = false;
+                    return true;
+                }
                 let operator_sidebar_was_dragging = self.operator_sidebar.selection_dragging;
                 if self.operator_sidebar.selection_dragging {
                     let sidebar_hit = ui::operator_sidebar_selection_cell(
