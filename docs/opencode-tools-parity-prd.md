@@ -163,12 +163,12 @@ This PRD is complete when all of the following are true:
    permission denial, large output/artifact spill, cancellation, unsupported
    dependencies, nested/batch execution, and replay-derived session inspection.
 5. The relevant commands pass, at minimum:
-   - `cargo test -p harness-tools --test native_tool_parity_matrix_test`
-   - `cargo test -p harness-tools`
-   - `cargo test -p harness-providers`
-   - `cargo test -p harness-core --test coord_test`
-   - `cargo test -p harness --test config_docs_reference_test`
-   - `cargo test -p harness --test event_docs_reference_test`
+   - `cargo nextest run -p harness-tools --test native_tool_parity_matrix_test`
+   - `cargo nextest run -p harness-tools`
+   - `cargo nextest run -p harness-providers`
+   - `cargo nextest run -p harness-core --test coord_test`
+   - `cargo nextest run -p harness --test config_docs_reference_test`
+   - `cargo nextest run -p harness --test event_docs_reference_test`
    - `scripts/test-lanes.sh fast`
    - `scripts/test-lanes.sh quality-gates`
    - `scripts/test-lanes.sh all-deterministic`
@@ -763,7 +763,7 @@ Progress rows should use this shape:
 **Acceptance:** inventory covers all Harness native IDs and current OpenCode
 reference built-ins with status values.
 
-**Verification:** `cargo test -p harness-tools --test native_tool_parity_matrix_test`
+**Verification:** `cargo nextest run -p harness-tools --test native_tool_parity_matrix_test`
 plus the new inventory test.
 
 **Dogfood:** compare doctor/catalog output to inventory.
@@ -778,7 +778,7 @@ profiles and MCP fixture tools.
 **Acceptance:** snapshots cover canonical IDs, sanitized names, descriptions,
 schemas, and provider request modes.
 
-**Verification:** `cargo test -p harness-providers request_serialization` and
+**Verification:** `cargo nextest run -p harness-providers request_serialization` and
 targeted provider serialization tests.
 
 **Dogfood:** mocked prompt with event-log inspection.
@@ -792,7 +792,7 @@ targeted provider serialization tests.
 **Acceptance:** strict OpenAI-compatible, Gemini-like, and Kimi-like schema cases
 are covered.
 
-**Verification:** `cargo test -p harness-providers`.
+**Verification:** `cargo nextest run -p harness-providers`.
 
 **Dogfood:** live/recorded provider run for each claimed provider family, or
 explicit unchecked status.
@@ -820,8 +820,8 @@ primary selectors.
 
 **Acceptance:** task/background/batch/skill tests cover happy and failure paths.
 
-**Verification:** `cargo test -p harness-tools --test native_agent_spawn_and_batch_preserve_lineage_permissions_and_order_test`,
-`cargo test -p harness-tools --test native_control_plane_tools_test`, and skill
+**Verification:** `cargo nextest run -p harness-tools --test native_agent_spawn_and_batch_preserve_lineage_permissions_and_order_test`,
+`cargo nextest run -p harness-tools --test native_control_plane_tools_test`, and skill
 tests.
 
 **Dogfood:** background, cancellation, batch, and skill scenarios from §7.2.
@@ -873,7 +873,7 @@ TUI/transcript tests where display is changed.
 
 **Acceptance:** display tests cover common tool states and Harness-only tools.
 
-**Verification:** `cargo test -p harness-tui --test deterministic_render_test`
+**Verification:** `cargo nextest run -p harness-tui --test deterministic_render_test`
 and targeted transcript/render tests.
 
 **Dogfood:** PTY/TUI capture with artifact provenance.
