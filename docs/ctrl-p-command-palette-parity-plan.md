@@ -23,7 +23,7 @@
 - Various test files — Updated filter text and command ID references
 
 **Test evidence:**
-- `cargo test -p harness-tui` — 894 tests pass (847 lib + 47 integration)
+- `cargo nextest run -p harness-tui` — 894 tests pass (847 lib + 47 integration)
 - `cargo clippy -p harness-tui -- -D warnings` — Zero new errors (1 pre-existing in layout.rs:703)
 - `cargo fmt --all` — Pass
 
@@ -371,9 +371,9 @@ Known divergences:
 Recommended commands, adjusted to actual test names after implementation:
 
 ```bash
-cargo test -p harness-tui --test deterministic_render_test
-cargo test -p harness-tui palette
-cargo test -p harness-tui command_palette
+cargo nextest run -p harness-tui --test deterministic_render_test
+cargo nextest run -p harness-tui palette
+cargo nextest run -p harness-tui command_palette
 scripts/test-lanes.sh fast
 ```
 

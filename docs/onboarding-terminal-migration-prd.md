@@ -355,12 +355,12 @@ The TUI must remain usable when no providers are connected:
 
 ```bash
 # Deterministic TUI tests
-cargo test -p harness-tui
-cargo test -p harness-tui --test deterministic_render_test
-cargo test -p harness-tui --test tui_signoff_manifest_test
+cargo nextest run -p harness-tui
+cargo nextest run -p harness-tui --test deterministic_render_test
+cargo nextest run -p harness-tui --test tui_signoff_manifest_test
 
 # Auth CLI tests (must pass unchanged)
-cargo test -p harness --test auth
+cargo nextest run -p harness --test auth
 
 # Config validation
 cargo run -p harness -- --config configs/harness.example.jsonc config validate
@@ -375,7 +375,7 @@ scripts/test-lanes.sh all-deterministic
 ### 8.3 PTY e2e tests
 
 ```bash
-RUST_TEST_THREADS=1 cargo test -p harness-tui --test pty_e2e
+RUST_TEST_THREADS=1 cargo nextest run -p harness-tui --test pty_e2e --test-threads 1
 ```
 
 PTY tests that exercised the old onboarding wizard must be updated to test:
@@ -462,10 +462,10 @@ Before declaring this PRD complete, verify ALL of the following:
 - [ ] `grep -r "OnboardingStep\|OnboardingState\|onboarding_required\|onboarding_screen\|set_onboarding_required\|render_onboarding_screen\|move_onboarding_selection\|execute_onboarding_selection" crates/` returns zero results.
 - [ ] `crates/harness-tui/src/app/onboarding.rs` does not exist.
 - [ ] `cargo build -p harness -p harness-tui` succeeds with no warnings.
-- [ ] `cargo test -p harness-tui` passes (all updated tests).
-- [ ] `cargo test -p harness-tui --test deterministic_render_test` passes.
-- [ ] `cargo test -p harness-tui --test tui_signoff_manifest_test` passes.
-- [ ] `RUST_TEST_THREADS=1 cargo test -p harness-tui --test pty_e2e` passes.
+- [ ] `cargo nextest run -p harness-tui` passes (all updated tests).
+- [ ] `cargo nextest run -p harness-tui --test deterministic_render_test` passes.
+- [ ] `cargo nextest run -p harness-tui --test tui_signoff_manifest_test` passes.
+- [ ] `RUST_TEST_THREADS=1 cargo nextest run -p harness-tui --test pty_e2e --test-threads 1` passes.
 - [ ] `scripts/test-lanes.sh fast` passes.
 - [ ] `scripts/test-lanes.sh quality-gates` passes.
 - [ ] `scripts/test-lanes.sh all-deterministic` passes.

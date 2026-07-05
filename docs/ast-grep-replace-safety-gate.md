@@ -24,11 +24,11 @@ The tool defaults to `mode: "dry_run"`. The ast-grep CLI is invoked only to prod
 
 ## Evidence
 
-- `cargo test -p harness-tools --test native_ast_grep_replace_test`
-- `cargo test -p harness-tools --test native_ast_grep_search_test`
-- `cargo test -p harness-tools --test native_tool_parity_matrix_test`
-- `cargo test -p harness-core --test permission_policy_supports_native_tool_permission_kinds_test`
-- `cargo test -p harness-core --test coord_ast_grep_auth_test -- --nocapture`
+- `cargo nextest run -p harness-tools --test native_ast_grep_replace_test`
+- `cargo nextest run -p harness-tools --test native_ast_grep_search_test`
+- `cargo nextest run -p harness-tools --test native_tool_parity_matrix_test`
+- `cargo nextest run -p harness-core --test permission_policy_supports_native_tool_permission_kinds_test`
+- `cargo nextest run -p harness-core --test coord_ast_grep_auth_test -- --nocapture`
 
 ## Rejected alternatives
 
