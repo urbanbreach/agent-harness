@@ -823,8 +823,13 @@ fn validate_shell_path_arguments(
         let candidate = if token.starts_with('-') {
             if let Some((_, value)) = token.split_once('=') {
                 value
-            } else {
+            } else if token.starts_with("--") {
                 continue;
+            } else {
+                let mut chars = token.chars();
+                chars.next(); // skip '-'
+                chars.next(); // skip flag character
+                chars.as_str()
             }
         } else {
             token
@@ -1114,6 +1119,17 @@ mod tests {
 
     #[test]
     fn validate_bash_command_rejects_external_path_arguments() {
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let safety = ShellSafety::new(ShellAllowlist {
+            executables: vec!["ls".to_string()],
+            cwd_roots: vec![".".to_string()],
+            ..ShellAllowlist::default()
+        });
+
+        let err_short = safety
+            .validate_bash_command("ls -I../../../etc/passwd", tempdir.path(), tempdir.path())
+            .expect_err("external relative path in short option should be blocked");
+        assert!(matches!(err_short, ToolError::PathEscapesWorkspace { .. }));
         let tempdir = tempfile::tempdir().expect("tempdir");
         let safety = ShellSafety::new(ShellAllowlist {
             executables: vec!["ls".to_string()],
