@@ -1,4 +1,5 @@
 use super::super::*;
+use crate::ui::ui_tool_question_todo::TranscriptTodoStatus;
 
 #[cfg(test)]
 pub(crate) fn exact_test_block_tool_cards_skip_empty_subtitle_rows() {
@@ -556,13 +557,126 @@ fn shell_tool_cards_render_harness_bash_panel_with_chrome_and_clamping() {
     });
     let rendered = text_lines.join("\n");
 
-    assert!(rendered.contains('┃'), "harness bash panel should have split rail");
-    assert!(rendered.contains("# Shell"), "harness bash panel should have title");
+    assert!(
+        rendered.contains('┃'),
+        "harness bash panel should have split rail"
+    );
+    assert!(
+        !rendered.contains("# Shell"),
+        "harness bash panels should not render a fallback title without a workdir description\n{text_lines:#?}"
+    );
     assert!(rendered.contains("$ echo hi"));
     assert!(!rendered.contains("stdout>"));
     assert!(rendered.contains("line 10"));
-    assert!(!rendered.contains("line 11"), "output should be clamped at 10 lines");
+    assert!(
+        !rendered.contains("line 11"),
+        "output should be clamped at 10 lines"
+    );
     assert!(rendered.contains("Click to expand"));
+}
+
+#[test]
+fn shell_tool_cards_without_workdir_start_with_command_row() {
+    let mut tool_call = transcript_section_model_test_tool_call("tc-shell-no-workdir", "bash");
+    tool_call.args_summary = r#"{"command":"cargo test -p harness-tui"}"#.to_string();
+    tool_call.status = ToolCallDisplayStatus::Succeeded;
+    tool_call.output_summary = Some("ok".to_string());
+
+    let section = build_transcript_tool_call_section(
+        &tool_call,
+        &AppState::default(),
+        None,
+        false,
+        false,
+        false,
+        false,
+        None,
+    );
+    let text_lines = transcript_test_line_texts({
+        let render = append_tool_call_section_lines(
+            &section,
+            &Theme::default(),
+            96,
+            Theme::default().surface.panel,
+        );
+        render.lines
+    });
+
+    assert!(
+        !text_lines.iter().any(|line| line.contains("# Shell")),
+        "no fallback shell title row should be rendered\n{text_lines:#?}"
+    );
+    let command_row = text_lines
+        .iter()
+        .position(|line| line.contains("$ cargo test -p harness-tui"))
+        .expect("command row");
+    let preceding_content = text_lines[..command_row]
+        .iter()
+        .filter(|line| line.contains("# ") || line.contains('$'))
+        .collect::<Vec<_>>();
+    assert!(
+        preceding_content.is_empty(),
+        "command row should be the first content row when no workdir title exists\n{text_lines:#?}"
+    );
+}
+
+#[test]
+fn todo_write_cards_parse_metadata_and_output_todos() {
+    let mut metadata_call =
+        transcript_section_model_test_tool_call("tc-todo-metadata", "todowrite");
+    metadata_call.status = ToolCallDisplayStatus::Succeeded;
+    metadata_call.output_json = Some(serde_json::json!({
+        "title": "0 todos",
+        "metadata": {
+            "todos": [
+                {"content": "Ship transcript parity", "status": "completed"},
+                {"content": "Capture visual QA", "status": "in_progress"}
+            ]
+        },
+        "output": "[]"
+    }));
+
+    let metadata_section = build_transcript_tool_call_section(
+        &metadata_call,
+        &AppState::default(),
+        None,
+        false,
+        false,
+        false,
+        false,
+        None,
+    );
+    assert!(matches!(
+        &metadata_section.detail_blocks[0],
+        TranscriptToolCallDetailBlock::TodoList { items }
+            if items.len() == 2
+                && items[0].content == "Ship transcript parity"
+                && items[0].status == TranscriptTodoStatus::Completed
+                && items[1].status == TranscriptTodoStatus::InProgress
+    ));
+
+    let mut output_call = transcript_section_model_test_tool_call("tc-todo-output", "todowrite");
+    output_call.status = ToolCallDisplayStatus::Succeeded;
+    output_call.output_summary =
+        Some(r#"[{"content":"Render completed box","status":"completed"}]"#.to_string());
+
+    let output_section = build_transcript_tool_call_section(
+        &output_call,
+        &AppState::default(),
+        None,
+        false,
+        false,
+        false,
+        false,
+        None,
+    );
+    assert!(matches!(
+        &output_section.detail_blocks[0],
+        TranscriptToolCallDetailBlock::TodoList { items }
+            if items.len() == 1
+                && items[0].content == "Render completed box"
+                && items[0].status == TranscriptTodoStatus::Completed
+    ));
 }
 
 #[test]

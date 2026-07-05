@@ -197,18 +197,19 @@ fn harness_bash_card_lines(
         lines.push(harness_bash_padding_line(theme));
     }
 
-    let title = harness_bash_title(description);
-    append_harness_bash_rows(
-        &mut lines,
-        &title,
-        Style::default().fg(theme.text.secondary),
-        theme,
-        panel_width,
-        HARNESS_BLOCK_TOOL_PADDING_LEFT,
-    );
+    if let Some(title) = harness_bash_title(description) {
+        append_harness_bash_rows(
+            &mut lines,
+            &title,
+            Style::default().fg(theme.text.secondary),
+            theme,
+            panel_width,
+            HARNESS_BLOCK_TOOL_PADDING_LEFT,
+        );
 
-    for _ in 0..HARNESS_BLOCK_TOOL_GAP {
-        lines.push(harness_bash_padding_line(theme));
+        for _ in 0..HARNESS_BLOCK_TOOL_GAP {
+            lines.push(harness_bash_padding_line(theme));
+        }
     }
 
     let command_style = Style::default().fg(theme.text.primary);
@@ -256,16 +257,15 @@ fn harness_bash_card_lines(
     lines
 }
 
-fn harness_bash_title(description: Option<&str>) -> String {
+fn harness_bash_title(description: Option<&str>) -> Option<String> {
     let description = description
         .map(collapse_inline_whitespace)
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| "Shell".to_string());
-    if description.starts_with("# ") {
+        .filter(|value| !value.is_empty())?;
+    Some(if description.starts_with("# ") {
         description
     } else {
         format!("# {description}")
-    }
+    })
 }
 
 fn harness_bash_output_style(_tone: TranscriptToolCallDetailTone, theme: &Theme) -> Style {

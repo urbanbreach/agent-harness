@@ -43,6 +43,7 @@ pub(super) fn todo_items_from_tool_call(
 ) -> Vec<TranscriptTodoItem> {
     todo_items_from_value(tool_call.output_json.as_ref())
         .or_else(|| todo_items_from_artifacts(tool_call, session_path))
+        .or_else(|| todo_items_from_json_str(tool_call.output_summary.as_deref()?))
         .or_else(|| {
             serde_json::from_str::<serde_json::Value>(&tool_call.args_summary)
                 .ok()
@@ -80,7 +81,13 @@ fn todo_items_from_artifacts(
 }
 
 fn todo_items_from_value(value: Option<&serde_json::Value>) -> Option<Vec<TranscriptTodoItem>> {
-    let todos = todo_array_from_value(value?)?;
+    let value = value?;
+    todo_array_from_value(value)
+        .and_then(|todos| todo_items_from_array(todos))
+        .or_else(|| todo_items_from_embedded_json_fields(value))
+}
+
+fn todo_items_from_array(todos: &[serde_json::Value]) -> Option<Vec<TranscriptTodoItem>> {
     let items = todos
         .iter()
         .filter_map(|todo| {
@@ -114,6 +121,21 @@ fn todo_items_from_value(value: Option<&serde_json::Value>) -> Option<Vec<Transc
     (!items.is_empty()).then_some(items)
 }
 
+fn todo_items_from_embedded_json_fields(
+    value: &serde_json::Value,
+) -> Option<Vec<TranscriptTodoItem>> {
+    ["output", "result"]
+        .iter()
+        .find_map(|field| value.get(field).and_then(serde_json::Value::as_str))
+        .and_then(todo_items_from_json_str)
+}
+
+fn todo_items_from_json_str(value: &str) -> Option<Vec<TranscriptTodoItem>> {
+    serde_json::from_str::<serde_json::Value>(value)
+        .ok()
+        .and_then(|value| todo_items_from_value(Some(&value)))
+}
+
 fn todo_array_from_value(value: &serde_json::Value) -> Option<&Vec<serde_json::Value>> {
     value
         .get("todos")
@@ -124,6 +146,9 @@ fn todo_array_from_value(value: &serde_json::Value) -> Option<&Vec<serde_json::V
                 .get("structured_output")
                 .and_then(todo_array_from_value)
         })
+        .or_else(|| value.get("metadata").and_then(todo_array_from_value))
+        .or_else(|| value.get("output").and_then(todo_array_from_value))
+        .or_else(|| value.get("result").and_then(todo_array_from_value))
 }
 
 impl TranscriptTodoStatus {
