@@ -4,7 +4,7 @@
     {
       "profile": "build",
       "category": "build",
-      "completion_request_digest": "ff95d7f02dd66340068b4a60178a3ebb05d55e641b0c8a5c8f2bae8ac38d0c99",
+      "completion_request_digest": "1ee99d8f11dc344356dccda25e92c8b05709c61f57792814366830fadb656acc",
       "tools": [
         {
           "canonical_id": "apply_patch",
@@ -24,14 +24,14 @@
           "canonical_id": "github.issue",
           "provider_function_name": "github_issue",
           "description_digest": "b0fcf5aa609cbd1445db2febc339e6a25e1761eaf11951f47b6e4154aa2eead1",
-          "parameters_digest": "3e7b5b71e8ca199643065c9b1c4b8caa95f3ac28c0d82fbfbdce9e2433f5230e",
+          "parameters_digest": "b4f350fcba766e3230d924f7b4edb387e0817bb384672c27e7765aa771eaeb6c",
           "parameters_type": "object"
         },
         {
           "canonical_id": "lsp.rename",
           "provider_function_name": "lsp_rename",
           "description_digest": "5456b5933cf482dc478e922b92edbe67c006ce8e43e5c1102fca196784b5414c",
-          "parameters_digest": "dcb0a847988b275e459bac462d9d1f948379285edb28ec0f0a00faadb6c4f5be",
+          "parameters_digest": "2062b220bf8ad383b4e3206f06dffdf0da1c47f40014ee643315438feb6658b4",
           "parameters_type": "object"
         },
         {
@@ -45,7 +45,7 @@
           "canonical_id": "shell.run",
           "provider_function_name": "shell_run",
           "description_digest": "b8bab68aa8034880334acea62855730eed3091e44727c6b9167776ab41006479",
-          "parameters_digest": "d8faa850c24455a8f7e19b6b5d4adf4b89488717f42ae2ea82b2aa342049ad14",
+          "parameters_digest": "1b1e8dd12d98ff3f6e2015aea2a3b6b69c578f3b4ef2c8ea05f771f1d21e29a2",
           "parameters_type": "object"
         }
       ],
@@ -54,7 +54,7 @@
           "api_mode": "chat_completions",
           "endpoint_path": "/v1/chat/completions",
           "bearer_token": "<redacted>",
-          "request_body_digest": "aaedddc546b110fda1e2d2fe15c3050ca9e58aa6bcb050f8413ddde026951238",
+          "request_body_digest": "cdb955ce584559d29d7e7e71b163fad2d358e7364698ce4c9c2d05831f5bfaff",
           "tool_function_names": [
             "apply_patch",
             "bash",
@@ -68,7 +68,7 @@
           "api_mode": "responses",
           "endpoint_path": "/v1/responses",
           "bearer_token": "<redacted>",
-          "request_body_digest": "9b8e8db41668d059cd936b63f04a8b7a5360c1eb88bf205c99d7b964addb8efa",
+          "request_body_digest": "60c440d0d50a425a70996818615b12694c90d2cfc8f9903f6704c09cf258627f",
           "tool_function_names": [
             "apply_patch",
             "bash",
@@ -83,7 +83,7 @@
     {
       "profile": "plan",
       "category": "plan",
-      "completion_request_digest": "1823c3bb1ca9bcaedecadd6d15d7a5ccd8686cc072438e4447cd708300820069",
+      "completion_request_digest": "43034b4b84d854967587545db784c3d77fbd228fa32b86364409d89385030cb7",
       "tools": [
         {
           "canonical_id": "glob",
@@ -103,7 +103,7 @@
           "canonical_id": "list",
           "provider_function_name": "list",
           "description_digest": "267d09bc590e824c2591be387acde9106be35a1a092595e84a902fff1df5c4af",
-          "parameters_digest": "da7b4611c84cb347aa1c39b2b59181738d3edc243b73614bf99db92e3c4a3d52",
+          "parameters_digest": "a4e0fa7ef06836c2da1b1d91b3d95988bb8d39f4cfed2dc7918cdd053fa24a61",
           "parameters_type": "object"
         },
         {
@@ -133,7 +133,7 @@
           "api_mode": "chat_completions",
           "endpoint_path": "/v1/chat/completions",
           "bearer_token": "<redacted>",
-          "request_body_digest": "905457ca08eee8c130ca9b31df09ffda54f27bfaac755049fdef8e053dfd2edd",
+          "request_body_digest": "57466aaf365adf78639199aed7fa626384d642f32a6efc220e1d545f5d9f3c56",
           "tool_function_names": [
             "glob",
             "grep",
@@ -147,7 +147,7 @@
           "api_mode": "responses",
           "endpoint_path": "/v1/responses",
           "bearer_token": "<redacted>",
-          "request_body_digest": "1cfcd145b83959877a90fff3c4f5729818102a38052451da24c8563bcc8db3ed",
+          "request_body_digest": "688d3516342f1c79b35a3ad215769e686b94f6613a6e674affbe359b1e2d9df0",
           "tool_function_names": [
             "glob",
             "grep",
@@ -162,27 +162,27 @@
     {
       "profile": "category",
       "category": "quick",
-      "completion_request_digest": "909c374ce502c8e09cf4c64d6f2fd7bb8cdac0e83146fd0ce31d2ba95f460b6a",
+      "completion_request_digest": "b7faf6eb6a60c948a3c5cc9a9ea91c4b5651d28fa37976a2e60e0e58b942fd84",
       "tools": [
         {
           "canonical_id": "background_output",
           "provider_function_name": "background_output",
-          "description_digest": "dc26cf6804f6287db10a3333061868d9c74f6385daea50ff070da073644ad799",
-          "parameters_digest": "487c060f36eaad3b9fda37c32dd63a603b696bee5e68da4b5d06df4a8ed1a2e7",
+          "description_digest": "d4d9b01f6dcaf018c8e0119c3b5eb4c18cb61215cc2f33a18510e34f9363aaf1",
+          "parameters_digest": "8145d6ae53462f087e1a7fd79b4c4689bf1c23fdc1721718d1e87271959b281e",
           "parameters_type": "object"
         },
         {
           "canonical_id": "skill",
           "provider_function_name": "skill",
           "description_digest": "a3b0369f01382bbb064edfe51114ff4260b114ccc20322c986061a05c4b9dd83",
-          "parameters_digest": "628d19bfbe335168bd3ea498d60b76d7af9a1c80adb13f9a32dd937b827f73a9",
+          "parameters_digest": "b47d9ae660cac1638b1224fb3d3e306a0c2e8260c69daa4550b67b2675bffc3d",
           "parameters_type": "object"
         },
         {
           "canonical_id": "task",
           "provider_function_name": "task",
-          "description_digest": "f6158a9111a37e0e38ae86b937686db200ca3c561235200d029967f3c719dec0",
-          "parameters_digest": "e732b08edcf8a6ca33af2c7ab652dffb02881897b8ae5667f821ac28ffdc6682",
+          "description_digest": "a453dcb46242264dd536ba3a079bace7a81fe2674d8571f981207e3e3bf8cb14",
+          "parameters_digest": "f424f790fed9db6606053ab9130a078d68910419b64f8daee66576df02e3affc",
           "parameters_type": "object"
         },
         {
@@ -198,7 +198,7 @@
           "api_mode": "chat_completions",
           "endpoint_path": "/v1/chat/completions",
           "bearer_token": "<redacted>",
-          "request_body_digest": "4d37bfe3bcbfc3b6901004e36c5edbb9f2b92636490d60f84c116a2dd8a19234",
+          "request_body_digest": "0945489aa5585594e09acd37e0af3d9786b836287018648c8381c7e3f6d3be8d",
           "tool_function_names": [
             "background_output",
             "skill",
@@ -210,7 +210,7 @@
           "api_mode": "responses",
           "endpoint_path": "/v1/responses",
           "bearer_token": "<redacted>",
-          "request_body_digest": "14740be9613a96ceb748f18dab5a5985581ec6ca2a1e5b79cfe8f67a52aa3f92",
+          "request_body_digest": "e3a7e17b940e9b2e7d2741aa3d522cff78de60e5866e82486e46045a02f484bf",
           "tool_function_names": [
             "background_output",
             "skill",
@@ -223,20 +223,20 @@
     {
       "profile": "mcp",
       "category": "mcp",
-      "completion_request_digest": "554cbb48454330254b21dd86f2b74d1fa70dfd0708e0ec0f2b5aaefbf44f13a4",
+      "completion_request_digest": "76fe29a4092e0badbe5b015f3dcee5d0dc152dcc33e03fe4a90dd7d81a4c705c",
       "tools": [
         {
           "canonical_id": "mcp.docs.rs.tool.call",
           "provider_function_name": "mcp_docs_rs_tool_call",
           "description_digest": "652a16e77764eb7150f7479ae6ebd77498a16b07a3af1079585fdc8c18f2ac71",
-          "parameters_digest": "2ac78c27db172ec2778999b3a07c13a4b75ee59a9dbab67e2049d006daa0a632",
+          "parameters_digest": "73cc0707a8139d017d3e074cfc1a73d9eb4b68ceab88a5807c1d1baeba98d4bb",
           "parameters_type": "object"
         },
         {
           "canonical_id": "mcp.docs.rs.tools.list",
           "provider_function_name": "mcp_docs_rs_tools_list",
           "description_digest": "fc3eb1eac76da53786f0cfe6cb074a4efd45b41523eff8515960adaf84b1a508",
-          "parameters_digest": "9c6d088442d9da099d4b25009899ec421564fd2db3375e245a81c98d9f71ca87",
+          "parameters_digest": "42cae6d4d314bebf9467567a6991107c925b0c3794338a363f5c65ce12137468",
           "parameters_type": "object"
         }
       ],
@@ -245,7 +245,7 @@
           "api_mode": "chat_completions",
           "endpoint_path": "/v1/chat/completions",
           "bearer_token": "<redacted>",
-          "request_body_digest": "540c9cf9eb417862df9cb2f6439b6f414c20e2e1916c13c1413962caaf12562d",
+          "request_body_digest": "e0111f69f1292d0bd4303da7097fb3640c8be7acb99dffab347f3b65ac36af16",
           "tool_function_names": [
             "mcp_docs_rs_tool_call",
             "mcp_docs_rs_tools_list"
@@ -255,7 +255,7 @@
           "api_mode": "responses",
           "endpoint_path": "/v1/responses",
           "bearer_token": "<redacted>",
-          "request_body_digest": "d6d253058896774bba12498b0ca743d1377622a7789909a672d7d79345376e57",
+          "request_body_digest": "f4356828e2e9b39804369e89a20c274b5ca85d7fae799832489704ebe44e8478",
           "tool_function_names": [
             "mcp_docs_rs_tool_call",
             "mcp_docs_rs_tools_list"
