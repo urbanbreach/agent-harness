@@ -55,13 +55,13 @@ agent-harness/
 ## CODE MAP
 | Area | Role | High-value tests |
 |------|------|------------------|
-| `harness-core::coord` | Single scheduling/event/permission/hook/lifecycle authority | `cargo test -p harness-core --test coord_test` |
-| `harness-core::event` | Event schema v1 and append-only envelopes | `cargo test -p harness --test event_docs_reference_test` |
-| `harness-core::config` | Runtime/TUI config loading, validation, public schema shape | `cargo test -p harness --test config_schema_cli_test` |
-| `harness-providers` | Streaming provider boundary, redacted metadata, cassette replay | `cargo test -p harness-providers` |
-| `harness-tools` | Built-in native tool surface and schema parity | `cargo test -p harness-tools --test native_tool_parity_matrix_test` |
-| `harness-tui` | App state, view models, renderer, shell geometry | `cargo test -p harness-tui --test deterministic_render_test` |
-| `harness-testkit` | Fakes, simulation evidence, visual/PTY helpers | `cargo test -p harness-testkit --test simulation_validator_test` |
+| `harness-core::coord` | Single scheduling/event/permission/hook/lifecycle authority | `cargo nextest run -p harness-core --test coord_test` |
+| `harness-core::event` | Event schema v1 and append-only envelopes | `cargo nextest run -p harness --test event_docs_reference_test` |
+| `harness-core::config` | Runtime/TUI config loading, validation, public schema shape | `cargo nextest run -p harness --test config_schema_cli_test` |
+| `harness-providers` | Streaming provider boundary, redacted metadata, cassette replay | `cargo nextest run -p harness-providers` |
+| `harness-tools` | Built-in native tool surface and schema parity | `cargo nextest run -p harness-tools --test native_tool_parity_matrix_test` |
+| `harness-tui` | App state, view models, renderer, shell geometry | `cargo nextest run -p harness-tui --test deterministic_render_test` |
+| `harness-testkit` | Fakes, simulation evidence, visual/PTY helpers | `cargo nextest run -p harness-testkit --test simulation_validator_test` |
 
 ## FIRST-PARTY SEARCH SCOPE
 - Include by default: `crates/`, `configs/`, `docs/`, `scripts/`, `.agent-harness/agents/`, `.agent-harness/prompt-families/`, `.agent-harness/skills/`, root manifests.
@@ -83,7 +83,7 @@ Targeted signoff:
 scripts/test-lanes.sh simulation
 scripts/test-lanes.sh signoff-binary
 scripts/test-lanes.sh signoff-pty
-RUST_TEST_THREADS=1 cargo test -p harness-testkit --test pty_e2e
+RUST_TEST_THREADS=1 cargo nextest run -p harness-testkit --test pty_e2e --test-threads 1
 ```
 
 ## CONVENTIONS
@@ -166,9 +166,9 @@ Read root `AGENTS.md` first. Human-facing explanation belongs in `../docs/config
 ```bash
 cargo run -p harness -- --config configs/harness.example.jsonc config validate
 cargo run -p harness -- --config configs/harness.example.jsonc doctor --json
-cargo test -p harness --test config_schema_cli_test
-cargo test -p harness --test config_docs_reference_test
-cargo test -p harness-core --test extension_manifest_test
+cargo nextest run -p harness --test config_schema_cli_test
+cargo nextest run -p harness --test config_docs_reference_test
+cargo nextest run -p harness-core --test extension_manifest_test
 ```
 
 ## ANTI-PATTERNS
