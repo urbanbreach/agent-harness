@@ -14,7 +14,7 @@ For each task:
 3. Write failing tests FIRST (TDD is mandatory, not optional)
 4. Implement the change
 5. Run the task-specific verification command and show actual output
-6. Run `cargo test -p harness-core` and show actual output
+6. Run `cargo nextest run -p harness-core` and show actual output
 7. Run `cargo clippy -p harness-core -- -D warnings` and show actual output
 8. Run `cargo fmt --check -p harness-core` and show actual output
 9. Show `git diff` of all changes
@@ -70,10 +70,10 @@ You are done when ALL of the following are true (Section 10 of the spec):
 1. All 7 tasks are implemented and committed
 2. The full verification suite passes (Section 6.2):
    ```
-   cargo test -p harness-core
-   cargo test -p harness --test config_docs_reference_test
-   cargo test -p harness --test config_schema_cli_test
-   cargo test -p harness --test bootstrap_profiles_test
+   cargo nextest run -p harness-core
+   cargo nextest run -p harness --test config_docs_reference_test
+   cargo nextest run -p harness --test config_schema_cli_test
+   cargo nextest run -p harness --test bootstrap_profiles_test
    cargo run -p harness -- --config configs/harness.example.jsonc config validate
    cargo run -p harness -- --config configs/harness.example.jsonc doctor --json
    scripts/test-lanes.sh fast

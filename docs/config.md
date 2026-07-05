@@ -793,7 +793,7 @@ policy language:
   "permission": {
     "bash": {
       "git status": "allow",
-      "cargo test*": "ask",
+      "cargo nextest run*": "ask",
       "*": "deny"
     },
     "edit": {
@@ -811,7 +811,7 @@ policy language:
 ```
 
 Bash selectors are either an exact command string, a trailing `*` prefix such as
-`cargo test*`, or the `*` catch-all. Edit selectors are either an exact
+`cargo nextest run*`, or the `*` catch-all. Edit selectors are either an exact
 workspace-relative path, a trailing `/**` path prefix such as `docs/**`, or the
 `*` catch-all. Task selectors match the requested subagent/profile/category name;
 they accept exact names, `*` catch-all, and simple `*` glob patterns such as

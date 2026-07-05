@@ -237,8 +237,8 @@ The implementer MUST actively refer to the Opencode source code in `inspirations
 
 **Verification:**
 ```bash
-cargo test -p harness-core -- config::discovery
-cargo test -p harness-core
+cargo nextest run -p harness-core -- config::discovery
+cargo nextest run -p harness-core
 ```
 
 ---
@@ -268,9 +268,9 @@ cargo test -p harness-core
 
 **Verification:**
 ```bash
-cargo test -p harness-core -- config::discovery
-cargo test -p harness-core
-cargo test -p harness --test config_schema_cli_test
+cargo nextest run -p harness-core -- config::discovery
+cargo nextest run -p harness-core
+cargo nextest run -p harness --test config_schema_cli_test
 ```
 
 ---
@@ -292,8 +292,8 @@ pub shell: Option<PermissionMode>,
 
 **Verification:**
 ```bash
-cargo test -p harness-core -- config
-cargo test -p harness-core
+cargo nextest run -p harness-core -- config
+cargo nextest run -p harness-core
 ```
 
 ---
@@ -368,9 +368,9 @@ cargo test -p harness-core
 
 **Verification:**
 ```bash
-cargo test -p harness-core -- config::discovery
-cargo test -p harness-core
-cargo test -p harness --test bootstrap_profiles_test
+cargo nextest run -p harness-core -- config::discovery
+cargo nextest run -p harness-core
+cargo nextest run -p harness --test bootstrap_profiles_test
 ```
 
 **Note:** `config_docs_reference_test` and `config_schema_cli_test` are drift tests updated in Task 7. They are NOT included here to avoid a circular verification dependency.
@@ -407,8 +407,8 @@ cargo test -p harness --test bootstrap_profiles_test
 
 **Verification:**
 ```bash
-cargo test -p harness --test config_docs_reference_test
-cargo test -p harness --test config_schema_cli_test
+cargo nextest run -p harness --test config_docs_reference_test
+cargo nextest run -p harness --test config_schema_cli_test
 cargo run -p harness -- --config configs/harness.example.jsonc config validate
 ```
 
@@ -442,7 +442,7 @@ cargo run -p harness -- --config configs/harness.example.jsonc config validate
 
 **Verification:**
 ```bash
-cargo test -p harness --test config_docs_reference_test
+cargo nextest run -p harness --test config_docs_reference_test
 ```
 
 ---
@@ -465,10 +465,10 @@ cargo test -p harness --test config_docs_reference_test
 
 **Verification (run ALL — no skipping):**
 ```bash
-cargo test -p harness-core
-cargo test -p harness --test config_docs_reference_test
-cargo test -p harness --test config_schema_cli_test
-cargo test -p harness --test bootstrap_profiles_test
+cargo nextest run -p harness-core
+cargo nextest run -p harness --test config_docs_reference_test
+cargo nextest run -p harness --test config_schema_cli_test
+cargo nextest run -p harness --test bootstrap_profiles_test
 cargo run -p harness -- --config configs/harness.example.jsonc config validate
 cargo run -p harness -- --config configs/harness.example.jsonc doctor --json
 scripts/test-lanes.sh fast
@@ -484,7 +484,7 @@ scripts/test-lanes.sh quality-gates
 Each task MUST be verified before moving to the next. Verification means:
 
 1. **Run the task-specific test command** — the test must PASS, not just compile
-2. **Run `cargo test -p harness-core`** — all existing tests must still pass
+2. **Run `cargo nextest run -p harness-core`** — all existing tests must still pass
 3. **Run `cargo clippy -p harness-core -- -D warnings`** — no warnings
 4. **Run `cargo fmt --check -p harness-core`** — no formatting issues
 5. **Show the actual command output** — do not claim "should pass" without running
@@ -495,12 +495,12 @@ After all tasks are complete, run the FULL verification suite:
 
 ```bash
 # Core tests
-cargo test -p harness-core
+cargo nextest run -p harness-core
 
 # Drift tests
-cargo test -p harness --test config_docs_reference_test
-cargo test -p harness --test config_schema_cli_test
-cargo test -p harness --test bootstrap_profiles_test
+cargo nextest run -p harness --test config_docs_reference_test
+cargo nextest run -p harness --test config_schema_cli_test
+cargo nextest run -p harness --test bootstrap_profiles_test
 
 # CLI verification
 cargo run -p harness -- --config configs/harness.example.jsonc config validate
@@ -810,7 +810,7 @@ The implementation is complete when ALL of the following are true:
 
 6. **Documentation complete** — variable substitution and config layering are documented in `docs/config.md` and example config. Verified by drift test.
 
-7. **All tests pass** — `cargo test -p harness-core`, `cargo test -p harness --test config_docs_reference_test`, `cargo test -p harness --test config_schema_cli_test`, `cargo test -p harness --test bootstrap_profiles_test`, `scripts/test-lanes.sh fast`, `scripts/test-lanes.sh quality-gates`.
+7. **All tests pass** — `cargo nextest run -p harness-core`, `cargo nextest run -p harness --test config_docs_reference_test`, `cargo nextest run -p harness --test config_schema_cli_test`, `cargo nextest run -p harness --test bootstrap_profiles_test`, `scripts/test-lanes.sh fast`, `scripts/test-lanes.sh quality-gates`.
 
 8. **CLI verification** — `cargo run -p harness -- --config configs/harness.example.jsonc config validate` and `cargo run -p harness -- --config configs/harness.example.jsonc doctor --json` both pass.
 
