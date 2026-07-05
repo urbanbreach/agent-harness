@@ -332,7 +332,7 @@ the current behavior and the Harness line(s) that must match or intentionally di
   known-language syntax coloring, plain fallback for unknown languages, same
   background as surrounding prose, and absence of nested frame rails.
 - `shell_tool_cards_use_reference_dollar_block_without_harness_chrome` locks the
-  bash block to `# Running in /workspace/crates/harness-tui`, `$ cargo test`, and
+  bash block to `# Running in /workspace/crates/harness-tui`, `$ cargo nextest run`, and
   command output rows while rejecting old `┃`, `# list files`, and box-card
   chrome.
 - `file_search_rows_match_reference_title_description_shape` locks grep, glob,

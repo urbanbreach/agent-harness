@@ -5,7 +5,7 @@ Budgets are local release-readiness gates, not production-class performance clai
 | Budget | Current local threshold | Evidence |
 |---|---:|---|
 | startup/readiness | 2s local startup smoke | `signoff-binary` startup stage |
-| TUI render | deterministic snapshot/render tests complete without timeout | `cargo test -p harness-tui` |
+| TUI render | deterministic snapshot/render tests complete without timeout | `cargo nextest run -p harness-tui` |
 | session resume | 200ms default local resume-plan budget | `crates/harness-core/tests/perf/resume_plan_perf.rs` |
 | large-session list/reopen/search | measured local artifact, no fast long-session claim by itself | `crates/harness/tests/perf_sessions_surface_test.rs` |
 | binary size | documented only in this slice | final-slice binary artifact gate |
@@ -16,7 +16,7 @@ Startup/readiness covers launching the binary far enough to parse config, initia
 
 ## TUI render budget
 
-TUI render budget is currently guarded by deterministic TestBackend/snapshot tests. The expected behavior is that startup, overlays, transcript render, permission state, model switcher, session picker, diff rendering, resume, and replay-failure states complete inside normal cargo test timeouts without sleeps or live dependencies.
+TUI render budget is currently guarded by deterministic TestBackend/snapshot tests. The expected behavior is that startup, overlays, transcript render, permission state, model switcher, session picker, diff rendering, resume, and replay-failure states complete inside normal cargo nextest run timeouts without sleeps or live dependencies.
 
 ## Session resume budget
 
