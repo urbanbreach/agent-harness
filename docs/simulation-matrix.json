@@ -35,7 +35,7 @@
       ],
       "owner_tests_or_lanes": [
         "scripts/test-lanes.sh simulation",
-        "cargo test -p harness-testkit --test simulation_validator_test"
+        "cargo nextest run -p harness-testkit --test simulation_validator_test"
       ],
       "replay_command": "read-only replay summary generation for <simulation-run-dir>",
       "expected_artifacts": [

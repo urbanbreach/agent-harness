@@ -16,7 +16,7 @@
       "id": "startup",
       "release_class": "normal_prompt_flow",
       "deterministic_tests": [
-        "cargo test -p harness-tui --test deterministic_render_test startup_shell_is_compose_first_without_pty"
+        "cargo nextest run -p harness-tui --test deterministic_render_test startup_shell_is_compose_first_without_pty"
       ],
       "pty_stages": [
         "scripts/test-lanes.sh signoff-pty :: harness_tui_pty_e2e",
@@ -31,9 +31,9 @@
       "id": "onboarding_auth",
       "release_class": "first_run_auth_flow",
       "deterministic_tests": [
-        "cargo test -p harness-tui onboarding -- --nocapture",
-        "cargo test -p harness auth -- --nocapture",
-        "RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 cargo test -p harness-tui --test pty_e2e pty_onboarding_auth_drives_required_screens -- --nocapture"
+        "cargo nextest run -p harness-tui onboarding -- --nocapture",
+        "cargo nextest run -p harness auth -- --nocapture",
+        "RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 cargo nextest run -p harness-tui --test pty_e2e --test-threads 1 pty_onboarding_auth_drives_required_screens -- --nocapture"
       ],
       "pty_stages": [
         "scripts/test-lanes.sh signoff-pty :: harness_tui_pty_e2e"
@@ -49,8 +49,8 @@
       "id": "command_palette",
       "release_class": "operator_navigation_flow",
       "deterministic_tests": [
-        "cargo test -p harness-tui --test deterministic_render_test command_palette_renders_without_pty",
-        "cargo test -p harness-tui command_palette_renders_and_filters"
+        "cargo nextest run -p harness-tui --test deterministic_render_test command_palette_renders_without_pty",
+        "cargo nextest run -p harness-tui command_palette_renders_and_filters"
       ],
       "pty_stages": [
         "scripts/test-lanes.sh signoff-pty :: harness_tui_pty_e2e",
@@ -66,8 +66,8 @@
       "id": "session_picker_resume",
       "release_class": "resume_flow",
       "deterministic_tests": [
-        "cargo test -p harness-tui --test deterministic_render_test startup_session_history_picker_renders_without_pty",
-        "cargo test -p harness-tui session_history_picker_renders_resumable_and_replay_rows"
+        "cargo nextest run -p harness-tui --test deterministic_render_test startup_session_history_picker_renders_without_pty",
+        "cargo nextest run -p harness-tui session_history_picker_renders_resumable_and_replay_rows"
       ],
       "pty_stages": [
         "scripts/test-lanes.sh signoff-pty :: harness_tui_happy_path_pty"
@@ -82,9 +82,9 @@
       "id": "permission_question",
       "release_class": "permission_question_flow",
       "deterministic_tests": [
-        "cargo test -p harness-tui --test deterministic_render_test permission_modal_preserves_draft_without_pty",
-        "cargo test -p harness-tui --test deterministic_render_test question_permission_prompt_renders_without_pty",
-        "cargo test -p harness-tui permission_modal_preempts_palette_and_slash"
+        "cargo nextest run -p harness-tui --test deterministic_render_test permission_modal_preserves_draft_without_pty",
+        "cargo nextest run -p harness-tui --test deterministic_render_test question_permission_prompt_renders_without_pty",
+        "cargo nextest run -p harness-tui permission_modal_preempts_palette_and_slash"
       ],
       "pty_stages": [
         "scripts/test-lanes.sh signoff-pty :: harness_tui_happy_path_pty"
@@ -100,9 +100,9 @@
       "id": "provider_tool_failure",
       "release_class": "provider_tool_failure_flow",
       "deterministic_tests": [
-        "cargo test -p harness-tui --test deterministic_render_test tool_lifecycle_rows_stay_ordered_without_pty",
-        "cargo test -p harness-tui --test deterministic_render_test replay_failure_state_renders_without_pty",
-        "cargo test -p harness-tui post_run_failure_handoff_renders_recovery_actions"
+        "cargo nextest run -p harness-tui --test deterministic_render_test tool_lifecycle_rows_stay_ordered_without_pty",
+        "cargo nextest run -p harness-tui --test deterministic_render_test replay_failure_state_renders_without_pty",
+        "cargo nextest run -p harness-tui post_run_failure_handoff_renders_recovery_actions"
       ],
       "pty_stages": [
         "scripts/test-lanes.sh signoff-pty :: harness_tui_happy_path_pty"
@@ -117,9 +117,9 @@
       "id": "diff_review",
       "release_class": "diff_review_flow",
       "deterministic_tests": [
-        "cargo test -p harness-tui --test deterministic_render_test tool_lifecycle_rows_stay_ordered_without_pty",
-        "cargo test -p harness-tui transcript_apply_patch_surfaces_rename_and_wrapped_inline_diffs",
-        "cargo test -p harness-tui diff_hunk_navigation_advances_and_retreats_between_hunks"
+        "cargo nextest run -p harness-tui --test deterministic_render_test tool_lifecycle_rows_stay_ordered_without_pty",
+        "cargo nextest run -p harness-tui transcript_apply_patch_surfaces_rename_and_wrapped_inline_diffs",
+        "cargo nextest run -p harness-tui diff_hunk_navigation_advances_and_retreats_between_hunks"
       ],
       "pty_stages": [
         "scripts/test-lanes.sh signoff-pty :: harness_tui_happy_path_pty"
