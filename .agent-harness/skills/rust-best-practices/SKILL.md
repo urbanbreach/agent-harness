@@ -19,5 +19,5 @@ Use this starter skill when you need a lightweight reminder of how this reposito
 - `cargo check --workspace`
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 - Add targeted crate tests for the touched behavior.
-- For TUI work, include `cargo test -p harness-tui`.
+- For TUI work, include `cargo nextest run -p harness-tui`.
 - For PTY/live helper changes, keep deterministic env guards intact and use the documented live-proxy order.

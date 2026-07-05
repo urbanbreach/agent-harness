@@ -41,9 +41,9 @@ Read root `AGENTS.md` first. This file is about runtime assets, not project codi
 
 ## TESTS
 ```bash
-cargo test -p harness --test bootstrap_profiles_test
-cargo test -p harness family_prompt
-cargo test -p harness-tools --test skill_load_discovery_test
+cargo nextest run -p harness --test bootstrap_profiles_test
+cargo nextest run -p harness family_prompt
+cargo nextest run -p harness-tools --test skill_load_discovery_test
 cargo run -p harness -- --config configs/harness.example.jsonc doctor --json
 ```
 
