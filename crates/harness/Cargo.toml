@@ -16,7 +16,7 @@ harness-tui = { path = "../harness-tui" }
 serde.workspace = true
 serde_json.workspace = true
 json5.workspace = true
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "webpki-roots"] }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 blake3 = "1"
 uuid = { version = "1", features = ["v5"] }
@@ -26,11 +26,11 @@ tracing-appender = "0.2"
 
 [dev-dependencies]
 harness-testkit = { path = "../harness-testkit" }
-portable-pty = "0.8"
+portable-pty = "0.9"
 sha2 = "0.10"
 tempfile.workspace = true
 tokio-stream.workspace = true
-vt100 = "0.15"
+vt100 = "0.16"
 
 [lints]
 workspace = true

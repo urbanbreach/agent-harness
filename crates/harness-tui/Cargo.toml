@@ -22,8 +22,8 @@ harness-providers = { path = "../harness-providers" }
 image = { version = "0.25", default-features = false, features = ["png"] }
 insta = { version = "1.39", features = ["json"] }
 tempfile.workspace = true
-portable-pty = "0.8"
-vt100 = "0.15"
+portable-pty = "0.9"
+vt100 = "0.16"
 
 [lints]
 workspace = true

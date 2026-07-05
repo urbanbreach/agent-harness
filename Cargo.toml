@@ -20,8 +20,8 @@ ratatui = { version = "0.30.1", features = ["crossterm_0_29"] }
 crossterm = "0.29"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-json5 = "0.4"
-schemars = { version = "0.8", features = ["derive"] }
+json5 = "1"
+schemars = { version = "1", features = ["derive"] }
 thiserror = "2"
 tempfile = "3"
 tokio = { version = "1", features = ["io-util", "macros", "process", "rt", "sync", "time"] }

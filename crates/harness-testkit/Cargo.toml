@@ -18,11 +18,11 @@ font8x8 = "0.3"
 fontdue = "0.9"
 insta = { version = "1.42", features = ["json"] }
 json5.workspace = true
-portable-pty = "0.8"
-reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
+portable-pty = "0.9"
+reqwest = { version = "0.13", default-features = false, features = ["json", "stream", "rustls", "webpki-roots"] }
 time = { version = "0.3", features = ["formatting", "macros"] }
 tokio.workspace = true
-vt100 = "0.15"
+vt100 = "0.16"
 wiremock = "0.6"
 
 [[test]]
