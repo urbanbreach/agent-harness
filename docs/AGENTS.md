@@ -40,11 +40,11 @@ Read root `AGENTS.md` first. Config-specific schema guidance lives in `../config
 
 ## TESTS
 ```bash
-cargo test -p harness --test config_docs_reference_test
-cargo test -p harness --test event_docs_reference_test
-cargo test -p harness-tools --test native_tool_parity_matrix_test
-cargo test -p harness-testkit --test simulation_validator_test
-cargo test -p harness-tui --test tui_signoff_manifest_test
+cargo nextest run -p harness --test config_docs_reference_test
+cargo nextest run -p harness --test event_docs_reference_test
+cargo nextest run -p harness-tools --test native_tool_parity_matrix_test
+cargo nextest run -p harness-testkit --test simulation_validator_test
+cargo nextest run -p harness-tui --test tui_signoff_manifest_test
 scripts/test-lanes.sh quality-gates
 ```
 

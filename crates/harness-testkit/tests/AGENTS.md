@@ -30,7 +30,7 @@ tests/
 | Repo helpers | `support/repo_root.rs` | Keep local to test-only path resolution. |
 
 ## LANE ORDER
-- PTY fallback: `RUST_TEST_THREADS=1 cargo test -p harness-testkit --test pty_e2e`.
+- PTY fallback: `RUST_TEST_THREADS=1 cargo nextest run -p harness-testkit --test pty_e2e --test-threads 1`.
 - Live CLI: `live_proxy_preflight_requires_live_env` -> `live_proxy_prompt_parity_signoff`.
 - Live TUI: `live_proxy_preflight_requires_live_env` -> `live_proxy_e2e_tui_parity_signoff`.
 - Native screenshots: ignored native tests, single-threaded, local signoff only.
@@ -53,10 +53,10 @@ tests/
 
 ## COMMANDS
 ```bash
-RUST_TEST_THREADS=1 cargo test -p harness-testkit --test pty_e2e
-HARNESS_LIVE_PROXY=1 HARNESS_LIVE_PROXY_CONFIG=harness.jsonc HARNESS_LIVE_PROXY_PROVIDER=umans-ai-coding-plan HARNESS_LIVE_PROXY_MODEL=umans-kimi-k2.7 cargo test -p harness-testkit live_proxy_preflight_requires_live_env -- --ignored --exact
-HARNESS_NATIVE_VISUAL=1 cargo test -p harness-testkit --test native_visual_e2e -- --ignored --test-threads=1
-cargo test -p harness-testkit --test simulation_validator_test
+RUST_TEST_THREADS=1 cargo nextest run -p harness-testkit --test pty_e2e --test-threads 1
+HARNESS_LIVE_PROXY=1 HARNESS_LIVE_PROXY_CONFIG=harness.jsonc HARNESS_LIVE_PROXY_PROVIDER=umans-ai-coding-plan HARNESS_LIVE_PROXY_MODEL=umans-kimi-k2.7 cargo nextest run -p harness-testkit live_proxy_preflight_requires_live_env -- --ignored --exact
+HARNESS_NATIVE_VISUAL=1 cargo nextest run -p harness-testkit --test native_visual_e2e --test-threads 1 -- --ignored
+cargo nextest run -p harness-testkit --test simulation_validator_test
 ```
 
 ## ANTI-PATTERNS

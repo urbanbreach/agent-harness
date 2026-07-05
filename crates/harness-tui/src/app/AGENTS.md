@@ -28,10 +28,10 @@ Read `../../AGENTS.md` first. Rendering stays in `ui*.rs`; layout/theme math sta
 
 ## TESTS
 ```bash
-cargo test -p harness-tui --test deterministic_render_test
-cargo test -p harness-tui --test session_navigation_keybindings_test
-cargo test -p harness-tui --test model_switcher_metadata_test
-cargo test -p harness-tui --test lineage_view_model_test
+cargo nextest run -p harness-tui --test deterministic_render_test
+cargo nextest run -p harness-tui --test session_navigation_keybindings_test
+cargo nextest run -p harness-tui --test model_switcher_metadata_test
+cargo nextest run -p harness-tui --test lineage_view_model_test
 ```
 
 ## ANTI-PATTERNS

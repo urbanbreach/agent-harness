@@ -35,13 +35,13 @@ Read root `AGENTS.md` first. E2E lane details live in `crates/harness-testkit/te
 
 ## TESTS
 ```bash
-cargo test -p harness-tui
-cargo test -p harness-tui --test deterministic_render_test
-cargo test -p harness-tui --test model_switcher_metadata_test
-cargo test -p harness-tui --test session_navigation_keybindings_test
-cargo test -p harness-tui --test tui_signoff_manifest_test
-cargo test -p harness-tui --test pty_e2e
-RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 cargo test -p harness-tui --test pty_e2e
+cargo nextest run -p harness-tui
+cargo nextest run -p harness-tui --test deterministic_render_test
+cargo nextest run -p harness-tui --test model_switcher_metadata_test
+cargo nextest run -p harness-tui --test session_navigation_keybindings_test
+cargo nextest run -p harness-tui --test tui_signoff_manifest_test
+cargo nextest run -p harness-tui --test pty_e2e
+RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 cargo nextest run -p harness-tui --test pty_e2e --test-threads 1
 ```
 Use `cargo insta review -p harness-tui --accept` only after intentionally updating snapshots.
 
