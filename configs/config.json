@@ -32,7 +32,7 @@
         "fallback_input_tokens": {
           "default": 32768,
           "format": "uint32",
-          "minimum": 0.0,
+          "minimum": 0,
           "type": "integer"
         },
         "model_backed": {
@@ -102,19 +102,17 @@
             "timeout_secs": {
               "default": 30,
               "format": "uint64",
-              "minimum": 0.0,
+              "minimum": 0,
               "type": "integer"
             },
             "transport": {
-              "enum": [
-                "stdio"
-              ],
+              "const": "stdio",
               "type": "string"
             }
           },
           "required": [
-            "command",
-            "transport"
+            "transport",
+            "command"
           ],
           "type": "object"
         },
@@ -138,19 +136,17 @@
             "timeout_secs": {
               "default": 30,
               "format": "uint64",
-              "minimum": 0.0,
+              "minimum": 0,
               "type": "integer"
             },
             "transport": {
-              "enum": [
-                "http"
-              ],
+              "const": "http",
               "type": "string"
             }
           },
           "required": [
-            "endpoint",
-            "transport"
+            "transport",
+            "endpoint"
           ],
           "type": "object"
         }
@@ -174,7 +170,7 @@
         "max_input_tokens": {
           "default": null,
           "format": "uint32",
-          "minimum": 0.0,
+          "minimum": 0,
           "type": [
             "integer",
             "null"
@@ -183,7 +179,7 @@
         "max_output_tokens": {
           "default": null,
           "format": "uint32",
-          "minimum": 0.0,
+          "minimum": 0,
           "type": [
             "integer",
             "null"
@@ -241,7 +237,7 @@
         "context": {
           "default": null,
           "format": "uint32",
-          "minimum": 0.0,
+          "minimum": 0,
           "type": [
             "integer",
             "null"
@@ -250,7 +246,7 @@
         "input": {
           "default": null,
           "format": "uint32",
-          "minimum": 0.0,
+          "minimum": 0,
           "type": [
             "integer",
             "null"
@@ -259,7 +255,7 @@
         "output": {
           "default": null,
           "format": "uint32",
-          "minimum": 0.0,
+          "minimum": 0,
           "type": [
             "integer",
             "null"
@@ -274,7 +270,7 @@
         "context_window_tokens": {
           "default": null,
           "format": "uint32",
-          "minimum": 0.0,
+          "minimum": 0,
           "type": [
             "integer",
             "null"
@@ -394,7 +390,7 @@
         "context_window_tokens": {
           "default": null,
           "format": "uint32",
-          "minimum": 0.0,
+          "minimum": 0,
           "type": [
             "integer",
             "null"
@@ -419,7 +415,7 @@
         "max_input_tokens": {
           "default": null,
           "format": "uint32",
-          "minimum": 0.0,
+          "minimum": 0,
           "type": [
             "integer",
             "null"
@@ -428,7 +424,7 @@
         "max_output_tokens": {
           "default": null,
           "format": "uint32",
-          "minimum": 0.0,
+          "minimum": 0,
           "type": [
             "integer",
             "null"
@@ -617,7 +613,7 @@
         "timeoutMs": {
           "default": null,
           "format": "uint64",
-          "minimum": 0.0,
+          "minimum": 0,
           "type": [
             "integer",
             "null"
@@ -637,6 +633,7 @@
     "ProviderConfig": {
       "oneOf": [
         {
+          "additionalProperties": false,
           "properties": {
             "apiKey": {
               "default": "",
@@ -722,13 +719,11 @@
             "timeoutMs": {
               "default": 60000,
               "format": "uint64",
-              "minimum": 0.0,
+              "minimum": 0,
               "type": "integer"
             },
             "type": {
-              "enum": [
-                "openai_compatible"
-              ],
+              "const": "openai_compatible",
               "type": "string"
             }
           },
@@ -748,19 +743,19 @@
         "base_delay_ms": {
           "default": 2000,
           "format": "uint64",
-          "minimum": 0.0,
+          "minimum": 0,
           "type": "integer"
         },
         "max_delay_ms": {
           "default": 30000,
           "format": "uint64",
-          "minimum": 0.0,
+          "minimum": 0,
           "type": "integer"
         },
         "max_retries": {
           "default": 2,
           "format": "uint32",
-          "minimum": 0.0,
+          "minimum": 0,
           "type": "integer"
         }
       },
@@ -791,7 +786,7 @@
         },
         "enable": {
           "default": null,
-          "description": "Set false to disable this agent. Set true to document that a shipped default remains active. `enabled` is accepted as an alias.",
+          "description": "Set false to disable this agent. Set true to document that a shipped\ndefault remains active. `enabled` is accepted as an alias.",
           "type": [
             "boolean",
             "null"
@@ -807,7 +802,7 @@
         "max_iters": {
           "default": null,
           "format": "uint",
-          "minimum": 0.0,
+          "minimum": 0,
           "type": [
             "integer",
             "null"

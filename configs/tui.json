@@ -4,18 +4,18 @@
   "type": "object",
   "properties": {
     "$schema": {
-      "default": null,
       "type": [
         "string",
         "null"
-      ]
+      ],
+      "default": null
     },
     "keybinds": {
-      "default": {},
       "type": "object",
       "additionalProperties": {
         "type": "string"
-      }
+      },
+      "default": {}
     }
   },
   "additionalProperties": false
