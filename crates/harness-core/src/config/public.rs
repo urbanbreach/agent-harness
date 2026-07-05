@@ -1,4 +1,4 @@
-use schemars::schema_for;
+use schemars::generate::SchemaSettings;
 
 use super::*;
 
@@ -972,8 +972,12 @@ pub(super) fn translate_public_runtime_root(
 }
 
 pub fn harness_schema_pretty_json() -> Result<String, ConfigError> {
-    let mut schema = serde_json::to_value(schema_for!(PublicRuntimeConfig))
-        .map_err(|err| ConfigError::SerializeSchema(err.to_string()))?;
+    let mut schema = serde_json::to_value(
+        SchemaSettings::draft07()
+            .into_generator()
+            .into_root_schema_for::<PublicRuntimeConfig>(),
+    )
+    .map_err(|err| ConfigError::SerializeSchema(err.to_string()))?;
     let definitions = schema
         .get_mut("definitions")
         .and_then(serde_json::Value::as_object_mut);
@@ -1014,7 +1018,9 @@ pub fn harness_schema_pretty_json() -> Result<String, ConfigError> {
 }
 
 pub fn harness_tui_schema_pretty_json() -> Result<String, ConfigError> {
-    let schema = schema_for!(PublicTuiConfig);
+    let schema = SchemaSettings::draft07()
+        .into_generator()
+        .into_root_schema_for::<PublicTuiConfig>();
     serde_json::to_string_pretty(&schema)
         .map_err(|err| ConfigError::SerializeSchema(err.to_string()))
 }

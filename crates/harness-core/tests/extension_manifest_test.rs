@@ -2,7 +2,7 @@ use harness_core::extension_manifest::{
     ExtensionManifestError, ExtensionManifestRuntimeEffects, ExtensionManifestV1,
     EXTENSION_MANIFEST_V1_SCHEMA_VERSION,
 };
-use schemars::schema_for;
+use schemars::generate::SchemaSettings;
 use serde_json::{json, Value};
 
 fn valid_manifest_json() -> String {
@@ -171,7 +171,12 @@ fn extension_manifest_schema_file_matches_generated_descriptor_schema() {
         &std::fs::read_to_string(schema_path).expect("read extension manifest schema"),
     )
     .expect("schema json");
-    let generated = serde_json::to_value(schema_for!(ExtensionManifestV1)).expect("schema value");
+    let generated = serde_json::to_value(
+        SchemaSettings::draft07()
+            .into_generator()
+            .into_root_schema_for::<ExtensionManifestV1>(),
+    )
+    .expect("schema value");
 
     // assert
     assert_eq!(checked_in, generated);

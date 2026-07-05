@@ -87,16 +87,18 @@ impl<'de> Deserialize<'de> for ProviderId {
 }
 
 impl schemars::JsonSchema for ProviderId {
-    fn schema_name() -> String {
-        "ProviderId".to_string()
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "ProviderId".into()
     }
 
-    fn json_schema(_: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
-        schemars::schema::SchemaObject {
-            instance_type: Some(schemars::schema::InstanceType::String.into()),
-            ..Default::default()
-        }
-        .into()
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        concat!(module_path!(), "::ProviderId").into()
+    }
+
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "type": "string"
+        })
     }
 }
 

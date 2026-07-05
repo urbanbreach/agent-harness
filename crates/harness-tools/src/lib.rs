@@ -519,8 +519,12 @@ pub fn worker_registry_with_mcp_and_editing(
 }
 
 fn json_schema_for<T: JsonSchema>() -> serde_json::Value {
-    let mut schema = serde_json::to_value(schemars::schema_for!(T).schema)
-        .unwrap_or_else(|_| empty_object_json_schema());
+    let mut schema = serde_json::to_value(
+        schemars::generate::SchemaSettings::draft07()
+            .into_generator()
+            .into_root_schema_for::<T>(),
+    )
+    .unwrap_or_else(|_| empty_object_json_schema());
     normalize_top_level_object_schema(&mut schema);
     schema
 }
