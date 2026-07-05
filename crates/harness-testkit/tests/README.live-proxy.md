@@ -14,7 +14,7 @@ HARNESS_LIVE_PROXY=1 \
 HARNESS_LIVE_PROXY_CONFIG=harness.jsonc \
 HARNESS_LIVE_PROXY_PROVIDER=umans-ai-coding-plan \
 HARNESS_LIVE_PROXY_MODEL=umans-kimi-k2.7 \
-cargo test -p harness-testkit live_proxy_preflight_requires_live_env -- --ignored --exact
+cargo nextest run -p harness-testkit live_proxy_preflight_requires_live_env -- --ignored --exact
 ```
 
 The preflight verifies:
@@ -47,14 +47,14 @@ HARNESS_LIVE_PROXY=1 \
 HARNESS_LIVE_PROXY_CONFIG=harness.jsonc \
 HARNESS_LIVE_PROXY_PROVIDER=umans-ai-coding-plan \
 HARNESS_LIVE_PROXY_MODEL=umans-kimi-k2.7 \
-cargo test -p harness-testkit live_proxy_prompt_parity_signoff -- --ignored --exact
+cargo nextest run -p harness-testkit live_proxy_prompt_parity_signoff -- --ignored --exact
 
 HARNESS_LIVE_PROXY=1 \
 HARNESS_LIVE_PROXY_CONFIG=harness.jsonc \
 HARNESS_LIVE_PROXY_PROVIDER=umans-ai-coding-plan \
 HARNESS_LIVE_PROXY_MODEL=umans-kimi-k2.7 \
 HARNESS_VISUAL_ARTIFACT_DIR=target/pty-visual-artifacts \
-cargo test -p harness-testkit live_proxy_e2e_tui_parity_signoff -- --ignored --exact
+cargo nextest run -p harness-testkit live_proxy_e2e_tui_parity_signoff -- --ignored --exact
 ```
 
 These wrappers are the shipped slim live signoff entrypoints:
