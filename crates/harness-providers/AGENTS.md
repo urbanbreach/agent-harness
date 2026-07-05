@@ -28,12 +28,12 @@ Read root `AGENTS.md` first. This crate separates `harness-core` from network/pr
 
 ## TESTS
 ```bash
-cargo test -p harness-providers
-cargo test -p harness-providers --test recorded_test
-cargo test -p harness-providers --test openai_compatible_serializes_native_tool_schema_without_alias_dupes_test
-cargo test -p harness-providers request_serialization
-cargo test -p harness-providers responses_cache
-cargo test -p harness-providers auth_profiles
+cargo nextest run -p harness-providers
+cargo nextest run -p harness-providers --test recorded_test
+cargo nextest run -p harness-providers --test openai_compatible_serializes_native_tool_schema_without_alias_dupes_test
+cargo nextest run -p harness-providers request_serialization
+cargo nextest run -p harness-providers responses_cache
+cargo nextest run -p harness-providers auth_profiles
 ```
 
 Run secret gates after cassette or provider metadata changes:

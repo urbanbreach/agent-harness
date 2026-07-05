@@ -36,24 +36,24 @@ Read root `AGENTS.md` first. Runtime policy lives in `harness-core`; this crate 
 
 ## TESTS
 ```bash
-cargo test -p harness-tools
-cargo test -p harness-tools --test native_tool_parity_matrix_test
-cargo test -p harness-tools --test native_execution_surface_test
-cargo test -p harness-tools --test native_workspace_edit_routing_test
-cargo test -p harness-tools --test native_agent_spawn_and_batch_preserve_lineage_permissions_and_order_test
-cargo test -p harness-tools --test native_ast_grep_search_test
-cargo test -p harness-tools --test native_ast_grep_replace_test
-cargo test -p harness-tools --test native_code_lsp_test
-cargo test -p harness-tools --test native_control_plane_tools_test
-cargo test -p harness-tools --test native_question_tool_test
-cargo test -p harness-tools --test native_web_fetch_test
-cargo test -p harness-tools --test native_web_search_test
-cargo test -p harness-tools --test native_github_test
-cargo test -p harness-tools --test native_code_search_test
-cargo test -p harness-tools --test hashline_apply_test
-cargo test -p harness-tools --test mcp_generic_test
-cargo test -p harness-tools --test skill_load_discovery_test
-cargo test -p harness-tools --test session_info_tool_test
+cargo nextest run -p harness-tools
+cargo nextest run -p harness-tools --test native_tool_parity_matrix_test
+cargo nextest run -p harness-tools --test native_execution_surface_test
+cargo nextest run -p harness-tools --test native_workspace_edit_routing_test
+cargo nextest run -p harness-tools --test native_agent_spawn_and_batch_preserve_lineage_permissions_and_order_test
+cargo nextest run -p harness-tools --test native_ast_grep_search_test
+cargo nextest run -p harness-tools --test native_ast_grep_replace_test
+cargo nextest run -p harness-tools --test native_code_lsp_test
+cargo nextest run -p harness-tools --test native_control_plane_tools_test
+cargo nextest run -p harness-tools --test native_question_tool_test
+cargo nextest run -p harness-tools --test native_web_fetch_test
+cargo nextest run -p harness-tools --test native_web_search_test
+cargo nextest run -p harness-tools --test native_github_test
+cargo nextest run -p harness-tools --test native_code_search_test
+cargo nextest run -p harness-tools --test hashline_apply_test
+cargo nextest run -p harness-tools --test mcp_generic_test
+cargo nextest run -p harness-tools --test skill_load_discovery_test
+cargo nextest run -p harness-tools --test session_info_tool_test
 ```
 
 ## ANTI-PATTERNS

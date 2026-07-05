@@ -41,9 +41,9 @@ target/                      # generated local artifacts; not source
 
 ## TESTS
 ```bash
-cargo test -p harness-testkit
-cargo test -p harness-testkit --test simulation_validator_test
-cargo test -p harness-testkit --test secretscan_test
+cargo nextest run -p harness-testkit
+cargo nextest run -p harness-testkit --test simulation_validator_test
+cargo nextest run -p harness-testkit --test secretscan_test
 scripts/test-lanes.sh simulation
 ```
 For signoff-specific PTY/live/native commands, follow `tests/AGENTS.md`.

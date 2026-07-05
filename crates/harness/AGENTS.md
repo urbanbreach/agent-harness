@@ -48,18 +48,18 @@ src/
 
 ## TESTS
 ```bash
-cargo test -p harness
-cargo test -p harness --test bootstrap_profiles_test
-cargo test -p harness --test config_schema_cli_test
-cargo test -p harness --test config_docs_reference_test
-cargo test -p harness --test prompt_cli_test
-cargo test -p harness --test replay_sessions_cli_test
-cargo test -p harness --test run_cli_test
-cargo test -p harness --test tui_cli_test
-cargo test -p harness --test binary_smoke -- --ignored
+cargo nextest run -p harness
+cargo nextest run -p harness --test bootstrap_profiles_test
+cargo nextest run -p harness --test config_schema_cli_test
+cargo nextest run -p harness --test config_docs_reference_test
+cargo nextest run -p harness --test prompt_cli_test
+cargo nextest run -p harness --test replay_sessions_cli_test
+cargo nextest run -p harness --test run_cli_test
+cargo nextest run -p harness --test tui_cli_test
+cargo nextest run -p harness --test binary_smoke -- --ignored
 ```
 
-Use `HARNESS_UPDATE_PROMPT_SNAPSHOTS=1 cargo test -p harness --test bootstrap_profiles_test` only when prompt/AGENTS/runtime-asset drift is intentional, then inspect the updated snapshots before keeping them.
+Use `HARNESS_UPDATE_PROMPT_SNAPSHOTS=1 cargo nextest run -p harness --test bootstrap_profiles_test` only when prompt/AGENTS/runtime-asset drift is intentional, then inspect the updated snapshots before keeping them.
 
 ## ANTI-PATTERNS
 - Do not move coordinator, permission, event append, compaction, or replay semantics into the CLI.
