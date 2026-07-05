@@ -605,7 +605,7 @@ Required test-first examples:
 
 Required commands:
 
-- `cargo test -p harness-tui --test deterministic_render_test`
+- `cargo nextest run -p harness-tui --test deterministic_render_test`
 - Palette owner tests covering `crates/harness-tui/src/app/tests/palette_parity_tests.rs`
 - Targeted tests for inventory, filtering, availability, dispatch, slash aliases, logging, and exclusion decisions.
 
@@ -634,13 +634,13 @@ Run the following as appropriate:
 
 - `scripts/test-lanes.sh fast`
 - `scripts/test-lanes.sh quality-gates`
-- `cargo test -p harness-tui --test deterministic_render_test`
+- `cargo nextest run -p harness-tui --test deterministic_render_test`
 - Palette owner test target(s)
 - Signoff/PTY/live lanes only when claiming those evidence types:
   - `scripts/test-lanes.sh signoff-pty`
   - `scripts/test-lanes.sh signoff-binary`
   - live provider lane if available in the project’s lane runner
-  - `RUST_TEST_THREADS=1 cargo test -p harness-testkit --test pty_e2e` when PTY evidence is claimed
+  - `RUST_TEST_THREADS=1 cargo nextest run -p harness-testkit --test pty_e2e --test-threads 1` when PTY evidence is claimed
 
 If a lane is unavailable or intentionally skipped, the final implementation report must state which claim remains unverified.
 

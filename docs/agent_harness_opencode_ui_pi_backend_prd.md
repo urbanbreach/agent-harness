@@ -398,7 +398,7 @@ transferable ideas.
 | `harness run --scenario golden_path --deterministic` + `harness replay` | PASS; 26 events; replay summary with next_steps and resume-block reason | Confirms replay surfaces; informed §7 |
 | PTY capture of `harness tui --replay <golden_path run>` (script(1), 120×40) | Historical capture rendered header `Replay · read-only · run … · 26 ev`, tool rows with durations, sidebar (MCP/LSP/Modified Files `demo.txt +1 -1`), and footer `Replay is read-only. ? shortcuts · ctrl+tab focus · r reload · q quit`; superseded by the 2026-06-27 TUI event-log removal, where replay footer omits `r reload`. | Confirms replay shell quality at the time; current TUI removes event-log reload affordances. |
 | PTY capture of `harness tui` startup + `Ctrl+p` | Renders HARNESS logo, composer-first home with placeholder, agent/model/variant row inside composer, hints `ctrl+t variants · tab agents · ctrl+p commands`, footer with cwd; palette shows Suggested/Sessions/Agents/System categories with per-row keybinding hints | Start-screen skeleton parity already achieved; §6.1 scopes the remaining vocabulary/finish gaps; flagged stale parity screenshot |
-| `cargo test -p harness-tui --test deterministic_render_test` | **FAIL on clean tree**: 7 passed, 2 failed (`command_palette_renders_without_pty` — committed snapshot lacks the live composer placeholder line `Type a prompt for the next turn…`; `tool_lifecycle_rows_stay_ordered_without_pty`) | Created P0 task T-TEST-01 (Phase 1); `.snap.new` artifacts deleted to leave tree clean |
+| `cargo nextest run -p harness-tui --test deterministic_render_test` | **FAIL on clean tree**: 7 passed, 2 failed (`command_palette_renders_without_pty` — committed snapshot lacks the live composer placeholder line `Type a prompt for the next turn…`; `tool_lifecycle_rows_stay_ordered_without_pty`) | Created P0 task T-TEST-01 (Phase 1); `.snap.new` artifacts deleted to leave tree clean |
 | Negative greps in harness-tui (`shell_mode`, `stash`, `leader`, `pin`, `favorite`, queue-in-composer, diff in `ui_permission_dock.rs`) | No hits | Established the §6.1 gap matrix |
 | `grep QueuedAgentTurn crates/harness-core/src/coord/state.rs` | Present (`queued_agent_turns`, `queue_agent_turn`) | Prompt-queue parity classified as TUI-side work (T-UI-12) |
 
@@ -1250,7 +1250,7 @@ tests as the harness. The `Deref/DerefMut → SessionProjection` design stays.
   land *in this struct* afterwards.)
 - Invariants: history persistence path semantics unchanged; draft preserved
   across history navigation and permission modal (existing tests).
-- Tests: `cargo test -p harness-tui` (lib), `deterministic_render_test`,
+- Tests: `cargo nextest run -p harness-tui` (lib), `deterministic_render_test`,
   `session_navigation_keybindings_test`.
 - Risks: low; pure move.
 
@@ -1270,7 +1270,7 @@ tests as the harness. The `Deref/DerefMut → SessionProjection` design stays.
   exactly one menu-like overlay visible at a time; replay restrictions.
 - Migration: stack-backed accessors that old booleans delegate to → port call
   sites → delete booleans.
-- Tests: full `cargo test -p harness-tui`; new
+- Tests: full `cargo nextest run -p harness-tui`; new
   `overlay_stack_is_single_source_of_visibility`.
 - Risks: medium (many call sites); mechanical per-overlay commits.
 
@@ -1634,7 +1634,7 @@ contract; `docs/sessions-and-replay.md`; `docs/native-tool-catalog.md`;
 **Stale or overstated claims found (correct during Phase 1):**
 
 1. **Clean-tree test failures.** `deterministic_render_test` fails 2/9 on
-   `dev` HEAD (§2.3). Roadmap claims `cargo test --workspace --all-features`
+   `dev` HEAD (§2.3). Roadmap claims `cargo nextest run --workspace --all-features`
    passes; until reconciled, that claim is stale.
 2. **"Editable titles."** Roadmap claims "generated **or editable** titles" —
    no edit surface exists. Land T-UI-06/T-BE-02 or reword per the
@@ -1714,7 +1714,7 @@ regression/evidence.
 - Tasks: T-TEST-01 (snapshot drift verdicts + reconciliation), T-DOC-01
   (doc fragments + stale claims).
 - Acceptance: `scripts/test-lanes.sh fast` and
-  `cargo test -p harness-tui --test deterministic_render_test` pass;
+  `cargo nextest run -p harness-tui --test deterministic_render_test` pass;
   behavior-vs-fixture verdicts recorded.
 - Do not change: render code (unless the verdict is "behavior regressed").
 
@@ -1816,7 +1816,7 @@ regression/evidence.
   `2cbfe31d`/`2555315c`/`9e5e7fb7`; write the behavior-vs-fixture verdict in
   the commit message; only then `cargo insta review`.
 - Acceptance: tests green; verdict recorded; no assertion weakened.
-- Validation: `cargo test -p harness-tui --test deterministic_render_test`;
+- Validation: `cargo nextest run -p harness-tui --test deterministic_render_test`;
   `scripts/test-lanes.sh fast`.
 
 **T-DOC-01 · Repair doc fragments and stale claims · P0 · docs** — per §15
@@ -1834,7 +1834,7 @@ items 1–4.
 **T-REF-03 · Extract Permission/Question prompt state · P1 · refactor** — §9.3 (enables T-UI-17).
 **T-REF-04 · Extract leaf states · P2 · refactor** — §9.5 (opportunistic).
 **T-REF-05 · Extract TranscriptViewState · P1 · refactor** — §9.4 (gated on Phase 2 tests).
-- (Shared) Acceptance: zero snapshot diffs; full `cargo test -p harness-tui`
+- (Shared) Acceptance: zero snapshot diffs; full `cargo nextest run -p harness-tui`
   green per step.
 
 **T-RT-01 · Terminal restore on panic (drop guard) · P1 · UI workstream/runtime** — §11.

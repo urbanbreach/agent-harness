@@ -68,7 +68,7 @@ Primary local references:
 Every UI change that affects visible chrome must include *one* of:
 
 - A deterministic render test with `insta` snapshot compared to an OpenCode screenshot at the same terminal geometry.
-- A PTY capture (`script(1)` or `cargo test -p harness-tui --test pty_e2e`) of the new surface next to the matching OpenCode screenshot, with a written diff of differences and the engineering reason.
+- A PTY capture (`script(1)` or `cargo nextest run -p harness-tui --test pty_e2e`) of the new surface next to the matching OpenCode screenshot, with a written diff of differences and the engineering reason.
 - For pure-motion behaviors (cursor motion, undo stack, leader-key timeout), a focused deterministic unit test that exercises edge cases.
 
 ---
@@ -80,7 +80,7 @@ Every UI change that affects visible chrome must include *one* of:
 - **What is missing:** `docs/architecture.md` lines 246-248 still read like a stranded sentence continuation without a preceding topic sentence. The stale parity screenshot in the read-only `inspirations/` folder is still present.
 - **Target state:** Decide for each fragment whether (a) it needs a preceding header, (b) should be removed, or (c) should be expanded. Replace or remove the stale screenshot with a current deterministic render capture if the PRD UI workstream matches the skeleton.
 - **Implementation note:** Doc-only change; no code change unless removing the stale inspiration asset.
-- **Verification:** `cargo test -p harness --test config_docs_reference_test` passes; `scripts/test-lanes.sh quality-gates` passes; a maintainer reviews the edited paragraph for flow.
+- **Verification:** `cargo nextest run -p harness --test config_docs_reference_test` passes; `scripts/test-lanes.sh quality-gates` passes; a maintainer reviews the edited paragraph for flow.
 
 ### [x] T-TEST-01 follow-up evidence
 
@@ -132,7 +132,7 @@ All five T-PERF tasks are unstarted and interdependent. Implement them in this o
 
 - **What is missing:** No property test asserting that measured row count equals rendered row count across line lengths, CJK characters, styled spans, etc.
 - **Target state:** Add a test that generates synthetic activity text of varying widths and styles, runs the layout pipeline, and asserts `measured_rows == rendered_rows`.
-- **Verification:** Test passes with `quickcheck` or `proptest`; part of `cargo test -p harness-tui`.
+- **Verification:** Test passes with `quickcheck` or `proptest`; part of `cargo nextest run -p harness-tui`.
 
 ### [x] T-PERF-05 · Long-session perf harness
 
@@ -153,7 +153,7 @@ All five T-PERF tasks are unstarted and interdependent. Implement them in this o
   2. Move `prompt_buffer`, `prompt_cursor`, `prompt_history*`, `prompt_history_draft`, plus the new selection, undo, stash, shell-mode fields.
   3. `AppState` embeds `pub(crate) composer: ComposerState`.
 - **Acceptance:** No change in existing composer behavior; existing tests pass.
-- **Verification:** `cargo test -p harness-tui --test session_navigation_keybindings_test`, `cargo test -p harness-tui --test deterministic_render_test`.
+- **Verification:** `cargo nextest run -p harness-tui --test session_navigation_keybindings_test`, `cargo nextest run -p harness-tui --test deterministic_render_test`.
 
 ### [x] T-REF-02 \u00b7 Make `OverlayStack` the single source of truth
 
@@ -174,7 +174,7 @@ All five T-PERF tasks are unstarted and interdependent. Implement them in this o
   2. `app/question_prompt.rs`: `QuestionPromptState { permission_id, tab, selection, answers, custom, editing, answer_buffer, answer_cursor, answer_error }`.
   3. `AppState` embeds both structs; refactor key/mouse handlers to dispatch through them.
 - **Acceptance:** Existing permission modal tests pass.
-- **Verification:** `cargo test -p harness-tui --test deterministic_render_test`; existing `permission_modal_preempts_palette_and_slash` and `question_permission_prompt_renders_without_pty` pass.
+- **Verification:** `cargo nextest run -p harness-tui --test deterministic_render_test`; existing `permission_modal_preempts_palette_and_slash` and `question_permission_prompt_renders_without_pty` pass.
 
 ### [x] T-REF-04 \u00b7 Extract leaf states
 
@@ -235,7 +235,7 @@ All five T-PERF tasks are unstarted and interdependent. Implement them in this o
   - How to find existing fixtures.
   - Suggested commands: `harness run --scenario golden_path --deterministic` or `harness run --mock "your prompt" --record-fixture` (or the path defined by `MOCK_FIXTURE_RECORD`).
 - **Acceptance:** A new user who hits this error can copy-paste one of the suggested commands.
-- **Verification:** `cargo test -p harness-providers` passes. New test asserts the error string contains the suggested command.
+- **Verification:** `cargo nextest run -p harness-providers` passes. New test asserts the error string contains the suggested command.
 
 ---
 
@@ -317,7 +317,7 @@ Theme dialog T-UI-09 and sidebar polish T-UI-08a are independent and can run in 
 
 **Verification:**
 
-- `cargo test -p harness-tui` passes.
+- `cargo nextest run -p harness-tui` passes.
 - New `tests/keybindings_leader_test.rs` exercises sequence dispatch + rebind + cancel.
 - Deterministic palette/help snapshot updated to show leader form.
 
