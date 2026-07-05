@@ -513,9 +513,9 @@ Add tests around the new catalog seam:
 Likely commands:
 
 ```bash
-cargo test -p harness-core auth -- --nocapture
-cargo test -p harness-core model -- --nocapture
-cargo test -p harness auth -- --nocapture
+cargo nextest run -p harness-core auth -- --nocapture
+cargo nextest run -p harness-core model -- --nocapture
+cargo nextest run -p harness auth -- --nocapture
 ```
 
 ### 8.2 TUI model picker tests
@@ -532,8 +532,8 @@ fixtures:
 Likely command:
 
 ```bash
-cargo test -p harness-tui --test model_switcher_metadata_test -- --nocapture
-cargo test -p harness-tui model_switcher -- --nocapture
+cargo nextest run -p harness-tui --test model_switcher_metadata_test -- --nocapture
+cargo nextest run -p harness-tui model_switcher -- --nocapture
 ```
 
 Use the actual test names that exist after implementation; do not invent passing
@@ -554,9 +554,9 @@ Add tests proving the real top-level surfaces:
 Likely commands:
 
 ```bash
-cargo test -p harness --test config_schema_cli_test -- --nocapture
-cargo test -p harness --test tui_cli_test -- --nocapture
-cargo test -p harness auth -- --nocapture
+cargo nextest run -p harness --test config_schema_cli_test -- --nocapture
+cargo nextest run -p harness --test tui_cli_test -- --nocapture
+cargo nextest run -p harness auth -- --nocapture
 ```
 
 ### 8.4 Provider routing tests
@@ -573,9 +573,9 @@ Use mocked providers/credential stores, not live network:
 Likely commands:
 
 ```bash
-cargo test -p harness-providers -- --nocapture
-cargo test -p harness-core --test coord_test -- --nocapture
-cargo test -p harness --test run_cli_test -- --nocapture
+cargo nextest run -p harness-providers -- --nocapture
+cargo nextest run -p harness-core --test coord_test -- --nocapture
+cargo nextest run -p harness --test run_cli_test -- --nocapture
 ```
 
 ### 8.5 Manual QA gate
@@ -608,11 +608,11 @@ At minimum, before marking done:
 ```bash
 cargo fmt --all -- --check
 cargo check --workspace
-cargo test -p harness auth -- --nocapture
-cargo test -p harness-core auth -- --nocapture
-cargo test -p harness-providers -- --nocapture
-cargo test -p harness-tui model_switcher -- --nocapture
-cargo test -p harness --test config_docs_reference_test -- --nocapture
+cargo nextest run -p harness auth -- --nocapture
+cargo nextest run -p harness-core auth -- --nocapture
+cargo nextest run -p harness-providers -- --nocapture
+cargo nextest run -p harness-tui model_switcher -- --nocapture
+cargo nextest run -p harness --test config_docs_reference_test -- --nocapture
 ```
 
 Run broader lanes if the touched files require them under `AGENTS.md`:
