@@ -35,9 +35,9 @@ Read root `AGENTS.md` first. Human-facing explanation belongs in `../docs/config
 ```bash
 cargo run -p harness -- --config configs/harness.example.jsonc config validate
 cargo run -p harness -- --config configs/harness.example.jsonc doctor --json
-cargo test -p harness --test config_schema_cli_test
-cargo test -p harness --test config_docs_reference_test
-cargo test -p harness-core --test extension_manifest_test
+cargo nextest run -p harness --test config_schema_cli_test
+cargo nextest run -p harness --test config_docs_reference_test
+cargo nextest run -p harness-core --test extension_manifest_test
 ```
 
 ## ANTI-PATTERNS

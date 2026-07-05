@@ -38,12 +38,12 @@ coord/
 ## WHERE TO LOOK
 | Task | Location | Tests |
 |------|----------|-------|
-| Turn loop | `agent_turn_runtime.rs`, `agent_turn_phases.rs`, `agent_turn_completion.rs` | `cargo test -p harness-core --test coord_test` |
-| Permissions/questions | `permission.rs`, `question.rs` | `cargo test -p harness-core --test permission_policy_supports_native_tool_permission_kinds_test` |
-| Task/background lifecycle | `task_lifecycle.rs`, `background_notifications.rs` | `cargo test -p harness-tools --test native_agent_spawn_and_batch_preserve_lineage_permissions_and_order_test` |
-| Compaction/context | `provider_context/`, `agent_turn_completion.rs` | `cargo test -p harness-core --test coord_test compaction` |
-| Replay metadata | `tool_metadata.rs`, `event_helpers.rs` | `cargo test -p harness-core --test native_metadata_replay_test` |
-| Snapshots/reverts | `snapshot.rs`, `revert.rs` | `cargo test -p harness-core --test coord_test workspace` |
+| Turn loop | `agent_turn_runtime.rs`, `agent_turn_phases.rs`, `agent_turn_completion.rs` | `cargo nextest run -p harness-core --test coord_test` |
+| Permissions/questions | `permission.rs`, `question.rs` | `cargo nextest run -p harness-core --test permission_policy_supports_native_tool_permission_kinds_test` |
+| Task/background lifecycle | `task_lifecycle.rs`, `background_notifications.rs` | `cargo nextest run -p harness-tools --test native_agent_spawn_and_batch_preserve_lineage_permissions_and_order_test` |
+| Compaction/context | `provider_context/`, `agent_turn_completion.rs` | `cargo nextest run -p harness-core --test coord_test compaction` |
+| Replay metadata | `tool_metadata.rs`, `event_helpers.rs` | `cargo nextest run -p harness-core --test native_metadata_replay_test` |
+| Snapshots/reverts | `snapshot.rs`, `revert.rs` | `cargo nextest run -p harness-core --test coord_test workspace` |
 
 ## ANTI-PATTERNS
 - Do not bypass `RunState` to share mutable lifecycle state across modules.

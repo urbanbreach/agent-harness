@@ -35,10 +35,10 @@ Read `../../AGENTS.md` first. This directory owns parsing and validation, not co
 
 ## TESTS
 ```bash
-cargo test -p harness-core --test mcp_config_test
-cargo test -p harness-core --test model_variant_resolution_test
-cargo test -p harness --test config_schema_cli_test
-cargo test -p harness --test config_docs_reference_test
+cargo nextest run -p harness-core --test mcp_config_test
+cargo nextest run -p harness-core --test model_variant_resolution_test
+cargo nextest run -p harness --test config_schema_cli_test
+cargo nextest run -p harness --test config_docs_reference_test
 ```
 
 ## ANTI-PATTERNS

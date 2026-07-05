@@ -43,26 +43,26 @@ Read root `AGENTS.md` first for search scope, cross-crate invariants, and comman
 
 ## TESTS
 ```bash
-cargo test -p harness-core
-cargo test -p harness-core --test coord_test
-cargo test -p harness-core --test coord_auth_test
-cargo test -p harness-core --test coord_ast_grep_auth_test
-cargo test -p harness-core --test extension_manifest_test
-cargo test -p harness-core --test conversation_projection_test
-cargo test -p harness-core --test mcp_config_test
-cargo test -p harness-core --test model_variant_resolution_test
-cargo test -p harness-core --test native_metadata_replay_test
-cargo test -p harness-core --test permission_policy_supports_native_tool_permission_kinds_test
-cargo test -p harness-core --test resume_plan_test
-cargo test -p harness-core --test session_lineage_materialization_test
-cargo test -p harness-core --test transcript_projection_test
+cargo nextest run -p harness-core
+cargo nextest run -p harness-core --test coord_test
+cargo nextest run -p harness-core --test coord_auth_test
+cargo nextest run -p harness-core --test coord_ast_grep_auth_test
+cargo nextest run -p harness-core --test extension_manifest_test
+cargo nextest run -p harness-core --test conversation_projection_test
+cargo nextest run -p harness-core --test mcp_config_test
+cargo nextest run -p harness-core --test model_variant_resolution_test
+cargo nextest run -p harness-core --test native_metadata_replay_test
+cargo nextest run -p harness-core --test permission_policy_supports_native_tool_permission_kinds_test
+cargo nextest run -p harness-core --test resume_plan_test
+cargo nextest run -p harness-core --test session_lineage_materialization_test
+cargo nextest run -p harness-core --test transcript_projection_test
 ```
 
 Run root drift checks when event/config public contracts change:
 ```bash
-cargo test -p harness --test event_docs_reference_test
-cargo test -p harness --test config_docs_reference_test
-cargo test -p harness --test config_schema_cli_test
+cargo nextest run -p harness --test event_docs_reference_test
+cargo nextest run -p harness --test config_docs_reference_test
+cargo nextest run -p harness --test config_schema_cli_test
 ```
 
 ## ANTI-PATTERNS
