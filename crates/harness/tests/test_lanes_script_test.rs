@@ -112,7 +112,7 @@ fn signoff_pty_records_happy_path_artifact_dir() {
     let happy_path_stage = script.contains(
         "tui_happy_path_artifacts_dir=\"$(stage_dir_for signoff-pty harness_tui_happy_path_pty)/artifacts\"",
     ) && script.contains("HARNESS_TUI_HAPPY_PATH_ARTIFACT_DIR=\"$tui_happy_path_artifacts_dir\"")
-        && script.contains("cargo test -p harness --test pty_happy_path_recorded")
+        && script.contains("cargo nextest run -p harness --test pty_happy_path_recorded")
         && script.contains("harness_tui_happy_path_pty");
 
     // assert

@@ -513,7 +513,7 @@ run_simulation() {
 
   mkdir -p "$simulation_data_dir"
 
-  run_stage simulation matrix_and_validator_tests "$repo_root" cargo test -p harness-testkit --test simulation_validator_test || true
+  run_stage simulation matrix_and_validator_tests "$repo_root" cargo nextest run -p harness-testkit --test simulation_validator_test || true
 
   run_stage simulation baseline_golden_path "$repo_root" cargo run -p harness -- --session-dir "${simulation_data_dir}/sessions-baseline" run --scenario golden_path --deterministic --out "$baseline_out" --print-run-dir || true
   if [[ "$dry_run" -eq 0 && -s "$(stage_dir_for simulation baseline_golden_path)/stdout.txt" ]]; then
@@ -541,35 +541,35 @@ run_simulation() {
 
   run_stage simulation simulation_evidence "$repo_root" cargo run -p harness-testkit --bin simulation_evidence -- --artifact-root "$evidence_artifacts_dir" --matrix "${repo_root}/docs/simulation-matrix.json" --baseline-events "$baseline_out" --baseline-replay "$baseline_replay" --repeat-events "$repeat_out" --repeat-replay "$repeat_replay" --seed 0 || true
 
-  run_stage simulation simulation_secret_scan "$repo_root" env HARNESS_SECRETS_SCAN_ARTIFACTS=1 HARNESS_SIMULATION_ARTIFACT_DIR="$evidence_artifacts_dir" cargo test -p harness-testkit --test secretscan_test || true
+  run_stage simulation simulation_secret_scan "$repo_root" env HARNESS_SECRETS_SCAN_ARTIFACTS=1 HARNESS_SIMULATION_ARTIFACT_DIR="$evidence_artifacts_dir" cargo nextest run -p harness-testkit --test secretscan_test || true
 }
 
 run_signoff_binary() {
   local binary_smoke_artifacts_dir
   binary_smoke_artifacts_dir="$(stage_dir_for signoff-binary harness_binary_smoke)/artifacts"
   mkdir -p "$binary_smoke_artifacts_dir"
-  run_stage signoff-binary harness_binary_smoke "$repo_root" env HARNESS_BINARY_SMOKE=1 HARNESS_BINARY_SMOKE_ARTIFACT_DIR="$binary_smoke_artifacts_dir" cargo test -p harness --test binary_smoke -- --ignored --exact || true
+  run_stage signoff-binary harness_binary_smoke "$repo_root" env HARNESS_BINARY_SMOKE=1 HARNESS_BINARY_SMOKE_ARTIFACT_DIR="$binary_smoke_artifacts_dir" cargo nextest run -p harness --test binary_smoke -- --ignored --exact || true
 }
 
 run_signoff_pty() {
-  run_stage signoff-pty harness_testkit_pty_e2e "$repo_root" env RUST_TEST_THREADS=1 cargo test -p harness-testkit --test pty_e2e || true
-  run_stage signoff-pty harness_tui_pty_e2e "$repo_root" env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 cargo test -p harness-tui --test pty_e2e || true
+  run_stage signoff-pty harness_testkit_pty_e2e "$repo_root" env RUST_TEST_THREADS=1 cargo nextest run -p harness-testkit --test pty_e2e --test-threads 1 || true
+  run_stage signoff-pty harness_tui_pty_e2e "$repo_root" env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 cargo nextest run -p harness-tui --test pty_e2e --test-threads 1 || true
   local tui_happy_path_artifacts_dir
   tui_happy_path_artifacts_dir="$(stage_dir_for signoff-pty harness_tui_happy_path_pty)/artifacts"
   mkdir -p "$tui_happy_path_artifacts_dir"
-  run_stage signoff-pty harness_tui_happy_path_pty "$repo_root" env RUST_TEST_THREADS=1 HARNESS_TUI_HAPPY_PATH_ARTIFACT_DIR="$tui_happy_path_artifacts_dir" cargo test -p harness --test pty_happy_path_recorded -- --ignored --exact scripted_tui_happy_path_records_start_prompt_permission_tool_edit_resume_and_quit || true
+  run_stage signoff-pty harness_tui_happy_path_pty "$repo_root" env RUST_TEST_THREADS=1 HARNESS_TUI_HAPPY_PATH_ARTIFACT_DIR="$tui_happy_path_artifacts_dir" cargo nextest run -p harness --test pty_happy_path_recorded --test-threads 1 -- --ignored --exact scripted_tui_happy_path_records_start_prompt_permission_tool_edit_resume_and_quit || true
 }
 
 run_signoff_live() {
   require_live_env signoff-live || return 0
-  run_stage signoff-live live_proxy_preflight_requires_live_env "$repo_root" cargo test -p harness-testkit live_proxy_preflight_requires_live_env -- --ignored --exact || true
-  run_stage signoff-live live_proxy_prompt_parity_signoff "$repo_root" cargo test -p harness-testkit live_proxy_prompt_parity_signoff -- --ignored --exact || true
-  run_stage signoff-live live_proxy_e2e_tui_parity_signoff "$repo_root" cargo test -p harness-testkit live_proxy_e2e_tui_parity_signoff -- --ignored --exact || true
+  run_stage signoff-live live_proxy_preflight_requires_live_env "$repo_root" cargo nextest run -p harness-testkit live_proxy_preflight_requires_live_env -- --ignored --exact || true
+  run_stage signoff-live live_proxy_prompt_parity_signoff "$repo_root" cargo nextest run -p harness-testkit live_proxy_prompt_parity_signoff -- --ignored --exact || true
+  run_stage signoff-live live_proxy_e2e_tui_parity_signoff "$repo_root" cargo nextest run -p harness-testkit live_proxy_e2e_tui_parity_signoff -- --ignored --exact || true
 }
 
 run_signoff_native() {
   require_native_env signoff-native || return 0
-  run_stage signoff-native native_visual_e2e_ignored "$repo_root" cargo test -p harness-testkit --test native_visual_e2e -- --ignored --test-threads=1 || true
+  run_stage signoff-native native_visual_e2e_ignored "$repo_root" cargo nextest run -p harness-testkit --test native_visual_e2e --test-threads 1 -- --ignored || true
 }
 
 run_stress_offline() {
