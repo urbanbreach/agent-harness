@@ -150,7 +150,7 @@ pub fn validate_simulation_events(
                 match redaction.get("redacted_fields").and_then(Value::as_array) {
                     Some(fields) => {
                         for (field_index, field) in fields.iter().enumerate() {
-                            if field.as_str().filter(|value| !value.is_empty()).is_none() {
+                            if field.as_str().is_none_or(str::is_empty) {
                                 failures.push(failure(
                                     "redaction",
                                     format!("{row_path}#/redaction/redacted_fields/{field_index}"),

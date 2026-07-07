@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
@@ -29,7 +30,7 @@ impl MockAuthHttpClient {
     }
 
     fn requests(&self) -> Vec<AuthHttpRequest> {
-        self.requests.lock().expect("requests").clone()
+        self.requests.lock().unwrap_or_abort().clone()
     }
 }
 
@@ -37,10 +38,10 @@ impl MockAuthHttpClient {
 impl AuthHttpClient for MockAuthHttpClient {
     async fn send(&self, request: AuthHttpRequest) -> Result<AuthHttpResponse, CodexOAuthError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        self.requests.lock().expect("requests").push(request);
+        self.requests.lock().unwrap_or_abort().push(request);
         self.responses
             .lock()
-            .expect("responses")
+            .unwrap_or_abort()
             .pop_front()
             .ok_or_else(|| CodexOAuthError::Http {
                 message: "no mocked auth response".to_string(),
@@ -57,14 +58,14 @@ fn response(status: u16, body: impl Into<String>) -> AuthHttpResponse {
 
 fn client(http: Arc<MockAuthHttpClient>) -> CodexOAuthClient {
     CodexOAuthClient::new(http).with_clock(Arc::new(FixedClock(
-        humantime::parse_rfc3339("2026-05-30T00:00:00Z").expect("clock"),
+        humantime::parse_rfc3339("2026-05-30T00:00:00Z").unwrap_or_abort(),
     )))
 }
 
 fn fake_jwt(claims: Value) -> String {
     format!(
         "header.{}.sig",
-        base64_url_encode(serde_json::to_string(&claims).expect("claims").as_bytes())
+        base64_url_encode(serde_json::to_string(&claims).unwrap_or_abort().as_bytes())
     )
 }
 
@@ -100,7 +101,7 @@ async fn codex_loopback_callback_validates_state_and_stores_tokens() {
         token_body("access-new", "refresh-new", "acct-new"),
     )]);
     let client = client(Arc::clone(&http));
-    let temp = tempfile::tempdir().expect("tempdir");
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let store = CredentialStore::new(temp.path());
     let session = CodexLoopbackSession::new(
         PkceCodes {
@@ -117,7 +118,7 @@ async fn codex_loopback_callback_validates_state_and_stores_tokens() {
             &store,
         )
         .await
-        .expect("credential stored");
+        .unwrap_or_abort();
 
     assert_eq!(credential.access_token.as_deref(), Some("access-new"));
     assert_eq!(credential.refresh_token.as_deref(), Some("refresh-new"));
@@ -134,7 +135,7 @@ async fn codex_loopback_callback_validates_state_and_stores_tokens() {
 async fn codex_loopback_rejects_bad_state_missing_code_and_timeout_without_storing() {
     let http = MockAuthHttpClient::new([]);
     let client = client(Arc::clone(&http));
-    let temp = tempfile::tempdir().expect("tempdir");
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let store = CredentialStore::new(temp.path());
     let session = CodexLoopbackSession::new(
         PkceCodes {
@@ -167,10 +168,7 @@ async fn codex_loopback_rejects_bad_state_missing_code_and_timeout_without_stori
         CodexOAuthError::CallbackTimeout { .. }
     ));
     assert_eq!(http.calls.load(Ordering::SeqCst), 0);
-    assert!(store
-        .load(&ProviderId::codex())
-        .expect("store load")
-        .is_none());
+    assert!(store.load(&ProviderId::codex()).unwrap_or_abort().is_none());
 }
 
 #[tokio::test]
@@ -200,13 +198,13 @@ async fn codex_device_flow_polls_pending_then_exchanges_and_stores_credential() 
         ),
     ]);
     let client = client(Arc::clone(&http));
-    let temp = tempfile::tempdir().expect("tempdir");
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let store = CredentialStore::new(temp.path());
 
     let credential = client
         .complete_device_flow(&store, 3)
         .await
-        .expect("device credential");
+        .unwrap_or_abort();
 
     assert_eq!(credential.access_token.as_deref(), Some("device-access"));
     assert_eq!(credential.refresh_token.as_deref(), Some("device-refresh"));

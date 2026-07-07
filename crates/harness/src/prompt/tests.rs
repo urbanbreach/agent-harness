@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -39,14 +40,14 @@ fn default_prompt_command() -> PromptCommand {
 
 #[test]
 fn no_config_prompt_without_provider_returns_connect_guidance() {
-    let temp = tempfile::tempdir().expect("tempdir");
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let deps = crate::CliDeps::real()
         .with_current_dir(temp.path().to_path_buf())
         .with_env(
             "HARNESS_DATA_HOME",
             temp.path().join("data").to_string_lossy(),
         );
-    let context = deps.config_load_context().expect("config context");
+    let context = deps.config_load_context().unwrap_or_abort();
 
     let err = match resolve_settings(
         &default_prompt_command(),
@@ -65,7 +66,7 @@ fn no_config_prompt_without_provider_returns_connect_guidance() {
 
 #[test]
 fn no_config_prompt_with_stored_codex_uses_runtime_catalog() {
-    let temp = tempfile::tempdir().expect("tempdir");
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let data_home = temp.path().join("data");
     let store = CredentialStore::new(data_home.join("harness"));
     store
@@ -74,11 +75,11 @@ fn no_config_prompt_with_stored_codex_uses_runtime_catalog() {
             "test-token",
             SystemCredentialClock.now_rfc3339(),
         ))
-        .expect("save credential");
+        .unwrap_or_abort();
     let deps = crate::CliDeps::real()
         .with_current_dir(temp.path().to_path_buf())
         .with_env("HARNESS_DATA_HOME", data_home.to_string_lossy());
-    let context = deps.config_load_context().expect("config context");
+    let context = deps.config_load_context().unwrap_or_abort();
 
     let settings = resolve_settings(
         &default_prompt_command(),
@@ -88,8 +89,8 @@ fn no_config_prompt_with_stored_codex_uses_runtime_catalog() {
         &context,
         &deps,
     )
-    .expect("stored credential should activate runtime catalog");
-    let config = settings.logging_config.expect("runtime config");
+    .unwrap_or_abort();
+    let config = settings.logging_config.unwrap_or_abort();
 
     assert!(config.providers.contains_key("openai-codex"));
     assert!(settings.config_digest.contains("builtin-auth-runtime"));
@@ -181,7 +182,8 @@ fn evaluate_prompt_completion_waits_for_prompt_task_completion_after_provider_fi
 #[tokio::test]
 async fn prompt_tracker_waits_for_agent_turn_end_not_provider_finish() {
     let store = Arc::new(CountingEventStore::new());
-    let wait_store: Arc<dyn EventStore> = store.clone();
+    let store_clone = Arc::clone(&store);
+    let wait_store: Arc<dyn EventStore> = store_clone;
     let waiter = tokio::spawn(async move {
         wait_for_prompt_completion(wait_store, "req_000001", Duration::from_secs(1)).await
     });
@@ -198,7 +200,7 @@ async fn prompt_tracker_waits_for_agent_turn_end_not_provider_finish() {
             }),
             Some("req_000001"),
         ))
-        .expect("append provider finish");
+        .unwrap_or_abort();
 
     tokio::task::yield_now().await;
     assert!(
@@ -221,9 +223,9 @@ async fn prompt_tracker_waits_for_agent_turn_end_not_provider_finish() {
             }),
             Some("req_000001"),
         ))
-        .expect("append agent turn completion");
+        .unwrap_or_abort();
 
-    assert_eq!(waiter.await.expect("join waiter"), Ok(()));
+    assert_eq!(waiter.await.unwrap_or_abort(), Ok(()));
 }
 
 #[test]
@@ -432,10 +434,11 @@ async fn wait_for_prompt_completion_subscribes_once_and_streams_new_events() {
                 }),
                 Some("other_request"),
             ))
-            .expect("append unrelated task completion");
+            .unwrap_or_abort();
     }
 
-    let wait_store: Arc<dyn EventStore> = store.clone();
+    let store_clone = Arc::clone(&store);
+    let wait_store: Arc<dyn EventStore> = store_clone;
     let waiter = tokio::spawn(async move {
         wait_for_prompt_completion(wait_store, "req_000001", Duration::from_secs(1)).await
     });
@@ -451,7 +454,7 @@ async fn wait_for_prompt_completion_subscribes_once_and_streams_new_events() {
             }),
             Some("req_000001"),
         ))
-        .expect("append prompt task scheduled");
+        .unwrap_or_abort();
     store
         .append(draft_event(
             EventV1::TaskCompleted(TaskCompletedEvent {
@@ -462,9 +465,9 @@ async fn wait_for_prompt_completion_subscribes_once_and_streams_new_events() {
             }),
             Some("req_000001"),
         ))
-        .expect("append prompt task completed");
+        .unwrap_or_abort();
 
-    assert_eq!(waiter.await.expect("join waiter"), Ok(()));
+    assert_eq!(waiter.await.unwrap_or_abort(), Ok(()));
     assert_eq!(store.subscribe_calls(), 1);
     assert_eq!(store.replay_calls(), 0);
 }

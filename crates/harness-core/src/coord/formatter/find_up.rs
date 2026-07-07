@@ -1,5 +1,6 @@
 //! Filesystem helpers for formatter discovery.
 
+use crate::UnwrapOrAbort;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -114,17 +115,18 @@ pub async fn run_command_check(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::UnwrapOrAbort;
 
     #[tokio::test]
     async fn find_up_finds_file_in_parent() {
         // arrange
-        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let temp_dir = tempfile::tempdir().unwrap_or_abort();
         let root = temp_dir.path();
         let nested = root.join("a").join("b").join("c");
-        std::fs::create_dir_all(&nested).expect("create nested dirs");
+        std::fs::create_dir_all(&nested).unwrap_or_abort();
 
         let marker = root.join("marker.txt");
-        std::fs::write(&marker, "found").expect("write marker");
+        std::fs::write(&marker, "found").unwrap_or_abort();
 
         // act
         let found = find_up("marker.txt", &nested, root).await;

@@ -51,7 +51,7 @@ impl From<WebSearchRequest> for NormalizedWebSearchRequest {
             query: request.query,
             num_results: request
                 .num_results
-                .unwrap_or(DEFAULT_WEBSEARCH_LIMIT as u32)
+                .unwrap_or(u32::try_from(DEFAULT_WEBSEARCH_LIMIT).unwrap_or(u32::MAX))
                 .clamp(1, 20) as usize,
             livecrawl: request.livecrawl.unwrap_or_else(|| "fallback".to_string()),
             search_type: request.search_type.unwrap_or_else(|| "auto".to_string()),

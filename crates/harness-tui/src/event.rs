@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyEventKind, MouseEvent};
 use std::cell::RefCell;
@@ -119,6 +120,7 @@ fn stashable_event(ev: Event) -> Option<TuiEvent> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::UnwrapOrAbort;
 
     #[test]
     fn coalesced_mouse_kind_groups_only_matching_high_frequency_events() {
@@ -134,8 +136,8 @@ mod tests {
     #[test]
     fn paste_events_are_preserved_for_prompt_insertion() {
         let event = normalize_event(Event::Paste("alpha\nbeta".to_string()))
-            .expect("normalize paste")
-            .expect("paste event");
+            .unwrap_or_abort()
+            .unwrap_or_abort();
 
         match event {
             TuiEvent::Paste(text) => assert_eq!(text, "alpha\nbeta"),

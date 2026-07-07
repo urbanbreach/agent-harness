@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -947,6 +948,7 @@ impl AppState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::UnwrapOrAbort;
 
     #[test]
     fn active_retry_metadata_returns_some_for_streaming_retry() {
@@ -994,7 +996,7 @@ mod tests {
         let retry = app.active_retry_metadata();
 
         // assert
-        let retry = retry.expect("retry metadata");
+        let retry = retry.unwrap_or_abort();
         assert_eq!(retry.attempt, 3);
         assert_eq!(retry.max_attempts, 4);
     }

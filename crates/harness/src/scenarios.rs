@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -407,12 +408,10 @@ fn insert_worker_text_response(
 fn demo_edit_tool_def() -> ToolDef {
     let tool_id = "edit";
     let registry = coordinator_registry(ShellAllowlist::default());
-    let tool = registry
-        .get(tool_id)
-        .expect("golden path scenario requires edit");
+    let tool = registry.get(tool_id).unwrap_or_abort();
     let function_name = build_tool_function_name_mapping([tool_id])
         .function_name_for_tool_id(tool_id)
-        .expect("golden path scenario requires a deterministic edit function name")
+        .unwrap_or_abort()
         .to_string();
 
     ToolDef {

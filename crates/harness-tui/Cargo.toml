@@ -1,8 +1,13 @@
 [package]
 name = "harness-tui"
+description = "Ratatui TUI for the agent-harness runtime"
 edition.workspace = true
 license.workspace = true
 version.workspace = true
+repository.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [dependencies]
 anyhow = "1.0"

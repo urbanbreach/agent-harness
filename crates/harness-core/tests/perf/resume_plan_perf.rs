@@ -1,3 +1,4 @@
+use harness_core::UnwrapOrAbort;
 use std::time::{Duration, Instant};
 
 use harness_core::event::{
@@ -24,7 +25,7 @@ fn perf_project_resume_plan_large_completed_log_under_budget() {
 
     let started = Instant::now();
     for _ in 0..REPLAY_ITERATIONS {
-        let plan = project_resume_plan(events.iter(), RUN_ID).expect("resume plan projects");
+        let plan = project_resume_plan(events.iter(), RUN_ID).unwrap_or_abort();
         assert!(plan.is_resumable, "completed fixture remains resumable");
         assert_eq!(plan.max_seq, events.len() as u64);
     }
@@ -38,7 +39,7 @@ fn perf_project_resume_plan_large_completed_log_under_budget() {
 
 fn completed_run_events(provider_turns: u64) -> Vec<EventEnvelopeV1> {
     let mut seq = 1;
-    let mut events = Vec::with_capacity(provider_turns as usize + 3);
+    let mut events = Vec::with_capacity(usize::try_from(provider_turns).unwrap_or(usize::MAX) + 3);
     events.push(envelope(
         seq,
         None,

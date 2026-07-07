@@ -1,6 +1,7 @@
+use harness_core::UnwrapOrAbort;
 #[tokio::test]
 async fn overflow_retry_compacts_context_and_retries_with_summary() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![
         vec![
             ProviderStreamEvent::Start,
@@ -49,28 +50,28 @@ async fn overflow_retry_compacts_context_and_retries_with_summary() {
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     coordinator
         .request_agent_turn(supervisor_actor(), agent_id.clone(), "first question")
         .await
-        .expect("first turn");
+        .unwrap_or_abort();
     tokio::task::yield_now().await;
     coordinator
         .request_agent_turn(supervisor_actor(), agent_id.clone(), "second question")
         .await
-        .expect("second turn");
+        .unwrap_or_abort();
     tokio::task::yield_now().await;
     let third_request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id, "third question")
         .await
-        .expect("third turn with overflow retry");
+        .unwrap_or_abort();
     tokio::task::yield_now().await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let requests = provider.requests();
     assert_eq!(
@@ -80,7 +81,7 @@ async fn overflow_retry_compacts_context_and_retries_with_summary() {
     );
     let retried_messages = requests
         .last()
-        .expect("retried provider request")
+        .unwrap_or_abort()
         .messages
         .iter()
         .map(|message| (message.role.clone(), message.content.clone()))
@@ -129,7 +130,7 @@ async fn overflow_retry_compacts_context_and_retries_with_summary() {
 }
 #[tokio::test]
 async fn overflow_retry_can_compact_a_single_large_preserved_turn() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![
         vec![
             ProviderStreamEvent::Start,
@@ -167,23 +168,23 @@ async fn overflow_retry_can_compact_a_single_large_preserved_turn() {
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     coordinator
         .request_agent_turn(supervisor_actor(), agent_id.clone(), "first question")
         .await
-        .expect("first turn");
+        .unwrap_or_abort();
     tokio::task::yield_now().await;
     let second_request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id, "second question")
         .await
-        .expect("second turn with overflow retry");
+        .unwrap_or_abort();
     tokio::task::yield_now().await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let requests = provider.requests();
     assert_eq!(
@@ -193,7 +194,7 @@ async fn overflow_retry_can_compact_a_single_large_preserved_turn() {
     );
     let retried_messages = requests
         .last()
-        .expect("retried provider request")
+        .unwrap_or_abort()
         .messages
         .iter()
         .map(|message| (message.role.clone(), message.content.clone()))
@@ -238,7 +239,7 @@ async fn overflow_retry_can_compact_a_single_large_preserved_turn() {
 }
 #[tokio::test]
 async fn overflow_retry_does_not_resend_same_context_when_compaction_is_noop() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![
         vec![
             ProviderStreamEvent::Start,
@@ -265,23 +266,23 @@ async fn overflow_retry_does_not_resend_same_context_when_compaction_is_noop() {
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     coordinator
         .request_agent_turn(supervisor_actor(), agent_id.clone(), "first question")
         .await
-        .expect("first turn");
+        .unwrap_or_abort();
     tokio::task::yield_now().await;
     let second_request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id, "second question")
         .await
-        .expect("second turn with overflow");
+        .unwrap_or_abort();
     tokio::task::yield_now().await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let requests = provider.requests();
     assert_eq!(
@@ -310,7 +311,7 @@ async fn overflow_retry_does_not_resend_same_context_when_compaction_is_noop() {
 }
 #[tokio::test]
 async fn compaction_trigger_pre_prompt_occurs_before_provider_request_started() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let current_prompt = "C".repeat(12_000);
     let provider = SequentialScriptedProvider::new(vec![
         provider_text_events(&"A".repeat(12_000)),
@@ -333,27 +334,27 @@ async fn compaction_trigger_pre_prompt_occurs_before_provider_request_started() 
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     coordinator
         .request_agent_turn(supervisor_actor(), agent_id.clone(), "first question")
         .await
-        .expect("first turn");
+        .unwrap_or_abort();
     tokio::task::yield_now().await;
     coordinator
         .request_agent_turn(supervisor_actor(), agent_id.clone(), "second question")
         .await
-        .expect("second turn");
+        .unwrap_or_abort();
     tokio::task::yield_now().await;
     let third_request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id, &current_prompt)
         .await
-        .expect("third turn");
+        .unwrap_or_abort();
     tokio::task::yield_now().await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let events = load_events(&run.events_path);
     let pre_prompt_written_idx = events
@@ -364,7 +365,7 @@ async fn compaction_trigger_pre_prompt_occurs_before_provider_request_started() 
                 EventV1::CompactionWritten(payload) if payload.trigger_reason == "pre_prompt"
             )
         })
-        .expect("pre-prompt compaction written event");
+        .unwrap_or_abort();
     let provider_started_idx = events
         .iter()
         .position(|event| {
@@ -373,7 +374,7 @@ async fn compaction_trigger_pre_prompt_occurs_before_provider_request_started() 
                 EventV1::ProviderRequestStarted(_) if event.correlation_id.as_deref() == Some(third_request_id.as_str())
             )
         })
-        .expect("third provider request started event");
+        .unwrap_or_abort();
     assert!(
         pre_prompt_written_idx < provider_started_idx,
         "pre-prompt checkpoint must be written before the third provider request is constructed"
@@ -381,7 +382,7 @@ async fn compaction_trigger_pre_prompt_occurs_before_provider_request_started() 
 }
 #[tokio::test]
 async fn compaction_trigger_pre_prompt_attempts_once_per_turn() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let current_prompt = "C".repeat(12_000);
     let provider = SequentialScriptedProvider::new(vec![
         provider_text_events(&"A".repeat(12_000)),
@@ -404,24 +405,24 @@ async fn compaction_trigger_pre_prompt_attempts_once_per_turn() {
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     for question in ["first question", "second question"] {
         coordinator
             .request_agent_turn(supervisor_actor(), agent_id.clone(), question)
             .await
-            .expect("turn request");
+            .unwrap_or_abort();
         tokio::task::yield_now().await;
     }
     coordinator
         .request_agent_turn(supervisor_actor(), agent_id, &current_prompt)
         .await
-        .expect("third turn");
+        .unwrap_or_abort();
     tokio::task::yield_now().await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let events = load_events(&run.events_path);
     let pre_prompt_writes = events

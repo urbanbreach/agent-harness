@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use harness_core::event::EventV1;
 
 use crate::app::{
@@ -924,21 +925,21 @@ pub(crate) fn exact_test_tool_runtime_state_uses_effective_tool_identity() {
     let queued = tool_runtime_state(&runtime_tool_identity_fixture(
         ToolCallDisplayStatus::Queued,
     ))
-    .expect("queued runtime state");
+    .unwrap_or_abort();
     assert_eq!(queued.summary, "tool queued · agent.spawn");
     assert!(!queued.summary.contains("task"));
 
     let running = tool_runtime_state(&runtime_tool_identity_fixture(
         ToolCallDisplayStatus::Running,
     ))
-    .expect("running runtime state");
+    .unwrap_or_abort();
     assert_eq!(running.summary, "tool running · agent.spawn");
     assert!(!running.summary.contains("task"));
 
     let succeeded = tool_runtime_state(&runtime_tool_identity_fixture(
         ToolCallDisplayStatus::Succeeded,
     ))
-    .expect("succeeded runtime state");
+    .unwrap_or_abort();
     assert_eq!(
         succeeded.summary,
         "tool finished · waiting for final response · agent.spawn"
@@ -948,7 +949,7 @@ pub(crate) fn exact_test_tool_runtime_state_uses_effective_tool_identity() {
     let failed = tool_runtime_state(&runtime_tool_identity_fixture(
         ToolCallDisplayStatus::Failed,
     ))
-    .expect("failed runtime state");
+    .unwrap_or_abort();
     assert_eq!(failed.summary, "tool failed · agent.spawn");
     assert!(!failed.summary.contains("task"));
 }

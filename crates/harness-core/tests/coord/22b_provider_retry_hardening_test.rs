@@ -1,9 +1,10 @@
+use harness_core::UnwrapOrAbort;
 use harness_core::store::EventStore;
 
 #[tokio::test]
 async fn provider_retry_cancellation_wins_during_backoff() {
     // arrange
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![vec![ProviderStreamEvent::categorized_error(
         "temporary rate limit",
         ProviderErrorCategory::RateLimited,
@@ -28,16 +29,16 @@ async fn provider_retry_cancellation_wins_during_backoff() {
     let run = coordinator
         .start_run("coord_provider_retry_cancel_backoff", PathBuf::from("/workspace/project"))
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     // act
     let request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id.clone(), "please cancel me")
         .await
-        .expect("request retrying turn");
+        .unwrap_or_abort();
 
     let task_id: String = wait_until(Duration::from_millis(700), || async {
         load_events(&run.events_path)
@@ -52,13 +53,13 @@ async fn provider_retry_cancellation_wins_during_backoff() {
             })
     })
     .await
-    .expect("task scheduled");
+    .unwrap_or_abort();
 
     // assert
     let _: () = coordinator
         .cancel_task(task_id.clone(), "operator cancelled during retry backoff")
         .await
-        .expect("cancel task");
+        .unwrap_or_abort();
 
     wait_for_events(&run.events_path, Duration::from_millis(700), |events| {
         events.iter().any(|event| {
@@ -71,7 +72,7 @@ async fn provider_retry_cancellation_wins_during_backoff() {
         })
     })
     .await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     assert_eq!(provider.requests().len(), 1, "cancellation should prevent retry attempts");
 }
@@ -79,7 +80,7 @@ async fn provider_retry_cancellation_wins_during_backoff() {
 #[tokio::test]
 async fn provider_retry_max_retries_zero_disables_headless_retries() {
     // arrange
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![
         vec![ProviderStreamEvent::categorized_error(
             "temporary rate limit",
@@ -107,16 +108,16 @@ async fn provider_retry_max_retries_zero_disables_headless_retries() {
     let run = coordinator
         .start_run("coord_provider_retry_max_retries_zero", PathBuf::from("/workspace/project"))
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     // act
     let request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id, "no retries please")
         .await
-        .expect("request failing turn");
+        .unwrap_or_abort();
 
     // assert
     wait_for_events(&run.events_path, Duration::from_millis(700), |events| {
@@ -130,7 +131,7 @@ async fn provider_retry_max_retries_zero_disables_headless_retries() {
         })
     })
     .await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     assert_eq!(
         provider.requests().len(),
@@ -142,7 +143,7 @@ async fn provider_retry_max_retries_zero_disables_headless_retries() {
 #[tokio::test]
 async fn provider_retry_uses_retry_after_header_for_backoff_delay() {
     // arrange
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![
         vec![ProviderStreamEvent::categorized_error_with_retry_after_ms(
             "rate limited",
@@ -171,16 +172,16 @@ async fn provider_retry_uses_retry_after_header_for_backoff_delay() {
     let run = coordinator
         .start_run("coord_provider_retry_after_header", PathBuf::from("/workspace/project"))
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     // act
     let request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id, "respect retry-after")
         .await
-        .expect("request retry-after turn");
+        .unwrap_or_abort();
 
     // assert
     let events = wait_for_events(&run.events_path, Duration::from_millis(7_000), |events| {
@@ -194,7 +195,7 @@ async fn provider_retry_uses_retry_after_header_for_backoff_delay() {
         })
     })
     .await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     assert_eq!(provider.requests().len(), 2);
     let second_start = events
@@ -208,12 +209,12 @@ async fn provider_retry_uses_retry_after_header_for_backoff_delay() {
             _ => None,
         })
         .nth(1)
-        .expect("second provider start");
+        .unwrap_or_abort();
     let retry = second_start
         .metadata
         .as_ref()
         .and_then(|metadata| metadata.retry.as_ref())
-        .expect("retry metadata on second attempt");
+        .unwrap_or_abort();
     assert_eq!(retry.attempt, 1);
     assert_eq!(retry.delay_ms, Some(2_500), "should use Retry-After value");
     assert_eq!(retry.category, Some(ProviderErrorCategory::RateLimited));
@@ -224,10 +225,10 @@ async fn old_replay_logs_without_provider_retry_metadata_replay_identically() {
     // arrange
     use harness_core::event::SCHEMA_VERSION;
 
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "old_log_without_retry";
     let store = harness_core::store::JsonlFileEventStore::open(temp_dir.path(), run_id, true)
-        .expect("open store");
+        .unwrap_or_abort();
     let actor = EventActor::new(ActorKind::Worker, Some("alpha".to_string()));
 
     store
@@ -246,7 +247,7 @@ async fn old_replay_logs_without_provider_retry_metadata_replay_identically() {
                 workspace_root: "/workspace/project".to_string(),
             }),
         })
-        .expect("append run started");
+        .unwrap_or_abort();
 
     store
         .append(harness_core::store::EventEnvelopeWithoutSeqV1 {
@@ -268,11 +269,11 @@ async fn old_replay_logs_without_provider_retry_metadata_replay_identically() {
                 metadata: Some(ProviderRequestStartedMetadata::default()),
             }),
         })
-        .expect("append provider start");
+        .unwrap_or_abort();
 
     // act
     let log_body = std::fs::read_to_string(temp_dir.path().join(run_id).join("events.jsonl"))
-        .expect("read events log");
+        .unwrap_or_abort();
 
     // assert
     assert!(
@@ -282,7 +283,7 @@ async fn old_replay_logs_without_provider_retry_metadata_replay_identically() {
 
     let replayed: Vec<_> = store
         .replay(0)
-        .expect("replay")
+        .unwrap_or_abort()
         .filter_map(|result| result.ok())
         .collect()
         .await;
@@ -293,7 +294,7 @@ async fn old_replay_logs_without_provider_retry_metadata_replay_identically() {
             EventV1::ProviderRequestStarted(data) => Some(data),
             _ => None,
         })
-        .expect("provider started event replayed");
+        .unwrap_or_abort();
     assert_eq!(
         started_event.metadata.as_ref().and_then(|m| m.retry.as_ref()),
         None,

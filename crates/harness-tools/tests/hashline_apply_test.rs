@@ -1,3 +1,4 @@
+use harness_tools::UnwrapOrAbort;
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
@@ -24,7 +25,7 @@ async fn hashline_apply_success_writes_file_and_emits_applied_event() {
 
     let file_path = workspace.workspace().join("demo.txt");
     let original = "alpha\nbeta\ngamma\n";
-    fs::write(&file_path, original).expect("seed file");
+    fs::write(&file_path, original).unwrap_or_abort();
 
     let patch = replace_line_patch("edit-success", "demo.txt", original, 2, "BETA");
     let expected_content = "alpha\nBETA\ngamma\n";
@@ -37,27 +38,27 @@ async fn hashline_apply_success_writes_file_and_emits_applied_event() {
     let run = handle
         .start_run("hashline_apply_success", workspace.workspace())
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let worker_agent_id = handle
         .spawn_agent(supervisor_actor(), "worker", None)
         .await
-        .expect("spawn worker");
+        .unwrap_or_abort();
 
     let tool_call_id = handle
         .request_tool_call(
             worker_actor(&worker_agent_id),
             Some("deep".to_string()),
             "edit.hashline_apply",
-            serde_json::to_value(&patch).expect("patch json"),
+            serde_json::to_value(&patch).unwrap_or_abort(),
         )
         .await
-        .expect("request tool call");
+        .unwrap_or_abort();
 
     tokio::task::yield_now().await;
-    handle.stop_run().await.expect("stop run");
+    handle.stop_run().await.unwrap_or_abort();
 
-    let updated = fs::read_to_string(&file_path).expect("read updated file");
+    let updated = fs::read_to_string(&file_path).unwrap_or_abort();
     assert_eq!(updated, expected_content);
 
     let events = read_events(&run.events_path);
@@ -81,7 +82,7 @@ async fn hashline_apply_success_writes_file_and_emits_applied_event() {
             }
             _ => None,
         })
-        .expect("edit applied event");
+        .unwrap_or_abort();
     assert_eq!(applied_event.new_file_digest, expected_digest);
 
     assert!(events.iter().any(|event| {
@@ -99,7 +100,7 @@ async fn hashline_apply_mismatch_leaves_file_unchanged() {
 
     let file_path = workspace.workspace().join("demo.txt");
     let original = "alpha\nbeta\ngamma\n";
-    fs::write(&file_path, original).expect("seed file");
+    fs::write(&file_path, original).unwrap_or_abort();
 
     let mut patch = replace_line_patch("edit-mismatch", "demo.txt", original, 2, "BETA");
     if let HashlineOp::Replace { expected, .. } = &mut patch.ops[0] {
@@ -111,27 +112,27 @@ async fn hashline_apply_mismatch_leaves_file_unchanged() {
     let run = handle
         .start_run("hashline_apply_mismatch", workspace.workspace())
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let worker_agent_id = handle
         .spawn_agent(supervisor_actor(), "worker", None)
         .await
-        .expect("spawn worker");
+        .unwrap_or_abort();
 
     let tool_call_id = handle
         .request_tool_call(
             worker_actor(&worker_agent_id),
             Some("deep".to_string()),
             "edit.hashline_apply",
-            serde_json::to_value(&patch).expect("patch json"),
+            serde_json::to_value(&patch).unwrap_or_abort(),
         )
         .await
-        .expect("request tool call");
+        .unwrap_or_abort();
 
     tokio::task::yield_now().await;
-    handle.stop_run().await.expect("stop run");
+    handle.stop_run().await.unwrap_or_abort();
 
-    let unchanged = fs::read_to_string(&file_path).expect("read unchanged file");
+    let unchanged = fs::read_to_string(&file_path).unwrap_or_abort();
     assert_eq!(unchanged, original);
 
     let events = read_events(&run.events_path);
@@ -165,7 +166,7 @@ async fn hashline_apply_overlap_rejection_explains_recovery() {
 
     let file_path = workspace.workspace().join("demo.txt");
     let original = "alpha\nbeta\ngamma\ndelta\n";
-    fs::write(&file_path, original).expect("seed file");
+    fs::write(&file_path, original).unwrap_or_abort();
 
     let source_lines = original
         .trim_end_matches('\n')
@@ -194,27 +195,27 @@ async fn hashline_apply_overlap_rejection_explains_recovery() {
     let run = handle
         .start_run("hashline_apply_overlap", workspace.workspace())
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let worker_agent_id = handle
         .spawn_agent(supervisor_actor(), "worker", None)
         .await
-        .expect("spawn worker");
+        .unwrap_or_abort();
 
     let tool_call_id = handle
         .request_tool_call(
             worker_actor(&worker_agent_id),
             Some("deep".to_string()),
             "edit.hashline_apply",
-            serde_json::to_value(&patch).expect("patch json"),
+            serde_json::to_value(&patch).unwrap_or_abort(),
         )
         .await
-        .expect("request tool call");
+        .unwrap_or_abort();
 
     tokio::task::yield_now().await;
-    handle.stop_run().await.expect("stop run");
+    handle.stop_run().await.unwrap_or_abort();
 
-    let unchanged = fs::read_to_string(&file_path).expect("read unchanged file");
+    let unchanged = fs::read_to_string(&file_path).unwrap_or_abort();
     assert_eq!(unchanged, original);
 
     let events = read_events(&run.events_path);
@@ -229,7 +230,7 @@ async fn hashline_apply_overlap_rejection_explains_recovery() {
             }
             _ => None,
         })
-        .expect("edit rejected event");
+        .unwrap_or_abort();
 
     assert!(rejection_reason.contains("OVERLAP"));
     assert!(rejection_reason.contains("Recovery:"));
@@ -251,7 +252,7 @@ async fn hashline_apply_permission_ask_blocks_until_resolved() {
 
     let file_path = workspace.workspace().join("demo.txt");
     let original = "alpha\nbeta\ngamma\n";
-    fs::write(&file_path, original).expect("seed file");
+    fs::write(&file_path, original).unwrap_or_abort();
 
     let patch = replace_line_patch("edit-ask", "demo.txt", original, 2, "BETA");
 
@@ -260,28 +261,28 @@ async fn hashline_apply_permission_ask_blocks_until_resolved() {
     let run = handle
         .start_run("hashline_apply_ask", workspace.workspace())
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let worker_agent_id = handle
         .spawn_agent(supervisor_actor(), "worker", None)
         .await
-        .expect("spawn worker");
+        .unwrap_or_abort();
 
     let tool_call_id = handle
         .request_tool_call(
             worker_actor(&worker_agent_id),
             Some("deep".to_string()),
             "edit.hashline_apply",
-            serde_json::to_value(&patch).expect("patch json"),
+            serde_json::to_value(&patch).unwrap_or_abort(),
         )
         .await
-        .expect("request tool call");
+        .unwrap_or_abort();
 
     tokio::task::yield_now().await;
     let before_resolve = read_events(&run.events_path);
 
     assert_eq!(
-        fs::read_to_string(&file_path).expect("read before resolve"),
+        fs::read_to_string(&file_path).unwrap_or_abort(),
         original,
         "file must not change before permission resolution"
     );
@@ -312,18 +313,18 @@ async fn hashline_apply_permission_ask_blocks_until_resolved() {
             }
             _ => None,
         })
-        .expect("permission id");
+        .unwrap_or_abort();
 
     handle
         .resolve_permission(permission_id, PermissionDecision::Allow, None)
         .await
-        .expect("resolve permission");
+        .unwrap_or_abort();
 
     tokio::task::yield_now().await;
-    handle.stop_run().await.expect("stop run");
+    handle.stop_run().await.unwrap_or_abort();
 
     assert_eq!(
-        fs::read_to_string(&file_path).expect("read updated file"),
+        fs::read_to_string(&file_path).unwrap_or_abort(),
         "alpha\nBETA\ngamma\n"
     );
 
@@ -337,7 +338,7 @@ async fn hashline_apply_permission_ask_blocks_until_resolved() {
                     if data.tool_call_id.as_deref() == Some(tool_call_id.as_str())
             )
         })
-        .expect("permission requested event");
+        .unwrap_or_abort();
     let permission_resolved_idx = events
         .iter()
         .position(|event| {
@@ -347,7 +348,7 @@ async fn hashline_apply_permission_ask_blocks_until_resolved() {
                     if data.decision == harness_core::event::PermissionDecision::Allow
             )
         })
-        .expect("permission resolved event");
+        .unwrap_or_abort();
     let tool_started_idx = events
         .iter()
         .position(|event| {
@@ -356,13 +357,13 @@ async fn hashline_apply_permission_ask_blocks_until_resolved() {
                 EventV1::ToolCallStarted(data) if data.tool_call_id == tool_call_id
             )
         })
-        .expect("tool started event");
+        .unwrap_or_abort();
     let edit_proposed_idx = events
         .iter()
         .position(|event| {
             matches!(&event.payload, EventV1::EditProposed(data) if data.edit_id == "edit-ask")
         })
-        .expect("edit proposed event");
+        .unwrap_or_abort();
 
     assert!(permission_requested_idx < permission_resolved_idx);
     assert!(permission_resolved_idx < tool_started_idx);

@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::sync::Arc;
 
 use harness_core::coord::{
@@ -319,7 +320,7 @@ async fn spawn_new_child_agent(
         {
             let fallback = request
                 .category_fallback_profile()
-                .expect("fallback checked")
+                .unwrap_or_abort()
                 .to_string();
             request.profile_name = fallback;
             spawn_child_agent_once(ctx, request, supervisor)
@@ -456,6 +457,7 @@ mod tests {
         build_child_prompt, map_request_agent_turn_error, map_spawn_agent_error,
         select_agent_selection, AgentSelection, AgentSpawnRequest,
     };
+    use crate::UnwrapOrAbort;
     use harness_core::coord::CoordinatorError;
     use harness_core::tool::ToolError;
     use std::path::PathBuf;
@@ -467,7 +469,7 @@ mod tests {
     fn select_agent_selection_accepts_matching_category_and_subagent_type() {
         assert_eq!(
             select_agent_selection(Some("child"), Some("child"))
-                .expect("matching selectors")
+                .unwrap_or_abort()
                 .profile_name,
             "child"
         );
@@ -476,8 +478,7 @@ mod tests {
     #[test]
     fn select_agent_selection_prefers_subagent_type_over_category_hint() {
         assert_eq!(
-            select_agent_selection(Some("quick"), Some("child"))
-                .expect("direct subagent selector should win"),
+            select_agent_selection(Some("quick"), Some("child")).unwrap_or_abort(),
             AgentSelection {
                 profile_name: "child".to_string(),
                 category_selector: None,
@@ -488,7 +489,7 @@ mod tests {
     #[test]
     fn select_agent_selection_uses_category_as_fallback_hint_for_category_only_request() {
         assert_eq!(
-            select_agent_selection(Some("quick"), None).expect("category-only selector should win"),
+            select_agent_selection(Some("quick"), None).unwrap_or_abort(),
             AgentSelection {
                 profile_name: "quick".to_string(),
                 category_selector: Some("quick".to_string()),
@@ -500,7 +501,7 @@ mod tests {
     fn select_agent_selection_ignores_blank_selectors() {
         assert_eq!(
             select_agent_selection(Some("  "), Some("child"))
-                .expect("blank category is ignored")
+                .unwrap_or_abort()
                 .profile_name,
             "child"
         );
@@ -508,13 +509,12 @@ mod tests {
 
     #[test]
     fn select_agent_selection_preserves_category_fallback_only_for_category_requests() {
-        let category_only = select_agent_selection(Some("quick"), None)
-            .expect("category-only selection should be accepted");
+        let category_only = select_agent_selection(Some("quick"), None).unwrap_or_abort();
         assert_eq!(category_only.profile_name, "quick");
         assert_eq!(category_only.category_selector.as_deref(), Some("quick"));
 
-        let explicit_subagent = select_agent_selection(Some("quick"), Some("child"))
-            .expect("explicit subagent should be accepted");
+        let explicit_subagent =
+            select_agent_selection(Some("quick"), Some("child")).unwrap_or_abort();
         assert_eq!(explicit_subagent.profile_name, "child");
         assert_eq!(explicit_subagent.category_selector, None);
     }

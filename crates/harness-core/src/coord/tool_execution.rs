@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 impl Coordinator {
     pub(in crate::coord) async fn request_tool_call_internal(
@@ -9,8 +10,8 @@ impl Coordinator {
         args_json: Value,
         respond_to: Option<oneshot::Sender<Result<ToolResult, String>>>,
     ) -> Result<String, CoordinatorError> {
-        let clock = self.clock.clone();
-        let redactor = self.redactor.clone();
+        let clock = Arc::clone(&self.clock);
+        let redactor = Arc::clone(&self.redactor);
         let job_tx = self.job_tx.clone();
 
         let run_state = self
@@ -244,8 +245,7 @@ impl Coordinator {
                         args_json: &args_json,
                         tool_call_id: &tool_call_id,
                         hashline_edit: hashline_edit.as_ref(),
-                        kind: maybe_kind
-                            .expect("permission kind exists when policy decision exists"),
+                        kind: maybe_kind.unwrap_or_abort(),
                         reason: "policy denied request",
                         request_correlation_id: request_correlation_id.as_deref(),
                     },
@@ -269,7 +269,7 @@ impl Coordinator {
                 let hook_request_id = request_correlation_id
                     .clone()
                     .or_else(|| Some(tool_call_id.clone()));
-                let kind = maybe_kind.expect("permission kind exists when policy decision exists");
+                let kind = maybe_kind.unwrap_or_abort();
                 let grant_request = permission_grant_request(
                     &run_state.info.workspace_root,
                     kind,
@@ -282,7 +282,7 @@ impl Coordinator {
                     start_tool_call_execution(
                         clock.as_ref(),
                         redactor.as_ref(),
-                        self.config.hook_command_executor.clone(),
+                        Arc::clone(&self.config.hook_command_executor),
                         job_tx,
                         run_state,
                         self.config.hook_runtime_config.clone(),
@@ -293,7 +293,7 @@ impl Coordinator {
                             actor,
                             category: effective_category.clone(),
                             hook_executions: Vec::new(),
-                            tool_registry: self.config.tool_registry.clone(),
+                            tool_registry: Arc::clone(&self.config.tool_registry),
                             request_correlation_id,
                             respond_to,
                         },
@@ -459,7 +459,7 @@ impl Coordinator {
                 start_tool_call_execution(
                     clock.as_ref(),
                     redactor.as_ref(),
-                    self.config.hook_command_executor.clone(),
+                    Arc::clone(&self.config.hook_command_executor),
                     job_tx,
                     run_state,
                     self.config.hook_runtime_config.clone(),
@@ -470,7 +470,7 @@ impl Coordinator {
                         actor,
                         category: effective_category.clone(),
                         hook_executions: Vec::new(),
-                        tool_registry: self.config.tool_registry.clone(),
+                        tool_registry: Arc::clone(&self.config.tool_registry),
                         request_correlation_id,
                         respond_to,
                     },

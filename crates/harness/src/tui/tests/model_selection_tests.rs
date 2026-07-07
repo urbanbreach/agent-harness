@@ -1,4 +1,5 @@
 use super::*;
+use harness::UnwrapOrAbort;
 
 #[test]
 fn interactive_launch_metadata_exposes_catalog_and_cross_profile_switch_options() {
@@ -83,12 +84,11 @@ fn interactive_launch_metadata_exposes_catalog_and_cross_profile_switch_options(
         }
         "#,
     )
-    .expect("config should parse");
+    .unwrap_or_abort();
 
-    let agent_profiles = bootstrap::interactive_agent_profiles(&config)
-        .expect("interactive agent profiles should build");
-    let metadata = interactive_launch_metadata(Some(&config), &agent_profiles, "build")
-        .expect("launch metadata should build");
+    let agent_profiles = bootstrap::interactive_agent_profiles(&config).unwrap_or_abort();
+    let metadata =
+        interactive_launch_metadata(Some(&config), &agent_profiles, "build").unwrap_or_abort();
 
     assert!(metadata
         .available_models()
@@ -115,13 +115,11 @@ fn interactive_launch_metadata_exposes_catalog_and_cross_profile_switch_options(
 #[test]
 fn shipped_example_config_preserves_configured_model_variant() {
     let config_path = crate::cli_config::shipped_example_config_path();
-    let config = harness_core::config::load_config_from_file(&config_path)
-        .expect("shipped example config should parse with discovered prompts");
+    let config = harness_core::config::load_config_from_file(&config_path).unwrap_or_abort();
 
-    let agent_profiles = bootstrap::interactive_agent_profiles(&config)
-        .expect("interactive agent profiles should build");
-    let metadata = interactive_launch_metadata(Some(&config), &agent_profiles, "build")
-        .expect("launch metadata should build");
+    let agent_profiles = bootstrap::interactive_agent_profiles(&config).unwrap_or_abort();
+    let metadata =
+        interactive_launch_metadata(Some(&config), &agent_profiles, "build").unwrap_or_abort();
 
     assert_eq!(metadata.profile(), "build");
     assert_eq!(metadata.variant(), Some("high"));
@@ -263,7 +261,7 @@ fn persisted_model_selection_ignores_unconfigured_variant() {
 
 #[test]
 fn persisted_model_selection_round_trips_model_json() {
-    let temp = tempfile::tempdir().expect("tempdir");
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let path = temp.path().join("model.json");
     let metadata = LaunchMetadata::from_model_option(&ModelOption {
         profile: "build".to_string(),
@@ -287,9 +285,8 @@ fn persisted_model_selection_round_trips_model_json() {
         recommended_for: None,
     });
 
-    save_persisted_model_selection_to_path(&path, &metadata, "digest-a")
-        .expect("persist model selection");
-    let selection = load_persisted_model_selection_from_path(&path).expect("load model selection");
+    save_persisted_model_selection_to_path(&path, &metadata, "digest-a").unwrap_or_abort();
+    let selection = load_persisted_model_selection_from_path(&path).unwrap_or_abort();
 
     assert_eq!(selection.schema_version, 2);
     assert_eq!(selection.config_digest, "digest-a");
@@ -306,12 +303,11 @@ fn persisted_model_selection_ignores_stale_config_digest() {
             ModelOption::from_model_ref("build", "umans-ai-coding-plan:umans-kimi-k2.7"),
             ModelOption::from_model_ref("build", "default:gpt-5.4-mini"),
         ]);
-    let temp = tempfile::tempdir().expect("tempdir");
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let path = temp.path().join("model.json");
     let stale = LaunchMetadata::from_model_ref("build", "default:gpt-5.4-mini");
 
-    save_persisted_model_selection_to_path(&path, &stale, "old-digest")
-        .expect("persist stale model selection");
+    save_persisted_model_selection_to_path(&path, &stale, "old-digest").unwrap_or_abort();
     let restored = apply_persisted_model_selection_from_path(base.clone(), &path, "new-digest");
 
     assert_eq!(restored, base);
@@ -324,12 +320,11 @@ fn persisted_model_selection_restores_matching_config_digest() {
             ModelOption::from_model_ref("build", "umans-ai-coding-plan:umans-kimi-k2.7"),
             ModelOption::from_model_ref("build", "default:gpt-5.4-mini"),
         ]);
-    let temp = tempfile::tempdir().expect("tempdir");
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let path = temp.path().join("model.json");
     let selected = LaunchMetadata::from_model_ref("build", "default:gpt-5.4-mini");
 
-    save_persisted_model_selection_to_path(&path, &selected, "same-digest")
-        .expect("persist model selection");
+    save_persisted_model_selection_to_path(&path, &selected, "same-digest").unwrap_or_abort();
     let restored = apply_persisted_model_selection_from_path(base, &path, "same-digest");
 
     assert_eq!(restored.provider(), "default");

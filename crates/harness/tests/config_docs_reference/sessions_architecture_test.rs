@@ -1,3 +1,4 @@
+use harness::UnwrapOrAbort;
 #[test]
 fn sessions_docs_cover_lineage_source_cutoff_summary_and_artifact_semantics() {
     // arrange
@@ -135,6 +136,7 @@ fn architecture_docs_cover_compaction_contracts_and_preservation_context() {
 }
 
 #[test]
+#[allow(clippy::panic, reason = "test code must panic gracefully")]
 fn docs_do_not_reference_broken_local_markdown_targets_or_deleted_prd_artifacts() {
     // arrange
     let root = repo_root();
@@ -148,7 +150,7 @@ fn docs_do_not_reference_broken_local_markdown_targets_or_deleted_prd_artifacts(
     for markdown in markdown_files(&root.join("docs")) {
         let relative = markdown
             .strip_prefix(&root)
-            .expect("markdown under repo root")
+            .unwrap_or_abort()
             .to_string_lossy()
             .replace('\\', "/");
         if matches!(
@@ -159,7 +161,7 @@ fn docs_do_not_reference_broken_local_markdown_targets_or_deleted_prd_artifacts(
             continue;
         }
         let body = std::fs::read_to_string(&markdown)
-            .unwrap_or_else(|err| panic!("read markdown {}: {err}", markdown.display()));
+            .unwrap_or_else(|_| panic!("abort"));
         // act
         for deleted_target in deleted {
             // assert
@@ -180,7 +182,7 @@ fn docs_do_not_reference_broken_local_markdown_targets_or_deleted_prd_artifacts(
             {
                 continue;
             }
-            let candidate = markdown.parent().expect("markdown parent").join(path_part);
+            let candidate = markdown.parent().unwrap_or_abort().join(path_part);
             assert!(
                 candidate.exists(),
                 "{} references missing local markdown target {}",
@@ -199,7 +201,7 @@ fn readiness_closeout_docs_are_current_and_back_roadmap_claims() {
     let claim_matrix = read_doc("docs/claim-evidence-matrix.md");
     // act
     let active_prd = std::fs::read_dir(root.join("docs"))
-        .expect("read docs dir")
+        .unwrap_or_abort()
         .filter_map(|entry| entry.ok().map(|e| e.path()))
         .find(|path| {
             path.file_name()
@@ -208,7 +210,7 @@ fn readiness_closeout_docs_are_current_and_back_roadmap_claims() {
                     name.starts_with("agent_harness_") && name.ends_with("_ui_pi_backend_prd.md")
                 })
         })
-        .expect("active implementation PRD must exist under docs/");
+        .unwrap_or_abort();
 
     // assert
     assert!(active_prd.exists(), "active implementation PRD must exist");
@@ -234,12 +236,13 @@ fn readiness_closeout_docs_are_current_and_back_roadmap_claims() {
     );
 }
 
+#[allow(clippy::panic, reason = "test code must panic gracefully")]
 fn markdown_files(dir: &Path) -> Vec<PathBuf> {
     let mut files = Vec::new();
     for entry in
-        std::fs::read_dir(dir).unwrap_or_else(|err| panic!("read dir {}: {err}", dir.display()))
+        std::fs::read_dir(dir).unwrap_or_else(|_| panic!("abort"))
     {
-        let path = entry.expect("dir entry").path();
+        let path = entry.unwrap_or_abort().path();
         if path.is_dir() {
             files.extend(markdown_files(&path));
         } else if path.extension().and_then(|ext| ext.to_str()) == Some("md") {

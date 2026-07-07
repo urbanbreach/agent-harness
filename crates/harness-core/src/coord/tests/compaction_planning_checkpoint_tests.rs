@@ -1,7 +1,8 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 pub(crate) fn proactive_compaction_writes_checkpoint_artifact_and_updates_provider_context() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let clock = FakeClock::new();
     let redactor = DefaultRedactor::default();
     let mut run_state = test_run_state(temp_dir.path(), "run_compaction_proactive");
@@ -44,8 +45,8 @@ pub(crate) fn proactive_compaction_writes_checkpoint_artifact_and_updates_provid
             estimate_source: None,
         }),
     )
-    .expect("proactive compaction should succeed")
-    .expect("proactive compaction should write a checkpoint");
+    .unwrap_or_abort()
+    .unwrap_or_abort();
 
     assert!(updated.updated_context.compacted_summary.is_some());
     assert_eq!(updated.updated_context.preserved_turns.len(), 1);
@@ -64,7 +65,7 @@ pub(crate) fn proactive_compaction_writes_checkpoint_artifact_and_updates_provid
             EventV1::CompactionWritten(payload) => Some(payload.clone()),
             _ => None,
         })
-        .expect("compaction written event");
+        .unwrap_or_abort();
     assert!(events
         .iter()
         .any(|event| matches!(event.payload, EventV1::CompactionApplied(_))));
@@ -74,9 +75,9 @@ pub(crate) fn proactive_compaction_writes_checkpoint_artifact_and_updates_provid
     assert_eq!(written.compacted_turns, Some(1));
 
     let checkpoint_path = run_state.info.run_dir.join(&written.artifact_path);
-    let checkpoint_body = fs::read_to_string(&checkpoint_path).expect("read checkpoint artifact");
+    let checkpoint_body = fs::read_to_string(&checkpoint_path).unwrap_or_abort();
     let checkpoint: ProviderContextCheckpoint =
-        serde_json::from_str(&checkpoint_body).expect("parse checkpoint artifact");
+        serde_json::from_str(&checkpoint_body).unwrap_or_abort();
     assert_eq!(checkpoint.metadata.agent_id, "agent_000001");
     assert_eq!(
         checkpoint.metadata.tokens_before_estimate,
@@ -144,7 +145,7 @@ pub(crate) fn proactive_compaction_writes_checkpoint_artifact_and_updates_provid
 }
 
 pub(crate) fn proactive_compaction_records_pruned_tool_artifacts_for_compacted_turns() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let clock = FakeClock::new();
     let redactor = DefaultRedactor::default();
     let first_answer = 'A'.to_string().repeat(6_000);
@@ -300,8 +301,8 @@ pub(crate) fn proactive_compaction_records_pruned_tool_artifacts_for_compacted_t
             estimate_source: None,
         }),
     )
-    .expect("proactive compaction should succeed")
-    .expect("proactive compaction should write a checkpoint");
+    .unwrap_or_abort()
+    .unwrap_or_abort();
 
     assert!(updated.updated_context.compacted_summary.is_some());
     let events = read_events(&run_state.info.events_path);
@@ -311,11 +312,11 @@ pub(crate) fn proactive_compaction_records_pruned_tool_artifacts_for_compacted_t
             EventV1::CompactionWritten(payload) => Some(payload.clone()),
             _ => None,
         })
-        .expect("compaction written event");
+        .unwrap_or_abort();
     let checkpoint_path = run_state.info.run_dir.join(&written.artifact_path);
-    let checkpoint_body = fs::read_to_string(&checkpoint_path).expect("read checkpoint artifact");
+    let checkpoint_body = fs::read_to_string(&checkpoint_path).unwrap_or_abort();
     let checkpoint: ProviderContextCheckpoint =
-        serde_json::from_str(&checkpoint_body).expect("parse checkpoint artifact");
+        serde_json::from_str(&checkpoint_body).unwrap_or_abort();
     assert_eq!(checkpoint.pruned_tool_artifacts.len(), 1);
     assert_eq!(
         checkpoint.pruned_tool_artifacts[0].path,

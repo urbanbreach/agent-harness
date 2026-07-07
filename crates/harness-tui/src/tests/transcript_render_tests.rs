@@ -1,19 +1,20 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 pub(super) fn module_transcript_edit_snapshot_renders_inline_diff() {
     harness_core::config::clear_registered_integrations_config();
     harness_core::config::set_registered_lsp_config(harness_core::config::LspConfig::default());
 
     let run_dir = write_diff_fixture(true);
-    let events = load_events_from_run_dir(run_dir.path()).expect("load diff fixture");
+    let events = load_events_from_run_dir(run_dir.path()).unwrap_or_abort();
 
     let app = AppState::new_replay(run_dir.path().to_path_buf(), events);
 
     let backend = TestBackend::new(80, 24);
-    let mut terminal = Terminal::new(backend).expect("create terminal");
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
     terminal
         .draw(|frame| ui::render_app(frame, &app))
-        .expect("draw transcript edit frame");
+        .unwrap_or_abort();
 
     assert_buffer_snapshot(
         "transcript_edit_snapshot_renders_inline_diff",
@@ -26,7 +27,7 @@ pub(super) fn module_inline_diff_does_not_leave_large_gap_before_active_footer()
     harness_core::config::set_registered_lsp_config(harness_core::config::LspConfig::default());
 
     let run_dir = write_diff_fixture(true);
-    let events = load_events_from_run_dir(run_dir.path()).expect("load diff fixture");
+    let events = load_events_from_run_dir(run_dir.path()).unwrap_or_abort();
     let app = AppState::new_replay(run_dir.path().to_path_buf(), events);
 
     let buffer = render_live_cells(&app, 80, 24);
@@ -38,11 +39,11 @@ pub(super) fn module_inline_diff_does_not_leave_large_gap_before_active_footer()
     let diff_last_row = lines
         .iter()
         .rposition(|line| line.contains("gamma") || line.contains("BETA") || line.contains("beta"))
-        .expect("inline diff row");
+        .unwrap_or_abort();
     let footer_row = lines
         .iter()
         .position(|line| line.contains("Assistant") && line.contains("active"))
-        .expect("active assistant footer row");
+        .unwrap_or_abort();
 
     assert_eq!(
         footer_row,
@@ -57,18 +58,18 @@ pub(super) fn module_fenced_code_highlighting_uses_syntect_styles_for_known_lang
     let buffer = render_live_cells(&app, 120, 30);
     let theme = Theme::default();
     let (_, _, prose_backgrounds) =
-        row_text_and_palette(&buffer, 120, "Here is a sample:").expect("prose row");
+        row_text_and_palette(&buffer, 120, "Here is a sample:").unwrap_or_abort();
     let rendered_code_row = rendered
         .lines()
         .find(|row| row.contains("let answer = 42;"))
-        .expect("rendered code row");
+        .unwrap_or_abort();
     assert!(
         !rendered_code_row.contains('┃'),
         "assistant code should render without a nested frame rail\n{rendered}"
     );
     let (row, colors, backgrounds) =
-        row_text_and_palette(&buffer, 120, "let answer = 42;").expect("highlighted code row");
-    let start = row.find("let answer = 42;").expect("code starts");
+        row_text_and_palette(&buffer, 120, "let answer = 42;").unwrap_or_abort();
+    let start = row.find("let answer = 42;").unwrap_or_abort();
     let end = start + "let answer = 42;".chars().count();
     let unique = colors[start..end]
         .iter()
@@ -101,10 +102,10 @@ pub(super) fn module_fenced_code_highlighting_falls_back_to_plain_text_when_unkn
     let buffer = render_live_cells(&app, 120, 30);
     let theme = Theme::default();
     let (_, _, prose_backgrounds) =
-        row_text_and_palette(&buffer, 120, "Here is a sample:").expect("prose row");
+        row_text_and_palette(&buffer, 120, "Here is a sample:").unwrap_or_abort();
     let (row, colors, backgrounds) =
-        row_text_and_palette(&buffer, 120, "let answer = 42;").expect("plain code row");
-    let start = row.find("let answer = 42;").expect("code starts");
+        row_text_and_palette(&buffer, 120, "let answer = 42;").unwrap_or_abort();
+    let start = row.find("let answer = 42;").unwrap_or_abort();
     let end = start + "let answer = 42;".chars().count();
     let unique = colors[start..end]
         .iter()
@@ -175,14 +176,14 @@ pub(super) fn module_diff_renderer_switches_to_side_by_side_at_primary_widths() 
 }
 
 pub(super) fn module_transcript_edit_tool_wide_diff_uses_syntax_highlighting_and_split_palettes() {
-    let run_dir = tempfile::tempdir().expect("create run dir");
+    let run_dir = tempfile::tempdir().unwrap_or_abort();
     let artifacts_dir = run_dir.path().join("artifacts");
-    std::fs::create_dir_all(&artifacts_dir).expect("create artifacts dir");
+    std::fs::create_dir_all(&artifacts_dir).unwrap_or_abort();
     std::fs::write(
         artifacts_dir.join("harness-inline.diff"),
         "--- crates/harness-tui/src/ui.rs\n+++ crates/harness-tui/src/ui.rs\n@@ -44,8 +44,7 @@\n use ui_secondary::{\n-    render_diff_tab, render_events_tab, render_help_tab,\n+    render_events_tab, render_help_tab, render_live_details_overlay,\n     render_operator_sidebar,\n };\n",
     )
-    .expect("write inline diff fixture");
+    .unwrap_or_abort();
 
     let mut app = AppState::new_live(Some(run_dir.path().to_path_buf()), false, None);
     let mut entry = ActivityEntry {
@@ -260,8 +261,8 @@ pub(super) fn module_transcript_edit_tool_wide_diff_uses_syntax_highlighting_and
     let buffer = render_live_cells(&app, 220, 30);
     let theme = Theme::default();
 
-    let (context_row, context_fgs, _) = row_text_and_palette(&buffer, 220, "use ui_secondary::{")
-        .expect("wide context row with syntax-highlighted code");
+    let (context_row, context_fgs, _) =
+        row_text_and_palette(&buffer, 220, "use ui_secondary::{").unwrap_or_abort();
     let context_matches = context_row
         .match_indices("use ui_secondary::{")
         .map(|(index, _)| index)
@@ -290,12 +291,11 @@ pub(super) fn module_transcript_edit_tool_wide_diff_uses_syntax_highlighting_and
     );
 
     let (changed_row, _, changed_bgs) =
-        row_text_and_palette(&buffer, 220, "render_live_details_overlay")
-            .expect("wide changed row with side-by-side edit columns");
-    let removed_start = changed_row.find("render_diff_tab").expect("removed symbol");
+        row_text_and_palette(&buffer, 220, "render_live_details_overlay").unwrap_or_abort();
+    let removed_start = changed_row.find("render_diff_tab").unwrap_or_abort();
     let added_start = changed_row
         .find("render_live_details_overlay")
-        .expect("added symbol");
+        .unwrap_or_abort();
     assert_ne!(
         changed_bgs[removed_start], changed_bgs[added_start],
         "wide transcript inline diff should tint before/after columns independently: {changed_row}"
@@ -304,15 +304,15 @@ pub(super) fn module_transcript_edit_tool_wide_diff_uses_syntax_highlighting_and
 
 pub(super) fn transcript_edit_snapshot_handles_missing_artifact() {
     let run_dir = write_diff_fixture(false);
-    let events = load_events_from_run_dir(run_dir.path()).expect("load diff fixture");
+    let events = load_events_from_run_dir(run_dir.path()).unwrap_or_abort();
 
     let app = AppState::new_replay(run_dir.path().to_path_buf(), events);
 
     let backend = TestBackend::new(80, 24);
-    let mut terminal = Terminal::new(backend).expect("create terminal");
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
     terminal
         .draw(|frame| ui::render_app(frame, &app))
-        .expect("draw transcript edit frame without diff artifact");
+        .unwrap_or_abort();
 
     let debug = format!("{:?}", terminal.backend().buffer());
     assert!(debug.contains("← Patch · demo.txt"));
@@ -358,10 +358,10 @@ pub(super) fn assistant_markdown_renders_headings_lists_and_quotes() {
     app.active_tab = app::Tab::Run;
 
     let backend = TestBackend::new(120, 30);
-    let mut terminal = Terminal::new(backend).expect("create terminal");
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
     terminal
         .draw(|frame| ui::render_app(frame, &app))
-        .expect("draw markdown frame");
+        .unwrap_or_abort();
 
     let debug = format!("{:?}", terminal.backend().buffer());
     assert!(debug.contains("Plan"), "heading text should render");
@@ -484,10 +484,10 @@ pub(super) fn block_style_tool_rows_render_titles_and_argument_blocks() {
     app.active_tab = app::Tab::Run;
 
     let backend = TestBackend::new(120, 30);
-    let mut terminal = Terminal::new(backend).expect("create terminal");
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
     terminal
         .draw(|frame| ui::render_app(frame, &app))
-        .expect("draw shell tool frame");
+        .unwrap_or_abort();
 
     let debug = format!("{:?}", terminal.backend().buffer());
     assert!(
@@ -554,10 +554,10 @@ pub(super) fn generic_tool_output_toggle_reveals_block_payload() {
     app.active_tab = app::Tab::Run;
 
     let backend = TestBackend::new(120, 30);
-    let mut terminal = Terminal::new(backend).expect("create terminal");
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
     terminal
         .draw(|frame| ui::render_app(frame, &app))
-        .expect("draw generic tool frame");
+        .unwrap_or_abort();
     let collapsed = format!("{:?}", terminal.backend().buffer());
     assert!(collapsed.contains("background.cancel"));
     assert!(collapsed.contains("[taskId=bg_123]"));
@@ -574,10 +574,10 @@ pub(super) fn generic_tool_output_toggle_reveals_block_payload() {
     app.handle_key(key(KeyCode::Enter));
 
     let backend = TestBackend::new(120, 30);
-    let mut terminal = Terminal::new(backend).expect("create terminal");
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
     terminal
         .draw(|frame| ui::render_app(frame, &app))
-        .expect("draw expanded generic tool frame");
+        .unwrap_or_abort();
     let expanded = format!("{:?}", terminal.backend().buffer());
     assert!(expanded.contains("background.cancel"));
     assert!(expanded.contains("[taskId=bg_123]"));
@@ -588,10 +588,10 @@ pub(super) fn generic_tool_output_toggle_reveals_block_payload() {
     app::palette_controller::dispatch_palette_command(&mut app, "harness.expand_turn_results");
 
     let backend = TestBackend::new(120, 30);
-    let mut terminal = Terminal::new(backend).expect("create terminal");
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
     terminal
         .draw(|frame| ui::render_app(frame, &app))
-        .expect("draw fully expanded generic tool frame");
+        .unwrap_or_abort();
     let fully_expanded = format!("{:?}", terminal.backend().buffer());
     assert!(fully_expanded.contains("result: ok"));
 }

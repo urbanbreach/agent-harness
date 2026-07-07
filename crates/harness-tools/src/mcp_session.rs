@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::collections::BTreeMap;
 use std::io;
 use std::time::Duration;
@@ -664,6 +665,7 @@ fn parse_content_length(line: &str) -> Result<usize, ToolError> {
 #[cfg(test)]
 mod tests {
     use super::{StdioMcpChild, StdioMcpProcess, StdioMcpProcessStarter, StdioMcpSession};
+    use crate::UnwrapOrAbort;
     use async_trait::async_trait;
     use serde_json::Value;
     use std::collections::BTreeMap;
@@ -713,7 +715,7 @@ mod tests {
         ) -> Result<StdioMcpProcess, harness_core::tool::ToolError> {
             self.started
                 .lock()
-                .expect("fake MCP starter lock")
+                .unwrap_or_abort()
                 .push(FakeStdioMcpStart {
                     server_id: server_id.to_string(),
                     command: command.to_vec(),
@@ -740,7 +742,7 @@ mod tests {
                 }
             }
         });
-        let mut bytes = serde_json::to_vec(&body).expect("serialize MCP response");
+        let mut bytes = serde_json::to_vec(&body).unwrap_or_abort();
         bytes.push(b'\n');
         bytes
     }
@@ -761,7 +763,7 @@ mod tests {
             &starter,
         )
         .await
-        .expect("start fake MCP stdio session");
+        .unwrap_or_abort();
 
         assert_eq!(session.next_id, 2);
         assert_eq!(
@@ -777,7 +779,7 @@ mod tests {
                 .and_then(Value::as_str),
             Some("fake-mcp")
         );
-        let started = starter.started.lock().expect("fake MCP starter lock");
+        let started = starter.started.lock().unwrap_or_abort();
         assert_eq!(started.len(), 1);
         assert_eq!(started[0].server_id, "fake-server");
         assert_eq!(started[0].command, command);

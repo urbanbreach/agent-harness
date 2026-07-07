@@ -1,3 +1,4 @@
+use harness::UnwrapOrAbort;
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -19,30 +20,35 @@ const ROWS: u16 = 32;
 
 #[test]
 #[ignore = "signoff-pty happy path; run via scripts/test-lanes.sh signoff-pty"]
+#[allow(
+    clippy::panic,
+    clippy::match_wild_err_arm,
+    reason = "test code must panic gracefully"
+)]
 fn scripted_tui_happy_path_records_start_prompt_permission_tool_edit_resume_and_quit() {
     #[cfg(not(target_os = "linux"))]
-    panic!("PTY signoff requires Linux");
+    panic!("abort");
     let artifact_dir = std::env::var_os(ARTIFACT_DIR_ENV)
         .map(PathBuf::from)
         .filter(|path| !path.as_os_str().is_empty())
-        .expect("HARNESS_TUI_HAPPY_PATH_ARTIFACT_DIR must point at a writable artifact directory");
-    fs::create_dir_all(&artifact_dir).expect("create happy-path artifact dir");
+        .unwrap_or_abort();
+    fs::create_dir_all(&artifact_dir).unwrap_or_abort();
 
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let prompt_session_dir = temp.path().join("prompt-sessions");
     let scenario_session_dir = temp.path().join("scenario-sessions");
 
     let prompt_recording = record_prompt_and_quit(&prompt_session_dir);
-    let prompt_run_dir = newest_run_dir(&prompt_session_dir).expect("prompt run dir");
+    let prompt_run_dir = newest_run_dir(&prompt_session_dir).unwrap_or_abort();
     let prompt_events_path = prompt_run_dir.join("events.jsonl");
-    let prompt_events = fs::read_to_string(&prompt_events_path).expect("read prompt events");
+    let prompt_events = fs::read_to_string(&prompt_events_path).unwrap_or_abort();
     assert!(prompt_events.contains("\"event_type\":\"user_message_submitted\""));
     assert!(prompt_events.contains("Hello from PTY"));
 
     let scenario_recording = record_permission_tool_edit_and_auto_exit(&scenario_session_dir);
-    let scenario_run_dir = newest_run_dir(&scenario_session_dir).expect("scenario run dir");
+    let scenario_run_dir = newest_run_dir(&scenario_session_dir).unwrap_or_abort();
     let scenario_events_path = scenario_run_dir.join("events.jsonl");
-    let scenario_events = fs::read_to_string(&scenario_events_path).expect("read scenario events");
+    let scenario_events = fs::read_to_string(&scenario_events_path).unwrap_or_abort();
     for marker in [
         "\"event_type\":\"permission_requested\"",
         "\"event_type\":\"permission_resolved\"",
@@ -62,9 +68,8 @@ fn scripted_tui_happy_path_records_start_prompt_permission_tool_edit_resume_and_
 
     let prompt_events_artifact = artifact_dir.join("prompt.events.jsonl");
     let scenario_events_artifact = artifact_dir.join("scenario.events.jsonl");
-    fs::copy(&prompt_events_path, &prompt_events_artifact).expect("copy prompt events artifact");
-    fs::copy(&scenario_events_path, &scenario_events_artifact)
-        .expect("copy scenario events artifact");
+    fs::copy(&prompt_events_path, &prompt_events_artifact).unwrap_or_abort();
+    fs::copy(&scenario_events_path, &scenario_events_artifact).unwrap_or_abort();
 
     let manifest_path = artifact_dir.join("tui-happy-path-recording.json");
     let summary_path = artifact_dir.join("tui-happy-path-recording.md");
@@ -97,9 +102,9 @@ fn scripted_tui_happy_path_records_start_prompt_permission_tool_edit_resume_and_
     });
     fs::write(
         &manifest_path,
-        serde_json::to_vec_pretty(&manifest).expect("serialize manifest"),
+        serde_json::to_vec_pretty(&manifest).unwrap_or_abort(),
     )
-    .expect("write happy-path manifest");
+    .unwrap_or_abort();
     fs::write(
         &summary_path,
         format!(
@@ -109,7 +114,7 @@ fn scripted_tui_happy_path_records_start_prompt_permission_tool_edit_resume_and_
             scenario_events_artifact.display()
         ),
     )
-    .expect("write happy-path summary");
+    .unwrap_or_abort();
 
     assert!(manifest_path.is_file());
     assert!(summary_path.is_file());
@@ -216,21 +221,24 @@ impl SpawnedHarness {
     }
 
     fn write_text(&mut self, text: &str) {
-        self.writer
-            .write_all(text.as_bytes())
-            .expect("write PTY text");
-        self.writer.flush().expect("flush PTY text");
+        self.writer.write_all(text.as_bytes()).unwrap_or_abort();
+        self.writer.flush().unwrap_or_abort();
     }
 
     fn send_key(&mut self, key: u8) {
-        self.writer.write_all(&[key]).expect("write PTY key");
-        self.writer.flush().expect("flush PTY key");
+        self.writer.write_all(&[key]).unwrap_or_abort();
+        self.writer.flush().unwrap_or_abort();
     }
 
     fn send_ctrl(&mut self, key: u8) {
         self.send_key(key & 0x1f);
     }
 
+    #[allow(
+        clippy::panic,
+        clippy::match_wild_err_arm,
+        reason = "test code must panic gracefully"
+    )]
     fn wait_success(mut self, label: &str) {
         let deadline = Instant::now() + CHILD_EXIT_TIMEOUT;
         loop {
@@ -240,16 +248,14 @@ impl SpawnedHarness {
                     return;
                 }
                 Ok(None) => {}
-                Err(err) => panic!("{label}: {err}"),
+                Err(_) => panic!("abort"),
             }
 
             drain_output(&mut self.parser, &self.output_rx);
             if Instant::now() >= deadline {
-                let final_screen = self.parser.screen().contents();
+                let _final_screen = self.parser.screen().contents();
                 let _ = self.child.kill();
-                panic!(
-                    "{label} did not exit after {CHILD_EXIT_TIMEOUT:?}; final screen:\n{final_screen}"
-                );
+                panic!("abort");
             }
 
             thread::sleep(READ_POLL_TIMEOUT);
@@ -266,7 +272,7 @@ fn spawn_harness_pty(args: &[String]) -> SpawnedHarness {
             pixel_width: 0,
             pixel_height: 0,
         })
-        .expect("open PTY pair");
+        .unwrap_or_abort();
 
     let mut command = CommandBuilder::new(env!("CARGO_BIN_EXE_harness"));
     for arg in args {
@@ -274,14 +280,11 @@ fn spawn_harness_pty(args: &[String]) -> SpawnedHarness {
     }
     configure_deterministic_env(&mut command);
 
-    let child = pair
-        .slave
-        .spawn_command(command)
-        .expect("spawn harness PTY child");
+    let child = pair.slave.spawn_command(command).unwrap_or_abort();
     drop(pair.slave);
 
-    let reader = pair.master.try_clone_reader().expect("clone PTY reader");
-    let writer = pair.master.take_writer().expect("take PTY writer");
+    let reader = pair.master.try_clone_reader().unwrap_or_abort();
+    let writer = pair.master.take_writer().unwrap_or_abort();
     let output_rx = spawn_reader_thread(reader);
 
     SpawnedHarness {
@@ -293,6 +296,11 @@ fn spawn_harness_pty(args: &[String]) -> SpawnedHarness {
     }
 }
 
+#[allow(
+    clippy::panic,
+    clippy::match_wild_err_arm,
+    reason = "test code must panic gracefully"
+)]
 fn wait_for_screen_contains(
     parser: &mut Parser,
     output_rx: &Receiver<Vec<u8>>,
@@ -309,9 +317,7 @@ fn wait_for_screen_contains(
 
         let now = Instant::now();
         if now >= deadline {
-            panic!(
-                "timed out waiting for marker '{needle}' after {MARKER_TIMEOUT:?}; final screen:\n{current}"
-            );
+            panic!("abort");
         }
 
         let wait_timeout = READ_POLL_TIMEOUT.min(deadline.saturating_duration_since(now));

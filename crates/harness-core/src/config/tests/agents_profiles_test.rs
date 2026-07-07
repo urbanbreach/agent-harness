@@ -1,5 +1,6 @@
 use super::*;
 use crate::auth::ProviderId;
+use crate::UnwrapOrAbort;
 
 #[test]
 fn top_level_default_agent_camel_case_alias_is_accepted() {
@@ -50,7 +51,7 @@ fn top_level_default_agent_camel_case_alias_is_accepted() {
         }
         "#;
 
-    let parsed = load_config_from_str(cfg).expect("defaultAgent alias should parse");
+    let parsed = load_config_from_str(cfg).unwrap_or_abort();
     assert_eq!(parsed.default_agent.as_deref(), Some("build"));
     assert_eq!(parsed.ui.default_profile.as_deref(), Some("build"));
 }
@@ -215,7 +216,7 @@ fn default_agent_normalizes_to_runtime_shape() {
         }
         "#;
 
-    let parsed = load_config_from_str(cfg).expect("default_agent config should parse");
+    let parsed = load_config_from_str(cfg).unwrap_or_abort();
     assert!(parsed.agents.contains_key("build"));
     assert!(parsed.agents.contains_key("plan"));
     assert_eq!(parsed.ui.default_profile.as_deref(), Some("build"));
@@ -269,7 +270,7 @@ fn public_default_agents_continue_after_tool_failures() {
         }
         "#;
 
-    let parsed = load_config_from_str(cfg).expect("public config should parse");
+    let parsed = load_config_from_str(cfg).unwrap_or_abort();
     assert_eq!(
         parsed.agents["build"].tool_failure_mode,
         ToolFailureMode::ContinueAsToolMessage
@@ -367,7 +368,7 @@ fn public_agent_schema_accepts_prompt_model_tool_map_and_metadata() {
         }
         "#;
 
-    let parsed = load_config_from_str(cfg).expect("public agent schema should parse");
+    let parsed = load_config_from_str(cfg).unwrap_or_abort();
     let build = &parsed.agents["build"];
     assert_eq!(build.name.as_deref(), Some("Builder"));
     assert_eq!(build.system_prompt.as_deref(), Some("Build work"));
@@ -409,7 +410,7 @@ fn openai_compatible_cache_retention_normalizes_from_options_and_rejects_conflic
         }
         "#;
 
-    let parsed = load_config_from_str(cfg).expect("cache retention options config parses");
+    let parsed = load_config_from_str(cfg).unwrap_or_abort();
     let ProviderConfig::OpenAiCompatible(provider) = &parsed.providers["default"];
     assert_eq!(
         provider.cache_retention,
@@ -466,7 +467,7 @@ fn openai_compatible_auth_provider_normalizes_from_options_and_rejects_conflicts
         }
         "#;
 
-    let parsed = load_config_from_str(cfg).expect("auth provider options config parses");
+    let parsed = load_config_from_str(cfg).unwrap_or_abort();
     let ProviderConfig::OpenAiCompatible(provider) = &parsed.providers["default"];
     assert_eq!(provider.auth_provider, Some(ProviderId::codex()));
 

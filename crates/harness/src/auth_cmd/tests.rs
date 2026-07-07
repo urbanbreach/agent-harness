@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use harness_core::auth::codex::{
     AuthHttpMethod, AuthHttpRequest, AuthHttpResponse, CodexLoopbackSession, CodexOAuthClient,
     CodexOAuthError, PkceCodes,
@@ -33,7 +34,7 @@ fn codex_config(provider_fields: &str) -> harness_core::config::HarnessConfig {
         }}
         "#
     ))
-    .expect("load auth config")
+    .unwrap_or_abort()
 }
 
 fn auth_args(args: &[&str]) -> Vec<String> {
@@ -47,7 +48,7 @@ fn assert_no_terminal_control_bytes(output: &str) {
 }
 
 fn assert_explicit_auth_login_rejects_provider(provider: &str) {
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let args = auth_args(&["login", provider, "--method", "api-key", "--api-key-stdin"]);
 
     let output =
@@ -69,8 +70,8 @@ fn auth_deps(data_home: &Path) -> crate::CliDeps {
 fn load_stored(data_home: &Path, provider: AuthProviderId) -> StoredCredential {
     CredentialStore::new(data_home.join("harness"))
         .load(&provider)
-        .expect("load stored credential")
-        .expect("credential stored")
+        .unwrap_or_abort()
+        .unwrap_or_abort()
 }
 
 #[test]
@@ -96,7 +97,7 @@ fn onboarding_required_only_when_configured_auth_provider_has_no_usable_fallback
         None
     ));
 
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let store = CredentialStore::new(temp.path());
     store
         .save(&StoredCredential::oauth(
@@ -106,7 +107,7 @@ fn onboarding_required_only_when_configured_auth_provider_has_no_usable_fallback
             Some("2099-01-02T03:04:05Z".to_string()),
             "2026-05-30T00:00:00Z",
         ))
-        .expect("save stored credential");
+        .unwrap_or_abort();
     assert!(!onboarding_required_for_config(
         Some(&missing),
         &|_| false,
@@ -116,7 +117,7 @@ fn onboarding_required_only_when_configured_auth_provider_has_no_usable_fallback
 
 #[test]
 fn interactive_auth_login_provider_picker_cancels_without_stacktrace() {
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let args = auth_args(&["login"]);
 
     let output = super::execute_backend_args(&args, None, None, "\x1b", &auth_deps(temp.path()));
@@ -135,7 +136,7 @@ fn interactive_auth_login_provider_picker_cancels_without_stacktrace() {
 
 #[test]
 fn interactive_codex_api_key_stores_without_echoing_secret() {
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let secret = "sk-interactive-auth-secret-value";
     let args = auth_args(&["login"]);
     let stdin = format!("\n\x1b[B\x1b[B\n{secret}\n");
@@ -162,7 +163,7 @@ fn interactive_codex_browser_and_device_resolve_to_mockable_oauth_paths() {
         ("\n\n", "ChatGPT Pro/Plus (browser)"),
         ("\n\x1b[B\n", "ChatGPT Pro/Plus (headless)"),
     ] {
-        let temp = tempdir().expect("tempdir");
+        let temp = tempdir().unwrap_or_abort();
         let token = format!("oauth-{expected_label}-secret");
         let args = auth_args(&[
             "login",
@@ -191,7 +192,7 @@ fn interactive_codex_browser_and_device_resolve_to_mockable_oauth_paths() {
 
 #[test]
 fn interactive_github_copilot_resolves_to_mockable_device_flow() {
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let token = "copilot-interactive-secret";
     let args = auth_args(&["login", "--mock-token", token]);
 
@@ -215,7 +216,7 @@ fn interactive_github_copilot_resolves_to_mockable_device_flow() {
 
 #[test]
 fn explicit_auth_login_args_bypass_interactive_picker() {
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let secret = "sk-explicit-auth-secret-value";
     let args = auth_args(&[
         "login",
@@ -268,7 +269,7 @@ fn supported_method_labels_parse_for_supported_providers() {
 
 #[test]
 fn explicit_auth_logout_rejects_control_provider_without_echoing_it() {
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let provider = "codex\u{1b}]52;c;SGFja2Vk\u{7}";
     let args = auth_args(&["logout", provider]);
 
@@ -317,7 +318,7 @@ fn explicit_auth_login_rejects_leading_newline_copilot_alias_without_echoing_it(
 
 #[test]
 fn auth_list_sanitizes_control_provider_key_config_error_without_echoing_it() {
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let config_path = temp.path().join("harness.jsonc");
     std::fs::write(
         &config_path,
@@ -345,7 +346,7 @@ fn auth_list_sanitizes_control_provider_key_config_error_without_echoing_it() {
         }
         "#,
     )
-    .expect("write malicious provider-key config");
+    .unwrap_or_abort();
     let args = auth_args(&["list"]);
 
     let output =
@@ -359,7 +360,7 @@ fn auth_list_sanitizes_control_provider_key_config_error_without_echoing_it() {
 
 #[test]
 fn auth_list_reports_arbitrary_configured_auth_provider() {
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let config_path = temp.path().join("harness.jsonc");
     std::fs::write(
         &config_path,
@@ -387,13 +388,12 @@ fn auth_list_reports_arbitrary_configured_auth_provider() {
         }
         "#,
     )
-    .expect("write arbitrary auth-provider config");
+    .unwrap_or_abort();
     let args = auth_args(&["list", "--json"]);
 
     let output =
         super::execute_backend_args(&args, Some(config_path), None, "", &auth_deps(temp.path()));
-    let statuses: serde_json::Value =
-        serde_json::from_str(&output.stdout).expect("auth list JSON output");
+    let statuses: serde_json::Value = serde_json::from_str(&output.stdout).unwrap_or_abort();
     let anthropic = statuses
         .as_array()
         .and_then(|items| {
@@ -401,7 +401,7 @@ fn auth_list_reports_arbitrary_configured_auth_provider() {
                 .iter()
                 .find(|item| item["auth_provider"] == serde_json::json!("anthropic"))
         })
-        .expect("anthropic auth provider status");
+        .unwrap_or_abort();
 
     assert_eq!(output.code, 0, "stderr: {}", output.stderr);
     assert!(output.stderr.is_empty(), "stderr: {}", output.stderr);
@@ -424,10 +424,10 @@ struct MockCodexAuthHttpClient {
 #[async_trait::async_trait]
 impl super::CodexAuthHttpClient for MockCodexAuthHttpClient {
     async fn send(&self, request: AuthHttpRequest) -> Result<AuthHttpResponse, CodexOAuthError> {
-        self.requests.lock().expect("requests").push(request);
+        self.requests.lock().unwrap_or_abort().push(request);
         self.responses
             .lock()
-            .expect("responses")
+            .unwrap_or_abort()
             .pop_front()
             .ok_or_else(|| CodexOAuthError::Http {
                 message: "no mocked auth response".to_string(),
@@ -444,7 +444,7 @@ impl MockCodexAuthHttpClient {
     }
 
     fn requests(&self) -> Vec<AuthHttpRequest> {
-        self.requests.lock().expect("requests").clone()
+        self.requests.lock().unwrap_or_abort().clone()
     }
 }
 
@@ -459,7 +459,8 @@ async fn codex_browser_login_accepts_pasted_localhost_callback_url() {
         })
         .to_string(),
     });
-    let client = CodexOAuthClient::new(http.clone()).with_issuer("https://issuer.test");
+    let http_clone = Arc::clone(&http);
+    let client = CodexOAuthClient::new(http_clone).with_issuer("https://issuer.test");
     let session = CodexLoopbackSession::with_redirect_uri(
         PkceCodes {
             verifier: "pasted-verifier-123".to_string(),
@@ -469,7 +470,7 @@ async fn codex_browser_login_accepts_pasted_localhost_callback_url() {
         "http://localhost:1455/auth/callback",
         "https://issuer.test",
     );
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let store = CredentialStore::new(temp.path());
 
     let credential = complete_codex_pasted_callback(
@@ -479,7 +480,7 @@ async fn codex_browser_login_accepts_pasted_localhost_callback_url() {
         "http://localhost:1455/auth/callback?code=pasted-code-123&state=state-123",
     )
     .await
-    .expect("complete pasted callback");
+    .unwrap_or_abort();
 
     assert_eq!(
         credential.access_token.as_deref(),
@@ -487,8 +488,8 @@ async fn codex_browser_login_accepts_pasted_localhost_callback_url() {
     );
     let stored = store
         .load(&AuthProviderId::codex())
-        .expect("load credential")
-        .expect("stored credential");
+        .unwrap_or_abort()
+        .unwrap_or_abort();
     assert_eq!(stored.access_token.as_deref(), Some("pasted-access-secret"));
     assert_eq!(
         stored.refresh_token.as_deref(),
@@ -516,7 +517,8 @@ async fn codex_browser_login_loopback_uses_cli_listener_and_stores_credential() 
         })
         .to_string(),
     });
-    let client = CodexOAuthClient::new(http.clone()).with_issuer("https://issuer.test");
+    let http_clone = Arc::clone(&http);
+    let client = CodexOAuthClient::new(http_clone).with_issuer("https://issuer.test");
     let session = CodexLoopbackSession::with_redirect_uri(
         PkceCodes {
             verifier: "browser-verifier-123".to_string(),
@@ -526,7 +528,7 @@ async fn codex_browser_login_loopback_uses_cli_listener_and_stores_credential() 
         "http://localhost:14567/auth/callback",
         "https://issuer.test",
     );
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let store = CredentialStore::new(temp.path());
     let (server_stream, mut browser_stream) = tokio::io::duplex(16 * 1024);
     let handler = tokio::spawn({
@@ -538,26 +540,20 @@ async fn codex_browser_login_loopback_uses_cli_listener_and_stores_credential() 
             b"GET /auth/callback?code=browser-code-123&state=state-123 HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
         )
         .await
-        .expect("write callback");
-    browser_stream
-        .shutdown()
-        .await
-        .expect("finish callback request");
+        .unwrap_or_abort();
+    browser_stream.shutdown().await.unwrap_or_abort();
     let mut response = String::new();
     browser_stream
         .read_to_string(&mut response)
         .await
-        .expect("read callback response");
+        .unwrap_or_abort();
 
     assert!(response.contains("Authorization Successful"));
-    handler
-        .await
-        .expect("loopback handler task")
-        .expect("loopback handler should store credential");
+    handler.await.unwrap_or_abort().unwrap_or_abort();
     let stored = store
         .load(&AuthProviderId::codex())
-        .expect("load credential")
-        .expect("stored credential");
+        .unwrap_or_abort()
+        .unwrap_or_abort();
     assert_eq!(
         stored.access_token.as_deref(),
         Some("browser-access-secret")
@@ -606,9 +602,8 @@ fn config_with_arbitrary_auth_provider_parses() {
         "#;
 
     // act
-    let config =
-        load_config_from_str(config_str).expect("config with arbitrary authProvider should parse");
-    let provider = config.providers.get("anthropic_route").expect("provider");
+    let config = load_config_from_str(config_str).unwrap_or_abort();
+    let provider = config.providers.get("anthropic_route").unwrap_or_abort();
 
     // assert
     match provider {
@@ -678,9 +673,8 @@ fn config_with_codex_auth_provider_backward_compat() {
         "#;
 
     // act
-    let config = load_config_from_str(config_str)
-        .expect("config with codex authProvider should parse for backward compat");
-    let provider = config.providers.get("codex_route").expect("provider");
+    let config = load_config_from_str(config_str).unwrap_or_abort();
+    let provider = config.providers.get("codex_route").unwrap_or_abort();
 
     // assert
     match provider {
@@ -716,9 +710,8 @@ fn config_with_null_auth_provider_passes() {
         "#;
 
     // act
-    let config =
-        load_config_from_str(config_str).expect("config without authProvider should parse");
-    let provider = config.providers.get("default").expect("provider");
+    let config = load_config_from_str(config_str).unwrap_or_abort();
+    let provider = config.providers.get("default").unwrap_or_abort();
 
     // assert
     match provider {

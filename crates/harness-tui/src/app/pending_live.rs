@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 #[cfg(test)]
 use std::cell::RefCell;
 #[cfg(not(test))]
@@ -42,10 +43,8 @@ struct PendingLiveState;
 
 impl PendingLiveState {
     #[cfg(not(test))]
-    fn lock<T>(mutex: &'static Mutex<T>, label: &str) -> MutexGuard<'static, T> {
-        mutex
-            .lock()
-            .unwrap_or_else(|_| panic!("pending live {label} lock poisoned"))
+    fn lock<T>(mutex: &'static Mutex<T>, _label: &str) -> MutexGuard<'static, T> {
+        mutex.lock().unwrap_or_abort()
     }
 
     #[cfg(not(test))]
@@ -162,7 +161,7 @@ pub fn set_pending_connect_providers(providers: Vec<ConnectProviderOption>) {
     #[cfg(not(test))]
     {
         let lock = PENDING_CONNECT_PROVIDERS.get_or_init(|| Mutex::new(Vec::new()));
-        *lock.lock().expect("lock connect providers") = providers;
+        *lock.lock().unwrap_or_abort() = providers;
     }
     #[cfg(test)]
     {
@@ -174,7 +173,7 @@ pub(super) fn take_pending_connect_providers() -> Vec<ConnectProviderOption> {
     #[cfg(not(test))]
     {
         let lock = PENDING_CONNECT_PROVIDERS.get_or_init(|| Mutex::new(Vec::new()));
-        std::mem::take(&mut *lock.lock().expect("lock connect providers"))
+        std::mem::take(&mut *lock.lock().unwrap_or_abort())
     }
     #[cfg(test)]
     {

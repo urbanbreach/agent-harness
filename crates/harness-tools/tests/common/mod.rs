@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use harness_core::config::PermissionMode;
 use harness_core::event::{ActorKind, EventActor};
 use harness_core::perm::PermissionPolicy;
@@ -15,25 +13,18 @@ mod single_surface_live;
 mod tool_context;
 mod workspace;
 
-#[allow(unused_imports)]
 pub(crate) use event_log::{
     find_finished, read_events, wait_for_request_terminal, wait_for_succeeded_tool_call_finish,
     wait_for_tool_call_finish,
 };
-#[allow(unused_imports)]
 pub(crate) use mcp_server::{
     install_fake_mcp_server, install_fake_mcp_server_with_tools,
     install_stateful_terminal_mcp_server,
 };
-#[allow(unused_imports)]
 pub(crate) use question_events::wait_for_question_permission;
-#[allow(unused_imports)]
 pub(crate) use repo_root::repo_root;
-#[allow(unused_imports)]
 pub(crate) use single_surface_live::{SingleSurfaceShellRunner, SingleSurfaceWebFetchTransport};
-#[allow(unused_imports)]
 pub use tool_context::{test_context, test_context_with_tool_state};
-#[allow(unused_imports)]
 pub use workspace::{setup_workspace, setup_workspace_fixture};
 
 pub fn worker_actor(agent_id: &str) -> EventActor {
@@ -73,22 +64,24 @@ pub fn ask_edit_permission_policy() -> PermissionPolicy {
     .with_ask_timeout_ms(1_000)
 }
 
+#[allow(clippy::panic, reason = "test code must panic gracefully")]
 pub fn expect_invalid_arguments(error: ToolError, expected: &str) {
     match error {
         ToolError::InvalidArguments(message) => assert!(
             message.contains(expected),
             "expected invalid-arguments error containing {expected:?}, got {message:?}"
         ),
-        other => panic!("expected invalid-arguments error, got {other:?}"),
+        _ => panic!("abort"),
     }
 }
 
+#[allow(clippy::panic, reason = "test code must panic gracefully")]
 pub fn expect_execution_error(error: ToolError, expected: &str) {
     match error {
         ToolError::Execution(message) => assert!(
             message.contains(expected),
             "expected execution error containing {expected:?}, got {message:?}"
         ),
-        other => panic!("expected execution error, got {other:?}"),
+        _ => panic!("abort"),
     }
 }

@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     text::Line,
@@ -852,6 +853,7 @@ fn centered_live_shell_area(area: Rect, shell: LiveShellLayout) -> Rect {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::UnwrapOrAbort;
 
     #[test]
     fn split_secondary_surface_stacks_vertically_in_narrow_tall_windows() {
@@ -877,7 +879,7 @@ mod tests {
             &theme,
             theme.lifecycle_surface_layout(80, 22),
         )
-        .expect("minimum lifecycle overlay");
+        .unwrap_or_abort();
 
         assert_eq!(overlay, Rect::new(2, 6, 76, 11));
     }
@@ -902,7 +904,7 @@ mod tests {
     fn startup_dock_uses_opencode_vertical_stack_when_width_uncapped() {
         let app = AppState::new_startup(Vec::new(), None);
         let plan = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, 70, 24));
-        let dock = plan.dock.expect("startup dock layout");
+        let dock = plan.dock.unwrap_or_abort();
 
         assert_eq!(dock.shell.width, plan.shell.width);
         assert_eq!(dock.shell.y, 15);
@@ -922,7 +924,7 @@ mod tests {
             crossterm::event::KeyModifiers::CONTROL,
         ));
         let palette_plan = FrameLayoutPlan::for_app(&palette, Rect::new(0, 0, 100, 30));
-        let palette_overlay = palette_plan.palette_overlay.expect("palette overlay");
+        let palette_overlay = palette_plan.palette_overlay.unwrap_or_abort();
         let expected = command_palette_overlay_area(
             palette_plan.content,
             &theme,
@@ -930,7 +932,7 @@ mod tests {
             palette_plan.session_contract,
             &palette,
         )
-        .expect("centered palette overlay");
+        .unwrap_or_abort();
         assert_eq!(palette_overlay, expected);
     }
 
@@ -943,7 +945,7 @@ mod tests {
         ));
 
         let plan = FrameLayoutPlan::for_app(&palette, Rect::new(0, 0, 100, 30));
-        let overlay = plan.palette_overlay.expect("startup palette overlay");
+        let overlay = plan.palette_overlay.unwrap_or_abort();
 
         assert_eq!(overlay, Rect::new(20, 8, 60, 14));
     }
@@ -957,7 +959,7 @@ mod tests {
         assert_eq!(app.overlay_stack().top(), Some(OverlayKind::ForkSelector));
 
         let plan = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, 100, 40));
-        let overlay = plan.palette_overlay.expect("fork selector overlay");
+        let overlay = plan.palette_overlay.unwrap_or_abort();
 
         assert_eq!(overlay, Rect::new(6, 10, 88, 7));
         assert_eq!(

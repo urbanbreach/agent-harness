@@ -3,6 +3,7 @@ use super::{
     server_for_path, LspOperation, LspPosition, LspServerSpec, SUPPORTED_LSP_OPERATION_NAMES,
 };
 use crate::workspace_paths::file_uri_from_path;
+use crate::UnwrapOrAbort;
 use harness_core::config::LspConfig;
 use harness_core::tool::ToolError;
 use std::cell::RefCell;
@@ -56,7 +57,7 @@ impl LspProcessStarter for FakeLspStarter {
 }
 
 fn lsp_message(body: serde_json::Value) -> Vec<u8> {
-    let body = serde_json::to_vec(&body).expect("serialize lsp body");
+    let body = serde_json::to_vec(&body).unwrap_or_abort();
     let mut message = format!("Content-Length: {}\r\n\r\n", body.len()).into_bytes();
     message.extend(body);
     message
@@ -72,9 +73,9 @@ fn lsp_startup_responses() -> Vec<u8> {
 
 #[test]
 fn file_uri_from_path_percent_encodes_spaces() {
-    let tempdir = tempfile::tempdir().expect("tempdir");
+    let tempdir = tempfile::tempdir().unwrap_or_abort();
     let path = tempdir.path().join("space file.rs");
-    fs::write(&path, "fn demo() {}\n").expect("write source file");
+    fs::write(&path, "fn demo() {}\n").unwrap_or_abort();
     let uri = file_uri_from_path(&path);
     assert!(uri.starts_with("file://"));
     assert!(uri.contains("space%20file.rs"));
@@ -82,7 +83,7 @@ fn file_uri_from_path_percent_encodes_spaces() {
 
 #[test]
 fn lsp_position_translates_one_based_to_zero_based() {
-    let position = LspPosition::from_one_based(3, 9).expect("valid one-based position");
+    let position = LspPosition::from_one_based(3, 9).unwrap_or_abort();
     assert_eq!(position.line(), 2);
     assert_eq!(position.character(), 8);
 }
@@ -108,9 +109,9 @@ fn lsp_operation_parse_rejects_unsupported_values_with_stable_message() {
 
 #[test]
 fn server_for_path_rejects_unsupported_extension_with_stable_message() {
-    let tempdir = tempfile::tempdir().expect("tempdir");
+    let tempdir = tempfile::tempdir().unwrap_or_abort();
     let path = tempdir.path().join("fixture.lua");
-    fs::write(&path, "print('hello')\n").expect("write fixture");
+    fs::write(&path, "print('hello')\n").unwrap_or_abort();
     let err = match server_for_path(&path, &LspConfig::default()) {
         Ok(_) => panic!("lua should be unsupported"),
         Err(err) => err,
@@ -122,12 +123,11 @@ fn server_for_path_rejects_unsupported_extension_with_stable_message() {
 
 #[test]
 fn lsp_session_start_can_use_injected_process_starter_without_spawning() {
-    let tempdir = tempfile::tempdir().expect("tempdir");
+    let tempdir = tempfile::tempdir().unwrap_or_abort();
     let starter = FakeLspStarter::new();
     let spec = LspServerSpec::builtin("rust", &["fake-lsp", "--stdio"], &[".rs"], &[]);
 
-    let session = LspSession::start_with_starter(&spec, tempdir.path(), &starter)
-        .expect("start fake lsp session");
+    let session = LspSession::start_with_starter(&spec, tempdir.path(), &starter).unwrap_or_abort();
 
     assert_eq!(session.next_id, 2);
     assert_eq!(starter.started.borrow().len(), 1);
@@ -138,7 +138,7 @@ fn lsp_session_start_can_use_injected_process_starter_without_spawning() {
 #[test]
 fn lsp_operation_supported_names_match_roundtrip_strings() {
     for operation in SUPPORTED_LSP_OPERATION_NAMES {
-        let parsed = LspOperation::parse(operation).expect("operation should parse");
+        let parsed = LspOperation::parse(operation).unwrap_or_abort();
         assert_eq!(parsed.as_str(), *operation);
     }
 }

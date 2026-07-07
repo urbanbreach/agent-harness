@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
@@ -66,7 +67,7 @@ impl Coordinator {
 
         // Paths present in the snapshot must be restored to their captured state.
         for path in snapshot_paths.iter() {
-            let entry = snapshot.get(*path).expect("path in snapshot");
+            let entry = snapshot.get(*path).unwrap_or_abort();
             match apply_restore(&workspace_root, path, Some(&entry.content)).await {
                 Ok(true) => restored_paths.push(path.to_string()),
                 Ok(false) => {}

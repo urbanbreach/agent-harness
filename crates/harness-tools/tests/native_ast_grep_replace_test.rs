@@ -1,3 +1,4 @@
+use harness_tools::UnwrapOrAbort;
 use std::fs;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
@@ -93,14 +94,12 @@ for root in roots:
 print(json.dumps(matches))
 "###,
     )
-    .expect("fake ast-grep script");
+    .unwrap_or_abort();
     #[cfg(unix)]
     {
-        let mut permissions = fs::metadata(&script)
-            .expect("fake ast-grep metadata")
-            .permissions();
+        let mut permissions = fs::metadata(&script).unwrap_or_abort().permissions();
         permissions.set_mode(0o755);
-        fs::set_permissions(&script, permissions).expect("fake ast-grep executable bit");
+        fs::set_permissions(&script, permissions).unwrap_or_abort();
     }
     script
 }
@@ -110,19 +109,19 @@ async fn ast_grep_replace_defaults_to_dry_run_and_apply_uses_safe_edit_artifacts
     // arrange
     let workspace = setup_workspace_fixture();
     let fake_ast_grep = install_fake_ast_grep(workspace.workspace());
-    fs::create_dir_all(workspace.workspace().join("src")).expect("src dir");
+    fs::create_dir_all(workspace.workspace().join("src")).unwrap_or_abort();
     let source_path = workspace.workspace().join("src/lib.rs");
     fs::write(
         &source_path,
         "fn hello_world() {\n    println!(\"hello\");\n}\n",
     )
-    .expect("write rust source");
+    .unwrap_or_abort();
 
     let registry = coordinator_registry_with_ast_grep_command(
         ShellAllowlist::default(),
         fake_ast_grep.display().to_string(),
     );
-    let tool = registry.get("ast_grep_replace").expect("ast_grep_replace");
+    let tool = registry.get("ast_grep_replace").unwrap_or_abort();
     assert_eq!(tool.capability(), ToolCapability::EditFs);
     let ctx = test_context(
         workspace.workspace(),
@@ -142,18 +141,18 @@ async fn ast_grep_replace_defaults_to_dry_run_and_apply_uses_safe_edit_artifacts
             }),
         )
         .await
-        .expect("dry-run ast_grep_replace");
+        .unwrap_or_abort();
 
     // assert: dry_run produces a diff artifact and does not mutate the file.
     assert_eq!(
-        fs::read_to_string(&source_path).expect("read source"),
+        fs::read_to_string(&source_path).unwrap_or_abort(),
         "fn hello_world() {\n    println!(\"hello\");\n}\n"
     );
     assert!(
         !dry_run.artifacts.is_empty(),
         "dry-run should write a diff artifact"
     );
-    let dry_json = dry_run.structured_json.as_ref().expect("dry-run json");
+    let dry_json = dry_run.structured_json.as_ref().unwrap_or_abort();
     assert_eq!(dry_json["mode"], "dry_run");
     assert_eq!(dry_json["applied"], false);
     assert_eq!(dry_json["returned_count"], 1);
@@ -185,18 +184,18 @@ async fn ast_grep_replace_defaults_to_dry_run_and_apply_uses_safe_edit_artifacts
             }),
         )
         .await
-        .expect("apply ast_grep_replace");
+        .unwrap_or_abort();
 
     // assert
     assert_eq!(
-        fs::read_to_string(&source_path).expect("read applied source"),
+        fs::read_to_string(&source_path).unwrap_or_abort(),
         "fn goodbye_world() {\n    println!(\"hello\");\n}\n"
     );
     assert!(
         !applied.artifacts.is_empty(),
         "apply should write a diff artifact"
     );
-    let applied_json = applied.structured_json.as_ref().expect("apply json");
+    let applied_json = applied.structured_json.as_ref().unwrap_or_abort();
     assert_eq!(applied_json["mode"], "apply");
     assert_eq!(applied_json["applied"], true);
 }
@@ -206,17 +205,17 @@ async fn ast_grep_replace_rejects_unsafe_or_unsupported_requests() {
     // arrange
     let workspace = setup_workspace_fixture();
     let fake_ast_grep = install_fake_ast_grep(workspace.workspace());
-    fs::create_dir_all(workspace.workspace().join("src")).expect("src dir");
+    fs::create_dir_all(workspace.workspace().join("src")).unwrap_or_abort();
     fs::write(
         workspace.workspace().join("src/lib.rs"),
         "fn hello_world() {}\n",
     )
-    .expect("write rust source");
+    .unwrap_or_abort();
     let registry = coordinator_registry_with_ast_grep_command(
         ShellAllowlist::default(),
         fake_ast_grep.display().to_string(),
     );
-    let tool = registry.get("ast_grep_replace").expect("ast_grep_replace");
+    let tool = registry.get("ast_grep_replace").unwrap_or_abort();
     let ctx = test_context(
         workspace.workspace(),
         "run-ast-grep-replace-reject-test",
@@ -301,9 +300,9 @@ async fn ast_grep_replace_rejects_unsafe_or_unsupported_requests() {
             }),
         )
         .await
-        .expect("no match is successful");
+        .unwrap_or_abort();
     assert_eq!(
-        no_match.structured_json.as_ref().expect("json")["returned_count"],
+        no_match.structured_json.as_ref().unwrap_or_abort()["returned_count"],
         0
     );
 }
@@ -313,18 +312,18 @@ async fn ast_grep_replace_caps_large_dry_runs_and_refuses_partial_apply() {
     // arrange
     let workspace = setup_workspace_fixture();
     let fake_ast_grep = install_fake_ast_grep(workspace.workspace());
-    fs::create_dir_all(workspace.workspace().join("src")).expect("src dir");
+    fs::create_dir_all(workspace.workspace().join("src")).unwrap_or_abort();
     let large_source = (0..20)
         .map(|index| format!("fn item_{index:03}() {{}}"))
         .collect::<Vec<_>>()
         .join("\n");
     let large_path = workspace.workspace().join("src/large.rs");
-    fs::write(&large_path, large_source.clone()).expect("write large rust source");
+    fs::write(&large_path, large_source.clone()).unwrap_or_abort();
     let registry = coordinator_registry_with_ast_grep_command(
         ShellAllowlist::default(),
         fake_ast_grep.display().to_string(),
     );
-    let tool = registry.get("ast_grep_replace").expect("ast_grep_replace");
+    let tool = registry.get("ast_grep_replace").unwrap_or_abort();
     let ctx = test_context(
         workspace.workspace(),
         "run-ast-grep-replace-large-test",
@@ -344,16 +343,16 @@ async fn ast_grep_replace_caps_large_dry_runs_and_refuses_partial_apply() {
             }),
         )
         .await
-        .expect("large dry-run should cap");
+        .unwrap_or_abort();
 
     // assert: dry-run caps the returned edits and records a diff artifact.
-    let dry_json = dry_run.structured_json.as_ref().expect("dry json");
+    let dry_json = dry_run.structured_json.as_ref().unwrap_or_abort();
     assert_eq!(dry_json["total_count"], 20);
     assert_eq!(dry_json["returned_count"], 5);
     assert_eq!(dry_json["truncated"], true);
     assert!(!dry_run.artifacts.is_empty());
     assert_eq!(
-        fs::read_to_string(&large_path).expect("read large"),
+        fs::read_to_string(&large_path).unwrap_or_abort(),
         large_source
     );
 
@@ -375,7 +374,7 @@ async fn ast_grep_replace_caps_large_dry_runs_and_refuses_partial_apply() {
         .to_string()
         .contains("refused to apply 20 replacement"));
     assert_eq!(
-        fs::read_to_string(&large_path).expect("read large"),
+        fs::read_to_string(&large_path).unwrap_or_abort(),
         large_source
     );
 }
@@ -385,12 +384,12 @@ async fn ast_grep_replace_reports_missing_adapter_actionably() {
     // arrange
     let workspace = setup_workspace_fixture();
     let missing_ast_grep = workspace.workspace().join("missing-ast-grep");
-    fs::create_dir_all(workspace.workspace().join("src")).expect("src dir");
+    fs::create_dir_all(workspace.workspace().join("src")).unwrap_or_abort();
     fs::write(
         workspace.workspace().join("src/lib.rs"),
         "fn missing_adapter() {}\n",
     )
-    .expect("write rust source");
+    .unwrap_or_abort();
 
     let registry = coordinator_registry_with_ast_grep_command(
         ShellAllowlist::default(),
@@ -405,7 +404,7 @@ async fn ast_grep_replace_reports_missing_adapter_actionably() {
     // act
     let err = registry
         .get("ast_grep_replace")
-        .expect("ast_grep_replace")
+        .unwrap_or_abort()
         .call(
             ctx,
             json!({

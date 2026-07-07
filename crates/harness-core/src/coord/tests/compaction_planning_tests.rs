@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 #[path = "compaction_planning_checkpoint_tests.rs"]
 mod compaction_planning_checkpoint_tests;
@@ -9,7 +10,7 @@ pub(super) use compaction_planning_checkpoint_tests::{
 
 pub(super) fn provider_context_compaction_request_returns_none_for_single_turn_manual_context() {
     // arrange
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let redactor = DefaultRedactor::default();
     let mut run_state = test_run_state(temp_dir.path(), "run_compaction_request_noop");
     run_state.recorded_runtime_context = Some(compaction_runtime_context());
@@ -48,7 +49,7 @@ pub(super) fn provider_context_compaction_request_returns_none_for_single_turn_m
 pub(super) fn provider_context_compaction_request_builds_checkpoint_decision_without_appending_events(
 ) {
     // arrange
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let redactor = DefaultRedactor::default();
     let mut run_state = test_run_state(temp_dir.path(), "run_compaction_request_plan");
     run_state.recorded_runtime_context = Some(compaction_runtime_context());
@@ -81,7 +82,7 @@ pub(super) fn provider_context_compaction_request_builds_checkpoint_decision_wit
         &summary_decision,
     )
     .plan(&redactor)
-    .expect("compaction request should produce checkpoint decision");
+    .unwrap_or_abort();
 
     // assert
     assert_eq!(
@@ -102,7 +103,7 @@ pub(super) fn provider_context_compaction_request_builds_checkpoint_decision_wit
 }
 
 pub(super) fn compaction_trigger_pre_prompt_uses_estimate_without_provider_usage() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let clock = FakeClock::new();
     let redactor = DefaultRedactor::default();
     let mut run_state = test_run_state(temp_dir.path(), "run_compaction_pre_prompt_estimate");
@@ -143,8 +144,8 @@ pub(super) fn compaction_trigger_pre_prompt_uses_estimate_without_provider_usage
         &CompactionRuntimeConfig::default(),
         &crate::coord::CompactionSummaryDecision::deterministic(&trigger),
     )
-    .expect("pre-prompt compaction should succeed")
-    .expect("pre-prompt compaction should write a checkpoint");
+    .unwrap_or_abort()
+    .unwrap_or_abort();
 
     let events = read_events(&run_state.info.events_path);
     let written = events
@@ -153,12 +154,12 @@ pub(super) fn compaction_trigger_pre_prompt_uses_estimate_without_provider_usage
             EventV1::CompactionWritten(payload) => Some(payload.clone()),
             _ => None,
         })
-        .expect("compaction written event");
+        .unwrap_or_abort();
     assert_eq!(written.trigger_reason, "pre_prompt");
     let checkpoint_path = run_state.info.run_dir.join(&written.artifact_path);
-    let checkpoint_body = fs::read_to_string(&checkpoint_path).expect("read checkpoint artifact");
+    let checkpoint_body = fs::read_to_string(&checkpoint_path).unwrap_or_abort();
     let checkpoint_json: serde_json::Value =
-        serde_json::from_str(&checkpoint_body).expect("parse checkpoint artifact json");
+        serde_json::from_str(&checkpoint_body).unwrap_or_abort();
     assert_eq!(
         checkpoint_json
             .get("estimate_source")
@@ -168,7 +169,7 @@ pub(super) fn compaction_trigger_pre_prompt_uses_estimate_without_provider_usage
 }
 
 pub(super) fn compaction_trigger_uses_fallback_budget_without_model_metadata() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let clock = FakeClock::new();
     let redactor = DefaultRedactor::default();
     let mut run_state = test_run_state(temp_dir.path(), "run_compaction_fallback_budget");
@@ -216,8 +217,8 @@ pub(super) fn compaction_trigger_uses_fallback_budget_without_model_metadata() {
         &compaction_config,
         &crate::coord::CompactionSummaryDecision::deterministic(&trigger),
     )
-    .expect("fallback-budget compaction should succeed")
-    .expect("fallback-budget compaction should write a checkpoint");
+    .unwrap_or_abort()
+    .unwrap_or_abort();
 
     let events = read_events(&run_state.info.events_path);
     let written = events
@@ -226,11 +227,11 @@ pub(super) fn compaction_trigger_uses_fallback_budget_without_model_metadata() {
             EventV1::CompactionWritten(payload) => Some(payload.clone()),
             _ => None,
         })
-        .expect("compaction written event");
+        .unwrap_or_abort();
     let checkpoint_path = run_state.info.run_dir.join(&written.artifact_path);
-    let checkpoint_body = fs::read_to_string(&checkpoint_path).expect("read checkpoint artifact");
+    let checkpoint_body = fs::read_to_string(&checkpoint_path).unwrap_or_abort();
     let checkpoint_json: serde_json::Value =
-        serde_json::from_str(&checkpoint_body).expect("parse checkpoint artifact json");
+        serde_json::from_str(&checkpoint_body).unwrap_or_abort();
     assert_eq!(
         checkpoint_json
             .get("estimate_source")
@@ -240,7 +241,7 @@ pub(super) fn compaction_trigger_uses_fallback_budget_without_model_metadata() {
 }
 
 pub(super) fn compaction_trigger_noops_below_estimated_threshold() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let clock = FakeClock::new();
     let redactor = DefaultRedactor::default();
     let mut run_state = test_run_state(temp_dir.path(), "run_compaction_below_estimated_threshold");
@@ -280,7 +281,7 @@ pub(super) fn compaction_trigger_noops_below_estimated_threshold() {
         &CompactionRuntimeConfig::default(),
         &crate::coord::CompactionSummaryDecision::deterministic(&trigger),
     )
-    .expect("below-threshold compaction check should not fail");
+    .unwrap_or_abort();
 
     assert!(result.is_none());
     let events = read_events(&run_state.info.events_path);
@@ -295,7 +296,7 @@ pub(super) fn compaction_trigger_noops_below_estimated_threshold() {
 }
 
 pub(super) fn structured_summary_contract_can_be_disabled_for_legacy_headings() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let clock = FakeClock::new();
     let redactor = DefaultRedactor::default();
     let mut run_state = test_run_state(temp_dir.path(), "run_compaction_legacy_contract");
@@ -332,8 +333,8 @@ pub(super) fn structured_summary_contract_can_be_disabled_for_legacy_headings() 
         &compaction_config,
         &crate::coord::CompactionSummaryDecision::deterministic(&trigger),
     )
-    .expect("legacy contract compaction should succeed")
-    .expect("legacy contract compaction should write a checkpoint");
+    .unwrap_or_abort()
+    .unwrap_or_abort();
 
     let events = read_events(&run_state.info.events_path);
     let written = events
@@ -342,11 +343,11 @@ pub(super) fn structured_summary_contract_can_be_disabled_for_legacy_headings() 
             EventV1::CompactionWritten(payload) => Some(payload.clone()),
             _ => None,
         })
-        .expect("compaction written event");
+        .unwrap_or_abort();
     let checkpoint_path = run_state.info.run_dir.join(&written.artifact_path);
-    let checkpoint_body = fs::read_to_string(&checkpoint_path).expect("read checkpoint artifact");
+    let checkpoint_body = fs::read_to_string(&checkpoint_path).unwrap_or_abort();
     let checkpoint: ProviderContextCheckpoint =
-        serde_json::from_str(&checkpoint_body).expect("parse checkpoint artifact");
+        serde_json::from_str(&checkpoint_body).unwrap_or_abort();
 
     for heading in provider_context_summary_required_headings(&compaction_config) {
         assert!(
@@ -423,7 +424,7 @@ pub(super) fn model_summary_validation_rejects_missing_required_harness_section(
     let omitted_heading = provider_context_summary_required_headings(&config)
         .last()
         .copied()
-        .expect("Harness contract has headings");
+        .unwrap_or_abort();
     let mut headings = provider_context_summary_required_headings(&config)
         .iter()
         .copied()

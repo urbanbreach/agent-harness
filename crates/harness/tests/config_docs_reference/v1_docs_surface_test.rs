@@ -1,3 +1,4 @@
+use harness::UnwrapOrAbort;
 #[test]
 fn first_run_provider_auth_docs_do_not_assume_loopback_only() {
     // arrange
@@ -69,7 +70,7 @@ fn reference_prompt_patterns_map_to_harness_seams() {
     let mut section = architecture
         .split("### Prompt reference seam map\n")
         .nth(1)
-        .expect("architecture doc has prompt reference seam map");
+        .unwrap_or_abort();
     if let Some((current, _rest)) = section.split_once("\n### ") {
         section = current;
     }
@@ -144,10 +145,10 @@ fn built_in_capability_order_and_state_policy_are_documented_and_guarded() {
     let capability_section = extension
         .split("## Core runtime behavior vs disableable built-in capabilities\n")
         .nth(1)
-        .expect("extension strategy has built-in capability map")
+        .unwrap_or_abort()
         .split("\n## Built-in capability order and state policy")
         .next()
-        .expect("capability map precedes order section");
+        .unwrap_or_abort();
     let rows = markdown_table_rows(capability_section)
         .into_iter()
         .filter(|row| row.first().is_none_or(|cell| cell != "Surface"))

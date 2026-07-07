@@ -395,8 +395,12 @@ impl AppState {
             return;
         }
 
-        let current = self.model_selected.min(len.saturating_sub(1)) as isize;
-        let next = (current + delta).clamp(0, len.saturating_sub(1) as isize);
+        let current =
+            isize::try_from(self.model_selected.min(len.saturating_sub(1))).unwrap_or(isize::MAX);
+        let next = (current + delta).clamp(
+            0,
+            isize::try_from(len.saturating_sub(1)).unwrap_or(isize::MAX),
+        );
         self.model_selected = usize::try_from(next).unwrap_or(0);
     }
     pub fn launch_metadata(&self) -> &LaunchMetadata {

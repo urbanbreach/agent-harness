@@ -1,5 +1,6 @@
 use super::super::*;
 use crate::ui::ui_tool_question_todo::TranscriptTodoStatus;
+use crate::UnwrapOrAbort;
 
 #[cfg(test)]
 pub(crate) fn exact_test_block_tool_cards_skip_empty_subtitle_rows() {
@@ -40,15 +41,15 @@ pub(crate) fn exact_test_block_tool_cards_skip_empty_subtitle_rows() {
     let command_row = text_lines
         .iter()
         .position(|line| line.contains("cargo test -p harness-tui"))
-        .expect("shell inline command");
+        .unwrap_or_abort();
     let exit_row = text_lines
         .iter()
         .position(|line| line.contains("exit code: 1"))
-        .expect("shell inline error exit");
+        .unwrap_or_abort();
     let stderr_row = text_lines
         .iter()
         .position(|line| line.contains("stderr: snapshot mismatch"))
-        .expect("shell inline error stderr");
+        .unwrap_or_abort();
 
     assert!(command_row < exit_row && exit_row < stderr_row);
     assert!(
@@ -441,7 +442,7 @@ fn consecutive_tool_rows_do_not_insert_terminal_blank_rows() {
                     .any(|span| span.content.as_ref().contains("background.cancel"))
             })
         })
-        .expect("background.cancel surface");
+        .unwrap_or_abort();
     let lsp_surface = surfaces
         .iter()
         .find(|surface| {
@@ -451,7 +452,7 @@ fn consecutive_tool_rows_do_not_insert_terminal_blank_rows() {
                     .any(|span| span.content.as_ref().contains("LSP"))
             })
         })
-        .expect("lsp surface");
+        .unwrap_or_abort();
 
     assert_eq!(
         lsp_surface.top_offset,
@@ -495,7 +496,7 @@ fn block_tool_cards_render_subtitle_inline_with_title() {
     let title_row = text_lines
         .iter()
         .position(|line| line.contains("Spawn researcher · audit transcript parity · 14:36 · 1.6s"))
-        .expect("block tool title row");
+        .unwrap_or_abort();
 
     assert!(
         text_lines[title_row].contains("Spawn researcher · audit transcript parity · 14:36 · 1.6s"),
@@ -609,7 +610,7 @@ fn shell_tool_cards_without_workdir_start_with_command_row() {
     let command_row = text_lines
         .iter()
         .position(|line| line.contains("$ cargo test -p harness-tui"))
-        .expect("command row");
+        .unwrap_or_abort();
     let preceding_content = text_lines[..command_row]
         .iter()
         .filter(|line| line.contains("# ") || line.contains('$'))

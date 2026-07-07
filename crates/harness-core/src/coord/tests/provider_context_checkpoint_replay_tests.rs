@@ -1,13 +1,13 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 pub(crate) fn replay_equivalence_after_failed_turn_pre_prompt_compaction_resume() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_replay_equivalence_failed_pre_prompt";
     let run_dir = temp_dir.path().join(run_id);
     let checkpoint_rel = "artifacts/compactions/agent_000001/checkpoint_000012.json";
     let checkpoint_path = run_dir.join(checkpoint_rel);
-    fs::create_dir_all(checkpoint_path.parent().expect("checkpoint parent"))
-        .expect("create checkpoint directory");
+    fs::create_dir_all(checkpoint_path.parent().unwrap_or_abort()).unwrap_or_abort();
     let checkpoint = ProviderContextCheckpoint {
         metadata: ProviderContextCheckpointMetadata {
             checkpoint_id: "checkpoint_000012".to_string(),
@@ -101,9 +101,9 @@ pub(crate) fn replay_equivalence_after_failed_turn_pre_prompt_compaction_resume(
     };
     fs::write(
         &checkpoint_path,
-        serde_json::to_string_pretty(&checkpoint).expect("serialize checkpoint"),
+        serde_json::to_string_pretty(&checkpoint).unwrap_or_abort(),
     )
-    .expect("write checkpoint artifact");
+    .unwrap_or_abort();
     write_restore_history_fixture(
         temp_dir.path(),
         run_id,
@@ -291,11 +291,8 @@ pub(crate) fn replay_equivalence_after_failed_turn_pre_prompt_compaction_resume(
     );
 
     let expected_context = ProviderContext::from_checkpoint(checkpoint.clone());
-    let restored = restore_provider_context_from_history(temp_dir.path(), run_id)
-        .expect("restore mixed compaction history");
-    let restored_context = restored
-        .get("agent_000001")
-        .expect("restored checkpoint provider context");
+    let restored = restore_provider_context_from_history(temp_dir.path(), run_id).unwrap_or_abort();
+    let restored_context = restored.get("agent_000001").unwrap_or_abort();
 
     assert_eq!(
         restored_context.compacted_summary,
@@ -304,7 +301,7 @@ pub(crate) fn replay_equivalence_after_failed_turn_pre_prompt_compaction_resume(
     let restored_summary = restored_context
         .compacted_summary
         .as_deref()
-        .expect("restored summary");
+        .unwrap_or_abort();
     assert!(restored_summary.contains("src/read_before_failure.rs"));
     assert!(restored_summary.contains("src/modified_before_failure.rs"));
     assert_eq!(

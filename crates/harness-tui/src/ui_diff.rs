@@ -1,4 +1,5 @@
 #[cfg(test)]
+use crate::UnwrapOrAbort;
 use ratatui::style::Color;
 use ratatui::text::Line;
 
@@ -119,12 +120,13 @@ fn line_to_plain_text(line: Line<'static>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::UnwrapOrAbort;
 
     #[test]
     fn structured_diff_rows_respect_display_width_for_wide_glyphs() {
         let diff = "--- demo.txt\n+++ demo.txt\n@@ -1,2 +1,2 @@\n-漢字🙂漢字🙂漢字🙂\n+🙂漢字🙂漢字🙂漢字\n";
         let lines = render_structured_diff_lines(diff, None, "", 24, false, &Theme::default())
-            .expect("wide glyph diff lines");
+            .unwrap_or_abort();
 
         assert!(
             lines.iter().all(|line| line.width() <= 24),
@@ -154,36 +156,36 @@ mod tests {
             },
             &theme,
         )
-        .expect("stacked diff lines");
+        .unwrap_or_abort();
 
         let context_line = lines
             .iter()
             .find(|line| line_to_plain_text((*line).clone()).contains("alpha"))
-            .expect("context row");
+            .unwrap_or_abort();
         let removed_line = lines
             .iter()
             .find(|line| line_to_plain_text((*line).clone()).contains("beta"))
-            .expect("removed row");
+            .unwrap_or_abort();
         let added_line = lines
             .iter()
             .find(|line| line_to_plain_text((*line).clone()).contains("BETA"))
-            .expect("added row");
+            .unwrap_or_abort();
 
         let context_span = context_line
             .spans
             .iter()
             .find(|span| span.content.contains("alpha"))
-            .expect("context text span");
+            .unwrap_or_abort();
         let removed_span = removed_line
             .spans
             .iter()
             .find(|span| span.content.contains("beta"))
-            .expect("removed text span");
+            .unwrap_or_abort();
         let added_span = added_line
             .spans
             .iter()
             .find(|span| span.content.contains("BETA"))
-            .expect("added text span");
+            .unwrap_or_abort();
 
         assert_eq!(context_span.style.bg, Some(theme.surface.panel));
         assert_eq!(
@@ -251,7 +253,7 @@ mod tests {
             .spans
             .iter()
             .find(|span| span.content.contains("@@ -1,1 +1,1 @@"))
-            .expect("hunk header span");
+            .unwrap_or_abort();
         assert_eq!(hunk_span.style.fg, Some(reference_diff_hunk_header()));
         assert_eq!(hunk_span.style.bg, Some(theme.surface.panel));
     }
@@ -263,7 +265,7 @@ mod tests {
             "let value = \"hi\"; let total = 42; // note",
             Some(reference_diff_added_bg()),
         )
-        .expect("syntax-highlighted diff chunks");
+        .unwrap_or_abort();
 
         let find_chunk = |needle: &str| {
             chunks
@@ -350,12 +352,12 @@ mod tests {
             },
             &Theme::default(),
         )
-        .expect("rename diff lines");
+        .unwrap_or_abort();
         let header = lines
             .iter()
             .map(|line| line_to_plain_text(line.clone()))
             .find(|line| line.contains("old_name.rs") && line.contains("new_name.rs"))
-            .expect("rename header");
+            .unwrap_or_abort();
 
         assert!(
             header.contains("→"),
@@ -380,7 +382,7 @@ mod tests {
             },
             &Theme::default(),
         )
-        .expect("wrapped stacked diff lines");
+        .unwrap_or_abort();
         let rendered = lines
             .iter()
             .map(|line| line_to_plain_text(line.clone()))

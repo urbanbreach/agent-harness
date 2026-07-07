@@ -73,7 +73,9 @@ pub(super) async fn capture_openai_request(
             timeout_ms: 60_000,
             headers: BTreeMap::new(),
         },
-        Arc::new(FakeOpenAiTransport { http: http.clone() }),
+        Arc::new(FakeOpenAiTransport {
+            http: std::sync::Arc::<harness_testkit::fakes::FakeHttpClient>::clone(&http),
+        }),
     )?;
 
     let events = provider
@@ -112,6 +114,7 @@ fn tool_function_names(api_mode: OpenAiApiMode, body: &serde_json::Value) -> Vec
         .collect()
 }
 
+#[allow(clippy::panic, reason = "test code must panic gracefully")]
 fn sse_transcript(api_mode: OpenAiApiMode) -> String {
     match api_mode {
         OpenAiApiMode::ChatCompletions => concat!(
@@ -124,15 +127,16 @@ fn sse_transcript(api_mode: OpenAiApiMode) -> String {
             "data: [DONE]\n\n"
         )
         .to_string(),
-        OpenAiApiMode::Auto => unreachable!("snapshot test uses explicit API modes"),
+        OpenAiApiMode::Auto => panic!("abort"),
     }
 }
 
+#[allow(clippy::panic, reason = "test code must panic gracefully")]
 fn endpoint_path(api_mode: OpenAiApiMode) -> &'static str {
     match api_mode {
         OpenAiApiMode::ChatCompletions => "/v1/chat/completions",
         OpenAiApiMode::Responses => "/v1/responses",
-        OpenAiApiMode::Auto => unreachable!("snapshot test uses explicit API modes"),
+        OpenAiApiMode::Auto => panic!("abort"),
     }
 }
 

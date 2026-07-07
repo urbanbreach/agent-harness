@@ -1,6 +1,7 @@
+use harness_core::UnwrapOrAbort;
 #[tokio::test]
 async fn resume_existing_run_restores_sequence_and_ids() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_resume_ids";
     write_resume_fixture(
         temp_dir.path(),
@@ -101,7 +102,7 @@ async fn resume_existing_run_restores_sequence_and_ids() {
     let run = coordinator
         .resume_run(run_id, "interactive")
         .await
-        .expect("resume run");
+        .unwrap_or_abort();
 
     let post_resume_events = load_events(&run.events_path);
     assert!(post_resume_events.iter().any(|event| {
@@ -126,13 +127,13 @@ async fn resume_existing_run_restores_sequence_and_ids() {
     let new_agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn resumed agent");
+        .unwrap_or_abort();
     assert_eq!(new_agent_id, "agent_000004");
 
     let request_id = coordinator
         .request_agent_turn(supervisor_actor(), "agent_000003", "resume prompt")
         .await
-        .expect("request resumed agent turn");
+        .unwrap_or_abort();
     assert_eq!(request_id, "req_000009");
 
     let tool_call_id = coordinator
@@ -143,16 +144,16 @@ async fn resume_existing_run_restores_sequence_and_ids() {
             json!({"cmd": "true"}),
         )
         .await
-        .expect("request resumed tool call");
+        .unwrap_or_abort();
     assert_eq!(tool_call_id, "toolcall_000006");
 
     coordinator
         .resolve_permission("perm_000005", RuntimePermissionDecision::Allow, None)
         .await
-        .expect("resolve resumed permission");
+        .unwrap_or_abort();
 
     tokio::task::yield_now().await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let events = load_events(&run.events_path);
     assert!(events.iter().any(|event| {
@@ -178,7 +179,7 @@ async fn resume_existing_run_restores_sequence_and_ids() {
 }
 #[tokio::test]
 async fn resume_existing_run_reuses_same_run_id_and_directory() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_resume_same_dir";
     write_resume_fixture(
         temp_dir.path(),
@@ -227,7 +228,7 @@ async fn resume_existing_run_reuses_same_run_id_and_directory() {
     let run = coordinator
         .resume_run(run_id, "interactive")
         .await
-        .expect("resume run");
+        .unwrap_or_abort();
 
     assert_eq!(run.run_id, run_id);
     assert_eq!(run.run_dir, temp_dir.path().join(run_id));
@@ -236,7 +237,7 @@ async fn resume_existing_run_reuses_same_run_id_and_directory() {
         temp_dir.path().join(run_id).join("events.jsonl")
     );
 
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let events = load_events(&run.events_path);
     assert_eq!(
@@ -248,7 +249,7 @@ async fn resume_existing_run_reuses_same_run_id_and_directory() {
 }
 #[tokio::test]
 async fn resume_existing_run_restores_subagent_parent_lineage_for_hooks_and_replay() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_resume_subagent_parent_lineage";
     let workspace_root = temp_dir.path().display().to_string();
     let hook_output_path = temp_dir.path().join("resume-subagent-parent-hooks.txt");
@@ -347,18 +348,18 @@ async fn resume_existing_run_restores_subagent_parent_lineage_for_hooks_and_repl
     let run = coordinator
         .resume_run(run_id, "interactive")
         .await
-        .expect("resume run");
+        .unwrap_or_abort();
 
     let request_id = coordinator
         .request_agent_turn(supervisor_actor(), "agent_000002", "resume child prompt")
         .await
-        .expect("request resumed child turn");
+        .unwrap_or_abort();
     assert_eq!(request_id, "req_000002");
 
     tokio::task::yield_now().await;
-    coordinator.stop_run().await.expect("stop resumed run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
-    let hook_output = fs::read_to_string(&hook_output_path).expect("hook output");
+    let hook_output = fs::read_to_string(&hook_output_path).unwrap_or_abort();
     assert!(hook_output.lines().any(|line| {
         line.starts_with("provider_request_started|")
             && line.contains("agent=agent_000002")
@@ -370,12 +371,12 @@ async fn resume_existing_run_restores_subagent_parent_lineage_for_hooks_and_repl
     let child = plan
         .child_sessions
         .get("agent_000002")
-        .expect("projected resumed child session");
+        .unwrap_or_abort();
     assert_eq!(child.parent_session_id.as_deref(), Some("agent_000001"));
 }
 #[tokio::test]
 async fn resume_existing_run_restores_agent_profile_bindings() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_resume_agents";
     write_resume_fixture(
         temp_dir.path(),
@@ -424,19 +425,19 @@ async fn resume_existing_run_restores_agent_profile_bindings() {
     coordinator
         .resume_run(run_id, "interactive")
         .await
-        .expect("resume run");
+        .unwrap_or_abort();
 
     let request_id = coordinator
         .request_agent_turn(supervisor_actor(), "agent_000001", "continue")
         .await
-        .expect("known resumed agent should accept turn requests");
+        .unwrap_or_abort();
     assert_eq!(request_id, "req_000002");
 
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 }
 #[tokio::test]
 async fn resumed_run_agent_ids_skip_existing_child_session_directories() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_resume_skips_stale_child_dir";
     write_resume_fixture(
         temp_dir.path(),
@@ -481,16 +482,16 @@ async fn resumed_run_agent_ids_skip_existing_child_session_directories() {
         ],
     );
     let stale_child_dir = temp_dir.path().join("agent_000002");
-    fs::create_dir_all(&stale_child_dir).expect("create stale child dir");
-    fs::write(stale_child_dir.join(".writer.lock"), "").expect("write stale legacy lock");
-    fs::write(stale_child_dir.join("events.jsonl"), "").expect("write stale event log");
+    fs::create_dir_all(&stale_child_dir).unwrap_or_abort();
+    fs::write(stale_child_dir.join(".writer.lock"), "").unwrap_or_abort();
+    fs::write(stale_child_dir.join("events.jsonl"), "").unwrap_or_abort();
 
     let coordinator = test_resume_coordinator(temp_dir.path());
 
     coordinator
         .resume_run(run_id, "interactive")
         .await
-        .expect("resume run");
+        .unwrap_or_abort();
     let child_agent_id = coordinator
         .spawn_agent_idle(
             supervisor_actor(),
@@ -498,13 +499,13 @@ async fn resumed_run_agent_ids_skip_existing_child_session_directories() {
             Some("agent_000001".to_string()),
         )
         .await
-        .expect("spawn child without colliding with stale child dir");
+        .unwrap_or_abort();
 
     assert_eq!(child_agent_id, "agent_000003");
     assert!(temp_dir.path().join("agent_000003/events.jsonl").exists());
     assert_eq!(
-        fs::read_to_string(stale_child_dir.join(".writer.lock")).expect("stale lock remains"),
+        fs::read_to_string(stale_child_dir.join(".writer.lock")).unwrap_or_abort(),
         ""
     );
-    coordinator.stop_run().await.expect("stop resumed run");
+    coordinator.stop_run().await.unwrap_or_abort();
 }

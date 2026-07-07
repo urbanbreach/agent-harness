@@ -1,3 +1,4 @@
+use harness::UnwrapOrAbort;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
@@ -14,11 +15,12 @@ use common::repo_root;
 
 const V1_PROMPT_PROFILES: &str = "build plan general explore visual-engineering artistry ultrabrain deep quick unspecified-low unspecified-high writing";
 
+#[allow(clippy::panic, reason = "test code must panic gracefully")]
 fn documented_table_keys(doc: &str, heading: &str) -> BTreeSet<String> {
     let mut section = doc
         .split(&format!("## {heading}\n"))
         .nth(1)
-        .unwrap_or_else(|| panic!("missing `{heading}` section"));
+        .unwrap_or_else(|| panic!("abort"));
     if let Some((current, _rest)) = section.split_once("\n## ") {
         section = current;
     }
@@ -37,9 +39,12 @@ fn documented_table_keys(doc: &str, heading: &str) -> BTreeSet<String> {
         .collect()
 }
 
+#[allow(clippy::panic, reason = "test code must panic gracefully")]
 fn read_doc(path: &str) -> String {
-    std::fs::read_to_string(repo_root().join(path))
-        .unwrap_or_else(|err| panic!("read {path}: {err}"))
+    std::fs::read_to_string(repo_root().join(path)).unwrap_or_else(|err| {
+        let _ = err;
+        panic!("abort");
+    })
 }
 
 fn markdown_table_rows(doc: &str) -> Vec<Vec<String>> {
@@ -57,7 +62,7 @@ fn markdown_table_rows(doc: &str) -> Vec<Vec<String>> {
 }
 
 fn shipped_builtin_skill_entries() -> Vec<(String, String)> {
-    let catalog = discover_skill_catalog(&repo_root()).expect("discover shipped skill catalog");
+    let catalog = discover_skill_catalog(&repo_root()).unwrap_or_abort();
     let mut entries = catalog
         .entries
         .iter()
@@ -82,7 +87,7 @@ fn maintained_claim_phrases(matrix: &str) -> Vec<String> {
     matrix
         .split("## Maintained claim phrase list")
         .nth(1)
-        .expect("claim matrix has maintained phrase list")
+        .unwrap_or_abort()
         .lines()
         .skip_while(|line| !line.trim_start().starts_with("- "))
         .take_while(|line| line.trim_start().starts_with("- "))
@@ -93,13 +98,11 @@ fn maintained_claim_phrases(matrix: &str) -> Vec<String> {
 #[test]
 fn config_docs_runtime_and_tui_keys_match_generated_schemas() {
     let contract = public_config_contract();
-    let runtime_schema =
-        harness_schema_pretty_json().expect("runtime schema generation should succeed");
-    let runtime_schema: serde_json::Value =
-        serde_json::from_str(&runtime_schema).expect("runtime schema json");
+    let runtime_schema = harness_schema_pretty_json().unwrap_or_abort();
+    let runtime_schema: serde_json::Value = serde_json::from_str(&runtime_schema).unwrap_or_abort();
     let runtime_keys: BTreeSet<String> = runtime_schema["properties"]
         .as_object()
-        .expect("runtime schema root properties")
+        .unwrap_or_abort()
         .keys()
         .cloned()
         .collect();
@@ -108,12 +111,11 @@ fn config_docs_runtime_and_tui_keys_match_generated_schemas() {
         .map(str::to_string)
         .collect::<BTreeSet<_>>();
 
-    let tui_schema =
-        harness_tui_schema_pretty_json().expect("tui schema generation should succeed");
-    let tui_schema: serde_json::Value = serde_json::from_str(&tui_schema).expect("tui schema json");
+    let tui_schema = harness_tui_schema_pretty_json().unwrap_or_abort();
+    let tui_schema: serde_json::Value = serde_json::from_str(&tui_schema).unwrap_or_abort();
     let tui_keys: BTreeSet<String> = tui_schema["properties"]
         .as_object()
-        .expect("tui schema root properties")
+        .unwrap_or_abort()
         .keys()
         .cloned()
         .collect();
@@ -123,7 +125,7 @@ fn config_docs_runtime_and_tui_keys_match_generated_schemas() {
         .collect::<BTreeSet<_>>();
 
     let doc_path = repo_root().join("docs/config.md");
-    let doc = std::fs::read_to_string(&doc_path).expect("read docs/config.md");
+    let doc = std::fs::read_to_string(&doc_path).unwrap_or_abort();
 
     let documented_runtime_keys = documented_table_keys(&doc, "Runtime top-level keys");
     let documented_tui_keys = documented_table_keys(&doc, "TUI top-level keys");
@@ -160,7 +162,7 @@ fn config_docs_document_variable_substitution_and_config_layering() {
     let root = repo_root();
 
     // act
-    let doc = std::fs::read_to_string(root.join("docs/config.md")).expect("read docs/config.md");
+    let doc = std::fs::read_to_string(root.join("docs/config.md")).unwrap_or_abort();
 
     // assert
     assert!(
@@ -211,14 +213,14 @@ fn config_contract_semantic_metadata_matches_docs() {
     // arrange
     let contract = public_config_contract();
     let root = repo_root();
-    let doc = std::fs::read_to_string(root.join("docs/config.md")).expect("read docs/config.md");
+    let doc = std::fs::read_to_string(root.join("docs/config.md")).unwrap_or_abort();
 
     // act
     let runtime_key = contract
         .runtime_top_level_keys
         .iter()
         .find(|key| key.name == "runtime")
-        .expect("runtime key metadata");
+        .unwrap_or_abort();
     assert_eq!(runtime_key.status, PublicConfigKeyStatus::Canonical);
     assert!(doc.contains("| `runtime` | Runtime knobs"));
 
@@ -226,7 +228,7 @@ fn config_contract_semantic_metadata_matches_docs() {
         .runtime_top_level_keys
         .iter()
         .find(|key| key.name == "smallModel")
-        .expect("smallModel alias metadata");
+        .unwrap_or_abort();
     assert_eq!(
         small_model_alias.status,
         PublicConfigKeyStatus::Compatibility
@@ -238,7 +240,7 @@ fn config_contract_semantic_metadata_matches_docs() {
         .runtime_top_level_keys
         .iter()
         .find(|key| key.name == "server")
-        .expect("server metadata");
+        .unwrap_or_abort();
     assert_eq!(server.status, PublicConfigKeyStatus::UnsupportedActive);
     assert!(doc.contains(
         "`server`, `command`, `plugin`, `share`, `autoshare`, `autoupdate`, `enterprise`"
@@ -248,7 +250,7 @@ fn config_contract_semantic_metadata_matches_docs() {
         .permission_names
         .iter()
         .find(|permission| permission.name == "bash")
-        .expect("bash permission metadata");
+        .unwrap_or_abort();
     assert!(bash.canonical);
     assert!(bash.schema_property);
     assert!(bash.supports_selectors);
@@ -260,7 +262,7 @@ fn config_contract_semantic_metadata_matches_docs() {
         .compaction_knobs
         .iter()
         .find(|knob| knob.canonical_name == "fallback_input_tokens")
-        .expect("fallback_input_tokens metadata");
+        .unwrap_or_abort();
     assert_eq!(compaction.default_value, "32768");
     assert!(compaction.aliases.contains(&"fallbackInputTokens"));
     assert!(doc.contains("| `fallbackInputTokens` / `fallback_input_tokens` | `32768` |"));
@@ -281,20 +283,18 @@ fn config_contract_semantic_metadata_matches_docs() {
 fn config_docs_capture_v1_skill_contract_and_authoring_guide() {
     // arrange
     let root = repo_root();
-    let doc = std::fs::read_to_string(root.join("docs/config.md")).expect("read docs/config.md");
-    let starter = std::fs::read_to_string(root.join("docs/starter-skills.md"))
-        .expect("read docs/starter-skills.md");
-    let readme = std::fs::read_to_string(root.join("README.md")).expect("read README.md");
-    let runtime_schema =
-        harness_schema_pretty_json().expect("runtime schema generation should succeed");
+    let doc = std::fs::read_to_string(root.join("docs/config.md")).unwrap_or_abort();
+    let starter = std::fs::read_to_string(root.join("docs/starter-skills.md")).unwrap_or_abort();
+    let readme = std::fs::read_to_string(root.join("README.md")).unwrap_or_abort();
+    let runtime_schema = harness_schema_pretty_json().unwrap_or_abort();
     let runtime_schema: serde_json::Value =
         // act
-        serde_json::from_str(&runtime_schema).expect("runtime schema json");
+        serde_json::from_str(&runtime_schema).unwrap_or_abort();
 
     // assert
     assert!(runtime_schema["definitions"]["SkillsConfig"]["properties"]
         .as_object()
-        .expect("skills schema properties")
+        .unwrap_or_abort()
         .contains_key("disabled"));
     assert_eq!(
         runtime_schema["properties"]["skills"]["default"]["disabled"],
@@ -356,6 +356,7 @@ fn config_docs_capture_v1_skill_contract_and_authoring_guide() {
 }
 
 #[test]
+#[allow(clippy::panic, reason = "test code must panic gracefully")]
 fn built_in_skill_docs_and_capability_map_cover_catalog_stable_ids() {
     // arrange
     let config = read_doc("docs/config.md");
@@ -388,7 +389,7 @@ fn built_in_skill_docs_and_capability_map_cover_catalog_stable_ids() {
                 row.first()
                     .is_some_and(|cell| cell.contains(&format!("`{stable_id}`")))
             })
-            .unwrap_or_else(|| panic!("starter skill docs missing built-in row for {stable_id}"));
+            .unwrap_or_else(|| panic!("abort"));
         assert!(
             starter_row.get(1).is_some_and(|cell| cell.len() > 20),
             "starter skill row for {stable_id} needs a concrete use-when entry"

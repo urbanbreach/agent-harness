@@ -1,7 +1,8 @@
+use harness::UnwrapOrAbort;
 #[test]
 fn sessions_export_cli_fails_closed_for_resolved_config_credentials_in_events() {
     // arrange
-    let workspace = tempdir().expect("workspace tempdir");
+    let workspace = tempdir().unwrap_or_abort();
     let config_path = workspace.path().join("harness.jsonc");
     write_support_export_config(
         &config_path,
@@ -17,7 +18,7 @@ fn sessions_export_cli_fails_closed_for_resolved_config_credentials_in_events() 
 
     let session_dir = workspace.path().join(".agent-harness/sessions");
     let run_dir = session_dir.join("run_export_config_credentials");
-    std::fs::create_dir_all(&run_dir).expect("create run dir");
+    std::fs::create_dir_all(&run_dir).unwrap_or_abort();
     write_events_jsonl(
         &run_dir,
         &[
@@ -60,14 +61,14 @@ fn sessions_export_cli_fails_closed_for_resolved_config_credentials_in_events() 
         .env("MY_PROVIDER_KEY", "plain-env-config-secret-value")
         .args([
             "--config",
-            config_path.to_str().expect("config path utf-8"),
+            config_path.to_str().unwrap_or_abort(),
             "--session-dir",
-            session_dir.to_str().expect("session dir utf-8"),
+            session_dir.to_str().unwrap_or_abort(),
             "sessions",
             "export",
             "run_export_config_credentials",
             "--output",
-            export_path.to_str().expect("export path utf-8"),
+            export_path.to_str().unwrap_or_abort(),
         ])
         .output();
 
@@ -84,8 +85,8 @@ fn sessions_export_cli_fails_closed_for_resolved_config_credentials_in_events() 
 #[test]
 fn sessions_export_cli_uses_session_workspace_for_readiness_when_config_is_implicit() {
     // arrange
-    let session_workspace = tempdir().expect("session workspace tempdir");
-    let caller_workspace = tempdir().expect("caller workspace tempdir");
+    let session_workspace = tempdir().unwrap_or_abort();
+    let caller_workspace = tempdir().unwrap_or_abort();
     let session_config_path = session_workspace.path().join("harness.jsonc");
     let caller_config_path = caller_workspace.path().join("harness.jsonc");
     write_support_export_config(&session_config_path, "session", "session-inline-secret", "");
@@ -93,7 +94,7 @@ fn sessions_export_cli_uses_session_workspace_for_readiness_when_config_is_impli
 
     let session_dir = session_workspace.path().join(".agent-harness/sessions");
     let run_dir = session_dir.join("run_export_session_rooted_readiness");
-    std::fs::create_dir_all(&run_dir).expect("create run dir");
+    std::fs::create_dir_all(&run_dir).unwrap_or_abort();
     write_events_jsonl(
         &run_dir,
         &[
@@ -121,12 +122,12 @@ fn sessions_export_cli_uses_session_workspace_for_readiness_when_config_is_impli
         .current_dir(caller_workspace.path())
         .args([
             "--session-dir",
-            session_dir.to_str().expect("session dir utf-8"),
+            session_dir.to_str().unwrap_or_abort(),
             "sessions",
             "export",
             "run_export_session_rooted_readiness",
             "--output",
-            export_path.to_str().expect("export path utf-8"),
+            export_path.to_str().unwrap_or_abort(),
         ])
         .output();
 
@@ -137,9 +138,9 @@ fn sessions_export_cli_uses_session_workspace_for_readiness_when_config_is_impli
         String::from_utf8_lossy(&output.stderr)
     );
     let bundle: serde_json::Value = serde_json::from_slice(
-        &std::fs::read(&export_path).expect("read session-rooted export"),
+        &std::fs::read(&export_path).unwrap_or_abort(),
     )
-    .expect("session-rooted export bundle should parse");
+    .unwrap_or_abort();
     assert_eq!(
         bundle["support"]["config_summary"]["config"],
         session_config_path.display().to_string()
@@ -153,7 +154,7 @@ fn sessions_export_cli_uses_session_workspace_for_readiness_when_config_is_impli
 #[test]
 fn sessions_export_cli_fails_closed_for_hidden_prompt_config_values_in_events() {
     // arrange
-    let workspace = tempdir().expect("workspace tempdir");
+    let workspace = tempdir().unwrap_or_abort();
     let config_path = workspace.path().join("harness.jsonc");
     std::fs::write(
         &config_path,
@@ -188,11 +189,11 @@ fn sessions_export_cli_fails_closed_for_hidden_prompt_config_values_in_events() 
 }
 "#,
     )
-    .expect("write prompt-secret config");
+    .unwrap_or_abort();
 
     let session_dir = workspace.path().join(".agent-harness/sessions");
     let run_dir = session_dir.join("run_export_prompt_secrets");
-    std::fs::create_dir_all(&run_dir).expect("create run dir");
+    std::fs::create_dir_all(&run_dir).unwrap_or_abort();
     write_events_jsonl(
         &run_dir,
         &[
@@ -235,14 +236,14 @@ fn sessions_export_cli_fails_closed_for_hidden_prompt_config_values_in_events() 
         .current_dir(workspace.path())
         .args([
             "--config",
-            config_path.to_str().expect("config path utf-8"),
+            config_path.to_str().unwrap_or_abort(),
             "--session-dir",
-            session_dir.to_str().expect("session dir utf-8"),
+            session_dir.to_str().unwrap_or_abort(),
             "sessions",
             "export",
             "run_export_prompt_secrets",
             "--output",
-            export_path.to_str().expect("export path utf-8"),
+            export_path.to_str().unwrap_or_abort(),
         ])
         .output();
 
@@ -259,7 +260,7 @@ fn sessions_export_cli_fails_closed_for_hidden_prompt_config_values_in_events() 
 #[test]
 fn sessions_export_cli_excludes_stored_credentials_and_scans_for_leaks() {
     // arrange
-    let workspace = tempdir().expect("workspace tempdir");
+    let workspace = tempdir().unwrap_or_abort();
     let data_home = workspace.path().join("data-home");
     let config_path = workspace.path().join("harness.jsonc");
     write_support_export_config(
@@ -278,11 +279,11 @@ fn sessions_export_cli_excludes_stored_credentials_and_scans_for_leaks() {
             Some("2099-01-01T00:00:00Z".to_string()),
             "2026-05-30T00:00:00Z",
         ))
-        .expect("save stored credential");
+        .unwrap_or_abort();
 
     let session_dir = workspace.path().join(".agent-harness/sessions");
     let run_dir = session_dir.join("run_export_stored_credentials");
-    std::fs::create_dir_all(&run_dir).expect("create run dir");
+    std::fs::create_dir_all(&run_dir).unwrap_or_abort();
     write_events_jsonl(
         &run_dir,
         &[
@@ -311,14 +312,14 @@ fn sessions_export_cli_excludes_stored_credentials_and_scans_for_leaks() {
         .env("HARNESS_DATA_HOME", &data_home)
         .args([
             "--config",
-            config_path.to_str().expect("config path utf-8"),
+            config_path.to_str().unwrap_or_abort(),
             "--session-dir",
-            session_dir.to_str().expect("session dir utf-8"),
+            session_dir.to_str().unwrap_or_abort(),
             "sessions",
             "export",
             "run_export_stored_credentials",
             "--output",
-            export_path.to_str().expect("export path utf-8"),
+            export_path.to_str().unwrap_or_abort(),
         ])
         .output();
 
@@ -328,11 +329,11 @@ fn sessions_export_cli_excludes_stored_credentials_and_scans_for_leaks() {
         "stderr:\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let body = std::fs::read_to_string(&export_path).expect("read export");
+    let body = std::fs::read_to_string(&export_path).unwrap_or_abort();
     assert!(!body.contains("stored-access-secret-value"));
     assert!(!body.contains("stored-refresh-secret-value"));
     let bundle: serde_json::Value =
-        serde_json::from_str(&body).expect("stored credential export parses");
+        serde_json::from_str(&body).unwrap_or_abort();
     assert_eq!(
         bundle["support"]["credential_store_manifest"]["providers"][0]["status"],
         "excluded_stored"
@@ -343,7 +344,7 @@ fn sessions_export_cli_excludes_stored_credentials_and_scans_for_leaks() {
     );
 
     let leak_run_dir = session_dir.join("run_export_stored_credential_leak");
-    std::fs::create_dir_all(&leak_run_dir).expect("create leak run dir");
+    std::fs::create_dir_all(&leak_run_dir).unwrap_or_abort();
     write_events_jsonl(
         &leak_run_dir,
         &[
@@ -378,14 +379,14 @@ fn sessions_export_cli_excludes_stored_credentials_and_scans_for_leaks() {
         .env("HARNESS_DATA_HOME", &data_home)
         .args([
             "--config",
-            config_path.to_str().expect("config path utf-8"),
+            config_path.to_str().unwrap_or_abort(),
             "--session-dir",
-            session_dir.to_str().expect("session dir utf-8"),
+            session_dir.to_str().unwrap_or_abort(),
             "sessions",
             "export",
             "run_export_stored_credential_leak",
             "--output",
-            leak_export_path.to_str().expect("export path utf-8"),
+            leak_export_path.to_str().unwrap_or_abort(),
         ])
         .output();
     assert!(!leak_output.status.success());
@@ -435,5 +436,5 @@ fn write_support_export_config(
 "#
         ),
     )
-    .expect("write support export config");
+    .unwrap_or_abort();
 }

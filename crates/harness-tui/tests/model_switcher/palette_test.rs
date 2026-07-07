@@ -1,3 +1,4 @@
+use harness_tui::UnwrapOrAbort;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -10,13 +11,13 @@ use crate::model_switcher_fixtures::*;
 
 #[test]
 fn model_switcher_ui_opens_from_slash_command() {
-    let _config = load_config_from_str(rich_model_config()).expect("config should parse");
+    let _config = load_config_from_str(rich_model_config()).unwrap_or_abort();
 
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let sink = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
 
@@ -41,7 +42,7 @@ fn model_switcher_ui_opens_from_slash_command() {
     assert!(app.model_switcher_visible);
     assert_eq!(app.model_options.len(), 1);
     assert_eq!(app.model_options[0].variant(), None);
-    assert!(intents.lock().expect("lock intents").is_empty());
+    assert!(intents.lock().unwrap_or_abort().is_empty());
 
     let mut replay = AppState::new_replay(PathBuf::from("/tmp/replay-models"), Vec::new());
     replay.set_launch_metadata(
@@ -53,7 +54,7 @@ fn model_switcher_ui_opens_from_slash_command() {
 
 #[test]
 fn model_switcher_populates_options_from_launch_metadata() {
-    let _config = load_config_from_str(rich_model_config()).expect("config should parse");
+    let _config = load_config_from_str(rich_model_config()).unwrap_or_abort();
 
     let available_models = available_models();
 
@@ -79,7 +80,7 @@ fn model_switcher_populates_options_from_launch_metadata() {
 
 #[test]
 fn model_switcher_shows_base_models_without_variant_rows() {
-    let _config = load_config_from_str(rich_model_config()).expect("config should parse");
+    let _config = load_config_from_str(rich_model_config()).unwrap_or_abort();
 
     let mut app = AppState::new_live(None, false, None);
     app.set_launch_metadata(
@@ -117,10 +118,10 @@ fn model_switcher_renders_harness_select_dialog_contract() {
     app.handle_key(key(KeyCode::Enter));
 
     let backend = TestBackend::new(100, 30);
-    let mut terminal = Terminal::new(backend).expect("create terminal");
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
     terminal
         .draw(|frame| harness_tui::ui::render_app(frame, &app))
-        .expect("draw frame");
+        .unwrap_or_abort();
     let rendered = format!("{:?}", terminal.backend().buffer());
 
     assert!(rendered.contains("Select model"), "{rendered}");
@@ -164,10 +165,10 @@ fn model_switcher_filter_flattens_to_title_and_provider_matches() {
     );
 
     let backend = TestBackend::new(100, 30);
-    let mut terminal = Terminal::new(backend).expect("create terminal");
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
     terminal
         .draw(|frame| harness_tui::ui::render_app(frame, &app))
-        .expect("draw frame");
+        .unwrap_or_abort();
     let rendered = format!("{:?}", terminal.backend().buffer());
 
     assert!(rendered.contains("Claude Sonnet 4.5"), "{rendered}");
@@ -190,10 +191,10 @@ fn model_switcher_renders_fallback_error_status() {
     app.handle_key(key(KeyCode::Enter));
 
     let backend = TestBackend::new(100, 30);
-    let mut terminal = Terminal::new(backend).expect("create terminal");
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
     terminal
         .draw(|frame| harness_tui::ui::render_app(frame, &app))
-        .expect("draw frame");
+        .unwrap_or_abort();
     let rendered = format!("{:?}", terminal.backend().buffer());
 
     // assert
@@ -213,7 +214,7 @@ fn model_switcher_enter_emits_switch_intent_for_selected_model() {
     let sink = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
 
@@ -233,11 +234,11 @@ fn model_switcher_enter_emits_switch_intent_for_selected_model() {
     assert!(!app.model_switcher_visible);
     assert_eq!(app.active_profile(), "build");
     assert_eq!(app.launch_mode_label(), Some("Continued"));
-    let intents = intents.lock().expect("lock intents");
+    let intents = intents.lock().unwrap_or_abort();
     let UiIntent::SwitchModel {
         profile,
         launch_metadata,
-    } = intents.last().expect("switch intent should be emitted")
+    } = intents.last().unwrap_or_abort()
     else {
         panic!("expected switch model intent");
     };
@@ -306,10 +307,10 @@ fn model_switcher_opens_no_provider_connect_state() {
     assert!(app.model_options.is_empty());
 
     let backend = TestBackend::new(100, 30);
-    let mut terminal = Terminal::new(backend).expect("create terminal");
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
     terminal
         .draw(|frame| harness_tui::ui::render_app(frame, &app))
-        .expect("draw frame");
+        .unwrap_or_abort();
     let rendered = format!("{:?}", terminal.backend().buffer());
     assert!(rendered.contains("Connect a provider"), "{rendered}");
 }
@@ -328,10 +329,10 @@ fn model_switcher_groups_authenticated_builtin_provider_rows() {
     app.handle_key(key(KeyCode::Enter));
 
     let backend = TestBackend::new(100, 30);
-    let mut terminal = Terminal::new(backend).expect("create terminal");
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
     terminal
         .draw(|frame| harness_tui::ui::render_app(frame, &app))
-        .expect("draw frame");
+        .unwrap_or_abort();
     let rendered = format!("{:?}", terminal.backend().buffer());
 
     assert!(rendered.contains("OpenAI Codex"), "{rendered}");
@@ -345,7 +346,7 @@ fn model_switcher_search_matches_authenticated_provider_label_and_switches() {
     let sink = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
     let mut app = AppState::new_live(None, false, Some(sink));
@@ -372,10 +373,10 @@ fn model_switcher_search_matches_authenticated_provider_label_and_switches() {
         Some("GitHub Copilot")
     );
     assert_eq!(app.current_model_label(), "GPT 5.5");
-    let intents = intents.lock().expect("lock intents");
+    let intents = intents.lock().unwrap_or_abort();
     let UiIntent::SwitchModel {
         launch_metadata, ..
-    } = intents.last().expect("switch intent")
+    } = intents.last().unwrap_or_abort()
     else {
         panic!("expected switch model intent");
     };
@@ -389,7 +390,7 @@ fn no_provider_prompt_submission_blocks_with_connect_guidance() {
     let sink = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
     let mut app = AppState::new_live(None, false, Some(sink));
@@ -400,7 +401,7 @@ fn no_provider_prompt_submission_blocks_with_connect_guidance() {
     }
     app.handle_key(key(KeyCode::Enter));
 
-    assert!(intents.lock().expect("lock intents").is_empty());
+    assert!(intents.lock().unwrap_or_abort().is_empty());
     assert_eq!(
         app.status_banner.as_deref(),
         Some("Connect a provider to send prompts")

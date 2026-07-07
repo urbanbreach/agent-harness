@@ -1,10 +1,9 @@
 use super::*;
+use harness::UnwrapOrAbort;
 
 #[test]
 fn tui_startup_carries_unsent_draft_into_new_live_session() {
-    let _guard = startup_draft_test_lock()
-        .lock()
-        .expect("startup draft test lock poisoned");
+    let _guard = startup_draft_test_lock().lock().unwrap_or_abort();
     set_pending_live_prompt_draft(None);
 
     set_pending_live_prompt_draft(Some("draft to keep".to_string()));
@@ -63,7 +62,7 @@ fn workflow_managed_live_tuis_preserve_terminal_between_handoffs() {
 
 #[test]
 fn new_live_tui_options_allow_pre_bootstrap_run_directory() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_dir = temp_dir.path().join("run_projected_new_session");
     let (_tx, rx) = std_mpsc::channel::<LiveUpdate>();
     let sink: UiIntentSink = Arc::new(|_| {});
@@ -94,7 +93,7 @@ fn new_live_tui_options_allow_pre_bootstrap_run_directory() {
 
 #[tokio::test]
 async fn session_history_refresh_sends_bootstrapped_catalog() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_dir = temp_dir.path().join("run_projected_new_session");
     write_catalog_run(&run_dir, &catalog_events("run_projected_new_session"));
     let (tx, rx) = std_mpsc::channel::<LiveUpdate>();
@@ -104,9 +103,9 @@ async fn session_history_refresh_sends_bootstrapped_catalog() {
         spawn_session_history_refresh(temp_dir.path().to_path_buf(), tx),
     )
     .await
-    .expect("refresh session history");
+    .unwrap_or_abort();
 
-    let update = rx.try_recv().expect("session history update");
+    let update = rx.try_recv().unwrap_or_abort();
     let LiveUpdate::SessionHistory(entries) = update else {
         panic!("expected session history update");
     };
@@ -117,7 +116,7 @@ async fn session_history_refresh_sends_bootstrapped_catalog() {
 
 #[test]
 fn resumed_live_tui_options_carry_normalized_lineage_history() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let root_dir = temp_dir.path().join("root_session");
     let child_dir = temp_dir.path().join("child_session");
     write_catalog_run(&root_dir, &catalog_events("root_session"));
@@ -126,10 +125,9 @@ fn resumed_live_tui_options_carry_normalized_lineage_history() {
         child_dir.join("meta.json"),
         r#"{"harness_lineage":{"harness_source_run_id":"root_session"}}"#,
     )
-    .expect("write child lineage metadata");
+    .unwrap_or_abort();
 
-    let entries = load_live_session_history_entries(&child_dir, temp_dir.path())
-        .expect("load live lineage entries");
+    let entries = load_live_session_history_entries(&child_dir, temp_dir.path()).unwrap_or_abort();
     assert_eq!(entries.len(), 2);
     assert_eq!(
         entries

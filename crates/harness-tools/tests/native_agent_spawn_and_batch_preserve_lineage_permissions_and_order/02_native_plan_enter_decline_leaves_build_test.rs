@@ -1,9 +1,10 @@
+use harness_tools::UnwrapOrAbort;
 #[tokio::test]
 async fn native_plan_enter_decline_leaves_build_agent_active_without_spawning_plan() {
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let session_dir = workspace.join("sessions");
-    fs::create_dir_all(&session_dir).expect("session dir");
+    fs::create_dir_all(&session_dir).unwrap_or_abort();
 
     let mut config = CoordinatorConfig::new(session_dir);
     config.permission_policy = plan_mode_permission_policy();
@@ -30,11 +31,11 @@ async fn native_plan_enter_decline_leaves_build_agent_active_without_spawning_pl
     let run = handle
         .start_run("native_plan_enter_decline", &workspace)
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let build_agent_id = handle
         .spawn_agent_idle(anonymous_supervisor_actor(), "build", None)
         .await
-        .expect("spawn build");
+        .unwrap_or_abort();
 
     let tool_call_id = handle
         .request_tool_call(
@@ -44,13 +45,13 @@ async fn native_plan_enter_decline_leaves_build_agent_active_without_spawning_pl
             json!({"goal": "implement parity"}),
         )
         .await
-        .expect("request plan_enter");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &tool_call_id).await;
 
     let events = read_events(&run.events_path);
     let finished = find_finished(&events, &tool_call_id);
     assert_eq!(finished.status, ToolCallStatus::Succeeded);
-    let output = finished.output_json.expect("plan_enter structured output");
+    let output = finished.output_json.unwrap_or_abort();
     assert_eq!(output["agent"], "build");
     assert_eq!(output["approved"], false);
     assert_eq!(output["goal"], "implement parity");
@@ -69,7 +70,7 @@ async fn plan_profile_can_spawn_explore_but_bash_is_permission_denied() {
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let session_dir = workspace.join("sessions");
-    fs::create_dir_all(&session_dir).expect("session dir");
+    fs::create_dir_all(&session_dir).unwrap_or_abort();
 
     let mut config = CoordinatorConfig::new(session_dir);
     config.permission_policy = plan_mode_permission_policy();
@@ -84,11 +85,11 @@ async fn plan_profile_can_spawn_explore_but_bash_is_permission_denied() {
     let run = handle
         .start_run("native_plan_task_boundary", &workspace)
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let plan_agent_id = handle
         .spawn_agent_idle(anonymous_supervisor_actor(), "plan", None)
         .await
-        .expect("spawn plan");
+        .unwrap_or_abort();
 
     let denied = handle
         .request_tool_call(
@@ -126,17 +127,17 @@ async fn plan_profile_can_spawn_explore_but_bash_is_permission_denied() {
             }),
         )
         .await
-        .expect("plan profile can call task");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &task_tool_call_id).await;
 
     let events = read_events(&run.events_path);
     let finished = find_finished(&events, &task_tool_call_id);
     assert_eq!(finished.status, ToolCallStatus::Succeeded);
-    let output = finished.output_json.expect("task structured output");
+    let output = finished.output_json.unwrap_or_abort();
     assert_eq!(output["profile"], json!("explore"));
     let child_session_id = output["child_session_id"]
         .as_str()
-        .expect("child session id");
+        .unwrap_or_abort();
     assert!(events.iter().any(|event| matches!(
         &event.payload,
         EventV1::AgentSpawned(payload)
@@ -157,7 +158,7 @@ async fn plan_profile_can_spawn_explore_but_bash_is_permission_denied() {
             }),
         )
         .await
-        .expect("plan profile can request task policy denial");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &denied_general).await;
 
     let events = read_events(&run.events_path);
@@ -187,7 +188,7 @@ async fn plan_profile_can_spawn_explore_but_bash_is_permission_denied() {
             }),
         )
         .await
-        .expect("plan profile can request custom task policy denial");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &denied_custom).await;
 
     let events = read_events(&run.events_path);
@@ -225,13 +226,13 @@ async fn task_subagent_type_selects_explore_and_general_profiles() {
                 }),
             )
             .await
-            .expect("request task");
+            .unwrap_or_abort();
         wait_for_tool_call_finish(&run.events_path, &tool_call_id).await;
 
         let events = read_events(&run.events_path);
         let finished = find_finished(&events, &tool_call_id);
         assert_eq!(finished.status, ToolCallStatus::Succeeded);
-        let output = finished.output_json.expect("task structured output");
+        let output = finished.output_json.unwrap_or_abort();
         assert_eq!(output["profile"], json!(profile));
         assert_eq!(output["runtime"]["profile"], json!(profile));
         assert_eq!(output["runtime"]["category"], json!(profile));
@@ -241,19 +242,19 @@ async fn task_subagent_type_selects_explore_and_general_profiles() {
         assert!(output["child_toolset"].is_array());
         assert!(output["next_actions"]
             .as_array()
-            .expect("next actions")
+            .unwrap_or_abort()
             .iter()
             .any(|action| action["action"] == json!("cancel")
                 && action["tool"] == json!("background_cancel")));
         assert!(output["next_actions"]
             .as_array()
-            .expect("next actions")
+            .unwrap_or_abort()
             .iter()
             .any(|action| action["action"] == json!("cancel_compat")
                 && action["tool"] == json!("background_output")));
         let child_session_id = output["child_session_id"]
             .as_str()
-            .expect("child session id");
+            .unwrap_or_abort();
         assert!(events.iter().any(|event| matches!(
             &event.payload,
             EventV1::AgentSpawned(payload)
@@ -283,17 +284,17 @@ async fn task_subagent_type_wins_when_category_hint_is_also_present() {
             }),
         )
         .await
-        .expect("request task");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &tool_call_id).await;
 
     let events = read_events(&run.events_path);
     let finished = find_finished(&events, &tool_call_id);
     assert_eq!(finished.status, ToolCallStatus::Succeeded);
-    let output = finished.output_json.expect("task structured output");
+    let output = finished.output_json.unwrap_or_abort();
     assert_eq!(output["profile"], json!("general"));
     let child_session_id = output["child_session_id"]
         .as_str()
-        .expect("child session id");
+        .unwrap_or_abort();
     assert!(events.iter().any(|event| matches!(
         &event.payload,
         EventV1::AgentSpawned(payload)
@@ -309,7 +310,7 @@ async fn worker_without_task_tool_cannot_redelegate() {
     let general_id = handle
         .spawn_agent_idle(anonymous_supervisor_actor(), "general", None)
         .await
-        .expect("spawn general worker");
+        .unwrap_or_abort();
 
     let denied = handle
         .request_tool_call(
@@ -353,7 +354,7 @@ async fn restricted_profiles_reject_edit_bash_task_and_mcp_calls() {
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let session_dir = workspace.join("sessions");
-    fs::create_dir_all(&session_dir).expect("session dir");
+    fs::create_dir_all(&session_dir).unwrap_or_abort();
     let mcp_server = workspace.join("fake_mcp_server.py");
     install_fake_mcp_server(&mcp_server);
 
@@ -373,11 +374,11 @@ async fn restricted_profiles_reject_edit_bash_task_and_mcp_calls() {
     let run = handle
         .start_run("restricted_profile_tool_depth", &workspace)
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let explore_agent_id = handle
         .spawn_agent_idle(anonymous_supervisor_actor(), "explore", None)
         .await
-        .expect("spawn explore");
+        .unwrap_or_abort();
 
     for (tool_id, args_json) in [
         (
@@ -442,7 +443,7 @@ async fn restricted_profiles_reject_edit_bash_task_and_mcp_calls() {
     let quick_agent_id = handle
         .spawn_agent_idle(anonymous_supervisor_actor(), "quick", None)
         .await
-        .expect("spawn quick");
+        .unwrap_or_abort();
     let denied_recursive_task = handle
         .request_tool_call(
             worker_actor(&quick_agent_id),
@@ -509,13 +510,13 @@ async fn task_category_without_matching_profile_falls_back_to_general() {
             }),
         )
         .await
-        .expect("request task");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &tool_call_id).await;
 
     let events = read_events(&run.events_path);
     let finished = find_finished(&events, &tool_call_id);
     assert_eq!(finished.status, ToolCallStatus::Succeeded);
-    let output = finished.output_json.expect("task structured output");
+    let output = finished.output_json.unwrap_or_abort();
     assert_eq!(output["profile"], json!("general"));
     assert_eq!(output["route"]["requested_category"], json!("quick"));
     assert_eq!(output["route"]["resolved_profile"], json!("general"));
@@ -556,7 +557,7 @@ async fn task_category_without_matching_profile_falls_back_to_general() {
     );
     let child_session_id = output["child_session_id"]
         .as_str()
-        .expect("child session id");
+        .unwrap_or_abort();
     assert!(events.iter().any(|event| matches!(
         &event.payload,
         EventV1::AgentSpawned(payload)

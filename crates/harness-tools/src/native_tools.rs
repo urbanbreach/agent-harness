@@ -383,7 +383,7 @@ impl Tool for GlobTool {
                 json!({
                     "pattern": args.pattern,
                     "path": args.path,
-                    "limit": args.limit.unwrap_or(DEFAULT_GLOB_LIMIT as u32),
+                    "limit": args.limit.unwrap_or(u32::try_from(DEFAULT_GLOB_LIMIT).unwrap_or(u32::MAX)),
                 }),
             )
             .await
@@ -418,7 +418,7 @@ impl Tool for GrepTool {
                     "path": args.path,
                     "include": args.include,
                     "literal": args.literal,
-                    "limit": args.limit.unwrap_or(DEFAULT_GREP_LIMIT as u32),
+                    "limit": args.limit.unwrap_or(u32::try_from(DEFAULT_GREP_LIMIT).unwrap_or(u32::MAX)),
                     "context": DEFAULT_GREP_CONTEXT,
                 }),
             )
@@ -446,7 +446,7 @@ impl Tool for BashTool {
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         let args: BashArgs = parse_tool_args(args_json)?;
-        ShellRunTool::with_runner(self.allowlist.clone(), self.runner.clone())
+        ShellRunTool::with_runner(self.allowlist.clone(), Arc::clone(&self.runner))
             .call(
                 ctx,
                 json!({

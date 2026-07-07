@@ -1,4 +1,5 @@
 use super::*;
+use harness::UnwrapOrAbort;
 
 #[test]
 fn live_coordinator_config_warmup_reuses_interactive_config() {
@@ -57,10 +58,9 @@ fn live_coordinator_config_warmup_reuses_interactive_config() {
         }
         "#,
     )
-    .expect("config should parse");
+    .unwrap_or_abort();
     let session_dir = PathBuf::from("/tmp/warmed-session-dir");
-    let agent_profiles = bootstrap::interactive_agent_profiles(&config)
-        .expect("interactive agent profiles should build");
+    let agent_profiles = bootstrap::interactive_agent_profiles(&config).unwrap_or_abort();
     let settings = LiveSettings {
         config: Some(config),
         config_path: None,
@@ -71,7 +71,7 @@ fn live_coordinator_config_warmup_reuses_interactive_config() {
         seed: 0,
         config_digest: "digest".to_string(),
         launch_metadata: interactive_launch_metadata(None, &agent_profiles, "build")
-            .expect("launch metadata should build"),
+            .unwrap_or_abort(),
         launch_mode_label: None,
         toggles: TogglesConfig::default(),
     };
@@ -79,17 +79,17 @@ fn live_coordinator_config_warmup_reuses_interactive_config() {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
-        .expect("runtime should build");
+        .unwrap_or_abort();
     runtime.block_on(async {
         let warmup = LiveCoordinatorConfigWarmup::start(&settings, false);
         let first = warmup
             .coordinator_config(&settings, false)
             .await
-            .expect("warmup should build interactive coordinator config");
+            .unwrap_or_abort();
         let second = warmup
             .coordinator_config(&settings, false)
             .await
-            .expect("warmup should reuse cached coordinator config");
+            .unwrap_or_abort();
 
         assert_eq!(first.session_dir, session_dir);
         assert_eq!(second.session_dir, session_dir);

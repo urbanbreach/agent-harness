@@ -1,3 +1,4 @@
+use harness_core::UnwrapOrAbort;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -54,7 +55,7 @@ mod provider_tools;
 use self::provider_tools::*;
 
 async fn deterministic_runs_suppress_live_hook_execution() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let hook_output_path = temp_dir.path().join("deterministic-hook-side-effect.txt");
     let hook_runtime_config = HookRuntimeConfig {
         hooks: HooksConfig {
@@ -102,7 +103,7 @@ async fn deterministic_runs_suppress_live_hook_execution() {
             temp_dir.path().to_path_buf(),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let tool_call_id = coordinator
         .request_tool_call(
@@ -112,10 +113,10 @@ async fn deterministic_runs_suppress_live_hook_execution() {
             json!({"cmd": "true"}),
         )
         .await
-        .expect("request tool call");
+        .unwrap_or_abort();
 
     tokio::task::yield_now().await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     assert!(
         !hook_output_path.exists(),
@@ -129,12 +130,12 @@ async fn deterministic_runs_suppress_live_hook_execution() {
             EventV1::ToolCallFinished(data) if data.tool_call_id == tool_call_id => Some(data),
             _ => None,
         })
-        .expect("tool finished event");
+        .unwrap_or_abort();
     let hook_executions = tool_finished
         .metadata
         .as_ref()
         .map(|metadata| metadata.hook_executions.clone())
-        .expect("hook metadata on tool finish");
+        .unwrap_or_abort();
     assert_eq!(hook_executions.len(), 1);
     assert_eq!(hook_executions[0].hook_name, "tool-finish-suppressed");
     assert_eq!(hook_executions[0].status, HookExecutionStatus::Skipped);
@@ -197,10 +198,10 @@ fn checkpoint_for_trigger(
             }
             _ => None,
         })
-        .expect("compaction written event");
+        .unwrap_or_abort();
     let checkpoint_path = run.run_dir.join(&written.artifact_path);
-    let checkpoint_body = fs::read_to_string(&checkpoint_path).expect("read checkpoint artifact");
-    serde_json::from_str(&checkpoint_body).expect("parse checkpoint artifact")
+    let checkpoint_body = fs::read_to_string(&checkpoint_path).unwrap_or_abort();
+    serde_json::from_str(&checkpoint_body).unwrap_or_abort()
 }
 
 fn test_agent_coordinator(session_dir: &Path, delay: Duration) -> CoordinatorHandle {
@@ -544,7 +545,7 @@ where
         }
     })
     .await
-    .expect("timed out waiting for expected events")
+    .unwrap_or_abort()
 }
 
 fn write_resumable_history_fixture(session_dir: &Path, run_id: &str) {
@@ -778,17 +779,17 @@ fn write_resumable_multi_turn_history_fixture(session_dir: &Path, run_id: &str) 
 
 fn write_resume_fixture(session_dir: &Path, run_id: &str, events: &[EventEnvelopeV1]) -> PathBuf {
     let run_dir = session_dir.join(run_id);
-    fs::create_dir_all(run_dir.join("artifacts")).expect("create fixture artifacts directory");
+    fs::create_dir_all(run_dir.join("artifacts")).unwrap_or_abort();
 
     let mut body = String::new();
     for event in events {
-        let line = serde_json::to_string(event).expect("serialize fixture event");
+        let line = serde_json::to_string(event).unwrap_or_abort();
         body.push_str(&line);
         body.push('\n');
     }
 
     let events_path = run_dir.join("events.jsonl");
-    fs::write(&events_path, body).expect("write fixture events");
+    fs::write(&events_path, body).unwrap_or_abort();
     events_path
 }
 

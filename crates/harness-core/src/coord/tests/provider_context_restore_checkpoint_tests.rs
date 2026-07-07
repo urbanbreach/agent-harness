@@ -1,14 +1,14 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 pub(crate) fn restore_provider_context_from_history_uses_checkpoint_then_replays_post_checkpoint_turns(
 ) {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_restore_checkpointed_context";
     let run_dir = temp_dir.path().join(run_id);
     let checkpoint_rel = "artifacts/compactions/agent_000001/checkpoint_000010.json".to_string();
     let checkpoint_path = run_dir.join(&checkpoint_rel);
-    fs::create_dir_all(checkpoint_path.parent().expect("checkpoint parent"))
-        .expect("create checkpoint directory");
+    fs::create_dir_all(checkpoint_path.parent().unwrap_or_abort()).unwrap_or_abort();
     fs::write(
         &checkpoint_path,
         serde_json::to_string_pretty(&ProviderContextCheckpoint {
@@ -42,9 +42,9 @@ pub(crate) fn restore_provider_context_from_history_uses_checkpoint_then_replays
             summary_source: None,
             timeline_entry: None,
         })
-        .expect("serialize checkpoint"),
+        .unwrap_or_abort(),
     )
-    .expect("write checkpoint artifact");
+    .unwrap_or_abort();
 
     write_restore_history_fixture(
         temp_dir.path(),
@@ -239,11 +239,8 @@ pub(crate) fn restore_provider_context_from_history_uses_checkpoint_then_replays
         ],
     );
 
-    let restored = restore_provider_context_from_history(temp_dir.path(), run_id)
-        .expect("restore checkpointed provider context");
-    let context = restored
-        .get("agent_000001")
-        .expect("checkpointed agent context");
+    let restored = restore_provider_context_from_history(temp_dir.path(), run_id).unwrap_or_abort();
+    let context = restored.get("agent_000001").unwrap_or_abort();
     assert_eq!(
         context.compacted_summary.as_deref(),
         Some("Earlier checkpoint summary")
@@ -254,13 +251,12 @@ pub(crate) fn restore_provider_context_from_history_uses_checkpoint_then_replays
 }
 
 pub(crate) fn failed_turn_context_resume_reconstructs_failed_turn_after_checkpoint() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_restore_failed_turn_after_checkpoint";
     let run_dir = temp_dir.path().join(run_id);
     let checkpoint_rel = "artifacts/compactions/agent_000001/checkpoint_000010.json".to_string();
     let checkpoint_path = run_dir.join(&checkpoint_rel);
-    fs::create_dir_all(checkpoint_path.parent().expect("checkpoint parent"))
-        .expect("create checkpoint directory");
+    fs::create_dir_all(checkpoint_path.parent().unwrap_or_abort()).unwrap_or_abort();
     fs::write(
         &checkpoint_path,
         serde_json::to_string_pretty(&ProviderContextCheckpoint {
@@ -295,9 +291,9 @@ pub(crate) fn failed_turn_context_resume_reconstructs_failed_turn_after_checkpoi
             summary_source: None,
             timeline_entry: None,
         })
-        .expect("serialize checkpoint"),
+        .unwrap_or_abort(),
     )
-    .expect("write checkpoint artifact");
+    .unwrap_or_abort();
 
     write_restore_history_fixture(
         temp_dir.path(),
@@ -469,11 +465,8 @@ pub(crate) fn failed_turn_context_resume_reconstructs_failed_turn_after_checkpoi
         ],
     );
 
-    let restored = restore_provider_context_from_history(temp_dir.path(), run_id)
-        .expect("restore checkpointed provider context");
-    let context = restored
-        .get("agent_000001")
-        .expect("checkpointed agent context");
+    let restored = restore_provider_context_from_history(temp_dir.path(), run_id).unwrap_or_abort();
+    let context = restored.get("agent_000001").unwrap_or_abort();
     assert_eq!(context.preserved_turns.len(), 2);
     let failed_turn = &context.preserved_turns[1];
     assert_eq!(failed_turn.user_prompt, "failed question");

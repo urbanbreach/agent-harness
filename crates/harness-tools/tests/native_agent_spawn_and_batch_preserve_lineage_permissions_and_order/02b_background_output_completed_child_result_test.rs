@@ -1,3 +1,4 @@
+use harness_tools::UnwrapOrAbort;
 #[tokio::test]
 async fn background_output_retrieves_completed_child_result_by_request_id() {
     // arrange
@@ -20,15 +21,15 @@ async fn background_output_retrieves_completed_child_result_by_request_id() {
             }),
         )
         .await
-        .expect("request task");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &task_tool_call_id).await;
 
     let task_events = read_events(&run.events_path);
     let task_finished = find_finished(&task_events, &task_tool_call_id);
-    let task_output = task_finished.output_json.expect("task structured output");
+    let task_output = task_finished.output_json.unwrap_or_abort();
     let request_id = task_output["child_request_id"]
         .as_str()
-        .expect("child request id")
+        .unwrap_or_abort()
         .to_string();
     wait_for_request_terminal(&run.events_path, &request_id).await;
 
@@ -44,7 +45,7 @@ async fn background_output_retrieves_completed_child_result_by_request_id() {
             }),
         )
         .await
-        .expect("request background output");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &output_tool_call_id).await;
 
     let events = read_events(&run.events_path);
@@ -54,7 +55,7 @@ async fn background_output_retrieves_completed_child_result_by_request_id() {
     assert_eq!(finished.status, ToolCallStatus::Succeeded);
     let output = finished
         .output_json
-        .expect("background output structured json");
+        .unwrap_or_abort();
     assert_eq!(output["request_id"], json!(request_id));
     assert_eq!(output["status"], json!("completed"));
     assert_eq!(output["terminal"], json!(true));
@@ -67,7 +68,7 @@ async fn background_output_retrieves_completed_child_result_by_request_id() {
     assert_eq!(output["runtime"]["can_redelegate"], json!(true));
     assert!(output["next_actions"]
         .as_array()
-        .expect("next actions")
+        .unwrap_or_abort()
         .iter()
         .any(|action| action["action"] == json!("check_status")));
 }

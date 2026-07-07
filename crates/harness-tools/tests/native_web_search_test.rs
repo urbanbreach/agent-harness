@@ -1,3 +1,4 @@
+use harness_tools::UnwrapOrAbort;
 use std::sync::{Arc, Mutex};
 
 mod common;
@@ -37,7 +38,7 @@ impl ScriptedRemoteSearchTransport {
     }
 
     fn requests(&self) -> Vec<RemoteSearchHttpRequest> {
-        self.requests.lock().expect("request log").clone()
+        self.requests.lock().unwrap_or_abort().clone()
     }
 }
 
@@ -47,8 +48,8 @@ impl RemoteSearchHttpTransport for ScriptedRemoteSearchTransport {
         &self,
         request: RemoteSearchHttpRequest,
     ) -> Result<RemoteSearchHttpResponse, ToolError> {
-        self.requests.lock().expect("request log").push(request);
-        Ok(self.responses.lock().expect("response script").remove(0))
+        self.requests.lock().unwrap_or_abort().push(request);
+        Ok(self.responses.lock().unwrap_or_abort().remove(0))
     }
 }
 
@@ -57,7 +58,7 @@ fn search_registry(
     config: RemoteSearchTestConfig,
 ) -> harness_core::tool::ToolRegistry {
     coordinator_registry_with_remote_search_transport(ShellAllowlist::default(), config, transport)
-        .expect("remote search test registry")
+        .unwrap_or_abort()
 }
 
 #[tokio::test]
@@ -76,7 +77,7 @@ async fn native_web_search_rejects_non_baseline_control_values_before_network() 
             ..RemoteSearchTestConfig::default()
         },
     );
-    let websearch = registry.get("websearch").expect("websearch tool");
+    let websearch = registry.get("websearch").unwrap_or_abort();
 
     let schema = websearch.parameters_json_schema().to_string();
     assert!(schema.contains("fallback"));
@@ -181,7 +182,7 @@ async fn native_web_search_uses_shared_client_and_fixture_backend() {
             ..RemoteSearchTestConfig::default()
         },
     );
-    let websearch = registry.get("websearch").expect("websearch tool");
+    let websearch = registry.get("websearch").unwrap_or_abort();
 
     let first_result = websearch
         .call(
@@ -195,7 +196,7 @@ async fn native_web_search_uses_shared_client_and_fixture_backend() {
             }),
         )
         .await
-        .expect("websearch first");
+        .unwrap_or_abort();
     let second_result = websearch
         .call(
             test_context(workspace.workspace(), "websearch-second"),
@@ -208,7 +209,7 @@ async fn native_web_search_uses_shared_client_and_fixture_backend() {
             }),
         )
         .await
-        .expect("websearch second");
+        .unwrap_or_abort();
 
     assert_eq!(
         first_result.display_text,
@@ -216,7 +217,7 @@ async fn native_web_search_uses_shared_client_and_fixture_backend() {
     );
     assert_eq!(first_result.display_text, second_result.display_text);
     assert_eq!(first_result.structured_json, second_result.structured_json);
-    let result_json = first_result.structured_json.expect("structured json");
+    let result_json = first_result.structured_json.unwrap_or_abort();
     assert_eq!(result_json["query"], json!("tokio runtime"));
     assert_eq!(result_json["numResults"], json!(2));
     assert_eq!(result_json["livecrawl"], json!("preferred"));
@@ -258,7 +259,7 @@ async fn native_web_search_handles_missing_auth_rate_limit_and_empty_results() {
     );
     let missing_auth = missing_auth_registry
         .get("websearch")
-        .expect("websearch tool")
+        .unwrap_or_abort()
         .call(
             test_context(workspace.workspace(), "missing-auth"),
             json!({
@@ -286,7 +287,7 @@ async fn native_web_search_handles_missing_auth_rate_limit_and_empty_results() {
     );
     let rate_limit_error = rate_limit_registry
         .get("websearch")
-        .expect("websearch tool")
+        .unwrap_or_abort()
         .call(
             test_context(workspace.workspace(), "rate-limit"),
             json!({
@@ -318,7 +319,7 @@ async fn native_web_search_handles_missing_auth_rate_limit_and_empty_results() {
     );
     let empty_result = empty_registry
         .get("websearch")
-        .expect("websearch tool")
+        .unwrap_or_abort()
         .call(
             test_context(workspace.workspace(), "empty-results"),
             json!({
@@ -326,9 +327,9 @@ async fn native_web_search_handles_missing_auth_rate_limit_and_empty_results() {
             }),
         )
         .await
-        .expect("empty results should be handled");
+        .unwrap_or_abort();
     assert_eq!(empty_result.display_text, "No search results found");
-    let empty_json = empty_result.structured_json.expect("empty structured json");
+    let empty_json = empty_result.structured_json.unwrap_or_abort();
     assert_eq!(empty_json["numResults"], json!(8));
     assert_eq!(empty_json["livecrawl"], json!("fallback"));
     assert_eq!(empty_json["type"], json!("auto"));

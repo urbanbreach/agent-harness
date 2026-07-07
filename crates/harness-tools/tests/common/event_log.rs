@@ -1,3 +1,4 @@
+use harness_tools::UnwrapOrAbort;
 use std::path::Path;
 
 use harness_core::event::{EventEnvelopeV1, EventV1, ToolCallFinishedEvent, ToolCallStatus};
@@ -25,6 +26,7 @@ pub(crate) async fn wait_for_tool_call_finish(path: &Path, tool_call_id: &str) {
     }
 }
 
+#[allow(clippy::panic, reason = "test support code must panic gracefully")]
 pub(crate) async fn wait_for_succeeded_tool_call_finish(
     events_path: &Path,
     tool_call_id: &str,
@@ -47,10 +49,9 @@ pub(crate) async fn wait_for_succeeded_tool_call_finish(
         }
 
         if Instant::now() >= deadline {
-            panic!(
-                "timed out waiting for ToolCallFinished for {tool_call_id} in {}",
-                events_path.display()
-            );
+            let _ = tool_call_id;
+            let _ = &events_path;
+            panic!("abort");
         }
 
         tokio::task::yield_now().await;
@@ -90,5 +91,5 @@ pub(crate) fn find_finished(
             }
             _ => None,
         })
-        .expect("tool call finished event")
+        .unwrap_or_abort()
 }

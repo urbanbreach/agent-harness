@@ -1,3 +1,4 @@
+use harness_core::UnwrapOrAbort;
 #[test]
 fn projects_task_lineage_and_child_session_metadata() {
     let lineage = TaskLineageMetadata {
@@ -74,7 +75,7 @@ fn projects_task_lineage_and_child_session_metadata() {
         ),
     ];
 
-    let projection = project_transcript(&events).expect("project transcript");
+    let projection = project_transcript(&events).unwrap_or_abort();
 
     assert_eq!(
         projection
@@ -113,7 +114,7 @@ fn projects_task_lineage_and_child_session_metadata() {
             ProjectedPart::Task(task) if task.state == ProjectedTaskState::Completed => Some(task),
             _ => None,
         })
-        .expect("completed task part");
+        .unwrap_or_abort();
     assert_eq!(
         completed_task.result_summary.as_deref(),
         Some("child completed")
@@ -252,7 +253,7 @@ fn tolerates_old_minimal_metadata_and_projects_incomplete_or_failed_states() {
         ),
     ];
 
-    let projection = project_transcript(&events).expect("project transcript");
+    let projection = project_transcript(&events).unwrap_or_abort();
 
     assert_eq!(projection.session.status, TranscriptRunStatus::Failed);
     let assistant = assistant_message(&projection, "req_legacy");
@@ -271,7 +272,7 @@ fn tolerates_old_minimal_metadata_and_projects_incomplete_or_failed_states() {
             }
             _ => None,
         })
-        .expect("permission part");
+        .unwrap_or_abort();
     assert_eq!(
         resolved_permission.state,
         ProjectedPermissionState::Resolved
@@ -291,7 +292,7 @@ fn tolerates_old_minimal_metadata_and_projects_incomplete_or_failed_states() {
             }
             _ => None,
         })
-        .expect("legacy tool part");
+        .unwrap_or_abort();
     assert_eq!(legacy_tool.state, ProjectedToolCallState::Failed);
     assert_eq!(legacy_tool.started_seq, Some(6));
     assert_eq!(legacy_tool.finished_seq, Some(7));

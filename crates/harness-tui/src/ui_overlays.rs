@@ -537,7 +537,7 @@ fn render_command_palette_header(frame: &mut Frame, theme: &Theme, area: Rect, t
         .direction(Direction::Horizontal)
         .constraints([
             Constraint::Min(0),
-            Constraint::Length(esc.chars().count() as u16),
+            Constraint::Length(u16::try_from(esc.chars().count()).unwrap_or(u16::MAX)),
         ])
         .split(area);
 

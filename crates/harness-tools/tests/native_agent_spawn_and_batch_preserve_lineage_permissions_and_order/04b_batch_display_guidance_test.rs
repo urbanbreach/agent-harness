@@ -1,3 +1,4 @@
+use harness_tools::UnwrapOrAbort;
 #[tokio::test]
 async fn batch_model_facing_text_enumerates_order_status_and_permission_attribution() {
     // arrange
@@ -21,13 +22,13 @@ async fn batch_model_facing_text_enumerates_order_status_and_permission_attribut
             }),
         )
         .await
-        .expect("request batch tool");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &batch_tool_call_id).await;
 
-    handle.stop_run().await.expect("stop run");
+    handle.stop_run().await.unwrap_or_abort();
     let events = read_events(&run.events_path);
     let finished = find_finished(&events, &batch_tool_call_id);
-    let summary = finished.output_summary.expect("batch output summary");
+    let summary = finished.output_summary.unwrap_or_abort();
 
     // assert
     assert!(summary.contains("Batch results (input order)"));

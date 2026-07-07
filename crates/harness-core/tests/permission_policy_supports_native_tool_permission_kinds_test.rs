@@ -1,3 +1,4 @@
+use harness_core::UnwrapOrAbort;
 use std::{fs, path::PathBuf};
 
 use harness_core::config::load_config_from_str;
@@ -72,7 +73,7 @@ fn permission_policy_supports_native_tool_permission_kinds() {
         }
         "#,
     )
-    .expect("config should parse");
+    .unwrap_or_abort();
 
     assert_eq!(
         config.paths.session_dir,
@@ -176,7 +177,7 @@ fn permissions_docs_state_file_workspace_and_network_implications() {
     let docs = fs::read_to_string(
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/permissions.md"),
     )
-    .expect("permissions docs");
+    .unwrap_or_abort();
 
     // act
     let edit_implication = docs.contains("Approving `edit` can change workspace files");

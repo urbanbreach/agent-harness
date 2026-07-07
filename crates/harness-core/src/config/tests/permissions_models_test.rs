@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 #[test]
 fn permission_scalar_expands_to_public_kinds_and_network() {
@@ -8,7 +9,7 @@ fn permission_scalar_expands_to_public_kinds_and_network() {
         ("\"deny\"", PermissionMode::Deny),
     ] {
         let cfg = public_minimal_config_with_permission(raw);
-        let parsed = load_config_from_str(&cfg).expect("permission scalar should parse");
+        let parsed = load_config_from_str(&cfg).unwrap_or_abort();
         assert_eq!(parsed.permissions.defaults.edit, mode);
         assert_eq!(parsed.permissions.defaults.shell, mode);
         assert_eq!(parsed.permissions.defaults.network, mode);
@@ -41,7 +42,7 @@ fn permission_object_accepts_per_tool_scalar_modes() {
                 lsp: "allow"
             }"#,
     );
-    let parsed = load_config_from_str(&cfg).expect("per-tool scalar permissions should parse");
+    let parsed = load_config_from_str(&cfg).unwrap_or_abort();
 
     assert_eq!(parsed.permissions.defaults.shell, PermissionMode::Ask);
     assert_eq!(parsed.permissions.defaults.edit, PermissionMode::Deny);
@@ -94,7 +95,7 @@ fn permission_rule_object_preserves_shell_allowlist_and_rules() {
                 }
             }"#,
     );
-    let parsed = load_config_from_str(&cfg).expect("permission rule object should parse");
+    let parsed = load_config_from_str(&cfg).unwrap_or_abort();
 
     assert_eq!(
         parsed.permissions.defaults.question,
@@ -119,7 +120,7 @@ fn shell_allowlist_loads_legacy_flat_shape_with_default_mode() {
             }"#,
     );
 
-    let parsed = load_config_from_str(&cfg).expect("legacy shell allowlist should parse");
+    let parsed = load_config_from_str(&cfg).unwrap_or_abort();
 
     assert_eq!(
         parsed.permissions.shell_allowlist.mode,
@@ -142,7 +143,7 @@ fn shell_allowlist_accepts_camel_case_cwd_roots_and_policy_mode() {
             }"#,
     );
 
-    let parsed = load_config_from_str(&cfg).expect("camelCase shell allowlist should parse");
+    let parsed = load_config_from_str(&cfg).unwrap_or_abort();
 
     assert_eq!(
         parsed.permissions.shell_allowlist.mode,
@@ -163,14 +164,13 @@ fn shell_allowlist_mode_round_trips_through_json() {
         cwd_roots: vec![".".to_string()],
     };
 
-    let json = serde_json::to_value(&allowlist).expect("shell allowlist should serialize");
+    let json = serde_json::to_value(&allowlist).unwrap_or_abort();
     assert_eq!(
         json.get("mode"),
         Some(&serde_json::json!("legacy_executables"))
     );
 
-    let parsed: ShellAllowlist =
-        serde_json::from_value(json).expect("shell allowlist should deserialize");
+    let parsed: ShellAllowlist = serde_json::from_value(json).unwrap_or_abort();
     assert_eq!(parsed.mode, ShellAllowlistMode::LegacyExecutables);
     assert_eq!(parsed.executables, vec!["git"]);
     assert_eq!(parsed.cwd_roots, vec!["."]);
@@ -178,7 +178,7 @@ fn shell_allowlist_mode_round_trips_through_json() {
     let camel_case_alias: ShellAllowlist = serde_json::from_value(serde_json::json!({
         "policyMode": "legacy_executables",
     }))
-    .expect("camelCase shell allowlist mode alias should deserialize");
+    .unwrap_or_abort();
     assert_eq!(camel_case_alias.mode, ShellAllowlistMode::LegacyExecutables);
 }
 
@@ -243,7 +243,7 @@ fn model_limit_modalities_and_options_normalize_to_catalog_metadata() {
         }
         "#;
 
-    let parsed = load_config_from_str(cfg).expect("model limit config should parse");
+    let parsed = load_config_from_str(cfg).unwrap_or_abort();
     let ProviderConfig::OpenAiCompatible(provider) = parsed.providers.get("default").unwrap();
     assert_eq!(provider.timeout_ms, 30_000);
     let model = &provider.models["gpt-4o-mini"];
@@ -252,8 +252,7 @@ fn model_limit_modalities_and_options_normalize_to_catalog_metadata() {
     assert!(model.options.contains_key("reasoning"));
     assert_eq!(model.variants["fast"].limit.output, Some(32_000));
 
-    let metadata =
-        resolve_profile_model_metadata(&parsed, "build").expect("profile metadata should resolve");
+    let metadata = resolve_profile_model_metadata(&parsed, "build").unwrap_or_abort();
     assert_eq!(metadata.context_window_tokens, Some(128_000));
     assert_eq!(metadata.max_input_tokens, Some(64_000));
     assert_eq!(metadata.max_output_tokens, Some(32_000));
@@ -339,15 +338,14 @@ fn legacy_provider_name_and_options_normalize_to_runtime_shape() {
         }
         "#;
 
-    let parsed = load_config_from_str(cfg).expect("legacy provider config should parse");
+    let parsed = load_config_from_str(cfg).unwrap_or_abort();
     let ProviderConfig::OpenAiCompatible(provider) = parsed.providers.get("default").unwrap();
     assert_eq!(provider.name.as_deref(), Some("CLIProxyAPI"));
     assert_eq!(provider.base_url, "http://127.0.0.1:8317/v1");
     assert_eq!(provider.api_key, "test-key");
     assert_eq!(provider.models["gpt-4o-mini"].display_name, "GPT-4o mini");
 
-    let metadata =
-        resolve_profile_model_metadata(&parsed, "build").expect("profile metadata should resolve");
+    let metadata = resolve_profile_model_metadata(&parsed, "build").unwrap_or_abort();
     assert_eq!(metadata.provider_display_label, "CLIProxyAPI");
 }
 
@@ -399,7 +397,7 @@ fn top_level_legacy_agent_key_is_translated() {
         }
         "#;
 
-    let parsed = load_config_from_str(cfg).expect("canonical `agent` key should parse");
+    let parsed = load_config_from_str(cfg).unwrap_or_abort();
     assert!(parsed.agents.contains_key("plan"));
 }
 
@@ -459,7 +457,7 @@ fn invalid_explicit_default_profile_falls_back_to_build_when_available() {
         }
         "#;
 
-    let parsed = load_config_from_str(cfg).expect("invalid default should fall back to build");
+    let parsed = load_config_from_str(cfg).unwrap_or_abort();
     assert_eq!(parsed.ui.default_profile.as_deref(), Some("build"));
     assert_eq!(parsed.default_agent.as_deref(), Some("build"));
 }

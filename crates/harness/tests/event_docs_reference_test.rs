@@ -1,3 +1,4 @@
+use harness::UnwrapOrAbort;
 use std::collections::BTreeSet;
 
 mod common;
@@ -10,7 +11,7 @@ fn event_variants_from_source(source: &str) -> BTreeSet<String> {
         .nth(1)
         .and_then(|tail| tail.split_once("}\n"))
         .map(|(body, _)| body)
-        .expect("EventV1 enum body");
+        .unwrap_or_abort();
 
     enum_body
         .lines()
@@ -30,10 +31,7 @@ fn event_variants_from_source(source: &str) -> BTreeSet<String> {
 }
 
 fn documented_event_variants(doc: &str) -> BTreeSet<String> {
-    let mut section = doc
-        .split("### Event Types\n")
-        .nth(1)
-        .expect("architecture event types section");
+    let mut section = doc.split("### Event Types\n").nth(1).unwrap_or_abort();
     if let Some((current, _rest)) = section.split_once("\n## ") {
         section = current;
     }
@@ -50,10 +48,10 @@ fn documented_event_variants(doc: &str) -> BTreeSet<String> {
 #[test]
 fn architecture_event_docs_match_event_v1_variants() {
     let root = repo_root();
-    let event_source = std::fs::read_to_string(root.join("crates/harness-core/src/event.rs"))
-        .expect("read event source");
+    let event_source =
+        std::fs::read_to_string(root.join("crates/harness-core/src/event.rs")).unwrap_or_abort();
     let architecture_doc =
-        std::fs::read_to_string(root.join("docs/architecture.md")).expect("read architecture docs");
+        std::fs::read_to_string(root.join("docs/architecture.md")).unwrap_or_abort();
 
     assert_eq!(
         documented_event_variants(&architecture_doc),

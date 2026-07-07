@@ -687,12 +687,14 @@ fn render_operator_sidebar_surface(
         .sidebar_directory_branch_label()
         .map(|label| operator_sidebar_directory_footer_text(label, theme, inner.width, surface));
     let brand_footer = operator_sidebar_brand_footer_text(theme, surface);
-    let title_height = title_text.lines.len().min(usize::from(u16::MAX)) as u16;
+    let title_height =
+        u16::try_from(title_text.lines.len().min(usize::from(u16::MAX))).unwrap_or(u16::MAX);
     let footer_height = directory_footer
         .as_ref()
-        .map(|footer| footer.height().min(usize::from(u16::MAX)) as u16)
+        .map(|footer| u16::try_from(footer.height().min(usize::from(u16::MAX))).unwrap_or(u16::MAX))
         .unwrap_or(0);
-    let brand_height = brand_footer.height().min(usize::from(u16::MAX)) as u16;
+    let brand_height =
+        u16::try_from(brand_footer.height().min(usize::from(u16::MAX))).unwrap_or(u16::MAX);
     let sections = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -995,7 +997,6 @@ fn line_to_plain_text(line: Line<'static>) -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
 

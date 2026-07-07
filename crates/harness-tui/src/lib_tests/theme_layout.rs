@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 pub(super) fn harness_dark_theme_is_default() {
     let default = Theme::default();
@@ -196,11 +197,9 @@ pub(super) fn hovered_wheel_target_uses_layout_plan() {
     themed_app.set_theme_for_test(custom_theme);
 
     let default_plan = layout::FrameLayoutPlan::for_app(&default_app, area);
-    let default_transcript = default_plan.transcript.expect("default transcript area");
+    let default_transcript = default_plan.transcript.unwrap_or_abort();
     let themed_plan = layout::FrameLayoutPlan::for_app(&themed_app, area);
-    let themed_sidebar = themed_plan
-        .operator_sidebar
-        .expect("themed operator sidebar");
+    let themed_sidebar = themed_plan.operator_sidebar.unwrap_or_abort();
     let default_target = ui::hovered_wheel_target(
         &default_app,
         area,
@@ -223,7 +222,7 @@ pub(super) fn layout_plan_minimum_geometry_matches_shell_contract() {
     let mut app = app::AppState::new_live(None, false, None);
     app.active_tab = app::Tab::Run;
     let plan = layout::FrameLayoutPlan::for_app(&app, ratatui::layout::Rect::new(0, 0, 80, 24));
-    let dock = plan.dock.expect("minimum dock layout");
+    let dock = plan.dock.unwrap_or_abort();
 
     assert_eq!(plan.root, ratatui::layout::Rect::new(0, 0, 80, 24));
     assert_eq!(plan.header, ratatui::layout::Rect::new(0, 0, 80, 0));
@@ -241,7 +240,7 @@ pub(super) fn layout_plan_minimum_geometry_matches_shell_contract() {
     );
     assert_eq!(dock.shell, ratatui::layout::Rect::new(2, 18, 76, 6));
     assert_eq!(dock.status, plan.status);
-    assert_eq!(dock.composer, plan.composer.expect("minimum composer"));
+    assert_eq!(dock.composer, plan.composer.unwrap_or_abort());
     assert_eq!(
         dock.disclosure,
         Some(ratatui::layout::Rect::new(2, 23, 76, 1))
@@ -256,7 +255,7 @@ pub(super) fn layout_plan_primary_geometry_matches_shell_contract() {
         app.ingest_event(event);
     }
     let plan = layout::FrameLayoutPlan::for_app(&app, ratatui::layout::Rect::new(0, 0, 100, 30));
-    let dock = plan.dock.expect("primary dock layout");
+    let dock = plan.dock.unwrap_or_abort();
 
     assert_eq!(plan.root, ratatui::layout::Rect::new(0, 0, 100, 30));
     assert_eq!(plan.header, ratatui::layout::Rect::new(0, 0, 100, 0));
@@ -275,7 +274,7 @@ pub(super) fn layout_plan_primary_geometry_matches_shell_contract() {
     );
     assert_eq!(dock.shell, ratatui::layout::Rect::new(0, 24, 100, 6));
     assert_eq!(dock.status, plan.status);
-    assert_eq!(dock.composer, plan.composer.expect("primary composer"));
+    assert_eq!(dock.composer, plan.composer.unwrap_or_abort());
     assert_eq!(
         dock.disclosure,
         Some(ratatui::layout::Rect::new(0, 29, 100, 1))

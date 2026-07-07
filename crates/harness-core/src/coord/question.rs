@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::time::Duration;
 
 use serde::Deserialize;
@@ -119,8 +120,11 @@ impl super::Coordinator {
             let permission_id = format!("perm_{:06}", run_state.next_permission_id);
             run_state.next_permission_id += 1;
             let request_correlation_id = tool_request_correlation_id(run_state, &actor);
-            let kind = permission_kind_for_tool("question")
-                .expect("question must resolve to a formal permission kind");
+            let kind = permission_kind_for_tool("question").ok_or_else(|| {
+                CoordinatorError::PolicyViolation(
+                    "question must resolve to a formal permission kind".to_string(),
+                )
+            })?;
             let timeout_ms = question_request_timeout_ms(&self.config.permission_policy);
             let request_summary = serde_json::to_string(&request_json)?;
             let request_digest = permission_request_digest(kind.as_str(), &request_json);
@@ -179,9 +183,7 @@ impl super::Coordinator {
                 resolution: PendingPermissionResolution::Question {
                     actor: actor.clone(),
                     prompts,
-                    respond_to: respond_to
-                        .take()
-                        .expect("question responder is available before storing"),
+                    respond_to: respond_to.take().unwrap_or_abort(),
                 },
             };
 

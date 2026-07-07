@@ -1,6 +1,7 @@
+use harness_core::UnwrapOrAbort;
 #[tokio::test]
 async fn same_agent_turn_queues_even_when_provider_model_has_free_slots() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let coordinator = test_agent_coordinator_with_provider(
         temp_dir.path(),
         Arc::new(SlowMockProvider {
@@ -16,21 +17,21 @@ async fn same_agent_turn_queues_even_when_provider_model_has_free_slots() {
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
 
     let first_request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id.clone(), "first prompt")
         .await
-        .expect("request first turn");
+        .unwrap_or_abort();
     let queued_request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id.clone(), "queued prompt")
         .await
-        .expect("request queued turn");
+        .unwrap_or_abort();
 
     let events = wait_for_events(&run.events_path, Duration::from_secs(2), |events| {
         events.iter().any(|event| {
@@ -78,7 +79,7 @@ async fn same_agent_turn_queues_even_when_provider_model_has_free_slots() {
             == vec![TaskScheduleState::Queued, TaskScheduleState::Started]
     })
     .await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let queued_schedule_states = events
         .iter()
@@ -98,7 +99,7 @@ async fn same_agent_turn_queues_even_when_provider_model_has_free_slots() {
 }
 #[tokio::test]
 async fn background_task_completion_after_tool_result_wakes_parent_in_followup_turn() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let tool_release = Arc::new(Notify::new());
     let provider = SequentialScriptedProvider::new(vec![
         vec![
@@ -155,7 +156,7 @@ async fn background_task_completion_after_tool_result_wakes_parent_in_followup_t
     config.command_buffer = 64;
     config.provider_model_concurrency = 2;
     config.permission_policy = shell_only_permission_policy();
-    config.tool_registry = lifecycle_tool_registry(tool_release.clone());
+    config.tool_registry = lifecycle_tool_registry(Arc::clone(&tool_release));
     config.provider = Arc::new(provider.clone());
     config.agent_profiles = agent_profiles();
     if let Some(profile) = config.agent_profiles.get_mut("alpha") {
@@ -173,19 +174,19 @@ async fn background_task_completion_after_tool_result_wakes_parent_in_followup_t
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let parent_agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn parent");
+        .unwrap_or_abort();
     let child_agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "beta", Some(parent_agent_id.clone()))
         .await
-        .expect("spawn child");
+        .unwrap_or_abort();
     let parent_request_id = coordinator
         .request_agent_turn(supervisor_actor(), parent_agent_id.clone(), "parent prompt")
         .await
-        .expect("request parent turn");
+        .unwrap_or_abort();
 
     wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
         events.iter().any(|event| {
@@ -217,7 +218,7 @@ async fn background_task_completion_after_tool_result_wakes_parent_in_followup_t
             },
         )
         .await
-        .expect("request child turn");
+        .unwrap_or_abort();
 
     wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
         events.iter().any(|event| {
@@ -241,7 +242,7 @@ async fn background_task_completion_after_tool_result_wakes_parent_in_followup_t
         })
     })
     .await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let requests = provider.requests();
     assert_eq!(requests.len(), 4);
@@ -265,7 +266,7 @@ async fn background_task_completion_after_tool_result_wakes_parent_in_followup_t
 }
 #[tokio::test]
 async fn same_agent_blocked_turns_start_fifo() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let coordinator = test_agent_coordinator_with_provider(
         temp_dir.path(),
         Arc::new(SlowMockProvider {
@@ -278,31 +279,31 @@ async fn same_agent_blocked_turns_start_fifo() {
     let run = coordinator
         .start_run("coord_same_agent_fifo", PathBuf::from("/workspace/project"))
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
 
     let first_request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id.clone(), "first prompt")
         .await
-        .expect("request first turn");
+        .unwrap_or_abort();
     let second_request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id.clone(), "second prompt")
         .await
-        .expect("request second turn");
+        .unwrap_or_abort();
     let third_request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id, "third prompt")
         .await
-        .expect("request third turn");
+        .unwrap_or_abort();
 
     let events = wait_for_events(&run.events_path, Duration::from_secs(2), |events| {
         provider_started_request_ids(events).len() >= 3
     })
     .await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let started_request_ids = provider_started_request_ids(&events);
     let expected = vec![first_request_id, second_request_id, third_request_id];
@@ -310,7 +311,7 @@ async fn same_agent_blocked_turns_start_fifo() {
 }
 #[tokio::test]
 async fn cancelling_promoted_same_agent_queued_turn_promotes_next_blocked_turn() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let coordinator = test_agent_coordinator_with_provider(
         temp_dir.path(),
         Arc::new(SlowMockProvider {
@@ -326,33 +327,33 @@ async fn cancelling_promoted_same_agent_queued_turn_promotes_next_blocked_turn()
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let alpha = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     let beta = coordinator
         .spawn_agent_idle(supervisor_actor(), "beta", None)
         .await
-        .expect("spawn idle beta");
+        .unwrap_or_abort();
 
     let _alpha_first = coordinator
         .request_agent_turn(supervisor_actor(), alpha.clone(), "alpha first")
         .await
-        .expect("request alpha first");
+        .unwrap_or_abort();
     let beta_request_id = coordinator
         .request_agent_turn(supervisor_actor(), beta, "beta first")
         .await
-        .expect("request beta");
+        .unwrap_or_abort();
     let alpha_second = coordinator
         .request_agent_turn(supervisor_actor(), alpha.clone(), "alpha second")
         .await
-        .expect("request alpha second");
+        .unwrap_or_abort();
     let alpha_third = coordinator
         .request_agent_turn(supervisor_actor(), alpha, "alpha third")
         .await
-        .expect("request alpha third");
+        .unwrap_or_abort();
 
     let events = wait_for_events(&run.events_path, Duration::from_secs(5), |events| {
         task_schedule_states_for_request(events, &alpha_second) == vec![TaskScheduleState::Queued]
@@ -376,12 +377,12 @@ async fn cancelling_promoted_same_agent_queued_turn_promotes_next_blocked_turn()
             }
             _ => None,
         })
-        .expect("alpha second queued task id");
+        .unwrap_or_abort();
 
     coordinator
         .cancel_task(alpha_second_task_id, "skip promoted same-agent prompt")
         .await
-        .expect("cancel promoted alpha turn");
+        .unwrap_or_abort();
 
     let events = wait_for_events(&run.events_path, Duration::from_secs(5), |events| {
         task_schedule_states_for_request(events, &alpha_third)
@@ -395,7 +396,7 @@ async fn cancelling_promoted_same_agent_queued_turn_promotes_next_blocked_turn()
             })
     })
     .await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     assert!(!events.iter().any(|event| {
         matches!(
@@ -407,7 +408,7 @@ async fn cancelling_promoted_same_agent_queued_turn_promotes_next_blocked_turn()
 }
 #[tokio::test]
 async fn queued_agent_turn_cancellation_preserves_owner_context() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let coordinator = test_agent_coordinator(temp_dir.path(), Duration::from_millis(25));
 
     let run = coordinator
@@ -416,25 +417,25 @@ async fn queued_agent_turn_cancellation_preserves_owner_context() {
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let alpha = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     let beta = coordinator
         .spawn_agent_idle(supervisor_actor(), "beta", None)
         .await
-        .expect("spawn idle beta");
+        .unwrap_or_abort();
 
     let _running_request_id = coordinator
         .request_agent_turn(supervisor_actor(), alpha, "alpha-prompt")
         .await
-        .expect("request running turn");
+        .unwrap_or_abort();
     let queued_request_id = coordinator
         .request_agent_turn(supervisor_actor(), beta.clone(), "beta-prompt")
         .await
-        .expect("request queued turn");
+        .unwrap_or_abort();
 
     let task_id = load_events(&run.events_path)
         .into_iter()
@@ -447,15 +448,15 @@ async fn queued_agent_turn_cancellation_preserves_owner_context() {
             }
             _ => None,
         })
-        .expect("queued agent task id");
+        .unwrap_or_abort();
 
     coordinator
         .cancel_task(task_id.clone(), "manual queued cancellation")
         .await
-        .expect("cancel queued agent turn");
+        .unwrap_or_abort();
 
     tokio::task::yield_now().await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let events = load_events(&run.events_path);
     let cancellations = events

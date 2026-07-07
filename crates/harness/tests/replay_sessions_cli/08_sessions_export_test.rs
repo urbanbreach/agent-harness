@@ -1,14 +1,15 @@
+use harness::UnwrapOrAbort;
 fn expanded_task_route_fixture() -> serde_json::Value {
     serde_json::from_str(r#"{"requested_category":"quick","requested_profile":"quick","resolved_profile":"general","profile_id":"general","role":"subagent","hidden":false,"prompt":{"source":"runtime_profile","status":"resolved_by_coordinator","profile":"general"},"model":{"model_ref":"default/gpt-5.4-mini","provider":"default","model":"gpt-5.4-mini","fallback_chain":[]},"toolset":["read","edit"],"permission_posture":{"spawn":"checked_before_child_turn","edit":"available_subject_to_runtime_permission","bash":"deny_by_toolset","question":"deny_by_toolset","task":"deny_by_toolset","webfetch":"deny_by_toolset","websearch":"deny_by_toolset","codesearch":"deny_by_toolset","lsp":"deny_by_toolset","background_output":"deny_by_toolset"},"permissions":{"spawn_permission_kind":"task","parent_scope":"build","child_scope":"general","scope_relation":"isolated_by_requested_profile"},"loaded_skills":[],"fallback_chain":["quick","general"],"category_fallback_chain":["quick","general"],"fallback":{"applied":true,"fallback_profile":"general","policy_source":"harness_core::coord::task_category_fallback_profile","disabled_parent_profiles":["plan"]}}"#)
-        .expect("expanded task route fixture")
+        .unwrap_or_abort()
 }
 
 #[test]
 fn sessions_export_cli_writes_json_bundle() {
     // arrange
-    let session_dir = tempdir().expect("tempdir");
+    let session_dir = tempdir().unwrap_or_abort();
     let run_dir = session_dir.path().join("run_export");
-    std::fs::create_dir_all(&run_dir).expect("create run dir");
+    std::fs::create_dir_all(&run_dir).unwrap_or_abort();
 
     write_events_jsonl(
         &run_dir,
@@ -119,12 +120,12 @@ fn sessions_export_cli_writes_json_bundle() {
     // act
     let output = run_harness([
         "--session-dir",
-        session_dir.path().to_str().expect("session dir utf-8"),
+        session_dir.path().to_str().unwrap_or_abort(),
         "sessions",
         "export",
         "run_export",
         "--output",
-        export_path.to_str().expect("export path utf-8"),
+        export_path.to_str().unwrap_or_abort(),
     ]);
 
     // assert
@@ -135,18 +136,18 @@ fn sessions_export_cli_writes_json_bundle() {
     );
 
     let bundle: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(&export_path).expect("read exported session bundle"))
-            .expect("export bundle should parse");
+        serde_json::from_slice(&std::fs::read(&export_path).unwrap_or_abort())
+            .unwrap_or_abort();
     assert_eq!(bundle["catalog"]["run_id"], "run_export");
     assert_eq!(bundle["replay"]["run_name"], "exportable");
     assert_eq!(bundle["events"].as_array().map(Vec::len), Some(9));
     let route_metadata = bundle["support"]["route_metadata"]
         .as_array()
-        .expect("route metadata array");
+        .unwrap_or_abort();
     let session_route = route_metadata
         .iter()
         .find(|entry| entry["source"] == "session_replay")
-        .expect("session-derived route metadata");
+        .unwrap_or_abort();
     assert_eq!(session_route["route"]["run_id"], "run_export");
     assert_eq!(session_route["route"]["status"], "finished");
     assert_eq!(session_route["route"]["profiles"], serde_json::json!(["build"]));
@@ -156,18 +157,18 @@ fn sessions_export_cli_writes_json_bundle() {
     );
     assert!(session_route["route"]["tools"]
         .as_array()
-        .expect("tools array")
+        .unwrap_or_abort()
         .iter()
         .any(|tool| tool["tool_id"] == "edit"));
     assert!(session_route["route"]["permissions"]
         .as_array()
-        .expect("permissions array")
+        .unwrap_or_abort()
         .iter()
         .any(|permission| permission["decision"] == "allow"));
     let task_route = route_metadata
         .iter()
         .find(|entry| entry["source"] == "task_output")
-        .expect("task-output route metadata");
+        .unwrap_or_abort();
     assert_eq!(task_route["route"]["requested_category"], "quick");
     assert_eq!(task_route["route"]["resolved_profile"], "general");
     assert_eq!(task_route["route"]["prompt"]["status"], "resolved_by_coordinator");
@@ -199,7 +200,7 @@ fn sessions_export_cli_writes_json_bundle() {
 #[test]
 fn sessions_export_cli_support_includes_readiness_and_config_summaries() {
     // arrange
-    let workspace = tempdir().expect("workspace tempdir");
+    let workspace = tempdir().unwrap_or_abort();
     let config_path = workspace.path().join("harness.jsonc");
     std::fs::write(
         &config_path,
@@ -236,27 +237,27 @@ fn sessions_export_cli_support_includes_readiness_and_config_summaries() {
 }
 "#,
     )
-    .expect("write config");
+    .unwrap_or_abort();
     let skill_dir = workspace.path().join(".agent-harness/skills/support-skill");
-    std::fs::create_dir_all(&skill_dir).expect("create support skill dir");
+    std::fs::create_dir_all(&skill_dir).unwrap_or_abort();
     std::fs::write(
         skill_dir.join("SKILL.md"),
         "---\nname: support-skill\ndescription: Support export compact metadata\n---\n\nSUPPORT SKILL BODY SENTINEL\n",
     )
-    .expect("write support skill");
+    .unwrap_or_abort();
     let disabled_skill_dir = workspace
         .path()
         .join(".agent-harness/skills/disabled-support");
-    std::fs::create_dir_all(&disabled_skill_dir).expect("create disabled support skill dir");
+    std::fs::create_dir_all(&disabled_skill_dir).unwrap_or_abort();
     std::fs::write(
         disabled_skill_dir.join("SKILL.md"),
         "---\nname: disabled-support\ndescription: Disabled support export metadata\n---\n\nDISABLED SUPPORT BODY SENTINEL\n",
     )
-    .expect("write disabled support skill");
+    .unwrap_or_abort();
 
     let session_dir = workspace.path().join(".agent-harness/sessions");
     let run_dir = session_dir.join("run_export_support_readiness");
-    std::fs::create_dir_all(&run_dir).expect("create run dir");
+    std::fs::create_dir_all(&run_dir).unwrap_or_abort();
     write_events_jsonl(
         &run_dir,
         &[
@@ -285,14 +286,14 @@ fn sessions_export_cli_support_includes_readiness_and_config_summaries() {
         .current_dir(workspace.path())
         .args([
             "--config",
-            config_path.to_str().expect("config path utf-8"),
+            config_path.to_str().unwrap_or_abort(),
             "--session-dir",
-            session_dir.to_str().expect("session dir utf-8"),
+            session_dir.to_str().unwrap_or_abort(),
             "sessions",
             "export",
             "run_export_support_readiness",
             "--output",
-            export_path.to_str().expect("export path utf-8"),
+            export_path.to_str().unwrap_or_abort(),
         ])
         .output();
 
@@ -303,12 +304,12 @@ fn sessions_export_cli_support_includes_readiness_and_config_summaries() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let export_text = std::fs::read_to_string(&export_path).expect("read support export");
+    let export_text = std::fs::read_to_string(&export_path).unwrap_or_abort();
     assert!(!export_text.contains("sk-AbCdEf0123456789"));
     assert!(!export_text.contains("SUPPORT SKILL BODY SENTINEL"));
     assert!(!export_text.contains("DISABLED SUPPORT BODY SENTINEL"));
     let bundle: serde_json::Value =
-        serde_json::from_str(&export_text).expect("support export bundle should parse");
+        serde_json::from_str(&export_text).unwrap_or_abort();
 
     assert_eq!(bundle["support"]["doctor_json"]["no_network_probes"], true);
     assert_eq!(
@@ -317,10 +318,10 @@ fn sessions_export_cli_support_includes_readiness_and_config_summaries() {
     );
     let resolved_routes = bundle["support"]["doctor_json"]["checks"]
         .as_array()
-        .expect("doctor checks")
+        .unwrap_or_abort()
         .iter()
         .find(|check| check["name"] == "resolved_routes")
-        .expect("resolved route check");
+        .unwrap_or_abort();
     assert_eq!(
         resolved_routes["details"]["skills"]["no_network_probes"],
         true
@@ -335,12 +336,12 @@ fn sessions_export_cli_support_includes_readiness_and_config_summaries() {
     );
     assert!(resolved_routes["details"]["skills"]["catalog"]["entries"]
         .as_array()
-        .expect("doctor skill catalog entries")
+        .unwrap_or_abort()
         .iter()
         .any(|entry| entry["name"] == "support-skill" && entry["body_loaded"] == false));
     assert!(resolved_routes["details"]["skills"]["catalog"]["entries"]
         .as_array()
-        .expect("doctor skill catalog entries")
+        .unwrap_or_abort()
         .iter()
         .any(|entry| {
             entry["name"] == "disabled-support"
@@ -362,7 +363,7 @@ fn sessions_export_cli_support_includes_readiness_and_config_summaries() {
     );
     assert!(bundle["support"]["skill_catalog_summary"]["entries"]
         .as_array()
-        .expect("support skill catalog entries")
+        .unwrap_or_abort()
         .iter()
         .any(|entry| {
             entry["name"] == "support-skill"
@@ -372,7 +373,7 @@ fn sessions_export_cli_support_includes_readiness_and_config_summaries() {
         }));
     assert!(bundle["support"]["skill_catalog_summary"]["entries"]
         .as_array()
-        .expect("support skill catalog entries")
+        .unwrap_or_abort()
         .iter()
         .any(|entry| {
             entry["name"] == "disabled-support"
@@ -405,7 +406,7 @@ fn sessions_export_cli_support_includes_readiness_and_config_summaries() {
 #[test]
 fn sessions_export_cli_redacts_support_bundle_secret_shapes() {
     // arrange
-    let workspace = tempdir().expect("workspace tempdir");
+    let workspace = tempdir().unwrap_or_abort();
     let config_path = workspace.path().join("harness.jsonc");
     std::fs::write(
         &config_path,
@@ -428,11 +429,11 @@ fn sessions_export_cli_redacts_support_bundle_secret_shapes() {
 }
 "#,
     )
-    .expect("write config");
+    .unwrap_or_abort();
 
     let session_dir = workspace.path().join(".agent-harness/sessions");
     let run_dir = session_dir.join("run_export_secret_shapes");
-    std::fs::create_dir_all(&run_dir).expect("create run dir");
+    std::fs::create_dir_all(&run_dir).unwrap_or_abort();
     write_events_jsonl(
         &run_dir,
         &[
@@ -479,14 +480,14 @@ fn sessions_export_cli_redacts_support_bundle_secret_shapes() {
         .current_dir(workspace.path())
         .args([
             "--config",
-            config_path.to_str().expect("config path utf-8"),
+            config_path.to_str().unwrap_or_abort(),
             "--session-dir",
-            session_dir.to_str().expect("session dir utf-8"),
+            session_dir.to_str().unwrap_or_abort(),
             "sessions",
             "export",
             "run_export_secret_shapes",
             "--output",
-            export_path.to_str().expect("export path utf-8"),
+            export_path.to_str().unwrap_or_abort(),
         ])
         .output();
 
@@ -496,7 +497,7 @@ fn sessions_export_cli_redacts_support_bundle_secret_shapes() {
         "stderr:\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let export_text = std::fs::read_to_string(&export_path).expect("read secret-shapes export");
+    let export_text = std::fs::read_to_string(&export_path).unwrap_or_abort();
     for forbidden in [
         "sk-proj-config_secret_0123456789abcdef",
         "sk-proj-output_secret_0123456789abcdef",
@@ -519,7 +520,7 @@ fn sessions_export_cli_redacts_support_bundle_secret_shapes() {
     }
 
     let bundle: serde_json::Value =
-        serde_json::from_str(&export_text).expect("secret-shapes export should parse");
+        serde_json::from_str(&export_text).unwrap_or_abort();
     assert_eq!(bundle["support"]["redaction_manifest"]["status"], "clean");
     assert_eq!(bundle["support"]["secret_scan_status"]["status"], "clean");
     assert_eq!(

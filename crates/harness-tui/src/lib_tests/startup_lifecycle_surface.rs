@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 pub(super) fn startup_surface_renders_primary_actions() {
     let mut app = app::AppState::new_startup(
@@ -154,7 +155,7 @@ pub(super) fn post_run_handoff_disables_prompt_submission() {
     let intent_sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
     let mut app = app::AppState::new_live(None, false, Some(intent_sink));
@@ -182,7 +183,7 @@ pub(super) fn post_run_handoff_disables_prompt_submission() {
     app.focus = app::Focus::List;
     app.handle_key(key(crossterm::event::KeyCode::Enter));
 
-    let intents = intents.lock().expect("lock intents");
+    let intents = intents.lock().unwrap_or_abort();
     assert_eq!(
         &*intents,
         &[UiIntent::SubmitPrompt {
@@ -201,7 +202,7 @@ pub(super) fn double_escape_interrupts_active_live_turn_after_harness_confirmati
     let intent_sink = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
     let mut app = app::AppState::new_live(None, false, Some(intent_sink));
@@ -240,14 +241,14 @@ pub(super) fn double_escape_interrupts_active_live_turn_after_harness_confirmati
     app.handle_key(key(crossterm::event::KeyCode::Esc));
 
     assert!(app.interrupt_confirmation_pending());
-    assert!(intents.lock().expect("lock intents").is_empty());
+    assert!(intents.lock().unwrap_or_abort().is_empty());
     assert!(render_live_lines(&app, 100, 24).contains("esc again to interrupt"));
 
     app.handle_key(key(crossterm::event::KeyCode::Esc));
 
     assert!(!app.interrupt_confirmation_pending());
     assert_eq!(
-        &*intents.lock().expect("lock intents"),
+        &*intents.lock().unwrap_or_abort(),
         &[UiIntent::InterruptSession {
             task_ids: vec!["task_active".to_string(), "task_sibling".to_string()],
         }]
@@ -259,7 +260,7 @@ pub(super) fn interrupt_confirmation_is_scoped_to_current_active_turn_set() {
     let intent_sink = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
     let mut app = app::AppState::new_live(None, false, Some(intent_sink));
@@ -308,12 +309,12 @@ pub(super) fn interrupt_confirmation_is_scoped_to_current_active_turn_set() {
     assert!(!app.interrupt_confirmation_pending());
     app.handle_key(key(crossterm::event::KeyCode::Esc));
     assert!(app.interrupt_confirmation_pending());
-    assert!(intents.lock().expect("lock intents").is_empty());
+    assert!(intents.lock().unwrap_or_abort().is_empty());
 
     app.handle_key(key(crossterm::event::KeyCode::Esc));
 
     assert_eq!(
-        &*intents.lock().expect("lock intents"),
+        &*intents.lock().unwrap_or_abort(),
         &[UiIntent::InterruptSession {
             task_ids: vec!["task_new".to_string()],
         }]

@@ -1,5 +1,6 @@
 use super::*;
 use crate::app::{LaunchMetadata, ModelOption};
+use crate::UnwrapOrAbort;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use harness_core::event::{
     ActorKind, EventActor, EventEnvelopeV1, EventV1, PermissionRequestedEvent,
@@ -13,10 +14,10 @@ fn render_debug(app: &AppState, width: u16, height: u16) -> String {
     use ratatui::{backend::TestBackend, Terminal};
 
     let backend = TestBackend::new(width, height);
-    let mut terminal = Terminal::new(backend).expect("create terminal");
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
     terminal
         .draw(|frame| render_app(frame, app))
-        .expect("draw frame");
+        .unwrap_or_abort();
     format!("{:?}", terminal.backend().buffer())
 }
 
@@ -238,11 +239,11 @@ fn transcript_debug_places_assistant_answer_before_nested_context() {
     let transcript = transcript_debug(&app);
     let thinking_index = transcript
         .find("Drafting a document-like plan")
-        .expect("thinking summary");
+        .unwrap_or_abort();
     let answer_index = transcript
         .find("Found the transcript renderer and the composer chrome.")
-        .expect("answer text");
-    let tool_index = transcript.find("Read src/ui.rs").expect("tool summary");
+        .unwrap_or_abort();
+    let tool_index = transcript.find("Read src/ui.rs").unwrap_or_abort();
 
     assert!(thinking_index < tool_index);
     assert!(tool_index < answer_index);
@@ -318,9 +319,9 @@ fn wheel_hit_testing_uses_app_theme() {
     custom_theme.live_shell.primary.details_sidebar_width = 36;
     themed_app.set_theme_for_test(custom_theme);
 
-    let default_transcript = default_plan.transcript.expect("default transcript area");
+    let default_transcript = default_plan.transcript.unwrap_or_abort();
     let themed_plan = FrameLayoutPlan::for_app(&themed_app, area);
-    let themed_rail = themed_plan.operator_sidebar.expect("themed operator rail");
+    let themed_rail = themed_plan.operator_sidebar.unwrap_or_abort();
 
     assert_eq!(
         default_plan.wheel_hit_areas.overlay,

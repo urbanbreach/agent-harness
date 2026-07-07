@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 use std::sync::Mutex;
 
 static CONFIG_DISCOVERY_TEST_LOCK: Mutex<()> = Mutex::new(());
@@ -117,9 +118,8 @@ fn write_agent_markdown_in(repo_root: &Path, prompt_root: &str, name: &str, cont
         .join(prompt_root)
         .join("agents")
         .join(format!("{name}.md"));
-    fs::create_dir_all(path.parent().expect("agent markdown parent"))
-        .expect("create agent markdown parent");
-    fs::write(path, content).expect("write agent markdown");
+    fs::create_dir_all(path.parent().unwrap_or_abort()).unwrap_or_abort();
+    fs::write(path, content).unwrap_or_abort();
 }
 
 fn write_agent_markdown(repo_root: &Path, name: &str, content: &str) {

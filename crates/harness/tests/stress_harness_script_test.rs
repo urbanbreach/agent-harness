@@ -1,3 +1,4 @@
+use harness::UnwrapOrAbort;
 use std::fs;
 
 mod common;
@@ -5,7 +6,7 @@ mod common;
 use common::repo_root;
 
 fn stress_script_body() -> String {
-    fs::read_to_string(repo_root().join("scripts/stress-harness.sh")).expect("read stress script")
+    fs::read_to_string(repo_root().join("scripts/stress-harness.sh")).unwrap_or_abort()
 }
 
 #[test]

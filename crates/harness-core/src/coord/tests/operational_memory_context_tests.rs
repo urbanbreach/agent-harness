@@ -1,7 +1,8 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 pub(crate) fn operational_memory_records_read_and_modified_files_from_events() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let clock = FakeClock::new();
     let redactor = DefaultRedactor::default();
     let first_answer = 'A'.to_string().repeat(6_000);
@@ -92,7 +93,7 @@ pub(crate) fn operational_memory_records_read_and_modified_files_from_events() {
 
 pub(crate) fn compaction_preserves_file_tool_skill_todo_and_plan_context() {
     // arrange
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let clock = FakeClock::new();
     let redactor = DefaultRedactor::default();
     let run_id = "run_compaction_preserves_context_kinds";

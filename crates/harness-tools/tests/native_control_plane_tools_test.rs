@@ -1,3 +1,4 @@
+use harness_tools::UnwrapOrAbort;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -42,7 +43,7 @@ async fn spawn_worker_run(
     agent_profiles: BTreeMap<String, AgentProfile>,
 ) -> (harness_core::coord::CoordinatorHandle, RunInfo, String) {
     let session_dir = workspace.join("session-dir");
-    fs::create_dir_all(&session_dir).expect("session dir");
+    fs::create_dir_all(&session_dir).unwrap_or_abort();
 
     let mut config = CoordinatorConfig::new(session_dir);
     config.permission_policy = allow_all_permission_policy();
@@ -57,30 +58,30 @@ async fn spawn_worker_run(
     let run = handle
         .start_run("native_control_plane", workspace)
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let worker_id = handle
         .spawn_agent(anonymous_supervisor_actor(), worker_profile_name, None)
         .await
-        .expect("spawn worker");
+        .unwrap_or_abort();
     (handle, run, worker_id)
 }
 
 fn todo_state_file(run: &RunInfo) -> PathBuf {
     run.artifacts_dir
         .parent()
-        .expect("run root")
+        .unwrap_or_abort()
         .join("control-plane")
         .join("todos.json")
 }
 
 fn write_skill_fixture(workspace: &Path, name: &str) {
     let skill_dir = workspace.join(".agent-harness/skills").join(name);
-    fs::create_dir_all(&skill_dir).expect("skill dir");
+    fs::create_dir_all(&skill_dir).unwrap_or_abort();
     fs::write(
         skill_dir.join("SKILL.md"),
         format!("---\nname: {name}\ndescription: {name} description\n---\n\n{name} body.\n"),
     )
-    .expect("skill file");
+    .unwrap_or_abort();
 }
 
 #[tokio::test]
@@ -104,7 +105,7 @@ async fn native_control_plane_tools_cover_invalid_todo_and_skill() {
             todos_payload,
         )
         .await
-        .expect("todowrite");
+        .unwrap_or_abort();
     assert_eq!(
         todo_write.structured_json,
         Some(json!({
@@ -123,7 +124,7 @@ async fn native_control_plane_tools_cover_invalid_todo_and_skill() {
             json!({}),
         )
         .await
-        .expect("todoread");
+        .unwrap_or_abort();
     assert!(todo_read.display_text.contains("task"));
 
     let invalid = handle
@@ -134,7 +135,7 @@ async fn native_control_plane_tools_cover_invalid_todo_and_skill() {
             json!({"tool": "todowrite", "error": "bad args"}),
         )
         .await
-        .expect("invalid");
+        .unwrap_or_abort();
     assert!(invalid.display_text.contains("bad args"));
 
     let skill = handle
@@ -145,7 +146,7 @@ async fn native_control_plane_tools_cover_invalid_todo_and_skill() {
             json!({"name": "rust-best-practices"}),
         )
         .await
-        .expect("skill");
+        .unwrap_or_abort();
     assert!(skill.display_text.contains("# Skill: rust-best-practices"));
 }
 
@@ -172,9 +173,9 @@ async fn native_todo_write_rejects_multiple_in_progress_items() {
             }),
         )
         .await
-        .expect("initial todowrite");
+        .unwrap_or_abort();
     let state_path = todo_state_file(&run);
-    let before = fs::read_to_string(&state_path).expect("todo state before invalid write");
+    let before = fs::read_to_string(&state_path).unwrap_or_abort();
 
     let err = handle
         .execute_agent_tool_call(
@@ -192,7 +193,7 @@ async fn native_todo_write_rejects_multiple_in_progress_items() {
         .expect_err("todowrite should reject multiple in_progress items");
     assert!(err.contains("at most one item with status `in_progress`"));
 
-    let after = fs::read_to_string(&state_path).expect("todo state after invalid write");
+    let after = fs::read_to_string(&state_path).unwrap_or_abort();
     assert_eq!(before, after, "invalid todowrite should not replace state");
 
     let todo_read = handle
@@ -203,7 +204,7 @@ async fn native_todo_write_rejects_multiple_in_progress_items() {
             json!({}),
         )
         .await
-        .expect("todoread");
+        .unwrap_or_abort();
     assert_eq!(
         todo_read.structured_json,
         Some(json!({

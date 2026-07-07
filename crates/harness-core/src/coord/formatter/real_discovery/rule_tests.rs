@@ -1,15 +1,16 @@
 use super::{DiscoveryContext, RealFormatterDiscovery};
 use crate::coord::formatter::FormatterDiscovery;
+use crate::UnwrapOrAbort;
 
 #[tokio::test]
 async fn ruff_discovery_requires_config_file() {
     let _guard = PATH_LOCK.lock().await;
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp_dir.path().join("workspace");
-    std::fs::create_dir_all(&workspace).expect("create workspace");
+    std::fs::create_dir_all(&workspace).unwrap_or_abort();
     let bin_dir = temp_dir.path().join("bin");
-    std::fs::create_dir_all(&bin_dir).expect("create bin dir");
-    std::fs::write(bin_dir.join("ruff"), "#!/bin/sh\n").expect("create fake ruff");
+    std::fs::create_dir_all(&bin_dir).unwrap_or_abort();
+    std::fs::write(bin_dir.join("ruff"), "#!/bin/sh\n").unwrap_or_abort();
     super::tests::make_executable(&bin_dir.join("ruff"));
     let _path_guard = prepend_path(&bin_dir);
 
@@ -25,10 +26,7 @@ async fn ruff_discovery_requires_config_file() {
         "ruff absent without config or fallback"
     );
     std::fs::write(workspace.join("ruff.toml"), "[tool.ruff]\n").unwrap();
-    let command = discovery
-        .resolve("ruff", &context)
-        .await
-        .expect("ruff discovered with config");
+    let command = discovery.resolve("ruff", &context).await.unwrap_or_abort();
     assert_eq!(command, vec!["ruff", "format", "$FILE"]);
 
     std::fs::remove_file(workspace.join("ruff.toml")).unwrap();
@@ -42,14 +40,14 @@ async fn ruff_discovery_requires_config_file() {
 #[tokio::test]
 async fn ruff_falls_back_when_nearest_pyproject_lacks_ruff_section() {
     let _guard = PATH_LOCK.lock().await;
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp_dir.path().join("workspace");
-    std::fs::create_dir_all(&workspace).expect("create workspace");
+    std::fs::create_dir_all(&workspace).unwrap_or_abort();
     let target = workspace.join("package");
-    std::fs::create_dir_all(&target).expect("create target");
+    std::fs::create_dir_all(&target).unwrap_or_abort();
     let bin_dir = temp_dir.path().join("bin");
-    std::fs::create_dir_all(&bin_dir).expect("create bin dir");
-    std::fs::write(bin_dir.join("ruff"), "#!/bin/sh\n").expect("create fake ruff");
+    std::fs::create_dir_all(&bin_dir).unwrap_or_abort();
+    std::fs::write(bin_dir.join("ruff"), "#!/bin/sh\n").unwrap_or_abort();
     super::tests::make_executable(&bin_dir.join("ruff"));
     let _path_guard = prepend_path(&bin_dir);
 
@@ -63,24 +61,21 @@ async fn ruff_falls_back_when_nearest_pyproject_lacks_ruff_section() {
     };
     let discovery = RealFormatterDiscovery;
 
-    let command = discovery
-        .resolve("ruff", &context)
-        .await
-        .expect("ruff discovered via ruff.toml after pyproject without ruff section");
+    let command = discovery.resolve("ruff", &context).await.unwrap_or_abort();
     assert_eq!(command, vec!["ruff", "format", "$FILE"]);
 }
 
 #[tokio::test]
 async fn uv_skips_when_ruff_enabled() {
     let _guard = PATH_LOCK.lock().await;
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp_dir.path().join("workspace");
-    std::fs::create_dir_all(&workspace).expect("create workspace");
+    std::fs::create_dir_all(&workspace).unwrap_or_abort();
     let bin_dir = temp_dir.path().join("bin");
-    std::fs::create_dir_all(&bin_dir).expect("create bin dir");
+    std::fs::create_dir_all(&bin_dir).unwrap_or_abort();
     for name in ["ruff", "uv"] {
         let path = bin_dir.join(name);
-        std::fs::write(&path, "#!/bin/sh\n").expect("create fake binary");
+        std::fs::write(&path, "#!/bin/sh\n").unwrap_or_abort();
         super::tests::make_executable(&path);
     }
     std::fs::write(workspace.join("ruff.toml"), "[tool.ruff]\n").unwrap();
@@ -98,10 +93,7 @@ async fn uv_skips_when_ruff_enabled() {
         "uv skips while ruff config exists"
     );
     std::fs::remove_file(workspace.join("ruff.toml")).unwrap();
-    let command = discovery
-        .resolve("uv", &context)
-        .await
-        .expect("uv discovered without ruff");
+    let command = discovery.resolve("uv", &context).await.unwrap_or_abort();
     let uv_path = bin_dir.join("uv").to_string_lossy().to_string();
     assert_eq!(
         command,
@@ -112,12 +104,12 @@ async fn uv_skips_when_ruff_enabled() {
 #[tokio::test]
 async fn clang_format_discovery_requires_dot_clang_format() {
     let _guard = PATH_LOCK.lock().await;
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp_dir.path().join("workspace");
-    std::fs::create_dir_all(&workspace).expect("create workspace");
+    std::fs::create_dir_all(&workspace).unwrap_or_abort();
     let bin_dir = temp_dir.path().join("bin");
-    std::fs::create_dir_all(&bin_dir).expect("create bin dir");
-    std::fs::write(bin_dir.join("clang-format"), "#!/bin/sh\n").expect("create fake clang-format");
+    std::fs::create_dir_all(&bin_dir).unwrap_or_abort();
+    std::fs::write(bin_dir.join("clang-format"), "#!/bin/sh\n").unwrap_or_abort();
     super::tests::make_executable(&bin_dir.join("clang-format"));
     let _path_guard = prepend_path(&bin_dir);
 
@@ -136,19 +128,19 @@ async fn clang_format_discovery_requires_dot_clang_format() {
     let command = discovery
         .resolve("clang-format", &context)
         .await
-        .expect("clang-format discovered with marker");
+        .unwrap_or_abort();
     assert_eq!(command[1..], ["-i", "$FILE"]);
 }
 
 #[tokio::test]
 async fn ocamlformat_discovery_requires_dot_ocamlformat() {
     let _guard = PATH_LOCK.lock().await;
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp_dir.path().join("workspace");
-    std::fs::create_dir_all(&workspace).expect("create workspace");
+    std::fs::create_dir_all(&workspace).unwrap_or_abort();
     let bin_dir = temp_dir.path().join("bin");
-    std::fs::create_dir_all(&bin_dir).expect("create bin dir");
-    std::fs::write(bin_dir.join("ocamlformat"), "#!/bin/sh\n").expect("create fake ocamlformat");
+    std::fs::create_dir_all(&bin_dir).unwrap_or_abort();
+    std::fs::write(bin_dir.join("ocamlformat"), "#!/bin/sh\n").unwrap_or_abort();
     super::tests::make_executable(&bin_dir.join("ocamlformat"));
     let _path_guard = prepend_path(&bin_dir);
 
@@ -173,17 +165,17 @@ async fn ocamlformat_discovery_requires_dot_ocamlformat() {
 #[tokio::test]
 async fn air_discovery_requires_help_output() {
     let _guard = PATH_LOCK.lock().await;
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp_dir.path().join("workspace");
-    std::fs::create_dir_all(&workspace).expect("create workspace");
+    std::fs::create_dir_all(&workspace).unwrap_or_abort();
     let bin_dir = temp_dir.path().join("bin");
-    std::fs::create_dir_all(&bin_dir).expect("create bin dir");
+    std::fs::create_dir_all(&bin_dir).unwrap_or_abort();
     let valid = bin_dir.join("air");
     std::fs::write(
         &valid,
         "#!/bin/sh\necho 'air: format R language formatter'\n",
     )
-    .expect("create valid air");
+    .unwrap_or_abort();
     super::tests::make_executable(&valid);
     let _path_guard = prepend_path(&bin_dir);
 
@@ -194,10 +186,7 @@ async fn air_discovery_requires_help_output() {
     };
     let discovery = RealFormatterDiscovery;
 
-    let command = discovery
-        .resolve("air", &context)
-        .await
-        .expect("air discovered when help matches");
+    let command = discovery.resolve("air", &context).await.unwrap_or_abort();
     assert_eq!(
         command,
         vec![
@@ -217,12 +206,12 @@ async fn air_discovery_requires_help_output() {
 #[tokio::test]
 async fn which_only_formatter_resolves_to_path_binary() {
     let _guard = PATH_LOCK.lock().await;
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp_dir.path().join("workspace");
-    std::fs::create_dir_all(&workspace).expect("create workspace");
+    std::fs::create_dir_all(&workspace).unwrap_or_abort();
     let bin_dir = temp_dir.path().join("bin");
-    std::fs::create_dir_all(&bin_dir).expect("create bin dir");
-    std::fs::write(bin_dir.join("gofmt"), "#!/bin/sh\n").expect("create fake gofmt");
+    std::fs::create_dir_all(&bin_dir).unwrap_or_abort();
+    std::fs::write(bin_dir.join("gofmt"), "#!/bin/sh\n").unwrap_or_abort();
     super::tests::make_executable(&bin_dir.join("gofmt"));
     let _path_guard = prepend_path(&bin_dir);
 
@@ -233,10 +222,7 @@ async fn which_only_formatter_resolves_to_path_binary() {
     };
     let discovery = RealFormatterDiscovery;
 
-    let command = discovery
-        .resolve("gofmt", &context)
-        .await
-        .expect("gofmt discovered by PATH");
+    let command = discovery.resolve("gofmt", &context).await.unwrap_or_abort();
     assert_eq!(command[1..], ["-w", "$FILE"]);
     assert!(
         command[0].ends_with("gofmt"),

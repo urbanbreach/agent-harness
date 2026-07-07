@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 pub(super) fn runtime_state_overlay_is_quiet_and_actionable() {
     let mut app = app::AppState::new_live(None, false, None);
@@ -153,12 +154,12 @@ pub(super) fn operator_sidebar_uses_secondary_quiet_chrome() {
     let buffer = render_live_cells(&app, 160, 48);
     let theme = Theme::default();
     let title = "Explain the refactor";
-    let (row, _fg, bg) = row_text_and_palette(&buffer, 160, title).expect("sidebar title row");
-    let start = row.find(title).expect("sidebar title starts");
+    let (row, _fg, bg) = row_text_and_palette(&buffer, 160, title).unwrap_or_abort();
+    let start = row.find(title).unwrap_or_abort();
     let start = row[..start].chars().count();
     let end = start + title.chars().count();
 
-    assert!(!row[..row.find(title).expect("sidebar title bytes")].contains('│'));
+    assert!(!row[..row.find(title).unwrap_or_abort()].contains('│'));
     assert!(bg[start..end]
         .iter()
         .all(|color| *color == theme.surface.panel));

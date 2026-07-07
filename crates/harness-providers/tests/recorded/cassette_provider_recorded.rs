@@ -1,3 +1,4 @@
+use harness_providers::UnwrapOrAbort;
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -21,7 +22,7 @@ async fn replay_matches_requests_by_sequential_cursor() {
         CassetteMode::Replay,
         false,
     )
-    .expect("replay cassette");
+    .unwrap_or_abort();
 
     let first = provider
         .stream_completion(request("first"))
@@ -53,7 +54,7 @@ async fn replay_reports_clear_mismatch_without_calling_inner_provider() {
         CassetteMode::Replay,
         false,
     )
-    .expect("replay cassette");
+    .unwrap_or_abort();
 
     let events = provider
         .stream_completion(request("wrong"))
@@ -69,7 +70,7 @@ async fn replay_reports_clear_mismatch_without_calling_inner_provider() {
 
 #[tokio::test]
 async fn ci_forces_replay_and_missing_cassette_fails_closed() {
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let missing = temp.path().join("missing.json");
 
     let err = match RecordedProvider::with_ci(
@@ -88,7 +89,7 @@ async fn ci_forces_replay_and_missing_cassette_fails_closed() {
 
 #[tokio::test]
 async fn record_mode_writes_safe_cassette_and_replays_recorded_events() {
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let path = temp.path().join("recorded.json");
     let provider = RecordedProvider::with_ci(
         CountingProvider::default(),
@@ -96,7 +97,7 @@ async fn record_mode_writes_safe_cassette_and_replays_recorded_events() {
         CassetteMode::Record,
         false,
     )
-    .expect("record provider");
+    .unwrap_or_abort();
 
     let events = provider
         .stream_completion(request("record me"))
@@ -108,8 +109,8 @@ async fn record_mode_writes_safe_cassette_and_replays_recorded_events() {
         vec![ProviderStreamEvent::TextDelta("call-1".to_string())]
     );
 
-    let cassette = ProviderCassette::read_from(&path).expect("recorded cassette");
-    assert_cassette_is_safe(&cassette).expect("safe cassette");
+    let cassette = ProviderCassette::read_from(&path).unwrap_or_abort();
+    assert_cassette_is_safe(&cassette).unwrap_or_abort();
     assert_eq!(cassette.interactions.len(), 1);
     assert_eq!(cassette.interactions[0].request, request("record me"));
     assert_eq!(cassette.interactions[0].events, events);
@@ -117,7 +118,7 @@ async fn record_mode_writes_safe_cassette_and_replays_recorded_events() {
 
 #[tokio::test]
 async fn unsafe_secret_refuses_to_write_recording() {
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let path = temp.path().join("unsafe.json");
     let provider = RecordedProvider::with_ci(
         CountingProvider::default(),
@@ -125,7 +126,7 @@ async fn unsafe_secret_refuses_to_write_recording() {
         CassetteMode::Record,
         false,
     )
-    .expect("record provider");
+    .unwrap_or_abort();
 
     let events = provider
         .stream_completion(request("please leak sk-testsecret123"))
@@ -199,7 +200,6 @@ fn request(content: &str) -> CompletionRequest {
     }
 }
 
-#[allow(dead_code)]
 fn interaction(content: &str, delta: &str) -> CassetteInteraction {
     CassetteInteraction::new(
         request(content),

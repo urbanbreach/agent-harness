@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 #[tokio::test]
 async fn openai_compatible_offline_transport_parses_sse_deltas() {
@@ -88,7 +89,7 @@ async fn codex_auth_profile_rewrites_endpoint_and_adds_context_headers() {
         },
         Arc::clone(&transport) as Arc<dyn OpenAiHttpTransport>,
     )
-    .expect("provider")
+    .unwrap_or_abort()
     .with_auth_profile(OpenAiAuthProfile::Codex)
     .with_credential_source(Arc::new(StaticCredentialSource {
         token: "codex-oauth-token".to_string(),
@@ -185,7 +186,7 @@ async fn codex_auth_profile_rewrites_endpoint_and_adds_context_headers() {
         .body
         .get("input")
         .and_then(serde_json::Value::as_array)
-        .expect("codex request input");
+        .unwrap_or_abort();
     assert_eq!(input.len(), 1);
     assert_eq!(
         input[0].get("role"),
@@ -211,7 +212,7 @@ async fn codex_gpt_request_defaults_match_reference_matrix() {
         },
         Arc::clone(&transport) as Arc<dyn OpenAiHttpTransport>,
     )
-    .expect("provider")
+    .unwrap_or_abort()
     .with_auth_profile(OpenAiAuthProfile::Codex)
     .with_credential_source(Arc::new(StaticCredentialSource {
         token: "codex-oauth-token".to_string(),
@@ -298,7 +299,7 @@ async fn github_copilot_auth_profile_rewrites_public_and_enterprise_headers() {
         },
         Arc::clone(&transport) as Arc<dyn OpenAiHttpTransport>,
     )
-    .expect("provider")
+    .unwrap_or_abort()
     .with_auth_profile(OpenAiAuthProfile::GithubCopilot)
     .with_credential_source(Arc::new(StaticCredentialSource {
         token: "copilot-public-token".to_string(),
@@ -362,7 +363,7 @@ async fn github_copilot_auth_profile_rewrites_public_and_enterprise_headers() {
         },
         Arc::clone(&enterprise_transport) as Arc<dyn OpenAiHttpTransport>,
     )
-    .expect("provider")
+    .unwrap_or_abort()
     .with_auth_profile(OpenAiAuthProfile::GithubCopilot)
     .with_credential_source(Arc::new(StaticCredentialSource {
         token: "copilot-enterprise-token".to_string(),

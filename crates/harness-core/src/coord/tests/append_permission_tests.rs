@@ -1,26 +1,34 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 #[test]
 fn event_append_helpers_preserve_correlation_fallbacks_and_stream_keys() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let clock = Arc::new(FakeClock::new());
     let redactor = Arc::new(DefaultRedactor::default());
     let (_command_tx, command_rx) = mpsc::channel(1);
     let (job_tx, job_rx) = mpsc::channel(1);
     let mut coordinator = Coordinator::new(
         test_config(temp_dir.path()),
-        clock.clone(),
-        redactor.clone(),
+        {
+            let c: Arc<dyn crate::clock::Clock + Send + Sync> = Arc::<FakeClock>::clone(&clock);
+            c
+        },
+        {
+            let r: Arc<dyn crate::redact::Redactor + Send + Sync> =
+                Arc::<DefaultRedactor>::clone(&redactor);
+            r
+        },
         command_rx,
         job_tx,
         job_rx,
     );
     coordinator
         .start_run_internal("append_helpers".to_string(), temp_dir.path().to_path_buf())
-        .expect("start run");
+        .unwrap_or_abort();
 
     let actor = EventActor::new(ActorKind::Worker, Some("agent_000001".to_string()));
-    let run_state = coordinator.run_state.as_mut().expect("run state");
+    let run_state = coordinator.run_state.as_mut().unwrap_or_abort();
 
     let requested = append_tool_call_requested_event(
         clock.as_ref(),
@@ -35,7 +43,7 @@ fn event_append_helpers_preserve_correlation_fallbacks_and_stream_keys() {
             request_correlation_id: Some("req_000001"),
         },
     )
-    .expect("append tool call requested");
+    .unwrap_or_abort();
     assert_eq!(requested.correlation_id.as_deref(), Some("req_000001"));
     assert_eq!(
         requested.stream_key.as_deref(),
@@ -57,7 +65,7 @@ fn event_append_helpers_preserve_correlation_fallbacks_and_stream_keys() {
             request_correlation_id: None,
         },
     )
-    .expect("append permission requested");
+    .unwrap_or_abort();
     assert_eq!(
         permission.correlation_id.as_deref(),
         Some("toolcall_000001")
@@ -74,7 +82,7 @@ fn event_append_helpers_preserve_correlation_fallbacks_and_stream_keys() {
         "toolcall_000001",
         None,
     )
-    .expect("append tool call started");
+    .unwrap_or_abort();
     assert_eq!(started.correlation_id.as_deref(), Some("toolcall_000001"));
     assert_eq!(
         started.stream_key.as_deref(),
@@ -94,7 +102,7 @@ fn event_append_helpers_preserve_correlation_fallbacks_and_stream_keys() {
             request_correlation_id: Some("req_000001"),
         },
     )
-    .expect("append tool call finished");
+    .unwrap_or_abort();
     assert_eq!(finished.correlation_id.as_deref(), Some("req_000001"));
     assert_eq!(
         finished.stream_key.as_deref(),
@@ -115,7 +123,7 @@ fn event_append_helpers_preserve_correlation_fallbacks_and_stream_keys() {
         &edit_metadata,
         None,
     )
-    .expect("append edit proposed");
+    .unwrap_or_abort();
     assert_eq!(edit.correlation_id.as_deref(), Some("toolcall_000001"));
     assert_eq!(edit.stream_key.as_deref(), Some("edit:edit_000001"));
 
@@ -132,7 +140,7 @@ fn event_append_helpers_preserve_correlation_fallbacks_and_stream_keys() {
             request_correlation_id: None,
         },
     )
-    .expect("append edit applied");
+    .unwrap_or_abort();
     assert_eq!(
         edit_applied.correlation_id.as_deref(),
         Some("toolcall_000001")
@@ -154,7 +162,7 @@ fn event_append_helpers_preserve_correlation_fallbacks_and_stream_keys() {
         "anchor mismatch".to_string(),
         None,
     )
-    .expect("append edit rejected");
+    .unwrap_or_abort();
     assert_eq!(
         edit_rejected.correlation_id.as_deref(),
         Some("toolcall_000001")
@@ -186,7 +194,7 @@ fn event_append_helpers_preserve_correlation_fallbacks_and_stream_keys() {
         None,
         grant,
     )
-    .expect("append permission grant recorded");
+    .unwrap_or_abort();
     assert_eq!(
         grant_recorded.correlation_id.as_deref(),
         Some("perm_000001")
@@ -209,7 +217,7 @@ fn event_append_helpers_preserve_correlation_fallbacks_and_stream_keys() {
         None,
         None,
     )
-    .expect("append artifact written");
+    .unwrap_or_abort();
     assert_eq!(
         artifact_written.correlation_id.as_deref(),
         Some("toolcall_000001")
@@ -222,7 +230,7 @@ fn event_append_helpers_preserve_correlation_fallbacks_and_stream_keys() {
 
 #[tokio::test]
 async fn perm_allow_path_proceeds() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let mut config = test_config(temp_dir.path());
     config.permission_policy = allow_shell_permission_policy();
 
@@ -235,7 +243,7 @@ async fn perm_allow_path_proceeds() {
     let run = handle
         .start_run("perm_allow", temp_dir.path())
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let tool_call_id = handle
         .request_tool_call(
@@ -245,7 +253,7 @@ async fn perm_allow_path_proceeds() {
             json!({"cmd": "true"}),
         )
         .await
-        .expect("request tool call");
+        .unwrap_or_abort();
 
     wait_for_events(
         &handle,
@@ -260,7 +268,7 @@ async fn perm_allow_path_proceeds() {
         },
     )
     .await;
-    handle.stop_run().await.expect("stop run");
+    handle.stop_run().await.unwrap_or_abort();
 
     let events = read_events(&run.events_path);
     assert!(events.iter().any(|event| {

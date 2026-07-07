@@ -3,6 +3,7 @@ mod common;
 use common::{setup_workspace_fixture, test_context};
 use harness_core::config::ShellAllowlist;
 use harness_tools::coordinator_registry;
+use harness_tools::UnwrapOrAbort;
 use serde_json::json;
 
 #[tokio::test]
@@ -19,7 +20,7 @@ async fn malformed_native_args_return_actionable_recovery_message() {
     // act
     let error = registry
         .get("read")
-        .expect("read tool")
+        .unwrap_or_abort()
         .call(
             context,
             json!({

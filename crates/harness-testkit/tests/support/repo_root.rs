@@ -5,5 +5,5 @@ pub(crate) fn repo_root() -> PathBuf {
         .parent()
         .and_then(std::path::Path::parent)
         .map(std::path::Path::to_path_buf)
-        .expect("harness-testkit lives under <repo>/crates/harness-testkit")
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")))
 }

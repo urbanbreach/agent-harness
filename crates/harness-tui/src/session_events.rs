@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::fs;
 use std::path::Path;
 
@@ -29,6 +30,7 @@ pub(crate) fn load_session_events(session_path: &Path) -> Result<Vec<EventEnvelo
 
 #[cfg(test)]
 mod tests {
+    use crate::UnwrapOrAbort;
     use harness_core::event::{
         ActorKind, EventActor, EventEnvelopeV1, EventV1, RunStartedEvent, SCHEMA_VERSION,
     };
@@ -57,10 +59,10 @@ mod tests {
     fn write_events(run_dir: &Path, events: &[EventEnvelopeV1], separator: &str) {
         let body = events
             .iter()
-            .map(|event| serde_json::to_string(event).expect("serialize event"))
+            .map(|event| serde_json::to_string(event).unwrap_or_abort())
             .collect::<Vec<_>>()
             .join(separator);
-        fs::write(run_dir.join(EVENTS_FILE_NAME), body).expect("write events");
+        fs::write(run_dir.join(EVENTS_FILE_NAME), body).unwrap_or_abort();
     }
 
     fn run_started_count(events: &[EventEnvelopeV1]) -> usize {
@@ -72,10 +74,10 @@ mod tests {
 
     #[test]
     fn session_event_loader_skips_blank_lines_and_trims_events() {
-        let run_dir = tempfile::tempdir().expect("create run dir");
+        let run_dir = tempfile::tempdir().unwrap_or_abort();
         write_events(run_dir.path(), &[event(1), event(2)], "\n\n  \n");
 
-        let events = load_session_events(run_dir.path()).expect("load session events");
+        let events = load_session_events(run_dir.path()).unwrap_or_abort();
 
         assert_eq!(run_started_count(&events), 2);
     }

@@ -1,3 +1,4 @@
+use harness_tools::UnwrapOrAbort;
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -36,10 +37,7 @@ fn assert_wrapped_tool_result_contract(
     expected_tool: &str,
     expected_text: &str,
 ) {
-    let structured = result
-        .structured_json
-        .as_ref()
-        .expect("structured MCP result");
+    let structured = result.structured_json.as_ref().unwrap_or_abort();
     assert_eq!(
         structured
             .get("server")
@@ -113,12 +111,8 @@ async fn stdio_mcp_tool_calls_preserve_stateful_sessions_across_calls() {
 
     let registry =
         coordinator_registry_with_mcp(ShellAllowlist::default(), fake_mcp_config(&script_path));
-    let spawn = registry
-        .get("mcp.fixture.terminal_spawn")
-        .expect("terminal_spawn tool");
-    let wait = registry
-        .get("mcp.fixture.terminal_wait")
-        .expect("terminal_wait tool");
+    let spawn = registry.get("mcp.fixture.terminal_spawn").unwrap_or_abort();
+    let wait = registry.get("mcp.fixture.terminal_wait").unwrap_or_abort();
 
     let spawn_result = spawn
         .call(
@@ -126,7 +120,7 @@ async fn stdio_mcp_tool_calls_preserve_stateful_sessions_across_calls() {
             json!({"shell": "/bin/bash"}),
         )
         .await
-        .expect("spawn terminal session");
+        .unwrap_or_abort();
     assert!(spawn_result.display_text.contains("sessionId"));
 
     let wait_result = wait
@@ -135,7 +129,7 @@ async fn stdio_mcp_tool_calls_preserve_stateful_sessions_across_calls() {
             json!({"sessionId": "term-1", "ms": 10}),
         )
         .await
-        .expect("reuse stateful terminal session");
+        .unwrap_or_abort();
     assert_eq!(wait_result.display_text, "terminal session still active");
 }
 
@@ -149,16 +143,14 @@ async fn generic_mcp_registry_exposes_first_class_remote_tools() {
     let registry =
         coordinator_registry_with_mcp(ShellAllowlist::default(), fake_mcp_config(&script_path));
 
-    let tool = registry
-        .get("mcp.fixture.echo")
-        .expect("first-class MCP tool");
+    let tool = registry.get("mcp.fixture.echo").unwrap_or_abort();
     let result = tool
         .call(
             test_context(&workspace, "mcp-first-class-tool-call"),
             json!({ "text": "hello first-class" }),
         )
         .await
-        .expect("first-class MCP tool call");
+        .unwrap_or_abort();
 
     assert_eq!(result.display_text, "hello first-class");
     assert_wrapped_tool_result_contract(&result, "echo", "hello first-class");
@@ -174,13 +166,11 @@ async fn generic_mcp_stdio_server_supports_tools_resources_and_prompts() {
     let registry =
         coordinator_registry_with_mcp(ShellAllowlist::default(), fake_mcp_config(&script_path));
 
-    let tools_list = registry
-        .get("mcp.fixture.tools.list")
-        .expect("tools.list tool");
+    let tools_list = registry.get("mcp.fixture.tools.list").unwrap_or_abort();
     let tools_result = tools_list
         .call(test_context(&workspace, "mcp-tools-list"), json!({}))
         .await
-        .expect("mcp tools.list");
+        .unwrap_or_abort();
     assert!(tools_result.display_text.contains("MCP tools from fixture"));
     assert!(tools_result
         .display_text
@@ -196,9 +186,7 @@ async fn generic_mcp_stdio_server_supports_tools_resources_and_prompts() {
         Some(1)
     );
 
-    let tool_call = registry
-        .get("mcp.fixture.tool.call")
-        .expect("tool.call tool");
+    let tool_call = registry.get("mcp.fixture.tool.call").unwrap_or_abort();
     let tool_result = tool_call
         .call(
             test_context(&workspace, "mcp-tool-call"),
@@ -210,48 +198,40 @@ async fn generic_mcp_stdio_server_supports_tools_resources_and_prompts() {
             }),
         )
         .await
-        .expect("mcp tool.call");
+        .unwrap_or_abort();
     assert_eq!(tool_result.display_text, "hello from mcp");
     assert_wrapped_tool_result_contract(&tool_result, "echo", "hello from mcp");
 
-    let resources_list = registry
-        .get("mcp.fixture.resources.list")
-        .expect("resources.list tool");
+    let resources_list = registry.get("mcp.fixture.resources.list").unwrap_or_abort();
     let resources_result = resources_list
         .call(test_context(&workspace, "mcp-resources-list"), json!({}))
         .await
-        .expect("mcp resources.list");
+        .unwrap_or_abort();
     assert!(resources_result.display_text.contains("fixture://alpha"));
 
-    let resource_read = registry
-        .get("mcp.fixture.resource.read")
-        .expect("resource.read tool");
+    let resource_read = registry.get("mcp.fixture.resource.read").unwrap_or_abort();
     let resource_result = resource_read
         .call(
             test_context(&workspace, "mcp-resource-read"),
             json!({ "uri": "fixture://alpha" }),
         )
         .await
-        .expect("mcp resource.read");
+        .unwrap_or_abort();
     assert_eq!(
         resource_result.display_text,
         "resource body for fixture://alpha"
     );
 
-    let prompts_list = registry
-        .get("mcp.fixture.prompts.list")
-        .expect("prompts.list tool");
+    let prompts_list = registry.get("mcp.fixture.prompts.list").unwrap_or_abort();
     let prompts_result = prompts_list
         .call(test_context(&workspace, "mcp-prompts-list"), json!({}))
         .await
-        .expect("mcp prompts.list");
+        .unwrap_or_abort();
     assert!(prompts_result
         .display_text
         .contains("summarize — Summarize a topic"));
 
-    let prompt_get = registry
-        .get("mcp.fixture.prompt.get")
-        .expect("prompt.get tool");
+    let prompt_get = registry.get("mcp.fixture.prompt.get").unwrap_or_abort();
     let prompt_result = prompt_get
         .call(
             test_context(&workspace, "mcp-prompt-get"),
@@ -263,7 +243,7 @@ async fn generic_mcp_stdio_server_supports_tools_resources_and_prompts() {
             }),
         )
         .await
-        .expect("mcp prompt.get");
+        .unwrap_or_abort();
     assert_eq!(prompt_result.display_text, "user: Summarize MCP");
 }
 
@@ -335,22 +315,18 @@ async fn generic_mcp_registry_reserves_wrapper_ids_for_colliding_first_class_too
         );
     }
 
-    let reserved_tool = registry
-        .get("mcp.fixture.tool_call_2")
-        .expect("reserved collision tool.call first-class tool");
+    let reserved_tool = registry.get("mcp.fixture.tool_call_2").unwrap_or_abort();
     let reserved_result = reserved_tool
         .call(
             test_context(&workspace, "mcp-reserved-tool-call-direct"),
             json!({ "text": "reserved tool.call" }),
         )
         .await
-        .expect("direct reserved tool.call first-class tool call");
+        .unwrap_or_abort();
     assert_eq!(reserved_result.display_text, "reserved tool.call");
     assert_wrapped_tool_result_contract(&reserved_result, "tool.call", "reserved tool.call");
 
-    let wrapper_tool = registry
-        .get("mcp.fixture.tool.call")
-        .expect("reserved wrapper tool.call tool");
+    let wrapper_tool = registry.get("mcp.fixture.tool.call").unwrap_or_abort();
     let wrapper_result = wrapper_tool
         .call(
             test_context(&workspace, "mcp-reserved-tool-call-wrapper"),
@@ -360,7 +336,7 @@ async fn generic_mcp_registry_reserves_wrapper_ids_for_colliding_first_class_too
             }),
         )
         .await
-        .expect("wrapper reserved tool.call call");
+        .unwrap_or_abort();
     assert_eq!(wrapper_result.display_text, "wrapper reserved tool.call");
     assert_wrapped_tool_result_contract(&wrapper_result, "tool.call", "wrapper reserved tool.call");
 }

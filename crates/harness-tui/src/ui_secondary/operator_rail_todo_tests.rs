@@ -1,5 +1,6 @@
 use super::operator_rail_test_fixtures::*;
 use super::*;
+use crate::UnwrapOrAbort;
 
 pub(crate) fn exact_test_operator_rail_renders_todo_items_from_tool_state() {
     let mut app = AppState::new_live(None, false, None);
@@ -73,7 +74,7 @@ pub(crate) fn exact_test_operator_rail_renders_todo_items_from_tool_state() {
                 .collect::<String>()
                 .contains("[•] Implement UI")
         })
-        .expect("in-progress todo line");
+        .unwrap_or_abort();
     assert_eq!(in_progress.spans[0].style.fg, Some(theme.status.warning));
     assert_eq!(in_progress.spans[1].style.fg, Some(theme.status.warning));
 
@@ -86,7 +87,7 @@ pub(crate) fn exact_test_operator_rail_renders_todo_items_from_tool_state() {
                 .collect::<String>()
                 .contains("[ ] Verify tests")
         })
-        .expect("pending todo line");
+        .unwrap_or_abort();
     assert_eq!(pending.spans[0].style.fg, Some(theme.text.secondary));
     assert_eq!(pending.spans[1].style.fg, Some(theme.text.secondary));
 }
@@ -219,15 +220,14 @@ pub(crate) fn exact_test_operator_rail_hides_completed_todo_state() {
 
 #[cfg(test)]
 pub(crate) fn exact_test_operator_rail_renders_todo_items_from_artifact_state() {
-    let temp_dir = tempfile::tempdir().expect("todo artifact session dir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let artifact_path = temp_dir
         .path()
         .join("artifacts")
         .join("toolcalls")
         .join("tool_call_todo_artifact")
         .join("result.json");
-    std::fs::create_dir_all(artifact_path.parent().expect("artifact parent"))
-        .expect("create todo artifact dir");
+    std::fs::create_dir_all(artifact_path.parent().unwrap_or_abort()).unwrap_or_abort();
     std::fs::write(
         &artifact_path,
         serde_json::to_vec_pretty(&serde_json::json!({
@@ -235,9 +235,9 @@ pub(crate) fn exact_test_operator_rail_renders_todo_items_from_artifact_state() 
                 {"content": "Persisted todo", "status": "in_progress", "priority": "high"}
             ]
         }))
-        .expect("serialize todo artifact"),
+        .unwrap_or_abort(),
     )
-    .expect("write todo artifact");
+    .unwrap_or_abort();
 
     let mut app = AppState::new_live(Some(temp_dir.path().to_path_buf()), false, None);
     app.ingest_event(operator_rail_test_event_with_correlation(

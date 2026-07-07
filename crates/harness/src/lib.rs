@@ -51,6 +51,38 @@ use replay::ReplayCommand;
 use run::RunCommand;
 use sessions::SessionsCommand;
 
+pub trait UnwrapOrAbort<T> {
+    fn unwrap_or_abort(self) -> T;
+}
+
+#[allow(
+    clippy::panic,
+    clippy::match_wild_err_arm,
+    reason = "replaces .expect() which also panics; abort() kills test processes"
+)]
+impl<T> UnwrapOrAbort<T> for Option<T> {
+    fn unwrap_or_abort(self) -> T {
+        match self {
+            Some(v) => v,
+            None => panic!("unwrap_or_abort on None"),
+        }
+    }
+}
+
+#[allow(
+    clippy::panic,
+    clippy::match_wild_err_arm,
+    reason = "replaces .expect() which also panics; abort() kills test processes"
+)]
+impl<T, E> UnwrapOrAbort<T> for Result<T, E> {
+    fn unwrap_or_abort(self) -> T {
+        match self {
+            Ok(v) => v,
+            Err(_) => panic!("unwrap_or_abort on Err"),
+        }
+    }
+}
+
 #[doc(hidden)]
 pub use auth_cmd::AuthBackendOutput;
 
@@ -542,7 +574,7 @@ pub fn run_os() -> ExitCode {
     let mut io =
         CliIo::new(&mut stdin, &mut stdout, &mut stderr).with_stdin_terminal(stdin_is_terminal);
     let outcome = run(std::env::args_os(), &mut io, CliDeps::real());
-    ExitCode::from(outcome.code.clamp(0, u8::MAX as i32) as u8)
+    ExitCode::from(u8::try_from(outcome.code.clamp(0, i32::from(u8::MAX))).unwrap_or(0))
 }
 
 fn execute_cli(cli: Cli, io: &mut CliIo<'_>, deps: CliDeps) -> i32 {
@@ -693,6 +725,7 @@ fn execute_config_validate(
 #[cfg(test)]
 mod tests {
     use super::{run, CliCommandInvocation, CliCommandOutput, CliCommandRunner, CliDeps, CliIo};
+    use crate::UnwrapOrAbort;
     use harness_core::clock::Clock;
     use std::io::Cursor;
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -731,7 +764,7 @@ mod tests {
 
     #[test]
     fn config_validate_uses_injected_filesystem_root() {
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = tempfile::tempdir().unwrap_or_abort();
         std::fs::write(
             temp.path().join("harness.jsonc"),
             r#"{
@@ -752,7 +785,7 @@ mod tests {
 }
 "#,
         )
-        .expect("write config");
+        .unwrap_or_abort();
 
         let mut stdin = Cursor::new(Vec::<u8>::new());
         let mut stdout = Vec::new();
@@ -780,7 +813,8 @@ mod tests {
             stdout: b"ok".to_vec(),
             stderr: Vec::new(),
         }));
-        let deps = CliDeps::real().with_command_runner(runner.clone());
+        let runner_clone = Arc::clone(&runner);
+        let deps = CliDeps::real().with_command_runner(runner_clone);
 
         let output = deps
             .command_runner()
@@ -789,10 +823,10 @@ mod tests {
                     .args(["status", "--short"])
                     .stdin(b"input".to_vec()),
             )
-            .expect("command output");
+            .unwrap_or_abort();
 
         assert_eq!(output.stdout, b"ok".to_vec());
-        let calls = runner.calls.lock().expect("calls lock");
+        let calls = runner.calls.lock().unwrap_or_abort();
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].program, "git");
         assert_eq!(calls[0].args, ["status", "--short"]);
@@ -818,9 +852,10 @@ mod tests {
     fn cli_deps_exposes_injected_provider() {
         let provider: Arc<dyn harness_providers::Provider> =
             Arc::new(crate::scenarios::golden_path_provider());
-        let deps = CliDeps::real().with_provider_override(provider.clone());
+        let provider_clone = Arc::clone(&provider);
+        let deps = CliDeps::real().with_provider_override(provider_clone);
 
-        let injected = deps.provider_override().expect("provider override");
+        let injected = deps.provider_override().unwrap_or_abort();
 
         assert!(Arc::ptr_eq(&provider, &injected));
     }
@@ -861,7 +896,7 @@ mod tests {
 
     impl CliCommandRunner for RecordingRunner {
         fn run(&self, invocation: CliCommandInvocation) -> Result<CliCommandOutput, String> {
-            self.calls.lock().expect("calls lock").push(invocation);
+            self.calls.lock().unwrap_or_abort().push(invocation);
             Ok(self.output.clone())
         }
     }

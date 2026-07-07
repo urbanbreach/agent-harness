@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 #[path = "provider_context_checkpoint_replay_tests.rs"]
 mod provider_context_checkpoint_replay_tests;
@@ -29,8 +30,7 @@ pub(super) fn legacy_provider_context_checkpoint_deserializes() {
         ]
     }"#;
 
-    let checkpoint: ProviderContextCheckpoint =
-        serde_json::from_str(body).expect("legacy checkpoint should deserialize");
+    let checkpoint: ProviderContextCheckpoint = serde_json::from_str(body).unwrap_or_abort();
 
     assert_eq!(checkpoint.metadata.tokens_before_estimate, None);
     assert_eq!(checkpoint.metadata.tokens_after_estimate, None);
@@ -38,10 +38,7 @@ pub(super) fn legacy_provider_context_checkpoint_deserializes() {
     assert_eq!(checkpoint.recent_turns[0].request_id, None);
     assert_eq!(checkpoint.recent_turns[0].artifacts, Vec::new());
     assert_eq!(checkpoint.recent_turns[0].messages, Vec::new());
-    let source = checkpoint
-        .summary_source
-        .as_ref()
-        .expect("legacy summary source should deserialize");
+    let source = checkpoint.summary_source.as_ref().unwrap_or_abort();
     assert_eq!(source.summary_contract_version, None);
     assert_eq!(source.summary_contract_enforced, None);
 }
@@ -102,12 +99,11 @@ pub(super) fn provider_neutral_reconstruction_marks_continue_as_tool_message_fai
 }
 
 pub(super) fn provider_context_checkpoint_legacy_round_trips_with_new_defaults() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_legacy_checkpoint_round_trip";
     let checkpoint_rel = "artifacts/compactions/agent_000001/checkpoint_legacy.json";
     let checkpoint_path = temp_dir.path().join(run_id).join(checkpoint_rel);
-    fs::create_dir_all(checkpoint_path.parent().expect("checkpoint parent"))
-        .expect("create checkpoint directory");
+    fs::create_dir_all(checkpoint_path.parent().unwrap_or_abort()).unwrap_or_abort();
     fs::write(
         &checkpoint_path,
         r#"{
@@ -133,7 +129,7 @@ pub(super) fn provider_context_checkpoint_legacy_round_trips_with_new_defaults()
             ]
         }"#,
     )
-    .expect("write legacy checkpoint artifact");
+    .unwrap_or_abort();
     write_restore_history_fixture(
         temp_dir.path(),
         run_id,
@@ -199,12 +195,8 @@ pub(super) fn provider_context_checkpoint_legacy_round_trips_with_new_defaults()
         ],
     );
 
-    let restored = restore_provider_context_from_history(temp_dir.path(), run_id)
-        .expect("restore legacy checkpoint context");
-    let mut restored_context = restored
-        .get("agent_000001")
-        .cloned()
-        .expect("restored agent context");
+    let restored = restore_provider_context_from_history(temp_dir.path(), run_id).unwrap_or_abort();
+    let mut restored_context = restored.get("agent_000001").cloned().unwrap_or_abort();
     assert_eq!(
         restored_context.compacted_summary.as_deref(),
         Some("legacy summary that must survive")
@@ -244,8 +236,8 @@ pub(super) fn provider_context_checkpoint_legacy_round_trips_with_new_defaults()
         &CompactionRuntimeConfig::default(),
         &crate::coord::CompactionSummaryDecision::deterministic(&trigger),
     )
-    .expect("second compaction should succeed")
-    .expect("second compaction should write a checkpoint");
+    .unwrap_or_abort()
+    .unwrap_or_abort();
 
     let events = read_events(&run_state.info.events_path);
     let written = events
@@ -254,11 +246,11 @@ pub(super) fn provider_context_checkpoint_legacy_round_trips_with_new_defaults()
             EventV1::CompactionWritten(payload) => Some(payload.clone()),
             _ => None,
         })
-        .expect("new compaction written event");
+        .unwrap_or_abort();
     let checkpoint_path = run_state.info.run_dir.join(&written.artifact_path);
-    let checkpoint_body = fs::read_to_string(checkpoint_path).expect("read new checkpoint");
+    let checkpoint_body = fs::read_to_string(checkpoint_path).unwrap_or_abort();
     let checkpoint: ProviderContextCheckpoint =
-        serde_json::from_str(&checkpoint_body).expect("parse new checkpoint");
+        serde_json::from_str(&checkpoint_body).unwrap_or_abort();
     assert!(checkpoint
         .summary
         .contains("legacy summary that must survive"));
@@ -314,8 +306,7 @@ pub(super) fn failed_turn_status_defaults_to_completed_for_legacy_checkpoint() {
         }
     }"#;
 
-    let checkpoint: ProviderContextCheckpoint =
-        serde_json::from_str(body).expect("legacy checkpoint should deserialize");
+    let checkpoint: ProviderContextCheckpoint = serde_json::from_str(body).unwrap_or_abort();
 
     assert_eq!(
         checkpoint.recent_turns[0].status,
@@ -327,7 +318,7 @@ pub(super) fn failed_turn_status_defaults_to_completed_for_legacy_checkpoint() {
         checkpoint.facts.compacted_turns[0].status,
         ProviderConversationTurnStatus::Completed
     );
-    let serialized = serde_json::to_value(&checkpoint).expect("serialize checkpoint");
+    let serialized = serde_json::to_value(&checkpoint).unwrap_or_abort();
     assert_eq!(
         serialized["recent_turns"][0].get("status"),
         None,
@@ -341,7 +332,7 @@ pub(super) fn failed_turn_status_defaults_to_completed_for_legacy_checkpoint() {
 }
 
 pub(super) fn compaction_turn_facts_include_failed_turn_status() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let clock = FakeClock::new();
     let redactor = DefaultRedactor::default();
     let mut run_state = test_run_state(temp_dir.path(), "run_compaction_failed_fact_status");
@@ -384,8 +375,8 @@ pub(super) fn compaction_turn_facts_include_failed_turn_status() {
         &CompactionRuntimeConfig::default(),
         &crate::coord::CompactionSummaryDecision::deterministic(&trigger),
     )
-    .expect("failed-turn compaction should succeed")
-    .expect("failed-turn compaction should write a checkpoint");
+    .unwrap_or_abort()
+    .unwrap_or_abort();
 
     let events = read_events(&run_state.info.events_path);
     let written = events
@@ -394,17 +385,13 @@ pub(super) fn compaction_turn_facts_include_failed_turn_status() {
             EventV1::CompactionWritten(payload) => Some(payload.clone()),
             _ => None,
         })
-        .expect("compaction written event");
+        .unwrap_or_abort();
     let checkpoint_path = run_state.info.run_dir.join(&written.artifact_path);
-    let checkpoint_body = fs::read_to_string(&checkpoint_path).expect("read checkpoint artifact");
+    let checkpoint_body = fs::read_to_string(&checkpoint_path).unwrap_or_abort();
     assert!(!checkpoint_body.contains("sk-ABCDE12345ABCDE"));
     let checkpoint: ProviderContextCheckpoint =
-        serde_json::from_str(&checkpoint_body).expect("parse checkpoint artifact");
-    let compacted_fact = checkpoint
-        .facts
-        .compacted_turns
-        .first()
-        .expect("compacted failed turn fact");
+        serde_json::from_str(&checkpoint_body).unwrap_or_abort();
+    let compacted_fact = checkpoint.facts.compacted_turns.first().unwrap_or_abort();
     assert_eq!(
         compacted_fact.status,
         ProviderConversationTurnStatus::Failed
@@ -413,10 +400,7 @@ pub(super) fn compaction_turn_facts_include_failed_turn_status() {
         compacted_fact.failure_stage.as_deref(),
         Some("provider_error")
     );
-    let reason = compacted_fact
-        .failure_reason
-        .as_deref()
-        .expect("failure reason should be retained");
+    let reason = compacted_fact.failure_reason.as_deref().unwrap_or_abort();
     assert!(reason.contains("[REDACTED_API_KEY]"));
     assert!(
         reason.chars().count()

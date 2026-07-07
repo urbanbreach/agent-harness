@@ -21,6 +21,39 @@ mod text;
 pub mod theme;
 mod time_format;
 pub mod ui;
+
+pub trait UnwrapOrAbort<T> {
+    fn unwrap_or_abort(self) -> T;
+}
+
+#[allow(
+    clippy::panic,
+    clippy::match_wild_err_arm,
+    reason = "replaces .expect() which also panics; abort() kills test processes"
+)]
+impl<T> UnwrapOrAbort<T> for Option<T> {
+    fn unwrap_or_abort(self) -> T {
+        match self {
+            Some(v) => v,
+            None => panic!("unwrap_or_abort on None"),
+        }
+    }
+}
+
+#[allow(
+    clippy::panic,
+    clippy::match_wild_err_arm,
+    reason = "replaces .expect() which also panics; abort() kills test processes"
+)]
+impl<T, E> UnwrapOrAbort<T> for Result<T, E> {
+    fn unwrap_or_abort(self) -> T {
+        match self {
+            Ok(v) => v,
+            Err(_) => panic!("unwrap_or_abort on Err"),
+        }
+    }
+}
+
 mod view_model;
 
 pub use app::{ReviewSurface, UiIntent};

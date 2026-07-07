@@ -1,6 +1,7 @@
+use harness_core::UnwrapOrAbort;
 #[tokio::test]
 async fn provider_retry_retries_retryable_empty_failures_and_records_attempt_metadata() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![
         vec![ProviderStreamEvent::categorized_error(
             "temporary rate limit",
@@ -32,15 +33,15 @@ async fn provider_retry_retries_retryable_empty_failures_and_records_attempt_met
     let run = coordinator
         .start_run("coord_provider_retry_recovers", PathBuf::from("/workspace/project"))
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     let request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id, "please retry")
         .await
-        .expect("request retrying turn");
+        .unwrap_or_abort();
 
     let events = wait_for_events(&run.events_path, Duration::from_millis(700), |events| {
         events.iter().any(|event| {
@@ -53,7 +54,7 @@ async fn provider_retry_retries_retryable_empty_failures_and_records_attempt_met
         })
     })
     .await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     assert_eq!(provider.requests().len(), 3);
     let starts = events
@@ -75,7 +76,7 @@ async fn provider_retry_retries_retryable_empty_failures_and_records_attempt_met
                 .metadata
                 .as_ref()
                 .and_then(|metadata| metadata.retry.as_ref())
-                .expect("retry metadata")
+                .unwrap_or_abort()
                 .attempt
         })
         .collect::<Vec<_>>();
@@ -109,7 +110,7 @@ async fn provider_retry_retries_retryable_empty_failures_and_records_attempt_met
 
 #[tokio::test]
 async fn provider_retry_does_not_retry_partial_output_failures() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![
         vec![
             ProviderStreamEvent::Start,
@@ -129,15 +130,15 @@ async fn provider_retry_does_not_retry_partial_output_failures() {
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     let request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id, "partial fails")
         .await
-        .expect("request failing turn");
+        .unwrap_or_abort();
 
     wait_for_events(&run.events_path, Duration::from_millis(700), |events| {
         events.iter().any(|event| {
@@ -150,7 +151,7 @@ async fn provider_retry_does_not_retry_partial_output_failures() {
         })
     })
     .await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     assert_eq!(provider.requests().len(), 1);
 }

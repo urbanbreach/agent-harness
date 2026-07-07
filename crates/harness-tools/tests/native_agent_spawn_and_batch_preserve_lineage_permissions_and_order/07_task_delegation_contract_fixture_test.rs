@@ -1,3 +1,4 @@
+use harness_tools::UnwrapOrAbort;
 #[tokio::test]
 async fn task_delegation_fixture_covers_structured_prompt_lineage_and_summary_cap() {
     // arrange
@@ -29,8 +30,9 @@ async fn task_delegation_fixture_covers_structured_prompt_lineage_and_summary_ca
             named_worker_profile("general", &["read", "bash"]),
         ),
     ]);
+    let provider_clone = Arc::clone(&provider);
     let (handle, run, worker_id) =
-        spawn_run_with_provider_and_profiles(&workspace, provider.clone(), profiles).await;
+        spawn_run_with_provider_and_profiles(&workspace, provider_clone, profiles).await;
 
     let structured_prompt = "context: inspect the WS9 task contract\n\
 goal: prove delegation evidence\n\
@@ -54,7 +56,7 @@ must-not-do: do not edit files";
             }),
         )
         .await
-        .expect("request sync task");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &sync_tool_call_id).await;
 
     let background_tool_call_id = handle
@@ -71,7 +73,7 @@ must-not-do: do not edit files";
             }),
         )
         .await
-        .expect("request background task");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &background_tool_call_id).await;
 
     let events = read_events(&run.events_path);
@@ -81,7 +83,7 @@ must-not-do: do not edit files";
     let sync_output = sync_finished
         .output_json
         .as_ref()
-        .expect("sync task structured output");
+        .unwrap_or_abort();
     assert_delegation_output_is_capped(sync_output, "foreground");
     assert_eq!(sync_output["route"]["requested_category"], json!("visual-engineering"));
     assert_eq!(sync_output["route"]["resolved_profile"], json!("visual-engineering"));
@@ -93,7 +95,7 @@ must-not-do: do not edit files";
     let background_task_output = background_finished
         .output_json
         .as_ref()
-        .expect("background task structured output");
+        .unwrap_or_abort();
     assert_eq!(background_task_output["mode"], json!("background"));
     assert_eq!(background_task_output["status"], json!("scheduled"));
     assert_eq!(
@@ -102,7 +104,7 @@ must-not-do: do not edit files";
     );
     let background_request_id = background_task_output["child_request_id"]
         .as_str()
-        .expect("background child request id")
+        .unwrap_or_abort()
         .to_string();
     wait_for_request_terminal(&run.events_path, &background_request_id).await;
 
@@ -118,7 +120,7 @@ must-not-do: do not edit files";
             }),
         )
         .await
-        .expect("request background output");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &background_output_tool_call_id).await;
 
     let events = read_events(&run.events_path);
@@ -127,7 +129,7 @@ must-not-do: do not edit files";
     let background_output = background_output_finished
         .output_json
         .as_ref()
-        .expect("background output structured json");
+        .unwrap_or_abort();
     assert_delegation_output_is_capped(background_output, "background");
     assert_eq!(background_output["route"]["resolved_profile"], json!("visual-engineering"));
     assert_eq!(background_output["source"], json!("event_replay"));
@@ -185,7 +187,7 @@ fn assert_delegation_output_is_capped(output: &Value, expected_mode: &str) {
     assert_eq!(output["mode"], json!(expected_mode));
     let result_summary = output["result_summary"]
         .as_str()
-        .expect("parent-visible result summary");
+        .unwrap_or_abort();
     assert!(
         result_summary.chars().count() <= 1201,
         "summary should stay within the documented 1200 char cap plus ellipsis"

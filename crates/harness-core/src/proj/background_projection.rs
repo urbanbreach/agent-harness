@@ -119,13 +119,13 @@ pub fn resolve_background_request_ref<'a>(
         None if explicit_request_id.is_some() && !saw_explicit_request => {
             return Err(BackgroundRequestProjectionError::UnknownRequest(
                 explicit_request_id
-                    .expect("explicit request id checked")
-                    .to_string(),
+                    .map(|id| id.to_string())
+                    .unwrap_or_default(),
             ));
         }
         None => {
             return Err(BackgroundRequestProjectionError::UnknownSelector(
-                selector_hint.expect("selector checked").to_string(),
+                selector_hint.unwrap_or_default().to_string(),
             ));
         }
     };

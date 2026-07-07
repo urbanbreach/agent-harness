@@ -1,3 +1,4 @@
+use harness_core::UnwrapOrAbort;
 use std::path::PathBuf;
 
 use harness_core::config::{
@@ -62,8 +63,7 @@ fn config_with_mcp_servers_json(servers: &str) -> String {
 }
 
 fn config_with_mcp_servers(servers: &str) -> HarnessConfig {
-    json5::from_str(&config_with_mcp_servers_json(servers))
-        .expect("config shape should deserialize")
+    json5::from_str(&config_with_mcp_servers_json(servers)).unwrap_or_abort()
 }
 
 #[test]
@@ -95,7 +95,7 @@ fn integrations_mcp_accepts_stdio_and_http_server_shapes() {
         .mcp
         .servers
         .get("fixture_stdio")
-        .expect("stdio server config");
+        .unwrap_or_abort();
     match stdio {
         McpServerConfig::Stdio {
             command,
@@ -121,7 +121,7 @@ fn integrations_mcp_accepts_stdio_and_http_server_shapes() {
         .mcp
         .servers
         .get("fixture_http")
-        .expect("http server config");
+        .unwrap_or_abort();
     match http {
         McpServerConfig::Http {
             endpoint,
@@ -173,7 +173,7 @@ fn integrations_mcp_rejects_legacy_local_and_remote_server_shapes() {
 
 #[test]
 fn config_schema_exports_top_level_mcp_servers() {
-    let schema = harness_schema_pretty_json().expect("schema generation should succeed");
+    let schema = harness_schema_pretty_json().unwrap_or_abort();
 
     assert!(schema.contains("\"mcp\""));
     assert!(schema.contains("\"transport\""));

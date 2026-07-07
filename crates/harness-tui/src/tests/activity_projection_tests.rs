@@ -1,11 +1,12 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 pub(super) fn prompt_focus_enter_emits_submit_intent() {
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let intent_sink = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
 
@@ -18,7 +19,7 @@ pub(super) fn prompt_focus_enter_emits_submit_intent() {
 
     app.handle_key(key(KeyCode::Enter));
 
-    let intents = intents.lock().expect("lock intents");
+    let intents = intents.lock().unwrap_or_abort();
     assert_eq!(intents.len(), 1);
     assert_eq!(
         intents[0],
@@ -260,10 +261,10 @@ pub(super) fn run_workspace_renders_activity_with_compact_format() {
     app.handle_key(key(crossterm::event::KeyCode::Char('i')));
 
     let backend = TestBackend::new(80, 24);
-    let mut terminal = Terminal::new(backend).expect("create terminal");
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
     terminal
         .draw(|frame| ui::render_app(frame, &app))
-        .expect("draw run workspace frame");
+        .unwrap_or_abort();
 
     let debug = format!("{:?}", terminal.backend().buffer());
     assert!(
@@ -312,10 +313,10 @@ pub(super) fn tool_call_requested_renders_pending_status() {
     app.active_tab = app::Tab::Run;
 
     let backend = TestBackend::new(80, 24);
-    let mut terminal = Terminal::new(backend).expect("create terminal");
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
     terminal
         .draw(|frame| ui::render_app(frame, &app))
-        .expect("draw tool call frame");
+        .unwrap_or_abort();
 
     let debug = format!("{:?}", terminal.backend().buffer());
     assert!(
@@ -363,10 +364,10 @@ pub(super) fn tool_call_started_renders_running_status() {
     app.active_tab = app::Tab::Run;
 
     let backend = TestBackend::new(80, 24);
-    let mut terminal = Terminal::new(backend).expect("create terminal");
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
     terminal
         .draw(|frame| ui::render_app(frame, &app))
-        .expect("draw tool call frame");
+        .unwrap_or_abort();
 
     let debug = format!("{:?}", terminal.backend().buffer());
     assert!(
@@ -428,10 +429,10 @@ pub(super) fn tool_call_finished_renders_truncated_output() {
     app.active_tab = app::Tab::Run;
 
     let backend = TestBackend::new(80, 24);
-    let mut terminal = Terminal::new(backend).expect("create terminal");
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
     terminal
         .draw(|frame| ui::render_app(frame, &app))
-        .expect("draw tool call frame");
+        .unwrap_or_abort();
 
     let debug = format!("{:?}", terminal.backend().buffer());
     assert!(
@@ -496,10 +497,10 @@ pub(super) fn tool_call_failed_renders_error() {
     app.active_tab = app::Tab::Run;
 
     let backend = TestBackend::new(80, 24);
-    let mut terminal = Terminal::new(backend).expect("create terminal");
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
     terminal
         .draw(|frame| ui::render_app(frame, &app))
-        .expect("draw tool call frame");
+        .unwrap_or_abort();
 
     let debug = format!("{:?}", terminal.backend().buffer());
     assert!(

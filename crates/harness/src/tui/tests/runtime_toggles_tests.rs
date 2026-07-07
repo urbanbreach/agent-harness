@@ -1,21 +1,22 @@
 use super::*;
+use harness::UnwrapOrAbort;
 
 #[test]
 fn runtime_toggles_report_compact_skill_catalog_states() {
     // arrange
-    let workspace = tempfile::tempdir().expect("workspace tempdir");
-    fs::create_dir_all(workspace.path().join(".git")).expect("git dir");
+    let workspace = tempfile::tempdir().unwrap_or_abort();
+    fs::create_dir_all(workspace.path().join(".git")).unwrap_or_abort();
     for (name, body) in [
         ("ready-skill", "READY SKILL BODY SENTINEL"),
         ("disabled-skill", "DISABLED SKILL BODY SENTINEL"),
     ] {
         let skill_dir = workspace.path().join(".agent-harness/skills").join(name);
-        fs::create_dir_all(&skill_dir).expect("skill dir");
+        fs::create_dir_all(&skill_dir).unwrap_or_abort();
         fs::write(
             skill_dir.join("SKILL.md"),
             format!("---\nname: {name}\ndescription: {name} description\n---\n\n{body}\n"),
         )
-        .expect("skill file");
+        .unwrap_or_abort();
     }
     let config = load_config_from_str(
         r#"
@@ -48,7 +49,7 @@ fn runtime_toggles_report_compact_skill_catalog_states() {
         }
         "#,
     )
-    .expect("config should parse");
+    .unwrap_or_abort();
 
     let toggles = runtime_toggles_config(Some(&config), workspace.path());
     let ready = toggles
@@ -60,7 +61,7 @@ fn runtime_toggles_report_compact_skill_catalog_states() {
             matches!(&entry.kind, ToggleEntryKind::AgentSkill { agent, skill }
                 if agent == "build" && skill == "skill:project:ready-skill")
         })
-        .expect("ready skill toggle");
+        .unwrap_or_abort();
     assert_eq!(ready.label, "build: ready-skill");
     assert!(ready.description.contains("loadable skill `ready-skill`"));
     assert!(ready.description.contains("project root"));
@@ -73,7 +74,7 @@ fn runtime_toggles_report_compact_skill_catalog_states() {
             matches!(&entry.kind, ToggleEntryKind::AgentSkill { agent, skill }
                 if agent == "build" && skill == "skill:project:disabled-skill")
         })
-        .expect("disabled skill toggle");
+        .unwrap_or_abort();
     assert_eq!(disabled.label, "build: disabled-skill");
     assert!(disabled
         .description

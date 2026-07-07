@@ -428,7 +428,10 @@ fn build_provider_context_checkpoint(
     let tokens_after_estimate = summary_tokens_estimate.saturating_add(preserved_tokens_estimate);
     let reduction_tokens_estimate = tokens_before_estimate.saturating_sub(tokens_after_estimate);
     let reduction_percent_estimate = (tokens_before_estimate > 0).then(|| {
-        ((u64::from(reduction_tokens_estimate) * 100) / u64::from(tokens_before_estimate)) as u32
+        u32::try_from(
+            (u64::from(reduction_tokens_estimate) * 100) / u64::from(tokens_before_estimate),
+        )
+        .unwrap_or(u32::MAX)
     });
 
     let first_kept_request_id = plan
@@ -445,8 +448,8 @@ fn build_provider_context_checkpoint(
         },
         summary: summarize_compaction_text(&summary),
         first_kept_request_id,
-        compacted_turns: plan.older_turns.len() as u32,
-        preserved_turns: plan.recent_turns.len() as u32,
+        compacted_turns: u32::try_from(plan.older_turns.len()).unwrap_or(u32::MAX),
+        preserved_turns: u32::try_from(plan.recent_turns.len()).unwrap_or(u32::MAX),
         tokens_before_estimate: Some(tokens_before_estimate),
         tokens_after_estimate: Some(tokens_after_estimate),
     };
@@ -464,8 +467,8 @@ fn build_provider_context_checkpoint(
             tokens_before_estimate: Some(tokens_before_estimate),
             tokens_after_estimate: Some(tokens_after_estimate),
             summary_tokens_estimate: Some(summary_tokens_estimate),
-            compacted_turns: Some(plan.older_turns.len() as u32),
-            preserved_turns: Some(plan.recent_turns.len() as u32),
+            compacted_turns: Some(u32::try_from(plan.older_turns.len()).unwrap_or(u32::MAX)),
+            preserved_turns: Some(u32::try_from(plan.recent_turns.len()).unwrap_or(u32::MAX)),
             reduction_tokens_estimate: Some(reduction_tokens_estimate),
             reduction_percent_estimate,
             trigger_reason: Some(trigger.trigger_reason.clone()),
@@ -820,7 +823,7 @@ fn build_provider_compaction_tail_boundary(
 
     ProviderCompactionTailBoundary {
         mode,
-        preserved_turns: recent_turns.len() as u32,
+        preserved_turns: u32::try_from(recent_turns.len()).unwrap_or(u32::MAX),
         preserved_tokens_estimate,
         preserved_from_request_id: first_preserved.and_then(|turn| turn.request_id.clone()),
         preserved_from_seq: first_preserved.and_then(|turn| turn.first_seq),

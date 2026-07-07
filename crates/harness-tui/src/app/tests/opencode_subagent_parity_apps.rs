@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 mod events {
     include!("opencode_subagent_parity_events.rs");
@@ -87,7 +88,7 @@ fn inline_parent_path() -> PathBuf {
     tempfile::Builder::new()
         .prefix("harness-parity-inline-")
         .tempdir()
-        .expect("create inline parity tempdir")
+        .unwrap_or_abort()
         .path()
         .join("parent")
 }

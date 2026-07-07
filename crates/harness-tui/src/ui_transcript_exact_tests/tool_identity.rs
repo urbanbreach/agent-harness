@@ -1,4 +1,5 @@
 use super::super::*;
+use crate::UnwrapOrAbort;
 
 #[cfg(test)]
 pub(crate) fn exact_test_native_tool_transcript_rows_show_reference_timestamps_and_task_metadata() {
@@ -154,11 +155,11 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_reference_timestamps_a
     );
     let task_hit_width = task_render.interaction_rows[0]
         .as_ref()
-        .expect("task header interaction")
+        .unwrap_or_abort()
         .hit_width;
     let task_hit_start = task_render.interaction_rows[0]
         .as_ref()
-        .expect("task header interaction")
+        .unwrap_or_abort()
         .hit_start;
     let task_hit_layout = MeasuredTranscriptLayout {
         sections: vec![MeasuredTranscriptSection {
@@ -867,7 +868,7 @@ pub(crate) fn exact_test_todo_write_rows_render_open_checklist() {
 
     let write_section =
         build_tool_call_section(&write_call, &app, false, false, false, false, false, None)
-            .expect("todo write should render in transcript");
+            .unwrap_or_abort();
     assert_eq!(
         write_section.header.visual_style,
         TranscriptToolCallVisualStyle::Block
@@ -891,8 +892,8 @@ pub(crate) fn exact_test_todo_write_rows_render_open_checklist() {
     assert!(rendered.contains("[•] Implement UI"));
     assert!(rendered.contains("[✓] Plan work"));
     assert!(rendered.contains("[ ] Verify tests"));
-    let completed = rendered.find("[✓] Plan work").expect("completed todo row");
-    let active = rendered.find("[•] Implement UI").expect("active todo row");
+    let completed = rendered.find("[✓] Plan work").unwrap_or_abort();
+    let active = rendered.find("[•] Implement UI").unwrap_or_abort();
     assert!(
         completed < active,
         "todo rows should preserve tool-provided order\n{rendered}"
@@ -917,7 +918,7 @@ pub(crate) fn exact_test_todo_write_rows_render_open_checklist() {
         false,
         None,
     )
-    .expect("compat todo write should render bare-array output");
+    .unwrap_or_abort();
     let cancelled_then_pending_lines = {
         let render = append_tool_call_section_lines(
             &cancelled_then_pending_section,
@@ -931,10 +932,10 @@ pub(crate) fn exact_test_todo_write_rows_render_open_checklist() {
         transcript_test_line_texts(cancelled_then_pending_lines.clone()).join("\n");
     let cancelled = cancelled_then_pending_rendered
         .find("[ ] Skip stale path")
-        .expect("cancelled todo row");
+        .unwrap_or_abort();
     let pending = cancelled_then_pending_rendered
         .find("[ ] Pick next path")
-        .expect("pending todo row");
+        .unwrap_or_abort();
     assert!(
         cancelled < pending,
         "todo rows should preserve cancelled/pending order\n{cancelled_then_pending_rendered}"
@@ -948,7 +949,7 @@ pub(crate) fn exact_test_todo_write_rows_render_open_checklist() {
                 .collect::<String>()
                 .contains("Skip stale path")
         })
-        .expect("cancelled todo line should render");
+        .unwrap_or_abort();
     assert!(
         cancelled_line
             .spans
@@ -998,7 +999,7 @@ pub(crate) fn exact_test_todo_write_rows_render_open_checklist() {
         false,
         None,
     )
-    .expect("todo write should render structured_output todos");
+    .unwrap_or_abort();
     let structured_output_rendered = transcript_test_line_texts({
         let render = append_tool_call_section_lines(
             &structured_output_section,

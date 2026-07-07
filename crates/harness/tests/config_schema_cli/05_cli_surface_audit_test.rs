@@ -1,15 +1,17 @@
+use harness::UnwrapOrAbort;
+#[allow(clippy::panic, reason = "test code must panic gracefully")]
 fn run_help(args: &[&str]) -> String {
     let output = harness_command()
         .args(args.iter().copied())
         .output()
-        .unwrap_or_else(|err| panic!("run harness {args:?}: {err}"));
+        .unwrap_or_else(|_| panic!("abort"));
     assert!(
         output.status.success(),
         "stdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    String::from_utf8(output.stdout).expect("help output is utf-8")
+    String::from_utf8(output.stdout).unwrap_or_abort()
 }
 
 fn command_rows(help: &str) -> Vec<(String, String)> {
@@ -164,7 +166,7 @@ fn cli_help_lists_non_placeholder_command_descriptions() {
 #[test]
 fn readme_command_audit_resolves_to_real_subcommands() {
     // arrange
-    let readme = fs::read_to_string(repo_root().join("README.md")).expect("read README.md");
+    let readme = fs::read_to_string(repo_root().join("README.md")).unwrap_or_abort();
 
     // act
     let documented = extract_harness_command_paths(&readme);

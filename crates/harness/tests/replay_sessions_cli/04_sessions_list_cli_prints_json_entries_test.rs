@@ -1,14 +1,15 @@
+use harness::UnwrapOrAbort;
 #[test]
 fn sessions_list_cli_prints_json_entries() {
-    let session_dir = tempdir().expect("tempdir");
+    let session_dir = tempdir().unwrap_or_abort();
     let run_dir = session_dir.path().join("run_json");
-    std::fs::create_dir_all(&run_dir).expect("create run dir");
+    std::fs::create_dir_all(&run_dir).unwrap_or_abort();
 
     write_events_jsonl(&run_dir, &delegated_recovery_events("run_json"));
 
     let output = run_harness([
             "--session-dir",
-            session_dir.path().to_str().expect("session dir utf-8"),
+            session_dir.path().to_str().unwrap_or_abort(),
             "sessions",
             "list",
             "--json",
@@ -21,10 +22,10 @@ fn sessions_list_cli_prints_json_entries() {
     );
 
     let rows: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("sessions json output should parse");
+        serde_json::from_slice(&output.stdout).unwrap_or_abort();
     assert_eq!(rows.as_array().map(Vec::len), Some(1));
     let row = &rows[0];
-    assert_eq!(row["run_dir"], run_dir.to_str().expect("run dir utf-8"));
+    assert_eq!(row["run_dir"], run_dir.to_str().unwrap_or_abort());
     assert_eq!(row["run_id"], "run_json");
     assert_eq!(row["run_name"], "recovery-fixture");
     assert_eq!(row["status"], "finished");
@@ -38,9 +39,9 @@ fn sessions_list_cli_prints_json_entries() {
 }
 #[test]
 fn sessions_reopen_json_surfaces_prompt_context_child_sessions_and_artifacts() {
-    let session_dir = tempdir().expect("tempdir");
+    let session_dir = tempdir().unwrap_or_abort();
     let run_dir = session_dir.path().join("resume_fixture_dir");
-    std::fs::create_dir_all(&run_dir).expect("create run dir");
+    std::fs::create_dir_all(&run_dir).unwrap_or_abort();
 
     let mut events = vec![
         envelope(
@@ -226,7 +227,7 @@ fn sessions_reopen_json_surfaces_prompt_context_child_sessions_and_artifacts() {
 
     let output = run_harness([
             "--session-dir",
-            session_dir.path().to_str().expect("session dir utf-8"),
+            session_dir.path().to_str().unwrap_or_abort(),
             "sessions",
             "reopen",
             "--session",
@@ -241,7 +242,7 @@ fn sessions_reopen_json_surfaces_prompt_context_child_sessions_and_artifacts() {
     );
 
     let summary: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("reopen json should parse");
+        serde_json::from_slice(&output.stdout).unwrap_or_abort();
     assert_eq!(summary["run_id"], "run_resume_fixture");
     assert_eq!(summary["resumable"], true);
     assert_eq!(summary["resume_agent_id"], "agent_000002");
@@ -269,9 +270,9 @@ fn sessions_reopen_json_surfaces_prompt_context_child_sessions_and_artifacts() {
 }
 #[test]
 fn sessions_surfaces_checkpoint_artifacts_in_catalog_and_recovery_views() {
-    let session_dir = tempdir().expect("tempdir");
+    let session_dir = tempdir().unwrap_or_abort();
     let run_dir = session_dir.path().join("run_checkpoint_artifacts");
-    std::fs::create_dir_all(&run_dir).expect("create run dir");
+    std::fs::create_dir_all(&run_dir).unwrap_or_abort();
 
     write_events_jsonl(
         &run_dir,
@@ -324,7 +325,7 @@ fn sessions_surfaces_checkpoint_artifacts_in_catalog_and_recovery_views() {
 
     let list_output = run_harness([
             "--session-dir",
-            session_dir.path().to_str().expect("session dir utf-8"),
+            session_dir.path().to_str().unwrap_or_abort(),
             "sessions",
             "list",
             "--json",
@@ -336,14 +337,14 @@ fn sessions_surfaces_checkpoint_artifacts_in_catalog_and_recovery_views() {
         String::from_utf8_lossy(&list_output.stderr)
     );
     let rows: serde_json::Value =
-        serde_json::from_slice(&list_output.stdout).expect("sessions json output should parse");
+        serde_json::from_slice(&list_output.stdout).unwrap_or_abort();
     assert_eq!(rows.as_array().map(Vec::len), Some(1));
     assert_eq!(rows[0]["run_id"], "run_checkpoint_artifacts");
     assert_eq!(rows[0]["artifact_count"], 1);
 
     let reopen_output = run_harness([
             "--session-dir",
-            session_dir.path().to_str().expect("session dir utf-8"),
+            session_dir.path().to_str().unwrap_or_abort(),
             "sessions",
             "reopen",
             "--session",
@@ -357,7 +358,7 @@ fn sessions_surfaces_checkpoint_artifacts_in_catalog_and_recovery_views() {
         String::from_utf8_lossy(&reopen_output.stderr)
     );
     let summary: serde_json::Value =
-        serde_json::from_slice(&reopen_output.stdout).expect("reopen json should parse");
+        serde_json::from_slice(&reopen_output.stdout).unwrap_or_abort();
     assert_eq!(
         summary["artifacts"][0]["path"],
         "artifacts/compactions/agent_000001/checkpoint_000003.json"

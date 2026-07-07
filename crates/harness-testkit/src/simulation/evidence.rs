@@ -152,16 +152,24 @@ pub fn simulation_event_rows(
 pub fn scan_simulation_artifact_root(
     artifact_root: &Path,
 ) -> SingleFailureResult<RedactionSummary> {
-    let findings = scan_directory_tree_for_secrets(artifact_root, &default_forbidden_patterns())
-        .map_err(|err| {
-            Box::new(failure(
-                "secret-scan",
-                artifact_root.display().to_string(),
-                "scannable artifact root",
-                err.to_string(),
-                "secret scanner failed on simulation artifact root",
-            ))
-        })?;
+    let patterns = default_forbidden_patterns().map_err(|err| {
+        Box::new(failure(
+            "secret-scan",
+            artifact_root.display().to_string(),
+            "scannable artifact root",
+            err.to_string(),
+            "failed to compile default forbidden patterns",
+        ))
+    })?;
+    let findings = scan_directory_tree_for_secrets(artifact_root, &patterns).map_err(|err| {
+        Box::new(failure(
+            "secret-scan",
+            artifact_root.display().to_string(),
+            "scannable artifact root",
+            err.to_string(),
+            "secret scanner failed on simulation artifact root",
+        ))
+    })?;
     let scanned_artifact_count = count_files(artifact_root).map_err(|err| {
         Box::new(failure(
             "secret-scan",

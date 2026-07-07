@@ -1,6 +1,7 @@
+use harness_core::UnwrapOrAbort;
 #[test]
 fn resume_plan_uses_latest_lifecycle_segment_instead_of_any_terminal_event() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_dir = temp_dir.path().join("run_latest_segment");
     write_events(
         &run_dir,
@@ -82,7 +83,7 @@ fn resume_plan_uses_latest_lifecycle_segment_instead_of_any_terminal_event() {
 }
 #[test]
 fn resume_plan_keeps_provider_model_after_open_and_quit_resumed_segment() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_dir = temp_dir.path().join("run_open_quit_latest_segment");
     write_events(
         &run_dir,
@@ -162,7 +163,7 @@ fn resume_plan_keeps_provider_model_after_open_and_quit_resumed_segment() {
 }
 #[test]
 fn resume_plan_preserves_child_session_lineage_across_open_and_quit_resumed_segment() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_dir = temp_dir.path().join("run_child_lineage_open_quit");
     let lineage = TaskLineageMetadata {
         parent_tool_call_id: Some("toolcall_000777".to_string()),
@@ -272,7 +273,7 @@ fn resume_plan_preserves_child_session_lineage_across_open_and_quit_resumed_segm
     let child = plan
         .child_sessions
         .get("agent_000777")
-        .expect("child lineage should survive open-and-quit resumed segment");
+        .unwrap_or_abort();
     assert_eq!(child.parent_session_id.as_deref(), Some("agent_000001"));
     assert_eq!(
         child.parent_tool_call_id.as_deref(),
@@ -282,7 +283,7 @@ fn resume_plan_preserves_child_session_lineage_across_open_and_quit_resumed_segm
 }
 #[test]
 fn session_catalog_counts_checkpoint_artifacts_alongside_tool_artifacts() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_dir = temp_dir.path().join("run_resume_checkpoint_artifacts");
 
     let mut tool_artifact = envelope(
@@ -365,6 +366,6 @@ fn session_catalog_counts_checkpoint_artifacts_alongside_tool_artifacts() {
         Some("2026-04-23T00:00:00Z".to_string()),
         None,
     )
-    .expect("project session catalog entry");
+    .unwrap_or_abort();
     assert_eq!(entry.artifact_count, 2);
 }

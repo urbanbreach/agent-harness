@@ -1,13 +1,12 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 #[test]
 fn relative_paths_remain_cwd_relative_when_loading_from_file() {
-    let _lock = CONFIG_DISCOVERY_TEST_LOCK
-        .lock()
-        .expect("lock discovery tests");
-    let temp = tempfile::tempdir().expect("tempdir");
+    let _lock = CONFIG_DISCOVERY_TEST_LOCK.lock().unwrap_or_abort();
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let config_path = temp.path().join("nested/config.jsonc");
-    fs::create_dir_all(config_path.parent().expect("config parent")).expect("create config parent");
+    fs::create_dir_all(config_path.parent().unwrap_or_abort()).unwrap_or_abort();
     let cfg = r#"
             {
               providers: {
@@ -66,9 +65,9 @@ fn relative_paths_remain_cwd_relative_when_loading_from_file() {
               }
             }
             "#;
-    fs::write(&config_path, cfg).expect("write config");
+    fs::write(&config_path, cfg).unwrap_or_abort();
 
-    let parsed = load_config_from_file(&config_path).expect("config should parse");
+    let parsed = load_config_from_file(&config_path).unwrap_or_abort();
     assert_eq!(
         parsed.runtime.session_dir,
         PathBuf::from("relative-sessions")
@@ -79,13 +78,12 @@ fn relative_paths_remain_cwd_relative_when_loading_from_file() {
 
 #[test]
 fn schema_uses_runtime_first_public_contract() {
-    let schema = harness_schema_pretty_json().expect("schema generation should succeed");
-    let parsed: serde_json::Value =
-        serde_json::from_str(&schema).expect("schema output should be valid json");
+    let schema = harness_schema_pretty_json().unwrap_or_abort();
+    let parsed: serde_json::Value = serde_json::from_str(&schema).unwrap_or_abort();
     let properties = parsed
         .get("properties")
         .and_then(serde_json::Value::as_object)
-        .expect("schema should contain properties");
+        .unwrap_or_abort();
 
     assert!(properties.contains_key("$schema"));
     assert!(properties.contains_key("provider"));
@@ -103,7 +101,7 @@ fn schema_uses_runtime_first_public_contract() {
         .get("runtime")
         .and_then(|value| value.get("allOf"))
         .and_then(serde_json::Value::as_array)
-        .expect("public runtime schema should expose the narrow runtime settings surface");
+        .unwrap_or_abort();
     let runtime_ref = runtime
         .first()
         .and_then(|value| value.get("$ref"))
@@ -119,13 +117,12 @@ fn schema_uses_runtime_first_public_contract() {
 fn inert_compatibility_keys_absent_from_generated_schema() {
     // arrange
     // act
-    let schema = harness_schema_pretty_json().expect("schema generation should succeed");
-    let parsed: serde_json::Value =
-        serde_json::from_str(&schema).expect("schema output should be valid json");
+    let schema = harness_schema_pretty_json().unwrap_or_abort();
+    let parsed: serde_json::Value = serde_json::from_str(&schema).unwrap_or_abort();
     let properties = parsed
         .get("properties")
         .and_then(serde_json::Value::as_object)
-        .expect("schema should contain properties");
+        .unwrap_or_abort();
 
     // assert
     for key in [
@@ -175,7 +172,7 @@ fn public_top_level_skills_translate_into_runtime_config() {
             }
             "#,
     )
-    .expect("runtime config with top-level skills should parse");
+    .unwrap_or_abort();
 
     assert!(!parsed.skills.walk_to_git_root);
     assert_eq!(
@@ -263,26 +260,24 @@ fn json5_comments_trailing_commas_and_schema_field_parse() {
         }
         "#;
 
-    let parsed = load_config_from_str(cfg).expect("json5 flavored config should parse");
+    let parsed = load_config_from_str(cfg).unwrap_or_abort();
     assert_eq!(parsed.schema.as_deref(), Some("./config.json"));
     assert_eq!(parsed.agents["deep"].model_ref, "default:gpt-4o-mini");
 }
 
 #[test]
 fn resolve_config_path_prefers_explicit_path_over_discovery() {
-    let _lock = CONFIG_DISCOVERY_TEST_LOCK
-        .lock()
-        .expect("lock discovery tests");
-    let temp = tempfile::tempdir().expect("tempdir");
+    let _lock = CONFIG_DISCOVERY_TEST_LOCK.lock().unwrap_or_abort();
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let xdg_root = temp.path().join("xdg");
     let xdg_config = xdg_root.join("harness/harness.jsonc");
     let cwd_config = temp.path().join("harness.jsonc");
     let explicit_config = temp.path().join("explicit.jsonc");
 
-    fs::create_dir_all(xdg_config.parent().expect("xdg parent")).expect("create xdg config dir");
-    fs::write(&xdg_config, "xdg").expect("write xdg config");
-    fs::write(&cwd_config, "cwd").expect("write cwd config");
-    fs::write(&explicit_config, "explicit").expect("write explicit config");
+    fs::create_dir_all(xdg_config.parent().unwrap_or_abort()).unwrap_or_abort();
+    fs::write(&xdg_config, "xdg").unwrap_or_abort();
+    fs::write(&cwd_config, "cwd").unwrap_or_abort();
+    fs::write(&explicit_config, "explicit").unwrap_or_abort();
 
     let context = discovery_context(temp.path(), Some(&xdg_root));
 
@@ -294,17 +289,15 @@ fn resolve_config_path_prefers_explicit_path_over_discovery() {
 
 #[test]
 fn resolve_config_path_prefers_cwd_harness_jsonc_over_xdg_config() {
-    let _lock = CONFIG_DISCOVERY_TEST_LOCK
-        .lock()
-        .expect("lock discovery tests");
-    let temp = tempfile::tempdir().expect("tempdir");
+    let _lock = CONFIG_DISCOVERY_TEST_LOCK.lock().unwrap_or_abort();
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let xdg_root = temp.path().join("xdg");
     let xdg_config = xdg_root.join("harness/harness.jsonc");
     let cwd_config = temp.path().join("harness.jsonc");
 
-    fs::create_dir_all(xdg_config.parent().expect("xdg parent")).expect("create xdg config dir");
-    fs::write(&xdg_config, "xdg").expect("write xdg config");
-    fs::write(&cwd_config, "cwd").expect("write cwd config");
+    fs::create_dir_all(xdg_config.parent().unwrap_or_abort()).unwrap_or_abort();
+    fs::write(&xdg_config, "xdg").unwrap_or_abort();
+    fs::write(&cwd_config, "cwd").unwrap_or_abort();
 
     let context = discovery_context(temp.path(), Some(&xdg_root));
 
@@ -316,21 +309,19 @@ fn resolve_config_path_prefers_cwd_harness_jsonc_over_xdg_config() {
 
 #[test]
 fn resolve_config_layer_paths_orders_global_then_local() {
-    let _lock = CONFIG_DISCOVERY_TEST_LOCK
-        .lock()
-        .expect("lock discovery tests");
-    let temp = tempfile::tempdir().expect("tempdir");
+    let _lock = CONFIG_DISCOVERY_TEST_LOCK.lock().unwrap_or_abort();
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let xdg_root = temp.path().join("xdg");
     let xdg_config = xdg_root.join("harness/harness.jsonc");
     let cwd_config = temp.path().join("harness.jsonc");
 
-    fs::create_dir_all(xdg_config.parent().expect("xdg parent")).expect("create xdg config dir");
+    fs::create_dir_all(xdg_config.parent().unwrap_or_abort()).unwrap_or_abort();
     fs::write(
         &xdg_config,
         "{ providers: {}, permissions: {}, runtime: {}, integrations: {}, agents: {} }",
     )
-    .expect("write xdg config");
-    fs::write(&cwd_config, "{ agents: {} }").expect("write cwd config");
+    .unwrap_or_abort();
+    fs::write(&cwd_config, "{ agents: {} }").unwrap_or_abort();
 
     let context = discovery_context(temp.path(), Some(&xdg_root));
 
@@ -342,10 +333,8 @@ fn resolve_config_layer_paths_orders_global_then_local() {
 
 #[test]
 fn resolve_config_layer_paths_include_env_and_project_ancestor_layers() {
-    let _lock = CONFIG_DISCOVERY_TEST_LOCK
-        .lock()
-        .expect("lock discovery tests");
-    let temp = tempfile::tempdir().expect("tempdir");
+    let _lock = CONFIG_DISCOVERY_TEST_LOCK.lock().unwrap_or_abort();
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let xdg_root = temp.path().join("xdg");
     let repo = temp.path().join("repo");
     let nested = repo.join("workspace/app");
@@ -356,21 +345,11 @@ fn resolve_config_layer_paths_include_env_and_project_ancestor_layers() {
     let nested_config = nested.join("harness.json");
     let nested_dot_config = nested.join(".agent-harness/harness.json");
 
-    fs::create_dir_all(xdg_config.parent().expect("xdg parent")).expect("create xdg dir");
-    fs::create_dir_all(
-        repo_dot_config
-            .parent()
-            .expect("repo .agent-harness parent"),
-    )
-    .expect("create repo .agent-harness dir");
-    fs::create_dir_all(
-        nested_dot_config
-            .parent()
-            .expect("nested .agent-harness parent"),
-    )
-    .expect("create nested .agent-harness dir");
-    fs::create_dir_all(env_config.parent().expect("env parent")).expect("create env dir");
-    fs::create_dir_all(repo.join(".git")).expect("create repo git dir");
+    fs::create_dir_all(xdg_config.parent().unwrap_or_abort()).unwrap_or_abort();
+    fs::create_dir_all(repo_dot_config.parent().unwrap_or_abort()).unwrap_or_abort();
+    fs::create_dir_all(nested_dot_config.parent().unwrap_or_abort()).unwrap_or_abort();
+    fs::create_dir_all(env_config.parent().unwrap_or_abort()).unwrap_or_abort();
+    fs::create_dir_all(repo.join(".git")).unwrap_or_abort();
 
     for path in [
         &xdg_config,
@@ -380,7 +359,7 @@ fn resolve_config_layer_paths_include_env_and_project_ancestor_layers() {
         &nested_config,
         &nested_dot_config,
     ] {
-        fs::write(path, "{}").expect("write placeholder config");
+        fs::write(path, "{}").unwrap_or_abort();
     }
 
     let mut context = discovery_context(&nested, Some(&xdg_root));
@@ -400,15 +379,13 @@ fn resolve_config_layer_paths_include_env_and_project_ancestor_layers() {
 
 #[test]
 fn load_resolved_config_merges_global_then_local_and_prefers_local_values() {
-    let _lock = CONFIG_DISCOVERY_TEST_LOCK
-        .lock()
-        .expect("lock discovery tests");
-    let temp = tempfile::tempdir().expect("tempdir");
+    let _lock = CONFIG_DISCOVERY_TEST_LOCK.lock().unwrap_or_abort();
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let xdg_root = temp.path().join("xdg");
     let xdg_config = xdg_root.join("harness/harness.jsonc");
     let cwd_config = temp.path().join("harness.jsonc");
 
-    fs::create_dir_all(xdg_config.parent().expect("xdg parent")).expect("create xdg config dir");
+    fs::create_dir_all(xdg_config.parent().unwrap_or_abort()).unwrap_or_abort();
     fs::write(
         &xdg_config,
         r#"
@@ -460,7 +437,7 @@ fn load_resolved_config_merges_global_then_local_and_prefers_local_values() {
             }
             "#,
     )
-    .expect("write xdg config");
+    .unwrap_or_abort();
     fs::write(
         &cwd_config,
         r#"
@@ -483,13 +460,13 @@ fn load_resolved_config_merges_global_then_local_and_prefers_local_values() {
             }
             "#,
     )
-    .expect("write cwd config");
+    .unwrap_or_abort();
 
     let context = discovery_context(temp.path(), Some(&xdg_root));
 
     let loaded = load_resolved_config_with_context(None, &context)
-        .expect("load resolved config")
-        .expect("merged config should resolve");
+        .unwrap_or_abort()
+        .unwrap_or_abort();
 
     assert_eq!(loaded.paths, vec![xdg_config.clone(), cwd_config.clone()]);
     assert_eq!(loaded.config.ui.default_profile.as_deref(), Some("build"));
@@ -503,10 +480,8 @@ fn load_resolved_config_merges_global_then_local_and_prefers_local_values() {
 
 #[test]
 fn load_resolved_config_applies_harness_config_content_last() {
-    let _lock = CONFIG_DISCOVERY_TEST_LOCK
-        .lock()
-        .expect("lock discovery tests");
-    let temp = tempfile::tempdir().expect("tempdir");
+    let _lock = CONFIG_DISCOVERY_TEST_LOCK.lock().unwrap_or_abort();
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let config_path = temp.path().join("harness.jsonc");
     fs::write(
         &config_path,
@@ -532,14 +507,14 @@ fn load_resolved_config_applies_harness_config_content_last() {
         })
         .to_string(),
     )
-    .expect("write config");
+    .unwrap_or_abort();
 
     let mut context = discovery_context(temp.path(), None);
     context.runtime_content =
         Some("{ permission: { bash: \"allow\" }, default_agent: \"plan\" }".to_string());
     let loaded = load_resolved_config_with_context(None, &context)
-        .expect("load config")
-        .expect("config should resolve");
+        .unwrap_or_abort()
+        .unwrap_or_abort();
     assert!(matches!(
         loaded.config.permissions.defaults.shell,
         PermissionMode::Allow
@@ -549,33 +524,31 @@ fn load_resolved_config_applies_harness_config_content_last() {
 
 #[test]
 fn load_resolved_config_explicit_path_bypasses_discovery_layers() {
-    let _lock = CONFIG_DISCOVERY_TEST_LOCK
-        .lock()
-        .expect("lock discovery tests");
-    let temp = tempfile::tempdir().expect("tempdir");
+    let _lock = CONFIG_DISCOVERY_TEST_LOCK.lock().unwrap_or_abort();
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let xdg_root = temp.path().join("xdg");
     let xdg_config = xdg_root.join("harness/config.jsonc");
     let cwd_config = temp.path().join("harness.jsonc");
     let explicit_config = temp.path().join("explicit.jsonc");
 
-    fs::create_dir_all(xdg_config.parent().expect("xdg parent")).expect("create xdg config dir");
+    fs::create_dir_all(xdg_config.parent().unwrap_or_abort()).unwrap_or_abort();
     fs::write(
         &xdg_config,
         "{ providers: {}, permissions: {}, runtime: {}, integrations: {}, agents: {} }",
     )
-    .expect("write xdg config");
-    fs::write(&cwd_config, "{ agents: {} }").expect("write cwd config");
+    .unwrap_or_abort();
+    fs::write(&cwd_config, "{ agents: {} }").unwrap_or_abort();
     fs::write(
         &explicit_config,
         config_fixture(&deep_profile(r#"tools: ["read"],"#), "test-key", None, None),
     )
-    .expect("write explicit config");
+    .unwrap_or_abort();
 
     let context = discovery_context(temp.path(), Some(&xdg_root));
 
     let loaded = load_resolved_config_with_context(Some(&explicit_config), &context)
-        .expect("load explicit config")
-        .expect("explicit config should resolve");
+        .unwrap_or_abort()
+        .unwrap_or_abort();
 
     assert_eq!(loaded.paths, vec![explicit_config]);
 }

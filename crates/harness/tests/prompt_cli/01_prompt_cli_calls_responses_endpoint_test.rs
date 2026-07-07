@@ -1,14 +1,16 @@
+use harness::UnwrapOrAbort;
+#[allow(clippy::clone_on_ref_ptr, reason = "trait object coercion requires .clone() not Arc::clone")]
 #[tokio::test]
 async fn prompt_cli_calls_responses_endpoint() {
     let provider = ScriptedPromptProvider::fixed(text_events("Hello"));
 
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let config_path = temp.path().join("harness.test.jsonc");
     let session_dir = temp.path().join("sessions");
 
     let config = prompt_cli_config("https://fixture.test/v1", &session_dir, &[]);
 
-    fs::write(&config_path, config).expect("write config");
+    fs::write(&config_path, config).unwrap_or_abort();
 
     let config_arg = config_path.clone();
     let temp_path = temp.path().to_path_buf();
@@ -16,14 +18,14 @@ async fn prompt_cli_calls_responses_endpoint() {
     let output = tokio::task::spawn_blocking(move || {
         run_harness_in_with_provider(temp_path, [
                 "--config",
-                config_arg.to_str().expect("config path utf-8"),
+                config_arg.to_str().unwrap_or_abort(),
                 "prompt",
                 "--text",
                 "Hello",
             ], provider_for_run)
     })
     .await
-    .expect("join blocking command");
+    .unwrap_or_abort();
 
     assert!(
         output.status.success(),
@@ -34,19 +36,20 @@ async fn prompt_cli_calls_responses_endpoint() {
 
     assert_eq!(provider.requests().len(), 1);
 }
+#[allow(clippy::clone_on_ref_ptr, reason = "trait object coercion requires .clone() not Arc::clone")]
 #[tokio::test]
 async fn prompt_cli_expands_at_file_and_directory_tags_for_provider() {
     let provider = ScriptedPromptProvider::fixed(text_events("Hello"));
 
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let config_path = temp.path().join("harness.test.jsonc");
     let session_dir = temp.path().join("sessions");
-    fs::write(temp.path().join("alpha.txt"), "alpha one\nalpha two\n").expect("write file");
-    fs::create_dir(temp.path().join("src")).expect("create src");
-    fs::write(temp.path().join("src/lib.rs"), "pub fn demo() {}\n").expect("write nested file");
+    fs::write(temp.path().join("alpha.txt"), "alpha one\nalpha two\n").unwrap_or_abort();
+    fs::create_dir(temp.path().join("src")).unwrap_or_abort();
+    fs::write(temp.path().join("src/lib.rs"), "pub fn demo() {}\n").unwrap_or_abort();
 
     let config = prompt_cli_config("https://fixture.test/v1", &session_dir, &[]);
-    fs::write(&config_path, config).expect("write config");
+    fs::write(&config_path, config).unwrap_or_abort();
 
     let config_arg = config_path.clone();
     let temp_path = temp.path().to_path_buf();
@@ -54,14 +57,14 @@ async fn prompt_cli_expands_at_file_and_directory_tags_for_provider() {
     let output = tokio::task::spawn_blocking(move || {
         run_harness_in_with_provider(temp_path, [
                 "--config",
-                config_arg.to_str().expect("config path utf-8"),
+                config_arg.to_str().unwrap_or_abort(),
                 "prompt",
                 "--text",
                 "Summarize @alpha.txt and list @src",
             ], provider_for_run)
     })
     .await
-    .expect("join blocking command");
+    .unwrap_or_abort();
 
     assert!(
         output.status.success(),
@@ -79,11 +82,12 @@ async fn prompt_cli_expands_at_file_and_directory_tags_for_provider() {
     assert!(body.contains("2: alpha two"));
     assert!(body.contains("lib.rs"));
 }
+#[allow(clippy::clone_on_ref_ptr, reason = "trait object coercion requires .clone() not Arc::clone")]
 #[tokio::test]
 async fn prompt_cli_generates_harness_session_title() {
     let provider = ScriptedPromptProvider::fixed(text_events("Debugging production 500 errors"));
 
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let config_path = temp.path().join("harness.public.jsonc");
     let session_dir = temp.path().join("sessions");
     let out_path = temp.path().join("events.jsonl");
@@ -91,18 +95,18 @@ async fn prompt_cli_generates_harness_session_title() {
         &config_path,
         prompt_cli_public_runtime_config("https://fixture.test/v1"),
     )
-    .expect("write config");
+    .unwrap_or_abort();
 
     let output = run_harness_in_blocking_with_provider(temp.path(), [
             "--config",
-            config_path.to_str().expect("config path utf-8"),
+            config_path.to_str().unwrap_or_abort(),
             "--session-dir",
-            session_dir.to_str().expect("session dir utf-8"),
+            session_dir.to_str().unwrap_or_abort(),
             "prompt",
             "--text",
             "debug 500 errors in production",
             "--out",
-            out_path.to_str().expect("out path utf-8"),
+            out_path.to_str().unwrap_or_abort(),
         ], provider.clone())
         .await;
 
@@ -113,10 +117,10 @@ async fn prompt_cli_generates_harness_session_title() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let events_body = fs::read_to_string(&out_path).expect("read prompt events");
+    let events_body = fs::read_to_string(&out_path).unwrap_or_abort();
     let events = events_body
         .lines()
-        .map(|line| serde_json::from_str::<EventEnvelopeV1>(line).expect("parse prompt event"))
+        .map(|line| serde_json::from_str::<EventEnvelopeV1>(line).unwrap_or_abort())
         .collect::<Vec<_>>();
     let run_started = events
         .iter()
@@ -124,7 +128,7 @@ async fn prompt_cli_generates_harness_session_title() {
             EventV1::RunStarted(payload) => Some(payload),
             _ => None,
         })
-        .expect("run started");
+        .unwrap_or_abort();
     assert!(
         harness_core::session_title::is_default_title(&run_started.run_name),
         "initial title should be harness default, got `{}`",
@@ -140,8 +144,8 @@ async fn prompt_cli_generates_harness_session_title() {
 
     let meta_path = session_dir.join(&events[0].run_id).join("meta.json");
     let meta: serde_json::Value =
-        serde_json::from_str(&fs::read_to_string(&meta_path).expect("read meta"))
-            .expect("parse meta");
+        serde_json::from_str(&fs::read_to_string(&meta_path).unwrap_or_abort())
+            .unwrap_or_abort();
     assert_eq!(meta["run_name"], "Debugging production 500 errors");
     assert_eq!(meta["mode_source"], "prompt");
 
@@ -161,7 +165,7 @@ async fn prompt_cli_generates_harness_session_title() {
 async fn prompt_tracker_waits_for_agent_turn_end_not_provider_finish() {
     let provider = ScriptedPromptProvider::fixed(text_events("Hello"));
 
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let config_path = temp.path().join("harness.prompt-tracker.jsonc");
     let session_dir = temp.path().join("sessions");
     let out_path = temp.path().join("events.jsonl");
@@ -170,16 +174,16 @@ async fn prompt_tracker_waits_for_agent_turn_end_not_provider_finish() {
         &config_path,
         prompt_cli_config("https://fixture.test/v1", &session_dir, &[]),
     )
-    .expect("write config");
+    .unwrap_or_abort();
 
     let output = run_harness_in_blocking_with_provider(temp.path(), [
             "--config",
-            config_path.to_str().expect("config path utf-8"),
+            config_path.to_str().unwrap_or_abort(),
             "prompt",
             "--text",
             "Hello",
             "--out",
-            out_path.to_str().expect("out path utf-8"),
+            out_path.to_str().unwrap_or_abort(),
         ], provider)
         .await;
 
@@ -195,10 +199,10 @@ async fn prompt_tracker_waits_for_agent_turn_end_not_provider_finish() {
         String::from_utf8_lossy(&output.stdout)
     );
 
-    let events_body = fs::read_to_string(&out_path).expect("read prompt events");
+    let events_body = fs::read_to_string(&out_path).unwrap_or_abort();
     let events = events_body
         .lines()
-        .map(|line| serde_json::from_str::<EventEnvelopeV1>(line).expect("parse prompt event"))
+        .map(|line| serde_json::from_str::<EventEnvelopeV1>(line).unwrap_or_abort())
         .collect::<Vec<_>>();
 
     let turn_request_id = events
@@ -207,7 +211,7 @@ async fn prompt_tracker_waits_for_agent_turn_end_not_provider_finish() {
             EventV1::UserMessageSubmitted(payload) => Some(payload.request_id.as_str()),
             _ => None,
         })
-        .expect("turn request id");
+        .unwrap_or_abort();
 
     let provider_finished_seq = events
         .iter()
@@ -228,7 +232,7 @@ async fn prompt_tracker_waits_for_agent_turn_end_not_provider_finish() {
             }
             _ => None,
         })
-        .expect("provider finish event");
+        .unwrap_or_abort();
     let agent_turn_completed_seq = events
         .iter()
         .find_map(|event| match &event.payload {
@@ -243,25 +247,26 @@ async fn prompt_tracker_waits_for_agent_turn_end_not_provider_finish() {
             }
             _ => None,
         })
-        .expect("agent turn task completion event");
+        .unwrap_or_abort();
 
     assert!(
         provider_finished_seq < agent_turn_completed_seq,
         "provider finish alone must not be treated as prompt completion; events:\n{events_body}"
     );
 }
+#[allow(clippy::clone_on_ref_ptr, reason = "trait object coercion requires .clone() not Arc::clone")]
 #[tokio::test]
 async fn prompt_cli_accepts_public_slash_style_model_refs() {
     let provider = ScriptedPromptProvider::fixed(text_events("Hello"));
 
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let config_path = temp.path().join("harness.public.jsonc");
 
     fs::write(
         &config_path,
         prompt_cli_public_runtime_config("https://fixture.test/v1"),
     )
-    .expect("write public config");
+    .unwrap_or_abort();
 
     let config_arg = config_path.clone();
     let temp_path = temp.path().to_path_buf();
@@ -269,14 +274,14 @@ async fn prompt_cli_accepts_public_slash_style_model_refs() {
     let output = tokio::task::spawn_blocking(move || {
         run_harness_in_with_provider(temp_path, [
                 "--config",
-                config_arg.to_str().expect("config path utf-8"),
+                config_arg.to_str().unwrap_or_abort(),
                 "prompt",
                 "--text",
                 "Hello",
             ], provider_for_run)
     })
     .await
-    .expect("join blocking command");
+    .unwrap_or_abort();
 
     assert!(
         output.status.success(),
@@ -289,7 +294,7 @@ async fn prompt_cli_accepts_public_slash_style_model_refs() {
     let main_request = requests
         .iter()
         .find(|request| request.body.to_string().contains("Hello"))
-        .expect("expected captured main prompt request");
+        .unwrap_or_abort();
     assert_eq!(main_request.provider_id.as_deref(), Some("default"));
     assert_eq!(main_request.model_id, "gpt-5.4-mini");
 }
@@ -297,7 +302,7 @@ async fn prompt_cli_accepts_public_slash_style_model_refs() {
 async fn prompt_cli_creates_durable_run_logs_under_run_dir() {
     let provider = ScriptedPromptProvider::fixed(text_events("Hello"));
 
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let config_path = temp.path().join("harness.logging.jsonc");
     let session_dir = temp.path().join("sessions");
 
@@ -305,11 +310,11 @@ async fn prompt_cli_creates_durable_run_logs_under_run_dir() {
         &config_path,
         prompt_cli_config("https://fixture.test/v1", &session_dir, &[]),
     )
-    .expect("write config");
+    .unwrap_or_abort();
 
     let output = run_harness_in_blocking_with_provider(temp.path(), [
             "--config",
-            config_path.to_str().expect("config path utf-8"),
+            config_path.to_str().unwrap_or_abort(),
             "prompt",
             "--text",
             "Hello",
@@ -329,7 +334,7 @@ async fn prompt_cli_creates_durable_run_logs_under_run_dir() {
         .lines()
         .rev()
         .find(|line| line.contains("prompt_") || line.contains("run_"))
-        .expect("run dir line in prompt output");
+        .unwrap_or_abort();
     let log_path = std::path::Path::new(run_dir_line)
         .join("logs")
         .join("harness.log");
@@ -339,7 +344,7 @@ async fn prompt_cli_creates_durable_run_logs_under_run_dir() {
         log_path.display()
     );
 
-    let log_body = fs::read_to_string(&log_path).expect("read harness log file");
+    let log_body = fs::read_to_string(&log_path).unwrap_or_abort();
     assert!(
         log_body.contains("initialized harness file logging"),
         "expected logging init marker in {}\n{}",

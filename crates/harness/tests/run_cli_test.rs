@@ -1,3 +1,4 @@
+use harness::UnwrapOrAbort;
 use std::fs;
 use std::path::Path;
 
@@ -66,7 +67,7 @@ fn run_cli_config(session_dir: &Path) -> String {
 
 #[test]
 fn run_cli_writes_out_file_and_prints_run_dir() {
-    let workspace = TestWorkspace::new().expect("test workspace");
+    let workspace = TestWorkspace::new().unwrap_or_abort();
     let out_path = workspace.path("events/out.jsonl");
     let session_dir = workspace.sessions_dir();
 
@@ -78,9 +79,9 @@ fn run_cli_writes_out_file_and_prints_run_dir() {
             "golden_path",
             "--deterministic",
             "--session-dir",
-            session_dir.to_str().expect("session dir utf-8"),
+            session_dir.to_str().unwrap_or_abort(),
             "--out",
-            out_path.to_str().expect("out path utf-8"),
+            out_path.to_str().unwrap_or_abort(),
             "--print-run-dir",
         ])
         .output();
@@ -100,7 +101,7 @@ fn run_cli_writes_out_file_and_prints_run_dir() {
     assert!(out_path.exists(), "expected --out file to be written");
     assert!(
         std::fs::read_to_string(&out_path)
-            .expect("read out file")
+            .unwrap_or_abort()
             .contains("run_finished"),
         "expected copied events jsonl to include run_finished"
     );
@@ -126,7 +127,7 @@ fn run_cli_writes_out_file_and_prints_run_dir() {
 
 #[test]
 fn run_cli_interactive_permissions_accepts_allow_on_in_memory_stdin() {
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let session_dir = temp.path().join("sessions");
 
     let output = CliHarness::new()
@@ -136,7 +137,7 @@ fn run_cli_interactive_permissions_accepts_allow_on_in_memory_stdin() {
             "golden_path_interactive",
             "--deterministic",
             "--session-dir",
-            session_dir.to_str().expect("session dir utf-8"),
+            session_dir.to_str().unwrap_or_abort(),
         ])
         .capture_session_dir(&session_dir)
         .stdin(b"allow\n".to_vec())
@@ -157,22 +158,22 @@ fn run_cli_interactive_permissions_accepts_allow_on_in_memory_stdin() {
 
 #[test]
 fn run_cli_creates_durable_run_logs_under_run_dir() {
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let config_path = temp.path().join("harness.logging.jsonc");
     let session_dir = temp.path().join("sessions");
 
-    fs::write(&config_path, run_cli_config(&session_dir)).expect("write config");
+    fs::write(&config_path, run_cli_config(&session_dir)).unwrap_or_abort();
 
     let output = CliHarness::new()
         .args([
             "--config",
-            config_path.to_str().expect("config path utf-8"),
+            config_path.to_str().unwrap_or_abort(),
             "run",
             "--scenario",
             "golden_path",
             "--deterministic",
             "--session-dir",
-            session_dir.to_str().expect("session dir utf-8"),
+            session_dir.to_str().unwrap_or_abort(),
             "--print-run-dir",
         ])
         .output();
@@ -192,7 +193,7 @@ fn run_cli_creates_durable_run_logs_under_run_dir() {
         log_path.display()
     );
 
-    let log_body = fs::read_to_string(&log_path).expect("read harness log file");
+    let log_body = fs::read_to_string(&log_path).unwrap_or_abort();
     assert!(
         log_body.contains("initialized harness file logging"),
         "expected logging init marker in {}\n{}",

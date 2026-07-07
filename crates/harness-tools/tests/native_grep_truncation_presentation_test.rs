@@ -1,3 +1,4 @@
+use harness_tools::UnwrapOrAbort;
 use std::fs;
 
 mod common;
@@ -19,7 +20,7 @@ async fn grep_truncation_names_full_artifact_and_narrowing_guidance() {
         workspace.workspace().join("large.txt"),
         format!("{fixture}\n"),
     )
-    .expect("write grep fixture");
+    .unwrap_or_abort();
     let context = test_context(
         workspace.workspace(),
         "run-grep-truncation-presentation",
@@ -31,7 +32,7 @@ async fn grep_truncation_names_full_artifact_and_narrowing_guidance() {
     // act: grep truncates inline presentation at the default limit.
     let result = registry
         .get("grep")
-        .expect("grep tool")
+        .unwrap_or_abort()
         .call(
             context,
             json!({
@@ -40,7 +41,7 @@ async fn grep_truncation_names_full_artifact_and_narrowing_guidance() {
             }),
         )
         .await
-        .expect("grep should succeed");
+        .unwrap_or_abort();
 
     // assert: inline metadata stays bounded and points to the full rendered output.
     assert_eq!(result.artifacts.len(), 1);
@@ -49,15 +50,12 @@ async fn grep_truncation_names_full_artifact_and_narrowing_guidance() {
     assert!(result.display_text.contains("rerun grep"));
     assert!(!result.display_text.contains("result-105"));
 
-    let metadata = result.structured_json.expect("structured grep metadata");
+    let metadata = result.structured_json.unwrap_or_abort();
     assert_eq!(metadata["total_count"], json!(105));
     assert_eq!(metadata["returned_count"], json!(100));
     assert_eq!(metadata["truncated_count"], json!(5));
     assert_eq!(metadata["truncated"], json!(true));
-    assert_eq!(
-        metadata["matches"].as_array().expect("matches array").len(),
-        100
-    );
+    assert_eq!(metadata["matches"].as_array().unwrap_or_abort().len(), 100);
     assert_eq!(
         metadata["output_artifact"]["path"],
         json!(result.artifacts[0].path)
@@ -66,9 +64,8 @@ async fn grep_truncation_names_full_artifact_and_narrowing_guidance() {
     let relative_artifact = result.artifacts[0]
         .path
         .strip_prefix("artifacts/")
-        .expect("artifact path prefix");
-    let artifact_text =
-        fs::read_to_string(artifacts_dir.join(relative_artifact)).expect("read grep artifact");
+        .unwrap_or_abort();
+    let artifact_text = fs::read_to_string(artifacts_dir.join(relative_artifact)).unwrap_or_abort();
     assert!(artifact_text.contains("large.txt:105: MATCH result-105"));
 }
 
@@ -79,8 +76,7 @@ async fn grep_byte_cap_spills_single_huge_match_to_artifact() {
     let body = "x".repeat(60 * 1024);
     let sentinel = "HUGE_TAIL";
     let huge = format!("MATCH {body}{sentinel}");
-    fs::write(workspace.workspace().join("huge.txt"), format!("{huge}\n"))
-        .expect("write huge grep fixture");
+    fs::write(workspace.workspace().join("huge.txt"), format!("{huge}\n")).unwrap_or_abort();
     let context = test_context(
         workspace.workspace(),
         "run-grep-byte-cap",
@@ -92,16 +88,16 @@ async fn grep_byte_cap_spills_single_huge_match_to_artifact() {
     // act
     let result = registry
         .get("grep")
-        .expect("grep tool")
+        .unwrap_or_abort()
         .call(context, json!({"pattern": "MATCH", "path": "huge.txt"}))
         .await
-        .expect("grep should succeed");
+        .unwrap_or_abort();
 
     // assert
     assert_eq!(result.artifacts.len(), 1);
     assert!(result.display_text.contains("full output artifact:"));
     assert!(result.display_text.len() <= 55 * 1024);
-    let metadata = result.structured_json.expect("structured grep metadata");
+    let metadata = result.structured_json.unwrap_or_abort();
     assert_eq!(metadata["truncated"], json!(true));
     assert_eq!(
         metadata["output_artifact"]["path"],
@@ -110,9 +106,8 @@ async fn grep_byte_cap_spills_single_huge_match_to_artifact() {
     let relative_artifact = result.artifacts[0]
         .path
         .strip_prefix("artifacts/")
-        .expect("artifact path prefix");
-    let artifact_text =
-        fs::read_to_string(artifacts_dir.join(relative_artifact)).expect("read grep artifact");
+        .unwrap_or_abort();
+    let artifact_text = fs::read_to_string(artifacts_dir.join(relative_artifact)).unwrap_or_abort();
     assert!(artifact_text.contains("huge.txt:1: MATCH"));
     assert!(artifact_text.contains(&sentinel));
     assert!(artifact_text.len() > 60 * 1024);

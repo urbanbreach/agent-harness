@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 #[cfg(test)]
 use std::cell::Cell;
 use std::cell::RefCell;
@@ -186,7 +187,7 @@ impl TranscriptSelectionSnapshot {
             let text = extract_text_by_display_columns(line_text, row_start, row_end);
             if row_idx != start_row && continues_previous && !lines.is_empty() {
                 let continuation = text.trim_start_matches(' ');
-                let current = lines.last_mut().expect("continuation has previous line");
+                let current = lines.last_mut().unwrap_or_abort();
                 if !continuation.is_empty() && !current.ends_with(char::is_whitespace) {
                     current.push(' ');
                 }
@@ -295,12 +296,12 @@ pub(super) fn with_cached_transcript_selection_snapshot<R>(
         {
             let cache = cache.borrow();
             if let Some(entry) = cache.iter().find(|entry| entry.key.matches(key)) {
-                let render = render.take().expect("render closure is available");
+                let render = render.take().unwrap_or_abort();
                 return Some(render(&entry.snapshot));
             }
         }
 
-        let snapshot = build_snapshot.take().expect("builder is available")()?;
+        let snapshot = build_snapshot.take().unwrap_or_abort()()?;
 
         #[cfg(test)]
         TRANSCRIPT_SELECTION_CACHE_BUILD_COUNT
@@ -323,8 +324,8 @@ pub(super) fn with_cached_transcript_selection_snapshot<R>(
         let entry = cache
             .iter()
             .find(|entry| entry.key.matches(key))
-            .expect("cached transcript selection snapshot should be present after insertion");
-        let render = render.take().expect("render closure is available");
+            .unwrap_or_abort();
+        let render = render.take().unwrap_or_abort();
         Some(render(&entry.snapshot))
     })
 }

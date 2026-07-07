@@ -1,6 +1,7 @@
+use harness_core::UnwrapOrAbort;
 #[tokio::test]
 async fn model_backed_overflow_split_uses_model_prefix_summary() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let oversized_answer = format!(
         "MODEL_PREFIX_ANCHOR {} MODEL_SUFFIX_ANCHOR",
         "M".repeat(12_000)
@@ -40,27 +41,27 @@ async fn model_backed_overflow_split_uses_model_prefix_summary() {
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     coordinator
         .request_agent_turn(supervisor_actor(), agent_id.clone(), "first question")
         .await
-        .expect("first turn");
+        .unwrap_or_abort();
     tokio::task::yield_now().await;
     coordinator
         .request_agent_turn(supervisor_actor(), agent_id.clone(), "second question")
         .await
-        .expect("second turn");
+        .unwrap_or_abort();
     tokio::task::yield_now().await;
     coordinator
         .request_agent_turn(supervisor_actor(), agent_id, "third question")
         .await
-        .expect("third turn triggers overflow retry");
+        .unwrap_or_abort();
     tokio::task::yield_now().await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let requests = provider.requests();
     assert_eq!(
@@ -84,7 +85,7 @@ async fn model_backed_overflow_split_uses_model_prefix_summary() {
 
     let events = load_events(&run.events_path);
     let checkpoint = overflow_checkpoint(&run, &events);
-    let tail_boundary = checkpoint.tail_boundary.as_ref().expect("tail boundary");
+    let tail_boundary = checkpoint.tail_boundary.as_ref().unwrap_or_abort();
     assert_eq!(tail_boundary.mode, "split_oversized_turn_tail");
     assert!(tail_boundary
         .split_prefix_summary
@@ -95,14 +96,14 @@ async fn model_backed_overflow_split_uses_model_prefix_summary() {
         .as_deref()
         .is_some_and(|note| note.contains("Split prefix summary source: model_backed.")));
     assert!(checkpoint.summary.contains("MODEL_PREFIX_SUMMARY"));
-    let source = checkpoint.summary_source.expect("summary source metadata");
+    let source = checkpoint.summary_source.unwrap_or_abort();
     assert_eq!(source.strategy, "model_backed_summary");
     assert!(source.model_backed);
     assert!(!source.deterministic_fallback);
 }
 #[tokio::test]
 async fn model_backed_overflow_split_summary_without_prefix_content_falls_back() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let oversized_answer = format!(
         "MISSING_PREFIX_CONTENT_ANCHOR {} MISSING_SUFFIX_ANCHOR",
         "P".repeat(12_000)
@@ -142,27 +143,27 @@ async fn model_backed_overflow_split_summary_without_prefix_content_falls_back()
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     coordinator
         .request_agent_turn(supervisor_actor(), agent_id.clone(), "first question")
         .await
-        .expect("first turn");
+        .unwrap_or_abort();
     tokio::task::yield_now().await;
     coordinator
         .request_agent_turn(supervisor_actor(), agent_id.clone(), "second question")
         .await
-        .expect("second turn");
+        .unwrap_or_abort();
     tokio::task::yield_now().await;
     coordinator
         .request_agent_turn(supervisor_actor(), agent_id, "third question")
         .await
-        .expect("third turn triggers overflow retry");
+        .unwrap_or_abort();
     tokio::task::yield_now().await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     assert_eq!(
         provider.requests().len(),
@@ -171,7 +172,7 @@ async fn model_backed_overflow_split_summary_without_prefix_content_falls_back()
     );
     let events = load_events(&run.events_path);
     let checkpoint = overflow_checkpoint(&run, &events);
-    let source = checkpoint.summary_source.expect("summary source metadata");
+    let source = checkpoint.summary_source.unwrap_or_abort();
     assert_eq!(source.strategy, "model_backed_deterministic_fallback");
     assert!(source.model_backed);
     assert!(source.deterministic_fallback);
@@ -187,7 +188,7 @@ async fn model_backed_overflow_split_summary_without_prefix_content_falls_back()
 }
 #[tokio::test]
 async fn model_backed_overflow_split_empty_prefix_summary_falls_back_deterministically() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let oversized_answer = format!(
         "FALLBACK_PREFIX_ANCHOR {} FALLBACK_SUFFIX_ANCHOR",
         "N".repeat(12_000)
@@ -227,27 +228,27 @@ async fn model_backed_overflow_split_empty_prefix_summary_falls_back_determinist
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     coordinator
         .request_agent_turn(supervisor_actor(), agent_id.clone(), "first question")
         .await
-        .expect("first turn");
+        .unwrap_or_abort();
     tokio::task::yield_now().await;
     coordinator
         .request_agent_turn(supervisor_actor(), agent_id.clone(), "second question")
         .await
-        .expect("second turn");
+        .unwrap_or_abort();
     tokio::task::yield_now().await;
     coordinator
         .request_agent_turn(supervisor_actor(), agent_id, "third question")
         .await
-        .expect("third turn triggers overflow retry");
+        .unwrap_or_abort();
     tokio::task::yield_now().await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     assert_eq!(
         provider.requests().len(),
@@ -256,24 +257,24 @@ async fn model_backed_overflow_split_empty_prefix_summary_falls_back_determinist
     );
     let events = load_events(&run.events_path);
     let checkpoint = overflow_checkpoint(&run, &events);
-    let tail_boundary = checkpoint.tail_boundary.as_ref().expect("tail boundary");
+    let tail_boundary = checkpoint.tail_boundary.as_ref().unwrap_or_abort();
     assert_eq!(tail_boundary.mode, "split_oversized_turn_tail");
     assert!(tail_boundary
         .split_prefix_summary
         .as_deref()
         .is_some_and(|summary| summary.contains("FALLBACK_PREFIX_ANCHOR")));
-    let note = tail_boundary.note.as_deref().expect("tail note");
+    let note = tail_boundary.note.as_deref().unwrap_or_abort();
     assert!(note.contains("Split prefix summary source: model_backed_deterministic_fallback."));
     assert!(note.contains("model split prefix summary was empty"));
     assert!(checkpoint.summary.contains("FALLBACK_PREFIX_ANCHOR"));
-    let source = checkpoint.summary_source.expect("summary source metadata");
+    let source = checkpoint.summary_source.unwrap_or_abort();
     assert_eq!(source.strategy, "model_backed_summary");
     assert!(source.model_backed);
     assert!(!source.deterministic_fallback);
 }
 #[tokio::test]
 async fn overflow_auto_retry_can_be_disabled_by_compaction_config() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![
         provider_text_events("first answer"),
         vec![
@@ -297,22 +298,22 @@ async fn overflow_auto_retry_can_be_disabled_by_compaction_config() {
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     coordinator
         .request_agent_turn(supervisor_actor(), agent_id.clone(), "first question")
         .await
-        .expect("first turn");
+        .unwrap_or_abort();
     tokio::task::yield_now().await;
     let second_request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id, "second question")
         .await
-        .expect("second turn");
+        .unwrap_or_abort();
     tokio::task::yield_now().await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     assert_eq!(provider.requests().len(), 2);
     let events = load_events(&run.events_path);
@@ -330,7 +331,7 @@ async fn overflow_auto_retry_can_be_disabled_by_compaction_config() {
 }
 #[tokio::test]
 async fn manual_compaction_returns_noop_when_context_has_single_turn() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![vec![
         ProviderStreamEvent::Start,
         ProviderStreamEvent::TextDelta("first answer".to_string()),
@@ -351,25 +352,25 @@ async fn manual_compaction_returns_noop_when_context_has_single_turn() {
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     let first_request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id.clone(), "first question")
         .await
-        .expect("first turn");
+        .unwrap_or_abort();
     tokio::task::yield_now().await;
 
     let outcome = coordinator
         .compact_agent_context(agent_id, Some(first_request_id), "manual")
         .await
-        .expect("manual noop succeeds");
+        .unwrap_or_abort();
     assert_eq!(outcome, ManualCompactionOutcome::NoOp);
 
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let events = load_events(&run.events_path);
     assert!(events.iter().all(|event| {
@@ -383,7 +384,7 @@ async fn manual_compaction_returns_noop_when_context_has_single_turn() {
 }
 #[tokio::test]
 async fn resume_rejects_missing_user_message_when_prompt_summary_is_truncated() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_resume_truncated_prompt_summary";
     let events_path = write_resume_fixture(
         temp_dir.path(),

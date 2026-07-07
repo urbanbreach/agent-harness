@@ -2,6 +2,7 @@ use harness_core::extension_manifest::{
     ExtensionManifestError, ExtensionManifestRuntimeEffects, ExtensionManifestV1,
     EXTENSION_MANIFEST_V1_SCHEMA_VERSION,
 };
+use harness_core::UnwrapOrAbort;
 use schemars::generate::SchemaSettings;
 use serde_json::{json, Value};
 
@@ -54,7 +55,7 @@ fn extension_manifest_parses_descriptor_only_surface_and_replay_metadata() {
     let input = valid_manifest_json();
 
     // act
-    let manifest = ExtensionManifestV1::parse_json(&input).expect("valid manifest");
+    let manifest = ExtensionManifestV1::parse_json(&input).unwrap_or_abort();
 
     // assert
     assert_eq!(manifest.id, "demo.extension");
@@ -82,7 +83,7 @@ fn extension_manifest_parses_descriptor_only_surface_and_replay_metadata() {
     assert_eq!(replay.diagnostic_descriptor_count, 1);
     assert_eq!(replay.provider_decorator_descriptor_count, 1);
     assert_eq!(
-        serde_json::to_value(replay).expect("replay json")["replayLabel"],
+        serde_json::to_value(replay).unwrap_or_abort()["replayLabel"],
         "Demo extension descriptor"
     );
 }
@@ -167,16 +168,15 @@ fn extension_manifest_schema_file_matches_generated_descriptor_schema() {
     );
 
     // act
-    let checked_in: Value = serde_json::from_str(
-        &std::fs::read_to_string(schema_path).expect("read extension manifest schema"),
-    )
-    .expect("schema json");
+    let checked_in: Value =
+        serde_json::from_str(&std::fs::read_to_string(schema_path).unwrap_or_abort())
+            .unwrap_or_abort();
     let generated = serde_json::to_value(
         SchemaSettings::draft07()
             .into_generator()
             .into_root_schema_for::<ExtensionManifestV1>(),
     )
-    .expect("schema value");
+    .unwrap_or_abort();
 
     // assert
     assert_eq!(checked_in, generated);

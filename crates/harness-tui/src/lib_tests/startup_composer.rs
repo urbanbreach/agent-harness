@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 pub(super) fn startup_home_screen_renders_compose_first_shell() {
     let mut app = app::AppState::new_startup(Vec::new(), None);
@@ -93,7 +94,7 @@ pub(super) fn startup_composer_width_stays_capped_for_shell() {
 
     for (width, height) in [(80, 24), (100, 30), (160, 48)] {
         let plan = FrameLayoutPlan::for_app(&app, ratatui::layout::Rect::new(0, 0, width, height));
-        let dock = plan.dock.expect("startup dock layout");
+        let dock = plan.dock.unwrap_or_abort();
 
         assert_eq!(
             dock.shell.width, 75,

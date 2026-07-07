@@ -2,6 +2,7 @@
 //!
 //! Maps KeyEvent to Action with support for configurable overrides.
 
+use crate::UnwrapOrAbort;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::collections::{BTreeMap, HashMap};
 use std::str::FromStr;
@@ -493,7 +494,7 @@ fn parse_key_code(s: &str) -> Result<KeyCode, String> {
         "f11" => Ok(KeyCode::F(11)),
         "f12" => Ok(KeyCode::F(12)),
         s if s.len() == 1 => {
-            let c = s.chars().next().unwrap();
+            let c = s.chars().next().unwrap_or_abort();
             Ok(KeyCode::Char(c))
         }
         _ => Err(format!("unknown key: {s}")),

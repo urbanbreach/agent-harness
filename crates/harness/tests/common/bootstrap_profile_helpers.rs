@@ -33,6 +33,7 @@ fn snapshot_workspace_environment() -> WorkspaceEnvironment {
     }
 }
 
+#[allow(clippy::panic, reason = "test code must panic gracefully")]
 fn assert_snapshot_text(path: &Path, actual: &str) {
     let actual = snapshot_text(actual);
     assert!(
@@ -42,18 +43,15 @@ fn assert_snapshot_text(path: &Path, actual: &str) {
     );
 
     if prompt_snapshot_update_enabled() {
-        fs::create_dir_all(path.parent().expect("snapshot parent"))
-            .expect("create prompt snapshot dir");
+        fs::create_dir_all(path.parent().unwrap_or_abort())
+            .unwrap_or_abort();
         fs::write(path, actual)
-            .unwrap_or_else(|err| panic!("write prompt snapshot {}: {err}", path.display()));
+            .unwrap_or_else(|_| panic!("abort"));
         return;
     }
 
-    let expected = fs::read_to_string(path).unwrap_or_else(|err| {
-        panic!(
-            "read prompt snapshot {}; set {UPDATE_PROMPT_SNAPSHOTS_ENV}=1 to regenerate: {err}",
-            path.display()
-        )
+    let expected = fs::read_to_string(path).unwrap_or_else(|_| {
+        panic!("abort")
     });
     assert_eq!(
         actual,
@@ -63,15 +61,16 @@ fn assert_snapshot_text(path: &Path, actual: &str) {
     );
 }
 
+#[allow(clippy::panic, reason = "test code must panic gracefully")]
 fn assert_snapshot_dir_contains_exact_files(snapshot_dir: &Path, expected_files: &[String]) {
     let mut expected_files = expected_files.to_vec();
     expected_files.sort();
     let mut actual_files = if snapshot_dir.exists() {
         fs::read_dir(snapshot_dir)
-            .unwrap_or_else(|err| panic!("read snapshot dir {}: {err}", snapshot_dir.display()))
+            .unwrap_or_else(|_| panic!("abort"))
             .map(|entry| {
                 entry
-                    .expect("snapshot dir entry")
+                    .unwrap_or_abort()
                     .file_name()
                     .to_string_lossy()
                     .into_owned()
@@ -127,6 +126,7 @@ fn normalize_composed_prompt_snapshot(prompt: &str) -> String {
     normalized
 }
 
+#[allow(clippy::panic, reason = "test code must panic gracefully")]
 fn shipped_v1_prompt_asset_snapshot(repo_root: &Path) -> serde_json::Value {
     let mut profiles = serde_json::Map::new();
     for profile in V1_PROMPT_PROFILES.split_whitespace() {
@@ -135,7 +135,7 @@ fn shipped_v1_prompt_asset_snapshot(repo_root: &Path) -> serde_json::Value {
             .join("agents")
             .join(format!("{profile}.md"));
         let markdown = fs::read_to_string(&asset_path)
-            .unwrap_or_else(|err| panic!("read prompt asset {}: {err}", asset_path.display()));
+            .unwrap_or_else(|_| panic!("abort"));
         let body = prompt_body_from_markdown(&markdown);
         let digest12 = blake3::hash(body.as_bytes())
             .to_hex()
@@ -176,13 +176,14 @@ fn prompt_body_from_markdown(markdown: &str) -> String {
     markdown.trim().to_string()
 }
 
+#[allow(clippy::panic, reason = "test code must panic gracefully")]
 fn shipped_profile_body(repo_root: &Path, profile: &str) -> String {
     let asset_path = repo_root
         .join(".agent-harness")
         .join("agents")
         .join(format!("{profile}.md"));
     let markdown = fs::read_to_string(&asset_path)
-        .unwrap_or_else(|err| panic!("read prompt asset {}: {err}", asset_path.display()));
+        .unwrap_or_else(|_| panic!("abort"));
     prompt_body_from_markdown(&markdown)
 }
 
@@ -213,20 +214,21 @@ fn coordinator_denies_tool_for_profile(
 
 fn task_description_for_profile(registry: &ToolRegistry, profile: &AgentProfile) -> String {
     build_provider_tool_defs(profile, registry)
-        .expect("tool defs")
+        .unwrap_or_abort()
         .into_iter()
         .find(|tool| tool.tool_id == "task")
-        .expect("task tool")
+        .unwrap_or_abort()
         .description
-        .expect("task description")
+        .unwrap_or_abort()
 }
 
+#[allow(clippy::panic, reason = "test code must panic gracefully")]
 fn prompt_section(body: &str, heading: &str) -> String {
     let marker = format!("## {heading}\n");
     let section = body
         .split(&marker)
         .nth(1)
-        .unwrap_or_else(|| panic!("missing prompt section {heading}"));
+        .unwrap_or_else(|| panic!("abort"));
     section
         .split("\n## ")
         .next()

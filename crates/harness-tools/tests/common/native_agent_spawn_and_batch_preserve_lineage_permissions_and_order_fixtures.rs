@@ -1,3 +1,4 @@
+use harness_tools::UnwrapOrAbort;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
@@ -303,7 +304,7 @@ fn named_worker_profile_with_prompt(name: &str, toolset: &[&str], system_prompt:
 }
 
 fn write_fixture(workspace: &Path) {
-    fs::write(workspace.join("fixture.txt"), "alpha\nbeta\n").expect("fixture file");
+    fs::write(workspace.join("fixture.txt"), "alpha\nbeta\n").unwrap_or_abort();
 }
 
 fn write_numbered_fixture(workspace: &Path) {
@@ -311,27 +312,27 @@ fn write_numbered_fixture(workspace: &Path) {
         .map(|index| format!("line-{index:02}"))
         .collect::<Vec<_>>()
         .join("\n");
-    fs::write(workspace.join("fixture.txt"), format!("{fixture_body}\n")).expect("fixture file");
+    fs::write(workspace.join("fixture.txt"), format!("{fixture_body}\n")).unwrap_or_abort();
 }
 
 fn write_skill_fixture(workspace: &Path, name: &str) {
     let skill_dir = workspace.join(".agent-harness/skills").join(name);
-    fs::create_dir_all(&skill_dir).expect("skill dir");
+    fs::create_dir_all(&skill_dir).unwrap_or_abort();
     fs::write(
         skill_dir.join("SKILL.md"),
         format!("---\nname: {name}\ndescription: {name} description\n---\n\n{name} body.\n"),
     )
-    .expect("skill file");
+    .unwrap_or_abort();
 }
 
 fn write_skill_fixture_with_frontmatter(workspace: &Path, name: &str, frontmatter: &str, body: &str) {
     let skill_dir = workspace.join(".agent-harness/skills").join(name);
-    fs::create_dir_all(&skill_dir).expect("skill dir");
+    fs::create_dir_all(&skill_dir).unwrap_or_abort();
     fs::write(
         skill_dir.join("SKILL.md"),
         format!("---\n{frontmatter}\n---\n\n{body}\n"),
     )
-    .expect("skill file");
+    .unwrap_or_abort();
 }
 
 fn skills_registry_test_lock() -> &'static Mutex<()> {
@@ -401,9 +402,9 @@ fn harness_config_with_skills(skills: SkillsConfig) -> HarnessConfig {
                 "endpoint": "https://mcp.exa.ai/mcp"
             }
         },
-        "skills": serde_json::to_value(skills).expect("serialize skills config")
+        "skills": serde_json::to_value(skills).unwrap_or_abort()
     }))
-    .expect("config shape should deserialize")
+    .unwrap_or_abort()
 }
 
 fn plan_mode_permission_policy() -> PermissionPolicy {
@@ -542,7 +543,7 @@ async fn spawn_run_with_provider_and_profiles(
     agent_profiles: BTreeMap<String, AgentProfile>,
 ) -> (CoordinatorHandle, RunInfo, String) {
     let session_dir = workspace.join("sessions");
-    fs::create_dir_all(&session_dir).expect("session dir");
+    fs::create_dir_all(&session_dir).unwrap_or_abort();
 
     let mut config = CoordinatorConfig::new(session_dir);
     config.permission_policy = PermissionPolicy::new(
@@ -562,11 +563,11 @@ async fn spawn_run_with_provider_and_profiles(
     let run = handle
         .start_run("native_agent_spawn_batch", workspace)
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let worker_id = handle
         .spawn_agent_idle(anonymous_supervisor_actor(), "deep", None)
         .await
-        .expect("spawn worker");
+        .unwrap_or_abort();
 
     (handle, run, worker_id)
 }

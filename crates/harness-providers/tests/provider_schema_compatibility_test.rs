@@ -1,4 +1,5 @@
 use harness_providers::schema_compat::{prepare_tools_for_family, ProviderSchemaFamily};
+use harness_providers::UnwrapOrAbort;
 use harness_providers::{Provider, ProviderErrorCategory, ProviderStreamEvent, ToolDef};
 use provider_schema_compatibility_support::{completion_request, provider, real_tools};
 use serde_json::json;
@@ -13,8 +14,8 @@ fn strict_openai_compatible_accepts_real_build_and_plan_tools() {
     let tools = [real_tools("build"), real_tools("plan")].concat();
 
     // act
-    let prepared = prepare_tools_for_family(ProviderSchemaFamily::OpenAiCompatible, tools)
-        .expect("real build and plan schemas should be OpenAI compatible");
+    let prepared =
+        prepare_tools_for_family(ProviderSchemaFamily::OpenAiCompatible, tools).unwrap_or_abort();
 
     // assert
     assert!(prepared.iter().any(|tool| tool.tool_id == "shell.run"));
@@ -36,10 +37,10 @@ fn gemini_like_normalizes_real_mcp_schema_extensions_and_rejects_top_level_combi
     let tool = tools
         .iter_mut()
         .find(|tool| tool.tool_id == "mcp.docs.rs.tool.call")
-        .expect("mcp call tool should exist");
+        .unwrap_or_abort();
     let properties = tool.parameters["properties"]
         .as_object_mut()
-        .expect("mcp call tool should have properties");
+        .unwrap_or_abort();
     properties.insert("optional".to_string(), json!({"type": ["string", "null"]}));
     properties.insert(
         "mode".to_string(),
@@ -48,8 +49,7 @@ fn gemini_like_normalizes_real_mcp_schema_extensions_and_rejects_top_level_combi
     tool.parameters["required"] = json!(["name", "missing"]);
 
     // act
-    let prepared = prepare_tools_for_family(ProviderSchemaFamily::Gemini, tools)
-        .expect("Gemini-compatible schemas should be normalized");
+    let prepared = prepare_tools_for_family(ProviderSchemaFamily::Gemini, tools).unwrap_or_abort();
     let schema = &prepared[0].parameters;
 
     // assert
@@ -79,8 +79,7 @@ fn kimi_like_normalizes_ref_siblings_and_tuple_items_on_real_tool_schema() {
     });
 
     // act
-    let prepared = prepare_tools_for_family(ProviderSchemaFamily::Kimi, tools)
-        .expect("Kimi-compatible schemas should be normalized");
+    let prepared = prepare_tools_for_family(ProviderSchemaFamily::Kimi, tools).unwrap_or_abort();
     let schema = &prepared[0].parameters;
 
     // assert

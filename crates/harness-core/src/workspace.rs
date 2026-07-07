@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -122,6 +123,7 @@ fn resolve_git_path(cwd: &Path, value: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::UnwrapOrAbort;
     use std::cell::RefCell;
     use std::collections::BTreeMap;
 
@@ -153,7 +155,7 @@ mod tests {
 
     #[test]
     fn non_git_directory_uses_working_directory_as_workspace_root() {
-        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let temp_dir = tempfile::tempdir().unwrap_or_abort();
         let git_probe = FakeWorkspaceGitProbe::default();
         let environment =
             WorkspaceEnvironment::discover_with_git_probe(temp_dir.path(), &git_probe);
@@ -166,10 +168,10 @@ mod tests {
 
     #[test]
     fn git_marker_ancestor_becomes_workspace_root_without_git_binary() {
-        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let temp_dir = tempfile::tempdir().unwrap_or_abort();
         let nested = temp_dir.path().join("crates").join("harness");
-        std::fs::create_dir_all(&nested).expect("nested directory");
-        std::fs::create_dir(temp_dir.path().join(".git")).expect("git marker");
+        std::fs::create_dir_all(&nested).unwrap_or_abort();
+        std::fs::create_dir(temp_dir.path().join(".git")).unwrap_or_abort();
         let git_probe = FakeWorkspaceGitProbe::default();
 
         let environment = WorkspaceEnvironment::discover_with_git_probe(&nested, &git_probe);

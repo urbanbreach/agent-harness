@@ -157,7 +157,8 @@ impl AppState {
             None => 0,
         };
         self.operator_sidebar.keyboard_index = Some(next);
-        self.details_scroll = targets[next].top_row.min(usize::from(u16::MAX)) as u16;
+        self.details_scroll =
+            u16::try_from(targets[next].top_row.min(usize::from(u16::MAX))).unwrap_or(u16::MAX);
         true
     }
 

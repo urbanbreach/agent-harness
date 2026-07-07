@@ -1,9 +1,10 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 pub(crate) fn mouse_up_on_completed_general_task_row_opens_child_session() {
-    let run_dir = tempfile::tempdir().expect("create run dir");
+    let run_dir = tempfile::tempdir().unwrap_or_abort();
     let parent_path = run_dir.path().join("parent_run");
-    fs::create_dir_all(&parent_path).expect("create parent run dir");
+    fs::create_dir_all(&parent_path).unwrap_or_abort();
 
     let mut app = AppState::new_live(Some(parent_path), false, None);
     app.ingest_event(agent_spawned(1, "parent", "build"));

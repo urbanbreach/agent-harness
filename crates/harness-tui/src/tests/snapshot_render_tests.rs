@@ -1,19 +1,20 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 pub(super) fn module_replay_mode_snapshot_renders_two_pane_layout() {
     harness_core::config::clear_registered_integrations_config();
     harness_core::config::set_registered_lsp_config(harness_core::config::LspConfig::default());
 
     let run_dir = write_replay_fixture(sample_replay_events());
-    let events = load_events_from_run_dir(run_dir.path()).expect("load replay events");
+    let events = load_events_from_run_dir(run_dir.path()).unwrap_or_abort();
 
     let backend = TestBackend::new(80, 24);
-    let mut terminal = Terminal::new(backend).expect("create terminal");
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
 
     let app = AppState::new_replay(run_dir.path().to_path_buf(), events);
     terminal
         .draw(|frame| ui::render_app(frame, &app))
-        .expect("draw replay frame");
+        .unwrap_or_abort();
 
     assert_buffer_snapshot(
         "replay_mode_snapshot_renders_two_pane_layout",
@@ -23,7 +24,7 @@ pub(super) fn module_replay_mode_snapshot_renders_two_pane_layout() {
 
 pub(super) fn replay_mode_r_key_reports_removed_reload() {
     let run_dir = write_replay_fixture(sample_replay_events());
-    let events = load_events_from_run_dir(run_dir.path()).expect("load replay events");
+    let events = load_events_from_run_dir(run_dir.path()).unwrap_or_abort();
 
     let mut app = AppState::new_replay(run_dir.path().to_path_buf(), events);
     app.handle_key(key(KeyCode::Char('r')));
@@ -42,10 +43,10 @@ pub(super) fn live_mode_snapshot_renders_grouped_streams() {
     app.active_tab = app::Tab::Run;
 
     let backend = TestBackend::new(80, 24);
-    let mut terminal = Terminal::new(backend).expect("create terminal");
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
     terminal
         .draw(|frame| ui::render_app(frame, &app))
-        .expect("draw live frame");
+        .unwrap_or_abort();
 
     assert_buffer_snapshot(
         "live_mode_snapshot_renders_grouped_streams",
@@ -58,10 +59,10 @@ pub(super) fn slash_commands_snapshot_renders_reference_style_popup() {
     app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
 
     let backend = TestBackend::new(100, 24);
-    let mut terminal = Terminal::new(backend).expect("create terminal");
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
     terminal
         .draw(|frame| ui::render_app(frame, &app))
-        .expect("draw slash popup frame");
+        .unwrap_or_abort();
 
     assert_buffer_snapshot(
         "slash_commands_snapshot_renders_reference_style_popup",
@@ -77,10 +78,10 @@ pub(super) fn tool_spacing_parity_snapshot_renders_grouped_context_and_output_tr
     app.active_tab = app::Tab::Run;
 
     let backend = TestBackend::new(120, 30);
-    let mut terminal = Terminal::new(backend).expect("create terminal");
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
     terminal
         .draw(|frame| ui::render_app(frame, &app))
-        .expect("draw tool spacing parity frame");
+        .unwrap_or_abort();
 
     assert_buffer_snapshot(
         "tool_spacing_parity_snapshot_renders_grouped_context_and_output_transition",
@@ -96,10 +97,10 @@ pub(super) fn live_mode_renders_activity_and_transcript() {
     app.active_tab = app::Tab::Run;
 
     let backend = TestBackend::new(80, 24);
-    let mut terminal = Terminal::new(backend).expect("create terminal");
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
     terminal
         .draw(|frame| ui::render_app(frame, &app))
-        .expect("draw live frame");
+        .unwrap_or_abort();
 
     let debug = format!("{:?}", terminal.backend().buffer());
     assert!(

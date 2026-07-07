@@ -1,13 +1,14 @@
+use harness_tools::UnwrapOrAbort;
 #[tokio::test]
 async fn native_execution_surface_tools_execute_through_native_ids() {
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
 
-    let read = registry.get("read").expect("read in registry");
-    let todo_write = registry.get("todowrite").expect("todowrite in registry");
-    let todo_read = registry.get("todoread").expect("todoread in registry");
-    let invalid = registry.get("invalid").expect("invalid in registry");
+    let read = registry.get("read").unwrap_or_abort();
+    let todo_write = registry.get("todowrite").unwrap_or_abort();
+    let todo_read = registry.get("todoread").unwrap_or_abort();
+    let invalid = registry.get("invalid").unwrap_or_abort();
     assert!(todo_write.description().contains("structured task list"));
     assert!(todo_write.description().contains("test todo"));
     assert!(todo_write
@@ -15,7 +16,7 @@ async fn native_execution_surface_tools_execute_through_native_ids() {
         .contains("never reply only \"Done\""));
     assert!(todo_write.description().contains("in_progress"));
 
-    fs::write(workspace.join("surface.txt"), "before\n").expect("seed existing file");
+    fs::write(workspace.join("surface.txt"), "before\n").unwrap_or_abort();
 
     read.call(
         test_context(workspace, "read"),
@@ -26,7 +27,7 @@ async fn native_execution_surface_tools_execute_through_native_ids() {
         }),
     )
     .await
-    .expect("read");
+    .unwrap_or_abort();
 
     let todos_payload = json!({
         "todos": [
@@ -36,7 +37,7 @@ async fn native_execution_surface_tools_execute_through_native_ids() {
     let todo_write_result = todo_write
         .call(test_context(workspace, "todo-write"), todos_payload.clone())
         .await
-        .expect("todowrite");
+        .unwrap_or_abort();
     assert!(!todo_write_result.display_text.trim().is_empty());
     assert_eq!(
         todo_write_result.structured_json,
@@ -50,7 +51,7 @@ async fn native_execution_surface_tools_execute_through_native_ids() {
     let todo_read_result = todo_read
         .call(test_context(workspace, "todo-read"), json!({}))
         .await
-        .expect("todoread");
+        .unwrap_or_abort();
     assert!(todo_read_result.display_text.contains("task"));
 
     let invalid_result = invalid
@@ -62,7 +63,7 @@ async fn native_execution_surface_tools_execute_through_native_ids() {
             }),
         )
         .await
-        .expect("invalid");
+        .unwrap_or_abort();
     assert!(invalid_result.display_text.contains("bad args"));
 }
 #[tokio::test]
@@ -71,8 +72,8 @@ async fn native_todowrite_accepts_legacy_text_shape_and_defaults_priority() {
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
 
-    let todo_write = registry.get("todowrite").expect("todowrite in registry");
-    let todo_read = registry.get("todoread").expect("todoread in registry");
+    let todo_write = registry.get("todowrite").unwrap_or_abort();
+    let todo_read = registry.get("todoread").unwrap_or_abort();
 
     let todo_write_result = todo_write
         .call(
@@ -85,7 +86,7 @@ async fn native_todowrite_accepts_legacy_text_shape_and_defaults_priority() {
             }),
         )
         .await
-        .expect("legacy todowrite");
+        .unwrap_or_abort();
 
     assert_eq!(
         todo_write_result.structured_json,
@@ -100,7 +101,7 @@ async fn native_todowrite_accepts_legacy_text_shape_and_defaults_priority() {
     let todo_read_result = todo_read
         .call(test_context(workspace, "todo-read-legacy"), json!({}))
         .await
-        .expect("todoread legacy state");
+        .unwrap_or_abort();
     assert!(todo_read_result.display_text.contains("legacy text entry"));
     assert!(todo_read_result.display_text.contains("legacy title entry"));
     assert!(todo_read_result.display_text.contains("medium"));
@@ -111,7 +112,7 @@ async fn native_todowrite_accepts_state_alias_from_model_tool_call() {
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
 
-    let todo_write = registry.get("todowrite").expect("todowrite in registry");
+    let todo_write = registry.get("todowrite").unwrap_or_abort();
     let schema = todo_write.parameters_json_schema();
     assert!(schema.to_string().contains("\"state\""));
 
@@ -125,7 +126,7 @@ async fn native_todowrite_accepts_state_alias_from_model_tool_call() {
             }),
         )
         .await
-        .expect("state-alias todowrite");
+        .unwrap_or_abort();
 
     assert_eq!(
         todo_write_result.structured_json,
@@ -142,7 +143,7 @@ async fn native_todowrite_accepts_done_shape_and_schema_advertises_it() {
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
 
-    let todo_write = registry.get("todowrite").expect("todowrite in registry");
+    let todo_write = registry.get("todowrite").unwrap_or_abort();
     let schema = todo_write.parameters_json_schema();
     assert!(schema.to_string().contains("\"done\""));
     assert_eq!(
@@ -163,7 +164,7 @@ async fn native_todowrite_accepts_done_shape_and_schema_advertises_it() {
             }),
         )
         .await
-        .expect("done-shape todowrite");
+        .unwrap_or_abort();
 
     assert_eq!(
         todo_write_result.structured_json,
@@ -181,7 +182,7 @@ async fn native_todowrite_rejects_unknown_status_values() {
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
 
-    let todo_write = registry.get("todowrite").expect("todowrite in registry");
+    let todo_write = registry.get("todowrite").unwrap_or_abort();
 
     let error = todo_write
         .call(
@@ -205,7 +206,7 @@ async fn native_public_edit_schema_uses_exact_surface_and_runtime_accepts_hashli
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
-    let edit = registry.get("edit").expect("edit in registry");
+    let edit = registry.get("edit").unwrap_or_abort();
     let edit_description = edit.description();
 
     assert!(edit_description.contains("oldString"));
@@ -223,7 +224,7 @@ async fn native_public_edit_schema_uses_exact_surface_and_runtime_accepts_hashli
     assert!(schema["properties"].get("filePath").is_none());
     assert!(schema["properties"].get("edits").is_none());
 
-    fs::write(workspace.join("surface.txt"), "before\n").expect("seed existing file");
+    fs::write(workspace.join("surface.txt"), "before\n").unwrap_or_abort();
 
     // act
     let result = edit
@@ -241,12 +242,12 @@ async fn native_public_edit_schema_uses_exact_surface_and_runtime_accepts_hashli
             }),
         )
         .await
-        .expect("hashline edit");
+        .unwrap_or_abort();
 
     // assert
     assert!(result.display_text.contains("Edit applied successfully"));
     assert_eq!(
-        fs::read_to_string(workspace.join("surface.txt")).expect("read edited file"),
+        fs::read_to_string(workspace.join("surface.txt")).unwrap_or_abort(),
         "after\n"
     );
 }
@@ -255,9 +256,9 @@ async fn native_public_edit_accepts_start_alias_for_pos() {
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
-    let edit = registry.get("edit").expect("edit in registry");
+    let edit = registry.get("edit").unwrap_or_abort();
 
-    fs::write(workspace.join("surface.txt"), "before\n").expect("seed existing file");
+    fs::write(workspace.join("surface.txt"), "before\n").unwrap_or_abort();
 
     let result = edit
         .call(
@@ -274,11 +275,11 @@ async fn native_public_edit_accepts_start_alias_for_pos() {
             }),
         )
         .await
-        .expect("hashline edit with start alias");
+        .unwrap_or_abort();
 
     assert!(result.display_text.contains("Edit applied successfully"));
     assert_eq!(
-        fs::read_to_string(workspace.join("surface.txt")).expect("read edited file"),
+        fs::read_to_string(workspace.join("surface.txt")).unwrap_or_abort(),
         "after\n"
     );
 }
@@ -287,9 +288,9 @@ async fn native_public_edit_accepts_opless_anchored_delete_shape() {
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
-    let edit = registry.get("edit").expect("edit in registry");
+    let edit = registry.get("edit").unwrap_or_abort();
 
-    fs::write(workspace.join("surface.txt"), "before\nnext\n").expect("seed existing file");
+    fs::write(workspace.join("surface.txt"), "before\nnext\n").unwrap_or_abort();
 
     let result = edit
         .call(
@@ -305,11 +306,11 @@ async fn native_public_edit_accepts_opless_anchored_delete_shape() {
             }),
         )
         .await
-        .expect("op-less anchored delete should normalize to replace/delete");
+        .unwrap_or_abort();
 
     assert!(result.display_text.contains("Edit applied successfully"));
     assert_eq!(
-        fs::read_to_string(workspace.join("surface.txt")).expect("read edited file"),
+        fs::read_to_string(workspace.join("surface.txt")).unwrap_or_abort(),
         "next\n"
     );
 }
@@ -318,7 +319,7 @@ async fn native_public_edit_rejects_delete_flag_with_edit_payload() {
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
-    let edit = registry.get("edit").expect("edit in registry");
+    let edit = registry.get("edit").unwrap_or_abort();
     let schema = edit.parameters_json_schema();
 
     assert_eq!(schema["type"], json!("object"));
@@ -329,7 +330,7 @@ async fn native_public_edit_rejects_delete_flag_with_edit_payload() {
     assert!(schema["properties"].get("delete").is_none());
 
     let file_path = workspace.join("surface.txt");
-    fs::write(&file_path, "before\n").expect("seed existing file");
+    fs::write(&file_path, "before\n").unwrap_or_abort();
 
     let error = edit
         .call(
@@ -363,9 +364,9 @@ async fn native_public_edit_rejects_opless_anchored_non_delete_shape() {
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
-    let edit = registry.get("edit").expect("edit in registry");
+    let edit = registry.get("edit").unwrap_or_abort();
 
-    fs::write(workspace.join("surface.txt"), "before\nnext\n").expect("seed existing file");
+    fs::write(workspace.join("surface.txt"), "before\nnext\n").unwrap_or_abort();
 
     let error = edit
         .call(
@@ -393,9 +394,9 @@ async fn native_public_edit_rejects_opless_anchorless_shape() {
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
-    let edit = registry.get("edit").expect("edit in registry");
+    let edit = registry.get("edit").unwrap_or_abort();
 
-    fs::write(workspace.join("surface.txt"), "before\nnext\n").expect("seed existing file");
+    fs::write(workspace.join("surface.txt"), "before\nnext\n").unwrap_or_abort();
 
     let error = edit
         .call(
@@ -422,9 +423,9 @@ async fn native_public_edit_accepts_quoted_refresh_snippet_anchor() {
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
-    let edit = registry.get("edit").expect("edit in registry");
+    let edit = registry.get("edit").unwrap_or_abort();
 
-    fs::write(workspace.join("surface.txt"), "current\nnext\n").expect("seed existing file");
+    fs::write(workspace.join("surface.txt"), "current\nnext\n").unwrap_or_abort();
 
     let result = edit
         .call(
@@ -441,11 +442,11 @@ async fn native_public_edit_accepts_quoted_refresh_snippet_anchor() {
             }),
         )
         .await
-        .expect("hashline edit with quoted refresh snippet anchor");
+        .unwrap_or_abort();
 
     assert!(result.display_text.contains("Edit applied successfully"));
     assert_eq!(
-        fs::read_to_string(workspace.join("surface.txt")).expect("read edited file"),
+        fs::read_to_string(workspace.join("surface.txt")).unwrap_or_abort(),
         "after\nnext\n"
     );
 }
@@ -456,7 +457,7 @@ async fn native_bash_allows_redirection_and_cat() {
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
-    let bash = registry.get("bash").expect("bash in registry");
+    let bash = registry.get("bash").unwrap_or_abort();
 
     // act
     let result = bash
@@ -468,7 +469,7 @@ async fn native_bash_allows_redirection_and_cat() {
             }),
         )
         .await
-        .expect("bash redirection and cat should succeed");
+        .unwrap_or_abort();
 
     // assert
     assert!(result.display_text.contains("hello"));
@@ -481,7 +482,7 @@ async fn native_bash_allows_pipeline_grep() {
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
-    let bash = registry.get("bash").expect("bash in registry");
+    let bash = registry.get("bash").unwrap_or_abort();
 
     // act
     let result = bash
@@ -493,7 +494,7 @@ async fn native_bash_allows_pipeline_grep() {
             }),
         )
         .await
-        .expect("bash pipeline with grep should succeed");
+        .unwrap_or_abort();
 
     // assert
     assert!(result.display_text.contains('b'));
@@ -505,7 +506,7 @@ async fn native_bash_allows_touch_and_rm() {
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
-    let bash = registry.get("bash").expect("bash in registry");
+    let bash = registry.get("bash").unwrap_or_abort();
 
     // act
     bash
@@ -517,7 +518,7 @@ async fn native_bash_allows_touch_and_rm() {
             }),
         )
         .await
-        .expect("bash touch and rm should succeed");
+        .unwrap_or_abort();
 
     // assert
     assert!(!workspace.join("tmp.txt").exists());
@@ -529,7 +530,7 @@ async fn native_bash_rejects_python3_c() {
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
-    let bash = registry.get("bash").expect("bash in registry");
+    let bash = registry.get("bash").unwrap_or_abort();
 
     // act
     let error = bash
@@ -553,7 +554,7 @@ async fn native_bash_records_permission_patterns_in_metadata() {
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
-    let bash = registry.get("bash").expect("bash in registry");
+    let bash = registry.get("bash").unwrap_or_abort();
 
     // act
     let result = bash
@@ -565,12 +566,12 @@ async fn native_bash_records_permission_patterns_in_metadata() {
             }),
         )
         .await
-        .expect("bash should record permission patterns");
+        .unwrap_or_abort();
 
     // assert
-    let metadata = result.structured_json.expect("structured json");
+    let metadata = result.structured_json.unwrap_or_abort();
     let always = metadata["permission_always_patterns"]
         .as_array()
-        .expect("always patterns array");
+        .unwrap_or_abort();
     assert!(always.iter().any(|value| value == "cargo test *"));
 }

@@ -30,7 +30,6 @@ pub(crate) struct ControlPlaneExecutor {
 }
 
 impl ControlPlaneExecutor {
-    #[allow(dead_code)]
     pub(crate) fn new() -> Self {
         Self::with_question_answer_source(coordinator_question_answer_source())
     }

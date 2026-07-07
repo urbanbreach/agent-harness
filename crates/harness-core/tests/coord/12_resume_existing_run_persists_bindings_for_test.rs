@@ -1,6 +1,7 @@
+use harness_core::UnwrapOrAbort;
 #[tokio::test]
 async fn resume_existing_run_persists_bindings_for_future_reresume() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_resume_reresume";
     write_resume_fixture(
         temp_dir.path(),
@@ -49,13 +50,13 @@ async fn resume_existing_run_persists_bindings_for_future_reresume() {
     let run = first
         .resume_run(run_id, "interactive")
         .await
-        .expect("first resume should succeed");
+        .unwrap_or_abort();
     first
         .request_agent_turn(supervisor_actor(), "agent_000001", "follow up")
         .await
-        .expect("restored agent should accept turn in resumed segment");
+        .unwrap_or_abort();
     tokio::task::yield_now().await;
-    first.stop_run().await.expect("stop first resumed segment");
+    first.stop_run().await.unwrap_or_abort();
 
     let plan_after_first_resume = inspect_resume_plan(&run.run_dir);
     assert_eq!(
@@ -78,20 +79,20 @@ async fn resume_existing_run_persists_bindings_for_future_reresume() {
     second
         .resume_run(run_id, "interactive")
         .await
-        .expect("second resume should succeed from persisted bindings");
+        .unwrap_or_abort();
     let second_request_id = second
         .request_agent_turn(supervisor_actor(), "agent_000001", "second resume turn")
         .await
-        .expect("restored agent should be present after second resume");
+        .unwrap_or_abort();
     assert_eq!(second_request_id, "req_000004");
     second
         .stop_run()
         .await
-        .expect("stop second resumed segment");
+        .unwrap_or_abort();
 }
 #[tokio::test]
 async fn resume_existing_run_remains_resumable_after_open_and_quit_without_prompt() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_resume_open_quit";
     write_resume_fixture(
         temp_dir.path(),
@@ -140,11 +141,11 @@ async fn resume_existing_run_remains_resumable_after_open_and_quit_without_promp
     let run = first
         .resume_run(run_id, "interactive")
         .await
-        .expect("first resume should succeed");
+        .unwrap_or_abort();
     first
         .stop_run()
         .await
-        .expect("stop resumed segment without new prompt");
+        .unwrap_or_abort();
 
     let plan_after_quit = inspect_resume_plan(&run.run_dir);
     assert_eq!(
@@ -164,20 +165,20 @@ async fn resume_existing_run_remains_resumable_after_open_and_quit_without_promp
     second
         .resume_run(run_id, "interactive")
         .await
-        .expect("second resume should succeed after open-and-quit");
+        .unwrap_or_abort();
     let request_id = second
         .request_agent_turn(supervisor_actor(), "agent_000001", "second segment prompt")
         .await
-        .expect("resumed agent should accept prompt after re-resume");
+        .unwrap_or_abort();
     assert_eq!(request_id, "req_000002");
     second
         .stop_run()
         .await
-        .expect("stop second resumed segment");
+        .unwrap_or_abort();
 }
 #[tokio::test]
 async fn resume_existing_run_rejects_missing_historical_profile_binding() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_resume_missing_profile";
     let events_path = write_resume_fixture(
         temp_dir.path(),
@@ -249,12 +250,12 @@ async fn resume_existing_run_rejects_missing_historical_profile_binding() {
 }
 #[tokio::test]
 async fn resume_existing_run_rejects_second_writer_lock() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let first = test_resume_coordinator(temp_dir.path());
     let run = first
         .start_run("interactive", PathBuf::from("/workspace/project"))
         .await
-        .expect("start first run");
+        .unwrap_or_abort();
 
     let second = test_resume_coordinator(temp_dir.path());
     let error = second
@@ -267,11 +268,11 @@ async fn resume_existing_run_rejects_second_writer_lock() {
         CoordinatorError::EventStore(EventStoreError::AcquireWriterLock { .. })
     ));
 
-    first.stop_run().await.expect("stop first run");
+    first.stop_run().await.unwrap_or_abort();
 }
 #[tokio::test]
 async fn resume_existing_run_does_not_append_on_restore_failure() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_resume_invalid_agent";
     let events_path = write_resume_fixture(
         temp_dir.path(),
@@ -334,7 +335,7 @@ async fn resume_existing_run_does_not_append_on_restore_failure() {
 }
 #[tokio::test]
 async fn resume_restores_interactive_provider_context() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_resume_context";
     write_resumable_history_fixture(temp_dir.path(), run_id);
 
@@ -345,13 +346,13 @@ async fn resume_restores_interactive_provider_context() {
     coordinator
         .resume_run(run_id, "interactive")
         .await
-        .expect("resume run");
+        .unwrap_or_abort();
     coordinator
         .request_agent_turn(supervisor_actor(), "agent_000001", "second question")
         .await
-        .expect("submit resumed prompt");
+        .unwrap_or_abort();
     tokio::task::yield_now().await;
-    coordinator.stop_run().await.expect("stop resumed run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let requests = provider.requests();
     assert_eq!(requests.len(), 1, "expected one resumed provider request");
@@ -373,7 +374,7 @@ async fn resume_restores_interactive_provider_context() {
 }
 #[tokio::test]
 async fn resumed_turn_matches_uninterrupted_conversation_request_shape() {
-    let uninterrupted_dir = tempfile::tempdir().expect("tempdir");
+    let uninterrupted_dir = tempfile::tempdir().unwrap_or_abort();
     let uninterrupted_provider = CapturingProvider::new(vec!["first answer", "second answer"]);
     let uninterrupted = test_resume_coordinator_with_provider(
         uninterrupted_dir.path(),
@@ -383,36 +384,36 @@ async fn resumed_turn_matches_uninterrupted_conversation_request_shape() {
     uninterrupted
         .start_run("interactive", PathBuf::from("/workspace/project"))
         .await
-        .expect("start uninterrupted run");
+        .unwrap_or_abort();
     uninterrupted
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn uninterrupted agent");
+        .unwrap_or_abort();
     uninterrupted
         .request_agent_turn(supervisor_actor(), "agent_000001", "first question")
         .await
-        .expect("first uninterrupted turn");
+        .unwrap_or_abort();
     tokio::task::yield_now().await;
     uninterrupted
         .request_agent_turn(supervisor_actor(), "agent_000001", "second question")
         .await
-        .expect("second uninterrupted turn");
+        .unwrap_or_abort();
     tokio::task::yield_now().await;
     uninterrupted
         .stop_run()
         .await
-        .expect("stop uninterrupted run");
+        .unwrap_or_abort();
 
     let uninterrupted_shape = uninterrupted_provider
         .requests()
         .last()
-        .expect("second uninterrupted request")
+        .unwrap_or_abort()
         .messages
         .iter()
         .map(|message| (message.role.clone(), message.content.clone()))
         .collect::<Vec<_>>();
 
-    let resumed_dir = tempfile::tempdir().expect("tempdir");
+    let resumed_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_resume_matches_uninterrupted";
     write_resumable_history_fixture(resumed_dir.path(), run_id);
     let resumed_provider = CapturingProvider::new(vec!["second answer"]);
@@ -424,18 +425,18 @@ async fn resumed_turn_matches_uninterrupted_conversation_request_shape() {
     resumed
         .resume_run(run_id, "interactive")
         .await
-        .expect("resume run");
+        .unwrap_or_abort();
     resumed
         .request_agent_turn(supervisor_actor(), "agent_000001", "second question")
         .await
-        .expect("resumed second turn");
+        .unwrap_or_abort();
     tokio::task::yield_now().await;
-    resumed.stop_run().await.expect("stop resumed run");
+    resumed.stop_run().await.unwrap_or_abort();
 
     let resumed_shape = resumed_provider
         .requests()
         .last()
-        .expect("resumed request")
+        .unwrap_or_abort()
         .messages
         .iter()
         .map(|message| (message.role.clone(), message.content.clone()))
@@ -448,7 +449,7 @@ async fn resumed_turn_matches_uninterrupted_conversation_request_shape() {
 }
 #[tokio::test]
 async fn resume_restores_multi_turn_historical_context_with_final_task_output() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_resume_multi_turn_context";
     write_resumable_multi_turn_history_fixture(temp_dir.path(), run_id);
 
@@ -459,13 +460,13 @@ async fn resume_restores_multi_turn_historical_context_with_final_task_output() 
     coordinator
         .resume_run(run_id, "interactive")
         .await
-        .expect("resume run");
+        .unwrap_or_abort();
     coordinator
         .request_agent_turn(supervisor_actor(), "agent_000001", "second question")
         .await
-        .expect("submit resumed prompt");
+        .unwrap_or_abort();
     tokio::task::yield_now().await;
-    coordinator.stop_run().await.expect("stop resumed run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let requests = provider.requests();
     assert_eq!(requests.len(), 1, "expected one resumed provider request");

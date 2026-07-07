@@ -1,3 +1,4 @@
+use harness_tui::UnwrapOrAbort;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -9,7 +10,7 @@ use crate::model_switcher_fixtures::*;
 
 #[test]
 fn runtime_context_labels_distinguish_live_continue_and_replay() {
-    let _config = load_config_from_str(rich_model_config()).expect("config should parse");
+    let _config = load_config_from_str(rich_model_config()).unwrap_or_abort();
 
     let launch_metadata = LaunchMetadata::from_model_ref("deep", "default:gpt-5.4-mini")
         .with_available_models(available_models());
@@ -57,7 +58,7 @@ fn runtime_context_labels_distinguish_live_continue_and_replay() {
 
 #[test]
 fn live_switch_model_labels_next_turn_only() {
-    let _config = load_config_from_str(rich_model_config()).expect("config should parse");
+    let _config = load_config_from_str(rich_model_config()).unwrap_or_abort();
 
     let variant_cycle_overrides =
         BTreeMap::from([("variant_cycle".to_string(), "tab".to_string())]);

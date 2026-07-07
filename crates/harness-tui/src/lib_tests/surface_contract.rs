@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 pub(super) fn full_surface_scope_matrix_is_defined() {
     assert_eq!(
@@ -300,8 +301,8 @@ pub(super) fn hovered_wheel_target_uses_sidebar_overlay_hit_areas() {
     app.live_details_drawer_open = true;
     let area = ratatui::layout::Rect::new(0, 0, 80, 24);
     let plan = layout::FrameLayoutPlan::for_app(&app, area);
-    let overlay = plan.details_overlay.expect("overlay sidebar area");
-    let transcript = plan.transcript.expect("transcript area");
+    let overlay = plan.details_overlay.unwrap_or_abort();
+    let transcript = plan.transcript.unwrap_or_abort();
 
     let overlay_column = overlay.x.saturating_add(1);
     let overlay_row = overlay.y.saturating_add(1);

@@ -1,6 +1,7 @@
+use harness::UnwrapOrAbort;
 #[test]
 fn models_probe_generates_harness_catalog_fragment_from_models_dev_json() {
-    let temp = tempdir().expect("create tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let source_path = temp.path().join("models-dev.json");
     write_json(
         &source_path,
@@ -78,13 +79,13 @@ fn models_probe_generates_harness_catalog_fragment_from_models_dev_json() {
             "models",
             "probe",
             "--input",
-            source_path.to_str().expect("utf8 source path"),
+            source_path.to_str().unwrap_or_abort(),
             "--provider",
             "openai",
             "--emit-reasoning-variants",
         ])
         .output()
-        .expect("run harness models probe");
+        .unwrap_or_abort();
 
     assert!(
         output.status.success(),
@@ -92,7 +93,7 @@ fn models_probe_generates_harness_catalog_fragment_from_models_dev_json() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let catalog: Value = serde_json::from_slice(&output.stdout).expect("catalog json");
+    let catalog: Value = serde_json::from_slice(&output.stdout).unwrap_or_abort();
     assert_eq!(catalog["$schema"], "./config.json");
     assert!(catalog["provider"].get("anthropic").is_none());
 
@@ -102,7 +103,7 @@ fn models_probe_generates_harness_catalog_fragment_from_models_dev_json() {
     assert_eq!(openai["options"]["baseURL"], "https://api.openai.com/v1");
     assert_eq!(openai["options"]["apiKeyEnv"][0], "OPENAI_API_KEY");
 
-    let models = openai["models"].as_object().expect("models object");
+    let models = openai["models"].as_object().unwrap_or_abort();
     assert!(models.contains_key("gpt-5-mini"));
     assert!(!models.contains_key("gpt-old"));
     assert!(!models.contains_key("gpt-text-only"));
@@ -129,7 +130,7 @@ fn models_probe_generates_harness_catalog_fragment_from_models_dev_json() {
 }
 #[test]
 fn models_generate_updates_static_catalog_artifact_from_models_dev_json() {
-    let temp = tempdir().expect("create tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let source_path = temp.path().join("models-dev.json");
     let output_path = temp.path().join("provider-catalog.generated.json");
     write_json(
@@ -159,13 +160,13 @@ fn models_generate_updates_static_catalog_artifact_from_models_dev_json() {
             "models",
             "generate",
             "--input",
-            source_path.to_str().expect("utf8 source path"),
+            source_path.to_str().unwrap_or_abort(),
             "--output",
-            output_path.to_str().expect("utf8 output path"),
+            output_path.to_str().unwrap_or_abort(),
             "--emit-reasoning-variants",
         ])
         .output()
-        .expect("run harness models generate");
+        .unwrap_or_abort();
 
     assert!(
         output.status.success(),
@@ -177,8 +178,8 @@ fn models_generate_updates_static_catalog_artifact_from_models_dev_json() {
         "generate should write the artifact instead of stdout"
     );
 
-    let generated = fs::read_to_string(&output_path).expect("read generated catalog");
-    let compact: Value = serde_json::from_str(&generated).expect("generated catalog json");
+    let generated = fs::read_to_string(&output_path).unwrap_or_abort();
+    let compact: Value = serde_json::from_str(&generated).unwrap_or_abort();
     assert_eq!(
         generated.matches('\n').count(),
         1,
@@ -203,7 +204,7 @@ fn models_generated_prints_embedded_static_catalog() {
     let output = harness_command()
         .args(["models", "generated"])
         .output()
-        .expect("run harness models generated");
+        .unwrap_or_abort();
 
     assert!(
         output.status.success(),
@@ -211,21 +212,21 @@ fn models_generated_prints_embedded_static_catalog() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let catalog: Value = serde_json::from_slice(&output.stdout).expect("embedded catalog json");
+    let catalog: Value = serde_json::from_slice(&output.stdout).unwrap_or_abort();
     assert_eq!(catalog["$schema"], "./config.json");
     assert!(catalog["provider"]
         .as_object()
-        .expect("provider object")
+        .unwrap_or_abort()
         .contains_key("openai"));
     serde_json::from_slice::<PublicRuntimeConfig>(&output.stdout)
-        .expect("embedded generated catalog should parse as public runtime config fragment");
+        .unwrap_or_abort();
 }
 #[test]
 fn schema_cli_prints_runtime_json_schema() {
     let output = harness_command()
         .arg("schema")
         .output()
-        .expect("run harness schema");
+        .unwrap_or_abort();
 
     assert!(
         output.status.success(),
@@ -233,11 +234,11 @@ fn schema_cli_prints_runtime_json_schema() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let schema: Value = serde_json::from_slice(&output.stdout).expect("schema json");
+    let schema: Value = serde_json::from_slice(&output.stdout).unwrap_or_abort();
     let root_properties = schema
         .get("properties")
         .and_then(Value::as_object)
-        .expect("runtime schema properties");
+        .unwrap_or_abort();
     assert!(root_properties.contains_key("provider"));
     assert!(root_properties.contains_key("model"));
     assert!(root_properties.contains_key("small_model"));
@@ -255,12 +256,12 @@ fn schema_cli_prints_runtime_json_schema() {
     let definitions = schema
         .get("definitions")
         .and_then(Value::as_object)
-        .expect("schema definitions");
+        .unwrap_or_abort();
 
     let agent_map_properties = definitions["PublicAgentMap"]
         .get("properties")
         .and_then(Value::as_object)
-        .expect("PublicAgentMap properties");
+        .unwrap_or_abort();
     for agent in [
         "build",
         "plan",
@@ -295,7 +296,7 @@ fn schema_cli_prints_runtime_json_schema() {
     let model_properties = definitions["ModelConfig"]
         .get("properties")
         .and_then(Value::as_object)
-        .expect("ModelConfig properties");
+        .unwrap_or_abort();
     assert!(model_properties.contains_key("name"));
     assert!(model_properties.contains_key("limit"));
     assert!(model_properties.contains_key("modalities"));
@@ -307,7 +308,7 @@ fn schema_cli_prints_runtime_json_schema() {
     let variant_properties = definitions["ModelVariantConfig"]
         .get("properties")
         .and_then(Value::as_object)
-        .expect("ModelVariantConfig properties");
+        .unwrap_or_abort();
     assert!(variant_properties.contains_key("name"));
     assert!(variant_properties.contains_key("limit"));
     assert!(variant_properties.contains_key("modalities"));
@@ -317,7 +318,7 @@ fn schema_cli_prints_runtime_json_schema() {
     let provider_properties = definitions["ProviderConfig"]["oneOf"][0]
         .get("properties")
         .and_then(Value::as_object)
-        .expect("ProviderConfig properties");
+        .unwrap_or_abort();
     assert!(provider_properties.contains_key("baseURL"));
     assert!(provider_properties.contains_key("apiKey"));
     assert!(provider_properties.contains_key("apiKeyEnv"));
@@ -331,7 +332,7 @@ fn schema_cli_prints_runtime_json_schema() {
     let options_properties = definitions["OpenAiCompatibleProviderOptions"]
         .get("properties")
         .and_then(Value::as_object)
-        .expect("OpenAiCompatibleProviderOptions properties");
+        .unwrap_or_abort();
     assert!(options_properties.contains_key("baseURL"));
     assert!(options_properties.contains_key("apiKey"));
     assert!(options_properties.contains_key("apiKeyEnv"));
@@ -345,7 +346,7 @@ fn schema_cli_prints_runtime_json_schema() {
     let permission_properties = definitions["PublicPermissionConfig"]
         .get("properties")
         .and_then(Value::as_object)
-        .expect("PublicPermissionConfig properties");
+        .unwrap_or_abort();
     assert!(permission_properties.contains_key("bash"));
     assert!(permission_properties.contains_key("task"));
     assert!(!permission_properties.contains_key("shell"));
@@ -354,7 +355,7 @@ fn schema_cli_prints_runtime_json_schema() {
     let agent_properties = definitions["PublicAgentConfig"]
         .get("properties")
         .and_then(Value::as_object)
-        .expect("PublicAgentConfig properties");
+        .unwrap_or_abort();
     for key in [
         "name",
         "description",
@@ -381,7 +382,7 @@ fn schema_cli_prints_tui_json_schema() {
     let output = harness_command()
         .args(["schema", "--tui"])
         .output()
-        .expect("run harness schema --tui");
+        .unwrap_or_abort();
 
     assert!(
         output.status.success(),
@@ -389,23 +390,23 @@ fn schema_cli_prints_tui_json_schema() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let schema: Value = serde_json::from_slice(&output.stdout).expect("tui schema json");
+    let schema: Value = serde_json::from_slice(&output.stdout).unwrap_or_abort();
     let properties = schema
         .get("properties")
         .and_then(Value::as_object)
-        .expect("tui schema properties");
+        .unwrap_or_abort();
     assert!(properties.contains_key("keybinds"));
     assert!(!properties.contains_key("parity"));
     assert!(!properties.contains_key("default_profile"));
 }
 #[test]
 fn config_validate_cli_reports_missing_config() {
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let output = harness_command()
         .current_dir(temp.path())
         .args(["config", "validate"])
         .output()
-        .expect("run harness config validate without config");
+        .unwrap_or_abort();
 
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -424,12 +425,12 @@ fn config_validate_cli_accepts_shipped_example_config() {
         .current_dir(&repo_root)
         .args([
             "--config",
-            config_path.to_str().expect("config path utf-8"),
+            config_path.to_str().unwrap_or_abort(),
             "config",
             "validate",
         ])
         .output()
-        .expect("run harness config validate with shipped example config");
+        .unwrap_or_abort();
 
     assert!(
         output.status.success(),
@@ -441,12 +442,12 @@ fn config_validate_cli_accepts_shipped_example_config() {
     assert!(stdout.contains("config valid:"));
     assert!(stdout.contains("configs/harness.example.jsonc"));
 
-    let parsed = load_config_from_file(&config_path).expect("shipped example config should parse");
+    let parsed = load_config_from_file(&config_path).unwrap_or_abort();
     assert_eq!(parsed.providers.len(), 1);
     let ProviderConfig::OpenAiCompatible(provider) = parsed
         .providers
         .get("openai-codex")
-        .expect("openai-codex provider present in shipped example config");
+        .unwrap_or_abort();
     assert_eq!(provider.models.len(), 2);
     assert!(provider.models.contains_key("gpt-5.5"));
     assert!(provider.models.contains_key("gpt-5.4-mini"));

@@ -1,3 +1,4 @@
+use harness_tools::UnwrapOrAbort;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
@@ -46,11 +47,11 @@ impl ScriptedWebFetchTransport {
     }
 
     fn requests(&self) -> Vec<CapturedWebFetchRequest> {
-        self.requests.lock().expect("request log").clone()
+        self.requests.lock().unwrap_or_abort().clone()
     }
 
     fn hit_count(&self, path: &str) -> usize {
-        let mut guard = self.counts.lock().expect("request counts");
+        let mut guard = self.counts.lock().unwrap_or_abort();
         let entry = guard.entry(path.to_string()).or_insert(0);
         *entry += 1;
         *entry
@@ -68,7 +69,7 @@ impl WebFetchHttpTransport for ScriptedWebFetchTransport {
         let path = url.path().to_string();
         self.requests
             .lock()
-            .expect("request log")
+            .unwrap_or_abort()
             .push(CapturedWebFetchRequest {
                 path: path.clone(),
                 headers: BTreeMap::from([
@@ -147,10 +148,8 @@ fn test_context(workspace_root: &Path, tool_call_id: &str) -> ToolContext {
 }
 
 fn artifact_bytes(context: &ToolContext, artifact_path: &str) -> Vec<u8> {
-    let relative = artifact_path
-        .strip_prefix("artifacts/")
-        .expect("artifact path prefix");
-    fs::read(context.artifacts_dir.join(relative)).expect("artifact bytes")
+    let relative = artifact_path.strip_prefix("artifacts/").unwrap_or_abort();
+    fs::read(context.artifacts_dir.join(relative)).unwrap_or_abort()
 }
 
 #[tokio::test]
@@ -158,9 +157,10 @@ async fn native_web_fetch_supports_text_markdown_html_and_binary_artifacts() {
     let workspace = setup_workspace_fixture();
     let workspace_root = workspace.workspace();
     let transport = Arc::new(ScriptedWebFetchTransport::new());
+    let transport_clone = Arc::clone(&transport);
     let registry =
-        coordinator_registry_with_web_fetch_transport(ShellAllowlist::default(), transport.clone());
-    let web_fetch = registry.get("webfetch").expect("webfetch tool");
+        coordinator_registry_with_web_fetch_transport(ShellAllowlist::default(), transport_clone);
+    let web_fetch = registry.get("webfetch").unwrap_or_abort();
     let base_url = "https://fixture.test";
 
     let plain = web_fetch
@@ -172,11 +172,11 @@ async fn native_web_fetch_supports_text_markdown_html_and_binary_artifacts() {
             }),
         )
         .await
-        .expect("plain fetch");
+        .unwrap_or_abort();
     assert_eq!(plain.display_text, "hello text\n");
     assert!(plain.artifacts.is_empty());
     assert_eq!(
-        plain.structured_json.expect("plain json")["response_kind"],
+        plain.structured_json.unwrap_or_abort()["response_kind"],
         json!("text")
     );
 
@@ -189,7 +189,7 @@ async fn native_web_fetch_supports_text_markdown_html_and_binary_artifacts() {
             }),
         )
         .await
-        .expect("markdown fetch");
+        .unwrap_or_abort();
     let repeated_markdown = web_fetch
         .call(
             test_context(workspace_root, "repeat-markdown"),
@@ -199,7 +199,7 @@ async fn native_web_fetch_supports_text_markdown_html_and_binary_artifacts() {
             }),
         )
         .await
-        .expect("repeat markdown fetch");
+        .unwrap_or_abort();
     assert_eq!(markdown.display_text, "# Hello markdown\n\nBody\n");
     assert_eq!(markdown.display_text, repeated_markdown.display_text);
     assert_eq!(markdown.structured_json, repeated_markdown.structured_json);
@@ -213,7 +213,7 @@ async fn native_web_fetch_supports_text_markdown_html_and_binary_artifacts() {
             }),
         )
         .await
-        .expect("html fetch");
+        .unwrap_or_abort();
     assert_eq!(
         html.display_text,
         "<html><body><h1>Hello HTML</h1><p>Body text</p></body></html>"
@@ -229,7 +229,7 @@ async fn native_web_fetch_supports_text_markdown_html_and_binary_artifacts() {
             }),
         )
         .await
-        .expect("retry fetch");
+        .unwrap_or_abort();
     assert!(retry.display_text.contains("# Retry Title"));
     assert!(retry.display_text.contains("Retry body"));
 
@@ -243,14 +243,14 @@ async fn native_web_fetch_supports_text_markdown_html_and_binary_artifacts() {
             }),
         )
         .await
-        .expect("image fetch");
+        .unwrap_or_abort();
     assert!(image.display_text.contains("Fetched image artifact"));
     assert_eq!(image.artifacts.len(), 1);
     assert_eq!(
         artifact_bytes(&image_ctx, &image.artifacts[0].path),
         PNG_BYTES
     );
-    let image_json = image.structured_json.expect("image json");
+    let image_json = image.structured_json.unwrap_or_abort();
     assert_eq!(image_json["response_kind"], json!("artifact"));
     assert_eq!(image_json["artifact_kind"], json!("image"));
     assert_eq!(
@@ -268,11 +268,11 @@ async fn native_web_fetch_supports_text_markdown_html_and_binary_artifacts() {
             }),
         )
         .await
-        .expect("pdf fetch");
+        .unwrap_or_abort();
     assert!(pdf.display_text.contains("Fetched pdf artifact"));
     assert_eq!(pdf.artifacts.len(), 1);
     assert_eq!(artifact_bytes(&pdf_ctx, &pdf.artifacts[0].path), PDF_BYTES);
-    let pdf_json = pdf.structured_json.expect("pdf json");
+    let pdf_json = pdf.structured_json.unwrap_or_abort();
     assert_eq!(pdf_json["response_kind"], json!("artifact"));
     assert_eq!(pdf_json["artifact_kind"], json!("pdf"));
 
@@ -297,7 +297,7 @@ async fn native_web_fetch_supports_text_markdown_html_and_binary_artifacts() {
     assert!(cf_requests[0]
         .headers
         .get("user-agent")
-        .expect("browser user-agent")
+        .unwrap_or_abort()
         .starts_with("Mozilla/5.0"));
     assert_eq!(
         cf_requests[1].headers.get("user-agent").map(String::as_str),
@@ -313,7 +313,7 @@ async fn native_web_fetch_rejects_invalid_scheme_large_response_and_timeout() {
         ShellAllowlist::default(),
         Arc::new(ScriptedWebFetchTransport::new()),
     );
-    let web_fetch = registry.get("webfetch").expect("webfetch tool");
+    let web_fetch = registry.get("webfetch").unwrap_or_abort();
     let base_url = "https://fixture.test";
 
     let invalid_scheme = web_fetch

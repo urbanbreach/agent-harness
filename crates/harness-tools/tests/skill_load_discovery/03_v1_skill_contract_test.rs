@@ -1,12 +1,13 @@
+use harness_tools::UnwrapOrAbort;
 use harness_tools::{discover_skill_catalog, SkillCatalogStatus};
 
 #[test]
 fn v1_skill_catalog_reports_compact_metadata_without_body_leak() {
     // arrange
     let _guard = skills_registry_test_lock();
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let repo = temp_dir.path().join("repo");
-    fs::create_dir_all(repo.join(".git")).expect("git dir");
+    fs::create_dir_all(repo.join(".git")).unwrap_or_abort();
     let _skills_guard = SkillsConfigGuard::install(skills_config_without_global_roots());
 
     write_v1_skill(
@@ -23,11 +24,11 @@ resources: bundled-reference-not-loaded"#,
         "BODY LEAK SENTINEL: only activation may expose this body.",
     );
 
-    let catalog = discover_skill_catalog(&repo).expect("discover compact catalog");
+    let catalog = discover_skill_catalog(&repo).unwrap_or_abort();
     let entry = catalog
         .active_entry("v1-contract")
         // act
-        .expect("active V1 skill metadata");
+        .unwrap_or_abort();
 
     // assert
     assert_eq!(entry.name, "v1-contract");
@@ -47,7 +48,7 @@ resources: bundled-reference-not-loaded"#,
     );
     assert!(!entry.body_loaded);
     assert!(entry.body_digest.is_none());
-    let serialized = serde_json::to_string(&catalog).expect("serialize catalog");
+    let serialized = serde_json::to_string(&catalog).unwrap_or_abort();
     assert!(!serialized.contains("BODY LEAK SENTINEL"));
 }
 
@@ -58,9 +59,9 @@ resources: bundled-reference-not-loaded"#,
 )]
 async fn v1_skill_activation_reports_metadata_then_loads_body() {
     let _guard = skills_registry_test_lock();
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let repo = temp_dir.path().join("repo");
-    fs::create_dir_all(repo.join(".git")).expect("git dir");
+    fs::create_dir_all(repo.join(".git")).unwrap_or_abort();
     let _skills_guard = SkillsConfigGuard::install(skills_config_without_global_roots());
 
     write_v1_skill(
@@ -71,21 +72,21 @@ async fn v1_skill_activation_reports_metadata_then_loads_body() {
     );
 
     let registry = coordinator_registry(ShellAllowlist::default());
-    let skill_tool = registry.get("skill").expect("skill tool");
+    let skill_tool = registry.get("skill").unwrap_or_abort();
     let skill = skill_tool
         .call(
             tool_context(&repo, "toolcall-v1-activation"),
             json!({"name": "activation-skill"}),
         )
         .await
-        .expect("activation skill loads");
+        .unwrap_or_abort();
 
     assert!(skill.display_text.contains("ACTIVATION BODY SENTINEL"));
     let metadata = skill
         .structured_json
         .as_ref()
         .and_then(|value| value.get("metadata"))
-        .expect("activation metadata");
+        .unwrap_or_abort();
     assert_eq!(metadata["stable_id"], json!("skill:project:activation-skill"));
     assert_eq!(metadata["status"], json!("loadable"));
     assert_eq!(metadata["source_scope"], json!("project"));
@@ -103,9 +104,9 @@ async fn v1_skill_activation_reports_metadata_then_loads_body() {
 )]
 async fn v1_skill_activation_loads_bundled_resources_with_caps_and_redaction() {
     let _guard = skills_registry_test_lock();
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let repo = temp_dir.path().join("repo");
-    fs::create_dir_all(repo.join(".git")).expect("git dir");
+    fs::create_dir_all(repo.join(".git")).unwrap_or_abort();
     let _skills_guard = SkillsConfigGuard::install(skills_config_without_global_roots());
     let skill_root = repo.join(".agent-harness/skills");
 
@@ -116,27 +117,27 @@ async fn v1_skill_activation_loads_bundled_resources_with_caps_and_redaction() {
         "ACTIVATION BODY.",
     );
     let skill_dir = skill_root.join("resource-skill");
-    fs::create_dir_all(skill_dir.join("references")).expect("references dir");
+    fs::create_dir_all(skill_dir.join("references")).unwrap_or_abort();
     fs::write(
         skill_dir.join("references/guide.md"),
         "RESOURCE GUIDE SENTINEL\nBearer super.secret.token\n",
     )
-    .expect("write guide resource");
+    .unwrap_or_abort();
     fs::write(
         skill_dir.join("references/large.md"),
         format!("{}TRUNCATED TAIL SENTINEL", "x".repeat(70 * 1024)),
     )
-    .expect("write large resource");
+    .unwrap_or_abort();
 
     let registry = coordinator_registry(ShellAllowlist::default());
-    let skill_tool = registry.get("skill").expect("skill tool");
+    let skill_tool = registry.get("skill").unwrap_or_abort();
     let skill = skill_tool
         .call(
             tool_context(&repo, "toolcall-v1-resource"),
             json!({"name": "resource-skill"}),
         )
         .await
-        .expect("activation skill loads resources");
+        .unwrap_or_abort();
 
     assert!(skill.display_text.contains("## Bundled resources"));
     assert!(skill
@@ -159,13 +160,13 @@ async fn v1_skill_activation_loads_bundled_resources_with_caps_and_redaction() {
 )]
 async fn v1_skill_resources_reject_escape_paths_for_project_and_global_roots() {
     let _guard = skills_registry_test_lock();
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let repo = temp_dir.path().join("repo");
     let home = temp_dir.path().join("home");
-    fs::create_dir_all(repo.join(".git")).expect("git dir");
-    fs::create_dir_all(&home).expect("home dir");
-    fs::write(repo.join("outside-project.txt"), "PROJECT SECRET").expect("outside project");
-    fs::write(home.join("outside-global.txt"), "GLOBAL SECRET").expect("outside global");
+    fs::create_dir_all(repo.join(".git")).unwrap_or_abort();
+    fs::create_dir_all(&home).unwrap_or_abort();
+    fs::write(repo.join("outside-project.txt"), "PROJECT SECRET").unwrap_or_abort();
+    fs::write(home.join("outside-global.txt"), "GLOBAL SECRET").unwrap_or_abort();
     let _skills_guard = SkillsConfigGuard::install(SkillsConfig {
         global_roots: vec![home.join(".config/agent-harness/skills")],
         ..SkillsConfig::default()
@@ -198,7 +199,7 @@ async fn v1_skill_resources_reject_escape_paths_for_project_and_global_roots() {
     }
 
     let registry = coordinator_registry(ShellAllowlist::default());
-    let skill_tool = registry.get("skill").expect("skill tool");
+    let skill_tool = registry.get("skill").unwrap_or_abort();
     for name in ["project-dotdot", "global-dotdot", "project-absolute"] {
         let err = skill_tool
             .call(
@@ -223,10 +224,10 @@ async fn v1_skill_resources_reject_escape_paths_for_project_and_global_roots() {
 )]
 async fn v1_skill_resources_reject_symlink_escape() {
     let _guard = skills_registry_test_lock();
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let repo = temp_dir.path().join("repo");
-    fs::create_dir_all(repo.join(".git")).expect("git dir");
-    fs::write(repo.join("outside-symlink.txt"), "SYMLINK SECRET").expect("outside symlink");
+    fs::create_dir_all(repo.join(".git")).unwrap_or_abort();
+    fs::write(repo.join("outside-symlink.txt"), "SYMLINK SECRET").unwrap_or_abort();
     let _skills_guard = SkillsConfigGuard::install(skills_config_without_global_roots());
     let skill_root = repo.join(".agent-harness/skills");
 
@@ -237,15 +238,15 @@ async fn v1_skill_resources_reject_symlink_escape() {
         "BODY",
     );
     let skill_dir = skill_root.join("symlink-resource");
-    fs::create_dir_all(skill_dir.join("refs")).expect("refs dir");
+    fs::create_dir_all(skill_dir.join("refs")).unwrap_or_abort();
     std::os::unix::fs::symlink(
         repo.join("outside-symlink.txt"),
         skill_dir.join("refs/link.md"),
     )
-    .expect("symlink escape");
+    .unwrap_or_abort();
 
     let registry = coordinator_registry(ShellAllowlist::default());
-    let skill_tool = registry.get("skill").expect("skill tool");
+    let skill_tool = registry.get("skill").unwrap_or_abort();
     let err = skill_tool
         .call(
             tool_context(&repo, "toolcall-v1-symlink-resource"),
@@ -266,11 +267,11 @@ async fn v1_skill_resources_reject_symlink_escape() {
 )]
 async fn v1_skill_catalog_reports_shadowed_disabled_denied_and_malformed_states() {
     let _guard = skills_registry_test_lock();
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let home = temp_dir.path().join("home");
     let repo = temp_dir.path().join("repo");
-    fs::create_dir_all(&home).expect("home dir");
-    fs::create_dir_all(repo.join(".git")).expect("git dir");
+    fs::create_dir_all(&home).unwrap_or_abort();
+    fs::create_dir_all(repo.join(".git")).unwrap_or_abort();
     let _skills_guard = SkillsConfigGuard::install(SkillsConfig {
         global_roots: vec![home.join(".config/agent-harness/skills")],
         disabled: vec!["skill:project:disabled-skill".to_string()],
@@ -318,9 +319,9 @@ async fn v1_skill_catalog_reports_shadowed_disabled_denied_and_malformed_states(
         "Valid sibling body",
     );
 
-    let catalog = discover_skill_catalog(&repo).expect("discover status catalog");
+    let catalog = discover_skill_catalog(&repo).unwrap_or_abort();
     assert_eq!(
-        catalog.active_entry("shadowed-skill").expect("active shadowed skill").source_scope,
+        catalog.active_entry("shadowed-skill").unwrap_or_abort().source_scope,
         "project"
     );
     assert!(catalog
@@ -330,7 +331,7 @@ async fn v1_skill_catalog_reports_shadowed_disabled_denied_and_malformed_states(
             && entry.source_scope == "global"));
     let disabled_entry = catalog
         .active_entry("disabled-skill")
-        .expect("disabled entry");
+        .unwrap_or_abort();
     assert_eq!(disabled_entry.status, SkillCatalogStatus::Disabled);
     assert_eq!(disabled_entry.stable_id, "skill:project:disabled-skill");
     assert!(!disabled_entry.loadable);
@@ -341,27 +342,27 @@ async fn v1_skill_catalog_reports_shadowed_disabled_denied_and_malformed_states(
     assert_eq!(
         catalog
             .active_entry("denied-secret")
-            .expect("denied entry")
+            .unwrap_or_abort()
             .status,
         SkillCatalogStatus::Denied
     );
     assert_eq!(
         catalog
             .active_entry("malformed-skill")
-            .expect("malformed entry")
+            .unwrap_or_abort()
             .status,
         SkillCatalogStatus::Malformed
     );
     assert_eq!(
         catalog
             .active_entry("valid-sibling")
-            .expect("valid sibling survives malformed skill")
+            .unwrap_or_abort()
             .status,
         SkillCatalogStatus::Loadable
     );
 
     let registry = coordinator_registry(ShellAllowlist::default());
-    let skill_tool = registry.get("skill").expect("skill tool");
+    let skill_tool = registry.get("skill").unwrap_or_abort();
     for name in ["disabled-skill", "denied-secret", "malformed-skill"] {
         let err = skill_tool
             .call(

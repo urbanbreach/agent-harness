@@ -1,15 +1,16 @@
 use super::super::*;
+use crate::UnwrapOrAbort;
 
 #[cfg(test)]
 pub(crate) fn exact_test_transcript_edit_tool_matches_inline_diff_shape() {
-    let run_dir = tempfile::tempdir().expect("create run dir");
+    let run_dir = tempfile::tempdir().unwrap_or_abort();
     let artifacts_dir = run_dir.path().join("artifacts");
-    std::fs::create_dir_all(&artifacts_dir).expect("create artifacts dir");
+    std::fs::create_dir_all(&artifacts_dir).unwrap_or_abort();
     std::fs::write(
         artifacts_dir.join("harness-inline.diff"),
         "--- crates/harness-tui/src/ui.rs\n+++ crates/harness-tui/src/ui.rs\n@@ -44,8 +44,7 @@\n use ui_secondary::{\n-    render_diff_tab, render_events_tab, render_help_tab,\n+    render_events_tab, render_help_tab, render_live_details_overlay,\n     render_operator_sidebar,\n };\n",
     )
-    .expect("write inline diff fixture");
+    .unwrap_or_abort();
 
     let mut app = AppState::new_live(Some(run_dir.path().to_path_buf()), false, None);
     let mut entry =
@@ -85,14 +86,14 @@ pub(crate) fn exact_test_transcript_edit_tool_matches_inline_diff_shape() {
 
 #[cfg(test)]
 pub(crate) fn exact_test_transcript_native_edit_renders_inline_diff_from_artifact() {
-    let run_dir = tempfile::tempdir().expect("create run dir");
+    let run_dir = tempfile::tempdir().unwrap_or_abort();
     let artifacts_dir = run_dir.path().join("artifacts");
-    std::fs::create_dir_all(&artifacts_dir).expect("create artifacts dir");
+    std::fs::create_dir_all(&artifacts_dir).unwrap_or_abort();
     std::fs::write(
         artifacts_dir.join("native-edit.diff"),
         "--- docs/rust.md\n+++ docs/rust.md\n@@ -1,3 +1,2 @@\n # Rust\n-## Ownership\n Safe and fast\n",
     )
-    .expect("write native edit diff fixture");
+    .unwrap_or_abort();
 
     let mut app = AppState::new_live(Some(run_dir.path().to_path_buf()), false, None);
     let mut entry =
@@ -151,19 +152,19 @@ pub(crate) fn exact_test_transcript_native_edit_renders_inline_diff_from_artifac
 
 #[cfg(test)]
 pub(crate) fn exact_test_transcript_apply_patch_multifile_uses_output_edit_paths() {
-    let run_dir = tempfile::tempdir().expect("create run dir");
+    let run_dir = tempfile::tempdir().unwrap_or_abort();
     let artifacts_dir = run_dir.path().join("artifacts");
-    std::fs::create_dir_all(&artifacts_dir).expect("create artifacts dir");
+    std::fs::create_dir_all(&artifacts_dir).unwrap_or_abort();
     std::fs::write(
         artifacts_dir.join("apply-a.diff"),
         "@@ -1,1 +1,1 @@\n-old a\n+new a\n",
     )
-    .expect("write apply patch diff fixture a");
+    .unwrap_or_abort();
     std::fs::write(
         artifacts_dir.join("apply-b.diff"),
         "@@ -1,1 +1,1 @@\n-old b\n+new b\n",
     )
-    .expect("write apply patch diff fixture b");
+    .unwrap_or_abort();
 
     let mut app = AppState::new_live(Some(run_dir.path().to_path_buf()), false, None);
     let mut entry = transcript_section_model_test_activity(
@@ -281,19 +282,19 @@ pub(crate) fn exact_test_transcript_apply_patch_multifile_uses_output_edit_paths
 
 #[cfg(test)]
 pub(crate) fn exact_test_transcript_apply_patch_surfaces_rename_and_wrapped_inline_diffs() {
-    let run_dir = tempfile::tempdir().expect("create run dir");
+    let run_dir = tempfile::tempdir().unwrap_or_abort();
     let artifacts_dir = run_dir.path().join("artifacts");
-    std::fs::create_dir_all(&artifacts_dir).expect("create artifacts dir");
+    std::fs::create_dir_all(&artifacts_dir).unwrap_or_abort();
     std::fs::write(
         artifacts_dir.join("apply-rename.diff"),
         "--- src/session_turn.rs\n+++ src/session_diff.rs\n@@ -1,1 +1,1 @@\n-pub fn render_session_turn_diff() {}\n+pub fn render_session_diff_view() {}\n",
     )
-    .expect("write rename diff fixture");
+    .unwrap_or_abort();
     std::fs::write(
         artifacts_dir.join("apply-wrap.diff"),
         "--- docs/transcript.md\n+++ docs/transcript.md\n@@ -1,1 +1,1 @@\n-session turn diff view keeps the tool row spacing perfectly aligned in every transcript lane for operators reviewing compact windows\n+session turn diff view keeps the tool row spacing perfectly aligned across the transcript surface for operators reviewing compact windows and narrow shells\n",
     )
-    .expect("write wrapped diff fixture");
+    .unwrap_or_abort();
 
     let mut app = AppState::new_live(Some(run_dir.path().to_path_buf()), false, None);
     let mut entry = transcript_section_model_test_activity(
@@ -379,7 +380,7 @@ pub(crate) fn exact_test_transcript_apply_patch_surfaces_rename_and_wrapped_inli
     let rename_header = lines
         .iter()
         .find(|line| line.contains("session_diff.rs") && line.contains("src"))
-        .expect("rename header");
+        .unwrap_or_abort();
     assert!(
         rename_header.contains("session_diff.rs"),
         "rename header: {rename_header}"
@@ -418,14 +419,14 @@ pub(crate) fn exact_test_transcript_apply_patch_surfaces_rename_and_wrapped_inli
 
 #[cfg(test)]
 pub(crate) fn exact_test_transcript_inline_diff_stays_compact_between_tool_rows() {
-    let run_dir = tempfile::tempdir().expect("create run dir");
+    let run_dir = tempfile::tempdir().unwrap_or_abort();
     let artifacts_dir = run_dir.path().join("artifacts");
-    std::fs::create_dir_all(&artifacts_dir).expect("create artifacts dir");
+    std::fs::create_dir_all(&artifacts_dir).unwrap_or_abort();
     std::fs::write(
         artifacts_dir.join("apply-compact.diff"),
         "--- docs/spacing.md\n+++ docs/spacing.md\n@@ -1,1 +1,1 @@\n-tool rows drift apart after inline diffs in compact transcript layouts\n+tool rows stay packed tightly after inline diffs in compact transcript layouts\n",
     )
-    .expect("write compact diff fixture");
+    .unwrap_or_abort();
 
     let mut app = AppState::new_live(Some(run_dir.path().to_path_buf()), false, None);
     let mut entry = transcript_section_model_test_activity(
@@ -543,19 +544,19 @@ pub(crate) fn exact_test_transcript_inline_diff_stays_compact_between_tool_rows(
     let read_before = lines
         .iter()
         .position(|line| line.contains("Read docs/spacing.md"))
-        .expect("read-before row");
+        .unwrap_or_abort();
     let patch_header = lines
         .iter()
         .position(|line| line.contains("Patch 1 file"))
-        .expect("patch header row");
+        .unwrap_or_abort();
     let diff_tail = lines
         .iter()
         .rposition(|line| line.contains("compact transcript layouts"))
-        .expect("diff tail row");
+        .unwrap_or_abort();
     let read_after = lines
         .iter()
         .rposition(|line| line.contains("Read docs/spacing.md"))
-        .expect("read-after row");
+        .unwrap_or_abort();
 
     assert!(read_before < patch_header && patch_header < diff_tail && diff_tail < read_after);
     assert!(
@@ -578,7 +579,7 @@ pub(crate) fn exact_test_transcript_inline_diff_stays_compact_between_tool_rows(
 
 #[cfg(test)]
 pub(crate) fn exact_test_transcript_applied_edit_missing_diff_surfaces_fallback() {
-    let run_dir = tempfile::tempdir().expect("create run dir");
+    let run_dir = tempfile::tempdir().unwrap_or_abort();
     let mut app = AppState::new_live(Some(run_dir.path().to_path_buf()), false, None);
     let mut entry = transcript_section_model_test_activity(
         "request-edit-missing-diff",

@@ -1,3 +1,4 @@
+use harness::UnwrapOrAbort;
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -27,42 +28,33 @@ fn harness_binary_supports_operator_first_run_smoke() {
         Ok("1"),
         "set HARNESS_BINARY_SMOKE=1 to run the T5 binary smoke"
     );
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let smoke_artifacts_dir = std::env::var_os("HARNESS_BINARY_SMOKE_ARTIFACT_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|| temp.path().join("binary-smoke-artifacts"));
-    fs::create_dir_all(&smoke_artifacts_dir).expect("create binary smoke artifacts dir");
+    fs::create_dir_all(&smoke_artifacts_dir).unwrap_or_abort();
     let config_path = temp.path().join("harness.jsonc");
     let prompt_events_path = temp.path().join("prompt.events.jsonl");
     let tool_prompt_events_path = smoke_artifacts_dir.join("tool-prompt.events.jsonl");
-    fs::write(&config_path, EXAMPLE_CONFIG).expect("write copied harness config");
-    fs::create_dir_all(temp.path().join(".agent-harness"))
-        .expect("create session directory parent");
+    fs::write(&config_path, EXAMPLE_CONFIG).unwrap_or_abort();
+    fs::create_dir_all(temp.path().join(".agent-harness")).unwrap_or_abort();
 
     // act
-    let help_output = harness_binary()
-        .arg("--help")
-        .output()
-        .expect("run harness --help through real binary");
-    let version_output = harness_binary()
-        .arg("--version")
-        .output()
-        .expect("run harness --version through real binary");
+    let help_output = harness_binary().arg("--help").output().unwrap_or_abort();
+    let version_output = harness_binary().arg("--version").output().unwrap_or_abort();
     let validate_output = outside_repo_harness(temp.path())
         .args(["config", "validate"])
         .output()
-        .expect("run harness config validate through real binary outside repo");
+        .unwrap_or_abort();
     let doctor_output = outside_repo_harness(temp.path())
         .arg("doctor")
         .output()
-        .expect("run harness doctor through real binary outside repo");
+        .unwrap_or_abort();
     let doctor_json_output = outside_repo_harness(temp.path())
         .args(["doctor", "--json"])
         .output()
-        .expect("run harness doctor --json through real binary outside repo");
-    let prompt_events_arg = prompt_events_path
-        .to_str()
-        .expect("prompt events path utf-8");
+        .unwrap_or_abort();
+    let prompt_events_arg = prompt_events_path.to_str().unwrap_or_abort();
     let prompt_output = outside_repo_harness(temp.path())
         .args([
             "prompt",
@@ -74,15 +66,13 @@ fn harness_binary_supports_operator_first_run_smoke() {
             "--print-run-dir",
         ])
         .output()
-        .expect("run harness prompt --mock through real binary outside repo");
+        .unwrap_or_abort();
     let run_output = outside_repo_harness(temp.path())
         .args(["run", "--mock", "Hello"])
         .output()
-        .expect("run harness run --mock through real binary outside repo");
+        .unwrap_or_abort();
     let tui_startup_output = run_tui_startup_through_pty(temp.path());
-    let tool_prompt_events_arg = tool_prompt_events_path
-        .to_str()
-        .expect("tool prompt events path utf-8");
+    let tool_prompt_events_arg = tool_prompt_events_path.to_str().unwrap_or_abort();
     let tool_prompt_output = outside_repo_harness(temp.path())
         .args([
             "run",
@@ -94,7 +84,7 @@ fn harness_binary_supports_operator_first_run_smoke() {
             "--print-run-dir",
         ])
         .output()
-        .expect("run tool-enabled mock scenario through real binary outside repo");
+        .unwrap_or_abort();
     write_pty_output_artifact(&smoke_artifacts_dir, "tui-startup", &tui_startup_output);
     write_output_artifact(&smoke_artifacts_dir, "tool-prompt", &tool_prompt_output);
 
@@ -130,18 +120,17 @@ fn harness_binary_supports_operator_first_run_smoke() {
 
     assert_success(&doctor_json_output);
 
-    let report: Value =
-        serde_json::from_slice(&doctor_json_output.stdout).expect("doctor json report");
+    let report: Value = serde_json::from_slice(&doctor_json_output.stdout).unwrap_or_abort();
     assert!(report["config"]
         .as_str()
-        .expect("config display")
+        .unwrap_or_abort()
         .contains("harness.jsonc"));
     let route_check = report["checks"]
         .as_array()
-        .expect("checks array")
+        .unwrap_or_abort()
         .iter()
         .find(|check| check["name"] == "resolved_routes")
-        .expect("resolved_routes check");
+        .unwrap_or_abort();
     assert_eq!(route_check["status"], "pass");
     assert_eq!(route_check["details"]["no_network_probes"], true);
     assert_eq!(
@@ -157,7 +146,7 @@ fn harness_binary_supports_operator_first_run_smoke() {
         stdout.contains(".agent-harness/sessions/prompt_"),
         "stdout:\n{stdout}"
     );
-    let prompt_events = fs::read_to_string(&prompt_events_path).expect("read prompt event log");
+    let prompt_events = fs::read_to_string(&prompt_events_path).unwrap_or_abort();
     assert!(prompt_events.contains("\"event_type\":\"task_completed\""));
     assert!(prompt_events.contains("Hello world"));
 
@@ -191,8 +180,7 @@ fn harness_binary_supports_operator_first_run_smoke() {
 
     assert_success(&tool_prompt_output);
 
-    let tool_prompt_events =
-        fs::read_to_string(&tool_prompt_events_path).expect("read tool prompt event log");
+    let tool_prompt_events = fs::read_to_string(&tool_prompt_events_path).unwrap_or_abort();
     assert!(tool_prompt_events.contains("\"event_type\":\"tool_call_requested\""));
     assert!(tool_prompt_events.contains("\"event_type\":\"tool_call_finished\""));
     assert!(tool_prompt_events.contains("\"tool_id\":\"edit\""));
@@ -232,7 +220,7 @@ fn run_tui_startup_through_pty(workdir: &Path) -> PtySmokeOutput {
             pixel_width: 0,
             pixel_height: 0,
         })
-        .expect("open TUI startup PTY pair");
+        .unwrap_or_abort();
 
     let mut command = CommandBuilder::new(env!("CARGO_BIN_EXE_harness"));
     command.args(["tui", "--mock", "--exit-on-finish"]);
@@ -242,16 +230,10 @@ fn run_tui_startup_through_pty(workdir: &Path) -> PtySmokeOutput {
     command.env("XDG_CONFIG_HOME", workdir.join("xdg"));
     configure_tui_startup_env(&mut command);
 
-    let mut child = pair
-        .slave
-        .spawn_command(command)
-        .expect("spawn harness TUI startup PTY child");
+    let mut child = pair.slave.spawn_command(command).unwrap_or_abort();
     drop(pair.slave);
 
-    let reader = pair
-        .master
-        .try_clone_reader()
-        .expect("clone TUI startup PTY reader");
+    let reader = pair.master.try_clone_reader().unwrap_or_abort();
     let output_rx = spawn_pty_reader_thread(reader);
     let mut parser = Parser::new(TUI_STARTUP_ROWS, TUI_STARTUP_COLS, 0);
     let mut stdout = Vec::new();
@@ -366,25 +348,21 @@ fn assert_success(output: &Output) {
 }
 
 fn write_output_artifact(dir: &Path, name: &str, output: &Output) {
-    fs::write(dir.join(format!("{name}.stdout.txt")), &output.stdout)
-        .expect("write stdout artifact");
-    fs::write(dir.join(format!("{name}.stderr.txt")), &output.stderr)
-        .expect("write stderr artifact");
+    fs::write(dir.join(format!("{name}.stdout.txt")), &output.stdout).unwrap_or_abort();
+    fs::write(dir.join(format!("{name}.stderr.txt")), &output.stderr).unwrap_or_abort();
     fs::write(
         dir.join(format!("{name}.status.txt")),
         format!("success={}\n", output.status.success()),
     )
-    .expect("write status artifact");
+    .unwrap_or_abort();
 }
 
 fn write_pty_output_artifact(dir: &Path, name: &str, output: &PtySmokeOutput) {
-    fs::write(dir.join(format!("{name}.stdout.txt")), &output.stdout)
-        .expect("write stdout artifact");
-    fs::write(dir.join(format!("{name}.stderr.txt")), &output.stderr)
-        .expect("write stderr artifact");
+    fs::write(dir.join(format!("{name}.stdout.txt")), &output.stdout).unwrap_or_abort();
+    fs::write(dir.join(format!("{name}.stderr.txt")), &output.stderr).unwrap_or_abort();
     fs::write(
         dir.join(format!("{name}.status.txt")),
         format!("success={}\n", output.success),
     )
-    .expect("write status artifact");
+    .unwrap_or_abort();
 }

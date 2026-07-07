@@ -74,12 +74,13 @@ fn assert_snapshot_invariants(snapshot: &Snapshot) {
     }
 }
 
+#[allow(clippy::panic, reason = "test code must panic gracefully")]
 fn assert_no_tool(snapshot: &Snapshot, profile_name: &str, canonical_id: &str) {
     let profile = snapshot
         .profiles
         .iter()
         .find(|profile| profile.profile == profile_name)
-        .unwrap_or_else(|| panic!("missing profile {profile_name}"));
+        .unwrap_or_else(|| panic!("abort"));
     assert!(
         profile
             .tools
@@ -89,16 +90,17 @@ fn assert_no_tool(snapshot: &Snapshot, profile_name: &str, canonical_id: &str) {
     );
 }
 
+#[allow(clippy::panic, reason = "test code must panic gracefully")]
 fn assert_tool(snapshot: &Snapshot, profile_name: &str, canonical_id: &str, function_name: &str) {
     let profile = snapshot
         .profiles
         .iter()
         .find(|profile| profile.profile == profile_name)
-        .unwrap_or_else(|| panic!("missing profile {profile_name}"));
+        .unwrap_or_else(|| panic!("abort"));
     let tool = profile
         .tools
         .iter()
         .find(|tool| tool.canonical_id == canonical_id)
-        .unwrap_or_else(|| panic!("missing tool {canonical_id} in {profile_name}"));
+        .unwrap_or_else(|| panic!("abort"));
     assert_eq!(tool.provider_function_name, function_name);
 }

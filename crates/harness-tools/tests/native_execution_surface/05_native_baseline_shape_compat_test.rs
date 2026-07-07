@@ -1,10 +1,11 @@
+use harness_tools::UnwrapOrAbort;
 #[tokio::test]
 async fn native_bash_accepts_baseline_shape_without_description() {
     // arrange
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
-    let bash = registry.get("bash").expect("bash in registry");
+    let bash = registry.get("bash").unwrap_or_abort();
 
     // act
     let result = bash
@@ -15,7 +16,7 @@ async fn native_bash_accepts_baseline_shape_without_description() {
             }),
         )
         .await
-        .expect("baseline bash shape should not require Harness-only description");
+        .unwrap_or_abort();
 
     // assert
     assert!(result.display_text.contains("ok"));
@@ -27,10 +28,10 @@ async fn native_glob_accepts_baseline_limit_shape() {
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
-    let glob = registry.get("glob").expect("glob in registry");
+    let glob = registry.get("glob").unwrap_or_abort();
 
-    fs::write(workspace.join("a.rs"), "fn a() {}\n").expect("write a.rs");
-    fs::write(workspace.join("b.rs"), "fn b() {}\n").expect("write b.rs");
+    fs::write(workspace.join("a.rs"), "fn a() {}\n").unwrap_or_abort();
+    fs::write(workspace.join("b.rs"), "fn b() {}\n").unwrap_or_abort();
 
     // act
     let result = glob
@@ -42,7 +43,7 @@ async fn native_glob_accepts_baseline_limit_shape() {
             }),
         )
         .await
-        .expect("baseline glob shape should accept limit");
+        .unwrap_or_abort();
 
     // assert
     assert!(
@@ -51,7 +52,7 @@ async fn native_glob_accepts_baseline_limit_shape() {
             .is_some(),
         "provider-visible glob schema should advertise the current upstream limit field"
     );
-    let structured = result.structured_json.expect("glob structured json");
+    let structured = result.structured_json.unwrap_or_abort();
     assert_eq!(structured["returned_count"], json!(1));
     assert_eq!(structured["truncated"], json!(true));
 }
@@ -62,13 +63,13 @@ async fn native_read_directory_uses_baseline_offset_and_guidance() {
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
-    let read = registry.get("read").expect("read in registry");
+    let read = registry.get("read").unwrap_or_abort();
 
     let docs = workspace.join("docs");
-    fs::create_dir(&docs).expect("create docs dir");
-    fs::write(docs.join("a.txt"), "a\n").expect("write a");
-    fs::write(docs.join("b.txt"), "b\n").expect("write b");
-    fs::write(docs.join("c.txt"), "c\n").expect("write c");
+    fs::create_dir(&docs).unwrap_or_abort();
+    fs::write(docs.join("a.txt"), "a\n").unwrap_or_abort();
+    fs::write(docs.join("b.txt"), "b\n").unwrap_or_abort();
+    fs::write(docs.join("c.txt"), "c\n").unwrap_or_abort();
 
     // act
     let result = read
@@ -81,7 +82,7 @@ async fn native_read_directory_uses_baseline_offset_and_guidance() {
             }),
         )
         .await
-        .expect("directory read should accept offset and limit");
+        .unwrap_or_abort();
 
     // assert
     assert!(result.display_text.contains("<type>directory</type>"));
@@ -90,7 +91,7 @@ async fn native_read_directory_uses_baseline_offset_and_guidance() {
     assert!(result
         .display_text
         .contains("Use 'offset' parameter to read beyond entry 3"));
-    let structured = result.structured_json.expect("directory read metadata");
+    let structured = result.structured_json.unwrap_or_abort();
     assert_eq!(structured["entries"], json!(["b.txt"]));
     assert_eq!(structured["metadata"]["display"]["offset"], json!(2));
     assert_eq!(structured["truncated"], json!(true));
@@ -102,9 +103,9 @@ async fn native_grep_accepts_baseline_limit_shape() {
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
-    let grep = registry.get("grep").expect("grep in registry");
+    let grep = registry.get("grep").unwrap_or_abort();
 
-    fs::write(workspace.join("grep.txt"), "needle one\nneedle two\n").expect("write grep file");
+    fs::write(workspace.join("grep.txt"), "needle one\nneedle two\n").unwrap_or_abort();
 
     // act
     let result = grep
@@ -117,10 +118,10 @@ async fn native_grep_accepts_baseline_limit_shape() {
             }),
         )
         .await
-        .expect("baseline grep shape should accept limit");
+        .unwrap_or_abort();
 
     // assert
-    let structured = result.structured_json.expect("grep structured json");
+    let structured = result.structured_json.unwrap_or_abort();
     assert_eq!(structured["limit"], json!(1));
     assert_eq!(structured["returned_count"], json!(1));
     assert_eq!(structured["truncated"], json!(true));

@@ -46,7 +46,13 @@ pub(super) fn render_provider_rows(
         .unwrap_or(0);
     for (offset, row_index) in visible_window(rows.len(), selected_row, area.height).enumerate() {
         let row_area = horizontal_inset(
-            Rect::new(area.x, area.y.saturating_add(offset as u16), area.width, 1),
+            Rect::new(
+                area.x,
+                area.y
+                    .saturating_add(u16::try_from(offset).unwrap_or(u16::MAX)),
+                area.width,
+                1,
+            ),
             1,
         );
         match rows[row_index] {

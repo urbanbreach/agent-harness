@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 pub(super) fn ctrl_j_inserts_newline_without_submitting() {
     let mut app = AppState::new_live(None, false, None);
@@ -23,7 +24,7 @@ pub(super) fn paste_multiline_text_inserts_newlines_without_submitting() {
     let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
     let mut app = AppState::new_live(None, false, Some(sink));
@@ -36,7 +37,7 @@ pub(super) fn paste_multiline_text_inserts_newlines_without_submitting() {
         app.composer.prompt_buffer.chars().count()
     );
     assert!(app.composer.prompt_history.is_empty());
-    assert!(intents.lock().expect("lock intents").is_empty());
+    assert!(intents.lock().unwrap_or_abort().is_empty());
 }
 
 pub(super) fn multiline_history_keys_move_cursor_before_recalling_history() {
@@ -67,7 +68,7 @@ pub(super) fn multiline_history_keys_move_cursor_before_recalling_history() {
 
 pub(super) fn prompt_history_persists_and_restores_draft_after_recall() {
     // arrange
-    let tempdir = tempfile::tempdir().expect("tempdir");
+    let tempdir = tempfile::tempdir().unwrap_or_abort();
     let history_path = tempdir
         .path()
         .join("sessions")
@@ -110,7 +111,7 @@ pub(super) fn prompt_history_persists_and_restores_draft_after_recall() {
 
 pub(super) fn startup_auto_submit_persists_prompt_history_once() {
     // arrange
-    let tempdir = tempfile::tempdir().expect("tempdir");
+    let tempdir = tempfile::tempdir().unwrap_or_abort();
     let history_path = tempdir
         .path()
         .join("sessions")
@@ -120,7 +121,7 @@ pub(super) fn startup_auto_submit_persists_prompt_history_once() {
     let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
     let mut startup = AppState::new_startup_with_prompt_history_path(
@@ -138,7 +139,7 @@ pub(super) fn startup_auto_submit_persists_prompt_history_once() {
 
     // assert
     assert!(matches!(
-        intents.lock().expect("lock intents").as_slice(),
+        intents.lock().unwrap_or_abort().as_slice(),
         [UiIntent::NewSession]
     ));
     assert_eq!(
@@ -152,7 +153,7 @@ pub(super) fn live_bootstrap_auto_submit_echoes_and_emits_first_prompt() {
     let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
 
@@ -175,7 +176,7 @@ pub(super) fn live_bootstrap_auto_submit_echoes_and_emits_first_prompt() {
         Some("boot prompt")
     );
     assert_eq!(
-        intents.lock().expect("lock intents").as_slice(),
+        intents.lock().unwrap_or_abort().as_slice(),
         &[UiIntent::SubmitPrompt {
             text: "boot prompt".to_string(),
             selected_file_tags: Vec::new(),
@@ -191,7 +192,7 @@ pub(super) fn submit_prompt_while_turn_streams_echoes_as_queued_and_emits_intent
     let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
 
@@ -236,7 +237,7 @@ pub(super) fn submit_prompt_while_turn_streams_echoes_as_queued_and_emits_intent
         Some(ActivityStatus::Queued)
     );
     assert_eq!(
-        intents.lock().expect("lock intents").as_slice(),
+        intents.lock().unwrap_or_abort().as_slice(),
         &[UiIntent::SubmitPrompt {
             text: "next prompt".to_string(),
             selected_file_tags: Vec::new(),

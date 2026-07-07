@@ -1,8 +1,13 @@
 [package]
 name = "harness-testkit"
+description = "Deterministic test support: fakes, workspaces, simulation evidence"
 edition.workspace = true
 license.workspace = true
 version.workspace = true
+repository.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [dependencies]
 image = { version = "0.25", default-features = false, features = ["png"] }

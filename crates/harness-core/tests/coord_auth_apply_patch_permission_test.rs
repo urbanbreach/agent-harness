@@ -1,3 +1,4 @@
+use harness_core::UnwrapOrAbort;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -47,7 +48,7 @@ impl Tool for TestApplyPatchTool {
 #[tokio::test]
 async fn apply_patch_requires_permission_for_patch_text_paths() {
     // arrange
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let policy = allow_all_permission_policy().with_category_override(
         "docs-only",
         CategoryPermissions {
@@ -75,11 +76,11 @@ async fn apply_patch_requires_permission_for_patch_text_paths() {
             temp_dir.path().join("workspace"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let worker_agent_id = coordinator
         .spawn_agent(supervisor_actor(), "worker", None)
         .await
-        .expect("spawn worker");
+        .unwrap_or_abort();
 
     // act
     let denied_error = coordinator
@@ -99,7 +100,7 @@ async fn apply_patch_requires_permission_for_patch_text_paths() {
         other => panic!("expected PermissionDenied, got {other:?}"),
     };
 
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     // assert
     let events = load_events(&run.events_path);

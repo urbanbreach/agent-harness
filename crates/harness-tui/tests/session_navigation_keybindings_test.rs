@@ -1,3 +1,4 @@
+use harness_tui::UnwrapOrAbort;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -52,13 +53,13 @@ fn default_navigation_keybindings() -> BTreeMap<String, String> {
 }
 
 fn write_events_jsonl(run_dir: &Path, events: &[EventEnvelopeV1]) {
-    fs::create_dir_all(run_dir).expect("create run dir");
+    fs::create_dir_all(run_dir).unwrap_or_abort();
     let body = events
         .iter()
-        .map(|event| serde_json::to_string(event).expect("serialize event"))
+        .map(|event| serde_json::to_string(event).unwrap_or_abort())
         .collect::<Vec<_>>()
         .join("\n");
-    fs::write(run_dir.join("events.jsonl"), format!("{body}\n")).expect("write events");
+    fs::write(run_dir.join("events.jsonl"), format!("{body}\n")).unwrap_or_abort();
 }
 
 fn run_started(seq: u64) -> EventEnvelopeV1 {
@@ -207,14 +208,14 @@ fn continued_runtime_model_options() -> Vec<ModelOption> {
 
 #[test]
 fn child_session_navigation_keybinds_follow_default_contract() {
-    let run_dir = tempfile::tempdir().expect("create temp run dir");
+    let run_dir = tempfile::tempdir().unwrap_or_abort();
     let (parent_dir, child_a_dir, child_b_dir, parent_events) = session_fixture(run_dir.path());
 
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
 
@@ -280,7 +281,7 @@ fn child_session_navigation_keybinds_follow_default_contract() {
     child_b_app.handle_key(key(KeyCode::Left));
 
     assert_eq!(
-        intents.lock().expect("lock intents").as_slice(),
+        intents.lock().unwrap_or_abort().as_slice(),
         &[
             UiIntent::ReplaySession {
                 run_id: "parent".to_string(),
@@ -296,7 +297,7 @@ fn child_session_navigation_keybinds_follow_default_contract() {
 
 #[test]
 fn replay_child_navigation_does_not_emit_live_intents() {
-    let run_dir = tempfile::tempdir().expect("create temp run dir");
+    let run_dir = tempfile::tempdir().unwrap_or_abort();
     let (parent_dir, _child_a_dir, _child_b_dir, parent_events) = session_fixture(run_dir.path());
 
     let mut app = AppState::new_replay(parent_dir, parent_events);

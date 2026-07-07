@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -21,7 +22,6 @@ pub struct DynamicPromptEnvironment<'a> {
 }
 
 #[cfg(test)]
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PromptSectionModule {
     pub name: &'static str,
@@ -29,7 +29,6 @@ pub struct PromptSectionModule {
 }
 
 #[cfg(test)]
-#[allow(dead_code)]
 pub const PROMPT_SECTION_MODULES: [PromptSectionModule; 6] = [
     PromptSectionModule {
         name: "base_model",
@@ -58,7 +57,6 @@ pub const PROMPT_SECTION_MODULES: [PromptSectionModule; 6] = [
 ];
 
 #[cfg(test)]
-#[allow(dead_code)]
 pub fn registered_prompt_sections() -> &'static [PromptSectionModule] {
     &PROMPT_SECTION_MODULES
 }
@@ -237,7 +235,7 @@ fn intent_gate_prompt() -> &'static str {
 fn today_date_string() -> String {
     let seconds = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_secs() as i64)
+        .map(|duration| i64::try_from(duration.as_secs()).unwrap_or(i64::MAX))
         .unwrap_or(0);
     let days = seconds.div_euclid(86_400);
     let (year, month, day) = civil_from_days(days);
@@ -264,7 +262,11 @@ fn civil_from_days(days_since_epoch: i64) -> (i64, u32, u32) {
     if month <= 2 {
         year += 1;
     }
-    (year, month as u32, day as u32)
+    (
+        year,
+        u32::try_from(month).unwrap_or(0),
+        u32::try_from(day).unwrap_or(0),
+    )
 }
 
 fn weekday_name(index: i64) -> &'static str {
@@ -563,6 +565,7 @@ When changing code, run the focused tests or checks that prove the affected beha
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::UnwrapOrAbort;
 
     fn model(model: &str) -> ResolvedModelTarget {
         let resolution = harness_core::model_resolution::resolve_model(
@@ -638,7 +641,7 @@ mod tests {
 
     #[test]
     fn family_prompt_missing_asset_falls_back_to_default_with_status_warning() {
-        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let temp_dir = tempfile::tempdir().unwrap_or_abort();
         let prompt = render_family_prompt_for_test(PromptFamily::Gemini, temp_dir.path());
         let status = prompt_family_asset_status(PromptFamily::Gemini, temp_dir.path());
 
@@ -648,7 +651,7 @@ mod tests {
         assert!(status
             .warning
             .as_deref()
-            .expect("warning")
+            .unwrap_or_abort()
             .contains(".agent-harness/prompt-families/gemini.md"));
     }
 

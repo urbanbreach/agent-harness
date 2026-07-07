@@ -1,8 +1,13 @@
 [package]
 name = "harness-providers"
+description = "Provider trait, OpenAI-compatible transport, mock provider, cassettes"
 edition.workspace = true
 license.workspace = true
 version.workspace = true
+repository.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [dependencies]
 async-trait = "0.1"

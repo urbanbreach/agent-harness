@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::collections::BTreeSet;
 use std::path::{Component, Path, PathBuf};
 
@@ -227,7 +228,7 @@ fn consume_file_tag_segment(indices: &mut FileTagChars<'_>, end: &mut usize, nam
 }
 
 fn consume_file_tag_char(indices: &mut FileTagChars<'_>, end: &mut usize, name: &mut String) {
-    let (_, consumed) = indices.next().expect("peeked char");
+    let (_, consumed) = indices.next().unwrap_or_abort();
     *end += consumed.len_utf8();
     name.push(consumed);
 }

@@ -1,3 +1,4 @@
+use harness_tools::UnwrapOrAbort;
 #[tokio::test]
 async fn foreground_task_waits_for_child_agent_turn_after_child_tool_result() {
     let temp_dir = setup_workspace();
@@ -5,7 +6,8 @@ async fn foreground_task_waits_for_child_agent_turn_after_child_tool_result() {
     write_fixture(&workspace);
 
     let provider = Arc::new(ChildToolThenFinalProvider::new());
-    let (handle, run, worker_id) = spawn_run_with_provider(&workspace, provider.clone()).await;
+    let provider_clone = Arc::clone(&provider);
+    let (handle, run, worker_id) = spawn_run_with_provider(&workspace, provider_clone).await;
 
     let task_tool_call_id = handle
         .request_tool_call(
@@ -21,10 +23,10 @@ async fn foreground_task_waits_for_child_agent_turn_after_child_tool_result() {
             }),
         )
         .await
-        .expect("request task tool");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &task_tool_call_id).await;
 
-    handle.stop_run().await.expect("stop run");
+    handle.stop_run().await.unwrap_or_abort();
     let events = read_events(&run.events_path);
     let finished = find_finished(&events, &task_tool_call_id);
 
@@ -32,10 +34,10 @@ async fn foreground_task_waits_for_child_agent_turn_after_child_tool_result() {
     assert!(finished
         .output_summary
         .as_deref()
-        .expect("output summary")
+        .unwrap_or_abort()
         .contains("child final after read"));
 
-    let output = finished.output_json.as_ref().expect("task output json");
+    let output = finished.output_json.as_ref().unwrap_or_abort();
     assert_eq!(
         output.get("result_summary"),
         Some(&json!("child final after read"))
@@ -48,7 +50,7 @@ async fn foreground_task_waits_for_child_agent_turn_after_child_tool_result() {
     let child_request_id = output
         .get("child_request_id")
         .and_then(Value::as_str)
-        .expect("child request id");
+        .unwrap_or_abort();
     let child_tool_finish_seq = events
         .iter()
         .find_map(|event| match &event.payload {
@@ -64,7 +66,7 @@ async fn foreground_task_waits_for_child_agent_turn_after_child_tool_result() {
             }
             _ => None,
         })
-        .expect("child tool task completion");
+        .unwrap_or_abort();
     let child_agent_finish_seq = events
         .iter()
         .find_map(|event| match &event.payload {
@@ -80,7 +82,7 @@ async fn foreground_task_waits_for_child_agent_turn_after_child_tool_result() {
             }
             _ => None,
         })
-        .expect("child agent task completion");
+        .unwrap_or_abort();
     let parent_task_tool_finish_seq = events
         .iter()
         .find_map(|event| match &event.payload {
@@ -89,7 +91,7 @@ async fn foreground_task_waits_for_child_agent_turn_after_child_tool_result() {
             }
             _ => None,
         })
-        .expect("parent task tool completion");
+        .unwrap_or_abort();
 
     assert!(
         child_tool_finish_seq < child_agent_finish_seq,
@@ -112,7 +114,7 @@ async fn task_subagent_inherits_parent_turn_model_when_profile_model_is_defaulte
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let session_dir = workspace.join("sessions");
-    fs::create_dir_all(&session_dir).expect("session dir");
+    fs::create_dir_all(&session_dir).unwrap_or_abort();
 
     let provider = Arc::new(TaskCallingProvider::default());
     let mut config = CoordinatorConfig::new(session_dir);
@@ -121,7 +123,8 @@ async fn task_subagent_inherits_parent_turn_model_when_profile_model_is_defaulte
         PermissionMode::Deny,
         PermissionMode::Allow,
     );
-    config.provider = provider.clone();
+    let provider_clone = Arc::clone(&provider);
+        config.provider = provider_clone;
     config.tool_registry = Arc::new(coordinator_registry(ShellAllowlist::default()));
     let mut general = named_worker_profile("general", &["read", "bash"]);
     general.model_ref_explicit = false;
@@ -141,11 +144,11 @@ async fn task_subagent_inherits_parent_turn_model_when_profile_model_is_defaulte
     let run = handle
         .start_run("native_task_model_inheritance", &workspace)
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let worker_id = handle
         .spawn_agent_idle(anonymous_supervisor_actor(), "deep", None)
         .await
-        .expect("spawn worker");
+        .unwrap_or_abort();
     let request_id = handle
         .request_agent_turn_with_model(
             anonymous_supervisor_actor(),
@@ -161,7 +164,7 @@ async fn task_subagent_inherits_parent_turn_model_when_profile_model_is_defaulte
             }),
         )
         .await
-        .expect("request parent turn");
+        .unwrap_or_abort();
 
     wait_for_request_terminal(&run.events_path, &request_id).await;
 
@@ -182,7 +185,7 @@ async fn task_subagent_keeps_explicit_profile_model_over_parent_turn_model() {
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let session_dir = workspace.join("sessions");
-    fs::create_dir_all(&session_dir).expect("session dir");
+    fs::create_dir_all(&session_dir).unwrap_or_abort();
 
     let provider = Arc::new(TaskCallingProvider::default());
     let mut config = CoordinatorConfig::new(session_dir);
@@ -191,7 +194,8 @@ async fn task_subagent_keeps_explicit_profile_model_over_parent_turn_model() {
         PermissionMode::Deny,
         PermissionMode::Allow,
     );
-    config.provider = provider.clone();
+    let provider_clone = Arc::clone(&provider);
+        config.provider = provider_clone;
     config.tool_registry = Arc::new(coordinator_registry(ShellAllowlist::default()));
     let mut general = named_worker_profile("general", &["read", "bash"]);
     general.model_ref = "default:general".to_string();
@@ -211,11 +215,11 @@ async fn task_subagent_keeps_explicit_profile_model_over_parent_turn_model() {
     let run = handle
         .start_run("native_task_model_override", &workspace)
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let worker_id = handle
         .spawn_agent_idle(anonymous_supervisor_actor(), "deep", None)
         .await
-        .expect("spawn worker");
+        .unwrap_or_abort();
     let request_id = handle
         .request_agent_turn_with_model(
             anonymous_supervisor_actor(),
@@ -231,7 +235,7 @@ async fn task_subagent_keeps_explicit_profile_model_over_parent_turn_model() {
             }),
         )
         .await
-        .expect("request parent turn");
+        .unwrap_or_abort();
 
     wait_for_request_terminal(&run.events_path, &request_id).await;
 
@@ -252,7 +256,7 @@ async fn native_plan_exit_switches_to_build_agent_after_approval() {
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let session_dir = workspace.join("sessions");
-    fs::create_dir_all(&session_dir).expect("session dir");
+    fs::create_dir_all(&session_dir).unwrap_or_abort();
 
     let mut config = CoordinatorConfig::new(session_dir);
     config.permission_policy = plan_mode_permission_policy();
@@ -276,11 +280,11 @@ async fn native_plan_exit_switches_to_build_agent_after_approval() {
     let run = handle
         .start_run("native_plan_exit", &workspace)
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let plan_agent_id = handle
         .spawn_agent_idle(anonymous_supervisor_actor(), "plan", None)
         .await
-        .expect("spawn plan");
+        .unwrap_or_abort();
 
     let tool_call_id = handle
         .request_tool_call(
@@ -290,13 +294,13 @@ async fn native_plan_exit_switches_to_build_agent_after_approval() {
             json!({}),
         )
         .await
-        .expect("request plan_exit");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &tool_call_id).await;
 
     let events = read_events(&run.events_path);
     let finished = find_finished(&events, &tool_call_id);
     assert_eq!(finished.status, ToolCallStatus::Succeeded);
-    let output = finished.output_json.expect("plan_exit structured output");
+    let output = finished.output_json.unwrap_or_abort();
     assert_eq!(output["agent"], "build");
     assert_eq!(
         output["plan_file"],
@@ -305,7 +309,7 @@ async fn native_plan_exit_switches_to_build_agent_after_approval() {
     assert_eq!(output["approved"], true);
     let build_agent_id = output["build_agent_id"]
         .as_str()
-        .expect("build agent id")
+        .unwrap_or_abort()
         .to_string();
     assert!(output["request_id"].as_str().is_some());
 
@@ -329,7 +333,7 @@ async fn native_plan_exit_decline_leaves_plan_agent_active_without_spawning_buil
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let session_dir = workspace.join("sessions");
-    fs::create_dir_all(&session_dir).expect("session dir");
+    fs::create_dir_all(&session_dir).unwrap_or_abort();
 
     let mut config = CoordinatorConfig::new(session_dir);
     config.permission_policy = plan_mode_permission_policy();
@@ -353,11 +357,11 @@ async fn native_plan_exit_decline_leaves_plan_agent_active_without_spawning_buil
     let run = handle
         .start_run("native_plan_exit_decline", &workspace)
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let plan_agent_id = handle
         .spawn_agent_idle(anonymous_supervisor_actor(), "plan", None)
         .await
-        .expect("spawn plan");
+        .unwrap_or_abort();
 
     let tool_call_id = handle
         .request_tool_call(
@@ -367,13 +371,13 @@ async fn native_plan_exit_decline_leaves_plan_agent_active_without_spawning_buil
             json!({}),
         )
         .await
-        .expect("request plan_exit");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &tool_call_id).await;
 
     let events = read_events(&run.events_path);
     let finished = find_finished(&events, &tool_call_id);
     assert_eq!(finished.status, ToolCallStatus::Succeeded);
-    let output = finished.output_json.expect("plan_exit structured output");
+    let output = finished.output_json.unwrap_or_abort();
     assert_eq!(output["agent"], "plan");
     assert_eq!(output["approved"], false);
     assert_eq!(
@@ -395,7 +399,7 @@ async fn native_plan_enter_switches_to_plan_agent_after_approval() {
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let session_dir = workspace.join("sessions");
-    fs::create_dir_all(&session_dir).expect("session dir");
+    fs::create_dir_all(&session_dir).unwrap_or_abort();
 
     let mut config = CoordinatorConfig::new(session_dir);
     config.permission_policy = plan_mode_permission_policy();
@@ -422,11 +426,11 @@ async fn native_plan_enter_switches_to_plan_agent_after_approval() {
     let run = handle
         .start_run("native_plan_enter", &workspace)
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let build_agent_id = handle
         .spawn_agent_idle(anonymous_supervisor_actor(), "build", None)
         .await
-        .expect("spawn build");
+        .unwrap_or_abort();
 
     let tool_call_id = handle
         .request_tool_call(
@@ -436,13 +440,13 @@ async fn native_plan_enter_switches_to_plan_agent_after_approval() {
             json!({"goal": "implement parity", "reason": "multi-file change"}),
         )
         .await
-        .expect("request plan_enter");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &tool_call_id).await;
 
     let events = read_events(&run.events_path);
     let finished = find_finished(&events, &tool_call_id);
     assert_eq!(finished.status, ToolCallStatus::Succeeded);
-    let output = finished.output_json.expect("plan_enter structured output");
+    let output = finished.output_json.unwrap_or_abort();
     assert_eq!(output["agent"], "plan");
     assert_eq!(output["goal"], "implement parity");
     assert_eq!(output["approved"], true);
@@ -452,7 +456,7 @@ async fn native_plan_enter_switches_to_plan_agent_after_approval() {
     );
     let plan_agent_id = output["plan_agent_id"]
         .as_str()
-        .expect("plan agent id")
+        .unwrap_or_abort()
         .to_string();
     assert!(output["request_id"].as_str().is_some());
 

@@ -1,5 +1,6 @@
 use crate::config::public::translate_public_formatter_config;
 use crate::config::{FormatterConfig, FormatterOverride};
+use crate::UnwrapOrAbort;
 
 #[test]
 fn formatter_scalar_false_disables_formatting() {
@@ -69,10 +70,7 @@ fn formatter_object_parses_named_override() {
 
     // assert
     assert!(translated.enabled);
-    let rustfmt = translated
-        .overrides
-        .get("rustfmt")
-        .expect("rustfmt override");
+    let rustfmt = translated.overrides.get("rustfmt").unwrap_or_abort();
     assert_eq!(
         rustfmt.command,
         Some(vec![
@@ -100,10 +98,7 @@ fn formatter_disable_by_name_sets_disabled_flag() {
     let translated = translate_public_formatter_config(Some(&value)).unwrap();
 
     // assert
-    let prettier = translated
-        .overrides
-        .get("prettier")
-        .expect("prettier override");
+    let prettier = translated.overrides.get("prettier").unwrap_or_abort();
     assert!(prettier.disabled);
     assert_eq!(
         prettier.command,
@@ -128,8 +123,8 @@ fn formatter_environment_is_preserved_at_config_level() {
     let translated = translate_public_formatter_config(Some(&value)).unwrap();
 
     // assert
-    let black = translated.overrides.get("black").expect("black override");
-    let environment = black.environment.as_ref().expect("environment map");
+    let black = translated.overrides.get("black").unwrap_or_abort();
+    let environment = black.environment.as_ref().unwrap_or_abort();
     assert_eq!(
         environment.get("PYTHONPATH"),
         Some(&"/opt/python".to_string())
@@ -155,10 +150,7 @@ fn formatter_uvformat_alias_translates_to_uv_key() {
         !translated.overrides.contains_key("uvformat"),
         "legacy uvformat key should not remain in overrides"
     );
-    let uv = translated
-        .overrides
-        .get("uv")
-        .expect("uv override from alias");
+    let uv = translated.overrides.get("uv").unwrap_or_abort();
     assert!(uv.disabled);
 }
 
@@ -173,7 +165,7 @@ fn formatter_uv_canonical_key_takes_precedence_over_uvformat_alias() {
     let translated = translate_public_formatter_config(Some(&value)).unwrap();
 
     // assert
-    let uv = translated.overrides.get("uv").expect("uv override");
+    let uv = translated.overrides.get("uv").unwrap_or_abort();
     assert!(
         uv.disabled,
         "canonical uv key should win when both are present"
@@ -197,17 +189,11 @@ fn formatter_languages_backward_compat_converts_to_synthetic_overrides() {
     // assert
     assert!(translated.enabled);
 
-    let rust = translated
-        .overrides
-        .get("_lang_rs")
-        .expect("synthetic rust override");
+    let rust = translated.overrides.get("_lang_rs").unwrap_or_abort();
     assert_eq!(rust.command, Some(vec!["rustfmt".to_string()]));
     assert_eq!(rust.extensions, Some(vec![".rs".to_string()]));
 
-    let python = translated
-        .overrides
-        .get("_lang_py")
-        .expect("synthetic python override");
+    let python = translated.overrides.get("_lang_py").unwrap_or_abort();
     assert_eq!(python.command, Some(vec!["black".to_string()]));
     assert_eq!(python.extensions, Some(vec![".py".to_string()]));
 }

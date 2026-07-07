@@ -1,6 +1,7 @@
+use harness_core::UnwrapOrAbort;
 #[test]
 fn replay_suppresses_hooks_but_preserves_hook_history() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_replay_hook_suppression";
     let side_effect_path = temp_dir.path().join("hook-side-effect.txt");
     let side_effect_digest = format!("digest:{}", side_effect_path.display());
@@ -167,7 +168,7 @@ fn replay_suppresses_hooks_but_preserves_hook_history() {
         .get("toolcall_000401")
         .and_then(|snapshot| snapshot.metadata.as_ref())
         .map(|metadata| metadata.hook_executions.clone())
-        .expect("projected tool-call hook metadata");
+        .unwrap_or_abort();
     assert_eq!(tool_call_hooks, vec![hook_execution.clone()]);
 
     let completed_task_hooks = plan
@@ -175,13 +176,13 @@ fn replay_suppresses_hooks_but_preserves_hook_history() {
         .get("task_000401")
         .and_then(|snapshot| snapshot.metadata.as_ref())
         .map(|metadata| metadata.hook_executions.clone())
-        .expect("projected task hook metadata");
+        .unwrap_or_abort();
     assert_eq!(completed_task_hooks, vec![hook_execution.clone()]);
 
     let child = plan
         .child_sessions
         .get("agent_000401")
-        .expect("projected child session for hook replay");
+        .unwrap_or_abort();
     assert_eq!(
         child.terminal_state,
         Some(ChildSessionTerminalState::Completed)

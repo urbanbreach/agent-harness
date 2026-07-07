@@ -1,3 +1,4 @@
+use harness_tools::UnwrapOrAbort;
 #[test]
 fn native_provider_tool_defs_accept_edit_and_question_export_schemas() {
     // arrange
@@ -17,7 +18,7 @@ fn native_provider_tool_defs_accept_edit_and_question_export_schemas() {
 
     // act
     let defs = build_provider_tool_defs(&profile, &registry)
-        .expect("native edit/question schemas should be provider-safe");
+        .unwrap_or_abort();
 
     // assert
     assert_eq!(defs.len(), 2);
@@ -51,7 +52,7 @@ fn provider_tool_defs_match_current_core_filesystem_input_schemas() {
 
     // act
     let defs = build_provider_tool_defs(&profile, &registry)
-        .expect("filesystem provider schemas should be provider-safe");
+        .unwrap_or_abort();
 
     // assert
     assert_schema_properties(
@@ -110,15 +111,15 @@ fn provider_tool_defs_do_not_advertise_runtime_only_grep_controls() {
 
     // act
     let defs = build_provider_tool_defs(&profile, &registry)
-        .expect("grep provider schema should be provider-safe");
+        .unwrap_or_abort();
     let grep = defs
         .iter()
         .find(|def| def.tool_id == "grep")
-        .expect("grep provider def should exist");
+        .unwrap_or_abort();
     let description = grep
         .description
         .as_deref()
-        .expect("grep provider def should have a description");
+        .unwrap_or_abort();
     let schema_text = grep.parameters.to_string();
 
     // assert
@@ -158,7 +159,7 @@ fn native_provider_tool_defs_gate_patch_tools_like_baseline_registry() {
 
     // act
     let defs = build_provider_tool_defs(&profile, &registry)
-        .expect("native mutation schemas should be provider-safe");
+        .unwrap_or_abort();
     let ids = defs
         .iter()
         .map(|def| def.tool_id.as_str())
@@ -195,7 +196,7 @@ fn native_provider_tool_defs_gate_edit_write_tools_for_non_patch_models() {
 
     // act
     let defs = build_provider_tool_defs(&profile, &registry)
-        .expect("native mutation schemas should be provider-safe");
+        .unwrap_or_abort();
     let ids = defs
         .iter()
         .map(|def| def.tool_id.as_str())
@@ -232,9 +233,9 @@ fn native_provider_tool_defs_gate_patch_tools_by_actual_turn_model() {
 
     // act
     let patch_defs = build_provider_tool_defs_for_model(&profile, &registry, "openai/gpt-5.5")
-        .expect("actual GPT model should build patch-gated defs");
+        .unwrap_or_abort();
     let edit_defs = build_provider_tool_defs_for_model(&profile, &registry, "mock:model")
-        .expect("actual non-GPT model should build edit/write-gated defs");
+        .unwrap_or_abort();
     let patch_ids = patch_defs
         .iter()
         .map(|def| def.tool_id.as_str())
@@ -253,6 +254,7 @@ fn native_provider_tool_defs_gate_patch_tools_by_actual_turn_model() {
     assert!(edit_ids.contains(&"write"));
 }
 
+#[allow(clippy::panic, reason = "test code must panic gracefully")]
 fn assert_schema_properties(
     defs: &[harness_providers::ToolDef],
     tool_id: &str,
@@ -263,10 +265,10 @@ fn assert_schema_properties(
     let def = defs
         .iter()
         .find(|def| def.tool_id == tool_id)
-        .unwrap_or_else(|| panic!("missing provider tool def for {tool_id}"));
+        .unwrap_or_else(|| panic!("abort"));
     let properties = def.parameters["properties"]
         .as_object()
-        .unwrap_or_else(|| panic!("{tool_id} schema properties should be an object"));
+        .unwrap_or_else(|| panic!("abort"));
     let mut property_names = properties.keys().map(String::as_str).collect::<Vec<_>>();
     property_names.sort_unstable();
     let mut expected = expected_properties.to_vec();
@@ -275,10 +277,10 @@ fn assert_schema_properties(
 
     let required = def.parameters["required"]
         .as_array()
-        .unwrap_or_else(|| panic!("{tool_id} schema required should be an array"));
+        .unwrap_or_else(|| panic!("abort"));
     let mut required = required
         .iter()
-        .map(|value| value.as_str().expect("required field should be string"))
+        .map(|value| value.as_str().unwrap_or_abort())
         .collect::<Vec<_>>();
     required.sort_unstable();
     let mut expected_required = expected_required.to_vec();

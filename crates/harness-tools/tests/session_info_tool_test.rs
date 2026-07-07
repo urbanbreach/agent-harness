@@ -1,3 +1,4 @@
+use harness_tools::UnwrapOrAbort;
 use std::fs;
 use std::path::Path;
 
@@ -26,7 +27,7 @@ fn sessions_replay_docs_name_session_tools_and_no_side_effect_contract() {
     let docs = fs::read_to_string(
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/sessions-and-replay.md"),
     )
-    .expect("sessions docs");
+    .unwrap_or_abort();
 
     // act
     let undoc_tools: Vec<_> = SESSION_TOOL_IDS
@@ -57,7 +58,7 @@ fn session_tools_describe_replay_source_in_model_visible_surface() {
     let offenders: Vec<_> = SESSION_TOOL_IDS
         .iter()
         .filter_map(|tool_id| {
-            let tool = registry.get(tool_id).expect("session tool");
+            let tool = registry.get(tool_id).unwrap_or_abort();
             let description = tool.description();
             (!description.contains("replay-derived") && !description.contains("replay-safe"))
                 .then_some((*tool_id, description.to_string()))
@@ -89,23 +90,23 @@ fn envelope(run_id: &str, seq: u64, payload: EventV1) -> EventEnvelopeV1 {
 
 fn write_session_events(workspace: &Path, run_id: &str, events: &[EventEnvelopeV1]) {
     let run_dir = workspace.join(".agent-harness/sessions").join(run_id);
-    fs::create_dir_all(&run_dir).expect("session run dir");
+    fs::create_dir_all(&run_dir).unwrap_or_abort();
     let body = events
         .iter()
-        .map(|event| serde_json::to_string(event).expect("serialize event"))
+        .map(|event| serde_json::to_string(event).unwrap_or_abort())
         .collect::<Vec<_>>()
         .join("\n");
-    fs::write(run_dir.join("events.jsonl"), format!("{body}\n")).expect("events jsonl");
+    fs::write(run_dir.join("events.jsonl"), format!("{body}\n")).unwrap_or_abort();
 }
 
 fn write_session_metadata(workspace: &Path, run_id: &str, metadata: Value) {
     let run_dir = workspace.join(".agent-harness/sessions").join(run_id);
-    fs::create_dir_all(&run_dir).expect("session run dir");
+    fs::create_dir_all(&run_dir).unwrap_or_abort();
     fs::write(
         run_dir.join("meta.json"),
-        serde_json::to_string_pretty(&metadata).expect("metadata json"),
+        serde_json::to_string_pretty(&metadata).unwrap_or_abort(),
     )
-    .expect("session metadata");
+    .unwrap_or_abort();
 }
 
 async fn session_info(workspace: &Path, run_id: &str, selector: &str) -> Value {
@@ -113,12 +114,12 @@ async fn session_info(workspace: &Path, run_id: &str, selector: &str) -> Value {
     let ctx = test_context(workspace, run_id, "session-info-test");
     registry
         .get("session_info")
-        .expect("session_info")
+        .unwrap_or_abort()
         .call(ctx, json!({"session": selector}))
         .await
-        .expect("session_info call")
+        .unwrap_or_abort()
         .structured_json
-        .expect("session_info json")
+        .unwrap_or_abort()
 }
 
 fn run_started(run_id: &str, seq: u64, run_name: &str, workspace: &Path) -> EventEnvelopeV1 {
@@ -217,7 +218,7 @@ async fn session_info_reports_failed_replay_only_child_lineage_and_missing_sessi
     .await;
     let missing = registry
         .get("session_info")
-        .expect("session_info")
+        .unwrap_or_abort()
         .call(ctx, json!({"session": "missing_session"}))
         .await
         .expect_err("missing session should fail");
@@ -277,18 +278,18 @@ async fn session_info_spills_large_payloads() {
     // act
     let spilled = registry
         .get("session_info")
-        .expect("session_info")
+        .unwrap_or_abort()
         .call(ctx, json!({"session": "run_large_info"}))
         .await
-        .expect("spilled session_info");
+        .unwrap_or_abort();
 
     // assert
     assert_eq!(spilled.artifacts.len(), 1);
-    let spill_json = spilled.structured_json.expect("spilled structured json");
+    let spill_json = spilled.structured_json.unwrap_or_abort();
     assert_eq!(spill_json.pointer("/spilled"), Some(&json!(true)));
     let artifact_path = spilled.artifacts[0].path.clone();
-    let artifact_body = fs::read_to_string(workspace.workspace().join(&artifact_path))
-        .expect("spilled artifact body");
+    let artifact_body =
+        fs::read_to_string(workspace.workspace().join(&artifact_path)).unwrap_or_abort();
     assert!(artifact_body.contains("run_large_info"));
     assert!(artifact_body.contains("model-"));
 }

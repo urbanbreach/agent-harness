@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -564,6 +565,7 @@ fn prompt_char_to_byte(value: &str, char_index: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
+    use crate::UnwrapOrAbort;
     use std::collections::BTreeMap;
 
     use super::entries::{extract_line_range, search_file_mentions};
@@ -582,10 +584,10 @@ mod tests {
 
     #[test]
     fn search_file_mentions_returns_directories_for_empty_query() {
-        let tempdir = tempfile::tempdir().expect("tempdir");
-        std::fs::create_dir(tempdir.path().join("src")).expect("create src");
-        std::fs::write(tempdir.path().join("src/lib.rs"), "lib").expect("write lib");
-        std::fs::write(tempdir.path().join("README.md"), "readme").expect("write readme");
+        let tempdir = tempfile::tempdir().unwrap_or_abort();
+        std::fs::create_dir(tempdir.path().join("src")).unwrap_or_abort();
+        std::fs::write(tempdir.path().join("src/lib.rs"), "lib").unwrap_or_abort();
+        std::fs::write(tempdir.path().join("README.md"), "readme").unwrap_or_abort();
 
         let index = FileMentionIndex::build(
             tempdir.path().to_path_buf(),
@@ -600,9 +602,9 @@ mod tests {
 
     #[test]
     fn search_file_mentions_preserves_valid_line_range_on_file_value() {
-        let tempdir = tempfile::tempdir().expect("tempdir");
-        std::fs::create_dir(tempdir.path().join("src")).expect("create src");
-        std::fs::write(tempdir.path().join("src/main.rs"), "fn main() {}").expect("write main");
+        let tempdir = tempfile::tempdir().unwrap_or_abort();
+        std::fs::create_dir(tempdir.path().join("src")).unwrap_or_abort();
+        std::fs::write(tempdir.path().join("src/main.rs"), "fn main() {}").unwrap_or_abort();
 
         let index = FileMentionIndex::build(
             tempdir.path().to_path_buf(),
@@ -616,19 +618,18 @@ mod tests {
 
     #[test]
     fn search_file_mentions_prefers_shallow_workspace_directory_over_hidden_nested_match() {
-        let tempdir = tempfile::tempdir().expect("tempdir");
+        let tempdir = tempfile::tempdir().unwrap_or_abort();
         std::fs::create_dir_all(tempdir.path().join(".harness/skills/.system/openai-docs"))
-            .expect("create hidden docs dir");
+            .unwrap_or_abort();
         std::fs::write(
             tempdir
                 .path()
                 .join(".harness/skills/.system/openai-docs/readme.md"),
             "hidden docs",
         )
-        .expect("write hidden docs file");
-        std::fs::create_dir(tempdir.path().join("docs")).expect("create docs");
-        std::fs::write(tempdir.path().join("docs/guide.md"), "workspace docs")
-            .expect("write docs file");
+        .unwrap_or_abort();
+        std::fs::create_dir(tempdir.path().join("docs")).unwrap_or_abort();
+        std::fs::write(tempdir.path().join("docs/guide.md"), "workspace docs").unwrap_or_abort();
 
         let index = FileMentionIndex::build(
             tempdir.path().to_path_buf(),
@@ -641,10 +642,10 @@ mod tests {
 
     #[test]
     fn search_file_mentions_uses_frecency_before_depth_and_path() {
-        let tempdir = tempfile::tempdir().expect("tempdir");
-        std::fs::create_dir_all(tempdir.path().join("src/deep")).expect("create nested dir");
-        std::fs::write(tempdir.path().join("alpha.rs"), "root").expect("write root");
-        std::fs::write(tempdir.path().join("src/deep/alpha.rs"), "nested").expect("write nested");
+        let tempdir = tempfile::tempdir().unwrap_or_abort();
+        std::fs::create_dir_all(tempdir.path().join("src/deep")).unwrap_or_abort();
+        std::fs::write(tempdir.path().join("alpha.rs"), "root").unwrap_or_abort();
+        std::fs::write(tempdir.path().join("src/deep/alpha.rs"), "nested").unwrap_or_abort();
         let index = FileMentionIndex::build(
             tempdir.path().to_path_buf(),
             &SystemFileMentionWorkspaceScanner,

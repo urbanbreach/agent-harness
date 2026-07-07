@@ -1,16 +1,17 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 pub(crate) fn slash_exit_from_inline_subagent_restores_parent_before_quit() {
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let intent_sink = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
-    let run_dir = tempfile::tempdir().expect("create run dir");
+    let run_dir = tempfile::tempdir().unwrap_or_abort();
     let parent_path = run_dir.path().join("parent_run");
-    fs::create_dir_all(&parent_path).expect("create parent run dir");
+    fs::create_dir_all(&parent_path).unwrap_or_abort();
 
     let mut app = AppState::new_live(Some(parent_path), false, Some(intent_sink));
     app.ingest_event(agent_spawned(1, "parent", "build"));
@@ -55,7 +56,7 @@ pub(crate) fn slash_exit_from_inline_subagent_restores_parent_before_quit() {
     assert_eq!(app.current_session_id(), Some("parent_run"));
     assert!(!app.replay_mode);
     assert!(!app.current_subagent_session_present());
-    let intents = intents.lock().expect("lock intents");
+    let intents = intents.lock().unwrap_or_abort();
     assert!(intents
         .iter()
         .any(|intent| matches!(intent, UiIntent::QuitRequested)));

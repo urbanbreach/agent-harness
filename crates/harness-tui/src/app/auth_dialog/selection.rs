@@ -79,13 +79,13 @@ impl AppState {
     }
 
     fn move_connect_dialog_selection(&mut self, delta: isize, count: usize) {
-        let selected = self.connect_dialog.selected as isize + delta;
+        let selected = isize::try_from(self.connect_dialog.selected).unwrap_or(isize::MAX) + delta;
         self.connect_dialog.selected = if selected < 0 {
             count - 1
-        } else if selected >= count as isize {
+        } else if selected >= isize::try_from(count).unwrap_or(isize::MAX) {
             0
         } else {
-            selected as usize
+            usize::try_from(selected).unwrap_or(usize::MAX)
         };
     }
 

@@ -1,3 +1,4 @@
+use harness_providers::UnwrapOrAbort;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -70,12 +71,15 @@ pub(crate) fn provider() -> (OpenAiCompatibleProvider, Arc<FakeHttpClient>) {
             timeout_ms: 60_000,
             headers: BTreeMap::new(),
         },
-        Arc::new(FakeOpenAiTransport { http: http.clone() }),
+        Arc::new(FakeOpenAiTransport {
+            http: Arc::clone(&http),
+        }),
     )
-    .expect("provider should build");
+    .unwrap_or_abort();
     (provider, http)
 }
 
+#[allow(clippy::panic, reason = "test code must panic gracefully")]
 pub(crate) fn real_tools(name: &str) -> Vec<ToolDef> {
     let native = coordinator_registry(ShellAllowlist::default());
     let mcp = coordinator_registry_with_mcp(ShellAllowlist::default(), mcp_config());
@@ -108,9 +112,9 @@ pub(crate) fn real_tools(name: &str) -> Vec<ToolDef> {
             ),
             &mcp,
         ),
-        other => panic!("unknown profile {other}"),
+        _ => panic!("abort"),
     };
-    build_provider_tool_defs(&profile, registry).expect("profile tool defs should build")
+    build_provider_tool_defs(&profile, registry).unwrap_or_abort()
 }
 
 pub(crate) fn completion_request(

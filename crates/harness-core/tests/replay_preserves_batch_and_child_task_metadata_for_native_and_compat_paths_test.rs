@@ -1,3 +1,4 @@
+use harness_core::UnwrapOrAbort;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -112,9 +113,9 @@ impl Tool for BatchMetadataTool {
 
 #[tokio::test]
 async fn replay_preserves_batch_and_child_task_metadata_for_native_and_compat_paths() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let workspace_root = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace_root).expect("workspace");
+    fs::create_dir_all(&workspace_root).unwrap_or_abort();
 
     let coordinator = test_coordinator(temp_dir.path());
     let run = coordinator
@@ -123,7 +124,7 @@ async fn replay_preserves_batch_and_child_task_metadata_for_native_and_compat_pa
             PathBuf::from(&workspace_root),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let native_spawn_call_id = coordinator
         .request_tool_call(
@@ -136,7 +137,7 @@ async fn replay_preserves_batch_and_child_task_metadata_for_native_and_compat_pa
             }),
         )
         .await
-        .expect("request native agent.spawn");
+        .unwrap_or_abort();
 
     let compat_task_call_id = coordinator
         .request_tool_call(
@@ -149,7 +150,7 @@ async fn replay_preserves_batch_and_child_task_metadata_for_native_and_compat_pa
             }),
         )
         .await
-        .expect("request compat task");
+        .unwrap_or_abort();
 
     let native_batch_call_id = coordinator
         .request_tool_call(
@@ -161,7 +162,7 @@ async fn replay_preserves_batch_and_child_task_metadata_for_native_and_compat_pa
             }),
         )
         .await
-        .expect("request native tool.batch");
+        .unwrap_or_abort();
 
     let compat_batch_call_id = coordinator
         .request_tool_call(
@@ -173,14 +174,14 @@ async fn replay_preserves_batch_and_child_task_metadata_for_native_and_compat_pa
             }),
         )
         .await
-        .expect("request compat batch");
+        .unwrap_or_abort();
 
     wait_for_tool_call_finish(&run.events_path, &native_spawn_call_id).await;
     wait_for_tool_call_finish(&run.events_path, &compat_task_call_id).await;
     wait_for_tool_call_finish(&run.events_path, &native_batch_call_id).await;
     wait_for_tool_call_finish(&run.events_path, &compat_batch_call_id).await;
 
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
     let events = load_events(&run.events_path);
 
     assert_tool_metadata(
@@ -210,10 +211,7 @@ async fn replay_preserves_batch_and_child_task_metadata_for_native_and_compat_pa
     assert_tool_metadata(&events, &compat_batch_call_id, "batch", None, None, None);
 
     let native_batch_finished = find_finished(&events, &native_batch_call_id);
-    let native_batch_output = native_batch_finished
-        .output_json
-        .as_ref()
-        .expect("native batch output_json");
+    let native_batch_output = native_batch_finished.output_json.as_ref().unwrap_or_abort();
     assert_eq!(
         native_batch_output.pointer("/execution/concurrency"),
         Some(&json!("parallel"))
@@ -236,10 +234,7 @@ async fn replay_preserves_batch_and_child_task_metadata_for_native_and_compat_pa
     );
 
     let compat_batch_finished = find_finished(&events, &compat_batch_call_id);
-    let compat_batch_output = compat_batch_finished
-        .output_json
-        .as_ref()
-        .expect("compat batch output_json");
+    let compat_batch_output = compat_batch_finished.output_json.as_ref().unwrap_or_abort();
     assert_eq!(
         compat_batch_output.pointer("/details/0/tool_id"),
         Some(&json!("todo.write"))
@@ -288,14 +283,8 @@ async fn replay_preserves_batch_and_child_task_metadata_for_native_and_compat_pa
         None,
     );
 
-    let replay_native_batch = plan
-        .tool_calls
-        .get(&native_batch_call_id)
-        .expect("native batch replay snapshot");
-    let replay_native_batch_output = replay_native_batch
-        .output_json
-        .as_ref()
-        .expect("native batch replay output_json");
+    let replay_native_batch = plan.tool_calls.get(&native_batch_call_id).unwrap_or_abort();
+    let replay_native_batch_output = replay_native_batch.output_json.as_ref().unwrap_or_abort();
     assert_eq!(
         replay_native_batch_output.pointer("/execution/result_order"),
         Some(&json!("input"))
@@ -305,14 +294,8 @@ async fn replay_preserves_batch_and_child_task_metadata_for_native_and_compat_pa
         Some(&json!("fs.read"))
     );
 
-    let replay_compat_batch = plan
-        .tool_calls
-        .get(&compat_batch_call_id)
-        .expect("compat batch replay snapshot");
-    let replay_compat_batch_output = replay_compat_batch
-        .output_json
-        .as_ref()
-        .expect("compat batch replay output_json");
+    let replay_compat_batch = plan.tool_calls.get(&compat_batch_call_id).unwrap_or_abort();
+    let replay_compat_batch_output = replay_compat_batch.output_json.as_ref().unwrap_or_abort();
     assert_eq!(
         replay_compat_batch_output.pointer("/details/0/tool_id"),
         Some(&json!("todo.write"))
@@ -329,7 +312,7 @@ async fn replay_preserves_batch_and_child_task_metadata_for_native_and_compat_pa
                 .and_then(|lineage| lineage.parent_tool_call_id.as_deref())
                 == Some(native_spawn_call_id.as_str())
         })
-        .expect("native completed task snapshot");
+        .unwrap_or_abort();
     assert_eq!(
         native_completed
             .metadata
@@ -350,7 +333,7 @@ async fn replay_preserves_batch_and_child_task_metadata_for_native_and_compat_pa
                 .and_then(|lineage| lineage.parent_tool_call_id.as_deref())
                 == Some(compat_task_call_id.as_str())
         })
-        .expect("compat completed task snapshot");
+        .unwrap_or_abort();
     assert_eq!(
         compat_completed
             .metadata
@@ -370,7 +353,7 @@ fn assert_tool_metadata(
     child_request_id: Option<&str>,
 ) {
     let requested = find_requested(events, tool_call_id);
-    let requested_metadata = requested.metadata.as_ref().expect("requested metadata");
+    let requested_metadata = requested.metadata.as_ref().unwrap_or_abort();
     assert_eq!(
         requested_metadata.canonical_tool_id.as_deref(),
         Some(canonical_tool_id)
@@ -382,7 +365,7 @@ fn assert_tool_metadata(
 
     let finished = find_finished(events, tool_call_id);
     assert_eq!(finished.status, ToolCallStatus::Succeeded);
-    let finished_metadata = finished.metadata.as_ref().expect("finished metadata");
+    let finished_metadata = finished.metadata.as_ref().unwrap_or_abort();
     assert_eq!(
         finished_metadata.canonical_tool_id.as_deref(),
         Some(canonical_tool_id)
@@ -416,10 +399,7 @@ fn assert_replay_tool(
     child_session_id: Option<&str>,
     child_request_id: Option<&str>,
 ) {
-    let replay_tool = plan
-        .tool_calls
-        .get(tool_call_id)
-        .expect("replay tool snapshot");
+    let replay_tool = plan.tool_calls.get(tool_call_id).unwrap_or_abort();
     assert_eq!(replay_tool.tool_id.as_deref(), Some(invoked_tool_id));
     assert_eq!(
         replay_tool
@@ -517,7 +497,7 @@ fn find_requested(events: &[EventEnvelopeV1], tool_call_id: &str) -> ToolCallReq
             }
             _ => None,
         })
-        .expect("tool call requested event")
+        .unwrap_or_abort()
 }
 
 fn find_finished(events: &[EventEnvelopeV1], tool_call_id: &str) -> ToolCallFinishedEvent {
@@ -529,5 +509,5 @@ fn find_finished(events: &[EventEnvelopeV1], tool_call_id: &str) -> ToolCallFini
             }
             _ => None,
         })
-        .expect("tool call finished event")
+        .unwrap_or_abort()
 }

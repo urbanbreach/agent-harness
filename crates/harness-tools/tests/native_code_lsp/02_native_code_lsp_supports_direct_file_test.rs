@@ -1,14 +1,15 @@
+use harness_tools::UnwrapOrAbort;
 #[tokio::test]
 #[expect(
     clippy::await_holding_lock,
     reason = "the global test lock intentionally serializes LSP registry mutations across awaits"
 )]
 async fn native_code_lsp_supports_direct_file_and_workspace_diagnostics() {
-    let _lock = test_lock().lock().expect("test lock");
+    let _lock = test_lock().lock().unwrap_or_abort();
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let fake_bin = temp_dir.path().join("fake-lsp-bin");
-    fs::create_dir_all(&fake_bin).expect("fake bin dir");
+    fs::create_dir_all(&fake_bin).unwrap_or_abort();
     install_fake_lsp_binary(
         &fake_bin,
         "custom-rust-analyzer",
@@ -42,7 +43,7 @@ async fn native_code_lsp_supports_direct_file_and_workspace_diagnostics() {
     });
 
     let registry = coordinator_registry(ShellAllowlist::default());
-    let lsp = registry.get("lsp").expect("lsp tool");
+    let lsp = registry.get("lsp").unwrap_or_abort();
 
     let file_result = lsp
         .call(
@@ -55,7 +56,7 @@ async fn native_code_lsp_supports_direct_file_and_workspace_diagnostics() {
             }),
         )
         .await
-        .expect("file diagnostics request with reusable cursor metadata");
+        .unwrap_or_abort();
     assert!(file_result.display_text.contains("Diagnostics for"));
     assert!(file_result
         .display_text
@@ -63,12 +64,12 @@ async fn native_code_lsp_supports_direct_file_and_workspace_diagnostics() {
     let file_json = file_result
         .structured_json
         .clone()
-        .expect("file diagnostics structured json");
+        .unwrap_or_abort();
     assert_eq!(file_json["result"]["scope"], json!("file"));
     assert_eq!(file_json["result"]["diagnosticCount"], json!(1));
     assert!(file_json["diagnostics"][0]["file_path"]
         .as_str()
-        .expect("file diagnostic path")
+        .unwrap_or_abort()
         .ends_with("src/lib.rs"));
     assert!(
         first_diagnostic_message(&file_json).contains("env_ok=True; lang_ok=True; init_ok=True")
@@ -83,7 +84,7 @@ async fn native_code_lsp_supports_direct_file_and_workspace_diagnostics() {
             }),
         )
         .await
-        .expect("workspace diagnostics request");
+        .unwrap_or_abort();
     assert!(workspace_result.display_text.contains("Diagnostics for"));
     assert!(workspace_result
         .display_text
@@ -96,14 +97,14 @@ async fn native_code_lsp_supports_direct_file_and_workspace_diagnostics() {
         .contains("src/other.rs:1:1 Error rust direct diagnostic"));
     let workspace_json = workspace_result
         .structured_json
-        .expect("workspace diagnostics structured json");
+        .unwrap_or_abort();
     assert_eq!(workspace_json["result"]["scope"], json!("workspace"));
     assert_eq!(workspace_json["result"]["filesScanned"], json!(3));
     assert_eq!(workspace_json["result"]["diagnosticCount"], json!(3));
     assert_eq!(
         workspace_json["diagnostics"]
             .as_array()
-            .expect("workspace diagnostics array")
+            .unwrap_or_abort()
             .len(),
         3
     );
@@ -114,11 +115,11 @@ async fn native_code_lsp_supports_direct_file_and_workspace_diagnostics() {
     reason = "the global test lock intentionally serializes LSP registry mutations across awaits"
 )]
 async fn native_code_lsp_reports_empty_direct_diagnostics_cleanly() {
-    let _lock = test_lock().lock().expect("test lock");
+    let _lock = test_lock().lock().unwrap_or_abort();
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let fake_bin = temp_dir.path().join("fake-lsp-bin");
-    fs::create_dir_all(&fake_bin).expect("fake bin dir");
+    fs::create_dir_all(&fake_bin).unwrap_or_abort();
     install_fake_lsp_binary(
         &fake_bin,
         "custom-rust-analyzer",
@@ -148,7 +149,7 @@ async fn native_code_lsp_reports_empty_direct_diagnostics_cleanly() {
     });
 
     let registry = coordinator_registry(ShellAllowlist::default());
-    let lsp = registry.get("lsp").expect("lsp tool");
+    let lsp = registry.get("lsp").unwrap_or_abort();
 
     let result = lsp
         .call(
@@ -159,7 +160,7 @@ async fn native_code_lsp_reports_empty_direct_diagnostics_cleanly() {
             }),
         )
         .await
-        .expect("empty file diagnostics request");
+        .unwrap_or_abort();
     let expected_path = workspace.join("src/lib.rs").display().to_string();
     assert_eq!(
         result.display_text,
@@ -167,7 +168,7 @@ async fn native_code_lsp_reports_empty_direct_diagnostics_cleanly() {
     );
     let result_json = result
         .structured_json
-        .expect("empty file diagnostics structured json");
+        .unwrap_or_abort();
     assert_eq!(result_json["result"]["scope"], json!("file"));
     assert_eq!(result_json["result"]["diagnosticCount"], json!(0));
     assert_eq!(result_json["diagnostics"][0]["diagnostics"], json!([]));
@@ -178,7 +179,7 @@ async fn native_code_lsp_reports_empty_direct_diagnostics_cleanly() {
     reason = "the global test lock intentionally serializes LSP registry mutations across awaits"
 )]
 async fn native_code_lsp_rejects_disabled_or_unsupported_servers() {
-    let _lock = test_lock().lock().expect("test lock");
+    let _lock = test_lock().lock().unwrap_or_abort();
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let _config_guard = LspConfigGuard::install(LspConfig {
@@ -208,7 +209,7 @@ async fn native_code_lsp_rejects_disabled_or_unsupported_servers() {
     });
 
     let registry = coordinator_registry(ShellAllowlist::default());
-    let lsp = registry.get("lsp").expect("lsp tool");
+    let lsp = registry.get("lsp").unwrap_or_abort();
 
     let disabled_rust = lsp
         .call(
@@ -270,7 +271,7 @@ async fn native_code_lsp_validates_inputs_by_operation_shape() {
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let registry = coordinator_registry(ShellAllowlist::default());
-    let lsp = registry.get("lsp").expect("lsp tool");
+    let lsp = registry.get("lsp").unwrap_or_abort();
 
     let missing_position = lsp
         .call(
@@ -302,11 +303,11 @@ async fn native_code_lsp_validates_inputs_by_operation_shape() {
     reason = "the global test lock intentionally serializes LSP registry mutations across awaits"
 )]
 async fn native_code_lsp_supports_non_position_operations_without_cursor_placeholders() {
-    let _lock = test_lock().lock().expect("test lock");
+    let _lock = test_lock().lock().unwrap_or_abort();
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let fake_bin = temp_dir.path().join("fake-lsp-bin");
-    fs::create_dir_all(&fake_bin).expect("fake bin dir");
+    fs::create_dir_all(&fake_bin).unwrap_or_abort();
     install_fake_lsp_binary(
         &fake_bin,
         "custom-rust-analyzer",
@@ -336,7 +337,7 @@ async fn native_code_lsp_supports_non_position_operations_without_cursor_placeho
     });
 
     let registry = coordinator_registry(ShellAllowlist::default());
-    let lsp = registry.get("lsp").expect("lsp tool");
+    let lsp = registry.get("lsp").unwrap_or_abort();
 
     let document_symbols = lsp
         .call(
@@ -347,11 +348,11 @@ async fn native_code_lsp_supports_non_position_operations_without_cursor_placeho
             }),
         )
         .await
-        .expect("documentSymbol request");
+        .unwrap_or_abort();
     let document_json = document_symbols
         .structured_json
         .clone()
-        .expect("documentSymbol structured json");
+        .unwrap_or_abort();
     assert_eq!(document_json["operation"], json!("documentSymbol"));
     assert_eq!(
         document_json["filePath"],
@@ -370,10 +371,10 @@ async fn native_code_lsp_supports_non_position_operations_without_cursor_placeho
             }),
         )
         .await
-        .expect("workspaceSymbol request");
+        .unwrap_or_abort();
     let workspace_json = workspace_symbols
         .structured_json
-        .expect("workspaceSymbol structured json");
+        .unwrap_or_abort();
     assert_eq!(workspace_json["operation"], json!("workspaceSymbol"));
     assert_eq!(workspace_json["query"], json!("helper"));
     assert_eq!(workspace_json["result"][0]["query"], json!("helper"));
@@ -385,7 +386,7 @@ async fn native_code_lsp_rejects_unsupported_operation_cleanly() {
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let registry = coordinator_registry(ShellAllowlist::default());
-    let lsp = registry.get("lsp").expect("lsp tool");
+    let lsp = registry.get("lsp").unwrap_or_abort();
 
     let unsupported_operation = lsp
         .call(

@@ -1,6 +1,7 @@
+use harness_core::UnwrapOrAbort;
 #[tokio::test]
 async fn tool_task_lifecycle_events_preserve_owner_actor() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let clock = Arc::new(FakeClock::new());
     let coordinator = test_tool_lifecycle_coordinator(
         temp_dir.path(),
@@ -15,16 +16,16 @@ async fn tool_task_lifecycle_events_preserve_owner_actor() {
     let run = coordinator
         .start_run("tool_task_owner", temp_dir.path().to_path_buf())
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle agent");
+        .unwrap_or_abort();
     let request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id.clone(), "alpha-prompt")
         .await
-        .expect("request agent turn");
+        .unwrap_or_abort();
     let owner_actor = EventActor::new(ActorKind::Worker, Some(agent_id));
     tokio::task::yield_now().await;
 
@@ -36,7 +37,7 @@ async fn tool_task_lifecycle_events_preserve_owner_actor() {
             json!({"cmd": "true"}),
         )
         .await
-        .expect("request successful tool call");
+        .unwrap_or_abort();
     coordinator
         .request_tool_call(
             owner_actor.clone(),
@@ -45,10 +46,10 @@ async fn tool_task_lifecycle_events_preserve_owner_actor() {
             json!({"cmd": "false"}),
         )
         .await
-        .expect("request failing tool call");
+        .unwrap_or_abort();
 
     tokio::task::yield_now().await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let events = load_events(&run.events_path);
     let tool_task_ids = tool_task_ids(&events);
@@ -107,11 +108,11 @@ async fn tool_task_lifecycle_events_preserve_owner_actor() {
 }
 #[tokio::test]
 async fn stale_tool_task_late_result_preserves_owner_actor() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let clock = Arc::new(FakeClock::new());
     let coordinator = test_tool_lifecycle_coordinator(
         temp_dir.path(),
-        clock.clone(),
+        Arc::clone(&clock),
         lifecycle_tool_registry(Arc::new(Notify::new())),
         Duration::from_millis(100),
         10,
@@ -122,16 +123,16 @@ async fn stale_tool_task_late_result_preserves_owner_actor() {
     let run = coordinator
         .start_run("stale_tool_task_owner", temp_dir.path().to_path_buf())
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle agent");
+        .unwrap_or_abort();
     let request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id.clone(), "alpha-prompt")
         .await
-        .expect("request agent turn");
+        .unwrap_or_abort();
     let owner_actor = EventActor::new(ActorKind::Worker, Some(agent_id));
     tokio::task::yield_now().await;
 
@@ -143,7 +144,7 @@ async fn stale_tool_task_late_result_preserves_owner_actor() {
             json!({"cmd": "wait"}),
         )
         .await
-        .expect("request blocking tool call");
+        .unwrap_or_abort();
 
     tokio::task::yield_now().await;
     let task_id = load_events(&run.events_path)
@@ -156,15 +157,15 @@ async fn stale_tool_task_late_result_preserves_owner_actor() {
             }
             _ => None,
         })
-        .expect("blocking tool task id");
+        .unwrap_or_abort();
     coordinator
         .job_progress(task_id.clone(), JobProgressKind::Heartbeat)
         .await
-        .expect("refresh tool heartbeat before cancellation");
+        .unwrap_or_abort();
     coordinator
         .cancel_task(task_id.clone(), "manual cancellation")
         .await
-        .expect("cancel tool task");
+        .unwrap_or_abort();
     coordinator
         .job_finished(
             task_id.clone(),
@@ -173,11 +174,11 @@ async fn stale_tool_task_late_result_preserves_owner_actor() {
             },
         )
         .await
-        .expect("record late tool result");
+        .unwrap_or_abort();
 
     clock.advance(25);
     tokio::task::yield_now().await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let events = load_events(&run.events_path);
     let cancelled_event = events
@@ -188,7 +189,7 @@ async fn stale_tool_task_late_result_preserves_owner_actor() {
                 EventV1::TaskCancelled(data) if data.task_id == task_id
             )
         })
-        .expect("cancelled event");
+        .unwrap_or_abort();
     assert_task_event_context(cancelled_event, &owner_actor, &request_id);
 
     let late_event = events
@@ -199,12 +200,12 @@ async fn stale_tool_task_late_result_preserves_owner_actor() {
                 EventV1::TaskResultLate(data) if data.task_id == task_id
             )
         })
-        .expect("late result event");
+        .unwrap_or_abort();
     assert_task_event_context(late_event, &owner_actor, &request_id);
 }
 #[tokio::test]
 async fn critical_hook_failure_fails_closed_and_records_metadata() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let hook_output_path = temp_dir.path().join("hook-finish.txt");
     let hook_runtime_config = HookRuntimeConfig {
         hooks: HooksConfig {
@@ -269,7 +270,7 @@ async fn critical_hook_failure_fails_closed_and_records_metadata() {
             temp_dir.path().to_path_buf(),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let tool_call_id = coordinator
         .request_tool_call(
@@ -279,12 +280,12 @@ async fn critical_hook_failure_fails_closed_and_records_metadata() {
             json!({"cmd": "true"}),
         )
         .await
-        .expect("request tool call");
+        .unwrap_or_abort();
 
     tokio::task::yield_now().await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
-    let hook_output = fs::read_to_string(&hook_output_path).expect("hook output file");
+    let hook_output = fs::read_to_string(&hook_output_path).unwrap_or_abort();
     assert!(
         hook_output.starts_with(&temp_dir.path().display().to_string()),
         "hook should execute from workspace-root cwd: {hook_output}"
@@ -300,7 +301,7 @@ async fn critical_hook_failure_fails_closed_and_records_metadata() {
             }
             _ => None,
         })
-        .expect("tool task id");
+        .unwrap_or_abort();
 
     assert!(
         events.iter().any(|event| {
@@ -327,13 +328,13 @@ async fn critical_hook_failure_fails_closed_and_records_metadata() {
             EventV1::ToolCallFinished(data) if data.tool_call_id == tool_call_id => Some(data),
             _ => None,
         })
-        .expect("tool finished event");
+        .unwrap_or_abort();
     assert_eq!(tool_finished.status, ToolCallStatus::Failed);
     let hook_executions = tool_finished
         .metadata
         .as_ref()
         .map(|metadata| metadata.hook_executions.clone())
-        .expect("hook metadata on tool finish");
+        .unwrap_or_abort();
     assert_eq!(hook_executions.len(), 2, "expected both hooks recorded");
     assert_eq!(hook_executions[0].hook_name, "tool-start-timeout");
     assert_eq!(hook_executions[0].status, HookExecutionStatus::Failed);
@@ -358,7 +359,7 @@ async fn critical_hook_failure_fails_closed_and_records_metadata() {
 }
 #[tokio::test]
 async fn noncritical_hook_failure_records_metadata_without_cancelling_task() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let hook_output_path = temp_dir.path().join("hook-finish-noncritical.txt");
     let hook_runtime_config = HookRuntimeConfig {
         hooks: HooksConfig {
@@ -406,7 +407,7 @@ async fn noncritical_hook_failure_records_metadata_without_cancelling_task() {
             temp_dir.path().to_path_buf(),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let tool_call_id = coordinator
         .request_tool_call(
@@ -416,12 +417,12 @@ async fn noncritical_hook_failure_records_metadata_without_cancelling_task() {
             json!({"cmd": "true"}),
         )
         .await
-        .expect("request tool call");
+        .unwrap_or_abort();
 
     tokio::task::yield_now().await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
-    let hook_output = fs::read_to_string(&hook_output_path).expect("hook output file");
+    let hook_output = fs::read_to_string(&hook_output_path).unwrap_or_abort();
     assert!(
         hook_output.starts_with(&temp_dir.path().display().to_string()),
         "hook should execute from workspace-root cwd: {hook_output}"
@@ -437,7 +438,7 @@ async fn noncritical_hook_failure_records_metadata_without_cancelling_task() {
             }
             _ => None,
         })
-        .expect("tool task id");
+        .unwrap_or_abort();
 
     assert!(
         events.iter().any(|event| {
@@ -464,13 +465,13 @@ async fn noncritical_hook_failure_records_metadata_without_cancelling_task() {
             EventV1::ToolCallFinished(data) if data.tool_call_id == tool_call_id => Some(data),
             _ => None,
         })
-        .expect("tool finished event");
+        .unwrap_or_abort();
     assert_eq!(tool_finished.status, ToolCallStatus::Succeeded);
     let hook_executions = tool_finished
         .metadata
         .as_ref()
         .map(|metadata| metadata.hook_executions.clone())
-        .expect("hook metadata on tool finish");
+        .unwrap_or_abort();
     assert_eq!(
         hook_executions.len(),
         1,

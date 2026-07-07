@@ -1,14 +1,15 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 pub(super) fn permission_modal_snapshot_renders_request() {
     let mut app = AppState::new_live(None, false, None);
     app.ingest_event(permission_requested_event(1, "perm_1", "tool_call_1"));
 
     let backend = TestBackend::new(80, 24);
-    let mut terminal = Terminal::new(backend).expect("create terminal");
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
     terminal
         .draw(|frame| ui::render_app(frame, &app))
-        .expect("draw modal frame");
+        .unwrap_or_abort();
 
     assert_buffer_snapshot(
         "permission_modal_snapshot_renders_request",
@@ -83,8 +84,8 @@ pub(super) fn question_permission_modal_matches_reference_palette_contract() {
 
     let buffer = render_live_cells(&app, 100, 28);
     let (tab_row, tab_fgs, tab_bgs) =
-        row_text_and_palette(&buffer, 100, "Choice").expect("tab row");
-    let tab_start = tab_row[..tab_row.find("Choice").expect("choice tab start")]
+        row_text_and_palette(&buffer, 100, "Choice").unwrap_or_abort();
+    let tab_start = tab_row[..tab_row.find("Choice").unwrap_or_abort()]
         .chars()
         .count();
     let tab_end = tab_start + "Choice".chars().count();
@@ -96,11 +97,11 @@ pub(super) fn question_permission_modal_matches_reference_palette_contract() {
         .all(|color| *color == Color::Rgb(0x0A, 0x0A, 0x0A)));
 
     let (option_row, option_fgs, option_bgs) =
-        row_text_and_palette(&buffer, 100, "1. A").expect("option row");
-    let number_start = option_row[..option_row.find("1.").expect("number start")]
+        row_text_and_palette(&buffer, 100, "1. A").unwrap_or_abort();
+    let number_start = option_row[..option_row.find("1.").unwrap_or_abort()]
         .chars()
         .count();
-    let label_start = option_row[..option_row.find("A").expect("label start")]
+    let label_start = option_row[..option_row.find("A").unwrap_or_abort()]
         .chars()
         .count();
     assert_eq!(option_bgs[number_start], Color::Rgb(0x1E, 0x1E, 0x1E));
@@ -204,7 +205,7 @@ pub(super) fn permission_modal_ctrl_y_emits_resolve_intent_and_closes_on_resolve
     let intent_sink = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
 
@@ -216,7 +217,7 @@ pub(super) fn permission_modal_ctrl_y_emits_resolve_intent_and_closes_on_resolve
         KeyModifiers::CONTROL,
     ));
 
-    let intents = intents.lock().expect("lock intents");
+    let intents = intents.lock().unwrap_or_abort();
     assert_eq!(intents.len(), 1);
     assert_eq!(
         intents[0],

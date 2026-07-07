@@ -1,3 +1,4 @@
+use harness::UnwrapOrAbort;
 use std::collections::BTreeSet;
 use std::fs;
 
@@ -10,7 +11,7 @@ fn test_lanes_exports_artifact_dir_for_performance_stage() {
     // arrange
     let script = fs::read_to_string(repo_root().join("scripts/test-lanes.sh"))
         // act
-        .expect("read test lane script");
+        .unwrap_or_abort();
 
     // assert
     assert!(script.contains("perf_artifacts_dir=\"$(stage_dir_for perf nextest_perf)/artifacts\""));
@@ -21,10 +22,9 @@ fn test_lanes_exports_artifact_dir_for_performance_stage() {
 #[test]
 fn release_blocker_taxonomy_maps_categories_to_real_lanes() {
     // arrange
-    let blockers = fs::read_to_string(repo_root().join("docs/release-blockers.md"))
-        .expect("read release blockers doc");
-    let script = fs::read_to_string(repo_root().join("scripts/test-lanes.sh"))
-        .expect("read test lane script");
+    let blockers =
+        fs::read_to_string(repo_root().join("docs/release-blockers.md")).unwrap_or_abort();
+    let script = fs::read_to_string(repo_root().join("scripts/test-lanes.sh")).unwrap_or_abort();
 
     // act
     let modes = lane_modes_from_script(&script);
@@ -44,7 +44,7 @@ fn release_blocker_taxonomy_maps_categories_to_real_lanes() {
             .iter()
             .find(|row| row.first().is_some_and(|cell| cell == category))
             .unwrap_or_else(|| panic!("release blocker taxonomy missing `{category}`"));
-        let lanes = backticked_values(row.get(2).expect("lane cell"))
+        let lanes = backticked_values(row.get(2).unwrap_or_abort())
             .into_iter()
             .filter(|lane| modes.contains(lane.as_str()))
             .collect::<Vec<_>>();
@@ -69,10 +69,9 @@ fn release_blocker_taxonomy_maps_categories_to_real_lanes() {
 #[test]
 fn test_lanes_runs_perf_artifact_freshness_gate() {
     // arrange
-    let script = fs::read_to_string(repo_root().join("scripts/test-lanes.sh"))
-        .expect("read test lane script");
-    let checker = fs::read_to_string(repo_root().join("scripts/check-perf-artifacts.py"))
-        .expect("read perf artifact checker");
+    let script = fs::read_to_string(repo_root().join("scripts/test-lanes.sh")).unwrap_or_abort();
+    let checker =
+        fs::read_to_string(repo_root().join("scripts/check-perf-artifacts.py")).unwrap_or_abort();
 
     // act
     let stage_guard_present = script.contains("perf_artifact_freshness")
@@ -90,8 +89,7 @@ fn test_lanes_runs_perf_artifact_freshness_gate() {
 #[test]
 fn signoff_binary_exports_smoke_artifact_dir() {
     // arrange
-    let script = fs::read_to_string(repo_root().join("scripts/test-lanes.sh"))
-        .expect("read test lane script");
+    let script = fs::read_to_string(repo_root().join("scripts/test-lanes.sh")).unwrap_or_abort();
 
     // act
     let binary_smoke_artifact_dir = script.contains(
@@ -105,8 +103,7 @@ fn signoff_binary_exports_smoke_artifact_dir() {
 #[test]
 fn signoff_pty_records_happy_path_artifact_dir() {
     // arrange
-    let script = fs::read_to_string(repo_root().join("scripts/test-lanes.sh"))
-        .expect("read test lane script");
+    let script = fs::read_to_string(repo_root().join("scripts/test-lanes.sh")).unwrap_or_abort();
 
     // act
     let happy_path_stage = script.contains(

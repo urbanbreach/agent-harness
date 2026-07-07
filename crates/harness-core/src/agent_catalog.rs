@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
@@ -427,6 +428,7 @@ mod tests {
         SHIPPED_SUBAGENTS,
     };
     use crate::config::{load_config_from_str, AgentMode, HarnessConfig};
+    use crate::UnwrapOrAbort;
 
     fn config() -> HarnessConfig {
         load_config_from_str(
@@ -466,7 +468,7 @@ mod tests {
             }
             "#,
         )
-        .expect("agent catalog fixture config should parse")
+        .unwrap_or_abort()
     }
 
     #[test]
@@ -475,31 +477,31 @@ mod tests {
 
         for id in SHIPPED_PRIMARY_PROFILES {
             assert_eq!(
-                catalog.get(id).expect("primary").role,
+                catalog.get(id).unwrap_or_abort().role,
                 AgentCatalogRole::Primary
             );
         }
         for id in SHIPPED_SUBAGENTS {
             assert_eq!(
-                catalog.get(id).expect("subagent").role,
+                catalog.get(id).unwrap_or_abort().role,
                 AgentCatalogRole::Subagent
             );
         }
         for id in SHIPPED_CATEGORY_ROUTES {
-            let entry = catalog.get(id).expect("category");
+            let entry = catalog.get(id).unwrap_or_abort();
             assert_eq!(entry.role, AgentCatalogRole::Category);
             assert_eq!(entry.category_binding.as_deref(), Some(*id));
         }
         assert_eq!(
-            catalog.get("title").expect("hidden title").role,
+            catalog.get("title").unwrap_or_abort().role,
             AgentCatalogRole::Hidden
         );
         assert_eq!(
-            catalog.get("summary").expect("hidden summary").role,
+            catalog.get("summary").unwrap_or_abort().role,
             AgentCatalogRole::Hidden
         );
         assert_eq!(
-            catalog.get("compaction").expect("hidden compaction").role,
+            catalog.get("compaction").unwrap_or_abort().role,
             AgentCatalogRole::Hidden
         );
     }
@@ -507,7 +509,7 @@ mod tests {
     #[test]
     fn catalog_reports_prompt_model_tools_permissions_and_fallback_policy() {
         let catalog = resolve_agent_catalog(&config());
-        let build = catalog.get("build").expect("build route");
+        let build = catalog.get("build").unwrap_or_abort();
 
         assert_eq!(build.prompt.status, "available");
         assert_eq!(build.model.provider.as_deref(), Some("mock"));
@@ -523,7 +525,7 @@ mod tests {
     #[test]
     fn catalog_keeps_custom_all_profile_visible() {
         let mut fixture = config();
-        let mut custom = fixture.agents.get("build").expect("build").clone();
+        let mut custom = fixture.agents.get("build").unwrap_or_abort().clone();
         custom.mode = AgentMode::All;
         custom.hidden = false;
         fixture.agents.insert("ops".to_string(), custom);
@@ -531,14 +533,14 @@ mod tests {
         assert_eq!(
             resolve_agent_catalog(&config())
                 .get("build")
-                .expect("build")
+                .unwrap_or_abort()
                 .role,
             AgentCatalogRole::Primary
         );
         assert_eq!(
             resolve_agent_catalog(&fixture)
                 .get("ops")
-                .expect("ops")
+                .unwrap_or_abort()
                 .role,
             AgentCatalogRole::All
         );

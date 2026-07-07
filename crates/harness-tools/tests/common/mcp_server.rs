@@ -1,3 +1,4 @@
+use harness_tools::UnwrapOrAbort;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
@@ -123,10 +124,10 @@ for raw in sys.stdin:
         })
 "#
     .replace("__TOOLS_LITERAL__", tools_literal);
-    fs::write(script_path, script).expect("write fake mcp server");
-    let mut permissions = fs::metadata(script_path).expect("metadata").permissions();
+    fs::write(script_path, script).unwrap_or_abort();
+    let mut permissions = fs::metadata(script_path).unwrap_or_abort().permissions();
     permissions.set_mode(0o755);
-    fs::set_permissions(script_path, permissions).expect("chmod fake mcp server");
+    fs::set_permissions(script_path, permissions).unwrap_or_abort();
 }
 
 pub(crate) fn install_fake_mcp_server(script_path: &Path) {
@@ -239,8 +240,8 @@ for raw in sys.stdin:
             "result": {"content": [{"type": "text", "text": f"unknown tool: {tool_name}"}], "isError": True}
         })
 "#;
-    fs::write(script_path, script).expect("write stateful mcp server");
-    let mut permissions = fs::metadata(script_path).expect("metadata").permissions();
+    fs::write(script_path, script).unwrap_or_abort();
+    let mut permissions = fs::metadata(script_path).unwrap_or_abort().permissions();
     permissions.set_mode(0o755);
-    fs::set_permissions(script_path, permissions).expect("chmod stateful mcp server");
+    fs::set_permissions(script_path, permissions).unwrap_or_abort();
 }

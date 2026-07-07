@@ -1,6 +1,7 @@
 use super::operator_rail_test_fixtures::*;
 use super::*;
 use crate::app::{ActiveContextUsage, ActivityUsage};
+use crate::UnwrapOrAbort;
 
 pub(crate) fn exact_test_operator_rail_section_model_builds_pinned_summary() {
     let _guard = operator_sidebar_config_test_guard();
@@ -117,7 +118,7 @@ pub(crate) fn exact_test_operator_rail_sanitizes_control_chars_in_sidebar_string
             OperatorRailBodySection::ModifiedFiles { items, .. } => Some(items),
             _ => None,
         })
-        .expect("modified file sidebar section");
+        .unwrap_or_abort();
 
     assert_eq!(
         modified_files
@@ -185,16 +186,15 @@ pub(crate) fn exact_test_operator_rail_matches_sidebar_text_styles() {
         "harness-tui-sidebar-style-{}",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .expect("clock before unix epoch")
+            .unwrap_or_abort()
             .as_nanos()
     ));
-    std::fs::create_dir_all(session_path.join("artifacts"))
-        .expect("create sidebar style fixture dir");
+    std::fs::create_dir_all(session_path.join("artifacts")).unwrap_or_abort();
     std::fs::write(
         session_path.join("artifacts/edit-1.diff"),
         "diff --git a/src/ui_secondary.rs b/src/ui_secondary.rs\n--- a/src/ui_secondary.rs\n+++ b/src/ui_secondary.rs\n@@ -1 +1 @@\n-old\n+new\n",
     )
-    .expect("write sidebar style diff fixture");
+    .unwrap_or_abort();
 
     crate::app::set_pending_live_launch_metadata(
         crate::app::LaunchMetadata::from_model_ref("worker", "mock:model-1")
@@ -273,7 +273,7 @@ pub(crate) fn exact_test_operator_rail_matches_sidebar_text_styles() {
                 .collect::<String>()
                 .contains("fixture Connected")
         })
-        .expect("connected mcp line");
+        .unwrap_or_abort();
     assert_eq!(mcp_connected.spans[0].style.fg, Some(theme.status.success));
     assert_eq!(mcp_connected.spans[1].style.fg, Some(theme.text.primary));
     assert_eq!(mcp_connected.spans[2].style.fg, Some(theme.text.secondary));
@@ -287,7 +287,7 @@ pub(crate) fn exact_test_operator_rail_matches_sidebar_text_styles() {
                 .collect::<String>()
                 .contains("websearch Disconnected")
         })
-        .expect("disconnected mcp line");
+        .unwrap_or_abort();
     assert_eq!(mcp_disconnected.spans[0].style.fg, Some(theme.status.error));
     assert_eq!(mcp_disconnected.spans[1].style.fg, Some(theme.text.primary));
     assert_eq!(
@@ -304,7 +304,7 @@ pub(crate) fn exact_test_operator_rail_matches_sidebar_text_styles() {
                 .collect::<String>()
                 .contains("rust")
         })
-        .expect("lsp line");
+        .unwrap_or_abort();
     assert_eq!(lsp_line.spans[0].style.fg, Some(theme.status.success));
     assert_eq!(lsp_line.spans[1].style.fg, Some(theme.text.secondary));
 
@@ -317,7 +317,7 @@ pub(crate) fn exact_test_operator_rail_matches_sidebar_text_styles() {
                 .collect::<String>()
                 .contains("src/ui_secondary.rs · +1 -1")
         })
-        .expect("modified file line");
+        .unwrap_or_abort();
     assert_eq!(
         modified_file_line.spans[0].style.fg,
         Some(theme.text.secondary)
@@ -335,7 +335,7 @@ pub(crate) fn exact_test_operator_rail_matches_sidebar_text_styles() {
         Some(theme.status.error)
     );
 
-    std::fs::remove_dir_all(session_path).expect("remove sidebar style fixture dir");
+    std::fs::remove_dir_all(session_path).unwrap_or_abort();
 }
 
 #[cfg(test)]
@@ -770,14 +770,14 @@ pub(crate) fn exact_test_operator_sidebar_hit_target_maps_section_headers() {
     let frame_area = Rect::new(0, 0, 160, 30);
     let sidebar_area = crate::layout::FrameLayoutPlan::for_app(&app, frame_area)
         .operator_sidebar
-        .expect("persistent operator sidebar");
+        .unwrap_or_abort();
     let inner = operator_sidebar_inner_area(
         &app,
         sidebar_area,
         app.theme(),
         OperatorSidebarChrome::Persistent,
     )
-    .expect("sidebar inner area");
+    .unwrap_or_abort();
     let column = inner.x.saturating_add(1);
     let hits = (inner.y..inner.y.saturating_add(inner.height))
         .filter_map(|row| operator_sidebar_section_hit_target(&app, frame_area, column, row))

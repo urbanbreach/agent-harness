@@ -1,10 +1,11 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 pub(crate) fn keyboard_sidebar_subagent_selection_opens_child_session() {
     // arrange
-    let run_dir = tempfile::tempdir().expect("create run dir");
+    let run_dir = tempfile::tempdir().unwrap_or_abort();
     let parent_path = run_dir.path().join("parent_run");
-    fs::create_dir_all(&parent_path).expect("create parent run dir");
+    fs::create_dir_all(&parent_path).unwrap_or_abort();
 
     let mut app = AppState::new_live(Some(parent_path), false, None);
     app.ingest_event(agent_spawned(1, "parent", "build"));
@@ -76,9 +77,9 @@ pub(crate) fn keyboard_sidebar_subagent_selection_opens_child_session() {
 }
 
 pub(crate) fn live_subagent_hitbox_uses_rendered_transcript_area() {
-    let run_dir = tempfile::tempdir().expect("create run dir");
+    let run_dir = tempfile::tempdir().unwrap_or_abort();
     let parent_path = run_dir.path().join("parent_run");
-    fs::create_dir_all(&parent_path).expect("create parent run dir");
+    fs::create_dir_all(&parent_path).unwrap_or_abort();
 
     let mut app = AppState::new_live(Some(parent_path), false, None);
     app.ingest_event(agent_spawned(1, "parent", "build"));
@@ -114,7 +115,7 @@ pub(crate) fn live_subagent_hitbox_uses_rendered_transcript_area() {
             compact_area,
             FrameLayoutPlan::for_app(&app, compact_area)
                 .transcript
-                .expect("transcript area")
+                .unwrap_or_abort()
                 .x
                 .saturating_add(Theme::default().live_shell.rhythm.transcript_gutter_x)
                 .saturating_sub(1),
@@ -130,10 +131,10 @@ pub(crate) fn disk_backed_child_navigation_stays_in_live_tui_stack() {
     let intent_sink = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
-    let run_dir = tempfile::tempdir().expect("create run dir");
+    let run_dir = tempfile::tempdir().unwrap_or_abort();
     let parent_path = run_dir.path().join("parent_run");
     let child_path = run_dir.path().join("agent_child");
     let parent_events = vec![
@@ -174,7 +175,7 @@ pub(crate) fn disk_backed_child_navigation_stays_in_live_tui_stack() {
         .session_navigation_stack
         .last()
         .is_some_and(|snapshot| snapshot.session_path == parent_path && !snapshot.replay_mode));
-    assert!(intents.lock().expect("lock intents").is_empty());
+    assert!(intents.lock().unwrap_or_abort().is_empty());
 
     app.navigate_to_parent_session();
 
@@ -183,6 +184,6 @@ pub(crate) fn disk_backed_child_navigation_stays_in_live_tui_stack() {
     assert!(!app.should_quit);
     app.handle_key(key(KeyCode::Char('x')));
     assert_eq!(app.composer.prompt_buffer, "x");
-    let intents = intents.lock().expect("lock intents");
+    let intents = intents.lock().unwrap_or_abort();
     assert!(intents.is_empty());
 }

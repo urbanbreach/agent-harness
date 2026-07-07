@@ -19,6 +19,7 @@ mod startup_tests;
 
 use super::*;
 use crate::recovery::most_recent_conversational_agent_id;
+use crate::UnwrapOrAbort;
 use harness_core::auth::{
     AuthProviderId, CredentialClock, CredentialStore, StoredCredential, SystemCredentialClock,
 };
@@ -177,9 +178,9 @@ fn write_recorded_runtime_context_meta(run_dir: &Path) {
     });
     std::fs::write(
         run_dir.join("meta.json"),
-        serde_json::to_vec_pretty(&meta).expect("serialize meta"),
+        serde_json::to_vec_pretty(&meta).unwrap_or_abort(),
     )
-    .expect("write source meta");
+    .unwrap_or_abort();
 }
 
 fn catalog_event(run_id: &str, seq: u64, payload: EventV1) -> EventEnvelopeV1 {
@@ -238,20 +239,19 @@ fn catalog_events(run_id: &str) -> Vec<EventEnvelopeV1> {
 }
 
 fn write_catalog_run(run_dir: &Path, events: &[EventEnvelopeV1]) {
-    std::fs::create_dir_all(run_dir).expect("create catalog run dir");
+    std::fs::create_dir_all(run_dir).unwrap_or_abort();
     let body = events
         .iter()
-        .map(|event| serde_json::to_string(event).expect("serialize event"))
+        .map(|event| serde_json::to_string(event).unwrap_or_abort())
         .collect::<Vec<_>>()
         .join("\n");
-    std::fs::write(run_dir.join("events.jsonl"), format!("{body}\n"))
-        .expect("write catalog events");
+    std::fs::write(run_dir.join("events.jsonl"), format!("{body}\n")).unwrap_or_abort();
 }
 
 #[test]
 fn connect_provider_options_seed_from_models_dev_catalog() {
-    let catalog = harness_core::provider_catalog::ProviderCatalog::from_embedded()
-        .expect("embedded catalog loads");
+    let catalog =
+        harness_core::provider_catalog::ProviderCatalog::from_embedded().unwrap_or_abort();
     let registry = AuthPluginRegistry::with_builtins();
 
     let providers = connect_provider_options(None, &registry, Some(&catalog));

@@ -1,12 +1,13 @@
+use harness::UnwrapOrAbort;
 #[test]
 fn sessions_list_cli_filters_machine_readable_selectors() {
-    let session_dir = tempdir().expect("tempdir");
+    let session_dir = tempdir().unwrap_or_abort();
     let resumable_dir = session_dir.path().join("run_resumable");
     let prompt_dir = session_dir.path().join("run_prompt");
     let failed_dir = session_dir.path().join("run_failed");
-    std::fs::create_dir_all(&resumable_dir).expect("create resumable run dir");
-    std::fs::create_dir_all(&prompt_dir).expect("create prompt run dir");
-    std::fs::create_dir_all(&failed_dir).expect("create failed run dir");
+    std::fs::create_dir_all(&resumable_dir).unwrap_or_abort();
+    std::fs::create_dir_all(&prompt_dir).unwrap_or_abort();
+    std::fs::create_dir_all(&failed_dir).unwrap_or_abort();
 
     write_events_jsonl(
         &resumable_dir,
@@ -83,10 +84,10 @@ fn sessions_list_cli_filters_machine_readable_selectors() {
                 "mode_source": "prompt",
                 "created_at": "1710000000000"
             }))
-            .expect("serialize prompt catalog metadata")
+            .unwrap_or_abort()
         ),
     )
-    .expect("write prompt catalog metadata");
+    .unwrap_or_abort();
 
     write_events_jsonl(
         &failed_dir,
@@ -120,7 +121,7 @@ fn sessions_list_cli_filters_machine_readable_selectors() {
 
     let output = run_harness([
             "--session-dir",
-            session_dir.path().to_str().expect("session dir utf-8"),
+            session_dir.path().to_str().unwrap_or_abort(),
             "sessions",
             "list",
             "--json",
@@ -139,12 +140,12 @@ fn sessions_list_cli_filters_machine_readable_selectors() {
     );
 
     let rows: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("filtered sessions json should parse");
+        serde_json::from_slice(&output.stdout).unwrap_or_abort();
     assert_eq!(rows.as_array().map(Vec::len), Some(1));
     let row = &rows[0];
     assert_eq!(
         row["run_dir"],
-        prompt_dir.to_str().expect("prompt dir utf-8")
+        prompt_dir.to_str().unwrap_or_abort()
     );
     assert_eq!(row["run_id"], "run_prompt_filtered");
     assert_eq!(row["run_name"], "prompt");
@@ -162,9 +163,9 @@ fn sessions_list_cli_filters_machine_readable_selectors() {
 }
 #[test]
 fn sessions_inspect_cli_accepts_positional_session_selector() {
-    let session_dir = tempdir().expect("tempdir");
+    let session_dir = tempdir().unwrap_or_abort();
     let run_dir = session_dir.path().join("directory_name_differs");
-    std::fs::create_dir_all(&run_dir).expect("create run dir");
+    std::fs::create_dir_all(&run_dir).unwrap_or_abort();
 
     write_events_jsonl(
         &run_dir,
@@ -198,7 +199,7 @@ fn sessions_inspect_cli_accepts_positional_session_selector() {
 
     let output = run_harness([
             "--session-dir",
-            session_dir.path().to_str().expect("session dir utf-8"),
+            session_dir.path().to_str().unwrap_or_abort(),
             "sessions",
             "inspect",
             "directory_name_differs",
@@ -212,19 +213,19 @@ fn sessions_inspect_cli_accepts_positional_session_selector() {
     );
 
     let inspected: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("sessions inspect json should parse");
+        serde_json::from_slice(&output.stdout).unwrap_or_abort();
     assert_eq!(inspected["catalog"]["run_id"], "run_inspect_positional");
     assert_eq!(inspected["replay"]["run_name"], "inspectable");
     assert_eq!(
         inspected["run_dir"],
-        run_dir.to_str().expect("run dir utf-8")
+        run_dir.to_str().unwrap_or_abort()
     );
 }
 #[test]
 fn sessions_replay_cli_resolves_run_id_from_session_catalog() {
-    let session_dir = tempdir().expect("tempdir");
+    let session_dir = tempdir().unwrap_or_abort();
     let run_dir = session_dir.path().join("directory_name_differs");
-    std::fs::create_dir_all(&run_dir).expect("create run dir");
+    std::fs::create_dir_all(&run_dir).unwrap_or_abort();
 
     write_events_jsonl(
         &run_dir,
@@ -249,7 +250,7 @@ fn sessions_replay_cli_resolves_run_id_from_session_catalog() {
 
     let output = run_harness([
             "--session-dir",
-            session_dir.path().to_str().expect("session dir utf-8"),
+            session_dir.path().to_str().unwrap_or_abort(),
             "sessions",
             "replay",
             "run_resolved",
@@ -263,16 +264,16 @@ fn sessions_replay_cli_resolves_run_id_from_session_catalog() {
     );
 
     let summary: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("replay json output should parse");
+        serde_json::from_slice(&output.stdout).unwrap_or_abort();
     assert_eq!(summary["run_id"], "run_resolved");
     assert_eq!(summary["run_name"], "resolved");
 }
 #[test]
 fn sessions_list_cli_supports_run_id_sorting() {
-    let session_dir = tempdir().expect("tempdir");
+    let session_dir = tempdir().unwrap_or_abort();
     for run_id in ["run_b", "run_c", "run_a"] {
         let run_dir = session_dir.path().join(run_id);
-        std::fs::create_dir_all(&run_dir).expect("create run dir");
+        std::fs::create_dir_all(&run_dir).unwrap_or_abort();
         write_events_jsonl(
             &run_dir,
             &[
@@ -297,7 +298,7 @@ fn sessions_list_cli_supports_run_id_sorting() {
 
     let output = run_harness([
             "--session-dir",
-            session_dir.path().to_str().expect("session dir utf-8"),
+            session_dir.path().to_str().unwrap_or_abort(),
             "sessions",
             "list",
             "--json",
@@ -312,22 +313,22 @@ fn sessions_list_cli_supports_run_id_sorting() {
     );
 
     let rows: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("sorted sessions json should parse");
+        serde_json::from_slice(&output.stdout).unwrap_or_abort();
     let run_ids = rows
         .as_array()
-        .expect("sessions json array")
+        .unwrap_or_abort()
         .iter()
-        .map(|row| row["run_id"].as_str().expect("run_id string"))
+        .map(|row| row["run_id"].as_str().unwrap_or_abort())
         .collect::<Vec<_>>();
     assert_eq!(run_ids, vec!["run_a", "run_b", "run_c"]);
 }
 #[test]
 fn sessions_tree_prints_lineage_depths() {
-    let session_dir = tempdir().expect("tempdir");
+    let session_dir = tempdir().unwrap_or_abort();
     let root_dir = session_dir.path().join("root_session_dir");
     let child_dir = session_dir.path().join("child_session_dir");
-    std::fs::create_dir_all(&root_dir).expect("create root run dir");
-    std::fs::create_dir_all(&child_dir).expect("create child run dir");
+    std::fs::create_dir_all(&root_dir).unwrap_or_abort();
+    std::fs::create_dir_all(&child_dir).unwrap_or_abort();
 
     write_events_jsonl(&root_dir, &resumable_finished_events("run_tree_root"));
     write_events_jsonl(&child_dir, &resumable_finished_events("run_tree_child"));
@@ -335,7 +336,7 @@ fn sessions_tree_prints_lineage_depths() {
 
     let json_output = run_harness([
             "--session-dir",
-            session_dir.path().to_str().expect("session dir utf-8"),
+            session_dir.path().to_str().unwrap_or_abort(),
             "sessions",
             "tree",
             "--json",
@@ -347,7 +348,7 @@ fn sessions_tree_prints_lineage_depths() {
         String::from_utf8_lossy(&json_output.stderr)
     );
     let tree: serde_json::Value =
-        serde_json::from_slice(&json_output.stdout).expect("tree json should parse");
+        serde_json::from_slice(&json_output.stdout).unwrap_or_abort();
     assert_eq!(tree["session_count"], 2);
     assert_eq!(tree["harness_lineage"][0]["run_id"], "run_tree_root");
     assert_eq!(tree["harness_lineage"][0]["depth"], 0);
@@ -360,11 +361,11 @@ fn sessions_tree_prints_lineage_depths() {
 
     let rooted_output = run_harness([
             "--session-dir",
-            session_dir.path().to_str().expect("session dir utf-8"),
+            session_dir.path().to_str().unwrap_or_abort(),
             "sessions",
             "tree",
             "--root",
-            root_dir.to_str().expect("root dir utf-8"),
+            root_dir.to_str().unwrap_or_abort(),
             "--filter",
             "child",
         ]);

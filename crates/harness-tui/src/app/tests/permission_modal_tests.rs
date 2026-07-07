@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 pub(super) fn overlay_stack_orders_details_palette_permission() {
     let mut app = AppState::new_live(None, false, None);
@@ -42,7 +43,7 @@ pub(super) fn permission_modal_preempts_palette() {
     let intent_sink = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
 
@@ -78,7 +79,7 @@ pub(super) fn permission_modal_preempts_palette() {
         app.overlay_stack().top(),
         Some(OverlayKind::PermissionModal)
     );
-    let intents = intents.lock().expect("lock intents");
+    let intents = intents.lock().unwrap_or_abort();
     assert_eq!(
         intents.as_slice(),
         &[UiIntent::ResolvePermission {
@@ -95,7 +96,7 @@ pub(super) fn permission_modal_ignores_unmapped_chars_without_buffering() {
     let intent_sink = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
 
@@ -120,7 +121,7 @@ pub(super) fn permission_modal_ignores_unmapped_chars_without_buffering() {
 
     assert!(!app.should_quit);
     assert_eq!(app.composer.prompt_buffer, "keep this draft");
-    let intents = intents.lock().expect("lock intents");
+    let intents = intents.lock().unwrap_or_abort();
     assert!(intents.is_empty());
     assert!(app.active_permission().is_some());
 }
@@ -130,7 +131,7 @@ pub(super) fn permission_modal_escape_rejects_without_hiding_pending_permission(
     let intent_sink = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
 
@@ -152,7 +153,7 @@ pub(super) fn permission_modal_escape_rejects_without_hiding_pending_permission(
     app.handle_key(key(KeyCode::Esc));
 
     assert_eq!(
-        intents.lock().expect("lock intents").as_slice(),
+        intents.lock().unwrap_or_abort().as_slice(),
         &[UiIntent::ResolvePermission {
             permission_id: "perm_modal_escape".to_string(),
             decision: PermissionDecision::Deny,
@@ -173,7 +174,7 @@ pub(super) fn permission_modal_ctrl_n_emits_deny_intent_without_hiding_pending_p
     let intent_sink = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
 
@@ -203,7 +204,7 @@ pub(super) fn permission_modal_ctrl_n_emits_deny_intent_without_hiding_pending_p
     // assert
     assert_eq!(app.composer.prompt_buffer, "keep this draft");
     assert_eq!(
-        intents.lock().expect("lock intents").as_slice(),
+        intents.lock().unwrap_or_abort().as_slice(),
         &[UiIntent::ResolvePermission {
             permission_id: "perm_modal_ctrl_n".to_string(),
             decision: PermissionDecision::Deny,
@@ -223,7 +224,7 @@ pub(super) fn question_permission_modal_collects_answers_and_emits_reason_payloa
     let intent_sink = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
 
@@ -252,7 +253,7 @@ pub(super) fn question_permission_modal_collects_answers_and_emits_reason_payloa
     app.handle_key(key(KeyCode::Enter));
 
     assert_eq!(
-        intents.lock().expect("lock intents").as_slice(),
+        intents.lock().unwrap_or_abort().as_slice(),
         &[UiIntent::ResolvePermission {
             permission_id: "perm_question_modal".to_string(),
             decision: PermissionDecision::Allow,
@@ -267,7 +268,7 @@ pub(super) fn question_permission_modal_multi_question_uses_tabs_before_submit()
     let intent_sink = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
 
@@ -307,7 +308,7 @@ pub(super) fn question_permission_modal_multi_question_uses_tabs_before_submit()
     app.handle_key(key(KeyCode::Enter));
 
     assert_eq!(
-        intents.lock().expect("lock intents").as_slice(),
+        intents.lock().unwrap_or_abort().as_slice(),
         &[UiIntent::ResolvePermission {
             permission_id: "perm_question_tabs".to_string(),
             decision: PermissionDecision::Allow,
@@ -408,7 +409,7 @@ pub(super) fn question_modal_submit_allows_unanswered_questions_on_confirm() {
     let intent_sink = {
         let intents = std::sync::Arc::clone(&intents);
         std::sync::Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
     let mut app = AppState::new_live(None, false, Some(intent_sink));
@@ -444,7 +445,7 @@ pub(super) fn question_modal_submit_allows_unanswered_questions_on_confirm() {
     app.handle_key(key(KeyCode::Right));
     app.handle_key(key(KeyCode::Enter));
 
-    let intents = intents.lock().expect("lock intents");
+    let intents = intents.lock().unwrap_or_abort();
     assert_eq!(intents.len(), 1);
     assert_eq!(
         intents[0],
@@ -462,7 +463,7 @@ pub(super) fn permission_modal_allow_always_requests_durable_run_grant() {
     let intent_sink = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
 
@@ -496,7 +497,7 @@ pub(super) fn permission_modal_allow_always_requests_durable_run_grant() {
     app.handle_key(key(KeyCode::Enter));
 
     assert_eq!(
-        intents.lock().expect("lock intents").as_slice(),
+        intents.lock().unwrap_or_abort().as_slice(),
         &[UiIntent::ResolvePermission {
             permission_id: "perm_modal_allow_always_1".to_string(),
             decision: PermissionDecision::Allow,

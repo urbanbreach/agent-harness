@@ -391,7 +391,7 @@ impl Coordinator {
             .run_state
             .as_ref()
             .ok_or(CoordinatorError::RunNotStarted)?;
-        Ok(run_state.event_store.clone())
+        Ok(Arc::clone(&run_state.event_store))
     }
 
     pub(in crate::coord) async fn stop_run_internal(
@@ -683,15 +683,15 @@ impl Coordinator {
             schedule_agent_turn(
                 self.clock.as_ref(),
                 self.redactor.as_ref(),
-                self.config.hook_command_executor.clone(),
+                Arc::clone(&self.config.hook_command_executor),
                 self.job_tx.clone(),
                 run_state,
                 self.config.hook_runtime_config.clone(),
                 self.config.compaction.clone(),
                 self.config.provider_retry,
                 ScheduleAgentTurnArgs {
-                    provider: self.config.provider.clone(),
-                    tool_registry: self.config.tool_registry.clone(),
+                    provider: Arc::clone(&self.config.provider),
+                    tool_registry: Arc::clone(&self.config.tool_registry),
                     profile: profile_cfg,
                     request,
                     request_id,

@@ -1,3 +1,4 @@
+use harness_core::UnwrapOrAbort;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
@@ -28,21 +29,20 @@ const MODEL_REF: &str = "default:gpt-5.4-mini";
 
 #[tokio::test]
 async fn recorded_runtime_context_meta_roundtrips() {
-    refresh_profile_model_metadata_registry(&profile_metadata_config())
-        .expect("profile metadata registry should refresh");
+    refresh_profile_model_metadata_registry(&profile_metadata_config()).unwrap_or_abort();
 
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let session_dir = temp_dir.path().join("sessions");
-    fs::create_dir_all(&session_dir).expect("create session dir");
+    fs::create_dir_all(&session_dir).unwrap_or_abort();
 
     let workspace_root = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace_root).expect("create workspace root");
+    fs::create_dir_all(&workspace_root).unwrap_or_abort();
 
     let coordinator = test_coordinator(&session_dir);
     let run = coordinator
         .start_run("interactive", &workspace_root)
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     coordinator
         .spawn_agent_idle(
             supervisor_actor_with_id("agent-supervisor"),
@@ -50,11 +50,11 @@ async fn recorded_runtime_context_meta_roundtrips() {
             None,
         )
         .await
-        .expect("spawn launch agent");
-    coordinator.stop_run().await.expect("stop run");
+        .unwrap_or_abort();
+    coordinator.stop_run().await.unwrap_or_abort();
 
-    let meta_body = fs::read_to_string(run.run_dir.join("meta.json")).expect("read meta.json");
-    let metadata: RunMetadata = serde_json::from_str(&meta_body).expect("parse run metadata");
+    let meta_body = fs::read_to_string(run.run_dir.join("meta.json")).unwrap_or_abort();
+    let metadata: RunMetadata = serde_json::from_str(&meta_body).unwrap_or_abort();
     let expected_context = RecordedRuntimeContext {
         profile: PROFILE_NAME.to_string(),
         profile_description: Some("Deep work".to_string()),
@@ -89,7 +89,7 @@ async fn recorded_runtime_context_meta_roundtrips() {
     );
 
     let catalog_metadata: SessionCatalogMetadata =
-        serde_json::from_str(&meta_body).expect("parse session catalog metadata");
+        serde_json::from_str(&meta_body).unwrap_or_abort();
     assert_eq!(
         catalog_metadata.recorded_runtime_context.as_ref(),
         Some(&expected_context)
@@ -103,7 +103,7 @@ async fn recorded_runtime_context_meta_roundtrips() {
         None,
         None,
     )
-    .expect("project session catalog entry");
+    .unwrap_or_abort();
 
     assert_eq!(entry.profile_preset.as_deref(), Some(PROFILE_NAME));
     assert_eq!(
@@ -127,7 +127,7 @@ fn session_catalog_entry_tolerates_legacy_meta_without_runtime_context() {
         }
         "#,
     )
-    .expect("legacy metadata should deserialize");
+    .unwrap_or_abort();
 
     assert_eq!(metadata.recorded_runtime_context, None);
 
@@ -165,7 +165,7 @@ fn session_catalog_entry_tolerates_legacy_meta_without_runtime_context() {
         Some("2026-03-25T00:00:00Z".to_string()),
         None,
     )
-    .expect("legacy metadata should still project cleanly");
+    .unwrap_or_abort();
 
     assert_eq!(entry.run_id, "run_legacy");
     assert_eq!(entry.profile_preset.as_deref(), Some("legacy-profile"));
@@ -242,7 +242,7 @@ fn profile_metadata_config() -> HarnessConfig {
         }}
         "#
     ))
-    .expect("config shape should deserialize")
+    .unwrap_or_abort()
 }
 
 fn test_coordinator(session_dir: &Path) -> CoordinatorHandle {

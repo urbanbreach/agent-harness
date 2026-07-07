@@ -303,7 +303,7 @@ fn translate_hashline_edits_for_missing_file(
                     "file {path} does not exist; replace requires an existing LINE#HASH anchor"
                 )));
             }
-            _ => unreachable!(),
+            _ => std::process::abort(),
         }
     }
 
@@ -344,7 +344,7 @@ fn translate_hashline_edit(
         "replace" => translate_replace_edit(index, edit, source_lines, recent_anchors),
         "append" => translate_append_edit(index, edit, source_lines, recent_anchors),
         "prepend" => translate_prepend_edit(index, edit, source_lines, recent_anchors),
-        _ => unreachable!(),
+        _ => std::process::abort(),
     }
 }
 
@@ -389,13 +389,21 @@ fn translate_append_edit(
         )));
     }
     let anchor = match edit.pos.as_deref().or(edit.end.as_deref()) {
-        Some(anchor) if is_boundary_reference(anchor, "eof") => {
-            anchor_for_line(source_lines, source_lines.len() as u32, index, "append")?
-        }
+        Some(anchor) if is_boundary_reference(anchor, "eof") => anchor_for_line(
+            source_lines,
+            u32::try_from(source_lines.len()).unwrap_or(u32::MAX),
+            index,
+            "append",
+        )?,
         Some(anchor) => {
             parse_anchor_reference(Some(anchor), index, "append", source_lines, recent_anchors)?
         }
-        None => anchor_for_line(source_lines, source_lines.len() as u32, index, "append")?,
+        None => anchor_for_line(
+            source_lines,
+            u32::try_from(source_lines.len()).unwrap_or(u32::MAX),
+            index,
+            "append",
+        )?,
     };
     Ok(HashlineOp::InsertAfter { anchor, lines })
 }
@@ -610,7 +618,7 @@ fn resolve_hash_only_anchor(
                 "edit {index}: anchor \"{value}\" omitted its line number and does not match any current line. Re-read the file and copy the full LINE#HASH tag."
         ))),
         [(line_index, line_hash)] => Ok(LineAnchor {
-            line: *line_index as u32 + 1,
+            line: u32::try_from(*line_index).unwrap_or(u32::MAX) + 1,
             hash: line_hash.clone(),
         }),
         _ => resolve_ambiguous_hash_only_anchor(hash, value, index, source_lines, recent_anchors),
@@ -705,7 +713,7 @@ fn anchors_for_range(
         .iter()
         .enumerate()
         .map(|(offset, line)| LineAnchor {
-            line: start.line + offset as u32,
+            line: start.line + u32::try_from(offset).unwrap_or(u32::MAX),
             hash: compute_line_hash(line),
         })
         .collect())

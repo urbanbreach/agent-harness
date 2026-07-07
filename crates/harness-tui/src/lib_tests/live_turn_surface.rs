@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 pub(super) fn live_shell_type_first_input_snapshot() {
     let mut app = app::AppState::new_live(None, false, None);
@@ -75,7 +76,7 @@ pub(super) fn live_submitted_event_merges_duplicate_local_echo_before_rendering_
     }
     app.handle_key(key(crossterm::event::KeyCode::Enter));
 
-    let local_echo = app.activities.back_mut().expect("optimistic local echo");
+    let local_echo = app.activities.back_mut().unwrap_or_abort();
     local_echo.status = app::ActivityStatus::Done;
     local_echo.transcript_text = "Ack.".to_string();
     app.activities
@@ -101,7 +102,7 @@ pub(super) fn live_submitted_event_merges_duplicate_local_echo_before_rendering_
 
     assert_eq!(app.activities.len(), 1);
     assert_eq!(app.transcript_view.selected_activity_index, 0);
-    let activity = app.activities.back().expect("merged activity");
+    let activity = app.activities.back().unwrap_or_abort();
     assert_eq!(activity.request_id, "req_live_echo_merge");
     assert_eq!(activity.status, app::ActivityStatus::Done);
     assert_eq!(
@@ -322,26 +323,26 @@ pub(super) fn narrow_transcript_wrapped_top_level_turns_keep_alignment() {
     let rendered = render_live_lines(&app, 60, 18);
     let lines = rendered.lines().collect::<Vec<_>>();
 
-    let user_first = find_line_containing(&lines, "alpha bravo").expect("wrapped user first row");
+    let user_first = find_line_containing(&lines, "alpha bravo").unwrap_or_abort();
     let assistant_first =
         find_line_containing_from(&lines, user_first + 1, "assistant reply wraps")
-            .expect("wrapped assistant first row");
+            .unwrap_or_abort();
     let user_continuation = lines
         .iter()
         .enumerate()
         .skip(user_first + 1)
         .take(assistant_first.saturating_sub(user_first + 1))
         .find_map(|(index, line)| line.chars().any(char::is_alphanumeric).then_some(index))
-        .expect("wrapped user continuation row");
-    let assistant_footer = find_line_containing_from(&lines, assistant_first + 1, "Assistant")
-        .expect("assistant footer row");
+        .unwrap_or_abort();
+    let assistant_footer =
+        find_line_containing_from(&lines, assistant_first + 1, "Assistant").unwrap_or_abort();
     let assistant_continuation = lines
         .iter()
         .enumerate()
         .skip(assistant_first + 1)
         .take(assistant_footer.saturating_sub(assistant_first + 1))
         .find_map(|(index, line)| line.chars().any(char::is_alphanumeric).then_some(index))
-        .expect("wrapped assistant continuation row");
+        .unwrap_or_abort();
 
     assert_eq!(
         first_alphanumeric_column(lines[user_continuation]),

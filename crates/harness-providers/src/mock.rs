@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
@@ -305,6 +306,7 @@ impl From<FixtureStreamEvent> for ProviderStreamEvent {
 
 #[cfg(test)]
 mod tests {
+    use crate::UnwrapOrAbort;
     use std::path::PathBuf;
 
     use tokio_stream::StreamExt;
@@ -452,7 +454,7 @@ mod tests {
     }
 
     fn load_fixture_provider() -> MockProvider {
-        MockProvider::from_fixture_dir(fixture_dir()).expect("load mock provider fixtures")
+        MockProvider::from_fixture_dir(fixture_dir()).unwrap_or_abort()
     }
 
     fn fixture_dir() -> PathBuf {

@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::hash::{Hash, Hasher};
@@ -682,6 +683,7 @@ mod tests {
     use crate::event::ActorKind;
     use crate::event::EventActor;
     use crate::redact::DefaultRedactor;
+    use crate::UnwrapOrAbort;
     use std::collections::BTreeSet;
     use std::fs;
     use std::path::Path;
@@ -717,12 +719,12 @@ mod tests {
 
     #[test]
     fn artifact_store_write_text_returns_artifact_ref_with_digest() {
-        let temp_dir = tempfile::tempdir().expect("tempdir");
-        let store = ArtifactStore::new(temp_dir.path().join("artifacts")).expect("artifact store");
+        let temp_dir = tempfile::tempdir().unwrap_or_abort();
+        let store = ArtifactStore::new(temp_dir.path().join("artifacts")).unwrap_or_abort();
 
         let artifact = store
             .write_text("notes/output.txt", "hello artifact")
-            .expect("write artifact");
+            .unwrap_or_abort();
 
         assert_eq!(artifact.path, "artifacts/notes/output.txt");
         assert_eq!(
@@ -730,14 +732,14 @@ mod tests {
             Some(blake3::hash(b"hello artifact").to_hex().as_str())
         );
         let written = fs::read_to_string(temp_dir.path().join("artifacts/notes/output.txt"))
-            .expect("read artifact file");
+            .unwrap_or_abort();
         assert_eq!(written, "hello artifact");
     }
 
     #[test]
     fn artifact_store_rejects_parent_traversal() {
-        let temp_dir = tempfile::tempdir().expect("tempdir");
-        let store = ArtifactStore::new(temp_dir.path().join("artifacts")).expect("artifact store");
+        let temp_dir = tempfile::tempdir().unwrap_or_abort();
+        let store = ArtifactStore::new(temp_dir.path().join("artifacts")).unwrap_or_abort();
 
         let err = store
             .write_text("../escape.txt", "blocked")
@@ -747,26 +749,23 @@ mod tests {
 
     #[tokio::test]
     async fn resolve_workspace_path_lexically_normalizes_self_references() {
-        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let temp_dir = tempfile::tempdir().unwrap_or_abort();
         let workspace = temp_dir.path().join("workspace");
-        fs::create_dir_all(&workspace).expect("workspace dir");
+        fs::create_dir_all(&workspace).unwrap_or_abort();
         let ctx = tool_context(&workspace, "tool-call-1");
 
         let resolved = ctx
             .resolve_workspace_path(Path::new("missing/.."))
-            .expect("missing/.. should normalize to workspace root");
+            .unwrap_or_abort();
 
-        assert_eq!(
-            resolved,
-            workspace.canonicalize().expect("canonical workspace")
-        );
+        assert_eq!(resolved, workspace.canonicalize().unwrap_or_abort());
     }
 
     #[tokio::test]
     async fn resolve_workspace_path_blocks_parent_traversal_above_workspace() {
-        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let temp_dir = tempfile::tempdir().unwrap_or_abort();
         let workspace = temp_dir.path().join("workspace");
-        fs::create_dir_all(&workspace).expect("workspace dir");
+        fs::create_dir_all(&workspace).unwrap_or_abort();
         let ctx = tool_context(&workspace, "tool-call-2");
 
         let err = ctx
@@ -779,23 +778,20 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn resolve_workspace_path_accepts_absolute_symlink_alias_inside_workspace() {
-        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let temp_dir = tempfile::tempdir().unwrap_or_abort();
         let workspace = temp_dir.path().join("workspace");
         let nested = workspace.join("nested");
         let alias = temp_dir.path().join("workspace-alias");
-        fs::create_dir_all(&nested).expect("nested dir");
-        std::os::unix::fs::symlink(
-            workspace.canonicalize().expect("canonical workspace"),
-            &alias,
-        )
-        .expect("workspace symlink");
+        fs::create_dir_all(&nested).unwrap_or_abort();
+        std::os::unix::fs::symlink(workspace.canonicalize().unwrap_or_abort(), &alias)
+            .unwrap_or_abort();
         let ctx = tool_context(&workspace, "tool-call-symlink");
 
         let resolved = ctx
             .resolve_workspace_path(&alias.join("nested"))
-            .expect("symlink alias should resolve inside workspace");
+            .unwrap_or_abort();
 
-        assert_eq!(resolved, nested.canonicalize().expect("canonical nested"));
+        assert_eq!(resolved, nested.canonicalize().unwrap_or_abort());
     }
 
     #[test]

@@ -1,5 +1,6 @@
 use super::{DiscoveryContext, RealFormatterDiscovery};
 use crate::coord::formatter::FormatterDiscovery;
+use crate::UnwrapOrAbort;
 
 #[test]
 fn first_line_returns_first_line_or_empty() {
@@ -14,16 +15,16 @@ fn first_line_returns_first_line_or_empty() {
 #[tokio::test]
 async fn prettier_discovery_uses_local_npm_binary_when_dep_present() {
     // arrange
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp_dir.path().join("workspace");
     let node_bin = workspace.join("node_modules").join(".bin");
-    std::fs::create_dir_all(&node_bin).expect("create node bin dir");
-    std::fs::write(node_bin.join("prettier"), "").expect("create fake prettier binary");
+    std::fs::create_dir_all(&node_bin).unwrap_or_abort();
+    std::fs::write(node_bin.join("prettier"), "").unwrap_or_abort();
     std::fs::write(
         workspace.join("package.json"),
         r#"{"devDependencies": {"prettier": "1.0.0"}}"#,
     )
-    .expect("write package.json");
+    .unwrap_or_abort();
 
     let context = DiscoveryContext {
         workspace_root: workspace.clone(),
@@ -36,7 +37,7 @@ async fn prettier_discovery_uses_local_npm_binary_when_dep_present() {
     let command = discovery
         .resolve("prettier", &context)
         .await
-        .expect("prettier discovered");
+        .unwrap_or_abort();
     // assert
     assert_eq!(command.len(), 3);
     assert_eq!(command[1], "--write");
@@ -46,14 +47,14 @@ async fn prettier_discovery_uses_local_npm_binary_when_dep_present() {
 #[tokio::test]
 async fn biome_discovery_requires_biome_json() {
     // arrange
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp_dir.path().join("workspace");
     let node_bin = workspace.join("node_modules").join(".bin");
-    std::fs::create_dir_all(&node_bin).expect("create node bin dir");
+    std::fs::create_dir_all(&node_bin).unwrap_or_abort();
     let biome_bin = node_bin.join("biome");
-    std::fs::write(&biome_bin, "#!/bin/sh\n").expect("create fake biome binary");
+    std::fs::write(&biome_bin, "#!/bin/sh\n").unwrap_or_abort();
     make_executable(&biome_bin);
-    std::fs::write(workspace.join("biome.json"), "{}").expect("write biome.json");
+    std::fs::write(workspace.join("biome.json"), "{}").unwrap_or_abort();
 
     let context = DiscoveryContext {
         workspace_root: workspace.clone(),
@@ -63,10 +64,7 @@ async fn biome_discovery_requires_biome_json() {
 
     let discovery = RealFormatterDiscovery;
     // act
-    let command = discovery
-        .resolve("biome", &context)
-        .await
-        .expect("biome discovered");
+    let command = discovery.resolve("biome", &context).await.unwrap_or_abort();
     // assert
     assert_eq!(command[1..], ["format", "--write", "$FILE"]);
 }
@@ -74,17 +72,17 @@ async fn biome_discovery_requires_biome_json() {
 #[tokio::test]
 async fn oxfmt_discovery_gated_by_experimental_oxfmt() {
     // arrange
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp_dir.path().join("workspace");
     let node_bin = workspace.join("node_modules").join(".bin");
-    std::fs::create_dir_all(&node_bin).expect("create node bin dir");
-    std::fs::write(node_bin.join("oxfmt"), "#!/bin/sh\n").expect("create fake oxfmt binary");
+    std::fs::create_dir_all(&node_bin).unwrap_or_abort();
+    std::fs::write(node_bin.join("oxfmt"), "#!/bin/sh\n").unwrap_or_abort();
     make_executable(&node_bin.join("oxfmt"));
     std::fs::write(
         workspace.join("package.json"),
         r#"{"dependencies": {"oxfmt": "1.0.0"}}"#,
     )
-    .expect("write package.json");
+    .unwrap_or_abort();
 
     let disabled_context = DiscoveryContext {
         workspace_root: workspace.clone(),
@@ -109,7 +107,7 @@ async fn oxfmt_discovery_gated_by_experimental_oxfmt() {
     let command = discovery
         .resolve("oxfmt", &enabled_context)
         .await
-        .expect("oxfmt discovered when enabled");
+        .unwrap_or_abort();
     // assert
     assert_eq!(command.len(), 2);
     assert_eq!(command[1], "$FILE");
@@ -118,14 +116,14 @@ async fn oxfmt_discovery_gated_by_experimental_oxfmt() {
 #[tokio::test]
 async fn pint_discovery_requires_laravel_pint_in_composer() {
     // arrange
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp_dir.path().join("workspace");
-    std::fs::create_dir_all(&workspace).expect("create workspace");
+    std::fs::create_dir_all(&workspace).unwrap_or_abort();
     std::fs::write(
         workspace.join("composer.json"),
         r#"{"require-dev": {"laravel/pint": "^1.0"}}"#,
     )
-    .expect("write composer.json");
+    .unwrap_or_abort();
 
     let context = DiscoveryContext {
         workspace_root: workspace.clone(),
@@ -134,10 +132,7 @@ async fn pint_discovery_requires_laravel_pint_in_composer() {
     };
     let discovery = RealFormatterDiscovery;
     // act
-    let command = discovery
-        .resolve("pint", &context)
-        .await
-        .expect("pint discovered");
+    let command = discovery.resolve("pint", &context).await.unwrap_or_abort();
     // assert
     assert_eq!(command, vec!["./vendor/bin/pint", "$FILE"]);
 }

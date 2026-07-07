@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::cell::RefCell;
 use std::path::Path;
 
@@ -208,7 +209,7 @@ pub(super) fn render_transcript_pane(frame: &mut Frame, app: &AppState, area: Re
         return;
     }
 
-    frame.render_widget(context.block.expect("replay transcript block"), area);
+    frame.render_widget(context.block.unwrap_or_abort(), area);
 
     if live_empty_state_visible(app) {
         render_live_empty_state(frame, app, context.inner_area, theme);
@@ -590,7 +591,6 @@ fn transcript_surface_selection_rows(
     rows
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn build_transcript_lines(app: &AppState, theme: &Theme) -> Vec<Line<'static>> {
     build_transcript_lines_for_width(app, theme, DIFF_SIDE_BY_SIDE_MIN_WIDTH.saturating_sub(1))
 }
@@ -609,7 +609,6 @@ pub(crate) fn build_transcript_lines_for_width(
     )
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 fn build_measured_transcript_layout_for_width(
     app: &AppState,
     theme: &Theme,
@@ -618,7 +617,6 @@ fn build_measured_transcript_layout_for_width(
     build_measured_transcript_layout_for_width_on_surface(app, theme, width, theme.surface.shell)
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 fn build_measured_transcript_layout_for_width_on_surface(
     app: &AppState,
     theme: &Theme,
@@ -696,7 +694,7 @@ fn with_measured_transcript_layout_for_width_on_surface<R>(
                     && entry.width == width
                     && entry.base_surface == base_surface
             })
-            .expect("cached transcript layout should be present after insertion");
+            .unwrap_or_abort();
         render(&entry.layout)
     })
 }

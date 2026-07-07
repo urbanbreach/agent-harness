@@ -68,8 +68,9 @@ impl AppState {
             return;
         }
         let len = self.prompt_stash.entries.len();
-        let current = self.prompt_stash.list_selected.min(len - 1) as isize;
-        let next = (current + delta).clamp(0, len as isize - 1);
+        let current =
+            isize::try_from(self.prompt_stash.list_selected.min(len - 1)).unwrap_or(isize::MAX);
+        let next = (current + delta).clamp(0, isize::try_from(len - 1).unwrap_or(isize::MAX));
         self.prompt_stash.list_selected = usize::try_from(next).unwrap_or(0);
     }
 
@@ -136,6 +137,6 @@ impl AppState {
 fn prompt_stash_now_unix_millis() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|duration| duration.as_millis() as u64)
+        .map(|duration| u64::try_from(duration.as_millis()).unwrap_or(u64::MAX))
         .unwrap_or(0)
 }

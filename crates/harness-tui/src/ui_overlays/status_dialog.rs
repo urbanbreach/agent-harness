@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -474,11 +475,11 @@ pub(crate) fn exact_test_status_dialog_render_snapshot_covers_harness_sections()
     }];
 
     let backend = ratatui::backend::TestBackend::new(80, 24);
-    let mut terminal = ratatui::Terminal::new(backend).expect("create terminal");
+    let mut terminal = ratatui::Terminal::new(backend).unwrap_or_abort();
     terminal
         .draw(|frame| {
             let root = Rect::new(0, 0, 80, 24);
-            let overlay = status_dialog_area(root).expect("status dialog area");
+            let overlay = status_dialog_area(root).unwrap_or_abort();
             render_overlay_dim_backdrop(frame, root);
             assert!(paint_command_palette_panel(frame, &theme, overlay));
             let content = inset_rect(overlay, 2.min(overlay.width.saturating_sub(1)), 1);
@@ -494,7 +495,7 @@ pub(crate) fn exact_test_status_dialog_render_snapshot_covers_harness_sections()
                 status_dialog_body_from_rows(mcp_rows, lsp_rows, &theme),
             );
         })
-        .expect("draw status dialog");
+        .unwrap_or_abort();
 
     insta::assert_snapshot!(
         "status_dialog_render_snapshot_covers_harness_sections",

@@ -1,3 +1,4 @@
+use harness::UnwrapOrAbort;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -23,7 +24,7 @@ impl CapturedDogfoodRequest {
     }
 
     pub(crate) fn messages_text(&self) -> String {
-        serde_json::to_string(&self.messages).expect("serialize captured messages")
+        serde_json::to_string(&self.messages).unwrap_or_abort()
     }
 }
 
@@ -63,7 +64,7 @@ impl DogfoodPromptProvider {
     }
 
     pub(crate) fn requests(&self) -> Vec<CapturedDogfoodRequest> {
-        self.requests.lock().expect("provider requests").clone()
+        self.requests.lock().unwrap_or_abort().clone()
     }
 
     fn response_for(&self, request: &CompletionRequest) -> Vec<ProviderStreamEvent> {
@@ -75,10 +76,7 @@ impl DogfoodPromptProvider {
             return text_events("Auxiliary prompt complete.");
         }
 
-        let mut next_response_index = self
-            .next_response_index
-            .lock()
-            .expect("provider response index");
+        let mut next_response_index = self.next_response_index.lock().unwrap_or_abort();
         let response_index = *next_response_index;
         *next_response_index += 1;
 
@@ -118,7 +116,7 @@ impl Provider for DogfoodPromptProvider {
     async fn stream_completion(&self, req: CompletionRequest) -> ProviderEventStream {
         self.requests
             .lock()
-            .expect("provider requests")
+            .unwrap_or_abort()
             .push(CapturedDogfoodRequest::from(&req));
         let events = self.response_for(&req);
         Box::pin(tokio_stream::iter(events))

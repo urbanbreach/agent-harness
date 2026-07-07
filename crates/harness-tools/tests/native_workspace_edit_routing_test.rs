@@ -1,3 +1,4 @@
+use harness_tools::UnwrapOrAbort;
 use std::fs;
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
@@ -33,11 +34,11 @@ async fn native_edit_create_routes_through_hashline_and_emits_edit_events() {
     let run = handle
         .start_run("native_edit_create_routes", workspace.workspace())
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let worker_agent_id = handle
         .spawn_agent(supervisor_actor(), "worker", None)
         .await
-        .expect("spawn worker");
+        .unwrap_or_abort();
 
     let tool_call_id = handle
         .request_tool_call(
@@ -56,14 +57,14 @@ async fn native_edit_create_routes_through_hashline_and_emits_edit_events() {
             }),
         )
         .await
-        .expect("request tool call");
+        .unwrap_or_abort();
 
     wait_for_succeeded_tool_call_finish(&run.events_path, &tool_call_id, Duration::from_secs(2))
         .await;
-    handle.stop_run().await.expect("stop run");
+    handle.stop_run().await.unwrap_or_abort();
 
     assert_eq!(
-        fs::read_to_string(workspace.workspace().join("demo.txt")).expect("read updated file"),
+        fs::read_to_string(workspace.workspace().join("demo.txt")).unwrap_or_abort(),
         "alpha\nBETA\n"
     );
 
@@ -110,11 +111,11 @@ async fn native_edit_create_accepts_bof_and_eof_boundary_positions() {
             workspace.workspace(),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let worker_agent_id = handle
         .spawn_agent(supervisor_actor(), "worker", None)
         .await
-        .expect("spawn worker");
+        .unwrap_or_abort();
 
     handle
         .execute_agent_tool_call(
@@ -134,7 +135,7 @@ async fn native_edit_create_accepts_bof_and_eof_boundary_positions() {
             }),
         )
         .await
-        .expect("append eof should create missing file");
+        .unwrap_or_abort();
 
     handle
         .execute_agent_tool_call(
@@ -154,17 +155,15 @@ async fn native_edit_create_accepts_bof_and_eof_boundary_positions() {
             }),
         )
         .await
-        .expect("prepend bof should create missing file");
-    handle.stop_run().await.expect("stop run");
+        .unwrap_or_abort();
+    handle.stop_run().await.unwrap_or_abort();
 
     assert_eq!(
-        fs::read_to_string(workspace.workspace().join("append-boundary.txt"))
-            .expect("read append boundary file"),
+        fs::read_to_string(workspace.workspace().join("append-boundary.txt")).unwrap_or_abort(),
         "append ok\n"
     );
     assert_eq!(
-        fs::read_to_string(workspace.workspace().join("prepend-boundary.txt"))
-            .expect("read prepend boundary file"),
+        fs::read_to_string(workspace.workspace().join("prepend-boundary.txt")).unwrap_or_abort(),
         "prepend ok\n"
     );
 }
@@ -174,9 +173,8 @@ async fn native_edit_create_accepts_bof_and_eof_boundary_positions() {
 async fn native_edit_create_rejects_symlink_parent_escape() {
     let workspace = setup_workspace_fixture();
     let outside = workspace.temp_dir().join("outside");
-    fs::create_dir_all(&outside).expect("outside");
-    symlink(&outside, workspace.workspace().join("escape-link"))
-        .expect("symlink outside dir into workspace");
+    fs::create_dir_all(&outside).unwrap_or_abort();
+    symlink(&outside, workspace.workspace().join("escape-link")).unwrap_or_abort();
 
     let handle = test_coordinator(
         workspace.temp_dir(),
@@ -187,11 +185,11 @@ async fn native_edit_create_rejects_symlink_parent_escape() {
     let _run = handle
         .start_run("native_edit_create_symlink_escape", workspace.workspace())
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let worker_agent_id = handle
         .spawn_agent(supervisor_actor(), "worker", None)
         .await
-        .expect("spawn worker");
+        .unwrap_or_abort();
 
     let error = handle
         .execute_agent_tool_call(
@@ -210,7 +208,7 @@ async fn native_edit_create_rejects_symlink_parent_escape() {
         )
         .await
         .expect_err("symlink escape should fail edit create");
-    handle.stop_run().await.expect("stop run");
+    handle.stop_run().await.unwrap_or_abort();
 
     assert!(
         error.contains("path escapes workspace root"),
@@ -227,13 +225,13 @@ async fn native_edit_create_rejects_symlink_parent_escape() {
 async fn native_edit_rejects_symlink_file_escape() {
     let workspace = setup_workspace_fixture();
     let outside = workspace.temp_dir().join("outside");
-    fs::create_dir_all(&outside).expect("outside");
-    fs::write(outside.join("secret.txt"), "outside\n").expect("seed outside file");
+    fs::create_dir_all(&outside).unwrap_or_abort();
+    fs::write(outside.join("secret.txt"), "outside\n").unwrap_or_abort();
     symlink(
         outside.join("secret.txt"),
         workspace.workspace().join("escape-file.txt"),
     )
-    .expect("symlink outside file into workspace");
+    .unwrap_or_abort();
 
     let handle = test_coordinator(
         workspace.temp_dir(),
@@ -244,11 +242,11 @@ async fn native_edit_rejects_symlink_file_escape() {
     let _run = handle
         .start_run("native_edit_symlink_escape", workspace.workspace())
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let worker_agent_id = handle
         .spawn_agent(supervisor_actor(), "worker", None)
         .await
-        .expect("spawn worker");
+        .unwrap_or_abort();
 
     let error = handle
         .execute_agent_tool_call(
@@ -268,14 +266,14 @@ async fn native_edit_rejects_symlink_file_escape() {
         )
         .await
         .expect_err("symlink escape should fail edit");
-    handle.stop_run().await.expect("stop run");
+    handle.stop_run().await.unwrap_or_abort();
 
     assert!(
         error.contains("path escapes workspace root"),
         "unexpected error: {error}"
     );
     assert_eq!(
-        fs::read_to_string(outside.join("secret.txt")).expect("read outside file"),
+        fs::read_to_string(outside.join("secret.txt")).unwrap_or_abort(),
         "outside\n"
     );
 }
@@ -284,7 +282,7 @@ async fn native_edit_rejects_symlink_file_escape() {
 async fn native_edit_delete_with_absolute_path_emits_applied_event_without_rejection() {
     let workspace = setup_workspace_fixture();
     let file_path = workspace.workspace().join("demo.txt");
-    fs::write(&file_path, "alpha\n").expect("seed file");
+    fs::write(&file_path, "alpha\n").unwrap_or_abort();
 
     let handle = test_coordinator(
         workspace.temp_dir(),
@@ -295,11 +293,11 @@ async fn native_edit_delete_with_absolute_path_emits_applied_event_without_rejec
     let run = handle
         .start_run("native_edit_delete_compat_absolute", workspace.workspace())
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let worker_agent_id = handle
         .spawn_agent(supervisor_actor(), "worker", None)
         .await
-        .expect("spawn worker");
+        .unwrap_or_abort();
 
     handle
         .execute_agent_tool_call(
@@ -313,8 +311,8 @@ async fn native_edit_delete_with_absolute_path_emits_applied_event_without_rejec
             }),
         )
         .await
-        .expect("path delete should succeed");
-    handle.stop_run().await.expect("stop run");
+        .unwrap_or_abort();
+    handle.stop_run().await.unwrap_or_abort();
 
     assert!(!file_path.exists(), "path delete should remove the file");
 
@@ -337,7 +335,7 @@ async fn native_edit_delete_with_absolute_path_emits_applied_event_without_rejec
 #[tokio::test]
 async fn native_edit_rename_only_moves_existing_file() {
     let workspace = setup_workspace_fixture();
-    fs::write(workspace.workspace().join("old.txt"), "alpha\n").expect("seed file");
+    fs::write(workspace.workspace().join("old.txt"), "alpha\n").unwrap_or_abort();
 
     let handle = test_coordinator(
         workspace.temp_dir(),
@@ -348,11 +346,11 @@ async fn native_edit_rename_only_moves_existing_file() {
     let run = handle
         .start_run("native_edit_rename_only", workspace.workspace())
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let worker_agent_id = handle
         .spawn_agent(supervisor_actor(), "worker", None)
         .await
-        .expect("spawn worker");
+        .unwrap_or_abort();
 
     handle
         .execute_agent_tool_call(
@@ -366,12 +364,12 @@ async fn native_edit_rename_only_moves_existing_file() {
             }),
         )
         .await
-        .expect("rename-only edit should succeed");
-    handle.stop_run().await.expect("stop run");
+        .unwrap_or_abort();
+    handle.stop_run().await.unwrap_or_abort();
 
     assert!(!workspace.workspace().join("old.txt").exists());
     assert_eq!(
-        fs::read_to_string(workspace.workspace().join("new.txt")).expect("read moved file"),
+        fs::read_to_string(workspace.workspace().join("new.txt")).unwrap_or_abort(),
         "alpha\n"
     );
 
@@ -387,8 +385,8 @@ async fn native_edit_rename_only_moves_existing_file() {
 #[tokio::test]
 async fn native_edit_rename_failure_does_not_apply_content_edit() {
     let workspace = setup_workspace_fixture();
-    fs::write(workspace.workspace().join("old.txt"), "alpha\n").expect("seed source file");
-    fs::write(workspace.workspace().join("new.txt"), "occupied\n").expect("seed destination file");
+    fs::write(workspace.workspace().join("old.txt"), "alpha\n").unwrap_or_abort();
+    fs::write(workspace.workspace().join("new.txt"), "occupied\n").unwrap_or_abort();
 
     let handle = test_coordinator(
         workspace.temp_dir(),
@@ -399,11 +397,11 @@ async fn native_edit_rename_failure_does_not_apply_content_edit() {
     let run = handle
         .start_run("native_edit_rename_failure_atomic", workspace.workspace())
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let worker_agent_id = handle
         .spawn_agent(supervisor_actor(), "worker", None)
         .await
-        .expect("spawn worker");
+        .unwrap_or_abort();
 
     let error = handle
         .execute_agent_tool_call(
@@ -425,15 +423,15 @@ async fn native_edit_rename_failure_does_not_apply_content_edit() {
         )
         .await
         .expect_err("rename to existing destination should fail before editing");
-    handle.stop_run().await.expect("stop run");
+    handle.stop_run().await.unwrap_or_abort();
 
     assert!(error.contains("destination already exists"));
     assert_eq!(
-        fs::read_to_string(workspace.workspace().join("old.txt")).expect("read source file"),
+        fs::read_to_string(workspace.workspace().join("old.txt")).unwrap_or_abort(),
         "alpha\n"
     );
     assert_eq!(
-        fs::read_to_string(workspace.workspace().join("new.txt")).expect("read destination file"),
+        fs::read_to_string(workspace.workspace().join("new.txt")).unwrap_or_abort(),
         "occupied\n"
     );
 

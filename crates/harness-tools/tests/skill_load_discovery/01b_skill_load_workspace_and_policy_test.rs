@@ -1,3 +1,4 @@
+use harness_tools::UnwrapOrAbort;
 #[tokio::test]
 #[expect(
     clippy::await_holding_lock,
@@ -5,14 +6,14 @@
 )]
 async fn skill_discovery_uses_workspace_root_not_process_cwd() {
     let _guard = skills_registry_test_lock();
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let home = temp_dir.path().join("home");
     let repo = temp_dir.path().join("repo");
     let outside = temp_dir.path().join("outside-cwd");
-    fs::create_dir_all(&home).expect("home dir");
-    fs::create_dir_all(&repo).expect("repo dir");
-    fs::create_dir_all(&outside).expect("outside cwd");
-    fs::create_dir_all(repo.join(".git")).expect("git dir");
+    fs::create_dir_all(&home).unwrap_or_abort();
+    fs::create_dir_all(&repo).unwrap_or_abort();
+    fs::create_dir_all(&outside).unwrap_or_abort();
+    fs::create_dir_all(repo.join(".git")).unwrap_or_abort();
     let _skills_guard = SkillsConfigGuard::install(skills_config_with_global_root(
         home.join(".config/agent-harness/skills"),
     ));
@@ -31,14 +32,14 @@ async fn skill_discovery_uses_workspace_root_not_process_cwd() {
     );
 
     let registry = coordinator_registry(ShellAllowlist::default());
-    let skill_tool = registry.get("skill").expect("skill tool");
+    let skill_tool = registry.get("skill").unwrap_or_abort();
     let workspace_skill = skill_tool
         .call(
             tool_context(&repo, "toolcall-workspace-root-skill"),
             json!({"name": "workspace-skill"}),
         )
         .await
-        .expect("workspace skill");
+        .unwrap_or_abort();
     assert!(workspace_skill
         .display_text
         .contains("Workspace description"));
@@ -62,13 +63,13 @@ async fn skill_discovery_uses_workspace_root_not_process_cwd() {
 )]
 async fn skill_discovery_rejects_symlinked_skill_directories() {
     let _guard = skills_registry_test_lock();
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let home = temp_dir.path().join("home");
     let repo = temp_dir.path().join("repo");
     let outside = temp_dir.path().join("outside-skill");
-    fs::create_dir_all(&home).expect("home dir");
-    fs::create_dir_all(&repo).expect("repo dir");
-    fs::create_dir_all(repo.join(".git")).expect("git dir");
+    fs::create_dir_all(&home).unwrap_or_abort();
+    fs::create_dir_all(&repo).unwrap_or_abort();
+    fs::create_dir_all(repo.join(".git")).unwrap_or_abort();
     let _skills_guard = SkillsConfigGuard::install(skills_config_with_global_root(
         home.join(".config/agent-harness/skills"),
     ));
@@ -80,11 +81,11 @@ async fn skill_discovery_rejects_symlinked_skill_directories() {
         "Outside body",
     );
     let skill_root = repo.join(".agent-harness/skills");
-    fs::create_dir_all(&skill_root).expect("skill root");
-    std::os::unix::fs::symlink(&outside, skill_root.join("evil")).expect("symlink evil skill dir");
+    fs::create_dir_all(&skill_root).unwrap_or_abort();
+    std::os::unix::fs::symlink(&outside, skill_root.join("evil")).unwrap_or_abort();
 
     let registry = coordinator_registry(ShellAllowlist::default());
-    let skill_tool = registry.get("skill").expect("skill tool");
+    let skill_tool = registry.get("skill").unwrap_or_abort();
     let err = skill_tool
         .call(
             tool_context(&repo, "toolcall-symlink-skill"),
@@ -102,13 +103,13 @@ async fn skill_discovery_rejects_symlinked_skill_directories() {
 )]
 async fn skill_discovery_rejects_symlinked_project_skill_root() {
     let _guard = skills_registry_test_lock();
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let home = temp_dir.path().join("home");
     let repo = temp_dir.path().join("repo");
     let outside = temp_dir.path().join("outside-root");
-    fs::create_dir_all(&home).expect("home dir");
-    fs::create_dir_all(&repo).expect("repo dir");
-    fs::create_dir_all(repo.join(".git")).expect("git dir");
+    fs::create_dir_all(&home).unwrap_or_abort();
+    fs::create_dir_all(&repo).unwrap_or_abort();
+    fs::create_dir_all(repo.join(".git")).unwrap_or_abort();
     let _skills_guard = SkillsConfigGuard::install(skills_config_with_global_root(
         home.join(".config/agent-harness/skills"),
     ));
@@ -120,12 +121,12 @@ async fn skill_discovery_rejects_symlinked_project_skill_root() {
         "Outside root body",
     );
     let agent_harness_dir = repo.join(".agent-harness");
-    fs::create_dir_all(&agent_harness_dir).expect("agent harness dir");
+    fs::create_dir_all(&agent_harness_dir).unwrap_or_abort();
     std::os::unix::fs::symlink(&outside, agent_harness_dir.join("skills"))
-        .expect("symlink project skill root");
+        .unwrap_or_abort();
 
     let registry = coordinator_registry(ShellAllowlist::default());
-    let skill_tool = registry.get("skill").expect("skill tool");
+    let skill_tool = registry.get("skill").unwrap_or_abort();
     let err = skill_tool
         .call(
             tool_context(&repo, "toolcall-symlink-root-skill"),
@@ -144,12 +145,12 @@ async fn skill_discovery_rejects_symlinked_project_skill_root() {
 )]
 async fn skill_load_hides_denied_or_invalid_skills() {
     let _guard = skills_registry_test_lock();
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let home = temp_dir.path().join("home");
     let repo = temp_dir.path().join("repo");
-    fs::create_dir_all(&home).expect("home dir");
-    fs::create_dir_all(&repo).expect("repo dir");
-    fs::create_dir_all(repo.join(".git")).expect("git dir");
+    fs::create_dir_all(&home).unwrap_or_abort();
+    fs::create_dir_all(&repo).unwrap_or_abort();
+    fs::create_dir_all(repo.join(".git")).unwrap_or_abort();
     let _skills_guard = SkillsConfigGuard::install(SkillsConfig {
         global_roots: vec![home.join(".config/agent-harness/skills")],
         permissions: BTreeMap::from([
@@ -187,14 +188,14 @@ async fn skill_load_hides_denied_or_invalid_skills() {
     );
 
     let registry = coordinator_registry(ShellAllowlist::default());
-    let skill_tool = registry.get("skill").expect("skill tool");
+    let skill_tool = registry.get("skill").unwrap_or_abort();
     let visible = skill_tool
         .call(
             tool_context(&repo, "toolcall-visible-skill"),
             json!({"name": "visible-skill"}),
         )
         .await
-        .expect("visible skill");
+        .unwrap_or_abort();
     assert!(visible.display_text.contains("Visible description"));
 
     let denied = skill_tool
@@ -214,7 +215,7 @@ async fn skill_load_hides_denied_or_invalid_skills() {
             json!({"name": "experimental-preview"}),
         )
         .await
-        .expect("ask skill should load after approval");
+        .unwrap_or_abort();
     assert!(approved.display_text.contains("Ask description"));
     assert!(approved.display_text.contains("Ask body"));
 
@@ -246,14 +247,14 @@ async fn shipped_starter_skill_pack_is_discoverable_from_repo_checkout() {
     let repo = repo_root();
     let _skills_guard = SkillsConfigGuard::install(skills_config_without_global_roots());
     let registry = coordinator_registry(ShellAllowlist::default());
-    let skill_tool = registry.get("skill").expect("skill tool");
+    let skill_tool = registry.get("skill").unwrap_or_abort();
     let skill = skill_tool
         .call(
             tool_context(&repo, "toolcall-shipped-rust-best-practices"),
             json!({"name": "rust-best-practices"}),
         )
         .await
-        .expect("shipped rust-best-practices skill");
+        .unwrap_or_abort();
     assert!(skill.display_text.contains("# Skill: rust-best-practices"));
     assert!(skill.display_text.contains("cargo fmt --all -- --check"));
     assert_eq!(
@@ -277,14 +278,14 @@ async fn harness_skill_pack_is_discoverable_from_repo_checkout() {
     let repo = repo_root();
     let _skills_guard = SkillsConfigGuard::install(skills_config_without_global_roots());
     let registry = coordinator_registry(ShellAllowlist::default());
-    let skill_tool = registry.get("skill").expect("skill tool");
+    let skill_tool = registry.get("skill").unwrap_or_abort();
     let skill = skill_tool
         .call(
             tool_context(&repo, "toolcall-shipped-analyze"),
             json!({"name": "rust-best-practices"}),
         )
         .await
-        .expect("shipped rust best practices skill");
+        .unwrap_or_abort();
     assert!(skill.display_text.contains("# Rust best practices"));
     assert!(skill.display_text.contains("harness workspace"));
     assert_eq!(
@@ -308,7 +309,7 @@ async fn skill_load_reports_agent_hint_for_build() {
     let repo = repo_root();
     let _skills_guard = SkillsConfigGuard::install(skills_config_without_global_roots());
     let registry = coordinator_registry(ShellAllowlist::default());
-    let skill_tool = registry.get("skill").expect("skill tool");
+    let skill_tool = registry.get("skill").unwrap_or_abort();
 
     let err = skill_tool
         .call(

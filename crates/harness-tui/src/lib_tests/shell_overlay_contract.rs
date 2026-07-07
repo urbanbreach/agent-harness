@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 pub(super) fn startup_surface_renders_without_onboarding_overlay() {
     let app = app::AppState::new_startup(Vec::new(), None);
@@ -228,32 +229,27 @@ pub(super) fn slash_overlay_uses_input_width_aligned_rows_and_accent_selection()
         .unwrap_or_else(|| panic!("slash /help row\n{rendered}"));
     let help_description = lines[row]
         .find("Show shortcuts and TUI controls")
-        .expect("help description column");
+        .unwrap_or_abort();
     let exit_row = find_line_containing_all(&lines, &["/exit", "Quit the application"])
         .unwrap_or_else(|| panic!("slash /exit row\n{rendered}"));
     let exit_description = lines[exit_row]
         .find("Quit the application")
-        .expect("exit description column");
+        .unwrap_or_abort();
 
     assert_eq!(help_description, exit_description);
     assert!(!lines[row].contains('┃'));
     assert!(!rendered.contains('╭') && !rendered.contains('╰') && !rendered.contains('│'));
 
     let buffer = render_live_cells(&app, 100, 24);
-    let selected_command = format!(
-        "/{}",
-        app.slash_filtered.first().expect("selected slash command")
-    );
+    let selected_command = format!("/{}", app.slash_filtered.first().unwrap_or_abort());
     let (selected_row, selected_fgs, selected_bgs) =
-        row_text_and_palette(&buffer, 100, &selected_command).expect("selected slash row palette");
-    let command_start = selected_row
-        .find(&selected_command)
-        .expect("selected command start");
+        row_text_and_palette(&buffer, 100, &selected_command).unwrap_or_abort();
+    let command_start = selected_row.find(&selected_command).unwrap_or_abort();
     let description_start = selected_row
         .find(crate::keybindings::slash_command_description(
             selected_command.trim_start_matches('/'),
         ))
-        .expect("selected description start");
+        .unwrap_or_abort();
     let theme = Theme::default();
 
     assert_eq!(selected_bgs[command_start], theme.text.accent);
@@ -291,7 +287,7 @@ pub(super) fn command_driven_session_switch_emits_correct_ui_intent() {
     let sink = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
 
@@ -314,7 +310,7 @@ pub(super) fn command_driven_session_switch_emits_correct_ui_intent() {
     app.handle_key(exact_test_key(crossterm::event::KeyCode::Enter));
 
     assert!(matches!(
-        intents.lock().expect("lock intents").last(),
+        intents.lock().unwrap_or_abort().last(),
         Some(UiIntent::ContinueSession { run_id, run_dir })
             if run_id == "run_resume" && run_dir.as_path() == Path::new("/tmp/sessions/run_resume")
     ));
@@ -527,8 +523,8 @@ pub(super) fn permission_modal_remains_visually_dominant_and_fail_closed() {
     let rendered = render_live_lines(&app, 100, 24);
     let buffer = render_live_cells(&app, 100, 24);
     let theme = Theme::default();
-    let (row, _, bgs) = row_text_and_palette(&buffer, 100, "Allow once").expect("allow chip row");
-    let start_byte = row.find("Allow once").expect("chip substring");
+    let (row, _, bgs) = row_text_and_palette(&buffer, 100, "Allow once").unwrap_or_abort();
+    let start_byte = row.find("Allow once").unwrap_or_abort();
     let start = row[..start_byte].chars().count();
     let end = start + "Allow once".chars().count();
 

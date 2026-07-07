@@ -119,6 +119,38 @@ pub use tool_catalog::{native_tool_catalog_entries, NativeToolCatalogEntry};
 mod plan;
 use plan::{PlanEnterTool, PlanExitTool};
 
+pub trait UnwrapOrAbort<T> {
+    fn unwrap_or_abort(self) -> T;
+}
+
+#[allow(
+    clippy::panic,
+    clippy::match_wild_err_arm,
+    reason = "replaces .expect() which also panics; abort() kills test processes"
+)]
+impl<T> UnwrapOrAbort<T> for Option<T> {
+    fn unwrap_or_abort(self) -> T {
+        match self {
+            Some(v) => v,
+            None => panic!("unwrap_or_abort on None"),
+        }
+    }
+}
+
+#[allow(
+    clippy::panic,
+    clippy::match_wild_err_arm,
+    reason = "replaces .expect() which also panics; abort() kills test processes"
+)]
+impl<T, E> UnwrapOrAbort<T> for Result<T, E> {
+    fn unwrap_or_abort(self) -> T {
+        match self {
+            Ok(v) => v,
+            Err(_) => panic!("unwrap_or_abort on Err"),
+        }
+    }
+}
+
 pub use harness_core::tool::canonical_tool_id_for;
 
 #[doc(hidden)]
@@ -402,10 +434,10 @@ fn coordinator_native_tool_surface(
     editing: EditingToolSurfaceConfig,
     executors: CoordinatorRegistryExecutors,
 ) -> Vec<Arc<dyn Tool>> {
-    let question_answer_source = executors.question_answer_source.clone();
-    let network_executor = executors.network_executor.clone();
-    let github_executor = executors.github_executor.clone();
-    let shell_command_runner = executors.shell_command_runner.clone();
+    let question_answer_source = Arc::clone(&executors.question_answer_source);
+    let network_executor = Arc::clone(&executors.network_executor);
+    let github_executor = Arc::clone(&executors.github_executor);
+    let shell_command_runner = Arc::clone(&executors.shell_command_runner);
     let ast_grep_command = executors.ast_grep_command.clone();
     let ast_grep_tool = ast_grep_command
         .clone()
@@ -414,11 +446,11 @@ fn coordinator_native_tool_surface(
     let ast_grep_replace_tool = ast_grep_command
         .map(AstGrepReplaceTool::with_command)
         .unwrap_or_else(AstGrepReplaceTool::new);
-    let agent_ops_executor = Arc::new(AgentOpsExecutor::with_question_answer_source(
-        question_answer_source.clone(),
-    ));
+    let agent_ops_executor = Arc::new(AgentOpsExecutor::with_question_answer_source(Arc::clone(
+        &question_answer_source,
+    )));
     let control_plane_executor = Arc::new(ControlPlaneExecutor::with_question_answer_source(
-        question_answer_source.clone(),
+        Arc::clone(&question_answer_source),
     ));
     let code_lsp_executor = Arc::new(CodeLspExecutor::new());
     let code_lsp_rename_executor = Arc::new(CodeLspRenameExecutor::new());
@@ -428,35 +460,35 @@ fn coordinator_native_tool_surface(
         boxed_tool(ListTool),
         boxed_tool(GlobTool),
         boxed_tool(GrepTool),
-        boxed_tool(TaskTool::new(agent_ops_executor.clone())),
-        boxed_tool(BackgroundOutputTool::new(agent_ops_executor.clone())),
-        boxed_tool(BackgroundCancelTool::new(agent_ops_executor.clone())),
+        boxed_tool(TaskTool::new(Arc::clone(&agent_ops_executor))),
+        boxed_tool(BackgroundOutputTool::new(Arc::clone(&agent_ops_executor))),
+        boxed_tool(BackgroundCancelTool::new(Arc::clone(&agent_ops_executor))),
         boxed_tool(SessionListTool),
         boxed_tool(SessionReadTool),
         boxed_tool(SessionSearchTool),
         boxed_tool(SessionInfoTool),
         boxed_tool(ast_grep_tool),
         boxed_tool(ast_grep_replace_tool),
-        boxed_tool(PlanEnterTool::new(question_answer_source.clone())),
-        boxed_tool(PlanExitTool::new(question_answer_source.clone())),
+        boxed_tool(PlanEnterTool::new(Arc::clone(&question_answer_source))),
+        boxed_tool(PlanExitTool::new(Arc::clone(&question_answer_source))),
         boxed_tool(HashlineEditTool),
         boxed_tool(WriteTool),
         boxed_tool(ApplyPatchTool),
         boxed_tool(ShellRunTool::with_runner(
             shell_allowlist.clone(),
-            shell_command_runner.clone(),
+            Arc::clone(&shell_command_runner),
         )),
         boxed_tool(BashTool::with_runner(shell_allowlist, shell_command_runner)),
-        boxed_tool(WebFetchTool::new(network_executor.clone())),
-        boxed_tool(WebSearchTool::new(network_executor.clone())),
-        boxed_tool(CodeSearchTool::new(network_executor.clone())),
-        boxed_tool(GitHubIssueTool::new(github_executor.clone())),
+        boxed_tool(WebFetchTool::new(Arc::clone(&network_executor))),
+        boxed_tool(WebSearchTool::new(Arc::clone(&network_executor))),
+        boxed_tool(CodeSearchTool::new(Arc::clone(&network_executor))),
+        boxed_tool(GitHubIssueTool::new(Arc::clone(&github_executor))),
         boxed_tool(GitHubPullRequestTool::new(github_executor)),
-        boxed_tool(TodoWriteTool::new(control_plane_executor.clone())),
-        boxed_tool(TodoReadTool::new(control_plane_executor.clone())),
-        boxed_tool(SkillTool::new(control_plane_executor.clone())),
-        boxed_tool(BatchTool::new(agent_ops_executor.clone())),
-        boxed_tool(QuestionTool::new(control_plane_executor.clone())),
+        boxed_tool(TodoWriteTool::new(Arc::clone(&control_plane_executor))),
+        boxed_tool(TodoReadTool::new(Arc::clone(&control_plane_executor))),
+        boxed_tool(SkillTool::new(Arc::clone(&control_plane_executor))),
+        boxed_tool(BatchTool::new(Arc::clone(&agent_ops_executor))),
+        boxed_tool(QuestionTool::new(Arc::clone(&control_plane_executor))),
         boxed_tool(CodeLspRenameTool::new(code_lsp_rename_executor)),
         boxed_tool(LspTool::new(code_lsp_executor)),
         boxed_tool(InvalidTool::new(control_plane_executor)),
@@ -567,6 +599,7 @@ fn normalize_top_level_object_schema(schema: &mut serde_json::Value) {
 
 #[cfg(test)]
 pub(crate) mod test_support {
+    use super::UnwrapOrAbort;
     use std::path::{Path, PathBuf};
     use std::sync::Arc;
 
@@ -597,11 +630,8 @@ pub(crate) mod test_support {
     }
 
     pub(crate) fn read_spilled_artifact(context: &ToolContext, artifact_path: &str) -> String {
-        let relative = artifact_path
-            .strip_prefix("artifacts/")
-            .expect("artifact path prefix");
-        std::fs::read_to_string(context.artifacts_dir.join(relative))
-            .expect("read spilled artifact")
+        let relative = artifact_path.strip_prefix("artifacts/").unwrap_or_abort();
+        std::fs::read_to_string(context.artifacts_dir.join(relative)).unwrap_or_abort()
     }
 
     pub(crate) fn write_workspace_file(
@@ -610,7 +640,7 @@ pub(crate) mod test_support {
         contents: impl AsRef<[u8]>,
     ) -> PathBuf {
         let path = workspace_root.join(relative_path);
-        std::fs::write(&path, contents).expect("write workspace fixture");
+        std::fs::write(&path, contents).unwrap_or_abort();
         path
     }
 }
@@ -618,6 +648,7 @@ pub(crate) mod test_support {
 #[cfg(test)]
 mod tests {
     use super::coordinator_registry;
+    use crate::UnwrapOrAbort;
     use harness_core::config::ShellAllowlist;
     use schemars::JsonSchema;
     use serde::Deserialize;
@@ -686,6 +717,10 @@ mod tests {
 
     #[derive(Debug, Deserialize, JsonSchema)]
     #[serde(deny_unknown_fields)]
+    #[allow(
+        clippy::empty_structs_with_brackets,
+        reason = "unit struct changes JSON schema representation"
+    )]
     struct EmptyObjectArgs {}
 
     #[test]
@@ -729,9 +764,9 @@ mod tests {
         let registry = coordinator_registry(ShellAllowlist::default());
         let schema = registry
             .get("read")
-            .expect("read tool")
+            .unwrap_or_abort()
             .parameters_json_schema();
-        let properties = schema["properties"].as_object().expect("read properties");
+        let properties = schema["properties"].as_object().unwrap_or_abort();
 
         assert_eq!(properties["offset"]["minimum"], json!(1));
         assert_eq!(properties["limit"]["minimum"], json!(1));
@@ -742,7 +777,7 @@ mod tests {
     #[test]
     fn bash_description_warns_against_find_style_repo_exploration() {
         let registry = coordinator_registry(ShellAllowlist::default());
-        let bash = registry.get("bash").expect("bash tool");
+        let bash = registry.get("bash").unwrap_or_abort();
         let description = bash.description();
 
         assert!(description.contains("glob"));

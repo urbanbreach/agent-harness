@@ -1,3 +1,4 @@
+use harness_tui::UnwrapOrAbort;
 use std::path::PathBuf;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -403,9 +404,7 @@ fn fork_selector_lists_user_messages_like_reference_selector() {
     );
     app.handle_key(key(KeyCode::Enter));
 
-    let confirmed = app
-        .confirmed_fork_prefix()
-        .expect("reference-style selected user message confirmed");
+    let confirmed = app.confirmed_fork_prefix().unwrap_or_abort();
     assert_eq!(confirmed.cutoff_seq, 5);
     assert_eq!(confirmed.event_count, 5);
     assert!(!app.fork_selector_visible);
@@ -420,9 +419,7 @@ fn fork_selector_lists_user_messages_like_reference_selector() {
     }
     app.handle_key(key(KeyCode::Enter));
 
-    let confirmed = app
-        .confirmed_fork_prefix()
-        .expect("stable cutoff confirmed");
+    let confirmed = app.confirmed_fork_prefix().unwrap_or_abort();
     assert_eq!(confirmed.cutoff_seq, 10);
     assert_eq!(confirmed.event_count, 10);
     assert!(!app.fork_selector_visible);

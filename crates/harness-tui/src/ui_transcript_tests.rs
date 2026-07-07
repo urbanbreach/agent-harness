@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 use harness_core::event::UserMessageSubmittedEvent;
 
 #[test]
@@ -346,7 +347,7 @@ fn streaming_assistant_footer_uses_reserved_active_label() {
     let footer_row = lines
         .iter()
         .position(|line| line.contains("Assistant · gpt-5.4-mini · active"))
-        .expect("streaming assistant footer row");
+        .unwrap_or_abort();
     assert_eq!(footer_row, 0);
     assert_eq!(lines[footer_row], "   ⠋ Assistant · gpt-5.4-mini · active");
 }
@@ -727,11 +728,11 @@ fn fenced_code_blocks_render_frameless_with_highlighting() {
     let function_row = lines
         .iter()
         .find(|line| line.contains("fn main()"))
-        .expect("function row");
+        .unwrap_or_abort();
     let println_row = lines
         .iter()
         .find(|line| line.contains("println!(\"hi\")"))
-        .expect("println row");
+        .unwrap_or_abort();
 
     assert!(lines.iter().any(|line| line.contains("Before")));
     assert!(
@@ -788,31 +789,28 @@ fn assistant_tool_surfaces_keep_same_trailing_gap_as_text_boxes() {
                 .iter()
                 .any(|line| line.contains("bash smoke test ok"))
         })
-        .expect("assistant tool surface");
+        .unwrap_or_abort();
     let tool_lines = transcript_test_line_texts(tool_surface.lines.clone());
-    let tool_interactions = tool_surface
-        .interaction_rows
-        .as_ref()
-        .expect("tool surface interaction rows");
+    let tool_interactions = tool_surface.interaction_rows.as_ref().unwrap_or_abort();
 
     assert_eq!(tool_surface.width, 78);
     let command_row = tool_lines
         .iter()
         .position(|line| line.contains("$ printf 'bash smoke test ok"))
-        .expect("command line");
+        .unwrap_or_abort();
     let output_row = tool_lines
         .iter()
         .enumerate()
         .find_map(|(index, line)| {
             (!line.contains("$ printf") && line.contains("bash smoke test ok")).then_some(index)
         })
-        .expect("output line");
+        .unwrap_or_abort();
     let command_column = tool_lines[command_row]
         .find("$ printf 'bash smoke test ok")
-        .expect("command column");
+        .unwrap_or_abort();
     let output_column = tool_lines[output_row]
         .find("bash smoke test ok")
-        .expect("output column");
+        .unwrap_or_abort();
     assert_eq!(output_column, command_column);
     assert_eq!(tool_interactions[command_row], None);
     assert_eq!(tool_interactions[output_row], None);
@@ -829,18 +827,17 @@ fn assistant_tool_surfaces_keep_same_trailing_gap_as_text_boxes() {
     );
 
     let area = Rect::new(0, 0, 100, 30);
-    let snapshot = transcript_selection_debug_snapshot(&app, area)
-        .expect("shell command card selection snapshot");
+    let snapshot = transcript_selection_debug_snapshot(&app, area).unwrap_or_abort();
     let command_row = snapshot
         .rows
         .iter()
         .position(|line| line.contains("$ printf 'bash smoke test ok"))
-        .expect("selectable command row");
+        .unwrap_or_abort();
     let output_row = snapshot
         .rows
         .iter()
         .position(|line| line.contains("bash smoke test ok"))
-        .expect("selectable output row");
+        .unwrap_or_abort();
     let copied = transcript_selection_text(
         &app,
         area,
@@ -855,7 +852,7 @@ fn assistant_tool_surfaces_keep_same_trailing_gap_as_text_boxes() {
             },
         },
     )
-    .expect("shell command card selection copies text");
+    .unwrap_or_abort();
     assert!(
         copied.starts_with("$ printf 'bash smoke test ok"),
         "copied shell card text should skip visual rail/padding: {copied:?}"
@@ -921,11 +918,11 @@ fn reasoning_to_answer_transition_uses_single_blank_row() {
     let reasoning_row = lines
         .iter()
         .position(|line| line.contains("reasoning"))
-        .expect("reasoning row");
+        .unwrap_or_abort();
     let answer_row = lines
         .iter()
         .position(|line| line.contains("answer"))
-        .expect("answer row");
+        .unwrap_or_abort();
 
     assert_eq!(
         answer_row,
@@ -1092,8 +1089,7 @@ fn transcript_selection_rows_proportional_to_visual_lines_not_cell_count() {
     let layout = build_measured_transcript_layout_for_width(&app, &Theme::default(), 80);
     let total_height = layout.total_height;
 
-    let row_count =
-        transcript_selection_row_count(&app, area).expect("selection snapshot row count");
+    let row_count = transcript_selection_row_count(&app, area).unwrap_or_abort();
     // assert
     assert_eq!(
         row_count, total_height,
@@ -1114,8 +1110,8 @@ fn transcript_selection_rows_proportional_to_visual_lines_not_cell_count() {
 
     let wide_layout = build_measured_transcript_layout_for_width(&app, &Theme::default(), 120);
     let wide_total_height = wide_layout.total_height;
-    let wide_row_count = transcript_selection_row_count(&app, Rect::new(0, 0, 140, 40))
-        .expect("selection snapshot row count at wider width");
+    let wide_row_count =
+        transcript_selection_row_count(&app, Rect::new(0, 0, 140, 40)).unwrap_or_abort();
 
     assert_eq!(
         wide_row_count, wide_total_height,
@@ -1123,7 +1119,8 @@ fn transcript_selection_rows_proportional_to_visual_lines_not_cell_count() {
     );
 
     let width_ratio = 120.0 / 80.0;
-    let row_ratio = wide_row_count as f64 / row_count.max(1) as f64;
+    let row_ratio = f64::from(u32::try_from(wide_row_count).unwrap_or(u32::MAX))
+        / f64::from(u32::try_from(row_count.max(1)).unwrap_or(u32::MAX));
     assert!(
         row_ratio < width_ratio,
         "SelectionRow count should not scale linearly with width: \
@@ -1214,7 +1211,7 @@ fn perf_500_event_streaming_transcript_cache_and_layout_budget() {
         total_delta += key_elapsed + layout_elapsed;
     }
 
-    let avg_delta = total_delta / STREAMING_DELTA_COUNT as u32;
+    let avg_delta = total_delta / u32::try_from(STREAMING_DELTA_COUNT).unwrap_or(u32::MAX);
 
     eprintln!(
         "perf_500_event: {ACTIVITY_COUNT} activities, {STREAMING_DELTA_COUNT} deltas | \

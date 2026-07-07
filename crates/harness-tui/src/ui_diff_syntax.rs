@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::path::Path;
 use std::str::FromStr;
 use std::sync::OnceLock;
@@ -273,8 +274,7 @@ fn push_syntect_scope(
     background: Option<SyntectColor>,
     font_style: Option<SyntectFontStyle>,
 ) {
-    let scope = ScopeSelectors::from_str(selector)
-        .unwrap_or_else(|error| panic!("invalid syntect selector {selector:?}: {error:?}"));
+    let scope = ScopeSelectors::from_str(selector).unwrap_or_abort();
     scopes.push(ThemeItem {
         scope,
         style: SyntectStyleModifier {

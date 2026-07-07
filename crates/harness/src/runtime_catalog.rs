@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
@@ -488,6 +489,7 @@ fn retarget_default_model_refs(config: &mut HarnessConfig, provider: &str, defau
 
 #[cfg(test)]
 mod tests {
+    use crate::UnwrapOrAbort;
     use tempfile::tempdir;
 
     use harness_core::auth::{CredentialClock, StoredCredential, SystemCredentialClock};
@@ -496,7 +498,7 @@ mod tests {
     use super::*;
 
     fn store_with(provider: AuthProviderId) -> (tempfile::TempDir, CredentialStore) {
-        let temp = tempdir().expect("tempdir");
+        let temp = tempdir().unwrap_or_abort();
         let store = CredentialStore::new(temp.path());
         store
             .save(&StoredCredential::api_key(
@@ -504,15 +506,15 @@ mod tests {
                 "test-token",
                 SystemCredentialClock.now_rfc3339(),
             ))
-            .expect("save credential");
+            .unwrap_or_abort();
         (temp, store)
     }
 
     #[test]
     fn no_config_stored_codex_activates_filtered_codex_catalog() {
         let (_temp, store) = store_with(AuthProviderId::codex());
-        let resolved = resolve_runtime_catalog(None, None, None, Some(&store), &|_| None)
-            .expect("runtime catalog");
+        let resolved =
+            resolve_runtime_catalog(None, None, None, Some(&store), &|_| None).unwrap_or_abort();
         assert!(resolved
             .connected_provider_ids
             .contains(&BUILTIN_CODEX_PROVIDER_ID.to_string()));
@@ -528,8 +530,8 @@ mod tests {
     #[test]
     fn no_config_stored_copilot_activates_copilot_catalog() {
         let (_temp, store) = store_with(AuthProviderId::github_copilot());
-        let resolved = resolve_runtime_catalog(None, None, None, Some(&store), &|_| None)
-            .expect("runtime catalog");
+        let resolved =
+            resolve_runtime_catalog(None, None, None, Some(&store), &|_| None).unwrap_or_abort();
         assert!(resolved
             .connected_provider_ids
             .contains(&BUILTIN_COPILOT_PROVIDER_ID.to_string()));
@@ -556,7 +558,7 @@ mod tests {
           agent: { build: { enable: true, model: "github-copilot/custom" } },
           permission: { "*": "deny" }
         }"#;
-        let config = load_config_from_str(raw).expect("config");
+        let config = load_config_from_str(raw).unwrap_or_abort();
         let (_temp, store) = store_with(AuthProviderId::github_copilot());
         let resolved = resolve_runtime_catalog(
             Some(config),
@@ -565,7 +567,7 @@ mod tests {
             Some(&store),
             &|_| None,
         )
-        .expect("runtime catalog");
+        .unwrap_or_abort();
         let entries = configured_model_catalog(&resolved.config);
         assert!(entries.iter().any(|entry| {
             entry.provider == BUILTIN_COPILOT_PROVIDER_ID
@@ -579,8 +581,7 @@ mod tests {
 
     #[test]
     fn no_config_without_credentials_reports_connect_state() {
-        let resolved =
-            resolve_runtime_catalog(None, None, None, None, &|_| None).expect("runtime catalog");
+        let resolved = resolve_runtime_catalog(None, None, None, None, &|_| None).unwrap_or_abort();
 
         assert!(resolved.no_provider_connected);
         assert!(resolved.connected_provider_ids.is_empty());
@@ -599,7 +600,7 @@ mod tests {
         let resolved = resolve_runtime_catalog(None, None, None, None, &|name| {
             (name == "OPENAI_API_KEY").then_some("sk-test-secret".to_string())
         })
-        .expect("runtime catalog");
+        .unwrap_or_abort();
 
         assert!(resolved
             .connected_provider_ids
@@ -608,7 +609,7 @@ mod tests {
             .config
             .providers
             .get(BUILTIN_CODEX_PROVIDER_ID)
-            .expect("codex provider");
+            .unwrap_or_abort();
         assert_eq!(provider.auth_provider, Some(AuthProviderId::codex()));
         assert!(provider.api_key.is_empty());
         assert_eq!(provider.api_key_env, ["OPENAI_API_KEY".to_string()]);
@@ -628,7 +629,7 @@ mod tests {
           agent: { build: { enable: true, model: "default/custom" } },
           permission: { "*": "deny" }
         }"#;
-        let config = load_config_from_str(raw).expect("config");
+        let config = load_config_from_str(raw).unwrap_or_abort();
         let resolved = resolve_runtime_catalog(
             Some(config),
             Some("explicit".to_string()),
@@ -636,7 +637,7 @@ mod tests {
             None,
             &|_| None,
         )
-        .expect("runtime catalog");
+        .unwrap_or_abort();
 
         assert!(resolved.config.providers.contains_key("default"));
         assert!(!resolved
@@ -671,21 +672,21 @@ mod tests {
                 "test-token",
                 SystemCredentialClock.now_rfc3339(),
             ))
-            .expect("save copilot");
+            .unwrap_or_abort();
         drop(codex_store);
 
         let resolved = resolve_runtime_catalog(None, None, None, Some(&copilot_store), &|_| None)
-            .expect("runtime catalog");
+            .unwrap_or_abort();
         let ProviderConfig::OpenAiCompatible(codex) = resolved
             .config
             .providers
             .get(BUILTIN_CODEX_PROVIDER_ID)
-            .expect("codex provider");
+            .unwrap_or_abort();
         let ProviderConfig::OpenAiCompatible(copilot) = resolved
             .config
             .providers
             .get(BUILTIN_COPILOT_PROVIDER_ID)
-            .expect("copilot provider");
+            .unwrap_or_abort();
 
         assert_eq!(codex.auth_provider, Some(AuthProviderId::codex()));
         assert_eq!(
@@ -712,7 +713,7 @@ mod tests {
           agent: { build: { enable: true, model: "default/gpt-5.4-mini" } },
           permission: { "*": "deny" }
         }"#;
-        let config = load_config_from_str(raw).expect("config");
+        let config = load_config_from_str(raw).unwrap_or_abort();
         let (temp_codex, codex_store) = store_with(AuthProviderId::codex());
         let copilot_store = CredentialStore::new(temp_codex.path());
         copilot_store
@@ -721,7 +722,7 @@ mod tests {
                 "test-token",
                 SystemCredentialClock.now_rfc3339(),
             ))
-            .expect("save copilot");
+            .unwrap_or_abort();
         drop(codex_store);
         let resolved = resolve_runtime_catalog(
             Some(config),
@@ -730,7 +731,7 @@ mod tests {
             Some(&copilot_store),
             &|_| None,
         )
-        .expect("runtime catalog");
+        .unwrap_or_abort();
         assert!(!resolved
             .config
             .providers
@@ -744,8 +745,8 @@ mod tests {
     #[test]
     fn codex_oauth_models_get_complete_reasoning_variants() {
         let (_temp, store) = store_with(AuthProviderId::codex());
-        let resolved = resolve_runtime_catalog(None, None, None, Some(&store), &|_| None)
-            .expect("runtime catalog");
+        let resolved =
+            resolve_runtime_catalog(None, None, None, Some(&store), &|_| None).unwrap_or_abort();
         let entries = configured_model_catalog(&resolved.config);
 
         let gpt54_entries: Vec<_> = entries
@@ -793,7 +794,7 @@ mod tests {
                     && e.model == "gpt-5.5"
                     && e.variant.is_none()
             })
-            .expect("gpt-5.5 base model");
+            .unwrap_or_abort();
         assert_eq!(gpt55.context_window_tokens, Some(400_000));
         assert_eq!(gpt55.max_input_tokens, Some(272_000));
         assert_eq!(gpt55.max_output_tokens, Some(128_000));

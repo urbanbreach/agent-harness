@@ -1,9 +1,10 @@
+use harness_core::UnwrapOrAbort;
 use harness_core::perm::PermissionGrantScope;
 
 #[tokio::test]
 async fn permission_flow_covers_allow_headless_ask_deny_and_worker_policy_violation() {
     // arrange
-    let allow_temp_dir = tempfile::tempdir().expect("allow tempdir");
+    let allow_temp_dir = tempfile::tempdir().unwrap_or_abort();
     let allow_coordinator = test_agent_tool_coordinator(
         allow_temp_dir.path(),
         Arc::new(test_mock_provider()),
@@ -15,7 +16,7 @@ async fn permission_flow_covers_allow_headless_ask_deny_and_worker_policy_violat
     let allow_run = allow_coordinator
         .start_run("coord_permission_allow", PathBuf::from("/workspace/project"))
         .await
-        .expect("start allow run");
+        .unwrap_or_abort();
 
     // act
     let allowed_tool_call_id = allow_coordinator
@@ -26,7 +27,7 @@ async fn permission_flow_covers_allow_headless_ask_deny_and_worker_policy_violat
             json!({"cmd": "true"}),
         )
         .await
-        .expect("allowed shell request");
+        .unwrap_or_abort();
     wait_for_events(&allow_run.events_path, Duration::from_millis(500), |events| {
         events.iter().any(|event| matches!(
             &event.payload,
@@ -34,7 +35,7 @@ async fn permission_flow_covers_allow_headless_ask_deny_and_worker_policy_violat
         ))
     })
     .await;
-    allow_coordinator.stop_run().await.expect("stop allow run");
+    allow_coordinator.stop_run().await.unwrap_or_abort();
 
     // assert
     let allow_events = load_events(&allow_run.events_path);
@@ -45,7 +46,7 @@ async fn permission_flow_covers_allow_headless_ask_deny_and_worker_policy_violat
     )));
 
     // arrange
-    let ask_temp_dir = tempfile::tempdir().expect("ask tempdir");
+    let ask_temp_dir = tempfile::tempdir().unwrap_or_abort();
     let ask_policy = PermissionPolicy::new(
         PermissionMode::Deny,
         PermissionMode::Ask,
@@ -66,7 +67,7 @@ async fn permission_flow_covers_allow_headless_ask_deny_and_worker_policy_violat
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start ask run");
+        .unwrap_or_abort();
 
     // act
     let ask_tool_call_id = ask_coordinator
@@ -77,7 +78,7 @@ async fn permission_flow_covers_allow_headless_ask_deny_and_worker_policy_violat
             json!({"cmd": "true"}),
         )
         .await
-        .expect("ask request should pend until timeout");
+        .unwrap_or_abort();
     let ask_events = wait_for_events(&ask_run.events_path, Duration::from_millis(500), |events| {
         events.iter().any(|event| matches!(
             &event.payload,
@@ -87,7 +88,7 @@ async fn permission_flow_covers_allow_headless_ask_deny_and_worker_policy_violat
         ))
     })
     .await;
-    ask_coordinator.stop_run().await.expect("stop ask run");
+    ask_coordinator.stop_run().await.unwrap_or_abort();
 
     // assert
     assert!(ask_events.iter().any(|event| matches!(
@@ -105,7 +106,7 @@ async fn permission_flow_covers_allow_headless_ask_deny_and_worker_policy_violat
     )));
 
     // arrange
-    let worker_temp_dir = tempfile::tempdir().expect("worker tempdir");
+    let worker_temp_dir = tempfile::tempdir().unwrap_or_abort();
     let worker_coordinator = test_agent_tool_coordinator(
         worker_temp_dir.path(),
         Arc::new(test_mock_provider()),
@@ -120,13 +121,13 @@ async fn permission_flow_covers_allow_headless_ask_deny_and_worker_policy_violat
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start worker run");
+        .unwrap_or_abort();
 
     // act
     let worker_agent_id = worker_coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn worker");
+        .unwrap_or_abort();
     let worker_error = worker_coordinator
         .request_tool_call(
             EventActor::new(ActorKind::Worker, Some(worker_agent_id)),
@@ -139,7 +140,7 @@ async fn permission_flow_covers_allow_headless_ask_deny_and_worker_policy_violat
     worker_coordinator
         .stop_run()
         .await
-        .expect("stop worker run");
+        .unwrap_or_abort();
 
     // assert
     assert!(matches!(worker_error, CoordinatorError::PolicyViolation(_)));
@@ -158,11 +159,11 @@ async fn repeated_shell_command_after_run_grant_uses_prefix_pattern() {
     let calls = Arc::new(AtomicUsize::new(0));
     let mut registry = ToolRegistry::new();
     registry.register(Arc::new(CountingShellTool {
-        calls: calls.clone(),
+        calls: Arc::clone(&calls),
     }));
     let tool_registry = Arc::new(registry);
 
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let coordinator = test_agent_tool_coordinator(
         temp_dir.path(),
         Arc::new(test_mock_provider()),
@@ -177,7 +178,7 @@ async fn repeated_shell_command_after_run_grant_uses_prefix_pattern() {
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let first_tool_call_id = coordinator
         .request_tool_call(
@@ -187,7 +188,7 @@ async fn repeated_shell_command_after_run_grant_uses_prefix_pattern() {
             json!({"command": "cargo test -p harness-core"}),
         )
         .await
-        .expect("first shell request");
+        .unwrap_or_abort();
 
     let events = wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
         events.iter().any(|event| matches!(
@@ -207,7 +208,7 @@ async fn repeated_shell_command_after_run_grant_uses_prefix_pattern() {
             }
             _ => None,
         })
-        .expect("permission id for first request");
+        .unwrap_or_abort();
     assert!(
         events.iter().any(|event| matches!(
             &event.payload,
@@ -224,7 +225,7 @@ async fn repeated_shell_command_after_run_grant_uses_prefix_pattern() {
             Some(PermissionGrantScope::Run),
         )
         .await
-        .expect("resolve first permission");
+        .unwrap_or_abort();
 
     common::wait_for_tool_call_finish(&run.events_path, &first_tool_call_id).await;
 
@@ -236,10 +237,10 @@ async fn repeated_shell_command_after_run_grant_uses_prefix_pattern() {
             json!({"command": "cargo test -p harness-tools --test native_tool_parity_matrix_test"}),
         )
         .await
-        .expect("second shell request");
+        .unwrap_or_abort();
 
     common::wait_for_tool_call_finish(&run.events_path, &second_tool_call_id).await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let final_events = load_events(&run.events_path);
     let requested = final_events

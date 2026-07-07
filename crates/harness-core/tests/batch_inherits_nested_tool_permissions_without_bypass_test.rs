@@ -1,3 +1,4 @@
+use harness_core::UnwrapOrAbort;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -80,7 +81,7 @@ impl Tool for TestBatchTool {
 
 #[tokio::test]
 async fn batch_inherits_nested_tool_permissions_without_bypass() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let coordinator = test_coordinator(temp_dir.path());
 
     let run = coordinator
@@ -89,7 +90,7 @@ async fn batch_inherits_nested_tool_permissions_without_bypass() {
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let batch_tool_call_id = coordinator
         .request_tool_call(
@@ -104,7 +105,7 @@ async fn batch_inherits_nested_tool_permissions_without_bypass() {
             }),
         )
         .await
-        .expect("batch tool call should be accepted for execution");
+        .unwrap_or_abort();
 
     wait_for_tool_call_finish(&run.events_path, &batch_tool_call_id).await;
 
@@ -119,7 +120,7 @@ async fn batch_inherits_nested_tool_permissions_without_bypass() {
             }
             _ => None,
         })
-        .expect("nested shell call should be requested through the coordinator");
+        .unwrap_or_abort();
 
     let (nested_permission_id, nested_permission_summary) = events
         .iter()
@@ -131,7 +132,7 @@ async fn batch_inherits_nested_tool_permissions_without_bypass() {
             }
             _ => None,
         })
-        .expect("nested shell permission should be requested");
+        .unwrap_or_abort();
     assert!(
         nested_permission_summary.contains("tool=shell.run"),
         "nested permission prompt should name effective child tool: {nested_permission_summary}"
@@ -144,8 +145,8 @@ async fn batch_inherits_nested_tool_permissions_without_bypass() {
             Some("nested batch denial".to_string()),
         )
         .await
-        .expect("resolve nested permission");
-    coordinator.stop_run().await.expect("stop run");
+        .unwrap_or_abort();
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let events = load_events(&run.events_path);
 

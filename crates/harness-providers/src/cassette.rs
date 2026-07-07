@@ -295,10 +295,7 @@ impl RecordedOpenAiHttpTransport {
         &self,
         request: OpenAiHttpRecordedRequest,
     ) -> Result<OpenAiHttpRecordedResponse, CassetteError> {
-        let mut state = self
-            .state
-            .lock()
-            .expect("http cassette state lock poisoned");
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         let index = state.cursor;
         let Some(interaction) = state.cassette.interactions.get(index) else {
             return Err(CassetteError::Exhausted {
@@ -322,10 +319,7 @@ impl RecordedOpenAiHttpTransport {
         request: OpenAiHttpRecordedRequest,
         response: OpenAiHttpRecordedResponse,
     ) -> Result<(), CassetteError> {
-        let mut state = self
-            .state
-            .lock()
-            .expect("http cassette state lock poisoned");
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         state
             .cassette
             .interactions
@@ -348,11 +342,7 @@ impl OpenAiHttpTransport for RecordedOpenAiHttpTransport {
             headers: allowed_request_headers(&headers),
             body: body.clone(),
         };
-        let record = self
-            .state
-            .lock()
-            .expect("http cassette state lock poisoned")
-            .record;
+        let record = self.state.lock().unwrap_or_else(|e| e.into_inner()).record;
         if !record {
             return self
                 .replay(request)
@@ -412,7 +402,7 @@ impl<P> RecordedProvider<P> {
     }
 
     fn replay(&self, req: CompletionRequest) -> Result<Vec<ProviderStreamEvent>, CassetteError> {
-        let mut state = self.state.lock().expect("cassette state lock poisoned");
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         let index = state.cursor;
         let Some(interaction) = state.cassette.interactions.get(index) else {
             return Err(CassetteError::Exhausted {
@@ -436,7 +426,7 @@ impl<P> RecordedProvider<P> {
         request: CompletionRequest,
         events: Vec<ProviderStreamEvent>,
     ) -> Result<(), CassetteError> {
-        let mut state = self.state.lock().expect("cassette state lock poisoned");
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         state
             .cassette
             .interactions
@@ -451,11 +441,7 @@ where
     P: Provider + Send + Sync,
 {
     async fn stream_completion(&self, req: CompletionRequest) -> ProviderEventStream {
-        let record = self
-            .state
-            .lock()
-            .expect("cassette state lock poisoned")
-            .record;
+        let record = self.state.lock().unwrap_or_else(|e| e.into_inner()).record;
         if !record {
             return match self.replay(req) {
                 Ok(events) => Box::pin(stream::iter(events)),
@@ -500,12 +486,9 @@ async fn record_http_response(
 }
 
 fn recorded_response_to_http_response(response: OpenAiHttpRecordedResponse) -> OpenAiHttpResponse {
-    OpenAiHttpResponse::text(
-        response.status,
-        recorded_headers_to_header_map(&response.headers)
-            .expect("recorded OpenAI response headers should be valid"),
-        response.body,
-    )
+    let headers =
+        recorded_headers_to_header_map(&response.headers).unwrap_or_else(|_| HeaderMap::new());
+    OpenAiHttpResponse::text(response.status, headers, response.body)
 }
 
 fn scrub_endpoint_to_path(endpoint: &str) -> String {

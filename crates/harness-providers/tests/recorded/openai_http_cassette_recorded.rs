@@ -1,3 +1,4 @@
+use harness_providers::UnwrapOrAbort;
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::{Arc, Mutex};
 
@@ -21,19 +22,20 @@ use tokio_stream::StreamExt;
 
 #[tokio::test]
 async fn replayed_http_cassette_drives_openai_parser_without_inner_transport() {
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let path = temp.path().join("openai-http.json");
     OpenAiHttpCassette::new(vec![OpenAiHttpInteraction {
         request: recorded_request("/v1/chat/completions", basic_chat_body()),
         response: recorded_response(200, deterministic_chat_sse()),
     }])
     .write_to(&path)
-    .expect("write cassette");
+    .unwrap_or_abort();
 
     let inner = Arc::new(ScriptedTransport::default());
+    let inner_clone = Arc::clone(&inner);
     let transport = Arc::new(
-        RecordedOpenAiHttpTransport::with_ci(inner.clone(), &path, CassetteMode::Replay, false)
-            .expect("replay transport"),
+        RecordedOpenAiHttpTransport::with_ci(inner_clone, &path, CassetteMode::Replay, false)
+            .unwrap_or_abort(),
     );
     let provider = provider_for_transport(transport, OpenAiApiMode::ChatCompletions);
 
@@ -68,7 +70,7 @@ async fn replayed_http_cassette_drives_openai_parser_without_inner_transport() {
 
 #[tokio::test]
 async fn ci_forces_http_replay_and_missing_cassette_fails_closed() {
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let missing = temp.path().join("missing.json");
 
     let err = match RecordedOpenAiHttpTransport::with_ci(
@@ -87,14 +89,15 @@ async fn ci_forces_http_replay_and_missing_cassette_fails_closed() {
 
 #[tokio::test]
 async fn record_mode_writes_redacted_path_headers_body_and_replays() {
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let path = temp.path().join("recorded-http.json");
     let inner = Arc::new(ScriptedTransport::new([ScriptedResponse::sse(
         deterministic_chat_sse(),
     )]));
+    let inner_clone = Arc::clone(&inner);
     let transport =
-        RecordedOpenAiHttpTransport::with_ci(inner.clone(), &path, CassetteMode::Record, false)
-            .expect("record transport");
+        RecordedOpenAiHttpTransport::with_ci(inner_clone, &path, CassetteMode::Record, false)
+            .unwrap_or_abort();
 
     let mut headers = HeaderMap::new();
     headers.insert(
@@ -113,10 +116,10 @@ async fn record_mode_writes_redacted_path_headers_body_and_replays() {
             basic_chat_body(),
         )
         .await
-        .expect("record response");
+        .unwrap_or_abort();
     assert_eq!(response.status, 200);
 
-    let cassette = OpenAiHttpCassette::read_from(&path).expect("recorded cassette");
+    let cassette = OpenAiHttpCassette::read_from(&path).unwrap_or_abort();
     assert_eq!(cassette.interactions.len(), 1);
     let interaction = &cassette.interactions[0];
     assert_eq!(interaction.request.endpoint_path, "/v1/chat/completions");
@@ -125,7 +128,7 @@ async fn record_mode_writes_redacted_path_headers_body_and_replays() {
         Some(&"org-public".to_string())
     );
     assert!(!interaction.request.headers.contains_key("authorization"));
-    let raw = std::fs::read_to_string(&path).expect("read cassette");
+    let raw = std::fs::read_to_string(&path).unwrap_or_abort();
     assert!(!raw.contains("sk-secret"));
     assert!(!raw.contains("api_key"));
     assert_eq!(inner.calls(), 1);
@@ -133,13 +136,13 @@ async fn record_mode_writes_redacted_path_headers_body_and_replays() {
 
 #[tokio::test]
 async fn unsafe_http_recording_refuses_to_write_secret_body() {
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let path = temp.path().join("unsafe-http.json");
     let inner = Arc::new(ScriptedTransport::new([ScriptedResponse::sse(
         "data: {\"type\":\"response.completed\",\"leak\":\"sk-leakedsecret123\"}\n\ndata: [DONE]\n\n",
     )]));
     let transport = RecordedOpenAiHttpTransport::with_ci(inner, &path, CassetteMode::Record, false)
-        .expect("record transport");
+        .unwrap_or_abort();
 
     let err = match transport
         .post_json(
@@ -173,7 +176,7 @@ impl ScriptedTransport {
     }
 
     fn calls(&self) -> usize {
-        *self.calls.lock().expect("calls lock")
+        *self.calls.lock().unwrap_or_abort()
     }
 }
 
@@ -201,13 +204,13 @@ impl OpenAiHttpTransport for ScriptedTransport {
         _bearer_token: String,
         _body: serde_json::Value,
     ) -> Result<OpenAiHttpResponse, String> {
-        *self.calls.lock().expect("calls lock") += 1;
+        *self.calls.lock().unwrap_or_abort() += 1;
         let response = self
             .responses
             .lock()
-            .expect("responses lock")
+            .unwrap_or_abort()
             .pop_front()
-            .expect("scripted response");
+            .unwrap_or_abort();
         let mut headers = HeaderMap::new();
         if response.status == 200 {
             headers.insert(CONTENT_TYPE, HeaderValue::from_static("text/event-stream"));
@@ -234,7 +237,7 @@ fn provider_for_transport(
         },
         transport,
     )
-    .expect("build provider")
+    .unwrap_or_abort()
 }
 
 fn basic_request() -> CompletionRequest {

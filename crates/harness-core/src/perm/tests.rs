@@ -8,6 +8,7 @@ use crate::config::{
     PermissionSelectorRule,
 };
 use crate::tool::ToolCapability;
+use crate::UnwrapOrAbort;
 
 fn ask_decision(timeout_ms: u64) -> PolicyDecision {
     PolicyDecision::Ask {
@@ -473,7 +474,7 @@ fn permission_rule_profile_override_beats_top_level_edit_rule() {
             }
             "#,
     )
-    .expect("config should parse");
+    .unwrap_or_abort();
     let policy = PermissionPolicy::from_config(&parsed);
 
     assert_eq!(
@@ -516,7 +517,7 @@ fn shipped_plan_agent_allows_only_plan_file_edits() {
             }
             "#,
     )
-    .expect("public config should parse");
+    .unwrap_or_abort();
     let policy = PermissionPolicy::from_config(&parsed);
 
     assert_eq!(

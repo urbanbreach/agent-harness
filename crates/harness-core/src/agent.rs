@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use harness_providers::CacheRetention;
 use serde::{Deserialize, Serialize};
 
@@ -112,6 +113,7 @@ pub struct AgentModelSettings {
 
 #[cfg(test)]
 mod tests {
+    use crate::UnwrapOrAbort;
     use std::collections::BTreeMap;
     use std::sync::{Arc, Mutex};
 
@@ -141,7 +143,7 @@ mod tests {
         let request = test_request();
         let tool_registry = test_tool_registry();
         let tool_defs =
-            build_provider_tool_defs(&profile, tool_registry.as_ref()).expect("build tool defs");
+            build_provider_tool_defs(&profile, tool_registry.as_ref()).unwrap_or_abort();
 
         let first_request = completion_request(
             "model-1",
@@ -182,11 +184,11 @@ mod tests {
             },
             test_provider_request_ids(),
             {
-                let seen_calls = seen_calls.clone();
+                let seen_calls = Arc::clone(&seen_calls);
                 move |_tool_id, _args_json| {
-                    let seen_calls = seen_calls.clone();
+                    let seen_calls = Arc::clone(&seen_calls);
                     async move {
-                        *seen_calls.lock().expect("lock seen calls") += 1;
+                        *seen_calls.lock().unwrap_or_abort() += 1;
                         Ok(ToolResult::text("unused"))
                     }
                 }
@@ -202,7 +204,7 @@ mod tests {
                 messages: Vec::new(),
             }
         );
-        assert_eq!(*seen_calls.lock().expect("lock seen calls"), 0);
+        assert_eq!(*seen_calls.lock().unwrap_or_abort(), 0);
     }
 
     #[tokio::test]
@@ -211,8 +213,8 @@ mod tests {
         let request = test_request();
         let tool_registry = test_tool_registry();
         let tool_defs =
-            build_provider_tool_defs(&profile, tool_registry.as_ref()).expect("build tool defs");
-        let function_name = tool_defs.first().expect("tool def").function_name.clone();
+            build_provider_tool_defs(&profile, tool_registry.as_ref()).unwrap_or_abort();
+        let function_name = tool_defs.first().unwrap_or_abort().function_name.clone();
 
         let first_request = completion_request(
             "model-1",
@@ -258,11 +260,11 @@ mod tests {
             },
             test_provider_request_ids(),
             {
-                let seen_calls = seen_calls.clone();
+                let seen_calls = Arc::clone(&seen_calls);
                 move |_tool_id, _args_json| {
-                    let seen_calls = seen_calls.clone();
+                    let seen_calls = Arc::clone(&seen_calls);
                     async move {
-                        *seen_calls.lock().expect("lock seen calls") += 1;
+                        *seen_calls.lock().unwrap_or_abort() += 1;
                         Ok(ToolResult::text("must not execute"))
                     }
                 }
@@ -278,7 +280,7 @@ mod tests {
             }
             other => panic!("expected failed outcome, got {other:?}"),
         }
-        assert_eq!(*seen_calls.lock().expect("lock seen calls"), 0);
+        assert_eq!(*seen_calls.lock().unwrap_or_abort(), 0);
     }
 
     #[test]
@@ -349,7 +351,7 @@ mod tests {
 
         // assert
         assert_eq!(
-            serde_json::from_str::<serde_json::Value>(&content).expect("provider content json"),
+            serde_json::from_str::<serde_json::Value>(&content).unwrap_or_abort(),
             json!({
                 "_harness_tool_result": {
                     "text": "Image read successfully",
@@ -456,9 +458,9 @@ mod tests {
             ..ProviderConversationTurn::default()
         };
 
-        let serialized = serde_json::to_value(&turn).expect("serialize max_iters turn");
+        let serialized = serde_json::to_value(&turn).unwrap_or_abort();
         let restored: ProviderConversationTurn =
-            serde_json::from_value(serialized).expect("deserialize max_iters turn");
+            serde_json::from_value(serialized).unwrap_or_abort();
 
         assert_eq!(restored, turn);
     }
@@ -506,8 +508,8 @@ mod tests {
                 trigger_reason: Some("test".to_string()),
             }),
         };
-        let tool_defs = build_provider_tool_defs(&profile, test_tool_registry().as_ref())
-            .expect("build provider tool defs");
+        let tool_defs =
+            build_provider_tool_defs(&profile, test_tool_registry().as_ref()).unwrap_or_abort();
 
         let provider_prompt = request.provider_prompt();
         let projected_context =
@@ -579,7 +581,7 @@ mod tests {
         let request = test_request();
         let tool_registry = test_tool_registry();
         let tool_defs =
-            build_provider_tool_defs(&profile, tool_registry.as_ref()).expect("build tool defs");
+            build_provider_tool_defs(&profile, tool_registry.as_ref()).unwrap_or_abort();
 
         let first_request = completion_request(
             "model-1",
@@ -624,11 +626,11 @@ mod tests {
             },
             test_provider_request_ids(),
             {
-                let call_count = call_count.clone();
+                let call_count = Arc::clone(&call_count);
                 move |_tool_id, _args_json| {
-                    let call_count = call_count.clone();
+                    let call_count = Arc::clone(&call_count);
                     async move {
-                        let mut guard = call_count.lock().expect("lock call count");
+                        let mut guard = call_count.lock().unwrap_or_abort();
                         *guard += 1;
                         Ok(ToolResult::text("unused"))
                     }
@@ -645,7 +647,7 @@ mod tests {
             other => panic!("expected failed outcome, got {other:?}"),
         }
 
-        assert_eq!(*call_count.lock().expect("lock call count"), 0);
+        assert_eq!(*call_count.lock().unwrap_or_abort(), 0);
     }
 
     #[tokio::test]
@@ -654,8 +656,8 @@ mod tests {
         let request = test_request();
         let tool_registry = test_tool_registry();
         let tool_defs =
-            build_provider_tool_defs(&profile, tool_registry.as_ref()).expect("build tool defs");
-        let function_name = tool_defs.first().expect("tool def").function_name.clone();
+            build_provider_tool_defs(&profile, tool_registry.as_ref()).unwrap_or_abort();
+        let function_name = tool_defs.first().unwrap_or_abort().function_name.clone();
 
         let first_request = completion_request(
             "model-1",
@@ -700,11 +702,11 @@ mod tests {
             },
             test_provider_request_ids(),
             {
-                let call_count = call_count.clone();
+                let call_count = Arc::clone(&call_count);
                 move |_tool_id, _args_json| {
-                    let call_count = call_count.clone();
+                    let call_count = Arc::clone(&call_count);
                     async move {
-                        let mut guard = call_count.lock().expect("lock call count");
+                        let mut guard = call_count.lock().unwrap_or_abort();
                         *guard += 1;
                         Ok(ToolResult::text("unused"))
                     }
@@ -721,7 +723,7 @@ mod tests {
             other => panic!("expected failed outcome, got {other:?}"),
         }
 
-        assert_eq!(*call_count.lock().expect("lock call count"), 0);
+        assert_eq!(*call_count.lock().unwrap_or_abort(), 0);
     }
 
     fn test_profile() -> AgentProfile {

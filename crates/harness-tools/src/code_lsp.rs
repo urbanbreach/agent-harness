@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::path::{Path, PathBuf};
 
 use harness_core::tool::{ToolContext, ToolError, ToolResult};
@@ -325,6 +326,7 @@ fn render_diagnostics_only_display_text(
 #[cfg(test)]
 mod tests {
     use super::{code_lsp_parameters_json_schema, parse_code_lsp_request, CodeLspRequest};
+    use crate::UnwrapOrAbort;
     use harness_core::tool::ToolError;
     use serde_json::json;
 
@@ -336,7 +338,7 @@ mod tests {
             "line": 2,
             "character": 4,
         }))
-        .expect("position-based request should parse");
+        .unwrap_or_abort();
         assert!(matches!(
             position,
             CodeLspRequest::Position {
@@ -351,7 +353,7 @@ mod tests {
             "operation": "documentSymbol",
             "filePath": "src/lib.rs",
         }))
-        .expect("file-only request should parse");
+        .unwrap_or_abort();
         assert!(matches!(
             file_only,
             CodeLspRequest::File { file_path, .. } if file_path == "src/lib.rs"
@@ -362,7 +364,7 @@ mod tests {
             "filePath": "src/lib.rs",
             "query": "helper",
         }))
-        .expect("query request should parse");
+        .unwrap_or_abort();
         assert!(matches!(
             query,
             CodeLspRequest::Query {
@@ -378,7 +380,7 @@ mod tests {
             "line": 1,
             "character": 1,
         }))
-        .expect("file diagnostics should ignore cursor metadata that the public schema allows");
+        .unwrap_or_abort();
         assert!(matches!(
             file_with_cursor_metadata,
             CodeLspRequest::File { file_path, .. } if file_path == "src/lib.rs"

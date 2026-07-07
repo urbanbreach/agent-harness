@@ -1,6 +1,7 @@
+use harness_core::UnwrapOrAbort;
 #[tokio::test]
 async fn lifecycle_hooks_cover_provider_subagent_and_permission_events() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let hook_output_path = temp_dir.path().join("hook-lifecycle-events.txt");
     let hook_command = "printf '%s|agent=%s|parent=%s|request=%s|permission=%s|tool_call=%s|provider=%s|outcome=%s\\n' \"$HARNESS_HOOK_EVENT\" \"${HARNESS_HOOK_AGENT_ID:-}\" \"${HARNESS_HOOK_PARENT_AGENT_ID:-}\" \"${HARNESS_HOOK_REQUEST_ID:-}\" \"${HARNESS_HOOK_PERMISSION_ID:-}\" \"${HARNESS_HOOK_TOOL_CALL_ID:-}\" \"${HARNESS_HOOK_PROVIDER_ID:-}\" \"${HARNESS_HOOK_OUTCOME:-}\" >> \"$HOOK_OUTPUT_PATH\"";
     let hook_env = BTreeMap::from([(
@@ -120,7 +121,7 @@ async fn lifecycle_hooks_cover_provider_subagent_and_permission_events() {
             temp_dir.path().to_path_buf(),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let subagent_id = coordinator
         .spawn_agent(
@@ -129,7 +130,7 @@ async fn lifecycle_hooks_cover_provider_subagent_and_permission_events() {
             Some("agent_parent_001".to_string()),
         )
         .await
-        .expect("spawn subagent");
+        .unwrap_or_abort();
     assert_eq!(subagent_id, "agent_000001");
 
     wait_for_events(&run.events_path, Duration::from_secs(2), |events| {
@@ -148,7 +149,7 @@ async fn lifecycle_hooks_cover_provider_subagent_and_permission_events() {
             json!({"cmd": "true"}),
         )
         .await
-        .expect("request tool call");
+        .unwrap_or_abort();
     assert_eq!(tool_call_id, "toolcall_000001");
 
     let events = wait_for_events(&run.events_path, Duration::from_secs(2), |events| {
@@ -170,7 +171,7 @@ async fn lifecycle_hooks_cover_provider_subagent_and_permission_events() {
             }
             _ => None,
         })
-        .expect("permission id for tool call");
+        .unwrap_or_abort();
 
     coordinator
         .resolve_permission(
@@ -179,7 +180,7 @@ async fn lifecycle_hooks_cover_provider_subagent_and_permission_events() {
             Some("approved".to_string()),
         )
         .await
-        .expect("resolve permission");
+        .unwrap_or_abort();
 
     wait_for_events(&run.events_path, Duration::from_secs(2), |events| {
         events.iter().any(|event| {
@@ -192,9 +193,9 @@ async fn lifecycle_hooks_cover_provider_subagent_and_permission_events() {
         })
     })
     .await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
-    let hook_output = fs::read_to_string(&hook_output_path).expect("hook output");
+    let hook_output = fs::read_to_string(&hook_output_path).unwrap_or_abort();
     let lines = hook_output.lines().collect::<Vec<_>>();
 
     assert!(lines.iter().any(|line| {
@@ -233,7 +234,7 @@ async fn lifecycle_hooks_cover_provider_subagent_and_permission_events() {
 }
 #[test]
 fn replay_reconstructs_parallel_child_sessions_and_timings() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_replay_parallel_child_sessions";
 
     let lineage_a = TaskLineageMetadata {
@@ -499,7 +500,7 @@ fn replay_reconstructs_parallel_child_sessions_and_timings() {
     let child_a = plan
         .child_sessions
         .get("agent_000101")
-        .expect("child A projection");
+        .unwrap_or_abort();
     assert_eq!(child_a.parent_session_id.as_deref(), Some("agent_000001"));
     assert_eq!(
         child_a.parent_tool_call_id.as_deref(),
@@ -523,7 +524,7 @@ fn replay_reconstructs_parallel_child_sessions_and_timings() {
     let child_b = plan
         .child_sessions
         .get("agent_000102")
-        .expect("child B projection");
+        .unwrap_or_abort();
     assert_eq!(child_b.parent_session_id.as_deref(), Some("agent_000001"));
     assert_eq!(
         child_b.parent_tool_call_id.as_deref(),

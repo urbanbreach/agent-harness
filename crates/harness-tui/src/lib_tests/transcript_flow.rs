@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 pub(super) fn run_finished_keeps_transcript_and_ready_composer() {
     let mut app = app::AppState::new_live(None, false, None);
@@ -418,23 +419,22 @@ pub(super) fn transcript_shell_remains_scannable_without_bubble_cards() {
 
     let rendered = render_live_lines(&app, 120, 30);
     let lines = rendered.lines().collect::<Vec<_>>();
-    let prompt_row =
-        find_line_containing(&lines, "Restyle the transcript shell").expect("user prompt row");
+    let prompt_row = find_line_containing(&lines, "Restyle the transcript shell").unwrap_or_abort();
     let thinking_row =
         find_line_containing_all_from(&lines, prompt_row + 1, &["Drafting a document-like plan"])
-            .expect("reasoning row");
+            .unwrap_or_abort();
     let tool_row = find_line_containing_all_from(
         &lines,
         thinking_row + 1,
         &["Read src/ui.rs", "[offset=1, limit=24]"],
     )
-    .expect("tool row");
+    .unwrap_or_abort();
     let body_row = find_line_containing_from(
         &lines,
         tool_row + 1,
         "Found the transcript renderer and the composer chrome.",
     )
-    .expect("assistant body row");
+    .unwrap_or_abort();
 
     assert!(prompt_row < body_row);
     assert!(prompt_row < thinking_row);
@@ -475,20 +475,20 @@ pub(super) fn transcript_turn_spacing_collapses_without_losing_actor_boundaries(
     let rendered = render_live_lines(&app, 120, 30);
     let lines = rendered.lines().collect::<Vec<_>>();
 
-    let first_reply_row = find_line_containing(&lines, "The shell is transcript-first and calm.")
-        .expect("first assistant body row");
+    let first_reply_row =
+        find_line_containing(&lines, "The shell is transcript-first and calm.").unwrap_or_abort();
     let second_prompt_row = find_line_containing_from(
         &lines,
         first_reply_row + 1,
         "Tighten the transcript spacing",
     )
-    .expect("second prompt row");
+    .unwrap_or_abort();
     let second_assistant_row = find_line_containing_from(
         &lines,
         second_prompt_row + 1,
         "Spacing is collapsed without losing turn boundaries.",
     )
-    .expect("second assistant row");
+    .unwrap_or_abort();
 
     assert!(
         second_prompt_row > first_reply_row,
@@ -506,19 +506,19 @@ pub(super) fn nested_transcript_rows_preserve_prefix_on_wrapped_continuations() 
 
     let rendered = render_live_lines(&app, 80, 24);
     let lines = rendered.lines().collect::<Vec<_>>();
-    let thinking_row = find_line_containing(&lines, "Drafting a document-like plan")
-        .expect("wrapped reasoning row");
+    let thinking_row =
+        find_line_containing(&lines, "Drafting a document-like plan").unwrap_or_abort();
     let body_row = find_line_containing(
         &lines,
         "Found the transcript renderer and the composer chrome.",
     )
-    .expect("assistant body row");
+    .unwrap_or_abort();
     let continuation_row = (thinking_row + 1..body_row)
         .find(|row| !lines[*row].trim().is_empty())
-        .expect("wrapped continuation row");
+        .unwrap_or_abort();
     let answer_gap_row = (continuation_row + 1..body_row)
         .find(|row| lines[*row].trim().is_empty())
-        .expect("blank gap row before assistant body");
+        .unwrap_or_abort();
 
     assert!(
         first_alphanumeric_column(lines[thinking_row])

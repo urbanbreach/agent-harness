@@ -1,9 +1,10 @@
+use harness::UnwrapOrAbort;
 #[test]
 fn sessions_export_cli_redacts_secret_payloads_and_reports_manifest() {
     // arrange
-    let session_dir = tempdir().expect("tempdir");
+    let session_dir = tempdir().unwrap_or_abort();
     let run_dir = session_dir.path().join("run_export_redaction");
-    std::fs::create_dir_all(&run_dir).expect("create run dir");
+    std::fs::create_dir_all(&run_dir).unwrap_or_abort();
 
     write_events_jsonl(
         &run_dir,
@@ -48,12 +49,12 @@ fn sessions_export_cli_redacts_secret_payloads_and_reports_manifest() {
     // act
     let output = run_harness([
         "--session-dir",
-        session_dir.path().to_str().expect("session dir utf-8"),
+        session_dir.path().to_str().unwrap_or_abort(),
         "sessions",
         "export",
         "run_export_redaction",
         "--output",
-        export_path.to_str().expect("export path utf-8"),
+        export_path.to_str().unwrap_or_abort(),
     ]);
     // assert
     assert!(
@@ -62,14 +63,14 @@ fn sessions_export_cli_redacts_secret_payloads_and_reports_manifest() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let export_text = std::fs::read_to_string(&export_path).expect("read redacted export");
+    let export_text = std::fs::read_to_string(&export_path).unwrap_or_abort();
     assert!(!export_text.contains("sk-AbCdEf0123456789"));
     assert!(!export_text.contains("Bearer abc.def-ghi_123"));
     assert!(export_text.contains("[REDACTED_API_KEY]"));
     assert!(export_text.contains("Bearer [REDACTED]"));
 
     let bundle: serde_json::Value =
-        serde_json::from_str(&export_text).expect("redacted export bundle should parse");
+        serde_json::from_str(&export_text).unwrap_or_abort();
     assert_eq!(bundle["support"]["redaction_manifest"]["status"], "clean");
     assert_eq!(
         bundle["support"]["secret_scan_status"]["secret_finding_count"],
@@ -80,9 +81,9 @@ fn sessions_export_cli_redacts_secret_payloads_and_reports_manifest() {
 #[test]
 fn sessions_export_cli_support_includes_artifact_index() {
     // arrange
-    let session_dir = tempdir().expect("tempdir");
+    let session_dir = tempdir().unwrap_or_abort();
     let run_dir = session_dir.path().join("run_export_artifacts");
-    std::fs::create_dir_all(&run_dir).expect("create run dir");
+    std::fs::create_dir_all(&run_dir).unwrap_or_abort();
     write_events_jsonl(
         &run_dir,
         &delegated_recovery_events("run_export_artifacts"),
@@ -92,12 +93,12 @@ fn sessions_export_cli_support_includes_artifact_index() {
     // act
     let output = run_harness([
         "--session-dir",
-        session_dir.path().to_str().expect("session dir utf-8"),
+        session_dir.path().to_str().unwrap_or_abort(),
         "sessions",
         "export",
         "run_export_artifacts",
         "--output",
-        export_path.to_str().expect("export path utf-8"),
+        export_path.to_str().unwrap_or_abort(),
     ]);
     // assert
     assert!(
@@ -107,9 +108,9 @@ fn sessions_export_cli_support_includes_artifact_index() {
     );
 
     let bundle: serde_json::Value = serde_json::from_slice(
-        &std::fs::read(&export_path).expect("read artifact-index export"),
+        &std::fs::read(&export_path).unwrap_or_abort(),
     )
-    .expect("artifact-index export bundle should parse");
+    .unwrap_or_abort();
     assert_eq!(
         bundle["support"]["artifact_index"][0]["path"],
         "artifacts/delegated/task-output.json"

@@ -530,8 +530,12 @@ impl AppState {
             return;
         }
 
-        let current = self.slash_selected.min(len.saturating_sub(1)) as isize;
-        let next = (current + delta).clamp(0, len.saturating_sub(1) as isize);
+        let current =
+            isize::try_from(self.slash_selected.min(len.saturating_sub(1))).unwrap_or(isize::MAX);
+        let next = (current + delta).clamp(
+            0,
+            isize::try_from(len.saturating_sub(1)).unwrap_or(isize::MAX),
+        );
         self.slash_selected = usize::try_from(next).unwrap_or(0);
     }
 
@@ -632,13 +636,13 @@ impl AppState {
             return;
         }
 
-        let current = self.palette_selected as isize;
+        let current = isize::try_from(self.palette_selected).unwrap_or(isize::MAX);
         let mut next = current + delta;
         while next < 0 {
-            next += len as isize;
+            next += isize::try_from(len).unwrap_or(isize::MAX);
         }
-        next %= len as isize;
-        self.palette_selected = next as usize;
+        next %= isize::try_from(len).unwrap_or(isize::MAX);
+        self.palette_selected = usize::try_from(next).unwrap_or(usize::MAX);
         self.palette_log
             .push(super::palette_controller::PaletteLogEntry {
                 command_id: String::new(),
@@ -760,7 +764,6 @@ impl AppState {
         self.sync_file_mention_overlay();
     }
 
-    #[allow(dead_code)]
     pub(in crate::app) fn palette_command_available(&self, command_id: &str) -> bool {
         let Some(entry) = crate::keybindings::palette_model::find(command_id) else {
             return false;

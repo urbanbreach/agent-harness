@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 #[path = "session_navigation_parent_child_tests.rs"]
 mod session_navigation_parent_child_tests;
@@ -21,7 +22,7 @@ pub(super) fn replay_mode_focus_cycle_skips_prompt_and_blocks_draft_edits() {
 }
 
 pub(super) fn child_session_navigation_keybinds_follow_default_contract() {
-    let run_dir = tempfile::tempdir().expect("create temp run dir");
+    let run_dir = tempfile::tempdir().unwrap_or_abort();
     let parent_dir = run_dir.path().join("parent");
     let child_a_dir = run_dir.path().join("child_a");
     let child_b_dir = run_dir.path().join("child_b");
@@ -64,16 +65,16 @@ pub(super) fn child_session_navigation_keybinds_follow_default_contract() {
                     "parent_session_id": "parent",
                 }
             }))
-            .expect("serialize child meta"),
+            .unwrap_or_abort(),
         )
-        .expect("write child meta");
+        .unwrap_or_abort();
     }
 
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
 
@@ -137,7 +138,7 @@ pub(super) fn child_session_navigation_keybinds_follow_default_contract() {
     assert!(reverse_app.composer.prompt_buffer.is_empty());
 
     assert_eq!(
-        intents.lock().expect("lock intents").as_slice(),
+        intents.lock().unwrap_or_abort().as_slice(),
         &[
             UiIntent::ReplaySession {
                 run_id: "parent".to_string(),
@@ -152,7 +153,7 @@ pub(super) fn child_session_navigation_keybinds_follow_default_contract() {
 }
 
 pub(super) fn replay_child_navigation_does_not_emit_live_intents() {
-    let run_dir = tempfile::tempdir().expect("create temp run dir");
+    let run_dir = tempfile::tempdir().unwrap_or_abort();
     let parent_dir = run_dir.path().join("parent");
     let child_a_dir = run_dir.path().join("child_a");
     let child_b_dir = run_dir.path().join("child_b");
@@ -185,7 +186,7 @@ pub(super) fn replay_child_navigation_does_not_emit_live_intents() {
     let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
 
@@ -216,11 +217,11 @@ pub(super) fn replay_child_navigation_does_not_emit_live_intents() {
     app.handle_key(key(KeyCode::Up));
     assert_eq!(app.session_path.as_deref(), Some(parent_dir.as_path()));
     assert_eq!(app.active_profile(), "planner");
-    assert!(intents.lock().expect("lock intents").is_empty());
+    assert!(intents.lock().unwrap_or_abort().is_empty());
 }
 
 pub(super) fn replay_handoff_parent_navigation_continues_resumable_parent_session() {
-    let run_dir = tempfile::tempdir().expect("create temp run dir");
+    let run_dir = tempfile::tempdir().unwrap_or_abort();
     let parent_dir = run_dir.path().join("parent");
     let child_dir = run_dir.path().join("child_a");
 
@@ -258,15 +259,15 @@ pub(super) fn replay_handoff_parent_navigation_continues_resumable_parent_sessio
                 "parent_session_id": "parent",
             }
         }))
-        .expect("serialize child meta"),
+        .unwrap_or_abort(),
     )
-    .expect("write child meta");
+    .unwrap_or_abort();
 
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
 
@@ -279,7 +280,7 @@ pub(super) fn replay_handoff_parent_navigation_continues_resumable_parent_sessio
     assert!(app.should_quit);
     assert_eq!(app.session_path.as_deref(), Some(child_dir.as_path()));
     assert_eq!(
-        intents.lock().expect("lock intents").as_slice(),
+        intents.lock().unwrap_or_abort().as_slice(),
         &[UiIntent::ContinueSession {
             run_id: "parent".to_string(),
             run_dir: parent_dir,
@@ -288,9 +289,9 @@ pub(super) fn replay_handoff_parent_navigation_continues_resumable_parent_sessio
 }
 
 pub(super) fn task_child_navigation_opens_inline_subagent_view_without_child_run_dir() {
-    let run_dir = tempfile::tempdir().expect("create temp run dir");
+    let run_dir = tempfile::tempdir().unwrap_or_abort();
     let parent_dir = run_dir.path().join("parent");
-    fs::create_dir_all(&parent_dir).expect("create parent dir");
+    fs::create_dir_all(&parent_dir).unwrap_or_abort();
 
     let parent_events = vec![
         run_started(1),
@@ -371,9 +372,9 @@ pub(super) fn task_child_navigation_opens_inline_subagent_view_without_child_run
 }
 
 pub(super) fn parent_child_navigation_ignores_nested_subagents_hidden_from_parent_transcript() {
-    let run_dir = tempfile::tempdir().expect("create temp run dir");
+    let run_dir = tempfile::tempdir().unwrap_or_abort();
     let parent_dir = run_dir.path().join("parent");
-    fs::create_dir_all(&parent_dir).expect("create parent dir");
+    fs::create_dir_all(&parent_dir).unwrap_or_abort();
 
     let parent_events = vec![
         run_started(1),
@@ -422,9 +423,9 @@ pub(super) fn parent_child_navigation_ignores_nested_subagents_hidden_from_paren
 }
 
 pub(super) fn live_inline_child_navigation_restores_live_parent_mode() {
-    let run_dir = tempfile::tempdir().expect("create temp run dir");
+    let run_dir = tempfile::tempdir().unwrap_or_abort();
     let parent_dir = run_dir.path().join("parent");
-    fs::create_dir_all(&parent_dir).expect("create parent dir");
+    fs::create_dir_all(&parent_dir).unwrap_or_abort();
 
     let parent_events = vec![
         run_started(1),
@@ -499,9 +500,9 @@ pub(super) fn live_inline_child_navigation_restores_live_parent_mode() {
 }
 
 pub(super) fn live_parent_events_update_parent_snapshot_while_inline_child_is_selected() {
-    let run_dir = tempfile::tempdir().expect("create temp run dir");
+    let run_dir = tempfile::tempdir().unwrap_or_abort();
     let parent_dir = run_dir.path().join("parent");
-    fs::create_dir_all(&parent_dir).expect("create parent dir");
+    fs::create_dir_all(&parent_dir).unwrap_or_abort();
 
     let parent_events = vec![
         run_started(1),

@@ -1,3 +1,4 @@
+use harness::UnwrapOrAbort;
 #[tokio::test]
 async fn prompt_cli_executes_fs_grep_and_completes_turn() {
     let provider = ScriptedPromptProvider::sequence(vec![
@@ -9,14 +10,14 @@ async fn prompt_cli_executes_fs_grep_and_completes_turn() {
         text_events("Grep complete: fixtures/notes.md contains BETA on line 2."),
     ]);
 
-    let temp = tempdir().expect("tempdir");
-    fs::create_dir_all(temp.path().join("fixtures")).expect("create fixtures dir");
+    let temp = tempdir().unwrap_or_abort();
+    fs::create_dir_all(temp.path().join("fixtures")).unwrap_or_abort();
     fs::write(
         temp.path().join("fixtures/notes.md"),
         "alpha\nBETA match\ngamma\n",
     )
-    .expect("write notes.md");
-    fs::write(temp.path().join("fixtures/skip.txt"), "BETA hidden\n").expect("write skip.txt");
+    .unwrap_or_abort();
+    fs::write(temp.path().join("fixtures/skip.txt"), "BETA hidden\n").unwrap_or_abort();
 
     let output = run_prompt_with_single_tool(
         temp.path(),
@@ -26,16 +27,16 @@ async fn prompt_cli_executes_fs_grep_and_completes_turn() {
     )
     .await;
 
-    let events_body = fs::read_to_string(temp.path().join("events.jsonl")).expect("read events");
+    let events_body = fs::read_to_string(temp.path().join("events.jsonl")).unwrap_or_abort();
     assert_successful_tool_roundtrip(&output, &events_body, "grep");
     assert!(events_body.contains("fixtures/notes.md:"));
     assert!(events_body.contains("Line 2: BETA match"));
 }
 #[tokio::test]
 async fn prompt_cli_reads_absolute_workspace_path_and_completes_turn() {
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let absolute_target = temp.path().join("tool-target.txt");
-    fs::write(&absolute_target, "alpha\nbeta\ngamma\n").expect("seed tool target");
+    fs::write(&absolute_target, "alpha\nbeta\ngamma\n").unwrap_or_abort();
     let provider = ScriptedPromptProvider::sequence(vec![
         tool_call_events(
             "call_1",
@@ -53,7 +54,7 @@ async fn prompt_cli_reads_absolute_workspace_path_and_completes_turn() {
     )
     .await;
 
-    let events_body = fs::read_to_string(temp.path().join("events.jsonl")).expect("read events");
+    let events_body = fs::read_to_string(temp.path().join("events.jsonl")).unwrap_or_abort();
     assert_successful_tool_roundtrip(&output, &events_body, "read");
     assert!(events_body.contains("tool-target.txt"));
     assert!(events_body.contains("alpha"));

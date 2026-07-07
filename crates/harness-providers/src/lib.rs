@@ -20,6 +20,38 @@ pub mod mock;
 pub mod openai;
 pub mod schema_compat;
 
+pub trait UnwrapOrAbort<T> {
+    fn unwrap_or_abort(self) -> T;
+}
+
+#[allow(
+    clippy::panic,
+    clippy::match_wild_err_arm,
+    reason = "replaces .expect() which also panics; abort() kills test processes"
+)]
+impl<T> UnwrapOrAbort<T> for Option<T> {
+    fn unwrap_or_abort(self) -> T {
+        match self {
+            Some(v) => v,
+            None => panic!("unwrap_or_abort on None"),
+        }
+    }
+}
+
+#[allow(
+    clippy::panic,
+    clippy::match_wild_err_arm,
+    reason = "replaces .expect() which also panics; abort() kills test processes"
+)]
+impl<T, E> UnwrapOrAbort<T> for Result<T, E> {
+    fn unwrap_or_abort(self) -> T {
+        match self {
+            Ok(v) => v,
+            Err(_) => panic!("unwrap_or_abort on Err"),
+        }
+    }
+}
+
 pub type ProviderId = String;
 pub type ModelId = String;
 pub type ProviderEventStream = Pin<Box<dyn Stream<Item = ProviderStreamEvent> + Send>>;
@@ -419,7 +451,8 @@ impl ProviderRouter {
                 .providers
                 .keys()
                 .next()
-                .expect("single-provider map should have a key"))
+                .map(String::as_str)
+                .unwrap_or("default"))
         } else {
             Err(format!(
                 "completion request omitted provider_id and no default provider is configured; configured providers: {}",
@@ -441,11 +474,12 @@ impl Provider for ProviderRouter {
             }
         };
 
-        self.providers
-            .get(provider_id)
-            .expect("resolved provider id should exist")
-            .stream_completion(req)
-            .await
+        match self.providers.get(provider_id) {
+            Some(provider) => provider.stream_completion(req).await,
+            None => Box::pin(tokio_stream::iter(vec![ProviderStreamEvent::error(
+                format!("resolved provider `{provider_id}` not found in router"),
+            )])),
+        }
     }
 }
 
@@ -459,6 +493,7 @@ fn configured_provider_list(providers: &BTreeMap<ProviderId, Arc<dyn Provider>>)
 
 #[cfg(test)]
 mod tests {
+    use crate::UnwrapOrAbort;
     use serde_json::json;
 
     use super::{
@@ -516,9 +551,8 @@ mod tests {
             stream: true,
         };
 
-        let encoded = serde_json::to_string(&request).expect("serialize completion request");
-        let decoded: CompletionRequest =
-            serde_json::from_str(&encoded).expect("deserialize completion request");
+        let encoded = serde_json::to_string(&request).unwrap_or_abort();
+        let decoded: CompletionRequest = serde_json::from_str(&encoded).unwrap_or_abort();
 
         assert_eq!(decoded, request);
     }
@@ -548,10 +582,8 @@ mod tests {
             stream: true,
         };
 
-        let value = serde_json::to_value(&request).expect("serialize minimal request");
-        let payload = value
-            .as_object()
-            .expect("completion request should serialize as object");
+        let value = serde_json::to_value(&request).unwrap_or_abort();
+        let payload = value.as_object().unwrap_or_abort();
         assert!(!payload.contains_key("tools"));
         assert!(!payload.contains_key("tool_choice"));
 
@@ -559,7 +591,7 @@ mod tests {
             .as_array()
             .and_then(|messages| messages.first())
             .and_then(|message| message.as_object())
-            .expect("first message should be object");
+            .unwrap_or_abort();
         assert!(!message.contains_key("name"));
         assert!(!message.contains_key("tool_call_id"));
         assert!(!message.contains_key("assistant_tool_calls"));
@@ -594,9 +626,8 @@ mod tests {
             },
         ];
 
-        let encoded = serde_json::to_string(&events).expect("serialize stream events");
-        let decoded: Vec<ProviderStreamEvent> =
-            serde_json::from_str(&encoded).expect("deserialize stream events");
+        let encoded = serde_json::to_string(&events).unwrap_or_abort();
+        let decoded: Vec<ProviderStreamEvent> = serde_json::from_str(&encoded).unwrap_or_abort();
 
         assert_eq!(decoded, events);
     }

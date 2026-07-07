@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use harness_core::event::ActorKind;
 use harness_core::perm::{permission_kind_for_tool_call, PermissionKind};
 use harness_core::tool::{ToolCapability, ToolRegistry};
@@ -175,6 +176,7 @@ fn artifact_behavior(tool_id: &str) -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    use crate::UnwrapOrAbort;
     use harness_core::config::ShellAllowlist;
 
     use crate::{coordinator_registry, native_tool_catalog_entries};
@@ -205,21 +207,21 @@ mod tests {
         let background_cancel = catalog
             .iter()
             .find(|entry| entry.canonical_id == "background_cancel")
-            .expect("background_cancel");
+            .unwrap_or_abort();
         assert_eq!(background_cancel.permission_kind.as_deref(), Some("task"));
         assert_eq!(background_cancel.schema_status, "strict");
 
         let ast_grep = catalog
             .iter()
             .find(|entry| entry.canonical_id == "ast_grep_search")
-            .expect("ast_grep_search");
+            .unwrap_or_abort();
         assert_eq!(ast_grep.permission_kind.as_deref(), Some("codesearch"));
         assert_eq!(ast_grep.mutation, "read_only");
 
         let ast_grep_replace = catalog
             .iter()
             .find(|entry| entry.canonical_id == "ast_grep_replace")
-            .expect("ast_grep_replace");
+            .unwrap_or_abort();
         assert_eq!(ast_grep_replace.permission_kind.as_deref(), Some("edit"));
         assert_eq!(ast_grep_replace.mutation, "mutating");
         assert_eq!(ast_grep_replace.artifact_behavior, "spills_large_output");
@@ -227,14 +229,14 @@ mod tests {
         let session_info = catalog
             .iter()
             .find(|entry| entry.canonical_id == "session_info")
-            .expect("session_info");
+            .unwrap_or_abort();
         assert_eq!(session_info.replay_behavior, "projection_read_only");
         assert_eq!(session_info.artifact_behavior, "spills_large_output");
 
         let todo_write = catalog
             .iter()
             .find(|entry| entry.canonical_id == "todowrite")
-            .expect("todowrite");
+            .unwrap_or_abort();
         assert_eq!(todo_write.permission_kind.as_deref(), Some("task"));
         assert_eq!(todo_write.mutation, "mutating");
         assert_eq!(todo_write.baseline_mapping_status, "harness_adapted");
@@ -243,7 +245,7 @@ mod tests {
         let session_list = catalog
             .iter()
             .find(|entry| entry.canonical_id == "session_list")
-            .expect("session_list");
+            .unwrap_or_abort();
         assert_eq!(session_list.baseline_mapping_status, "harness_only");
         assert_eq!(session_list.baseline_equivalent_id, None);
     }

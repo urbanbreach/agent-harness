@@ -1,3 +1,4 @@
+use harness_tools::UnwrapOrAbort;
 #[tokio::test]
 async fn task_tool_rejects_reentry_to_sibling_child_session() {
     let temp_dir = setup_workspace();
@@ -7,7 +8,7 @@ async fn task_tool_rejects_reentry_to_sibling_child_session() {
     let sibling_parent = handle
         .spawn_agent_idle(anonymous_supervisor_actor(), "deep", None)
         .await
-        .expect("spawn sibling parent");
+        .unwrap_or_abort();
     let sibling_child = handle
         .spawn_agent_idle(
             anonymous_supervisor_actor(),
@@ -15,7 +16,7 @@ async fn task_tool_rejects_reentry_to_sibling_child_session() {
             Some(sibling_parent),
         )
         .await
-        .expect("spawn sibling child");
+        .unwrap_or_abort();
 
     let reentry_tool_call_id = handle
         .request_tool_call(
@@ -32,7 +33,7 @@ async fn task_tool_rejects_reentry_to_sibling_child_session() {
             }),
         )
         .await
-        .expect("request sibling reentry task");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &reentry_tool_call_id).await;
 
     let events = read_events(&run.events_path);
@@ -41,7 +42,7 @@ async fn task_tool_rejects_reentry_to_sibling_child_session() {
     assert!(finished
         .output_summary
         .as_deref()
-        .expect("failure summary")
+        .unwrap_or_abort()
         .contains("is not a direct child of the calling agent"));
 }
 #[tokio::test]
@@ -49,7 +50,7 @@ async fn plan_task_reentry_rejects_non_explore_existing_child_profile() {
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let session_dir = workspace.join("sessions");
-    fs::create_dir_all(&session_dir).expect("session dir");
+    fs::create_dir_all(&session_dir).unwrap_or_abort();
 
     let mut config = CoordinatorConfig::new(session_dir);
     config.permission_policy = plan_mode_permission_policy();
@@ -64,11 +65,11 @@ async fn plan_task_reentry_rejects_non_explore_existing_child_profile() {
     let run = handle
         .start_run("native_plan_task_reentry_boundary", &workspace)
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let plan_agent_id = handle
         .spawn_agent_idle(anonymous_supervisor_actor(), "plan", None)
         .await
-        .expect("spawn plan");
+        .unwrap_or_abort();
     let general_child = handle
         .spawn_agent_idle(
             anonymous_supervisor_actor(),
@@ -76,7 +77,7 @@ async fn plan_task_reentry_rejects_non_explore_existing_child_profile() {
             Some(plan_agent_id.clone()),
         )
         .await
-        .expect("spawn general child");
+        .unwrap_or_abort();
 
     let reentry_tool_call_id = handle
         .request_tool_call(
@@ -93,7 +94,7 @@ async fn plan_task_reentry_rejects_non_explore_existing_child_profile() {
             }),
         )
         .await
-        .expect("request plan reentry task");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &reentry_tool_call_id).await;
 
     let events = read_events(&run.events_path);
@@ -102,7 +103,7 @@ async fn plan_task_reentry_rejects_non_explore_existing_child_profile() {
     assert!(finished
         .output_summary
         .as_deref()
-        .expect("failure summary")
+        .unwrap_or_abort()
         .contains("uses profile `general`, but the request selected `explore`"));
 }
 #[tokio::test]
@@ -114,7 +115,7 @@ async fn batch_rejects_more_than_25_calls_preserving_input_order() {
         .map(|line| format!("line {line}"))
         .collect::<Vec<_>>()
         .join("\n");
-    fs::write(workspace.join("fixture.txt"), format!("{fixture}\n")).expect("fixture file");
+    fs::write(workspace.join("fixture.txt"), format!("{fixture}\n")).unwrap_or_abort();
 
     let (handle, run, worker_id) = spawn_run(&workspace).await;
     let tool_calls = (0..26)
@@ -139,16 +140,16 @@ async fn batch_rejects_more_than_25_calls_preserving_input_order() {
             json!({ "tool_calls": tool_calls }),
         )
         .await
-        .expect("request over-limit batch");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &batch_tool_call_id).await;
 
-    handle.stop_run().await.expect("stop run");
+    handle.stop_run().await.unwrap_or_abort();
     let events = read_events(&run.events_path);
     let finished = find_finished(&events, &batch_tool_call_id);
 
     // assert
     assert_eq!(finished.status, ToolCallStatus::Succeeded);
-    let output = finished.output_json.as_ref().expect("batch output json");
+    let output = finished.output_json.as_ref().unwrap_or_abort();
     assert_eq!(output.get("requested_call_count"), Some(&json!(26)));
     assert_eq!(output.get("max_calls"), Some(&json!(25)));
     assert_eq!(output.pointer("/audit/successful"), Some(&json!(25)));
@@ -161,7 +162,7 @@ async fn batch_rejects_more_than_25_calls_preserving_input_order() {
     let details = output
         .get("details")
         .and_then(Value::as_array)
-        .expect("batch details");
+        .unwrap_or_abort();
     assert_eq!(details.len(), 26);
     for (index, detail) in details.iter().enumerate() {
         assert_eq!(detail.get("index"), Some(&json!(index)));
@@ -182,6 +183,6 @@ async fn batch_rejects_more_than_25_calls_preserving_input_order() {
     assert!(details[25]
         .get("error")
         .and_then(Value::as_str)
-        .expect("over-limit batch error")
+        .unwrap_or_abort()
         .contains("Maximum of 25 tools allowed in batch"));
 }

@@ -1,3 +1,4 @@
+use harness_tools::UnwrapOrAbort;
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
@@ -70,17 +71,17 @@ pub(crate) fn run_started(run_id: &str, workspace: &Path) -> EventEnvelopeV1 {
 
 pub(crate) fn write_session_events(workspace: &Path, run_id: &str, events: &[EventEnvelopeV1]) {
     let run_dir = workspace.join(".agent-harness/sessions").join(run_id);
-    std::fs::create_dir_all(&run_dir).expect("session run dir");
+    std::fs::create_dir_all(&run_dir).unwrap_or_abort();
     let body = events
         .iter()
-        .map(|event| serde_json::to_string(event).expect("serialize event"))
+        .map(|event| serde_json::to_string(event).unwrap_or_abort())
         .collect::<Vec<_>>()
         .join("\n");
-    std::fs::write(run_dir.join("events.jsonl"), format!("{body}\n")).expect("events jsonl");
+    std::fs::write(run_dir.join("events.jsonl"), format!("{body}\n")).unwrap_or_abort();
 }
 
 pub(crate) fn read_artifact(workspace: &Path, artifact_path: &str) -> String {
-    std::fs::read_to_string(workspace.join(artifact_path)).expect("read artifact")
+    std::fs::read_to_string(workspace.join(artifact_path)).unwrap_or_abort()
 }
 
 pub(crate) fn task_profiles() -> BTreeMap<String, AgentProfile> {
@@ -107,7 +108,7 @@ pub(crate) fn profile(name: &str, toolset: &[&str]) -> AgentProfile {
 
 pub(crate) async fn spawn_task_run(workspace: &Path) -> (CoordinatorHandle, RunInfo, String) {
     let session_dir = workspace.join("sessions");
-    std::fs::create_dir_all(&session_dir).expect("session dir");
+    std::fs::create_dir_all(&session_dir).unwrap_or_abort();
 
     let mut config = CoordinatorConfig::new(session_dir);
     config.permission_policy = allow_all_permission_policy();
@@ -123,11 +124,11 @@ pub(crate) async fn spawn_task_run(workspace: &Path) -> (CoordinatorHandle, RunI
     let run = handle
         .start_run("native_large_output_child_task", workspace)
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let worker_id = handle
         .spawn_agent(anonymous_supervisor_actor(), "parent", None)
         .await
-        .expect("spawn parent worker");
+        .unwrap_or_abort();
 
     (handle, run, worker_id)
 }

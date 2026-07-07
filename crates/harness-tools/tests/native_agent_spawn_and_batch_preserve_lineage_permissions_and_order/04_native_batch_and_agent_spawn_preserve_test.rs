@@ -1,3 +1,4 @@
+use harness_tools::UnwrapOrAbort;
 #[tokio::test]
 async fn native_batch_and_agent_spawn_preserve_child_lineage_permissions_and_order() {
     let temp_dir = setup_workspace();
@@ -22,7 +23,7 @@ async fn native_batch_and_agent_spawn_preserve_child_lineage_permissions_and_ord
             }),
         )
         .await
-        .expect("request native task");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &native_spawn_tool_call_id).await;
 
     let compat_task_tool_call_id = handle
@@ -39,7 +40,7 @@ async fn native_batch_and_agent_spawn_preserve_child_lineage_permissions_and_ord
             }),
         )
         .await
-        .expect("request compat task");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &compat_task_tool_call_id).await;
 
     let native_batch_tool_call_id = handle
@@ -62,7 +63,7 @@ async fn native_batch_and_agent_spawn_preserve_child_lineage_permissions_and_ord
             }),
         )
         .await
-        .expect("request native batch");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &native_batch_tool_call_id).await;
 
     let compat_batch_tool_call_id = handle
@@ -78,10 +79,10 @@ async fn native_batch_and_agent_spawn_preserve_child_lineage_permissions_and_ord
             }),
         )
         .await
-        .expect("request compat batch");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &compat_batch_tool_call_id).await;
 
-    handle.stop_run().await.expect("stop run");
+    handle.stop_run().await.unwrap_or_abort();
     let events = read_events(&run.events_path);
 
     let native_spawn_finished = find_finished(&events, &native_spawn_tool_call_id);
@@ -89,7 +90,7 @@ async fn native_batch_and_agent_spawn_preserve_child_lineage_permissions_and_ord
     let native_spawn_metadata = native_spawn_finished
         .metadata
         .as_ref()
-        .expect("native spawn metadata");
+        .unwrap_or_abort();
     assert_eq!(
         native_spawn_metadata.canonical_tool_id.as_deref(),
         Some("task")
@@ -98,17 +99,17 @@ async fn native_batch_and_agent_spawn_preserve_child_lineage_permissions_and_ord
     let native_spawn_output = native_spawn_finished
         .output_json
         .as_ref()
-        .expect("native spawn output json");
+        .unwrap_or_abort();
     assert_eq!(native_spawn_output.get("mode"), Some(&json!("background")));
     assert_eq!(native_spawn_output.get("status"), Some(&json!("scheduled")));
     let native_child_session = native_spawn_output
         .get("child_session_id")
         .and_then(Value::as_str)
-        .expect("native child session id");
+        .unwrap_or_abort();
     let native_child_request = native_spawn_output
         .get("child_request_id")
         .and_then(Value::as_str)
-        .expect("native child request id");
+        .unwrap_or_abort();
     assert_eq!(
         native_spawn_metadata
             .lineage
@@ -139,7 +140,7 @@ async fn native_batch_and_agent_spawn_preserve_child_lineage_permissions_and_ord
             }
             _ => None,
         })
-        .expect("native spawn task completion");
+        .unwrap_or_abort();
     assert_eq!(
         native_completed
             .metadata
@@ -161,7 +162,7 @@ async fn native_batch_and_agent_spawn_preserve_child_lineage_permissions_and_ord
     let compat_task_metadata = compat_task_finished
         .metadata
         .as_ref()
-        .expect("compat task metadata");
+        .unwrap_or_abort();
     assert_eq!(
         compat_task_metadata.canonical_tool_id.as_deref(),
         Some("task")
@@ -170,7 +171,7 @@ async fn native_batch_and_agent_spawn_preserve_child_lineage_permissions_and_ord
     let compat_task_output = compat_task_finished
         .output_json
         .as_ref()
-        .expect("compat task output json");
+        .unwrap_or_abort();
     assert_eq!(compat_task_output.get("mode"), Some(&json!("background")));
     assert_eq!(
         compat_task_output
@@ -186,7 +187,7 @@ async fn native_batch_and_agent_spawn_preserve_child_lineage_permissions_and_ord
     let native_batch_metadata = native_batch_finished
         .metadata
         .as_ref()
-        .expect("native batch metadata");
+        .unwrap_or_abort();
     assert_eq!(
         native_batch_metadata.canonical_tool_id.as_deref(),
         Some("batch")
@@ -195,7 +196,7 @@ async fn native_batch_and_agent_spawn_preserve_child_lineage_permissions_and_ord
     let native_batch_output = native_batch_finished
         .output_json
         .as_ref()
-        .expect("native batch output json");
+        .unwrap_or_abort();
     assert_eq!(
         native_batch_output.pointer("/execution/concurrency"),
         Some(&json!("parallel"))
@@ -219,7 +220,7 @@ async fn native_batch_and_agent_spawn_preserve_child_lineage_permissions_and_ord
     let native_details = native_batch_output
         .get("details")
         .and_then(Value::as_array)
-        .expect("native batch details array");
+        .unwrap_or_abort();
     assert_eq!(native_details.len(), 4);
     assert_eq!(native_details[0].get("index"), Some(&json!(0)));
     assert_eq!(native_details[0].get("tool_id"), Some(&json!("read")));
@@ -240,7 +241,7 @@ async fn native_batch_and_agent_spawn_preserve_child_lineage_permissions_and_ord
     assert!(native_details[1]
         .get("error")
         .and_then(Value::as_str)
-        .expect("shell error")
+        .unwrap_or_abort()
         .contains("tool call denied"));
 
     assert_eq!(native_details[2].get("index"), Some(&json!(2)));
@@ -249,7 +250,7 @@ async fn native_batch_and_agent_spawn_preserve_child_lineage_permissions_and_ord
     assert!(native_details[2]
         .get("error")
         .and_then(Value::as_str)
-        .expect("nested batch error")
+        .unwrap_or_abort()
         .contains("cannot be nested"));
 
     assert_eq!(native_details[3].get("index"), Some(&json!(3)));
@@ -269,7 +270,7 @@ async fn native_batch_and_agent_spawn_preserve_child_lineage_permissions_and_ord
     let compat_batch_metadata = compat_batch_finished
         .metadata
         .as_ref()
-        .expect("compat batch metadata");
+        .unwrap_or_abort();
     assert_eq!(
         compat_batch_metadata.canonical_tool_id.as_deref(),
         Some("batch")
@@ -279,23 +280,23 @@ async fn native_batch_and_agent_spawn_preserve_child_lineage_permissions_and_ord
     let compat_batch_output = compat_batch_finished
         .output_json
         .as_ref()
-        .expect("compat batch output json");
+        .unwrap_or_abort();
     let compat_details = compat_batch_output
         .get("details")
         .and_then(Value::as_array)
-        .expect("compat batch details");
+        .unwrap_or_abort();
     assert_eq!(compat_details.len(), 2);
     assert_eq!(compat_details[0].get("index"), Some(&json!(0)));
     assert_eq!(compat_details[1].get("index"), Some(&json!(1)));
     assert!(compat_details[0]
         .get("summary")
         .and_then(Value::as_str)
-        .expect("first compat summary")
+        .unwrap_or_abort()
         .contains("|line-02"));
     assert!(compat_details[1]
         .get("summary")
         .and_then(Value::as_str)
-        .expect("second compat summary")
+        .unwrap_or_abort()
         .contains("|line-01"));
 }
 #[tokio::test]
@@ -321,7 +322,7 @@ async fn compat_task_and_batch_delegate_to_native_orchestration() {
             }),
         )
         .await
-        .expect("request compat task");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &compat_task_tool_call_id).await;
 
     let compat_batch_tool_call_id = handle
@@ -345,10 +346,10 @@ async fn compat_task_and_batch_delegate_to_native_orchestration() {
             }),
         )
         .await
-        .expect("request compat batch");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &compat_batch_tool_call_id).await;
 
-    handle.stop_run().await.expect("stop run");
+    handle.stop_run().await.unwrap_or_abort();
     let events = read_events(&run.events_path);
 
     let compat_task_finished = find_finished(&events, &compat_task_tool_call_id);
@@ -356,7 +357,7 @@ async fn compat_task_and_batch_delegate_to_native_orchestration() {
     let compat_task_metadata = compat_task_finished
         .metadata
         .as_ref()
-        .expect("compat task metadata");
+        .unwrap_or_abort();
     assert_eq!(
         compat_task_metadata.canonical_tool_id.as_deref(),
         Some("task")
@@ -365,7 +366,7 @@ async fn compat_task_and_batch_delegate_to_native_orchestration() {
     let compat_task_output = compat_task_finished
         .output_json
         .as_ref()
-        .expect("compat task output json");
+        .unwrap_or_abort();
     assert_eq!(compat_task_output.get("mode"), Some(&json!("background")));
     assert_eq!(compat_task_output.get("status"), Some(&json!("scheduled")));
     assert_eq!(
@@ -392,7 +393,7 @@ async fn compat_task_and_batch_delegate_to_native_orchestration() {
     let compat_batch_metadata = compat_batch_finished
         .metadata
         .as_ref()
-        .expect("compat batch metadata");
+        .unwrap_or_abort();
     assert_eq!(
         compat_batch_metadata.canonical_tool_id.as_deref(),
         Some("batch")
@@ -401,7 +402,7 @@ async fn compat_task_and_batch_delegate_to_native_orchestration() {
     let compat_batch_output = compat_batch_finished
         .output_json
         .as_ref()
-        .expect("compat batch output json");
+        .unwrap_or_abort();
     assert_eq!(
         compat_batch_output.pointer("/execution/concurrency"),
         Some(&json!("parallel"))
@@ -425,7 +426,7 @@ async fn compat_task_and_batch_delegate_to_native_orchestration() {
     let compat_details = compat_batch_output
         .get("details")
         .and_then(Value::as_array)
-        .expect("compat batch details");
+        .unwrap_or_abort();
     assert_eq!(compat_details.len(), 3);
     assert_eq!(compat_details[0].get("index"), Some(&json!(0)));
     assert_eq!(compat_details[0].get("tool_id"), Some(&json!("read")));
@@ -445,7 +446,7 @@ async fn compat_task_and_batch_delegate_to_native_orchestration() {
     assert!(compat_details[0]
         .get("summary")
         .and_then(Value::as_str)
-        .expect("first compat summary")
+        .unwrap_or_abort()
         .contains("|line-02"));
     assert_eq!(compat_details[1].get("index"), Some(&json!(1)));
     assert_eq!(compat_details[1].get("tool_id"), Some(&json!("batch")));
@@ -457,7 +458,7 @@ async fn compat_task_and_batch_delegate_to_native_orchestration() {
     assert!(compat_details[1]
         .get("error")
         .and_then(Value::as_str)
-        .expect("nested compat batch error")
+        .unwrap_or_abort()
         .contains("cannot be nested"));
     assert_eq!(compat_details[2].get("index"), Some(&json!(2)));
     assert_eq!(compat_details[2].get("tool_id"), Some(&json!("read")));
@@ -469,7 +470,7 @@ async fn compat_task_and_batch_delegate_to_native_orchestration() {
     assert!(compat_details[2]
         .get("summary")
         .and_then(Value::as_str)
-        .expect("second compat summary")
+        .unwrap_or_abort()
         .contains("|line-01"));
 }
 #[tokio::test]
@@ -493,10 +494,10 @@ async fn task_tool_rejects_unknown_child_profile_before_spawning_fallback_model(
             }),
         )
         .await
-        .expect("request task tool");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &task_tool_call_id).await;
 
-    handle.stop_run().await.expect("stop run");
+    handle.stop_run().await.unwrap_or_abort();
     let events = read_events(&run.events_path);
     let finished = find_finished(&events, &task_tool_call_id);
 
@@ -504,6 +505,6 @@ async fn task_tool_rejects_unknown_child_profile_before_spawning_fallback_model(
     assert!(finished
         .output_summary
         .as_deref()
-        .expect("output summary")
+        .unwrap_or_abort()
         .contains("Unknown child profile `missing_profile`"));
 }

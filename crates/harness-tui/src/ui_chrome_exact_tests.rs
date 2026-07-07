@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 #[cfg(test)]
 pub(crate) fn exact_test_subagent_footer_matches_harness_layout() {
@@ -16,7 +17,7 @@ pub(crate) fn exact_test_subagent_footer_matches_harness_layout() {
     };
 
     let backend = TestBackend::new(80, 6);
-    let mut terminal = Terminal::new(backend).expect("create terminal");
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
     terminal
         .draw(|frame| {
             render_subagent_footer(
@@ -28,7 +29,7 @@ pub(crate) fn exact_test_subagent_footer_matches_harness_layout() {
                 &info,
             );
         })
-        .expect("draw subagent footer");
+        .unwrap_or_abort();
 
     let buffer = terminal.backend().buffer();
     let rows = buffer
@@ -150,10 +151,10 @@ pub(crate) fn exact_test_subagent_replay_suppresses_parent_replay_dock() {
     );
 
     let backend = TestBackend::new(100, 30);
-    let mut terminal = Terminal::new(backend).expect("create terminal");
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
     terminal
         .draw(|frame| render_app(frame, &app))
-        .expect("draw subagent replay");
+        .unwrap_or_abort();
     let rows = terminal
         .backend()
         .buffer()
@@ -171,7 +172,7 @@ pub(crate) fn exact_test_subagent_replay_suppresses_parent_replay_dock() {
 
     let theme = app.theme();
     let plan = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, 100, 30));
-    let transcript = plan.transcript.expect("subagent transcript area");
+    let transcript = plan.transcript.unwrap_or_abort();
     let sample_x = transcript.x.saturating_add(
         theme
             .live_shell
@@ -207,7 +208,7 @@ pub(crate) fn exact_test_live_control_dock_renders_shared_surface() {
     let height = 30;
     let area = Rect::new(0, 0, width, height);
     let plan = FrameLayoutPlan::for_app(&app, area);
-    let dock = plan.dock.expect("live dock layout");
+    let dock = plan.dock.unwrap_or_abort();
     let composer = dock.composer;
 
     assert_eq!(dock.status, None);
@@ -216,10 +217,10 @@ pub(crate) fn exact_test_live_control_dock_renders_shared_surface() {
     assert_eq!(dock.disclosure, Some(Rect::new(0, 29, 100, 1)));
 
     let backend = TestBackend::new(width, height);
-    let mut terminal = Terminal::new(backend).expect("create live shell terminal");
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
     terminal
         .draw(|frame| super::render_app(frame, &app))
-        .expect("draw live shell frame");
+        .unwrap_or_abort();
 
     let buffer = terminal.backend().buffer().clone();
     let right_edge = dock
@@ -272,10 +273,10 @@ pub(crate) fn exact_test_live_control_dock_collapses_disclosure_before_status() 
     let height = 18;
 
     let backend = TestBackend::new(width, height);
-    let mut terminal = Terminal::new(backend).expect("create live shell terminal");
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
     terminal
         .draw(|frame| super::render_app(frame, &app))
-        .expect("draw live shell frame");
+        .unwrap_or_abort();
 
     let rendered = terminal
         .backend()
@@ -345,7 +346,7 @@ pub(crate) fn exact_test_tool_status_summary_uses_effective_tool_identity() {
         revision: 0,
     });
 
-    let summary = control_dock_summary_segment(&app).expect("tool summary segment");
+    let summary = control_dock_summary_segment(&app).unwrap_or_abort();
     assert_eq!(
         summary.kind,
         crate::view_model::ControlDockSummarySegmentKind::Tool
@@ -399,7 +400,7 @@ pub(crate) fn exact_test_retry_summary_segment_prioritizes_retry_indicator() {
         revision: 0,
     });
 
-    let summary = control_dock_summary_segment(&app).expect("retry summary segment");
+    let summary = control_dock_summary_segment(&app).unwrap_or_abort();
     assert_eq!(
         summary.kind,
         crate::view_model::ControlDockSummarySegmentKind::Retry
@@ -421,7 +422,7 @@ pub(crate) fn exact_test_live_composer_reserves_right_gap() {
     }
 
     let plan = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, 160, 30));
-    let dock = plan.dock.expect("live dock layout");
+    let dock = plan.dock.unwrap_or_abort();
 
     assert!(plan.operator_sidebar.is_some());
     assert_eq!(dock.composer.x, dock.shell.x);
@@ -532,7 +533,7 @@ pub(crate) fn exact_test_startup_disclosure_matches_harness_hint_row() {
     let candidate = startup_disclosure_candidates(theme, surface, "Ctrl+p", "Shift+Enter/Ctrl+j")
         .into_iter()
         .next()
-        .expect("primary startup disclosure candidate")
+        .unwrap_or_abort()
         .into_iter()
         .map(|span| span.content.into_owned())
         .collect::<String>();

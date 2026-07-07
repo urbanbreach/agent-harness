@@ -1,7 +1,8 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 pub(super) fn split_oversized_turn_pre_prompt_preserves_suffix_and_prefix_summary() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let clock = FakeClock::new();
     let redactor = DefaultRedactor::default();
     let mut run_state = test_run_state(temp_dir.path(), "run_split_pre_prompt_prefix_summary");
@@ -52,8 +53,8 @@ pub(super) fn split_oversized_turn_pre_prompt_preserves_suffix_and_prefix_summar
         &compaction_config,
         &crate::coord::CompactionSummaryDecision::deterministic(&trigger),
     )
-    .expect("pre-prompt split compaction should succeed")
-    .expect("pre-prompt split compaction should write checkpoint");
+    .unwrap_or_abort()
+    .unwrap_or_abort();
 
     assert_eq!(updated.updated_context.preserved_turns.len(), 1);
     let recent = &updated.updated_context.preserved_turns[0];
@@ -72,16 +73,14 @@ pub(super) fn split_oversized_turn_pre_prompt_preserves_suffix_and_prefix_summar
             }
             _ => None,
         })
-        .expect("pre-prompt compaction written event");
+        .unwrap_or_abort();
     let checkpoint_path = run_state.info.run_dir.join(&written.artifact_path);
-    let checkpoint_body = fs::read_to_string(&checkpoint_path).expect("read checkpoint artifact");
+    let checkpoint_body = fs::read_to_string(&checkpoint_path).unwrap_or_abort();
     let checkpoint: ProviderContextCheckpoint =
-        serde_json::from_str(&checkpoint_body).expect("parse checkpoint artifact");
-    let tail_boundary = checkpoint.tail_boundary.expect("tail boundary");
+        serde_json::from_str(&checkpoint_body).unwrap_or_abort();
+    let tail_boundary = checkpoint.tail_boundary.unwrap_or_abort();
     assert_eq!(tail_boundary.mode, "split_oversized_turn_tail");
-    let prefix_summary = tail_boundary
-        .split_prefix_summary
-        .expect("split prefix summary");
+    let prefix_summary = tail_boundary.split_prefix_summary.unwrap_or_abort();
     assert!(prefix_summary.contains("PREFIX_ANCHOR"));
     assert!(checkpoint.summary.contains("## Critical Context"));
     assert!(checkpoint.summary.contains("Split prefix summary"));
@@ -91,7 +90,7 @@ pub(super) fn split_oversized_turn_pre_prompt_preserves_suffix_and_prefix_summar
 }
 
 pub(super) fn split_oversized_failed_provider_error_preserves_incomplete_suffix() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let clock = FakeClock::new();
     let redactor = DefaultRedactor::default();
     let mut run_state = test_run_state(temp_dir.path(), "run_split_failed_provider_error");
@@ -141,8 +140,8 @@ pub(super) fn split_oversized_failed_provider_error_preserves_incomplete_suffix(
         &compaction_config,
         &crate::coord::CompactionSummaryDecision::deterministic(&trigger),
     )
-    .expect("failed-response split compaction should succeed")
-    .expect("failed-response split compaction should write checkpoint");
+    .unwrap_or_abort()
+    .unwrap_or_abort();
 
     let events = read_events(&run_state.info.events_path);
     let written = events
@@ -153,11 +152,11 @@ pub(super) fn split_oversized_failed_provider_error_preserves_incomplete_suffix(
             }
             _ => None,
         })
-        .expect("failed-response compaction written event");
+        .unwrap_or_abort();
     let checkpoint_path = run_state.info.run_dir.join(&written.artifact_path);
-    let checkpoint_body = fs::read_to_string(&checkpoint_path).expect("read checkpoint artifact");
+    let checkpoint_body = fs::read_to_string(&checkpoint_path).unwrap_or_abort();
     let checkpoint: ProviderContextCheckpoint =
-        serde_json::from_str(&checkpoint_body).expect("parse checkpoint artifact");
+        serde_json::from_str(&checkpoint_body).unwrap_or_abort();
     assert_eq!(checkpoint.recent_turns.len(), 1);
     let suffix = &checkpoint.recent_turns[0];
     assert_eq!(suffix.status, ProviderConversationTurnStatus::Failed);
@@ -176,7 +175,7 @@ pub(super) fn split_oversized_failed_provider_error_preserves_incomplete_suffix(
 }
 
 pub(super) fn split_oversized_turn_refuses_tool_failure_to_avoid_orphan_tools() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let clock = FakeClock::new();
     let redactor = DefaultRedactor::default();
     let mut run_state = test_run_state(temp_dir.path(), "run_split_refuses_tool_failure");
@@ -225,8 +224,8 @@ pub(super) fn split_oversized_turn_refuses_tool_failure_to_avoid_orphan_tools() 
         &compaction_config,
         &crate::coord::CompactionSummaryDecision::deterministic(&trigger),
     )
-    .expect("tool-failure summary-only compaction should succeed")
-    .expect("tool-failure summary-only compaction should write checkpoint");
+    .unwrap_or_abort()
+    .unwrap_or_abort();
 
     let events = read_events(&run_state.info.events_path);
     let written = events
@@ -237,13 +236,13 @@ pub(super) fn split_oversized_turn_refuses_tool_failure_to_avoid_orphan_tools() 
             }
             _ => None,
         })
-        .expect("failed-response compaction written event");
+        .unwrap_or_abort();
     let checkpoint_path = run_state.info.run_dir.join(&written.artifact_path);
-    let checkpoint_body = fs::read_to_string(&checkpoint_path).expect("read checkpoint artifact");
+    let checkpoint_body = fs::read_to_string(&checkpoint_path).unwrap_or_abort();
     let checkpoint: ProviderContextCheckpoint =
-        serde_json::from_str(&checkpoint_body).expect("parse checkpoint artifact");
+        serde_json::from_str(&checkpoint_body).unwrap_or_abort();
     assert!(checkpoint.recent_turns.is_empty());
-    let tail_boundary = checkpoint.tail_boundary.expect("tail boundary");
+    let tail_boundary = checkpoint.tail_boundary.unwrap_or_abort();
     assert_eq!(tail_boundary.mode, "summary_only");
     assert_eq!(tail_boundary.split_prefix_summary, None);
     assert!(checkpoint.facts.compacted_turns.iter().any(|fact| {
@@ -253,7 +252,7 @@ pub(super) fn split_oversized_turn_refuses_tool_failure_to_avoid_orphan_tools() 
 }
 
 pub(super) fn split_oversized_turn_refuses_artifact_backed_turn() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let clock = FakeClock::new();
     let redactor = DefaultRedactor::default();
     let mut run_state = test_run_state(temp_dir.path(), "run_split_refuses_artifact_turn");
@@ -300,8 +299,8 @@ pub(super) fn split_oversized_turn_refuses_artifact_backed_turn() {
         &compaction_config,
         &crate::coord::CompactionSummaryDecision::deterministic(&trigger),
     )
-    .expect("artifact-backed summary-only compaction should succeed")
-    .expect("artifact-backed summary-only compaction should write checkpoint");
+    .unwrap_or_abort()
+    .unwrap_or_abort();
 
     let events = read_events(&run_state.info.events_path);
     let written = events
@@ -312,13 +311,13 @@ pub(super) fn split_oversized_turn_refuses_artifact_backed_turn() {
             }
             _ => None,
         })
-        .expect("overflow compaction written event");
+        .unwrap_or_abort();
     let checkpoint_path = run_state.info.run_dir.join(&written.artifact_path);
-    let checkpoint_body = fs::read_to_string(&checkpoint_path).expect("read checkpoint artifact");
+    let checkpoint_body = fs::read_to_string(&checkpoint_path).unwrap_or_abort();
     let checkpoint: ProviderContextCheckpoint =
-        serde_json::from_str(&checkpoint_body).expect("parse checkpoint artifact");
+        serde_json::from_str(&checkpoint_body).unwrap_or_abort();
     assert!(checkpoint.recent_turns.is_empty());
-    let tail_boundary = checkpoint.tail_boundary.expect("tail boundary");
+    let tail_boundary = checkpoint.tail_boundary.unwrap_or_abort();
     assert_eq!(tail_boundary.mode, "summary_only");
     assert_eq!(tail_boundary.split_prefix_summary, None);
     assert!(checkpoint
@@ -329,7 +328,7 @@ pub(super) fn split_oversized_turn_refuses_artifact_backed_turn() {
 }
 
 pub(super) fn split_oversized_turn_refuses_provider_neutral_tool_messages() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let clock = FakeClock::new();
     let redactor = DefaultRedactor::default();
     let mut run_state = test_run_state(temp_dir.path(), "run_split_refuses_neutral_tool_turn");
@@ -423,8 +422,8 @@ pub(super) fn split_oversized_turn_refuses_provider_neutral_tool_messages() {
         &compaction_config,
         &crate::coord::CompactionSummaryDecision::deterministic(&trigger),
     )
-    .expect("neutral tool summary-only compaction should succeed")
-    .expect("neutral tool summary-only compaction should write checkpoint");
+    .unwrap_or_abort()
+    .unwrap_or_abort();
 
     let events = read_events(&run_state.info.events_path);
     let written = events
@@ -435,19 +434,19 @@ pub(super) fn split_oversized_turn_refuses_provider_neutral_tool_messages() {
             }
             _ => None,
         })
-        .expect("overflow compaction written event");
+        .unwrap_or_abort();
     let checkpoint_path = run_state.info.run_dir.join(&written.artifact_path);
-    let checkpoint_body = fs::read_to_string(&checkpoint_path).expect("read checkpoint artifact");
+    let checkpoint_body = fs::read_to_string(&checkpoint_path).unwrap_or_abort();
     let checkpoint: ProviderContextCheckpoint =
-        serde_json::from_str(&checkpoint_body).expect("parse checkpoint artifact");
+        serde_json::from_str(&checkpoint_body).unwrap_or_abort();
     assert!(checkpoint.recent_turns.is_empty());
-    let tail_boundary = checkpoint.tail_boundary.expect("tail boundary");
+    let tail_boundary = checkpoint.tail_boundary.unwrap_or_abort();
     assert_eq!(tail_boundary.mode, "summary_only");
     assert_eq!(tail_boundary.split_prefix_summary, None);
 }
 
 pub(super) fn split_oversized_turn_prefix_summary_in_checkpoint_facts() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let clock = FakeClock::new();
     let redactor = DefaultRedactor::default();
     let mut run_state = test_run_state(temp_dir.path(), "run_split_prefix_summary_facts");
@@ -490,8 +489,8 @@ pub(super) fn split_oversized_turn_prefix_summary_in_checkpoint_facts() {
         &compaction_config,
         &crate::coord::CompactionSummaryDecision::deterministic(&trigger),
     )
-    .expect("overflow split compaction should succeed")
-    .expect("overflow split compaction should write checkpoint");
+    .unwrap_or_abort()
+    .unwrap_or_abort();
 
     let events = read_events(&run_state.info.events_path);
     let written = events
@@ -502,24 +501,24 @@ pub(super) fn split_oversized_turn_prefix_summary_in_checkpoint_facts() {
             }
             _ => None,
         })
-        .expect("overflow compaction written event");
+        .unwrap_or_abort();
     let checkpoint_path = run_state.info.run_dir.join(&written.artifact_path);
-    let checkpoint_body = fs::read_to_string(&checkpoint_path).expect("read checkpoint artifact");
+    let checkpoint_body = fs::read_to_string(&checkpoint_path).unwrap_or_abort();
     let checkpoint_json: serde_json::Value =
-        serde_json::from_str(&checkpoint_body).expect("parse checkpoint artifact json");
+        serde_json::from_str(&checkpoint_body).unwrap_or_abort();
     assert_eq!(
         checkpoint_json["tail_boundary"]["mode"].as_str(),
         Some("split_oversized_turn_tail")
     );
     let split_prefix_summary = checkpoint_json["tail_boundary"]["split_prefix_summary"]
         .as_str()
-        .expect("serialized split prefix summary");
+        .unwrap_or_abort();
     assert!(split_prefix_summary.contains("FACT_PREFIX_ANCHOR"));
-    let summary = checkpoint_json["summary"].as_str().expect("summary");
+    let summary = checkpoint_json["summary"].as_str().unwrap_or_abort();
     assert!(summary.contains("Split prefix summary"));
     assert!(summary.contains("Source facts: split prefix summary"));
     assert!(!checkpoint_json["recent_turns"][0]["assistant_response"]
         .as_str()
-        .expect("recent assistant suffix")
+        .unwrap_or_abort()
         .contains("FACT_PREFIX_ANCHOR"));
 }

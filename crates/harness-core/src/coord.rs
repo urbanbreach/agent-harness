@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -655,7 +656,7 @@ fn block_on_coordinator_future<T>(future: impl std::future::Future<Output = T>) 
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
-        .expect("coordinator helper runtime")
+        .unwrap_or_abort()
         .block_on(future)
 }
 

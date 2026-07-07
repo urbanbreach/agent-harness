@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
@@ -65,10 +66,10 @@ pub(super) async fn built_in_command_still_requires_discovery_when_only_extensio
 }
 
 pub(super) async fn multiple_matching_formatters_run_in_sorted_order() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("create workspace");
-    fs::write(workspace.join("test.py"), "x = 1\n").expect("write py");
+    fs::create_dir_all(&workspace).unwrap_or_abort();
+    fs::write(workspace.join("test.py"), "x = 1\n").unwrap_or_abort();
 
     let mut overrides = BTreeMap::new();
     overrides.insert(
@@ -98,9 +99,9 @@ pub(super) async fn multiple_matching_formatters_run_in_sorted_order() {
     let discovery = FakeFormatterDiscovery::new(["ruff", "uv"]);
     run_formatter_for_path_with_discovery(&config, &workspace, "test.py", &discovery)
         .await
-        .expect("formatters run");
+        .unwrap_or_abort();
 
-    let markers = fs::read_to_string(workspace.join("markers.txt")).expect("read markers");
+    let markers = fs::read_to_string(workspace.join("markers.txt")).unwrap_or_abort();
     let lines: Vec<_> = markers.lines().collect();
     assert_eq!(lines, vec!["ruff", "uv"]);
 }
@@ -118,10 +119,10 @@ pub(super) async fn formatter_registry_order_is_declaration_order_not_alphabetic
 }
 
 pub(super) async fn ruff_uv_coupling_skips_both_when_one_disabled() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("create workspace");
-    fs::write(workspace.join("test.py"), "x = 1\n").expect("write py");
+    fs::create_dir_all(&workspace).unwrap_or_abort();
+    fs::write(workspace.join("test.py"), "x = 1\n").unwrap_or_abort();
 
     let mut overrides = BTreeMap::new();
     overrides.insert(
@@ -151,15 +152,15 @@ pub(super) async fn ruff_uv_coupling_skips_both_when_one_disabled() {
     let discovery = FakeFormatterDiscovery::new(["ruff", "uv"]);
     run_formatter_for_path_with_discovery(&config, &workspace, "test.py", &discovery)
         .await
-        .expect("coupled skip returns ok");
+        .unwrap_or_abort();
     assert!(!workspace.join("marker.txt").exists());
 }
 
 pub(super) async fn uv_disabled_skips_ruff_too() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("create workspace");
-    fs::write(workspace.join("test.py"), "x = 1\n").expect("write py");
+    fs::create_dir_all(&workspace).unwrap_or_abort();
+    fs::write(workspace.join("test.py"), "x = 1\n").unwrap_or_abort();
 
     let mut overrides = BTreeMap::new();
     overrides.insert(
@@ -189,7 +190,7 @@ pub(super) async fn uv_disabled_skips_ruff_too() {
     let discovery = FakeFormatterDiscovery::new(["ruff", "uv"]);
     run_formatter_for_path_with_discovery(&config, &workspace, "test.py", &discovery)
         .await
-        .expect("coupled skip returns ok");
+        .unwrap_or_abort();
     assert!(!workspace.join("marker.txt").exists());
 }
 

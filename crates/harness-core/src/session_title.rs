@@ -131,7 +131,7 @@ pub(crate) fn system_time_millis_iso(time: std::time::SystemTime) -> String {
     let duration = time
         .duration_since(UNIX_EPOCH)
         .unwrap_or(Duration::from_secs(0));
-    let total_millis = duration.as_millis() as u64;
+    let total_millis = u64::try_from(duration.as_millis()).unwrap_or(u64::MAX);
     let millis = total_millis % 1_000;
     let secs = UNIX_EPOCH + Duration::from_secs(total_millis / 1_000);
     let seconds = humantime::format_rfc3339(secs).to_string();

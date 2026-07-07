@@ -80,7 +80,7 @@ pub(in crate::coord) async fn model_backed_compaction_summary_for(
     };
     let model_ref = compaction_summary_model_ref(compaction_config, trigger);
     let split_prefix_summary = model_backed_split_prefix_summary_decision(
-        provider.clone(),
+        Arc::clone(&provider),
         &model_ref,
         &initial_plan,
         trigger,
@@ -141,7 +141,7 @@ pub(in crate::coord) async fn model_backed_compaction_summary_for(
             },
         ],
         temperature: None,
-        max_tokens: Some(PROVIDER_CONTEXT_COMPACTION_SUMMARY_MAX_CHARS as u32 / 3),
+        max_tokens: Some(u32::try_from(PROVIDER_CONTEXT_COMPACTION_SUMMARY_MAX_CHARS).unwrap_or(u32::MAX) / 3),
         variant: None,
         reasoning_effort: None,
         text_verbosity: None,
@@ -237,7 +237,7 @@ async fn model_backed_split_prefix_summary_for(
             },
         ],
         temperature: None,
-        max_tokens: Some(PROVIDER_CONTEXT_SPLIT_PREFIX_SUMMARY_MAX_CHARS as u32 / 3),
+        max_tokens: Some(u32::try_from(PROVIDER_CONTEXT_SPLIT_PREFIX_SUMMARY_MAX_CHARS).unwrap_or(u32::MAX) / 3),
         variant: None,
         reasoning_effort: None,
         text_verbosity: None,

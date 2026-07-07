@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 #[path = "activity_lifecycle_terminal_tests.rs"]
 mod activity_lifecycle_terminal_tests;
@@ -36,7 +37,7 @@ pub(super) fn provider_reasoning_delta_populates_thinking_stream_without_overwri
         }),
     ));
 
-    let activity = app.activities.back().expect("streaming activity");
+    let activity = app.activities.back().unwrap_or_abort();
     assert_eq!(activity.thinking_text, "Drafting a careful answer.");
     assert_eq!(activity.transcript_text, "Hello world");
 }
@@ -85,7 +86,7 @@ pub(super) fn provider_request_finished_keeps_activity_streaming_until_turn_task
         }),
     ));
 
-    let activity = app.activities.back().expect("activity exists");
+    let activity = app.activities.back().unwrap_or_abort();
     assert_eq!(activity.status, ActivityStatus::Streaming);
     assert!(app.active_turn_in_progress());
 
@@ -105,7 +106,7 @@ pub(super) fn provider_request_finished_keeps_activity_streaming_until_turn_task
         }),
     ));
 
-    let activity = app.activities.back().expect("completed activity exists");
+    let activity = app.activities.back().unwrap_or_abort();
     assert_eq!(activity.status, ActivityStatus::Done);
     assert!(!app.active_turn_in_progress());
 }
@@ -144,7 +145,7 @@ pub(super) fn cache_read_write_tokens_render_as_separate_status_labels() {
     let segment = app
         .control_dock_view_model()
         .summary_segment
-        .expect("cache summary status segment");
+        .unwrap_or_abort();
     assert_eq!(segment.text, "cache read 41 · write 17");
 }
 
@@ -190,7 +191,7 @@ pub(super) fn task_cancelled_marks_matching_activity_as_error() {
         }),
     ));
 
-    let activity = app.activities.back().expect("cancelled activity exists");
+    let activity = app.activities.back().unwrap_or_abort();
     assert_eq!(activity.status, ActivityStatus::Error);
     assert_eq!(
         activity.error_message.as_deref(),
@@ -245,9 +246,9 @@ pub(super) fn provider_error_categories_surface_in_tui_activity_and_runtime_stat
             }),
         ));
 
-        let activity = app.activities.back().expect("provider error activity");
+        let activity = app.activities.back().unwrap_or_abort();
         // act
-        let error_message = activity.error_message.as_deref().expect("error detail");
+        let error_message = activity.error_message.as_deref().unwrap_or_abort();
         // assert
         assert_eq!(activity.status, ActivityStatus::Error);
         assert!(error_message.contains(category.as_str()), "{error_message}");
@@ -324,7 +325,7 @@ pub(super) fn child_tool_task_completed_does_not_finish_parent_turn_activity() {
         }),
     ));
 
-    let activity = app.activities.back().expect("activity exists");
+    let activity = app.activities.back().unwrap_or_abort();
     assert_eq!(activity.status, ActivityStatus::Streaming);
     assert!(activity.transcript_text.is_empty());
     assert!(app.active_turn_in_progress());
@@ -373,7 +374,7 @@ pub(super) fn child_tool_task_cancelled_does_not_mark_parent_turn_activity_error
         }),
     ));
 
-    let activity = app.activities.back().expect("activity exists");
+    let activity = app.activities.back().unwrap_or_abort();
     assert_eq!(activity.status, ActivityStatus::Streaming);
     assert!(activity.error_message.is_none());
     assert!(app.active_turn_in_progress());
@@ -410,7 +411,7 @@ pub(super) fn terminal_only_turn_completion_scope_marks_activity_done_without_ta
         }),
     ));
 
-    let activity = app.activities.back().expect("activity exists");
+    let activity = app.activities.back().unwrap_or_abort();
     assert_eq!(activity.status, ActivityStatus::Done);
     assert_eq!(activity.transcript_text, "Final answer");
     assert!(!app.active_turn_in_progress());
@@ -441,7 +442,7 @@ pub(super) fn terminal_only_turn_cancellation_scope_marks_activity_error_without
         }),
     ));
 
-    let activity = app.activities.back().expect("activity exists");
+    let activity = app.activities.back().unwrap_or_abort();
     assert_eq!(activity.status, ActivityStatus::Error);
     assert_eq!(
         activity.error_message.as_deref(),
@@ -476,7 +477,7 @@ pub(super) fn terminal_only_tool_cancellation_scope_does_not_fail_activity_or_ru
         }),
     ));
 
-    let activity = app.activities.back().expect("activity exists");
+    let activity = app.activities.back().unwrap_or_abort();
     assert_eq!(activity.status, ActivityStatus::Streaming);
     assert!(activity.error_message.is_none());
     assert_eq!(app.runtime_state().kind, RuntimeStateKind::Sending);

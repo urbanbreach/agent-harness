@@ -1,8 +1,13 @@
 [package]
 name = "harness-tools"
+description = "Native tool surface: fs, edit, bash, task, web, code, lsp, mcp, session"
 edition.workspace = true
 license.workspace = true
 version.workspace = true
+repository.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [dependencies]
 harness-core = { path = "../harness-core" }

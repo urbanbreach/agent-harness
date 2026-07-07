@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 pub(super) const COMPOSER_RAIL_GLYPH: &str = "┃";
 pub(super) const COMPOSER_RAIL_CAP_GLYPH: &str = "╹";
@@ -730,7 +731,7 @@ pub(super) fn composer_line_with_file_tags(
             if !current.is_empty() {
                 spans.push(Span::styled(
                     std::mem::take(&mut current),
-                    current_style.unwrap(),
+                    current_style.unwrap_or_abort(),
                 ));
             }
             current_style = Some(style);

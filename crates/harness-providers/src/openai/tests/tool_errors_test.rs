@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 #[tokio::test]
 async fn openai_responses_offline_transport_malformed_args_fail_closed() {
@@ -80,7 +81,7 @@ async fn openai_compatible_offline_transport_streams_chat_tool_calls() {
     let tools = body
         .get("tools")
         .and_then(|value| value.as_array())
-        .expect("tools array should be serialized");
+        .unwrap_or_abort();
     assert_eq!(tools.len(), 1);
     assert_eq!(
         tools[0].get("type"),
@@ -267,7 +268,7 @@ async fn openai_malformed_stream_and_transport_failures_have_stable_categories()
         },
         Arc::new(FailingOpenAiTransport),
     )
-    .expect("build provider");
+    .unwrap_or_abort();
     let transport_events = collect_events(&transport_provider, basic_request("gpt-4o-mini")).await;
     assert_single_error_category(&transport_events, ProviderErrorCategory::TransportFailure);
 }

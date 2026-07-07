@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 #[test]
 fn openai_chat_request_extracts_tool_result_images_to_user_message() {
@@ -35,14 +36,13 @@ fn openai_chat_request_extracts_tool_result_images_to_user_message() {
     };
 
     // act
-    let body = serde_json::to_value(OpenAiChatCompletionsRequest::from(request))
-        .expect("serialize chat request");
+    let body = serde_json::to_value(OpenAiChatCompletionsRequest::from(request)).unwrap_or_abort();
 
     // assert
     let messages = body
         .get("messages")
         .and_then(serde_json::Value::as_array)
-        .expect("chat request messages array");
+        .unwrap_or_abort();
     assert_eq!(messages.len(), 2);
     assert_eq!(
         messages[0].get("content"),
@@ -115,14 +115,13 @@ fn openai_chat_request_batches_consecutive_tool_result_images() {
     };
 
     // act
-    let body = serde_json::to_value(OpenAiChatCompletionsRequest::from(request))
-        .expect("serialize chat request");
+    let body = serde_json::to_value(OpenAiChatCompletionsRequest::from(request)).unwrap_or_abort();
 
     // assert
     let messages = body
         .get("messages")
         .and_then(serde_json::Value::as_array)
-        .expect("chat request messages array");
+        .unwrap_or_abort();
     assert_eq!(messages.len(), 3);
     assert_eq!(messages[0].get("role"), Some(&json!("tool")));
     assert_eq!(messages[1].get("role"), Some(&json!("tool")));
@@ -130,7 +129,7 @@ fn openai_chat_request_batches_consecutive_tool_result_images() {
     let content = messages[2]
         .get("content")
         .and_then(serde_json::Value::as_array)
-        .expect("batched image content");
+        .unwrap_or_abort();
     assert_eq!(content.len(), 2);
     assert_eq!(
         content[0]
@@ -187,8 +186,7 @@ fn openai_chat_request_skips_invalid_tool_result_images() {
     };
 
     // act
-    let body = serde_json::to_value(OpenAiChatCompletionsRequest::from(request))
-        .expect("serialize chat request");
+    let body = serde_json::to_value(OpenAiChatCompletionsRequest::from(request)).unwrap_or_abort();
 
     // assert
     let content = body
@@ -197,7 +195,7 @@ fn openai_chat_request_skips_invalid_tool_result_images() {
         .and_then(|messages| messages.get(1))
         .and_then(|message| message.get("content"))
         .and_then(serde_json::Value::as_array)
-        .expect("valid image content");
+        .unwrap_or_abort();
     assert_eq!(content.len(), 1);
     assert_eq!(
         content[0]
@@ -249,8 +247,7 @@ fn openai_responses_request_skips_oversized_tool_result_images() {
     };
 
     // act
-    let body = serde_json::to_value(OpenAiResponsesRequest::from(request))
-        .expect("serialize responses request");
+    let body = serde_json::to_value(OpenAiResponsesRequest::from(request)).unwrap_or_abort();
 
     // assert
     let output = body
@@ -259,7 +256,7 @@ fn openai_responses_request_skips_oversized_tool_result_images() {
         .and_then(|input| input.first())
         .and_then(|item| item.get("output"))
         .and_then(serde_json::Value::as_array)
-        .expect("function_call_output content array");
+        .unwrap_or_abort();
     assert_eq!(output.len(), 2);
     assert_eq!(output[0]["type"], json!("input_text"));
     assert_eq!(output[1]["image_url"], json!("data:image/png;base64,AAAA"));
@@ -306,8 +303,7 @@ fn openai_responses_request_serializes_tool_result_images_and_skips_pdfs() {
     };
 
     // act
-    let body = serde_json::to_value(OpenAiResponsesRequest::from(request))
-        .expect("serialize responses request");
+    let body = serde_json::to_value(OpenAiResponsesRequest::from(request)).unwrap_or_abort();
 
     // assert
     let output = body
@@ -316,7 +312,7 @@ fn openai_responses_request_serializes_tool_result_images_and_skips_pdfs() {
         .and_then(|input| input.first())
         .and_then(|item| item.get("output"))
         .and_then(serde_json::Value::as_array)
-        .expect("function_call_output content array");
+        .unwrap_or_abort();
     assert_eq!(output[0]["type"], json!("input_text"));
     assert_eq!(output[0]["text"], json!("PDF read successfully"));
     assert_eq!(output[1]["type"], json!("input_image"));

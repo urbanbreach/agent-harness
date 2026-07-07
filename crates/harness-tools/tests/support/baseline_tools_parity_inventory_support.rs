@@ -1,4 +1,5 @@
 use harness_core::config::ShellAllowlist;
+use harness_tools::UnwrapOrAbort;
 use harness_tools::{coordinator_registry, native_tool_catalog_entries};
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
@@ -186,8 +187,8 @@ fn load_parity_inventory() -> Vec<ParityInventoryRow> {
     let fixture_dir = "crates/harness-tools/tests/fixtures";
     let fixture_name: &str = concat!("open", "code", "_tools_parity_inventory.v1.json");
     let inventory = std::fs::read_to_string(repo_path(&format!("{fixture_dir}/{fixture_name}")))
-        .expect("read baseline tools parity inventory fixture");
-    serde_json::from_str(&inventory).expect("parse baseline tools parity inventory fixture")
+        .unwrap_or_abort();
+    serde_json::from_str(&inventory).unwrap_or_abort()
 }
 
 fn repo_path(relative: &str) -> PathBuf {

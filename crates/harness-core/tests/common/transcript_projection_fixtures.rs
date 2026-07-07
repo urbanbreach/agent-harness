@@ -1,3 +1,4 @@
+use harness_core::UnwrapOrAbort;
 use std::collections::BTreeMap;
 
 use harness_core::event::{
@@ -30,7 +31,7 @@ fn assistant_message<'a>(
             message.role == ProjectedMessageRole::Assistant
                 && message.request_id.as_deref() == Some(request_id)
         })
-        .expect("assistant message")
+        .unwrap_or_abort()
 }
 
 fn tool_requested(

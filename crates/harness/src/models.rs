@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::io::Write;
 use std::path::PathBuf;
 
@@ -131,6 +132,7 @@ fn execute_with_writers(
 
 #[cfg(test)]
 mod tests {
+    use crate::UnwrapOrAbort;
     use harness_core::auth::{
         AuthProviderId, CredentialClock, CredentialStore, StoredCredential, SystemCredentialClock,
     };
@@ -139,7 +141,7 @@ mod tests {
 
     #[test]
     fn no_config_models_without_provider_prints_connect_guidance() {
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = tempfile::tempdir().unwrap_or_abort();
         let deps = crate::CliDeps::real()
             .with_current_dir(temp.path().to_path_buf())
             .with_env(
@@ -160,13 +162,13 @@ mod tests {
         assert_eq!(code, 2);
         assert!(stdout.is_empty());
         assert!(String::from_utf8(stderr)
-            .expect("stderr utf8")
+            .unwrap_or_abort()
             .contains("Connect a provider"));
     }
 
     #[test]
     fn no_config_models_with_stored_copilot_lists_builtin_provider() {
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = tempfile::tempdir().unwrap_or_abort();
         let data_home = temp.path().join("data");
         CredentialStore::new(data_home.join("harness"))
             .save(&StoredCredential::api_key(
@@ -174,7 +176,7 @@ mod tests {
                 "test-token",
                 SystemCredentialClock.now_rfc3339(),
             ))
-            .expect("save credential");
+            .unwrap_or_abort();
         let deps = crate::CliDeps::real()
             .with_current_dir(temp.path().to_path_buf())
             .with_env("HARNESS_DATA_HOME", data_home.to_string_lossy());
@@ -190,7 +192,7 @@ mod tests {
         );
 
         assert_eq!(code, 0, "stderr: {}", String::from_utf8_lossy(&stderr));
-        let stdout = String::from_utf8(stdout).expect("stdout utf8");
+        let stdout = String::from_utf8(stdout).unwrap_or_abort();
         assert!(stdout.contains("github-copilot:"), "{stdout}");
         assert!(stdout.contains("label="), "{stdout}");
         assert!(stderr.is_empty());

@@ -75,7 +75,7 @@ impl OpenAiChatCompletionsRequest {
             reasoning_effort,
             text_verbosity,
             thinking,
-            tools: map_tools(tools),
+            tools: tools.map(|tools| tools.into_iter().map(Into::into).collect()),
             tool_choice,
             stream,
         }
@@ -192,7 +192,7 @@ fn chat_message_and_images_from_tool_message(
     let payload = parse_harness_tool_result(&message.content);
     let text = payload
         .as_ref()
-        .map(|payload| provider_tool_result_text(payload))
+        .map(provider_tool_result_text)
         .unwrap_or_else(|| message.content.clone());
     let tool_message = OpenAiChatMessage {
         role: role_to_openai(&message.role).to_string(),
@@ -329,7 +329,7 @@ impl OpenAiResponsesRequest {
             ),
             text: text_verbosity.map(|verbosity| OpenAiResponsesText { verbosity }),
             thinking,
-            tools: map_tools(tools),
+            tools: tools.map(|tools| tools.into_iter().map(Into::into).collect()),
             tool_choice,
             stream,
         }
@@ -405,7 +405,7 @@ impl OpenAiResponsesInputItem {
         let item_type = match role {
             MessageRole::Assistant => "output_text",
             MessageRole::System | MessageRole::User => "input_text",
-            MessageRole::Tool => unreachable!("tool messages handled above"),
+            MessageRole::Tool => std::process::abort(),
         };
 
         let has_assistant_tool_calls = assistant_tool_calls
@@ -629,13 +629,6 @@ impl From<ToolDef> for OpenAiResponsesTool {
             parameters: tool.parameters,
         }
     }
-}
-
-fn map_tools<T>(tools: Option<Vec<ToolDef>>) -> Option<Vec<T>>
-where
-    T: From<ToolDef>,
-{
-    tools.map(|tools| tools.into_iter().map(Into::into).collect())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

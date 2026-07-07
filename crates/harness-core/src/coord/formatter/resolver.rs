@@ -9,7 +9,6 @@ use super::{discovery::DiscoveryContext, FormatterDiscovery, BUILTIN_FORMATTERS}
 
 #[derive(Debug, Clone)]
 pub struct ResolvedFormatter {
-    #[allow(dead_code)]
     pub(crate) name: String,
     pub(crate) command: Vec<String>,
     pub(crate) environment: BTreeMap<String, String>,

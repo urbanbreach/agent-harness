@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -533,6 +534,7 @@ fn auto_mcp_tool_ids(tool_registry: &ToolRegistry) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
+    use crate::UnwrapOrAbort;
     use harness_core::agent::build_provider_tool_defs;
     use harness_core::config::{load_config_from_file, load_config_from_str};
 
@@ -620,7 +622,7 @@ mod tests {
             agents = agents,
         );
 
-        load_config_from_str(&raw).expect("fixture config should parse")
+        load_config_from_str(&raw).unwrap_or_abort()
     }
 
     #[test]
@@ -644,7 +646,7 @@ mod tests {
             "#,
         );
 
-        let profiles = interactive_agent_profiles(&cfg).expect("interactive profiles");
+        let profiles = interactive_agent_profiles(&cfg).unwrap_or_abort();
         assert_eq!(profiles["deep"].max_iters, None);
         assert_eq!(profiles["deep"].temperature, Some(0.7));
         assert_eq!(profiles["review"].max_iters, Some(20));
@@ -667,7 +669,7 @@ mod tests {
             "#
         ));
 
-        let profiles = interactive_agent_profiles(&cfg).expect("interactive profiles");
+        let profiles = interactive_agent_profiles(&cfg).unwrap_or_abort();
         assert!(profiles["review"]
             .system_prompt
             .starts_with(configured_prompt));
@@ -675,8 +677,7 @@ mod tests {
             .system_prompt
             .contains("The exact model ID is default/gpt-5.4-mini"));
 
-        let coordinator_config =
-            build_interactive_coordinator_config(&cfg).expect("coordinator config");
+        let coordinator_config = build_interactive_coordinator_config(&cfg).unwrap_or_abort();
         assert!(coordinator_config.agent_profiles["review"]
             .system_prompt
             .starts_with(configured_prompt));
@@ -698,7 +699,7 @@ mod tests {
             "#,
         );
 
-        let profiles = interactive_agent_profiles(&cfg).expect("interactive profiles");
+        let profiles = interactive_agent_profiles(&cfg).unwrap_or_abort();
         assert_eq!(profiles["build"].model_ref, "default:gpt-5.4");
     }
 
@@ -739,7 +740,7 @@ mod tests {
                 "mcp.gh_grep.searchGitHub".to_string(),
             ],
         )
-        .expect("interactive profiles");
+        .unwrap_or_abort();
 
         assert!(profiles["build"].toolset.contains(&"read".to_string()));
         assert!(profiles["build"]
@@ -786,7 +787,7 @@ mod tests {
     #[test]
     fn shipped_example_config_seeds_build_plan_and_subagents() {
         let config_path = crate::cli_config::shipped_example_config_path();
-        let cfg = load_config_from_file(&config_path).expect("shipped example config should parse");
+        let cfg = load_config_from_file(&config_path).unwrap_or_abort();
 
         assert!(cfg.agents.contains_key("build"));
         assert!(cfg.agents.contains_key("plan"));
@@ -794,7 +795,7 @@ mod tests {
         assert!(cfg.agents.contains_key("general"));
         assert_eq!(cfg.default_agent.as_deref(), Some("build"));
 
-        let profiles = interactive_agent_profiles(&cfg).expect("interactive profiles");
+        let profiles = interactive_agent_profiles(&cfg).unwrap_or_abort();
         assert!(profiles["build"].toolset.contains(&"edit".to_string()));
         assert!(profiles["build"].toolset.contains(&"bash".to_string()));
         assert!(profiles["build"].toolset.contains(&"task".to_string()));
@@ -852,9 +853,8 @@ mod tests {
     #[test]
     fn task_tool_description_lists_available_subagents_for_build() {
         let config_path = crate::cli_config::shipped_example_config_path();
-        let cfg = load_config_from_file(&config_path).expect("shipped example config should parse");
-        let coordinator_config =
-            build_interactive_coordinator_config(&cfg).expect("coordinator config");
+        let cfg = load_config_from_file(&config_path).unwrap_or_abort();
+        let coordinator_config = build_interactive_coordinator_config(&cfg).unwrap_or_abort();
         let profile = &coordinator_config.agent_profiles["build"];
         let task_description = task_description_for_profile(&coordinator_config, profile);
 
@@ -869,9 +869,8 @@ mod tests {
     #[test]
     fn skill_tool_description_lists_available_skills_for_build() {
         let config_path = crate::cli_config::shipped_example_config_path();
-        let cfg = load_config_from_file(&config_path).expect("shipped example config should parse");
-        let coordinator_config =
-            build_interactive_coordinator_config(&cfg).expect("coordinator config");
+        let cfg = load_config_from_file(&config_path).unwrap_or_abort();
+        let coordinator_config = build_interactive_coordinator_config(&cfg).unwrap_or_abort();
         let profile = &coordinator_config.agent_profiles["build"];
         let skill_description = skill_description_for_profile(&coordinator_config, profile);
 
@@ -886,9 +885,8 @@ mod tests {
     #[test]
     fn task_tool_description_respects_plan_delegation_boundary() {
         let config_path = crate::cli_config::shipped_example_config_path();
-        let cfg = load_config_from_file(&config_path).expect("shipped example config should parse");
-        let coordinator_config =
-            build_interactive_coordinator_config(&cfg).expect("coordinator config");
+        let cfg = load_config_from_file(&config_path).unwrap_or_abort();
+        let coordinator_config = build_interactive_coordinator_config(&cfg).unwrap_or_abort();
         let profile = &coordinator_config.agent_profiles["plan"];
         let task_description = task_description_for_profile(&coordinator_config, profile);
 
@@ -929,8 +927,7 @@ mod tests {
             },
             "#,
         );
-        let coordinator_config =
-            build_interactive_coordinator_config(&cfg).expect("coordinator config");
+        let coordinator_config = build_interactive_coordinator_config(&cfg).unwrap_or_abort();
         let profile = &coordinator_config.agent_profiles["build"];
         let task_description = task_description_for_profile(&coordinator_config, profile);
 
@@ -943,12 +940,12 @@ mod tests {
         profile: &AgentProfile,
     ) -> String {
         build_provider_tool_defs(profile, coordinator_config.tool_registry.as_ref())
-            .expect("tool defs")
+            .unwrap_or_abort()
             .into_iter()
             .find(|tool| tool.tool_id == "task")
-            .expect("task tool")
+            .unwrap_or_abort()
             .description
-            .expect("task description")
+            .unwrap_or_abort()
     }
 
     fn skill_description_for_profile(
@@ -956,11 +953,11 @@ mod tests {
         profile: &AgentProfile,
     ) -> String {
         build_provider_tool_defs(profile, coordinator_config.tool_registry.as_ref())
-            .expect("tool defs")
+            .unwrap_or_abort()
             .into_iter()
             .find(|tool| tool.tool_id == "skill")
-            .expect("skill tool")
+            .unwrap_or_abort()
             .description
-            .expect("skill description")
+            .unwrap_or_abort()
     }
 }

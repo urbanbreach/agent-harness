@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 pub(super) fn permission_modal_snapshot_renders_request() {
     let mut app = app::AppState::new_live(None, false, None);
@@ -53,7 +54,7 @@ pub(super) fn permission_modal_preempts_palette() {
     let intent_sink = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
 
@@ -81,7 +82,7 @@ pub(super) fn permission_modal_preempts_palette() {
         Some(overlay::OverlayKind::PermissionModal)
     );
 
-    let intents = intents.lock().expect("lock intents");
+    let intents = intents.lock().unwrap_or_abort();
     assert_eq!(
         intents.as_slice(),
         &[UiIntent::ResolvePermission {

@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::{
     collections::{BTreeMap, VecDeque},
     env, fs,
@@ -100,10 +101,7 @@ impl ScriptedOpenAiTransport {
     }
 
     fn requests(&self) -> Vec<RecordedOpenAiRequest> {
-        self.requests
-            .lock()
-            .expect("scripted transport requests lock")
-            .clone()
+        self.requests.lock().unwrap_or_abort().clone()
     }
 }
 
@@ -118,7 +116,7 @@ impl OpenAiHttpTransport for ScriptedOpenAiTransport {
     ) -> Result<OpenAiHttpResponse, String> {
         self.requests
             .lock()
-            .expect("scripted transport requests lock")
+            .unwrap_or_abort()
             .push(RecordedOpenAiRequest {
                 endpoint,
                 headers,
@@ -128,9 +126,9 @@ impl OpenAiHttpTransport for ScriptedOpenAiTransport {
         let response = self
             .responses
             .lock()
-            .expect("scripted transport responses lock")
+            .unwrap_or_abort()
             .pop_front()
-            .expect("scripted OpenAI response");
+            .unwrap_or_abort();
         let mut headers = HeaderMap::new();
         headers.extend(response.headers.clone());
         if response.status == 200 {
@@ -221,7 +219,7 @@ fn provider_for_transport_with_mode(
         },
         transport,
     )
-    .expect("build provider")
+    .unwrap_or_abort()
 }
 
 fn basic_request(model_id: &str) -> CompletionRequest {

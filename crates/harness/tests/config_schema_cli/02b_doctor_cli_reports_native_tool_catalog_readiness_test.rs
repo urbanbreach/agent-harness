@@ -1,3 +1,4 @@
+use harness::UnwrapOrAbort;
 #[test]
 fn doctor_cli_json_reports_native_tool_catalog_readiness() {
     // arrange
@@ -9,12 +10,12 @@ fn doctor_cli_json_reports_native_tool_catalog_readiness() {
         .current_dir(&repo_root)
         .args([
             "--config",
-            config_path.to_str().expect("config path utf-8"),
+            config_path.to_str().unwrap_or_abort(),
             "doctor",
             "--json",
         ])
         .output()
-        .expect("run harness doctor --json with shipped example config");
+        .unwrap_or_abort();
 
     // assert
     assert!(
@@ -23,13 +24,13 @@ fn doctor_cli_json_reports_native_tool_catalog_readiness() {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    let report: serde_json::Value = serde_json::from_slice(&output.stdout).expect("doctor json report");
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap_or_abort();
     let tool_check = report["checks"]
         .as_array()
-        .expect("checks array")
+        .unwrap_or_abort()
         .iter()
         .find(|check| check["name"] == "native_tool_catalog")
-        .expect("native tool catalog check");
+        .unwrap_or_abort();
 
     assert_eq!(tool_check["status"], "pass");
     assert_eq!(
@@ -51,7 +52,7 @@ fn doctor_cli_json_reports_native_tool_catalog_readiness() {
 
     let tools = tool_check["details"]["tools"]
         .as_array()
-        .expect("catalog tools");
+        .unwrap_or_abort();
     for tool_id in [
         "session_list",
         "session_read",
@@ -70,6 +71,6 @@ fn doctor_cli_json_reports_native_tool_catalog_readiness() {
     let session_info = tools
         .iter()
         .find(|tool| tool["canonical_id"] == "session_info")
-        .expect("session_info tool entry");
+        .unwrap_or_abort();
     assert_eq!(session_info["artifact_behavior"], serde_json::json!("spills_large_output"));
 }

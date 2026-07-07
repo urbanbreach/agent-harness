@@ -80,7 +80,7 @@ pub(super) fn truncate_fs_read_line(line: &str) -> Cow<'_, str> {
 
 pub(super) fn build_fs_read_line_anchor(line_number: usize, line: &str) -> LineAnchor {
     LineAnchor {
-        line: line_number as u32,
+        line: u32::try_from(line_number).unwrap_or(u32::MAX),
         hash: compute_line_hash(line),
     }
 }

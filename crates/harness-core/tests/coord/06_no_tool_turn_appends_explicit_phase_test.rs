@@ -1,6 +1,7 @@
+use harness_core::UnwrapOrAbort;
 #[tokio::test]
 async fn no_tool_turn_appends_explicit_phase_barriers_in_order() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let coordinator = test_agent_coordinator_with_provider(
         temp_dir.path(),
         Arc::new(CapturingProvider::new(vec!["phase complete"])),
@@ -13,15 +14,15 @@ async fn no_tool_turn_appends_explicit_phase_barriers_in_order() {
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     let request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id, "phase order prompt")
         .await
-        .expect("request agent turn");
+        .unwrap_or_abort();
 
     wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
         events.iter().any(|event| {
@@ -34,7 +35,7 @@ async fn no_tool_turn_appends_explicit_phase_barriers_in_order() {
         })
     })
     .await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let events = load_events(&run.events_path);
     let scheduled_idx = events
@@ -51,7 +52,7 @@ async fn no_tool_turn_appends_explicit_phase_barriers_in_order() {
                             .is_some_and(|queue_key| queue_key.starts_with("provider_model:"))
             )
         })
-        .expect("agent turn scheduled barrier");
+        .unwrap_or_abort();
     let provider_started_idx = events
         .iter()
         .position(|event| {
@@ -61,7 +62,7 @@ async fn no_tool_turn_appends_explicit_phase_barriers_in_order() {
                     if event.correlation_id.as_deref() == Some(request_id.as_str())
             )
         })
-        .expect("provider start barrier");
+        .unwrap_or_abort();
     let provider_delta_idx = events
         .iter()
         .position(|event| {
@@ -72,7 +73,7 @@ async fn no_tool_turn_appends_explicit_phase_barriers_in_order() {
                         && data.delta == "phase complete"
             )
         })
-        .expect("provider text delta");
+        .unwrap_or_abort();
     let provider_finished_idx = events
         .iter()
         .position(|event| {
@@ -83,7 +84,7 @@ async fn no_tool_turn_appends_explicit_phase_barriers_in_order() {
                         && data.finish_reason == "done"
             )
         })
-        .expect("provider finish barrier");
+        .unwrap_or_abort();
     let assistant_message_finished_idx = events
         .iter()
         .position(|event| {
@@ -94,7 +95,7 @@ async fn no_tool_turn_appends_explicit_phase_barriers_in_order() {
                         && data.tool_call_count == 0
             )
         })
-        .expect("assistant message end barrier");
+        .unwrap_or_abort();
     let turn_completed_idx = events
         .iter()
         .position(|event| {
@@ -105,7 +106,7 @@ async fn no_tool_turn_appends_explicit_phase_barriers_in_order() {
                         && data.result_summary == "phase complete"
             )
         })
-        .expect("turn end barrier");
+        .unwrap_or_abort();
 
     assert!(scheduled_idx < provider_started_idx);
     assert!(provider_started_idx < provider_delta_idx);
@@ -119,7 +120,7 @@ async fn no_tool_turn_appends_explicit_phase_barriers_in_order() {
 }
 #[tokio::test]
 async fn tool_turn_does_not_preflight_until_assistant_message_end_is_durable() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![
         vec![
             ProviderStreamEvent::Start,
@@ -164,15 +165,15 @@ async fn tool_turn_does_not_preflight_until_assistant_message_end_is_durable() {
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     let request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id, "tool phase barrier")
         .await
-        .expect("request agent turn");
+        .unwrap_or_abort();
 
     wait_for_events(&run.events_path, Duration::from_millis(700), |events| {
         events.iter().any(|event| {
@@ -185,7 +186,7 @@ async fn tool_turn_does_not_preflight_until_assistant_message_end_is_durable() {
         })
     })
     .await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let events = load_events(&run.events_path);
     let provider_started = events
@@ -211,7 +212,7 @@ async fn tool_turn_does_not_preflight_until_assistant_message_end_is_durable() {
                         && data.request_id == provider_started[0]
             )
         })
-        .expect("provider finish barrier for first provider call");
+        .unwrap_or_abort();
     let assistant_message_finished_idx = events
         .iter()
         .position(|event| {
@@ -223,7 +224,7 @@ async fn tool_turn_does_not_preflight_until_assistant_message_end_is_durable() {
                         && data.tool_call_count == 1
             )
         })
-        .expect("assistant message end barrier for first provider call");
+        .unwrap_or_abort();
     let tool_requested_idx = events
         .iter()
         .position(|event| {
@@ -234,7 +235,7 @@ async fn tool_turn_does_not_preflight_until_assistant_message_end_is_durable() {
                         && data.tool_id == "shell.run"
             )
         })
-        .expect("tool preflight requested");
+        .unwrap_or_abort();
     let tool_started_idx = events
         .iter()
         .position(|event| {
@@ -245,7 +246,7 @@ async fn tool_turn_does_not_preflight_until_assistant_message_end_is_durable() {
                         && !data.tool_call_id.is_empty()
             )
         })
-        .expect("tool started");
+        .unwrap_or_abort();
     let tool_finished_idx = events
         .iter()
         .position(|event| {
@@ -256,7 +257,7 @@ async fn tool_turn_does_not_preflight_until_assistant_message_end_is_durable() {
                         && data.status == ToolCallStatus::Succeeded
             )
         })
-        .expect("tool result barrier");
+        .unwrap_or_abort();
     let second_provider_started_idx = events
         .iter()
         .position(|event| {
@@ -267,7 +268,7 @@ async fn tool_turn_does_not_preflight_until_assistant_message_end_is_durable() {
                         && data.request_id == provider_started[1]
             )
         })
-        .expect("follow-up provider start");
+        .unwrap_or_abort();
 
     assert!(first_provider_finished_idx < assistant_message_finished_idx);
     assert!(assistant_message_finished_idx < tool_requested_idx);
@@ -276,7 +277,7 @@ async fn tool_turn_does_not_preflight_until_assistant_message_end_is_durable() {
 }
 #[tokio::test]
 async fn queued_turn_recomputes_context_at_provider_start() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = DelayedCapturingProvider::new(
         vec!["first answer", "beta answer", "second answer"],
         Duration::from_millis(50),
@@ -290,20 +291,20 @@ async fn queued_turn_recomputes_context_at_provider_start() {
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     let beta_agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "beta", None)
         .await
-        .expect("spawn idle beta");
+        .unwrap_or_abort();
 
     let first_request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id.clone(), "first question")
         .await
-        .expect("first turn");
+        .unwrap_or_abort();
     wait_for_events(&run.events_path, Duration::from_secs(1), |events| {
         events.iter().any(|event| {
             matches!(
@@ -319,7 +320,7 @@ async fn queued_turn_recomputes_context_at_provider_start() {
     let beta_request_id = coordinator
         .request_agent_turn(supervisor_actor(), beta_agent_id, "beta question")
         .await
-        .expect("beta turn holding provider slot");
+        .unwrap_or_abort();
     wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
         events.iter().any(|event| {
             matches!(
@@ -334,7 +335,7 @@ async fn queued_turn_recomputes_context_at_provider_start() {
     let second_request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id, "second question")
         .await
-        .expect("queued second turn");
+        .unwrap_or_abort();
 
     wait_for_events(&run.events_path, Duration::from_secs(1), |events| {
         events.iter().any(|event| {
@@ -347,7 +348,7 @@ async fn queued_turn_recomputes_context_at_provider_start() {
         })
     })
     .await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let requests = provider.requests();
     assert_eq!(requests.len(), 3, "expected all provider turns to run");

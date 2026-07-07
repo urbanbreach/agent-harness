@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -676,6 +677,7 @@ fn transient_live_status_banner(status: &str) -> bool {
 mod tests {
     use super::*;
     use crate::app::{AppState, ToastVariant};
+    use crate::UnwrapOrAbort;
     use harness_core::proj::{RunStatus, SessionCatalogEntry, SessionModeSource};
 
     #[test]
@@ -776,7 +778,7 @@ mod tests {
             message: "manual compaction skipped: need at least two completed turns".to_string(),
             level: OperatorNoticeLevel::Info,
         })
-        .expect("send operator notice");
+        .unwrap_or_abort();
 
         let mut app = AppState::default();
         let state = drain_live_updates(&mut app, &rx);
@@ -807,7 +809,7 @@ mod tests {
             message: "manual compaction failed: boom".to_string(),
             level: OperatorNoticeLevel::Error,
         })
-        .expect("send error operator notice");
+        .unwrap_or_abort();
 
         let mut app = AppState::default();
         let state = drain_live_updates(&mut app, &rx);
@@ -853,7 +855,7 @@ mod tests {
         };
         let (tx, rx) = mpsc::channel();
         tx.send(LiveUpdate::SessionHistory(vec![entry.clone()]))
-            .expect("send session history");
+            .unwrap_or_abort();
 
         let mut app = AppState::default();
         let state = drain_live_updates(&mut app, &rx);
@@ -878,7 +880,7 @@ mod tests {
                 .to_string(),
         ));
         tx.send(LiveUpdate::AuthBackendResult { success: true })
-            .expect("send auth result");
+            .unwrap_or_abort();
 
         let state = drain_live_updates(&mut app, &rx);
 
@@ -898,7 +900,7 @@ mod tests {
         let (tx, rx) = mpsc::channel();
         for index in 0..=LIVE_UPDATE_DRAIN_MAX_PER_FRAME {
             tx.send(LiveUpdate::Status(format!("status {index}")))
-                .expect("send status update");
+                .unwrap_or_abort();
         }
 
         let mut app = AppState::default();

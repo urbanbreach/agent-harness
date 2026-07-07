@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 pub(super) fn session_shell_hides_tab_chrome_and_replay_review_is_command_driven() {
     use ratatui::{backend::TestBackend, Terminal};
@@ -9,10 +10,10 @@ pub(super) fn session_shell_hides_tab_chrome_and_replay_review_is_command_driven
     }
 
     let live_backend = TestBackend::new(80, 24);
-    let mut live_terminal = Terminal::new(live_backend).expect("create live terminal");
+    let mut live_terminal = Terminal::new(live_backend).unwrap_or_abort();
     live_terminal
         .draw(|frame| ui::render_app(frame, &live))
-        .expect("draw live frame");
+        .unwrap_or_abort();
 
     let live_debug = format!("{:?}", live_terminal.backend().buffer());
     assert!(live_debug.contains("┃ "));
@@ -45,10 +46,10 @@ pub(super) fn session_shell_hides_tab_chrome_and_replay_review_is_command_driven
         session_view_events(),
     );
     let replay_backend = TestBackend::new(80, 24);
-    let mut replay_terminal = Terminal::new(replay_backend).expect("create replay terminal");
+    let mut replay_terminal = Terminal::new(replay_backend).unwrap_or_abort();
     replay_terminal
         .draw(|frame| ui::render_app(frame, &replay))
-        .expect("draw replay frame");
+        .unwrap_or_abort();
 
     let replay_debug = format!("{:?}", replay_terminal.backend().buffer());
     assert!(!replay_debug.contains("Tabs"));
@@ -168,7 +169,7 @@ pub(super) fn command_palette_dims_background_instead_of_repainting_it() {
     let overlay =
         FrameLayoutPlan::for_app(&palette, ratatui::layout::Rect::new(0, 0, width, height))
             .palette_overlay
-            .expect("palette overlay");
+            .unwrap_or_abort();
     let palette_buffer = render_live_cells(&palette, width, height);
     let (x, y, base_cell, palette_cell) = base_buffer
         .content
@@ -489,13 +490,10 @@ pub(super) fn continue_picker_filters_to_interactive_sessions() {
         vec!["run_ready_live", "run_ready_mock", "run_blocked"]
     );
     assert_eq!(
-        app.session_history_entries[*app
-            .session_history_filtered
-            .last()
-            .expect("blocked interactive entry present")]
-        .catalog
-        .resume_disabled_reason
-        .as_deref(),
+        app.session_history_entries[*app.session_history_filtered.last().unwrap_or_abort()]
+            .catalog
+            .resume_disabled_reason
+            .as_deref(),
         Some("run is still active")
     );
     let rendered = render_live_lines(&app, 120, 30);
@@ -715,12 +713,9 @@ pub(super) fn session_pin_toggles_and_sorts_pinned_first() {
     assert!(app.session_pins.contains("run_pin"));
 
     assert_eq!(
-        app.session_history_entries[*app
-            .session_history_filtered
-            .first()
-            .expect("filtered entry")]
-        .catalog
-        .run_id,
+        app.session_history_entries[*app.session_history_filtered.first().unwrap_or_abort()]
+            .catalog
+            .run_id,
         "run_pin"
     );
 

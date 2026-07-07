@@ -1,3 +1,4 @@
+use harness_tools::UnwrapOrAbort;
 use std::sync::{Arc, Mutex};
 
 mod common;
@@ -37,22 +38,15 @@ impl ScriptedGitHubTransport {
     }
 
     fn requests(&self) -> Vec<GitHubHttpRequest> {
-        self.requests.lock().expect("github request log").clone()
+        self.requests.lock().unwrap_or_abort().clone()
     }
 }
 
 #[async_trait]
 impl GitHubHttpTransport for ScriptedGitHubTransport {
     async fn send(&self, request: GitHubHttpRequest) -> Result<GitHubHttpResponse, ToolError> {
-        self.requests
-            .lock()
-            .expect("github request log")
-            .push(request);
-        Ok(self
-            .responses
-            .lock()
-            .expect("github response script")
-            .remove(0))
+        self.requests.lock().unwrap_or_abort().push(request);
+        Ok(self.responses.lock().unwrap_or_abort().remove(0))
     }
 }
 
@@ -69,7 +63,7 @@ fn github_registry(
 }
 
 fn request_path(request: &GitHubHttpRequest) -> String {
-    let url = reqwest::Url::parse(&request.url).expect("github request url");
+    let url = reqwest::Url::parse(&request.url).unwrap_or_abort();
     match url.query() {
         Some(query) => format!("{}?{}", url.path(), query),
         None => url.path().to_string(),
@@ -91,7 +85,7 @@ async fn github_issue_get_uses_env_repository_and_auth_headers() {
     )]);
 
     let registry = github_registry(Some("fixture-token"), Arc::clone(&transport));
-    let tool = registry.get("github.issue").expect("github.issue tool");
+    let tool = registry.get("github.issue").unwrap_or_abort();
     let result = tool
         .call(
             test_context(workspace.workspace(), "toolcall-github-issue-get"),
@@ -103,7 +97,7 @@ async fn github_issue_get_uses_env_repository_and_auth_headers() {
             }),
         )
         .await
-        .expect("github.issue get");
+        .unwrap_or_abort();
 
     assert!(result.display_text.contains("Issue #19"));
     assert!(result
@@ -118,7 +112,7 @@ async fn github_issue_get_uses_env_repository_and_auth_headers() {
     );
 
     let requests = transport.requests();
-    let request = requests.first().expect("request captured");
+    let request = requests.first().unwrap_or_abort();
     assert_eq!(request.method, Method::GET);
     assert_eq!(
         request_path(request),
@@ -154,7 +148,7 @@ async fn github_issue_list_filters_pull_requests_and_preserves_query_parameters(
     )]);
 
     let registry = github_registry(None, Arc::clone(&transport));
-    let tool = registry.get("github.issue").expect("github.issue tool");
+    let tool = registry.get("github.issue").unwrap_or_abort();
     let result = tool
         .call(
             test_context(workspace.workspace(), "toolcall-github-issue-list"),
@@ -167,7 +161,7 @@ async fn github_issue_list_filters_pull_requests_and_preserves_query_parameters(
             }),
         )
         .await
-        .expect("github.issue list");
+        .unwrap_or_abort();
 
     assert!(result.display_text.contains("Real issue"));
     assert!(!result.display_text.contains("Actually a pull request"));
@@ -176,11 +170,11 @@ async fn github_issue_list_filters_pull_requests_and_preserves_query_parameters(
         .as_ref()
         .and_then(|value| value.get("items"))
         .and_then(Value::as_array)
-        .expect("items array");
+        .unwrap_or_abort();
     assert_eq!(items.len(), 1);
 
     let requests = transport.requests();
-    let request = requests.first().expect("request captured");
+    let request = requests.first().unwrap_or_abort();
     assert_eq!(
         request_path(request),
         "/repos/urbanbreach/agent-harness/issues?per_page=2&state=closed"
@@ -209,9 +203,7 @@ async fn github_pull_request_list_preserves_query_parameters_and_renders_refs() 
     )]);
 
     let registry = github_registry(None, Arc::clone(&transport));
-    let tool = registry
-        .get("github.pull_request")
-        .expect("github.pull_request tool");
+    let tool = registry.get("github.pull_request").unwrap_or_abort();
     let result = tool
         .call(
             test_context(workspace.workspace(), "toolcall-github-pr-list"),
@@ -224,7 +216,7 @@ async fn github_pull_request_list_preserves_query_parameters_and_renders_refs() 
             }),
         )
         .await
-        .expect("github.pull_request list");
+        .unwrap_or_abort();
 
     assert_eq!(
         result.display_text,
@@ -239,7 +231,7 @@ async fn github_pull_request_list_preserves_query_parameters_and_renders_refs() 
     );
 
     let requests = transport.requests();
-    let request = requests.first().expect("request captured");
+    let request = requests.first().unwrap_or_abort();
     assert_eq!(
         request_path(request),
         "/repos/urbanbreach/agent-harness/pulls?per_page=1&state=all"
@@ -255,7 +247,7 @@ async fn github_issue_close_requires_authentication() {
     let workspace = setup_workspace_fixture();
 
     let registry = github_registry(None, ScriptedGitHubTransport::new(Vec::new()));
-    let tool = registry.get("github.issue").expect("github.issue tool");
+    let tool = registry.get("github.issue").unwrap_or_abort();
     let error = tool
         .call(
             test_context(workspace.workspace(), "toolcall-github-issue-close"),
@@ -284,7 +276,7 @@ async fn github_issue_comment_posts_body_and_renders_comment_url() {
     )]);
 
     let registry = github_registry(Some("fixture-token"), Arc::clone(&transport));
-    let tool = registry.get("github.issue").expect("github.issue tool");
+    let tool = registry.get("github.issue").unwrap_or_abort();
     let result = tool
         .call(
             test_context(workspace.workspace(), "toolcall-github-issue-comment"),
@@ -297,7 +289,7 @@ async fn github_issue_comment_posts_body_and_renders_comment_url() {
             }),
         )
         .await
-        .expect("github.issue comment");
+        .unwrap_or_abort();
 
     assert_eq!(
         result.display_text,
@@ -312,14 +304,14 @@ async fn github_issue_comment_posts_body_and_renders_comment_url() {
     );
 
     let requests = transport.requests();
-    let request = requests.first().expect("request captured");
+    let request = requests.first().unwrap_or_abort();
     assert_eq!(request.method, Method::POST);
     assert_eq!(
         request_path(request),
         "/repos/urbanbreach/agent-harness/issues/19/comments"
     );
     assert_eq!(request.auth_token.as_deref(), Some("fixture-token"));
-    let payload = request.body.as_ref().expect("request json");
+    let payload = request.body.as_ref().unwrap_or_abort();
     assert_eq!(payload.get("body"), Some(&json!("Looks good from here.")));
 }
 
@@ -340,9 +332,7 @@ async fn github_pull_request_create_posts_expected_payload() {
     )]);
 
     let registry = github_registry(Some("fixture-token"), Arc::clone(&transport));
-    let tool = registry
-        .get("github.pull_request")
-        .expect("github.pull_request tool");
+    let tool = registry.get("github.pull_request").unwrap_or_abort();
     let result = tool
         .call(
             test_context(workspace.workspace(), "toolcall-github-pr-create"),
@@ -358,7 +348,7 @@ async fn github_pull_request_create_posts_expected_payload() {
             }),
         )
         .await
-        .expect("github.pull_request create");
+        .unwrap_or_abort();
 
     assert!(result.display_text.contains("Created pull request #42"));
     assert_eq!(
@@ -370,14 +360,14 @@ async fn github_pull_request_create_posts_expected_payload() {
     );
 
     let requests = transport.requests();
-    let request = requests.first().expect("request captured");
+    let request = requests.first().unwrap_or_abort();
     assert_eq!(request.method, Method::POST);
     assert_eq!(
         request_path(request),
         "/repos/urbanbreach/agent-harness/pulls"
     );
     assert_eq!(request.auth_token.as_deref(), Some("fixture-token"));
-    let payload = request.body.as_ref().expect("request json");
+    let payload = request.body.as_ref().unwrap_or_abort();
     assert_eq!(payload.get("title"), Some(&json!("Add GitHub tool docs")));
     assert_eq!(payload.get("head"), Some(&json!("feature/github-docs")));
     assert_eq!(payload.get("base"), Some(&json!("main")));

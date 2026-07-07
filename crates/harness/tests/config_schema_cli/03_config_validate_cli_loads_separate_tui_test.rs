@@ -1,6 +1,7 @@
+use harness::UnwrapOrAbort;
 #[test]
 fn config_validate_cli_loads_separate_tui_config() {
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     write_config(
         &temp.path().join("harness.jsonc"),
         &canonical_runtime_config(),
@@ -18,7 +19,7 @@ fn config_validate_cli_loads_separate_tui_config() {
         .current_dir(temp.path())
         .args(["config", "validate"])
         .output()
-        .expect("run harness config validate with separate tui config");
+        .unwrap_or_abort();
 
     assert!(
         output.status.success(),
@@ -31,10 +32,10 @@ fn config_validate_cli_loads_separate_tui_config() {
 }
 #[test]
 fn config_validate_cli_accepts_harness_config_env_path() {
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let env_config_path = temp.path().join("env/custom-harness.jsonc");
-    fs::create_dir_all(env_config_path.parent().expect("env config parent"))
-        .expect("create env config dir");
+    fs::create_dir_all(env_config_path.parent().unwrap_or_abort())
+        .unwrap_or_abort();
     write_config(&env_config_path, &canonical_runtime_config());
 
     let output = harness_command()
@@ -42,7 +43,7 @@ fn config_validate_cli_accepts_harness_config_env_path() {
         .env("HARNESS_CONFIG", &env_config_path)
         .args(["config", "validate"])
         .output()
-        .expect("run harness config validate with HARNESS_CONFIG");
+        .unwrap_or_abort();
 
     assert!(
         output.status.success(),
@@ -51,11 +52,11 @@ fn config_validate_cli_accepts_harness_config_env_path() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(String::from_utf8_lossy(&output.stdout)
-        .contains(env_config_path.to_str().expect("env config path utf-8")));
+        .contains(env_config_path.to_str().unwrap_or_abort()));
 }
 #[test]
 fn config_validate_cli_applies_harness_config_content_last() {
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     write_config(
         &temp.path().join("harness.jsonc"),
         &canonical_runtime_config(),
@@ -69,7 +70,7 @@ fn config_validate_cli_applies_harness_config_content_last() {
         )
         .args(["config", "validate"])
         .output()
-        .expect("run harness config validate with HARNESS_CONFIG_CONTENT");
+        .unwrap_or_abort();
 
     assert!(
         output.status.success(),
@@ -80,13 +81,13 @@ fn config_validate_cli_applies_harness_config_content_last() {
 }
 #[test]
 fn config_validate_cli_explicit_path_bypasses_discovery_layers() {
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let xdg_root = temp.path().join("xdg");
     let explicit_path = temp.path().join("explicit.jsonc");
     let xdg_config_path = xdg_root.join("harness/harness.jsonc");
 
-    fs::create_dir_all(xdg_config_path.parent().expect("xdg config parent"))
-        .expect("create xdg config dir");
+    fs::create_dir_all(xdg_config_path.parent().unwrap_or_abort())
+        .unwrap_or_abort();
     write_config(&xdg_config_path, &canonical_runtime_config());
     write_config(
         &explicit_path,
@@ -112,12 +113,12 @@ fn config_validate_cli_explicit_path_bypasses_discovery_layers() {
         .env("XDG_CONFIG_HOME", &xdg_root)
         .args([
             "--config",
-            explicit_path.to_str().expect("explicit config utf-8"),
+            explicit_path.to_str().unwrap_or_abort(),
             "config",
             "validate",
         ])
         .output()
-        .expect("run harness config validate with explicit path");
+        .unwrap_or_abort();
 
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -126,7 +127,7 @@ fn config_validate_cli_explicit_path_bypasses_discovery_layers() {
 }
 #[test]
 fn config_validate_cli_rejects_unknown_top_level_keys() {
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let config_path = temp.path().join("harness.jsonc");
     let mut config = canonical_runtime_config();
     config["mystery"] = serde_json::json!({"enabled": true});
@@ -136,7 +137,7 @@ fn config_validate_cli_rejects_unknown_top_level_keys() {
         .current_dir(temp.path())
         .args(["config", "validate"])
         .output()
-        .expect("run harness config validate with unknown key");
+        .unwrap_or_abort();
 
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -145,7 +146,7 @@ fn config_validate_cli_rejects_unknown_top_level_keys() {
 }
 #[test]
 fn config_validate_cli_rejects_unknown_provider_reference() {
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let config_path = temp.path().join("harness.jsonc");
     let mut config = canonical_runtime_config();
     config["agent"] = serde_json::json!({
@@ -161,7 +162,7 @@ fn config_validate_cli_rejects_unknown_provider_reference() {
         .current_dir(temp.path())
         .args(["config", "validate"])
         .output()
-        .expect("run harness config validate with invalid provider ref");
+        .unwrap_or_abort();
 
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -178,7 +179,7 @@ fn config_validate_cli_rejects_unsupported_upstream_top_level_keys() {
         "autoupdate",
         "enterprise",
     ] {
-        let temp = tempdir().expect("tempdir");
+        let temp = tempdir().unwrap_or_abort();
         let config_path = temp.path().join("harness.jsonc");
         let mut config = canonical_runtime_config();
         config[key] = serde_json::json!({ "enabled": true });
@@ -273,7 +274,7 @@ fn compatibility_config_shape_accepts_subagents_and_safe_inert_keys() {
         }
         "#,
     )
-    .expect("compatibility config shape should parse");
+    .unwrap_or_abort();
 
     assert!(parsed.agents.contains_key("build"));
     assert_eq!(
@@ -309,11 +310,11 @@ fn shipped_example_config_uses_codex_oauth_provider_without_openai_api_key() {
     let config_path = repo_root.join("configs").join("harness.example.jsonc");
 
     let parsed = load_config_from_file(&config_path)
-        .expect("shipped example config should use its explicit Codex OAuth provider");
+        .unwrap_or_abort();
     let ProviderConfig::OpenAiCompatible(provider) = parsed
         .providers
         .get("openai-codex")
-        .expect("openai-codex provider present in shipped example config");
+        .unwrap_or_abort();
 
     assert_eq!(provider.name.as_deref(), Some("OpenAI Codex"));
     assert_eq!(provider.base_url, "https://api.openai.com/v1");
@@ -332,11 +333,11 @@ fn shipped_example_config_keeps_codex_oauth_provider_even_when_openai_api_key_is
     let config_path = repo_root.join("configs").join("harness.example.jsonc");
 
     let parsed = load_config_from_file(&config_path)
-        .expect("shipped example config should keep its explicit Codex OAuth provider");
+        .unwrap_or_abort();
     let ProviderConfig::OpenAiCompatible(provider) = parsed
         .providers
         .get("openai-codex")
-        .expect("openai-codex provider present in shipped example config");
+        .unwrap_or_abort();
 
     assert_eq!(provider.name.as_deref(), Some("OpenAI Codex"));
     assert_eq!(provider.base_url, "https://api.openai.com/v1");
@@ -351,26 +352,26 @@ fn shipped_example_config_keeps_codex_oauth_provider_even_when_openai_api_key_is
 }
 #[test]
 fn checked_in_tui_schema_matches_generated_schema() {
-    let generated = harness_tui_schema_pretty_json().expect("generate tui schema");
+    let generated = harness_tui_schema_pretty_json().unwrap_or_abort();
     let checked_in = fs::read_to_string(repo_root().join("configs").join("tui.json"))
-        .expect("read checked-in tui schema");
+        .unwrap_or_abort();
 
     assert_eq!(checked_in.trim(), generated.trim());
 }
 #[test]
 fn checked_in_runtime_schema_matches_generated_schema() {
-    let generated = harness_schema_pretty_json().expect("generate runtime schema");
+    let generated = harness_schema_pretty_json().unwrap_or_abort();
     let checked_in = fs::read_to_string(repo_root().join("configs").join("config.json"))
-        .expect("read checked-in runtime schema");
+        .unwrap_or_abort();
 
     assert_eq!(checked_in.trim(), generated.trim());
 }
 #[test]
 fn shipped_tui_example_parses_as_public_tui_config() {
     let shipped = fs::read_to_string(repo_root().join("configs").join("tui.example.jsonc"))
-        .expect("read shipped tui example");
+        .unwrap_or_abort();
 
-    let parsed: PublicTuiConfig = json5::from_str(&shipped).expect("parse shipped tui example");
+    let parsed: PublicTuiConfig = json5::from_str(&shipped).unwrap_or_abort();
 
     assert_eq!(
         parsed.keybindings.get("variant_cycle"),
@@ -384,10 +385,10 @@ fn shipped_tui_example_parses_as_public_tui_config() {
 #[test]
 fn shipped_runtime_example_parses_as_public_runtime_config() {
     let shipped = fs::read_to_string(repo_root().join("configs").join("harness.example.jsonc"))
-        .expect("read shipped runtime example");
+        .unwrap_or_abort();
 
     let parsed: PublicRuntimeConfig =
-        json5::from_str(&shipped).expect("parse shipped runtime example");
+        json5::from_str(&shipped).unwrap_or_abort();
 
     assert_eq!(parsed.default_agent.as_deref(), Some("build"));
     assert_eq!(parsed.model.as_deref(), Some("openai-codex/gpt-5.4-mini"));
@@ -397,7 +398,7 @@ fn shipped_runtime_example_parses_as_public_runtime_config() {
     let ProviderConfig::OpenAiCompatible(provider) = parsed
         .provider
         .get("openai-codex")
-        .expect("openai-codex provider present in public example");
+        .unwrap_or_abort();
     assert_eq!(provider.models.len(), 2);
     assert!(provider.models.contains_key("gpt-5.5"));
     assert!(provider.models.contains_key("gpt-5.4-mini"));
@@ -458,7 +459,7 @@ fn public_runtime_config_accepts_top_level_skills() {
         }
         "#,
     )
-    .expect("parse runtime config with top-level skills");
+    .unwrap_or_abort();
 
     assert!(!parsed.skills.walk_to_git_root);
     assert_eq!(

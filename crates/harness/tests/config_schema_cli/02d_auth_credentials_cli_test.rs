@@ -1,7 +1,8 @@
+use harness::UnwrapOrAbort;
 #[test]
 fn auth_login_list_and_logout_run_outside_onboarding_without_printing_secrets() {
     // arrange
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let data_home = temp.path().join("data");
     let config_path = temp.path().join("harness.jsonc");
     let config_body = r#"
@@ -21,7 +22,7 @@ fn auth_login_list_and_logout_run_outside_onboarding_without_printing_secrets() 
           permission: "ask",
         }
         "#;
-    fs::write(&config_path, config_body).expect("write auth config");
+    fs::write(&config_path, config_body).unwrap_or_abort();
 
     // act: API-key login stores a credential without editing config or echoing the key.
     let api_secret = "sk-auth-cli-secret-value";
@@ -38,7 +39,7 @@ fn auth_login_list_and_logout_run_outside_onboarding_without_printing_secrets() 
         ])
         .stdin(format!("{api_secret}\n"))
         .output()
-        .expect("run auth api-key login");
+        .unwrap_or_abort();
 
     // assert
     assert!(
@@ -55,7 +56,7 @@ fn auth_login_list_and_logout_run_outside_onboarding_without_printing_secrets() 
         "credential should be stored outside config"
     );
     assert_eq!(
-        fs::read_to_string(&config_path).expect("read config after login"),
+        fs::read_to_string(&config_path).unwrap_or_abort(),
         config_body,
         "auth login must not edit harness config"
     );
@@ -81,7 +82,7 @@ fn auth_login_list_and_logout_run_outside_onboarding_without_printing_secrets() 
             account_id,
         ])
         .output()
-        .expect("run mocked OAuth login");
+        .unwrap_or_abort();
     assert!(mock_login.status.success());
     let mock_stdout = String::from_utf8_lossy(&mock_login.stdout);
     let mock_stderr = String::from_utf8_lossy(&mock_login.stderr);
@@ -95,25 +96,25 @@ fn auth_login_list_and_logout_run_outside_onboarding_without_printing_secrets() 
         .env("HARNESS_DATA_HOME", data_home.as_os_str())
         .args([
             "--config",
-            config_path.to_str().expect("config path utf-8"),
+            config_path.to_str().unwrap_or_abort(),
             "auth",
             "list",
             "--json",
         ])
         .output()
-        .expect("run auth list");
+        .unwrap_or_abort();
     assert!(list_output.status.success());
     let list_stdout = String::from_utf8_lossy(&list_output.stdout);
     for secret in [oauth_secret, refresh_secret, account_id, api_secret] {
         assert!(!list_stdout.contains(secret), "auth list leaked {secret}");
     }
-    let list: Value = serde_json::from_slice(&list_output.stdout).expect("auth list json");
+    let list: Value = serde_json::from_slice(&list_output.stdout).unwrap_or_abort();
     let codex = list
         .as_array()
-        .expect("auth list array")
+        .unwrap_or_abort()
         .iter()
         .find(|status| status["auth_provider"] == "codex")
-        .expect("codex status");
+        .unwrap_or_abort();
     assert_eq!(codex["provider_ids"], serde_json::json!(["codex_route"]));
     assert_eq!(codex["presence"], "stored");
     assert_eq!(codex["source"], "stored_oauth");
@@ -138,7 +139,7 @@ fn auth_login_list_and_logout_run_outside_onboarding_without_printing_secrets() 
             "",
         ])
         .output()
-        .expect("run mocked Copilot login with empty enterprise url");
+        .unwrap_or_abort();
     assert!(!empty_enterprise_login.status.success());
     let empty_enterprise_stdout = String::from_utf8_lossy(&empty_enterprise_login.stdout);
     let empty_enterprise_stderr = String::from_utf8_lossy(&empty_enterprise_login.stderr);
@@ -159,20 +160,20 @@ fn auth_login_list_and_logout_run_outside_onboarding_without_printing_secrets() 
         .env("HARNESS_AUTH_FALLBACK_KEY", "fallback-secret-value")
         .args([
             "--config",
-            config_path.to_str().expect("config path utf-8"),
+            config_path.to_str().unwrap_or_abort(),
             "auth",
             "logout",
             "codex",
         ])
         .output()
-        .expect("run auth logout");
+        .unwrap_or_abort();
     assert!(logout.status.success());
     assert!(
         !credential_path.exists(),
         "auth logout should delete only the stored credential"
     );
     assert_eq!(
-        fs::read_to_string(&config_path).expect("read config after logout"),
+        fs::read_to_string(&config_path).unwrap_or_abort(),
         config_body,
         "auth logout must not edit harness config"
     );
@@ -183,24 +184,24 @@ fn auth_login_list_and_logout_run_outside_onboarding_without_printing_secrets() 
         .env("HARNESS_AUTH_FALLBACK_KEY", "fallback-secret-value")
         .args([
             "--config",
-            config_path.to_str().expect("config path utf-8"),
+            config_path.to_str().unwrap_or_abort(),
             "auth",
             "list",
             "--json",
         ])
         .output()
-        .expect("run auth list after logout");
+        .unwrap_or_abort();
     assert!(fallback_list.status.success());
     let fallback_stdout = String::from_utf8_lossy(&fallback_list.stdout);
     assert!(!fallback_stdout.contains("fallback-secret-value"));
     let fallback_list: Value =
-        serde_json::from_slice(&fallback_list.stdout).expect("fallback auth list json");
+        serde_json::from_slice(&fallback_list.stdout).unwrap_or_abort();
     let codex = fallback_list
         .as_array()
-        .expect("fallback auth list array")
+        .unwrap_or_abort()
         .iter()
         .find(|status| status["auth_provider"] == "codex")
-        .expect("codex fallback status");
+        .unwrap_or_abort();
     assert_eq!(codex["presence"], "env");
     assert_eq!(codex["source"], "apiKeyEnv");
     assert_eq!(codex["env_fallback_configured"], true);
@@ -210,7 +211,7 @@ fn auth_login_list_and_logout_run_outside_onboarding_without_printing_secrets() 
 #[test]
 fn auth_list_and_doctor_report_malformed_stored_credentials_as_error() {
     // arrange
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let data_home = temp.path().join("data");
     let config_path = temp.path().join("harness.jsonc");
     fs::write(
@@ -233,15 +234,15 @@ fn auth_list_and_doctor_report_malformed_stored_credentials_as_error() {
         }
         "#,
     )
-    .expect("write auth config");
+    .unwrap_or_abort();
     let credential_dir = data_home.join("harness/credentials");
-    fs::create_dir_all(&credential_dir).expect("create credential dir");
+    fs::create_dir_all(&credential_dir).unwrap_or_abort();
     let corrupt_secret = "corrupt-credential-secret-value";
     fs::write(
         credential_dir.join("codex.json"),
         format!("{{ not valid json: \"{corrupt_secret}\""),
     )
-    .expect("write malformed credential");
+    .unwrap_or_abort();
 
     // act: auth list reports the store error instead of falling back silently.
     let list_output = harness_command()
@@ -250,26 +251,26 @@ fn auth_list_and_doctor_report_malformed_stored_credentials_as_error() {
         .env("HARNESS_AUTH_FALLBACK_KEY", "fallback-secret-value")
         .args([
             "--config",
-            config_path.to_str().expect("config path utf-8"),
+            config_path.to_str().unwrap_or_abort(),
             "auth",
             "list",
             "--json",
         ])
         .output()
-        .expect("run auth list with malformed credential");
+        .unwrap_or_abort();
 
     // assert
     assert!(list_output.status.success());
     let list_stdout = String::from_utf8_lossy(&list_output.stdout);
     assert!(!list_stdout.contains(corrupt_secret));
     assert!(!list_stdout.contains("fallback-secret-value"));
-    let list: Value = serde_json::from_slice(&list_output.stdout).expect("auth list json");
+    let list: Value = serde_json::from_slice(&list_output.stdout).unwrap_or_abort();
     let codex = list
         .as_array()
-        .expect("auth list array")
+        .unwrap_or_abort()
         .iter()
         .find(|status| status["auth_provider"] == "codex")
-        .expect("codex status");
+        .unwrap_or_abort();
     assert_eq!(codex["presence"], "error");
     assert_eq!(codex["source"], "credential_store_error");
     assert_eq!(codex["env_fallback_configured"], true);
@@ -282,12 +283,12 @@ fn auth_list_and_doctor_report_malformed_stored_credentials_as_error() {
         .env("HARNESS_AUTH_FALLBACK_KEY", "fallback-secret-value")
         .args([
             "--config",
-            config_path.to_str().expect("config path utf-8"),
+            config_path.to_str().unwrap_or_abort(),
             "doctor",
             "--json",
         ])
         .output()
-        .expect("run doctor with malformed credential");
+        .unwrap_or_abort();
 
     // assert
     assert!(
@@ -299,24 +300,24 @@ fn auth_list_and_doctor_report_malformed_stored_credentials_as_error() {
     let doctor_stdout = String::from_utf8_lossy(&doctor_output.stdout);
     assert!(!doctor_stdout.contains(corrupt_secret));
     assert!(!doctor_stdout.contains("fallback-secret-value"));
-    let report: Value = serde_json::from_slice(&doctor_output.stdout).expect("doctor json report");
+    let report: Value = serde_json::from_slice(&doctor_output.stdout).unwrap_or_abort();
     let credential_check = report["checks"]
         .as_array()
-        .expect("checks array")
+        .unwrap_or_abort()
         .iter()
         .find(|check| check["name"] == "provider_credentials")
-        .expect("provider credential check");
+        .unwrap_or_abort();
     assert_eq!(credential_check["status"], "warn");
     assert!(credential_check["message"]
         .as_str()
-        .expect("message")
+        .unwrap_or_abort()
         .contains("unreadable stored credentials"));
     let auth = credential_check["details"]["auth"]
         .as_array()
-        .expect("auth status array")
+        .unwrap_or_abort()
         .iter()
         .find(|status| status["auth_provider"] == "codex")
-        .expect("codex auth detail");
+        .unwrap_or_abort();
     assert_eq!(auth["presence"], "error");
     assert_eq!(auth["source"], "credential_store_error");
     assert_eq!(auth["usable_without_network_probe"], false);
@@ -325,7 +326,7 @@ fn auth_list_and_doctor_report_malformed_stored_credentials_as_error() {
 #[test]
 fn doctor_cli_json_reports_redacted_per_provider_auth_status() {
     // arrange
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let data_home = temp.path().join("data");
     let config_path = temp.path().join("harness.jsonc");
     fs::write(
@@ -347,7 +348,7 @@ fn doctor_cli_json_reports_redacted_per_provider_auth_status() {
         }
         "#,
     )
-    .expect("write auth doctor config");
+    .unwrap_or_abort();
     let secret = "doctor-oauth-secret-value";
     let account_id = "acct-doctor-secret";
     let login = harness_command()
@@ -365,7 +366,7 @@ fn doctor_cli_json_reports_redacted_per_provider_auth_status() {
             "2099-05-06T07:08:09Z",
         ])
         .output()
-        .expect("seed stored auth credential");
+        .unwrap_or_abort();
     assert!(login.status.success());
 
     // act
@@ -374,12 +375,12 @@ fn doctor_cli_json_reports_redacted_per_provider_auth_status() {
         .env("HARNESS_DATA_HOME", data_home.as_os_str())
         .args([
             "--config",
-            config_path.to_str().expect("config path utf-8"),
+            config_path.to_str().unwrap_or_abort(),
             "doctor",
             "--json",
         ])
         .output()
-        .expect("run doctor with stored auth");
+        .unwrap_or_abort();
 
     // assert
     assert!(
@@ -391,22 +392,22 @@ fn doctor_cli_json_reports_redacted_per_provider_auth_status() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(!stdout.contains(secret));
     assert!(!stdout.contains(account_id));
-    let report: Value = serde_json::from_slice(&output.stdout).expect("doctor json report");
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap_or_abort();
     let credential_check = report["checks"]
         .as_array()
-        .expect("checks array")
+        .unwrap_or_abort()
         .iter()
         .find(|check| check["name"] == "provider_credentials")
-        .expect("provider credential check");
+        .unwrap_or_abort();
     assert_eq!(credential_check["status"], "pass");
     assert_eq!(credential_check["details"]["redacted"], true);
     assert_eq!(credential_check["details"]["no_network_probes"], true);
     let auth = credential_check["details"]["auth"]
         .as_array()
-        .expect("auth status array")
+        .unwrap_or_abort()
         .iter()
         .find(|status| status["auth_provider"] == "codex")
-        .expect("codex auth detail");
+        .unwrap_or_abort();
     assert_eq!(auth["presence"], "stored");
     assert_eq!(auth["source"], "stored_oauth");
     assert_eq!(auth["kind"], "oauth");

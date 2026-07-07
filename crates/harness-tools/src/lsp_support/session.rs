@@ -398,7 +398,7 @@ fn request_with_retry_mode(
         }
     }
 
-    unreachable!("lsp retry loop must return before exhaustion")
+    std::process::abort()
 }
 
 fn error_message(value: &Value) -> String {

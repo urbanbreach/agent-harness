@@ -1,4 +1,5 @@
 use harness_core::config::ShellAllowlist;
+use harness_tools::UnwrapOrAbort;
 use harness_tools::{canonical_tool_id_for, coordinator_registry, native_tool_catalog_entries};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -102,7 +103,7 @@ fn coordinator_registry_exposes_single_native_tool_surface() {
     let doc_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .join("docs/native-tool-catalog.md");
-    let doc = std::fs::read_to_string(&doc_path).expect("read native tool catalog doc");
+    let doc = std::fs::read_to_string(&doc_path).unwrap_or_abort();
     let doc_ids = documented_tool_ids(&doc);
     assert_eq!(
         doc_ids, registry_ids,
@@ -116,7 +117,7 @@ fn native_tool_catalog_rows_include_permission_alias_and_replay_metadata() {
     let registry = coordinator_registry(ShellAllowlist::default());
     let catalog = native_tool_catalog_entries(&registry);
     let doc_path = repo_path("docs/native-tool-catalog.md");
-    let doc = std::fs::read_to_string(&doc_path).expect("read native tool catalog doc");
+    let doc = std::fs::read_to_string(&doc_path).unwrap_or_abort();
     let rows = documented_tool_rows(&doc);
 
     for entry in catalog {
@@ -174,25 +175,22 @@ fn bash_safety_guidance_and_ast_grep_replace_catalog_match_runtime_sources() {
     let registry = coordinator_registry(ShellAllowlist::default());
     // assert
     assert!(registry.get("ast_grep_search").is_some());
-    let replace = registry
-        .get("ast_grep_replace")
-        .expect("ast_grep_replace should be registered after edit-safety gates");
+    let replace = registry.get("ast_grep_replace").unwrap_or_abort();
     assert_eq!(
         replace.capability(),
         harness_core::tool::ToolCapability::EditFs
     );
 
-    let doc = std::fs::read_to_string(repo_path("docs/native-tool-catalog.md"))
-        .expect("read native tool catalog doc");
-    let doctor = std::fs::read_to_string(repo_path("crates/harness/src/doctor.rs"))
-        .expect("read doctor source");
-    let claims = std::fs::read_to_string(repo_path("docs/claim-evidence-matrix.md"))
-        .expect("read claim evidence matrix");
+    let doc = std::fs::read_to_string(repo_path("docs/native-tool-catalog.md")).unwrap_or_abort();
+    let doctor =
+        std::fs::read_to_string(repo_path("crates/harness/src/doctor.rs")).unwrap_or_abort();
+    let claims =
+        std::fs::read_to_string(repo_path("docs/claim-evidence-matrix.md")).unwrap_or_abort();
     let shell_run = std::fs::read_to_string(repo_path("crates/harness-tools/src/shell_run.rs"))
-        .expect("read shell_run source");
+        .unwrap_or_abort();
     let shell_safety =
         std::fs::read_to_string(repo_path("crates/harness-tools/src/shell_safety.rs"))
-            .expect("read shell_safety source");
+            .unwrap_or_abort();
 
     assert!(shell_run.contains("const DEFAULT_SHELL_TIMEOUT_MS: u64 = 120_000;"));
     assert!(shell_run.contains("const SHELL_OUTPUT_INLINE_LINE_LIMIT: usize = 2_000;"));
@@ -267,7 +265,8 @@ fn documented_tool_rows(doc: &str) -> BTreeMap<String, DocumentedToolRow> {
         .collect()
 }
 
+#[allow(clippy::panic, reason = "test code must panic gracefully")]
 fn read_agent_prompt(profile: &str) -> String {
     std::fs::read_to_string(repo_path(&format!(".agent-harness/agents/{profile}.md")))
-        .unwrap_or_else(|err| panic!("read {profile} prompt: {err}"))
+        .unwrap_or_else(|_| panic!("abort"))
 }

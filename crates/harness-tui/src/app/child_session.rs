@@ -109,9 +109,15 @@ pub(super) fn subagent_usage_label(app: &AppState) -> Option<String> {
 
 fn compact_usage_count(value: u64) -> String {
     if value >= 1_000_000 {
-        format!("{:.1}M", value as f64 / 1_000_000.0)
+        format!(
+            "{:.1}M",
+            f64::from(u32::try_from(value).unwrap_or(u32::MAX)) / 1_000_000.0
+        )
     } else if value >= 1_000 {
-        format!("{:.1}K", value as f64 / 1_000.0)
+        format!(
+            "{:.1}K",
+            f64::from(u32::try_from(value).unwrap_or(u32::MAX)) / 1_000.0
+        )
     } else {
         value.to_string()
     }

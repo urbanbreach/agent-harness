@@ -1,4 +1,6 @@
+use crate::UnwrapOrAbort;
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use harness_core::config::{
@@ -44,13 +46,13 @@ pub(crate) fn register_mcp_tools(registry: &mut ToolRegistry, config: McpConfig)
         ));
         for kind in McpToolKind::all() {
             registry.register(std::sync::Arc::new(McpServerTool::new(
-                executor.clone(),
+                Arc::clone(&executor),
                 kind,
             )));
         }
 
         let (discovered_tools, discovered_tool_ids, connection_state) =
-            discover_first_class_tools(executor.clone());
+            discover_first_class_tools(Arc::clone(&executor));
         connection_states.insert(executor.server_id.clone(), connection_state);
         first_class_tool_ids.insert(executor.server_id.clone(), discovered_tool_ids);
         for tool in discovered_tools {
@@ -69,7 +71,7 @@ fn discover_first_class_tools(
     BTreeMap<String, String>,
     McpServerConnectionState,
 ) {
-    let discovery_executor = executor.clone();
+    let discovery_executor = Arc::clone(&executor);
     let discovery = std::thread::spawn(move || {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -89,7 +91,7 @@ fn discover_first_class_tools(
                 .collect::<BTreeMap<_, _>>();
             let tools = specs
                 .into_iter()
-                .map(|spec| McpDiscoveredTool::new(spec, executor.clone()))
+                .map(|spec| McpDiscoveredTool::new(spec, Arc::clone(&executor)))
                 .collect::<Vec<_>>();
             (
                 tools,
@@ -325,6 +327,10 @@ impl Tool for McpDiscoveredTool {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::empty_structs_with_brackets,
+    reason = "unit struct changes JSON schema representation"
+)]
 struct EmptyArgs {}
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -779,9 +785,7 @@ impl McpServerExecutor {
         if guard.is_none() {
             *guard = Some(self.start_stdio_session().await?);
         }
-        let session = guard
-            .as_mut()
-            .expect("stdio MCP session should be initialized");
+        let session = guard.as_mut().unwrap_or_abort();
         let response = session.request(method, params).await;
         let metadata = session.metadata().clone();
         match response {

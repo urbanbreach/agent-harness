@@ -725,19 +725,19 @@ fn base64_url_decode(value: &str) -> Result<Vec<u8>, ()> {
     let mut bits = 0_u8;
     for byte in value.bytes() {
         let value = match byte {
-            b'A'..=b'Z' => byte - b'A',
-            b'a'..=b'z' => byte - b'a' + 26,
-            b'0'..=b'9' => byte - b'0' + 52,
+            b'A'..=b'Z' => u32::from(byte - b'A'),
+            b'a'..=b'z' => u32::from(byte - b'a' + 26),
+            b'0'..=b'9' => u32::from(byte - b'0' + 52),
             b'-' => 62,
             b'_' => 63,
             b'=' => break,
             _ => return Err(()),
-        } as u32;
+        };
         buffer = (buffer << 6) | value;
         bits += 6;
         if bits >= 8 {
             bits -= 8;
-            output.push((buffer >> bits) as u8);
+            output.push(u8::try_from(buffer >> bits).unwrap_or(u8::MAX));
             buffer &= (1 << bits) - 1;
         }
     }

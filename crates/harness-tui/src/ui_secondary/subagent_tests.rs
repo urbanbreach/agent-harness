@@ -1,5 +1,6 @@
 use super::operator_rail_test_fixtures::*;
 use super::*;
+use crate::UnwrapOrAbort;
 
 #[cfg(test)]
 pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_state() {
@@ -243,7 +244,7 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
                 .collect::<String>()
                 .contains("▶ Explore ⠋ 2 tasks · 1 active")
         })
-        .expect("collapsed explore group line");
+        .unwrap_or_abort();
     assert_eq!(explore_group.spans[0].style.fg, Some(theme.status.success));
     assert_eq!(explore_group.spans[1].style.fg, Some(theme.text.primary));
     assert_eq!(explore_group.spans[2].style.fg, Some(theme.status.success));
@@ -258,7 +259,7 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
                 .collect::<String>()
                 .contains("• ✗ Plan Task")
         })
-        .expect("cancelled subagent line");
+        .unwrap_or_abort();
     assert_eq!(cancelled.spans[0].style.fg, Some(theme.text.primary));
     assert_eq!(cancelled.spans[1].style.fg, Some(theme.text.secondary));
     assert_eq!(cancelled.spans[2].style.fg, Some(theme.text.secondary));
@@ -267,18 +268,21 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
     let theme = &theme;
     let inner =
         operator_sidebar_inner_area(&app, sidebar_area, theme, OperatorSidebarChrome::Persistent)
-            .expect("sidebar inner area");
+            .unwrap_or_abort();
     let rail = build_operator_rail_model(&app);
-    let title_height = build_operator_rail_title_text(rail.title.as_ref(), theme, inner.width)
-        .lines
-        .len()
-        .min(usize::from(u16::MAX)) as u16;
+    let title_height = u16::try_from(
+        build_operator_rail_title_text(rail.title.as_ref(), theme, inner.width)
+            .lines
+            .len()
+            .min(usize::from(u16::MAX)),
+    )
+    .unwrap_or(u16::MAX);
     let wrapped_layout = build_operator_rail_body_layout(&rail.body, theme, inner.width, 0);
     let explore_group_region = wrapped_layout
         .subagent_group_hit_regions
         .iter()
         .find(|region| region.agent_name == "Explore")
-        .expect("explore group hit region");
+        .unwrap_or_abort();
     assert_eq!(
         operator_sidebar_subagent_group_hit_target_in_surface(
             &app,
@@ -289,7 +293,7 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
             inner
                 .y
                 .saturating_add(title_height)
-                .saturating_add(explore_group_region.top_row as u16),
+                .saturating_add(u16::try_from(explore_group_region.top_row).unwrap_or(u16::MAX)),
         ),
         Some("Explore".to_string())
     );
@@ -304,13 +308,14 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
         .subagent_hit_regions
         .iter()
         .find(|region| region.session_id == "child_running_session")
-        .expect("running child session hit region");
+        .unwrap_or_abort();
     assert!(
         wrapped_region.height == 1,
         "long subagent row should stay compact and keep a one-row hit region"
     );
     let body_y = inner.y.saturating_add(title_height);
-    let wrapped_row = body_y.saturating_add(wrapped_region.top_row as u16);
+    let wrapped_row =
+        body_y.saturating_add(u16::try_from(wrapped_region.top_row).unwrap_or(u16::MAX));
     assert_eq!(
         operator_sidebar_subagent_session_hit_target_in_surface(
             &app,
@@ -362,20 +367,22 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
 
     let frame_area = Rect::new(0, 0, 140, 40);
     let plan = crate::layout::FrameLayoutPlan::for_app(&app, frame_area);
-    let sidebar_area = plan.operator_sidebar.expect("operator sidebar area");
+    let sidebar_area = plan.operator_sidebar.unwrap_or_abort();
     let inner =
         operator_sidebar_inner_area(&app, sidebar_area, theme, OperatorSidebarChrome::Persistent)
-            .expect("operator sidebar inner area");
+            .unwrap_or_abort();
     let rail = build_operator_rail_model(&app);
-    let body_area = operator_sidebar_body_area(&app, inner, theme, rail.title.as_ref())
-        .expect("operator sidebar body area");
+    let body_area =
+        operator_sidebar_body_area(&app, inner, theme, rail.title.as_ref()).unwrap_or_abort();
     let layout = build_operator_rail_body_layout(&rail.body, theme, body_area.width, 0);
     let group_region = layout
         .subagent_group_hit_regions
         .iter()
         .find(|region| region.agent_name == "Explore")
-        .expect("explore group hit region in frame layout");
-    let group_row = body_area.y.saturating_add(group_region.top_row as u16);
+        .unwrap_or_abort();
+    let group_row = body_area
+        .y
+        .saturating_add(u16::try_from(group_region.top_row).unwrap_or(u16::MAX));
     let group_col = body_area.x;
     for kind in [
         crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
@@ -409,7 +416,7 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
                 .collect::<String>()
                 .contains("  ⠋ Explore Task")
         })
-        .expect("running subagent line after expanding group");
+        .unwrap_or_abort();
     assert_eq!(running.spans[0].style.fg, Some(theme.status.success));
     assert_eq!(running.spans[1].style.fg, Some(theme.status.success));
     assert_eq!(running.spans[2].style.fg, Some(theme.text.primary));
@@ -676,7 +683,7 @@ pub(crate) fn exact_test_operator_rail_uses_simple_subagent_task_labels() {
     let explore = groups
         .iter()
         .find(|group| group.agent_name == "Explore")
-        .expect("explore group");
+        .unwrap_or_abort();
     assert_eq!(explore.items.len(), 1);
     assert_eq!(explore.items[0].description, "Explore Task");
     assert_eq!(explore.items[0].status, SubagentRailStatus::Completed);
@@ -684,7 +691,7 @@ pub(crate) fn exact_test_operator_rail_uses_simple_subagent_task_labels() {
     let librarian = groups
         .iter()
         .find(|group| group.agent_name == "Librarian")
-        .expect("librarian group");
+        .unwrap_or_abort();
     assert_eq!(librarian.items.len(), 2);
     assert_eq!(librarian.items[0].description, "Librarian Task");
     assert_eq!(librarian.items[0].status, SubagentRailStatus::Completed);

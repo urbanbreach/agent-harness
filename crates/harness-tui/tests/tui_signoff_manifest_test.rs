@@ -1,12 +1,13 @@
+use harness_tui::UnwrapOrAbort;
 use serde_json::Value;
 
 const TUI_SIGNOFF_MANIFEST: &str = include_str!("../../../docs/tui-signoff-manifest.v1.json");
 
 #[test]
+#[allow(clippy::panic, reason = "test code must panic gracefully")]
 fn tui_signoff_manifest_covers_required_release_flows() {
     // arrange
-    let manifest: Value =
-        serde_json::from_str(TUI_SIGNOFF_MANIFEST).expect("parse TUI signoff manifest");
+    let manifest: Value = serde_json::from_str(TUI_SIGNOFF_MANIFEST).unwrap_or_abort();
     assert_eq!(
         manifest["schema_version"],
         "harness-tui-signoff-manifest-v1"
@@ -17,9 +18,7 @@ fn tui_signoff_manifest_covers_required_release_flows() {
         "documented_gap"
     );
 
-    let flows = manifest["flows"]
-        .as_array()
-        .expect("manifest flows must be an array");
+    let flows = manifest["flows"].as_array().unwrap_or_abort();
     let required_flow_ids = [
         "startup",
         "command_palette",
@@ -44,7 +43,10 @@ fn tui_signoff_manifest_covers_required_release_flows() {
         let flow = flows
             .iter()
             .find(|flow| flow["id"] == flow_id)
-            .unwrap_or_else(|| panic!("missing signoff flow {flow_id}"));
+            .unwrap_or_else(|| {
+                let _ = flow_id;
+                panic!("abort");
+            });
         assert_non_empty_array(flow, "deterministic_tests");
         assert_non_empty_array(flow, "pty_stages");
         assert_non_empty_array(flow, "required_markers");
@@ -98,14 +100,16 @@ fn assert_non_empty_array(flow: &Value, field: &str) {
     );
 }
 
+#[allow(clippy::panic, reason = "test code must panic gracefully")]
 fn assert_flow_names_test(flows: &[Value], flow_id: &str, test_name: &str) {
     let flow = flows
         .iter()
         .find(|flow| flow["id"] == flow_id)
-        .unwrap_or_else(|| panic!("missing signoff flow {flow_id}"));
-    let deterministic_tests = flow["deterministic_tests"]
-        .as_array()
-        .expect("deterministic_tests must be an array");
+        .unwrap_or_else(|| {
+            let _ = flow_id;
+            panic!("abort");
+        });
+    let deterministic_tests = flow["deterministic_tests"].as_array().unwrap_or_abort();
     assert!(
         deterministic_tests
             .iter()

@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 pub(super) fn orchestration_projection_resolves_owner_labels() {
     let mut app = app::AppState::new_live(None, false, None);
@@ -326,10 +327,7 @@ pub(super) fn background_notification_projects_chat_reminder_without_duplicate_u
     assert_eq!(activity.request_id, "req_parent_wakeup");
     assert_eq!(activity.status, app::ActivityStatus::Queued);
     assert_eq!(activity.profile_label, "build");
-    let reminder = activity
-        .user_message
-        .as_ref()
-        .expect("background notification should render as chat reminder");
+    let reminder = activity.user_message.as_ref().unwrap_or_abort();
     assert!(reminder.text.contains("[BACKGROUND TASK COMPLETED]"));
     assert!(reminder.text.contains("ID: agent_child"));
     assert!(!reminder.text.contains("summarize README"));
@@ -360,7 +358,7 @@ pub(super) fn background_notification_projects_chat_reminder_without_duplicate_u
         app.activities[0]
             .user_message
             .as_ref()
-            .expect("canonical wakeup should replace placeholder")
+            .unwrap_or_abort()
             .text,
         "<system-reminder>canonical coordinator wakeup</system-reminder>"
     );

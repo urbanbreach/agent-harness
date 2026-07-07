@@ -1,3 +1,4 @@
+use harness::UnwrapOrAbort;
 #[test]
 fn doctor_cli_json_reports_formatter_status() {
     // arrange
@@ -10,12 +11,12 @@ fn doctor_cli_json_reports_formatter_status() {
         .env("OPENAI_API_KEY", "doctor-formatter-status-test-key")
         .args([
             "--config",
-            config_path.to_str().expect("config path utf-8"),
+            config_path.to_str().unwrap_or_abort(),
             "doctor",
             "--json",
         ])
         .output()
-        .expect("run harness doctor --json for formatter status");
+        .unwrap_or_abort();
 
     // assert
     assert!(
@@ -25,13 +26,13 @@ fn doctor_cli_json_reports_formatter_status() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let report: Value = serde_json::from_slice(&output.stdout).expect("doctor json report");
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap_or_abort();
     let formatters_check = report["checks"]
         .as_array()
-        .expect("checks array")
+        .unwrap_or_abort()
         .iter()
         .find(|check| check["name"] == "formatters")
-        .expect("formatters check");
+        .unwrap_or_abort();
 
     assert!(
         formatters_check["status"] == "pass" || formatters_check["status"] == "warn",
@@ -41,7 +42,7 @@ fn doctor_cli_json_reports_formatter_status() {
 
     let entries = formatters_check["details"]["formatters"]
         .as_array()
-        .expect("formatters details array");
+        .unwrap_or_abort();
     assert!(
         entries.iter().any(|entry| entry["name"] == "rustfmt"),
         "rustfmt status entry should be present"

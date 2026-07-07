@@ -3,6 +3,7 @@ use harness_testkit::simulation::{
     SimulationMatrix, ARTIFACT_INDEX_SCHEMA_VERSION, EVENT_SCHEMA_VERSION, MATRIX_SCHEMA_VERSION,
     NORMALIZATION_PROFILE, REPORT_SCHEMA_VERSION,
 };
+use harness_testkit::UnwrapOrAbort;
 use serde_json::{json, Value};
 
 pub fn valid_matrix() -> Value {
@@ -47,7 +48,7 @@ pub fn valid_matrix() -> Value {
 }
 
 pub fn matrix() -> SimulationMatrix {
-    validate_matrix_value(&valid_matrix(), "valid-matrix").expect("valid matrix")
+    validate_matrix_value(&valid_matrix(), "valid-matrix").unwrap_or_abort()
 }
 
 pub fn valid_event_rows() -> Vec<Value> {
@@ -126,11 +127,14 @@ pub fn valid_report() -> Value {
     })
 }
 
+#[allow(clippy::panic, reason = "test support code must panic gracefully")]
 pub fn assert_control<T: std::fmt::Debug>(
     result: Result<T, Vec<SimulationFailure>>,
     control: &str,
 ) {
-    let failures = result.expect_err("negative control should fail");
+    let Err(failures) = result else {
+        panic!("negative control should fail");
+    };
     assert!(
         failures.iter().any(|failure| failure.control == control),
         "expected control `{control}` in failures: {failures:#?}"
@@ -138,12 +142,13 @@ pub fn assert_control<T: std::fmt::Debug>(
     let first = failures
         .iter()
         .find(|failure| failure.control == control)
-        .expect("matching control");
+        .unwrap_or_abort();
     assert!(!first.path.is_empty());
     assert!(!first.expected.is_empty());
     assert!(!first.observed.is_empty());
 }
 
+#[allow(clippy::panic, reason = "test support code must panic gracefully")]
 pub fn assert_delta_status(deltas: &[Value], kind: &str, status: &str) {
     let row = deltas
         .iter()

@@ -1,3 +1,4 @@
+use harness_core::UnwrapOrAbort;
 use std::path::Path;
 
 use harness_core::file_tag::{
@@ -7,11 +8,11 @@ use harness_core::file_tag::{
 };
 
 fn create_fixture_dir(root: &Path, relative: &str) {
-    std::fs::create_dir(root.join(relative)).expect("create fixture dir");
+    std::fs::create_dir(root.join(relative)).unwrap_or_abort();
 }
 
 fn write_fixture(root: &Path, relative: &str, contents: impl AsRef<[u8]>) {
-    std::fs::write(root.join(relative), contents).expect("write fixture file");
+    std::fs::write(root.join(relative), contents).unwrap_or_abort();
 }
 
 #[test]
@@ -63,14 +64,14 @@ fn files_matches_harness_markdown_file_regex_examples() {
 
 #[test]
 fn materialize_file_tag_context_reads_files_and_directories_once() {
-    let tempdir = tempfile::tempdir().expect("tempdir");
+    let tempdir = tempfile::tempdir().unwrap_or_abort();
     let root = tempdir.path();
     write_fixture(root, "alpha.txt", "first\nsecond\n");
     create_fixture_dir(root, "src");
     write_fixture(root, "src/lib.rs", "pub fn demo() {}\n");
 
     let context = materialize_file_tag_context(root, "read @alpha.txt and @src and @alpha.txt")
-        .expect("context");
+        .unwrap_or_abort();
 
     assert!(context.contains("Called the Read tool with the following input:"));
     assert!(context.contains("alpha.txt"));
@@ -81,21 +82,21 @@ fn materialize_file_tag_context_reads_files_and_directories_once() {
 
 #[test]
 fn materialize_file_tag_context_sorts_directory_entries_and_marks_directories() {
-    let tempdir = tempfile::tempdir().expect("tempdir");
+    let tempdir = tempfile::tempdir().unwrap_or_abort();
     let root = tempdir.path();
     create_fixture_dir(root, "src");
     create_fixture_dir(root, "src/nested");
     write_fixture(root, "src/zeta.rs", "pub fn zeta() {}\n");
     write_fixture(root, "src/alpha.rs", "pub fn alpha() {}\n");
 
-    let context = materialize_file_tag_context(root, "inspect @src").expect("context");
+    let context = materialize_file_tag_context(root, "inspect @src").unwrap_or_abort();
 
     assert!(context.contains("alpha.rs\nnested/\nzeta.rs"));
 }
 
 #[test]
 fn materialize_file_tag_context_ignores_missing_paths() {
-    let tempdir = tempfile::tempdir().expect("tempdir");
+    let tempdir = tempfile::tempdir().unwrap_or_abort();
 
     assert_eq!(
         materialize_file_tag_context(tempdir.path(), "read @missing.txt"),
@@ -105,14 +106,14 @@ fn materialize_file_tag_context_ignores_missing_paths() {
 
 #[test]
 fn materialize_file_tag_context_reports_paths_outside_workspace() {
-    let workspace = tempfile::tempdir().expect("workspace tempdir");
-    let external = tempfile::NamedTempFile::new().expect("external file");
+    let workspace = tempfile::tempdir().unwrap_or_abort();
+    let external = tempfile::NamedTempFile::new().unwrap_or_abort();
 
     let context = materialize_file_tag_context(
         workspace.path(),
         &format!("read @{}", external.path().display()),
     )
-    .expect("context");
+    .unwrap_or_abort();
 
     assert!(context.contains("Read tool failed to read"));
     assert!(context.contains("path escapes workspace root"));
@@ -120,11 +121,11 @@ fn materialize_file_tag_context_reports_paths_outside_workspace() {
 
 #[test]
 fn materialize_file_tag_context_honors_line_ranges() {
-    let tempdir = tempfile::tempdir().expect("tempdir");
+    let tempdir = tempfile::tempdir().unwrap_or_abort();
     let root = tempdir.path();
     write_fixture(root, "alpha.txt", "one\ntwo\nthree\nfour\n");
 
-    let context = materialize_file_tag_context(root, "read @alpha.txt#2-3").expect("context");
+    let context = materialize_file_tag_context(root, "read @alpha.txt#2-3").unwrap_or_abort();
 
     assert!(context.contains("2: two\n3: three"));
     assert!(!context.contains("1: one"));
@@ -133,11 +134,11 @@ fn materialize_file_tag_context_honors_line_ranges() {
 
 #[test]
 fn materialize_file_tag_context_clamps_reversed_line_ranges_to_start() {
-    let tempdir = tempfile::tempdir().expect("tempdir");
+    let tempdir = tempfile::tempdir().unwrap_or_abort();
     let root = tempdir.path();
     write_fixture(root, "alpha.txt", "one\ntwo\nthree\nfour\n");
 
-    let context = materialize_file_tag_context(root, "read @alpha.txt#3-1").expect("context");
+    let context = materialize_file_tag_context(root, "read @alpha.txt#3-1").unwrap_or_abort();
 
     assert!(context.contains("3: three"));
     assert!(!context.contains("2: two"));
@@ -188,22 +189,22 @@ fn split_line_range_strips_invalid_hash_suffixes_without_selecting_lines() {
 
 #[test]
 fn materialize_file_tag_context_omits_binary_files_by_mime() {
-    let tempdir = tempfile::tempdir().expect("tempdir");
+    let tempdir = tempfile::tempdir().unwrap_or_abort();
     let root = tempdir.path();
     write_fixture(root, "image.png", b"\x89PNG\0binary");
 
-    let context = materialize_file_tag_context(root, "read @image.png").expect("context");
+    let context = materialize_file_tag_context(root, "read @image.png").unwrap_or_abort();
 
     assert!(context.contains("[binary file omitted: MIME image/png]"));
 }
 
 #[test]
 fn materialize_file_tag_context_reports_non_utf8_files() {
-    let tempdir = tempfile::tempdir().expect("tempdir");
+    let tempdir = tempfile::tempdir().unwrap_or_abort();
     let root = tempdir.path();
     write_fixture(root, "bad.txt", b"\xff\xfe");
 
-    let context = materialize_file_tag_context(root, "read @bad.txt").expect("context");
+    let context = materialize_file_tag_context(root, "read @bad.txt").unwrap_or_abort();
 
     assert!(context.contains("Read tool failed to read"));
     assert!(context.contains("binary or non-UTF-8 file omitted: MIME text/plain"));
@@ -211,7 +212,7 @@ fn materialize_file_tag_context_reports_non_utf8_files() {
 
 #[test]
 fn selected_file_tags_are_materialized_once_with_structured_metadata() {
-    let tempdir = tempfile::tempdir().expect("tempdir");
+    let tempdir = tempfile::tempdir().unwrap_or_abort();
     let root = tempdir.path();
     write_fixture(root, "alpha.txt", "one\ntwo\nthree\n");
 
@@ -233,7 +234,7 @@ fn selected_file_tags_are_materialized_once_with_structured_metadata() {
 
     let context =
         materialize_file_tag_context_with_selected(root, "read @alpha.txt#2", &[selected])
-            .expect("context");
+            .unwrap_or_abort();
 
     assert!(context.contains("2: two"));
     assert!(!context.contains("1: one"));
@@ -243,7 +244,7 @@ fn selected_file_tags_are_materialized_once_with_structured_metadata() {
 
 #[test]
 fn selected_agent_and_resource_tags_materialize_prompt_context() {
-    let tempdir = tempfile::tempdir().expect("tempdir");
+    let tempdir = tempfile::tempdir().unwrap_or_abort();
     let context = materialize_prompt_part_context(
         tempdir.path(),
         "ask @plan about @mcp://docs/guide",
@@ -268,7 +269,7 @@ fn selected_agent_and_resource_tags_materialize_prompt_context() {
             },
         }],
     )
-    .expect("context");
+    .unwrap_or_abort();
 
     assert!(context.contains("Selected agent mention: @plan"));
     assert!(context.contains("Use the task tool with subagent `plan`"));

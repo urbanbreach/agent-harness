@@ -1,6 +1,7 @@
+use harness_core::UnwrapOrAbort;
 #[tokio::test]
 async fn compaction_trigger_pre_prompt_runtime_uses_checkpointed_prior_context() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let current_prompt = "C".repeat(12_000);
     let provider = SequentialScriptedProvider::new(vec![
         provider_text_events(&"A".repeat(12_000)),
@@ -23,24 +24,24 @@ async fn compaction_trigger_pre_prompt_runtime_uses_checkpointed_prior_context()
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     for question in ["first question", "second question"] {
         coordinator
             .request_agent_turn(supervisor_actor(), agent_id.clone(), question)
             .await
-            .expect("turn request");
+            .unwrap_or_abort();
         tokio::task::yield_now().await;
     }
     coordinator
         .request_agent_turn(supervisor_actor(), agent_id, &current_prompt)
         .await
-        .expect("third turn");
+        .unwrap_or_abort();
     tokio::task::yield_now().await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let requests = provider.requests();
     assert_eq!(
@@ -50,7 +51,7 @@ async fn compaction_trigger_pre_prompt_runtime_uses_checkpointed_prior_context()
     );
     let third_messages = requests
         .last()
-        .expect("third provider request")
+        .unwrap_or_abort()
         .messages
         .iter()
         .map(|message| (message.role.clone(), message.content.clone()))
@@ -75,23 +76,23 @@ async fn compaction_trigger_pre_prompt_runtime_uses_checkpointed_prior_context()
             }
             _ => None,
         })
-        .expect("pre-prompt compaction written event");
+        .unwrap_or_abort();
     assert_eq!(written.tokens_before, None);
     let checkpoint_path = run.run_dir.join(&written.artifact_path);
-    let checkpoint_body = fs::read_to_string(&checkpoint_path).expect("read checkpoint artifact");
+    let checkpoint_body = fs::read_to_string(&checkpoint_path).unwrap_or_abort();
     let checkpoint_json: serde_json::Value =
-        serde_json::from_str(&checkpoint_body).expect("parse checkpoint artifact json");
+        serde_json::from_str(&checkpoint_body).unwrap_or_abort();
     let recent_turns = checkpoint_json
         .get("recent_turns")
         .and_then(serde_json::Value::as_array)
-        .expect("checkpoint recent turns");
+        .unwrap_or_abort();
     assert!(recent_turns.iter().all(|turn| {
         turn.get("user_prompt").and_then(serde_json::Value::as_str) != Some(current_prompt.as_str())
     }));
 }
 #[tokio::test]
 async fn compaction_no_loop_guards_cover_pre_prompt_overflow_and_failed_response() {
-    let pre_prompt_dir = tempfile::tempdir().expect("pre-prompt tempdir");
+    let pre_prompt_dir = tempfile::tempdir().unwrap_or_abort();
     let pre_prompt_current_prompt = "C".repeat(12_000);
     let pre_prompt_provider = SequentialScriptedProvider::new(vec![
         provider_text_events(&"A".repeat(12_000)),
@@ -113,16 +114,16 @@ async fn compaction_no_loop_guards_cover_pre_prompt_overflow_and_failed_response
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start pre-prompt run");
+        .unwrap_or_abort();
     let pre_prompt_agent = pre_prompt
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn pre-prompt agent");
+        .unwrap_or_abort();
     for question in ["first question", "second question"] {
         pre_prompt
             .request_agent_turn(supervisor_actor(), pre_prompt_agent.clone(), question)
             .await
-            .expect("pre-prompt setup turn");
+            .unwrap_or_abort();
         tokio::task::yield_now().await;
     }
     let pre_prompt_request_id = pre_prompt
@@ -132,7 +133,7 @@ async fn compaction_no_loop_guards_cover_pre_prompt_overflow_and_failed_response
             &pre_prompt_current_prompt,
         )
         .await
-        .expect("pre-prompt no-shrink turn");
+        .unwrap_or_abort();
     let pre_prompt_events = wait_for_events(
         &pre_prompt_run.events_path,
         Duration::from_millis(900),
@@ -148,7 +149,7 @@ async fn compaction_no_loop_guards_cover_pre_prompt_overflow_and_failed_response
         },
     )
     .await;
-    pre_prompt.stop_run().await.expect("stop pre-prompt run");
+    pre_prompt.stop_run().await.unwrap_or_abort();
     let pre_prompt_attempt_count = pre_prompt_events
         .iter()
         .filter(|event| {
@@ -186,7 +187,7 @@ async fn compaction_no_loop_guards_cover_pre_prompt_overflow_and_failed_response
         "pre-prompt no-shrink must not loop provider execution"
     );
 
-    let overflow_dir = tempfile::tempdir().expect("overflow tempdir");
+    let overflow_dir = tempfile::tempdir().unwrap_or_abort();
     let overflow_provider = SequentialScriptedProvider::new(vec![
         provider_text_events("first answer"),
         vec![
@@ -205,20 +206,20 @@ async fn compaction_no_loop_guards_cover_pre_prompt_overflow_and_failed_response
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start overflow run");
+        .unwrap_or_abort();
     let overflow_agent = overflow
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn overflow agent");
+        .unwrap_or_abort();
     overflow
         .request_agent_turn(supervisor_actor(), overflow_agent.clone(), "first question")
         .await
-        .expect("overflow setup turn");
+        .unwrap_or_abort();
     tokio::task::yield_now().await;
     let overflow_request_id = overflow
         .request_agent_turn(supervisor_actor(), overflow_agent, "second question")
         .await
-        .expect("overflow no-shrink turn");
+        .unwrap_or_abort();
     let overflow_events = wait_for_events(&overflow_run.events_path, Duration::from_millis(700), |events| {
         events.iter().any(|event| {
             matches!(
@@ -230,7 +231,7 @@ async fn compaction_no_loop_guards_cover_pre_prompt_overflow_and_failed_response
         })
     })
     .await;
-    overflow.stop_run().await.expect("stop overflow run");
+    overflow.stop_run().await.unwrap_or_abort();
     assert_eq!(
         overflow_events
             .iter()
@@ -256,7 +257,7 @@ async fn compaction_no_loop_guards_cover_pre_prompt_overflow_and_failed_response
         )
     }));
 
-    let failed_dir = tempfile::tempdir().expect("failed-response tempdir");
+    let failed_dir = tempfile::tempdir().unwrap_or_abort();
     let failed_provider = SequentialScriptedProvider::new(vec![
         provider_text_events("first answer"),
         vec![
@@ -283,15 +284,15 @@ async fn compaction_no_loop_guards_cover_pre_prompt_overflow_and_failed_response
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start failed-response run");
+        .unwrap_or_abort();
     let failed_agent = failed
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn failed-response agent");
+        .unwrap_or_abort();
     failed
         .request_agent_turn(supervisor_actor(), failed_agent.clone(), "first question")
         .await
-        .expect("failed-response setup turn");
+        .unwrap_or_abort();
     wait_for_events(
         &failed_run.events_path,
         Duration::from_millis(700),
@@ -308,7 +309,7 @@ async fn compaction_no_loop_guards_cover_pre_prompt_overflow_and_failed_response
     let failed_request_id = failed
         .request_agent_turn(supervisor_actor(), failed_agent, "partial then error")
         .await
-        .expect("failed-response no-shrink turn");
+        .unwrap_or_abort();
     let failed_events = wait_for_events(
         &failed_run.events_path,
         Duration::from_millis(900),
@@ -331,7 +332,7 @@ async fn compaction_no_loop_guards_cover_pre_prompt_overflow_and_failed_response
         },
     )
     .await;
-    failed.stop_run().await.expect("stop failed-response run");
+    failed.stop_run().await.unwrap_or_abort();
     assert_eq!(
         failed_events
             .iter()
@@ -361,7 +362,7 @@ async fn compaction_no_loop_guards_cover_pre_prompt_overflow_and_failed_response
 }
 #[tokio::test]
 async fn manual_compaction_writes_checkpoint_and_manual_events() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![
         vec![
             ProviderStreamEvent::Start,
@@ -395,27 +396,27 @@ async fn manual_compaction_writes_checkpoint_and_manual_events() {
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     coordinator
         .request_agent_turn(supervisor_actor(), agent_id.clone(), "first question")
         .await
-        .expect("first turn");
+        .unwrap_or_abort();
     tokio::task::yield_now().await;
     let second_request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id.clone(), "second question")
         .await
-        .expect("second turn");
+        .unwrap_or_abort();
     tokio::task::yield_now().await;
 
     let outcome = coordinator
         .compact_agent_context(agent_id, Some(second_request_id.clone()), "manual")
         .await
-        .expect("manual compaction succeeds");
+        .unwrap_or_abort();
     let ManualCompactionOutcome::CheckpointWritten {
         checkpoint_id,
         tokens_before_estimate,
@@ -428,7 +429,7 @@ async fn manual_compaction_writes_checkpoint_and_manual_events() {
     assert!(tokens_after_estimate.is_some());
     assert!(tokens_after_estimate < tokens_before_estimate);
 
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let events = load_events(&run.events_path);
     assert!(events.iter().any(|event| {
@@ -449,7 +450,7 @@ async fn manual_compaction_writes_checkpoint_and_manual_events() {
             }
             _ => None,
         })
-        .expect("manual compaction written event");
+        .unwrap_or_abort();
     assert_eq!(written.checkpoint_id, checkpoint_id);
     assert_eq!(written.tokens_before_estimate, tokens_before_estimate);
     assert_eq!(written.tokens_after_estimate, tokens_after_estimate);

@@ -1,3 +1,4 @@
+use harness::UnwrapOrAbort;
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::time::SystemTime;
@@ -83,30 +84,30 @@ fn envelope_with_actor(
 fn write_events_jsonl(run_dir: &std::path::Path, events: &[EventEnvelopeV1]) {
     let body = events
         .iter()
-        .map(|event| serde_json::to_string(event).expect("serialize event"))
+        .map(|event| serde_json::to_string(event).unwrap_or_abort())
         .collect::<Vec<_>>()
         .join("\n");
-    std::fs::write(run_dir.join("events.jsonl"), format!("{body}\n")).expect("write events");
+    std::fs::write(run_dir.join("events.jsonl"), format!("{body}\n")).unwrap_or_abort();
 }
 
 fn write_events_lines(run_dir: &std::path::Path, lines: &[&str]) {
     let body = lines.join("\n");
-    std::fs::write(run_dir.join("events.jsonl"), format!("{body}\n")).expect("write events");
+    std::fs::write(run_dir.join("events.jsonl"), format!("{body}\n")).unwrap_or_abort();
 }
 
 fn events_modified(run_dir: &std::path::Path) -> SystemTime {
     run_dir
         .join("events.jsonl")
         .metadata()
-        .expect("read events metadata")
+        .unwrap_or_abort()
         .modified()
-        .expect("read events modified time")
+        .unwrap_or_abort()
 }
 
 fn events_modified_unix_ms(run_dir: &std::path::Path) -> u128 {
     events_modified(run_dir)
         .duration_since(SystemTime::UNIX_EPOCH)
-        .expect("events modified time after epoch")
+        .unwrap_or_abort()
         .as_millis()
 }
 
@@ -128,7 +129,7 @@ fn run_harness_help(args: &[&str]) -> String {
         "stderr:\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    String::from_utf8(output.stdout).expect("help is utf-8")
+    String::from_utf8(output.stdout).unwrap_or_abort()
 }
 
 fn assert_harness_branded(context: &str, text: &str, forbidden_terms: &[String]) {
@@ -162,7 +163,7 @@ fn assert_support_export_catalog_metadata(bundle: &serde_json::Value) {
     );
     assert!(bundle["support"]["agent_catalog_summary"]["entries"]
         .as_array()
-        .expect("agent catalog entries")
+        .unwrap_or_abort()
         .iter()
         .any(|entry| entry["id"] == "build" && entry["role"] == "primary"));
     assert_eq!(
@@ -171,7 +172,7 @@ fn assert_support_export_catalog_metadata(bundle: &serde_json::Value) {
     );
     assert!(bundle["support"]["native_tool_catalog_summary"]["tools"]
         .as_array()
-        .expect("native tool catalog entries")
+        .unwrap_or_abort()
         .iter()
         .any(|entry| entry["canonical_id"] == "session_list"));
     assert_eq!(
@@ -258,10 +259,10 @@ fn write_harness_lineage_meta(run_dir: &std::path::Path, run_id: &str, parent_ru
                     "harness_source_digest": "test-source-digest"
                 }
             }))
-            .expect("serialize harness lineage metadata")
+            .unwrap_or_abort()
         ),
     )
-    .expect("write harness lineage metadata");
+    .unwrap_or_abort();
 }
 
 fn delegated_recovery_events(run_id: &str) -> Vec<EventEnvelopeV1> {

@@ -1,6 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use harness_core::config::{configured_model_catalog, load_config_from_str};
 use harness_tui::app::ModelOption;
+use harness_tui::UnwrapOrAbort;
 
 pub(crate) fn key(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::NONE)
@@ -296,7 +297,7 @@ pub(crate) fn reasoning_order_variant_options() -> Vec<ModelOption> {
 }
 
 pub(crate) fn config_backed_profile_model_options(profile: &str) -> Vec<ModelOption> {
-    let config = load_config_from_str(rich_model_config()).expect("config should parse");
+    let config = load_config_from_str(rich_model_config()).unwrap_or_abort();
     configured_model_catalog(&config)
         .into_iter()
         .map(|entry| ModelOption {

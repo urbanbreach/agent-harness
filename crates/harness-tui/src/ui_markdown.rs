@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use ratatui::{
     style::{Color, Modifier, Style},
     text::{Line, Span},
@@ -118,10 +119,7 @@ pub(super) fn parse_inline_markdown_spans(
             .min()
             .unwrap_or(remaining.len());
         if next_marker == 0 {
-            let ch = remaining
-                .chars()
-                .next()
-                .expect("remaining text should not be empty");
+            let ch = remaining.chars().next().unwrap_or_abort();
             spans.push(Span::styled(ch.to_string(), base_style.fg(base_color)));
             remaining = &remaining[ch.len_utf8()..];
             continue;

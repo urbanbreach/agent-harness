@@ -262,7 +262,7 @@ impl Coordinator {
             .as_ref()
             .ok_or_else(|| "run is not started".to_string())?;
         model_backed_compaction_summary_for(
-            self.config.provider.clone(),
+            Arc::clone(&self.config.provider),
             &self.config.compaction,
             run_state,
             trigger,
@@ -313,14 +313,14 @@ impl Coordinator {
                 start_agent_turn_execution(
                     self.clock.as_ref(),
                     self.redactor.as_ref(),
-                    self.config.hook_command_executor.clone(),
+                    Arc::clone(&self.config.hook_command_executor),
                     self.job_tx.clone(),
                     run_state,
                     self.config.hook_runtime_config.clone(),
                     self.config.compaction.clone(),
                     self.config.provider_retry,
-                    self.config.provider.clone(),
-                    self.config.tool_registry.clone(),
+                    Arc::clone(&self.config.provider),
+                    Arc::clone(&self.config.tool_registry),
                     queued,
                 )
                 .await?;
@@ -485,14 +485,14 @@ impl Coordinator {
                             append_background_task_notification_and_schedule(
                                 self.clock.as_ref(),
                                 self.redactor.as_ref(),
-                                self.config.hook_command_executor.clone(),
+                                Arc::clone(&self.config.hook_command_executor),
                                 self.job_tx.clone(),
                                 run_state,
                                 self.config.hook_runtime_config.clone(),
                                 self.config.compaction.clone(),
                                 self.config.provider_retry,
-                                self.config.provider.clone(),
-                                self.config.tool_registry.clone(),
+                                Arc::clone(&self.config.provider),
+                                Arc::clone(&self.config.tool_registry),
                                 running.child_task.clone(),
                                 &terminal_event,
                                 BackgroundTaskNotificationStatus::Failed,
@@ -547,14 +547,14 @@ impl Coordinator {
                             append_background_task_notification_and_schedule(
                                 self.clock.as_ref(),
                                 self.redactor.as_ref(),
-                                self.config.hook_command_executor.clone(),
+                                Arc::clone(&self.config.hook_command_executor),
                                 self.job_tx.clone(),
                                 run_state,
                                 self.config.hook_runtime_config.clone(),
                                 self.config.compaction.clone(),
                                 self.config.provider_retry,
-                                self.config.provider.clone(),
-                                self.config.tool_registry.clone(),
+                                Arc::clone(&self.config.provider),
+                                Arc::clone(&self.config.tool_registry),
                                 running.child_task.clone(),
                                 &terminal_event,
                                 BackgroundTaskNotificationStatus::Completed,
@@ -579,7 +579,7 @@ impl Coordinator {
                             };
                             let summary_decision = if self.config.compaction.model_backed {
                                 match model_backed_compaction_summary_for(
-                                    self.config.provider.clone(),
+                                    Arc::clone(&self.config.provider),
                                     &self.config.compaction,
                                     run_state,
                                     &proactive_trigger,
@@ -675,14 +675,14 @@ impl Coordinator {
                         append_background_task_notification_and_schedule(
                             self.clock.as_ref(),
                             self.redactor.as_ref(),
-                            self.config.hook_command_executor.clone(),
+                            Arc::clone(&self.config.hook_command_executor),
                             self.job_tx.clone(),
                             run_state,
                             self.config.hook_runtime_config.clone(),
                             self.config.compaction.clone(),
                             self.config.provider_retry,
-                            self.config.provider.clone(),
-                            self.config.tool_registry.clone(),
+                            Arc::clone(&self.config.provider),
+                            Arc::clone(&self.config.tool_registry),
                             running.child_task.clone(),
                             &terminal_event,
                             background_notification_status_for_cancel_reason(&reason),
@@ -733,14 +733,14 @@ impl Coordinator {
                 start_agent_turn_execution(
                     self.clock.as_ref(),
                     self.redactor.as_ref(),
-                    self.config.hook_command_executor.clone(),
+                    Arc::clone(&self.config.hook_command_executor),
                     self.job_tx.clone(),
                     run_state,
                     self.config.hook_runtime_config.clone(),
                     self.config.compaction.clone(),
                     self.config.provider_retry,
-                    self.config.provider.clone(),
-                    self.config.tool_registry.clone(),
+                    Arc::clone(&self.config.provider),
+                    Arc::clone(&self.config.tool_registry),
                     queued,
                 )
                 .await?;
@@ -750,14 +750,14 @@ impl Coordinator {
         schedule_pending_agent_wakeups_for_idle_agent(
             self.clock.as_ref(),
             self.redactor.as_ref(),
-            self.config.hook_command_executor.clone(),
+            Arc::clone(&self.config.hook_command_executor),
             self.job_tx.clone(),
             run_state,
             self.config.hook_runtime_config.clone(),
             self.config.compaction.clone(),
             self.config.provider_retry,
-            self.config.provider.clone(),
-            self.config.tool_registry.clone(),
+            Arc::clone(&self.config.provider),
+            Arc::clone(&self.config.tool_registry),
             &finished_agent_id,
         )
         .await?;
@@ -961,7 +961,7 @@ where
             reduction_percent_estimate: checkpoint.metadata.reduction_percent_estimate,
             estimate_source: trigger.estimate_source.clone(),
             summary_source: checkpoint.summary_source.clone(),
-            preserved_turns: checkpoint.recent_turns.len() as u32,
+            preserved_turns: u32::try_from(checkpoint.recent_turns.len()).unwrap_or(u32::MAX),
         }),
     )?;
 

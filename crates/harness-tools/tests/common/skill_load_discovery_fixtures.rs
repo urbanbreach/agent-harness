@@ -1,3 +1,4 @@
+use harness_tools::UnwrapOrAbort;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -29,7 +30,7 @@ fn skills_registry_test_lock() -> MutexGuard<'static, ()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     LOCK.get_or_init(|| Mutex::new(()))
         .lock()
-        .expect("skills registry lock")
+        .unwrap_or_abort()
 }
 
 fn tool_context(workspace_root: &Path, tool_call_id: &str) -> ToolContext {
@@ -55,45 +56,46 @@ fn tool_context(workspace_root: &Path, tool_call_id: &str) -> ToolContext {
 
 fn write_skill(root: &Path, name: &str, description: &str, body: &str) {
     let skill_dir = root.join(name);
-    fs::create_dir_all(&skill_dir).expect("create skill dir");
+    fs::create_dir_all(&skill_dir).unwrap_or_abort();
     fs::write(
         skill_dir.join("SKILL.md"),
         format!("---\nname: {name}\ndescription: {description}\n---\n\n{body}\n"),
     )
-    .expect("write skill file");
+    .unwrap_or_abort();
 }
 
 fn write_invalid_skill(root: &Path, name: &str) {
     let skill_dir = root.join(name);
-    fs::create_dir_all(&skill_dir).expect("create invalid skill dir");
+    fs::create_dir_all(&skill_dir).unwrap_or_abort();
     fs::write(
         skill_dir.join("SKILL.md"),
         format!(
             "---\nname: {name}\ndescription: Broken precedence target\nmetadata: nope\n---\n\nThis skill should be rejected.\n"
         ),
     )
-    .expect("write invalid skill file");
+    .unwrap_or_abort();
 }
 
 fn write_v1_skill(root: &Path, name: &str, frontmatter: &str, body: &str) {
     let skill_dir = root.join(name);
-    fs::create_dir_all(&skill_dir).expect("create v1 skill dir");
+    fs::create_dir_all(&skill_dir).unwrap_or_abort();
     fs::write(
         skill_dir.join("SKILL.md"),
         format!("---\n{frontmatter}\n---\n\n{body}\n"),
     )
-    .expect("write v1 skill file");
+    .unwrap_or_abort();
 }
 
+#[allow(clippy::panic, reason = "test fixture code must panic gracefully")]
 fn section_body<'a>(body: &'a str, section: &str) -> &'a str {
     let section_start = body
         .find(section)
-        .unwrap_or_else(|| panic!("missing section `{section}`"));
+        .unwrap_or_else(|| panic!("abort"));
     let after_heading = &body[section_start + section.len()..];
     after_heading
         .split("\n## ")
         .next()
-        .expect("section split always yields current section")
+        .unwrap_or_abort()
 }
 
 fn assert_section_has_content(body: &str, section: &str, skill_name: &str) {
@@ -145,7 +147,7 @@ async fn spawn_worker_run(
     agent_profiles: BTreeMap<String, AgentProfile>,
 ) -> (harness_core::coord::CoordinatorHandle, RunInfo, String) {
     let session_dir = workspace.join("session-dir");
-    fs::create_dir_all(&session_dir).expect("session dir");
+    fs::create_dir_all(&session_dir).unwrap_or_abort();
 
     let mut config = CoordinatorConfig::new(session_dir);
     config.permission_policy = allow_all_permission_policy();
@@ -159,11 +161,11 @@ async fn spawn_worker_run(
     let run = handle
         .start_run("skill_load_discovery", workspace)
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let worker_id = handle
         .spawn_agent(anonymous_supervisor_actor(), profile_name, None)
         .await
-        .expect("spawn worker");
+        .unwrap_or_abort();
     (handle, run, worker_id)
 }
 
@@ -211,9 +213,9 @@ fn harness_config_with_skills(skills: SkillsConfig) -> HarnessConfig {
                 "endpoint": "https://mcp.exa.ai/mcp"
             }
         },
-        "skills": serde_json::to_value(skills).expect("serialize skills config")
+        "skills": serde_json::to_value(skills).unwrap_or_abort()
     }))
-    .expect("config shape should deserialize")
+    .unwrap_or_abort()
 }
 
 struct SkillsConfigGuard {

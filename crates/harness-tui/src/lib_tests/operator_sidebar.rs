@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 pub(super) fn operator_sidebar_pins_summary_and_hides_empty_sections() {
     ui::exact_test_operator_rail_low_activity_presentation_prefers_primary_stack();
@@ -34,25 +35,18 @@ pub(super) fn operator_sidebar_compact_empty_mode_preserves_anchor_copy_with_fix
         ratatui::layout::Rect::new(0, 0, 100, 30),
     );
 
-    let live_empty_sidebar = live_empty_plan
-        .operator_sidebar
-        .expect("live compact sidebar");
-    let replay_empty_sidebar = replay_empty_plan
-        .operator_sidebar
-        .expect("replay compact sidebar");
+    let live_empty_sidebar = live_empty_plan.operator_sidebar.unwrap_or_abort();
+    let replay_empty_sidebar = replay_empty_plan.operator_sidebar.unwrap_or_abort();
 
     assert_eq!(
         live_empty_sidebar.width,
-        live_populated_plan
-            .operator_sidebar
-            .expect("live populated sidebar")
-            .width
+        live_populated_plan.operator_sidebar.unwrap_or_abort().width
     );
     assert_eq!(
         replay_empty_sidebar.width,
         replay_populated_plan
             .operator_sidebar
-            .expect("replay populated sidebar")
+            .unwrap_or_abort()
             .width
     );
     for (label, app) in [("live", &live_empty), ("replay", &replay_empty)] {
@@ -81,14 +75,14 @@ pub(super) fn operator_sidebar_width_stays_fixed_when_todo_or_modified_files_exi
         ratatui::layout::Rect::new(0, 0, 160, 30),
     )
     .operator_sidebar
-    .expect("live compact sidebar")
+    .unwrap_or_abort()
     .width;
     let replay_empty_width = layout::FrameLayoutPlan::for_app(
         &app::AppState::new_replay(PathBuf::from("/tmp/replay-session"), Vec::new()),
         ratatui::layout::Rect::new(0, 0, 100, 30),
     )
     .operator_sidebar
-    .expect("replay compact sidebar")
+    .unwrap_or_abort()
     .width;
 
     assert_operator_sidebar_expanded(
@@ -123,5 +117,5 @@ pub(super) fn replay_narrow_layout_does_not_overlay_operator_rail() {
 
     assert_eq!(plan.operator_sidebar, None);
     assert_eq!(plan.details_overlay, None);
-    assert_eq!(plan.transcript.expect("transcript area").width, 60);
+    assert_eq!(plan.transcript.unwrap_or_abort().width, 60);
 }

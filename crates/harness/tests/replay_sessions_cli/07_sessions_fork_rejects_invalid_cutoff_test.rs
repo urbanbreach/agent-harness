@@ -1,8 +1,9 @@
+use harness::UnwrapOrAbort;
 #[test]
 fn sessions_fork_rejects_invalid_cutoff() {
-    let session_dir = tempdir().expect("tempdir");
+    let session_dir = tempdir().unwrap_or_abort();
     let source_dir = session_dir.path().join("unstable_source");
-    std::fs::create_dir_all(&source_dir).expect("create source run dir");
+    std::fs::create_dir_all(&source_dir).unwrap_or_abort();
     write_events_jsonl(
         &source_dir,
         &[
@@ -35,7 +36,7 @@ fn sessions_fork_rejects_invalid_cutoff() {
 
     let output = run_harness([
             "--session-dir",
-            session_dir.path().to_str().expect("session dir utf-8"),
+            session_dir.path().to_str().unwrap_or_abort(),
             "sessions",
             "fork",
             "--source",
@@ -53,11 +54,11 @@ fn sessions_fork_rejects_invalid_cutoff() {
 }
 #[test]
 fn sessions_fork_clone_reject_invalid_source_selector() {
-    let session_dir = tempdir().expect("tempdir");
+    let session_dir = tempdir().unwrap_or_abort();
 
     let fork_output = run_harness([
             "--session-dir",
-            session_dir.path().to_str().expect("session dir utf-8"),
+            session_dir.path().to_str().unwrap_or_abort(),
             "sessions",
             "fork",
             "--source",
@@ -73,7 +74,7 @@ fn sessions_fork_clone_reject_invalid_source_selector() {
 
     let clone_output = run_harness([
             "--session-dir",
-            session_dir.path().to_str().expect("session dir utf-8"),
+            session_dir.path().to_str().unwrap_or_abort(),
             "sessions",
             "clone",
             "--source",
@@ -87,16 +88,16 @@ fn sessions_fork_clone_reject_invalid_source_selector() {
 }
 #[test]
 fn sessions_fork_clone_reject_ambiguous_source_selector() {
-    let session_dir = tempdir().expect("tempdir");
+    let session_dir = tempdir().unwrap_or_abort();
     for run_dir_name in ["ambiguous_source_a", "ambiguous_source_b"] {
         let run_dir = session_dir.path().join(run_dir_name);
-        std::fs::create_dir_all(&run_dir).expect("create source run dir");
+        std::fs::create_dir_all(&run_dir).unwrap_or_abort();
         write_events_jsonl(&run_dir, &resumable_finished_events("run_ambiguous_source"));
     }
 
     let fork_output = run_harness([
             "--session-dir",
-            session_dir.path().to_str().expect("session dir utf-8"),
+            session_dir.path().to_str().unwrap_or_abort(),
             "sessions",
             "fork",
             "--source",
@@ -112,7 +113,7 @@ fn sessions_fork_clone_reject_ambiguous_source_selector() {
 
     let clone_output = run_harness([
             "--session-dir",
-            session_dir.path().to_str().expect("session dir utf-8"),
+            session_dir.path().to_str().unwrap_or_abort(),
             "sessions",
             "clone",
             "--source",
@@ -126,9 +127,9 @@ fn sessions_fork_clone_reject_ambiguous_source_selector() {
 }
 #[test]
 fn sessions_fork_rejects_cutoff_beyond_log() {
-    let session_dir = tempdir().expect("tempdir");
+    let session_dir = tempdir().unwrap_or_abort();
     let source_dir = session_dir.path().join("short_source");
-    std::fs::create_dir_all(&source_dir).expect("create source run dir");
+    std::fs::create_dir_all(&source_dir).unwrap_or_abort();
     write_events_jsonl(
         &source_dir,
         &resumable_finished_events("run_short_lineage_source"),
@@ -136,7 +137,7 @@ fn sessions_fork_rejects_cutoff_beyond_log() {
 
     let output = run_harness([
             "--session-dir",
-            session_dir.path().to_str().expect("session dir utf-8"),
+            session_dir.path().to_str().unwrap_or_abort(),
             "sessions",
             "fork",
             "--source",
@@ -153,11 +154,11 @@ fn sessions_fork_rejects_cutoff_beyond_log() {
 }
 #[test]
 fn replay_cli_fails_when_events_are_missing() {
-    let run_dir = tempdir().expect("tempdir");
+    let run_dir = tempdir().unwrap_or_abort();
     let output = run_harness([
             "replay",
             "--session",
-            run_dir.path().to_str().expect("run dir utf-8"),
+            run_dir.path().to_str().unwrap_or_abort(),
         ]);
 
     assert!(!output.status.success());

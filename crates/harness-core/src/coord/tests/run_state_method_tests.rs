@@ -1,8 +1,9 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 pub(super) fn run_state_turn_queue_methods_own_agent_turn_lifecycle_state() {
     // arrange
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let clock = FakeClock::new();
     let mut run_state = test_run_state(temp_dir.path(), "run_state_turn_methods");
 
@@ -60,7 +61,7 @@ pub(super) fn run_state_turn_queue_methods_own_agent_turn_lifecycle_state() {
 
 pub(super) fn run_state_permission_methods_own_pending_and_grant_state() {
     // arrange
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let mut run_state = test_run_state(temp_dir.path(), "run_state_permission_methods");
     let (respond_to, _response_rx) = oneshot::channel();
     let request = permission_grant_request_fixture();
@@ -101,7 +102,7 @@ pub(super) fn run_state_permission_methods_own_pending_and_grant_state() {
 
 pub(super) fn run_state_compaction_methods_own_overflow_retry_attempt_state() {
     // arrange
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let mut run_state = test_run_state(temp_dir.path(), "run_state_compaction_methods");
     let request = FailedTerminalCompactionRequest::new(
         "task_000001",

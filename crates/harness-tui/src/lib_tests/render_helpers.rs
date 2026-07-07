@@ -1,13 +1,14 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 pub(crate) fn render_live_buffer(app: &app::AppState, width: u16, height: u16) -> String {
     use ratatui::{backend::TestBackend, Terminal};
 
     let backend = TestBackend::new(width, height);
-    let mut terminal = Terminal::new(backend).expect("create terminal");
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
     terminal
         .draw(|frame| ui::render_app(frame, app))
-        .expect("draw frame");
+        .unwrap_or_abort();
     format!("{:?}", terminal.backend().buffer())
 }
 
@@ -19,10 +20,10 @@ pub(crate) fn render_live_cells(
     use ratatui::{backend::TestBackend, Terminal};
 
     let backend = TestBackend::new(width, height);
-    let mut terminal = Terminal::new(backend).expect("create terminal");
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
     terminal
         .draw(|frame| ui::render_app(frame, app))
-        .expect("draw frame");
+        .unwrap_or_abort();
     terminal.backend().buffer().clone()
 }
 
@@ -79,9 +80,7 @@ pub(crate) fn assert_selected_overlay_row_uses_highlight(
     let buffer = render_live_cells(app, width, height);
     let (row, fgs, bgs) = row_text_and_palette(&buffer, width, needle)
         .unwrap_or_else(|| panic!("missing selected overlay row {needle:?}"));
-    let start_byte = row
-        .find(needle)
-        .expect("row contains selected overlay needle");
+    let start_byte = row.find(needle).unwrap_or_abort();
     let start = row[..start_byte].chars().count();
     let end = start + needle.chars().count();
 
@@ -106,7 +105,7 @@ pub(crate) fn assert_row_segment_palette(
 ) {
     let (row, fgs, bgs) = row_text_and_palette(buffer, width, needle)
         .unwrap_or_else(|| panic!("missing row for {needle:?}"));
-    let start_byte = row.find(needle).expect("row contains helper substring");
+    let start_byte = row.find(needle).unwrap_or_abort();
     let start = row[..start_byte].chars().count();
     let end = start + needle.chars().count();
 
@@ -128,7 +127,7 @@ pub(crate) fn assert_row_segment_background(
 ) {
     let (row, _, bgs) = row_text_and_palette(buffer, width, needle)
         .unwrap_or_else(|| panic!("missing row for {needle:?}"));
-    let start_byte = row.find(needle).expect("row contains helper substring");
+    let start_byte = row.find(needle).unwrap_or_abort();
     let start = row[..start_byte].chars().count();
     let end = start + needle.chars().count();
 
@@ -275,7 +274,7 @@ pub(crate) fn runtime_overlay_text(
     app: &app::AppState,
     max_chars: usize,
 ) -> ui::RuntimeOverlayTextForTest {
-    ui::runtime_overlay_text_for_test(app, max_chars).expect("runtime overlay")
+    ui::runtime_overlay_text_for_test(app, max_chars).unwrap_or_abort()
 }
 
 pub(crate) fn assert_live_shell_document_composer_contract(
@@ -291,7 +290,7 @@ pub(crate) fn assert_live_shell_document_composer_contract(
 
     let plan =
         layout::FrameLayoutPlan::for_app(app, ratatui::layout::Rect::new(0, 0, width, height));
-    let dock = plan.dock.expect("live shell dock layout");
+    let dock = plan.dock.unwrap_or_abort();
     let composer = dock.composer;
     let dock_width = usize::from(composer.width);
     let lines = rendered.lines().collect::<Vec<_>>();
@@ -436,10 +435,10 @@ pub(crate) fn render_live_lines(app: &app::AppState, width: u16, height: u16) ->
     use ratatui::{backend::TestBackend, Terminal};
 
     let backend = TestBackend::new(width, height);
-    let mut terminal = Terminal::new(backend).expect("create live shell terminal");
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
     terminal
         .draw(|frame| ui::render_app(frame, app))
-        .expect("draw live shell frame");
+        .unwrap_or_abort();
 
     terminal
         .backend()
@@ -497,7 +496,7 @@ pub(crate) fn live_status_strip_row(
         .enumerate()
         .rev()
         .find_map(|(index, line)| line.contains(marker).then_some(index))
-        .expect("status row");
+        .unwrap_or_abort();
     lines[row].trim().to_string()
 }
 
@@ -592,10 +591,10 @@ pub(crate) fn first_non_whitespace_column(line: &str) -> usize {
 pub(crate) fn live_shell_composer_input_span(lines: &[&str]) -> (usize, usize, usize) {
     let composer_first_row = (0..lines.len())
         .find(|&index| composer_shell_line(lines[index]))
-        .expect("composer shell row");
+        .unwrap_or_abort();
     let composer_input_row = (composer_first_row..lines.len())
         .find(|&index| line_has_composer_text(lines[index]))
-        .expect("composer input row");
+        .unwrap_or_abort();
     let mut composer_last_row = composer_first_row;
     while composer_last_row + 1 < lines.len() && composer_shell_line(lines[composer_last_row + 1]) {
         composer_last_row += 1;
@@ -629,7 +628,7 @@ pub(crate) fn assert_live_shell_composer_progressive_disclosure(
                 .rev()
                 .find_map(|(index, line)| (!line.trim().is_empty()).then_some(index))
         })
-        .expect("footer row");
+        .unwrap_or_abort();
     let composer_last_row = footer_row.saturating_sub(1);
     let mut composer_first_row = composer_last_row;
     while composer_first_row > 0 && composer_shell_line(lines[composer_first_row.saturating_sub(1)])
@@ -640,7 +639,7 @@ pub(crate) fn assert_live_shell_composer_progressive_disclosure(
         Some(marker) => {
             let input_row = (composer_first_row..=composer_last_row)
                 .find(|&index| line_has_composer_text(lines[index]))
-                .expect("composer input row");
+                .unwrap_or_abort();
             assert!(
                 lines[composer_first_row..=composer_last_row]
                     .iter()

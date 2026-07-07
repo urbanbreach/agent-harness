@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 use ratatui::{backend::TestBackend, layout::Rect, Terminal};
 
@@ -37,10 +38,10 @@ pub(crate) fn exact_test_startup_shell_keeps_no_default_tab_chrome_after_runtime
     ));
 
     let backend = TestBackend::new(100, 24);
-    let mut terminal = Terminal::new(backend).expect("create terminal");
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
     terminal
         .draw(|frame| render_app(frame, &app))
-        .expect("draw frame");
+        .unwrap_or_abort();
     let debug = format!("{:?}", terminal.backend().buffer());
 
     assert!(!debug.contains("Launch: deep · GPT-5.4 Mini · Deterministic"));
@@ -78,10 +79,10 @@ pub(crate) fn exact_test_replay_prompt_pane_is_visibly_read_only() {
     ));
 
     let backend = TestBackend::new(100, 24);
-    let mut terminal = Terminal::new(backend).expect("create terminal");
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
     terminal
         .draw(|frame| render_app(frame, &app))
-        .expect("draw frame");
+        .unwrap_or_abort();
     let debug = format!("{:?}", terminal.backend().buffer());
     assert!(debug.contains("Replay · read-only"));
     assert!(debug.contains("▼ MCP"));
@@ -96,7 +97,7 @@ pub(crate) fn exact_test_wheel_target_hits_transcript_when_hovered() {
     let app = AppState::new_live(None, false, None);
     let area = Rect::new(0, 0, 140, 40);
     let hit_areas = FrameLayoutPlan::for_app(&app, area).wheel_hit_areas;
-    let transcript = hit_areas.transcript.expect("transcript area");
+    let transcript = hit_areas.transcript.unwrap_or_abort();
     let (column, row) = rect_center(transcript);
 
     assert_eq!(
@@ -114,7 +115,7 @@ pub(crate) fn exact_test_wheel_target_hits_inspector_inside_live_overlay() {
 
     let area = Rect::new(0, 0, 140, 40);
     let plan = FrameLayoutPlan::for_app(&app, area);
-    let rail = plan.operator_sidebar.expect("compact operator rail");
+    let rail = plan.operator_sidebar.unwrap_or_abort();
     let hit_areas = plan.wheel_hit_areas;
     let (column, row) = rect_center(rail);
 
@@ -132,7 +133,7 @@ pub(crate) fn exact_test_wheel_target_excludes_activity_portion_of_live_overlay(
 
     let area = Rect::new(0, 0, 140, 40);
     let plan = FrameLayoutPlan::for_app(&app, area);
-    let rail = plan.operator_sidebar.expect("compact operator rail");
+    let rail = plan.operator_sidebar.unwrap_or_abort();
     let hit_areas = plan.wheel_hit_areas;
 
     assert_eq!(hit_areas.overlay, None);
@@ -155,7 +156,7 @@ pub(crate) fn exact_test_compact_operator_rail_does_not_capture_wheel() {
     let app = AppState::new_live(None, false, None);
     let area = Rect::new(0, 0, 140, 40);
     let plan = FrameLayoutPlan::for_app(&app, area);
-    let rail = plan.operator_sidebar.expect("compact operator rail");
+    let rail = plan.operator_sidebar.unwrap_or_abort();
     let (column, row) = rect_center(rail);
 
     assert_eq!(plan.wheel_hit_areas.overlay, None);
@@ -191,14 +192,14 @@ pub(crate) fn exact_test_persistent_operator_sidebar_uses_panel_gutter() {
     let theme = Theme::default();
     let area = Rect::new(0, 0, 160, 30);
     let plan = FrameLayoutPlan::for_app(&app, area);
-    let sidebar = plan.operator_sidebar.expect("persistent operator sidebar");
-    let transcript = plan.transcript.expect("transcript area");
+    let sidebar = plan.operator_sidebar.unwrap_or_abort();
+    let transcript = plan.transcript.unwrap_or_abort();
 
     let backend = TestBackend::new(area.width, area.height);
-    let mut terminal = Terminal::new(backend).expect("create terminal");
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
     terminal
         .draw(|frame| render_app(frame, &app))
-        .expect("draw frame");
+        .unwrap_or_abort();
 
     let buffer = terminal.backend().buffer();
     let boundary_x = transcript.x.saturating_add(transcript.width);

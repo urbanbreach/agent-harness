@@ -1,3 +1,4 @@
+use harness_tools::UnwrapOrAbort;
 #[tokio::test]
 async fn native_question_tool_uses_permission_answers() {
     let workspace = setup_workspace_fixture();
@@ -8,7 +9,7 @@ async fn native_question_tool_uses_permission_answers() {
     let run = coordinator
         .start_run("native_question_success", workspace_root)
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let tool_task = spawn_question_tool_call(
         coordinator.clone(),
@@ -47,18 +48,18 @@ async fn native_question_tool_uses_permission_answers() {
             Some(r#"[["   "],["beta","custom"]]"#.to_string()),
         )
         .await
-        .expect("resolve question permission");
+        .unwrap_or_abort();
 
     let result = tool_task
         .await
-        .expect("join question tool task")
-        .expect("question tool result");
+        .unwrap_or_abort()
+        .unwrap_or_abort();
     assert_eq!(
         result.display_text,
         "User has answered your questions: \"Pick one\"=\"Unanswered\", \"Pick many\"=\"Beta, custom\". You can now continue with the user's answers in mind."
     );
 
-    let structured = result.structured_json.expect("structured json");
+    let structured = result.structured_json.unwrap_or_abort();
     assert_eq!(
         structured.get("answers"),
         Some(&json!([[], ["Beta", "custom"]]))
@@ -71,10 +72,10 @@ async fn native_question_tool_uses_permission_answers() {
     let state_path = structured
         .get("state_path")
         .and_then(Value::as_str)
-        .expect("state_path in structured output");
+        .unwrap_or_abort();
     let question_state: Value =
-        serde_json::from_slice(&fs::read(state_path).expect("read persisted question state"))
-            .expect("parse persisted question state");
+        serde_json::from_slice(&fs::read(state_path).unwrap_or_abort())
+            .unwrap_or_abort();
     assert_eq!(
         question_state,
         json!([
@@ -99,7 +100,7 @@ async fn native_question_tool_uses_permission_answers() {
         ])
     );
 
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 }
 #[tokio::test]
 async fn native_question_tool_accepts_string_option_shorthand() {
@@ -111,7 +112,7 @@ async fn native_question_tool_accepts_string_option_shorthand() {
     let run = coordinator
         .start_run("native_question_shorthand", workspace_root)
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let tool_task = spawn_question_tool_call(
         coordinator.clone(),
@@ -138,26 +139,26 @@ async fn native_question_tool_accepts_string_option_shorthand() {
             Some(r#"[["bash"]]"#.to_string()),
         )
         .await
-        .expect("resolve question permission");
+        .unwrap_or_abort();
 
     let result = tool_task
         .await
-        .expect("join question tool task")
-        .expect("question tool result");
+        .unwrap_or_abort()
+        .unwrap_or_abort();
     assert!(result
         .display_text
         .contains("\"Which tool surface should be exercised next?\"=\"bash\""));
 
-    let structured = result.structured_json.expect("structured json");
+    let structured = result.structured_json.unwrap_or_abort();
     assert_eq!(structured.get("answers"), Some(&json!([["bash"]])));
 
     let state_path = structured
         .get("state_path")
         .and_then(Value::as_str)
-        .expect("state_path in structured output");
+        .unwrap_or_abort();
     let question_state: Value =
-        serde_json::from_slice(&fs::read(state_path).expect("read persisted question state"))
-            .expect("parse persisted question state");
+        serde_json::from_slice(&fs::read(state_path).unwrap_or_abort())
+            .unwrap_or_abort();
     assert_eq!(
         question_state,
         json!([
@@ -174,7 +175,7 @@ async fn native_question_tool_accepts_string_option_shorthand() {
         ])
     );
 
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 }
 #[tokio::test]
 async fn native_question_tool_accepts_single_question_shape_and_legacy_fields() {
@@ -186,7 +187,7 @@ async fn native_question_tool_accepts_single_question_shape_and_legacy_fields() 
     let run = coordinator
         .start_run("native_question_single_legacy", workspace_root)
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let tool_task = spawn_question_tool_call(
         coordinator.clone(),
@@ -211,26 +212,26 @@ async fn native_question_tool_accepts_single_question_shape_and_legacy_fields() 
             Some(r#"[["detailed"]]"#.to_string()),
         )
         .await
-        .expect("resolve question permission");
+        .unwrap_or_abort();
 
     let result = tool_task
         .await
-        .expect("join question tool task")
-        .expect("legacy question tool result");
+        .unwrap_or_abort()
+        .unwrap_or_abort();
     assert!(result
         .display_text
         .contains("\"Choose the final stress-test summary level\"=\"detailed\""));
 
-    let structured = result.structured_json.expect("structured json");
+    let structured = result.structured_json.unwrap_or_abort();
     assert_eq!(structured.get("answers"), Some(&json!([["detailed"]])));
 
     let state_path = structured
         .get("state_path")
         .and_then(Value::as_str)
-        .expect("state_path in structured output");
+        .unwrap_or_abort();
     let question_state: Value =
-        serde_json::from_slice(&fs::read(state_path).expect("read persisted question state"))
-            .expect("parse persisted question state");
+        serde_json::from_slice(&fs::read(state_path).unwrap_or_abort())
+            .unwrap_or_abort();
     assert_eq!(
         question_state,
         json!([
@@ -247,7 +248,7 @@ async fn native_question_tool_accepts_single_question_shape_and_legacy_fields() 
         ])
     );
 
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 }
 #[tokio::test]
 async fn native_question_tool_accepts_allow_freeform_legacy_field() {
@@ -259,7 +260,7 @@ async fn native_question_tool_accepts_allow_freeform_legacy_field() {
     let run = coordinator
         .start_run("native_question_allow_freeform_legacy", workspace_root)
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let tool_task = spawn_question_tool_call(
         coordinator.clone(),
@@ -284,17 +285,17 @@ async fn native_question_tool_accepts_allow_freeform_legacy_field() {
             Some(r#"[["read"]]"#.to_string()),
         )
         .await
-        .expect("resolve question permission");
+        .unwrap_or_abort();
 
     let result = tool_task
         .await
-        .expect("join question tool task")
-        .expect("allowFreeform legacy question tool result");
+        .unwrap_or_abort()
+        .unwrap_or_abort();
     assert!(result
         .display_text
         .contains("\"Pick the validation surface\"=\"read\""));
 
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 }
 #[tokio::test]
 async fn native_question_tool_accepts_text_prompt_compat_shape_and_schema_advertises_it() {
@@ -306,7 +307,7 @@ async fn native_question_tool_accepts_text_prompt_compat_shape_and_schema_advert
     let run = coordinator
         .start_run("native_question_text_compat", workspace_root)
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let question_tool = question_tool();
     let schema = question_tool.parameters_json_schema();
@@ -341,15 +342,15 @@ async fn native_question_tool_accepts_text_prompt_compat_shape_and_schema_advert
             Some(r#"[["reachable"]]"#.to_string()),
         )
         .await
-        .expect("resolve question permission");
+        .unwrap_or_abort();
 
     let result = tool_task
         .await
-        .expect("join question tool task")
-        .expect("text compat question tool result");
+        .unwrap_or_abort()
+        .unwrap_or_abort();
     assert!(result.display_text.contains("\"Acknowledge that this question tool is reachable and return a one-line status.\"=\"reachable\""));
 
-    let structured = result.structured_json.expect("structured json");
+    let structured = result.structured_json.unwrap_or_abort();
     assert_eq!(structured.get("answers"), Some(&json!([["reachable"]])));
     assert_eq!(
         structured.get("questions"),
@@ -363,7 +364,7 @@ async fn native_question_tool_accepts_text_prompt_compat_shape_and_schema_advert
         ]))
     );
 
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 }
 #[tokio::test]
 async fn native_question_tool_waits_indefinitely_when_timeout_disabled() {
@@ -375,7 +376,7 @@ async fn native_question_tool_waits_indefinitely_when_timeout_disabled() {
     let run = coordinator
         .start_run("native_question_no_timeout", workspace_root)
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let tool_task = spawn_question_tool_call(
         coordinator.clone(),
@@ -405,15 +406,15 @@ async fn native_question_tool_waits_indefinitely_when_timeout_disabled() {
             Some(r#"[["done"]]"#.to_string()),
         )
         .await
-        .expect("resolve question permission");
+        .unwrap_or_abort();
 
     let result = tool_task
         .await
-        .expect("join question tool task")
-        .expect("question result with timeout disabled");
+        .unwrap_or_abort()
+        .unwrap_or_abort();
     assert!(result
         .display_text
         .contains("\"Wait for a human answer\"=\"done\""));
 
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 }

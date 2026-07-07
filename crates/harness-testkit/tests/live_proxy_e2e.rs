@@ -1,3 +1,4 @@
+use harness_testkit::UnwrapOrAbort;
 use std::path::{Path, PathBuf};
 
 const DEFAULT_PROVIDER: &str = "umans-ai-coding-plan";
@@ -6,19 +7,19 @@ const DEFAULT_MODEL: &str = "umans-kimi-k2.7";
 #[test]
 #[ignore = "requires HARNESS_LIVE_PROXY=1 and local CLIproxyAPI access"]
 fn live_proxy_preflight_requires_live_env() {
-    assert_live_proxy_env().expect("live proxy smoke prerequisites");
+    assert_live_proxy_env().unwrap_or_abort();
 }
 
 #[test]
 #[ignore = "requires HARNESS_LIVE_PROXY=1 and local CLIproxyAPI access"]
 fn live_proxy_prompt_parity_signoff() {
-    assert_live_proxy_env().expect("live proxy prompt parity prerequisites");
+    assert_live_proxy_env().unwrap_or_abort();
 }
 
 #[test]
 #[ignore = "requires HARNESS_LIVE_PROXY=1 and local CLIproxyAPI access"]
 fn live_proxy_e2e_tui_parity_signoff() {
-    assert_live_proxy_env().expect("live proxy TUI smoke prerequisites");
+    assert_live_proxy_env().unwrap_or_abort();
 }
 
 #[test]
@@ -81,5 +82,5 @@ fn repo_root() -> PathBuf {
         .parent()
         .and_then(Path::parent)
         .map(Path::to_path_buf)
-        .expect("harness-testkit lives under <repo>/crates/harness-testkit")
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")))
 }

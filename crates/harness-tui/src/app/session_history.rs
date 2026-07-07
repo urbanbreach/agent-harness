@@ -259,7 +259,7 @@ fn days_from_civil(year: i32, month: u8, day: u8) -> i64 {
 fn weekday_name(year: i32, month: u8, day: u8) -> &'static str {
     const WEEKDAYS: [&str; 7] = ["Thu", "Fri", "Sat", "Sun", "Mon", "Tue", "Wed"];
     let days = days_from_civil(year, month, day);
-    let index = days.rem_euclid(7) as usize;
+    let index = usize::try_from(days.rem_euclid(7)).unwrap_or(0);
     WEEKDAYS[index]
 }
 
@@ -444,8 +444,12 @@ impl AppState {
             return;
         }
 
-        let current = self.session_history_selected.min(len.saturating_sub(1)) as isize;
-        let next = (current + delta).clamp(0, len.saturating_sub(1) as isize);
+        let current = isize::try_from(self.session_history_selected.min(len.saturating_sub(1)))
+            .unwrap_or(isize::MAX);
+        let next = (current + delta).clamp(
+            0,
+            isize::try_from(len.saturating_sub(1)).unwrap_or(isize::MAX),
+        );
         self.session_history_selected = usize::try_from(next).unwrap_or(0);
     }
 

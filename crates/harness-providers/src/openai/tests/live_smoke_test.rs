@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 #[tokio::test]
 #[ignore = "requires HARNESS_LIVE_PROXY=1 and local proxy access"]
@@ -29,12 +30,12 @@ async fn openai_compatible_live_proxy_config_file_smoke() {
         timeout_ms: provider_config.timeout_ms,
         headers: provider_config.headers.clone(),
     })
-    .expect("build live provider");
+    .unwrap_or_abort();
 
     let model_id = env::var("HARNESS_LIVE_PROXY_MODEL")
         .ok()
         .or_else(|| provider_config.models.keys().next().cloned())
-        .expect("HARNESS_LIVE_PROXY_MODEL or at least one configured model is required");
+        .unwrap_or_abort();
 
     let mut stream = provider.stream_completion(basic_request(&model_id)).await;
 
@@ -65,7 +66,7 @@ async fn openai_compatible_live_proxy_config_file_smoke() {
         }
     })
     .await
-    .expect("timed out waiting for live SSE response");
+    .unwrap_or_abort();
 
     assert!(saw_start, "expected a start event");
     assert!(saw_done, "expected a done event");

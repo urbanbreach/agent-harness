@@ -4,6 +4,7 @@ use super::{
 };
 use crate::clock::FakeClock;
 use crate::redact::DefaultRedactor;
+use crate::UnwrapOrAbort;
 use serde_json::json;
 
 #[test]
@@ -21,7 +22,7 @@ fn run_started_snapshot_is_stable_in_deterministic_mode() {
 
     let envelope = builder
         .run_started(context, "golden_path", "/workspace/project")
-        .expect("build run started envelope");
+        .unwrap_or_abort();
 
     insta::with_settings!({ snapshot_path => "../snapshots" }, {
         insta::assert_json_snapshot!("run_started_envelope_v1", envelope);
@@ -55,7 +56,7 @@ fn permission_requested_snapshot_is_stable_in_deterministic_mode() {
                 default_decision: PermissionDecision::Deny,
             },
         )
-        .expect("build permission requested envelope");
+        .unwrap_or_abort();
 
     insta::with_settings!({ snapshot_path => "../snapshots" }, {
         insta::assert_json_snapshot!("permission_requested_envelope_v1", envelope);
@@ -85,7 +86,7 @@ fn tool_call_requested_uses_redacted_summary_and_digest() {
             &args,
             None,
         )
-        .expect("build tool call requested envelope");
+        .unwrap_or_abort();
 
     let EventV1::ToolCallRequested(ToolCallRequestedEvent {
         args_summary,

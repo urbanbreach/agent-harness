@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::collections::BTreeMap;
 use std::fs;
 use std::sync::Arc;
@@ -10,11 +11,11 @@ use crate::event::EventV1;
 use super::*;
 
 pub(super) async fn snapshot_captures_workspace_and_emits_event() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("create workspace");
-    fs::write(workspace.join("a.txt"), "alpha").expect("write a.txt");
-    fs::write(workspace.join("b.txt"), "beta").expect("write b.txt");
+    fs::create_dir_all(&workspace).unwrap_or_abort();
+    fs::write(workspace.join("a.txt"), "alpha").unwrap_or_abort();
+    fs::write(workspace.join("b.txt"), "beta").unwrap_or_abort();
 
     let handle = spawn_coordinator(
         test_config(temp_dir.path()),
@@ -24,12 +25,12 @@ pub(super) async fn snapshot_captures_workspace_and_emits_event() {
     let run = handle
         .start_run("snapshot_run", &workspace)
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let summary = handle
         .snapshot_workspace("req_000001")
         .await
-        .expect("snapshot workspace");
+        .unwrap_or_abort();
 
     assert_eq!(summary.request_id, "req_000001");
     assert_eq!(summary.file_count, 2);
@@ -43,19 +44,19 @@ pub(super) async fn snapshot_captures_workspace_and_emits_event() {
             EventV1::WorkspaceSnapshot(payload) => Some(payload),
             _ => None,
         })
-        .expect("workspace snapshot event emitted");
+        .unwrap_or_abort();
     assert_eq!(snapshot_event.request_id, "req_000001");
     assert_eq!(snapshot_event.file_count, 2);
     assert!(!snapshot_event.artifact_digest.is_empty());
 }
 
 pub(super) async fn revert_restores_workspace_from_snapshot() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("create workspace");
-    fs::write(workspace.join("keep.txt"), "keep-original").expect("write keep");
-    fs::write(workspace.join("change.txt"), "change-original").expect("write change");
-    fs::write(workspace.join("remove.txt"), "remove-original").expect("write remove");
+    fs::create_dir_all(&workspace).unwrap_or_abort();
+    fs::write(workspace.join("keep.txt"), "keep-original").unwrap_or_abort();
+    fs::write(workspace.join("change.txt"), "change-original").unwrap_or_abort();
+    fs::write(workspace.join("remove.txt"), "remove-original").unwrap_or_abort();
 
     let handle = spawn_coordinator(
         test_config(temp_dir.path()),
@@ -65,22 +66,22 @@ pub(super) async fn revert_restores_workspace_from_snapshot() {
     let run = handle
         .start_run("revert_run", &workspace)
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     handle
         .snapshot_workspace("req_revert_001")
         .await
-        .expect("snapshot workspace");
+        .unwrap_or_abort();
 
     // Apply changes after the snapshot.
-    fs::write(workspace.join("change.txt"), "change-modified").expect("modify change.txt");
-    fs::remove_file(workspace.join("remove.txt")).expect("remove remove.txt");
-    fs::write(workspace.join("add.txt"), "add-new").expect("add add.txt");
+    fs::write(workspace.join("change.txt"), "change-modified").unwrap_or_abort();
+    fs::remove_file(workspace.join("remove.txt")).unwrap_or_abort();
+    fs::write(workspace.join("add.txt"), "add-new").unwrap_or_abort();
 
     let summary = handle
         .revert_workspace("req_revert_001")
         .await
-        .expect("revert workspace");
+        .unwrap_or_abort();
 
     assert!(summary.restored_paths.contains(&"change.txt".to_string()));
     assert!(summary.restored_paths.contains(&"remove.txt".to_string()));
@@ -88,15 +89,15 @@ pub(super) async fn revert_restores_workspace_from_snapshot() {
     assert!(summary.failed_paths.is_empty());
 
     assert_eq!(
-        fs::read_to_string(workspace.join("keep.txt")).expect("read keep"),
+        fs::read_to_string(workspace.join("keep.txt")).unwrap_or_abort(),
         "keep-original"
     );
     assert_eq!(
-        fs::read_to_string(workspace.join("change.txt")).expect("read change"),
+        fs::read_to_string(workspace.join("change.txt")).unwrap_or_abort(),
         "change-original"
     );
     assert_eq!(
-        fs::read_to_string(workspace.join("remove.txt")).expect("read remove"),
+        fs::read_to_string(workspace.join("remove.txt")).unwrap_or_abort(),
         "remove-original"
     );
     assert!(!workspace.join("add.txt").exists());
@@ -108,7 +109,7 @@ pub(super) async fn revert_restores_workspace_from_snapshot() {
             EventV1::WorkspaceReverted(payload) => Some(payload),
             _ => None,
         })
-        .expect("workspace reverted event emitted");
+        .unwrap_or_abort();
     assert_eq!(reverted_event.snapshot_request_id, "req_revert_001");
     assert!(reverted_event
         .restored_paths
@@ -122,17 +123,17 @@ pub(super) async fn revert_restores_workspace_from_snapshot() {
 }
 
 pub(super) async fn formatter_runs_configured_command_on_edited_file() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("create workspace");
+    fs::create_dir_all(&workspace).unwrap_or_abort();
     let script = temp_dir.path().join("format.sh");
-    fs::write(&script, "#!/bin/sh\nsed -i 's/old/new/g' \"$1\"\n").expect("write formatter script");
+    fs::write(&script, "#!/bin/sh\nsed -i 's/old/new/g' \"$1\"\n").unwrap_or_abort();
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mut perms = fs::metadata(&script).expect("metadata").permissions();
+        let mut perms = fs::metadata(&script).unwrap_or_abort().permissions();
         perms.set_mode(0o755);
-        fs::set_permissions(&script, perms).expect("chmod");
+        fs::set_permissions(&script, perms).unwrap_or_abort();
     }
 
     let mut overrides = BTreeMap::new();
@@ -152,22 +153,22 @@ pub(super) async fn formatter_runs_configured_command_on_edited_file() {
     };
 
     let file_path = workspace.join("test.txt");
-    fs::write(&file_path, "old content").expect("write file");
+    fs::write(&file_path, "old content").unwrap_or_abort();
 
     run_formatter_for_path(&config, &workspace, "test.txt")
         .await
-        .expect("formatter succeeds");
+        .unwrap_or_abort();
 
-    let content = fs::read_to_string(&file_path).expect("read file");
+    let content = fs::read_to_string(&file_path).unwrap_or_abort();
     assert_eq!(content, "new content");
 }
 
 pub(super) async fn formatter_disabled_skips_command() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("create workspace");
+    fs::create_dir_all(&workspace).unwrap_or_abort();
     let file_path = workspace.join("test.txt");
-    fs::write(&file_path, "old content").expect("write file");
+    fs::write(&file_path, "old content").unwrap_or_abort();
 
     let config = FormatterConfig {
         enabled: false,
@@ -177,18 +178,18 @@ pub(super) async fn formatter_disabled_skips_command() {
 
     run_formatter_for_path(&config, &workspace, "test.txt")
         .await
-        .expect("disabled formatter returns Ok");
+        .unwrap_or_abort();
 
-    let content = fs::read_to_string(&file_path).expect("read file");
+    let content = fs::read_to_string(&file_path).unwrap_or_abort();
     assert_eq!(content, "old content");
 }
 
 pub(super) async fn formatter_missing_language_is_no_op() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("create workspace");
+    fs::create_dir_all(&workspace).unwrap_or_abort();
     let file_path = workspace.join("test.unknown");
-    fs::write(&file_path, "old content").expect("write file");
+    fs::write(&file_path, "old content").unwrap_or_abort();
 
     let config = FormatterConfig {
         enabled: true,
@@ -198,18 +199,18 @@ pub(super) async fn formatter_missing_language_is_no_op() {
 
     run_formatter_for_path(&config, &workspace, "test.unknown")
         .await
-        .expect("missing language returns Ok");
+        .unwrap_or_abort();
 
-    let content = fs::read_to_string(&file_path).expect("read file");
+    let content = fs::read_to_string(&file_path).unwrap_or_abort();
     assert_eq!(content, "old content");
 }
 
 pub(super) async fn formatter_failure_returns_warning_without_panic() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("create workspace");
+    fs::create_dir_all(&workspace).unwrap_or_abort();
     let file_path = workspace.join("test.txt");
-    fs::write(&file_path, "content").expect("write file");
+    fs::write(&file_path, "content").unwrap_or_abort();
 
     let mut overrides = BTreeMap::new();
     overrides.insert(
@@ -235,15 +236,15 @@ pub(super) async fn formatter_failure_returns_warning_without_panic() {
         "error surfaces failing command: {err}"
     );
 
-    let content = fs::read_to_string(&file_path).expect("read file");
+    let content = fs::read_to_string(&file_path).unwrap_or_abort();
     assert_eq!(content, "content");
 }
 
 pub(super) async fn replay_of_reverted_session_does_not_restore_files() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("create workspace");
-    fs::write(workspace.join("target.txt"), "original").expect("write target");
+    fs::create_dir_all(&workspace).unwrap_or_abort();
+    fs::write(workspace.join("target.txt"), "original").unwrap_or_abort();
 
     let handle = spawn_coordinator(
         test_config(temp_dir.path()),
@@ -253,35 +254,35 @@ pub(super) async fn replay_of_reverted_session_does_not_restore_files() {
     let _run = handle
         .start_run("revert_replay_demo", &workspace)
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     handle
         .snapshot_workspace("snap_replay_absence")
         .await
-        .expect("snapshot workspace");
+        .unwrap_or_abort();
 
-    fs::write(workspace.join("target.txt"), "modified").expect("modify target");
+    fs::write(workspace.join("target.txt"), "modified").unwrap_or_abort();
 
     handle
         .revert_workspace("snap_replay_absence")
         .await
-        .expect("revert workspace");
+        .unwrap_or_abort();
 
     assert_eq!(
-        fs::read_to_string(workspace.join("target.txt")).expect("read original workspace"),
+        fs::read_to_string(workspace.join("target.txt")).unwrap_or_abort(),
         "original"
     );
 
     let replay_workspace = temp_dir.path().join("replay_workspace");
-    fs::create_dir_all(&replay_workspace).expect("create replay workspace");
-    fs::write(replay_workspace.join("target.txt"), "modified").expect("seed replay workspace");
+    fs::create_dir_all(&replay_workspace).unwrap_or_abort();
+    fs::write(replay_workspace.join("target.txt"), "modified").unwrap_or_abort();
 
-    let replay_store = handle.event_store().await.expect("get event store");
-    let mut stream = replay_store.replay(1).expect("replay events");
+    let replay_store = handle.event_store().await.unwrap_or_abort();
+    let mut stream = replay_store.replay(1).unwrap_or_abort();
     while stream.next().await.is_some() {}
 
     assert_eq!(
-        fs::read_to_string(replay_workspace.join("target.txt")).expect("read replay workspace"),
+        fs::read_to_string(replay_workspace.join("target.txt")).unwrap_or_abort(),
         "modified",
         "replaying WorkspaceReverted must be side-effect free and leave workspace unchanged"
     );
@@ -297,12 +298,12 @@ pub(super) async fn live_rustfmt_formats_and_diff_reflects_post_format_content()
         return;
     }
 
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("create workspace");
+    fs::create_dir_all(&workspace).unwrap_or_abort();
 
     let original = "fn main(){println!(\"hello\");}\n";
-    fs::write(workspace.join("test.rs"), original).expect("write file");
+    fs::write(workspace.join("test.rs"), original).unwrap_or_abort();
 
     let config = FormatterConfig {
         enabled: true,
@@ -312,9 +313,9 @@ pub(super) async fn live_rustfmt_formats_and_diff_reflects_post_format_content()
 
     run_formatter_for_path(&config, &workspace, "test.rs")
         .await
-        .expect("rustfmt succeeds");
+        .unwrap_or_abort();
 
-    let formatted = fs::read_to_string(workspace.join("test.rs")).expect("read formatted file");
+    let formatted = fs::read_to_string(workspace.join("test.rs")).unwrap_or_abort();
     assert_ne!(formatted, original, "rustfmt should have changed the file");
     assert!(
         formatted.contains("fn main() {"),

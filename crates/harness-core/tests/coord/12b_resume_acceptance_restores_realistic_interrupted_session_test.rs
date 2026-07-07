@@ -3,6 +3,7 @@ mod resume_acceptance_fixture {
     include!("common/resume_acceptance_fixture.rs");
 }
 
+use harness_core::UnwrapOrAbort;
 use resume_acceptance_fixture::{
     test_digest12, test_permission_request_digest, write_resume_acceptance_fixture,
     ResumeAcceptanceFixture,
@@ -27,7 +28,7 @@ let provider = CapturingProvider::new(vec!["post-resume answer"]);
     let run = coordinator
         .resume_run(run_id, "resume acceptance coding session")
         .await
-        .expect("resume run");
+        .unwrap_or_abort();
     // assert
     assert!(artifact_abs_path.exists(), "artifact file should still exist");
 
@@ -68,7 +69,7 @@ let provider = CapturingProvider::new(vec!["post-resume answer"]);
             shell_args,
         )
         .await
-        .expect("restored grant should let same shell command start without asking again");
+        .unwrap_or_abort();
     assert_eq!(granted_tool_call_id, "toolcall_000005");
     let events_after_grant_reuse = wait_for_events(&run.events_path, Duration::from_secs(1), |events| {
         events.iter().any(|event| {
@@ -94,7 +95,7 @@ let provider = CapturingProvider::new(vec!["post-resume answer"]);
             "Post-resume verification prompt",
         )
         .await
-        .expect("resumed agent should accept next turn");
+        .unwrap_or_abort();
     assert_eq!(request_id, "req_000006");
     wait_for_events(&run.events_path, Duration::from_secs(1), |events| {
         events.iter().any(|event| {
@@ -107,7 +108,7 @@ let provider = CapturingProvider::new(vec!["post-resume answer"]);
         })
     })
     .await;
-    coordinator.stop_run().await.expect("stop resumed run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let requests = provider.requests();
     assert_eq!(requests.len(), 1, "expected one post-resume provider call");

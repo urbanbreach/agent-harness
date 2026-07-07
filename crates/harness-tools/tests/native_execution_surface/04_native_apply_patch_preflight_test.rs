@@ -1,12 +1,13 @@
+use harness_tools::UnwrapOrAbort;
 #[tokio::test]
 async fn native_apply_patch_rejects_later_move_before_earlier_add_mutates() {
     // arrange
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
-    let apply_patch = registry.get("apply_patch").expect("apply_patch in registry");
+    let apply_patch = registry.get("apply_patch").unwrap_or_abort();
 
-    fs::write(workspace.join("source.txt"), "alpha\nbeta\n").expect("seed source file");
+    fs::write(workspace.join("source.txt"), "alpha\nbeta\n").unwrap_or_abort();
 
     // act
     let error = apply_patch
@@ -28,7 +29,7 @@ async fn native_apply_patch_rejects_later_move_before_earlier_add_mutates() {
     );
     assert!(!workspace.join("added.txt").exists());
     assert_eq!(
-        fs::read_to_string(workspace.join("source.txt")).expect("read source file"),
+        fs::read_to_string(workspace.join("source.txt")).unwrap_or_abort(),
         "alpha\nbeta\n"
     );
 }
@@ -39,7 +40,7 @@ async fn native_apply_patch_rejects_later_missing_update_before_earlier_add_muta
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
-    let apply_patch = registry.get("apply_patch").expect("apply_patch in registry");
+    let apply_patch = registry.get("apply_patch").unwrap_or_abort();
 
     // act
     let error = apply_patch
@@ -66,7 +67,7 @@ async fn native_apply_patch_rejects_later_missing_delete_before_earlier_add_muta
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
-    let apply_patch = registry.get("apply_patch").expect("apply_patch in registry");
+    let apply_patch = registry.get("apply_patch").unwrap_or_abort();
 
     // act
     let error = apply_patch
@@ -93,7 +94,7 @@ async fn native_apply_patch_rejects_later_traversal_target_before_earlier_add_mu
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
-    let apply_patch = registry.get("apply_patch").expect("apply_patch in registry");
+    let apply_patch = registry.get("apply_patch").unwrap_or_abort();
 
     // act
     let error = apply_patch
@@ -120,10 +121,10 @@ async fn native_apply_patch_matches_baseline_context_and_normalized_text() {
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
-    let apply_patch = registry.get("apply_patch").expect("apply_patch in registry");
+    let apply_patch = registry.get("apply_patch").unwrap_or_abort();
 
     fs::write(workspace.join("decorator.txt"), "@decorator\nsay “hello”\n")
-        .expect("seed decorator file");
+        .unwrap_or_abort();
 
     // act
     apply_patch
@@ -134,11 +135,11 @@ async fn native_apply_patch_matches_baseline_context_and_normalized_text() {
             }),
         )
         .await
-        .expect("context header and normalized quotes should match baseline behavior");
+        .unwrap_or_abort();
 
     // assert
     assert_eq!(
-        fs::read_to_string(workspace.join("decorator.txt")).expect("read decorator file"),
+        fs::read_to_string(workspace.join("decorator.txt")).unwrap_or_abort(),
         "@decorator\nsay \"hi\"\n"
     );
 }

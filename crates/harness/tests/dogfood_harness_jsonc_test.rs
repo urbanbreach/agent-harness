@@ -1,3 +1,4 @@
+use harness::UnwrapOrAbort;
 use std::fs;
 use std::path::PathBuf;
 
@@ -15,9 +16,9 @@ fn harness_jsonc_source() -> PathBuf {
 }
 
 fn copy_harness_jsonc_to_temp() -> (tempfile::TempDir, PathBuf) {
-    let temp = tempdir().expect("tempdir for harness.jsonc");
+    let temp = tempdir().unwrap_or_abort();
     let dest = temp.path().join("harness.jsonc");
-    fs::copy(harness_jsonc_source(), &dest).expect("copy harness.jsonc to temp");
+    fs::copy(harness_jsonc_source(), &dest).unwrap_or_abort();
     (temp, dest)
 }
 
@@ -31,8 +32,8 @@ fn harness_command() -> CliHarness {
 }
 
 fn run_with_real_config(config_path: &PathBuf, args: &[&str]) -> common::CliHarnessOutput {
-    let data_temp = tempdir().expect("tempdir for HARNESS_DATA_HOME");
-    let mut full_args = vec!["--config", config_path.to_str().expect("config path utf-8")];
+    let data_temp = tempdir().unwrap_or_abort();
+    let mut full_args = vec!["--config", config_path.to_str().unwrap_or_abort()];
     full_args.extend_from_slice(args);
     harness_command()
         .env("HARNESS_DATA_HOME", data_temp.path())
@@ -72,13 +73,12 @@ fn doctor_json_passes_with_real_harness_jsonc() {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    let report: Value =
-        serde_json::from_slice(&output.stdout).expect("doctor output is valid JSON");
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap_or_abort();
     assert!(
         report["checks"].is_array(),
         "doctor report has checks array"
     );
-    let checks = report["checks"].as_array().expect("checks array");
+    let checks = report["checks"].as_array().unwrap_or_abort();
     for check in checks {
         assert_ne!(
             check["status"], "fail",
@@ -94,11 +94,8 @@ fn openai_codex_provider_resolves_codex_auth_provider() {
     let (_config_temp, config_path) = copy_harness_jsonc_to_temp();
 
     // act
-    let config = load_config_from_file(&config_path).expect("load real harness.jsonc");
-    let provider = config
-        .providers
-        .get("openai-codex")
-        .expect("openai-codex provider in harness.jsonc");
+    let config = load_config_from_file(&config_path).unwrap_or_abort();
+    let provider = config.providers.get("openai-codex").unwrap_or_abort();
 
     // assert
     match provider {
@@ -118,11 +115,8 @@ fn default_provider_has_inline_api_key_without_auth_provider() {
     let (_config_temp, config_path) = copy_harness_jsonc_to_temp();
 
     // act
-    let config = load_config_from_file(&config_path).expect("load real harness.jsonc");
-    let provider = config
-        .providers
-        .get("default")
-        .expect("default provider in harness.jsonc");
+    let config = load_config_from_file(&config_path).unwrap_or_abort();
+    let provider = config.providers.get("default").unwrap_or_abort();
 
     // assert
     match provider {
@@ -145,11 +139,11 @@ fn umans_provider_has_api_key_env_without_auth_provider() {
     let (_config_temp, config_path) = copy_harness_jsonc_to_temp();
 
     // act
-    let config = load_config_from_file(&config_path).expect("load real harness.jsonc");
+    let config = load_config_from_file(&config_path).unwrap_or_abort();
     let provider = config
         .providers
         .get("umans-ai-coding-plan")
-        .expect("umans-ai-coding-plan provider in harness.jsonc");
+        .unwrap_or_abort();
 
     // assert
     match provider {
@@ -178,7 +172,7 @@ fn dogfood_agents_use_umans_models() {
     let (_config_temp, config_path) = copy_harness_jsonc_to_temp();
 
     // act
-    let config = load_config_from_file(&config_path).expect("load real harness.jsonc");
+    let config = load_config_from_file(&config_path).unwrap_or_abort();
 
     // assert
     for (agent_name, agent) in &config.agents {
@@ -196,19 +190,16 @@ fn dogfood_agents_use_umans_models() {
 fn adding_anthropic_auth_provider_to_real_config_works() {
     // arrange
     let (_config_temp, config_path) = copy_harness_jsonc_to_temp();
-    let original = fs::read_to_string(&config_path).expect("read harness.jsonc");
+    let original = fs::read_to_string(&config_path).unwrap_or_abort();
     let modified = original.replace(
         "\"umans-ai-coding-plan\": {",
         "\"anthropic-test\": {\n      \"type\": \"openai_compatible\",\n      \"name\": \"Anthropic Test\",\n      \"options\": {\n        \"authProvider\": \"anthropic\",\n        \"baseURL\": \"https://api.anthropic.com/v1\",\n        \"apiKey\": \"sk-test-anthropic\",\n      },\n      \"models\": {\n        \"claude-test\": { \"name\": \"Claude Test\" },\n      },\n    },\n    \"umans-ai-coding-plan\": {",
     );
 
     // act
-    fs::write(&config_path, &modified).expect("write modified config");
-    let config = load_config_from_file(&config_path).expect("load modified config");
-    let provider = config
-        .providers
-        .get("anthropic-test")
-        .expect("anthropic-test provider in modified config");
+    fs::write(&config_path, &modified).unwrap_or_abort();
+    let config = load_config_from_file(&config_path).unwrap_or_abort();
+    let provider = config.providers.get("anthropic-test").unwrap_or_abort();
 
     // assert
     match provider {
@@ -226,12 +217,12 @@ fn adding_anthropic_auth_provider_to_real_config_works() {
 fn config_validate_with_anthropic_auth_provider_added_to_real_config() {
     // arrange
     let (_config_temp, config_path) = copy_harness_jsonc_to_temp();
-    let original = fs::read_to_string(&config_path).expect("read harness.jsonc");
+    let original = fs::read_to_string(&config_path).unwrap_or_abort();
     let modified = original.replace(
         "\"umans-ai-coding-plan\": {",
         "\"anthropic-test\": {\n      \"type\": \"openai_compatible\",\n      \"name\": \"Anthropic Test\",\n      \"options\": {\n        \"authProvider\": \"anthropic\",\n        \"baseURL\": \"https://api.anthropic.com/v1\",\n        \"apiKey\": \"sk-test-anthropic\",\n      },\n      \"models\": {\n        \"claude-test\": { \"name\": \"Claude Test\" },\n      },\n    },\n    \"umans-ai-coding-plan\": {",
     );
-    fs::write(&config_path, &modified).expect("write modified config");
+    fs::write(&config_path, &modified).unwrap_or_abort();
 
     // act
     let output = run_with_real_config(&config_path, &["config", "validate"]);
@@ -243,6 +234,5 @@ fn config_validate_with_anthropic_auth_provider_added_to_real_config() {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    let _ =
-        load_config_from_str(&modified).expect("modified config parses via load_config_from_str");
+    let _ = load_config_from_str(&modified).unwrap_or_abort();
 }

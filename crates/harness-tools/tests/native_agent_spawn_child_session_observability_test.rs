@@ -1,3 +1,4 @@
+use harness_tools::UnwrapOrAbort;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
@@ -67,7 +68,7 @@ fn child_observability_profiles() -> BTreeMap<String, AgentProfile> {
 
 async fn spawn_run(workspace: &Path) -> (CoordinatorHandle, RunInfo, String) {
     let session_dir = workspace.join("sessions");
-    fs::create_dir_all(&session_dir).expect("session dir");
+    fs::create_dir_all(&session_dir).unwrap_or_abort();
 
     let mut config = CoordinatorConfig::new(session_dir);
     config.permission_policy = child_observability_permission_policy();
@@ -82,11 +83,11 @@ async fn spawn_run(workspace: &Path) -> (CoordinatorHandle, RunInfo, String) {
     let run = handle
         .start_run("native_agent_spawn_child_session_observability", workspace)
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let worker_id = handle
         .spawn_agent(anonymous_supervisor_actor(), "parent", None)
         .await
-        .expect("spawn worker");
+        .unwrap_or_abort();
 
     (handle, run, worker_id)
 }
@@ -110,21 +111,21 @@ async fn agent_spawn_returns_child_session_status_duration_and_counts() {
             }),
         )
         .await
-        .expect("request task");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &tool_call_id).await;
 
-    handle.stop_run().await.expect("stop run");
+    handle.stop_run().await.unwrap_or_abort();
     let events = read_events(&run.events_path);
     let finished = find_finished(&events, &tool_call_id);
     assert_eq!(finished.status, ToolCallStatus::Succeeded);
 
-    let output = finished.output_json.as_ref().expect("output json");
+    let output = finished.output_json.as_ref().unwrap_or_abort();
     assert_eq!(output.get("status"), Some(&json!("failed")));
     assert!(output.get("duration_ms").and_then(Value::as_u64).is_some());
     assert!(output
         .get("failure_summary")
         .and_then(Value::as_str)
-        .expect("failure summary")
+        .unwrap_or_abort()
         .contains("no provider configured"));
     assert_eq!(
         output.pointer("/child_tool_call_counts/requested"),
@@ -162,12 +163,12 @@ async fn agent_spawn_returns_child_session_status_duration_and_counts() {
     let child_session_id = output
         .get("child_session_id")
         .and_then(Value::as_str)
-        .expect("child session id");
+        .unwrap_or_abort();
     let child_request_id = output
         .get("child_request_id")
         .and_then(Value::as_str)
-        .expect("child request id");
-    let session_dir = run.run_dir.parent().expect("parent session dir");
+        .unwrap_or_abort();
+    let session_dir = run.run_dir.parent().unwrap_or_abort();
     let child_run_dir = session_dir.join(child_session_id);
     let child_events_path = child_run_dir.join("events.jsonl");
     assert!(
@@ -196,9 +197,9 @@ async fn agent_spawn_returns_child_session_status_duration_and_counts() {
     )));
 
     let child_meta: Value = serde_json::from_str(
-        &fs::read_to_string(child_run_dir.join("meta.json")).expect("read child meta"),
+        &fs::read_to_string(child_run_dir.join("meta.json")).unwrap_or_abort(),
     )
-    .expect("parse child meta");
+    .unwrap_or_abort();
     assert_eq!(child_meta["run_id"], json!(child_session_id));
     assert_eq!(
         child_meta["harness_lineage"]["parent_run_id"],
@@ -222,11 +223,8 @@ async fn agent_spawn_returns_child_session_status_duration_and_counts() {
     resumed_handle
         .resume_run(&run.run_id, "resumed parent")
         .await
-        .expect("resume parent run");
-    resumed_handle
-        .stop_run()
-        .await
-        .expect("stop resumed parent run");
+        .unwrap_or_abort();
+    resumed_handle.stop_run().await.unwrap_or_abort();
     let child_events_after_resume = read_events(&child_events_path);
     assert_eq!(
         child_events_after_resume.len(),
@@ -255,7 +253,7 @@ async fn child_session_permission_inheritance_isolated_by_task() {
             }),
         )
         .await
-        .expect("request inherited spawn");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &inherited_spawn).await;
 
     let restricted_spawn = handle
@@ -272,18 +270,18 @@ async fn child_session_permission_inheritance_isolated_by_task() {
             }),
         )
         .await
-        .expect("request restricted spawn");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &restricted_spawn).await;
 
     let inherited_spawn_finished = find_finished(&read_events(&run.events_path), &inherited_spawn);
     let inherited_output = inherited_spawn_finished
         .output_json
         .as_ref()
-        .expect("inherited output");
+        .unwrap_or_abort();
     let inherited_child_session = inherited_output
         .get("child_session_id")
         .and_then(Value::as_str)
-        .expect("inherited child session");
+        .unwrap_or_abort();
     assert_eq!(
         inherited_output.pointer("/permissions/scope_relation"),
         Some(&json!("inherits_parent_scope"))
@@ -301,7 +299,7 @@ async fn child_session_permission_inheritance_isolated_by_task() {
             }),
         )
         .await
-        .expect("request inherited child bash");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &inherited_shell).await;
 
     let restricted_spawn_finished =
@@ -309,11 +307,11 @@ async fn child_session_permission_inheritance_isolated_by_task() {
     let restricted_output = restricted_spawn_finished
         .output_json
         .as_ref()
-        .expect("restricted output");
+        .unwrap_or_abort();
     let restricted_child_session = restricted_output
         .get("child_session_id")
         .and_then(Value::as_str)
-        .expect("restricted child session");
+        .unwrap_or_abort();
     assert_eq!(
         restricted_output.pointer("/permissions/parent_scope"),
         Some(&json!("parent"))
@@ -345,7 +343,7 @@ async fn child_session_permission_inheritance_isolated_by_task() {
         "restricted child bash should be denied"
     );
 
-    handle.stop_run().await.expect("stop run");
+    handle.stop_run().await.unwrap_or_abort();
     let events = read_events(&run.events_path);
 
     let inherited_shell_finished = find_finished(&events, &inherited_shell);

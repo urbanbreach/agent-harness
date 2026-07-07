@@ -1,12 +1,13 @@
+use harness::UnwrapOrAbort;
 #[test]
 fn tui_cli_invalid_config_fails_without_mock_fallback() {
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let missing_config = temp.path().join("does-not-exist.jsonc");
     let output = run_harness_in(temp.path(), [
             "--config",
             missing_config
                 .to_str()
-                .expect("missing config path should be valid utf-8"),
+                .unwrap_or_abort(),
             "tui",
             "--exit-on-finish",
         ]);

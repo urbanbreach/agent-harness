@@ -1,11 +1,12 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 #[cfg(not(windows))]
 pub(super) fn mouse_drag_copy_on_select_copies_transcript_text_and_clears_selection() {
     let copied = Arc::new(Mutex::new(None::<String>));
     let sink = Arc::clone(&copied);
     crate::clipboard::set_copy_override(Some(Box::new(move |text| {
-        *sink.lock().expect("lock copied text") = Some(text.to_string());
+        *sink.lock().unwrap_or_abort() = Some(text.to_string());
         Ok(())
     })));
 
@@ -13,7 +14,7 @@ pub(super) fn mouse_drag_copy_on_select_copies_transcript_text_and_clears_select
     drag_transcript_selection(&mut app, "Copy this exact reply");
 
     assert_eq!(
-        copied.lock().expect("lock copied text").clone(),
+        copied.lock().unwrap_or_abort().clone(),
         Some("Copy this exact reply".to_string())
     );
     assert!(app.transcript_selection().is_none());
@@ -31,7 +32,7 @@ pub(super) fn mouse_drag_copy_on_select_copies_shell_card_text() {
     let copied = Arc::new(Mutex::new(None::<String>));
     let sink = Arc::clone(&copied);
     crate::clipboard::set_copy_override(Some(Box::new(move |text| {
-        *sink.lock().expect("lock copied text") = Some(text.to_string());
+        *sink.lock().unwrap_or_abort() = Some(text.to_string());
         Ok(())
     })));
 
@@ -44,7 +45,7 @@ pub(super) fn mouse_drag_copy_on_select_copies_shell_card_text() {
     );
 
     assert_eq!(
-        copied.lock().expect("lock copied text").clone(),
+        copied.lock().unwrap_or_abort().clone(),
         Some("copy target output".to_string())
     );
     assert!(app.transcript_selection().is_none());
@@ -62,7 +63,7 @@ pub(super) fn mouse_drag_copy_on_select_copies_operator_sidebar_text() {
     let copied = Arc::new(Mutex::new(None::<String>));
     let sink = Arc::clone(&copied);
     crate::clipboard::set_copy_override(Some(Box::new(move |text| {
-        *sink.lock().expect("lock copied text") = Some(text.to_string());
+        *sink.lock().unwrap_or_abort() = Some(text.to_string());
         Ok(())
     })));
 
@@ -70,7 +71,7 @@ pub(super) fn mouse_drag_copy_on_select_copies_operator_sidebar_text() {
     drag_operator_sidebar_selection(&mut app, "Copy sidebar task");
 
     assert_eq!(
-        copied.lock().expect("lock copied text").clone(),
+        copied.lock().unwrap_or_abort().clone(),
         Some("Copy sidebar task".to_string())
     );
     assert!(app.operator_sidebar_selection().is_none());
@@ -88,7 +89,7 @@ pub(super) fn disabled_copy_on_select_keeps_operator_sidebar_selection_until_rig
     let copied = Arc::new(Mutex::new(None::<String>));
     let sink = Arc::clone(&copied);
     crate::clipboard::set_copy_override(Some(Box::new(move |text| {
-        *sink.lock().expect("lock copied text") = Some(text.to_string());
+        *sink.lock().unwrap_or_abort() = Some(text.to_string());
         Ok(())
     })));
 
@@ -96,7 +97,7 @@ pub(super) fn disabled_copy_on_select_keeps_operator_sidebar_selection_until_rig
     let (column, row, _) = drag_operator_sidebar_selection(&mut app, "Copy sidebar task");
 
     assert!(app.operator_sidebar_selection().is_some());
-    assert!(copied.lock().expect("lock copied text").is_none());
+    assert!(copied.lock().unwrap_or_abort().is_none());
 
     app.handle_mouse(
         MouseEvent {
@@ -112,7 +113,7 @@ pub(super) fn disabled_copy_on_select_keeps_operator_sidebar_selection_until_rig
     );
 
     assert_eq!(
-        copied.lock().expect("lock copied text").clone(),
+        copied.lock().unwrap_or_abort().clone(),
         Some("Copy sidebar task".to_string())
     );
     assert!(app.operator_sidebar_selection().is_none());
@@ -148,7 +149,7 @@ pub(super) fn mouse_drag_copy_on_select_preserves_multiline_text_without_render_
     let copied = Arc::new(Mutex::new(None::<String>));
     let sink = Arc::clone(&copied);
     crate::clipboard::set_copy_override(Some(Box::new(move |text| {
-        *sink.lock().expect("lock copied text") = Some(text.to_string());
+        *sink.lock().unwrap_or_abort() = Some(text.to_string());
         Ok(())
     })));
 
@@ -171,10 +172,7 @@ pub(super) fn mouse_drag_copy_on_select_preserves_multiline_text_without_render_
         (end_column + end_width.saturating_sub(1), end_row),
     );
 
-    assert_eq!(
-        copied.lock().expect("lock copied text").clone(),
-        Some(expected)
-    );
+    assert_eq!(copied.lock().unwrap_or_abort().clone(), Some(expected));
     assert!(app.transcript_selection().is_none());
 
     crate::clipboard::set_copy_override(None);
@@ -185,7 +183,7 @@ pub(super) fn disabled_copy_on_select_keeps_selection_until_right_click_copy() {
     let copied = Arc::new(Mutex::new(None::<String>));
     let sink = Arc::clone(&copied);
     crate::clipboard::set_copy_override(Some(Box::new(move |text| {
-        *sink.lock().expect("lock copied text") = Some(text.to_string());
+        *sink.lock().unwrap_or_abort() = Some(text.to_string());
         Ok(())
     })));
 
@@ -193,7 +191,7 @@ pub(super) fn disabled_copy_on_select_keeps_selection_until_right_click_copy() {
     let (column, row, _) = drag_transcript_selection(&mut app, "Copy this exact reply");
 
     assert!(app.transcript_selection().is_some());
-    assert!(copied.lock().expect("lock copied text").is_none());
+    assert!(copied.lock().unwrap_or_abort().is_none());
 
     app.handle_mouse(
         MouseEvent {
@@ -209,7 +207,7 @@ pub(super) fn disabled_copy_on_select_keeps_selection_until_right_click_copy() {
     );
 
     assert_eq!(
-        copied.lock().expect("lock copied text").clone(),
+        copied.lock().unwrap_or_abort().clone(),
         Some("Copy this exact reply".to_string())
     );
     assert!(app.transcript_selection().is_none());
@@ -225,9 +223,7 @@ pub(super) fn disabled_copy_on_select_supports_ctrl_c_and_escape() {
     let copied = Arc::new(Mutex::new(Vec::<String>::new()));
     let sink = Arc::clone(&copied);
     crate::clipboard::set_copy_override(Some(Box::new(move |text| {
-        sink.lock()
-            .expect("lock copied text")
-            .push(text.to_string());
+        sink.lock().unwrap_or_abort().push(text.to_string());
         Ok(())
     })));
 
@@ -242,7 +238,7 @@ pub(super) fn disabled_copy_on_select_supports_ctrl_c_and_escape() {
     ));
 
     assert_eq!(
-        copied.lock().expect("lock copied text").as_slice(),
+        copied.lock().unwrap_or_abort().as_slice(),
         ["Copy this exact reply"]
     );
     assert!(copy_app.transcript_selection().is_none());
@@ -255,7 +251,7 @@ pub(super) fn disabled_copy_on_select_supports_ctrl_c_and_escape() {
 
     assert!(escape_app.transcript_selection().is_none());
     assert_eq!(
-        copied.lock().expect("lock copied text").as_slice(),
+        copied.lock().unwrap_or_abort().as_slice(),
         ["Copy this exact reply"]
     );
 }
@@ -265,7 +261,7 @@ pub(super) fn mouse_drag_copy_on_select_keeps_body_rows_aligned_after_reasoning_
     let copied = Arc::new(Mutex::new(None::<String>));
     let sink = Arc::clone(&copied);
     crate::clipboard::set_copy_override(Some(Box::new(move |text| {
-        *sink.lock().expect("lock copied text") = Some(text.to_string());
+        *sink.lock().unwrap_or_abort() = Some(text.to_string());
         Ok(())
     })));
 
@@ -276,7 +272,7 @@ pub(super) fn mouse_drag_copy_on_select_keeps_body_rows_aligned_after_reasoning_
     drag_transcript_selection(&mut app, "Copy this exact reply");
 
     assert_eq!(
-        copied.lock().expect("lock copied text").clone(),
+        copied.lock().unwrap_or_abort().clone(),
         Some("Copy this exact reply".to_string())
     );
     assert!(app.transcript_selection().is_none());
@@ -299,13 +295,12 @@ pub(super) fn transcript_selection_hit_testing_reuses_cached_snapshot_during_dra
 
 pub(super) fn transcript_selection_snapshot_uses_transcript_rail_for_user_rows() {
     let app = transcript_selection_test_app();
-    let snapshot = transcript_selection_debug_snapshot(&app, TEST_FRAME_AREA)
-        .expect("transcript selection snapshot");
+    let snapshot = transcript_selection_debug_snapshot(&app, TEST_FRAME_AREA).unwrap_or_abort();
     let user_row = snapshot
         .rows
         .iter()
         .find(|row| row.contains("Select this"))
-        .expect("user prompt selection row");
+        .unwrap_or_abort();
 
     assert!(
         user_row.trim_start().starts_with("┃  Select this"),
@@ -370,13 +365,13 @@ pub(super) fn transcript_selection_render_reuses_cached_snapshot() {
     reset_transcript_selection_cache_metrics_for_test();
 
     let backend = TestBackend::new(TEST_FRAME_AREA.width, TEST_FRAME_AREA.height);
-    let mut terminal = Terminal::new(backend).expect("create terminal");
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
     terminal
         .draw(|frame| render_app(frame, &app))
-        .expect("draw selection frame");
+        .unwrap_or_abort();
     terminal
         .draw(|frame| render_app(frame, &app))
-        .expect("draw selection frame again");
+        .unwrap_or_abort();
 
     assert_eq!(transcript_selection_cache_build_count_for_test(), 1);
 }
@@ -415,10 +410,10 @@ pub(super) fn transcript_selection_render_stays_aligned_after_large_reasoning_bl
     );
 
     let backend = TestBackend::new(TEST_FRAME_AREA.width, TEST_FRAME_AREA.height);
-    let mut terminal = Terminal::new(backend).expect("create terminal");
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
     terminal
         .draw(|frame| render_app(frame, &app))
-        .expect("draw selection frame");
+        .unwrap_or_abort();
 
     let buffer = terminal.backend().buffer();
     let highlight = crate::theme::Theme::default().status.info;
@@ -463,13 +458,13 @@ pub(super) fn transcript_render_key_is_cached_across_selection_drag_path() {
     );
 
     let backend = TestBackend::new(TEST_FRAME_AREA.width, TEST_FRAME_AREA.height);
-    let mut terminal = Terminal::new(backend).expect("create terminal");
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
     terminal
         .draw(|frame| render_app(frame, &app))
-        .expect("draw selection frame");
+        .unwrap_or_abort();
     terminal
         .draw(|frame| render_app(frame, &app))
-        .expect("draw selection frame again");
+        .unwrap_or_abort();
 
     assert_eq!(AppState::transcript_render_key_build_count_for_test(), 1);
 }

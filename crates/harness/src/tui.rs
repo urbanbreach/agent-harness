@@ -1052,7 +1052,6 @@ fn unique_interactive_run_id() -> String {
 }
 
 #[cfg(test)]
-#[allow(dead_code)]
 pub(crate) fn replay_launch_metadata_for_test(
     run_dir: &Path,
     historical_events: &[EventEnvelopeV1],

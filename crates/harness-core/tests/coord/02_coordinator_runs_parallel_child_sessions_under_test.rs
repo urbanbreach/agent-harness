@@ -1,6 +1,7 @@
+use harness_core::UnwrapOrAbort;
 #[tokio::test]
 async fn coordinator_runs_parallel_child_sessions_under_slot_limits() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = Arc::new(PromptScriptedProvider::new(
         BTreeMap::from([
             (
@@ -42,21 +43,21 @@ async fn coordinator_runs_parallel_child_sessions_under_slot_limits() {
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let actor = supervisor_actor();
     let _alpha = coordinator
         .spawn_agent(actor.clone(), "alpha", None)
         .await
-        .expect("spawn alpha");
+        .unwrap_or_abort();
     let _beta = coordinator
         .spawn_agent(actor.clone(), "beta", None)
         .await
-        .expect("spawn beta");
+        .unwrap_or_abort();
     let _beta_two = coordinator
         .spawn_agent(actor, "beta", None)
         .await
-        .expect("spawn second beta");
+        .unwrap_or_abort();
 
     let events = wait_for_events(&run.events_path, Duration::from_secs(2), |events| {
         let scheduled = events
@@ -89,7 +90,7 @@ async fn coordinator_runs_parallel_child_sessions_under_slot_limits() {
         scheduled == 4 && completed == 3
     })
     .await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let scheduled = events
         .iter()
@@ -172,7 +173,7 @@ async fn coordinator_runs_parallel_child_sessions_under_slot_limits() {
 }
 #[tokio::test]
 async fn coordinator_isolates_parallel_child_failures() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = Arc::new(PromptScriptedProvider::new(
         BTreeMap::from([
             (
@@ -207,17 +208,17 @@ async fn coordinator_isolates_parallel_child_failures() {
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let actor = supervisor_actor();
     let _alpha = coordinator
         .spawn_agent(actor.clone(), "alpha", None)
         .await
-        .expect("spawn alpha");
+        .unwrap_or_abort();
     let _beta = coordinator
         .spawn_agent(actor, "beta", None)
         .await
-        .expect("spawn beta");
+        .unwrap_or_abort();
 
     let events = wait_for_events(&run.events_path, Duration::from_secs(2), |events| {
         let scheduled_task_ids = events
@@ -243,7 +244,7 @@ async fn coordinator_isolates_parallel_child_failures() {
                 == 2
     })
     .await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let scheduled_task_ids = events
         .iter()
@@ -315,7 +316,7 @@ async fn coordinator_isolates_parallel_child_failures() {
 }
 #[tokio::test]
 async fn immediate_agent_turn_emits_single_started_event() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let coordinator = test_agent_coordinator(temp_dir.path(), Duration::from_millis(5));
 
     let run = coordinator
@@ -324,16 +325,16 @@ async fn immediate_agent_turn_emits_single_started_event() {
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     let request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id.clone(), "alpha-prompt")
         .await
-        .expect("request immediate turn");
+        .unwrap_or_abort();
 
     let events = wait_for_events(&run.events_path, Duration::from_secs(2), |events| {
         events.iter().any(|event| {
@@ -351,7 +352,7 @@ async fn immediate_agent_turn_emits_single_started_event() {
         })
     })
     .await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let scheduled: Vec<_> = events
         .iter()
@@ -400,7 +401,7 @@ async fn immediate_agent_turn_emits_single_started_event() {
                 EventV1::ProviderRequestStarted(_) if event.correlation_id.as_deref() == Some(request_id.as_str())
             )
         })
-        .expect("provider request started event");
+        .unwrap_or_abort();
     assert!(
         started_idx < provider_started_idx,
         "started scheduling event should precede provider execution"
@@ -417,7 +418,7 @@ async fn immediate_agent_turn_emits_single_started_event() {
 }
 #[tokio::test]
 async fn queued_agent_turn_emits_started_when_dequeued() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let coordinator = test_agent_coordinator(temp_dir.path(), Duration::from_millis(25));
 
     let run = coordinator
@@ -426,25 +427,25 @@ async fn queued_agent_turn_emits_started_when_dequeued() {
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let alpha = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     let beta = coordinator
         .spawn_agent_idle(supervisor_actor(), "beta", None)
         .await
-        .expect("spawn idle beta");
+        .unwrap_or_abort();
 
     let _first_request_id = coordinator
         .request_agent_turn(supervisor_actor(), alpha, "alpha-prompt")
         .await
-        .expect("request first turn");
+        .unwrap_or_abort();
     let queued_request_id = coordinator
         .request_agent_turn(supervisor_actor(), beta.clone(), "beta-prompt")
         .await
-        .expect("request queued turn");
+        .unwrap_or_abort();
 
     let events = wait_for_events(&run.events_path, Duration::from_secs(2), |events| {
         let scheduled = events
@@ -471,7 +472,7 @@ async fn queued_agent_turn_emits_started_when_dequeued() {
         scheduled == 2 && completed
     })
     .await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let scheduled: Vec<_> = events
         .iter()
@@ -508,7 +509,7 @@ async fn queued_agent_turn_emits_started_when_dequeued() {
                 EventV1::ProviderRequestStarted(_) if event.correlation_id.as_deref() == Some(queued_request_id.as_str())
             )
         })
-        .expect("provider request started event");
+        .unwrap_or_abort();
     assert!(
         scheduled[1].0 < provider_started_idx,
         "dequeue-time started event should be emitted before execution begins"
@@ -525,6 +526,6 @@ async fn queued_agent_turn_emits_started_when_dequeued() {
                         && event.correlation_id.as_deref() == Some(queued_request_id.as_str())
             )
         })
-        .expect("task completed event");
+        .unwrap_or_abort();
     assert!(provider_started_idx < completed_idx);
 }

@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -81,21 +82,22 @@ mod tests {
         TaskScheduleState, TaskScheduledEvent, TaskTerminalScope, ToolCallFinishedEvent,
         ToolCallRequestedEvent, ToolCallStatus, SCHEMA_VERSION,
     };
+    use crate::UnwrapOrAbort;
 
     #[test]
     fn applying_same_jsonl_twice_yields_identical_run_summary() {
         let jsonl = fixture_jsonl();
         let first: Vec<EventEnvelopeV1> = jsonl
             .lines()
-            .map(|line| serde_json::from_str(line).expect("valid fixture line"))
+            .map(|line| serde_json::from_str(line).unwrap_or_abort())
             .collect();
         let second: Vec<EventEnvelopeV1> = jsonl
             .lines()
-            .map(|line| serde_json::from_str(line).expect("valid fixture line"))
+            .map(|line| serde_json::from_str(line).unwrap_or_abort())
             .collect();
 
-        let summary_a = project_run_summary(first.iter()).expect("project first replay");
-        let summary_b = project_run_summary(second.iter()).expect("project second replay");
+        let summary_a = project_run_summary(first.iter()).unwrap_or_abort();
+        let summary_b = project_run_summary(second.iter()).unwrap_or_abort();
 
         assert_eq!(summary_a, summary_b);
         assert_eq!(summary_a.status, RunStatus::Finished);
@@ -175,8 +177,8 @@ mod tests {
             ),
         ];
 
-        let summary = project_run_summary(events.iter()).expect("project summary");
-        let timeline = project_timeline_index(events.iter()).expect("project timeline");
+        let summary = project_run_summary(events.iter()).unwrap_or_abort();
+        let timeline = project_timeline_index(events.iter()).unwrap_or_abort();
 
         assert_eq!(summary.status, RunStatus::Finished);
         assert!(summary.tasks_in_flight.is_empty());
@@ -291,9 +293,8 @@ mod tests {
 
         let request_ref =
             resolve_background_request_ref(events.iter(), &parent_actor, Some("req_child"), None)
-                .expect("authorized child request");
-        let projection =
-            project_background_request(events.iter(), &request_ref).expect("project background");
+                .unwrap_or_abort();
+        let projection = project_background_request(events.iter(), &request_ref).unwrap_or_abort();
 
         assert_eq!(projection.request_id, "req_child");
         assert_eq!(projection.session_id.as_deref(), Some("agent_child"));
@@ -360,9 +361,8 @@ mod tests {
 
         let request_ref =
             resolve_background_request_ref(events.iter(), &parent_actor, Some("req_child"), None)
-                .expect("authorized child request");
-        let projection =
-            project_background_request(events.iter(), &request_ref).expect("project background");
+                .unwrap_or_abort();
+        let projection = project_background_request(events.iter(), &request_ref).unwrap_or_abort();
         assert_eq!(projection.status, "failed");
         assert!(projection.terminal);
         assert_eq!(projection.session_id.as_deref(), Some("agent_child"));
@@ -371,12 +371,9 @@ mod tests {
             Some("provider failed closed")
         );
 
-        let plan = project_resume_plan(events.iter(), "run_projection").expect("resume plan");
+        let plan = project_resume_plan(events.iter(), "run_projection").unwrap_or_abort();
         assert!(plan.tasks_in_flight.is_empty());
-        let child = plan
-            .child_sessions
-            .get("agent_child")
-            .expect("child session snapshot");
+        let child = plan.child_sessions.get("agent_child").unwrap_or_abort();
         assert_eq!(
             child.terminal_state,
             Some(ChildSessionTerminalState::Failed)
@@ -385,10 +382,7 @@ mod tests {
             child.terminal_reason.as_deref(),
             Some("provider failed closed")
         );
-        let notification = child
-            .background_notification
-            .as_ref()
-            .expect("notification snapshot");
+        let notification = child.background_notification.as_ref().unwrap_or_abort();
         assert_eq!(
             notification.status,
             BackgroundTaskNotificationStatus::Failed
@@ -473,7 +467,7 @@ mod tests {
             Some("req_first"),
             Some("agent_child"),
         )
-        .expect("explicit request id should resolve");
+        .unwrap_or_abort();
 
         assert_eq!(request_ref.request_id, "req_first");
     }
@@ -525,9 +519,8 @@ mod tests {
 
         let request_ref =
             resolve_background_request_ref(events.iter(), &parent_actor, Some("req_child"), None)
-                .expect("authorized child request");
-        let projection =
-            project_background_request(events.iter(), &request_ref).expect("project background");
+                .unwrap_or_abort();
+        let projection = project_background_request(events.iter(), &request_ref).unwrap_or_abort();
 
         assert_eq!(projection.status, "cancelled");
         assert!(projection.terminal);
@@ -591,9 +584,8 @@ mod tests {
 
         let request_ref =
             resolve_background_request_ref(events.iter(), &parent_actor, Some("req_child"), None)
-                .expect("authorized child request");
-        let projection =
-            project_background_request(events.iter(), &request_ref).expect("project background");
+                .unwrap_or_abort();
+        let projection = project_background_request(events.iter(), &request_ref).unwrap_or_abort();
 
         assert_eq!(projection.scheduler_task_id.as_deref(), Some("task_000001"));
         assert_eq!(projection.status, "running");

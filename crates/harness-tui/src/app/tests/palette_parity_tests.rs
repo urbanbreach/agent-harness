@@ -1,6 +1,7 @@
 use super::*;
 use crate::keybindings::palette_model;
 use crate::keybindings::parity_matrix;
+use crate::UnwrapOrAbort;
 
 fn open_palette(app: &mut AppState) {
     app.handle_key(key_with_modifiers(
@@ -276,7 +277,7 @@ pub(super) fn palette_suggested_duplicate_dispatches_same_command() {
         .palette_filtered
         .iter()
         .find(|c| c.starts_with("suggested:"))
-        .expect("should have suggested duplicate");
+        .unwrap_or_abort();
 
     let original = suggested.strip_prefix("suggested:").unwrap();
     assert!(
@@ -517,7 +518,7 @@ pub(super) fn palette_title_weighting_prefers_title_match() {
         .position(|c| c == "app.exit")
         .unwrap();
     let first_id = app.palette_filtered[0].as_str();
-    let first_entry = palette_model::find(first_id).expect("first result should be valid");
+    let first_entry = palette_model::find(first_id).unwrap_or_abort();
     assert!(
         first_entry.category != palette_model::PaletteCategory::System || first_id == "app.exit",
         "if first result is in System category, it should be app.exit; got: {first_id}"
@@ -935,7 +936,7 @@ pub(super) fn palette_suggested_row_dispatches_via_enter() {
         .palette_filtered
         .iter()
         .position(|c| c == "suggested:session.new")
-        .expect("should have suggested:session.new duplicate");
+        .unwrap_or_abort();
 
     app.palette_selected = suggested_pos;
     app.handle_key(key(KeyCode::Enter));
@@ -1648,7 +1649,7 @@ pub(super) fn palette_log_success_dispatch() {
         .iter()
         .rev()
         .find(|e| !e.command_id.is_empty())
-        .expect("palette log should have dispatch entry");
+        .unwrap_or_abort();
     assert_eq!(dispatch_entry.command_id, "app.exit");
     assert_eq!(
         dispatch_entry.dialog_state,
@@ -1664,10 +1665,7 @@ pub(super) fn palette_log_rejection_for_unavailable() {
     let mut app = AppState::new_live(None, false, None);
     open_palette(&mut app);
     palette_controller::dispatch_palette_command(&mut app, "prompt.stash");
-    let last = app
-        .palette_log
-        .last()
-        .expect("palette log should have rejection entry");
+    let last = app.palette_log.last().unwrap_or_abort();
     assert_eq!(last.command_id, "prompt.stash");
     assert_eq!(
         last.dialog_state,
@@ -1689,7 +1687,7 @@ pub(super) fn palette_log_contains_command_id_and_target() {
         .iter()
         .rev()
         .find(|e| !e.command_id.is_empty())
-        .expect("palette log should have dispatch entry");
+        .unwrap_or_abort();
     assert!(
         !dispatch_entry.command_id.is_empty(),
         "log must contain command_id"
@@ -1710,7 +1708,7 @@ pub(super) fn palette_log_contains_filter_length() {
         .palette_filtered
         .iter()
         .position(|c| c == "app.exit")
-        .expect("app.exit should be in filtered results");
+        .unwrap_or_abort();
     app.palette_selected = exit_pos;
     app.handle_key(key(KeyCode::Enter));
     let dispatch_entries: Vec<_> = app
@@ -1862,7 +1860,7 @@ pub(super) fn palette_behavior_session_copy_copies_transcript() {
         .iter()
         .rev()
         .find(|e| e.command_id == "session.copy")
-        .expect("palette log should have entry for session.copy");
+        .unwrap_or_abort();
     assert_eq!(dispatch_entry.command_id, "session.copy");
     assert_eq!(
         dispatch_entry.dialog_state,
@@ -2084,7 +2082,7 @@ pub(super) fn palette_golden_ranking_page_up_wraps_from_start() {
     assert!(len > 10);
     app.palette_selected = 0;
     app.handle_key(key(KeyCode::PageUp));
-    let expected = (0isize - 10).rem_euclid(len as isize) as usize;
+    let expected = (0isize - 10).rem_euclid(isize::try_from(len).unwrap_or(isize::MAX)) as usize;
     assert_eq!(
         app.palette_selected, expected,
         "PageUp from first item must wrap to {}, got {}",
@@ -2096,10 +2094,7 @@ pub(super) fn palette_log_failure_has_error_kind() {
     let mut app = AppState::new_live(None, false, None);
     open_palette(&mut app);
     palette_controller::dispatch_palette_command(&mut app, "prompt.stash");
-    let last = app
-        .palette_log
-        .last()
-        .expect("palette log should have rejection entry");
+    let last = app.palette_log.last().unwrap_or_abort();
     assert_eq!(last.command_id, "prompt.stash");
     assert_eq!(last.status, palette_controller::PaletteLogStatus::Rejected);
     assert!(
@@ -2116,10 +2111,7 @@ pub(super) fn palette_log_has_redacted_ids() {
     ));
     open_palette(&mut app);
     palette_controller::dispatch_palette_command(&mut app, "app.exit");
-    let last = app
-        .palette_log
-        .last()
-        .expect("palette log should have entry");
+    let last = app.palette_log.last().unwrap_or_abort();
     assert!(
         last.provider_id_redacted.is_some(),
         "log must contain redacted provider ID when provider is configured"
@@ -2329,13 +2321,13 @@ pub(super) fn palette_golden_ranking_title_vs_category_weighting() {
     let new_session_pos = session_rows
         .iter()
         .position(|r| r.command_id == "session.new")
-        .expect("session.new should be in filtered Session results");
+        .unwrap_or_abort();
 
     // "Show sidebar" does NOT have "session" in its title → category-only match (weighted 1x).
     let show_sidebar_pos = session_rows
         .iter()
         .position(|r| r.command_id == "session.sidebar.toggle")
-        .expect("session.sidebar.toggle should be in filtered Session results");
+        .unwrap_or_abort();
 
     assert!(
         new_session_pos < show_sidebar_pos,

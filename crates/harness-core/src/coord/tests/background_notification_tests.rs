@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 #[path = "background_notification_delivery_tests.rs"]
 mod background_notification_delivery_tests;
@@ -8,7 +9,7 @@ pub(super) use background_notification_delivery_tests::{
 };
 
 pub(super) async fn background_task_completion_schedules_pending_wakeup_when_parent_finishes() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let clock = FakeClock::new();
     let redactor = DefaultRedactor::default();
     let mut run_state = background_task_notification_run_state(temp_dir.path(), "run_bg_race");
@@ -27,7 +28,7 @@ pub(super) async fn background_task_completion_schedules_pending_wakeup_when_par
             metadata: None,
         }),
     )
-    .expect("append terminal completion");
+    .unwrap_or_abort();
 
     append_background_task_notification_and_schedule(
         &clock,
@@ -46,15 +47,15 @@ pub(super) async fn background_task_completion_schedules_pending_wakeup_when_par
         "child output",
     )
     .await
-    .expect("active parent stores pending wakeup");
+    .unwrap_or_abort();
 
     let pending = run_state
         .pending_agent_wakeups
         .get("agent_parent")
-        .expect("pending parent wakeup")
+        .unwrap_or_abort()
         .first()
         .cloned()
-        .expect("one pending wakeup");
+        .unwrap_or_abort();
     run_state.running_agent_turns.clear();
 
     schedule_pending_agent_wakeups_for_idle_agent(
@@ -71,20 +72,20 @@ pub(super) async fn background_task_completion_schedules_pending_wakeup_when_par
         "agent_parent",
     )
     .await
-    .expect("schedule pending wakeup after parent finish");
+    .unwrap_or_abort();
 
     assert!(run_state.pending_agent_wakeups.is_empty());
     let running = run_state
         .running_agent_turns
         .values()
         .find(|running| running.agent_id == "agent_parent")
-        .expect("pending wakeup starts follow-up parent turn");
+        .unwrap_or_abort();
     assert_eq!(running.request_id, pending.request_id);
     assert_eq!(running.request_prompt, pending.notification_text);
 }
 
 pub(super) async fn background_task_completion_queues_parent_when_parent_is_idle() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let clock = FakeClock::new();
     let redactor = DefaultRedactor::default();
     let mut run_state = background_task_notification_run_state(temp_dir.path(), "run_bg_idle");
@@ -104,7 +105,7 @@ pub(super) async fn background_task_completion_queues_parent_when_parent_is_idle
             metadata: None,
         }),
     )
-    .expect("append terminal completion");
+    .unwrap_or_abort();
 
     append_background_task_notification_and_schedule(
         &clock,
@@ -123,7 +124,7 @@ pub(super) async fn background_task_completion_queues_parent_when_parent_is_idle
         "child output",
     )
     .await
-    .expect("schedule idle parent wakeup");
+    .unwrap_or_abort();
 
     assert!(run_state.pending_agent_wakeups.is_empty());
     assert!(run_state.queued_agent_turns.is_empty());
@@ -131,7 +132,7 @@ pub(super) async fn background_task_completion_queues_parent_when_parent_is_idle
         .running_agent_turns
         .values()
         .find(|running| running.agent_id == "agent_parent")
-        .expect("idle parent wakeup starts a new turn when capacity is available");
+        .unwrap_or_abort();
     assert_eq!(running.profile_name, "parent");
     assert_eq!(running.model_ref, "mock:parent-model");
     assert!(running
@@ -154,7 +155,7 @@ pub(super) async fn background_task_completion_queues_parent_when_parent_is_idle
 }
 
 pub(super) async fn background_task_completion_sync_spawn_does_not_notify() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let clock = FakeClock::new();
     let redactor = DefaultRedactor::default();
     let mut run_state = background_task_notification_run_state(temp_dir.path(), "run_sync_none");
@@ -173,7 +174,7 @@ pub(super) async fn background_task_completion_sync_spawn_does_not_notify() {
             metadata: None,
         }),
     )
-    .expect("append terminal completion");
+    .unwrap_or_abort();
 
     append_background_task_notification_and_schedule(
         &clock,
@@ -192,7 +193,7 @@ pub(super) async fn background_task_completion_sync_spawn_does_not_notify() {
         "sync child output",
     )
     .await
-    .expect("sync child ignored");
+    .unwrap_or_abort();
 
     let events = read_events(&run_state.info.events_path);
     assert!(!events
@@ -203,7 +204,7 @@ pub(super) async fn background_task_completion_sync_spawn_does_not_notify() {
 
 pub(super) async fn background_task_completion_records_pending_notification_when_parent_cannot_wake(
 ) {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let clock = FakeClock::new();
     let redactor = DefaultRedactor::default();
     let mut run_state = background_task_notification_run_state(temp_dir.path(), "run_bg_pending");
@@ -222,7 +223,7 @@ pub(super) async fn background_task_completion_records_pending_notification_when
             metadata: None,
         }),
     )
-    .expect("append terminal completion");
+    .unwrap_or_abort();
     let mut child_task = background_child_task(true);
     child_task.parent_agent_id = Some("missing_parent_agent".to_string());
 
@@ -243,7 +244,7 @@ pub(super) async fn background_task_completion_records_pending_notification_when
         "child output",
     )
     .await
-    .expect("pending notification is durable");
+    .unwrap_or_abort();
 
     let events = read_events(&run_state.info.events_path);
     let notification = events
@@ -252,7 +253,7 @@ pub(super) async fn background_task_completion_records_pending_notification_when
             EventV1::BackgroundTaskNotification(payload) => Some(payload),
             _ => None,
         })
-        .expect("pending notification event");
+        .unwrap_or_abort();
     assert_eq!(
         notification.parent_agent_id.as_deref(),
         Some("missing_parent_agent")
@@ -262,7 +263,7 @@ pub(super) async fn background_task_completion_records_pending_notification_when
 }
 
 pub(super) async fn background_task_completion_cancellation_and_late_terminal_do_not_duplicate() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let clock = FakeClock::new();
     let redactor = DefaultRedactor::default();
     let mut run_state = background_task_notification_run_state(temp_dir.path(), "run_bg_cancel");
@@ -281,7 +282,7 @@ pub(super) async fn background_task_completion_cancellation_and_late_terminal_do
             task_scope: Some(crate::event::TaskTerminalScope::AgentTurn),
         }),
     )
-    .expect("append cancellation");
+    .unwrap_or_abort();
     append_background_task_notification_and_schedule(
         &clock,
         &redactor,
@@ -299,7 +300,7 @@ pub(super) async fn background_task_completion_cancellation_and_late_terminal_do
         "provider failed closed",
     )
     .await
-    .expect("failed child notifies");
+    .unwrap_or_abort();
 
     let late_terminal = append_payload_event_with_correlation(
         &clock,
@@ -315,7 +316,7 @@ pub(super) async fn background_task_completion_cancellation_and_late_terminal_do
             metadata: None,
         }),
     )
-    .expect("append duplicate late terminal");
+    .unwrap_or_abort();
     append_background_task_notification_and_schedule(
         &clock,
         &redactor,
@@ -333,7 +334,7 @@ pub(super) async fn background_task_completion_cancellation_and_late_terminal_do
         "late output",
     )
     .await
-    .expect("late duplicate ignored");
+    .unwrap_or_abort();
 
     let events = read_events(&run_state.info.events_path);
     let notifications = events
@@ -373,8 +374,8 @@ pub(super) fn background_task_completion_replay_projection_is_side_effect_free()
         }),
     )];
 
-    let summary = crate::proj::project_run_summary(events.iter()).expect("project summary");
-    let timeline = crate::proj::project_timeline_index(events.iter()).expect("project timeline");
+    let summary = crate::proj::project_run_summary(events.iter()).unwrap_or_abort();
+    let timeline = crate::proj::project_timeline_index(events.iter()).unwrap_or_abort();
 
     assert_eq!(summary.counts.total_events, 1);
     assert_eq!(

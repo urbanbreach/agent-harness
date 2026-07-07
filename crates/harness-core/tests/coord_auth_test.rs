@@ -1,3 +1,4 @@
+use harness_core::UnwrapOrAbort;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -70,7 +71,7 @@ impl Tool for TestEditTool {
 
 #[tokio::test]
 async fn tool_auth_uses_derived_worker_category_not_caller_category() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let policy = allow_all_permission_policy()
         .with_category_override(
             "worker-deny",
@@ -96,12 +97,12 @@ async fn tool_auth_uses_derived_worker_category_not_caller_category() {
     let run = coordinator
         .start_run("derived_category", PathBuf::from("/workspace/project"))
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let worker_agent_id = coordinator
         .spawn_agent(supervisor_actor(), "worker", None)
         .await
-        .expect("spawn worker");
+        .unwrap_or_abort();
 
     let error = coordinator
         .request_tool_call(
@@ -118,7 +119,7 @@ async fn tool_auth_uses_derived_worker_category_not_caller_category() {
         other => panic!("expected PermissionDenied, got {other:?}"),
     };
 
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let events = load_events(&run.events_path);
     assert!(events.iter().any(|event| {
@@ -139,7 +140,7 @@ async fn tool_auth_uses_derived_worker_category_not_caller_category() {
 
 #[tokio::test]
 async fn unknown_worker_agent_id_is_denied_closed() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
 
     let coordinator = test_coordinator(
         temp_dir.path(),
@@ -150,7 +151,7 @@ async fn unknown_worker_agent_id_is_denied_closed() {
     let run = coordinator
         .start_run("unknown_worker", PathBuf::from("/workspace/project"))
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let error = coordinator
         .request_tool_call(
@@ -164,7 +165,7 @@ async fn unknown_worker_agent_id_is_denied_closed() {
 
     assert!(matches!(error, CoordinatorError::PolicyViolation(_)));
 
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let events = load_events(&run.events_path);
     assert!(events.iter().any(|event| {
@@ -177,7 +178,7 @@ async fn unknown_worker_agent_id_is_denied_closed() {
 
 #[tokio::test]
 async fn worker_toolset_enforcement_blocks_non_allowlisted_tool() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
 
     let coordinator = test_coordinator(
         temp_dir.path(),
@@ -188,12 +189,12 @@ async fn worker_toolset_enforcement_blocks_non_allowlisted_tool() {
     let run = coordinator
         .start_run("toolset_enforcement", PathBuf::from("/workspace/project"))
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let worker_agent_id = coordinator
         .spawn_agent(supervisor_actor(), "worker", None)
         .await
-        .expect("spawn worker");
+        .unwrap_or_abort();
 
     let error = coordinator
         .request_tool_call(
@@ -207,7 +208,7 @@ async fn worker_toolset_enforcement_blocks_non_allowlisted_tool() {
 
     assert!(matches!(error, CoordinatorError::PolicyViolation(_)));
 
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let events = load_events(&run.events_path);
     assert!(events.iter().any(|event| {
@@ -221,7 +222,7 @@ async fn worker_toolset_enforcement_blocks_non_allowlisted_tool() {
 #[tokio::test]
 async fn shell_permission_summary_redacts_command_secrets() {
     // arrange
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let policy = PermissionPolicy::new(
         PermissionMode::Allow,
         PermissionMode::Ask,
@@ -239,7 +240,7 @@ async fn shell_permission_summary_redacts_command_secrets() {
             temp_dir.path().join("workspace"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let command = "curl -H 'Authorization: Bearer sk-secret1234567890' https://example.test";
 
     // act
@@ -251,7 +252,7 @@ async fn shell_permission_summary_redacts_command_secrets() {
             json!({"command": command}),
         )
         .await
-        .expect("ask-mode shell request should be recorded before timeout");
+        .unwrap_or_abort();
     let permission_id = load_events(&run.events_path)
         .iter()
         .find_map(|event| match &event.payload {
@@ -262,7 +263,7 @@ async fn shell_permission_summary_redacts_command_secrets() {
             }
             _ => None,
         })
-        .expect("permission request should be recorded");
+        .unwrap_or_abort();
     coordinator
         .resolve_permission(
             permission_id,
@@ -270,9 +271,9 @@ async fn shell_permission_summary_redacts_command_secrets() {
             Some("test denied".to_string()),
         )
         .await
-        .expect("deny ask-mode shell permission");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &tool_call_id).await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     // assert
     let events = load_events(&run.events_path);
@@ -286,14 +287,14 @@ async fn shell_permission_summary_redacts_command_secrets() {
             }
             _ => None,
         })
-        .expect("permission request summary");
+        .unwrap_or_abort();
     assert!(!summary.contains("sk-secret1234567890"));
     assert!(summary.contains("Bearer [REDACTED]"));
 }
 
 #[tokio::test]
 async fn edit_rename_requires_permission_for_destination_path() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let policy = allow_all_permission_policy().with_category_override(
         "plan",
         CategoryPermissions {
@@ -321,12 +322,12 @@ async fn edit_rename_requires_permission_for_destination_path() {
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let worker_agent_id = coordinator
         .spawn_agent(supervisor_actor(), "worker", None)
         .await
-        .expect("spawn worker");
+        .unwrap_or_abort();
     let active_plan = harness_core::plan::plan_file_display_path(&run.run_id);
 
     let error = coordinator
@@ -347,7 +348,7 @@ async fn edit_rename_requires_permission_for_destination_path() {
         other => panic!("expected PermissionDenied, got {other:?}"),
     };
 
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let events = load_events(&run.events_path);
     assert!(events.iter().any(|event| {
@@ -372,7 +373,7 @@ async fn edit_rename_requires_permission_for_destination_path() {
 
 #[tokio::test]
 async fn plan_mode_edit_requires_active_plan_file_not_sibling_plan() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let policy = allow_all_permission_policy().with_category_override(
         "plan",
         CategoryPermissions {
@@ -404,11 +405,11 @@ async fn plan_mode_edit_requires_active_plan_file_not_sibling_plan() {
     let run = coordinator
         .start_run("active_plan_edit", &workspace)
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let worker_agent_id = coordinator
         .spawn_agent(supervisor_actor(), "worker", None)
         .await
-        .expect("spawn worker");
+        .unwrap_or_abort();
     let active_plan = harness_core::plan::plan_file_display_path(&run.run_id);
 
     let allowed_tool_call_id = coordinator
@@ -419,7 +420,7 @@ async fn plan_mode_edit_requires_active_plan_file_not_sibling_plan() {
             json!({ "filePath": active_plan }),
         )
         .await
-        .expect("active plan file edit should be allowed");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &allowed_tool_call_id).await;
 
     let denied_error = coordinator
@@ -437,7 +438,7 @@ async fn plan_mode_edit_requires_active_plan_file_not_sibling_plan() {
         other => panic!("expected PermissionDenied, got {other:?}"),
     };
 
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let events = load_events(&run.events_path);
     assert!(events.iter().any(|event| matches!(
@@ -463,13 +464,13 @@ async fn plan_mode_edit_requires_active_plan_file_not_sibling_plan() {
 #[cfg(unix)]
 #[tokio::test]
 async fn plan_mode_edit_rejects_symlinked_active_plan_directory() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp_dir.path().join("workspace");
     let redirected_agent_harness = temp_dir.path().join("redirected-agent-harness");
-    fs::create_dir_all(&redirected_agent_harness).expect("create redirected target");
-    fs::create_dir_all(&workspace).expect("create workspace");
+    fs::create_dir_all(&redirected_agent_harness).unwrap_or_abort();
+    fs::create_dir_all(&workspace).unwrap_or_abort();
     std::os::unix::fs::symlink(&redirected_agent_harness, workspace.join(".agent-harness"))
-        .expect("symlink .agent-harness");
+        .unwrap_or_abort();
 
     let policy = allow_all_permission_policy().with_category_override(
         "plan",
@@ -494,11 +495,11 @@ async fn plan_mode_edit_rejects_symlinked_active_plan_directory() {
     let run = coordinator
         .start_run("symlinked_active_plan_edit", &workspace)
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let worker_agent_id = coordinator
         .spawn_agent(supervisor_actor(), "worker", None)
         .await
-        .expect("spawn worker");
+        .unwrap_or_abort();
     let active_plan = harness_core::plan::plan_file_display_path(&run.run_id);
 
     let denied_error = coordinator
@@ -515,7 +516,7 @@ async fn plan_mode_edit_rejects_symlinked_active_plan_directory() {
         other => panic!("expected PermissionDenied, got {other:?}"),
     };
 
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let events = load_events(&run.events_path);
     assert!(events.iter().any(|event| matches!(

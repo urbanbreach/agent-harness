@@ -1,9 +1,10 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 #[test]
 fn structured_summary_contract_defaults_on_and_serializes_alias() {
     let default_compaction: CompactionRuntimeConfig =
-        serde_json::from_value(serde_json::json!({})).expect("empty compaction config parses");
+        serde_json::from_value(serde_json::json!({})).unwrap_or_abort();
     assert!(default_compaction.structured_summary_contract);
     assert!(default_compaction.estimated_token_triggers);
     assert_eq!(default_compaction.fallback_input_tokens, 32_768);
@@ -13,13 +14,12 @@ fn structured_summary_contract_defaults_on_and_serializes_alias() {
         "estimatedTokenTriggers": false,
         "fallbackInputTokens": 65_536,
     }))
-    .expect("camelCase compaction aliases parse");
+    .unwrap_or_abort();
     assert!(!disabled_via_alias.structured_summary_contract);
     assert!(!disabled_via_alias.estimated_token_triggers);
     assert_eq!(disabled_via_alias.fallback_input_tokens, 65_536);
 
-    let serialized =
-        serde_json::to_value(&disabled_via_alias).expect("compaction config serializes");
+    let serialized = serde_json::to_value(&disabled_via_alias).unwrap_or_abort();
     assert_eq!(
         serialized.get("structured_summary_contract"),
         Some(&serde_json::Value::Bool(false))
@@ -63,7 +63,7 @@ fn example_config_parses_public_agents_and_compaction() {
         ),
         Some("./config.json"),
     );
-    let parsed = load_config_from_str(&text).expect("fixture config must parse");
+    let parsed = load_config_from_str(&text).unwrap_or_abort();
 
     assert_eq!(parsed.schema.as_deref(), Some("./config.json"));
     assert!(parsed.providers.contains_key("default"));
@@ -179,7 +179,7 @@ fn built_in_lsp_presets_accept_override_only_entries() {
             }
         "#;
 
-    let parsed = load_config_from_str(cfg).expect("built-in lsp presets should parse");
+    let parsed = load_config_from_str(cfg).unwrap_or_abort();
     assert!(parsed.lsp.servers.contains_key("python"));
     assert!(parsed.lsp.servers.contains_key("go"));
     assert!(parsed.lsp.servers.contains_key("yaml"));
@@ -225,7 +225,7 @@ fn model_variant_metadata_accepts_max_reasoning_effort() {
             }
         "#,
     )
-    .expect("max reasoning effort should parse");
+    .unwrap_or_abort();
     let catalog = configured_model_catalog(&parsed);
 
     assert!(catalog.iter().any(|entry| {
@@ -322,7 +322,7 @@ fn retired_top_level_keys_fail_with_migration_guidance() {
             }
             "#,
     )
-    .expect("legacy compatibility keys should translate");
+    .unwrap_or_abort();
 
     assert!(parsed.agents.contains_key("deep"));
     assert_eq!(parsed.runtime.background_tasks.default_concurrency, 2);
@@ -375,7 +375,7 @@ fn runtime_background_tasks_camel_case_aliases_parse_without_duplicate_fields() 
             }
             "#,
     )
-    .expect("runtime camelCase aliases should parse without duplicate logical fields");
+    .unwrap_or_abort();
 
     assert_eq!(parsed.runtime.background_tasks.default_concurrency, 2);
     assert_eq!(parsed.runtime.background_tasks.provider_concurrency, 3);
@@ -506,7 +506,7 @@ fn top_level_hashline_edit_alias_and_default_are_accepted() {
         }
         "#;
 
-    let parsed = load_config_from_str(cfg).expect("hashline-edit alias should parse");
+    let parsed = load_config_from_str(cfg).unwrap_or_abort();
     assert!(!parsed.hashline_edit);
 
     let defaults_cfg = r#"
@@ -559,7 +559,6 @@ fn top_level_hashline_edit_alias_and_default_are_accepted() {
         }
         "#;
 
-    let parsed_defaults =
-        load_config_from_str(defaults_cfg).expect("hashline-edit defaults should parse");
+    let parsed_defaults = load_config_from_str(defaults_cfg).unwrap_or_abort();
     assert!(parsed_defaults.hashline_edit);
 }

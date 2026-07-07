@@ -2,6 +2,7 @@ use super::{
     build_recursive_tree, AgentOpsExecutor, BackgroundOutputTool, BatchArgs, ControlPlaneExecutor,
     QuestionArgs, SkillArgs, SkillTool, TaskArgs, TaskTool,
 };
+use crate::UnwrapOrAbort;
 use std::sync::Arc;
 
 use harness_core::clock::RealClock;
@@ -13,13 +14,13 @@ use serde_json::{json, Value};
 
 #[tokio::test]
 async fn recursive_tree_renders_direct_children_once_in_sorted_order() {
-    let tempdir = tempfile::tempdir().expect("tempdir");
+    let tempdir = tempfile::tempdir().unwrap_or_abort();
     let root = tempdir.path();
-    std::fs::create_dir_all(root.join("src/zeta")).expect("create zeta");
-    std::fs::create_dir_all(root.join("src/alpha")).expect("create alpha");
-    std::fs::write(root.join("src/zeta/mod.rs"), "").expect("write zeta mod");
-    std::fs::write(root.join("src/alpha/lib.rs"), "").expect("write alpha lib");
-    std::fs::write(root.join("README.md"), "").expect("write readme");
+    std::fs::create_dir_all(root.join("src/zeta")).unwrap_or_abort();
+    std::fs::create_dir_all(root.join("src/alpha")).unwrap_or_abort();
+    std::fs::write(root.join("src/zeta/mod.rs"), "").unwrap_or_abort();
+    std::fs::write(root.join("src/alpha/lib.rs"), "").unwrap_or_abort();
+    std::fs::write(root.join("README.md"), "").unwrap_or_abort();
 
     let coordinator = spawn_coordinator(
         CoordinatorConfig::default(),
@@ -39,7 +40,7 @@ async fn recursive_tree_renders_direct_children_once_in_sorted_order() {
         coordinator,
     };
 
-    let tree = build_recursive_tree(&ctx, root, &[], 100).expect("render tree");
+    let tree = build_recursive_tree(&ctx, root, &[], 100).unwrap_or_abort();
 
     assert_eq!(tree.count, 3);
     assert!(!tree.truncated);
@@ -62,7 +63,7 @@ fn question_args_accept_top_level_array_and_prompt_aliases() {
             "allowMultiple": true
         }
     ]))
-    .expect("question args should accept top-level arrays");
+    .unwrap_or_abort();
 
     assert_eq!(args.questions.len(), 1);
     assert_eq!(args.questions[0].question, "Choose a mode");
@@ -82,7 +83,7 @@ fn question_args_accept_allow_freeform_legacy_field() {
             }
         ]
     }))
-    .expect("question args should ignore allowFreeform legacy field");
+    .unwrap_or_abort();
 
     assert_eq!(args.questions.len(), 1);
     assert_eq!(args.questions[0].question, "Choose a mode");
@@ -94,7 +95,7 @@ fn skill_args_match_harness_name_only_schema() {
     let args: SkillArgs = serde_json::from_value(json!({
         "name": "git-master"
     }))
-    .expect("skill args should accept exact skill name");
+    .unwrap_or_abort();
 
     assert_eq!(args.name, "git-master");
 
@@ -122,7 +123,7 @@ fn task_args_accept_agent_alias_fields() {
         "background": true,
         "load_skills": []
     }))
-    .expect("task args should accept agent aliases");
+    .unwrap_or_abort();
 
     assert_eq!(args.subagent_type.as_deref(), Some("explorer"));
     assert!(args.run_in_background);
@@ -137,7 +138,7 @@ fn task_args_accept_skills_alias_for_load_skills() {
         "run_in_background": false,
         "skills": ["rust-best-practices"]
     }))
-    .expect("task args should accept skills alias");
+    .unwrap_or_abort();
 
     assert_eq!(args.load_skills, vec!["rust-best-practices".to_string()]);
 }
@@ -170,7 +171,7 @@ fn task_args_require_explicit_background_and_skills_fields() {
 #[test]
 fn task_and_background_output_descriptions_prefer_completion_notification() {
     let executor = Arc::new(AgentOpsExecutor::new());
-    let task = TaskTool::new(executor.clone());
+    let task = TaskTool::new(Arc::clone(&executor));
     let background_output = BackgroundOutputTool::new(executor);
 
     let task_description = task.description();
@@ -212,7 +213,7 @@ fn task_and_background_output_descriptions_prefer_completion_notification() {
     let prompt_description = task_schema
         .pointer("/properties/prompt/description")
         .and_then(Value::as_str)
-        .expect("task prompt schema description");
+        .unwrap_or_abort();
     for field in [
         "context",
         "goal",
@@ -230,7 +231,7 @@ fn task_and_background_output_descriptions_prefer_completion_notification() {
     let run_in_background_description = task_schema
         .pointer("/properties/run_in_background/description")
         .and_then(Value::as_str)
-        .expect("task run_in_background schema description");
+        .unwrap_or_abort();
     assert!(run_in_background_description.contains("interim status checks"));
     assert!(run_in_background_description.contains("cancel=true anytime"));
     assert!(run_in_background_description.contains("completion notification"));
@@ -250,19 +251,19 @@ fn task_and_background_output_descriptions_prefer_completion_notification() {
     let request_id_description = background_output_schema
         .pointer("/properties/request_id/description")
         .and_then(Value::as_str)
-        .expect("background_output request_id schema description");
+        .unwrap_or_abort();
     assert!(request_id_description.contains("interim status checks"));
     assert!(request_id_description.contains("completion notification"));
     let block_description = background_output_schema
         .pointer("/properties/block/description")
         .and_then(Value::as_str)
-        .expect("background_output block schema description");
+        .unwrap_or_abort();
     assert!(block_description.contains("interim status checks"));
     assert!(block_description.contains("completion notification"));
     let cancel_description = background_output_schema
         .pointer("/properties/cancel/description")
         .and_then(Value::as_str)
-        .expect("background_output cancel schema description");
+        .unwrap_or_abort();
     assert!(cancel_description.contains("cancel=true"));
     assert!(cancel_description.contains("allowed anytime"));
 }
@@ -281,7 +282,7 @@ fn batch_args_accept_parallel_wrapper_shape() {
             }
         ]
     }))
-    .expect("batch args should accept wrapper shape");
+    .unwrap_or_abort();
 
     assert_eq!(args.tool_calls.len(), 2);
     assert_eq!(args.tool_calls[0].tool, "read");
@@ -299,7 +300,7 @@ fn batch_args_accept_wrapper_shape_inside_tool_calls() {
             }
         ]
     }))
-    .expect("batch args should accept wrapper calls inside tool_calls");
+    .unwrap_or_abort();
 
     assert_eq!(args.tool_calls.len(), 1);
     assert_eq!(args.tool_calls[0].tool, "read");
@@ -319,7 +320,7 @@ fn batch_args_accept_args_alias_inside_tool_calls() {
             }
         ]
     }))
-    .expect("batch args should accept args alias");
+    .unwrap_or_abort();
 
     assert_eq!(args.tool_calls.len(), 1);
     assert_eq!(args.tool_calls[0].tool, "read");

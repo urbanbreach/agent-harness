@@ -1,3 +1,4 @@
+use harness_tools::UnwrapOrAbort;
 use harness_core::agent_catalog::{SHIPPED_CATEGORY_ROUTES, SHIPPED_SUBAGENTS};
 use harness_tools::{discover_skill_catalog, SkillCatalogStatus};
 
@@ -11,7 +12,7 @@ async fn shipped_v1_builtin_skills_load_and_disable_by_stable_id() {
     let _guard = skills_registry_test_lock();
     let root = repo_root();
     let registry = coordinator_registry(ShellAllowlist::default());
-    let skill_tool = registry.get("skill").expect("skill tool");
+    let skill_tool = registry.get("skill").unwrap_or_abort();
 
     let _loadable_guard = SkillsConfigGuard::install(skills_config_without_global_roots());
 
@@ -55,7 +56,7 @@ async fn shipped_v1_builtin_skills_load_and_disable_by_stable_id() {
         ],
         ..SkillsConfig::default()
     });
-    let catalog = discover_skill_catalog(&root).expect("discover disabled shipped skills");
+    let catalog = discover_skill_catalog(&root).unwrap_or_abort();
 
     for name in ["git-master", "review-work", "frontend-ui-ux"] {
         let entry = catalog
@@ -85,9 +86,9 @@ async fn shipped_v1_builtin_skills_load_and_disable_by_stable_id() {
 fn shipped_builtin_skill_ids_win_over_global_and_imported_duplicates() {
     // arrange
     let _guard = skills_registry_test_lock();
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let home = temp_dir.path().join("home");
-    fs::create_dir_all(&home).expect("home dir");
+    fs::create_dir_all(&home).unwrap_or_abort();
     let _skills_guard = SkillsConfigGuard::install(SkillsConfig {
         global_roots: vec![
             home.join(".agents/skills"),
@@ -113,7 +114,7 @@ fn shipped_builtin_skill_ids_win_over_global_and_imported_duplicates() {
     }
 
     // act
-    let catalog = discover_skill_catalog(&root).expect("discover shipped skill catalog");
+    let catalog = discover_skill_catalog(&root).unwrap_or_abort();
 
     // assert
     for name in ["git-master", "review-work", "frontend-ui-ux"] {
@@ -147,7 +148,7 @@ fn shipped_v1_builtin_skills_have_quality_contract_and_catalog_metadata() {
     let _skills_guard = SkillsConfigGuard::install(skills_config_without_global_roots());
     let root = repo_root();
     let skill_root = root.join(".agent-harness/skills");
-    let catalog = discover_skill_catalog(&root).expect("discover shipped skill catalog");
+    let catalog = discover_skill_catalog(&root).unwrap_or_abort();
 
     for name in ["git-master", "review-work", "frontend-ui-ux"] {
         let skill_path = skill_root.join(name).join("SKILL.md");
@@ -193,7 +194,7 @@ fn shipped_v1_builtin_skills_have_quality_contract_and_catalog_metadata() {
     }
 
     let review = fs::read_to_string(skill_root.join("review-work/SKILL.md"))
-        .expect("read review-work skill");
+        .unwrap_or_abort();
     for real_route in [
         "category=\"deep\"",
         "category=\"ultrabrain\"",
@@ -210,7 +211,7 @@ fn shipped_v1_builtin_skills_have_quality_contract_and_catalog_metadata() {
 fn review_work_references_only_shipped_agent_catalog_routes() {
     // arrange
     let review = fs::read_to_string(repo_root().join(".agent-harness/skills/review-work/SKILL.md"))
-        .expect("read review-work skill");
+        .unwrap_or_abort();
 
     // act
     let category_refs = quoted_values_after(&review, "category=");

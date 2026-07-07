@@ -1,3 +1,4 @@
+use harness_tools::UnwrapOrAbort;
 #[tokio::test]
 #[expect(
     clippy::await_holding_lock,
@@ -5,13 +6,13 @@
 )]
 async fn skill_load_uses_registered_custom_roots_and_permission_precedence() {
     let _guard = skills_registry_test_lock();
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let home = temp_dir.path().join("home");
     let repo = temp_dir.path().join("repo");
     let app = repo.join("packages/app");
-    fs::create_dir_all(&home).expect("home dir");
-    fs::create_dir_all(&app).expect("app dir");
-    fs::create_dir_all(repo.join(".git")).expect("git dir");
+    fs::create_dir_all(&home).unwrap_or_abort();
+    fs::create_dir_all(&app).unwrap_or_abort();
+    fs::create_dir_all(repo.join(".git")).unwrap_or_abort();
     let _skills_guard = SkillsConfigGuard::install(SkillsConfig {
         project_roots: vec![PathBuf::from(".custom/skills")],
         global_roots: vec![home.join(".company/skills")],
@@ -51,7 +52,7 @@ async fn skill_load_uses_registered_custom_roots_and_permission_precedence() {
     );
 
     let registry = coordinator_registry(ShellAllowlist::default());
-    let skill_tool = registry.get("skill").expect("skill tool");
+    let skill_tool = registry.get("skill").unwrap_or_abort();
 
     let visible = skill_tool
         .call(
@@ -59,7 +60,7 @@ async fn skill_load_uses_registered_custom_roots_and_permission_precedence() {
             json!({"name": "custom-visible"}),
         )
         .await
-        .expect("custom-visible skill");
+        .unwrap_or_abort();
     assert!(visible.display_text.contains("Custom visible description"));
     assert_eq!(
         visible
@@ -97,13 +98,13 @@ async fn skill_load_uses_registered_custom_roots_and_permission_precedence() {
             Some(r#"[["Yes"]]"#.to_string()),
         )
         .await
-        .expect("approve custom-secret skill");
+        .unwrap_or_abort();
     let gated = gated_task
         .await
-        .expect("join gated skill task")
-        .expect("exact permission override should load after approval");
+        .unwrap_or_abort()
+        .unwrap_or_abort();
     assert!(gated.display_text.contains("Custom secret description"));
-    handle.stop_run().await.expect("stop custom roots run");
+    handle.stop_run().await.unwrap_or_abort();
 
     let repo_hidden = skill_tool
         .call(
@@ -122,7 +123,7 @@ async fn skill_load_uses_registered_custom_roots_and_permission_precedence() {
             json!({"name": "global-visible"}),
         )
         .await
-        .expect("global-visible skill");
+        .unwrap_or_abort();
     assert!(global_visible
         .display_text
         .contains("Global visible description"));
@@ -134,12 +135,12 @@ async fn skill_load_uses_registered_custom_roots_and_permission_precedence() {
 )]
 async fn skill_load_ask_permissions_use_question_approval_flow() {
     let _guard = skills_registry_test_lock();
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let home = temp_dir.path().join("home");
     let repo = temp_dir.path().join("repo");
-    fs::create_dir_all(&home).expect("home dir");
-    fs::create_dir_all(&repo).expect("repo dir");
-    fs::create_dir_all(repo.join(".git")).expect("git dir");
+    fs::create_dir_all(&home).unwrap_or_abort();
+    fs::create_dir_all(&repo).unwrap_or_abort();
+    fs::create_dir_all(repo.join(".git")).unwrap_or_abort();
     let _skills_guard = SkillsConfigGuard::install(SkillsConfig {
         global_roots: vec![home.join(".config/agent-harness/skills")],
         permissions: BTreeMap::from([
@@ -182,15 +183,15 @@ async fn skill_load_ask_permissions_use_question_approval_flow() {
             Some(r#"[["Yes"]]"#.to_string()),
         )
         .await
-        .expect("approve skill tool");
+        .unwrap_or_abort();
     let skill = skill_task
         .await
-        .expect("join skill tool")
-        .expect("skill tool result");
+        .unwrap_or_abort()
+        .unwrap_or_abort();
 
     assert!(skill.display_text.contains("Ask description"));
     assert!(skill.display_text.contains("Ask body"));
     assert!(skill.display_text.contains("# Skill: experimental-preview"));
 
-    handle.stop_run().await.expect("stop run");
+    handle.stop_run().await.unwrap_or_abort();
 }

@@ -1,11 +1,11 @@
+use harness::UnwrapOrAbort;
 use std::path::PathBuf;
 
-#[allow(dead_code)]
 pub fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
-        .expect("workspace root")
+        .unwrap_or_abort()
         .parent()
-        .expect("repo root")
+        .unwrap_or_abort()
         .to_path_buf()
 }

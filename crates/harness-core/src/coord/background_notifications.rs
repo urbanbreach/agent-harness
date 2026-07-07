@@ -281,15 +281,15 @@ where
         schedule_agent_turn(
             clock,
             redactor,
-            hook_command_executor.clone(),
+            Arc::clone(&hook_command_executor),
             job_tx.clone(),
             run_state,
             hook_runtime_config.clone(),
             compaction_config.clone(),
             provider_retry_config,
             ScheduleAgentTurnArgs {
-                provider: provider.clone(),
-                tool_registry: tool_registry.clone(),
+                provider: Arc::clone(&provider),
+                tool_registry: Arc::clone(&tool_registry),
                 profile: parent_profile.clone(),
                 request: AgentRequest {
                     agent_id: agent_id.to_string(),

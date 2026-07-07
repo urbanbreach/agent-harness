@@ -1,3 +1,4 @@
+use harness::UnwrapOrAbort;
 #[test]
 fn interactive_bootstrap_builds_runtime_state_from_agents() {
     // arrange
@@ -64,11 +65,11 @@ fn interactive_bootstrap_builds_runtime_state_from_agents() {
         }
         "#,
     )
-    .expect("config should parse");
+    .unwrap_or_abort();
 
     let coordinator_config =
         // act
-        bootstrap::build_interactive_coordinator_config(&config).expect("build config");
+        bootstrap::build_interactive_coordinator_config(&config).unwrap_or_abort();
 
     // assert
     assert!(coordinator_config.agent_profiles.contains_key("deep"));
@@ -160,11 +161,11 @@ fn build_and_review_permissions_follow_configured_policy() {
         }
         "#,
     )
-    .expect("config should parse");
+    .unwrap_or_abort();
 
     let coordinator_config =
         // act
-        bootstrap::build_interactive_coordinator_config(&config).expect("build config");
+        bootstrap::build_interactive_coordinator_config(&config).unwrap_or_abort();
 
     // assert
     assert_eq!(bootstrap::interactive_profile_name(&config), "build");
@@ -203,10 +204,10 @@ fn build_and_review_permissions_follow_configured_policy() {
 #[test]
 fn interactive_bootstrap_uses_discovered_markdown_prompt_when_inline_missing() {
     // arrange
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let repo = temp.path().join("repo");
-    fs::create_dir_all(repo.join(".git")).expect("create git dir");
-    fs::create_dir_all(&repo).expect("create repo");
+    fs::create_dir_all(repo.join(".git")).unwrap_or_abort();
+    fs::create_dir_all(&repo).unwrap_or_abort();
 
     let config_path = repo.join("harness.jsonc");
     fs::write(
@@ -263,12 +264,12 @@ fn interactive_bootstrap_uses_discovered_markdown_prompt_when_inline_missing() {
         }
         "#,
     )
-    .expect("write config");
+    .unwrap_or_abort();
     write_agent_markdown(&repo, "build", "Markdown-backed build prompt.");
 
     let config = load_config_from_repo_file(&config_path, &repo);
     let coordinator_config =
-        bootstrap::build_interactive_coordinator_config(&config).expect("build config");
+        bootstrap::build_interactive_coordinator_config(&config).unwrap_or_abort();
     // act
     let prompt = &coordinator_config.agent_profiles["build"].system_prompt;
     // assert
@@ -279,10 +280,10 @@ fn interactive_bootstrap_uses_discovered_markdown_prompt_when_inline_missing() {
 #[test]
 fn interactive_bootstrap_prepends_project_agents_md_to_agent_prompt() {
     // arrange
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let repo = temp.path().join("repo");
-    fs::create_dir_all(repo.join(".git")).expect("create git dir");
-    fs::create_dir_all(&repo).expect("create repo");
+    fs::create_dir_all(repo.join(".git")).unwrap_or_abort();
+    fs::create_dir_all(&repo).unwrap_or_abort();
 
     let config_path = repo.join("harness.jsonc");
     fs::write(
@@ -340,13 +341,13 @@ fn interactive_bootstrap_prepends_project_agents_md_to_agent_prompt() {
         }
         "#,
     )
-    .expect("write config");
+    .unwrap_or_abort();
     fs::write(repo.join("AGENTS.md"), "Project-wide instructions.")
-        .expect("write project instructions");
+        .unwrap_or_abort();
 
     let config = load_config_from_repo_file(&config_path, &repo);
     let coordinator_config =
-        bootstrap::build_interactive_coordinator_config(&config).expect("build config");
+        bootstrap::build_interactive_coordinator_config(&config).unwrap_or_abort();
     // act
     let prompt = &coordinator_config.agent_profiles["build"].system_prompt;
     // assert

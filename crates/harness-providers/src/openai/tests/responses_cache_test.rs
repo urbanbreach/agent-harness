@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 #[tokio::test]
 async fn openai_responses_offline_transport_streams_tool_call_complete() {
@@ -65,7 +66,7 @@ async fn openai_responses_offline_transport_streams_tool_call_complete() {
     let tools = body
         .get("tools")
         .and_then(|value| value.as_array())
-        .expect("responses tools array should be serialized");
+        .unwrap_or_abort();
     assert_eq!(tools.len(), 1);
     assert_eq!(
         tools[0].get("type"),
@@ -84,7 +85,7 @@ async fn openai_responses_sse_parser_handles_multibyte_utf8_split_across_chunks(
         "data: {\"type\":\"response.output_text.delta\",\"delta\":\"hi €\"}\n\n",
         "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"total_tokens\":2}}}\n\n",
     );
-    let euro = transcript.find('€').expect("euro in transcript");
+    let euro = transcript.find('€').unwrap_or_abort();
     let split = euro + 1;
     let transport = ScriptedOpenAiTransport::new([ScriptedOpenAiResponse::sse_chunks(vec![
         transcript.as_bytes()[..split].to_vec(),
@@ -118,11 +119,11 @@ async fn openai_compatible_request_uses_stable_clamped_prompt_cache_key() {
         false,
         false,
     ))
-    .expect("serialize first responses request");
+    .unwrap_or_abort();
     let second_body = serde_json::to_value(OpenAiResponsesRequest::from_completion_request(
         first, false, false,
     ))
-    .expect("serialize second responses request");
+    .unwrap_or_abort();
     assert_eq!(
         first_body.get("prompt_cache_key"),
         Some(&serde_json::Value::String(expected_clamped.clone()))
@@ -139,7 +140,7 @@ async fn openai_compatible_request_uses_stable_clamped_prompt_cache_key() {
         false,
         false,
     ))
-    .expect("serialize other responses request");
+    .unwrap_or_abort();
     assert_ne!(
         other_body.get("prompt_cache_key"),
         first_body.get("prompt_cache_key")
@@ -150,7 +151,7 @@ async fn openai_compatible_request_uses_stable_clamped_prompt_cache_key() {
         false,
         false,
     ))
-    .expect("serialize no-session responses request");
+    .unwrap_or_abort();
     assert!(no_session.get("prompt_cache_key").is_none());
 
     let mut disabled = basic_request("gpt-4o-mini");
@@ -159,7 +160,7 @@ async fn openai_compatible_request_uses_stable_clamped_prompt_cache_key() {
     let disabled_body = serde_json::to_value(OpenAiResponsesRequest::from_completion_request(
         disabled, true, false,
     ))
-    .expect("serialize disabled responses request");
+    .unwrap_or_abort();
     assert!(disabled_body.get("prompt_cache_key").is_none());
     assert!(disabled_body.get("prompt_cache_retention").is_none());
 }
@@ -180,7 +181,7 @@ async fn openai_compatible_long_cache_retention_is_direct_openai_only() {
         },
         Arc::clone(&transport) as Arc<dyn OpenAiHttpTransport>,
     )
-    .expect("build direct provider");
+    .unwrap_or_abort();
     let mut direct_request = basic_request("gpt-4o-mini");
     direct_request.context.session_id = Some("session-direct".to_string());
     direct_request.context.cache_retention = CacheRetention::Long;
@@ -265,7 +266,7 @@ async fn openai_transport_failure_keeps_sanitized_context() {
         timeout_ms: 1_000,
         headers: BTreeMap::new(),
     })
-    .expect("build provider");
+    .unwrap_or_abort();
 
     let events = collect_events(&provider, basic_request("gpt-4o-mini")).await;
     let [ProviderStreamEvent::Error { message, .. }] = events.as_slice() else {

@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::path::{Path, PathBuf};
 
 use harness_core::tool::{ToolContext, ToolError};
@@ -7,7 +8,7 @@ use crate::fs_walk::normalize_relative_path;
 pub(crate) fn file_uri_from_path(path: &Path) -> String {
     let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
     reqwest::Url::from_file_path(&canonical)
-        .expect("valid file url")
+        .unwrap_or_abort()
         .to_string()
 }
 

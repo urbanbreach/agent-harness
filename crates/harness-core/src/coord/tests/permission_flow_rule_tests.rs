@@ -1,7 +1,8 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 pub(crate) async fn permission_rule_bash_selector_is_enforced_at_tool_call_site() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let parsed = load_config_from_str(
         r#"
         {
@@ -39,7 +40,7 @@ pub(crate) async fn permission_rule_bash_selector_is_enforced_at_tool_call_site(
         }
         "#,
     )
-    .expect("permission rule config should parse");
+    .unwrap_or_abort();
     let mut config = test_config(temp_dir.path());
     config.permission_policy = PermissionPolicy::from_config(&parsed);
 
@@ -52,7 +53,7 @@ pub(crate) async fn permission_rule_bash_selector_is_enforced_at_tool_call_site(
     let run = handle
         .start_run("permission_rule_bash", temp_dir.path())
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let actor = EventActor::new(ActorKind::Supervisor, Some("agent-supervisor".to_string()));
     let denied = handle
@@ -74,7 +75,7 @@ pub(crate) async fn permission_rule_bash_selector_is_enforced_at_tool_call_site(
             json!({"cmd": "git diff"}),
         )
         .await
-        .expect("catch-all bash rule should allow");
+        .unwrap_or_abort();
 
     wait_for_events(
         &handle,
@@ -88,7 +89,7 @@ pub(crate) async fn permission_rule_bash_selector_is_enforced_at_tool_call_site(
         },
     )
     .await;
-    handle.stop_run().await.expect("stop run");
+    handle.stop_run().await.unwrap_or_abort();
 
     let events = read_events(&run.events_path);
     assert!(events.iter().any(|event| {
@@ -145,7 +146,7 @@ pub(crate) fn task_permission_rule_selector_uses_subagent_type_before_aliases() 
 }
 
 pub(crate) async fn permission_rule_task_selector_is_enforced_at_tool_call_site() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let parsed = load_config_from_str(
         r#"
         {
@@ -184,7 +185,7 @@ pub(crate) async fn permission_rule_task_selector_is_enforced_at_tool_call_site(
         }
         "#,
     )
-    .expect("permission rule config should parse");
+    .unwrap_or_abort();
     let mut config = test_config(temp_dir.path());
     config.permission_policy = PermissionPolicy::from_config(&parsed);
 
@@ -196,7 +197,7 @@ pub(crate) async fn permission_rule_task_selector_is_enforced_at_tool_call_site(
     let run = handle
         .start_run("permission_rule_task", temp_dir.path())
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let actor = EventActor::new(ActorKind::Supervisor, Some("agent-supervisor".to_string()));
 
     let whitespace_denied = handle
@@ -237,7 +238,7 @@ pub(crate) async fn permission_rule_task_selector_is_enforced_at_tool_call_site(
         CoordinatorError::PermissionDenied(_)
     ));
 
-    handle.stop_run().await.expect("stop run");
+    handle.stop_run().await.unwrap_or_abort();
     let events = read_events(&run.events_path);
     assert!(events.iter().any(|event| {
         matches!(
@@ -252,7 +253,7 @@ pub(crate) async fn permission_rule_task_selector_is_enforced_at_tool_call_site(
 }
 
 pub(crate) async fn perm_ask_path_blocks_until_resolved() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let mut config = test_config(temp_dir.path());
     config.permission_policy = ask_shell_permission_policy(1_000);
 
@@ -265,7 +266,7 @@ pub(crate) async fn perm_ask_path_blocks_until_resolved() {
     let run = handle
         .start_run("perm_ask", temp_dir.path())
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let tool_call_id = handle
         .request_tool_call(
@@ -275,7 +276,7 @@ pub(crate) async fn perm_ask_path_blocks_until_resolved() {
             json!({"cmd": "echo blocked"}),
         )
         .await
-        .expect("request tool call");
+        .unwrap_or_abort();
 
     let before_resolve = wait_for_events(
         &handle,
@@ -310,12 +311,12 @@ pub(crate) async fn perm_ask_path_blocks_until_resolved() {
             }
             _ => None,
         })
-        .expect("permission requested event");
+        .unwrap_or_abort();
 
     handle
         .resolve_permission(permission_id, PermissionDecision::Allow, None)
         .await
-        .expect("resolve permission");
+        .unwrap_or_abort();
 
     wait_for_events(
         &handle,
@@ -329,7 +330,7 @@ pub(crate) async fn perm_ask_path_blocks_until_resolved() {
         },
     )
     .await;
-    handle.stop_run().await.expect("stop run");
+    handle.stop_run().await.unwrap_or_abort();
 
     let events = read_events(&run.events_path);
     let requested_idx = events
@@ -341,7 +342,7 @@ pub(crate) async fn perm_ask_path_blocks_until_resolved() {
                     if data.tool_call_id.as_deref() == Some(tool_call_id.as_str())
             )
         })
-        .expect("permission requested index");
+        .unwrap_or_abort();
     let resolved_idx = events
         .iter()
         .position(|event| {
@@ -351,7 +352,7 @@ pub(crate) async fn perm_ask_path_blocks_until_resolved() {
                     if data.decision == crate::event::PermissionDecision::Allow
             )
         })
-        .expect("permission resolved index");
+        .unwrap_or_abort();
     let started_idx = events
         .iter()
         .position(|event| {
@@ -360,7 +361,7 @@ pub(crate) async fn perm_ask_path_blocks_until_resolved() {
                 EventV1::ToolCallStarted(data) if data.tool_call_id == tool_call_id
             )
         })
-        .expect("tool started index");
+        .unwrap_or_abort();
 
     assert!(requested_idx < resolved_idx);
     assert!(resolved_idx < started_idx);

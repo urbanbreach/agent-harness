@@ -1,7 +1,8 @@
 use harness_core::auth::{CredentialStore, ProviderId, StoredCredential};
+use harness_core::UnwrapOrAbort;
 
 fn provider_id(value: &str) -> ProviderId {
-    ProviderId::parse(value).expect("valid provider id")
+    ProviderId::parse(value).unwrap_or_abort()
 }
 
 #[test]
@@ -34,7 +35,7 @@ fn poc_parse_rejects_all_traversal_payloads() {
 
 #[test]
 fn poc_credential_path_for_valid_provider_stays_in_dir() {
-    let temp = tempfile::tempdir().expect("tempdir");
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let store = CredentialStore::new(temp.path());
     let credentials_dir = temp.path().join("credentials");
     let provider = provider_id("safe-provider");
@@ -53,20 +54,15 @@ fn poc_credential_path_for_valid_provider_stays_in_dir() {
 
 #[test]
 fn poc_save_and_load_valid_custom_provider_stays_in_dir() {
-    let temp = tempfile::tempdir().expect("tempdir");
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let store = CredentialStore::new(temp.path());
     let credentials_dir = temp.path().join("credentials");
     let provider = provider_id("custom-provider");
     let credential =
         StoredCredential::api_key(provider.clone(), "sk-test-secret", "2026-06-26T00:00:00Z");
 
-    store
-        .save(&credential)
-        .expect("save valid provider credential");
-    let loaded = store
-        .load(&provider)
-        .expect("load valid provider credential")
-        .expect("credential exists");
+    store.save(&credential).unwrap_or_abort();
+    let loaded = store.load(&provider).unwrap_or_abort().unwrap_or_abort();
     let path = store.credential_path(&provider);
 
     assert!(

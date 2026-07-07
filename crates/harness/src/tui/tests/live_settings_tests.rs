@@ -1,8 +1,9 @@
 use super::*;
+use harness::UnwrapOrAbort;
 
 #[test]
 fn no_config_tui_without_credentials_enters_connect_state() {
-    let temp = tempfile::tempdir().expect("tempdir");
+    let temp = tempfile::tempdir().unwrap_or_abort();
 
     let settings = resolve_live_settings_for_test(
         &live_tui_command(),
@@ -17,7 +18,7 @@ fn no_config_tui_without_credentials_enters_connect_state() {
             model_selection_path: None,
         },
     )
-    .expect("no-config live settings should resolve");
+    .unwrap_or_abort();
 
     assert!(settings.config.is_some());
     assert_eq!(settings.launch_metadata.provider(), "local");
@@ -27,7 +28,7 @@ fn no_config_tui_without_credentials_enters_connect_state() {
 
 #[test]
 fn no_config_tui_with_stored_codex_launches_connected_catalog() {
-    let temp = tempfile::tempdir().expect("tempdir");
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let data_home = temp.path().join("data");
     let store = CredentialStore::new(data_home.join("harness"));
     store
@@ -36,7 +37,7 @@ fn no_config_tui_with_stored_codex_launches_connected_catalog() {
             "test-token",
             SystemCredentialClock.now_rfc3339(),
         ))
-        .expect("save credential");
+        .unwrap_or_abort();
 
     let settings = resolve_live_settings_for_test(
         &live_tui_command(),
@@ -51,7 +52,7 @@ fn no_config_tui_with_stored_codex_launches_connected_catalog() {
             model_selection_path: None,
         },
     )
-    .expect("stored Codex credential should resolve live settings");
+    .unwrap_or_abort();
 
     assert_eq!(settings.launch_metadata.provider(), "openai-codex");
     assert!(settings.launch_metadata.model().is_some());
@@ -64,7 +65,7 @@ fn no_config_tui_with_stored_codex_launches_connected_catalog() {
 
 #[test]
 fn auth_refresh_reloads_no_config_builtin_catalog_after_login() {
-    let temp = tempfile::tempdir().expect("tempdir");
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let data_home = temp.path().join("data");
     let store = CredentialStore::new(data_home.join("harness"));
     store
@@ -73,7 +74,7 @@ fn auth_refresh_reloads_no_config_builtin_catalog_after_login() {
             "test-token",
             SystemCredentialClock.now_rfc3339(),
         ))
-        .expect("save credential");
+        .unwrap_or_abort();
 
     let settings = resolve_live_settings_for_test(
         &live_tui_command(),
@@ -88,7 +89,7 @@ fn auth_refresh_reloads_no_config_builtin_catalog_after_login() {
             model_selection_path: None,
         },
     )
-    .expect("launch metadata should refresh after login");
+    .unwrap_or_abort();
     let launch_metadata = settings.launch_metadata;
 
     assert_eq!(launch_metadata.provider(), "github-copilot");
@@ -101,7 +102,7 @@ fn auth_refresh_reloads_no_config_builtin_catalog_after_login() {
 
 #[test]
 fn no_config_tui_ignores_legacy_builtin_model_selection() {
-    let temp = tempfile::tempdir().expect("tempdir");
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let data_home = temp.path().join("data");
     let state_path = temp.path().join("model.json");
     let store = CredentialStore::new(data_home.join("harness"));
@@ -111,12 +112,12 @@ fn no_config_tui_ignores_legacy_builtin_model_selection() {
             "test-token",
             SystemCredentialClock.now_rfc3339(),
         ))
-        .expect("save credential");
+        .unwrap_or_abort();
     std::fs::write(
         &state_path,
         r#"{"schema_version":1,"profile":"build","provider":"openai-codex","model":"gpt-5.5"}"#,
     )
-    .expect("write model state");
+    .unwrap_or_abort();
 
     let settings = resolve_live_settings_for_test(
         &live_tui_command(),
@@ -131,7 +132,7 @@ fn no_config_tui_ignores_legacy_builtin_model_selection() {
             model_selection_path: Some(&state_path),
         },
     )
-    .expect("stored Codex credential should resolve live settings");
+    .unwrap_or_abort();
 
     assert_eq!(settings.launch_metadata.provider(), "openai-codex");
     assert_eq!(settings.launch_metadata.model(), Some("gpt-5.4-mini"));
@@ -139,7 +140,7 @@ fn no_config_tui_ignores_legacy_builtin_model_selection() {
 
 #[test]
 fn project_config_tui_ignores_legacy_model_selection() {
-    let temp = tempfile::tempdir().expect("tempdir");
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let config_path = temp.path().join("harness.jsonc");
     let state_path = temp.path().join("model.json");
     std::fs::write(
@@ -168,12 +169,12 @@ fn project_config_tui_ignores_legacy_model_selection() {
           permission: "ask",
         }"#,
     )
-    .expect("write project config");
+    .unwrap_or_abort();
     std::fs::write(
         &state_path,
         r#"{"schema_version":1,"profile":"build","provider":"openai-codex","model":"gpt-5.5"}"#,
     )
-    .expect("write model state");
+    .unwrap_or_abort();
 
     let result = resolve_live_settings_for_test(
         &live_tui_command(),
@@ -189,17 +190,15 @@ fn project_config_tui_ignores_legacy_model_selection() {
         },
     );
 
-    let settings = result.expect("project config live settings should resolve");
+    let settings = result.unwrap_or_abort();
     assert_eq!(settings.launch_metadata.provider(), "openai-codex");
     assert_eq!(settings.launch_metadata.model(), Some("gpt-5.4-mini"));
 }
 
 #[test]
 fn mock_mode_ignores_discovered_cwd_config() {
-    let _guard = mock_mode_cwd_test_lock()
-        .lock()
-        .expect("mock mode cwd lock poisoned");
-    let temp = tempfile::tempdir().expect("tempdir");
+    let _guard = mock_mode_cwd_test_lock().lock().unwrap_or_abort();
+    let temp = tempfile::tempdir().unwrap_or_abort();
     std::fs::write(
         temp.path().join("harness.jsonc"),
         r#"{
@@ -250,7 +249,7 @@ fn mock_mode_ignores_discovered_cwd_config() {
           }
         }"#,
     )
-    .expect("write discovered cwd config");
+    .unwrap_or_abort();
 
     let result = resolve_live_settings(
         &TuiCommand {
@@ -270,7 +269,7 @@ fn mock_mode_ignores_discovered_cwd_config() {
             .with_current_dir(temp.path().to_path_buf()),
     );
 
-    let settings = result.expect("mock mode settings should resolve");
+    let settings = result.unwrap_or_abort();
     assert!(settings.config.is_none());
     assert_eq!(settings.launch_mode_label.as_deref(), Some("Demo"));
     assert_eq!(settings.launch_metadata.profile(), "worker");
@@ -280,10 +279,8 @@ fn mock_mode_ignores_discovered_cwd_config() {
 
 #[test]
 fn live_new_session_uses_current_workspace_instead_of_seeded_demo_workspace() {
-    let _guard = mock_mode_cwd_test_lock()
-        .lock()
-        .expect("mock mode cwd lock poisoned");
-    let temp = tempfile::tempdir().expect("tempdir");
+    let _guard = mock_mode_cwd_test_lock().lock().unwrap_or_abort();
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let config_path = temp.path().join("harness.jsonc");
     std::fs::write(
         &config_path,
@@ -335,7 +332,7 @@ fn live_new_session_uses_current_workspace_instead_of_seeded_demo_workspace() {
           }
         }"#,
     )
-    .expect("write live config");
+    .unwrap_or_abort();
 
     let result = resolve_live_settings(
         &TuiCommand {
@@ -355,9 +352,8 @@ fn live_new_session_uses_current_workspace_instead_of_seeded_demo_workspace() {
             .with_current_dir(temp.path().to_path_buf()),
     );
 
-    let settings = result.expect("live mode settings should resolve");
-    let workspace = prepare_new_live_workspace(&settings, false, "run_test")
-        .expect("live workspace should resolve");
+    let settings = result.unwrap_or_abort();
+    let workspace = prepare_new_live_workspace(&settings, false, "run_test").unwrap_or_abort();
 
     assert_eq!(settings.launch_mode_label, None);
     assert_eq!(workspace, temp.path());

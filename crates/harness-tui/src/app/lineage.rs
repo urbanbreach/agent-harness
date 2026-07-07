@@ -635,8 +635,11 @@ fn moved_selection_index(selected: usize, len: usize, delta: isize) -> usize {
         return (selected + 1) % len;
     }
 
-    let current = selected.min(len.saturating_sub(1)) as isize;
-    let next = (current + delta).clamp(0, len.saturating_sub(1) as isize);
+    let current = isize::try_from(selected.min(len.saturating_sub(1))).unwrap_or(isize::MAX);
+    let next = (current + delta).clamp(
+        0,
+        isize::try_from(len.saturating_sub(1)).unwrap_or(isize::MAX),
+    );
     usize::try_from(next).unwrap_or(0)
 }
 

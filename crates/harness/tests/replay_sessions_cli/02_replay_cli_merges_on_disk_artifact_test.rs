@@ -1,12 +1,13 @@
+use harness::UnwrapOrAbort;
 #[test]
 fn replay_cli_merges_on_disk_artifact_discovery_with_recovery_metadata() {
-    let run_dir = tempdir().expect("tempdir");
-    std::fs::create_dir_all(run_dir.path().join("artifacts/notes")).expect("create artifacts dir");
+    let run_dir = tempdir().unwrap_or_abort();
+    std::fs::create_dir_all(run_dir.path().join("artifacts/notes")).unwrap_or_abort();
     std::fs::write(
         run_dir.path().join("artifacts/notes/output.txt"),
         "artifact body\n",
     )
-    .expect("write artifact");
+    .unwrap_or_abort();
 
     write_events_jsonl(
         run_dir.path(),
@@ -95,7 +96,7 @@ fn replay_cli_merges_on_disk_artifact_discovery_with_recovery_metadata() {
     let json_output = run_harness([
             "replay",
             "--session",
-            run_dir.path().to_str().expect("run dir utf-8"),
+            run_dir.path().to_str().unwrap_or_abort(),
             "--json",
         ]);
 
@@ -105,7 +106,7 @@ fn replay_cli_merges_on_disk_artifact_discovery_with_recovery_metadata() {
         String::from_utf8_lossy(&json_output.stderr)
     );
     let summary: serde_json::Value =
-        serde_json::from_slice(&json_output.stdout).expect("replay json output should parse");
+        serde_json::from_slice(&json_output.stdout).unwrap_or_abort();
     assert_eq!(summary["artifact_count"], 1);
     assert_eq!(summary["child_session_count"], 1);
     assert_eq!(
@@ -127,7 +128,7 @@ fn replay_cli_merges_on_disk_artifact_discovery_with_recovery_metadata() {
     let human_output = run_harness([
             "replay",
             "--session",
-            run_dir.path().to_str().expect("run dir utf-8"),
+            run_dir.path().to_str().unwrap_or_abort(),
         ]);
 
     assert!(
@@ -146,11 +147,11 @@ fn replay_cli_merges_on_disk_artifact_discovery_with_recovery_metadata() {
 }
 #[test]
 fn sessions_list_cli_prints_finished_and_failed_runs() {
-    let session_dir = tempdir().expect("tempdir");
+    let session_dir = tempdir().unwrap_or_abort();
     let finished_dir = session_dir.path().join("run_a");
     let failed_dir = session_dir.path().join("run_b");
-    std::fs::create_dir_all(&finished_dir).expect("create finished run dir");
-    std::fs::create_dir_all(&failed_dir).expect("create failed run dir");
+    std::fs::create_dir_all(&finished_dir).unwrap_or_abort();
+    std::fs::create_dir_all(&failed_dir).unwrap_or_abort();
 
     write_events_jsonl(
         &finished_dir,
@@ -209,7 +210,7 @@ fn sessions_list_cli_prints_finished_and_failed_runs() {
 
     let output = run_harness([
             "--session-dir",
-            session_dir.path().to_str().expect("session dir utf-8"),
+            session_dir.path().to_str().unwrap_or_abort(),
             "sessions",
             "list",
         ]);
@@ -236,14 +237,14 @@ fn sessions_list_cli_prints_finished_and_failed_runs() {
 }
 #[test]
 fn sessions_list_cli_surfaces_recovery_counts_run_path_and_parent() {
-    let session_dir = tempdir().expect("tempdir");
+    let session_dir = tempdir().unwrap_or_abort();
     let run_dir = session_dir.path().join("run_recovery");
-    std::fs::create_dir_all(&run_dir).expect("create recovery run dir");
+    std::fs::create_dir_all(&run_dir).unwrap_or_abort();
     write_events_jsonl(&run_dir, &delegated_recovery_events("run_recovery_catalog"));
 
     let output = run_harness([
             "--session-dir",
-            session_dir.path().to_str().expect("session dir utf-8"),
+            session_dir.path().to_str().unwrap_or_abort(),
             "sessions",
             "list",
         ]);
@@ -258,24 +259,24 @@ fn sessions_list_cli_surfaces_recovery_counts_run_path_and_parent() {
     let row = stdout
         .lines()
         .find(|line| line.contains("run_recovery_catalog"))
-        .expect("recovery row");
+        .unwrap_or_abort();
     let columns = row.split_whitespace().collect::<Vec<_>>();
     assert_eq!(columns[0], "run_recovery_catalog");
     assert_eq!(columns[7], "1");
     assert_eq!(columns[8], "1");
-    assert_eq!(columns[9], run_dir.to_str().expect("run dir utf-8"));
+    assert_eq!(columns[9], run_dir.to_str().unwrap_or_abort());
     assert_eq!(columns[10], "agent_supervisor");
 }
 #[test]
 fn sessions_inspect_cli_surfaces_recovery_details() {
-    let session_dir = tempdir().expect("tempdir");
+    let session_dir = tempdir().unwrap_or_abort();
     let run_dir = session_dir.path().join("run_recovery_inspect");
-    std::fs::create_dir_all(run_dir.join("artifacts/notes")).expect("create run artifacts");
+    std::fs::create_dir_all(run_dir.join("artifacts/notes")).unwrap_or_abort();
     std::fs::write(
         run_dir.join("artifacts/notes/output.txt"),
         "artifact body\n",
     )
-    .expect("write artifact");
+    .unwrap_or_abort();
 
     write_events_jsonl(
         &run_dir,
@@ -372,7 +373,7 @@ fn sessions_inspect_cli_surfaces_recovery_details() {
 
     let output = run_harness([
             "--session-dir",
-            session_dir.path().to_str().expect("session dir utf-8"),
+            session_dir.path().to_str().unwrap_or_abort(),
             "sessions",
             "inspect",
             "--run",
@@ -396,7 +397,7 @@ fn sessions_inspect_cli_surfaces_recovery_details() {
 
     let json_output = run_harness([
             "--session-dir",
-            session_dir.path().to_str().expect("session dir utf-8"),
+            session_dir.path().to_str().unwrap_or_abort(),
             "sessions",
             "inspect",
             "--run",
@@ -410,13 +411,13 @@ fn sessions_inspect_cli_surfaces_recovery_details() {
         String::from_utf8_lossy(&json_output.stderr)
     );
     let inspected: serde_json::Value =
-        serde_json::from_slice(&json_output.stdout).expect("sessions inspect json should parse");
+        serde_json::from_slice(&json_output.stdout).unwrap_or_abort();
     assert_eq!(inspected["catalog"]["run_id"], "run_recovery_inspect");
     assert_eq!(inspected["replay"]["artifact_count"], 1);
     assert_eq!(inspected["replay"]["child_session_count"], 1);
     assert_eq!(
         inspected["replay"]["session_path"],
-        run_dir.to_str().expect("run dir utf-8")
+        run_dir.to_str().unwrap_or_abort()
     );
     assert_eq!(
         inspected["replay"]["artifacts"][0]["path"],

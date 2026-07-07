@@ -1,6 +1,7 @@
+use harness_core::UnwrapOrAbort;
 #[tokio::test]
 async fn manual_compaction_after_four_small_turns_writes_checkpoint_with_latest_turn() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(
         [
             "first answer",
@@ -33,12 +34,12 @@ async fn manual_compaction_after_four_small_turns_writes_checkpoint_with_latest_
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     for question in [
         "first small question",
         "second small question",
@@ -48,19 +49,19 @@ async fn manual_compaction_after_four_small_turns_writes_checkpoint_with_latest_
         coordinator
             .request_agent_turn(supervisor_actor(), agent_id.clone(), question)
             .await
-            .expect("turn request");
+            .unwrap_or_abort();
         tokio::task::yield_now().await;
     }
 
     let outcome = coordinator
         .compact_agent_context(agent_id, Some("req_000004".to_string()), "manual")
         .await
-        .expect("manual compaction succeeds");
+        .unwrap_or_abort();
     let ManualCompactionOutcome::CheckpointWritten { checkpoint_id, .. } = outcome else {
         panic!("expected manual compaction to force a checkpoint");
     };
 
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let events = load_events(&run.events_path);
     let written = events
@@ -71,14 +72,14 @@ async fn manual_compaction_after_four_small_turns_writes_checkpoint_with_latest_
             }
             _ => None,
         })
-        .expect("manual compaction written event");
+        .unwrap_or_abort();
     assert_eq!(written.checkpoint_id, checkpoint_id);
     assert_eq!(written.preserved_turns, 1);
 
     let checkpoint_path = run.run_dir.join(&written.artifact_path);
-    let checkpoint_body = fs::read_to_string(&checkpoint_path).expect("read checkpoint artifact");
+    let checkpoint_body = fs::read_to_string(&checkpoint_path).unwrap_or_abort();
     let checkpoint: ProviderContextCheckpoint =
-        serde_json::from_str(&checkpoint_body).expect("parse checkpoint artifact");
+        serde_json::from_str(&checkpoint_body).unwrap_or_abort();
     assert_eq!(
         checkpoint.metadata.trigger_reason.as_deref(),
         Some("manual")
@@ -99,7 +100,7 @@ async fn manual_compaction_after_four_small_turns_writes_checkpoint_with_latest_
 }
 #[tokio::test]
 async fn manual_compaction_after_two_turns_summarizes_first_and_preserves_latest() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(
         ["first answer", "second answer"]
             .into_iter()
@@ -127,17 +128,17 @@ async fn manual_compaction_after_two_turns_summarizes_first_and_preserves_latest
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     for question in ["first question", "second question"] {
         let request_id = coordinator
             .request_agent_turn(supervisor_actor(), agent_id.clone(), question)
             .await
-            .expect("turn request");
+            .unwrap_or_abort();
         wait_for_events(&run.events_path, Duration::from_secs(2), |events| {
             events.iter().any(|event| {
                 matches!(
@@ -153,12 +154,12 @@ async fn manual_compaction_after_two_turns_summarizes_first_and_preserves_latest
     let outcome = coordinator
         .compact_agent_context(agent_id, Some("req_000002".to_string()), "manual")
         .await
-        .expect("manual compaction succeeds");
+        .unwrap_or_abort();
     let ManualCompactionOutcome::CheckpointWritten { checkpoint_id, .. } = outcome else {
         panic!("expected manual compaction to force a checkpoint");
     };
 
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let events = load_events(&run.events_path);
     let written = events
@@ -169,15 +170,15 @@ async fn manual_compaction_after_two_turns_summarizes_first_and_preserves_latest
             }
             _ => None,
         })
-        .expect("manual compaction written event");
+        .unwrap_or_abort();
     assert_eq!(written.checkpoint_id, checkpoint_id);
     assert_eq!(written.trigger_reason, "manual");
     assert_eq!(written.preserved_turns, 1);
 
     let checkpoint_path = run.run_dir.join(&written.artifact_path);
-    let checkpoint_body = fs::read_to_string(&checkpoint_path).expect("read checkpoint artifact");
+    let checkpoint_body = fs::read_to_string(&checkpoint_path).unwrap_or_abort();
     let checkpoint: ProviderContextCheckpoint =
-        serde_json::from_str(&checkpoint_body).expect("parse checkpoint artifact");
+        serde_json::from_str(&checkpoint_body).unwrap_or_abort();
     assert_eq!(
         checkpoint.metadata.trigger_reason.as_deref(),
         Some("manual")
@@ -195,7 +196,7 @@ async fn manual_compaction_after_two_turns_summarizes_first_and_preserves_latest
 }
 #[tokio::test]
 async fn manual_compaction_uses_optional_model_backed_summary_without_provider_events() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let model_summary = structured_model_summary("model kept the goal", "model next step");
     let provider = SequentialScriptedProvider::new(vec![
         provider_text_events(&"A".repeat(12_000)),
@@ -219,16 +220,16 @@ async fn manual_compaction_uses_optional_model_backed_summary_without_provider_e
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     for question in ["first question", "second question"] {
         let request_id = coordinator
             .request_agent_turn(supervisor_actor(), agent_id.clone(), question)
             .await
-            .expect("turn request");
+            .unwrap_or_abort();
         wait_for_events(&run.events_path, Duration::from_secs(2), |events| {
             events.iter().any(|event| {
                 matches!(
@@ -244,8 +245,8 @@ async fn manual_compaction_uses_optional_model_backed_summary_without_provider_e
     coordinator
         .compact_agent_context(agent_id, Some("req_000002".to_string()), "manual")
         .await
-        .expect("manual compaction succeeds");
-    coordinator.stop_run().await.expect("stop run");
+        .unwrap_or_abort();
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let events = load_events(&run.events_path);
     let provider_started_count = events
@@ -263,14 +264,14 @@ async fn manual_compaction_uses_optional_model_backed_summary_without_provider_e
     );
     let checkpoint = manual_checkpoint(&run, &events);
     assert_eq!(checkpoint.summary.trim(), model_summary.trim());
-    let source = checkpoint.summary_source.expect("summary source metadata");
+    let source = checkpoint.summary_source.unwrap_or_abort();
     assert_eq!(source.strategy, "model_backed_summary");
     assert!(source.model_backed);
     assert!(!source.deterministic_fallback);
 }
 #[tokio::test]
 async fn model_backed_compaction_falls_back_for_invalid_summary_and_records_metadata() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![
         provider_text_events(&"A".repeat(12_000)),
         provider_text_events(&"B".repeat(12_000)),
@@ -293,16 +294,16 @@ async fn model_backed_compaction_falls_back_for_invalid_summary_and_records_meta
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     for question in ["first question", "second question"] {
         let request_id = coordinator
             .request_agent_turn(supervisor_actor(), agent_id.clone(), question)
             .await
-            .expect("turn request");
+            .unwrap_or_abort();
         wait_for_events(&run.events_path, Duration::from_secs(2), |events| {
             events.iter().any(|event| {
                 matches!(
@@ -318,8 +319,8 @@ async fn model_backed_compaction_falls_back_for_invalid_summary_and_records_meta
     coordinator
         .compact_agent_context(agent_id, Some("req_000002".to_string()), "manual")
         .await
-        .expect("manual compaction succeeds");
-    coordinator.stop_run().await.expect("stop run");
+        .unwrap_or_abort();
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let events = load_events(&run.events_path);
     let checkpoint = manual_checkpoint(&run, &events);
@@ -331,13 +332,13 @@ async fn model_backed_compaction_falls_back_for_invalid_summary_and_records_meta
             }
             _ => None,
         })
-        .expect("manual compaction written event");
-    let written_json = serde_json::to_value(written_event).expect("serialize written event");
+        .unwrap_or_abort();
+    let written_json = serde_json::to_value(written_event).unwrap_or_abort();
     assert_eq!(
         written_json["summary_source"]["strategy"],
         "model_backed_deterministic_fallback"
     );
-    let source = checkpoint.summary_source.expect("summary source metadata");
+    let source = checkpoint.summary_source.unwrap_or_abort();
     assert_eq!(source.strategy, "model_backed_deterministic_fallback");
     assert!(source.model_backed);
     assert!(source.deterministic_fallback);
@@ -352,7 +353,7 @@ async fn model_backed_compaction_falls_back_for_invalid_summary_and_records_meta
 }
 #[tokio::test]
 async fn hook_summary_override_takes_precedence_over_model_backed_compaction() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![
         provider_text_events(&"A".repeat(12_000)),
         provider_text_events(&"B".repeat(12_000)),
@@ -404,16 +405,16 @@ async fn hook_summary_override_takes_precedence_over_model_backed_compaction() {
             temp_dir.path().to_path_buf(),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     for question in ["first question", "second question"] {
         let request_id = coordinator
             .request_agent_turn(supervisor_actor(), agent_id.clone(), question)
             .await
-            .expect("turn request");
+            .unwrap_or_abort();
         wait_for_events(&run.events_path, Duration::from_secs(2), |events| {
             events.iter().any(|event| {
                 matches!(
@@ -429,8 +430,8 @@ async fn hook_summary_override_takes_precedence_over_model_backed_compaction() {
     coordinator
         .compact_agent_context(agent_id, Some("req_000002".to_string()), "manual")
         .await
-        .expect("manual compaction succeeds");
-    coordinator.stop_run().await.expect("stop run");
+        .unwrap_or_abort();
+    coordinator.stop_run().await.unwrap_or_abort();
 
     assert_eq!(
         provider.requests().len(),
@@ -440,14 +441,14 @@ async fn hook_summary_override_takes_precedence_over_model_backed_compaction() {
     let events = load_events(&run.events_path);
     let checkpoint = manual_checkpoint(&run, &events);
     assert_eq!(checkpoint.summary, "hook supplied checkpoint recap");
-    let source = checkpoint.summary_source.expect("summary source metadata");
+    let source = checkpoint.summary_source.unwrap_or_abort();
     assert_eq!(source.strategy, "hook_supplied_summary");
     assert!(!source.model_backed);
     assert!(!source.deterministic_fallback);
 }
 #[tokio::test]
 async fn overflow_retry_split_oversized_latest_turn_preserves_suffix_context() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let oversized_answer = "B".repeat(12_000);
     let provider = SequentialScriptedProvider::new(vec![
         provider_text_events("first compacted answer"),
@@ -474,32 +475,32 @@ async fn overflow_retry_split_oversized_latest_turn_preserves_suffix_context() {
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     coordinator
         .request_agent_turn(supervisor_actor(), agent_id.clone(), "first question")
         .await
-        .expect("first turn");
+        .unwrap_or_abort();
     tokio::task::yield_now().await;
     coordinator
         .request_agent_turn(supervisor_actor(), agent_id.clone(), "second question")
         .await
-        .expect("second turn");
+        .unwrap_or_abort();
     tokio::task::yield_now().await;
     coordinator
         .request_agent_turn(supervisor_actor(), agent_id, "third question")
         .await
-        .expect("third turn triggers overflow retry");
+        .unwrap_or_abort();
     tokio::task::yield_now().await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let retried_messages = provider
         .requests()
         .last()
-        .expect("retried request")
+        .unwrap_or_abort()
         .messages
         .clone();
     assert!(retried_messages.iter().any(|message| {
@@ -532,7 +533,7 @@ async fn overflow_retry_split_oversized_latest_turn_preserves_suffix_context() {
     assert!(checkpoint.recent_turns[0]
         .user_prompt
         .contains("preserved suffix of an oversized latest turn"));
-    let tail_boundary = checkpoint.tail_boundary.as_ref().expect("tail boundary");
+    let tail_boundary = checkpoint.tail_boundary.as_ref().unwrap_or_abort();
     assert_eq!(tail_boundary.mode, "split_oversized_turn_tail");
     assert!(tail_boundary
         .split_prefix_summary

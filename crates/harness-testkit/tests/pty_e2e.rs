@@ -1,3 +1,4 @@
+use harness_testkit::UnwrapOrAbort;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -38,23 +39,20 @@ fn pty_signoff_fails_closed_when_not_on_linux() {
 fn pty_artifact_directory_can_be_created() {
     let dir =
         std::env::temp_dir().join(format!("harness-testkit-pty-smoke-{}", std::process::id()));
-    fs::create_dir_all(&dir).expect("create pty smoke artifact dir");
+    fs::create_dir_all(&dir).unwrap_or_abort();
     assert!(dir.is_dir());
     let _ = fs::remove_dir_all(dir);
 }
 
 #[test]
 fn pty_signoff_manifest_declares_required_flow_artifacts() {
-    let manifest: Value =
-        serde_json::from_str(TUI_SIGNOFF_MANIFEST).expect("parse TUI signoff manifest");
+    let manifest: Value = serde_json::from_str(TUI_SIGNOFF_MANIFEST).unwrap_or_abort();
     assert_eq!(
         manifest["schema_version"],
         "harness-tui-signoff-manifest-v1"
     );
 
-    let flows = manifest["flows"]
-        .as_array()
-        .expect("manifest flows must be an array");
+    let flows = manifest["flows"].as_array().unwrap_or_abort();
     for flow_id in [
         "startup",
         "onboarding_auth",
@@ -73,7 +71,7 @@ fn pty_signoff_manifest_declares_required_flow_artifacts() {
         assert!(
             flow["pty_stages"]
                 .as_array()
-                .expect("pty stages array")
+                .unwrap_or_abort()
                 .iter()
                 .any(|stage| stage
                     .as_str()
@@ -89,14 +87,14 @@ fn pty_signoff_manifest_declares_required_flow_artifacts() {
     );
 
     let artifact_root = visual_artifact_root();
-    fs::create_dir_all(&artifact_root).expect("create PTY visual artifact root");
+    fs::create_dir_all(&artifact_root).unwrap_or_abort();
     let manifest_path = artifact_root.join("tui-signoff-manifest.v1.json");
     let summary_path = artifact_root.join("tui-signoff-manifest.v1.md");
     fs::write(
         &manifest_path,
-        serde_json::to_vec_pretty(&manifest).expect("serialize TUI signoff manifest"),
+        serde_json::to_vec_pretty(&manifest).unwrap_or_abort(),
     )
-    .expect("write TUI signoff manifest artifact");
+    .unwrap_or_abort();
     fs::write(
         &summary_path,
         format!(
@@ -108,7 +106,7 @@ fn pty_signoff_manifest_declares_required_flow_artifacts() {
                 .join(", ")
         ),
     )
-    .expect("write TUI signoff manifest summary artifact");
+    .unwrap_or_abort();
 
     assert_eq!(
         stable_manifest_snapshot_path(&manifest_path),

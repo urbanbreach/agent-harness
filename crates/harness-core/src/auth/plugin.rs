@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -218,6 +219,7 @@ impl AuthPlugin for CopilotAuthPlugin {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::UnwrapOrAbort;
 
     #[test]
     fn registry_get_codex_returns_plugin() {
@@ -235,7 +237,7 @@ mod tests {
     fn registry_get_unknown_returns_none() {
         // arrange
         let registry = AuthPluginRegistry::with_builtins();
-        let provider = ProviderId::parse("unknown").expect("valid provider id");
+        let provider = ProviderId::parse("unknown").unwrap_or_abort();
 
         // act
         let plugin = registry.get(&provider);
@@ -282,7 +284,7 @@ mod tests {
         let enterprise_url = prompts
             .iter()
             .find(|field| field.key == "enterprise_url")
-            .expect("enterprise_url prompt exists");
+            .unwrap_or_abort();
 
         // assert
         assert!(enterprise_url.when.is_some());

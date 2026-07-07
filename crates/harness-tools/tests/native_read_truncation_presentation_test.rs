@@ -1,3 +1,4 @@
+use harness_tools::UnwrapOrAbort;
 use std::fs;
 
 mod common;
@@ -15,7 +16,7 @@ async fn read_truncation_names_full_artifact_and_next_window() {
         workspace.workspace().join("fixture.txt"),
         "alpha\nbeta\ngamma\ndelta\n",
     )
-    .expect("write fixture");
+    .unwrap_or_abort();
     let context = test_context(
         workspace.workspace(),
         "run-read-truncation-presentation",
@@ -26,7 +27,7 @@ async fn read_truncation_names_full_artifact_and_next_window() {
     // act
     let result = registry
         .get("read")
-        .expect("read tool")
+        .unwrap_or_abort()
         .call(
             context,
             json!({
@@ -35,7 +36,7 @@ async fn read_truncation_names_full_artifact_and_next_window() {
             }),
         )
         .await
-        .expect("read should succeed");
+        .unwrap_or_abort();
 
     // assert
     assert_eq!(result.artifacts.len(), 1);
@@ -43,7 +44,7 @@ async fn read_truncation_names_full_artifact_and_next_window() {
     assert!(result.display_text.contains("full output artifact:"));
     assert!(result.display_text.contains("Use offset=3 to continue"));
 
-    let metadata = result.structured_json.expect("structured read metadata");
+    let metadata = result.structured_json.unwrap_or_abort();
     assert_eq!(metadata["truncated"], json!(true));
     assert_eq!(metadata["next_offset"], json!(3));
     assert_eq!(
@@ -61,8 +62,7 @@ async fn read_byte_cap_spills_many_lines_to_artifact() {
         .map(|_| huge_line.as_str())
         .collect::<Vec<_>>()
         .join("\n");
-    fs::write(workspace.workspace().join("huge.txt"), format!("{huge}\n"))
-        .expect("write huge fixture");
+    fs::write(workspace.workspace().join("huge.txt"), format!("{huge}\n")).unwrap_or_abort();
     let context = test_context(
         workspace.workspace(),
         "run-read-byte-cap",
@@ -74,17 +74,17 @@ async fn read_byte_cap_spills_many_lines_to_artifact() {
     // act
     let result = registry
         .get("read")
-        .expect("read tool")
+        .unwrap_or_abort()
         .call(context, json!({"filePath": "huge.txt"}))
         .await
-        .expect("read should succeed");
+        .unwrap_or_abort();
 
     // assert
     assert_eq!(result.artifacts.len(), 1);
     assert!(result.display_text.contains("<type>file</type>"));
     assert!(result.display_text.contains("full output artifact:"));
     assert!(result.display_text.len() <= 55 * 1024);
-    let metadata = result.structured_json.expect("structured read metadata");
+    let metadata = result.structured_json.unwrap_or_abort();
     assert_eq!(metadata["truncated"], json!(true));
     assert_eq!(
         metadata["output_artifact"]["path"],
@@ -93,9 +93,8 @@ async fn read_byte_cap_spills_many_lines_to_artifact() {
     let relative_artifact = result.artifacts[0]
         .path
         .strip_prefix("artifacts/")
-        .expect("artifact path prefix");
-    let artifact_text =
-        fs::read_to_string(artifacts_dir.join(relative_artifact)).expect("read artifact");
+        .unwrap_or_abort();
+    let artifact_text = fs::read_to_string(artifacts_dir.join(relative_artifact)).unwrap_or_abort();
     assert!(artifact_text.contains(&huge_line));
 }
 
@@ -110,7 +109,7 @@ async fn read_hashline_spill_artifact_hashes_source_line_for_truncated_visible_l
         workspace.workspace().join("hashline-huge.txt"),
         format!("{long_line}\nsecond\n"),
     )
-    .expect("write hashline fixture");
+    .unwrap_or_abort();
     let context = test_context(
         workspace.workspace(),
         "run-read-hashline-spill",
@@ -122,7 +121,7 @@ async fn read_hashline_spill_artifact_hashes_source_line_for_truncated_visible_l
     // act
     let result = registry
         .get("read")
-        .expect("read tool")
+        .unwrap_or_abort()
         .call(
             context,
             json!({
@@ -132,16 +131,15 @@ async fn read_hashline_spill_artifact_hashes_source_line_for_truncated_visible_l
             }),
         )
         .await
-        .expect("read should spill a hashline artifact");
+        .unwrap_or_abort();
 
     // assert
     assert_eq!(result.artifacts.len(), 1);
     let relative_artifact = result.artifacts[0]
         .path
         .strip_prefix("artifacts/")
-        .expect("artifact path prefix");
-    let artifact_text =
-        fs::read_to_string(artifacts_dir.join(relative_artifact)).expect("read artifact");
+        .unwrap_or_abort();
+    let artifact_text = fs::read_to_string(artifacts_dir.join(relative_artifact)).unwrap_or_abort();
     assert!(artifact_text.contains(&format!(
         "1#{}|{visible_line}",
         compute_line_hash(&long_line)

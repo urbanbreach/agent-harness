@@ -1,3 +1,4 @@
+use harness::UnwrapOrAbort;
 use std::fs;
 use std::ffi::OsString;
 use std::io;
@@ -19,17 +20,17 @@ use common::{repo_root, CliHarness, CliHarnessOutput};
 fn write_config(path: &Path, config: &serde_json::Value) {
     fs::write(
         path,
-        serde_json::to_string_pretty(config).expect("serialize config"),
+        serde_json::to_string_pretty(config).unwrap_or_abort(),
     )
-    .expect("write config");
+    .unwrap_or_abort();
 }
 
 fn write_json(path: &Path, value: &serde_json::Value) {
     fs::write(
         path,
-        serde_json::to_string_pretty(value).expect("serialize json"),
+        serde_json::to_string_pretty(value).unwrap_or_abort(),
     )
-    .expect("write json");
+    .unwrap_or_abort();
 }
 
 struct HarnessCommand {

@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
@@ -123,10 +124,7 @@ impl LifecycleHookCommandExecutor for FakeLifecycleHookCommandExecutor {
         &self,
         invocation: LifecycleHookCommandInvocation,
     ) -> Result<LifecycleHookCommandOutput, String> {
-        self.invocations
-            .lock()
-            .expect("fake hook executor lock")
-            .push(invocation);
+        self.invocations.lock().unwrap_or_abort().push(invocation);
         Ok(LifecycleHookCommandOutput {
             status: success_exit_status(),
             stdout: "hook stdout".to_string(),
@@ -142,7 +140,7 @@ fn success_exit_status() -> ExitStatus {
 
 #[tokio::test]
 async fn lifecycle_hooks_use_injected_executor_without_spawning() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let executor = FakeLifecycleHookCommandExecutor::new();
     let runtime = HookRuntimeConfig {
         hooks: HooksConfig {
@@ -202,10 +200,7 @@ async fn lifecycle_hooks_use_injected_executor_without_spawning() {
         batch.hook_executions[0].output_summary.as_deref(),
         Some("hook stdout")
     );
-    let invocations = executor
-        .invocations
-        .lock()
-        .expect("fake hook executor lock");
+    let invocations = executor.invocations.lock().unwrap_or_abort();
     assert_eq!(invocations.len(), 1);
     assert_eq!(invocations[0].executable, "fake-hook-bin");
     assert_eq!(invocations[0].args, vec!["--flag"]);
@@ -276,7 +271,7 @@ fn plan_mode_shell_boundary_allows_only_read_only_inspection_commands() {
         Some(PermissionKind::Shell),
         &json!({ "command": "touch src/lib.rs" }),
     )
-    .expect("mutating command denied");
+    .unwrap_or_abort();
     assert!(denied.contains("read-only inspection commands"));
 
     let redirected = plan_mode_shell_boundary_denial(
@@ -284,7 +279,7 @@ fn plan_mode_shell_boundary_allows_only_read_only_inspection_commands() {
         Some(PermissionKind::Shell),
         &json!({ "command": "git status > status.txt" }),
     )
-    .expect("redirection denied");
+    .unwrap_or_abort();
     assert!(redirected.contains("read-only inspection commands"));
 
     for command in [
@@ -312,7 +307,7 @@ fn plan_mode_shell_boundary_allows_only_read_only_inspection_commands() {
 #[test]
 fn permission_rule_request_selectors_extract_edit_file_alias() {
     // arrange
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
 
     // act
     let selectors = permission_rule_request_selectors(
@@ -498,12 +493,12 @@ fn test_agent_profile(name: &str) -> AgentProfile {
 
 #[tokio::test]
 async fn fresh_run_agent_ids_skip_existing_child_session_directories() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
-    fs::create_dir_all(temp_dir.path().join("agent_000001")).expect("create first old child dir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
+    fs::create_dir_all(temp_dir.path().join("agent_000001")).unwrap_or_abort();
     let stale_child_dir = temp_dir.path().join("agent_000002");
-    fs::create_dir_all(&stale_child_dir).expect("create stale child dir");
-    fs::write(stale_child_dir.join(".writer.lock"), "").expect("write stale legacy lock");
-    fs::write(stale_child_dir.join("events.jsonl"), "").expect("write stale event log");
+    fs::create_dir_all(&stale_child_dir).unwrap_or_abort();
+    fs::write(stale_child_dir.join(".writer.lock"), "").unwrap_or_abort();
+    fs::write(stale_child_dir.join("events.jsonl"), "").unwrap_or_abort();
 
     let mut config = test_config(temp_dir.path());
     config
@@ -518,22 +513,22 @@ async fn fresh_run_agent_ids_skip_existing_child_session_directories() {
     let run = handle
         .start_run("fresh skips old child dirs", temp_dir.path())
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let supervisor = EventActor::new(ActorKind::Supervisor, None);
     let parent_agent_id = handle
         .spawn_agent(supervisor.clone(), "alpha", None)
         .await
-        .expect("spawn parent agent");
+        .unwrap_or_abort();
     let child_agent_id = handle
         .spawn_agent_idle(supervisor, "alpha", Some(parent_agent_id.clone()))
         .await
-        .expect("spawn child agent without colliding with stale lock");
+        .unwrap_or_abort();
 
     assert_eq!(parent_agent_id, "agent_000003");
     assert_eq!(child_agent_id, "agent_000004");
     assert!(temp_dir.path().join("agent_000004/events.jsonl").exists());
     assert_eq!(
-        fs::read_to_string(stale_child_dir.join(".writer.lock")).expect("stale lock remains"),
+        fs::read_to_string(stale_child_dir.join(".writer.lock")).unwrap_or_abort(),
         ""
     );
     assert!(run.run_dir.ends_with("run_000001"));
@@ -629,19 +624,28 @@ delegate_test!(compaction_turn_facts_include_failed_turn_status => provider_cont
 
 #[test]
 fn stale_tool_task_late_result_preserves_owner_actor() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let mut config = test_config(temp_dir.path());
     config.stale_timeout_ms = 20;
     let clock = Arc::new(FakeClock::new());
     let redactor = Arc::new(DefaultRedactor::default());
     let (_command_tx, command_rx) = mpsc::channel(1);
     let (job_tx, job_rx) = mpsc::channel(1);
-    let mut coordinator =
-        Coordinator::new(config, clock.clone(), redactor, command_rx, job_tx, job_rx);
+    let mut coordinator = Coordinator::new(
+        config,
+        {
+            let c: Arc<dyn crate::clock::Clock + Send + Sync> = Arc::<FakeClock>::clone(&clock);
+            c
+        },
+        redactor,
+        command_rx,
+        job_tx,
+        job_rx,
+    );
 
     let run = coordinator
         .start_run_internal("stale_owner".to_string(), temp_dir.path().to_path_buf())
-        .expect("start run");
+        .unwrap_or_abort();
     let task_id = "task_000001".to_string();
     let queue_key = ConcurrencyKey::Tool {
         tool_id: "shell.run".to_string(),
@@ -650,7 +654,7 @@ fn stale_tool_task_late_result_preserves_owner_actor() {
     let request_correlation_id = Some("req_000001".to_string());
 
     {
-        let run_state = coordinator.run_state.as_mut().expect("run state");
+        let run_state = coordinator.run_state.as_mut().unwrap_or_abort();
         assert!(matches!(
             run_state
                 .scheduler
@@ -677,9 +681,7 @@ fn stale_tool_task_late_result_preserves_owner_actor() {
     }
 
     clock.advance(25);
-    coordinator
-        .watchdog_tick_internal()
-        .expect("detect stale tool task");
+    coordinator.watchdog_tick_internal().unwrap_or_abort();
     coordinator
         .job_finished_internal(
             task_id.clone(),
@@ -687,7 +689,7 @@ fn stale_tool_task_late_result_preserves_owner_actor() {
                 reason: "job cancelled".to_string(),
             },
         )
-        .expect("record late result");
+        .unwrap_or_abort();
 
     let events = read_events(&run.events_path);
     assert!(events.iter().any(|event| {
@@ -712,7 +714,7 @@ fn stale_tool_task_late_result_preserves_owner_actor() {
 
 #[tokio::test]
 async fn background_foreground_child_tasks_releases_parent_task_and_keeps_child_running() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let config = test_config(temp_dir.path());
     let clock = Arc::new(FakeClock::new());
     let redactor = Arc::new(DefaultRedactor::default());
@@ -726,7 +728,7 @@ async fn background_foreground_child_tasks_releases_parent_task_and_keeps_child_
             temp_dir.path().to_path_buf(),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let parent_task_id = "task_parent".to_string();
     let parent_tool_call_id = "toolcall_parent".to_string();
     let parent_request_id = "req_parent".to_string();
@@ -739,7 +741,7 @@ async fn background_foreground_child_tasks_releases_parent_task_and_keeps_child_
     let (respond_to, response_rx) = oneshot::channel();
 
     {
-        let run_state = coordinator.run_state.as_mut().expect("run state");
+        let run_state = coordinator.run_state.as_mut().unwrap_or_abort();
         assert!(matches!(
             run_state
                 .scheduler
@@ -808,13 +810,10 @@ async fn background_foreground_child_tasks_releases_parent_task_and_keeps_child_
     let count = coordinator
         .background_foreground_child_tasks_internal()
         .await
-        .expect("background foreground child");
+        .unwrap_or_abort();
     assert_eq!(count, 1);
 
-    let response = response_rx
-        .await
-        .expect("parent task response sent")
-        .expect("parent task response ok");
+    let response = response_rx.await.unwrap_or_abort().unwrap_or_abort();
     assert!(response
         .display_text
         .contains("Foreground subagent moved to background"));
@@ -827,13 +826,13 @@ async fn background_foreground_child_tasks_releases_parent_task_and_keeps_child_
         Some(true)
     );
 
-    let run_state = coordinator.run_state.as_ref().expect("run state");
+    let run_state = coordinator.run_state.as_ref().unwrap_or_abort();
     assert!(!run_state.tasks.contains_key(&parent_task_id));
     let child = run_state
         .running_agent_turns
         .get(&child_task_id)
         .and_then(|running| running.child_task.as_ref())
-        .expect("child turn still running");
+        .unwrap_or_abort();
     assert!(child.run_in_background);
     assert_eq!(child.child_request_id, child_request_id);
 
@@ -920,12 +919,12 @@ fn compaction_profile_config() -> crate::config::HarnessConfig {
         }
         "#,
     )
-    .expect("parse compaction metadata config")
+    .unwrap_or_abort()
 }
 
 fn compaction_runtime_context() -> RecordedRuntimeContext {
     resolve_profile_model_metadata(&compaction_profile_config(), "alpha")
-        .expect("resolve compaction runtime context")
+        .unwrap_or_abort()
         .into()
 }
 
@@ -999,10 +998,10 @@ delegate_tokio_test!(live_rustfmt_formats_and_diff_reflects_post_format_content 
 
 fn test_run_state(session_dir: &Path, run_id: &str) -> RunState {
     let event_store =
-        Arc::new(JsonlFileEventStore::open(session_dir, run_id, true).expect("open event store"));
+        Arc::new(JsonlFileEventStore::open(session_dir, run_id, true).unwrap_or_abort());
     let run_dir = session_dir.join(run_id);
     let artifacts_dir = run_dir.join("artifacts");
-    fs::create_dir_all(&artifacts_dir).expect("create artifacts dir");
+    fs::create_dir_all(&artifacts_dir).unwrap_or_abort();
     RunState {
         info: RunInfo {
             run_id: run_id.to_string(),
@@ -1068,16 +1067,16 @@ fn tool_metadata(canonical_tool_id: &str) -> ToolCallMetadata {
 
 fn write_restore_history_fixture(session_dir: &Path, run_id: &str, events: &[EventEnvelopeV1]) {
     let run_dir = session_dir.join(run_id);
-    fs::create_dir_all(&run_dir).expect("create run directory");
+    fs::create_dir_all(&run_dir).unwrap_or_abort();
 
     let mut body = String::new();
     for event in events {
-        let line = serde_json::to_string(event).expect("serialize event");
+        let line = serde_json::to_string(event).unwrap_or_abort();
         body.push_str(&line);
         body.push('\n');
     }
 
-    fs::write(run_dir.join("events.jsonl"), body).expect("write events");
+    fs::write(run_dir.join("events.jsonl"), body).unwrap_or_abort();
 }
 
 fn restore_fixture_event(
@@ -1103,9 +1102,9 @@ fn restore_fixture_event(
 }
 
 fn read_events(path: &Path) -> Vec<EventEnvelopeV1> {
-    let text = fs::read_to_string(path).expect("read events");
+    let text = fs::read_to_string(path).unwrap_or_abort();
     text.lines()
-        .map(|line| serde_json::from_str::<EventEnvelopeV1>(line).expect("valid event"))
+        .map(|line| serde_json::from_str::<EventEnvelopeV1>(line).unwrap_or_abort())
         .collect()
 }
 
@@ -1115,11 +1114,11 @@ async fn wait_for_events(
     label: &str,
     matches: impl Fn(&EventEnvelopeV1) -> bool,
 ) -> Vec<EventEnvelopeV1> {
-    let store = handle.event_store().await.expect("get event store");
-    let mut stream = store.subscribe(1).expect("subscribe to event store");
+    let store = handle.event_store().await.unwrap_or_abort();
+    let mut stream = store.subscribe(1).unwrap_or_abort();
 
     while let Some(next) = stream.next().await {
-        let event = next.expect("event stream item");
+        let event = next.unwrap_or_abort();
         if matches(&event) {
             return read_events(path);
         }

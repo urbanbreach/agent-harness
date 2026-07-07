@@ -1,3 +1,4 @@
+use harness_core::UnwrapOrAbort;
 #[test]
 fn provider_boundary_sanitizes_unknown_historical_tool_ids() {
     let mut profile = boundary_profile();
@@ -88,7 +89,7 @@ fn provider_boundary_sanitizes_unknown_historical_tool_ids() {
     let assistant_tool_calls = messages
         .iter()
         .find_map(|message| message.assistant_tool_calls.as_ref())
-        .expect("assistant tool calls");
+        .unwrap_or_abort();
     assert_eq!(assistant_tool_calls[0].function_name, "unknown_tool");
     assert_eq!(assistant_tool_calls[1].function_name, "unknown_tool");
     assert_eq!(

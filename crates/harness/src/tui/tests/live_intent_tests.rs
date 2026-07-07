@@ -1,4 +1,5 @@
 use super::*;
+use harness::UnwrapOrAbort;
 
 #[test]
 fn plan_handoff_updates_live_agent_target_to_spawned_build_agent() {
@@ -18,7 +19,7 @@ fn plan_handoff_updates_live_agent_target_to_spawned_build_agent() {
 
     maybe_update_live_agent_target_for_plan_handoff(&event, Some(&target));
 
-    let target = target.lock().expect("target lock");
+    let target = target.lock().unwrap_or_abort();
     assert_eq!(target.agent_id.as_deref(), Some("agent_build"));
     assert_eq!(target.profile, "build");
     assert_eq!(target.last_request_id, None);
@@ -26,7 +27,7 @@ fn plan_handoff_updates_live_agent_target_to_spawned_build_agent() {
 
 #[tokio::test]
 async fn compact_intent_reports_noop_status_for_idle_live_agent() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let mut config = CoordinatorConfig::new(temp_dir.path().to_path_buf());
     config.deterministic_store = true;
     config.agent_profiles = golden_path_profiles();
@@ -39,11 +40,11 @@ async fn compact_intent_reports_noop_status_for_idle_live_agent() {
     coordinator
         .start_run("compact_status", temp_dir.path())
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "planner", None)
         .await
-        .expect("spawn agent");
+        .unwrap_or_abort();
 
     let live_agent_target = Arc::new(Mutex::new(LiveAgentTarget {
         agent_id: Some(agent_id),
@@ -67,16 +68,11 @@ async fn compact_intent_reports_noop_status_for_idle_live_agent() {
         },
     ));
 
-    intent_tx
-        .send(UiIntent::CompactSession)
-        .expect("send compact intent");
+    intent_tx.send(UiIntent::CompactSession).unwrap_or_abort();
     drop(intent_tx);
 
-    handle
-        .await
-        .expect("ui intent task join")
-        .expect("ui intent task ok");
-    let status = status_rx.recv().expect("status update");
+    handle.await.unwrap_or_abort().unwrap_or_abort();
+    let status = status_rx.recv().unwrap_or_abort();
     assert!(matches!(
         status,
         LiveUpdate::OperatorNotice {
@@ -85,7 +81,7 @@ async fn compact_intent_reports_noop_status_for_idle_live_agent() {
         } if message == "manual compaction skipped: need at least two completed turns"
     ));
 
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 }
 
 #[test]
@@ -125,7 +121,7 @@ async fn event_forwarder_stops_after_terminal_event_when_requested() {
                 workspace_root: "/workspace".to_string(),
             }),
         ))
-        .expect("append started event");
+        .unwrap_or_abort();
     store
         .append(forwarder_event_draft(
             "run_forwarder_terminal",
@@ -134,7 +130,7 @@ async fn event_forwarder_stops_after_terminal_event_when_requested() {
                 summary: "done".to_string(),
             }),
         ))
-        .expect("append finished event");
+        .unwrap_or_abort();
     let (tx, rx) = std_mpsc::channel();
 
     // act
@@ -143,8 +139,8 @@ async fn event_forwarder_stops_after_terminal_event_when_requested() {
         forward_events_to_tui(store, tx, 1, None, true),
     )
     .await
-    .expect("forwarder should stop after forwarding terminal event")
-    .expect("forwarder succeeds");
+    .unwrap_or_abort()
+    .unwrap_or_abort();
 
     // assert
     let updates = rx.try_iter().collect::<Vec<_>>();
@@ -168,7 +164,7 @@ async fn event_forwarder_updates_live_agent_target_on_plan_handoff() {
                 parent_agent_id: Some("agent_plan".to_string()),
             }),
         ))
-        .expect("append build agent spawned event");
+        .unwrap_or_abort();
     store
         .append(forwarder_event_draft(
             "run_forwarder_plan_handoff",
@@ -177,7 +173,7 @@ async fn event_forwarder_updates_live_agent_target_on_plan_handoff() {
                 summary: "done".to_string(),
             }),
         ))
-        .expect("append finished event");
+        .unwrap_or_abort();
     let (tx, rx) = std_mpsc::channel();
     let target = Arc::new(Mutex::new(LiveAgentTarget {
         agent_id: Some("agent_plan".to_string()),
@@ -190,12 +186,12 @@ async fn event_forwarder_updates_live_agent_target_on_plan_handoff() {
         forward_events_to_tui(store, tx, 1, Some(Arc::clone(&target)), true),
     )
     .await
-    .expect("forwarder should stop after terminal event")
-    .expect("forwarder succeeds");
+    .unwrap_or_abort()
+    .unwrap_or_abort();
 
     let updates = rx.try_iter().collect::<Vec<_>>();
     assert_eq!(updates.len(), 2);
-    let target = target.lock().expect("target lock");
+    let target = target.lock().unwrap_or_abort();
     assert_eq!(target.agent_id.as_deref(), Some("agent_build"));
     assert_eq!(target.profile, harness_core::plan::BUILD_AGENT_NAME);
     assert_eq!(target.last_request_id, None);
@@ -203,7 +199,7 @@ async fn event_forwarder_updates_live_agent_target_on_plan_handoff() {
 
 #[tokio::test]
 async fn compact_intent_reports_unavailable_when_no_live_agent_target_exists() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let mut config = CoordinatorConfig::new(temp_dir.path().to_path_buf());
     config.deterministic_store = true;
     config.agent_profiles = golden_path_profiles();
@@ -216,7 +212,7 @@ async fn compact_intent_reports_unavailable_when_no_live_agent_target_exists() {
     coordinator
         .start_run("compact_status", temp_dir.path())
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let (intent_tx, intent_rx) = mpsc::unbounded_channel();
     let (status_tx, status_rx) = std_mpsc::channel();
@@ -235,16 +231,11 @@ async fn compact_intent_reports_unavailable_when_no_live_agent_target_exists() {
         },
     ));
 
-    intent_tx
-        .send(UiIntent::CompactSession)
-        .expect("send compact intent");
+    intent_tx.send(UiIntent::CompactSession).unwrap_or_abort();
     drop(intent_tx);
 
-    handle
-        .await
-        .expect("ui intent task join")
-        .expect("ui intent task ok");
-    let status = status_rx.recv().expect("status update");
+    handle.await.unwrap_or_abort().unwrap_or_abort();
+    let status = status_rx.recv().unwrap_or_abort();
     assert!(matches!(
         status,
         LiveUpdate::OperatorNotice {
@@ -253,7 +244,7 @@ async fn compact_intent_reports_unavailable_when_no_live_agent_target_exists() {
         } if message == "manual compaction unavailable: no live agent target"
     ));
 
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 }
 
 #[test]

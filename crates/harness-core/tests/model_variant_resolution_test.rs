@@ -2,6 +2,7 @@ use harness_core::config::{
     load_config_from_str, resolve_model_selection, resolve_profile_model_metadata, HarnessConfig,
 };
 use harness_core::model_resolution::{ModelFamily, ModelFamilySource, PromptFamily};
+use harness_core::UnwrapOrAbort;
 
 fn variant_test_config() -> HarnessConfig {
     json5::from_str(
@@ -71,7 +72,7 @@ fn variant_test_config() -> HarnessConfig {
         }
         "#,
     )
-    .expect("config shape should deserialize")
+    .unwrap_or_abort()
 }
 
 fn profile_test_config() -> HarnessConfig {
@@ -136,13 +137,12 @@ fn profile_test_config() -> HarnessConfig {
         }
         "#,
     )
-    .expect("profile config should load")
+    .unwrap_or_abort()
 }
 
 #[test]
 fn model_variant_resolution_returns_variant_display_and_metadata() {
-    let metadata = resolve_profile_model_metadata(&variant_test_config(), "deep")
-        .expect("variant metadata should resolve");
+    let metadata = resolve_profile_model_metadata(&variant_test_config(), "deep").unwrap_or_abort();
 
     assert_eq!(metadata.profile, "deep");
     assert_eq!(metadata.provider, "default");
@@ -207,10 +207,9 @@ fn model_variant_resolution_allows_variant_context_window_override() {
         }
         "#,
     )
-    .expect("config should load");
+    .unwrap_or_abort();
 
-    let metadata =
-        resolve_profile_model_metadata(&config, "build").expect("variant metadata should resolve");
+    let metadata = resolve_profile_model_metadata(&config, "build").unwrap_or_abort();
 
     assert_eq!(metadata.model, "gpt-5.4");
     assert_eq!(metadata.variant.as_deref(), Some("1m-high"));
@@ -225,7 +224,7 @@ fn model_variant_resolution_allows_variant_context_window_override() {
 #[test]
 fn model_variant_resolution_rejects_unknown_variant() {
     let mut config = variant_test_config();
-    config.agents.get_mut("deep").expect("deep profile").variant = Some("ghost".to_string());
+    config.agents.get_mut("deep").unwrap_or_abort().variant = Some("ghost".to_string());
 
     let err = resolve_profile_model_metadata(&config, "deep").expect_err("variant must fail");
 
@@ -239,7 +238,7 @@ fn model_variant_resolution_rejects_unknown_variant() {
 fn named_model_profile_resolves_primary_and_fallback_order() {
     let config = profile_test_config();
 
-    let selection = resolve_model_selection(&config, "fast", None).expect("profile resolves");
+    let selection = resolve_model_selection(&config, "fast", None).unwrap_or_abort();
 
     assert_eq!(selection.profile.as_deref(), Some("fast"));
     assert_eq!(selection.primary.model_ref, "default:gpt-5.4-mini");
@@ -285,10 +284,10 @@ fn model_resolution_prefers_metadata_family_and_exposes_capabilities() {
         }
         "#,
     )
-    .expect("config should load");
+    .unwrap_or_abort();
 
-    let selection = resolve_model_selection(&config, "default/enterprise-alpha", None)
-        .expect("direct model resolves");
+    let selection =
+        resolve_model_selection(&config, "default/enterprise-alpha", None).unwrap_or_abort();
     let resolution = &selection.primary.resolution;
 
     assert_eq!(resolution.family, ModelFamily::Gemini);
@@ -306,8 +305,7 @@ fn model_resolution_prefers_metadata_family_and_exposes_capabilities() {
 fn direct_model_refs_do_not_resolve_as_profile_names() {
     let config = profile_test_config();
 
-    let selection = resolve_model_selection(&config, "default/gpt-5.4", None)
-        .expect("direct slash ref resolves");
+    let selection = resolve_model_selection(&config, "default/gpt-5.4", None).unwrap_or_abort();
 
     assert_eq!(selection.profile, None);
     assert_eq!(selection.primary.model_ref, "default:gpt-5.4");

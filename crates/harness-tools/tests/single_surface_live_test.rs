@@ -5,6 +5,7 @@ use harness_core::coord::{spawn_coordinator, CoordinatorConfig};
 use harness_core::edit::hashline::compute_line_hash;
 use harness_core::perm::PermissionDecision;
 use harness_core::redact::DefaultRedactor;
+use harness_tools::UnwrapOrAbort;
 use harness_tools::{
     coordinator_registry_with_mcp_and_editing, coordinator_registry_with_mcp_editing_and_executors,
     CoordinatorRegistryExecutors, EditingToolSurfaceConfig,
@@ -79,10 +80,7 @@ fn example_profiles(
         })
         .collect::<BTreeMap<_, _>>();
 
-    let build_profile = profiles
-        .get("build")
-        .expect("build profile present in example config")
-        .clone();
+    let build_profile = profiles.get("build").unwrap_or_abort().clone();
     profiles.insert(
         SURFACE_LIVE_PROFILE.to_string(),
         AgentProfile {
@@ -103,7 +101,7 @@ fn example_profiles(
 
 #[tokio::test]
 async fn example_config_exposes_single_surface_tools_through_live_registry() {
-    let config = load_config_from_file(&example_config_path()).expect("load example config");
+    let config = load_config_from_file(&example_config_path()).unwrap_or_abort();
     let registry = coordinator_registry_with_mcp_and_editing(
         config.permissions.shell_allowlist.clone(),
         McpConfig::default(),
@@ -144,22 +142,22 @@ async fn example_config_exposes_single_surface_tools_through_live_registry() {
 
 #[tokio::test]
 async fn single_surface_tools_execute_under_example_config() {
-    let config = load_config_from_file(&example_config_path()).expect("load example config");
+    let config = load_config_from_file(&example_config_path()).unwrap_or_abort();
     let workspace = setup_workspace_fixture();
     let session_dir = workspace.temp_dir().join("sessions");
     let workspace_root = workspace.workspace();
-    fs::write(workspace_root.join("existing.txt"), "alpha\nbeta\n").expect("seed existing file");
-    fs::create_dir_all(workspace_root.join("src")).expect("src dir");
+    fs::write(workspace_root.join("existing.txt"), "alpha\nbeta\n").unwrap_or_abort();
+    fs::create_dir_all(workspace_root.join("src")).unwrap_or_abort();
     fs::write(
         workspace_root.join("Cargo.toml"),
         "[package]\nname = \"compat_lsp\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
     )
-    .expect("seed cargo manifest");
+    .unwrap_or_abort();
     fs::write(
         workspace_root.join("src/lib.rs"),
         "fn helper() {}\n\nfn caller() {\n    helper();\n}\n",
     )
-    .expect("seed rust file");
+    .unwrap_or_abort();
 
     let mut coordinator_config = CoordinatorConfig::new(session_dir.clone());
     coordinator_config.permission_policy = allow_all_permission_policy();
@@ -186,11 +184,11 @@ async fn single_surface_tools_execute_under_example_config() {
     let run = handle
         .start_run("single_surface_live", workspace_root)
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let worker_id = handle
         .spawn_agent(anonymous_supervisor_actor(), SURFACE_LIVE_PROFILE, None)
         .await
-        .expect("spawn worker");
+        .unwrap_or_abort();
 
     let create = handle
         .execute_agent_tool_call(
@@ -209,7 +207,7 @@ async fn single_surface_tools_execute_under_example_config() {
             }),
         )
         .await
-        .expect("edit create tool");
+        .unwrap_or_abort();
     assert!(create.display_text.contains("Edit applied successfully"));
 
     let escaped = handle
@@ -238,7 +236,7 @@ async fn single_surface_tools_execute_under_example_config() {
             serde_json::json!({ "filePath": "written.txt" }),
         )
         .await
-        .expect("read tool");
+        .unwrap_or_abort();
     assert!(read.display_text.contains("1#"));
     assert!(read.display_text.contains("|hello from surface"));
 
@@ -250,7 +248,7 @@ async fn single_surface_tools_execute_under_example_config() {
             serde_json::json!({ "path": "." }),
         )
         .await
-        .expect("list tool");
+        .unwrap_or_abort();
     assert!(listed.display_text.contains("written.txt"));
 
     let globbed = handle
@@ -261,7 +259,7 @@ async fn single_surface_tools_execute_under_example_config() {
             serde_json::json!({ "pattern": "**/*.txt" }),
         )
         .await
-        .expect("glob tool");
+        .unwrap_or_abort();
     assert!(globbed.display_text.contains("written.txt"));
 
     let grepped = handle
@@ -272,7 +270,7 @@ async fn single_surface_tools_execute_under_example_config() {
             serde_json::json!({ "pattern": "surface", "path": "." }),
         )
         .await
-        .expect("grep tool");
+        .unwrap_or_abort();
     assert!(grepped.display_text.contains("written.txt:"));
     assert!(grepped
         .display_text
@@ -289,7 +287,7 @@ async fn single_surface_tools_execute_under_example_config() {
             }),
         )
         .await
-        .expect("bash tool");
+        .unwrap_or_abort();
     assert!(bashed.display_text.contains("cargo"));
 
     let large_bash = handle
@@ -303,16 +301,13 @@ async fn single_surface_tools_execute_under_example_config() {
             }),
         )
         .await
-        .expect("large bash tool");
-    let large_bash_json = large_bash
-        .structured_json
-        .clone()
-        .expect("large bash structured json");
+        .unwrap_or_abort();
+    let large_bash_json = large_bash.structured_json.clone().unwrap_or_abort();
     assert!(
         large_bash.display_text.contains("[truncated:"),
         "display_text:\n{}\nstructured_json:\n{}",
         large_bash.display_text,
-        serde_json::to_string_pretty(&large_bash_json).expect("render large bash json")
+        serde_json::to_string_pretty(&large_bash_json).unwrap_or_abort()
     );
     assert_eq!(large_bash.artifacts.len(), 1);
     assert_eq!(
@@ -322,9 +317,9 @@ async fn single_surface_tools_execute_under_example_config() {
     let artifact_relative = large_bash.artifacts[0]
         .path
         .strip_prefix("artifacts/")
-        .expect("artifact path prefix");
-    let spilled_output = fs::read_to_string(run.artifacts_dir.join(artifact_relative))
-        .expect("read spilled large bash output");
+        .unwrap_or_abort();
+    let spilled_output =
+        fs::read_to_string(run.artifacts_dir.join(artifact_relative)).unwrap_or_abort();
     assert_eq!(spilled_output.len(), 70_000);
 
     let edited = handle
@@ -344,7 +339,7 @@ async fn single_surface_tools_execute_under_example_config() {
             }),
         )
         .await
-        .expect("edit tool");
+        .unwrap_or_abort();
     assert!(edited.display_text.contains("Edit applied successfully"));
 
     let reread_after_edit = handle
@@ -357,7 +352,7 @@ async fn single_surface_tools_execute_under_example_config() {
             }),
         )
         .await
-        .expect("reread after edit");
+        .unwrap_or_abort();
     assert!(reread_after_edit.display_text.contains("|hello from edit"));
 
     let patched = handle
@@ -377,7 +372,7 @@ async fn single_surface_tools_execute_under_example_config() {
             }),
         )
         .await
-        .expect("second edit tool");
+        .unwrap_or_abort();
     assert!(patched.display_text.contains("Edit applied successfully"));
 
     let reread = handle
@@ -388,7 +383,7 @@ async fn single_surface_tools_execute_under_example_config() {
             serde_json::json!({ "filePath": "written.txt" }),
         )
         .await
-        .expect("reread tool");
+        .unwrap_or_abort();
     assert!(reread.display_text.contains("hello from patch"));
 
     let todos = handle
@@ -403,7 +398,7 @@ async fn single_surface_tools_execute_under_example_config() {
             }),
         )
         .await
-        .expect("todowrite tool");
+        .unwrap_or_abort();
     assert!(todos.display_text.contains("pending"));
 
     let todo_read = handle
@@ -414,7 +409,7 @@ async fn single_surface_tools_execute_under_example_config() {
             serde_json::json!({}),
         )
         .await
-        .expect("todoread tool");
+        .unwrap_or_abort();
     assert!(todo_read.display_text.contains("one"));
 
     let question_handle = {
@@ -448,11 +443,8 @@ async fn single_surface_tools_execute_under_example_config() {
             Some("[[\"A\"]]".to_string()),
         )
         .await
-        .expect("resolve question permission");
-    let question = question_handle
-        .await
-        .expect("question task join")
-        .expect("question tool");
+        .unwrap_or_abort();
+    let question = question_handle.await.unwrap_or_abort().unwrap_or_abort();
     assert!(question.display_text.contains("\"Pick one\"=\"A\""));
 
     let invalid = handle
@@ -463,7 +455,7 @@ async fn single_surface_tools_execute_under_example_config() {
             serde_json::json!({ "tool": "missing_tool", "error": "bad args" }),
         )
         .await
-        .expect("invalid tool");
+        .unwrap_or_abort();
     assert!(invalid.display_text.contains("bad args"));
 
     let lsp = handle
@@ -495,7 +487,7 @@ async fn single_surface_tools_execute_under_example_config() {
             }),
         )
         .await
-        .expect("batch tool");
+        .unwrap_or_abort();
     assert!(batch
         .display_text
         .contains("All 2 tools executed successfully"));
@@ -514,7 +506,7 @@ async fn single_surface_tools_execute_under_example_config() {
             }),
         )
         .await
-        .expect("task tool");
+        .unwrap_or_abort();
     assert!(task.display_text.contains("Background task scheduled"));
 
     let fetched = handle
@@ -529,7 +521,7 @@ async fn single_surface_tools_execute_under_example_config() {
             }),
         )
         .await
-        .expect("webfetch tool");
+        .unwrap_or_abort();
     assert!(fetched.display_text.contains("hello fetch"));
 
     let websearch = handle
@@ -544,7 +536,7 @@ async fn single_surface_tools_execute_under_example_config() {
             }),
         )
         .await
-        .expect("websearch tool");
+        .unwrap_or_abort();
     assert!(websearch.display_text.to_lowercase().contains("tokio"));
 
     let codesearch = handle
@@ -558,8 +550,8 @@ async fn single_surface_tools_execute_under_example_config() {
             }),
         )
         .await
-        .expect("codesearch tool");
+        .unwrap_or_abort();
     assert!(!codesearch.display_text.trim().is_empty());
 
-    handle.stop_run().await.expect("stop run");
+    handle.stop_run().await.unwrap_or_abort();
 }

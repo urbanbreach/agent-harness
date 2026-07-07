@@ -88,7 +88,7 @@ mod tests {
         // arrange
         let count = Arc::new(AtomicUsize::new(0));
         let inner = CountingDiscovery {
-            count: count.clone(),
+            count: Arc::clone(&count),
         };
         let caching = CachingFormatterDiscovery::new(inner);
         let context = DiscoveryContext {
@@ -112,7 +112,7 @@ mod tests {
         // arrange
         let count = Arc::new(AtomicUsize::new(0));
         let inner = CountingDiscovery {
-            count: count.clone(),
+            count: Arc::clone(&count),
         };
         let caching = CachingFormatterDiscovery::new(inner);
         let ctx_a = DiscoveryContext {

@@ -1,3 +1,4 @@
+use harness_tui::UnwrapOrAbort;
 use font8x8::unicode::{BasicFonts, BlockFonts, BoxFonts, LatinFonts, UnicodeFonts};
 use fontdue::{Font, FontSettings};
 use image::{imageops::FilterType, Rgb, RgbImage};
@@ -123,7 +124,6 @@ pub(crate) fn render_parser_to_image(parser: &VtParser, config: TerminalRenderCo
     }
 }
 
-#[allow(dead_code)]
 pub(crate) fn extract_region_pixels(
     image: &RgbImage,
     region: (u16, u16, u16, u16),
@@ -233,7 +233,7 @@ fn draw_cell_glyph(
         .unwrap_or([0_u8; 8]);
 
     for (glyph_row, row_bits) in glyph.into_iter().enumerate() {
-        let glyph_row = u32::try_from(glyph_row).expect("glyph row in u32");
+        let glyph_row = u32::try_from(glyph_row).unwrap_or_abort();
         for bit in 0_u8..8 {
             let pixel_is_on = row_bits & (1_u8 << bit) != 0;
             if !pixel_is_on {
@@ -368,7 +368,7 @@ impl GlyphLookup {
 
         for y in 0..spec.cell.height {
             for x in 0..spec.cell.width {
-                let idx = usize::try_from(y * spec.cell.width + x).expect("mask index in usize");
+                let idx = usize::try_from(y * spec.cell.width + x).unwrap_or_abort();
                 let alpha = mask[idx];
                 if alpha == 0 {
                     continue;
@@ -420,7 +420,7 @@ impl GlyphLookup {
                 (centered_top + line.ascent).round() as i32
             })
             .unwrap_or_else(|| {
-                i32::try_from(metrics.height / 2).expect("cell height midpoint in i32")
+                i32::try_from(metrics.height / 2).unwrap_or_abort()
             });
 
         let (glyph_metrics, bitmap) = font.rasterize(ch, font_size);
@@ -433,35 +433,35 @@ impl GlyphLookup {
             return Some(mask);
         }
 
-        let glyph_width = u32::try_from(glyph_metrics.width).expect("glyph width fits u32");
-        let glyph_height = u32::try_from(glyph_metrics.height).expect("glyph height fits u32");
+        let glyph_width = u32::try_from(glyph_metrics.width).unwrap_or_abort();
+        let glyph_height = u32::try_from(glyph_metrics.height).unwrap_or_abort();
         let x_offset = baseline_origin_x + glyph_metrics.xmin;
         let y_offset = baseline_y
             - glyph_metrics.ymin
-            - i32::try_from(glyph_height).expect("glyph height in i32");
+            - i32::try_from(glyph_height).unwrap_or_abort();
 
         for y in 0..glyph_height {
             for x in 0..glyph_width {
-                let src_idx = usize::try_from(y * glyph_width + x).expect("bitmap index in usize");
+                let src_idx = usize::try_from(y * glyph_width + x).unwrap_or_abort();
                 let alpha = bitmap[src_idx];
                 if alpha == 0 {
                     continue;
                 }
 
-                let dx = x_offset + i32::try_from(x).expect("x fits i32");
-                let dy = y_offset + i32::try_from(y).expect("y fits i32");
+                let dx = x_offset + i32::try_from(x).unwrap_or_abort();
+                let dy = y_offset + i32::try_from(y).unwrap_or_abort();
                 if dx < 0 || dy < 0 {
                     continue;
                 }
 
-                let dx = u32::try_from(dx).expect("dx non-negative");
-                let dy = u32::try_from(dy).expect("dy non-negative");
+                let dx = u32::try_from(dx).unwrap_or_abort();
+                let dy = u32::try_from(dy).unwrap_or_abort();
                 if dx >= metrics.width || dy >= metrics.height {
                     continue;
                 }
 
                 let dst_idx =
-                    usize::try_from(dy * metrics.width + dx).expect("mask index in usize");
+                    usize::try_from(dy * metrics.width + dx).unwrap_or_abort();
                 mask[dst_idx] = alpha;
             }
         }

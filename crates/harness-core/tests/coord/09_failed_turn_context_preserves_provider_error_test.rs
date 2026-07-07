@@ -1,6 +1,7 @@
+use harness_core::UnwrapOrAbort;
 #[tokio::test]
 async fn failed_turn_context_preserves_provider_error_partial_output() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![
         vec![
             ProviderStreamEvent::Start,
@@ -28,15 +29,15 @@ async fn failed_turn_context_preserves_provider_error_partial_output() {
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     let failed_request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id.clone(), "partial then error")
         .await
-        .expect("request failing turn");
+        .unwrap_or_abort();
     wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
         events.iter().any(|event| {
             matches!(
@@ -52,7 +53,7 @@ async fn failed_turn_context_preserves_provider_error_partial_output() {
     let follow_up_request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id, "continue after failure")
         .await
-        .expect("request follow-up turn");
+        .unwrap_or_abort();
     wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
         events.iter().any(|event| {
             matches!(
@@ -64,10 +65,10 @@ async fn failed_turn_context_preserves_provider_error_partial_output() {
         })
     })
     .await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let requests = provider.requests();
-    let follow_up = requests.last().expect("follow-up provider request");
+    let follow_up = requests.last().unwrap_or_abort();
     let assistant_marker = follow_up
         .messages
         .iter()
@@ -77,7 +78,7 @@ async fn failed_turn_context_preserves_provider_error_partial_output() {
                     .content
                     .contains("Harness preserved an incomplete provider turn")
         })
-        .expect("failed turn marker should be sent before follow-up prompt");
+        .unwrap_or_abort();
     assert!(assistant_marker.content.contains("Status: failed"));
     assert!(assistant_marker.content.contains("Stage: provider_error"));
     assert!(assistant_marker
@@ -93,7 +94,7 @@ async fn failed_turn_context_preserves_provider_error_partial_output() {
 }
 #[tokio::test]
 async fn failed_turn_context_preserves_cancelled_turn_marker() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let tool_started = Arc::new(Notify::new());
     let tool_release = Arc::new(Notify::new());
     let provider = SequentialScriptedProvider::new(vec![
@@ -131,8 +132,8 @@ async fn failed_turn_context_preserves_cancelled_turn_marker() {
         named_tool_registry(vec![NamedShellTool {
             id: "shell.block",
             output: "blocking output",
-            started: Some(tool_started.clone()),
-            release: Some(tool_release.clone()),
+            started: Some(Arc::clone(&tool_started)),
+            release: Some(Arc::clone(&tool_release)),
         }]),
         shell_only_permission_policy(),
         vec!["shell.block".to_string()],
@@ -145,11 +146,11 @@ async fn failed_turn_context_preserves_cancelled_turn_marker() {
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     let cancelled_request_id = coordinator
         .request_agent_turn(
             supervisor_actor(),
@@ -157,11 +158,11 @@ async fn failed_turn_context_preserves_cancelled_turn_marker() {
             "cancel after assistant",
         )
         .await
-        .expect("request cancellable turn");
+        .unwrap_or_abort();
 
     tokio::time::timeout(Duration::from_millis(500), tool_started.notified())
         .await
-        .expect("blocking tool should start");
+        .unwrap_or_abort();
     let events = load_events(&run.events_path);
     let task_id = events
         .iter()
@@ -177,11 +178,11 @@ async fn failed_turn_context_preserves_cancelled_turn_marker() {
             }
             _ => None,
         })
-        .expect("agent task id");
+        .unwrap_or_abort();
     coordinator
         .cancel_task(task_id.clone(), "operator cancelled")
         .await
-        .expect("cancel running agent turn");
+        .unwrap_or_abort();
     tool_release.notify_waiters();
     wait_for_events(&run.events_path, Duration::from_millis(700), |events| {
         events.iter().any(|event| {
@@ -198,7 +199,7 @@ async fn failed_turn_context_preserves_cancelled_turn_marker() {
     let follow_up_request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id, "continue after cancellation")
         .await
-        .expect("request follow-up turn");
+        .unwrap_or_abort();
     wait_for_events(&run.events_path, Duration::from_millis(700), |events| {
         events.iter().any(|event| {
             matches!(
@@ -210,10 +211,10 @@ async fn failed_turn_context_preserves_cancelled_turn_marker() {
         })
     })
     .await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let requests = provider.requests();
-    let follow_up = requests.last().expect("follow-up provider request");
+    let follow_up = requests.last().unwrap_or_abort();
     let assistant_marker = follow_up
         .messages
         .iter()
@@ -223,7 +224,7 @@ async fn failed_turn_context_preserves_cancelled_turn_marker() {
                     .content
                     .contains("Harness preserved an incomplete provider turn")
         })
-        .expect("cancelled turn marker should be sent before follow-up prompt");
+        .unwrap_or_abort();
     assert!(assistant_marker.content.contains("Status: aborted"));
     assert!(assistant_marker.content.contains("Stage: cancelled"));
     assert!(assistant_marker
@@ -235,7 +236,7 @@ async fn failed_turn_context_preserves_cancelled_turn_marker() {
 }
 #[tokio::test]
 async fn failed_turn_context_preserves_tool_failure_without_orphan_tool_call() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![
         vec![
             ProviderStreamEvent::Start,
@@ -284,15 +285,15 @@ async fn failed_turn_context_preserves_tool_failure_without_orphan_tool_call() {
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     let failed_request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id.clone(), "call failing tool")
         .await
-        .expect("request failing tool turn");
+        .unwrap_or_abort();
     wait_for_events(&run.events_path, Duration::from_millis(700), |events| {
         events.iter().any(|event| {
             matches!(
@@ -308,7 +309,7 @@ async fn failed_turn_context_preserves_tool_failure_without_orphan_tool_call() {
     let follow_up_request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id, "continue after tool failure")
         .await
-        .expect("request follow-up turn");
+        .unwrap_or_abort();
     wait_for_events(&run.events_path, Duration::from_millis(700), |events| {
         events.iter().any(|event| {
             matches!(
@@ -320,10 +321,10 @@ async fn failed_turn_context_preserves_tool_failure_without_orphan_tool_call() {
         })
     })
     .await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let requests = provider.requests();
-    let follow_up = requests.last().expect("follow-up provider request");
+    let follow_up = requests.last().unwrap_or_abort();
     let assistant_marker = follow_up
         .messages
         .iter()
@@ -333,7 +334,7 @@ async fn failed_turn_context_preserves_tool_failure_without_orphan_tool_call() {
                     .content
                     .contains("Harness preserved an incomplete provider turn")
         })
-        .expect("tool-failure marker should be sent before follow-up prompt");
+        .unwrap_or_abort();
     assert!(assistant_marker.content.contains("Status: failed"));
     assert!(assistant_marker.content.contains("Stage: tool_failure"));
     assert!(assistant_marker
@@ -348,7 +349,7 @@ async fn failed_turn_context_preserves_tool_failure_without_orphan_tool_call() {
 }
 #[tokio::test]
 async fn failed_response_compaction_writes_checkpoint_after_provider_error() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![
         provider_text_events(&"A".repeat(12_000)),
         vec![
@@ -376,15 +377,15 @@ async fn failed_response_compaction_writes_checkpoint_after_provider_error() {
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     coordinator
         .request_agent_turn(supervisor_actor(), agent_id.clone(), "first question")
         .await
-        .expect("first turn");
+        .unwrap_or_abort();
     wait_for_events(&run.events_path, Duration::from_millis(700), |events| {
         events.iter().any(|event| {
             matches!(
@@ -398,7 +399,7 @@ async fn failed_response_compaction_writes_checkpoint_after_provider_error() {
     let failed_request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id, "partial then error")
         .await
-        .expect("failing turn");
+        .unwrap_or_abort();
     let events = wait_for_events(&run.events_path, Duration::from_millis(700), |events| {
         events.iter().any(|event| {
             matches!(
@@ -410,7 +411,7 @@ async fn failed_response_compaction_writes_checkpoint_after_provider_error() {
         })
     })
     .await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let cancelled_idx = events
         .iter()
@@ -422,7 +423,7 @@ async fn failed_response_compaction_writes_checkpoint_after_provider_error() {
                         && data.reason == "provider exploded"
             )
         })
-        .expect("original provider failure cancellation");
+        .unwrap_or_abort();
     let requested_idx = events
         .iter()
         .position(|event| {
@@ -433,7 +434,7 @@ async fn failed_response_compaction_writes_checkpoint_after_provider_error() {
                         && data.through_request_id.as_deref() == Some(failed_request_id.as_str())
             )
         })
-        .expect("failed-response compaction requested");
+        .unwrap_or_abort();
     assert!(
         cancelled_idx < requested_idx,
         "terminal TaskCancelled must be durable before failed-response compaction starts"
@@ -444,7 +445,7 @@ async fn failed_response_compaction_writes_checkpoint_after_provider_error() {
         .recent_turns
         .iter()
         .find(|turn| !turn.status.is_completed())
-        .expect("failed provider turn remains provider-visible");
+        .unwrap_or_abort();
     assert_eq!(
         failed_turn.status,
         harness_core::agent::ProviderConversationTurnStatus::Failed

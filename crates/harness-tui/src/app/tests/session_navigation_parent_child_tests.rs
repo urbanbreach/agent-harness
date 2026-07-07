@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 pub(crate) fn parent_transcript_hides_child_prompt_before_task_tool_finishes() {
     let mut app = AppState::new_live(None, false, None);
@@ -105,9 +106,9 @@ pub(crate) fn parent_transcript_hides_child_prompt_before_task_tool_finishes() {
         "parent transcript should hide child prompts before the task tool finishes: {parent_debug}"
     );
 
-    let child_dir = tempfile::tempdir().expect("create child dir");
+    let child_dir = tempfile::tempdir().unwrap_or_abort();
     let child_path = child_dir.path().join("agent_child");
-    fs::create_dir_all(&child_path).expect("create child path");
+    fs::create_dir_all(&child_path).unwrap_or_abort();
     app.session_path = Some(child_path);
     let child_debug = render_debug(&app, 140, 40);
     assert!(

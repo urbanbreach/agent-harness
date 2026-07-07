@@ -1,3 +1,4 @@
+use harness_core::UnwrapOrAbort;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
@@ -170,18 +171,18 @@ fn envelope(run_id: &str, seq: u64, payload: EventV1) -> EventEnvelopeV1 {
 
 fn write_source_artifact(source_run_dir: &Path, artifact_path: &str, contents: &[u8]) {
     let path = source_run_dir.join(artifact_path);
-    fs::create_dir_all(path.parent().expect("artifact parent")).expect("create artifact parent");
-    fs::write(path, contents).expect("write source artifact");
+    fs::create_dir_all(path.parent().unwrap_or_abort()).unwrap_or_abort();
+    fs::write(path, contents).unwrap_or_abort();
 }
 
 fn write_source_events(source_run_dir: &Path, events: &[EventEnvelopeV1]) {
     let body = events
         .iter()
-        .map(|event| serde_json::to_string(event).expect("serialize source event"))
+        .map(|event| serde_json::to_string(event).unwrap_or_abort())
         .collect::<Vec<_>>()
         .join("\n");
     fs::write(source_run_dir.join("events.jsonl"), format!("{body}\n"))
-        .expect("write source events");
+        .unwrap_or_abort();
 }
 
 fn read_events(run_dir: &Path) -> Vec<EventEnvelopeV1> {
@@ -191,7 +192,7 @@ fn read_events(run_dir: &Path) -> Vec<EventEnvelopeV1> {
 fn source_prefix_digest(events: &[EventEnvelopeV1]) -> String {
     let mut bytes = Vec::new();
     for event in events {
-        serde_json::to_writer(&mut bytes, event).expect("serialize source event");
+        serde_json::to_writer(&mut bytes, event).unwrap_or_abort();
         bytes.push(b'\n');
     }
     blake3::hash(&bytes).to_hex().to_string()
@@ -199,10 +200,10 @@ fn source_prefix_digest(events: &[EventEnvelopeV1]) -> String {
 
 fn session_dir_entries(session_dir: &Path) -> Vec<String> {
     let mut entries = fs::read_dir(session_dir)
-        .expect("read session dir")
+        .unwrap_or_abort()
         .map(|entry| {
             entry
-                .expect("dir entry")
+                .unwrap_or_abort()
                 .file_name()
                 .to_string_lossy()
                 .into_owned()
@@ -213,8 +214,8 @@ fn session_dir_entries(session_dir: &Path) -> Vec<String> {
 }
 
 fn assert_no_unpublished_temp_dirs(session_dir: &Path) {
-    for entry in fs::read_dir(session_dir).expect("read session dir") {
-        let entry = entry.expect("dir entry");
+    for entry in fs::read_dir(session_dir).unwrap_or_abort() {
+        let entry = entry.unwrap_or_abort();
         let name = entry.file_name();
         let name = name.to_string_lossy();
         assert!(

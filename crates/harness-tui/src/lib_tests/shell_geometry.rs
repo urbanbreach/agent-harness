@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 pub(super) fn live_shell_geometry_contract_is_rule_based() {
     let theme = Theme::default();
@@ -142,8 +143,8 @@ pub(super) fn slash_overlay_matches_composer_text_input_width() {
 
     let area = ratatui::layout::Rect::new(0, 0, 100, 30);
     let plan = layout::FrameLayoutPlan::for_app(&app, area);
-    let composer = plan.dock.expect("live dock layout").composer;
-    let overlay = plan.slash_overlay.expect("slash overlay");
+    let composer = plan.dock.unwrap_or_abort().composer;
+    let overlay = plan.slash_overlay.unwrap_or_abort();
     let content = layout::slash_command_overlay_content_area(overlay);
     let theme = Theme::default();
     let body_width = composer.width.saturating_sub(1);
@@ -158,7 +159,10 @@ pub(super) fn slash_overlay_matches_composer_text_input_width() {
     assert_eq!(overlay.x, input_x);
     assert_eq!(overlay.width, input_width);
     assert_eq!(overlay.y.saturating_add(overlay.height), composer.y);
-    assert_eq!(overlay.height, app.slash_filtered.len() as u16);
+    assert_eq!(
+        overlay.height,
+        u16::try_from(app.slash_filtered.len()).unwrap_or(u16::MAX)
+    );
     assert!(overlay.height <= 10);
     assert_eq!(content.x, overlay.x);
     assert_eq!(content.width, overlay.width);
@@ -170,9 +174,7 @@ fn assert_live_shell_headerless_contract(app: &app::AppState, width: u16, height
     let area = ratatui::layout::Rect::new(0, 0, width, height);
     let plan = layout::FrameLayoutPlan::for_app(app, area);
     let rendered = render_live_lines(app, width, height);
-    let transcript = plan
-        .transcript
-        .expect("headerless layout should preserve transcript content");
+    let transcript = plan.transcript.unwrap_or_abort();
 
     assert_eq!(
         plan.session_contract.header_mode,
@@ -384,12 +386,8 @@ pub(super) fn live_shell_redesign_guardrails_preserve_primary_contract() {
 
         match expected_sidebar {
             layout::SessionSidebarMode::Persistent { .. } => {
-                let transcript = plan
-                    .transcript
-                    .expect("persistent breakpoint should preserve transcript frame");
-                let sidebar = plan
-                    .operator_sidebar
-                    .expect("persistent breakpoint should preserve operator sidebar");
+                let transcript = plan.transcript.unwrap_or_abort();
+                let sidebar = plan.operator_sidebar.unwrap_or_abort();
                 assert!(
                     transcript.x < sidebar.x,
                     "{label}: transcript-first layout must keep transcript left of the operator sidebar"

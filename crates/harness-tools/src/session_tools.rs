@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -538,7 +539,7 @@ fn resolve_session_entry(
                     })
                     .collect::<Vec<_>>();
                 return match matches.len() {
-                    1 => Ok(matches.into_iter().next().expect("one match")),
+                    1 => Ok(matches.into_iter().next().unwrap_or_abort()),
                     0 => Err(ToolError::InvalidArguments(format!(
                         "unknown session `{selector}` in {}",
                         session_root.display()
@@ -597,7 +598,7 @@ fn load_session_entry(run_dir: &Path) -> Result<SessionEntry, ToolError> {
             summary
                 .get("artifact_count")
                 .and_then(Value::as_u64)
-                .unwrap_or(0) as usize
+                .map_or(0, |v| usize::try_from(v).unwrap_or(0))
         }),
         child_session_count: 0,
         parent_session_id: None,

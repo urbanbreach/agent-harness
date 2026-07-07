@@ -1,10 +1,11 @@
+use harness_tools::UnwrapOrAbort;
 #[tokio::test]
 async fn native_public_edit_accepts_exact_string_shape() {
     // arrange
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
-    let edit = registry.get("edit").expect("edit in registry");
+    let edit = registry.get("edit").unwrap_or_abort();
     let schema = edit.parameters_json_schema();
 
     assert_eq!(schema["additionalProperties"], json!(false));
@@ -18,7 +19,7 @@ async fn native_public_edit_accepts_exact_string_shape() {
     assert!(edit.description().contains("oldString"));
     assert!(!edit.description().contains("LINE#HASH"));
 
-    fs::write(workspace.join("exact.txt"), "alpha\nbeta\nbeta\n").expect("seed exact edit file");
+    fs::write(workspace.join("exact.txt"), "alpha\nbeta\nbeta\n").unwrap_or_abort();
 
     // act
     let error = edit
@@ -52,7 +53,7 @@ async fn native_public_edit_accepts_exact_string_shape() {
             }),
         )
         .await
-        .expect("exact edit with replaceAll");
+        .unwrap_or_abort();
 
     assert!(result.display_text.contains("Edited file successfully: exact.txt"));
     assert!(result.display_text.contains("Replacements: 2"));
@@ -76,7 +77,7 @@ async fn native_public_edit_accepts_exact_string_shape() {
             .is_some_and(|value| value.get("format_warning").is_some())
     );
     assert_eq!(
-        fs::read_to_string(workspace.join("exact.txt")).expect("read exact edit file"),
+        fs::read_to_string(workspace.join("exact.txt")).unwrap_or_abort(),
         "alpha\nBETA\nBETA\n"
     );
 }
@@ -87,7 +88,7 @@ async fn native_public_edit_creates_missing_file_when_old_string_is_empty() {
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
-    let edit = registry.get("edit").expect("edit in registry");
+    let edit = registry.get("edit").unwrap_or_abort();
 
     // act
     let result = edit
@@ -100,12 +101,12 @@ async fn native_public_edit_creates_missing_file_when_old_string_is_empty() {
             }),
         )
         .await
-        .expect("empty oldString creates missing file");
+        .unwrap_or_abort();
 
     // assert
     assert!(result.display_text.contains("Edited file successfully: created-by-edit.txt"));
     assert_eq!(
-        fs::read_to_string(workspace.join("created-by-edit.txt")).expect("read created file"),
+        fs::read_to_string(workspace.join("created-by-edit.txt")).unwrap_or_abort(),
         "created\n"
     );
     assert_eq!(
@@ -130,8 +131,8 @@ async fn native_public_edit_rejects_empty_old_string_for_existing_file() {
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
-    let edit = registry.get("edit").expect("edit in registry");
-    fs::write(workspace.join("existing.txt"), "existing\n").expect("seed existing file");
+    let edit = registry.get("edit").unwrap_or_abort();
+    fs::write(workspace.join("existing.txt"), "existing\n").unwrap_or_abort();
 
     // act
     let error = edit
@@ -149,7 +150,7 @@ async fn native_public_edit_rejects_empty_old_string_for_existing_file() {
     // assert
     assert!(error.to_string().contains("oldString cannot be empty"));
     assert_eq!(
-        fs::read_to_string(workspace.join("existing.txt")).expect("read existing file"),
+        fs::read_to_string(workspace.join("existing.txt")).unwrap_or_abort(),
         "existing\n"
     );
 }
@@ -160,10 +161,10 @@ async fn native_public_edit_accepts_baseline_line_trimmed_fallback() {
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
-    let edit = registry.get("edit").expect("edit in registry");
+    let edit = registry.get("edit").unwrap_or_abort();
 
     fs::write(workspace.join("trimmed.txt"), "fn main() {\n    println!(\"hi\");\n}\n")
-        .expect("seed trimmed fallback file");
+        .unwrap_or_abort();
 
     // act
     edit.call(
@@ -175,11 +176,11 @@ async fn native_public_edit_accepts_baseline_line_trimmed_fallback() {
         }),
     )
     .await
-    .expect("line-trimmed fallback edit");
+    .unwrap_or_abort();
 
     // assert
     assert_eq!(
-        fs::read_to_string(workspace.join("trimmed.txt")).expect("read trimmed fallback file"),
+        fs::read_to_string(workspace.join("trimmed.txt")).unwrap_or_abort(),
         "fn main() {\n    println!(\"bye\");\n}\n"
     );
 }
@@ -190,13 +191,13 @@ async fn native_public_edit_accepts_baseline_whitespace_and_escape_fallbacks() {
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
-    let edit = registry.get("edit").expect("edit in registry");
+    let edit = registry.get("edit").unwrap_or_abort();
 
     fs::write(
         workspace.join("fallbacks.txt"),
         "let value = alpha    beta;\nlet escaped = line\nvalue;\n",
     )
-    .expect("seed fallback file");
+    .unwrap_or_abort();
 
     // act
     edit.call(
@@ -208,7 +209,7 @@ async fn native_public_edit_accepts_baseline_whitespace_and_escape_fallbacks() {
         }),
     )
     .await
-    .expect("whitespace fallback edit");
+    .unwrap_or_abort();
     edit.call(
         test_context(workspace, "edit-escape-fallback"),
         json!({
@@ -218,11 +219,11 @@ async fn native_public_edit_accepts_baseline_whitespace_and_escape_fallbacks() {
         }),
     )
     .await
-    .expect("escape fallback edit");
+    .unwrap_or_abort();
 
     // assert
     assert_eq!(
-        fs::read_to_string(workspace.join("fallbacks.txt")).expect("read fallback file"),
+        fs::read_to_string(workspace.join("fallbacks.txt")).unwrap_or_abort(),
         "let value = gamma delta;\nlet escaped = line value;\n"
     );
 }
@@ -233,13 +234,13 @@ async fn native_public_edit_accepts_baseline_context_fallback() {
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
-    let edit = registry.get("edit").expect("edit in registry");
+    let edit = registry.get("edit").unwrap_or_abort();
 
     fs::write(
         workspace.join("context.txt"),
         "start\nactual middle\nstable middle\nend\n",
     )
-    .expect("seed context fallback file");
+    .unwrap_or_abort();
 
     // act
     edit.call(
@@ -251,11 +252,11 @@ async fn native_public_edit_accepts_baseline_context_fallback() {
         }),
     )
     .await
-    .expect("context fallback edit");
+    .unwrap_or_abort();
 
     // assert
     assert_eq!(
-        fs::read_to_string(workspace.join("context.txt")).expect("read context fallback file"),
+        fs::read_to_string(workspace.join("context.txt")).unwrap_or_abort(),
         "start\nreplacement middle\nend\n"
     );
 }
@@ -266,9 +267,9 @@ async fn native_public_edit_preserves_literal_prefixes_in_hashline_lines() {
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
-    let edit = registry.get("edit").expect("edit in registry");
+    let edit = registry.get("edit").unwrap_or_abort();
 
-    fs::write(workspace.join("literal.txt"), "old\n").expect("seed literal prefix file");
+    fs::write(workspace.join("literal.txt"), "old\n").unwrap_or_abort();
 
     // act
     edit.call(
@@ -290,11 +291,11 @@ async fn native_public_edit_preserves_literal_prefixes_in_hashline_lines() {
         }),
     )
     .await
-    .expect("hashline edit should preserve literal leading content");
+    .unwrap_or_abort();
 
     // assert
     assert_eq!(
-        fs::read_to_string(workspace.join("literal.txt")).expect("read literal prefix file"),
+        fs::read_to_string(workspace.join("literal.txt")).unwrap_or_abort(),
         "  indented\n+literal plus\n-literal minus\n>>> literal arrows\n"
     );
 }
@@ -305,7 +306,7 @@ async fn native_write_creates_and_overwrites_one_file() {
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
-    let write = registry.get("write").expect("write in registry");
+    let write = registry.get("write").unwrap_or_abort();
     let schema = write.parameters_json_schema();
 
     assert_eq!(schema["required"], json!(["path", "content"]));
@@ -323,7 +324,7 @@ async fn native_write_creates_and_overwrites_one_file() {
             }),
         )
         .await
-        .expect("write creates file");
+        .unwrap_or_abort();
 
     // assert
     assert!(create.display_text.contains("Created file successfully: created.txt"));
@@ -344,7 +345,7 @@ async fn native_write_creates_and_overwrites_one_file() {
             }),
         )
         .await
-        .expect("write accepts path alias");
+        .unwrap_or_abort();
     assert!(alias.display_text.contains("Wrote file successfully: created.txt"));
 
     let overwrite = write
@@ -356,7 +357,7 @@ async fn native_write_creates_and_overwrites_one_file() {
             }),
         )
         .await
-        .expect("write overwrites file");
+        .unwrap_or_abort();
     assert!(overwrite.display_text.contains("Wrote file successfully: created.txt"));
     assert_eq!(
         overwrite
@@ -366,7 +367,7 @@ async fn native_write_creates_and_overwrites_one_file() {
         Some(true)
     );
     assert_eq!(
-        fs::read_to_string(workspace.join("created.txt")).expect("read written file"),
+        fs::read_to_string(workspace.join("created.txt")).unwrap_or_abort(),
         "second\n"
     );
 }
@@ -377,10 +378,10 @@ async fn native_apply_patch_applies_add_update_and_delete() {
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
-    let apply_patch = registry.get("apply_patch").expect("apply_patch in registry");
+    let apply_patch = registry.get("apply_patch").unwrap_or_abort();
 
-    fs::write(workspace.join("update.txt"), "alpha\nbeta\n").expect("seed update file");
-    fs::write(workspace.join("delete.txt"), "remove me\n").expect("seed delete file");
+    fs::write(workspace.join("update.txt"), "alpha\nbeta\n").unwrap_or_abort();
+    fs::write(workspace.join("delete.txt"), "remove me\n").unwrap_or_abort();
 
     // act
     let result = apply_patch
@@ -391,7 +392,7 @@ async fn native_apply_patch_applies_add_update_and_delete() {
             }),
         )
         .await
-        .expect("apply patch add/update/delete");
+        .unwrap_or_abort();
 
     // assert
     assert!(result.display_text.contains("Applied patch sequentially:"));
@@ -399,11 +400,11 @@ async fn native_apply_patch_applies_add_update_and_delete() {
     assert!(result.display_text.contains("M update.txt"));
     assert!(result.display_text.contains("D delete.txt"));
     assert_eq!(
-        fs::read_to_string(workspace.join("added.txt")).expect("read added file"),
+        fs::read_to_string(workspace.join("added.txt")).unwrap_or_abort(),
         "new file\n"
     );
     assert_eq!(
-        fs::read_to_string(workspace.join("update.txt")).expect("read updated file"),
+        fs::read_to_string(workspace.join("update.txt")).unwrap_or_abort(),
         "alpha\nBETA\n"
     );
     assert!(!workspace.join("delete.txt").exists());
@@ -415,9 +416,9 @@ async fn native_apply_patch_rejects_move_without_mutating_workspace() {
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
-    let apply_patch = registry.get("apply_patch").expect("apply_patch in registry");
+    let apply_patch = registry.get("apply_patch").unwrap_or_abort();
 
-    fs::write(workspace.join("source.txt"), "alpha\nbeta\n").expect("seed source file");
+    fs::write(workspace.join("source.txt"), "alpha\nbeta\n").unwrap_or_abort();
 
     // act
     let error = apply_patch
@@ -438,7 +439,7 @@ async fn native_apply_patch_rejects_move_without_mutating_workspace() {
         "unexpected error: {error}"
     );
     assert_eq!(
-        fs::read_to_string(workspace.join("source.txt")).expect("read source file"),
+        fs::read_to_string(workspace.join("source.txt")).unwrap_or_abort(),
         "alpha\nbeta\n"
     );
     assert!(!workspace.join("moved.txt").exists());

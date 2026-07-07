@@ -110,12 +110,13 @@ impl Coordinator {
     pub(in crate::coord) async fn replay_current_run_events(
         &self,
     ) -> Result<Vec<EventEnvelopeV1>, CoordinatorError> {
-        let store = self
-            .run_state
-            .as_ref()
-            .ok_or(CoordinatorError::RunNotStarted)?
-            .event_store
-            .clone();
+        let store = Arc::clone(
+            &self
+                .run_state
+                .as_ref()
+                .ok_or(CoordinatorError::RunNotStarted)?
+                .event_store,
+        );
         let mut stream = store.replay(1)?;
         let mut events = Vec::new();
         while let Some(next) = stream.next().await {
@@ -158,14 +159,14 @@ impl Coordinator {
             append_background_task_notification_and_schedule(
                 self.clock.as_ref(),
                 self.redactor.as_ref(),
-                self.config.hook_command_executor.clone(),
+                Arc::clone(&self.config.hook_command_executor),
                 self.job_tx.clone(),
                 run_state,
                 self.config.hook_runtime_config.clone(),
                 self.config.compaction.clone(),
                 self.config.provider_retry,
-                self.config.provider.clone(),
-                self.config.tool_registry.clone(),
+                Arc::clone(&self.config.provider),
+                Arc::clone(&self.config.tool_registry),
                 queued.child_task,
                 &terminal_event,
                 background_notification_status_for_cancel_reason(&terminal_event_summary(
@@ -217,14 +218,14 @@ impl Coordinator {
             append_background_task_notification_and_schedule(
                 self.clock.as_ref(),
                 self.redactor.as_ref(),
-                self.config.hook_command_executor.clone(),
+                Arc::clone(&self.config.hook_command_executor),
                 self.job_tx.clone(),
                 run_state,
                 self.config.hook_runtime_config.clone(),
                 self.config.compaction.clone(),
                 self.config.provider_retry,
-                self.config.provider.clone(),
-                self.config.tool_registry.clone(),
+                Arc::clone(&self.config.provider),
+                Arc::clone(&self.config.tool_registry),
                 running.child_task,
                 &terminal_event,
                 background_notification_status_for_cancel_reason(&terminal_event_summary(

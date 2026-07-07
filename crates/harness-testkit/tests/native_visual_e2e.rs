@@ -1,9 +1,10 @@
+use harness_testkit::UnwrapOrAbort;
 use std::path::PathBuf;
 
 #[test]
 #[ignore = "requires HARNESS_NATIVE_VISUAL=1; runs inside a managed nested KWin/XWayland session"]
 fn native_visual_ghostty_smoke() {
-    assert_native_visual_env().expect("native visual smoke prerequisites");
+    assert_native_visual_env().unwrap_or_abort();
 }
 
 #[test]

@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -161,7 +162,7 @@ impl PlannedOp {
         match self {
             Self::Rewrite {
                 source_line_count, ..
-            } => *source_line_count as u32,
+            } => u32::try_from(*source_line_count).unwrap_or(u32::MAX),
             Self::Insert { anchor_line, .. } => *anchor_line,
             Self::Replace { end_line, .. } => *end_line,
         }
@@ -175,15 +176,15 @@ impl PlannedOp {
                 ..
             } => ChangedLineRange {
                 start_line: 1,
-                removed_lines: *source_line_count as u32,
-                added_lines: lines.len() as u32,
+                removed_lines: u32::try_from(*source_line_count).unwrap_or(u32::MAX),
+                added_lines: u32::try_from(lines.len()).unwrap_or(u32::MAX),
             },
             Self::Insert {
                 insert_idx, lines, ..
             } => ChangedLineRange {
-                start_line: (*insert_idx as u32) + 1,
+                start_line: u32::try_from(*insert_idx).unwrap_or(u32::MAX) + 1,
                 removed_lines: 0,
-                added_lines: lines.len() as u32,
+                added_lines: u32::try_from(lines.len()).unwrap_or(u32::MAX),
             },
             Self::Replace {
                 start_line,
@@ -193,8 +194,8 @@ impl PlannedOp {
                 ..
             } => ChangedLineRange {
                 start_line: *start_line,
-                removed_lines: (*end_idx - *start_idx) as u32,
-                added_lines: lines.len() as u32,
+                removed_lines: u32::try_from(*end_idx - *start_idx).unwrap_or(u32::MAX),
+                added_lines: u32::try_from(lines.len()).unwrap_or(u32::MAX),
             },
         }
     }
@@ -245,7 +246,7 @@ impl PlannedOp {
                     ..
                 },
             ) => left_start <= right_end && right_start <= left_end,
-            _ => unreachable!("rewrite conflicts are handled before pair matching"),
+            _ => std::process::abort(),
         }
     }
 }
@@ -414,7 +415,7 @@ fn validate_expected_block(
         return Err(HashlineError::OutOfRange {
             op_index,
             line: 0,
-            max_line: source_lines.len() as u32,
+            max_line: u32::try_from(source_lines.len()).unwrap_or(u32::MAX),
         });
     }
 
@@ -438,11 +439,11 @@ fn validate_expected_block(
 }
 
 fn line_to_index(line: u32, source_len: usize, op_index: usize) -> Result<usize, HashlineError> {
-    if line == 0 || line > source_len as u32 {
+    if line == 0 || line > u32::try_from(source_len).unwrap_or(u32::MAX) {
         return Err(HashlineError::OutOfRange {
             op_index,
             line,
-            max_line: source_len as u32,
+            max_line: u32::try_from(source_len).unwrap_or(u32::MAX),
         });
     }
 
@@ -508,6 +509,7 @@ mod tests {
         apply_hashline_patch, compute_line_hash, join_content, split_content, ChangedLineRange,
         HashlineError, HashlineOp, HashlinePatch, LineAnchor,
     };
+    use crate::UnwrapOrAbort;
     use proptest::prelude::*;
     use proptest::test_runner::Config as ProptestConfig;
 
@@ -549,7 +551,7 @@ mod tests {
             ],
         };
 
-        let result = apply_hashline_patch(original, &patch).expect("patch should apply");
+        let result = apply_hashline_patch(original, &patch).unwrap_or_abort();
 
         assert_eq!(result.content, "alpha\nintro\nbeta\nGAMMA\n");
         assert_eq!(
@@ -597,7 +599,7 @@ mod tests {
             }],
         };
 
-        let applied = apply_hashline_patch("alpha\nbeta\n", &patch).expect("rewrite applies");
+        let applied = apply_hashline_patch("alpha\nbeta\n", &patch).unwrap_or_abort();
         assert_eq!(applied.content, "fresh\ncontent\n");
         assert_eq!(
             applied.changed_ranges,
@@ -726,7 +728,7 @@ mod tests {
             for (position, line_number) in selected_line_numbers.into_iter().enumerate() {
                 let line_index = line_number - 1;
                 let anchor = LineAnchor {
-                    line: line_number as u32,
+                    line: u32::try_from(line_number).unwrap_or(u32::MAX),
                     hash: compute_line_hash(&source_lines[line_index]),
                 };
 
@@ -752,7 +754,7 @@ mod tests {
             };
 
             let applied = apply_hashline_patch(&original, &patch)
-                .expect("non-overlapping ops should apply");
+                .unwrap_or_abort();
 
             let mut expected_lines = source_lines.clone();
             model.sort_by_key(|entry| std::cmp::Reverse(entry.0));
@@ -776,7 +778,7 @@ mod tests {
             prop_assert_eq!(mismatch.code(), "ANCHOR_MISMATCH");
 
             let reapplied = apply_hashline_patch(&original, &patch)
-                .expect("original patch must still apply unchanged");
+                .unwrap_or_abort();
             prop_assert_eq!(reapplied.content, expected);
         }
     }
@@ -790,7 +792,7 @@ mod tests {
     }
 
     fn line_strategy() -> impl Strategy<Value = String> {
-        proptest::string::string_regex("[a-zA-Z0-9 \\t]{0,16}").expect("valid regex")
+        proptest::string::string_regex("[a-zA-Z0-9 \\t]{0,16}").unwrap_or_abort()
     }
 
     fn corrupt_first_anchor(patch: &mut HashlinePatch) {
@@ -802,7 +804,7 @@ mod tests {
             }
         };
 
-        match patch.ops.first_mut().expect("patch has ops") {
+        match patch.ops.first_mut().unwrap_or_abort() {
             HashlineOp::Rewrite { .. } => {
                 panic!("rewrite ops cannot be anchor-corrupted for mismatch checks")
             }
@@ -810,7 +812,7 @@ mod tests {
                 anchor.hash = replacement_hash(&anchor.hash);
             }
             HashlineOp::Replace { expected, .. } | HashlineOp::Delete { expected } => {
-                let first = expected.first_mut().expect("expected has anchor");
+                let first = expected.first_mut().unwrap_or_abort();
                 first.hash = replacement_hash(&first.hash);
             }
         }

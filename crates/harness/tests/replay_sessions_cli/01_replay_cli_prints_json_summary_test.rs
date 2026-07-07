@@ -1,6 +1,7 @@
+use harness::UnwrapOrAbort;
 #[test]
 fn replay_cli_prints_json_summary() {
-    let run_dir = tempdir().expect("tempdir");
+    let run_dir = tempdir().unwrap_or_abort();
     write_events_jsonl(
         run_dir.path(),
         &[
@@ -34,7 +35,7 @@ fn replay_cli_prints_json_summary() {
     let output = run_harness([
             "replay",
             "--session",
-            run_dir.path().to_str().expect("run dir utf-8"),
+            run_dir.path().to_str().unwrap_or_abort(),
             "--json",
         ]);
 
@@ -44,7 +45,7 @@ fn replay_cli_prints_json_summary() {
         String::from_utf8_lossy(&output.stderr)
     );
     let summary: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("replay json output should parse");
+        serde_json::from_slice(&output.stdout).unwrap_or_abort();
     assert_eq!(summary["run_id"], "run_replay_json");
     assert_eq!(summary["run_name"], "json-fixture");
     assert_eq!(summary["status"], "failed");
@@ -55,7 +56,7 @@ fn replay_cli_prints_json_summary() {
 #[test]
 fn replay_cli_uses_meta_mode_source_for_resumability() {
     // arrange
-    let run_dir = tempdir().expect("tempdir");
+    let run_dir = tempdir().unwrap_or_abort();
     write_events_jsonl(
         run_dir.path(),
         &resumable_finished_events("run_replay_meta_resumable"),
@@ -71,15 +72,15 @@ fn replay_cli_uses_meta_mode_source_for_resumability() {
             "harness_version": "test",
             "mode_source": "interactive_mock"
         }))
-        .expect("serialize metadata"),
+        .unwrap_or_abort(),
     )
-    .expect("write metadata");
+    .unwrap_or_abort();
 
     // act
     let output = run_harness([
         "replay",
         "--session",
-        run_dir.path().to_str().expect("run dir utf-8"),
+        run_dir.path().to_str().unwrap_or_abort(),
         "--json",
     ]);
 
@@ -90,7 +91,7 @@ fn replay_cli_uses_meta_mode_source_for_resumability() {
         String::from_utf8_lossy(&output.stderr)
     );
     let summary: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("replay json output should parse");
+        serde_json::from_slice(&output.stdout).unwrap_or_abort();
     assert_eq!(summary["mode_source"], "interactive_mock");
     assert_eq!(summary["is_resumable"], true);
     assert_eq!(summary["resume_disabled_reason"], serde_json::Value::Null);
@@ -98,7 +99,7 @@ fn replay_cli_uses_meta_mode_source_for_resumability() {
 
 #[test]
 fn replay_cli_prints_human_summary() {
-    let run_dir = tempdir().expect("tempdir");
+    let run_dir = tempdir().unwrap_or_abort();
     write_events_jsonl(
         run_dir.path(),
         &[
@@ -123,7 +124,7 @@ fn replay_cli_prints_human_summary() {
     let output = run_harness([
             "replay",
             "--session",
-            run_dir.path().to_str().expect("run dir utf-8"),
+            run_dir.path().to_str().unwrap_or_abort(),
         ]);
 
     assert!(
@@ -143,7 +144,7 @@ fn replay_cli_prints_human_summary() {
 }
 #[test]
 fn replay_cli_surfaces_recovery_story_details_from_resume_metadata() {
-    let run_dir = tempdir().expect("tempdir");
+    let run_dir = tempdir().unwrap_or_abort();
     write_events_jsonl(
         run_dir.path(),
         &delegated_recovery_events("run_recovery_replay"),
@@ -152,7 +153,7 @@ fn replay_cli_surfaces_recovery_story_details_from_resume_metadata() {
     let human = run_harness([
             "replay",
             "--session",
-            run_dir.path().to_str().expect("run dir utf-8"),
+            run_dir.path().to_str().unwrap_or_abort(),
         ]);
 
     assert!(
@@ -181,7 +182,7 @@ fn replay_cli_surfaces_recovery_story_details_from_resume_metadata() {
     let json = run_harness([
             "replay",
             "--session",
-            run_dir.path().to_str().expect("run dir utf-8"),
+            run_dir.path().to_str().unwrap_or_abort(),
             "--json",
         ]);
 
@@ -191,12 +192,12 @@ fn replay_cli_surfaces_recovery_story_details_from_resume_metadata() {
         String::from_utf8_lossy(&json.stderr)
     );
     let summary: serde_json::Value =
-        serde_json::from_slice(&json.stdout).expect("replay recovery json should parse");
+        serde_json::from_slice(&json.stdout).unwrap_or_abort();
     assert_eq!(summary["artifact_count"], 1);
     assert_eq!(summary["child_session_count"], 1);
     assert_eq!(
         summary["session_path"],
-        run_dir.path().to_str().expect("run dir utf-8")
+        run_dir.path().to_str().unwrap_or_abort()
     );
     assert_eq!(
         summary["artifacts"][0]["path"],
@@ -259,14 +260,14 @@ fn replay_cli_surfaces_recovery_story_details_from_resume_metadata() {
     );
     assert!(summary["child_sessions"][0]["next_actions"]
         .as_array()
-        .expect("child next actions")
+        .unwrap_or_abort()
         .iter()
         .filter_map(serde_json::Value::as_str)
         .any(|action| action.contains("task(session_id=\"child-run-001\"")));
 }
 #[test]
 fn replay_cli_sanitizes_control_char_metadata_in_human_output() {
-    let run_dir = tempdir().expect("tempdir");
+    let run_dir = tempdir().unwrap_or_abort();
     write_events_jsonl(
         run_dir.path(),
         &delegated_recovery_events_with_control_chars("run_recovery_controls"),
@@ -275,7 +276,7 @@ fn replay_cli_sanitizes_control_char_metadata_in_human_output() {
     let json_output = run_harness([
             "replay",
             "--session",
-            run_dir.path().to_str().expect("run dir utf-8"),
+            run_dir.path().to_str().unwrap_or_abort(),
             "--json",
         ]);
 
@@ -285,7 +286,7 @@ fn replay_cli_sanitizes_control_char_metadata_in_human_output() {
         String::from_utf8_lossy(&json_output.stderr)
     );
     let summary: serde_json::Value = serde_json::from_slice(&json_output.stdout)
-        .expect("replay json output with control chars should parse");
+        .unwrap_or_abort();
     assert_eq!(summary["artifact_count"], 1);
     assert_eq!(summary["child_session_count"], 1);
     assert_eq!(
@@ -316,7 +317,7 @@ fn replay_cli_sanitizes_control_char_metadata_in_human_output() {
     let human_output = run_harness([
             "replay",
             "--session",
-            run_dir.path().to_str().expect("run dir utf-8"),
+            run_dir.path().to_str().unwrap_or_abort(),
         ]);
 
     assert!(
@@ -338,7 +339,7 @@ fn replay_cli_sanitizes_control_char_metadata_in_human_output() {
 }
 #[test]
 fn replay_cli_surfaces_recovery_context_in_json_summary() {
-    let run_dir = tempdir().expect("tempdir");
+    let run_dir = tempdir().unwrap_or_abort();
     write_events_jsonl(
         run_dir.path(),
         &[
@@ -406,7 +407,7 @@ fn replay_cli_surfaces_recovery_context_in_json_summary() {
     let output = run_harness([
             "replay",
             "--session",
-            run_dir.path().to_str().expect("run dir utf-8"),
+            run_dir.path().to_str().unwrap_or_abort(),
             "--json",
         ]);
 
@@ -416,7 +417,7 @@ fn replay_cli_surfaces_recovery_context_in_json_summary() {
         String::from_utf8_lossy(&output.stderr)
     );
     let summary: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("replay json output should parse");
+        serde_json::from_slice(&output.stdout).unwrap_or_abort();
     assert_eq!(summary["mode_source"], "interactive_live");
     assert_eq!(summary["is_resumable"], true);
     assert_eq!(summary["artifact_count"], 1);

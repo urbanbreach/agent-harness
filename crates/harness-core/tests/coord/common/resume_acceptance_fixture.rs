@@ -1,3 +1,4 @@
+use harness_core::UnwrapOrAbort;
 pub(super) struct ResumeAcceptanceFixture {
     pub(super) temp_dir: tempfile::TempDir,
     pub(super) run_id: &'static str,
@@ -8,9 +9,9 @@ pub(super) struct ResumeAcceptanceFixture {
 }
 
 pub(super) fn write_resume_acceptance_fixture() -> ResumeAcceptanceFixture {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let workspace_root = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace_root).expect("create workspace");
+    fs::create_dir_all(&workspace_root).unwrap_or_abort();
     let run_id = "run_resume_acceptance_realistic";
     let artifact_path = "artifacts/reports/resume-acceptance.json";
     let artifact_body = r#"{"status":"artifact restored"}"#;
@@ -520,9 +521,9 @@ pub(super) fn write_resume_acceptance_fixture() -> ResumeAcceptanceFixture {
         ],
     );
     let artifact_abs_path = temp_dir.path().join(run_id).join(artifact_path);
-    fs::create_dir_all(artifact_abs_path.parent().expect("artifact parent"))
-        .expect("create artifact parent");
-    fs::write(&artifact_abs_path, artifact_body).expect("write artifact");
+    fs::create_dir_all(artifact_abs_path.parent().unwrap_or_abort())
+        .unwrap_or_abort();
+    fs::write(&artifact_abs_path, artifact_body).unwrap_or_abort();
 
     ResumeAcceptanceFixture {
         temp_dir,

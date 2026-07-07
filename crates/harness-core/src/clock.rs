@@ -28,7 +28,7 @@ impl Default for RealClock {
 
 impl Clock for RealClock {
     fn mono_ms(&self) -> u64 {
-        self.start.elapsed().as_millis() as u64
+        u64::try_from(self.start.elapsed().as_millis()).unwrap_or(u64::MAX)
     }
 
     fn system_time_rfc3339(&self) -> Option<String> {

@@ -1,3 +1,4 @@
+use harness_tools::UnwrapOrAbort;
 use std::collections::BTreeMap;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -21,75 +22,75 @@ fn test_context(workspace_root: &Path, tool_call_id: &str) -> harness_core::tool
 }
 
 fn setup_workspace() -> tempfile::TempDir {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(workspace.join("src")).expect("src");
-    fs::create_dir_all(workspace.join("web")).expect("web");
-    fs::create_dir_all(workspace.join("python")).expect("python");
-    fs::create_dir_all(workspace.join("go")).expect("go");
-    fs::create_dir_all(workspace.join("config")).expect("config");
-    fs::create_dir_all(workspace.join("custom")).expect("custom");
+    fs::create_dir_all(workspace.join("src")).unwrap_or_abort();
+    fs::create_dir_all(workspace.join("web")).unwrap_or_abort();
+    fs::create_dir_all(workspace.join("python")).unwrap_or_abort();
+    fs::create_dir_all(workspace.join("go")).unwrap_or_abort();
+    fs::create_dir_all(workspace.join("config")).unwrap_or_abort();
+    fs::create_dir_all(workspace.join("custom")).unwrap_or_abort();
 
     fs::write(
         workspace.join("Cargo.toml"),
         "[package]\nname = \"code_lsp_test\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
     )
-    .expect("write cargo manifest");
+    .unwrap_or_abort();
     fs::write(
         workspace.join("src/lib.rs"),
         "fn helper() {}\n\nfn caller() {\n    helper();\n}\n",
     )
-    .expect("write rust fixture");
+    .unwrap_or_abort();
     fs::write(workspace.join("src/extra.rs"), "pub fn extra() {}\n")
-        .expect("write extra rust fixture");
+        .unwrap_or_abort();
     fs::write(
         workspace.join("src/other.rs"),
         "fn another() {\n    helper();\n}\n",
     )
-    .expect("write secondary rust fixture");
+    .unwrap_or_abort();
     fs::write(
         workspace.join("package.json"),
         "{\"name\":\"code-lsp-test\"}\n",
     )
-    .expect("write package manifest");
+    .unwrap_or_abort();
     fs::write(
         workspace.join("pyproject.toml"),
         "[project]\nname = \"code-lsp-test\"\nversion = \"0.1.0\"\n",
     )
-    .expect("write python manifest");
+    .unwrap_or_abort();
     fs::write(
         workspace.join("go.mod"),
         "module example.com/code-lsp-test\n",
     )
-    .expect("write go module");
+    .unwrap_or_abort();
     fs::write(
         workspace.join("web/app.ts"),
         "const answer = 42;\nexport function read() {\n  return answer;\n}\n",
     )
-    .expect("write typescript fixture");
+    .unwrap_or_abort();
     fs::write(
         workspace.join("python/app.py"),
         "ANSWER = 42\n\ndef read() -> int:\n    return ANSWER\n",
     )
-    .expect("write python fixture");
+    .unwrap_or_abort();
     fs::write(
         workspace.join("go/main.go"),
         "package main\n\nfunc helper() {}\n\nfunc main() {\n\thelper()\n}\n",
     )
-    .expect("write go fixture");
+    .unwrap_or_abort();
     fs::write(
         workspace.join("config/settings.json"),
         "{\n  \"answer\": 42\n}\n",
     )
-    .expect("write json fixture");
-    fs::write(workspace.join("config/service.yaml"), "answer: 42\n").expect("write yaml fixture");
+    .unwrap_or_abort();
+    fs::write(workspace.join("config/service.yaml"), "answer: 42\n").unwrap_or_abort();
     fs::write(
         workspace.join("custom/schema.foo"),
         "thing Example\n\nreference Example\n",
     )
-    .expect("write custom fixture");
+    .unwrap_or_abort();
     fs::write(workspace.join("unsupported.lua"), "print('unsupported')\n")
-        .expect("write unsupported fixture");
+        .unwrap_or_abort();
 
     temp_dir
 }
@@ -106,10 +107,10 @@ fn fake_lsp_command(directory: &Path, name: &str) -> String {
 fn assert_server_command(structured: &serde_json::Value, expected: &[&str]) {
     let actual = structured["server"]["command"]
         .as_array()
-        .expect("server command array");
+        .unwrap_or_abort();
     assert_eq!(actual.len(), expected.len());
     for (index, expected_segment) in expected.iter().enumerate() {
-        let actual_segment = actual[index].as_str().expect("command string segment");
+        let actual_segment = actual[index].as_str().unwrap_or_abort();
         if index == 0 {
             assert!(
                 actual_segment.ends_with(expected_segment),
@@ -202,15 +203,15 @@ while True:
 "#
     .replace(
         "__COUNTER_PATH__",
-        &serde_json::to_string(&counter_path.display().to_string()).expect("counter path json"),
+        &serde_json::to_string(&counter_path.display().to_string()).unwrap_or_abort(),
     );
     let path = directory.join(name);
-    fs::write(&path, script).expect("write empty definition lsp binary");
+    fs::write(&path, script).unwrap_or_abort();
     let mut permissions = fs::metadata(&path)
-        .expect("empty definition lsp metadata")
+        .unwrap_or_abort()
         .permissions();
     permissions.set_mode(0o755);
-    fs::set_permissions(&path, permissions).expect("set empty definition lsp permissions");
+    fs::set_permissions(&path, permissions).unwrap_or_abort();
 }
 
 struct FakeLspSpec<'a> {
@@ -358,39 +359,39 @@ while True:
     if method not in ("textDocument/diagnostic", "workspace/diagnostic"):
         break
 "#
-    .replace("__RESULT_URI__", &serde_json::to_string(spec.result_uri).expect("result uri json"))
+    .replace("__RESULT_URI__", &serde_json::to_string(spec.result_uri).unwrap_or_abort())
     .replace(
         "__DIAGNOSTIC_MESSAGE__",
-        &serde_json::to_string(spec.diagnostic_message).expect("diagnostic json"),
+        &serde_json::to_string(spec.diagnostic_message).unwrap_or_abort(),
     )
     .replace("__EMPTY_DIAGNOSTICS__", if spec.empty_diagnostics { "True" } else { "False" })
     .replace(
         "__EXPECT_ENV_KEY__",
-        &serde_json::to_string(spec.env_key).expect("env key json"),
+        &serde_json::to_string(spec.env_key).unwrap_or_abort(),
     )
     .replace(
         "__EXPECT_ENV_VALUE__",
-        &serde_json::to_string(spec.env_value).expect("env value json"),
+        &serde_json::to_string(spec.env_value).unwrap_or_abort(),
     )
     .replace(
         "__EXPECT_LANGUAGE_ID__",
-        &serde_json::to_string(spec.expected_language_id).expect("language id json"),
+        &serde_json::to_string(spec.expected_language_id).unwrap_or_abort(),
     )
     .replace(
         "__EXPECT_INIT_PATH__",
-        &serde_json::to_string(spec.initialization_path).expect("init path json"),
+        &serde_json::to_string(spec.initialization_path).unwrap_or_abort(),
     )
     .replace(
         "__EXPECT_INIT_VALUE__",
-        &serde_json::to_string(spec.initialization_value).expect("init value json"),
+        &serde_json::to_string(spec.initialization_value).unwrap_or_abort(),
     );
     let path = directory.join(name);
-    fs::write(&path, script).expect("write fake lsp binary");
+    fs::write(&path, script).unwrap_or_abort();
     let mut permissions = fs::metadata(&path)
-        .expect("fake lsp metadata")
+        .unwrap_or_abort()
         .permissions();
     permissions.set_mode(0o755);
-    fs::set_permissions(&path, permissions).expect("set fake lsp permissions");
+    fs::set_permissions(&path, permissions).unwrap_or_abort();
 }
 
 fn install_fake_rename_lsp_binary(
@@ -575,46 +576,47 @@ while True:
             }
         })
 "#
-    .replace("__PRIMARY_URI__", &serde_json::to_string(primary_uri).expect("primary uri json"))
+    .replace("__PRIMARY_URI__", &serde_json::to_string(primary_uri).unwrap_or_abort())
     .replace(
         "__SECONDARY_URI__",
-        &serde_json::to_string(secondary_uri).expect("secondary uri json"),
+        &serde_json::to_string(secondary_uri).unwrap_or_abort(),
     )
     .replace(
         "__PREPARE_MODE__",
-        &serde_json::to_string(prepare_mode).expect("prepare mode json"),
+        &serde_json::to_string(prepare_mode).unwrap_or_abort(),
     )
     .replace(
         "__RENAME_MODE__",
-        &serde_json::to_string(rename_mode).expect("rename mode json"),
+        &serde_json::to_string(rename_mode).unwrap_or_abort(),
     );
     let path = directory.join(name);
-    fs::write(&path, script).expect("write fake rename lsp binary");
+    fs::write(&path, script).unwrap_or_abort();
     let mut permissions = fs::metadata(&path)
-        .expect("fake rename lsp metadata")
+        .unwrap_or_abort()
         .permissions();
     permissions.set_mode(0o755);
-    fs::set_permissions(&path, permissions).expect("set fake rename lsp permissions");
+    fs::set_permissions(&path, permissions).unwrap_or_abort();
 }
 
+#[allow(clippy::panic, reason = "test fixture code must panic gracefully")]
 fn expect_invalid_arguments(error: ToolError, expected_fragment: &str) {
     match error {
         ToolError::InvalidArguments(message) => assert!(
             message.contains(expected_fragment),
             "expected invalid-arguments error containing {expected_fragment:?}, got {message:?}"
         ),
-        other => panic!("expected invalid-arguments error, got {other:?}"),
+        _ => panic!("abort"),
     }
 }
 
 fn first_diagnostic_message(value: &serde_json::Value) -> &str {
     value["diagnostics"][0]["diagnostics"][0]["message"]
         .as_str()
-        .expect("diagnostic message")
+        .unwrap_or_abort()
 }
 
 fn file_uri(path: &Path) -> String {
     reqwest::Url::from_file_path(path)
-        .expect("file url")
+        .unwrap_or_abort()
         .to_string()
 }

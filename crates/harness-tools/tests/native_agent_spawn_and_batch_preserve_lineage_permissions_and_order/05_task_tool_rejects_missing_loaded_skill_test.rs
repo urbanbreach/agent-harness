@@ -1,3 +1,4 @@
+use harness_tools::UnwrapOrAbort;
 #[tokio::test]
 async fn task_tool_rejects_missing_loaded_skill_before_child_spawn() {
     let temp_dir = setup_workspace();
@@ -20,10 +21,10 @@ async fn task_tool_rejects_missing_loaded_skill_before_child_spawn() {
             }),
         )
         .await
-        .expect("request task tool");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &task_tool_call_id).await;
 
-    handle.stop_run().await.expect("stop run");
+    handle.stop_run().await.unwrap_or_abort();
     // assert
     let events = read_events(&run.events_path);
     let finished = find_finished(&events, &task_tool_call_id);
@@ -32,7 +33,7 @@ async fn task_tool_rejects_missing_loaded_skill_before_child_spawn() {
     assert!(finished
         .output_summary
         .as_deref()
-        .expect("output summary")
+        .unwrap_or_abort()
         .contains("Skill \"definitely-missing-skill\" not found"));
     assert!(!events.iter().any(|event| matches!(
         &event.payload,
@@ -79,7 +80,7 @@ async fn task_tool_rejects_unloadable_loaded_skills_before_child_spawn() {
                 }),
             )
             .await
-            .expect("request task tool");
+            .unwrap_or_abort();
         wait_for_tool_call_finish(&run.events_path, &task_tool_call_id).await;
 
         let events = read_events(&run.events_path);
@@ -87,7 +88,7 @@ async fn task_tool_rejects_unloadable_loaded_skills_before_child_spawn() {
         let finished = find_finished(&events, &task_tool_call_id);
         // assert
         assert_eq!(finished.status, ToolCallStatus::Failed);
-        let summary = finished.output_summary.as_deref().expect("output summary");
+        let summary = finished.output_summary.as_deref().unwrap_or_abort();
         assert!(summary.contains(name), "summary should name {name}: {summary}");
         assert!(
             summary.contains(expected_status),
@@ -99,7 +100,7 @@ async fn task_tool_rejects_unloadable_loaded_skills_before_child_spawn() {
         )));
     }
 
-    handle.stop_run().await.expect("stop run");
+    handle.stop_run().await.unwrap_or_abort();
 }
 #[cfg(unix)]
 #[tokio::test]
@@ -107,16 +108,16 @@ async fn task_tool_rejects_symlinked_loaded_skill_before_child_spawn() {
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let outside_skill = temp_dir.path().join("outside-skill");
-    fs::create_dir_all(&outside_skill).expect("outside skill dir");
+    fs::create_dir_all(&outside_skill).unwrap_or_abort();
     fs::write(
         outside_skill.join("SKILL.md"),
         "---\nname: evil\ndescription: Evil description\n---\n\nEvil body.\n",
     )
-    .expect("write outside skill");
+    .unwrap_or_abort();
     let skill_root = workspace.join(".agent-harness/skills");
-    fs::create_dir_all(&skill_root).expect("skill root");
+    fs::create_dir_all(&skill_root).unwrap_or_abort();
     std::os::unix::fs::symlink(&outside_skill, skill_root.join("evil"))
-        .expect("symlink evil skill dir");
+        .unwrap_or_abort();
 
     let (handle, run, worker_id) = spawn_run(&workspace).await;
 
@@ -134,10 +135,10 @@ async fn task_tool_rejects_symlinked_loaded_skill_before_child_spawn() {
             }),
         )
         .await
-        .expect("request task tool");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &task_tool_call_id).await;
 
-    handle.stop_run().await.expect("stop run");
+    handle.stop_run().await.unwrap_or_abort();
     // assert
     let events = read_events(&run.events_path);
     let finished = find_finished(&events, &task_tool_call_id);
@@ -146,7 +147,7 @@ async fn task_tool_rejects_symlinked_loaded_skill_before_child_spawn() {
     assert!(finished
         .output_summary
         .as_deref()
-        .expect("output summary")
+        .unwrap_or_abort()
         .contains("Skill \"evil\" not found"));
     assert!(!events.iter().any(|event| matches!(
         &event.payload,
@@ -158,14 +159,15 @@ async fn task_tool_injects_loaded_skill_content_into_child_prompt() {
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let skill_dir = workspace.join(".agent-harness/skills/task-skill");
-    fs::create_dir_all(&skill_dir).expect("skill dir");
+    fs::create_dir_all(&skill_dir).unwrap_or_abort();
     fs::write(
         skill_dir.join("SKILL.md"),
         "---\nname: task-skill\ndescription: Task skill description\n---\n\nTask skill body marker.\n",
     )
-    .expect("write skill");
+    .unwrap_or_abort();
     let provider = Arc::new(TaskCallingProvider::default());
-    let (handle, run, worker_id) = spawn_run_with_provider(&workspace, provider.clone()).await;
+    let provider_clone = Arc::clone(&provider);
+    let (handle, run, worker_id) = spawn_run_with_provider(&workspace, provider_clone).await;
 
     let task_tool_call_id = handle
         .request_tool_call(
@@ -181,13 +183,13 @@ async fn task_tool_injects_loaded_skill_content_into_child_prompt() {
             }),
         )
         .await
-        .expect("request task tool");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &task_tool_call_id).await;
 
     let events = read_events(&run.events_path);
     let finished = find_finished(&events, &task_tool_call_id);
     assert_eq!(finished.status, ToolCallStatus::Succeeded);
-    let output = finished.output_json.expect("task structured output");
+    let output = finished.output_json.unwrap_or_abort();
     assert_eq!(output["loaded_skills"][0]["name"], json!("task-skill"));
     assert_eq!(
         output["loaded_skills"][0]["stable_id"],
@@ -204,7 +206,7 @@ async fn task_tool_injects_loaded_skill_content_into_child_prompt() {
     assert_eq!(output["load_skills"], json!(["task-skill"]));
     assert!(output["next_actions"]
         .as_array()
-        .expect("next actions")
+        .unwrap_or_abort()
         .iter()
         .any(|action| action["action"] == json!("continue_task")
             && action["tool"] == json!("task")
@@ -244,7 +246,7 @@ async fn task_tool_injects_shipped_builtin_skill_bodies_into_child_prompt() {
     let workspace_skill_root = workspace.join(".agent-harness/skills");
     for name in ["git-master", "review-work", "frontend-ui-ux"] {
         let skill_dir = workspace_skill_root.join(name);
-        fs::create_dir_all(&skill_dir).expect("create copied built-in skill dir");
+        fs::create_dir_all(&skill_dir).unwrap_or_abort();
         fs::copy(
             shipped_skill_root.join(name).join("SKILL.md"),
             skill_dir.join("SKILL.md"),
@@ -252,7 +254,8 @@ async fn task_tool_injects_shipped_builtin_skill_bodies_into_child_prompt() {
         .unwrap_or_else(|err| panic!("copy shipped built-in skill {name}: {err}"));
     }
     let provider = Arc::new(TaskCallingProvider::default());
-    let (handle, run, worker_id) = spawn_run_with_provider(&workspace, provider.clone()).await;
+    let provider_clone = Arc::clone(&provider);
+    let (handle, run, worker_id) = spawn_run_with_provider(&workspace, provider_clone).await;
 
     // act
     let task_tool_call_id = handle
@@ -269,17 +272,17 @@ async fn task_tool_injects_shipped_builtin_skill_bodies_into_child_prompt() {
             }),
         )
         .await
-        .expect("request task tool");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &task_tool_call_id).await;
 
     // assert
     let events = read_events(&run.events_path);
     let finished = find_finished(&events, &task_tool_call_id);
     assert_eq!(finished.status, ToolCallStatus::Succeeded);
-    let output = finished.output_json.expect("task structured output");
+    let output = finished.output_json.unwrap_or_abort();
     let loaded_skills = output["loaded_skills"]
         .as_array()
-        .expect("loaded skills array");
+        .unwrap_or_abort();
     assert_eq!(loaded_skills.len(), 3);
     for name in ["git-master", "review-work", "frontend-ui-ux"] {
         assert!(loaded_skills.iter().any(|skill| {
@@ -324,14 +327,14 @@ async fn task_tool_rejects_disabled_shipped_builtin_skill_before_child_spawn() {
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let skill_dir = workspace.join(".agent-harness/skills/git-master");
-    fs::create_dir_all(&skill_dir).expect("create copied built-in skill dir");
+    fs::create_dir_all(&skill_dir).unwrap_or_abort();
     fs::copy(
         repo_root()
             .join(".agent-harness/skills/git-master")
             .join("SKILL.md"),
         skill_dir.join("SKILL.md"),
     )
-    .expect("copy git-master built-in skill");
+    .unwrap_or_abort();
     let (handle, run, worker_id) = spawn_run(&workspace).await;
 
     // act
@@ -349,14 +352,14 @@ async fn task_tool_rejects_disabled_shipped_builtin_skill_before_child_spawn() {
             }),
         )
         .await
-        .expect("request task tool");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &task_tool_call_id).await;
 
-    handle.stop_run().await.expect("stop run");
+    handle.stop_run().await.unwrap_or_abort();
     let events = read_events(&run.events_path);
     let finished = find_finished(&events, &task_tool_call_id);
     assert_eq!(finished.status, ToolCallStatus::Failed);
-    let summary = finished.output_summary.as_deref().expect("output summary");
+    let summary = finished.output_summary.as_deref().unwrap_or_abort();
     assert!(summary.contains("git-master"), "summary should name git-master: {summary}");
     assert!(
         summary.contains("disabled by skills.disabled"),
@@ -386,7 +389,8 @@ async fn task_tool_preserves_requested_skill_order_and_deduplicates_loaded_conte
         "Beta body marker.",
     );
     let provider = Arc::new(TaskCallingProvider::default());
-    let (handle, run, worker_id) = spawn_run_with_provider(&workspace, provider.clone()).await;
+    let provider_clone = Arc::clone(&provider);
+    let (handle, run, worker_id) = spawn_run_with_provider(&workspace, provider_clone).await;
 
     let task_tool_call_id = handle
         .request_tool_call(
@@ -402,7 +406,7 @@ async fn task_tool_preserves_requested_skill_order_and_deduplicates_loaded_conte
             }),
         )
         .await
-        .expect("request task tool");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &task_tool_call_id).await;
 
     let events = read_events(&run.events_path);
@@ -410,7 +414,7 @@ async fn task_tool_preserves_requested_skill_order_and_deduplicates_loaded_conte
     let finished = find_finished(&events, &task_tool_call_id);
     // assert
     assert_eq!(finished.status, ToolCallStatus::Succeeded);
-    let output = finished.output_json.expect("task structured output");
+    let output = finished.output_json.unwrap_or_abort();
     assert_eq!(
         output["load_skills"],
         json!(["alpha-skill", "beta-skill", "alpha-skill"])
@@ -433,11 +437,11 @@ async fn task_tool_preserves_requested_skill_order_and_deduplicates_loaded_conte
         .join("\n");
     let alpha_position = prompt
         .find("<skill_content name=\"alpha-skill\">")
-        .expect("alpha skill content");
+        .unwrap_or_abort();
     let beta_position = prompt
         .find("<skill_content name=\"beta-skill\">")
-        .expect("beta skill content");
-    let task_position = prompt.find("Use ordered skills").expect("task body");
+        .unwrap_or_abort();
+    let task_position = prompt.find("Use ordered skills").unwrap_or_abort();
     assert!(alpha_position < beta_position);
     assert!(beta_position < task_position);
     assert_eq!(

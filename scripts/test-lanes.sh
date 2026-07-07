@@ -473,6 +473,7 @@ require_native_env() {
 
 run_fast() {
   run_stage fast fmt "$repo_root" cargo fmt --all -- --check || true
+  run_stage fast clippy "$repo_root" cargo clippy --all-targets --all-features --workspace -- -D warnings || true
   run_stage fast check "$repo_root" cargo check --workspace || true
   run_stage fast nextest_ci "$repo_root" cargo nextest run --profile ci --workspace --all-features || true
 }

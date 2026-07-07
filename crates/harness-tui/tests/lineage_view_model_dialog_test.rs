@@ -1,3 +1,4 @@
+use harness_tui::UnwrapOrAbort;
 use std::path::PathBuf;
 
 use harness_core::proj::{RunStatus, SessionCatalogEntry, SessionModeSource};
@@ -81,9 +82,7 @@ fn lineage_child_dialog_shows_navigation_options_for_child_session() {
     assert!(app.lineage_child_dialog_view_model().is_none());
 
     app.lineage_browser.move_selection(1);
-    let dialog = app
-        .lineage_child_dialog_view_model()
-        .expect("child dialog for selected child session");
+    let dialog = app.lineage_child_dialog_view_model().unwrap_or_abort();
     assert_eq!(dialog.run_id, "child_b");
     assert_eq!(dialog.parent_run_id.as_deref(), Some("root"));
     assert_eq!(dialog.child_index, 1);
@@ -94,9 +93,7 @@ fn lineage_child_dialog_shows_navigation_options_for_child_session() {
     assert!(!dialog.parent_shortcut.is_empty());
 
     app.lineage_browser.move_selection(1);
-    let dialog = app
-        .lineage_child_dialog_view_model()
-        .expect("child dialog for second child session");
+    let dialog = app.lineage_child_dialog_view_model().unwrap_or_abort();
     assert_eq!(dialog.run_id, "child_a");
     assert_eq!(dialog.child_index, 2);
     assert_eq!(dialog.child_total, 2);
@@ -122,16 +119,14 @@ fn lineage_child_dialog_renders_navigation_options_in_overlay() {
     app.open_lineage_browser();
     app.lineage_browser.move_selection(1);
 
-    let dialog = app
-        .lineage_child_dialog_view_model()
-        .expect("child dialog view model");
+    let dialog = app.lineage_child_dialog_view_model().unwrap_or_abort();
     assert_eq!(dialog.run_id, "child_b");
 
     let backend = TestBackend::new(120, 24);
-    let mut terminal = Terminal::new(backend).expect("create terminal");
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
     terminal
         .draw(|frame| harness_tui::ui::render_app(frame, &app))
-        .expect("draw lineage browser with child dialog");
+        .unwrap_or_abort();
 
     let buffer = terminal.backend().buffer();
     let area = buffer.area;

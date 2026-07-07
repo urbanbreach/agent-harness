@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -90,7 +91,7 @@ impl InspectSessionCommand {
         self.session
             .as_deref()
             .or(self.run_id.as_deref())
-            .expect("clap requires either --run or session selector")
+            .unwrap_or_abort()
     }
 }
 
@@ -613,9 +614,9 @@ fn print_recovery_summary(summary: &SessionRecoverySummary, out: &mut dyn std::i
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::UnwrapOrAbort;
     use serde_json::json;
 
-    #[allow(clippy::too_many_arguments)]
     fn sample_entry(
         run_id: &str,
         sort_unix_ms: u128,
@@ -717,7 +718,7 @@ mod tests {
     fn support_export_fails_closed_when_redaction_scan_finds_secret() {
         // arrange
         let export = minimal_export_bundle_with_secret("sk-proj-leaked_0123456789abcdef");
-        let output_dir = tempfile::tempdir().expect("tempdir");
+        let output_dir = tempfile::tempdir().unwrap_or_abort();
         let output_path = output_dir.path().join("support.json");
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
@@ -748,7 +749,7 @@ mod tests {
     fn support_export_fails_closed_when_env_credential_value_survives_redaction() {
         // arrange
         let export = minimal_export_bundle_with_secret("plain-env-secret-value");
-        let output_dir = tempfile::tempdir().expect("tempdir");
+        let output_dir = tempfile::tempdir().unwrap_or_abort();
         let output_path = output_dir.path().join("support.json");
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
@@ -825,11 +826,10 @@ mod tests {
         // assert
         assert_eq!(code, 0, "stderr: {}", String::from_utf8_lossy(&stderr));
         assert!(stderr.is_empty());
-        let rendered = String::from_utf8(stdout).expect("support export should be UTF-8 JSON");
+        let rendered = String::from_utf8(stdout).unwrap_or_abort();
         assert!(!rendered.contains(raw_reasoning));
         assert!(!rendered.contains("provider_reasoning_delta"));
-        let parsed: serde_json::Value =
-            serde_json::from_str(&rendered).expect("parse support export JSON");
+        let parsed: serde_json::Value = serde_json::from_str(&rendered).unwrap_or_abort();
         assert_eq!(parsed["events"].as_array().map(Vec::len), Some(0));
         assert_eq!(parsed["replay"]["total_events"], 0);
         assert_eq!(parsed["replay"]["counts_by_type"], json!({}));
@@ -951,9 +951,8 @@ mod tests {
             Some("run-parent"),
         )];
 
-        let rendered = render_json_session_list(&entries).expect("serialize json session list");
-        let parsed: serde_json::Value =
-            serde_json::from_str(&rendered).expect("parse rendered json session list");
+        let rendered = render_json_session_list(&entries).unwrap_or_abort();
+        let parsed: serde_json::Value = serde_json::from_str(&rendered).unwrap_or_abort();
 
         assert_eq!(
             parsed,

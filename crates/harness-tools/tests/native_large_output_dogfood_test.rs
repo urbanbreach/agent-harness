@@ -1,3 +1,4 @@
+use harness_tools::UnwrapOrAbort;
 use std::fs;
 
 mod common;
@@ -29,7 +30,7 @@ async fn read_grep_and_bash_spill_large_outputs_with_model_guidance() {
         workspace.workspace().join("large-read.txt"),
         format!("{large_read}\n"),
     )
-    .expect("write read fixture");
+    .unwrap_or_abort();
     let large_grep = (1..=105)
         .map(|line| format!("MATCH grep-line-{line}"))
         .collect::<Vec<_>>()
@@ -38,13 +39,13 @@ async fn read_grep_and_bash_spill_large_outputs_with_model_guidance() {
         workspace.workspace().join("large-grep.txt"),
         format!("{large_grep}\n"),
     )
-    .expect("write grep fixture");
+    .unwrap_or_abort();
     let registry = coordinator_registry(ShellAllowlist::default());
 
     // act: read, grep, and bash each exceed their inline result budget.
     let read = registry
         .get("read")
-        .expect("read tool")
+        .unwrap_or_abort()
         .call(
             test_context(
                 workspace.workspace(),
@@ -54,10 +55,10 @@ async fn read_grep_and_bash_spill_large_outputs_with_model_guidance() {
             json!({"filePath": "large-read.txt"}),
         )
         .await
-        .expect("read succeeds");
+        .unwrap_or_abort();
     let grep = registry
         .get("grep")
-        .expect("grep tool")
+        .unwrap_or_abort()
         .call(
             test_context(
                 workspace.workspace(),
@@ -67,25 +68,25 @@ async fn read_grep_and_bash_spill_large_outputs_with_model_guidance() {
             json!({"pattern": "MATCH", "path": "large-grep.txt"}),
         )
         .await
-        .expect("grep succeeds");
+        .unwrap_or_abort();
     let bash = registry
         .get("bash")
-        .expect("bash tool")
+        .unwrap_or_abort()
         .call(
             test_context(workspace.workspace(), "run-large-bash", "toolcall-large-bash"),
             json!({"command": "yes alpha | tr -d '\\n' | head -c 55000", "description": "large deterministic stdout"}),
         )
         .await
-        .expect("bash succeeds");
+        .unwrap_or_abort();
 
     // assert: every surface keeps inline text bounded while pointing at full artifacts.
     assert_eq!(read.artifacts.len(), 1);
     assert!(read.display_text.contains("full output artifact:"));
     assert!(read.display_text.contains("Use offset="));
-    let read_json = read.structured_json.expect("read json");
+    let read_json = read.structured_json.unwrap_or_abort();
     assert_eq!(read_json["truncated"], json!(true));
     assert!(
-        read_json["next_offset"].as_u64().expect("next_offset") > 1,
+        read_json["next_offset"].as_u64().unwrap_or_abort() > 1,
         "read should continue from a non-trivial next offset"
     );
     assert_eq!(
@@ -97,7 +98,7 @@ async fn read_grep_and_bash_spill_large_outputs_with_model_guidance() {
     assert!(grep.display_text.contains("full output artifact:"));
     assert!(grep.display_text.contains("narrow by path/include/pattern"));
     assert!(!grep.display_text.contains("grep-line-105"));
-    let grep_json = grep.structured_json.expect("grep json");
+    let grep_json = grep.structured_json.unwrap_or_abort();
     assert_eq!(grep_json["truncated"], json!(true));
     assert_eq!(
         grep_json["output_artifact"]["path"],
@@ -111,7 +112,7 @@ async fn read_grep_and_bash_spill_large_outputs_with_model_guidance() {
     assert!(bash.display_text.contains("[truncated:"));
     assert!(bash.display_text.contains("full output:"));
     assert!(bash.display_text.len() < 52_000);
-    let bash_json = bash.structured_json.expect("bash json");
+    let bash_json = bash.structured_json.unwrap_or_abort();
     assert_eq!(bash_json["truncated"], json!(true));
     assert_eq!(
         bash_json["output_artifact"]["path"],
@@ -159,7 +160,7 @@ async fn session_read_spills_redacted_replay_only_large_sessions() {
     // act: session_read summarizes the session through replay-derived native tooling.
     let result = registry
         .get("session_read")
-        .expect("session_read tool")
+        .unwrap_or_abort()
         .call(
             test_context(
                 workspace.workspace(),
@@ -169,13 +170,13 @@ async fn session_read_spills_redacted_replay_only_large_sessions() {
             json!({"session": run_id, "eventLimit": 130, "messageLimit": 130}),
         )
         .await
-        .expect("session_read succeeds");
+        .unwrap_or_abort();
 
     // assert: the result spills redacted JSON and the command-looking event was not executed.
     assert_eq!(result.artifacts.len(), 1);
     assert!(result.display_text.contains("full output spilled to"));
     assert!(!marker.exists());
-    let json = result.structured_json.expect("session_read spill json");
+    let json = result.structured_json.unwrap_or_abort();
     assert_eq!(json["source"], json!("event_replay"));
     assert_eq!(json["spilled"], json!(true));
     assert_eq!(json["artifact"]["path"], json!(result.artifacts[0].path));
@@ -205,14 +206,14 @@ async fn child_task_returns_capped_summary_and_session_next_actions() {
             }),
         )
         .await
-        .expect("request task");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &tool_call_id).await;
-    handle.stop_run().await.expect("stop run");
+    handle.stop_run().await.unwrap_or_abort();
 
     // assert: parent-visible task output is capped and points to session inspection tools.
     let finished = find_finished(&read_events(&run.events_path), &tool_call_id);
     assert_eq!(finished.status, ToolCallStatus::Succeeded);
-    let output = finished.output_json.expect("task output json");
+    let output = finished.output_json.unwrap_or_abort();
     assert_eq!(output["status"], json!("completed"));
     assert_capped_child_summary(&output);
     assert_next_action_tool(&output, "session_info");
@@ -220,7 +221,7 @@ async fn child_task_returns_capped_summary_and_session_next_actions() {
 }
 
 fn assert_capped_child_summary(output: &Value) {
-    let summary = output["result_summary"].as_str().expect("result summary");
+    let summary = output["result_summary"].as_str().unwrap_or_abort();
     assert!(summary.starts_with("child-large-summary:"));
     assert!(summary.ends_with('…'));
     assert!(!summary.contains("child-summary-tail"));
@@ -232,7 +233,7 @@ fn assert_capped_child_summary(output: &Value) {
 }
 
 fn assert_next_action_tool(output: &Value, tool: &str) {
-    let actions = output["next_actions"].as_array().expect("next actions");
+    let actions = output["next_actions"].as_array().unwrap_or_abort();
     assert!(
         actions.iter().any(|action| action["tool"] == json!(tool)
             && action["parameters"]["session"] == output["child_session_id"]),

@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 use std::sync::Mutex;
 
 #[cfg(test)]
@@ -134,7 +135,7 @@ pub(crate) fn exact_test_live_slash_compact_emits_ui_intent() {
     let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
     let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, Some(sink));
@@ -149,7 +150,7 @@ pub(crate) fn exact_test_live_slash_compact_emits_ui_intent() {
     assert_eq!(app.composer.prompt_buffer, "compact draft");
     assert!(!app.slash_visible);
     assert_eq!(
-        intents.lock().expect("lock intents").as_slice(),
+        intents.lock().unwrap_or_abort().as_slice(),
         &[UiIntent::CompactSession]
     );
 }
@@ -160,14 +161,14 @@ pub(crate) fn exact_test_auth_slash_and_palette_emit_ui_intent_mid_session() {
     let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
 
     let mut slash = AppState::new_live(
         Some(PathBuf::from("/tmp/session")),
         false,
-        Some(sink.clone()),
+        Some(Arc::clone(&sink)),
     );
     slash.composer.prompt_buffer = "/login codex --method device".to_string();
     slash.composer.prompt_cursor = slash.composer.prompt_buffer.chars().count();
@@ -183,7 +184,7 @@ pub(crate) fn exact_test_auth_slash_and_palette_emit_ui_intent_mid_session() {
         Some("auth backend requested: harness auth login codex --method device")
     );
     assert_eq!(
-        intents.lock().expect("lock intents").as_slice(),
+        intents.lock().unwrap_or_abort().as_slice(),
         &[UiIntent::OpenAuthManager {
             args: vec![
                 "login".to_string(),
@@ -205,7 +206,7 @@ pub(crate) fn exact_test_auth_slash_and_palette_emit_ui_intent_mid_session() {
     assert!(!palette.palette_visible);
     assert!(palette.connect_dialog.visible);
     assert_eq!(
-        intents.lock().expect("lock intents").as_slice(),
+        intents.lock().unwrap_or_abort().as_slice(),
         &[UiIntent::OpenAuthManager {
             args: vec![
                 "login".to_string(),
@@ -251,7 +252,7 @@ pub(crate) fn exact_test_connect_slash_command_passes_provider_args() {
     let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
 
@@ -261,10 +262,10 @@ pub(crate) fn exact_test_connect_slash_command_passes_provider_args() {
         use harness_core::auth::ProviderId;
 
         let registry = AuthPluginRegistry::with_builtins();
-        let codex = registry.get(&ProviderId::codex()).expect("codex plugin");
+        let codex = registry.get(&ProviderId::codex()).unwrap_or_abort();
         let copilot = registry
             .get(&ProviderId::github_copilot())
-            .expect("copilot plugin");
+            .unwrap_or_abort();
         let providers = vec![
             crate::app::ConnectProviderOption {
                 id: ProviderId::codex(),
@@ -320,7 +321,7 @@ pub(crate) fn exact_test_connect_slash_command_passes_provider_args() {
         "submitting API key should enter waiting state"
     );
     assert_eq!(
-        intents.lock().expect("lock intents").as_slice(),
+        intents.lock().unwrap_or_abort().as_slice(),
         &[UiIntent::OpenAuthManager {
             args: vec![
                 "login".to_string(),
@@ -469,7 +470,7 @@ pub(crate) fn exact_test_slash_lineage_write_commands_blocked_in_replay() {
     let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
     let mut app = AppState::new_replay(PathBuf::from("/tmp/replay"), Vec::new());
@@ -502,7 +503,7 @@ pub(crate) fn exact_test_slash_lineage_write_commands_blocked_in_replay() {
     assert_eq!(app.composer.prompt_buffer, "tree draft");
     assert!(app.lineage_browser_visible);
 
-    assert!(intents.lock().expect("lock intents").is_empty());
+    assert!(intents.lock().unwrap_or_abort().is_empty());
 }
 
 #[cfg(test)]
@@ -511,7 +512,7 @@ pub(crate) fn exact_test_slash_lineage_write_commands_blocked_when_live_unstable
     let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
     let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, Some(sink));
@@ -567,7 +568,7 @@ pub(crate) fn exact_test_slash_lineage_write_commands_blocked_when_live_unstable
     app.sync_slash_overlay();
     assert_eq!(app.typed_slash_command(), Some("tree"));
     assert_eq!(app.slash_filtered, vec!["tree".to_string()]);
-    assert!(intents.lock().expect("lock intents").is_empty());
+    assert!(intents.lock().unwrap_or_abort().is_empty());
 }
 
 #[cfg(test)]
@@ -684,7 +685,7 @@ pub(crate) fn exact_test_request_workspace_revert_emits_intent() {
     let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
 
@@ -709,7 +710,7 @@ pub(crate) fn exact_test_request_workspace_revert_emits_intent() {
     });
     app.request_workspace_revert();
     assert_eq!(
-        intents.lock().expect("lock intents").as_slice(),
+        intents.lock().unwrap_or_abort().as_slice(),
         &[UiIntent::RevertWorkspace {
             snapshot_request_id: "req_snapshot_001".to_string(),
         }]
@@ -770,7 +771,7 @@ pub(crate) fn exact_test_select_model_step_shows_models() {
         use harness_core::auth::plugin::AuthPluginRegistry;
         use harness_core::auth::ProviderId;
         let registry = AuthPluginRegistry::with_builtins();
-        let codex = registry.get(&ProviderId::codex()).expect("codex plugin");
+        let codex = registry.get(&ProviderId::codex()).unwrap_or_abort();
         let providers = vec![crate::app::ConnectProviderOption {
             id: ProviderId::codex(),
             label: codex.label().to_string(),
@@ -808,7 +809,7 @@ pub(crate) fn exact_test_select_model_skip_goes_to_success() {
         use harness_core::auth::plugin::AuthPluginRegistry;
         use harness_core::auth::ProviderId;
         let registry = AuthPluginRegistry::with_builtins();
-        let codex = registry.get(&ProviderId::codex()).expect("codex plugin");
+        let codex = registry.get(&ProviderId::codex()).unwrap_or_abort();
         let providers = vec![crate::app::ConnectProviderOption {
             id: ProviderId::codex(),
             label: codex.label().to_string(),
@@ -847,7 +848,7 @@ pub(crate) fn exact_test_select_model_select_goes_to_success() {
         use harness_core::auth::plugin::AuthPluginRegistry;
         use harness_core::auth::ProviderId;
         let registry = AuthPluginRegistry::with_builtins();
-        let codex = registry.get(&ProviderId::codex()).expect("codex plugin");
+        let codex = registry.get(&ProviderId::codex()).unwrap_or_abort();
         let providers = vec![crate::app::ConnectProviderOption {
             id: ProviderId::codex(),
             label: codex.label().to_string(),
@@ -887,7 +888,7 @@ pub(crate) fn exact_test_toast_set_on_auth_success() {
         use harness_core::auth::plugin::AuthPluginRegistry;
         use harness_core::auth::ProviderId;
         let registry = AuthPluginRegistry::with_builtins();
-        let codex = registry.get(&ProviderId::codex()).expect("codex plugin");
+        let codex = registry.get(&ProviderId::codex()).unwrap_or_abort();
         let providers = vec![crate::app::ConnectProviderOption {
             id: ProviderId::codex(),
             label: codex.label().to_string(),
@@ -905,11 +906,7 @@ pub(crate) fn exact_test_toast_set_on_auth_success() {
     app.apply_connect_dialog_auth_result(true);
 
     // assert
-    let toast = app
-        .connect_dialog
-        .toast
-        .as_ref()
-        .expect("toast should be set on success");
+    let toast = app.connect_dialog.toast.as_ref().unwrap_or_abort();
     assert!(toast.is_success, "toast should be success");
     assert_eq!(toast.message, "Connected successfully");
 }
@@ -922,7 +919,7 @@ pub(crate) fn exact_test_toast_set_on_auth_failure() {
         use harness_core::auth::plugin::AuthPluginRegistry;
         use harness_core::auth::ProviderId;
         let registry = AuthPluginRegistry::with_builtins();
-        let codex = registry.get(&ProviderId::codex()).expect("codex plugin");
+        let codex = registry.get(&ProviderId::codex()).unwrap_or_abort();
         let providers = vec![crate::app::ConnectProviderOption {
             id: ProviderId::codex(),
             label: codex.label().to_string(),
@@ -940,11 +937,7 @@ pub(crate) fn exact_test_toast_set_on_auth_failure() {
     app.apply_connect_dialog_auth_result(false);
 
     // assert
-    let toast = app
-        .connect_dialog
-        .toast
-        .as_ref()
-        .expect("toast should be set on failure");
+    let toast = app.connect_dialog.toast.as_ref().unwrap_or_abort();
     assert!(!toast.is_success, "toast should be failure");
     assert_eq!(toast.message, "Authentication failed");
     assert_eq!(
@@ -962,7 +955,7 @@ pub(crate) fn exact_test_any_key_closes_dialog_on_success() {
         use harness_core::auth::plugin::AuthPluginRegistry;
         use harness_core::auth::ProviderId;
         let registry = AuthPluginRegistry::with_builtins();
-        let codex = registry.get(&ProviderId::codex()).expect("codex plugin");
+        let codex = registry.get(&ProviderId::codex()).unwrap_or_abort();
         let providers = vec![crate::app::ConnectProviderOption {
             id: ProviderId::codex(),
             label: codex.label().to_string(),

@@ -1,3 +1,4 @@
+use harness_core::UnwrapOrAbort;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
@@ -29,8 +30,7 @@ impl Tool for StaticTool {
 fn agent_profile_toolsets_are_exported_as_single_surface_provider_defs() {
     let registry = test_tool_registry();
 
-    let defs = build_provider_tool_defs(&test_profile(), &registry)
-        .expect("single-surface tool defs should build");
+    let defs = build_provider_tool_defs(&test_profile(), &registry).unwrap_or_abort();
 
     let tool_ids = tool_ids(&defs);
 

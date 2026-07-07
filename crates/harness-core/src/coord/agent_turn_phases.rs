@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 use std::time::Duration;
 use tokio_stream::StreamExt;
 
@@ -314,7 +315,7 @@ async fn run_provider_with_retry_phase(
             category: prior_retry_category,
         };
         let result = run_provider_stream_phase(ProviderStreamPhaseRequest {
-            provider: provider.clone(),
+            provider: Arc::clone(provider),
             profile: &task.profile,
             request: &task.request,
             turn_request_id: &task.request_id,
@@ -615,7 +616,7 @@ async fn run_tool_phase(
     for phase_result in source_ordered_results {
         let AgentToolPhaseResult {
             tool_call, result, ..
-        } = phase_result.expect("tool phase result exists for every source index");
+        } = phase_result.unwrap_or_abort();
         let tool_result = match result {
             Ok(result) => result,
             Err(reason)

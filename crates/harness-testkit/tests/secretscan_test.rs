@@ -1,6 +1,7 @@
 use harness_testkit::secret_scanner::{
     default_forbidden_patterns, scan_directories_for_secrets, SecretFinding,
 };
+use harness_testkit::UnwrapOrAbort;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -17,15 +18,13 @@ mod secretscan {
     fn secret_scan_does_not_find_api_keys_in_artifacts() {
         let repo_root = repo_root();
 
-        let mut scan_roots = snapshot_dirs(repo_root.join("crates").as_path())
-            .expect("discover committed snapshot dirs");
-        scan_roots.extend(committed_cassette_dirs(&repo_root).expect("discover cassette dirs"));
+        let mut scan_roots = snapshot_dirs(repo_root.join("crates").as_path()).unwrap_or_abort();
+        scan_roots.extend(committed_cassette_dirs(&repo_root).unwrap_or_abort());
         scan_roots.extend(explicit_artifact_roots(&repo_root));
         scan_roots.sort();
 
-        let patterns = default_forbidden_patterns();
-        let findings = scan_directories_for_secrets(&scan_roots, &patterns)
-            .expect("scan artifacts for forbidden secret patterns");
+        let patterns = default_forbidden_patterns().unwrap_or_abort();
+        let findings = scan_directories_for_secrets(&scan_roots, &patterns).unwrap_or_abort();
 
         assert!(
             findings.is_empty(),
@@ -57,18 +56,20 @@ fn pty_temp_session_dirs() -> Vec<PathBuf> {
         return Vec::new();
     }
 
-    let mut dirs: Vec<PathBuf> = fs::read_dir(&base)
-        .expect("read /tmp/harness-testkit")
-        .filter_map(|entry| entry.ok().map(|item| item.path()))
-        .filter(|path| {
-            path.is_dir()
-                && path
-                    .file_name()
-                    .and_then(|name| name.to_str())
-                    .map(|name| name.starts_with("pty-e2e-"))
-                    .unwrap_or(false)
-        })
-        .collect();
+    let mut dirs: Vec<PathBuf> = match fs::read_dir(&base) {
+        Ok(entries) => entries
+            .filter_map(|entry| entry.ok().map(|item| item.path()))
+            .filter(|path| {
+                path.is_dir()
+                    && path
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .map(|name| name.starts_with("pty-e2e-"))
+                        .unwrap_or(false)
+            })
+            .collect(),
+        Err(_) => Vec::new(),
+    };
 
     dirs.sort();
     dirs

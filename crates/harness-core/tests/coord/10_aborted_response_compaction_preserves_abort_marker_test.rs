@@ -1,6 +1,7 @@
+use harness_core::UnwrapOrAbort;
 #[tokio::test]
 async fn aborted_response_compaction_preserves_abort_marker() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let tool_started = Arc::new(Notify::new());
     let tool_release = Arc::new(Notify::new());
     let provider = SequentialScriptedProvider::new(vec![
@@ -32,8 +33,8 @@ async fn aborted_response_compaction_preserves_abort_marker() {
         named_tool_registry(vec![NamedShellTool {
             id: "shell.block",
             output: "blocking output",
-            started: Some(tool_started.clone()),
-            release: Some(tool_release.clone()),
+            started: Some(Arc::clone(&tool_started)),
+            release: Some(Arc::clone(&tool_release)),
         }]),
         shell_only_permission_policy(),
         vec!["shell.block".to_string()],
@@ -50,15 +51,15 @@ async fn aborted_response_compaction_preserves_abort_marker() {
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     coordinator
         .request_agent_turn(supervisor_actor(), agent_id.clone(), "first question")
         .await
-        .expect("first turn");
+        .unwrap_or_abort();
     wait_for_events(&run.events_path, Duration::from_millis(700), |events| {
         events.iter().any(|event| {
             matches!(
@@ -76,10 +77,10 @@ async fn aborted_response_compaction_preserves_abort_marker() {
             "cancel after assistant",
         )
         .await
-        .expect("cancellable turn");
+        .unwrap_or_abort();
     tokio::time::timeout(Duration::from_millis(700), tool_started.notified())
         .await
-        .expect("blocking tool should start");
+        .unwrap_or_abort();
     let task_id = load_events(&run.events_path)
         .iter()
         .find_map(|event| match &event.payload {
@@ -94,11 +95,11 @@ async fn aborted_response_compaction_preserves_abort_marker() {
             }
             _ => None,
         })
-        .expect("agent task id");
+        .unwrap_or_abort();
     coordinator
         .cancel_task(task_id.clone(), "operator cancelled")
         .await
-        .expect("cancel running agent turn");
+        .unwrap_or_abort();
     tool_release.notify_waiters();
 
     let events = wait_for_events(&run.events_path, Duration::from_millis(900), |events| {
@@ -116,7 +117,7 @@ async fn aborted_response_compaction_preserves_abort_marker() {
     let follow_up_request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id, "continue after cancellation")
         .await
-        .expect("request follow-up turn");
+        .unwrap_or_abort();
     wait_for_events(&run.events_path, Duration::from_millis(700), |events| {
         events.iter().any(|event| {
             matches!(
@@ -128,7 +129,7 @@ async fn aborted_response_compaction_preserves_abort_marker() {
         })
     })
     .await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     assert!(events.iter().any(|event| {
         matches!(
@@ -142,7 +143,7 @@ async fn aborted_response_compaction_preserves_abort_marker() {
         .recent_turns
         .iter()
         .find(|turn| !turn.status.is_completed())
-        .expect("aborted turn remains provider-visible");
+        .unwrap_or_abort();
     assert_eq!(
         aborted_turn.status,
         harness_core::agent::ProviderConversationTurnStatus::Aborted
@@ -157,7 +158,7 @@ async fn aborted_response_compaction_preserves_abort_marker() {
         .contains("partial before cancellation"));
 
     let requests = provider.requests();
-    let follow_up = requests.last().expect("follow-up request");
+    let follow_up = requests.last().unwrap_or_abort();
     let marker = follow_up
         .messages
         .iter()
@@ -167,13 +168,13 @@ async fn aborted_response_compaction_preserves_abort_marker() {
                     .content
                     .contains("Harness preserved an incomplete provider turn")
         })
-        .expect("aborted marker should remain in provider-visible context");
+        .unwrap_or_abort();
     assert!(marker.content.contains("Status: aborted"));
     assert!(marker.content.contains("Stage: cancelled"));
 }
 #[tokio::test]
 async fn failed_response_compaction_failure_does_not_mask_original_error() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![
         provider_text_events(&"A".repeat(12_000)),
         vec![
@@ -201,15 +202,15 @@ async fn failed_response_compaction_failure_does_not_mask_original_error() {
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     coordinator
         .request_agent_turn(supervisor_actor(), agent_id.clone(), "first question")
         .await
-        .expect("first turn");
+        .unwrap_or_abort();
     wait_for_events(&run.events_path, Duration::from_millis(700), |events| {
         events.iter().any(|event| {
             matches!(
@@ -219,13 +220,13 @@ async fn failed_response_compaction_failure_does_not_mask_original_error() {
         })
     })
     .await;
-    fs::remove_dir_all(&run.artifacts_dir).expect("remove artifacts dir");
-    fs::write(&run.artifacts_dir, "not a directory").expect("replace artifacts dir with file");
+    fs::remove_dir_all(&run.artifacts_dir).unwrap_or_abort();
+    fs::write(&run.artifacts_dir, "not a directory").unwrap_or_abort();
 
     let failed_request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id, "partial then error")
         .await
-        .expect("failing turn");
+        .unwrap_or_abort();
     let events = wait_for_events(&run.events_path, Duration::from_millis(700), |events| {
         events.iter().any(|event| {
             matches!(
@@ -237,7 +238,7 @@ async fn failed_response_compaction_failure_does_not_mask_original_error() {
         })
     })
     .await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     assert!(events.iter().any(|event| {
         matches!(
@@ -256,7 +257,7 @@ async fn failed_response_compaction_failure_does_not_mask_original_error() {
 }
 #[tokio::test]
 async fn critical_compaction_requested_hook_failure_records_compaction_failed() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![
         provider_text_events(&"A".repeat(12_000)),
         vec![
@@ -308,15 +309,15 @@ async fn critical_compaction_requested_hook_failure_records_compaction_failed() 
             temp_dir.path().to_path_buf(),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     coordinator
         .request_agent_turn(supervisor_actor(), agent_id.clone(), "first question")
         .await
-        .expect("first turn");
+        .unwrap_or_abort();
     wait_for_events(&run.events_path, Duration::from_millis(700), |events| {
         events.iter().any(|event| {
             matches!(
@@ -330,7 +331,7 @@ async fn critical_compaction_requested_hook_failure_records_compaction_failed() 
     let failed_request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id, "partial then error")
         .await
-        .expect("failing turn");
+        .unwrap_or_abort();
     let events = wait_for_events(&run.events_path, Duration::from_millis(900), |events| {
         events.iter().any(|event| {
             matches!(
@@ -342,7 +343,7 @@ async fn critical_compaction_requested_hook_failure_records_compaction_failed() 
         })
     })
     .await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     assert!(events.iter().any(|event| {
         matches!(
@@ -367,7 +368,7 @@ async fn critical_compaction_requested_hook_failure_records_compaction_failed() 
 }
 #[tokio::test]
 async fn profile_max_iters_does_not_cap_tool_loops() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![
         vec![
             ProviderStreamEvent::Start,
@@ -427,15 +428,15 @@ async fn profile_max_iters_does_not_cap_tool_loops() {
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     let request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id, "loop past former cap")
         .await
-        .expect("request agent turn");
+        .unwrap_or_abort();
 
     let events = wait_for_events(&run.events_path, Duration::from_millis(700), |events| {
         events.iter().any(|event| {
@@ -448,7 +449,7 @@ async fn profile_max_iters_does_not_cap_tool_loops() {
         })
     })
     .await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     assert!(!events.iter().any(|event| {
         matches!(

@@ -1,5 +1,6 @@
 use super::*;
 use crate::view_model;
+use crate::UnwrapOrAbort;
 
 fn runtime_context_model_option(
     profile: &str,
@@ -231,7 +232,7 @@ pub(super) fn tab_cycles_build_and_plan_primary_agents() {
     let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
 
@@ -248,7 +249,7 @@ pub(super) fn tab_cycles_build_and_plan_primary_agents() {
     assert_eq!(app.active_profile(), "plan");
     assert_eq!(app.current_agent_label().as_deref(), Some("Plan"));
     {
-        let intents = intents.lock().expect("lock intents");
+        let intents = intents.lock().unwrap_or_abort();
         let [UiIntent::SwitchModel {
             profile,
             launch_metadata,
@@ -264,7 +265,7 @@ pub(super) fn tab_cycles_build_and_plan_primary_agents() {
     app.handle_key(key(KeyCode::BackTab));
 
     assert_eq!(app.active_profile(), "build");
-    let intents = intents.lock().expect("lock intents");
+    let intents = intents.lock().unwrap_or_abort();
     let Some(UiIntent::SwitchModel {
         profile,
         launch_metadata,
@@ -302,7 +303,7 @@ pub(super) fn agent_cycle_preserves_user_selected_provider_model_across_profiles
     let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
 
@@ -319,7 +320,7 @@ pub(super) fn agent_cycle_preserves_user_selected_provider_model_across_profiles
     assert_eq!(app.active_provider(), "openai-codex");
     assert_eq!(app.launch_metadata().model(), Some("gpt-5.5"));
     assert_eq!(app.launch_metadata().variant(), Some("high"));
-    let intents = intents.lock().expect("lock intents");
+    let intents = intents.lock().unwrap_or_abort();
     let [UiIntent::SwitchModel {
         profile,
         launch_metadata,

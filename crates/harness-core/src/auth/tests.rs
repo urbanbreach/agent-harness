@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex as StdMutex;
@@ -40,10 +41,10 @@ impl OAuthTokenRefresher for CountingRefresher {
         assert_eq!(provider, &ProviderId::codex());
         assert_eq!(credential.refresh_token.as_deref(), Some("refresh-old"));
         self.calls.fetch_add(1, Ordering::SeqCst);
-        if let Some(started) = self.started.lock().expect("started lock").take() {
+        if let Some(started) = self.started.lock().unwrap_or_abort().take() {
             let _ = started.send(());
         }
-        let release = self.release.lock().expect("release lock").take();
+        let release = self.release.lock().unwrap_or_abort().take();
         if let Some(release) = release {
             let _ = release.await;
         }
@@ -58,43 +59,43 @@ impl OAuthTokenRefresher for CountingRefresher {
 }
 
 fn provider_id(value: &str) -> ProviderId {
-    ProviderId::parse(value).expect("valid provider id")
+    ProviderId::parse(value).unwrap_or_abort()
 }
 
 #[test]
 fn credential_store_round_trips_replaces_atomically_and_uses_restrictive_permissions() {
-    let temp = tempfile::tempdir().expect("tempdir");
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let store = CredentialStore::new(temp.path());
     let first = StoredCredential::api_key(
         ProviderId::codex(),
         "stored-api-key-old",
         "2026-05-30T00:00:00Z",
     );
-    store.save(&first).expect("save first credential");
+    store.save(&first).unwrap_or_abort();
     let second = StoredCredential::api_key(
         ProviderId::codex(),
         "stored-api-key-new",
         "2026-05-30T00:00:01Z",
     );
-    store.save(&second).expect("replace credential atomically");
+    store.save(&second).unwrap_or_abort();
 
     let loaded = store
         .load(&ProviderId::codex())
-        .expect("load credential")
-        .expect("stored credential");
+        .unwrap_or_abort()
+        .unwrap_or_abort();
     assert_eq!(loaded.api_key.as_deref(), Some("stored-api-key-new"));
     assert_eq!(loaded.secret_values(), vec!["stored-api-key-new"]);
 
     #[cfg(unix)]
     assert_eq!(
-        credential_file_mode(&store.credential_path(&ProviderId::codex())).expect("mode"),
+        credential_file_mode(&store.credential_path(&ProviderId::codex())).unwrap_or_abort(),
         0o600
     );
 }
 
 #[tokio::test]
 async fn credential_resolution_precedence_prefers_stored_then_env_then_inline() {
-    let temp = tempfile::tempdir().expect("tempdir");
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let store = CredentialStore::new(temp.path());
     let manager = ProviderCredentialManager::new(
         store.clone(),
@@ -104,7 +105,7 @@ async fn credential_resolution_precedence_prefers_stored_then_env_then_inline() 
         |name| (name == "HARNESS_TEST_API_KEY").then(|| "env-key".to_string()),
     );
 
-    let resolved = manager.resolve().await.expect("env credential");
+    let resolved = manager.resolve().await.unwrap_or_abort();
     assert_eq!(
         resolved.source,
         ResolvedCredentialSource::EnvApiKey {
@@ -119,8 +120,8 @@ async fn credential_resolution_precedence_prefers_stored_then_env_then_inline() 
             "stored-api-key",
             "2026-05-30T00:00:00Z",
         ))
-        .expect("save api credential");
-    let resolved = manager.resolve().await.expect("stored api credential");
+        .unwrap_or_abort();
+    let resolved = manager.resolve().await.unwrap_or_abort();
     assert_eq!(resolved.source, ResolvedCredentialSource::StoredApiKey);
     assert_eq!(resolved.token, "stored-api-key");
 
@@ -132,15 +133,15 @@ async fn credential_resolution_precedence_prefers_stored_then_env_then_inline() 
             Some("2099-01-01T00:00:00Z".to_string()),
             "2026-05-30T00:00:00Z",
         ))
-        .expect("replace with oauth credential");
-    let resolved = manager.resolve().await.expect("stored oauth credential");
+        .unwrap_or_abort();
+    let resolved = manager.resolve().await.unwrap_or_abort();
     assert_eq!(resolved.source, ResolvedCredentialSource::StoredOauth);
     assert_eq!(resolved.token, "stored-oauth-access");
 }
 
 #[tokio::test]
 async fn credential_resolution_preserves_copilot_enterprise_url() {
-    let temp = tempfile::tempdir().expect("tempdir");
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let store = CredentialStore::new(temp.path());
     let mut credential = StoredCredential::oauth(
         ProviderId::github_copilot(),
@@ -150,21 +151,21 @@ async fn credential_resolution_preserves_copilot_enterprise_url() {
         "2026-05-30T00:00:00Z",
     );
     credential.enterprise_url = Some("ghe.example.com".to_string());
-    store.save(&credential).expect("save copilot credential");
+    store.save(&credential).unwrap_or_abort();
 
     let manager =
         ProviderCredentialManager::new(store, ProviderId::github_copilot(), Vec::new(), "", |_| {
             None
         });
 
-    let bearer = manager.bearer_token().await.expect("bearer token");
+    let bearer = manager.bearer_token().await.unwrap_or_abort();
     assert_eq!(bearer.token, "stored-copilot-access");
     assert_eq!(bearer.enterprise_url.as_deref(), Some("ghe.example.com"));
 }
 
 #[tokio::test]
 async fn expired_oauth_refresh_is_single_flight_and_persisted() {
-    let temp = tempfile::tempdir().expect("tempdir");
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let store = CredentialStore::new(temp.path());
     store
         .save(&StoredCredential::oauth(
@@ -174,7 +175,7 @@ async fn expired_oauth_refresh_is_single_flight_and_persisted() {
             Some("2026-05-29T00:00:00Z".to_string()),
             "2026-05-29T00:00:00Z",
         ))
-        .expect("save expired oauth credential");
+        .unwrap_or_abort();
     let (started_tx, started_rx) = oneshot::channel();
     let (release_tx, release_rx) = oneshot::channel();
     let refresher = Arc::new(CountingRefresher {
@@ -188,32 +189,35 @@ async fn expired_oauth_refresh_is_single_flight_and_persisted() {
             None
         })
         .with_clock(Arc::new(FixedClock(
-            humantime::parse_rfc3339("2026-05-30T00:00:00Z").expect("clock"),
+            humantime::parse_rfc3339("2026-05-30T00:00:00Z").unwrap_or_abort(),
         )))
-        .with_refresher(refresher.clone()),
+        .with_refresher({
+            let r: Arc<dyn OAuthTokenRefresher> = Arc::<CountingRefresher>::clone(&refresher);
+            r
+        }),
     );
 
     let first = tokio::spawn({
-        let manager = manager.clone();
-        async move { manager.resolve().await.expect("first resolve") }
+        let manager = Arc::clone(&manager);
+        async move { manager.resolve().await.unwrap_or_abort() }
     });
-    started_rx.await.expect("refresh started");
+    started_rx.await.unwrap_or_abort();
     let second = tokio::spawn({
-        let manager = manager.clone();
-        async move { manager.resolve().await.expect("second resolve") }
+        let manager = Arc::clone(&manager);
+        async move { manager.resolve().await.unwrap_or_abort() }
     });
     tokio::task::yield_now().await;
-    release_tx.send(()).expect("release refresher");
-    let first = first.await.expect("first join");
-    let second = second.await.expect("second join");
+    release_tx.send(()).unwrap_or_abort();
+    let first = first.await.unwrap_or_abort();
+    let second = second.await.unwrap_or_abort();
 
     assert_eq!(first.token, "access-new");
     assert_eq!(second.token, "access-new");
     assert_eq!(refresher.calls.load(Ordering::SeqCst), 1);
     let stored = store
         .load(&ProviderId::codex())
-        .expect("load refreshed")
-        .expect("refreshed credential");
+        .unwrap_or_abort()
+        .unwrap_or_abort();
     assert_eq!(stored.access_token.as_deref(), Some("access-new"));
     assert_eq!(stored.refresh_token.as_deref(), Some("refresh-new"));
     assert_eq!(stored.account_id.as_deref(), Some("acct-new"));
@@ -221,7 +225,7 @@ async fn expired_oauth_refresh_is_single_flight_and_persisted() {
 
 #[test]
 fn credential_store_manifest_excludes_secret_material() {
-    let temp = tempfile::tempdir().expect("tempdir");
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let store = CredentialStore::new(temp.path());
     store
         .save(&StoredCredential::oauth(
@@ -231,10 +235,10 @@ fn credential_store_manifest_excludes_secret_material() {
             Some("2099-01-01T00:00:00Z".to_string()),
             "2026-05-30T00:00:00Z",
         ))
-        .expect("save credential");
+        .unwrap_or_abort();
 
     let manifest = serde_json::to_string(&store.manifest_entries([ProviderId::github_copilot()]))
-        .expect("serialize manifest");
+        .unwrap_or_abort();
     assert!(manifest.contains("github-copilot"));
     assert!(!manifest.contains("access-secret-value"));
     assert!(!manifest.contains("refresh-secret-value"));
@@ -363,7 +367,7 @@ fn provider_id_parse_rejects_dotdot() {
 #[test]
 fn credential_path_stays_in_credentials_dir() {
     // arrange
-    let temp = tempfile::tempdir().expect("tempdir");
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let store = CredentialStore::new(temp.path());
 
     // act
@@ -384,11 +388,11 @@ fn credential_path_stays_in_credentials_dir() {
 #[test]
 fn credential_store_load_corrupted_json_fails_gracefully() {
     // arrange
-    let temp = tempfile::tempdir().expect("tempdir");
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let store = CredentialStore::new(temp.path());
     let path = store.credential_path(&ProviderId::codex());
-    std::fs::create_dir_all(path.parent().expect("parent")).expect("create dir");
-    std::fs::write(&path, "{{{{not valid json").expect("write corrupted json");
+    std::fs::create_dir_all(path.parent().unwrap_or_abort()).unwrap_or_abort();
+    std::fs::write(&path, "{{{{not valid json").unwrap_or_abort();
 
     // act
     let result = store.load(&ProviderId::codex());
@@ -407,11 +411,11 @@ fn credential_store_load_corrupted_json_fails_gracefully() {
 #[test]
 fn credential_store_load_truncated_json_fails() {
     // arrange
-    let temp = tempfile::tempdir().expect("tempdir");
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let store = CredentialStore::new(temp.path());
     let path = store.credential_path(&ProviderId::codex());
-    std::fs::create_dir_all(path.parent().expect("parent")).expect("create dir");
-    std::fs::write(&path, "{\"version\":1,\"provider\":\"cod").expect("write truncated json");
+    std::fs::create_dir_all(path.parent().unwrap_or_abort()).unwrap_or_abort();
+    std::fs::write(&path, "{\"version\":1,\"provider\":\"cod").unwrap_or_abort();
 
     // act
     let result = store.load(&ProviderId::codex());
@@ -423,15 +427,15 @@ fn credential_store_load_truncated_json_fails() {
 #[test]
 fn credential_store_load_wrong_version_fails() {
     // arrange
-    let temp = tempfile::tempdir().expect("tempdir");
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let store = CredentialStore::new(temp.path());
     let path = store.credential_path(&ProviderId::codex());
-    std::fs::create_dir_all(path.parent().expect("parent")).expect("create dir");
+    std::fs::create_dir_all(path.parent().unwrap_or_abort()).unwrap_or_abort();
     std::fs::write(
         &path,
         r#"{"version":99,"provider":"codex","kind":"api_key","apiKey":"k","updatedAt":"t"}"#,
     )
-    .expect("write wrong version credential");
+    .unwrap_or_abort();
 
     // act
     let result = store.load(&ProviderId::codex());
@@ -447,15 +451,15 @@ fn credential_store_load_wrong_version_fails() {
 #[test]
 fn credential_store_load_wrong_provider_fails() {
     // arrange
-    let temp = tempfile::tempdir().expect("tempdir");
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let store = CredentialStore::new(temp.path());
     let path = store.credential_path(&ProviderId::codex());
-    std::fs::create_dir_all(path.parent().expect("parent")).expect("create dir");
+    std::fs::create_dir_all(path.parent().unwrap_or_abort()).unwrap_or_abort();
     std::fs::write(
         &path,
         r#"{"version":1,"provider":"anthropic","kind":"api_key","apiKey":"k","updatedAt":"t"}"#,
     )
-    .expect("write wrong provider credential");
+    .unwrap_or_abort();
 
     // act
     let result = store.load(&ProviderId::codex());
@@ -474,7 +478,7 @@ fn credential_store_load_wrong_provider_fails() {
 #[test]
 fn credential_store_save_and_load_arbitrary_provider() {
     // arrange
-    let temp = tempfile::tempdir().expect("tempdir");
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let store = CredentialStore::new(temp.path());
     let provider = provider_id("anthropic");
     let credential = StoredCredential::api_key(
@@ -484,13 +488,8 @@ fn credential_store_save_and_load_arbitrary_provider() {
     );
 
     // act
-    store
-        .save(&credential)
-        .expect("save arbitrary provider credential");
-    let loaded = store
-        .load(&provider)
-        .expect("load arbitrary provider credential")
-        .expect("credential exists");
+    store.save(&credential).unwrap_or_abort();
+    let loaded = store.load(&provider).unwrap_or_abort().unwrap_or_abort();
 
     // assert
     assert_eq!(loaded.provider, provider);
@@ -500,20 +499,16 @@ fn credential_store_save_and_load_arbitrary_provider() {
 #[test]
 fn credential_store_delete_arbitrary_provider() {
     // arrange
-    let temp = tempfile::tempdir().expect("tempdir");
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let store = CredentialStore::new(temp.path());
     let provider = provider_id("custom");
     let credential =
         StoredCredential::api_key(provider.clone(), "sk-custom-test", "2026-06-26T00:00:00Z");
-    store
-        .save(&credential)
-        .expect("save custom provider credential");
+    store.save(&credential).unwrap_or_abort();
 
     // act
-    let deleted = store
-        .delete(&provider)
-        .expect("delete custom provider credential");
-    let loaded = store.load(&provider).expect("load after delete");
+    let deleted = store.delete(&provider).unwrap_or_abort();
+    let loaded = store.load(&provider).unwrap_or_abort();
 
     // assert
     assert!(deleted, "delete should return true for existing credential");
@@ -523,19 +518,17 @@ fn credential_store_delete_arbitrary_provider() {
 #[test]
 fn credential_store_file_permissions_are_0600() {
     // arrange
-    let temp = tempfile::tempdir().expect("tempdir");
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let store = CredentialStore::new(temp.path());
     let provider = provider_id("perm-test");
     let credential =
         StoredCredential::api_key(provider.clone(), "sk-perm-test", "2026-06-26T00:00:00Z");
-    store
-        .save(&credential)
-        .expect("save credential for permission check");
+    store.save(&credential).unwrap_or_abort();
     let path = store.credential_path(&provider);
 
     // act
     #[cfg(unix)]
-    let mode = credential_file_mode(&path).expect("read file mode");
+    let mode = credential_file_mode(&path).unwrap_or_abort();
     #[cfg(not(unix))]
     let _ = path;
 

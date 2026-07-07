@@ -7,6 +7,7 @@
 //! 4. Fetch falls back to embedded on failure
 
 use harness_core::provider_catalog::{CatalogAuthMethod, OAuthFlow, ProviderCatalog};
+use harness_core::UnwrapOrAbort;
 
 #[test]
 fn poc_auth_methods_are_computed_from_provider_id_not_catalog_data() {
@@ -29,14 +30,14 @@ fn poc_auth_methods_are_computed_from_provider_id_not_catalog_data() {
         .or_else(|_| {
             // fetch_from_url will fail with a data: URL, so parse directly
             // by using from_path on a temp file
-            let dir = tempfile::tempdir().expect("tempdir");
+            let dir = tempfile::tempdir().unwrap_or_abort();
             let path = dir.path().join("evil-catalog.json");
-            std::fs::write(&path, malicious_catalog).expect("write");
+            std::fs::write(&path, malicious_catalog).unwrap_or_abort();
             ProviderCatalog::from_path(&path)
         })
-        .expect("parse malicious catalog");
+        .unwrap_or_abort();
 
-    let provider = catalog.provider("302ai").expect("302ai should exist");
+    let provider = catalog.provider("302ai").unwrap_or_abort();
 
     // The auth_methods should be computed by auth_methods_for_provider("302ai"),
     // which returns only ApiKey — NOT from the catalog data.
@@ -68,14 +69,12 @@ fn poc_malicious_catalog_cannot_inject_oauth_for_arbitrary_provider() {
         }
     }"#;
 
-    let dir = tempfile::tempdir().expect("tempdir");
+    let dir = tempfile::tempdir().unwrap_or_abort();
     let path = dir.path().join("evil-catalog.json");
-    std::fs::write(&path, malicious_catalog).expect("write");
+    std::fs::write(&path, malicious_catalog).unwrap_or_abort();
 
-    let catalog = ProviderCatalog::from_path(&path).expect("parse");
-    let provider = catalog
-        .provider("evil-provider")
-        .expect("evil-provider exists");
+    let catalog = ProviderCatalog::from_path(&path).unwrap_or_abort();
+    let provider = catalog.provider("evil-provider").unwrap_or_abort();
 
     // auth_methods_for_provider("evil-provider") returns only ApiKey
     // because it's not "codex" or "github-copilot".
@@ -103,12 +102,12 @@ fn poc_codex_and_copilot_keep_their_oauth_methods_regardless_of_catalog() {
         }
     }"#;
 
-    let dir = tempfile::tempdir().expect("tempdir");
+    let dir = tempfile::tempdir().unwrap_or_abort();
     let path = dir.path().join("evil-codex.json");
-    std::fs::write(&path, malicious_catalog).expect("write");
+    std::fs::write(&path, malicious_catalog).unwrap_or_abort();
 
-    let catalog = ProviderCatalog::from_path(&path).expect("parse");
-    let provider = catalog.provider("codex").expect("codex exists");
+    let catalog = ProviderCatalog::from_path(&path).unwrap_or_abort();
+    let provider = catalog.provider("codex").unwrap_or_abort();
 
     // codex should still have BrowserPkce and DeviceCode OAuth methods
     // because they're computed from the id, not from the catalog data.
@@ -128,12 +127,12 @@ fn poc_codex_and_copilot_keep_their_oauth_methods_regardless_of_catalog() {
 
 #[test]
 fn poc_cache_write_stays_at_specified_path_with_0600_permissions() {
-    let dir = tempfile::tempdir().expect("tempdir");
+    let dir = tempfile::tempdir().unwrap_or_abort();
     let cache_path = dir.path().join("cache.json");
 
     // Use a local mock server to test cache write behavior.
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
-    let addr = listener.local_addr().expect("addr");
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap_or_abort();
+    let addr = listener.local_addr().unwrap_or_abort();
     let url = format!("http://{addr}/api.json");
     let body = r#"{"provider":{}}"#.to_string();
     std::thread::spawn(move || {
@@ -151,7 +150,7 @@ fn poc_cache_write_stays_at_specified_path_with_0600_permissions() {
     });
     std::thread::sleep(std::time::Duration::from_millis(100));
 
-    let _catalog = ProviderCatalog::cached(&cache_path, Some(&url)).expect("should load");
+    let _catalog = ProviderCatalog::cached(&cache_path, Some(&url)).unwrap_or_abort();
 
     // Verify cache file was written at the specified path
     assert!(
@@ -164,7 +163,7 @@ fn poc_cache_write_stays_at_specified_path_with_0600_permissions() {
     {
         use std::os::unix::fs::PermissionsExt;
         let perms = std::fs::metadata(&cache_path)
-            .expect("metadata")
+            .unwrap_or_abort()
             .permissions();
         assert_eq!(
             perms.mode() & 0o777,
@@ -174,10 +173,10 @@ fn poc_cache_write_stays_at_specified_path_with_0600_permissions() {
     }
 
     // Verify no unexpected files were written in the cache directory
-    let parent = cache_path.parent().expect("parent");
-    let entries = std::fs::read_dir(parent).expect("read dir");
+    let parent = cache_path.parent().unwrap_or_abort();
+    let entries = std::fs::read_dir(parent).unwrap_or_abort();
     for entry in entries {
-        let entry = entry.expect("entry");
+        let entry = entry.unwrap_or_abort();
         let name = entry.file_name();
         let name_str = name.to_string_lossy();
         assert!(
@@ -189,12 +188,11 @@ fn poc_cache_write_stays_at_specified_path_with_0600_permissions() {
 
 #[test]
 fn poc_fetch_falls_back_to_embedded_on_failure() {
-    let dir = tempfile::tempdir().expect("tempdir");
+    let dir = tempfile::tempdir().unwrap_or_abort();
     let cache_path = dir.path().join("cache.json");
     let invalid_url = "http://127.0.0.1:1/nonexistent";
 
-    let catalog =
-        ProviderCatalog::cached(&cache_path, Some(invalid_url)).expect("should fall back");
+    let catalog = ProviderCatalog::cached(&cache_path, Some(invalid_url)).unwrap_or_abort();
 
     // Should fall back to embedded catalog with 116 providers
     assert_eq!(

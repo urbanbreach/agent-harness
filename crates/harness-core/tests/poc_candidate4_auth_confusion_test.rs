@@ -9,9 +9,10 @@
 use harness_core::auth::plugin::AuthPluginRegistry;
 use harness_core::auth::ProviderId;
 use harness_core::provider_catalog::{CatalogAuthMethod, OAuthFlow, ProviderCatalog};
+use harness_core::UnwrapOrAbort;
 
 fn provider_id(value: &str) -> ProviderId {
-    ProviderId::parse(value).expect("valid provider id")
+    ProviderId::parse(value).unwrap_or_abort()
 }
 
 #[test]
@@ -43,7 +44,7 @@ fn poc_registry_only_has_builtin_plugins() {
 
 #[test]
 fn poc_catalog_providers_filters_non_registered() {
-    let catalog = ProviderCatalog::from_embedded().expect("catalog");
+    let catalog = ProviderCatalog::from_embedded().unwrap_or_abort();
     let registry = AuthPluginRegistry::with_builtins();
 
     let providers: Vec<_> = catalog
@@ -75,7 +76,7 @@ fn poc_catalog_providers_filters_non_registered() {
 
 #[test]
 fn poc_non_builtin_provider_auth_methods_only_apikey() {
-    let catalog = ProviderCatalog::from_embedded().expect("catalog");
+    let catalog = ProviderCatalog::from_embedded().unwrap_or_abort();
 
     for provider in catalog.providers() {
         if provider.id == "codex" || provider.id == "github-copilot" {
@@ -104,11 +105,11 @@ fn poc_codex_has_browser_pkce_and_device_code() {
             }
         }
     }"#;
-    let dir = tempfile::tempdir().expect("tempdir");
+    let dir = tempfile::tempdir().unwrap_or_abort();
     let path = dir.path().join("codex.json");
-    std::fs::write(&path, crafted).expect("write");
-    let catalog = ProviderCatalog::from_path(&path).expect("parse");
-    let codex = catalog.provider("codex").expect("codex exists");
+    std::fs::write(&path, crafted).unwrap_or_abort();
+    let catalog = ProviderCatalog::from_path(&path).unwrap_or_abort();
+    let codex = catalog.provider("codex").unwrap_or_abort();
 
     assert!(codex.auth_methods.contains(&CatalogAuthMethod::ApiKey));
     assert!(codex
@@ -121,8 +122,8 @@ fn poc_codex_has_browser_pkce_and_device_code() {
 
 #[test]
 fn poc_copilot_has_device_code_only() {
-    let catalog = ProviderCatalog::from_embedded().expect("catalog");
-    let copilot = catalog.provider("github-copilot").expect("copilot exists");
+    let catalog = ProviderCatalog::from_embedded().unwrap_or_abort();
+    let copilot = catalog.provider("github-copilot").unwrap_or_abort();
 
     assert!(copilot.auth_methods.contains(&CatalogAuthMethod::ApiKey));
     assert!(copilot

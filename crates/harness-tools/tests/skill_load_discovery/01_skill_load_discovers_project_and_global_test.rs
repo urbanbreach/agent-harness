@@ -1,3 +1,4 @@
+use harness_tools::UnwrapOrAbort;
 #[tokio::test]
 #[expect(
     clippy::await_holding_lock,
@@ -5,13 +6,13 @@
 )]
 async fn skill_load_discovers_project_and_global_roots_with_precedence() {
     let _guard = skills_registry_test_lock();
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let home = temp_dir.path().join("home");
     let repo = temp_dir.path().join("repo");
     let app = repo.join("packages/app");
-    fs::create_dir_all(&home).expect("home dir");
-    fs::create_dir_all(&app).expect("app dir");
-    fs::create_dir_all(repo.join(".git")).expect("git dir");
+    fs::create_dir_all(&home).unwrap_or_abort();
+    fs::create_dir_all(&app).unwrap_or_abort();
+    fs::create_dir_all(repo.join(".git")).unwrap_or_abort();
     let _skills_guard = SkillsConfigGuard::install(skills_config_with_global_root(
         home.join(".config/agent-harness/skills"),
     ));
@@ -48,7 +49,7 @@ async fn skill_load_discovers_project_and_global_roots_with_precedence() {
     );
 
     let registry = coordinator_registry(ShellAllowlist::default());
-    let skill_tool = registry.get("skill").expect("skill tool");
+    let skill_tool = registry.get("skill").unwrap_or_abort();
 
     let native_shared = skill_tool
         .call(
@@ -56,7 +57,7 @@ async fn skill_load_discovers_project_and_global_roots_with_precedence() {
             json!({"name": "shared-skill"}),
         )
         .await
-        .expect("native shared skill");
+        .unwrap_or_abort();
     assert!(native_shared
         .display_text
         .contains("App shared description"));
@@ -80,7 +81,7 @@ async fn skill_load_discovers_project_and_global_roots_with_precedence() {
             json!({"name": "repo-only"}),
         )
         .await
-        .expect("repo-only skill");
+        .unwrap_or_abort();
     assert!(repo_only.display_text.contains("Repo only description"));
 
     let global_only = skill_tool
@@ -89,7 +90,7 @@ async fn skill_load_discovers_project_and_global_roots_with_precedence() {
             json!({"name": "global-only"}),
         )
         .await
-        .expect("global-only skill");
+        .unwrap_or_abort();
     assert!(global_only.display_text.contains("Global only description"));
 }
 #[test]
@@ -101,12 +102,12 @@ fn skill_discovery_walks_project_and_global_roots() {
 fn skill_discovery_ignores_external_adapter_roots_unless_explicitly_configured() {
     // arrange
     let _guard = skills_registry_test_lock();
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let home = temp_dir.path().join("home");
     let repo = temp_dir.path().join("repo");
-    fs::create_dir_all(&home).expect("home dir");
-    fs::create_dir_all(&repo).expect("repo dir");
-    fs::create_dir_all(repo.join(".git")).expect("git dir");
+    fs::create_dir_all(&home).unwrap_or_abort();
+    fs::create_dir_all(&repo).unwrap_or_abort();
+    fs::create_dir_all(repo.join(".git")).unwrap_or_abort();
 
     let _skills_guard = SkillsConfigGuard::install(SkillsConfig {
         global_roots: vec![home.join(".config/agent-harness/skills")],
@@ -152,7 +153,7 @@ fn skill_discovery_ignores_external_adapter_roots_unless_explicitly_configured()
 
     // act
     let default_catalog =
-        harness_tools::discover_skill_catalog(&repo).expect("discover default catalog");
+        harness_tools::discover_skill_catalog(&repo).unwrap_or_abort();
 
     // assert
     assert!(
@@ -187,7 +188,7 @@ fn skill_discovery_ignores_external_adapter_roots_unless_explicitly_configured()
         ..SkillsConfig::default()
     });
     let explicit_catalog =
-        harness_tools::discover_skill_catalog(&repo).expect("discover explicit adapter catalog");
+        harness_tools::discover_skill_catalog(&repo).unwrap_or_abort();
     assert!(
         explicit_catalog
             .active_entry("external-project-adapter")
@@ -206,12 +207,12 @@ fn skill_discovery_ignores_external_adapter_roots_unless_explicitly_configured()
 fn default_harness_owned_roots_resolve_duplicates_before_global_roots() {
     // arrange
     let _guard = skills_registry_test_lock();
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let home = temp_dir.path().join("home");
     let repo = temp_dir.path().join("repo");
-    fs::create_dir_all(&home).expect("home dir");
-    fs::create_dir_all(&repo).expect("repo dir");
-    fs::create_dir_all(repo.join(".git")).expect("git dir");
+    fs::create_dir_all(&home).unwrap_or_abort();
+    fs::create_dir_all(&repo).unwrap_or_abort();
+    fs::create_dir_all(repo.join(".git")).unwrap_or_abort();
     let _skills_guard = SkillsConfigGuard::install(SkillsConfig {
         global_roots: vec![home.join(".config/agent-harness/skills")],
         ..SkillsConfig::default()
@@ -237,7 +238,7 @@ fn default_harness_owned_roots_resolve_duplicates_before_global_roots() {
     );
 
     // act
-    let catalog = harness_tools::discover_skill_catalog(&repo).expect("discover catalog");
+    let catalog = harness_tools::discover_skill_catalog(&repo).unwrap_or_abort();
     let entries = catalog.entries_for("default-conflict");
 
     // assert
@@ -249,14 +250,14 @@ fn default_harness_owned_roots_resolve_duplicates_before_global_roots() {
         entries[0].location,
         repo.join(".agent-harness/skills/default-conflict/SKILL.md")
             .canonicalize()
-            .expect("canonical primary skill")
+            .unwrap_or_abort()
     );
     assert_eq!(entries[1].status, harness_tools::SkillCatalogStatus::Shadowed);
     assert_eq!(
         entries[1].location,
         repo.join(".harness/skills/default-conflict/SKILL.md")
             .canonicalize()
-            .expect("canonical fallback skill")
+            .unwrap_or_abort()
     );
     assert_eq!(entries[2].status, harness_tools::SkillCatalogStatus::Shadowed);
     assert_eq!(entries[2].stable_id, "skill:global:default-conflict");
@@ -266,12 +267,12 @@ fn default_harness_owned_roots_resolve_duplicates_before_global_roots() {
 fn imported_compatibility_roots_do_not_shadow_harness_owned_project_skills() {
     // arrange
     let _guard = skills_registry_test_lock();
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let home = temp_dir.path().join("home");
     let repo = temp_dir.path().join("repo");
-    fs::create_dir_all(&home).expect("home dir");
-    fs::create_dir_all(&repo).expect("repo dir");
-    fs::create_dir_all(repo.join(".git")).expect("git dir");
+    fs::create_dir_all(&home).unwrap_or_abort();
+    fs::create_dir_all(&repo).unwrap_or_abort();
+    fs::create_dir_all(repo.join(".git")).unwrap_or_abort();
 
     let _skills_guard = SkillsConfigGuard::install(SkillsConfig {
         project_roots: vec![
@@ -332,10 +333,10 @@ fn imported_compatibility_roots_do_not_shadow_harness_owned_project_skills() {
     );
 
     // act
-    let catalog = harness_tools::discover_skill_catalog(&repo).expect("discover catalog");
+    let catalog = harness_tools::discover_skill_catalog(&repo).unwrap_or_abort();
     let active = catalog
         .active_entry("conflict-skill")
-        .expect("active conflict skill");
+        .unwrap_or_abort();
 
     // assert
     assert_eq!(active.status, harness_tools::SkillCatalogStatus::Loadable);
@@ -345,7 +346,7 @@ fn imported_compatibility_roots_do_not_shadow_harness_owned_project_skills() {
         active.location,
         repo.join(".agent-harness/skills/conflict-skill/SKILL.md")
             .canonicalize()
-            .expect("canonical harness-owned skill")
+            .unwrap_or_abort()
     );
     let shadowed = catalog
         .entries_for("conflict-skill")
@@ -361,12 +362,12 @@ fn imported_compatibility_roots_do_not_shadow_harness_owned_project_skills() {
 fn imported_compatibility_roots_are_ordered_after_non_compat_roots() {
     // arrange
     let _guard = skills_registry_test_lock();
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let home = temp_dir.path().join("home");
     let repo = temp_dir.path().join("repo");
-    fs::create_dir_all(&home).expect("home dir");
-    fs::create_dir_all(&repo).expect("repo dir");
-    fs::create_dir_all(repo.join(".git")).expect("git dir");
+    fs::create_dir_all(&home).unwrap_or_abort();
+    fs::create_dir_all(&repo).unwrap_or_abort();
+    fs::create_dir_all(repo.join(".git")).unwrap_or_abort();
     let _skills_guard = SkillsConfigGuard::install(SkillsConfig {
         project_roots: vec![
             PathBuf::from(".agents/skills"),
@@ -407,11 +408,11 @@ fn imported_compatibility_roots_are_ordered_after_non_compat_roots() {
     );
 
     // act
-    let catalog = harness_tools::discover_skill_catalog(&repo).expect("discover catalog");
+    let catalog = harness_tools::discover_skill_catalog(&repo).unwrap_or_abort();
     let compat_entries = catalog.entries_for("compat-only");
     let harness_conflict = catalog
         .active_entry("global-harness-conflict")
-        .expect("active global harness conflict");
+        .unwrap_or_abort();
 
     // assert
     assert_eq!(compat_entries.len(), 4);
@@ -420,19 +421,19 @@ fn imported_compatibility_roots_are_ordered_after_non_compat_roots() {
         compat_entries[0].location,
         repo.join(".agents/skills/compat-only/SKILL.md")
             .canonicalize()
-            .expect("canonical first configured compatibility skill")
+            .unwrap_or_abort()
     );
     assert_eq!(
         compat_entries[1].location,
         repo.join(".assistant/skills/compat-only/SKILL.md")
             .canonicalize()
-            .expect("canonical second configured compatibility skill")
+            .unwrap_or_abort()
     );
     assert_eq!(
         compat_entries[2].location,
         repo.join(".external-editor/skills/compat-only/SKILL.md")
             .canonicalize()
-            .expect("canonical third configured compatibility skill")
+            .unwrap_or_abort()
     );
     assert_eq!(compat_entries[3].source_scope, "global");
     assert!(compat_entries[1..]

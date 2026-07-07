@@ -1,3 +1,4 @@
+use harness_tui::UnwrapOrAbort;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -48,7 +49,7 @@ fn model_switcher_deduplicates_agent_rows_and_preserves_current_agent() {
     let sink = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
 
@@ -79,10 +80,8 @@ fn model_switcher_deduplicates_agent_rows_and_preserves_current_agent() {
     app.handle_key(key(KeyCode::Enter));
 
     assert_eq!(app.active_profile(), "build");
-    let intents = intents.lock().expect("lock intents");
-    let UiIntent::SwitchModel { profile, .. } =
-        intents.last().expect("switch intent should be emitted")
-    else {
+    let intents = intents.lock().unwrap_or_abort();
+    let UiIntent::SwitchModel { profile, .. } = intents.last().unwrap_or_abort() else {
         panic!("expected switch model intent");
     };
     assert_eq!(profile, "build");
@@ -90,13 +89,13 @@ fn model_switcher_deduplicates_agent_rows_and_preserves_current_agent() {
 
 #[test]
 fn variant_cycle_updates_selected_model_without_losing_launch_metadata() {
-    let _config = load_config_from_str(rich_model_config()).expect("config should parse");
+    let _config = load_config_from_str(rich_model_config()).unwrap_or_abort();
 
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let sink = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
 
@@ -118,13 +117,11 @@ fn variant_cycle_updates_selected_model_without_losing_launch_metadata() {
     assert_eq!(live.current_model_label(), "GPT-5.4 Mini · Creative");
     assert_eq!(live.launch_mode_label(), Some("Demo"));
 
-    let intents = intents.lock().expect("lock intents");
+    let intents = intents.lock().unwrap_or_abort();
     let UiIntent::SwitchModel {
         profile,
         launch_metadata,
-    } = intents
-        .last()
-        .expect("switch model intent should be emitted")
+    } = intents.last().unwrap_or_abort()
     else {
         panic!("expected switch model intent");
     };
@@ -150,13 +147,13 @@ fn variant_cycle_updates_selected_model_without_losing_launch_metadata() {
 
 #[test]
 fn ctrl_t_cycles_thinking_variant_within_current_profile() {
-    let _config = load_config_from_str(rich_model_config()).expect("config should parse");
+    let _config = load_config_from_str(rich_model_config()).unwrap_or_abort();
 
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let sink = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
 
@@ -173,13 +170,11 @@ fn ctrl_t_cycles_thinking_variant_within_current_profile() {
     assert_eq!(live.current_model_label(), "GPT-5.4 Mini · Creative");
     assert_eq!(live.launch_mode_label(), Some("Demo"));
 
-    let intents = intents.lock().expect("lock intents");
+    let intents = intents.lock().unwrap_or_abort();
     let UiIntent::SwitchModel {
         profile,
         launch_metadata,
-    } = intents
-        .last()
-        .expect("switch model intent should be emitted")
+    } = intents.last().unwrap_or_abort()
     else {
         panic!("expected switch model intent");
     };
@@ -190,13 +185,13 @@ fn ctrl_t_cycles_thinking_variant_within_current_profile() {
 
 #[test]
 fn ctrl_t_includes_base_model_entries_in_config_backed_variant_cycle() {
-    let _config = load_config_from_str(rich_model_config()).expect("config should parse");
+    let _config = load_config_from_str(rich_model_config()).unwrap_or_abort();
 
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let sink = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
 
@@ -221,13 +216,11 @@ fn ctrl_t_includes_base_model_entries_in_config_backed_variant_cycle() {
         Some("Next turns: deep · GPT-5.4 Mini · Creative".to_string())
     );
 
-    let intents = intents.lock().expect("lock intents");
+    let intents = intents.lock().unwrap_or_abort();
     let UiIntent::SwitchModel {
         profile,
         launch_metadata,
-    } = intents
-        .last()
-        .expect("switch model intent should be emitted")
+    } = intents.last().unwrap_or_abort()
     else {
         panic!("expected switch model intent");
     };
@@ -238,13 +231,13 @@ fn ctrl_t_includes_base_model_entries_in_config_backed_variant_cycle() {
 
 #[test]
 fn ctrl_t_cycles_from_last_variant_to_none() {
-    let _config = load_config_from_str(rich_model_config()).expect("config should parse");
+    let _config = load_config_from_str(rich_model_config()).unwrap_or_abort();
 
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let sink = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
 
@@ -262,13 +255,11 @@ fn ctrl_t_cycles_from_last_variant_to_none() {
     assert_eq!(live.current_model_label(), "GPT-5.4 Mini");
     assert_eq!(live.launch_mode_label(), Some("Demo"));
 
-    let intents = intents.lock().expect("lock intents");
+    let intents = intents.lock().unwrap_or_abort();
     let UiIntent::SwitchModel {
         profile,
         launch_metadata,
-    } = intents
-        .last()
-        .expect("switch model intent should be emitted")
+    } = intents.last().unwrap_or_abort()
     else {
         panic!("expected switch model intent");
     };

@@ -1,3 +1,4 @@
+use harness_core::UnwrapOrAbort;
 use super::*;
 
 async fn cooperative_provider_delay(delay: Duration) {
@@ -148,7 +149,7 @@ impl CapturingProvider {
     pub(super) fn requests(&self) -> Vec<CompletionRequest> {
         self.captured_requests
             .lock()
-            .expect("capturing provider lock")
+            .unwrap_or_abort()
             .clone()
     }
 }
@@ -158,13 +159,13 @@ impl Provider for CapturingProvider {
     async fn stream_completion(&self, req: CompletionRequest) -> ProviderEventStream {
         self.captured_requests
             .lock()
-            .expect("capturing provider lock")
+            .unwrap_or_abort()
             .push(req);
 
         let response = self
             .queued_responses
             .lock()
-            .expect("queued response lock")
+            .unwrap_or_abort()
             .pop_front()
             .unwrap_or_else(|| "ok".to_string());
 
@@ -220,7 +221,7 @@ impl Provider for DelayedCapturingProvider {
 #[derive(Clone)]
 pub(super) struct SequentialScriptedProvider {
     captured_requests: Arc<Mutex<Vec<CompletionRequest>>>,
-    scripted_events: Arc<Vec<Vec<ProviderStreamEvent>>>,
+    scripted_events: Arc<[Vec<ProviderStreamEvent>]>,
     next_call_index: Arc<Mutex<usize>>,
 }
 
@@ -228,7 +229,7 @@ impl SequentialScriptedProvider {
     pub(super) fn new(scripted_events: Vec<Vec<ProviderStreamEvent>>) -> Self {
         Self {
             captured_requests: Arc::new(Mutex::new(Vec::new())),
-            scripted_events: Arc::new(scripted_events),
+            scripted_events: Arc::from(scripted_events),
             next_call_index: Arc::new(Mutex::new(0)),
         }
     }
@@ -236,7 +237,7 @@ impl SequentialScriptedProvider {
     pub(super) fn requests(&self) -> Vec<CompletionRequest> {
         self.captured_requests
             .lock()
-            .expect("sequential scripted provider lock")
+            .unwrap_or_abort()
             .clone()
     }
 }
@@ -246,13 +247,13 @@ impl Provider for SequentialScriptedProvider {
     async fn stream_completion(&self, req: CompletionRequest) -> ProviderEventStream {
         self.captured_requests
             .lock()
-            .expect("sequential scripted provider lock")
+            .unwrap_or_abort()
             .push(req);
 
         let mut next_call_index = self
             .next_call_index
             .lock()
-            .expect("sequential scripted call index");
+            .unwrap_or_abort();
         let call_index = *next_call_index;
         *next_call_index += 1;
 

@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 use super::opencode_subagent_parity_apps as app_fixtures;
 use crate::ui::render_app;
@@ -14,7 +15,7 @@ pub(super) fn opencode_subagent_parity_evidence_export() {
             panic!("set {EVIDENCE_ENV} before running this ignored evidence export")
         });
 
-    fs::create_dir_all(root.join("dogfood")).expect("create dogfood evidence dir");
+    fs::create_dir_all(root.join("dogfood")).unwrap_or_abort();
     let mut manifest = Vec::new();
 
     let no_child = app_fixtures::no_child_app();
@@ -65,19 +66,18 @@ pub(super) fn opencode_subagent_parity_evidence_export() {
         root.join("dogfood/manifest.txt"),
         manifest.join("\n") + "\n",
     )
-    .expect("write dogfood manifest");
+    .unwrap_or_abort();
 }
 
 fn export_state(root: &Path, manifest: &mut Vec<String>, slug: &str, app: &AppState) {
     for width in [80_u16, 120, 160] {
         let file = format!("dogfood/{slug}-{width}.txt");
         let rendered = render_text(app, width, 40);
-        fs::write(root.join(&file), rendered).expect("write dogfood capture");
+        fs::write(root.join(&file), rendered).unwrap_or_abort();
         manifest.push(file);
 
         let ansi_file = format!("dogfood/{slug}-{width}.ansi.txt");
-        fs::write(root.join(&ansi_file), render_ansi(app, width, 40))
-            .expect("write dogfood ANSI capture");
+        fs::write(root.join(&ansi_file), render_ansi(app, width, 40)).unwrap_or_abort();
         manifest.push(ansi_file);
     }
 }
@@ -92,10 +92,10 @@ fn subagent_footer_hover_slug(target: SubagentFooterTarget) -> &'static str {
 
 fn render_ansi(app: &AppState, width: u16, height: u16) -> String {
     let backend = TestBackend::new(width, height);
-    let mut terminal = Terminal::new(backend).expect("create terminal");
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
     terminal
         .draw(|frame| render_app(frame, app))
-        .expect("draw frame");
+        .unwrap_or_abort();
 
     let mut rendered = String::new();
     for row in terminal

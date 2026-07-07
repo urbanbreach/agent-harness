@@ -312,7 +312,7 @@ fn render_model_select_header(frame: &mut Frame, theme: &Theme, area: Rect, titl
         .direction(Direction::Horizontal)
         .constraints([
             Constraint::Min(0),
-            Constraint::Length(esc.chars().count() as u16),
+            Constraint::Length(u16::try_from(esc.chars().count()).unwrap_or(u16::MAX)),
         ])
         .split(area);
 

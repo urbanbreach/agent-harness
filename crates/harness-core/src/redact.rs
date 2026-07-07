@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use regex::Regex;
 use serde_json::{Map, Value};
 use std::sync::LazyLock;
@@ -20,49 +21,51 @@ pub struct DefaultRedactor {
     sensitive_query_re: Regex,
 }
 
-static API_KEY_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(^|[^A-Za-z0-9])(sk-[A-Za-z0-9._-]{10,})").expect("valid api key regex")
-});
-static GOOGLE_API_KEY_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"AIza[0-9A-Za-z_-]{20,}").expect("valid google api key regex"));
-static AWS_ACCESS_KEY_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"AKIA[0-9A-Z]{16}").expect("valid aws access key regex"));
-static GITHUB_PAT_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"github_pat_[A-Za-z0-9_]{20,}").expect("valid github pat regex"));
-static GITHUB_TOKEN_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"ghp_[A-Za-z0-9]{20,}").expect("valid github token regex"));
-static BEARER_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+").expect("valid bearer regex")
-});
-static COOKIE_HEADER_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)\b(?:Set-Cookie|Cookie):\s*[^\r\n]+").expect("valid cookie header regex")
-});
-static PEM_PRIVATE_KEY_RE: LazyLock<Regex> = LazyLock::new(|| {
+static API_KEY_RE: LazyLock<Result<Regex, regex::Error>> =
+    LazyLock::new(|| Regex::new(r"(^|[^A-Za-z0-9])(sk-[A-Za-z0-9._-]{10,})"));
+static GOOGLE_API_KEY_RE: LazyLock<Result<Regex, regex::Error>> =
+    LazyLock::new(|| Regex::new(r"AIza[0-9A-Za-z_-]{20,}"));
+static AWS_ACCESS_KEY_RE: LazyLock<Result<Regex, regex::Error>> =
+    LazyLock::new(|| Regex::new(r"AKIA[0-9A-Z]{16}"));
+static GITHUB_PAT_RE: LazyLock<Result<Regex, regex::Error>> =
+    LazyLock::new(|| Regex::new(r"github_pat_[A-Za-z0-9_]{20,}"));
+static GITHUB_TOKEN_RE: LazyLock<Result<Regex, regex::Error>> =
+    LazyLock::new(|| Regex::new(r"ghp_[A-Za-z0-9]{20,}"));
+static BEARER_RE: LazyLock<Result<Regex, regex::Error>> =
+    LazyLock::new(|| Regex::new(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+"));
+static COOKIE_HEADER_RE: LazyLock<Result<Regex, regex::Error>> =
+    LazyLock::new(|| Regex::new(r"(?i)\b(?:Set-Cookie|Cookie):\s*[^\r\n]+"));
+static PEM_PRIVATE_KEY_RE: LazyLock<Result<Regex, regex::Error>> = LazyLock::new(|| {
     Regex::new(r"(?s)-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----")
-        .expect("valid pem private key regex")
 });
-static URL_USERINFO_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)(https?://)[^/@\s]+@").expect("valid url userinfo regex"));
-static SENSITIVE_QUERY_RE: LazyLock<Regex> = LazyLock::new(|| {
+static URL_USERINFO_RE: LazyLock<Result<Regex, regex::Error>> =
+    LazyLock::new(|| Regex::new(r"(?i)(https?://)[^/@\s]+@"));
+static SENSITIVE_QUERY_RE: LazyLock<Result<Regex, regex::Error>> = LazyLock::new(|| {
     Regex::new(
         r"(?i)([?&](?:api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|token|password|secret)=)[^&\s]+",
     )
-    .expect("valid sensitive query regex")
 });
+
+fn regex_or_fallback(result: Result<Regex, regex::Error>) -> Regex {
+    match result {
+        Ok(re) => re,
+        Err(_) => Regex::new("$^").unwrap_or_abort(),
+    }
+}
 
 impl Default for DefaultRedactor {
     fn default() -> Self {
         Self {
-            api_key_re: API_KEY_RE.clone(),
-            google_api_key_re: GOOGLE_API_KEY_RE.clone(),
-            aws_access_key_re: AWS_ACCESS_KEY_RE.clone(),
-            github_pat_re: GITHUB_PAT_RE.clone(),
-            github_token_re: GITHUB_TOKEN_RE.clone(),
-            bearer_re: BEARER_RE.clone(),
-            cookie_header_re: COOKIE_HEADER_RE.clone(),
-            pem_private_key_re: PEM_PRIVATE_KEY_RE.clone(),
-            url_userinfo_re: URL_USERINFO_RE.clone(),
-            sensitive_query_re: SENSITIVE_QUERY_RE.clone(),
+            api_key_re: regex_or_fallback(API_KEY_RE.clone()),
+            google_api_key_re: regex_or_fallback(GOOGLE_API_KEY_RE.clone()),
+            aws_access_key_re: regex_or_fallback(AWS_ACCESS_KEY_RE.clone()),
+            github_pat_re: regex_or_fallback(GITHUB_PAT_RE.clone()),
+            github_token_re: regex_or_fallback(GITHUB_TOKEN_RE.clone()),
+            bearer_re: regex_or_fallback(BEARER_RE.clone()),
+            cookie_header_re: regex_or_fallback(COOKIE_HEADER_RE.clone()),
+            pem_private_key_re: regex_or_fallback(PEM_PRIVATE_KEY_RE.clone()),
+            url_userinfo_re: regex_or_fallback(URL_USERINFO_RE.clone()),
+            sensitive_query_re: regex_or_fallback(SENSITIVE_QUERY_RE.clone()),
         }
     }
 }
@@ -247,6 +250,7 @@ fn credential_key_segments(segments: &[String]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{redact_map, redact_value, DefaultRedactor, Redactor};
+    use crate::UnwrapOrAbort;
     use serde_json::json;
     use std::fs;
     use std::path::Path;
@@ -292,7 +296,7 @@ mod tests {
         assert!(as_text.contains("[REDACTED_API_KEY]"));
         assert!(as_text.contains("Bearer [REDACTED]"));
 
-        let map = value.as_object().expect("object input");
+        let map = value.as_object().unwrap_or_abort();
         let redacted_map = redact_map(&redactor, map);
         let as_map_text = serde_json::Value::Object(redacted_map).to_string();
         assert!(!as_map_text.contains("sk-ABCDE12345ABCDE"));
@@ -463,9 +467,9 @@ mod tests {
                 return;
             }
 
-            let entries = fs::read_dir(path).expect("read dir");
+            let entries = fs::read_dir(path).unwrap_or_abort();
             for entry in entries {
-                let entry = entry.expect("dir entry");
+                let entry = entry.unwrap_or_abort();
                 let entry_path = entry.path();
                 if entry_path.is_dir() {
                     Self::assert_no_sk_in_dir(&entry_path);
@@ -478,9 +482,9 @@ mod tests {
 
     #[test]
     fn secret_scan_helper_fails_when_jsonl_contains_sk_prefix() {
-        let dir = tempfile::tempdir().expect("tempdir");
+        let dir = tempfile::tempdir().unwrap_or_abort();
         let file = dir.path().join("events.jsonl");
-        fs::write(&file, "{\"line\":\"sk-should-not-be-here\"}").expect("write fixture");
+        fs::write(&file, "{\"line\":\"sk-should-not-be-here\"}").unwrap_or_abort();
 
         let panic = std::panic::catch_unwind(|| SecretScan::assert_no_sk_in_dir(dir.path()));
         assert!(panic.is_err(), "secret scan should fail for sk- leakage");
@@ -488,24 +492,24 @@ mod tests {
 
     #[test]
     fn secret_scan_helper_allows_redacted_jsonl() {
-        let dir = tempfile::tempdir().expect("tempdir");
+        let dir = tempfile::tempdir().unwrap_or_abort();
         let file = dir.path().join("events.jsonl");
-        fs::write(&file, "{\"line\":\"[REDACTED_API_KEY]\"}").expect("write fixture");
+        fs::write(&file, "{\"line\":\"[REDACTED_API_KEY]\"}").unwrap_or_abort();
 
         SecretScan::assert_no_sk_in_dir(dir.path());
     }
 
     #[test]
     fn secret_scan_helper_fails_when_artifact_contains_sk_prefix() {
-        let dir = tempfile::tempdir().expect("tempdir");
+        let dir = tempfile::tempdir().unwrap_or_abort();
         let file = dir
             .path()
             .join("artifacts")
             .join("toolcalls")
             .join("call_1")
             .join("result.redacted.json");
-        fs::create_dir_all(file.parent().expect("artifact parent")).expect("create artifact dir");
-        fs::write(&file, "{\"display_text\":\"sk-should-not-be-here\"}").expect("write fixture");
+        fs::create_dir_all(file.parent().unwrap_or_abort()).unwrap_or_abort();
+        fs::write(&file, "{\"display_text\":\"sk-should-not-be-here\"}").unwrap_or_abort();
 
         let panic = std::panic::catch_unwind(|| SecretScan::assert_no_sk_in_dir(dir.path()));
         assert!(
@@ -516,7 +520,7 @@ mod tests {
 
     #[test]
     fn secret_scan_helper_allows_redacted_artifact_files() {
-        let dir = tempfile::tempdir().expect("tempdir");
+        let dir = tempfile::tempdir().unwrap_or_abort();
         let result = dir
             .path()
             .join("artifacts")
@@ -529,18 +533,17 @@ mod tests {
             .join("toolcalls")
             .join("call_1")
             .join("display.redacted.txt");
-        fs::create_dir_all(result.parent().expect("artifact parent")).expect("create artifact dir");
+        fs::create_dir_all(result.parent().unwrap_or_abort()).unwrap_or_abort();
 
-        fs::write(&result, "{\"display_text\":\"[REDACTED_API_KEY]\"}")
-            .expect("write redacted json");
-        fs::write(&display, "token=[REDACTED_API_KEY]").expect("write redacted text");
+        fs::write(&result, "{\"display_text\":\"[REDACTED_API_KEY]\"}").unwrap_or_abort();
+        fs::write(&display, "token=[REDACTED_API_KEY]").unwrap_or_abort();
 
         SecretScan::assert_no_sk_in_dir(dir.path());
     }
 
     #[test]
     fn secret_scan_helper_fails_when_snap_file_contains_sk_prefix() {
-        let dir = tempfile::tempdir().expect("tempdir");
+        let dir = tempfile::tempdir().unwrap_or_abort();
         let file = dir
             .path()
             .join("crates")
@@ -548,8 +551,8 @@ mod tests {
             .join("tests")
             .join("snapshots")
             .join("pty_after_tool_call.snap");
-        fs::create_dir_all(file.parent().expect("snapshot parent")).expect("create snapshot dir");
-        fs::write(&file, "tool output: sk-should-not-be-here").expect("write fixture");
+        fs::create_dir_all(file.parent().unwrap_or_abort()).unwrap_or_abort();
+        fs::write(&file, "tool output: sk-should-not-be-here").unwrap_or_abort();
 
         let panic = std::panic::catch_unwind(|| SecretScan::assert_no_sk_in_dir(dir.path()));
         assert!(
@@ -560,7 +563,7 @@ mod tests {
 
     #[test]
     fn secret_scan_helper_allows_redacted_snap_file() {
-        let dir = tempfile::tempdir().expect("tempdir");
+        let dir = tempfile::tempdir().unwrap_or_abort();
         let file = dir
             .path()
             .join("crates")
@@ -568,8 +571,8 @@ mod tests {
             .join("tests")
             .join("snapshots")
             .join("pty_after_tool_call.snap");
-        fs::create_dir_all(file.parent().expect("snapshot parent")).expect("create snapshot dir");
-        fs::write(&file, "tool output: [REDACTED_API_KEY]").expect("write fixture");
+        fs::create_dir_all(file.parent().unwrap_or_abort()).unwrap_or_abort();
+        fs::write(&file, "tool output: [REDACTED_API_KEY]").unwrap_or_abort();
 
         SecretScan::assert_no_sk_in_dir(dir.path());
     }

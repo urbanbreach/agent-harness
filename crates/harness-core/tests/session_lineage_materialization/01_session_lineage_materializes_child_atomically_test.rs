@@ -1,10 +1,11 @@
+use harness_core::UnwrapOrAbort;
 #[test]
 fn session_lineage_materializes_child_atomically() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let session_dir = temp_dir.path();
     let source_run_id = "run_parent_materialize";
     let source_run_dir = session_dir.join(source_run_id);
-    fs::create_dir_all(&source_run_dir).expect("create source run dir");
+    fs::create_dir_all(&source_run_dir).unwrap_or_abort();
 
     let artifact_path = "artifacts/toolcalls/toolcall_000001/output.txt";
     let artifact_body = b"child materialization artifact\n".as_slice();
@@ -21,7 +22,7 @@ fn session_lineage_materializes_child_atomically() {
         })
         .to_string(),
     )
-    .expect("write source meta");
+    .unwrap_or_abort();
 
     let events = stable_events(
         source_run_id,
@@ -29,10 +30,10 @@ fn session_lineage_materializes_child_atomically() {
         &artifact_digest,
         artifact_body.len(),
     );
-    let prefix = validate_fork_stable_prefix(&events, events.len() as u64).expect("stable prefix");
+    let prefix = validate_fork_stable_prefix(&events, events.len() as u64).unwrap_or_abort();
 
     let lock_path = source_run_dir.join(".writer.lock");
-    fs::write(&lock_path, b"locked").expect("write source writer lock");
+    fs::write(&lock_path, b"locked").unwrap_or_abort();
     let locked_err = materialize_child_session(ChildSessionMaterializationRequest {
         source_run_dir: &source_run_dir,
         events: &events,
@@ -51,7 +52,7 @@ fn session_lineage_materializes_child_atomically() {
         stable_prefix: &prefix,
         source_kind: ChildSessionMaterializationSourceKind::TuiStableInMemorySnapshot,
     })
-    .expect("TUI stable in-memory snapshot may materialize while source writer is locked");
+    .unwrap_or_abort();
 
     assert_ne!(result.child_run_id, source_run_id);
     assert_eq!(result.source_run_id.as_deref(), Some(source_run_id));
@@ -60,7 +61,7 @@ fn session_lineage_materializes_child_atomically() {
     assert_eq!(result.artifact_count, 1);
     assert!(result.child_run_dir.is_dir());
     assert_eq!(
-        fs::read(result.child_run_dir.join(artifact_path)).expect("read child artifact"),
+        fs::read(result.child_run_dir.join(artifact_path)).unwrap_or_abort(),
         artifact_body
     );
 
@@ -80,12 +81,12 @@ fn session_lineage_materializes_child_atomically() {
     }
 
     let meta: serde_json::Value = serde_json::from_str(
-        &fs::read_to_string(result.child_run_dir.join("meta.json")).expect("read child meta"),
+        &fs::read_to_string(result.child_run_dir.join("meta.json")).unwrap_or_abort(),
     )
-    .expect("parse child meta");
+    .unwrap_or_abort();
     let created_at = meta["created_at"]
         .as_str()
-        .expect("created_at should be populated");
+        .unwrap_or_abort();
     assert!(
         created_at.starts_with("unix_ms:"),
         "created_at should use deterministic harness materialization timestamp shape"
@@ -116,7 +117,7 @@ fn session_lineage_materializes_child_atomically() {
     );
     assert_eq!(
         meta["harness_lineage"]["harness_source_cutoff_event_id"],
-        events.last().expect("cutoff event").event_id
+        events.last().unwrap_or_abort().event_id
     );
     assert_eq!(
         meta["harness_lineage"]["harness_source_digest"],
@@ -130,7 +131,7 @@ fn session_lineage_materializes_child_atomically() {
     );
     assert_eq!(
         meta["harness_lineage"]["source_cutoff_event_id"],
-        events.last().expect("cutoff event").event_id
+        events.last().unwrap_or_abort().event_id
     );
     assert_eq!(
         meta["harness_lineage"]["source_digest"],
@@ -138,18 +139,18 @@ fn session_lineage_materializes_child_atomically() {
     );
     assert!(meta["harness_lineage"]["event_rewrite_policy"]
         .as_str()
-        .expect("event policy")
+        .unwrap_or_abort()
         .contains("clears correlation_id and causation_id"));
 
     assert_no_unpublished_temp_dirs(session_dir);
 }
 #[test]
 fn session_lineage_tui_live_snapshot_terminalizes_open_state_for_resume() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let session_dir = temp_dir.path();
     let source_run_id = "run_parent_live_snapshot";
     let source_run_dir = session_dir.join(source_run_id);
-    fs::create_dir_all(&source_run_dir).expect("create source run dir");
+    fs::create_dir_all(&source_run_dir).unwrap_or_abort();
     fs::write(
         source_run_dir.join("meta.json"),
         serde_json::json!({
@@ -161,11 +162,11 @@ fn session_lineage_tui_live_snapshot_terminalizes_open_state_for_resume() {
         })
         .to_string(),
     )
-    .expect("write source meta");
+    .unwrap_or_abort();
 
     let events = live_snapshot_with_open_state(source_run_id);
     let prefix = validate_tui_fork_stable_prefix(&events, events.len() as u64)
-        .expect("TUI live snapshot prefix accepts reference-style snapshots");
+        .unwrap_or_abort();
 
     let result = materialize_child_session(ChildSessionMaterializationRequest {
         source_run_dir: &source_run_dir,
@@ -173,7 +174,7 @@ fn session_lineage_tui_live_snapshot_terminalizes_open_state_for_resume() {
         stable_prefix: &prefix,
         source_kind: ChildSessionMaterializationSourceKind::TuiStableInMemorySnapshot,
     })
-    .expect("TUI live snapshot materializes");
+    .unwrap_or_abort();
 
     let child_events = read_events(&result.child_run_dir);
     assert!(child_events.iter().any(|event| matches!(
@@ -204,11 +205,11 @@ fn session_lineage_tui_live_snapshot_terminalizes_open_state_for_resume() {
 }
 #[test]
 fn session_lineage_missing_artifact_rolls_back() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let session_dir = temp_dir.path();
     let source_run_id = "run_parent_missing_artifact";
     let source_run_dir = session_dir.join(source_run_id);
-    fs::create_dir_all(&source_run_dir).expect("create source run dir");
+    fs::create_dir_all(&source_run_dir).unwrap_or_abort();
 
     let events = stable_events(
         source_run_id,
@@ -217,7 +218,7 @@ fn session_lineage_missing_artifact_rolls_back() {
         7,
     );
     write_source_events(&source_run_dir, &events);
-    let prefix = validate_fork_stable_prefix(&events, events.len() as u64).expect("stable prefix");
+    let prefix = validate_fork_stable_prefix(&events, events.len() as u64).unwrap_or_abort();
 
     let err = materialize_child_session(ChildSessionMaterializationRequest {
         source_run_dir: &source_run_dir,
@@ -232,19 +233,19 @@ fn session_lineage_missing_artifact_rolls_back() {
     ));
 
     let run_dirs = fs::read_dir(session_dir)
-        .expect("read session dir")
-        .map(|entry| entry.expect("dir entry").file_name())
+        .unwrap_or_abort()
+        .map(|entry| entry.unwrap_or_abort().file_name())
         .collect::<Vec<_>>();
     assert_eq!(run_dirs, vec![source_run_id]);
     assert_no_unpublished_temp_dirs(session_dir);
 }
 #[test]
 fn session_lineage_concurrent_fork_clone_from_same_source_create_unique_children() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let session_dir = temp_dir.path();
     let source_run_id = "run_parent_concurrent";
     let source_run_dir = session_dir.join(source_run_id);
-    fs::create_dir_all(&source_run_dir).expect("create source run dir");
+    fs::create_dir_all(&source_run_dir).unwrap_or_abort();
 
     let artifact_path = "artifacts/toolcalls/toolcall_000001/output.txt";
     let artifact_body = b"shared concurrent materialization artifact\n".as_slice();
@@ -257,7 +258,7 @@ fn session_lineage_concurrent_fork_clone_from_same_source_create_unique_children
         artifact_body.len(),
     );
     write_source_events(&source_run_dir, &events);
-    let prefix = validate_fork_stable_prefix(&events, events.len() as u64).expect("stable prefix");
+    let prefix = validate_fork_stable_prefix(&events, events.len() as u64).unwrap_or_abort();
 
     let source_run_dir = Arc::new(source_run_dir);
     let events = Arc::new(events);
@@ -274,14 +275,14 @@ fn session_lineage_concurrent_fork_clone_from_same_source_create_unique_children
                     stable_prefix: prefix.as_ref(),
                     source_kind: ChildSessionMaterializationSourceKind::DiskRunDirectory,
                 })
-                .expect("concurrent child materialization succeeds")
+                .unwrap_or_abort()
             })
         })
         .collect::<Vec<_>>();
 
     let results = handles
         .into_iter()
-        .map(|handle| handle.join().expect("join materialization thread"))
+        .map(|handle| handle.join().unwrap_or_abort())
         .collect::<Vec<_>>();
     let child_ids = results
         .iter()
@@ -294,7 +295,7 @@ fn session_lineage_concurrent_fork_clone_from_same_source_create_unique_children
         assert!(result.child_run_dir.join("events.jsonl").exists());
         assert!(result.child_run_dir.join("meta.json").exists());
         assert_eq!(
-            fs::read(result.child_run_dir.join(artifact_path)).expect("read child artifact"),
+            fs::read(result.child_run_dir.join(artifact_path)).unwrap_or_abort(),
             artifact_body
         );
     }
@@ -302,11 +303,11 @@ fn session_lineage_concurrent_fork_clone_from_same_source_create_unique_children
 }
 #[test]
 fn session_lineage_missing_meta_uses_harness_fallback_metadata() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let session_dir = temp_dir.path();
     let source_run_id = "run_parent_missing_meta";
     let source_run_dir = session_dir.join(source_run_id);
-    fs::create_dir_all(&source_run_dir).expect("create source run dir");
+    fs::create_dir_all(&source_run_dir).unwrap_or_abort();
 
     let artifact_path = "artifacts/toolcalls/toolcall_000001/output.txt";
     let artifact_body = b"metadata fallback artifact\n".as_slice();
@@ -319,7 +320,7 @@ fn session_lineage_missing_meta_uses_harness_fallback_metadata() {
         artifact_body.len(),
     );
     write_source_events(&source_run_dir, &events);
-    let prefix = validate_fork_stable_prefix(&events, events.len() as u64).expect("stable prefix");
+    let prefix = validate_fork_stable_prefix(&events, events.len() as u64).unwrap_or_abort();
 
     let result = materialize_child_session(ChildSessionMaterializationRequest {
         source_run_dir: &source_run_dir,
@@ -327,12 +328,12 @@ fn session_lineage_missing_meta_uses_harness_fallback_metadata() {
         stable_prefix: &prefix,
         source_kind: ChildSessionMaterializationSourceKind::DiskRunDirectory,
     })
-    .expect("missing source metadata falls back to event-derived fields");
+    .unwrap_or_abort();
 
     let meta: serde_json::Value = serde_json::from_str(
-        &fs::read_to_string(result.child_run_dir.join("meta.json")).expect("read child meta"),
+        &fs::read_to_string(result.child_run_dir.join("meta.json")).unwrap_or_abort(),
     )
-    .expect("parse child meta");
+    .unwrap_or_abort();
     assert_eq!(
         meta["run_name"],
         format!("Harness child of {source_run_id}")
@@ -347,11 +348,11 @@ fn session_lineage_missing_meta_uses_harness_fallback_metadata() {
 }
 #[test]
 fn session_lineage_invalid_artifact_path_rolls_back() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let session_dir = temp_dir.path();
     let source_run_id = "run_parent_bad_artifact_path";
     let source_run_dir = session_dir.join(source_run_id);
-    fs::create_dir_all(&source_run_dir).expect("create source run dir");
+    fs::create_dir_all(&source_run_dir).unwrap_or_abort();
 
     let events = stable_events(
         source_run_id,
@@ -360,7 +361,7 @@ fn session_lineage_invalid_artifact_path_rolls_back() {
         3,
     );
     write_source_events(&source_run_dir, &events);
-    let prefix = validate_fork_stable_prefix(&events, events.len() as u64).expect("stable prefix");
+    let prefix = validate_fork_stable_prefix(&events, events.len() as u64).unwrap_or_abort();
 
     let err = materialize_child_session(ChildSessionMaterializationRequest {
         source_run_dir: &source_run_dir,
@@ -380,21 +381,21 @@ fn session_lineage_invalid_artifact_path_rolls_back() {
 #[cfg(unix)]
 #[test]
 fn session_lineage_rejects_artifact_symlink_without_copying_target() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let session_dir = temp_dir.path();
     let source_run_id = "run_parent_symlink_artifact";
     let source_run_dir = session_dir.join(source_run_id);
-    fs::create_dir_all(&source_run_dir).expect("create source run dir");
+    fs::create_dir_all(&source_run_dir).unwrap_or_abort();
 
     let artifact_path = "artifacts/toolcalls/toolcall_000001/output.txt";
     let artifact_body = b"outside symlink target\n".as_slice();
-    let outside_dir = tempfile::tempdir().expect("outside tempdir");
+    let outside_dir = tempfile::tempdir().unwrap_or_abort();
     let outside_target = outside_dir.path().join("outside-target.txt");
-    fs::write(&outside_target, artifact_body).expect("write outside target");
+    fs::write(&outside_target, artifact_body).unwrap_or_abort();
     let link_path = source_run_dir.join(artifact_path);
-    fs::create_dir_all(link_path.parent().expect("artifact parent"))
-        .expect("create artifact parent");
-    std::os::unix::fs::symlink(&outside_target, &link_path).expect("create artifact symlink");
+    fs::create_dir_all(link_path.parent().unwrap_or_abort())
+        .unwrap_or_abort();
+    std::os::unix::fs::symlink(&outside_target, &link_path).unwrap_or_abort();
 
     let artifact_digest = blake3::hash(artifact_body).to_hex().to_string();
     let events = stable_events(
@@ -404,7 +405,7 @@ fn session_lineage_rejects_artifact_symlink_without_copying_target() {
         artifact_body.len(),
     );
     write_source_events(&source_run_dir, &events);
-    let prefix = validate_fork_stable_prefix(&events, events.len() as u64).expect("stable prefix");
+    let prefix = validate_fork_stable_prefix(&events, events.len() as u64).unwrap_or_abort();
 
     let err = materialize_child_session(ChildSessionMaterializationRequest {
         source_run_dir: &source_run_dir,
@@ -423,11 +424,11 @@ fn session_lineage_rejects_artifact_symlink_without_copying_target() {
 }
 #[test]
 fn session_lineage_source_event_log_mismatch_rolls_back_before_publish() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let session_dir = temp_dir.path();
     let source_run_id = "run_parent_modified_source";
     let source_run_dir = session_dir.join(source_run_id);
-    fs::create_dir_all(&source_run_dir).expect("create source run dir");
+    fs::create_dir_all(&source_run_dir).unwrap_or_abort();
 
     let events = stable_events(
         source_run_id,
@@ -445,7 +446,7 @@ fn session_lineage_source_event_log_mismatch_rolls_back_before_publish() {
         }),
     ));
     write_source_events(&source_run_dir, &changed_events);
-    let prefix = validate_fork_stable_prefix(&events, events.len() as u64).expect("stable prefix");
+    let prefix = validate_fork_stable_prefix(&events, events.len() as u64).unwrap_or_abort();
 
     let err = materialize_child_session(ChildSessionMaterializationRequest {
         source_run_dir: &source_run_dir,

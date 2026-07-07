@@ -1,3 +1,4 @@
+use harness_tools::UnwrapOrAbort;
 use std::fs;
 use std::path::Path;
 
@@ -31,23 +32,23 @@ fn envelope(run_id: &str, seq: u64, payload: EventV1) -> EventEnvelopeV1 {
 
 fn write_session_events(workspace: &Path, run_id: &str, events: &[EventEnvelopeV1]) {
     let run_dir = workspace.join(".agent-harness/sessions").join(run_id);
-    fs::create_dir_all(&run_dir).expect("session run dir");
+    fs::create_dir_all(&run_dir).unwrap_or_abort();
     let body = events
         .iter()
-        .map(|event| serde_json::to_string(event).expect("serialize event"))
+        .map(|event| serde_json::to_string(event).unwrap_or_abort())
         .collect::<Vec<_>>()
         .join("\n");
-    fs::write(run_dir.join("events.jsonl"), format!("{body}\n")).expect("events jsonl");
+    fs::write(run_dir.join("events.jsonl"), format!("{body}\n")).unwrap_or_abort();
 }
 
 fn write_session_metadata(workspace: &Path, run_id: &str, metadata: serde_json::Value) {
     let run_dir = workspace.join(".agent-harness/sessions").join(run_id);
-    fs::create_dir_all(&run_dir).expect("session run dir");
+    fs::create_dir_all(&run_dir).unwrap_or_abort();
     fs::write(
         run_dir.join("meta.json"),
-        serde_json::to_string_pretty(&metadata).expect("metadata json"),
+        serde_json::to_string_pretty(&metadata).unwrap_or_abort(),
     )
-    .expect("session metadata");
+    .unwrap_or_abort();
 }
 
 fn run_started(run_id: &str, seq: u64, run_name: &str, workspace: &Path) -> EventEnvelopeV1 {
@@ -75,18 +76,14 @@ async fn session_read_rejects_events_file_symlink_escape() {
     );
     fs::write(
         &outside_events,
-        format!(
-            "{}\n",
-            serde_json::to_string(&event).expect("outside event json")
-        ),
+        format!("{}\n", serde_json::to_string(&event).unwrap_or_abort()),
     )
-    .expect("outside events file");
+    .unwrap_or_abort();
     let run_dir = workspace
         .workspace()
         .join(".agent-harness/sessions/run_symlink_escape");
-    fs::create_dir_all(&run_dir).expect("session run dir");
-    std::os::unix::fs::symlink(&outside_events, run_dir.join("events.jsonl"))
-        .expect("events symlink");
+    fs::create_dir_all(&run_dir).unwrap_or_abort();
+    std::os::unix::fs::symlink(&outside_events, run_dir.join("events.jsonl")).unwrap_or_abort();
 
     let registry = coordinator_registry(ShellAllowlist::default());
     let ctx = test_context(
@@ -98,7 +95,7 @@ async fn session_read_rejects_events_file_symlink_escape() {
     // act
     let err = registry
         .get("session_read")
-        .expect("session_read")
+        .unwrap_or_abort()
         .call(ctx, json!({"session": "run_symlink_escape"}))
         .await
         .expect_err("session_read should reject escaped events symlink");
@@ -192,16 +189,16 @@ async fn session_list_filters_status_profile_resumable_text_and_sort_order() {
     // act
     let build_sessions = registry
         .get("session_list")
-        .expect("session_list")
+        .unwrap_or_abort()
         .call(
             ctx.clone(),
             json!({"profile": "build", "sort": "run_id_desc"}),
         )
         .await
-        .expect("build session list");
+        .unwrap_or_abort();
     let beta_session = registry
         .get("session_list")
-        .expect("session_list")
+        .unwrap_or_abort()
         .call(
             ctx,
             json!({
@@ -213,10 +210,10 @@ async fn session_list_filters_status_profile_resumable_text_and_sort_order() {
             }),
         )
         .await
-        .expect("filtered session list");
+        .unwrap_or_abort();
 
     // assert
-    let build_json = build_sessions.structured_json.expect("build list json");
+    let build_json = build_sessions.structured_json.unwrap_or_abort();
     assert_eq!(
         build_json
             .pointer("/sessions/0/catalog/run_id")
@@ -236,7 +233,7 @@ async fn session_list_filters_status_profile_resumable_text_and_sort_order() {
         Some(2)
     );
 
-    let beta_json = beta_session.structured_json.expect("beta list json");
+    let beta_json = beta_session.structured_json.unwrap_or_abort();
     assert_eq!(
         beta_json
             .get("returned_count")
@@ -321,10 +318,10 @@ async fn model_visible_session_tools_are_replay_safe_redacted_and_capped() {
     // act
     let listed = registry
         .get("session_list")
-        .expect("session_list")
+        .unwrap_or_abort()
         .call(ctx.clone(), json!({"limit": 5}))
         .await
-        .expect("session_list");
+        .unwrap_or_abort();
     // assert
     assert_eq!(
         listed
@@ -344,10 +341,10 @@ async fn model_visible_session_tools_are_replay_safe_redacted_and_capped() {
     );
     let list_capped = registry
         .get("session_list")
-        .expect("session_list")
+        .unwrap_or_abort()
         .call(ctx.clone(), json!({"limit": 999}))
         .await
-        .expect("session_list capped");
+        .unwrap_or_abort();
     assert_eq!(
         list_capped
             .structured_json
@@ -367,14 +364,14 @@ async fn model_visible_session_tools_are_replay_safe_redacted_and_capped() {
 
     let read = registry
         .get("session_read")
-        .expect("session_read")
+        .unwrap_or_abort()
         .call(
             ctx.clone(),
             json!({"session": "run_session_tools", "eventLimit": 10}),
         )
         .await
-        .expect("session_read");
-    let read_json = read.structured_json.expect("session_read json");
+        .unwrap_or_abort();
+    let read_json = read.structured_json.unwrap_or_abort();
     assert_eq!(
         read_json
             .get("redacted")
@@ -383,20 +380,20 @@ async fn model_visible_session_tools_are_replay_safe_redacted_and_capped() {
     );
     assert!(
         !serde_json::to_string(&read_json)
-            .expect("json string")
+            .unwrap_or_abort()
             .contains("sk-test_secret_0123456789"),
         "session_read should redact secrets"
     );
     assert!(
         !serde_json::to_string(&read_json)
-            .expect("json string")
+            .unwrap_or_abort()
             .contains("sk-test_raw_tool_payload_0123456789"),
         "session_read should not expose raw tool output secrets"
     );
     let read_events = read_json
         .get("events")
         .and_then(serde_json::Value::as_array)
-        .expect("session_read events");
+        .unwrap_or_abort();
     assert!(
         read_events.iter().all(|event| event.get("assistant_message").is_none()),
         "session_read should expose assistant message metadata instead of the raw assistant_message field"
@@ -409,7 +406,7 @@ async fn model_visible_session_tools_are_replay_safe_redacted_and_capped() {
     );
     let read_message_window = registry
         .get("session_read")
-        .expect("session_read")
+        .unwrap_or_abort()
         .call(
             ctx.clone(),
             json!({
@@ -421,10 +418,8 @@ async fn model_visible_session_tools_are_replay_safe_redacted_and_capped() {
             }),
         )
         .await
-        .expect("session_read message window");
-    let read_message_json = read_message_window
-        .structured_json
-        .expect("session_read message json");
+        .unwrap_or_abort();
+    let read_message_json = read_message_window.structured_json.unwrap_or_abort();
     assert_eq!(
         read_message_json
             .get("returned_event_count")
@@ -451,13 +446,13 @@ async fn model_visible_session_tools_are_replay_safe_redacted_and_capped() {
     );
     let read_capped = registry
         .get("session_read")
-        .expect("session_read")
+        .unwrap_or_abort()
         .call(
             ctx.clone(),
             json!({"session": "run_session_tools", "eventLimit": 999}),
         )
         .await
-        .expect("session_read capped");
+        .unwrap_or_abort();
     assert_eq!(
         read_capped
             .structured_json
@@ -477,13 +472,13 @@ async fn model_visible_session_tools_are_replay_safe_redacted_and_capped() {
 
     let search = registry
         .get("session_search")
-        .expect("session_search")
+        .unwrap_or_abort()
         .call(
             ctx.clone(),
             json!({"query": "hello", "session": "run_session_tools", "limit": 10}),
         )
         .await
-        .expect("session_search");
+        .unwrap_or_abort();
     assert_eq!(
         search
             .structured_json
@@ -494,7 +489,7 @@ async fn model_visible_session_tools_are_replay_safe_redacted_and_capped() {
     );
     let search_capped = registry
         .get("session_search")
-        .expect("session_search")
+        .unwrap_or_abort()
         .call(
             ctx.clone(),
             json!({
@@ -505,7 +500,7 @@ async fn model_visible_session_tools_are_replay_safe_redacted_and_capped() {
             }),
         )
         .await
-        .expect("session_search capped");
+        .unwrap_or_abort();
     assert_eq!(
         search_capped
             .structured_json
@@ -532,13 +527,13 @@ async fn model_visible_session_tools_are_replay_safe_redacted_and_capped() {
     );
     let no_match = registry
         .get("session_search")
-        .expect("session_search")
+        .unwrap_or_abort()
         .call(
             ctx.clone(),
             json!({"query": "does-not-appear", "session": "run_session_tools", "limit": 10}),
         )
         .await
-        .expect("session_search no match");
+        .unwrap_or_abort();
     assert_eq!(
         no_match
             .structured_json
@@ -550,10 +545,10 @@ async fn model_visible_session_tools_are_replay_safe_redacted_and_capped() {
 
     let info = registry
         .get("session_info")
-        .expect("session_info")
+        .unwrap_or_abort()
         .call(ctx.clone(), json!({"session": "run_session_tools"}))
         .await
-        .expect("session_info");
+        .unwrap_or_abort();
     assert_eq!(
         info.structured_json
             .as_ref()
@@ -565,18 +560,18 @@ async fn model_visible_session_tools_are_replay_safe_redacted_and_capped() {
     let corrupt_dir = workspace
         .workspace()
         .join(".agent-harness/sessions/corrupt_session");
-    fs::create_dir_all(&corrupt_dir).expect("corrupt session dir");
+    fs::create_dir_all(&corrupt_dir).unwrap_or_abort();
     fs::write(
         corrupt_dir.join("events.jsonl"),
         "{\"schema_version\":1,\"event_id\":\"evt-bad\"\n",
     )
-    .expect("corrupt events jsonl");
+    .unwrap_or_abort();
     let corrupt_info = registry
         .get("session_info")
-        .expect("session_info corrupt")
+        .unwrap_or_abort()
         .call(ctx.clone(), json!({"session": "corrupt_session"}))
         .await
-        .expect("corrupt session_info should return degraded metadata");
+        .unwrap_or_abort();
     assert_eq!(
         corrupt_info.structured_json.as_ref().and_then(|json| {
             json.pointer("/recovery/parse_errors")
@@ -588,7 +583,7 @@ async fn model_visible_session_tools_are_replay_safe_redacted_and_capped() {
 
     let traversal_err = registry
         .get("session_read")
-        .expect("session_read")
+        .unwrap_or_abort()
         .call(ctx, json!({"session": "../outside"}))
         .await
         .expect_err("session traversal should be rejected");

@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::sync::Mutex;
 
 use std::fs;
@@ -587,22 +588,22 @@ fn envelope_with_actor(
 }
 
 fn write_replay_fixture(events: Vec<EventEnvelopeV1>) -> TempDir {
-    let run_dir = tempfile::tempdir().expect("create temp run dir");
+    let run_dir = tempfile::tempdir().unwrap_or_abort();
     write_events_jsonl(run_dir.path(), &events);
     run_dir
 }
 
 fn write_diff_fixture(with_diff_file: bool) -> TempDir {
-    let run_dir = tempfile::tempdir().expect("create temp run dir");
+    let run_dir = tempfile::tempdir().unwrap_or_abort();
 
     if with_diff_file {
         let artifacts_dir = run_dir.path().join("artifacts");
-        fs::create_dir_all(&artifacts_dir).expect("create artifacts dir");
+        fs::create_dir_all(&artifacts_dir).unwrap_or_abort();
         fs::write(
             artifacts_dir.join("edit-edit-golden-path.diff"),
             "--- demo.txt\n+++ demo.txt\n@@ -1,3 +1,3 @@\n alpha\n-beta\n+BETA\n gamma\n",
         )
-        .expect("write diff fixture");
+        .unwrap_or_abort();
     }
 
     let events = vec![
@@ -701,10 +702,10 @@ fn write_diff_fixture(with_diff_file: bool) -> TempDir {
 fn write_events_jsonl(run_dir: &Path, events: &[EventEnvelopeV1]) {
     let body = events
         .iter()
-        .map(|event| serde_json::to_string(event).expect("serialize event"))
+        .map(|event| serde_json::to_string(event).unwrap_or_abort())
         .collect::<Vec<_>>()
         .join("\n");
-    fs::write(run_dir.join("events.jsonl"), format!("{body}\n")).expect("write events jsonl");
+    fs::write(run_dir.join("events.jsonl"), format!("{body}\n")).unwrap_or_abort();
 }
 
 fn assert_buffer_snapshot(name: &str, buffer: &ratatui::buffer::Buffer) {

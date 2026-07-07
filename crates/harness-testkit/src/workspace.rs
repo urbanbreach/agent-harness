@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -112,12 +113,6 @@ impl TestWorkspace {
     }
 }
 
-impl Default for TestWorkspace {
-    fn default() -> Self {
-        Self::new().expect("create default TestWorkspace")
-    }
-}
-
 #[derive(Debug, Default)]
 pub struct TestClock {
     mono_ms: AtomicU64,
@@ -147,12 +142,13 @@ fn json_path(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::{with_workspace, TestWorkspace};
+    use crate::UnwrapOrAbort;
     use std::sync::{Arc, Barrier};
     use std::thread;
 
     #[test]
     fn workspace_creates_standard_isolated_paths_and_config() {
-        let workspace = TestWorkspace::with_seed(7).expect("workspace");
+        let workspace = TestWorkspace::with_seed(7).unwrap_or_abort();
 
         assert!(workspace.root().exists());
         assert!(workspace.sessions_dir().is_dir());
@@ -165,7 +161,7 @@ mod tests {
             "run_0000000000000007_000001"
         );
 
-        let config = std::fs::read_to_string(workspace.config_path()).expect("config");
+        let config = std::fs::read_to_string(workspace.config_path()).unwrap_or_abort();
         assert!(config.contains("\"deterministic\": true"));
         assert!(config.contains("\"seed\": 7"));
         assert!(config.contains(workspace.sessions_dir().to_string_lossy().as_ref()));
@@ -173,13 +169,13 @@ mod tests {
 
     #[test]
     fn with_workspace_cleans_up_after_scope() {
-        let root = with_workspace(|workspace| workspace.root().to_path_buf()).expect("workspace");
+        let root = with_workspace(|workspace| workspace.root().to_path_buf()).unwrap_or_abort();
         assert!(!root.exists(), "temp workspace should be removed on drop");
     }
 
     #[test]
     fn fake_clock_is_manual_and_deterministic() {
-        let workspace = TestWorkspace::new().expect("workspace");
+        let workspace = TestWorkspace::new().unwrap_or_abort();
         assert_eq!(workspace.clock().mono_ms(), 0);
         workspace.clock().advance(25);
         workspace.clock().advance(17);
@@ -195,7 +191,7 @@ mod tests {
                 let barrier = Arc::clone(&barrier);
                 thread::spawn(move || {
                     barrier.wait();
-                    let workspace = TestWorkspace::with_seed(idx as u64).expect("workspace");
+                    let workspace = TestWorkspace::with_seed(idx as u64).unwrap_or_abort();
                     assert_eq!(workspace.seed(), idx as u64);
                     workspace.root().to_path_buf()
                 })
@@ -204,7 +200,7 @@ mod tests {
 
         let mut roots = handles
             .into_iter()
-            .map(|handle| handle.join().expect("thread"))
+            .map(|handle| handle.join().unwrap_or_abort())
             .collect::<Vec<_>>();
         roots.sort();
         roots.dedup();

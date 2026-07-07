@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::collections::{hash_map::DefaultHasher, BTreeSet};
 use std::hash::{Hash, Hasher};
 
@@ -577,7 +578,7 @@ impl AppState {
                 .iter()
                 .copied()
                 .find(|row| *row > anchor)
-                .unwrap_or_else(|| *hunk_rows.last().expect("non-empty hunk rows"))
+                .unwrap_or_else(|| *hunk_rows.last().unwrap_or_abort())
         };
 
         self.transcript_view.selected_diff_hunk_row = Some(target);

@@ -1,3 +1,4 @@
+use harness::UnwrapOrAbort;
 #[test]
 fn tui_cli_help_does_not_expose_headless_output_flags() {
     let output = run_harness(["tui", "--help"]);
@@ -17,7 +18,7 @@ fn tui_cli_help_does_not_expose_headless_output_flags() {
 fn tui_startup_new_session_bootstraps_live_after_intent() {
     let _guard = startup_draft_test_lock()
         .lock()
-        .expect("startup draft test lock poisoned");
+        .unwrap_or_abort();
     set_pending_live_prompt_draft(None);
 
     set_pending_live_prompt_draft(Some("launcher draft".to_string()));
@@ -45,7 +46,7 @@ fn tui_startup_replay_session_uses_replay_mode() {
 fn tui_startup_carries_unsent_draft_into_new_live_session() {
     let _guard = startup_draft_test_lock()
         .lock()
-        .expect("startup draft test lock poisoned");
+        .unwrap_or_abort();
     set_pending_live_prompt_draft(None);
 
     set_pending_live_prompt_draft(Some("unsent startup draft".to_string()));
@@ -64,10 +65,10 @@ fn tui_startup_carries_unsent_draft_into_new_live_session() {
 }
 #[tokio::test]
 async fn tui_new_live_bootstrap_stays_idle_until_first_user_prompt() {
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let session_dir = temp.path().join("sessions");
     let workspace = temp.path().join("workspace");
-    std::fs::create_dir_all(&workspace).expect("create workspace");
+    std::fs::create_dir_all(&workspace).unwrap_or_abort();
 
     let mut coordinator_config = CoordinatorConfig::new(&session_dir);
     coordinator_config.agent_profiles.insert(
@@ -95,7 +96,7 @@ async fn tui_new_live_bootstrap_stays_idle_until_first_user_prompt() {
     let run = coordinator
         .start_run("interactive", &workspace)
         .await
-        .expect("start interactive run");
+        .unwrap_or_abort();
     let agent_id = coordinator
         .spawn_agent_idle(
             EventActor::new(ActorKind::Supervisor, Some("agent-supervisor".to_string())),
@@ -103,9 +104,9 @@ async fn tui_new_live_bootstrap_stays_idle_until_first_user_prompt() {
             None,
         )
         .await
-        .expect("spawn idle agent");
+        .unwrap_or_abort();
 
-    let before = load_events_from_run_dir(&run.run_dir).expect("load idle bootstrap events");
+    let before = load_events_from_run_dir(&run.run_dir).unwrap_or_abort();
     assert!(before
         .iter()
         .any(|event| matches!(&event.payload, EventV1::AgentSpawned(_))));
@@ -124,19 +125,19 @@ async fn tui_new_live_bootstrap_stays_idle_until_first_user_prompt() {
             "first real prompt",
         )
         .await
-        .expect("submit first live prompt");
+        .unwrap_or_abort();
 
     tokio::task::yield_now().await;
-    coordinator.stop_run().await.expect("stop interactive run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
-    let after = load_events_from_run_dir(&run.run_dir).expect("load submitted live events");
+    let after = load_events_from_run_dir(&run.run_dir).unwrap_or_abort();
     let first_started = after
         .iter()
         .find_map(|event| match &event.payload {
             EventV1::ProviderRequestStarted(payload) => Some((event, payload)),
             _ => None,
         })
-        .expect("provider request should start after first user prompt");
+        .unwrap_or_abort();
     assert_eq!(
         first_started.0.correlation_id.as_deref(),
         Some(request_id.as_str())
@@ -162,10 +163,10 @@ async fn tui_new_live_bootstrap_stays_idle_until_first_user_prompt() {
 async fn interactive_runtime_routes_non_default_profile_to_matching_provider() {
     let (default_provider, ops_provider, provider_router) = capturing_interactive_provider_router();
 
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let session_dir = temp.path().join("sessions");
     let workspace = temp.path().join("workspace");
-    std::fs::create_dir_all(&workspace).expect("create workspace");
+    std::fs::create_dir_all(&workspace).unwrap_or_abort();
 
     let config_path = temp.path().join("harness.multi-provider.jsonc");
     std::fs::write(
@@ -176,11 +177,11 @@ async fn interactive_runtime_routes_non_default_profile_to_matching_provider() {
             &session_dir,
         ),
     )
-    .expect("write config");
+    .unwrap_or_abort();
 
-    let config = load_config_from_file(&config_path).expect("load config");
+    let config = load_config_from_file(&config_path).unwrap_or_abort();
     let mut coordinator_config = bootstrap::build_interactive_coordinator_config(&config)
-        .expect("build multi-provider interactive config");
+        .unwrap_or_abort();
     coordinator_config.provider = provider_router;
     let coordinator = spawn_coordinator(
         coordinator_config,
@@ -191,7 +192,7 @@ async fn interactive_runtime_routes_non_default_profile_to_matching_provider() {
     let run = coordinator
         .start_run("interactive", &workspace)
         .await
-        .expect("start interactive run");
+        .unwrap_or_abort();
     let agent_id = coordinator
         .spawn_agent_idle(
             EventActor::new(ActorKind::Supervisor, Some("agent-supervisor".to_string())),
@@ -199,7 +200,7 @@ async fn interactive_runtime_routes_non_default_profile_to_matching_provider() {
             None,
         )
         .await
-        .expect("spawn non-default provider agent");
+        .unwrap_or_abort();
     let request_id = coordinator
         .request_agent_turn(
             EventActor::new(ActorKind::User, Some("interactive-user".to_string())),
@@ -207,11 +208,11 @@ async fn interactive_runtime_routes_non_default_profile_to_matching_provider() {
             "Hello from ops",
         )
         .await
-        .expect("submit prompt");
+        .unwrap_or_abort();
 
     let provider_started = tokio::time::timeout(Duration::from_secs(2), async {
         loop {
-            let events = load_events_from_run_dir(&run.run_dir).expect("load interactive events");
+            let events = load_events_from_run_dir(&run.run_dir).unwrap_or_abort();
             if let Some(provider_started) = events.iter().find_map(|event| match &event.payload {
                 EventV1::ProviderRequestStarted(data)
                     if event.correlation_id.as_deref() == Some(request_id.as_str()) =>
@@ -226,7 +227,7 @@ async fn interactive_runtime_routes_non_default_profile_to_matching_provider() {
         }
     })
     .await
-    .expect("provider request should be recorded");
+    .unwrap_or_abort();
 
     tokio::time::timeout(Duration::from_secs(2), async {
         loop {
@@ -237,9 +238,9 @@ async fn interactive_runtime_routes_non_default_profile_to_matching_provider() {
         }
     })
     .await
-    .expect("ops provider should receive request");
+    .unwrap_or_abort();
 
-    coordinator.stop_run().await.expect("stop interactive run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let default_requests = default_provider.requests();
     let ops_requests = ops_provider.requests();
@@ -260,10 +261,10 @@ async fn interactive_runtime_routes_non_default_profile_to_matching_provider() {
 }
 #[tokio::test]
 async fn new_live_session_persists_selected_runtime_context_into_run_metadata() {
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let session_dir = temp.path().join("sessions");
     let workspace = temp.path().join("workspace");
-    std::fs::create_dir_all(&workspace).expect("create workspace");
+    std::fs::create_dir_all(&workspace).unwrap_or_abort();
 
     let mut coordinator_config = CoordinatorConfig::new(&session_dir);
     coordinator_config.agent_profiles.insert(
@@ -306,7 +307,7 @@ async fn new_live_session_persists_selected_runtime_context_into_run_metadata() 
     let run = coordinator
         .start_run("interactive", &workspace)
         .await
-        .expect("start interactive run");
+        .unwrap_or_abort();
     coordinator
         .spawn_agent_idle(
             EventActor::new(ActorKind::Supervisor, Some("agent-supervisor".to_string())),
@@ -314,19 +315,19 @@ async fn new_live_session_persists_selected_runtime_context_into_run_metadata() 
             None,
         )
         .await
-        .expect("spawn selected launch agent");
+        .unwrap_or_abort();
 
-    let meta_body = std::fs::read_to_string(run.run_dir.join("meta.json")).expect("read meta");
-    let metadata: RunMetadata = serde_json::from_str(&meta_body).expect("parse meta");
+    let meta_body = std::fs::read_to_string(run.run_dir.join("meta.json")).unwrap_or_abort();
+    let metadata: RunMetadata = serde_json::from_str(&meta_body).unwrap_or_abort();
     let recorded_runtime_context = metadata
         .recorded_runtime_context
-        .expect("selected runtime context should be recorded before first turn");
+        .unwrap_or_abort();
 
     assert_eq!(recorded_runtime_context.profile, "ops");
     assert_eq!(recorded_runtime_context.provider, "anthropic");
     assert_eq!(recorded_runtime_context.model, "claude-3.7");
 
-    let bootstrap_events = load_events_from_run_dir(&run.run_dir).expect("load bootstrap events");
+    let bootstrap_events = load_events_from_run_dir(&run.run_dir).unwrap_or_abort();
     assert!(bootstrap_events
         .iter()
         .any(|event| matches!(&event.payload, EventV1::AgentSpawned(_))));
@@ -338,13 +339,13 @@ async fn new_live_session_persists_selected_runtime_context_into_run_metadata() 
         "selected runtime context must persist before the first user turn starts"
     );
 
-    coordinator.stop_run().await.expect("stop interactive run");
+    coordinator.stop_run().await.unwrap_or_abort();
 }
 #[test]
 fn tui_continue_session_bootstraps_live_with_preloaded_history() {
     let _guard = startup_draft_test_lock()
         .lock()
-        .expect("startup draft test lock poisoned");
+        .unwrap_or_abort();
     set_pending_live_prompt_draft(None);
 
     set_pending_live_prompt_draft(Some("preserved continue draft".to_string()));
@@ -417,7 +418,7 @@ fn tui_continue_session_bootstraps_live_with_preloaded_history() {
 fn tui_continue_session_restores_launch_metadata_from_history() {
     let _guard = startup_draft_test_lock()
         .lock()
-        .expect("startup draft test lock poisoned");
+        .unwrap_or_abort();
 
     set_pending_live_launch_metadata(
         LaunchMetadata::new(

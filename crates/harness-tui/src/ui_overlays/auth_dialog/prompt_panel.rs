@@ -39,9 +39,9 @@ impl PromptPanel<'_> {
             theme,
             root,
             PROMPT_HEADER_HEIGHT
-                + description_lines.len() as u16
+                + u16::try_from(description_lines.len()).unwrap_or(u16::MAX)
                 + 4
-                + error_lines.len() as u16
+                + u16::try_from(error_lines.len()).unwrap_or(u16::MAX)
                 + 2,
         );
         render_prompt_header(frame, theme, area, self.title);

@@ -1,3 +1,4 @@
+use harness_tools::UnwrapOrAbort;
 use std::fs;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
@@ -51,14 +52,12 @@ for index in range(count):
 print(json.dumps(matches))
 "###,
     )
-    .expect("fake ast-grep script");
+    .unwrap_or_abort();
     #[cfg(unix)]
     {
-        let mut permissions = fs::metadata(&script)
-            .expect("fake ast-grep metadata")
-            .permissions();
+        let mut permissions = fs::metadata(&script).unwrap_or_abort().permissions();
         permissions.set_mode(0o755);
-        fs::set_permissions(&script, permissions).expect("fake ast-grep executable bit");
+        fs::set_permissions(&script, permissions).unwrap_or_abort();
     }
     script
 }
@@ -68,12 +67,12 @@ async fn ast_grep_search_is_read_only_workspace_safe_and_structured() {
     // arrange
     let workspace = setup_workspace_fixture();
     let fake_ast_grep = install_fake_ast_grep(workspace.workspace());
-    fs::create_dir_all(workspace.workspace().join("src")).expect("src dir");
+    fs::create_dir_all(workspace.workspace().join("src")).unwrap_or_abort();
     fs::write(
         workspace.workspace().join("src/lib.rs"),
         "fn hello_world() {\n    println!(\"hello\");\n}\n",
     )
-    .expect("write rust source");
+    .unwrap_or_abort();
 
     let registry = coordinator_registry_with_ast_grep_command(
         ShellAllowlist::default(),
@@ -84,7 +83,7 @@ async fn ast_grep_search_is_read_only_workspace_safe_and_structured() {
     // act
     let result = registry
         .get("ast_grep_search")
-        .expect("ast_grep_search")
+        .unwrap_or_abort()
         .call(
             ctx.clone(),
             json!({
@@ -95,7 +94,7 @@ async fn ast_grep_search_is_read_only_workspace_safe_and_structured() {
             }),
         )
         .await
-        .expect("ast_grep_search");
+        .unwrap_or_abort();
 
     // assert
     assert_eq!(
@@ -128,7 +127,7 @@ async fn ast_grep_search_is_read_only_workspace_safe_and_structured() {
         .and_then(|json| json.get("matches"))
         .and_then(serde_json::Value::as_array)
         .and_then(|matches| matches.first())
-        .expect("ast-grep match");
+        .unwrap_or_abort();
     assert!(
         first_match
             .get("matched_text")
@@ -139,7 +138,7 @@ async fn ast_grep_search_is_read_only_workspace_safe_and_structured() {
 
     let err = registry
         .get("ast_grep_search")
-        .expect("ast_grep_search")
+        .unwrap_or_abort()
         .call(
             ctx.clone(),
             json!({
@@ -154,7 +153,7 @@ async fn ast_grep_search_is_read_only_workspace_safe_and_structured() {
 
     let schema_err = registry
         .get("ast_grep_search")
-        .expect("ast_grep_search")
+        .unwrap_or_abort()
         .call(
             ctx.clone(),
             json!({
@@ -170,7 +169,7 @@ async fn ast_grep_search_is_read_only_workspace_safe_and_structured() {
 
     let unsupported_language = registry
         .get("ast_grep_search")
-        .expect("ast_grep_search")
+        .unwrap_or_abort()
         .call(
             ctx.clone(),
             json!({
@@ -187,7 +186,7 @@ async fn ast_grep_search_is_read_only_workspace_safe_and_structured() {
 
     let invalid_pattern = registry
         .get("ast_grep_search")
-        .expect("ast_grep_search")
+        .unwrap_or_abort()
         .call(
             ctx.clone(),
             json!({
@@ -207,7 +206,7 @@ async fn ast_grep_search_is_read_only_workspace_safe_and_structured() {
 
     let inferred_language = registry
         .get("ast_grep_search")
-        .expect("ast_grep_search")
+        .unwrap_or_abort()
         .call(
             ctx.clone(),
             json!({
@@ -218,7 +217,7 @@ async fn ast_grep_search_is_read_only_workspace_safe_and_structured() {
             }),
         )
         .await
-        .expect("single file language inference should work");
+        .unwrap_or_abort();
     assert_eq!(
         inferred_language
             .structured_json
@@ -246,7 +245,7 @@ async fn ast_grep_search_is_read_only_workspace_safe_and_structured() {
 
     let no_match = registry
         .get("ast_grep_search")
-        .expect("ast_grep_search")
+        .unwrap_or_abort()
         .call(
             ctx.clone(),
             json!({
@@ -256,7 +255,7 @@ async fn ast_grep_search_is_read_only_workspace_safe_and_structured() {
             }),
         )
         .await
-        .expect("no match is successful");
+        .unwrap_or_abort();
     assert_eq!(
         no_match
             .structured_json
@@ -270,11 +269,10 @@ async fn ast_grep_search_is_read_only_workspace_safe_and_structured() {
         .map(|index| format!("fn generated_match_{index}() {{ println!(\"{index}\"); }}"))
         .collect::<Vec<_>>()
         .join("\n");
-    fs::write(workspace.workspace().join("src/large.rs"), large_source)
-        .expect("write large rust source");
+    fs::write(workspace.workspace().join("src/large.rs"), large_source).unwrap_or_abort();
     let spilled = registry
         .get("ast_grep_search")
-        .expect("ast_grep_search")
+        .unwrap_or_abort()
         .call(
             ctx,
             json!({
@@ -285,7 +283,7 @@ async fn ast_grep_search_is_read_only_workspace_safe_and_structured() {
             }),
         )
         .await
-        .expect("large ast_grep_search spills");
+        .unwrap_or_abort();
     assert!(
         !spilled.artifacts.is_empty(),
         "large ast_grep_search output should spill to an artifact"
@@ -297,12 +295,12 @@ async fn ast_grep_search_reports_missing_adapter_actionably() {
     // arrange
     let workspace = setup_workspace_fixture();
     let missing_ast_grep = workspace.workspace().join("missing-ast-grep");
-    fs::create_dir_all(workspace.workspace().join("src")).expect("src dir");
+    fs::create_dir_all(workspace.workspace().join("src")).unwrap_or_abort();
     fs::write(
         workspace.workspace().join("src/lib.rs"),
         "fn missing_adapter() {}\n",
     )
-    .expect("write rust source");
+    .unwrap_or_abort();
 
     let registry = coordinator_registry_with_ast_grep_command(
         ShellAllowlist::default(),
@@ -317,7 +315,7 @@ async fn ast_grep_search_reports_missing_adapter_actionably() {
     // act
     let err = registry
         .get("ast_grep_search")
-        .expect("ast_grep_search")
+        .unwrap_or_abort()
         .call(
             ctx,
             json!({

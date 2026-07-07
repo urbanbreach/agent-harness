@@ -1,11 +1,12 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 pub(super) fn permission_modal_preempts_prompt_submission() {
     let intents = Arc::new(std::sync::Mutex::new(Vec::<UiIntent>::new()));
     let intent_sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
 
@@ -21,7 +22,7 @@ pub(super) fn permission_modal_preempts_prompt_submission() {
 
     app.handle_key(key(crossterm::event::KeyCode::Enter));
 
-    let intents = intents.lock().expect("lock intents");
+    let intents = intents.lock().unwrap_or_abort();
     assert_eq!(
         intents.as_slice(),
         &[UiIntent::ResolvePermission {
@@ -48,7 +49,7 @@ pub(super) fn continue_disabled_session_shows_reason_banner() {
     let intent_sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
     let mut app = app::AppState::new_startup(
@@ -71,7 +72,7 @@ pub(super) fn continue_disabled_session_shows_reason_banner() {
     app.handle_key(key(crossterm::event::KeyCode::Enter));
     app.handle_key(key(crossterm::event::KeyCode::Enter));
 
-    let intents = intents.lock().expect("lock intents");
+    let intents = intents.lock().unwrap_or_abort();
     assert!(intents.is_empty());
     drop(intents);
     assert!(app.session_history_visible);
@@ -90,7 +91,7 @@ pub(super) fn replay_session_intent_never_enables_prompt_submission() {
     let intent_sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
     let mut app = app::AppState::new_startup(
@@ -114,7 +115,7 @@ pub(super) fn replay_session_intent_never_enables_prompt_submission() {
     }
     app.handle_key(key(crossterm::event::KeyCode::Enter));
 
-    let intents = intents.lock().expect("lock intents");
+    let intents = intents.lock().unwrap_or_abort();
     assert_eq!(intents.as_slice(), &[UiIntent::NewSession]);
     drop(intents);
     assert_eq!(app.composer.prompt_buffer, "do not submit");
@@ -241,7 +242,7 @@ pub(super) fn composer_enter_submits_and_shift_enter_inserts_newline() {
     let intent_sink = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
 
@@ -260,7 +261,7 @@ pub(super) fn composer_enter_submits_and_shift_enter_inserts_newline() {
 
     app.handle_key(key(crossterm::event::KeyCode::Enter));
 
-    let intents = intents.lock().expect("lock intents");
+    let intents = intents.lock().unwrap_or_abort();
     assert_eq!(
         intents.as_slice(),
         &[UiIntent::SubmitPrompt {
@@ -279,7 +280,7 @@ pub(super) fn composer_enter_submits_and_shift_enter_inserts_newline() {
         Some("hello\nworld")
     );
 
-    let activity = app.activities.back().expect("submitted activity");
+    let activity = app.activities.back().unwrap_or_abort();
     assert_eq!(
         activity
             .user_message
@@ -314,7 +315,7 @@ pub(super) fn composer_submits_queued_followup_while_streaming() {
     let intent_sink = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
 
@@ -356,7 +357,7 @@ pub(super) fn composer_submits_queued_followup_while_streaming() {
 
     app.handle_key(key(crossterm::event::KeyCode::Enter));
 
-    let intents = intents.lock().expect("lock intents");
+    let intents = intents.lock().unwrap_or_abort();
     assert_eq!(
         intents.as_slice(),
         &[
@@ -384,11 +385,11 @@ pub(super) fn composer_submits_queued_followup_while_streaming() {
         app.composer.prompt_history.last().map(String::as_str),
         Some("next")
     );
-    let activity = app.activities.front().expect("streaming activity");
+    let activity = app.activities.front().unwrap_or_abort();
     assert_eq!(activity.request_id, "req_001");
     assert_eq!(activity.transcript_text, "streaming");
     assert_eq!(activity.status, app::ActivityStatus::Streaming);
-    let queued_activity = app.activities.back().expect("submitted activity");
+    let queued_activity = app.activities.back().unwrap_or_abort();
     assert_eq!(
         queued_activity
             .user_message

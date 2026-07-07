@@ -1,6 +1,7 @@
+use harness_core::UnwrapOrAbort;
 #[tokio::test]
 async fn cancelling_turn_waiting_for_permission_emits_turn_end_without_tool_start() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![vec![
         ProviderStreamEvent::Start,
         ProviderStreamEvent::ToolCallComplete {
@@ -31,15 +32,15 @@ async fn cancelling_turn_waiting_for_permission_emits_turn_end_without_tool_star
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     let request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id, "permission gated tool")
         .await
-        .expect("request agent turn");
+        .unwrap_or_abort();
 
     let events = wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
         events
@@ -61,22 +62,22 @@ async fn cancelling_turn_waiting_for_permission_emits_turn_end_without_tool_star
             }
             _ => None,
         })
-        .expect("agent task id");
+        .unwrap_or_abort();
     let (permission_id, provider_tool_call_id) = events
         .iter()
         .find_map(|event| match &event.payload {
             EventV1::PermissionRequested(data) => Some((
                 data.permission_id.clone(),
-                data.tool_call_id.clone().expect("tool permission call id"),
+                data.tool_call_id.clone().unwrap_or_abort(),
             )),
             _ => None,
         })
-        .expect("pending permission");
+        .unwrap_or_abort();
 
     coordinator
         .cancel_task(agent_task_id.clone(), "cancel while permission pending")
         .await
-        .expect("cancel waiting turn");
+        .unwrap_or_abort();
     coordinator
         .resolve_permission(
             permission_id,
@@ -84,9 +85,9 @@ async fn cancelling_turn_waiting_for_permission_emits_turn_end_without_tool_star
             Some("late approval".to_string()),
         )
         .await
-        .expect("late resolve should be accepted without starting tool");
+        .unwrap_or_abort();
     tokio::task::yield_now().await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let events = load_events(&run.events_path);
     assert!(events.iter().any(|event| {
@@ -106,7 +107,7 @@ async fn cancelling_turn_waiting_for_permission_emits_turn_end_without_tool_star
 }
 #[tokio::test]
 async fn late_tool_result_after_turn_cancellation_is_task_result_late() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let release = Arc::new(Notify::new());
     let provider = SequentialScriptedProvider::new(vec![
         vec![
@@ -141,7 +142,7 @@ async fn late_tool_result_after_turn_cancellation_is_task_result_late() {
     let coordinator = test_agent_tool_coordinator(
         temp_dir.path(),
         Arc::new(provider),
-        lifecycle_tool_registry(release.clone()),
+        lifecycle_tool_registry(Arc::clone(&release)),
         shell_only_permission_policy(),
         vec!["shell.block".to_string()],
         12,
@@ -153,15 +154,15 @@ async fn late_tool_result_after_turn_cancellation_is_task_result_late() {
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     let request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id, "run blocking tool")
         .await
-        .expect("request agent turn");
+        .unwrap_or_abort();
 
     let events = wait_for_events(&run.events_path, Duration::from_millis(700), |events| {
         events.iter().any(|event| {
@@ -188,7 +189,7 @@ async fn late_tool_result_after_turn_cancellation_is_task_result_late() {
             }
             _ => None,
         })
-        .expect("agent task id");
+        .unwrap_or_abort();
     let tool_task_id = events
         .iter()
         .find_map(|event| match &event.payload {
@@ -200,12 +201,12 @@ async fn late_tool_result_after_turn_cancellation_is_task_result_late() {
             }
             _ => None,
         })
-        .expect("tool task id");
+        .unwrap_or_abort();
 
     coordinator
         .cancel_task(agent_task_id.clone(), "cancel turn during tool execution")
         .await
-        .expect("cancel agent turn");
+        .unwrap_or_abort();
     let events = wait_for_events(&run.events_path, Duration::from_millis(700), |events| {
         events.iter().any(|event| {
             matches!(
@@ -216,7 +217,7 @@ async fn late_tool_result_after_turn_cancellation_is_task_result_late() {
     })
     .await;
     release.notify_waiters();
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let turn_terminal_events = events
         .iter()
@@ -262,13 +263,13 @@ async fn late_tool_result_after_turn_cancellation_is_task_result_late() {
 }
 #[tokio::test]
 async fn cancelled_tool_task_records_late_result_without_completion() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let release = Arc::new(Notify::new());
     let clock = Arc::new(FakeClock::new());
     let coordinator = test_tool_lifecycle_coordinator(
         temp_dir.path(),
         clock,
-        lifecycle_tool_registry(release.clone()),
+        lifecycle_tool_registry(Arc::clone(&release)),
         Duration::from_millis(50),
         15_000,
         5,
@@ -281,15 +282,15 @@ async fn cancelled_tool_task_records_late_result_without_completion() {
             temp_dir.path().to_path_buf(),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle agent");
+        .unwrap_or_abort();
     let request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id.clone(), "alpha-prompt")
         .await
-        .expect("request agent turn");
+        .unwrap_or_abort();
     let owner_actor = EventActor::new(ActorKind::Worker, Some(agent_id));
     tokio::task::yield_now().await;
     coordinator
@@ -300,7 +301,7 @@ async fn cancelled_tool_task_records_late_result_without_completion() {
             json!({"cmd": "wait"}),
         )
         .await
-        .expect("request blocking tool");
+        .unwrap_or_abort();
 
     let events = wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
         events.iter().any(|event| {
@@ -322,11 +323,11 @@ async fn cancelled_tool_task_records_late_result_without_completion() {
             }
             _ => None,
         })
-        .expect("tool task id");
+        .unwrap_or_abort();
     coordinator
         .cancel_task(task_id.clone(), "manual cancellation")
         .await
-        .expect("cancel tool task");
+        .unwrap_or_abort();
     release.notify_waiters();
     wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
         events.iter().any(|event| {
@@ -337,7 +338,7 @@ async fn cancelled_tool_task_records_late_result_without_completion() {
         })
     })
     .await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let events = load_events(&run.events_path);
     let late = events
@@ -348,7 +349,7 @@ async fn cancelled_tool_task_records_late_result_without_completion() {
                 EventV1::TaskResultLate(data) if data.task_id == task_id
             )
         })
-        .expect("late result");
+        .unwrap_or_abort();
     assert_task_event_context(late, &owner_actor, &request_id);
     assert!(!events.iter().any(|event| {
         matches!(
@@ -359,7 +360,7 @@ async fn cancelled_tool_task_records_late_result_without_completion() {
 }
 #[tokio::test]
 async fn provider_partial_output_then_error_is_not_successful_assistant_message() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![vec![
         ProviderStreamEvent::Start,
         ProviderStreamEvent::TextDelta("partial answer".to_string()),
@@ -373,15 +374,15 @@ async fn provider_partial_output_then_error_is_not_successful_assistant_message(
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     let request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id, "partial then error")
         .await
-        .expect("request agent turn");
+        .unwrap_or_abort();
 
     let events = wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
         events.iter().any(|event| {
@@ -394,7 +395,7 @@ async fn provider_partial_output_then_error_is_not_successful_assistant_message(
         })
     })
     .await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let delta_idx = events
         .iter()
@@ -406,7 +407,7 @@ async fn provider_partial_output_then_error_is_not_successful_assistant_message(
                         && event.correlation_id.as_deref() == Some(request_id.as_str())
             )
         })
-        .expect("partial delta event");
+        .unwrap_or_abort();
     let finished_idx = events
         .iter()
         .position(|event| {
@@ -418,7 +419,7 @@ async fn provider_partial_output_then_error_is_not_successful_assistant_message(
                         && data.output_digest.is_none()
             )
         })
-        .expect("provider error finish event");
+        .unwrap_or_abort();
     assert!(delta_idx < finished_idx);
     assert!(!events.iter().any(|event| {
         matches!(
@@ -431,7 +432,7 @@ async fn provider_partial_output_then_error_is_not_successful_assistant_message(
 }
 #[tokio::test]
 async fn records_provider_error_events_and_fails_agent_turn() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![vec![
         ProviderStreamEvent::Start,
         ProviderStreamEvent::TextDelta("partial answer".to_string()),
@@ -448,15 +449,15 @@ async fn records_provider_error_events_and_fails_agent_turn() {
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     let request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id, "partial then error")
         .await
-        .expect("request agent turn");
+        .unwrap_or_abort();
 
     let events = wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
         events.iter().any(|event| {
@@ -469,7 +470,7 @@ async fn records_provider_error_events_and_fails_agent_turn() {
         })
     })
     .await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     assert!(events.iter().any(|event| {
         matches!(

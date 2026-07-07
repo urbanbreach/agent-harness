@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 #[path = "provider_context_restore_checkpoint_tests.rs"]
 mod provider_context_restore_checkpoint_tests;
@@ -8,7 +9,7 @@ pub(super) use provider_context_restore_checkpoint_tests::{
 };
 
 pub(super) fn restore_provider_context_uses_task_completed_summary_for_iterative_history() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_iterative_restore";
     write_restore_history_fixture(
         temp_dir.path(),
@@ -107,18 +108,15 @@ pub(super) fn restore_provider_context_uses_task_completed_summary_for_iterative
         ],
     );
 
-    let restored = restore_provider_context_from_history(temp_dir.path(), run_id)
-        .expect("restore provider context");
-    let turns = restored
-        .get("agent_000001")
-        .expect("agent should have restored history");
+    let restored = restore_provider_context_from_history(temp_dir.path(), run_id).unwrap_or_abort();
+    let turns = restored.get("agent_000001").unwrap_or_abort();
     assert_eq!(turns.preserved_turns.len(), 1);
     assert_eq!(turns.preserved_turns[0].user_prompt, "first question");
     assert_eq!(turns.preserved_turns[0].assistant_response, "final answer");
 }
 
 pub(super) fn failed_response_compaction_does_not_double_compact_same_request() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let agent_id = "agent_000001".to_string();
     let task_id = "task_000001".to_string();
     let request_id = "req_000001".to_string();
@@ -163,7 +161,7 @@ pub(super) fn failed_response_compaction_does_not_double_compact_same_request() 
     changed
         .provider_context_by_agent
         .get_mut(&agent_id)
-        .expect("agent context")
+        .unwrap_or_abort()
         .push_turn(ProviderConversationTurn {
             user_prompt: "failed retry question".to_string(),
             assistant_response: "partial retry output".to_string(),
@@ -184,7 +182,7 @@ pub(super) fn failed_response_compaction_does_not_double_compact_same_request() 
 }
 
 pub(super) fn failed_turn_context_does_not_duplicate_completed_turns() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_restore_no_duplicate_completed_turn";
     write_restore_history_fixture(
         temp_dir.path(),
@@ -284,11 +282,8 @@ pub(super) fn failed_turn_context_does_not_duplicate_completed_turns() {
         ],
     );
 
-    let restored = restore_provider_context_from_history(temp_dir.path(), run_id)
-        .expect("restore provider context");
-    let context = restored
-        .get("agent_000001")
-        .expect("agent context should be restored");
+    let restored = restore_provider_context_from_history(temp_dir.path(), run_id).unwrap_or_abort();
+    let context = restored.get("agent_000001").unwrap_or_abort();
     assert_eq!(context.preserved_turns.len(), 1);
     assert_eq!(context.preserved_turns[0].user_prompt, "completed question");
     assert_eq!(
@@ -302,13 +297,12 @@ pub(super) fn failed_turn_context_does_not_duplicate_completed_turns() {
 }
 
 pub(super) fn restore_provider_context_from_history_rejects_checkpoint_metadata_mismatch() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_restore_checkpoint_metadata_mismatch";
     let run_dir = temp_dir.path().join(run_id);
     let checkpoint_rel = "artifacts/compactions/agent_000001/checkpoint_000010.json".to_string();
     let checkpoint_path = run_dir.join(&checkpoint_rel);
-    fs::create_dir_all(checkpoint_path.parent().expect("checkpoint parent"))
-        .expect("create checkpoint directory");
+    fs::create_dir_all(checkpoint_path.parent().unwrap_or_abort()).unwrap_or_abort();
     fs::write(
         &checkpoint_path,
         serde_json::to_string_pretty(&ProviderContextCheckpoint {
@@ -342,9 +336,9 @@ pub(super) fn restore_provider_context_from_history_rejects_checkpoint_metadata_
             summary_source: None,
             timeline_entry: None,
         })
-        .expect("serialize checkpoint"),
+        .unwrap_or_abort(),
     )
-    .expect("write checkpoint artifact");
+    .unwrap_or_abort();
 
     write_restore_history_fixture(
         temp_dir.path(),

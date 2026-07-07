@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 pub(super) fn startup_shell_shows_profile_provider_and_model_chrome() {
     let mut app = app::AppState::new_startup(Vec::new(), None);
@@ -30,13 +31,13 @@ pub(super) fn lifecycle_shell_narrow_layout_renders_primary_cta() {
     assert_live_shell_frame_invariants(&rendered, 80, 24);
 
     let lines = rendered.lines().collect::<Vec<_>>();
-    let title_row = find_line_containing(&lines, "██╗  ██╗").expect("startup logo row");
+    let title_row = find_line_containing(&lines, "██╗  ██╗").unwrap_or_abort();
     let prompt_row = find_line_containing(
         &lines,
         "Ask anything... \"What is the tech stack of this project?\"",
     )
-    .expect("startup prompt row");
-    let footer_row = find_line_containing(&lines, "commands").expect("footer row");
+    .unwrap_or_abort();
+    let footer_row = find_line_containing(&lines, "commands").unwrap_or_abort();
 
     assert!(!rendered.contains("Actions:"));
     assert!(!rendered.contains("Dispatch a new run"));
@@ -198,11 +199,11 @@ pub(super) fn live_empty_state_respects_compact_geometry() {
         &theme.live_shell.empty_state.title.to_ascii_uppercase(),
     )
     .or_else(|| find_line_containing(&lines, theme.live_shell.empty_state.title))
-    .expect("title row");
-    let metadata_row = find_line_containing(&lines, "Launch: default · -").expect("metadata row");
-    let value_prop_row = find_line_containing(&lines, theme.live_shell.empty_state.value_prop)
-        .expect("value prop row");
-    let help_row = find_line_containing(&lines, "Ctrl+p commands").expect("key hint row");
+    .unwrap_or_abort();
+    let metadata_row = find_line_containing(&lines, "Launch: default · -").unwrap_or_abort();
+    let value_prop_row =
+        find_line_containing(&lines, theme.live_shell.empty_state.value_prop).unwrap_or_abort();
+    let help_row = find_line_containing(&lines, "Ctrl+p commands").unwrap_or_abort();
 
     assert!(
         title_row > 0,
@@ -314,21 +315,21 @@ pub(super) fn startup_and_live_empty_share_spacing_contract() {
 
     let startup_render = render_live_lines(&startup, 100, 24);
     let startup_lines = startup_render.lines().collect::<Vec<_>>();
-    let startup_title = find_line_containing(&startup_lines, "██╗  ██╗").expect("startup logo");
+    let startup_title = find_line_containing(&startup_lines, "██╗  ██╗").unwrap_or_abort();
     let startup_prompt = find_line_containing(
         &startup_lines,
         "Ask anything... \"What is the tech stack of this project?\"",
     )
-    .expect("startup prompt");
-    let startup_keys = find_line_containing(&startup_lines, "commands").expect("startup key hints");
+    .unwrap_or_abort();
+    let startup_keys = find_line_containing(&startup_lines, "commands").unwrap_or_abort();
 
     let live_render = render_live_lines(&live, 100, 24);
     let live_lines = live_render.lines().collect::<Vec<_>>();
     let live_metadata =
-        find_line_containing(&live_lines, "Launch: worker · model-1").expect("live metadata");
-    let live_value = find_line_containing(&live_lines, "Start a conversation to begin")
-        .expect("live value prop");
-    let live_keys = find_line_containing(&live_lines, "Ctrl+p commands").expect("live key hints");
+        find_line_containing(&live_lines, "Launch: worker · model-1").unwrap_or_abort();
+    let live_value =
+        find_line_containing(&live_lines, "Start a conversation to begin").unwrap_or_abort();
+    let live_keys = find_line_containing(&live_lines, "Ctrl+p commands").unwrap_or_abort();
 
     assert!(startup_title < startup_prompt);
     assert!(startup_prompt < startup_keys);

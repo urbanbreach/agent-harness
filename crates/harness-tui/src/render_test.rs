@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use ratatui::backend::TestBackend;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
@@ -18,10 +19,10 @@ pub fn render_to_buffer<ViewModel>(
     render: impl FnOnce(&ViewModel, &mut ratatui::Frame<'_>, Rect),
 ) -> Buffer {
     let backend = TestBackend::new(area.width, area.height);
-    let mut terminal = Terminal::new(backend).expect("create render test terminal");
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
     terminal
         .draw(|frame| render(view_model, frame, area))
-        .expect("draw render test frame");
+        .unwrap_or_abort();
     terminal.backend().buffer().clone()
 }
 

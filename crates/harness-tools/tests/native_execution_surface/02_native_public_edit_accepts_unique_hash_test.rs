@@ -1,11 +1,12 @@
+use harness_tools::UnwrapOrAbort;
 #[tokio::test]
 async fn native_public_edit_accepts_unique_hash_only_anchor() {
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
-    let edit = registry.get("edit").expect("edit in registry");
+    let edit = registry.get("edit").unwrap_or_abort();
 
-    fs::write(workspace.join("surface.txt"), "current\nnext\n").expect("seed existing file");
+    fs::write(workspace.join("surface.txt"), "current\nnext\n").unwrap_or_abort();
 
     let result = edit
         .call(
@@ -22,11 +23,11 @@ async fn native_public_edit_accepts_unique_hash_only_anchor() {
             }),
         )
         .await
-        .expect("hashline edit with unique hash-only anchor");
+        .unwrap_or_abort();
 
     assert!(result.display_text.contains("Edit applied successfully"));
     assert_eq!(
-        fs::read_to_string(workspace.join("surface.txt")).expect("read edited file"),
+        fs::read_to_string(workspace.join("surface.txt")).unwrap_or_abort(),
         "after\nnext\n"
     );
 }
@@ -35,11 +36,11 @@ async fn native_public_edit_uses_recent_hashline_read_to_disambiguate_hash_only_
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
-    let read = registry.get("read").expect("read in registry");
-    let edit = registry.get("edit").expect("edit in registry");
+    let read = registry.get("read").unwrap_or_abort();
+    let edit = registry.get("edit").unwrap_or_abort();
     let tool_state = ToolRunState::default();
 
-    fs::write(workspace.join("surface.txt"), "same\nother\nsame\n").expect("seed existing file");
+    fs::write(workspace.join("surface.txt"), "same\nother\nsame\n").unwrap_or_abort();
 
     read.call(
         test_context_with_tool_state(workspace, "read-disambiguation-window", tool_state.clone()),
@@ -50,7 +51,7 @@ async fn native_public_edit_uses_recent_hashline_read_to_disambiguate_hash_only_
         }),
     )
     .await
-    .expect("anchored read should succeed");
+    .unwrap_or_abort();
 
     let result = edit
         .call(
@@ -71,11 +72,11 @@ async fn native_public_edit_uses_recent_hashline_read_to_disambiguate_hash_only_
             }),
         )
         .await
-        .expect("hashline edit should use recent read window to disambiguate");
+        .unwrap_or_abort();
 
     assert!(result.display_text.contains("Edit applied successfully"));
     assert_eq!(
-        fs::read_to_string(workspace.join("surface.txt")).expect("read edited file"),
+        fs::read_to_string(workspace.join("surface.txt")).unwrap_or_abort(),
         "after\nother\nsame\n"
     );
 }
@@ -84,11 +85,11 @@ async fn native_public_edit_scopes_recent_hashline_reads_to_shared_tool_run_stat
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
-    let read = registry.get("read").expect("read in registry");
-    let edit = registry.get("edit").expect("edit in registry");
+    let read = registry.get("read").unwrap_or_abort();
+    let edit = registry.get("edit").unwrap_or_abort();
     let tool_state = ToolRunState::default();
 
-    fs::write(workspace.join("surface.txt"), "same\nother\nsame\n").expect("seed existing file");
+    fs::write(workspace.join("surface.txt"), "same\nother\nsame\n").unwrap_or_abort();
 
     read.call(
         common_test_context_with_tool_state(
@@ -104,7 +105,7 @@ async fn native_public_edit_scopes_recent_hashline_reads_to_shared_tool_run_stat
         }),
     )
     .await
-    .expect("anchored read should succeed");
+    .unwrap_or_abort();
 
     let result = edit
         .call(
@@ -126,11 +127,11 @@ async fn native_public_edit_scopes_recent_hashline_reads_to_shared_tool_run_stat
             }),
         )
         .await
-        .expect("shared edit session should disambiguate independent of run id");
+        .unwrap_or_abort();
 
     assert!(result.display_text.contains("Edit applied successfully"));
     assert_eq!(
-        fs::read_to_string(workspace.join("surface.txt")).expect("read edited file"),
+        fs::read_to_string(workspace.join("surface.txt")).unwrap_or_abort(),
         "after\nother\nsame\n"
     );
 }
@@ -141,11 +142,11 @@ async fn native_internal_hashline_scan_disambiguates_hash_only_anchor_for_edit()
     let registry = coordinator_registry_with_internal_hashline_tools(ShellAllowlist::default());
     let scan = registry
         .get("edit.hashline_scan")
-        .expect("edit.hashline_scan in registry");
-    let edit = registry.get("edit").expect("edit in registry");
+        .unwrap_or_abort();
+    let edit = registry.get("edit").unwrap_or_abort();
     let tool_state = ToolRunState::default();
 
-    fs::write(workspace.join("surface.txt"), "same\nother\nsame\n").expect("seed existing file");
+    fs::write(workspace.join("surface.txt"), "same\nother\nsame\n").unwrap_or_abort();
 
     scan.call(
         test_context_with_tool_state(workspace, "scan-disambiguation-window", tool_state.clone()),
@@ -156,7 +157,7 @@ async fn native_internal_hashline_scan_disambiguates_hash_only_anchor_for_edit()
         }),
     )
     .await
-    .expect("hashline scan should succeed");
+    .unwrap_or_abort();
 
     let result = edit
         .call(
@@ -177,11 +178,11 @@ async fn native_internal_hashline_scan_disambiguates_hash_only_anchor_for_edit()
             }),
         )
         .await
-        .expect("hashline edit should use recent scan window to disambiguate");
+        .unwrap_or_abort();
 
     assert!(result.display_text.contains("Edit applied successfully"));
     assert_eq!(
-        fs::read_to_string(workspace.join("surface.txt")).expect("read edited file"),
+        fs::read_to_string(workspace.join("surface.txt")).unwrap_or_abort(),
         "after\nother\nsame\n"
     );
 }
@@ -190,11 +191,11 @@ async fn native_public_edit_ignores_stale_recent_hashline_read_for_hash_only_anc
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
-    let read = registry.get("read").expect("read in registry");
-    let edit = registry.get("edit").expect("edit in registry");
+    let read = registry.get("read").unwrap_or_abort();
+    let edit = registry.get("edit").unwrap_or_abort();
     let tool_state = ToolRunState::default();
 
-    fs::write(workspace.join("surface.txt"), "same\nother\nsame\n").expect("seed existing file");
+    fs::write(workspace.join("surface.txt"), "same\nother\nsame\n").unwrap_or_abort();
 
     read.call(
         test_context_with_tool_state(
@@ -209,10 +210,10 @@ async fn native_public_edit_ignores_stale_recent_hashline_read_for_hash_only_anc
         }),
     )
     .await
-    .expect("anchored read should succeed");
+    .unwrap_or_abort();
 
     fs::write(workspace.join("surface.txt"), "same\nanother\nsame\n")
-        .expect("mutate file after anchored read");
+        .unwrap_or_abort();
 
     let error = edit
         .call(
@@ -239,7 +240,7 @@ async fn native_public_edit_ignores_stale_recent_hashline_read_for_hash_only_anc
     assert!(error.contains("matches multiple current lines"));
     assert!(error.contains("Re-read the file"));
     assert_eq!(
-        fs::read_to_string(workspace.join("surface.txt")).expect("read edited file"),
+        fs::read_to_string(workspace.join("surface.txt")).unwrap_or_abort(),
         "same\nanother\nsame\n"
     );
 }
@@ -248,10 +249,10 @@ async fn native_public_edit_does_not_share_recent_hashline_reads_across_tool_sta
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
-    let read = registry.get("read").expect("read in registry");
-    let edit = registry.get("edit").expect("edit in registry");
+    let read = registry.get("read").unwrap_or_abort();
+    let edit = registry.get("edit").unwrap_or_abort();
 
-    fs::write(workspace.join("surface.txt"), "same\nother\nsame\n").expect("seed existing file");
+    fs::write(workspace.join("surface.txt"), "same\nother\nsame\n").unwrap_or_abort();
 
     read.call(
         test_context_with_tool_state(
@@ -266,7 +267,7 @@ async fn native_public_edit_does_not_share_recent_hashline_reads_across_tool_sta
         }),
     )
     .await
-    .expect("anchored read should succeed");
+    .unwrap_or_abort();
 
     let error = edit
         .call(
@@ -293,7 +294,7 @@ async fn native_public_edit_does_not_share_recent_hashline_reads_across_tool_sta
     assert!(error.contains("matches multiple current lines"));
     assert!(error.contains("Re-read the file"));
     assert_eq!(
-        fs::read_to_string(workspace.join("surface.txt")).expect("read unchanged file"),
+        fs::read_to_string(workspace.join("surface.txt")).unwrap_or_abort(),
         "same\nother\nsame\n"
     );
 }
@@ -302,9 +303,9 @@ async fn native_public_edit_rejects_ambiguous_hash_only_anchor() {
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
-    let edit = registry.get("edit").expect("edit in registry");
+    let edit = registry.get("edit").unwrap_or_abort();
 
-    fs::write(workspace.join("surface.txt"), "same\nother\nsame\n").expect("seed existing file");
+    fs::write(workspace.join("surface.txt"), "same\nother\nsame\n").unwrap_or_abort();
 
     let error = edit
         .call(
@@ -334,9 +335,9 @@ async fn native_public_edit_rejects_unknown_hash_only_anchor() {
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
-    let edit = registry.get("edit").expect("edit in registry");
+    let edit = registry.get("edit").unwrap_or_abort();
 
-    fs::write(workspace.join("surface.txt"), "same\nother\n").expect("seed existing file");
+    fs::write(workspace.join("surface.txt"), "same\nother\n").unwrap_or_abort();
 
     let error = edit
         .call(
@@ -364,9 +365,9 @@ async fn native_public_edit_stale_anchor_error_includes_refresh_snippet() {
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
-    let edit = registry.get("edit").expect("edit in registry");
+    let edit = registry.get("edit").unwrap_or_abort();
 
-    fs::write(workspace.join("surface.txt"), "current\nnext\n").expect("seed existing file");
+    fs::write(workspace.join("surface.txt"), "current\nnext\n").unwrap_or_abort();
 
     let error = edit
         .call(

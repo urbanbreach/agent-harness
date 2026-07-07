@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -603,6 +604,7 @@ fn session_navigation_snapshot_from_path(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::UnwrapOrAbort;
 
     fn actor(
         kind: harness_core::event::ActorKind,
@@ -708,9 +710,7 @@ mod tests {
 
         app.navigate_to_child_session_id("agent_worker".to_string());
 
-        let info = app
-            .current_subagent_session_info()
-            .expect("child session should expose subagent footer info");
+        let info = app.current_subagent_session_info().unwrap_or_abort();
         assert_eq!(info.label, "Sisyphus Junior");
         assert_eq!(info.title, "map chat renderers");
         assert_eq!(info.parent_label, "parent_run");
@@ -795,9 +795,7 @@ mod tests {
 
         app.navigate_to_child_session_id("agent_worker".to_string());
 
-        let info = app
-            .current_subagent_session_info()
-            .expect("child session should merge task description with spawned profile");
+        let info = app.current_subagent_session_info().unwrap_or_abort();
         assert_eq!(info.label, "Sisyphus Junior");
         assert_eq!(info.title, "map chat renderers");
     }

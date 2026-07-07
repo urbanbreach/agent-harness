@@ -1,5 +1,6 @@
 use super::super::*;
 use super::task_detail_blocks_text;
+use crate::UnwrapOrAbort;
 
 #[cfg(test)]
 pub(crate) fn exact_test_transcript_section_model_preserves_activity_order() {
@@ -156,17 +157,17 @@ pub(crate) fn exact_test_transcript_reasoning_precedes_answer_and_tool_rows() {
     let reasoning_row = lines
         .iter()
         .position(|line| line.contains("working through the plan"))
-        .expect("reasoning row");
+        .unwrap_or_abort();
     let answer_row = lines
         .iter()
         .position(|line| line.contains("assistant answer"))
-        .expect("assistant answer row");
+        .unwrap_or_abort();
     let tool_row = lines
         .iter()
         .enumerate()
         .skip(answer_row + 1)
         .find_map(|(index, line)| line.contains("Read src/ui.rs").then_some(index))
-        .expect("tool row");
+        .unwrap_or_abort();
 
     assert!(reasoning_row < answer_row);
     assert!(answer_row < tool_row);
@@ -261,15 +262,15 @@ pub(crate) fn exact_test_latest_assistant_footer_stays_after_trailing_tool_rows(
     let body_row = lines
         .iter()
         .position(|line| line.contains("I need to inspect the file first."))
-        .expect("assistant body row");
+        .unwrap_or_abort();
     let tool_row = lines
         .iter()
         .position(|line| line.contains("Read src/ui.rs"))
-        .expect("tool row");
+        .unwrap_or_abort();
     let footer_row = lines
         .iter()
         .position(|line| line.contains("Assistant · gpt-5.4-mini"))
-        .expect("assistant footer row");
+        .unwrap_or_abort();
 
     assert!(
         body_row < tool_row,
@@ -423,15 +424,15 @@ pub(crate) fn exact_test_transcript_tool_rows_follow_chronological_turn_order() 
     let opening_row = lines
         .iter()
         .position(|line| line.contains("I’ll inspect the MCP result first."))
-        .expect("opening answer row");
+        .unwrap_or_abort();
     let tool_row = lines
         .iter()
         .position(|line| line.contains("docs-rs_search") && line.contains("ratatui"))
-        .expect("tool row");
+        .unwrap_or_abort();
     let closing_row = lines
         .iter()
         .position(|line| line.contains("It returns the crate metadata inline afterward."))
-        .expect("closing answer row");
+        .unwrap_or_abort();
 
     assert!(
         opening_row < tool_row,
@@ -589,19 +590,19 @@ fn reasoning_after_tool_renders_in_new_block_below_tool() {
     let first_reasoning_row = lines
         .iter()
         .position(|line| line.contains("Inspecting Tokio docs first."))
-        .expect("first reasoning row");
+        .unwrap_or_abort();
     let tool_row = lines
         .iter()
         .position(|line| line.contains("docs-rs_docs_rs_search_in_crate") && line.contains("spawn"))
-        .expect("tool row");
+        .unwrap_or_abort();
     let second_reasoning_row = lines
         .iter()
         .position(|line| line.contains("Now I can answer with the exact API."))
-        .expect("second reasoning row");
+        .unwrap_or_abort();
     let answer_row = lines
         .iter()
         .position(|line| line.contains("Use tokio::spawn for spawned tasks."))
-        .expect("answer row");
+        .unwrap_or_abort();
 
     assert!(first_reasoning_row < tool_row);
     assert!(tool_row < second_reasoning_row);
@@ -1006,7 +1007,7 @@ fn background_output_tool_row_confirms_checked_child_result() {
         false,
         None,
     )
-    .expect("background_output checks stay visible when tool details are hidden");
+    .unwrap_or_abort();
     assert_eq!(
         visible_without_details.header.title,
         "Checked background output"

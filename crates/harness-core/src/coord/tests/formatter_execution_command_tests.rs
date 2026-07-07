@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::collections::BTreeMap;
 use std::fs;
 
@@ -9,10 +10,10 @@ fn sh(script: &str) -> Vec<String> {
 }
 
 pub(super) async fn override_command_replaces_built_in_and_failure_is_non_fatal() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("create workspace");
-    fs::write(workspace.join("test.rs"), "fn main() {}").expect("write rs");
+    fs::create_dir_all(&workspace).unwrap_or_abort();
+    fs::write(workspace.join("test.rs"), "fn main() {}").unwrap_or_abort();
 
     let mut overrides = BTreeMap::new();
     overrides.insert(
@@ -41,10 +42,10 @@ pub(super) async fn override_command_replaces_built_in_and_failure_is_non_fatal(
 }
 
 pub(super) async fn disabled_override_skips_formatter() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("create workspace");
-    fs::write(workspace.join("test.rs"), "fn main() {}").expect("write rs");
+    fs::create_dir_all(&workspace).unwrap_or_abort();
+    fs::write(workspace.join("test.rs"), "fn main() {}").unwrap_or_abort();
 
     let mut overrides = BTreeMap::new();
     overrides.insert(
@@ -65,15 +66,15 @@ pub(super) async fn disabled_override_skips_formatter() {
     let discovery = FakeFormatterDiscovery::new(["rustfmt"]);
     run_formatter_for_path_with_discovery(&config, &workspace, "test.rs", &discovery)
         .await
-        .expect("skipped formatter returns ok");
+        .unwrap_or_abort();
     assert!(!workspace.join("marker.txt").exists());
 }
 
 pub(super) async fn success_continues_after_one_formatter_fails() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("create workspace");
-    fs::write(workspace.join("test.rs"), "fn main() {}").expect("write rs");
+    fs::create_dir_all(&workspace).unwrap_or_abort();
+    fs::write(workspace.join("test.rs"), "fn main() {}").unwrap_or_abort();
 
     let mut overrides = BTreeMap::new();
     overrides.insert(
@@ -110,16 +111,16 @@ pub(super) async fn success_continues_after_one_formatter_fails() {
     .expect_err("first failure is reported");
     assert!(err.contains("formatter `false` failed"));
     assert_eq!(
-        fs::read_to_string(workspace.join("marker.txt")).expect("read marker"),
+        fs::read_to_string(workspace.join("marker.txt")).unwrap_or_abort(),
         "ok\n"
     );
 }
 
 pub(super) async fn override_command_runs_even_when_builtin_not_on_path() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("create workspace");
-    fs::write(workspace.join("test.rs"), "fn main() {}").expect("write rs");
+    fs::create_dir_all(&workspace).unwrap_or_abort();
+    fs::write(workspace.join("test.rs"), "fn main() {}").unwrap_or_abort();
 
     let mut overrides = BTreeMap::new();
     overrides.insert(
@@ -140,10 +141,10 @@ pub(super) async fn override_command_runs_even_when_builtin_not_on_path() {
     let discovery = FakeFormatterDiscovery::default();
     run_formatter_for_path_with_discovery(&config, &workspace, "test.rs", &discovery)
         .await
-        .expect("override command runs without PATH discovery");
+        .unwrap_or_abort();
 
     assert_eq!(
-        fs::read_to_string(workspace.join("marker.txt")).expect("read marker"),
+        fs::read_to_string(workspace.join("marker.txt")).unwrap_or_abort(),
         "override\n"
     );
 }

@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 pub(super) fn focus_returns_after_palette_close() {
     let mut app = AppState::new_live(None, false, None);
@@ -256,14 +257,14 @@ pub(super) fn edit_applied_auto_opens_modified_files_section() {
 
 pub(super) fn diff_hunk_navigation_advances_and_retreats_between_hunks() {
     // arrange
-    let run_dir = tempfile::tempdir().expect("create run dir");
+    let run_dir = tempfile::tempdir().unwrap_or_abort();
     let artifacts_dir = run_dir.path().join("artifacts");
-    fs::create_dir_all(&artifacts_dir).expect("create artifacts dir");
+    fs::create_dir_all(&artifacts_dir).unwrap_or_abort();
     fs::write(
         artifacts_dir.join("two-hunks.diff"),
         "--- docs/demo.md\n+++ docs/demo.md\n@@ -1,3 +1,3 @@\n alpha\n-old one\n+new one\n keep\n@@ -20,3 +20,3 @@\n before\n-old two\n+new two\n after\n",
     )
-    .expect("write diff fixture");
+    .unwrap_or_abort();
 
     let mut app = AppState::new_live(Some(run_dir.path().to_path_buf()), false, None);
     app.focus = Focus::Details;
@@ -326,15 +327,11 @@ pub(super) fn diff_hunk_navigation_advances_and_retreats_between_hunks() {
 
     // act
     app.handle_key(key_with_modifiers(KeyCode::Char('n'), KeyModifiers::ALT));
-    let first_hunk = app
-        .selected_diff_hunk_row_for_test()
-        .expect("first hunk selected");
+    let first_hunk = app.selected_diff_hunk_row_for_test().unwrap_or_abort();
     assert!(!app.transcript_view.follow_mode);
 
     app.handle_key(key_with_modifiers(KeyCode::Char('n'), KeyModifiers::ALT));
-    let second_hunk = app
-        .selected_diff_hunk_row_for_test()
-        .expect("second hunk selected");
+    let second_hunk = app.selected_diff_hunk_row_for_test().unwrap_or_abort();
     assert!(
         second_hunk > first_hunk,
         "next hunk should advance: first={first_hunk}, second={second_hunk}"

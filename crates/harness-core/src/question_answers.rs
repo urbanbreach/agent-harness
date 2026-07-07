@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 pub trait QuestionAnswerPrompt {
     fn header(&self) -> &str;
     fn multiple(&self) -> bool;
@@ -67,6 +68,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::UnwrapOrAbort;
 
     struct Prompt {
         header: &'static str,
@@ -145,7 +147,7 @@ mod tests {
                 " ".to_string(),
             ]],
         )
-        .expect("normalized answers");
+        .unwrap_or_abort();
 
         // assert
         assert_eq!(answers, vec![vec!["Yes".to_string(), "custom".to_string()]]);

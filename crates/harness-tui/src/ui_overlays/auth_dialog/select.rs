@@ -13,7 +13,7 @@ use crate::theme::Theme;
 pub(super) fn render_provider_select(frame: &mut Frame, app: &AppState, theme: &Theme, root: Rect) {
     let dialog = &app.connect_dialog;
     let rows = provider_rows(dialog);
-    let visible_rows = visible_select_rows(root, rows.len() as u16);
+    let visible_rows = visible_select_rows(root, u16::try_from(rows.len()).unwrap_or(u16::MAX));
     let area = render_panel(frame, theme, root, SELECT_HEADER_HEIGHT + visible_rows + 1);
     render_select_header(
         frame,
@@ -35,7 +35,10 @@ pub(super) fn render_provider_select(frame: &mut Frame, app: &AppState, theme: &
 pub(super) fn render_method_select(frame: &mut Frame, app: &AppState, theme: &Theme, root: Rect) {
     let dialog = &app.connect_dialog;
     let method_indices = dialog.filtered_method_indices();
-    let visible_rows = visible_select_rows(root, method_indices.len() as u16);
+    let visible_rows = visible_select_rows(
+        root,
+        u16::try_from(method_indices.len()).unwrap_or(u16::MAX),
+    );
     let area = render_panel(frame, theme, root, SELECT_HEADER_HEIGHT + visible_rows + 1);
     render_select_header(
         frame,
@@ -70,7 +73,7 @@ pub(super) fn render_model_select(frame: &mut Frame, app: &AppState, theme: &The
     let dialog = &app.connect_dialog;
     let model_indices = dialog.filtered_model_indices();
     let total_rows = model_indices.len() + usize::from(dialog.skip_model_matches_filter());
-    let visible_rows = visible_select_rows(root, total_rows as u16);
+    let visible_rows = visible_select_rows(root, u16::try_from(total_rows).unwrap_or(u16::MAX));
     let area = render_panel(frame, theme, root, SELECT_HEADER_HEIGHT + visible_rows + 1);
     let title = dialog
         .selected_provider
@@ -114,7 +117,13 @@ fn render_method_rows(
             frame,
             theme,
             horizontal_inset(
-                Rect::new(area.x, area.y.saturating_add(offset as u16), area.width, 1),
+                Rect::new(
+                    area.x,
+                    area.y
+                        .saturating_add(u16::try_from(offset).unwrap_or(u16::MAX)),
+                    area.width,
+                    1,
+                ),
                 1,
             ),
             index == selected,
@@ -139,7 +148,13 @@ fn render_model_rows(
     let selected_row = dialog.selected.min(total.saturating_sub(1));
     for (offset, index) in visible_window(total, selected_row, area.height).enumerate() {
         let row_area = horizontal_inset(
-            Rect::new(area.x, area.y.saturating_add(offset as u16), area.width, 1),
+            Rect::new(
+                area.x,
+                area.y
+                    .saturating_add(u16::try_from(offset).unwrap_or(u16::MAX)),
+                area.width,
+                1,
+            ),
             1,
         );
         if let Some(model_index) = model_indices.get(index) {

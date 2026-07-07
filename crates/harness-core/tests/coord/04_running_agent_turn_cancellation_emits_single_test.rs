@@ -1,6 +1,7 @@
+use harness_core::UnwrapOrAbort;
 #[tokio::test]
 async fn running_agent_turn_cancellation_emits_single_owner_aware_terminal_event() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let coordinator = test_agent_coordinator(temp_dir.path(), Duration::from_millis(100));
 
     let run = coordinator
@@ -9,16 +10,16 @@ async fn running_agent_turn_cancellation_emits_single_owner_aware_terminal_event
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     let request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id.clone(), "alpha-prompt")
         .await
-        .expect("request running turn");
+        .unwrap_or_abort();
 
     let task_id = load_events(&run.events_path)
         .into_iter()
@@ -30,15 +31,15 @@ async fn running_agent_turn_cancellation_emits_single_owner_aware_terminal_event
             }
             _ => None,
         })
-        .expect("running agent task id");
+        .unwrap_or_abort();
 
     coordinator
         .cancel_task(task_id.clone(), "manual running cancellation")
         .await
-        .expect("cancel running agent turn");
+        .unwrap_or_abort();
 
     tokio::task::yield_now().await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let events = load_events(&run.events_path);
     let terminal_events = events
@@ -83,23 +84,23 @@ async fn running_agent_turn_cancellation_emits_single_owner_aware_terminal_event
 }
 #[tokio::test]
 async fn coord_agent_turn_provider_events_have_isolated_correlation_ids() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let coordinator = test_agent_coordinator(temp_dir.path(), Duration::from_millis(5));
 
     let run = coordinator
         .start_run("coord_agent_corr", PathBuf::from("/workspace/project"))
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let actor = EventActor::new(ActorKind::Supervisor, Some("agent_supervisor".to_string()));
     let _ = coordinator
         .spawn_agent(actor.clone(), "alpha", None)
         .await
-        .expect("spawn alpha");
+        .unwrap_or_abort();
     let _ = coordinator
         .spawn_agent(actor, "beta", None)
         .await
-        .expect("spawn beta");
+        .unwrap_or_abort();
 
     let events = wait_for_events(&run.events_path, Duration::from_secs(2), |events| {
         let mut provider_request_ids = events
@@ -119,7 +120,7 @@ async fn coord_agent_turn_provider_events_have_isolated_correlation_ids() {
                 >= 2
     })
     .await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let mut provider_request_ids = Vec::new();
 
@@ -156,7 +157,7 @@ async fn coord_agent_turn_provider_events_have_isolated_correlation_ids() {
         let turn_id = related[0]
             .correlation_id
             .as_deref()
-            .expect("provider event correlation should be stable turn id");
+            .unwrap_or_abort();
         assert!(related
             .iter()
             .all(|event| event.correlation_id.as_deref() == Some(turn_id)));
@@ -171,7 +172,7 @@ async fn provider_single_call_returns_tool_intents_without_executing_tools() {
     let tool_call_count = Arc::new(AtomicUsize::new(0));
     let mut registry = ToolRegistry::new();
     registry.register(Arc::new(CountingShellTool {
-        calls: tool_call_count.clone(),
+        calls: Arc::clone(&tool_call_count),
     }));
     let tool_registry = Arc::new(registry);
 
@@ -198,8 +199,8 @@ async fn provider_single_call_returns_tool_intents_without_executing_tools() {
         model_settings: AgentModelSettings::default(),
     };
     let tool_defs = build_provider_tool_defs(&profile, tool_registry.as_ref())
-        .expect("build provider tool defs");
-    let function_name = tool_defs.first().expect("tool def").function_name.clone();
+        .unwrap_or_abort();
+    let function_name = tool_defs.first().unwrap_or_abort().function_name.clone();
     let messages = build_provider_context_messages(
         &profile,
         &ProviderContext::default(),
@@ -272,17 +273,17 @@ async fn provider_single_call_returns_tool_intents_without_executing_tools() {
             tool_defs: &tool_defs,
         },
         {
-            let events = events.clone();
+            let events = Arc::clone(&events);
             move |event| {
-                let events = events.clone();
+                let events = Arc::clone(&events);
                 async move {
-                    events.lock().expect("lock events").push(event);
+                    events.lock().unwrap_or_abort().push(event);
                 }
             }
         },
     )
     .await
-    .expect("single provider call succeeds");
+    .unwrap_or_abort();
 
     assert_eq!(tool_call_count.load(Ordering::SeqCst), 0);
     assert_eq!(response.text, "I will call tools");
@@ -316,7 +317,7 @@ async fn provider_single_call_returns_tool_intents_without_executing_tools() {
         ]
     );
 
-    let events = events.lock().expect("lock events");
+    let events = events.lock().unwrap_or_abort();
     assert!(events.iter().any(|event| matches!(
         event,
         AgentRuntimeEvent::ProviderRequestStarted(started)
@@ -335,7 +336,7 @@ async fn provider_single_call_returns_tool_intents_without_executing_tools() {
 }
 #[tokio::test]
 async fn provider_calls_in_one_turn_have_unique_request_ids() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![
         vec![
             ProviderStreamEvent::Start,
@@ -379,16 +380,16 @@ async fn provider_calls_in_one_turn_have_unique_request_ids() {
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     let turn_request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id, "needs a tool")
         .await
-        .expect("request agent turn");
+        .unwrap_or_abort();
 
     wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
         events.iter().any(|event| {
@@ -401,7 +402,7 @@ async fn provider_calls_in_one_turn_have_unique_request_ids() {
         })
     })
     .await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let events = load_events(&run.events_path);
     let provider_started = events
@@ -436,9 +437,9 @@ async fn provider_calls_in_one_turn_have_unique_request_ids() {
         )
     }) {
         let EventV1::ProviderRequestStarted(data) = &event.payload else {
-            unreachable!("filtered provider start events")
+            panic!("abort")
         };
-        let metadata = data.metadata.as_ref().expect("provider start metadata");
+        let metadata = data.metadata.as_ref().unwrap_or_abort();
         assert_eq!(metadata.turn_id.as_deref(), Some(turn_request_id.as_str()));
         assert_eq!(
             metadata.provider_call_id.as_deref(),

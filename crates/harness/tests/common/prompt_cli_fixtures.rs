@@ -1,3 +1,4 @@
+use harness::UnwrapOrAbort;
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::fs;
@@ -58,7 +59,7 @@ impl ScriptedPromptProvider {
         let responses = Arc::new(responses);
         let index = Arc::new(Mutex::new(0_usize));
         Self::new(move |_| {
-            let mut guard = index.lock().expect("provider sequence index");
+            let mut guard = index.lock().unwrap_or_abort();
             let response = responses
                 .get(*guard)
                 .or_else(|| responses.last())
@@ -70,7 +71,7 @@ impl ScriptedPromptProvider {
     }
 
     fn requests(&self) -> Vec<CapturedPromptRequest> {
-        self.requests.lock().expect("provider requests").clone()
+        self.requests.lock().unwrap_or_abort().clone()
     }
 }
 
@@ -85,7 +86,7 @@ impl Provider for ScriptedPromptProvider {
     {
         self.requests
             .lock()
-            .expect("provider requests")
+            .unwrap_or_abort()
             .push(CapturedPromptRequest::from(&req));
         let events = (self.handler)(&req);
         Box::pin(async move {
@@ -107,7 +108,7 @@ impl CapturedPromptRequest {
             reasoning_effort: request.reasoning_effort.clone(),
             text_verbosity: request.text_verbosity.clone(),
             reasoning_summary: request.reasoning_summary.clone(),
-            body: serde_json::to_value(request).expect("serialize completion request"),
+            body: serde_json::to_value(request).unwrap_or_abort(),
         }
     }
 }
@@ -256,7 +257,7 @@ where
             .output()
     })
     .await
-    .expect("join blocking command")
+    .unwrap_or_abort()
 }
 
 fn prompt_cli_config(base_url: &str, session_dir: &std::path::Path, tools: &[&str]) -> String {
@@ -494,7 +495,7 @@ async fn run_prompt_with_single_tool(
 
     let config = prompt_cli_config("https://fixture.test/v1", &session_dir, tools);
 
-    fs::write(&config_path, config).expect("write config");
+    fs::write(&config_path, config).unwrap_or_abort();
 
     run_harness_in_blocking_with_provider(
         workspace_root,
@@ -594,10 +595,10 @@ fn write_resume_fixture_events(run_dir: &std::path::Path) {
 
     let body = events
         .iter()
-        .map(|event| serde_json::to_string(event).expect("serialize resume fixture event"))
+        .map(|event| serde_json::to_string(event).unwrap_or_abort())
         .collect::<Vec<_>>()
         .join("\n");
-    fs::write(run_dir.join("events.jsonl"), format!("{body}\n")).expect("write events");
+    fs::write(run_dir.join("events.jsonl"), format!("{body}\n")).unwrap_or_abort();
 }
 
 fn resume_envelope(run_id: &str, seq: u64, payload: EventV1) -> EventEnvelopeV1 {

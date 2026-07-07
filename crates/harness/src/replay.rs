@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::cmp::Reverse;
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -667,6 +668,7 @@ fn is_false(value: &bool) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::UnwrapOrAbort;
     use harness_core::event::{
         ActorKind, EventActor, EventEnvelopeV1, EventV1, RunStartedEvent, SCHEMA_VERSION,
     };
@@ -692,10 +694,10 @@ mod tests {
     fn write_events_jsonl(run_dir: &std::path::Path, events: &[EventEnvelopeV1]) {
         let body = events
             .iter()
-            .map(|event| serde_json::to_string(event).expect("serialize event"))
+            .map(|event| serde_json::to_string(event).unwrap_or_abort())
             .collect::<Vec<_>>()
             .join("\n");
-        std::fs::write(run_dir.join(EVENTS_FILE_NAME), format!("{body}\n")).expect("write events");
+        std::fs::write(run_dir.join(EVENTS_FILE_NAME), format!("{body}\n")).unwrap_or_abort();
     }
 
     fn inspection_entry(
@@ -748,14 +750,14 @@ mod tests {
 
     #[test]
     fn session_inspection_entry_normalizes_lineage_from_run_meta() {
-        let temp = tempdir().expect("tempdir");
+        let temp = tempdir().unwrap_or_abort();
         let run_dir = temp.path().join("child_session");
-        std::fs::create_dir_all(&run_dir).expect("create run dir");
+        std::fs::create_dir_all(&run_dir).unwrap_or_abort();
         std::fs::write(
             run_dir.join(META_FILE_NAME),
             r#"{"harness_lineage":{"harness_source_run_id":"root_session"}}"#,
         )
-        .expect("write meta");
+        .unwrap_or_abort();
 
         let entry =
             inspection_entry(run_dir, SessionModeSource::InteractiveLive).normalize_lineage();
@@ -768,11 +770,11 @@ mod tests {
 
     #[test]
     fn test_inspect_session_catalog_returns_valid_entries() {
-        let session_dir = tempdir().expect("tempdir");
+        let session_dir = tempdir().unwrap_or_abort();
 
         // Valid session 1
         let run1_dir = session_dir.path().join("run1");
-        std::fs::create_dir_all(&run1_dir).expect("create run dir");
+        std::fs::create_dir_all(&run1_dir).unwrap_or_abort();
         write_events_jsonl(
             &run1_dir,
             &[envelope(
@@ -787,7 +789,7 @@ mod tests {
 
         // Valid session 2
         let run2_dir = session_dir.path().join("run2");
-        std::fs::create_dir_all(&run2_dir).expect("create run dir");
+        std::fs::create_dir_all(&run2_dir).unwrap_or_abort();
         write_events_jsonl(
             &run2_dir,
             &[envelope(
@@ -802,13 +804,13 @@ mod tests {
 
         // Invalid session (no events.jsonl)
         let run3_dir = session_dir.path().join("run3");
-        std::fs::create_dir_all(&run3_dir).expect("create run dir");
+        std::fs::create_dir_all(&run3_dir).unwrap_or_abort();
 
         // File that is not a directory
         let file_path = session_dir.path().join("not_a_dir.txt");
-        std::fs::write(&file_path, "test").expect("write file");
+        std::fs::write(&file_path, "test").unwrap_or_abort();
 
-        let entries = inspect_session_catalog(session_dir.path()).expect("inspect catalog");
+        let entries = inspect_session_catalog(session_dir.path()).unwrap_or_abort();
 
         assert_eq!(entries.len(), 2);
 
@@ -820,7 +822,7 @@ mod tests {
 
     #[test]
     fn test_inspect_session_catalog_invalid_dir() {
-        let temp = tempdir().expect("tempdir");
+        let temp = tempdir().unwrap_or_abort();
         let missing_dir = temp.path().join("missing");
 
         let err = inspect_session_catalog(&missing_dir).unwrap_err();

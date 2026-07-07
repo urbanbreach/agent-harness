@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::sync::{Mutex, OnceLock};
 
 use crate::config::{
@@ -15,7 +16,7 @@ fn mcp_identity_registry_test_lock() -> &'static Mutex<()> {
 }
 
 pub(super) async fn mcp_effective_identity_persists_for_direct_and_wrapper_calls() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let mut config = test_config(temp_dir.path());
     config.permission_policy = allow_shell_permission_policy();
 
@@ -28,7 +29,7 @@ pub(super) async fn mcp_effective_identity_persists_for_direct_and_wrapper_calls
     let run = handle
         .start_run("mcp_identity", temp_dir.path())
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let actor = EventActor::new(ActorKind::Supervisor, Some("agent-supervisor".to_string()));
     let direct_call_id = handle
@@ -39,7 +40,7 @@ pub(super) async fn mcp_effective_identity_persists_for_direct_and_wrapper_calls
             json!({"text": "hello direct"}),
         )
         .await
-        .expect("request direct MCP tool call");
+        .unwrap_or_abort();
     let wrapper_call_id = handle
         .request_tool_call(
             actor,
@@ -51,7 +52,7 @@ pub(super) async fn mcp_effective_identity_persists_for_direct_and_wrapper_calls
             }),
         )
         .await
-        .expect("request wrapper MCP tool call");
+        .unwrap_or_abort();
 
     wait_for_events(
         &handle,
@@ -65,7 +66,7 @@ pub(super) async fn mcp_effective_identity_persists_for_direct_and_wrapper_calls
         },
     )
     .await;
-    handle.stop_run().await.expect("stop run");
+    handle.stop_run().await.unwrap_or_abort();
 
     let events = read_events(&run.events_path);
     let direct_requested = events
@@ -74,7 +75,7 @@ pub(super) async fn mcp_effective_identity_persists_for_direct_and_wrapper_calls
             EventV1::ToolCallRequested(data) if data.tool_call_id == direct_call_id => Some(data),
             _ => None,
         })
-        .expect("direct requested event");
+        .unwrap_or_abort();
     assert_eq!(direct_requested.tool_id, "mcp.fixture.echo");
     assert_eq!(
         direct_requested
@@ -97,7 +98,7 @@ pub(super) async fn mcp_effective_identity_persists_for_direct_and_wrapper_calls
             EventV1::ToolCallRequested(data) if data.tool_call_id == wrapper_call_id => Some(data),
             _ => None,
         })
-        .expect("wrapper requested event");
+        .unwrap_or_abort();
     assert_eq!(wrapper_requested.tool_id, "mcp.fixture.tool.call");
     assert_eq!(
         wrapper_requested
@@ -120,7 +121,7 @@ pub(super) async fn mcp_effective_identity_persists_for_direct_and_wrapper_calls
             EventV1::ToolCallFinished(data) if data.tool_call_id == wrapper_call_id => Some(data),
             _ => None,
         })
-        .expect("wrapper finished event");
+        .unwrap_or_abort();
     assert_eq!(wrapper_finished.status, ToolCallStatus::Succeeded);
     assert_eq!(
         wrapper_finished
@@ -143,7 +144,7 @@ pub(super) async fn mcp_effective_identity_persists_for_direct_and_wrapper_calls
     let direct_snapshot = resume_plan
         .tool_calls
         .get(&direct_call_id)
-        .expect("direct tool snapshot");
+        .unwrap_or_abort();
     assert_eq!(
         direct_snapshot
             .resolved_tool_identity
@@ -179,7 +180,7 @@ pub(super) async fn mcp_effective_identity_persists_for_direct_and_wrapper_calls
     let wrapper_snapshot = resume_plan
         .tool_calls
         .get(&wrapper_call_id)
-        .expect("wrapper tool snapshot");
+        .unwrap_or_abort();
     assert_eq!(
         wrapper_snapshot.tool_id.as_deref(),
         Some("mcp.fixture.tool.call")
@@ -233,9 +234,7 @@ pub(super) async fn mcp_effective_identity_persists_for_direct_and_wrapper_calls
 }
 
 pub(super) fn mcp_effective_identity_uses_registered_first_class_ids_for_reserved_wrapper_names() {
-    let _guard = mcp_identity_registry_test_lock()
-        .lock()
-        .expect("mcp identity registry test lock");
+    let _guard = mcp_identity_registry_test_lock().lock().unwrap_or_abort();
     clear_registered_mcp_server_first_class_tool_ids();
     set_registered_mcp_server_first_class_tool_ids(std::collections::BTreeMap::from([(
         "fixture".to_string(),
@@ -252,7 +251,7 @@ pub(super) fn mcp_effective_identity_uses_registered_first_class_ids_for_reserve
             "arguments": { "text": "hello wrapper" },
         }),
     )
-    .expect("wrapper MCP identity metadata");
+    .unwrap_or_abort();
     assert_eq!(
         wrapper_metadata.canonical_tool_id.as_deref(),
         Some("mcp.fixture.tool_call_2")
@@ -263,7 +262,7 @@ pub(super) fn mcp_effective_identity_uses_registered_first_class_ids_for_reserve
         "mcp.fixture.tool_call_2",
         &json!({ "text": "hello direct" }),
     )
-    .expect("direct MCP identity metadata");
+    .unwrap_or_abort();
     assert_eq!(
         direct_metadata.canonical_tool_id.as_deref(),
         Some("mcp.fixture.tool_call_2")

@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 pub(super) fn transcript_turn_sections_render_open_rail_surfaces() {
     let mut app = app::AppState::new_live(
@@ -63,10 +64,10 @@ pub(super) fn transcript_turn_sections_render_open_rail_surfaces() {
         "user message should not duplicate the body above the boxed row\n{rendered}"
     );
     let (user_body_row, user_body_fgs, user_body_bgs) =
-        row_at(&buffer, 80, user_body).expect("user body palette row");
+        row_at(&buffer, 80, user_body).unwrap_or_abort();
     let (assistant_footer_row, assistant_footer_fgs, assistant_footer_bgs) =
-        row_at(&buffer, 80, assistant_footer).expect("assistant footer palette row");
-    let user_rail_column = user_body_row.find('┃').expect("user rail");
+        row_at(&buffer, 80, assistant_footer).unwrap_or_abort();
+    let user_rail_column = user_body_row.find('┃').unwrap_or_abort();
     assert_eq!(user_body_fgs[user_rail_column], theme.agent_accent("build"));
 
     let mut plan_app = app::AppState::new_live(None, false, None);
@@ -91,9 +92,8 @@ pub(super) fn transcript_turn_sections_render_open_rail_surfaces() {
     let plan_user_body = find_line_containing(&plan_lines, "Plan this work")
         .unwrap_or_else(|| panic!("plan user body line\n{plan_rendered}"));
     let (plan_user_body_row, plan_user_body_fgs, _) =
-        row_at(&render_live_cells(&plan_app, 80, 24), 80, plan_user_body)
-            .expect("plan user body palette row");
-    let plan_user_rail_column = plan_user_body_row.find('┃').expect("plan user rail");
+        row_at(&render_live_cells(&plan_app, 80, 24), 80, plan_user_body).unwrap_or_abort();
+    let plan_user_rail_column = plan_user_body_row.find('┃').unwrap_or_abort();
     assert_eq!(
         plan_user_body_fgs[plan_user_rail_column],
         theme.agent_accent("plan")
@@ -223,11 +223,10 @@ pub(super) fn transcript_turn_sections_keep_nested_tool_details() {
     let assistant_body_rail = first_non_whitespace_column(lines[body_row]);
     let assistant_footer_column = first_alphanumeric_column(lines[assistant_footer]);
     let (reasoning_row_text, reasoning_row_fgs, _) =
-        row_at(&buffer, 100, reasoning_row).expect("reasoning palette row");
-    let reasoning_rail_column = reasoning_row_text.find('┃').expect("reasoning rail");
-    let thinking_body_start = reasoning_row_text[..reasoning_row_text
-        .find("tool planning")
-        .expect("thinking body start")]
+        row_at(&buffer, 100, reasoning_row).unwrap_or_abort();
+    let reasoning_rail_column = reasoning_row_text.find('┃').unwrap_or_abort();
+    let thinking_body_start = reasoning_row_text
+        [..reasoning_row_text.find("tool planning").unwrap_or_abort()]
         .chars()
         .count();
 

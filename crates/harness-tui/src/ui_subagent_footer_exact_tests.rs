@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 pub(super) fn footer_event(
     seq: u64,
@@ -38,7 +39,7 @@ pub(super) fn render_footer_rows(app: &AppState) -> Vec<String> {
     let theme = Theme::default();
     let info = subagent_info();
     let backend = TestBackend::new(100, 6);
-    let mut terminal = Terminal::new(backend).expect("create subagent footer terminal");
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
     terminal
         .draw(|frame| {
             render_subagent_footer(
@@ -50,7 +51,7 @@ pub(super) fn render_footer_rows(app: &AppState) -> Vec<String> {
                 &info,
             );
         })
-        .expect("draw subagent footer");
+        .unwrap_or_abort();
 
     terminal
         .backend()

@@ -1,3 +1,4 @@
+use harness::UnwrapOrAbort;
 use harness_core::extension_manifest::EXTENSION_MANIFEST_V1_SCHEMA_VERSION;
 use serde_json::Value;
 
@@ -6,7 +7,7 @@ fn hook_lifecycle_event_names_from_source() -> Vec<String> {
     let section = source
         .split("impl HookLifecycleEvent")
         .nth(1)
-        .expect("config source has HookLifecycleEvent impl");
+        .unwrap_or_abort();
     let events = section
         .lines()
         .filter_map(|line| {
@@ -32,10 +33,10 @@ fn extension_strategy_documents_command_hook_lifecycle_map() {
     let lifecycle_section = extension
         .split("### Lifecycle phase map\n")
         .nth(1)
-        .expect("extension strategy has lifecycle phase map")
+        .unwrap_or_abort()
         .split("\n## ")
         .next()
-        .expect("lifecycle map precedes next h2");
+        .unwrap_or_abort();
     let rows = markdown_table_rows(lifecycle_section)
         .into_iter()
         .filter(|row| {
@@ -119,9 +120,9 @@ fn extension_strategy_documents_descriptor_only_manifest_seam() {
 
     // act
     let schema: Value = serde_json::from_str(
-        &std::fs::read_to_string(&schema_path).expect("extension manifest schema"),
+        &std::fs::read_to_string(&schema_path).unwrap_or_abort(),
     )
-    .expect("schema json");
+    .unwrap_or_abort();
 
     // assert: docs describe descriptor-only scope and no runtime host behavior.
     for anchor in [

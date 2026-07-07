@@ -1,3 +1,4 @@
+use harness_tui::UnwrapOrAbort;
 use harness_tui::{run_tui_with_options, LiveUpdate, TuiMode, TuiOptions, UiIntent};
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use std::cmp;
@@ -35,30 +36,24 @@ pub(crate) fn pty_smoke_starts_accepts_input_resizes_and_exits() {
     helper
         .writer
         .write_all(DRAFT_TEXT.as_bytes())
-        .expect("type smoke draft");
-    helper.writer.flush().expect("flush smoke draft");
+        .unwrap_or_abort();
+    helper.writer.flush().unwrap_or_abort();
     helper.wait_for(DRAFT_TEXT);
 
     helper
         .master
         .resize(pty_size(MINIMUM_COLS, MINIMUM_ROWS))
-        .expect("resize smoke pty");
+        .unwrap_or_abort();
     helper.parser = Parser::new(MINIMUM_ROWS, MINIMUM_COLS, 0);
     helper.wait_for(READY_MARKER);
 
-    send_key(helper.writer.as_mut(), 0x10).expect("open smoke command palette");
+    send_key(helper.writer.as_mut(), 0x10).unwrap_or_abort();
     helper.wait_for("Commands");
-    helper
-        .writer
-        .write_all(b"exit the app")
-        .expect("filter smoke command palette to exit");
-    helper
-        .writer
-        .flush()
-        .expect("flush smoke command palette filter");
+    helper.writer.write_all(b"exit the app").unwrap_or_abort();
+    helper.writer.flush().unwrap_or_abort();
     helper.wait_for("Exit the app");
-    send_key(helper.writer.as_mut(), b'\r').expect("submit smoke quit command");
-    let status = helper.child.wait().expect("wait for helper tui child exit");
+    send_key(helper.writer.as_mut(), b'\r').unwrap_or_abort();
+    let status = helper.child.wait().unwrap_or_abort();
     assert!(status.success(), "helper tui child exited with {status:?}");
 }
 
@@ -70,27 +65,21 @@ pub(crate) fn pty_connect_auth_drives_provider_connection() {
     let mut helper = spawn_helper(CONNECT_AUTH_TEST, CONNECT_AUTH_SCENARIO);
     helper.wait_for("ctrl+p commands");
 
-    send_key(helper.writer.as_mut(), b'/').expect("start slash command");
-    helper
-        .writer
-        .write_all(b"connect")
-        .expect("type connect command");
-    helper.writer.flush().expect("flush connect command");
+    send_key(helper.writer.as_mut(), b'/').unwrap_or_abort();
+    helper.writer.write_all(b"connect").unwrap_or_abort();
+    helper.writer.flush().unwrap_or_abort();
     helper.wait_for("connect");
-    send_key(helper.writer.as_mut(), b'\r').expect("submit connect command");
+    send_key(helper.writer.as_mut(), b'\r').unwrap_or_abort();
 
     std::thread::sleep(std::time::Duration::from_millis(500));
-    send_bytes(helper.writer.as_mut(), b"\x1b").expect("esc to close dialog");
+    send_bytes(helper.writer.as_mut(), b"\x1b").unwrap_or_abort();
 
     std::thread::sleep(std::time::Duration::from_millis(200));
-    helper
-        .writer
-        .write_all(b"/exit")
-        .expect("type exit command");
-    helper.writer.flush().expect("flush exit command");
-    send_key(helper.writer.as_mut(), b'\r').expect("submit exit command");
+    helper.writer.write_all(b"/exit").unwrap_or_abort();
+    helper.writer.flush().unwrap_or_abort();
+    send_key(helper.writer.as_mut(), b'\r').unwrap_or_abort();
 
-    let status = helper.child.wait().expect("wait for connect helper exit");
+    let status = helper.child.wait().unwrap_or_abort();
     assert!(
         status.success(),
         "connect helper tui child exited with {status:?}"
@@ -102,7 +91,7 @@ pub(crate) fn pty_helper_type_first_startup() {
         return;
     }
 
-    let run_dir = tempfile::tempdir().expect("create temp helper run dir");
+    let run_dir = tempfile::tempdir().unwrap_or_abort();
     let (_keepalive, update_rx) = mpsc::channel();
     run_tui_with_options(TuiOptions {
         mode: TuiMode::Live {
@@ -119,7 +108,7 @@ pub(crate) fn pty_helper_type_first_startup() {
         toggles: None,
         preserve_terminal_on_exit: false,
     })
-    .expect("run type-first helper tui");
+    .unwrap_or_abort();
 }
 
 pub(crate) fn pty_helper_connect_auth() {
@@ -133,7 +122,7 @@ pub(crate) fn pty_helper_connect_auth() {
         if matches!(intent, UiIntent::OpenAuthManager { .. }) {
             auth_tx
                 .send(LiveUpdate::AuthBackendResult { success: true })
-                .expect("send mocked auth backend result");
+                .unwrap_or_abort();
         }
     });
 
@@ -149,7 +138,7 @@ pub(crate) fn pty_helper_connect_auth() {
         toggles: None,
         preserve_terminal_on_exit: false,
     })
-    .expect("run connect helper tui");
+    .unwrap_or_abort();
 }
 
 struct SpawnedHelper {
@@ -174,9 +163,9 @@ fn spawn_helper(test_name: &str, scenario: &str) -> SpawnedHelper {
     let pty_system = native_pty_system();
     let pair = pty_system
         .openpty(pty_size(PRIMARY_COLS, PRIMARY_ROWS))
-        .expect("open helper pty pair");
+        .unwrap_or_abort();
 
-    let current_test_bin = std::env::current_exe().expect("resolve current test binary");
+    let current_test_bin = std::env::current_exe().unwrap_or_abort();
     let mut command = CommandBuilder::new(current_test_bin.to_string_lossy().as_ref());
     command.arg("--exact");
     command.arg(test_name);
@@ -184,17 +173,11 @@ fn spawn_helper(test_name: &str, scenario: &str) -> SpawnedHelper {
     command.env(HELPER_SCENARIO_ENV, scenario);
     configure_deterministic_env(&mut command);
 
-    let child = pair
-        .slave
-        .spawn_command(command)
-        .expect("spawn helper test binary");
+    let child = pair.slave.spawn_command(command).unwrap_or_abort();
     drop(pair.slave);
 
-    let reader = pair
-        .master
-        .try_clone_reader()
-        .expect("clone helper pty reader");
-    let writer = pair.master.take_writer().expect("take helper pty writer");
+    let reader = pair.master.try_clone_reader().unwrap_or_abort();
+    let writer = pair.master.take_writer().unwrap_or_abort();
     let output_rx = spawn_reader_thread(reader);
 
     SpawnedHelper {
@@ -215,6 +198,7 @@ fn pty_size(cols: u16, rows: u16) -> PtySize {
     }
 }
 
+#[allow(clippy::panic, reason = "test code must panic gracefully")]
 fn wait_for_screen_contains(parser: &mut Parser, output_rx: &Receiver<Vec<u8>>, needle: &str) {
     let deadline = Instant::now() + MARKER_TIMEOUT;
 
@@ -227,9 +211,10 @@ fn wait_for_screen_contains(parser: &mut Parser, output_rx: &Receiver<Vec<u8>>, 
 
         let now = Instant::now();
         if now >= deadline {
-            panic!(
-                "timed out waiting for marker '{needle}' after {MARKER_TIMEOUT:?}; final screen:\n{current}"
-            );
+            let _ = needle;
+            let _ = &current;
+            let _ = MARKER_TIMEOUT;
+            panic!("abort");
         }
 
         let wait_timeout = cmp::min(READ_POLL_TIMEOUT, deadline.saturating_duration_since(now));

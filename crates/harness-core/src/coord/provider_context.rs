@@ -1,5 +1,6 @@
 use crate::event::{HookExecutionMetadata, HookExecutionStatus};
 use crate::text::{non_empty_trimmed, truncate_with_ellipsis};
+use crate::UnwrapOrAbort;
 
 mod model_summary;
 mod operational_memory;
@@ -109,6 +110,7 @@ pub(super) fn is_provider_context_overflow_reason(reason: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::UnwrapOrAbort;
 
     #[test]
     fn truncated_failure_reason_omits_blank_input_after_trimming() {
@@ -127,7 +129,7 @@ mod tests {
     #[test]
     fn truncated_failure_reason_caps_long_input_with_ellipsis() {
         let long_reason = "x".repeat(PROVIDER_CONTEXT_COMPACTION_TURN_EXCERPT_MAX_CHARS + 1);
-        let reason = truncated_failure_reason(&long_reason).expect("truncated reason");
+        let reason = truncated_failure_reason(&long_reason).unwrap_or_abort();
 
         assert_eq!(
             reason.chars().count(),

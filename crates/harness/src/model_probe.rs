@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::{self, Read, Write};
@@ -669,6 +670,7 @@ struct ModelsDevModalities {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::UnwrapOrAbort;
     use tempfile::NamedTempFile;
 
     #[test]
@@ -702,7 +704,7 @@ mod tests {
         assert_eq!(result, 0);
         assert!(stderr.is_empty());
         assert_eq!(
-            String::from_utf8(stdout).expect("catalog stdout is utf8"),
+            String::from_utf8(stdout).unwrap_or_abort(),
             crate::generated_model_catalog::PROVIDER_CATALOG_JSON
         );
     }

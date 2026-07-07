@@ -1,7 +1,8 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 pub(super) fn prompt_stash_push_clears_composer_and_persists_entry() {
-    let tempdir = tempfile::tempdir().expect("tempdir");
+    let tempdir = tempfile::tempdir().unwrap_or_abort();
     let session_dir = tempdir.path().join("session");
     let stash_path = prompt_stash::prompt_stash_path_for_session_dir(&session_dir);
     let mut app = AppState::new_live_with_prompt_history_path(
@@ -156,7 +157,7 @@ pub(super) fn prompt_stash_list_restore_loads_selected_entry_to_composer() {
 }
 
 pub(super) fn prompt_stash_persists_across_session_restart() {
-    let tempdir = tempfile::tempdir().expect("tempdir");
+    let tempdir = tempfile::tempdir().unwrap_or_abort();
     let session_dir = tempdir.path().join("session");
     let stash_path = prompt_stash::prompt_stash_path_for_session_dir(&session_dir);
 

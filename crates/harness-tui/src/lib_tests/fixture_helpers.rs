@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 #[cfg(test)]
 pub(super) fn exact_test_key(code: crossterm::event::KeyCode) -> crossterm::event::KeyEvent {
@@ -288,7 +289,7 @@ pub(super) fn orchestration_details_drawer_app(extra_terminal_rows: usize) -> ap
 pub(super) fn assert_session_view_state(app: &app::AppState) {
     assert_eq!(app.activities.len(), 1);
 
-    let activity = app.activities.front().expect("activity exists");
+    let activity = app.activities.front().unwrap_or_abort();
     assert_eq!(activity.request_id, "req_001");
     assert_eq!(activity.provider_id, "openai");
     assert_eq!(activity.model_id, "gpt-5-codex");
@@ -304,7 +305,7 @@ pub(super) fn assert_session_view_state(app: &app::AppState) {
     );
 
     assert_eq!(activity.tool_calls.len(), 1);
-    let tool_call = activity.tool_calls.first().expect("tool call exists");
+    let tool_call = activity.tool_calls.first().unwrap_or_abort();
     assert_eq!(tool_call.tool_call_id, "tool_call_1");
     assert_eq!(tool_call.tool_id, "fs.read");
     assert_eq!(tool_call.status, app::ToolCallDisplayStatus::Succeeded);
@@ -475,8 +476,8 @@ pub(super) fn startup_session_entry_with_mode_and_details(
 pub(super) fn test_timestamp_days_ago(days_ago: i64, time_hh_mm: &str) -> String {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .expect("system time before unix epoch");
-    let today_days = i64::try_from(now.as_secs() / 86_400).expect("unix day count fits in i64");
+        .unwrap_or_abort();
+    let today_days = i64::try_from(now.as_secs() / 86_400).unwrap_or_abort();
     let date = test_civil_date_from_days_since_epoch(today_days - days_ago);
     format!("{date}T{time_hh_mm}:00Z")
 }

@@ -1,3 +1,4 @@
+use harness_tools::UnwrapOrAbort;
 use std::path::PathBuf;
 
 pub(crate) fn repo_root() -> PathBuf {
@@ -5,5 +6,5 @@ pub(crate) fn repo_root() -> PathBuf {
         .join("..")
         .join("..")
         .canonicalize()
-        .expect("canonical repo root")
+        .unwrap_or_abort()
 }

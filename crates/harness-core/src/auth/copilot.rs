@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -429,6 +430,7 @@ fn non_empty(value: &str) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::UnwrapOrAbort;
     use std::collections::VecDeque;
     use std::sync::Mutex;
     use std::time::SystemTime;
@@ -457,7 +459,7 @@ mod tests {
         }
 
         fn requests(&self) -> Vec<AuthHttpRequest> {
-            self.requests.lock().expect("requests").clone()
+            self.requests.lock().unwrap_or_abort().clone()
         }
     }
 
@@ -467,10 +469,10 @@ mod tests {
             &self,
             request: AuthHttpRequest,
         ) -> Result<AuthHttpResponse, CopilotOAuthError> {
-            self.requests.lock().expect("requests").push(request);
+            self.requests.lock().unwrap_or_abort().push(request);
             self.responses
                 .lock()
-                .expect("responses")
+                .unwrap_or_abort()
                 .pop_front()
                 .ok_or_else(|| CopilotOAuthError::Http {
                     message: "no mocked auth response".to_string(),
@@ -487,7 +489,7 @@ mod tests {
 
     #[tokio::test]
     async fn copilot_device_flow_uses_direct_github_token_and_stores_public_credential() {
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = tempfile::tempdir().unwrap_or_abort();
         let store = CredentialStore::new(temp.path());
         let http = MockCopilotHttpClient::new([
             response(
@@ -498,14 +500,15 @@ mod tests {
             response(200, r#"{"error":"slow_down","interval":8}"#),
             response(200, r#"{"access_token":"gho_direct_copilot"}"#),
         ]);
-        let client = CopilotOAuthClient::new(http.clone()).with_clock(Arc::new(FixedClock(
-            humantime::parse_rfc3339("2026-05-30T00:00:00Z").expect("clock"),
+        let http_dyn: Arc<dyn CopilotAuthHttpClient> = Arc::<MockCopilotHttpClient>::clone(&http);
+        let client = CopilotOAuthClient::new(http_dyn).with_clock(Arc::new(FixedClock(
+            humantime::parse_rfc3339("2026-05-30T00:00:00Z").unwrap_or_abort(),
         )));
 
         let credential = client
             .complete_device_flow(&CopilotDeployment::public(), &store, 4)
             .await
-            .expect("complete device flow");
+            .unwrap_or_abort();
 
         assert_eq!(credential.provider, ProviderId::github_copilot());
         assert_eq!(
@@ -521,8 +524,8 @@ mod tests {
 
         let stored = store
             .load(&ProviderId::github_copilot())
-            .expect("load stored credential")
-            .expect("stored credential");
+            .unwrap_or_abort()
+            .unwrap_or_abort();
         assert_eq!(stored.access_token, credential.access_token);
 
         let requests = http.requests();
@@ -562,7 +565,7 @@ mod tests {
             client
                 .poll_device_token(&CopilotDeployment::public(), &device, 2)
                 .await
-                .expect("pending"),
+                .unwrap_or_abort(),
             CopilotDevicePoll::Pending {
                 wait: Duration::from_secs(5)
             }
@@ -571,7 +574,7 @@ mod tests {
             client
                 .poll_device_token(&CopilotDeployment::public(), &device, 2)
                 .await
-                .expect("slow_down default"),
+                .unwrap_or_abort(),
             CopilotDevicePoll::SlowDown {
                 interval_seconds: 7,
                 wait: Duration::from_secs(10)
@@ -581,7 +584,7 @@ mod tests {
             client
                 .poll_device_token(&CopilotDeployment::public(), &device, 7)
                 .await
-                .expect("slow_down server interval"),
+                .unwrap_or_abort(),
             CopilotDevicePoll::SlowDown {
                 interval_seconds: 11,
                 wait: Duration::from_secs(14)
@@ -597,7 +600,7 @@ mod tests {
             ("malformed", r#"{"not_access_token":true}"#),
         ];
         for (name, poll_body) in cases {
-            let temp = tempfile::tempdir().expect("tempdir");
+            let temp = tempfile::tempdir().unwrap_or_abort();
             let store = CredentialStore::new(temp.path());
             let http = MockCopilotHttpClient::new([
                 response(
@@ -621,12 +624,12 @@ mod tests {
                         ..
                     }
                 )),
-                _ => unreachable!(),
+                _ => std::process::abort(),
             }
             assert!(
                 store
                     .load(&ProviderId::github_copilot())
-                    .expect("load missing")
+                    .unwrap_or_abort()
                     .is_none(),
                 "{name} should not store credentials"
             );
@@ -635,7 +638,7 @@ mod tests {
 
     #[tokio::test]
     async fn copilot_device_timeout_stores_no_credentials() {
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = tempfile::tempdir().unwrap_or_abort();
         let store = CredentialStore::new(temp.path());
         let http = MockCopilotHttpClient::new([
             response(
@@ -657,28 +660,28 @@ mod tests {
         }
         assert!(store
             .load(&ProviderId::github_copilot())
-            .expect("load missing")
+            .unwrap_or_abort()
             .is_none());
     }
 
     #[tokio::test]
     async fn copilot_enterprise_normalizes_and_stores_domain() {
         assert_eq!(
-            normalize_enterprise_domain("https://GHE.Example.COM/").expect("normalize"),
+            normalize_enterprise_domain("https://GHE.Example.COM/").unwrap_or_abort(),
             "ghe.example.com"
         );
         assert_eq!(
-            normalize_enterprise_domain("company.ghe.com").expect("normalize bare"),
+            normalize_enterprise_domain("company.ghe.com").unwrap_or_abort(),
             "company.ghe.com"
         );
         assert!(normalize_enterprise_domain("").is_err());
         assert!(normalize_enterprise_domain("https://ghe.example.com/path").is_err());
         assert!(normalize_enterprise_domain("not a domain").is_err());
 
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = tempfile::tempdir().unwrap_or_abort();
         let store = CredentialStore::new(temp.path());
         let deployment =
-            CopilotDeployment::enterprise("https://ghe.example.com/").expect("enterprise");
+            CopilotDeployment::enterprise("https://ghe.example.com/").unwrap_or_abort();
         assert_eq!(deployment.oauth_domain(), "ghe.example.com");
         assert_eq!(
             deployment.api_base_url(),
@@ -695,7 +698,7 @@ mod tests {
         let credential = CopilotOAuthClient::new(http)
             .complete_device_flow(&deployment, &store, 1)
             .await
-            .expect("enterprise flow");
+            .unwrap_or_abort();
         assert_eq!(
             credential.enterprise_url.as_deref(),
             Some("ghe.example.com")

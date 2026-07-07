@@ -1,3 +1,4 @@
+use harness_tools::UnwrapOrAbort;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -17,8 +18,8 @@ impl WorkspaceFixture {
 }
 
 pub fn setup_workspace() -> tempfile::TempDir {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
-    fs::create_dir_all(temp_dir.path().join("workspace")).expect("workspace");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
+    fs::create_dir_all(temp_dir.path().join("workspace")).unwrap_or_abort();
     temp_dir
 }
 

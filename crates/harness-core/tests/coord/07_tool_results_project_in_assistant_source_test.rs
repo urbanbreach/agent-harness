@@ -1,6 +1,7 @@
+use harness_core::UnwrapOrAbort;
 #[tokio::test]
 async fn tool_results_project_in_assistant_source_order_after_out_of_order_completion() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let slow_started = Arc::new(Notify::new());
     let slow_release = Arc::new(Notify::new());
     let provider = SequentialScriptedProvider::new(vec![
@@ -43,8 +44,8 @@ async fn tool_results_project_in_assistant_source_order_after_out_of_order_compl
             NamedShellTool {
                 id: "shell.slow",
                 output: "slow output",
-                started: Some(slow_started.clone()),
-                release: Some(slow_release.clone()),
+                started: Some(Arc::clone(&slow_started)),
+                release: Some(Arc::clone(&slow_release)),
             },
             NamedShellTool {
                 id: "shell.fast",
@@ -64,19 +65,19 @@ async fn tool_results_project_in_assistant_source_order_after_out_of_order_compl
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     coordinator
         .request_agent_turn(supervisor_actor(), agent_id, "call slow then fast")
         .await
-        .expect("request agent turn");
+        .unwrap_or_abort();
 
     tokio::time::timeout(Duration::from_millis(500), slow_started.notified())
         .await
-        .expect("slow tool should start");
+        .unwrap_or_abort();
     let fast_completed_before_slow_release =
         tokio::time::timeout(Duration::from_millis(150), async {
             loop {
@@ -105,7 +106,7 @@ async fn tool_results_project_in_assistant_source_order_after_out_of_order_compl
         })
     })
     .await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     assert!(
         fast_completed_before_slow_release,
@@ -156,7 +157,7 @@ async fn tool_results_project_in_assistant_source_order_after_out_of_order_compl
 }
 #[tokio::test]
 async fn duplicate_provider_tool_call_ids_fail_before_tool_start() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![vec![
         ProviderStreamEvent::Start,
         ProviderStreamEvent::ToolCallComplete {
@@ -192,15 +193,15 @@ async fn duplicate_provider_tool_call_ids_fail_before_tool_start() {
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     let request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id, "duplicate tools")
         .await
-        .expect("request agent turn");
+        .unwrap_or_abort();
 
     let events = wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
         events.iter().any(|event| {
@@ -212,7 +213,7 @@ async fn duplicate_provider_tool_call_ids_fail_before_tool_start() {
         })
     })
     .await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     assert!(events.iter().any(|event| {
         matches!(
@@ -232,7 +233,7 @@ async fn duplicate_provider_tool_call_ids_fail_before_tool_start() {
 }
 #[tokio::test]
 async fn empty_provider_tool_call_id_fails_before_tool_start() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![vec![
         ProviderStreamEvent::Start,
         ProviderStreamEvent::ToolCallComplete {
@@ -263,15 +264,15 @@ async fn empty_provider_tool_call_id_fails_before_tool_start() {
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     let request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id, "empty tool id")
         .await
-        .expect("request agent turn");
+        .unwrap_or_abort();
 
     let events = wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
         events.iter().any(|event| {
@@ -283,7 +284,7 @@ async fn empty_provider_tool_call_id_fails_before_tool_start() {
         })
     })
     .await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     assert!(events.iter().any(|event| {
         matches!(
@@ -303,7 +304,7 @@ async fn empty_provider_tool_call_id_fails_before_tool_start() {
 }
 #[tokio::test]
 async fn denied_or_pending_tool_never_starts_before_permission_resolution() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let coordinator = test_agent_tool_coordinator(
         temp_dir.path(),
         Arc::new(test_mock_provider()),
@@ -319,7 +320,7 @@ async fn denied_or_pending_tool_never_starts_before_permission_resolution() {
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let error = coordinator
         .request_tool_call(
             supervisor_actor(),
@@ -332,7 +333,7 @@ async fn denied_or_pending_tool_never_starts_before_permission_resolution() {
     let CoordinatorError::PermissionDenied(tool_call_id) = error else {
         panic!("expected permission denial");
     };
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let events = load_events(&run.events_path);
     assert!(events.iter().any(|event| {
@@ -349,7 +350,7 @@ async fn denied_or_pending_tool_never_starts_before_permission_resolution() {
         )
     }));
 
-    let pending_temp_dir = tempfile::tempdir().expect("pending tempdir");
+    let pending_temp_dir = tempfile::tempdir().unwrap_or_abort();
     let pending_coordinator = test_agent_tool_coordinator(
         pending_temp_dir.path(),
         Arc::new(test_mock_provider()),
@@ -365,7 +366,7 @@ async fn denied_or_pending_tool_never_starts_before_permission_resolution() {
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start pending run");
+        .unwrap_or_abort();
     let pending_tool_call_id = pending_coordinator
         .request_tool_call(
             supervisor_actor(),
@@ -374,7 +375,7 @@ async fn denied_or_pending_tool_never_starts_before_permission_resolution() {
             json!({"cmd": "true"}),
         )
         .await
-        .expect("ask request should be pending");
+        .unwrap_or_abort();
 
     let pending_events = wait_for_events(
         &pending_run.events_path,
@@ -407,7 +408,7 @@ async fn denied_or_pending_tool_never_starts_before_permission_resolution() {
             }
             _ => None,
         })
-        .expect("pending permission id");
+        .unwrap_or_abort();
     pending_coordinator
         .resolve_permission(
             pending_permission_id,
@@ -415,15 +416,15 @@ async fn denied_or_pending_tool_never_starts_before_permission_resolution() {
             Some("test cleanup".to_string()),
         )
         .await
-        .expect("resolve pending permission");
+        .unwrap_or_abort();
     pending_coordinator
         .stop_run()
         .await
-        .expect("stop pending run");
+        .unwrap_or_abort();
 }
 #[tokio::test]
 async fn ask_pending_tool_call_never_emits_started_before_approval() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let coordinator = test_agent_tool_coordinator(
         temp_dir.path(),
         Arc::new(test_mock_provider()),
@@ -439,7 +440,7 @@ async fn ask_pending_tool_call_never_emits_started_before_approval() {
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let tool_call_id = coordinator
         .request_tool_call(
             supervisor_actor(),
@@ -448,7 +449,7 @@ async fn ask_pending_tool_call_never_emits_started_before_approval() {
             json!({"cmd": "true"}),
         )
         .await
-        .expect("ask request should be pending");
+        .unwrap_or_abort();
 
     let events = wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
         events.iter().any(|event| {
@@ -477,7 +478,7 @@ async fn ask_pending_tool_call_never_emits_started_before_approval() {
             }
             _ => None,
         })
-        .expect("permission id");
+        .unwrap_or_abort();
     coordinator
         .resolve_permission(
             permission_id,
@@ -485,6 +486,6 @@ async fn ask_pending_tool_call_never_emits_started_before_approval() {
             Some("test cleanup".to_string()),
         )
         .await
-        .expect("resolve pending permission");
-    coordinator.stop_run().await.expect("stop run");
+        .unwrap_or_abort();
+    coordinator.stop_run().await.unwrap_or_abort();
 }

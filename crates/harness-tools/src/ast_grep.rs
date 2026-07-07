@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
@@ -773,7 +774,7 @@ fn plan_replacements(
             let resolved_path = edits
                 .first()
                 .map(|edit| edit.resolved_path.clone())
-                .expect("group has at least one edit");
+                .unwrap_or_abort();
             let before = std::fs::read_to_string(&resolved_path).map_err(|err| {
                 ToolError::Execution(format!(
                     "ast_grep_replace failed to read {file_path} before applying rewrite: {err}"

@@ -1,3 +1,4 @@
+use harness_core::UnwrapOrAbort;
 #[test]
 fn provider_boundary_preserves_existing_message_shape() {
     let profile = boundary_profile();
@@ -41,7 +42,7 @@ fn provider_boundary_preserves_existing_message_shape() {
         timeline_entry: None,
     };
     let projected_context = project_conversation(&[], &[(&checkpoint).into()])
-        .expect("project checkpoint context")
+        .unwrap_or_abort()
         .messages
         .into_iter()
         .chain(std::iter::once(ConversationMessage::User(
@@ -54,7 +55,7 @@ fn provider_boundary_preserves_existing_message_shape() {
         )))
         .collect::<Vec<_>>();
     let tool_defs = build_provider_tool_defs(&profile, boundary_tool_registry().as_ref())
-        .expect("build provider tool defs");
+        .unwrap_or_abort();
 
     let boundary = transform_context_for_provider(ProviderBoundaryInput {
         profile: &profile,
@@ -141,7 +142,7 @@ fn conversation_projection_failed_checkpoint_turn_status() {
     };
 
     let projection =
-        project_conversation(&[], &[(&checkpoint).into()]).expect("project failed checkpoint turn");
+        project_conversation(&[], &[(&checkpoint).into()]).unwrap_or_abort();
 
     let ConversationMessage::Assistant(assistant) = &projection.messages[2] else {
         panic!("expected checkpoint assistant message");
@@ -317,7 +318,7 @@ fn conversation_projection_reconstructs_user_assistant_tool_messages_from_events
         ),
     ];
 
-    let projection = project_conversation(&events, &checkpoints).expect("project conversation");
+    let projection = project_conversation(&events, &checkpoints).unwrap_or_abort();
 
     assert_eq!(projection.checkpoints.len(), 1);
     assert_eq!(projection.messages.len(), 7);
@@ -388,11 +389,11 @@ fn conversation_projection_reconstructs_user_assistant_tool_messages_from_events
         .messages
         .iter()
         .find(|message| message.content == "I'll check.")
-        .expect("assistant provider message");
+        .unwrap_or_abort();
     let assistant_tool_calls = assistant_message
         .assistant_tool_calls
         .as_ref()
-        .expect("assistant tool calls should be provider-visible");
+        .unwrap_or_abort();
     assert_eq!(assistant_tool_calls[0].tool_call_id, "toolcall_000001");
     assert_eq!(assistant_tool_calls[0].function_name, "read");
     assert_eq!(
@@ -406,7 +407,7 @@ fn conversation_projection_reconstructs_user_assistant_tool_messages_from_events
             message.role == MessageRole::Tool
                 && message.tool_call_id.as_deref() == Some("toolcall_000001")
         })
-        .expect("tool result provider message");
+        .unwrap_or_abort();
     assert_eq!(provider_tool_result.name.as_deref(), Some("read"));
 }
 #[test]
@@ -447,7 +448,7 @@ fn provider_boundary_falls_back_for_non_json_historical_tool_args() {
             }),
         ),
     ];
-    let projection = project_conversation(&events, &[]).expect("project conversation");
+    let projection = project_conversation(&events, &[]).unwrap_or_abort();
 
     let provider_boundary = transform_context_for_provider(ProviderBoundaryInput {
         profile: &boundary_profile(),
@@ -465,10 +466,10 @@ fn provider_boundary_falls_back_for_non_json_historical_tool_args() {
         .messages
         .iter()
         .find(|message| message.role == MessageRole::Assistant)
-        .expect("assistant message");
+        .unwrap_or_abort();
     let tool_calls = assistant_message
         .assistant_tool_calls
         .as_ref()
-        .expect("tool calls");
+        .unwrap_or_abort();
     assert_eq!(tool_calls[0].arguments_json, "{}");
 }

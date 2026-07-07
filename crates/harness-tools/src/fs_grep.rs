@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::collections::BTreeSet;
 use std::path::Path;
 
@@ -493,6 +494,7 @@ fn read_utf8_lines(path: &Path) -> Result<Utf8FileLines, ToolError> {
 
 #[cfg(test)]
 mod tests {
+    use crate::UnwrapOrAbort;
     use std::fs;
     use std::path::Path;
     use std::sync::Arc;
@@ -537,16 +539,16 @@ mod tests {
     }
 
     fn create_dir(root: &Path, path: &str) {
-        fs::create_dir_all(root.join(path)).expect("create test directory");
+        fs::create_dir_all(root.join(path)).unwrap_or_abort();
     }
 
     fn write_file(root: &Path, path: &str, contents: impl AsRef<[u8]>) {
-        fs::write(root.join(path), contents).expect("write test file");
+        fs::write(root.join(path), contents).unwrap_or_abort();
     }
 
     #[test]
     fn collect_grep_matches_finds_matches_with_context_and_skips_ignored_directories() {
-        let tempdir = tempfile::tempdir().expect("tempdir");
+        let tempdir = tempfile::tempdir().unwrap_or_abort();
         let root = tempdir.path();
 
         create_dir(root, "docs");
@@ -579,7 +581,7 @@ mod tests {
             },
             MAX_GREP_RENDER_BYTES,
         )
-        .expect("collect matches");
+        .unwrap_or_abort();
 
         assert_eq!(result.total_count, 3);
         assert_eq!(result.returned_count, 3);
@@ -600,7 +602,7 @@ mod tests {
 
     #[test]
     fn collect_grep_matches_applies_include_filter_and_limit() {
-        let tempdir = tempfile::tempdir().expect("tempdir");
+        let tempdir = tempfile::tempdir().unwrap_or_abort();
         let root = tempdir.path();
 
         write_file(root, "a.txt", "TODO a\n");
@@ -617,7 +619,7 @@ mod tests {
             },
             MAX_GREP_RENDER_BYTES,
         )
-        .expect("collect");
+        .unwrap_or_abort();
 
         assert_eq!(result.total_count, 2);
         assert_eq!(result.returned_count, 1);
@@ -633,7 +635,7 @@ mod tests {
 
     #[tokio::test]
     async fn fs_grep_accepts_exact_file_path_without_searching_siblings() {
-        let tempdir = tempfile::tempdir().expect("tempdir");
+        let tempdir = tempfile::tempdir().unwrap_or_abort();
         let root = tempdir.path();
         create_dir(root, "src");
         write_file(root, "src/session_lineage.rs", "fn fork_point() {}\n");
@@ -649,12 +651,12 @@ mod tests {
                 }),
             )
             .await
-            .expect("grep should accept exact file paths");
+            .unwrap_or_abort();
 
         assert!(result.display_text.contains("Found 1 matches"));
         assert!(result.display_text.contains("src/session_lineage.rs:"));
         assert!(result.display_text.contains("  Line 1: fn fork_point() {}"));
-        let structured = result.structured_json.expect("structured result");
+        let structured = result.structured_json.unwrap_or_abort();
         assert_eq!(
             structured.get("path"),
             Some(&json!("src/session_lineage.rs"))
@@ -665,7 +667,7 @@ mod tests {
     #[test]
     fn collect_grep_matches_invalid_regex_suggests_escaping_regex_metacharacters() {
         // arrange
-        let tempdir = tempfile::tempdir().expect("tempdir");
+        let tempdir = tempfile::tempdir().unwrap_or_abort();
         let root = tempdir.path();
         write_file(root, "notes.txt", "task(run_in_background\n");
 
@@ -688,7 +690,7 @@ mod tests {
 
     #[test]
     fn collect_grep_matches_literal_search_escapes_regex_metacharacters() {
-        let tempdir = tempfile::tempdir().expect("tempdir");
+        let tempdir = tempfile::tempdir().unwrap_or_abort();
         let root = tempdir.path();
         write_file(root, "notes.txt", "task(run_in_background\ntaskXrun\n");
 
@@ -701,7 +703,7 @@ mod tests {
             },
             MAX_GREP_RENDER_BYTES,
         )
-        .expect("literal search should escape pattern");
+        .unwrap_or_abort();
 
         assert_eq!(result.total_count, 1);
         assert_eq!(result.lines.len(), 1);
@@ -710,7 +712,7 @@ mod tests {
 
     #[tokio::test]
     async fn fs_grep_accepts_absolute_workspace_path() {
-        let tempdir = tempfile::tempdir().expect("tempdir");
+        let tempdir = tempfile::tempdir().unwrap_or_abort();
         let root = tempdir.path();
         write_file(root, "main.rs", "#[tokio::main]\nfn main() {}\n");
 
@@ -724,11 +726,11 @@ mod tests {
                 }),
             )
             .await
-            .expect("grep with absolute workspace path should succeed");
+            .unwrap_or_abort();
 
         assert!(result.display_text.contains("main.rs:"));
         assert!(result.display_text.contains("  Line 1: #[tokio::main]"));
-        let structured = result.structured_json.expect("structured result");
+        let structured = result.structured_json.unwrap_or_abort();
         assert_eq!(structured.get("path"), Some(&json!(".")));
     }
 }

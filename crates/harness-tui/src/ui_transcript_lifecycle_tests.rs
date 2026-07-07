@@ -1,4 +1,5 @@
 use super::super::*;
+use crate::UnwrapOrAbort;
 use harness_core::event::UserMessageSubmittedEvent;
 
 #[test]
@@ -281,15 +282,13 @@ fn transcript_selection_snapshot_cache_reuses_repeated_hit_tests() {
     app.transcript_view.selected_activity_index = 0;
 
     let area = Rect::new(0, 0, 140, 40);
-    let snapshot = transcript_selection_debug_snapshot(&app, area).expect("selection snapshot");
+    let snapshot = transcript_selection_debug_snapshot(&app, area).unwrap_or_abort();
     let row = snapshot
         .rows
         .iter()
         .position(|line| line.contains("selection text"))
-        .expect("selection text row");
-    let column = snapshot.rows[row]
-        .find("selection")
-        .expect("selection text column");
+        .unwrap_or_abort();
+    let column = snapshot.rows[row].find("selection").unwrap_or_abort();
 
     reset_transcript_selection_cache_metrics_for_test();
 
@@ -297,8 +296,8 @@ fn transcript_selection_snapshot_cache_reuses_repeated_hit_tests() {
         assert!(transcript_selection_cell(
             &app,
             area,
-            snapshot.viewport.x + u16::try_from(column + offset).expect("column fits"),
-            snapshot.viewport.y + u16::try_from(row).expect("row fits"),
+            snapshot.viewport.x + u16::try_from(column + offset).unwrap_or_abort(),
+            snapshot.viewport.y + u16::try_from(row).unwrap_or_abort(),
         )
         .is_some());
     }
@@ -314,8 +313,7 @@ fn startup_lifecycle_text_participates_in_selection_copy() {
     );
 
     let area = Rect::new(0, 0, 100, 24);
-    let snapshot = transcript_selection_debug_snapshot(&app, area)
-        .expect("startup lifecycle selection snapshot");
+    let snapshot = transcript_selection_debug_snapshot(&app, area).unwrap_or_abort();
     let purpose = app.theme().live_shell.startup.new_session_purpose;
     assert!(!snapshot.rows.iter().any(|line| line.contains(purpose)));
     assert!(!snapshot.rows.iter().any(|line| line.contains("Launch:")));
@@ -324,15 +322,15 @@ fn startup_lifecycle_text_participates_in_selection_copy() {
         .rows
         .iter()
         .position(|line| line.contains("███████╗"))
-        .expect("startup logo row is selectable");
+        .unwrap_or_abort();
 
     let hit = transcript_selection_cell(
         &app,
         area,
         snapshot.viewport.x,
-        snapshot.viewport.y + u16::try_from(row).expect("row fits"),
+        snapshot.viewport.y + u16::try_from(row).unwrap_or_abort(),
     )
-    .expect("startup row accepts selection hits");
+    .unwrap_or_abort();
     assert_eq!(hit.row, row);
 
     let copied = transcript_selection_text(
@@ -346,7 +344,7 @@ fn startup_lifecycle_text_participates_in_selection_copy() {
             },
         },
     )
-    .expect("startup text copies from selection");
+    .unwrap_or_abort();
     assert!(copied.contains("███████╗"));
 }
 
@@ -359,20 +357,19 @@ fn live_empty_state_text_participates_in_selection_copy() {
     );
 
     let area = Rect::new(0, 0, 100, 24);
-    let snapshot = transcript_selection_debug_snapshot(&app, area)
-        .expect("empty-state lifecycle selection snapshot");
+    let snapshot = transcript_selection_debug_snapshot(&app, area).unwrap_or_abort();
     let value_prop = app.theme().live_shell.empty_state.value_prop;
     let row = snapshot
         .rows
         .iter()
         .position(|line| line.contains(value_prop))
-        .expect("empty-state value prop row is selectable");
+        .unwrap_or_abort();
 
     assert!(transcript_selection_cell(
         &app,
         area,
         snapshot.viewport.x,
-        snapshot.viewport.y + u16::try_from(row).expect("row fits"),
+        snapshot.viewport.y + u16::try_from(row).unwrap_or_abort(),
     )
     .is_some());
 
@@ -387,7 +384,7 @@ fn live_empty_state_text_participates_in_selection_copy() {
             },
         },
     )
-    .expect("empty-state text copies from selection");
+    .unwrap_or_abort();
     assert_eq!(copied, value_prop);
 }
 
@@ -400,14 +397,13 @@ fn live_empty_state_wrapped_examples_participate_in_selection_copy() {
     );
 
     let area = Rect::new(0, 0, 80, 24);
-    let snapshot = transcript_selection_debug_snapshot(&app, area)
-        .expect("empty-state lifecycle selection snapshot");
+    let snapshot = transcript_selection_debug_snapshot(&app, area).unwrap_or_abort();
     let prompts = &app.theme().live_shell.empty_state.example_prompts;
     let first_example_row = snapshot
         .rows
         .iter()
         .position(|line| line.contains(prompts[0].prompt))
-        .expect("first example prompt row is selectable");
+        .unwrap_or_abort();
     let wrapped_example_row = first_example_row.saturating_add(1);
     assert!(
         snapshot.rows[wrapped_example_row].contains(prompts[1].prompt)
@@ -432,7 +428,7 @@ fn live_empty_state_wrapped_examples_participate_in_selection_copy() {
             },
         },
     )
-    .expect("wrapped example text copies from selection");
+    .unwrap_or_abort();
     assert!(
         copied.contains(prompts[1].prompt)
             || copied.contains(prompts[2].prompt)

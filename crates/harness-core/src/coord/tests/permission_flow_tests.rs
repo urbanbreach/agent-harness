@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 #[path = "permission_flow_rule_tests.rs"]
 mod permission_flow_rule_tests;
@@ -10,7 +11,7 @@ pub(super) use permission_flow_rule_tests::{
 };
 
 pub(super) async fn allow_always_records_grant_and_authorizes_matching_future_shell_call() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let mut config = test_config(temp_dir.path());
     config.permission_policy = ask_shell_permission_policy(1_000);
 
@@ -23,7 +24,7 @@ pub(super) async fn allow_always_records_grant_and_authorizes_matching_future_sh
     let run = handle
         .start_run("perm_allow_always", temp_dir.path())
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let actor = EventActor::new(ActorKind::Supervisor, Some("agent-supervisor".to_string()));
     let first_tool_call_id = handle
@@ -34,7 +35,7 @@ pub(super) async fn allow_always_records_grant_and_authorizes_matching_future_sh
             json!({"cmd": "echo durable"}),
         )
         .await
-        .expect("request first tool call");
+        .unwrap_or_abort();
 
     let before_resolve = wait_for_events(
         &handle,
@@ -59,7 +60,7 @@ pub(super) async fn allow_always_records_grant_and_authorizes_matching_future_sh
             }
             _ => None,
         })
-        .expect("permission requested");
+        .unwrap_or_abort();
 
     handle
         .resolve_permission_with_grant_scope(
@@ -69,7 +70,7 @@ pub(super) async fn allow_always_records_grant_and_authorizes_matching_future_sh
             Some(PermissionGrantScope::Run),
         )
         .await
-        .expect("resolve with durable grant");
+        .unwrap_or_abort();
     wait_for_events(
         &handle,
         &run.events_path,
@@ -86,7 +87,7 @@ pub(super) async fn allow_always_records_grant_and_authorizes_matching_future_sh
             json!({"cmd": "echo durable", "note": "different digest"}),
         )
         .await
-        .expect("matching grant starts without ask");
+        .unwrap_or_abort();
 
     wait_for_events(
         &handle,
@@ -100,7 +101,7 @@ pub(super) async fn allow_always_records_grant_and_authorizes_matching_future_sh
         },
     )
     .await;
-    handle.stop_run().await.expect("stop run");
+    handle.stop_run().await.unwrap_or_abort();
 
     let events = read_events(&run.events_path);
     let requested_count = events
@@ -126,7 +127,7 @@ pub(super) async fn allow_always_records_grant_and_authorizes_matching_future_sh
 }
 
 pub(super) async fn allow_always_shell_run_grant_does_not_authorize_changed_args() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let mut config = test_config(temp_dir.path());
     config.permission_policy = ask_shell_permission_policy(1_000);
 
@@ -139,7 +140,7 @@ pub(super) async fn allow_always_shell_run_grant_does_not_authorize_changed_args
     let run = handle
         .start_run("perm_allow_always_args", temp_dir.path())
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let actor = EventActor::new(ActorKind::Supervisor, Some("agent-supervisor".to_string()));
     let first_tool_call_id = handle
@@ -150,7 +151,7 @@ pub(super) async fn allow_always_shell_run_grant_does_not_authorize_changed_args
             json!({"cmd": "bash", "args": ["-lc", "echo durable"]}),
         )
         .await
-        .expect("request first tool call");
+        .unwrap_or_abort();
 
     let permission_id = wait_for_events(
         &handle,
@@ -174,7 +175,7 @@ pub(super) async fn allow_always_shell_run_grant_does_not_authorize_changed_args
         }
         _ => None,
     })
-    .expect("permission requested");
+    .unwrap_or_abort();
 
     handle
         .resolve_permission_with_grant_scope(
@@ -184,7 +185,7 @@ pub(super) async fn allow_always_shell_run_grant_does_not_authorize_changed_args
             Some(PermissionGrantScope::Run),
         )
         .await
-        .expect("resolve with durable grant");
+        .unwrap_or_abort();
     wait_for_events(
         &handle,
         &run.events_path,
@@ -201,7 +202,7 @@ pub(super) async fn allow_always_shell_run_grant_does_not_authorize_changed_args
             json!({"cmd": "bash", "args": ["-lc", "echo changed"]}),
         )
         .await
-        .expect("request changed args tool call");
+        .unwrap_or_abort();
 
     wait_for_events(
         &handle,
@@ -216,7 +217,7 @@ pub(super) async fn allow_always_shell_run_grant_does_not_authorize_changed_args
         },
     )
     .await;
-    handle.stop_run().await.expect("stop run");
+    handle.stop_run().await.unwrap_or_abort();
 
     let events = read_events(&run.events_path);
     let requested_count = events
@@ -233,7 +234,7 @@ pub(super) async fn allow_always_shell_run_grant_does_not_authorize_changed_args
 }
 
 pub(super) async fn static_deny_overrides_permission_grant() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let mut config = test_config(temp_dir.path());
     config.permission_policy = ask_shell_permission_policy(1_000).with_category_override(
         "locked",
@@ -251,7 +252,7 @@ pub(super) async fn static_deny_overrides_permission_grant() {
     let run = handle
         .start_run("static_deny", temp_dir.path())
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let actor = EventActor::new(ActorKind::Supervisor, Some("agent-supervisor".to_string()));
     let granted_tool_call_id = handle
@@ -262,7 +263,7 @@ pub(super) async fn static_deny_overrides_permission_grant() {
             json!({"cmd": "echo durable"}),
         )
         .await
-        .expect("request grantable call");
+        .unwrap_or_abort();
     let permission_id = wait_for_events(
         &handle,
         &run.events_path,
@@ -285,7 +286,7 @@ pub(super) async fn static_deny_overrides_permission_grant() {
         }
         _ => None,
     })
-    .expect("permission requested");
+    .unwrap_or_abort();
     handle
         .resolve_permission_with_grant_scope(
             permission_id,
@@ -294,7 +295,7 @@ pub(super) async fn static_deny_overrides_permission_grant() {
             Some(PermissionGrantScope::Run),
         )
         .await
-        .expect("record durable grant");
+        .unwrap_or_abort();
     wait_for_events(
         &handle,
         &run.events_path,
@@ -314,7 +315,7 @@ pub(super) async fn static_deny_overrides_permission_grant() {
         .expect_err("static deny must override durable grant");
     assert!(matches!(denied, CoordinatorError::PermissionDenied(_)));
 
-    handle.stop_run().await.expect("stop run");
+    handle.stop_run().await.unwrap_or_abort();
     let events = read_events(&run.events_path);
     assert!(events.iter().any(|event| {
         matches!(
@@ -333,7 +334,7 @@ pub(super) async fn static_deny_overrides_permission_grant() {
 }
 
 pub(super) async fn permission_grant_event_does_not_persist_raw_shell_command_secret() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let mut config = test_config(temp_dir.path());
     config.permission_policy = ask_shell_permission_policy(1_000);
 
@@ -345,7 +346,7 @@ pub(super) async fn permission_grant_event_does_not_persist_raw_shell_command_se
     let run = handle
         .start_run("perm_grant_redaction", temp_dir.path())
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let tool_call_id = handle
         .request_tool_call(
@@ -355,7 +356,7 @@ pub(super) async fn permission_grant_event_does_not_persist_raw_shell_command_se
             json!({"cmd": "curl -H 'Authorization: Bearer secret.value' https://example.invalid"}),
         )
         .await
-        .expect("request shell call");
+        .unwrap_or_abort();
     let permission_id = wait_for_events(
         &handle,
         &run.events_path,
@@ -378,7 +379,7 @@ pub(super) async fn permission_grant_event_does_not_persist_raw_shell_command_se
         }
         _ => None,
     })
-    .expect("permission requested");
+    .unwrap_or_abort();
 
     handle
         .resolve_permission_with_grant_scope(
@@ -388,7 +389,7 @@ pub(super) async fn permission_grant_event_does_not_persist_raw_shell_command_se
             Some(PermissionGrantScope::Run),
         )
         .await
-        .expect("resolve durable grant");
+        .unwrap_or_abort();
     wait_for_events(
         &handle,
         &run.events_path,
@@ -396,20 +397,20 @@ pub(super) async fn permission_grant_event_does_not_persist_raw_shell_command_se
         |event| matches!(event.payload, EventV1::PermissionGrantRecorded(_)),
     )
     .await;
-    handle.stop_run().await.expect("stop run");
+    handle.stop_run().await.unwrap_or_abort();
 
-    let events_body = fs::read_to_string(&run.events_path).expect("read events body");
+    let events_body = fs::read_to_string(&run.events_path).unwrap_or_abort();
     let grant_line = events_body
         .lines()
         .find(|line| line.contains("permission_grant_recorded"))
-        .expect("grant event line");
+        .unwrap_or_abort();
     assert!(!grant_line.contains("secret.value"));
     assert!(!grant_line.contains("Authorization"));
     assert!(!grant_line.contains("Bearer"));
 }
 
 pub(super) async fn perm_timeout_path_denies_deterministically() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let mut config = test_config(temp_dir.path());
     config.permission_policy = ask_shell_permission_policy(25);
 
@@ -422,7 +423,7 @@ pub(super) async fn perm_timeout_path_denies_deterministically() {
     let run = handle
         .start_run("perm_timeout", temp_dir.path())
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let tool_call_id = handle
         .request_tool_call(
@@ -432,7 +433,7 @@ pub(super) async fn perm_timeout_path_denies_deterministically() {
             json!({"cmd": "sleep 1"}),
         )
         .await
-        .expect("request tool call");
+        .unwrap_or_abort();
 
     wait_for_events(
         &handle,
@@ -447,7 +448,7 @@ pub(super) async fn perm_timeout_path_denies_deterministically() {
         },
     )
     .await;
-    handle.stop_run().await.expect("stop run");
+    handle.stop_run().await.unwrap_or_abort();
 
     let events = read_events(&run.events_path);
     assert!(events.iter().any(|event| {
@@ -474,7 +475,7 @@ pub(super) async fn perm_timeout_path_denies_deterministically() {
 }
 
 pub(super) async fn malformed_question_answer_does_not_resolve_permission() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let config = test_config(temp_dir.path());
     let handle = spawn_coordinator(
         config,
@@ -484,7 +485,7 @@ pub(super) async fn malformed_question_answer_does_not_resolve_permission() {
     let run = handle
         .start_run("question_validation", temp_dir.path())
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let question_handle = handle.clone();
     let request = tokio::spawn(async move {
@@ -523,7 +524,7 @@ pub(super) async fn malformed_question_answer_does_not_resolve_permission() {
             }
             _ => None,
         })
-        .expect("question permission requested");
+        .unwrap_or_abort();
 
     let err = handle
         .resolve_permission(
@@ -546,5 +547,5 @@ pub(super) async fn malformed_question_answer_does_not_resolve_permission() {
     );
 
     request.abort();
-    handle.stop_run().await.expect("stop run");
+    handle.stop_run().await.unwrap_or_abort();
 }

@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -374,13 +375,14 @@ struct RawModelMetadata {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::UnwrapOrAbort;
 
     static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     #[test]
     fn from_embedded_loads_all_providers() {
         // arrange
-        let catalog = ProviderCatalog::from_embedded().expect("should load");
+        let catalog = ProviderCatalog::from_embedded().unwrap_or_abort();
 
         // act
         let count = catalog.providers.len();
@@ -392,10 +394,10 @@ mod tests {
     #[test]
     fn provider_302ai_returns_valid_entry() {
         // arrange
-        let catalog = ProviderCatalog::from_embedded().expect("should load");
+        let catalog = ProviderCatalog::from_embedded().unwrap_or_abort();
 
         // act
-        let provider = catalog.provider("302ai").expect("302ai should exist");
+        let provider = catalog.provider("302ai").unwrap_or_abort();
 
         // assert
         assert_eq!(provider.name, "302.AI");
@@ -406,7 +408,7 @@ mod tests {
     #[test]
     fn provider_nonexistent_returns_none() {
         // arrange
-        let catalog = ProviderCatalog::from_embedded().expect("should load");
+        let catalog = ProviderCatalog::from_embedded().unwrap_or_abort();
 
         // act
         let result = catalog.provider("nonexistent");
@@ -418,7 +420,7 @@ mod tests {
     #[test]
     fn sorted_by_priority_puts_openai_first() {
         // arrange
-        let catalog = ProviderCatalog::from_embedded().expect("should load");
+        let catalog = ProviderCatalog::from_embedded().unwrap_or_abort();
 
         // act
         let sorted = catalog.sorted_by_priority();
@@ -439,12 +441,10 @@ mod tests {
     #[test]
     fn provider_github_copilot_has_device_code_oauth() {
         // arrange
-        let catalog = ProviderCatalog::from_embedded().expect("should load");
+        let catalog = ProviderCatalog::from_embedded().unwrap_or_abort();
 
         // act
-        let provider = catalog
-            .provider("github-copilot")
-            .expect("github-copilot should exist");
+        let provider = catalog.provider("github-copilot").unwrap_or_abort();
 
         // assert
         assert!(
@@ -462,10 +462,10 @@ mod tests {
     #[test]
     fn provider_302ai_has_only_api_key_auth_method() {
         // arrange
-        let catalog = ProviderCatalog::from_embedded().expect("should load");
+        let catalog = ProviderCatalog::from_embedded().unwrap_or_abort();
 
         // act
-        let provider = catalog.provider("302ai").expect("302ai should exist");
+        let provider = catalog.provider("302ai").unwrap_or_abort();
 
         // assert
         assert_eq!(provider.auth_methods, vec![CatalogAuthMethod::ApiKey]);
@@ -475,12 +475,12 @@ mod tests {
     fn cached_loads_from_fresh_cache_file() {
         // arrange
         let _guard = ENV_LOCK.lock().unwrap();
-        let dir = tempfile::tempdir().expect("tempdir");
+        let dir = tempfile::tempdir().unwrap_or_abort();
         let cache_path = dir.path().join("cache.json");
-        std::fs::write(&cache_path, EMBEDDED_CATALOG).expect("write cache");
+        std::fs::write(&cache_path, EMBEDDED_CATALOG).unwrap_or_abort();
 
         // act
-        let catalog = ProviderCatalog::cached(&cache_path, None).expect("should load");
+        let catalog = ProviderCatalog::cached(&cache_path, None).unwrap_or_abort();
 
         // assert
         assert_eq!(catalog.providers.len(), 116);
@@ -490,11 +490,11 @@ mod tests {
     fn cached_falls_back_to_embedded_on_missing_file() {
         // arrange
         let _guard = ENV_LOCK.lock().unwrap();
-        let dir = tempfile::tempdir().expect("tempdir");
+        let dir = tempfile::tempdir().unwrap_or_abort();
         let cache_path = dir.path().join("nonexistent.json");
 
         // act
-        let catalog = ProviderCatalog::cached(&cache_path, None).expect("should load");
+        let catalog = ProviderCatalog::cached(&cache_path, None).unwrap_or_abort();
 
         // assert
         assert_eq!(catalog.providers.len(), 116);
@@ -504,7 +504,7 @@ mod tests {
     fn cached_falls_back_to_embedded_on_fetch_failure() {
         // arrange
         let _guard = ENV_LOCK.lock().unwrap();
-        let dir = tempfile::tempdir().expect("tempdir");
+        let dir = tempfile::tempdir().unwrap_or_abort();
         let cache_path = dir.path().join("cache.json");
         let invalid_url = "http://127.0.0.1:1/nonexistent";
 
@@ -512,7 +512,7 @@ mod tests {
         let catalog = ProviderCatalog::cached(&cache_path, Some(invalid_url));
 
         // assert
-        let catalog = catalog.expect("should fall back to embedded");
+        let catalog = catalog.unwrap_or_abort();
         assert_eq!(catalog.providers.len(), 116);
     }
 
@@ -520,7 +520,7 @@ mod tests {
     fn cached_disabled_env_var_uses_embedded() {
         // arrange
         let _guard = ENV_LOCK.lock().unwrap();
-        let dir = tempfile::tempdir().expect("tempdir");
+        let dir = tempfile::tempdir().unwrap_or_abort();
         let cache_path = dir.path().join("cache.json");
         std::env::set_var("HARNESS_DISABLE_MODELS_FETCH", "1");
 
@@ -529,40 +529,40 @@ mod tests {
 
         // assert
         std::env::remove_var("HARNESS_DISABLE_MODELS_FETCH");
-        let catalog = catalog.expect("should load embedded");
+        let catalog = catalog.unwrap_or_abort();
         assert_eq!(catalog.providers.len(), 116);
     }
 
     #[test]
     fn write_cache_atomic_creates_file() {
         // arrange
-        let dir = tempfile::tempdir().expect("tempdir");
+        let dir = tempfile::tempdir().unwrap_or_abort();
         let cache_path = dir.path().join("cache.json");
         let content = r#"{"provider":{}}"#;
 
         // act
-        write_cache_atomic(&cache_path, content).expect("should write");
+        write_cache_atomic(&cache_path, content).unwrap_or_abort();
 
         // assert
-        let written = std::fs::read_to_string(&cache_path).expect("should read");
+        let written = std::fs::read_to_string(&cache_path).unwrap_or_abort();
         assert_eq!(written, content);
     }
 
     #[test]
     fn write_cache_atomic_file_permissions_0600() {
         // arrange
-        let dir = tempfile::tempdir().expect("tempdir");
+        let dir = tempfile::tempdir().unwrap_or_abort();
         let cache_path = dir.path().join("cache.json");
 
         // act
-        write_cache_atomic(&cache_path, r#"{"provider":{}}"#).expect("should write");
+        write_cache_atomic(&cache_path, r#"{"provider":{}}"#).unwrap_or_abort();
 
         // assert
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             let perms = std::fs::metadata(&cache_path)
-                .expect("metadata")
+                .unwrap_or_abort()
                 .permissions();
             assert_eq!(perms.mode() & 0o777, 0o600);
         }
@@ -599,7 +599,7 @@ mod tests {
     #[test]
     fn refresh_in_background_does_not_panic() {
         // arrange
-        let dir = tempfile::tempdir().expect("tempdir");
+        let dir = tempfile::tempdir().unwrap_or_abort();
         let cache_path = dir.path().join("cache.json");
         let invalid_url = "http://127.0.0.1:1/nonexistent".to_string();
 
@@ -616,8 +616,8 @@ mod tests {
     #[test]
     fn fetch_from_url_succeeds_with_mock_server() {
         // arrange
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
-        let addr = listener.local_addr().expect("addr");
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap_or_abort();
+        let addr = listener.local_addr().unwrap_or_abort();
         let url = format!("http://{addr}/api.json");
         let body = EMBEDDED_CATALOG.to_string();
         std::thread::spawn(move || {
@@ -638,7 +638,7 @@ mod tests {
         let catalog = ProviderCatalog::fetch_from_url(&url);
 
         // assert
-        let catalog = catalog.expect("fetch should succeed");
+        let catalog = catalog.unwrap_or_abort();
         assert_eq!(catalog.providers.len(), 116);
     }
 
@@ -646,8 +646,8 @@ mod tests {
     fn cached_writes_fetched_data_to_cache_file() {
         // arrange
         let _guard = ENV_LOCK.lock().unwrap();
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
-        let addr = listener.local_addr().expect("addr");
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap_or_abort();
+        let addr = listener.local_addr().unwrap_or_abort();
         let url = format!("http://{addr}/api.json");
         let body = EMBEDDED_CATALOG.to_string();
         std::thread::spawn(move || {
@@ -664,16 +664,16 @@ mod tests {
             }
         });
         std::thread::sleep(std::time::Duration::from_millis(50));
-        let dir = tempfile::tempdir().expect("tempdir");
+        let dir = tempfile::tempdir().unwrap_or_abort();
         let cache_path = dir.path().join("cache.json");
 
         // act
-        let catalog = ProviderCatalog::cached(&cache_path, Some(&url)).expect("should load");
+        let catalog = ProviderCatalog::cached(&cache_path, Some(&url)).unwrap_or_abort();
 
         // assert
         assert_eq!(catalog.providers.len(), 116);
         assert!(cache_path.exists(), "cache file should be written");
-        let cached = ProviderCatalog::from_path(&cache_path).expect("should parse cache");
+        let cached = ProviderCatalog::from_path(&cache_path).unwrap_or_abort();
         assert_eq!(cached.providers.len(), 116);
     }
 }

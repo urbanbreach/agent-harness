@@ -115,10 +115,8 @@ pub struct PaletteRow {
     /// Category for grouping.
     pub category: PaletteCategory,
     /// Whether this is a synthetic suggested duplicate.
-    #[allow(dead_code)]
     pub is_suggested_duplicate: bool,
     /// Whether this row is a harness-only command.
-    #[allow(dead_code)]
     pub harness_only: bool,
 }
 

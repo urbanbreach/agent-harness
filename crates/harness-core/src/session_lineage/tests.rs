@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -55,8 +56,8 @@ fn session_lineage_projects_tree_root_child_sibling_deep_ordering() {
 
 #[test]
 fn session_lineage_handles_empty_sessions() {
-    let selected = validate_stable_prefix(&[], 0).expect("empty prefix is stable");
-    let latest = latest_clone_stable_prefix(&[]).expect("empty clone prefix is stable");
+    let selected = validate_stable_prefix(&[], 0).unwrap_or_abort();
+    let latest = latest_clone_stable_prefix(&[]).unwrap_or_abort();
     let tree = project_lineage_tree(Vec::new());
 
     assert_eq!(selected.cutoff_seq, 0);
@@ -119,8 +120,8 @@ fn session_lineage_accepts_stable_prefix() {
         ),
     ];
 
-    let fork = validate_fork_stable_prefix(&events, 5).expect("selected prefix is stable");
-    let latest = latest_clone_stable_prefix(&events).expect("latest stable prefix exists");
+    let fork = validate_fork_stable_prefix(&events, 5).unwrap_or_abort();
+    let latest = latest_clone_stable_prefix(&events).unwrap_or_abort();
 
     assert_eq!(fork.cutoff_seq, 5);
     assert_eq!(fork.event_count, 5);
@@ -179,7 +180,7 @@ fn session_lineage_clears_user_prompt_by_provider_turn_metadata() {
         ),
     ];
 
-    let prefix = validate_stable_prefix(&events, 5).expect("turn id clears user prompt");
+    let prefix = validate_stable_prefix(&events, 5).unwrap_or_abort();
     assert_eq!(prefix.cutoff_seq, 5);
 }
 
@@ -209,7 +210,7 @@ fn session_lineage_treats_background_wakeup_message_as_delivered() {
         ),
     ];
 
-    let prefix = validate_stable_prefix(&events, 3).expect("background wakeup is delivered");
+    let prefix = validate_stable_prefix(&events, 3).unwrap_or_abort();
     assert_eq!(prefix.cutoff_seq, 3);
 }
 
@@ -278,13 +279,11 @@ fn session_lineage_tui_accepts_live_message_snapshot_with_unanswered_prompt() {
         ),
     ];
 
-    let live_prefix = validate_tui_fork_stable_prefix(&events, 3)
-        .expect("TUI fork accepts reference-style live message snapshots");
+    let live_prefix = validate_tui_fork_stable_prefix(&events, 3).unwrap_or_abort();
     assert_eq!(live_prefix.cutoff_seq, 3);
     assert_eq!(live_prefix.event_count, 3);
 
-    let prompt_row_prefix = validate_tui_fork_stable_prefix(&events, 2)
-        .expect("fork-before-prompt prefix remains stable");
+    let prompt_row_prefix = validate_tui_fork_stable_prefix(&events, 2).unwrap_or_abort();
     assert_eq!(prompt_row_prefix.cutoff_seq, 2);
     assert_eq!(prompt_row_prefix.event_count, 2);
 }
@@ -328,8 +327,7 @@ fn session_lineage_tui_closes_historical_native_edit_id_mismatch_by_path() {
         ),
     ];
 
-    let prefix = validate_tui_fork_stable_prefix(&events, 4)
-        .expect("historical native edit id mismatch closes by matching path");
+    let prefix = validate_tui_fork_stable_prefix(&events, 4).unwrap_or_abort();
 
     assert_eq!(prefix.cutoff_seq, 4);
     assert_eq!(prefix.event_count, 4);
@@ -356,8 +354,7 @@ fn session_lineage_tui_accepts_live_snapshot_with_unfinished_native_edit() {
         ),
     ];
 
-    let prefix = validate_tui_fork_stable_prefix(&events, 2)
-        .expect("TUI fork terminalizes live snapshots with unfinished edit state");
+    let prefix = validate_tui_fork_stable_prefix(&events, 2).unwrap_or_abort();
 
     assert_eq!(prefix.cutoff_seq, 2);
     assert_eq!(prefix.event_count, 2);
@@ -532,7 +529,7 @@ fn session_lineage_handles_first_last_and_out_of_range_cutoffs() {
     ));
     assert_eq!(
         validate_stable_prefix(&events, 4)
-            .expect("last cutoff is stable")
+            .unwrap_or_abort()
             .cutoff_seq,
         4
     );
@@ -611,7 +608,7 @@ fn session_lineage_tracks_tool_call_in_flight_cutoffs() {
     ));
     assert_eq!(
         validate_stable_prefix(&events, 4)
-            .expect("tool completion closes prefix")
+            .unwrap_or_abort()
             .cutoff_seq,
         4
     );
@@ -619,13 +616,12 @@ fn session_lineage_tracks_tool_call_in_flight_cutoffs() {
 
 #[test]
 fn session_lineage_rejects_source_event_log_changed_while_materializing() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let source_run_dir = temp_dir.path().join("run_session_lineage");
-    fs::create_dir_all(&source_run_dir).expect("create source run dir");
+    fs::create_dir_all(&source_run_dir).unwrap_or_abort();
     let events = finished_events();
     write_events_jsonl(&source_run_dir, &events);
-    let prefix =
-        validate_fork_stable_prefix(&events, events.len() as u64).expect("source prefix is stable");
+    let prefix = validate_fork_stable_prefix(&events, events.len() as u64).unwrap_or_abort();
 
     let mut changed_events = events.clone();
     changed_events.push(envelope(
@@ -663,17 +659,15 @@ fn session_lineage_rejects_source_event_log_changed_while_materializing() {
 
 #[test]
 fn session_lineage_destination_collision_cleans_temp_without_overwriting_existing_run() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let source_run_dir = temp_dir.path().join("run_session_lineage");
-    fs::create_dir_all(&source_run_dir).expect("create source run dir");
+    fs::create_dir_all(&source_run_dir).unwrap_or_abort();
     let events = finished_events();
     write_events_jsonl(&source_run_dir, &events);
-    let prefix =
-        validate_fork_stable_prefix(&events, events.len() as u64).expect("source prefix is stable");
+    let prefix = validate_fork_stable_prefix(&events, events.len() as u64).unwrap_or_abort();
     let (child_run_id, child_run_dir, temp_run_dir) = planned_child_paths(temp_dir.path());
-    fs::create_dir_all(&child_run_dir).expect("create colliding child dir");
-    fs::write(child_run_dir.join("existing.txt"), "existing child")
-        .expect("write existing child marker");
+    fs::create_dir_all(&child_run_dir).unwrap_or_abort();
+    fs::write(child_run_dir.join("existing.txt"), "existing child").unwrap_or_abort();
 
     let err = materialize_child_session_inner(
         ChildSessionMaterializationRequest {
@@ -705,13 +699,12 @@ fn session_lineage_destination_collision_cleans_temp_without_overwriting_existin
 
 #[test]
 fn session_lineage_cross_device_publish_error_cleans_temp_without_fallback() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let source_run_dir = temp_dir.path().join("run_session_lineage");
-    fs::create_dir_all(&source_run_dir).expect("create source run dir");
+    fs::create_dir_all(&source_run_dir).unwrap_or_abort();
     let events = finished_events();
     write_events_jsonl(&source_run_dir, &events);
-    let prefix =
-        validate_fork_stable_prefix(&events, events.len() as u64).expect("source prefix is stable");
+    let prefix = validate_fork_stable_prefix(&events, events.len() as u64).unwrap_or_abort();
     let (child_run_id, child_run_dir, temp_run_dir) = planned_child_paths(temp_dir.path());
 
     let err = materialize_child_session_inner(
@@ -743,13 +736,12 @@ fn session_lineage_cross_device_publish_error_cleans_temp_without_fallback() {
 
 #[test]
 fn session_lineage_materialization_uses_injected_child_run_id_source() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let source_run_dir = temp_dir.path().join("run_session_lineage");
-    fs::create_dir_all(&source_run_dir).expect("create source run dir");
+    fs::create_dir_all(&source_run_dir).unwrap_or_abort();
     let events = finished_events();
     write_events_jsonl(&source_run_dir, &events);
-    let prefix =
-        validate_fork_stable_prefix(&events, events.len() as u64).expect("source prefix is stable");
+    let prefix = validate_fork_stable_prefix(&events, events.len() as u64).unwrap_or_abort();
 
     let result = materialize_child_session_inner(
         ChildSessionMaterializationRequest {
@@ -763,12 +755,12 @@ fn session_lineage_materialization_uses_injected_child_run_id_source() {
         || {},
         |from, to| fs::rename(from, to),
     )
-    .expect("materialize child with injected id");
+    .unwrap_or_abort();
 
     assert_eq!(result.child_run_id, "run_harness_child_seeded");
     assert!(result.child_run_dir.ends_with("run_harness_child_seeded"));
     let child_events =
-        fs::read_to_string(result.child_run_dir.join(EVENTS_FILE_NAME)).expect("read child events");
+        fs::read_to_string(result.child_run_dir.join(EVENTS_FILE_NAME)).unwrap_or_abort();
     assert!(child_events.contains("run_harness_child_seeded"));
     assert!(child_events.contains("evt-run_harness_child_seeded-00000000000000000001"));
 }
@@ -810,10 +802,10 @@ fn finished_events() -> Vec<EventEnvelopeV1> {
 fn write_events_jsonl(run_dir: &Path, events: &[EventEnvelopeV1]) {
     let body = events
         .iter()
-        .map(|event| serde_json::to_string(event).expect("serialize event"))
+        .map(|event| serde_json::to_string(event).unwrap_or_abort())
         .collect::<Vec<_>>()
         .join("\n");
-    fs::write(run_dir.join("events.jsonl"), format!("{body}\n")).expect("write events");
+    fs::write(run_dir.join("events.jsonl"), format!("{body}\n")).unwrap_or_abort();
 }
 
 fn planned_child_paths(session_dir: &Path) -> (String, PathBuf, PathBuf) {
@@ -827,10 +819,10 @@ fn planned_child_paths(session_dir: &Path) -> (String, PathBuf, PathBuf) {
 
 fn session_dir_entries(session_dir: &Path) -> Vec<String> {
     let mut entries = fs::read_dir(session_dir)
-        .expect("read session dir")
+        .unwrap_or_abort()
         .map(|entry| {
             entry
-                .expect("dir entry")
+                .unwrap_or_abort()
                 .file_name()
                 .to_string_lossy()
                 .into_owned()
@@ -841,8 +833,8 @@ fn session_dir_entries(session_dir: &Path) -> Vec<String> {
 }
 
 fn assert_no_unpublished_temp_dirs(session_dir: &Path) {
-    for entry in fs::read_dir(session_dir).expect("read session dir") {
-        let entry = entry.expect("dir entry");
+    for entry in fs::read_dir(session_dir).unwrap_or_abort() {
+        let entry = entry.unwrap_or_abort();
         let name = entry.file_name();
         let name = name.to_string_lossy();
         assert!(

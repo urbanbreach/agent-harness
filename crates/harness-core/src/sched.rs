@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::collections::{BTreeMap, VecDeque};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -230,6 +231,7 @@ mod tests {
     use super::{
         ConcurrencyKey, ScheduleDecision, Scheduler, SchedulerLimits, TaskProgressSnapshot,
     };
+    use crate::UnwrapOrAbort;
 
     #[test]
     fn scheduler_limit_one_queues_then_dequeues_after_completion() {
@@ -273,9 +275,7 @@ mod tests {
         let _ = scheduler.schedule("task_1", key.clone());
         let _ = scheduler.schedule("task_2", key);
 
-        let cancelled = scheduler
-            .cancel_queued("task_2")
-            .expect("task_2 should be queued");
+        let cancelled = scheduler.cancel_queued("task_2").unwrap_or_abort();
         assert_eq!(cancelled.task_id, "task_2");
     }
 

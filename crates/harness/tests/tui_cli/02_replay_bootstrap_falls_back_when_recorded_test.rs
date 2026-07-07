@@ -1,6 +1,7 @@
+use harness::UnwrapOrAbort;
 #[test]
 fn replay_bootstrap_falls_back_when_recorded_runtime_context_missing() {
-    let run_dir = tempdir().expect("tempdir");
+    let run_dir = tempdir().unwrap_or_abort();
     write_events_jsonl(
         run_dir.path(),
         &[
@@ -50,9 +51,9 @@ fn replay_bootstrap_falls_back_when_recorded_runtime_context_missing() {
         })
         .to_string(),
     )
-    .expect("write legacy meta");
+    .unwrap_or_abort();
 
-    let events = load_events_from_run_dir(run_dir.path()).expect("load replay events");
+    let events = load_events_from_run_dir(run_dir.path()).unwrap_or_abort();
     let launch_metadata = tui_impl::replay_launch_metadata_for_test(run_dir.path(), &events);
 
     assert_eq!(launch_metadata.profile(), "legacy-profile");
@@ -62,7 +63,7 @@ fn replay_bootstrap_falls_back_when_recorded_runtime_context_missing() {
 }
 #[test]
 fn replay_bootstrap_prefers_recorded_runtime_context_from_meta() {
-    let run_dir = tempdir().expect("tempdir");
+    let run_dir = tempdir().unwrap_or_abort();
     write_events_jsonl(
         run_dir.path(),
         &[
@@ -113,9 +114,9 @@ fn replay_bootstrap_prefers_recorded_runtime_context_from_meta() {
         })
         .to_string(),
     )
-    .expect("write replay meta");
+    .unwrap_or_abort();
 
-    let events = load_events_from_run_dir(run_dir.path()).expect("load replay events");
+    let events = load_events_from_run_dir(run_dir.path()).unwrap_or_abort();
     let launch_metadata = tui_impl::replay_launch_metadata_for_test(run_dir.path(), &events);
 
     assert_eq!(launch_metadata.profile(), "archive");
@@ -132,7 +133,7 @@ fn replay_bootstrap_prefers_recorded_runtime_context_from_meta() {
 fn tui_replay_and_continue_headers_are_distinct() {
     let _guard = startup_draft_test_lock()
         .lock()
-        .expect("startup draft test lock poisoned");
+        .unwrap_or_abort();
 
     let events = vec![
         envelope(
@@ -178,8 +179,8 @@ fn tui_replay_and_continue_headers_are_distinct() {
 fn tui_cli_without_config_reaches_connect_startup() {
     let _guard = startup_draft_test_lock()
         .lock()
-        .expect("startup draft test lock poisoned");
-    let temp = tempdir().expect("tempdir");
+        .unwrap_or_abort();
+    let temp = tempdir().unwrap_or_abort();
     let output = run_harness_in(temp.path(), ["tui", "--exit-on-finish"]);
 
     assert_no_config_startup_exits_cleanly("no-config interactive startup", &output);
@@ -188,8 +189,8 @@ fn tui_cli_without_config_reaches_connect_startup() {
 fn tui_cli_explicit_launch_reuses_no_config_startup() {
     let _guard = startup_draft_test_lock()
         .lock()
-        .expect("startup draft test lock poisoned");
-    let temp = tempdir().expect("tempdir");
+        .unwrap_or_abort();
+    let temp = tempdir().unwrap_or_abort();
     let output = run_harness_in(temp.path(), ["tui", "--exit-on-finish"]);
 
     assert_no_config_startup_exits_cleanly("explicit tui launch", &output);
@@ -198,8 +199,8 @@ fn tui_cli_explicit_launch_reuses_no_config_startup() {
 fn tui_cli_legacy_tui_alias_reuses_no_config_startup() {
     let _guard = startup_draft_test_lock()
         .lock()
-        .expect("startup draft test lock poisoned");
-    let temp = tempdir().expect("tempdir");
+        .unwrap_or_abort();
+    let temp = tempdir().unwrap_or_abort();
     let output = run_harness_in(temp.path(), ["tui", "--exit-on-finish"]);
 
     assert_no_config_startup_exits_cleanly("legacy tui alias", &output);
@@ -225,8 +226,8 @@ fn assert_no_config_startup_exits_cleanly(context: &str, output: &CliHarnessOutp
 fn tui_cli_mock_flag_starts_demo_mode() {
     let _guard = startup_draft_test_lock()
         .lock()
-        .expect("startup draft test lock poisoned");
-    let temp = tempdir().expect("tempdir");
+        .unwrap_or_abort();
+    let temp = tempdir().unwrap_or_abort();
     let output = run_harness_in(temp.path(), ["tui", "--mock", "--exit-on-finish"]);
 
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -247,8 +248,8 @@ fn tui_cli_mock_flag_starts_demo_mode() {
 fn tui_mock_mode_still_boots_through_launcher() {
     let _guard = startup_draft_test_lock()
         .lock()
-        .expect("startup draft test lock poisoned");
-    let temp = tempdir().expect("tempdir");
+        .unwrap_or_abort();
+    let temp = tempdir().unwrap_or_abort();
     let output = run_harness_in(temp.path(), ["tui", "--mock", "--exit-on-finish"]);
 
     let stderr = String::from_utf8_lossy(&output.stderr);

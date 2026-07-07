@@ -1,6 +1,7 @@
+use harness_core::UnwrapOrAbort;
 #[tokio::test]
 async fn coord_title_generation_uses_isolated_hidden_title_agent_request() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = CapturingProvider::new(vec![
         "<think>hidden</think>\n\nDebugging production 500 errors\nignored",
         "main response",
@@ -20,11 +21,11 @@ async fn coord_title_generation_uses_isolated_hidden_title_agent_request() {
             temp_dir.path(),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn agent");
+        .unwrap_or_abort();
 
     coordinator
         .request_agent_turn(
@@ -33,10 +34,10 @@ async fn coord_title_generation_uses_isolated_hidden_title_agent_request() {
             "debug 500 errors in production",
         )
         .await
-        .expect("request agent turn");
+        .unwrap_or_abort();
 
     let requests = provider.requests();
-    let title_request = requests.first().expect("title request");
+    let title_request = requests.first().unwrap_or_abort();
     assert_eq!(title_request.provider_id.as_deref(), Some("mock"));
     assert_eq!(title_request.model_id, "title-model");
     assert_eq!(
@@ -73,7 +74,7 @@ async fn coord_title_generation_uses_isolated_hidden_title_agent_request() {
 }
 #[tokio::test]
 async fn coord_supervisor_first_turn_does_not_generate_session_title() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = CapturingProvider::new(vec!["main response"]);
     let mut config = CoordinatorConfig::new(temp_dir.path());
     config.provider = Arc::new(provider.clone());
@@ -90,16 +91,16 @@ async fn coord_supervisor_first_turn_does_not_generate_session_title() {
             temp_dir.path(),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn agent");
+        .unwrap_or_abort();
 
     coordinator
         .request_agent_turn(supervisor_actor(), agent_id, "supervisor bootstrap")
         .await
-        .expect("request supervisor turn");
+        .unwrap_or_abort();
     tokio::task::yield_now().await;
 
     let requests = provider.requests();
@@ -114,9 +115,9 @@ async fn coord_supervisor_first_turn_does_not_generate_session_title() {
 }
 #[tokio::test]
 async fn coord_plan_mode_prompt_includes_workflow_and_plan_file_lifecycle() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).expect("workspace");
+    fs::create_dir_all(&workspace).unwrap_or_abort();
     let provider = CapturingProvider::new(vec!["first plan turn", "second plan turn"]);
     let mut config = CoordinatorConfig::new(temp_dir.path().join("sessions"));
     config.provider = Arc::new(provider.clone());
@@ -144,7 +145,7 @@ async fn coord_plan_mode_prompt_includes_workflow_and_plan_file_lifecycle() {
     let run = coordinator
         .start_run("coord_plan_prompt", &workspace)
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let agent_id = coordinator
         .spawn_agent_idle(
             supervisor_actor(),
@@ -152,7 +153,7 @@ async fn coord_plan_mode_prompt_includes_workflow_and_plan_file_lifecycle() {
             None,
         )
         .await
-        .expect("spawn plan agent");
+        .unwrap_or_abort();
 
     coordinator
         .request_agent_turn(
@@ -161,17 +162,17 @@ async fn coord_plan_mode_prompt_includes_workflow_and_plan_file_lifecycle() {
             "plan a careful change",
         )
         .await
-        .expect("request first plan turn");
+        .unwrap_or_abort();
     tokio::task::yield_now().await;
 
     let plan_file = harness_core::plan::plan_file_display_path(&run.run_id);
     let first_requests = provider.requests();
     let first_prompt = &first_requests
         .first()
-        .expect("first provider request")
+        .unwrap_or_abort()
         .messages
         .last()
-        .expect("first user message")
+        .unwrap_or_abort()
         .content;
     assert!(first_prompt.contains("No plan file exists yet"));
     assert!(first_prompt.contains(&plan_file));
@@ -181,8 +182,8 @@ async fn coord_plan_mode_prompt_includes_workflow_and_plan_file_lifecycle() {
     assert!(first_prompt.contains("run non-readonly tools, change configs, or make commits"));
 
     let plan_path = workspace.join(harness_core::plan::plan_file_relative_path(&run.run_id));
-    fs::create_dir_all(plan_path.parent().expect("plan parent")).expect("plan dir");
-    fs::write(&plan_path, "# Plan\n").expect("write plan");
+    fs::create_dir_all(plan_path.parent().unwrap_or_abort()).unwrap_or_abort();
+    fs::write(&plan_path, "# Plan\n").unwrap_or_abort();
 
     coordinator
         .request_agent_turn(
@@ -191,30 +192,30 @@ async fn coord_plan_mode_prompt_includes_workflow_and_plan_file_lifecycle() {
             "update the existing plan",
         )
         .await
-        .expect("request second plan turn");
+        .unwrap_or_abort();
     tokio::task::yield_now().await;
 
     let second_requests = provider.requests();
     let second_prompt = &second_requests
         .get(1)
-        .expect("second provider request")
+        .unwrap_or_abort()
         .messages
         .last()
-        .expect("second user message")
+        .unwrap_or_abort()
         .content;
     assert!(second_prompt.contains("An active plan file already exists"));
     assert!(second_prompt.contains(&plan_file));
 }
 #[tokio::test]
 async fn coord_start_run_appends_run_started() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let coordinator = test_coordinator(temp_dir.path());
 
     let run = coordinator
         .start_run("coord_start", PathBuf::from("/workspace/project"))
         .await
-        .expect("start run");
-    coordinator.stop_run().await.expect("stop run");
+        .unwrap_or_abort();
+    coordinator.stop_run().await.unwrap_or_abort();
 
     assert!(run.run_dir.exists(), "run directory must exist");
     assert!(run.artifacts_dir.exists(), "artifacts directory must exist");
@@ -231,21 +232,21 @@ async fn coord_start_run_appends_run_started() {
 }
 #[tokio::test]
 async fn coord_spawn_agent_appends_agent_spawned() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let coordinator = test_agent_coordinator(temp_dir.path(), Duration::from_millis(0));
 
     let run = coordinator
         .start_run("coord_spawn", PathBuf::from("/workspace/project"))
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let actor = EventActor::new(ActorKind::Supervisor, Some("agent_supervisor".to_string()));
     let _agent_id = coordinator
         .spawn_agent(actor, "alpha", None)
         .await
-        .expect("spawn agent");
+        .unwrap_or_abort();
 
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let events = load_events(&run.events_path);
     assert!(
@@ -257,15 +258,15 @@ async fn coord_spawn_agent_appends_agent_spawned() {
 }
 #[tokio::test]
 async fn coord_stop_run_appends_run_finished() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let coordinator = test_coordinator(temp_dir.path());
 
     let run = coordinator
         .start_run("coord_stop", PathBuf::from("/workspace/project"))
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let events = load_events(&run.events_path);
     assert!(
@@ -278,36 +279,36 @@ async fn coord_stop_run_appends_run_finished() {
 }
 #[tokio::test]
 async fn coord_event_store_subscribe_emits_live_events() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let coordinator = test_coordinator(temp_dir.path());
 
     let _run = coordinator
         .start_run("coord_live_subscribe", PathBuf::from("/workspace/project"))
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
-    let store = coordinator.event_store().await.expect("get event store");
-    let mut stream = store.subscribe(2).expect("subscribe from live boundary");
+    let store = coordinator.event_store().await.unwrap_or_abort();
+    let mut stream = store.subscribe(2).unwrap_or_abort();
 
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let event = tokio::time::timeout(Duration::from_secs(1), stream.next())
         .await
-        .expect("event should arrive")
-        .expect("stream should produce item")
-        .expect("stream item should be valid");
+        .unwrap_or_abort()
+        .unwrap_or_abort()
+        .unwrap_or_abort();
 
     assert!(matches!(event.payload, EventV1::RunFinished(_)));
 }
 #[tokio::test]
 async fn coord_worker_spawn_attempt_records_policy_violation_and_returns_error() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let coordinator = test_agent_coordinator(temp_dir.path(), Duration::from_millis(0));
 
     let run = coordinator
         .start_run("coord_policy", PathBuf::from("/workspace/project"))
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let actor = EventActor::new(ActorKind::Worker, Some("agent_worker".to_string()));
     let result = coordinator.spawn_agent(actor.clone(), "alpha", None).await;
@@ -315,7 +316,7 @@ async fn coord_worker_spawn_attempt_records_policy_violation_and_returns_error()
     let idle_result = coordinator.spawn_agent_idle(actor, "alpha", None).await;
     assert!(idle_result.is_err(), "worker idle spawn must fail");
 
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let events = load_events(&run.events_path);
     assert!(
@@ -327,13 +328,13 @@ async fn coord_worker_spawn_attempt_records_policy_violation_and_returns_error()
 }
 #[tokio::test]
 async fn coord_spawn_two_agents_respects_provider_concurrency_and_queues() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let coordinator = test_agent_coordinator(temp_dir.path(), Duration::from_millis(25));
 
     let run = coordinator
         .start_run("coord_agents_queue", PathBuf::from("/workspace/project"))
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let actor = EventActor::new(ActorKind::Supervisor, Some("agent_supervisor".to_string()));
     let spawn_a = coordinator.spawn_agent(actor.clone(), "alpha", None);
@@ -358,7 +359,7 @@ async fn coord_spawn_two_agents_respects_provider_concurrency_and_queues() {
         queued >= 1 && completed == 2
     })
     .await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let queued = events
         .iter()
@@ -383,13 +384,13 @@ async fn coord_spawn_two_agents_respects_provider_concurrency_and_queues() {
 }
 #[tokio::test]
 async fn coord_spawn_unknown_profile_returns_error() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let coordinator = test_coordinator(temp_dir.path());
 
     let run = coordinator
         .start_run("coord_unknown_profile", PathBuf::from("/workspace/project"))
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let actor = EventActor::new(ActorKind::Supervisor, Some("agent_supervisor".to_string()));
     let err = coordinator
@@ -399,7 +400,7 @@ async fn coord_spawn_unknown_profile_returns_error() {
 
     assert!(matches!(err, CoordinatorError::UnknownAgent(profile) if profile == "missing_profile"));
 
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
     let events = load_events(&run.events_path);
     assert!(
         !events.iter().any(|event| matches!(

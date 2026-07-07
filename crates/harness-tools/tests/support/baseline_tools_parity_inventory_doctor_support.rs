@@ -1,3 +1,4 @@
+use harness_tools::UnwrapOrAbort;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[test]
@@ -28,7 +29,7 @@ fn doctor_catalog_summary_matches_inventory_shape() {
     let doctor_tools = details
         .get("tools")
         .and_then(serde_json::Value::as_array)
-        .expect("doctor native tool array");
+        .unwrap_or_abort();
     assert_eq!(doctor_tools.len(), native_inventory_count);
     for tool in doctor_tools {
         assert!(tool.get("canonical_id").is_some());
@@ -98,13 +99,13 @@ fn active_profiles_by_tool(report: &serde_json::Value) -> BTreeMap<String, Vec<S
     let routes = resolved_routes_details(report)
         .get("routes")
         .and_then(serde_json::Value::as_object)
-        .expect("resolved routes object");
+        .unwrap_or_abort();
 
     for (profile_name, route) in routes {
         let toolset = route
             .get("toolset")
             .and_then(serde_json::Value::as_array)
-            .expect("route toolset array");
+            .unwrap_or_abort();
         for tool in toolset.iter().filter_map(serde_json::Value::as_str) {
             active_profiles
                 .entry(tool.to_string())
@@ -125,25 +126,20 @@ fn profile_description_overrides_by_tool(
     native_catalog_details(report)
         .get("tools")
         .and_then(serde_json::Value::as_array)
-        .expect("doctor native tool array")
+        .unwrap_or_abort()
         .iter()
         .map(|tool| {
             let canonical_id = tool
                 .get("canonical_id")
                 .and_then(serde_json::Value::as_str)
-                .expect("tool canonical id")
+                .unwrap_or_abort()
                 .to_string();
             let profiles = tool
                 .get("profile_description_overrides")
                 .and_then(serde_json::Value::as_array)
-                .expect("tool profile description overrides")
+                .unwrap_or_abort()
                 .iter()
-                .map(|profile| {
-                    profile
-                        .as_str()
-                        .expect("profile description override string")
-                        .to_string()
-                })
+                .map(|profile| profile.as_str().unwrap_or_abort().to_string())
                 .collect::<Vec<_>>();
             (canonical_id, profiles)
         })
@@ -158,6 +154,7 @@ fn resolved_routes_details(report: &serde_json::Value) -> &serde_json::Value {
     doctor_check_details(report, "resolved_routes")
 }
 
+#[allow(clippy::panic, reason = "test code must panic gracefully")]
 fn doctor_check_details<'a>(
     report: &'a serde_json::Value,
     check_name: &str,
@@ -165,11 +162,11 @@ fn doctor_check_details<'a>(
     report
         .get("checks")
         .and_then(serde_json::Value::as_array)
-        .expect("doctor report checks array")
+        .unwrap_or_abort()
         .iter()
         .find(|check| check.get("name").and_then(serde_json::Value::as_str) == Some(check_name))
         .and_then(|check| check.get("details"))
-        .unwrap_or_else(|| panic!("{check_name} details"))
+        .unwrap_or_else(|| panic!("abort"))
 }
 
 fn doctor_report() -> serde_json::Value {
@@ -177,8 +174,8 @@ fn doctor_report() -> serde_json::Value {
     let doctor = std::fs::read_to_string(super::repo_path(
         "target/baseline-tools-parity/P0.1/doctor.json",
     ))
-    .expect("read P0.1 doctor artifact");
-    serde_json::from_str(&doctor).expect("parse doctor JSON")
+    .unwrap_or_abort();
+    serde_json::from_str(&doctor).unwrap_or_abort()
 }
 
 fn ensure_doctor_artifact() {

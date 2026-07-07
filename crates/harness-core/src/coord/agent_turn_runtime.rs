@@ -126,15 +126,15 @@ impl Coordinator {
         schedule_agent_turn(
             self.clock.as_ref(),
             self.redactor.as_ref(),
-            self.config.hook_command_executor.clone(),
+            Arc::clone(&self.config.hook_command_executor),
             self.job_tx.clone(),
             run_state,
             self.config.hook_runtime_config.clone(),
             self.config.compaction.clone(),
             self.config.provider_retry,
             ScheduleAgentTurnArgs {
-                provider: self.config.provider.clone(),
-                tool_registry: self.config.tool_registry.clone(),
+                provider: Arc::clone(&self.config.provider),
+                tool_registry: Arc::clone(&self.config.tool_registry),
                 profile,
                 request,
                 request_id: request_id.clone(),
@@ -159,7 +159,7 @@ impl Coordinator {
         let Some(profile) = self.config.agent_profiles.get(TITLE_AGENT_NAME).cloned() else {
             return;
         };
-        let provider = self.config.provider.clone();
+        let provider = Arc::clone(&self.config.provider);
 
         let title = match generate_harness_session_title(provider, profile, prompt).await {
             Ok(Some(title)) => title,
@@ -682,8 +682,8 @@ where
                 } else {
                     loop {
                     let outcome = run_agent_turn_phase_loop(AgentTurnPhaseLoopRequest {
-                        provider: provider.clone(),
-                        tool_registry: tool_registry.clone(),
+                        provider: Arc::clone(&provider),
+                        tool_registry: Arc::clone(&tool_registry),
                         task: &task,
                         prior_context: &prior_context,
                         job_tx: job_tx.clone(),

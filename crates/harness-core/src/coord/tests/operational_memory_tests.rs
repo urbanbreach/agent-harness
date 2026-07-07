@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 #[path = "operational_memory_context_tests.rs"]
 mod operational_memory_context_tests;
@@ -8,7 +9,7 @@ pub(super) use operational_memory_context_tests::{
 };
 
 pub(super) fn operational_memory_redacts_secret_shaped_facts() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let clock = FakeClock::new();
     let redactor = DefaultRedactor::default();
     let first_answer = 'A'.to_string().repeat(6_000);
@@ -47,7 +48,7 @@ pub(super) fn operational_memory_redacts_secret_shaped_facts() {
         &clock,
         &redactor,
     );
-    let checkpoint_json = serde_json::to_string(&checkpoint).expect("serialize checkpoint");
+    let checkpoint_json = serde_json::to_string(&checkpoint).unwrap_or_abort();
 
     assert!(!checkpoint_json.contains("sk-AbCdEf0123456789"));
     assert!(!checkpoint_json.contains("Bearer abc.def-ghi_123"));
@@ -68,7 +69,7 @@ pub(super) fn operational_memory_redacts_secret_shaped_facts() {
 }
 
 pub(super) fn operational_memory_dedupes_sorts_and_caps_paths() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let clock = FakeClock::new();
     let redactor = DefaultRedactor::default();
     let first_answer = 'A'.to_string().repeat(6_000);
@@ -131,7 +132,7 @@ pub(super) fn operational_memory_dedupes_sorts_and_caps_paths() {
 }
 
 pub(super) fn operational_memory_ignores_freeform_path_like_output() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let clock = FakeClock::new();
     let redactor = DefaultRedactor::default();
     let first_answer = 'A'.to_string().repeat(6_000);
@@ -237,13 +238,12 @@ pub(super) fn operational_memory_preserves_touched_files_legacy_union() {
 }
 
 pub(super) fn operational_memory_resume_loads_checkpoint_facts_without_filesystem_scan() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_operational_memory_resume";
     let run_dir = temp_dir.path().join(run_id);
     let checkpoint_rel = "artifacts/compactions/agent_000001/checkpoint_000010.json".to_string();
     let checkpoint_path = run_dir.join(&checkpoint_rel);
-    fs::create_dir_all(checkpoint_path.parent().expect("checkpoint parent"))
-        .expect("create checkpoint directory");
+    fs::create_dir_all(checkpoint_path.parent().unwrap_or_abort()).unwrap_or_abort();
     fs::write(
         &checkpoint_path,
         serde_json::to_string_pretty(&ProviderContextCheckpoint {
@@ -279,9 +279,9 @@ pub(super) fn operational_memory_resume_loads_checkpoint_facts_without_filesyste
             summary_source: None,
             timeline_entry: None,
         })
-        .expect("serialize checkpoint"),
+        .unwrap_or_abort(),
     )
-    .expect("write checkpoint artifact");
+    .unwrap_or_abort();
     write_restore_history_fixture(
         temp_dir.path(),
         run_id,
@@ -347,12 +347,11 @@ pub(super) fn operational_memory_resume_loads_checkpoint_facts_without_filesyste
         ],
     );
 
-    let restored = restore_provider_context_from_history(temp_dir.path(), run_id)
-        .expect("restore provider context");
+    let restored = restore_provider_context_from_history(temp_dir.path(), run_id).unwrap_or_abort();
     let summary = restored
         .get("agent_000001")
         .and_then(|context| context.compacted_summary.as_deref())
-        .expect("restored checkpoint summary");
+        .unwrap_or_abort();
     assert!(summary.contains("## Operational Memory"));
     assert!(summary.contains("src/restored_read.rs"));
     assert!(summary.contains("src/restored_modified.rs"));
@@ -414,8 +413,8 @@ fn compact_operational_memory_fixture(
         &CompactionRuntimeConfig::default(),
         &crate::coord::CompactionSummaryDecision::deterministic(&trigger),
     )
-    .expect("operational-memory compaction should succeed")
-    .expect("operational-memory compaction should write a checkpoint");
+    .unwrap_or_abort()
+    .unwrap_or_abort();
 
     let events = read_events(&run_state.info.events_path);
     let written = events
@@ -424,10 +423,10 @@ fn compact_operational_memory_fixture(
             EventV1::CompactionWritten(payload) => Some(payload.clone()),
             _ => None,
         })
-        .expect("compaction written event");
+        .unwrap_or_abort();
     let checkpoint_path = run_state.info.run_dir.join(&written.artifact_path);
-    let checkpoint_body = fs::read_to_string(&checkpoint_path).expect("read checkpoint artifact");
-    serde_json::from_str(&checkpoint_body).expect("parse checkpoint artifact")
+    let checkpoint_body = fs::read_to_string(&checkpoint_path).unwrap_or_abort();
+    serde_json::from_str(&checkpoint_body).unwrap_or_abort()
 }
 
 fn operational_memory_history_events(

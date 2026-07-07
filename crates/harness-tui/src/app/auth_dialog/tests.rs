@@ -1,6 +1,7 @@
 use super::*;
 use crate::app::{AppState, UiIntent};
 use crate::ui::render_app;
+use crate::UnwrapOrAbort;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{backend::TestBackend, Terminal};
 use std::path::PathBuf;
@@ -8,7 +9,7 @@ use std::sync::{Arc, Mutex};
 
 fn api_key_provider(id: &str, label: &str) -> ConnectProviderOption {
     ConnectProviderOption {
-        id: ProviderId::parse(id).expect("provider id parses"),
+        id: ProviderId::parse(id).unwrap_or_abort(),
         label: label.to_string(),
         description: "API key".to_string(),
         methods: vec![AuthMethodSpec::ApiKey {
@@ -30,10 +31,10 @@ fn type_text(app: &mut AppState, value: &str) {
 
 fn render_plain(app: &AppState, width: u16, height: u16) -> String {
     let backend = TestBackend::new(width, height);
-    let mut terminal = Terminal::new(backend).expect("create terminal");
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
     terminal
         .draw(|frame| render_app(frame, app))
-        .expect("draw frame");
+        .unwrap_or_abort();
     let buffer = terminal.backend().buffer();
     (0..height)
         .map(|y| {
@@ -47,7 +48,7 @@ fn render_plain(app: &AppState, width: u16, height: u16) -> String {
 
 #[test]
 fn catalog_providers_include_models_dev_api_key_entries() {
-    let catalog = ProviderCatalog::from_embedded().expect("embedded catalog loads");
+    let catalog = ProviderCatalog::from_embedded().unwrap_or_abort();
     let registry = AuthPluginRegistry::with_builtins();
 
     let providers = catalog_providers(&catalog, &registry);
@@ -56,7 +57,7 @@ fn catalog_providers_include_models_dev_api_key_entries() {
     let anthropic = providers
         .iter()
         .find(|provider| provider.id.as_str() == "anthropic")
-        .expect("anthropic provider from models.dev is listed");
+        .unwrap_or_abort();
     assert_eq!(anthropic.label, "Anthropic");
     assert!(matches!(
         anthropic.methods.as_slice(),
@@ -67,7 +68,7 @@ fn catalog_providers_include_models_dev_api_key_entries() {
 
 #[test]
 fn catalog_providers_overlay_openai_auth_methods() {
-    let catalog = ProviderCatalog::from_embedded().expect("embedded catalog loads");
+    let catalog = ProviderCatalog::from_embedded().unwrap_or_abort();
     let registry = AuthPluginRegistry::with_builtins();
 
     let providers = catalog_providers(&catalog, &registry);
@@ -75,7 +76,7 @@ fn catalog_providers_overlay_openai_auth_methods() {
     let openai = providers
         .iter()
         .find(|provider| provider.id.as_str() == "openai")
-        .expect("openai provider from models.dev is listed");
+        .unwrap_or_abort();
     assert_eq!(openai.label, "OpenAI");
     assert!(openai
         .methods
@@ -193,7 +194,7 @@ fn other_provider_api_key_emits_generic_auth_login() {
     let sink = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
     let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, Some(sink));
@@ -211,7 +212,7 @@ fn other_provider_api_key_emits_generic_auth_login() {
 
     assert_eq!(app.connect_dialog.step, ConnectDialogStep::Waiting);
     assert_eq!(
-        intents.lock().expect("lock intents").as_slice(),
+        intents.lock().unwrap_or_abort().as_slice(),
         &[UiIntent::OpenAuthManager {
             args: vec![
                 "login".to_string(),

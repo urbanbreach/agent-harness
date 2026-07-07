@@ -19,7 +19,7 @@ pub(super) fn middle_line_similarity(
             )
         })
         .sum::<f64>();
-    total / lines_to_check as f64
+    total / f64::from(u32::try_from(lines_to_check).unwrap_or(u32::MAX))
 }
 
 pub(super) fn trimmed_middle_similarity(block_lines: &[&str], search_lines: &[&str]) -> f64 {
@@ -39,7 +39,8 @@ pub(super) fn trimmed_middle_similarity(block_lines: &[&str], search_lines: &[&s
     if total == 0 {
         1.0
     } else {
-        matched as f64 / total as f64
+        f64::from(u32::try_from(matched).unwrap_or(u32::MAX))
+            / f64::from(u32::try_from(total).unwrap_or(u32::MAX))
     }
 }
 
@@ -48,7 +49,8 @@ fn line_similarity(left: &str, right: &str) -> f64 {
     if max_len == 0 {
         return 1.0;
     }
-    1.0 - levenshtein(left, right) as f64 / max_len as f64
+    1.0 - f64::from(u32::try_from(levenshtein(left, right)).unwrap_or(u32::MAX))
+        / f64::from(u32::try_from(max_len).unwrap_or(u32::MAX))
 }
 
 fn levenshtein(left: &str, right: &str) -> usize {

@@ -1,3 +1,4 @@
+use harness_tools::UnwrapOrAbort;
 use std::sync::{Arc, Mutex};
 
 mod common;
@@ -42,7 +43,7 @@ impl ScriptedRemoteSearchTransport {
     }
 
     fn requests(&self) -> Vec<RemoteSearchHttpRequest> {
-        self.requests.lock().expect("request log").clone()
+        self.requests.lock().unwrap_or_abort().clone()
     }
 }
 
@@ -52,8 +53,8 @@ impl RemoteSearchHttpTransport for ScriptedRemoteSearchTransport {
         &self,
         request: RemoteSearchHttpRequest,
     ) -> Result<RemoteSearchHttpResponse, ToolError> {
-        self.requests.lock().expect("request log").push(request);
-        self.responses.lock().expect("response script").remove(0)
+        self.requests.lock().unwrap_or_abort().push(request);
+        self.responses.lock().unwrap_or_abort().remove(0)
     }
 }
 
@@ -62,7 +63,7 @@ fn search_registry(
     config: RemoteSearchTestConfig,
 ) -> harness_core::tool::ToolRegistry {
     coordinator_registry_with_remote_search_transport(ShellAllowlist::default(), config, transport)
-        .expect("remote search test registry")
+        .unwrap_or_abort()
 }
 
 #[tokio::test]
@@ -86,7 +87,7 @@ async fn native_code_search_uses_shared_client_and_respects_tokens_contract() {
             ..RemoteSearchTestConfig::default()
         },
     );
-    let codesearch = registry.get("codesearch").expect("codesearch tool");
+    let codesearch = registry.get("codesearch").unwrap_or_abort();
 
     let min_result = codesearch
         .call(
@@ -97,7 +98,7 @@ async fn native_code_search_uses_shared_client_and_respects_tokens_contract() {
             }),
         )
         .await
-        .expect("codesearch min clamp");
+        .unwrap_or_abort();
     let default_result = codesearch
         .call(
             test_context(workspace.workspace(), "codesearch-default"),
@@ -106,7 +107,7 @@ async fn native_code_search_uses_shared_client_and_respects_tokens_contract() {
             }),
         )
         .await
-        .expect("codesearch default");
+        .unwrap_or_abort();
     let max_result = codesearch
         .call(
             test_context(workspace.workspace(), "codesearch-max"),
@@ -116,7 +117,7 @@ async fn native_code_search_uses_shared_client_and_respects_tokens_contract() {
             }),
         )
         .await
-        .expect("codesearch max clamp");
+        .unwrap_or_abort();
 
     assert_eq!(
         min_result.display_text,
@@ -125,11 +126,9 @@ async fn native_code_search_uses_shared_client_and_respects_tokens_contract() {
     assert_eq!(min_result.display_text, default_result.display_text);
     assert_eq!(min_result.display_text, max_result.display_text);
 
-    let min_json = min_result.structured_json.expect("min structured json");
-    let default_json = default_result
-        .structured_json
-        .expect("default structured json");
-    let max_json = max_result.structured_json.expect("max structured json");
+    let min_json = min_result.structured_json.unwrap_or_abort();
+    let default_json = default_result.structured_json.unwrap_or_abort();
+    let max_json = max_result.structured_json.unwrap_or_abort();
     assert_eq!(min_json["tokensNum"], json!(1000));
     assert_eq!(default_json["tokensNum"], json!(5000));
     assert_eq!(max_json["tokensNum"], json!(50000));
@@ -174,7 +173,7 @@ async fn native_code_search_handles_timeout_and_empty_context_cleanly() {
     );
     let timeout_error = timeout_registry
         .get("codesearch")
-        .expect("codesearch tool")
+        .unwrap_or_abort()
         .call(
             test_context(workspace.workspace(), "timeout-code-search"),
             json!({
@@ -201,7 +200,7 @@ async fn native_code_search_handles_timeout_and_empty_context_cleanly() {
     );
     let empty_result = empty_registry
         .get("codesearch")
-        .expect("codesearch tool")
+        .unwrap_or_abort()
         .call(
             test_context(workspace.workspace(), "empty-code-search"),
             json!({
@@ -209,9 +208,9 @@ async fn native_code_search_handles_timeout_and_empty_context_cleanly() {
             }),
         )
         .await
-        .expect("empty context should be handled");
+        .unwrap_or_abort();
     assert_eq!(empty_result.display_text, EMPTY_CODE_SEARCH_MESSAGE);
-    let empty_json = empty_result.structured_json.expect("empty structured json");
+    let empty_json = empty_result.structured_json.unwrap_or_abort();
     assert_eq!(empty_json["query"], json!("no matches fixture"));
     assert_eq!(empty_json["tokensNum"], json!(5000));
     assert_eq!(empty_json["empty"], json!(true));

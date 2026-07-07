@@ -1,3 +1,4 @@
+use harness::UnwrapOrAbort;
 #[test]
 fn doctor_cli_reports_shipped_orchestration_health() {
     let repo_root = repo_root();
@@ -8,11 +9,11 @@ fn doctor_cli_reports_shipped_orchestration_health() {
         .env("OPENAI_API_KEY", "doctor-shipped-example-test-key")
         .args([
             "--config",
-            config_path.to_str().expect("config path utf-8"),
+            config_path.to_str().unwrap_or_abort(),
             "doctor",
         ])
         .output()
-        .expect("run harness doctor with shipped example config");
+        .unwrap_or_abort();
 
     // assert
     // assert
@@ -42,12 +43,12 @@ fn doctor_cli_emits_json_report() {
         .env("OPENAI_API_KEY", "doctor-shipped-example-test-key")
         .args([
             "--config",
-            config_path.to_str().expect("config path utf-8"),
+            config_path.to_str().unwrap_or_abort(),
             "doctor",
             "--json",
         ])
         .output()
-        .expect("run harness doctor --json with shipped example config");
+        .unwrap_or_abort();
 
     assert!(
         output.status.success(),
@@ -55,37 +56,37 @@ fn doctor_cli_emits_json_report() {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    let report: Value = serde_json::from_slice(&output.stdout).expect("doctor json report");
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap_or_abort();
     assert!(report["config"]
         .as_str()
-        .expect("config display")
+        .unwrap_or_abort()
         .contains("configs/harness.example.jsonc"));
     assert_eq!(report["no_network_probes"], true);
     assert_eq!(report["provider_execution_proof"], false);
     assert_eq!(report["readiness_scope"], "local_readiness_only");
     assert!(report["checks"]
         .as_array()
-        .expect("checks array")
+        .unwrap_or_abort()
         .iter()
         .any(|check| { check["name"] == "workflow_profiles" && check["status"] == "pass" }));
     assert!(report["checks"]
         .as_array()
-        .expect("checks array")
+        .unwrap_or_abort()
         .iter()
         .any(|check| { check["name"] == "category_routes" && check["status"] == "pass" }));
     assert!(report["checks"]
         .as_array()
-        .expect("checks array")
+        .unwrap_or_abort()
         .iter()
         .any(|check| { check["name"] == "provider_credentials" && check["status"] == "pass" }));
     assert!(report["checks"]
         .as_array()
-        .expect("checks array")
+        .unwrap_or_abort()
         .iter()
         .any(|check| { check["name"] == "model_references" && check["status"] == "pass" }));
     assert!(report["checks"]
         .as_array()
-        .expect("checks array")
+        .unwrap_or_abort()
         .iter()
         .any(|check| { check["name"] == "native_tool_catalog" && check["status"] == "pass" }));
 }
@@ -101,12 +102,12 @@ fn doctor_cli_json_reports_extension_roadmap_readiness_separately() {
         .current_dir(&repo_root)
         .args([
             "--config",
-            config_path.to_str().expect("config path utf-8"),
+            config_path.to_str().unwrap_or_abort(),
             "doctor",
             "--json",
         ])
         .output()
-        .expect("run harness doctor --json with shipped example config");
+        .unwrap_or_abort();
 
     // assert
     assert!(
@@ -115,13 +116,13 @@ fn doctor_cli_json_reports_extension_roadmap_readiness_separately() {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    let report: Value = serde_json::from_slice(&output.stdout).expect("doctor json report");
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap_or_abort();
     let readiness_check = report["checks"]
         .as_array()
-        .expect("checks array")
+        .unwrap_or_abort()
         .iter()
         .find(|check| check["name"] == "extension_roadmap_readiness")
-        .expect("extension roadmap readiness check");
+        .unwrap_or_abort();
     assert_eq!(readiness_check["status"], "pass");
     assert_eq!(
         readiness_check["details"]["separate_from_runtime_health"],
@@ -159,12 +160,12 @@ fn doctor_cli_json_reports_resolved_route_metadata() {
         .current_dir(&repo_root)
         .args([
             "--config",
-            config_path.to_str().expect("config path utf-8"),
+            config_path.to_str().unwrap_or_abort(),
             "doctor",
             "--json",
         ])
         .output()
-        .expect("run harness doctor --json with shipped example config");
+        .unwrap_or_abort();
 
     // assert
     assert!(
@@ -173,13 +174,13 @@ fn doctor_cli_json_reports_resolved_route_metadata() {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    let report: Value = serde_json::from_slice(&output.stdout).expect("doctor json report");
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap_or_abort();
     let route_check = report["checks"]
         .as_array()
-        .expect("checks array")
+        .unwrap_or_abort()
         .iter()
         .find(|check| check["name"] == "resolved_routes")
-        .expect("resolved route metadata check");
+        .unwrap_or_abort();
 
     assert_eq!(route_check["status"], "pass");
     assert_eq!(route_check["details"]["routes"]["build"]["role"], "primary");
@@ -221,7 +222,7 @@ fn doctor_cli_json_reports_resolved_route_metadata() {
     );
     assert!(route_check["details"]["skills"]["project_roots"]
         .as_array()
-        .expect("project roots array")
+        .unwrap_or_abort()
         .iter()
         .any(|root| root == ".agent-harness/skills"));
     assert_eq!(
@@ -234,7 +235,7 @@ fn doctor_cli_json_reports_resolved_route_metadata() {
     );
     let skill_entries = route_check["details"]["skills"]["catalog"]["entries"]
         .as_array()
-        .expect("skill catalog entries");
+        .unwrap_or_abort();
     assert!(skill_entries.iter().any(|entry| {
         entry["name"] == "rust-best-practices"
             && entry["stable_id"] == "skill:project:rust-best-practices"
@@ -252,7 +253,7 @@ fn doctor_cli_json_reports_resolved_route_metadata() {
         }));
     }
     assert!(!serde_json::to_string(&route_check["details"]["skills"])
-        .expect("serialize compact skill readiness")
+        .unwrap_or_abort()
         .contains("Use focused diffs."));
     assert_eq!(
         route_check["details"]["routes"]["general"]["role"],
@@ -286,8 +287,8 @@ fn doctor_cli_json_reports_resolved_route_metadata() {
 
 #[test]
 fn doctor_cli_json_reports_prompt_family_asset_fallback_warning() {
-    let temp = tempdir().expect("tempdir");
-    fs::create_dir_all(temp.path().join(".agent-harness")).expect("create workspace marker");
+    let temp = tempdir().unwrap_or_abort();
+    fs::create_dir_all(temp.path().join(".agent-harness")).unwrap_or_abort();
     let config_path = temp.path().join("harness.jsonc");
     fs::write(
         &config_path,
@@ -311,18 +312,18 @@ fn doctor_cli_json_reports_prompt_family_asset_fallback_warning() {
         }
         "#,
     )
-    .expect("write claude-family config");
+    .unwrap_or_abort();
 
     let output = harness_command()
         .current_dir(temp.path())
         .args([
             "--config",
-            config_path.to_str().expect("config path utf-8"),
+            config_path.to_str().unwrap_or_abort(),
             "doctor",
             "--json",
         ])
         .output()
-        .expect("run harness doctor with missing family prompt assets");
+        .unwrap_or_abort();
 
     assert!(
         output.status.success(),
@@ -330,13 +331,13 @@ fn doctor_cli_json_reports_prompt_family_asset_fallback_warning() {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    let report: Value = serde_json::from_slice(&output.stdout).expect("doctor json report");
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap_or_abort();
     let route_check = report["checks"]
         .as_array()
-        .expect("checks array")
+        .unwrap_or_abort()
         .iter()
         .find(|check| check["name"] == "resolved_routes")
-        .expect("resolved route metadata check");
+        .unwrap_or_abort();
     let prompt_asset = &route_check["details"]["routes"]["build"]["model"]["prompt_family_asset"];
 
     assert_eq!(prompt_asset["family"], "anthropic");
@@ -348,7 +349,7 @@ fn doctor_cli_json_reports_prompt_family_asset_fallback_warning() {
     );
     assert!(prompt_asset["warning"]
         .as_str()
-        .expect("prompt asset warning")
+        .unwrap_or_abort()
         .contains("using default prompt"));
     assert_eq!(prompt_asset["no_network_probes"], true);
 }
@@ -356,15 +357,15 @@ fn doctor_cli_json_reports_prompt_family_asset_fallback_warning() {
 #[test]
 fn doctor_cli_json_reports_stable_id_disabled_skill_metadata() {
     // arrange
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     fs::create_dir_all(temp.path().join(".agent-harness/skills/disabled-doctor"))
-        .expect("create disabled skill");
+        .unwrap_or_abort();
     fs::write(
         temp.path()
             .join(".agent-harness/skills/disabled-doctor/SKILL.md"),
         "---\nname: disabled-doctor\ndescription: Disabled doctor skill\n---\n\nDISABLED DOCTOR BODY SENTINEL\n",
     )
-    .expect("write disabled skill");
+    .unwrap_or_abort();
     let config_path = temp.path().join("harness.jsonc");
     fs::write(
         &config_path,
@@ -393,19 +394,19 @@ fn doctor_cli_json_reports_stable_id_disabled_skill_metadata() {
         }
         "#,
     )
-    .expect("write config with stable-id disabled skill");
+    .unwrap_or_abort();
 
     let output = harness_command()
         .current_dir(temp.path())
         .args([
             "--config",
-            config_path.to_str().expect("config path utf-8"),
+            config_path.to_str().unwrap_or_abort(),
             "doctor",
             "--json",
         ])
         .output()
         // act
-        .expect("run harness doctor with stable-id disabled skill");
+        .unwrap_or_abort();
 
     // assert
     assert!(
@@ -416,20 +417,20 @@ fn doctor_cli_json_reports_stable_id_disabled_skill_metadata() {
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(!stdout.contains("DISABLED DOCTOR BODY SENTINEL"));
-    let report: Value = serde_json::from_slice(&output.stdout).expect("doctor json report");
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap_or_abort();
     let route_check = report["checks"]
         .as_array()
-        .expect("checks array")
+        .unwrap_or_abort()
         .iter()
         .find(|check| check["name"] == "resolved_routes")
-        .expect("resolved route metadata check");
+        .unwrap_or_abort();
     assert_eq!(
         route_check["details"]["skills"]["readiness"]["disabled_count"],
         1
     );
     let skill_entries = route_check["details"]["skills"]["catalog"]["entries"]
         .as_array()
-        .expect("skill catalog entries");
+        .unwrap_or_abort();
     assert!(skill_entries.iter().any(|entry| {
         entry["name"] == "disabled-doctor"
             && entry["stable_id"] == "skill:project:disabled-doctor"
@@ -444,7 +445,7 @@ fn doctor_cli_json_reports_disabled_builtin_skill_metadata() {
     // arrange
     // act
     // assert
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let config_path = temp.path().join("harness.jsonc");
     fs::write(
         &config_path,
@@ -473,7 +474,7 @@ fn doctor_cli_json_reports_disabled_builtin_skill_metadata() {
         }
         "#,
     )
-    .expect("write config with disabled built-in skill");
+    .unwrap_or_abort();
 
     let repo_root = repo_root();
     // act
@@ -481,12 +482,12 @@ fn doctor_cli_json_reports_disabled_builtin_skill_metadata() {
         .current_dir(&repo_root)
         .args([
             "--config",
-            config_path.to_str().expect("config path utf-8"),
+            config_path.to_str().unwrap_or_abort(),
             "doctor",
             "--json",
         ])
         .output()
-        .expect("run harness doctor with disabled built-in skill");
+        .unwrap_or_abort();
 
     assert!(
         output.status.success(),
@@ -496,20 +497,20 @@ fn doctor_cli_json_reports_disabled_builtin_skill_metadata() {
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(!stdout.contains("Use git with atomic, reviewable intent"));
-    let report: Value = serde_json::from_slice(&output.stdout).expect("doctor json report");
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap_or_abort();
     let route_check = report["checks"]
         .as_array()
-        .expect("checks array")
+        .unwrap_or_abort()
         .iter()
         .find(|check| check["name"] == "resolved_routes")
-        .expect("resolved route metadata check");
+        .unwrap_or_abort();
     assert_eq!(
         route_check["details"]["skills"]["readiness"]["disabled_count"],
         1
     );
     let skill_entries = route_check["details"]["skills"]["catalog"]["entries"]
         .as_array()
-        .expect("skill catalog entries");
+        .unwrap_or_abort();
     assert!(skill_entries.iter().any(|entry| {
         entry["name"] == "git-master"
             && entry["stable_id"] == "skill:project:git-master"

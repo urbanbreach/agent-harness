@@ -1,7 +1,8 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 pub(crate) async fn background_task_completion_notifies_parent_once_and_queues_active_parent() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let clock = FakeClock::new();
     let redactor = DefaultRedactor::default();
     let mut run_state = background_task_notification_run_state(temp_dir.path(), "run_bg_once");
@@ -22,7 +23,7 @@ pub(crate) async fn background_task_completion_notifies_parent_once_and_queues_a
             metadata: None,
         }),
     )
-    .expect("append terminal completion");
+    .unwrap_or_abort();
 
     append_background_task_notification_and_schedule(
         &clock,
@@ -41,7 +42,7 @@ pub(crate) async fn background_task_completion_notifies_parent_once_and_queues_a
         &long_summary,
     )
     .await
-    .expect("schedule parent wakeup");
+    .unwrap_or_abort();
     append_background_task_notification_and_schedule(
         &clock,
         &redactor,
@@ -59,7 +60,7 @@ pub(crate) async fn background_task_completion_notifies_parent_once_and_queues_a
         &long_summary,
     )
     .await
-    .expect("duplicate terminal is ignored");
+    .unwrap_or_abort();
 
     let events = read_events(&run_state.info.events_path);
     let notifications = events
@@ -91,13 +92,13 @@ pub(crate) async fn background_task_completion_notifies_parent_once_and_queues_a
                     == notification
                         .delivered_turn_request_id
                         .clone()
-                        .expect("delivered request id") =>
+                        .unwrap_or_abort() =>
             {
                 Some(payload.text.clone())
             }
             _ => None,
         })
-        .expect("parent reminder message");
+        .unwrap_or_abort();
     assert!(reminder.contains("[BACKGROUND TASK COMPLETED]"));
     assert!(reminder.contains("ID: agent_child"));
     assert!(reminder.contains("Request ID: req_child"));
@@ -111,7 +112,7 @@ pub(crate) async fn background_task_completion_notifies_parent_once_and_queues_a
     let pending = run_state
         .pending_agent_wakeups
         .get("agent_parent")
-        .expect("active parent turn receives drainable wakeup");
+        .unwrap_or_abort();
     assert_eq!(pending.len(), 1);
     assert_eq!(pending[0].notification_text, reminder);
     assert_eq!(
@@ -121,7 +122,7 @@ pub(crate) async fn background_task_completion_notifies_parent_once_and_queues_a
 }
 
 pub(crate) async fn background_task_completion_caps_and_redacts_description_and_summary() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let clock = FakeClock::new();
     let redactor = DefaultRedactor::default();
     let mut run_state = background_task_notification_run_state(temp_dir.path(), "run_bg_redact");
@@ -140,7 +141,7 @@ pub(crate) async fn background_task_completion_caps_and_redacts_description_and_
             metadata: None,
         }),
     )
-    .expect("append terminal completion");
+    .unwrap_or_abort();
     let mut child = background_child_task(true);
     child.description = format!("{} sk-SECRETSECRETSECRETSECRET", "d".repeat(400));
     let summary = format!("{} Bearer token.secret", "s".repeat(900));
@@ -162,7 +163,7 @@ pub(crate) async fn background_task_completion_caps_and_redacts_description_and_
         &summary,
     )
     .await
-    .expect("append redacted notification");
+    .unwrap_or_abort();
 
     let notification = read_events(&run_state.info.events_path)
         .into_iter()
@@ -170,7 +171,7 @@ pub(crate) async fn background_task_completion_caps_and_redacts_description_and_
             EventV1::BackgroundTaskNotification(payload) => Some(payload),
             _ => None,
         })
-        .expect("background notification");
+        .unwrap_or_abort();
     assert!(notification.description.chars().count() <= 161);
     assert!(notification.summary.chars().count() <= 512);
     assert!(!notification.description.contains("sk-SECRET"));
@@ -189,7 +190,7 @@ pub(crate) async fn background_task_completion_caps_and_redacts_description_and_
             }
             _ => None,
         })
-        .expect("parent reminder");
+        .unwrap_or_abort();
     assert!(!reminder.contains("sk-SECRET"));
     assert!(!reminder.contains("token.secret"));
 }

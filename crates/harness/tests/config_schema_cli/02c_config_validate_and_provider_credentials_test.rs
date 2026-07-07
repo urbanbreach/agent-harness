@@ -1,8 +1,9 @@
+use harness::UnwrapOrAbort;
 #[test]
 fn doctor_cli_fails_invalid_category_routes_even_when_some_are_missing() {
     // arrange
-    let temp = tempdir().expect("tempdir");
-    fs::create_dir_all(temp.path().join(".agent-harness")).expect("create session parent");
+    let temp = tempdir().unwrap_or_abort();
+    fs::create_dir_all(temp.path().join(".agent-harness")).unwrap_or_abort();
     let config_path = temp.path().join("harness.jsonc");
     fs::write(
         &config_path,
@@ -27,18 +28,18 @@ fn doctor_cli_fails_invalid_category_routes_even_when_some_are_missing() {
         }
         "#,
     )
-    .expect("write invalid category route config");
+    .unwrap_or_abort();
 
     let output = harness_command()
         .current_dir(temp.path())
         .args([
             "--config",
-            config_path.to_str().expect("config path utf-8"),
+            config_path.to_str().unwrap_or_abort(),
             "doctor",
         ])
         .output()
         // act
-        .expect("run harness doctor with invalid category routes");
+        .unwrap_or_abort();
 
     // assert
     assert!(!output.status.success());
@@ -51,8 +52,8 @@ fn doctor_cli_fails_invalid_category_routes_even_when_some_are_missing() {
 #[test]
 fn doctor_cli_reports_model_profile_fallback_targets() {
     // arrange
-    let temp = tempdir().expect("tempdir");
-    fs::create_dir_all(temp.path().join(".agent-harness")).expect("create session parent");
+    let temp = tempdir().unwrap_or_abort();
+    fs::create_dir_all(temp.path().join(".agent-harness")).unwrap_or_abort();
     let config_path = temp.path().join("harness.jsonc");
     fs::write(
         &config_path,
@@ -83,19 +84,19 @@ fn doctor_cli_reports_model_profile_fallback_targets() {
         }
         "#,
     )
-    .expect("write config with model profile fallback");
+    .unwrap_or_abort();
 
     let output = harness_command()
         .current_dir(temp.path())
         .args([
             "--config",
-            config_path.to_str().expect("config path utf-8"),
+            config_path.to_str().unwrap_or_abort(),
             "doctor",
             "--json",
         ])
         .output()
         // act
-        .expect("run harness doctor with model profile fallback");
+        .unwrap_or_abort();
 
     // assert
     assert!(
@@ -104,25 +105,25 @@ fn doctor_cli_reports_model_profile_fallback_targets() {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    let report: Value = serde_json::from_slice(&output.stdout).expect("doctor json report");
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap_or_abort();
     let model_check = report["checks"]
         .as_array()
-        .expect("checks array")
+        .unwrap_or_abort()
         .iter()
         .find(|check| check["name"] == "model_references")
-        .expect("model references check");
+        .unwrap_or_abort();
     assert_eq!(model_check["status"], "pass");
     let message = model_check["message"]
         .as_str()
-        .expect("model check message");
+        .unwrap_or_abort();
     assert!(message.contains("1 model profile(s) resolve"));
     assert!(message.contains("fallback target(s)"));
 }
 #[test]
 fn doctor_cli_warns_when_provider_credentials_are_missing() {
     // arrange
-    let temp = tempdir().expect("tempdir");
-    fs::create_dir_all(temp.path().join(".agent-harness")).expect("create session parent");
+    let temp = tempdir().unwrap_or_abort();
+    fs::create_dir_all(temp.path().join(".agent-harness")).unwrap_or_abort();
     let config_path = temp.path().join("harness.jsonc");
     fs::write(
         &config_path,
@@ -142,18 +143,18 @@ fn doctor_cli_warns_when_provider_credentials_are_missing() {
         }
         "#,
     )
-    .expect("write config without credentials");
+    .unwrap_or_abort();
 
     let output = harness_command()
         .current_dir(temp.path())
         .args([
             "--config",
-            config_path.to_str().expect("config path utf-8"),
+            config_path.to_str().unwrap_or_abort(),
             "doctor",
         ])
         .output()
         // act
-        .expect("run harness doctor with missing credentials");
+        .unwrap_or_abort();
 
     // assert
     assert!(
@@ -174,8 +175,8 @@ fn doctor_cli_reports_env_provider_credentials_without_revealing_values() {
         "HARNESS_DOCTOR_TEST_API_KEY",
         Some("super-secret-test-key"),
         |command| {
-            let temp = tempdir().expect("tempdir");
-            fs::create_dir_all(temp.path().join(".agent-harness")).expect("create session parent");
+            let temp = tempdir().unwrap_or_abort();
+            fs::create_dir_all(temp.path().join(".agent-harness")).unwrap_or_abort();
             let config_path = temp.path().join("harness.jsonc");
             fs::write(
                 &config_path,
@@ -196,19 +197,19 @@ fn doctor_cli_reports_env_provider_credentials_without_revealing_values() {
             }
             "#,
             )
-            .expect("write env credential config");
+            .unwrap_or_abort();
 
             let output = command
                 .current_dir(temp.path())
                 .args([
                     "--config",
-                    config_path.to_str().expect("config path utf-8"),
+                    config_path.to_str().unwrap_or_abort(),
                     "doctor",
                     "--json",
                 ])
                 .output()
                 // act
-                .expect("run harness doctor with env credentials");
+                .unwrap_or_abort();
 
             // assert
             assert!(
@@ -219,17 +220,17 @@ fn doctor_cli_reports_env_provider_credentials_without_revealing_values() {
             );
             let stdout = String::from_utf8_lossy(&output.stdout);
             assert!(!stdout.contains("super-secret-test-key"));
-            let report: Value = serde_json::from_slice(&output.stdout).expect("doctor json report");
+            let report: Value = serde_json::from_slice(&output.stdout).unwrap_or_abort();
             let credential_check = report["checks"]
                 .as_array()
-                .expect("checks array")
+                .unwrap_or_abort()
                 .iter()
                 .find(|check| check["name"] == "provider_credentials")
-                .expect("provider credential check");
+                .unwrap_or_abort();
             assert_eq!(credential_check["status"], "pass");
             assert!(credential_check["message"]
                 .as_str()
-                .expect("credential message")
+                .unwrap_or_abort()
                 .contains("1 via environment"));
         },
     );

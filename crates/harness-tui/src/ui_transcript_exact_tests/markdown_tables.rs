@@ -1,4 +1,5 @@
 use super::super::*;
+use crate::UnwrapOrAbort;
 
 #[cfg(test)]
 pub(crate) fn exact_test_markdown_tables_match_reference_top_level_columns() {
@@ -50,7 +51,7 @@ pub(crate) fn exact_test_markdown_table_selection_matches_rendered_rows() {
 
     let snapshot =
         transcript_selection_debug_snapshot(&app, ratatui::layout::Rect::new(0, 0, 96, 24))
-            .expect("selection snapshot");
+            .unwrap_or_abort();
     let rendered = snapshot.rows.join("\n");
 
     assert!(
@@ -120,7 +121,7 @@ pub(crate) fn exact_test_markdown_table_rich_selection_matches_rendered_rows() {
 
     let snapshot =
         transcript_selection_debug_snapshot(&app, ratatui::layout::Rect::new(0, 0, 96, 24))
-            .expect("selection snapshot");
+            .unwrap_or_abort();
     let rendered = snapshot.rows.join("\n");
 
     assert!(

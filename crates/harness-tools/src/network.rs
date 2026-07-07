@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::collections::BTreeMap;
 use std::fs;
 use std::sync::Arc;
@@ -567,29 +568,26 @@ fn artifact_extension(mime: &str, kind: WebFetchBodyKind) -> &'static str {
     }
 }
 
-static HTML_TAGS_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"<[^>]+>").expect("html tag regex"));
-static WHITESPACE_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\s+").expect("whitespace regex"));
+static HTML_TAGS_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<[^>]+>").unwrap_or_abort());
+static WHITESPACE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s+").unwrap_or_abort());
 static H1_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?is)<h1[^>]*>(.*?)</h1>").expect("h1 regex"));
+    LazyLock::new(|| Regex::new(r"(?is)<h1[^>]*>(.*?)</h1>").unwrap_or_abort());
 static H2_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?is)<h2[^>]*>(.*?)</h2>").expect("h2 regex"));
+    LazyLock::new(|| Regex::new(r"(?is)<h2[^>]*>(.*?)</h2>").unwrap_or_abort());
 static H3_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?is)<h3[^>]*>(.*?)</h3>").expect("h3 regex"));
+    LazyLock::new(|| Regex::new(r"(?is)<h3[^>]*>(.*?)</h3>").unwrap_or_abort());
 static LI_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?is)<li[^>]*>(.*?)</li>").expect("li regex"));
+    LazyLock::new(|| Regex::new(r"(?is)<li[^>]*>(.*?)</li>").unwrap_or_abort());
 static BLOCK_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?is)</?(p|div|section|article|main|header|footer|ul|ol)[^>]*>")
-        .expect("block regex")
+    Regex::new(r"(?is)</?(p|div|section|article|main|header|footer|ul|ol)[^>]*>").unwrap_or_abort()
 });
 static LINK_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"(?is)<a[^>]*href=["']([^"']+)["'][^>]*>(.*?)</a>"#).expect("link regex")
+    Regex::new(r#"(?is)<a[^>]*href=["']([^"']+)["'][^>]*>(.*?)</a>"#).unwrap_or_abort()
 });
 static MARKDOWN_WHITESPACE_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"[ \t]+").expect("markdown whitespace regex"));
+    LazyLock::new(|| Regex::new(r"[ \t]+").unwrap_or_abort());
 static MARKDOWN_BLANK_LINE_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\n{3,}").expect("markdown blank line regex"));
+    LazyLock::new(|| Regex::new(r"\n{3,}").unwrap_or_abort());
 
 fn html_to_text(html: &str) -> String {
     let without_tags = HTML_TAGS_RE.replace_all(html, " ");

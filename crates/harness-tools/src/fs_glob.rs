@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::collections::BTreeSet;
 use std::path::Path;
 
@@ -177,6 +178,7 @@ fn compile_glob_matcher(pattern: &str) -> Result<GlobMatcher, ToolError> {
 
 #[cfg(test)]
 mod tests {
+    use crate::UnwrapOrAbort;
     use std::fs;
     use std::path::Path;
     use std::sync::Arc;
@@ -195,11 +197,11 @@ mod tests {
     }
 
     fn create_dir(root: &Path, path: &str) {
-        fs::create_dir_all(root.join(path)).expect("create test directory");
+        fs::create_dir_all(root.join(path)).unwrap_or_abort();
     }
 
     fn write_file(root: &Path, path: &str, contents: &str) {
-        fs::write(root.join(path), contents).expect("write test file");
+        fs::write(root.join(path), contents).unwrap_or_abort();
     }
 
     fn test_context(workspace_root: &Path, tool_call_id: &str) -> ToolContext {
@@ -224,7 +226,7 @@ mod tests {
 
     #[test]
     fn collect_glob_matches_supports_recursive_double_star_patterns() {
-        let tempdir = tempfile::tempdir().expect("tempdir");
+        let tempdir = tempfile::tempdir().unwrap_or_abort();
         let root = tempdir.path();
 
         create_dir(root, "src/nested");
@@ -242,7 +244,7 @@ mod tests {
         write_file(root, ".agent-harness/sessions/run-1/session.rs", "ignored");
 
         let result =
-            collect_glob_matches(root, root, glob_search("**/*.rs", 100)).expect("collect matches");
+            collect_glob_matches(root, root, glob_search("**/*.rs", 100)).unwrap_or_abort();
 
         assert_eq!(
             result.paths,
@@ -256,7 +258,7 @@ mod tests {
 
     #[test]
     fn collect_glob_matches_applies_limit_after_deterministic_sort() {
-        let tempdir = tempfile::tempdir().expect("tempdir");
+        let tempdir = tempfile::tempdir().unwrap_or_abort();
         let root = tempdir.path();
 
         create_dir(root, "src");
@@ -264,8 +266,7 @@ mod tests {
         write_file(root, "src/a.rs", "");
         write_file(root, "src/b.rs", "");
 
-        let result =
-            collect_glob_matches(root, root, glob_search("**/*.rs", 2)).expect("collect matches");
+        let result = collect_glob_matches(root, root, glob_search("**/*.rs", 2)).unwrap_or_abort();
 
         assert_eq!(result.paths, vec!["src/a.rs", "src/b.rs"]);
         assert_eq!(result.total_count, 3);
@@ -277,7 +278,7 @@ mod tests {
     #[test]
     fn collect_glob_matches_applies_slash_pattern_relative_to_search_base() {
         // arrange
-        let tempdir = tempfile::tempdir().expect("tempdir");
+        let tempdir = tempfile::tempdir().unwrap_or_abort();
         let root = tempdir.path();
 
         create_dir(root, "src/nested");
@@ -286,7 +287,7 @@ mod tests {
 
         // act
         let result = collect_glob_matches(root, &root.join("src"), glob_search("nested/*.rs", 100))
-            .expect("collect matches");
+            .unwrap_or_abort();
 
         // assert
         assert_eq!(result.paths, vec!["src/nested/mod.rs"]);
@@ -294,7 +295,7 @@ mod tests {
 
     #[tokio::test]
     async fn fs_glob_accepts_absolute_workspace_paths() {
-        let tempdir = tempfile::tempdir().expect("tempdir");
+        let tempdir = tempfile::tempdir().unwrap_or_abort();
         let workspace = tempdir.path().join("workspace");
         create_dir(&workspace, "src");
         write_file(&workspace, "src/lib.rs", "pub fn lib() {}\n");
@@ -308,9 +309,9 @@ mod tests {
                 }),
             )
             .await
-            .expect("glob tool should accept absolute workspace paths");
+            .unwrap_or_abort();
 
-        let structured = result.structured_json.expect("structured json");
+        let structured = result.structured_json.unwrap_or_abort();
         assert_eq!(structured.get("path"), Some(&json!(".")));
         assert_eq!(structured.get("paths"), Some(&json!(["src/lib.rs"])));
     }

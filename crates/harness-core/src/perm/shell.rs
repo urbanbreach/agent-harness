@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -412,12 +413,13 @@ fn unique(values: impl IntoIterator<Item = String>) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::{scan_shell_command, shell_permission_pattern_matches};
+    use crate::UnwrapOrAbort;
 
     #[test]
     fn scan_shell_command_extracts_pipeline_patterns() {
         let request =
             scan_shell_command("git status --short | rg '^ M' && cargo test -p harness-core")
-                .expect("scan should succeed");
+                .unwrap_or_abort();
 
         assert_eq!(
             request.patterns,
@@ -439,8 +441,7 @@ mod tests {
 
     #[test]
     fn scan_shell_command_extracts_redirection_path() {
-        let request =
-            scan_shell_command("printf hi > artifacts/out.txt").expect("scan should succeed");
+        let request = scan_shell_command("printf hi > artifacts/out.txt").unwrap_or_abort();
 
         assert_eq!(
             request.commands[0].path_patterns[0].path,
@@ -455,7 +456,7 @@ mod tests {
         let command = "grep needle leak && cat other && bash script.sh && node app.js";
 
         // act
-        let request = scan_shell_command(command).expect("scan should succeed");
+        let request = scan_shell_command(command).unwrap_or_abort();
 
         // assert
         assert_eq!(request.commands[0].path_patterns[0].path, "leak");
@@ -470,8 +471,8 @@ mod tests {
 
     #[test]
     fn scan_shell_command_extracts_touch_rm_patterns() {
-        let request = scan_shell_command("touch src/new.rs; rm -f target/tmp.txt")
-            .expect("scan should succeed");
+        let request =
+            scan_shell_command("touch src/new.rs; rm -f target/tmp.txt").unwrap_or_abort();
 
         assert_eq!(
             request.always_patterns,
@@ -481,7 +482,7 @@ mod tests {
 
     #[test]
     fn scan_shell_command_extracts_python3_c_always_pattern() {
-        let request = scan_shell_command("python3 -c 'print(1)'").expect("scan should succeed");
+        let request = scan_shell_command("python3 -c 'print(1)'").unwrap_or_abort();
 
         assert_eq!(request.commands[0].arity_tokens, vec!["python3", "-c"]);
         assert_eq!(request.always_patterns, vec!["python3 -c *".to_string()]);
@@ -489,8 +490,7 @@ mod tests {
 
     #[test]
     fn shell_always_pattern_uses_cargo_test_prefix() {
-        let request =
-            scan_shell_command("cargo test -p harness-core --lib").expect("scan should succeed");
+        let request = scan_shell_command("cargo test -p harness-core --lib").unwrap_or_abort();
 
         assert_eq!(request.commands[0].arity_tokens, vec!["cargo", "test"]);
         assert_eq!(request.always_patterns, vec!["cargo test *".to_string()]);

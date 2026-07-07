@@ -563,7 +563,7 @@ fn write_before_artifact(
 }
 
 fn line_count(content: &str) -> u32 {
-    content.lines().count() as u32
+    u32::try_from(content.lines().count()).unwrap_or(u32::MAX)
 }
 
 fn read_existing_file(path: &Path, failure_context: &str) -> Result<String, ToolError> {

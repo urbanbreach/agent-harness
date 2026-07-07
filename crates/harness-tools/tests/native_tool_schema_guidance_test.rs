@@ -1,5 +1,6 @@
 use harness_core::config::ShellAllowlist;
 use harness_tools::coordinator_registry;
+use harness_tools::UnwrapOrAbort;
 
 #[test]
 fn high_risk_provider_visible_tool_fields_have_model_guidance() {
@@ -71,12 +72,10 @@ fn tool_descriptions_route_models_away_from_known_smoke_test_confusions() {
     let registry = coordinator_registry(ShellAllowlist::default());
 
     // act
-    let codesearch = registry
-        .get("codesearch")
-        .expect("codesearch tool should exist");
-    let read = registry.get("read").expect("read tool should exist");
-    let edit = registry.get("edit").expect("edit tool should exist");
-    let task = registry.get("task").expect("task tool should exist");
+    let codesearch = registry.get("codesearch").unwrap_or_abort();
+    let read = registry.get("read").unwrap_or_abort();
+    let edit = registry.get("edit").unwrap_or_abort();
+    let task = registry.get("task").unwrap_or_abort();
 
     // assert
     assert!(!read.description().contains("hashlineAnchors"));
@@ -106,7 +105,7 @@ fn tool_descriptions_route_models_away_from_known_smoke_test_confusions() {
     let query_description = codesearch_schema
         .pointer("/properties/query/description")
         .and_then(serde_json::Value::as_str)
-        .expect("codesearch query schema description");
+        .unwrap_or_abort();
     assert!(query_description.contains("Remote/public"));
     assert!(query_description.contains("not local workspace symbol lookup"));
 
@@ -114,26 +113,27 @@ fn tool_descriptions_route_models_away_from_known_smoke_test_confusions() {
     let category_description = task_schema
         .pointer("/properties/category/description")
         .and_then(serde_json::Value::as_str)
-        .expect("task category schema description");
+        .unwrap_or_abort();
     let subagent_description = task_schema
         .pointer("/properties/subagent_type/description")
         .and_then(serde_json::Value::as_str)
-        .expect("task subagent_type schema description");
+        .unwrap_or_abort();
     assert!(category_description.contains("Required when subagent_type is omitted"));
     assert!(subagent_description.contains("Required when category is omitted"));
 }
 
+#[allow(clippy::panic, reason = "test code must panic gracefully")]
 fn assert_described_fields(tool_id: &str, schema: &serde_json::Value, fields: &[&str]) {
     let properties = schema
         .get("properties")
         .and_then(serde_json::Value::as_object)
-        .unwrap_or_else(|| panic!("{tool_id} schema missing properties object: {schema}"));
+        .unwrap_or_else(|| panic!("abort"));
     for field in fields {
         let description = properties
             .get(*field)
             .and_then(|field_schema| field_schema.get("description"))
             .and_then(serde_json::Value::as_str)
-            .unwrap_or_else(|| panic!("{tool_id}.{field} missing description in {schema}"));
+            .unwrap_or_else(|| panic!("abort"));
         assert!(
             description.trim().len() >= 16,
             "{tool_id}.{field} description is too sparse: {description}"

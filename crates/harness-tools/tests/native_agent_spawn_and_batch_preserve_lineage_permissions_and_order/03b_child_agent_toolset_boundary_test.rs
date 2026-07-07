@@ -1,3 +1,4 @@
+use harness_tools::UnwrapOrAbort;
 #[tokio::test]
 async fn child_agent_toolset_boundary_is_enforced() {
     // arrange
@@ -26,13 +27,13 @@ async fn child_agent_toolset_boundary_is_enforced() {
             }),
         )
         .await
-        .expect("spawn restricted child");
+        .unwrap_or_abort();
 
     wait_for_tool_call_finish(&run.events_path, &task_tool_call_id).await;
     let events = read_events(&run.events_path);
     let finished = find_finished(&events, &task_tool_call_id);
     // act
-    let output = finished.output_json.expect("task structured output");
+    let output = finished.output_json.unwrap_or_abort();
     // assert
     assert_eq!(
         output["route"]["loaded_skills"][0]["allowed_tools"],
@@ -42,12 +43,12 @@ async fn child_agent_toolset_boundary_is_enforced() {
     assert_eq!(output["route"]["permission_posture"]["edit"], json!("deny_by_toolset"));
     assert!(!output["route"]["toolset"]
         .as_array()
-        .expect("child toolset")
+        .unwrap_or_abort()
         .iter()
         .any(|tool| tool == "bash" || tool == "edit"));
     let child_session_id = output["child_session_id"]
         .as_str()
-        .expect("child session id");
+        .unwrap_or_abort();
 
     let denied = handle
         .request_tool_call(

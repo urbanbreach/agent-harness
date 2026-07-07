@@ -8,6 +8,7 @@ use crate::ui::{
     transcript_selection_cell, transcript_selection_debug_snapshot, SubagentFooterTarget,
     TranscriptMouseTarget, TranscriptScrollbarHit, WheelTarget,
 };
+use crate::UnwrapOrAbort;
 use crossterm::event::{MouseButton, MouseEvent};
 use harness_core::event::{
     ActorKind, AgentSpawnedEvent, CompactionWrittenEvent, EditAppliedEvent, EventActor,
@@ -85,19 +86,19 @@ fn key_with_modifiers(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
 
 fn render_debug(app: &AppState, width: u16, height: u16) -> String {
     let backend = TestBackend::new(width, height);
-    let mut terminal = Terminal::new(backend).expect("create terminal");
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
     terminal
         .draw(|frame| render_app(frame, app))
-        .expect("draw frame");
+        .unwrap_or_abort();
     format!("{:?}", terminal.backend().buffer())
 }
 
 fn render_text(app: &AppState, width: u16, height: u16) -> String {
     let backend = TestBackend::new(width, height);
-    let mut terminal = Terminal::new(backend).expect("create terminal");
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
     terminal
         .draw(|frame| render_app(frame, app))
-        .expect("draw frame");
+        .unwrap_or_abort();
     terminal
         .backend()
         .buffer()
@@ -171,7 +172,7 @@ fn compaction_written_status_surfaces_deterministic_fallback() {
     ));
 
     // act
-    let status = app.compaction_status().expect("compaction status");
+    let status = app.compaction_status().unwrap_or_abort();
     // assert
     assert_eq!(status.state, CompactionState::Written);
     assert!(status.message.contains("deterministic fallback"));
@@ -183,10 +184,10 @@ fn transcript_click_position(app: &AppState, needle: &str) -> (u16, u16) {
 
 fn transcript_click_position_in_area(app: &AppState, area: Rect, needle: &str) -> (u16, u16) {
     let backend = TestBackend::new(area.width, area.height);
-    let mut terminal = Terminal::new(backend).expect("create terminal");
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
     terminal
         .draw(|frame| render_app(frame, app))
-        .expect("draw transcript frame");
+        .unwrap_or_abort();
     let buffer = terminal.backend().buffer();
 
     for y in 0..area.height {
@@ -194,7 +195,7 @@ fn transcript_click_position_in_area(app: &AppState, area: Rect, needle: &str) -
             .map(|x| buffer[(x, y)].symbol())
             .collect::<String>();
         if let Some(column) = row.find(needle) {
-            return (u16::try_from(column + 1).expect("column fits"), y);
+            return (u16::try_from(column + 1).unwrap_or_abort(), y);
         }
     }
 
@@ -203,10 +204,10 @@ fn transcript_click_position_in_area(app: &AppState, area: Rect, needle: &str) -
 
 fn rendered_cell_bg(app: &AppState, column: u16, row: u16) -> Color {
     let backend = TestBackend::new(TEST_FRAME_AREA.width, TEST_FRAME_AREA.height);
-    let mut terminal = Terminal::new(backend).expect("create terminal");
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
     terminal
         .draw(|frame| render_app(frame, app))
-        .expect("draw transcript frame");
+        .unwrap_or_abort();
     terminal.backend().buffer()[(column, row)].bg
 }
 
@@ -236,7 +237,7 @@ fn session_background_emits_intent_from_default_prompt_focus() {
         None,
         false,
         Some(Arc::new(move |intent| {
-            captured_intents.lock().expect("intent lock").push(intent);
+            captured_intents.lock().unwrap_or_abort().push(intent);
         })),
     );
     app.apply_keybindings(default_navigation_keybindings());
@@ -254,7 +255,7 @@ fn session_background_emits_intent_from_default_prompt_focus() {
         Some("foreground subagent backgrounding requested")
     );
     assert!(matches!(
-        intents.lock().expect("intent lock").as_slice(),
+        intents.lock().unwrap_or_abort().as_slice(),
         [UiIntent::BackgroundForegroundSubagents]
     ));
 }
@@ -295,13 +296,13 @@ delegate_test!(subagent_footer_up_only_release_does_not_activate => subagent_foo
 mod opencode_subagent_parity_apps;
 
 fn write_events_jsonl(run_dir: &Path, events: &[EventEnvelopeV1]) {
-    fs::create_dir_all(run_dir).expect("create run dir");
+    fs::create_dir_all(run_dir).unwrap_or_abort();
     let body = events
         .iter()
-        .map(|event| serde_json::to_string(event).expect("serialize event"))
+        .map(|event| serde_json::to_string(event).unwrap_or_abort())
         .collect::<Vec<_>>()
         .join("\n");
-    fs::write(run_dir.join("events.jsonl"), format!("{body}\n")).expect("write events");
+    fs::write(run_dir.join("events.jsonl"), format!("{body}\n")).unwrap_or_abort();
 }
 
 fn transcript_selection_test_app_with_text(transcript_text: &str) -> AppState {
@@ -450,13 +451,12 @@ fn operator_sidebar_selection_test_app() -> AppState {
 }
 
 fn transcript_selection_text_position(app: &AppState, needle: &str) -> (u16, u16) {
-    let snapshot = transcript_selection_debug_snapshot(app, TEST_FRAME_AREA)
-        .expect("transcript selection snapshot");
+    let snapshot = transcript_selection_debug_snapshot(app, TEST_FRAME_AREA).unwrap_or_abort();
     for (row_idx, row) in snapshot.rows.iter().enumerate() {
         if let Some(column_idx) = row.find(needle) {
             return (
-                snapshot.viewport.x + u16::try_from(column_idx).expect("column fits"),
-                snapshot.viewport.y + u16::try_from(row_idx).expect("row fits"),
+                snapshot.viewport.x + u16::try_from(column_idx).unwrap_or_abort(),
+                snapshot.viewport.y + u16::try_from(row_idx).unwrap_or_abort(),
             );
         }
     }
@@ -469,20 +469,20 @@ fn transcript_selection_text_bounds(app: &AppState, needle: &str) -> (u16, u16, 
     (
         column,
         row,
-        u16::try_from(needle.chars().count()).expect("needle width fits"),
+        u16::try_from(needle.chars().count()).unwrap_or_abort(),
     )
 }
 
 fn operator_sidebar_text_bounds(app: &AppState, needle: &str) -> (u16, u16, u16) {
     let backend = TestBackend::new(TEST_FRAME_AREA.width, TEST_FRAME_AREA.height);
-    let mut terminal = Terminal::new(backend).expect("create terminal");
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
     terminal
         .draw(|frame| render_app(frame, app))
-        .expect("draw app frame");
+        .unwrap_or_abort();
     let buffer = terminal.backend().buffer();
     let sidebar = FrameLayoutPlan::for_app(app, TEST_FRAME_AREA)
         .operator_sidebar
-        .expect("operator sidebar visible");
+        .unwrap_or_abort();
 
     for y in sidebar.y..sidebar.bottom() {
         let row = (sidebar.x..sidebar.right())
@@ -490,11 +490,11 @@ fn operator_sidebar_text_bounds(app: &AppState, needle: &str) -> (u16, u16, u16)
             .collect::<String>();
         if let Some(column) = row.find(needle) {
             return (
-                sidebar.x.saturating_add(
-                    u16::try_from(row[..column].chars().count()).expect("column fits"),
-                ),
+                sidebar
+                    .x
+                    .saturating_add(u16::try_from(row[..column].chars().count()).unwrap_or_abort()),
                 y,
-                u16::try_from(needle.chars().count()).expect("needle width fits"),
+                u16::try_from(needle.chars().count()).unwrap_or_abort(),
             );
         }
     }

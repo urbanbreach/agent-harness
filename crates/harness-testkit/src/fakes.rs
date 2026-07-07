@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
 use std::path::PathBuf;
@@ -102,8 +103,9 @@ impl fmt::Display for FakeCommandError {
             Self::NoScriptedCommand { invocation } => {
                 write!(
                     f,
-                    "no scripted command for {} {:?}",
-                    invocation.program, invocation.args
+                    "no scripted command for {} {}",
+                    invocation.program,
+                    invocation.args.join(" ")
                 )
             }
             Self::Mismatch {
@@ -112,8 +114,11 @@ impl fmt::Display for FakeCommandError {
                 actual,
             } => write!(
                 f,
-                "scripted command mismatch: expected {} {:?}, got {} {:?}",
-                expected_program, expected_args, actual.program, actual.args
+                "scripted command mismatch: expected {} {}, got {} {}",
+                expected_program,
+                expected_args.join(" "),
+                actual.program,
+                actual.args.join(" ")
             ),
         }
     }
@@ -292,11 +297,11 @@ impl FakeHttpClient {
     }
 
     pub fn calls(&self) -> Vec<HttpInvocation> {
-        self.calls.lock().expect("HTTP calls lock poisoned").clone()
+        self.calls.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     pub fn remaining_scripted_calls(&self) -> usize {
-        self.script.lock().expect("HTTP script lock poisoned").len()
+        self.script.lock().unwrap_or_else(|e| e.into_inner()).len()
     }
 }
 
@@ -304,13 +309,13 @@ impl HttpClient for FakeHttpClient {
     fn send(&self, invocation: HttpInvocation) -> Result<HttpOutput, FakeHttpError> {
         self.calls
             .lock()
-            .expect("HTTP calls lock poisoned")
+            .unwrap_or_else(|e| e.into_inner())
             .push(invocation.clone());
 
         let scripted = self
             .script
             .lock()
-            .expect("HTTP script lock poisoned")
+            .unwrap_or_else(|e| e.into_inner())
             .pop_front()
             .ok_or_else(|| FakeHttpError::NoScriptedCall {
                 invocation: Box::new(invocation.clone()),
@@ -343,11 +348,11 @@ impl FakeCommandRunner {
     }
 
     pub fn calls(&self) -> Vec<CommandInvocation> {
-        self.calls.lock().expect("calls lock poisoned").clone()
+        self.calls.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     pub fn remaining_scripted_commands(&self) -> usize {
-        self.script.lock().expect("script lock poisoned").len()
+        self.script.lock().unwrap_or_else(|e| e.into_inner()).len()
     }
 }
 
@@ -355,13 +360,13 @@ impl CommandRunner for FakeCommandRunner {
     fn run(&self, invocation: CommandInvocation) -> Result<CommandOutput, FakeCommandError> {
         self.calls
             .lock()
-            .expect("calls lock poisoned")
+            .unwrap_or_else(|e| e.into_inner())
             .push(invocation.clone());
 
         let scripted = self
             .script
             .lock()
-            .expect("script lock poisoned")
+            .unwrap_or_else(|e| e.into_inner())
             .pop_front()
             .ok_or_else(|| FakeCommandError::NoScriptedCommand {
                 invocation: Box::new(invocation.clone()),
@@ -386,6 +391,7 @@ mod tests {
         FakeHttpClient, FakeHttpError, FakeIdSource, HttpClient, HttpInvocation, HttpOutput,
         ScriptedCommand, ScriptedHttpCall,
     };
+    use crate::UnwrapOrAbort;
     use serde_json::json;
 
     #[test]
@@ -401,12 +407,12 @@ mod tests {
 
         let first = runner
             .run(CommandInvocation::new("git").args(["status", "--short"]))
-            .expect("first command");
+            .unwrap_or_abort();
         assert_eq!(first.stdout, b"clean".to_vec());
 
         let second = runner
             .run(CommandInvocation::new("cargo").args(["test"]))
-            .expect("second command");
+            .unwrap_or_abort();
         assert_eq!(second.exit_code, 101);
         assert_eq!(second.stderr, b"failed".to_vec());
 
@@ -447,7 +453,7 @@ mod tests {
 
         let first = client
             .send(HttpInvocation::new("GET", "https://example.test/one"))
-            .expect("first response");
+            .unwrap_or_abort();
         assert_eq!(first.status, 200);
         assert_eq!(first.body_text(), "ok");
 
@@ -457,7 +463,7 @@ mod tests {
                     .bearer_token("token")
                     .body(json!({"name":"demo"})),
             )
-            .expect("second response");
+            .unwrap_or_abort();
         assert_eq!(second.status, 201);
 
         assert_eq!(client.remaining_scripted_calls(), 0);

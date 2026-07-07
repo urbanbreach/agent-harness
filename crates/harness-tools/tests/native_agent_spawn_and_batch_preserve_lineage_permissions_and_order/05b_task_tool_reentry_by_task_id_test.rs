@@ -1,3 +1,4 @@
+use harness_tools::UnwrapOrAbort;
 #[tokio::test]
 async fn task_tool_reenters_existing_child_session_by_task_id() {
     // arrange
@@ -20,7 +21,7 @@ async fn task_tool_reenters_existing_child_session_by_task_id() {
             }),
         )
         .await
-        .expect("request initial task");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &first_tool_call_id).await;
 
     let first_events = read_events(&run.events_path);
@@ -28,16 +29,16 @@ async fn task_tool_reenters_existing_child_session_by_task_id() {
     let first_output = first_finished
         .output_json
         .as_ref()
-        .expect("initial task output json");
+        .unwrap_or_abort();
     let child_task_id = first_output
         .get("task_id")
         .and_then(Value::as_str)
-        .expect("child task id")
+        .unwrap_or_abort()
         .to_string();
     let first_request_id = first_output
         .get("child_request_id")
         .and_then(Value::as_str)
-        .expect("child request id")
+        .unwrap_or_abort()
         .to_string();
     wait_for_request_terminal(&run.events_path, &first_request_id).await;
 
@@ -56,7 +57,7 @@ async fn task_tool_reenters_existing_child_session_by_task_id() {
             }),
         )
         .await
-        .expect("request task reentry by task_id");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &reentry_tool_call_id).await;
 
     let reentry_events = read_events(&run.events_path);
@@ -67,7 +68,7 @@ async fn task_tool_reenters_existing_child_session_by_task_id() {
     let reentry_output = reentry_finished
         .output_json
         .as_ref()
-        .expect("reentry task output json");
+        .unwrap_or_abort();
     assert_eq!(
         reentry_output
             .get("child_session_id")
@@ -85,11 +86,11 @@ async fn task_tool_reenters_existing_child_session_by_task_id() {
     let second_request_id = reentry_output
         .get("child_request_id")
         .and_then(Value::as_str)
-        .expect("second child request id")
+        .unwrap_or_abort()
         .to_string();
     wait_for_request_terminal(&run.events_path, &second_request_id).await;
 
-    handle.stop_run().await.expect("stop run");
+    handle.stop_run().await.unwrap_or_abort();
     let events = read_events(&run.events_path);
     let child_spawn_count = events
         .iter()

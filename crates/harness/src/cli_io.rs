@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::fs;
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -132,6 +133,7 @@ pub(crate) async fn wait_for_tool_finished(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::UnwrapOrAbort;
     use harness_core::event::{ActorKind, EventActor, EventV1, RunFinishedEvent, SCHEMA_VERSION};
     use tempfile::TempDir;
 
@@ -156,10 +158,10 @@ mod tests {
     fn write_events(path: &Path, events: &[EventEnvelopeV1]) {
         let content = events
             .iter()
-            .map(|event| serde_json::to_string(event).expect("serialize event"))
+            .map(|event| serde_json::to_string(event).unwrap_or_abort())
             .collect::<Vec<_>>()
             .join("\n");
-        fs::write(path, format!("{content}\n")).expect("write events file");
+        fs::write(path, format!("{content}\n")).unwrap_or_abort();
     }
 
     #[test]
@@ -169,7 +171,7 @@ mod tests {
         let to = dir.path().join("to.jsonl");
         fs::write(&from, "test\n").unwrap();
 
-        copy_events_file(&from, &to).expect("copy events file");
+        copy_events_file(&from, &to).unwrap_or_abort();
 
         assert_eq!(fs::read_to_string(&to).unwrap(), "test\n");
     }
@@ -181,7 +183,7 @@ mod tests {
         let to = dir.path().join("nested/dir/to.jsonl");
         fs::write(&from, "test\n").unwrap();
 
-        copy_events_file(&from, &to).expect("copy events file");
+        copy_events_file(&from, &to).unwrap_or_abort();
 
         assert_eq!(fs::read_to_string(&to).unwrap(), "test\n");
     }

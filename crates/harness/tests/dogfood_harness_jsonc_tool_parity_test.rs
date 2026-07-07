@@ -1,6 +1,8 @@
+use harness::UnwrapOrAbort;
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use tempfile::{tempdir, TempDir};
 
@@ -21,9 +23,9 @@ struct PromptRunFixture {
 
 impl PromptRunFixture {
     fn new() -> Self {
-        let workspace = tempdir().expect("dogfood prompt workspace");
+        let workspace = tempdir().unwrap_or_abort();
         let config_path = workspace.path().join("harness.jsonc");
-        fs::copy(repo_root().join("harness.jsonc"), &config_path).expect("copy harness.jsonc");
+        fs::copy(repo_root().join("harness.jsonc"), &config_path).unwrap_or_abort();
         let session_dir = workspace.path().join("sessions");
         let out_path = workspace.path().join("events.jsonl");
         Self {
@@ -64,17 +66,21 @@ impl PromptRunFixture {
 
     fn write_fixture_file(&self, relative_path: &str, body: &str) -> PathBuf {
         let path = self.workspace.path().join(relative_path);
-        let parent = path.parent().expect("fixture file has parent");
-        fs::create_dir_all(parent).expect("create fixture parent");
-        fs::write(&path, body).expect("write fixture file");
+        let parent = path.parent().unwrap_or_abort();
+        fs::create_dir_all(parent).unwrap_or_abort();
+        fs::write(&path, body).unwrap_or_abort();
         path
     }
 
     fn events_body(&self) -> String {
-        fs::read_to_string(&self.out_path).expect("read copied prompt events")
+        fs::read_to_string(&self.out_path).unwrap_or_abort()
     }
 }
 
+#[allow(
+    clippy::clone_on_ref_ptr,
+    reason = "trait object coercion requires .clone() not Arc::clone"
+)]
 #[test]
 fn vague_prompt_uses_model_visible_tool_definitions_to_select_glob() {
     // arrange: a workspace with a markdown file and a provider scripted to choose tools.
@@ -95,9 +101,7 @@ fn vague_prompt_uses_model_visible_tool_definitions_to_select_glob() {
         .iter()
         .find(|request| request.tool("glob").is_some())
         .unwrap_or_else(|| panic!("provider request did not expose glob; requests: {requests:?}"));
-    let glob_tool = first_request
-        .tool("glob")
-        .expect("model request exposes glob tool definition");
+    let glob_tool = first_request.tool("glob").unwrap_or_abort();
     assert_eq!(glob_tool.parameters["type"], "object");
     assert!(first_request.tool("grep").is_some());
     assert!(first_request.tool("read").is_some());
@@ -111,6 +115,10 @@ fn vague_prompt_uses_model_visible_tool_definitions_to_select_glob() {
     assert!(events_body.contains("decision.md"));
 }
 
+#[allow(
+    clippy::clone_on_ref_ptr,
+    reason = "trait object coercion requires .clone() not Arc::clone"
+)]
 #[test]
 fn malformed_tool_args_return_recovery_text_then_corrected_read_succeeds() {
     // arrange: a workspace text file and a provider scripted to emit bad args then recover.
@@ -136,7 +144,7 @@ fn malformed_tool_args_return_recovery_text_then_corrected_read_succeeds() {
         .iter()
         .map(|request| request.messages_text())
         .find(|messages| messages.contains(RECOVERY_INSTRUCTION))
-        .expect("provider receives recovery text after malformed args");
+        .unwrap_or_abort();
     assert!(recovery_request_text.contains(SERDE_DETAIL));
 
     let events_body = fixture.events_body();
@@ -159,5 +167,5 @@ fn assert_prompt_success(output: &CliHarnessOutput) {
 }
 
 fn path_string(path: &Path) -> String {
-    path.to_str().expect("fixture path is utf-8").to_string()
+    path.to_str().unwrap_or_abort().to_string()
 }

@@ -1,6 +1,7 @@
+use harness_core::UnwrapOrAbort;
 #[test]
 fn resume_plan_resolves_tool_identity_and_lifecycle_without_tui_inference() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_dir = temp_dir.path().join("run_tool_lifecycle_identity");
     write_events(
         &run_dir,
@@ -136,7 +137,7 @@ fn resume_plan_resolves_tool_identity_and_lifecycle_without_tui_inference() {
     let pending_alias = plan
         .tool_calls
         .get("toolcall_000101")
-        .expect("pending alias tool snapshot");
+        .unwrap_or_abort();
     assert_eq!(
         pending_alias.lifecycle_state,
         Some(ToolCallLifecycleState::Pending)
@@ -174,7 +175,7 @@ fn resume_plan_resolves_tool_identity_and_lifecycle_without_tui_inference() {
     let running_mcp_direct = plan
         .tool_calls
         .get("toolcall_000102")
-        .expect("running direct MCP tool snapshot");
+        .unwrap_or_abort();
     assert_eq!(
         running_mcp_direct.lifecycle_state,
         Some(ToolCallLifecycleState::Running)
@@ -205,7 +206,7 @@ fn resume_plan_resolves_tool_identity_and_lifecycle_without_tui_inference() {
     let error_mcp_wrapper = plan
         .tool_calls
         .get("toolcall_000103")
-        .expect("failed wrapper MCP tool snapshot");
+        .unwrap_or_abort();
     assert_eq!(
         error_mcp_wrapper.lifecycle_state,
         Some(ToolCallLifecycleState::Error)
@@ -236,7 +237,7 @@ fn resume_plan_resolves_tool_identity_and_lifecycle_without_tui_inference() {
     let completed_native = plan
         .tool_calls
         .get("toolcall_000104")
-        .expect("completed native tool snapshot");
+        .unwrap_or_abort();
     assert_eq!(
         completed_native.lifecycle_state,
         Some(ToolCallLifecycleState::Completed)
@@ -259,7 +260,7 @@ fn resume_plan_resolves_tool_identity_and_lifecycle_without_tui_inference() {
 }
 #[test]
 fn resume_plan_rejects_sessions_with_pending_permissions() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_dir = temp_dir.path().join("run_pending_permission");
     write_events(
         &run_dir,
@@ -320,7 +321,7 @@ fn resume_plan_rejects_sessions_with_pending_permissions() {
 }
 #[test]
 fn resume_plan_rejects_sessions_with_tasks_in_flight() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_dir = temp_dir.path().join("run_tasks_in_flight");
     write_events(
         &run_dir,
@@ -377,7 +378,7 @@ fn resume_plan_rejects_sessions_with_tasks_in_flight() {
 }
 #[test]
 fn resume_plan_rejects_non_monotonic_or_corrupt_logs() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
 
     let non_monotonic_dir = temp_dir.path().join("run_non_monotonic");
     write_events(
@@ -407,7 +408,7 @@ fn resume_plan_rejects_non_monotonic_or_corrupt_logs() {
         .is_some_and(|reason| reason.contains("corrupt or non-monotonic")));
 
     let corrupt_dir = temp_dir.path().join("run_corrupt");
-    fs::create_dir_all(&corrupt_dir).expect("create run dir");
+    fs::create_dir_all(&corrupt_dir).unwrap_or_abort();
     let valid_first_line = serde_json::to_string(&envelope(
         1,
         EventV1::RunStarted(RunStartedEvent {
@@ -415,12 +416,12 @@ fn resume_plan_rejects_non_monotonic_or_corrupt_logs() {
             workspace_root: "/workspace/project".to_string(),
         }),
     ))
-    .expect("serialize first event");
+    .unwrap_or_abort();
     fs::write(
         corrupt_dir.join("events.jsonl"),
         format!("{valid_first_line}\n{{bad-json}}\n"),
     )
-    .expect("write corrupt events");
+    .unwrap_or_abort();
 
     let corrupt_plan = inspect_resume_plan(&corrupt_dir);
     assert!(!corrupt_plan.is_resumable);

@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -709,7 +710,8 @@ impl Tool for ShellRunTool {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
+    use crate::UnwrapOrAbort;
+    use std::sync::{Arc, Mutex};
 
     use super::{
         ShellCommandInvocation, ShellCommandRunner, ShellOutputPreviewLimits, ShellProcessOutput,
@@ -741,7 +743,7 @@ mod tests {
         }
 
         fn calls(&self) -> Vec<(ShellCommandInvocation, u64)> {
-            self.calls.lock().expect("fake calls lock").clone()
+            self.calls.lock().unwrap_or_abort().clone()
         }
     }
 
@@ -754,7 +756,7 @@ mod tests {
         ) -> Result<ShellProcessOutput, ToolError> {
             self.calls
                 .lock()
-                .expect("fake calls lock")
+                .unwrap_or_abort()
                 .push((invocation, timeout_ms));
             Ok(self.output.clone())
         }
@@ -827,18 +829,18 @@ mod tests {
 
     #[test]
     fn shell_env_bash_candidate_accepts_existing_absolute_bash_path() {
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = tempfile::tempdir().unwrap_or_abort();
         let bash_path = temp.path().join("bash");
-        std::fs::write(&bash_path, "#!/usr/bin/env bash\n").expect("write bash stub");
+        std::fs::write(&bash_path, "#!/usr/bin/env bash\n").unwrap_or_abort();
 
         let candidate = super::shell_env_bash_candidate(bash_path.to_str());
         assert_eq!(candidate.as_deref(), bash_path.to_str());
     }
     #[tokio::test]
     async fn bash_spills_large_output_to_artifact_for_event_stability() {
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = tempfile::tempdir().unwrap_or_abort();
         let registry = coordinator_registry(ShellAllowlist::default());
-        let bash = registry.get("bash").expect("bash tool");
+        let bash = registry.get("bash").unwrap_or_abort();
 
         let context = shell_test_context(temp.path(), "toolcall-bash-truncated");
         let result = bash
@@ -850,12 +852,12 @@ mod tests {
                 }),
             )
             .await
-            .expect("bash should succeed");
+            .unwrap_or_abort();
 
         assert!(result.display_text.contains("[truncated:"));
         assert_eq!(result.artifacts.len(), 1);
 
-        let metadata = result.structured_json.expect("structured json");
+        let metadata = result.structured_json.unwrap_or_abort();
         assert_eq!(metadata["truncated"], json!(true));
         assert!(metadata.get("stdout").is_none());
         assert!(metadata.get("stderr").is_none());
@@ -867,9 +869,9 @@ mod tests {
     }
     #[tokio::test]
     async fn bash_direct_exec_allows_find_in_permission_patterns() {
-        let temp = tempfile::tempdir().expect("tempdir");
-        std::fs::create_dir(temp.path().join("docs")).expect("docs dir");
-        std::fs::write(temp.path().join("docs/example.txt"), "hello\n").expect("fixture file");
+        let temp = tempfile::tempdir().unwrap_or_abort();
+        std::fs::create_dir(temp.path().join("docs")).unwrap_or_abort();
+        std::fs::write(temp.path().join("docs/example.txt"), "hello\n").unwrap_or_abort();
         let bash =
             ShellRunTool::with_runner(ShellAllowlist::default(), ShellRunTool::default_runner());
 
@@ -882,16 +884,16 @@ mod tests {
                 }),
             )
             .await
-            .expect("find should be allowed in permission-pattern mode");
+            .unwrap_or_abort();
 
         assert!(result.display_text.contains("docs/example.txt"));
-        let structured = result.structured_json.expect("structured shell output");
+        let structured = result.structured_json.unwrap_or_abort();
         assert_eq!(structured.get("status"), Some(&json!(0)));
     }
 
     #[tokio::test]
     async fn shell_run_accepts_duplicate_wrapper_command_when_it_matches_cmd() {
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = tempfile::tempdir().unwrap_or_abort();
         let shell = ShellRunTool::with_runner(
             ShellAllowlist {
                 executables: vec!["printf".to_string()],
@@ -913,10 +915,10 @@ mod tests {
                 }),
             )
             .await
-            .expect("matching duplicate cmd/command should run as direct exec");
+            .unwrap_or_abort();
 
         assert_eq!(result.display_text, "shell-ok");
-        let structured = result.structured_json.expect("structured shell output");
+        let structured = result.structured_json.unwrap_or_abort();
         assert_eq!(structured.get("cmd"), Some(&json!("printf")));
         assert_eq!(structured.get("stdout"), Some(&json!("shell-ok")));
         assert_eq!(structured.get("success"), Some(&json!(true)));
@@ -924,7 +926,7 @@ mod tests {
 
     #[tokio::test]
     async fn shell_run_direct_invocation_uses_injected_runner_without_spawning() {
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = tempfile::tempdir().unwrap_or_abort();
         let runner = FakeShellCommandRunner::success("direct-ok");
         let shell = ShellRunTool::with_runner(
             ShellAllowlist {
@@ -932,7 +934,7 @@ mod tests {
                 cwd_roots: Vec::new(),
                 ..ShellAllowlist::default()
             },
-            runner.clone(),
+            std::sync::Arc::<FakeShellCommandRunner>::clone(&runner),
         );
 
         let result = shell
@@ -946,7 +948,7 @@ mod tests {
                 }),
             )
             .await
-            .expect("fake direct shell run");
+            .unwrap_or_abort();
 
         assert_eq!(result.display_text, "direct-ok");
         let calls = runner.calls();
@@ -959,9 +961,12 @@ mod tests {
 
     #[tokio::test]
     async fn shell_run_wrapper_invocation_uses_injected_runner_without_spawning_bash() {
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = tempfile::tempdir().unwrap_or_abort();
         let runner = FakeShellCommandRunner::success("wrapper-ok");
-        let shell = ShellRunTool::with_runner(ShellAllowlist::default(), runner.clone());
+        let shell = ShellRunTool::with_runner(
+            ShellAllowlist::default(),
+            std::sync::Arc::<FakeShellCommandRunner>::clone(&runner),
+        );
 
         let result = shell
             .call(
@@ -973,7 +978,7 @@ mod tests {
                 }),
             )
             .await
-            .expect("fake wrapper shell run");
+            .unwrap_or_abort();
 
         assert_eq!(result.display_text, "wrapper-ok");
         let calls = runner.calls();
@@ -989,7 +994,7 @@ mod tests {
 
     #[tokio::test]
     async fn shell_run_wrapper_records_permission_patterns_in_metadata() {
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = tempfile::tempdir().unwrap_or_abort();
         let runner = FakeShellCommandRunner::success("hello");
         let shell = ShellRunTool::with_runner(ShellAllowlist::default(), runner);
 
@@ -1002,9 +1007,9 @@ mod tests {
                 }),
             )
             .await
-            .expect("fake wrapper shell run");
+            .unwrap_or_abort();
 
-        let structured = result.structured_json.expect("structured shell output");
+        let structured = result.structured_json.unwrap_or_abort();
         assert_eq!(
             structured.get("permission_always_patterns"),
             Some(&json!(["printf *"]))
@@ -1013,7 +1018,7 @@ mod tests {
 
     #[tokio::test]
     async fn shell_run_rejects_direct_bash_command_mode_bypass() {
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = tempfile::tempdir().unwrap_or_abort();
         let shell = ShellRunTool::with_runner(
             ShellAllowlist {
                 executables: vec!["bash".to_string()],
@@ -1046,7 +1051,7 @@ mod tests {
     #[tokio::test]
     async fn shell_run_rejects_direct_secret_dump_command() {
         // arrange
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = tempfile::tempdir().unwrap_or_abort();
         let shell =
             ShellRunTool::with_runner(ShellAllowlist::default(), ShellRunTool::default_runner());
 
@@ -1069,13 +1074,16 @@ mod tests {
     #[tokio::test]
     async fn shell_run_rejects_wrapper_environment_inspection_before_secret_output() {
         // arrange
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = tempfile::tempdir().unwrap_or_abort();
         let fake_secret = "SECRET_TOKEN=redacted-test-secret";
 
         // act
         for command in ["export", "set", "declare -px", "typeset -px"] {
             let runner = FakeShellCommandRunner::success(fake_secret);
-            let shell = ShellRunTool::with_runner(ShellAllowlist::default(), runner.clone());
+            let shell = ShellRunTool::with_runner(
+                ShellAllowlist::default(),
+                std::sync::Arc::<FakeShellCommandRunner>::clone(&runner),
+            );
             let result = shell
                 .call(
                     shell_test_context(temp.path(), "toolcall-shell-run-env-inspect-blocked"),
@@ -1095,7 +1103,7 @@ mod tests {
     #[tokio::test]
     async fn shell_run_rejects_direct_environment_inspection_before_secret_output() {
         // arrange
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = tempfile::tempdir().unwrap_or_abort();
         let fake_secret = "SECRET_TOKEN=redacted-test-secret";
 
         // act
@@ -1106,7 +1114,10 @@ mod tests {
             ("typeset", vec!["-px".to_string()]),
         ] {
             let runner = FakeShellCommandRunner::success(fake_secret);
-            let shell = ShellRunTool::with_runner(ShellAllowlist::default(), runner.clone());
+            let shell = ShellRunTool::with_runner(
+                ShellAllowlist::default(),
+                std::sync::Arc::<FakeShellCommandRunner>::clone(&runner),
+            );
             let result = shell
                 .call(
                     shell_test_context(
@@ -1130,7 +1141,7 @@ mod tests {
     #[tokio::test]
     async fn shell_run_direct_invocation_scrubs_inherited_environment() {
         // arrange
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = tempfile::tempdir().unwrap_or_abort();
         let shell =
             ShellRunTool::with_runner(ShellAllowlist::default(), ShellRunTool::default_runner());
 
@@ -1145,7 +1156,7 @@ mod tests {
                 }),
             )
             .await
-            .expect("direct awk env inspection should execute with sanitized env");
+            .unwrap_or_abort();
 
         // assert
         assert_shell_result_scrubs_inherited_environment(&result);
@@ -1154,7 +1165,7 @@ mod tests {
     #[tokio::test]
     async fn shell_run_wrapper_invocation_scrubs_inherited_environment() {
         // arrange
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = tempfile::tempdir().unwrap_or_abort();
         let shell =
             ShellRunTool::with_runner(ShellAllowlist::default(), ShellRunTool::default_runner());
 
@@ -1168,7 +1179,7 @@ mod tests {
                 }),
             )
             .await
-            .expect("wrapper awk env inspection should execute with sanitized env");
+            .unwrap_or_abort();
 
         // assert
         assert_shell_result_scrubs_inherited_environment(&result);
@@ -1178,7 +1189,7 @@ mod tests {
     #[tokio::test]
     async fn shell_run_direct_invocation_hides_parent_environment() {
         // arrange
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = tempfile::tempdir().unwrap_or_abort();
         let shell =
             ShellRunTool::with_runner(ShellAllowlist::default(), ShellRunTool::default_runner());
 
@@ -1193,7 +1204,7 @@ mod tests {
                 }),
             )
             .await
-            .expect("direct awk parent env inspection should execute without inherited secrets");
+            .unwrap_or_abort();
 
         // assert
         assert_shell_result_hides_parent_environment(&result);
@@ -1203,7 +1214,7 @@ mod tests {
     #[tokio::test]
     async fn shell_run_wrapper_invocation_hides_parent_environment() {
         // arrange
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = tempfile::tempdir().unwrap_or_abort();
         let shell =
             ShellRunTool::with_runner(ShellAllowlist::default(), ShellRunTool::default_runner());
 
@@ -1217,7 +1228,7 @@ mod tests {
                 }),
             )
             .await
-            .expect("wrapper awk parent env inspection should execute without inherited secrets");
+            .unwrap_or_abort();
 
         // assert
         assert_shell_result_hides_parent_environment(&result);
@@ -1227,7 +1238,7 @@ mod tests {
     #[tokio::test]
     async fn shell_run_direct_invocation_hides_grandparent_environment() {
         // arrange
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = tempfile::tempdir().unwrap_or_abort();
         let shell =
             ShellRunTool::with_runner(ShellAllowlist::default(), ShellRunTool::default_runner());
 
@@ -1257,7 +1268,7 @@ mod tests {
     #[tokio::test]
     async fn shell_run_wrapper_invocation_hides_grandparent_environment() {
         // arrange
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = tempfile::tempdir().unwrap_or_abort();
         let shell =
             ShellRunTool::with_runner(ShellAllowlist::default(), ShellRunTool::default_runner());
 
@@ -1337,7 +1348,7 @@ mod tests {
 
     #[tokio::test]
     async fn shell_run_rejects_conflicting_cmd_and_command() {
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = tempfile::tempdir().unwrap_or_abort();
         let shell =
             ShellRunTool::with_runner(ShellAllowlist::default(), ShellRunTool::default_runner());
 

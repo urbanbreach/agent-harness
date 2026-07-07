@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use async_trait::async_trait;
 use harness_core::edit::hashline::{compute_line_hash, LineAnchor};
 use harness_core::redact::{redact_value, DefaultRedactor};
@@ -157,6 +158,7 @@ fn sanitize_artifact_name(path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::HashlineScanTool;
+    use crate::UnwrapOrAbort;
     use harness_core::clock::RealClock;
     use harness_core::coord::{spawn_coordinator, CoordinatorConfig};
     use harness_core::edit::hashline::compute_line_hash;
@@ -191,10 +193,10 @@ mod tests {
 
     #[tokio::test]
     async fn hashline_scan_anchor_hashes_match_compute_line_hash() {
-        let workspace = tempfile::tempdir().expect("workspace tempdir");
-        let artifacts = tempfile::tempdir().expect("artifacts tempdir");
+        let workspace = tempfile::tempdir().unwrap_or_abort();
+        let artifacts = tempfile::tempdir().unwrap_or_abort();
         let file_path = workspace.path().join("demo.txt");
-        std::fs::write(&file_path, "alpha\nbeta\r\ngamma\n").expect("write demo file");
+        std::fs::write(&file_path, "alpha\nbeta\r\ngamma\n").unwrap_or_abort();
 
         let tool = HashlineScanTool;
         let result = tool
@@ -203,14 +205,10 @@ mod tests {
                 json!({ "path": "demo.txt" }),
             )
             .await
-            .expect("hashline_scan should succeed");
+            .unwrap_or_abort();
 
-        let payload = result
-            .structured_json
-            .expect("hashline_scan should include structured_json");
-        let anchors = payload["anchors"]
-            .as_array()
-            .expect("anchors should be an array");
+        let payload = result.structured_json.unwrap_or_abort();
+        let anchors = payload["anchors"].as_array().unwrap_or_abort();
         assert_eq!(anchors.len(), 3);
 
         assert_eq!(
@@ -238,10 +236,10 @@ mod tests {
 
     #[tokio::test]
     async fn hashline_scan_out_of_range_start_line_returns_empty_anchors() {
-        let workspace = tempfile::tempdir().expect("workspace tempdir");
-        let artifacts = tempfile::tempdir().expect("artifacts tempdir");
+        let workspace = tempfile::tempdir().unwrap_or_abort();
+        let artifacts = tempfile::tempdir().unwrap_or_abort();
         let file_path = workspace.path().join("demo.txt");
-        std::fs::write(&file_path, "alpha\nbeta\n").expect("write demo file");
+        std::fs::write(&file_path, "alpha\nbeta\n").unwrap_or_abort();
 
         let tool = HashlineScanTool;
         let result = tool
@@ -250,14 +248,10 @@ mod tests {
                 json!({ "path": "demo.txt", "start_line": 99, "limit": 10 }),
             )
             .await
-            .expect("out-of-range start_line should be handled gracefully");
+            .unwrap_or_abort();
 
-        let payload = result
-            .structured_json
-            .expect("hashline_scan should include structured_json");
-        let anchors = payload["anchors"]
-            .as_array()
-            .expect("anchors should be an array");
+        let payload = result.structured_json.unwrap_or_abort();
+        let anchors = payload["anchors"].as_array().unwrap_or_abort();
 
         assert!(anchors.is_empty());
         assert_eq!(payload["start_line"], json!(99));

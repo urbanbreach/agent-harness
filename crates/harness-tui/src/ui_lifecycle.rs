@@ -108,7 +108,7 @@ fn startup_logo_height(content_area: Rect) -> u16 {
     if content_area.width < STARTUP_LOGO_MIN_WIDTH {
         1
     } else {
-        STARTUP_LOGO_LINES.len() as u16
+        u16::try_from(STARTUP_LOGO_LINES.len()).unwrap_or(u16::MAX)
     }
 }
 

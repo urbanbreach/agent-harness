@@ -3,6 +3,7 @@ use harness_testkit::simulation::{
     validate_artifact_index, validate_matrix_value, validate_report, validate_simulation_events,
     RedactionSummary, SummaryInput, ARTIFACT_INDEX_SCHEMA_VERSION,
 };
+use harness_testkit::UnwrapOrAbort;
 use serde_json::json;
 use std::fs;
 
@@ -18,7 +19,7 @@ fn matrix_validator_accepts_checked_in_shape() {
     let value = valid_matrix();
 
     // act
-    let matrix = validate_matrix_value(&value, "valid-matrix").expect("valid matrix");
+    let matrix = validate_matrix_value(&value, "valid-matrix").unwrap_or_abort();
 
     // assert
     assert_eq!(matrix.scenario.scenario_id, "golden_path");
@@ -56,7 +57,7 @@ fn invalid_schema_row_fails() {
     let mut value = valid_matrix();
     value["scenarios"][0]
         .as_object_mut()
-        .expect("object")
+        .unwrap_or_abort()
         .remove("replay_command");
 
     // act
@@ -73,7 +74,7 @@ fn duplicate_scenario_id_fails() {
     let duplicate = value["scenarios"][0].clone();
     value["scenarios"]
         .as_array_mut()
-        .expect("array")
+        .unwrap_or_abort()
         .push(duplicate);
 
     // act
@@ -119,7 +120,7 @@ fn simulation_events_accept_valid_rows() {
     let result = validate_simulation_events(&matrix, &rows, "simulation-events.jsonl");
 
     // assert
-    result.expect("valid event rows");
+    result.unwrap_or_abort();
 }
 
 #[test]
@@ -140,7 +141,7 @@ fn non_monotonic_jsonl_sequence_fails() {
 fn missing_actor_identity_fails() {
     // arrange
     let mut rows = valid_event_rows();
-    rows[0].as_object_mut().expect("object").remove("actor");
+    rows[0].as_object_mut().unwrap_or_abort().remove("actor");
     let matrix = matrix();
 
     // act
@@ -154,7 +155,10 @@ fn missing_actor_identity_fails() {
 fn missing_component_identity_fails() {
     // arrange
     let mut rows = valid_event_rows();
-    rows[0].as_object_mut().expect("object").remove("component");
+    rows[0]
+        .as_object_mut()
+        .unwrap_or_abort()
+        .remove("component");
     let matrix = matrix();
 
     // act
@@ -198,7 +202,7 @@ fn missing_invariant_ids_in_event_row_fails() {
     let mut rows = valid_event_rows();
     rows[0]
         .as_object_mut()
-        .expect("event object")
+        .unwrap_or_abort()
         .remove("invariant_ids");
     let matrix = matrix();
 
@@ -257,7 +261,7 @@ fn malformed_report_replay_command_shape_fails() {
     let mut report = valid_report();
     report["replay_commands"][0]
         .as_object_mut()
-        .expect("replay command object")
+        .unwrap_or_abort()
         .remove("fingerprint");
     let matrix = matrix();
 
@@ -352,7 +356,7 @@ fn same_seed_normalized_summary_mismatch_fails_with_path() {
 #[test]
 fn artifact_index_rejects_fingerprint_mismatch() {
     // arrange
-    let temp = tempfile::tempdir().expect("tempdir");
+    let temp = tempfile::tempdir().unwrap_or_abort();
     for artifact in [
         "simulation-matrix.json",
         "simulation-events.jsonl",
@@ -363,7 +367,7 @@ fn artifact_index_rejects_fingerprint_mismatch() {
         "normalized-summary-repeat.json",
         "same-seed-comparison.txt",
     ] {
-        fs::write(temp.path().join(artifact), artifact).expect("write artifact");
+        fs::write(temp.path().join(artifact), artifact).unwrap_or_abort();
     }
     let rows = [
         "simulation-matrix.json",
@@ -400,8 +404,8 @@ fn artifact_index_rejects_fingerprint_mismatch() {
 #[test]
 fn artifact_index_requires_relative_existing_paths() {
     // arrange
-    let temp = tempfile::tempdir().expect("tempdir");
-    fs::write(temp.path().join("simulation-events.jsonl"), "{}").expect("write artifact");
+    let temp = tempfile::tempdir().unwrap_or_abort();
+    fs::write(temp.path().join("simulation-events.jsonl"), "{}").unwrap_or_abort();
     let rows = vec![json!({
         "schema_version": ARTIFACT_INDEX_SCHEMA_VERSION,
         "scenario_id": "golden_path",
@@ -423,15 +427,15 @@ fn artifact_index_requires_relative_existing_paths() {
 #[test]
 fn secret_bearing_artifact_is_rejected_by_scanner() {
     // arrange
-    let temp = tempfile::tempdir().expect("tempdir");
+    let temp = tempfile::tempdir().unwrap_or_abort();
     fs::write(
         temp.path().join("simulation-report.json"),
         r#"{"token":"sk-negativecontrol12345"}"#,
     )
-    .expect("write secret artifact");
+    .unwrap_or_abort();
 
     // act
-    let summary = scan_simulation_artifact_root(temp.path()).expect("scan root");
+    let summary = scan_simulation_artifact_root(temp.path()).unwrap_or_abort();
 
     // assert
     assert_eq!(summary.secret_finding_count, 1);
@@ -441,7 +445,7 @@ fn secret_bearing_artifact_is_rejected_by_scanner() {
 #[test]
 fn scanner_counts_generated_redacted_fields() {
     // arrange
-    let temp = tempfile::tempdir().expect("tempdir");
+    let temp = tempfile::tempdir().unwrap_or_abort();
     fs::write(
         temp.path().join("simulation-events.jsonl"),
         r#"{"redaction":{"redacted_fields":["workspace_root","summary"]}}
@@ -449,10 +453,10 @@ fn scanner_counts_generated_redacted_fields() {
 {"redaction":{"redacted_fields":["session_path"]}}
 "#,
     )
-    .expect("write events");
+    .unwrap_or_abort();
 
     // act
-    let summary = scan_simulation_artifact_root(temp.path()).expect("scan root");
+    let summary = scan_simulation_artifact_root(temp.path()).unwrap_or_abort();
 
     // assert
     assert_eq!(summary.redacted_field_count, 3);

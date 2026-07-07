@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 impl AppState {
     pub fn handle_key(&mut self, key: KeyEvent) {
@@ -132,7 +133,7 @@ impl AppState {
             && matches!(key.code, KeyCode::Char(_))
         {
             if mapped_action.is_some_and(|action| action_preempts_text_input(action, key)) {
-                self.execute_action(mapped_action.expect("preempting action"));
+                self.execute_action(mapped_action.unwrap_or_abort());
                 self.maybe_auto_exit();
                 return;
             }
@@ -152,7 +153,7 @@ impl AppState {
             && matches!(key.code, KeyCode::Char(_))
         {
             if mapped_action.is_some_and(|action| action_preempts_text_input(action, key)) {
-                self.execute_action(mapped_action.expect("preempting action"));
+                self.execute_action(mapped_action.unwrap_or_abort());
                 self.maybe_auto_exit();
                 return;
             }
@@ -1147,6 +1148,7 @@ fn action_preempts_text_input(action: Action, key: KeyEvent) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::UnwrapOrAbort;
     use std::sync::{Arc, Mutex};
 
     #[test]
@@ -1217,7 +1219,7 @@ mod tests {
         let intent_sink = {
             let intents = Arc::clone(&intents);
             Arc::new(move |intent: UiIntent| {
-                intents.lock().expect("lock intents").push(intent);
+                intents.lock().unwrap_or_abort().push(intent);
             })
         };
 
@@ -1239,7 +1241,7 @@ mod tests {
         ));
 
         // assert
-        let intents = intents.lock().expect("lock intents");
+        let intents = intents.lock().unwrap_or_abort();
         assert_eq!(intents.len(), 1);
         match &intents[0] {
             UiIntent::RunShellCommand { command } => {

@@ -1,3 +1,4 @@
+use harness_testkit::UnwrapOrAbort;
 use std::collections::HashMap;
 use std::env;
 use std::fs::{self, File};
@@ -281,6 +282,7 @@ impl Args {
 #[cfg(test)]
 mod tests {
     use super::Args;
+    use harness_testkit::UnwrapOrAbort;
 
     fn parse_args(args: &[&str]) -> Result<Args, String> {
         Args::parse(args.iter().map(|value| value.to_string()))
@@ -327,7 +329,7 @@ mod tests {
             "--window-title",
             " title ",
         ])
-        .expect("non-empty values should parse");
+        .unwrap_or_abort();
 
         assert_eq!(args.window_id, " 0x123 ");
         assert_eq!(args.window_title, " title ");

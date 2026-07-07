@@ -1,8 +1,13 @@
 [package]
 name = "harness-core"
+description = "Core runtime: coordinator, events, permissions, config, projections"
 edition.workspace = true
 license.workspace = true
 version.workspace = true
+repository.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [dependencies]
 humantime = "2.1"

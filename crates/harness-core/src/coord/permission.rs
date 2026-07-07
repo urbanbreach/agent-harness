@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::io;
 use std::path::Path;
+use std::sync::Arc;
 
 use serde_json::Value;
 
@@ -122,7 +123,7 @@ fn permission_grant_matcher(
             let paths = workspace_path_selector_paths(workspace_root, args_json);
             if paths.len() == 1 {
                 PermissionGrantMatcher::WorkspacePath {
-                    path: paths.into_iter().next().expect("single path exists"),
+                    path: paths.into_iter().next().unwrap_or_default(),
                     request_digest: request_digest.to_string(),
                 }
             } else {
@@ -579,8 +580,8 @@ impl super::Coordinator {
         reason: Option<String>,
         grant_scope: Option<PermissionGrantScope>,
     ) -> Result<(), CoordinatorError> {
-        let clock = self.clock.clone();
-        let redactor = self.redactor.clone();
+        let clock = Arc::clone(&self.clock);
+        let redactor = Arc::clone(&self.redactor);
         let job_tx = self.job_tx.clone();
 
         let run_state = self
@@ -604,9 +605,11 @@ impl super::Coordinator {
             None
         };
 
-        let pending = run_state
-            .take_pending_permission(&permission_id)
-            .expect("pending permission exists after validation");
+        let Some(pending) = run_state.take_pending_permission(&permission_id) else {
+            return Err(CoordinatorError::PolicyViolation(
+                "pending permission not found after validation".to_string(),
+            ));
+        };
 
         let hook_request_id = pending
             .request_correlation_id
@@ -717,7 +720,7 @@ impl super::Coordinator {
                     tool_execution::start_tool_call_execution(
                         clock.as_ref(),
                         redactor.as_ref(),
-                        self.config.hook_command_executor.clone(),
+                        Arc::clone(&self.config.hook_command_executor),
                         job_tx,
                         run_state,
                         self.config.hook_runtime_config.clone(),
@@ -728,7 +731,7 @@ impl super::Coordinator {
                             actor,
                             category,
                             hook_executions: permission_hook_executions,
-                            tool_registry: self.config.tool_registry.clone(),
+                            tool_registry: Arc::clone(&self.config.tool_registry),
                             request_correlation_id,
                             respond_to,
                         },
@@ -782,8 +785,7 @@ impl super::Coordinator {
                 ..
             } => {
                 if decision == PermissionDecision::Allow && permission_hook_failure.is_none() {
-                    let answers = validated_question_answers
-                        .expect("validated answers exist for allowed question resolution");
+                    let answers = validated_question_answers.unwrap_or_default();
                     let _ = respond_to.send(Ok(answers));
                 } else if let Some(hook_reason) = permission_hook_failure.as_ref() {
                     let _ = respond_to.send(Err(format!(

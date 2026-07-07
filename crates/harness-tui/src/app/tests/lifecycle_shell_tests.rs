@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 pub(super) fn config_backed_live_launch_starts_in_session_shell_without_details_drawer() {
     set_pending_live_launch_metadata(LaunchMetadata::new(
@@ -18,9 +19,9 @@ pub(super) fn config_backed_live_launch_starts_in_session_shell_without_details_
 pub(super) fn historical_task_completed_marks_turn_done_and_unblocks_first_resumed_submit() {
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let sink = {
-        let intents = intents.clone();
+        let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
 
@@ -71,7 +72,7 @@ pub(super) fn historical_task_completed_marks_turn_done_and_unblocks_first_resum
     }
     app.handle_key(key(KeyCode::Enter));
 
-    let intents = intents.lock().expect("lock intents");
+    let intents = intents.lock().unwrap_or_abort();
     assert!(
         intents
             .iter()
@@ -147,7 +148,7 @@ pub(super) fn startup_prompt_enter_echoes_prompt_and_selects_new_session() {
     let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
 
@@ -173,7 +174,7 @@ pub(super) fn startup_prompt_enter_echoes_prompt_and_selects_new_session() {
     let next_live = AppState::new_live(None, false, None);
     assert!(
         matches!(
-            intents.lock().expect("lock intents").as_slice(),
+            intents.lock().unwrap_or_abort().as_slice(),
             [UiIntent::NewSession]
         ),
         "startup submit should select a fresh session after the local prompt echo"
@@ -197,7 +198,7 @@ pub(super) fn slash_new_then_submit_bootstraps_fresh_session_instead_of_live_tur
     let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
 
@@ -218,7 +219,7 @@ pub(super) fn slash_new_then_submit_bootstraps_fresh_session_instead_of_live_tur
     assert!(!app.startup_shell_visible());
     assert!(
         matches!(
-            intents.lock().expect("lock intents").as_slice(),
+            intents.lock().unwrap_or_abort().as_slice(),
             [UiIntent::NewSession]
         ),
         "/new startup handoff must select a fresh session, not submit to the old live run"

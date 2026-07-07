@@ -1,3 +1,4 @@
+use harness::UnwrapOrAbort;
 use harness_core::agent::{build_provider_tool_defs, AgentProfile};
 use harness_core::config::{
     load_config_from_file_with_context, load_config_from_str, ConfigLoadContext, HarnessConfig,
@@ -44,15 +45,12 @@ const V1_COMPOSED_PROMPTS: [&str; 15] = [
 ];
 const UPDATE_PROMPT_SNAPSHOTS_ENV: &str = "HARNESS_UPDATE_PROMPT_SNAPSHOTS";
 
-#[allow(dead_code)]
 #[path = "../src/dynamic_prompt.rs"]
 mod dynamic_prompt;
 
-#[allow(dead_code)]
 #[path = "../src/bootstrap.rs"]
 mod bootstrap;
 
-#[allow(dead_code)]
 #[path = "../src/cli_config.rs"]
 mod cli_config;
 
@@ -61,14 +59,13 @@ fn write_agent_markdown(repo_root: &Path, name: &str, body: &str) {
         .join(".agent-harness")
         .join("agents")
         .join(format!("{name}.md"));
-    fs::create_dir_all(path.parent().expect("agent markdown parent"))
-        .expect("create agent markdown dir");
-    fs::write(path, body).expect("write agent markdown");
+    fs::create_dir_all(path.parent().unwrap_or_abort()).unwrap_or_abort();
+    fs::write(path, body).unwrap_or_abort();
 }
 
 fn load_config_from_repo_file(config_path: &Path, repo: &Path) -> HarnessConfig {
     let context = ConfigLoadContext::from_env().with_current_dir(repo.to_path_buf());
-    load_config_from_file_with_context(config_path, &context).expect("load harness config")
+    load_config_from_file_with_context(config_path, &context).unwrap_or_abort()
 }
 
 #[test]
@@ -80,7 +77,7 @@ fn shipped_v1_prompt_assets_have_contract_bodies() {
 
     // act
     let coordinator_config =
-        bootstrap::build_interactive_coordinator_config(&config).expect("build config");
+        bootstrap::build_interactive_coordinator_config(&config).unwrap_or_abort();
 
     // assert
     for profile in V1_PROMPT_PROFILES.split_whitespace() {
@@ -122,11 +119,10 @@ fn shipped_v1_prompt_asset_snapshot_matches_source() {
         panic!(
             "missing prompt snapshot {}; expected:\n{}",
             snapshot_path.display(),
-            serde_json::to_string_pretty(&actual).expect("render actual prompt snapshot")
+            serde_json::to_string_pretty(&actual).unwrap_or_abort()
         )
     });
-    let expected: serde_json::Value =
-        serde_json::from_str(&expected).expect("parse prompt asset snapshot");
+    let expected: serde_json::Value = serde_json::from_str(&expected).unwrap_or_abort();
 
     // assert
     assert_eq!(actual, expected, "shipped V1 prompt asset snapshot drifted");
@@ -183,7 +179,7 @@ fn shipped_v1_full_composed_prompt_snapshots_match_source() {
     let config_path = repo_root.join("configs/harness.example.jsonc");
     let config = load_config_from_repo_file(&config_path, &repo_root);
     let coordinator_config =
-        bootstrap::build_interactive_coordinator_config(&config).expect("build config");
+        bootstrap::build_interactive_coordinator_config(&config).unwrap_or_abort();
     let snapshot_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
         .join("snapshots")
@@ -418,7 +414,7 @@ fn shipped_profile_permission_promises_match_runtime_policy_and_toolsets() {
     let config_path = repo_root.join("configs/harness.example.jsonc");
     let config = load_config_from_repo_file(&config_path, &repo_root);
     let coordinator_config =
-        bootstrap::build_interactive_coordinator_config(&config).expect("build config");
+        bootstrap::build_interactive_coordinator_config(&config).unwrap_or_abort();
 
     let plan_prompt = prompt_section(
         &coordinator_config.agent_profiles["plan"].system_prompt,

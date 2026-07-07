@@ -1,8 +1,9 @@
 use super::*;
+use harness::UnwrapOrAbort;
 
 #[test]
 fn tui_auth_backend_runs_same_auth_command_and_redacts_output() {
-    let temp = tempfile::tempdir().expect("tempdir");
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let data_home = temp.path().join("data");
     let config_path = temp.path().join("harness.jsonc");
     std::fs::write(
@@ -24,7 +25,7 @@ fn tui_auth_backend_runs_same_auth_command_and_redacts_output() {
         }
         "#,
     )
-    .expect("write config");
+    .unwrap_or_abort();
     let deps = harness::CliDeps::real()
         .with_current_dir(temp.path().to_path_buf())
         .with_env("HARNESS_DATA_HOME", data_home.to_string_lossy());
@@ -66,7 +67,7 @@ fn tui_auth_backend_runs_same_auth_command_and_redacts_output() {
 
 #[test]
 fn tui_auth_backend_streams_output_and_accepts_hidden_stdin() {
-    let temp = tempfile::tempdir().expect("tempdir");
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let data_home = temp.path().join("data");
     let config_path = temp.path().join("harness.jsonc");
     std::fs::write(
@@ -88,7 +89,7 @@ fn tui_auth_backend_streams_output_and_accepts_hidden_stdin() {
         }
         "#,
     )
-    .expect("write config");
+    .unwrap_or_abort();
     let deps = harness::CliDeps::real()
         .with_current_dir(temp.path().to_path_buf())
         .with_env("HARNESS_DATA_HOME", data_home.to_string_lossy());

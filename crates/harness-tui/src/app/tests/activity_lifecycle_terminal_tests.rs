@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 pub(crate) fn replay_terminal_only_turn_completion_scope_marks_activity_done_without_task_row() {
     let app = AppState::new_replay(
@@ -34,7 +35,7 @@ pub(crate) fn replay_terminal_only_turn_completion_scope_marks_activity_done_wit
         ],
     );
 
-    let activity = app.activities.back().expect("activity exists");
+    let activity = app.activities.back().unwrap_or_abort();
     assert_eq!(activity.status, ActivityStatus::Done);
     assert_eq!(activity.transcript_text, "Final answer");
     assert_eq!(app.runtime_state().kind, RuntimeStateKind::Success);
@@ -68,7 +69,7 @@ pub(crate) fn replay_terminal_only_turn_cancellation_scope_marks_activity_error_
         ],
     );
 
-    let activity = app.activities.back().expect("activity exists");
+    let activity = app.activities.back().unwrap_or_abort();
     assert_eq!(activity.status, ActivityStatus::Error);
     assert_eq!(
         activity.error_message.as_deref(),
@@ -106,7 +107,7 @@ pub(crate) fn replay_terminal_only_tool_cancellation_scope_does_not_fail_activit
         ],
     );
 
-    let activity = app.activities.back().expect("activity exists");
+    let activity = app.activities.back().unwrap_or_abort();
     assert_eq!(activity.status, ActivityStatus::Streaming);
     assert!(activity.error_message.is_none());
     assert_eq!(app.runtime_state().kind, RuntimeStateKind::Sending);
@@ -156,7 +157,7 @@ pub(crate) fn queued_turn_schedule_keeps_activity_queued_until_provider_starts()
         .activities
         .iter()
         .find(|activity| activity.request_id == "req_queued")
-        .expect("queued activity");
+        .unwrap_or_abort();
     assert_eq!(queued.status, ActivityStatus::Queued);
     assert!(app.active_turn_in_progress());
 
@@ -177,7 +178,7 @@ pub(crate) fn queued_turn_schedule_keeps_activity_queued_until_provider_starts()
         .activities
         .iter()
         .find(|activity| activity.request_id == "req_queued")
-        .expect("queued activity");
+        .unwrap_or_abort();
     assert_eq!(queued.status, ActivityStatus::Streaming);
 }
 
@@ -233,7 +234,7 @@ pub(crate) fn tool_task_completion_does_not_copy_tool_output_into_activity_trans
         }),
     ));
 
-    let activity = app.activities.front().expect("activity exists");
+    let activity = app.activities.front().unwrap_or_abort();
     assert!(
         activity.transcript_text.is_empty(),
         "tool task completion should not become assistant transcript text"

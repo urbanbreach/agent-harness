@@ -1,3 +1,4 @@
+use harness::UnwrapOrAbort;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -27,9 +28,9 @@ const SEARCH_NEEDLE: &str = "needle-large-session";
 #[test]
 fn perf_large_session_list_reopen_and_session_search_write_artifact() {
     // arrange
-    let workspace = tempfile::tempdir().expect("workspace tempdir");
+    let workspace = tempfile::tempdir().unwrap_or_abort();
     let session_root = workspace.path().join(".agent-harness/sessions");
-    fs::create_dir_all(&session_root).expect("session root");
+    fs::create_dir_all(&session_root).unwrap_or_abort();
     write_large_session_corpus(&session_root, workspace.path());
 
     let session_dir_arg = session_root.display().to_string();
@@ -52,7 +53,7 @@ fn perf_large_session_list_reopen_and_session_search_write_artifact() {
         String::from_utf8_lossy(&list_output.stderr)
     );
     let list_json: serde_json::Value =
-        serde_json::from_slice(&list_output.stdout).expect("list json parses");
+        serde_json::from_slice(&list_output.stdout).unwrap_or_abort();
     assert_eq!(list_json.as_array().map(Vec::len), Some(SESSION_COUNT));
 
     let target_run_id = format!("run_perf_large_{:03}", SESSION_COUNT - 1);
@@ -75,7 +76,7 @@ fn perf_large_session_list_reopen_and_session_search_write_artifact() {
         String::from_utf8_lossy(&reopen_output.stderr)
     );
     let reopen_json: serde_json::Value =
-        serde_json::from_slice(&reopen_output.stdout).expect("reopen json parses");
+        serde_json::from_slice(&reopen_output.stdout).unwrap_or_abort();
     assert_eq!(reopen_json["run_id"], target_run_id);
     assert_eq!(reopen_json["resumable"], true);
 
@@ -85,19 +86,16 @@ fn perf_large_session_list_reopen_and_session_search_write_artifact() {
     let search = run_async_tool(async move {
         registry
             .get("session_search")
-            .expect("session_search")
+            .unwrap_or_abort()
             .call(
                 tool_context(&workspace_root, "perf-session-search"),
                 json!({"query": SEARCH_NEEDLE, "limit": 200}),
             )
             .await
     })
-    .expect("session_search succeeds");
+    .unwrap_or_abort();
     let search_elapsed_ms = search_started.elapsed().as_millis();
-    let search_json = search
-        .structured_json
-        .as_ref()
-        .expect("session_search structured json");
+    let search_json = search.structured_json.as_ref().unwrap_or_abort();
     let search_json = if search_json
         .get("spilled")
         .and_then(serde_json::Value::as_bool)
@@ -106,11 +104,9 @@ fn perf_large_session_list_reopen_and_session_search_write_artifact() {
         let artifact_path = search_json
             .pointer("/artifact/path")
             .and_then(serde_json::Value::as_str)
-            .expect("session_search spill artifact path");
-        serde_json::from_slice(
-            &fs::read(workspace.path().join(artifact_path)).expect("read session_search artifact"),
-        )
-        .expect("session_search artifact json parses")
+            .unwrap_or_abort();
+        serde_json::from_slice(&fs::read(workspace.path().join(artifact_path)).unwrap_or_abort())
+            .unwrap_or_abort()
     } else {
         search_json.clone()
     };
@@ -135,7 +131,7 @@ fn perf_large_session_list_reopen_and_session_search_write_artifact() {
     );
 
     let artifact_root = perf_artifact_root();
-    fs::create_dir_all(&artifact_root).expect("perf artifact root");
+    fs::create_dir_all(&artifact_root).unwrap_or_abort();
     let artifact_path = artifact_root.join("large-session-surfaces.json");
     let total_events = SESSION_COUNT * events_per_session();
     let artifact = json!({
@@ -165,13 +161,12 @@ fn perf_large_session_list_reopen_and_session_search_write_artifact() {
     });
     fs::write(
         &artifact_path,
-        serde_json::to_vec_pretty(&artifact).expect("serialize perf artifact"),
+        serde_json::to_vec_pretty(&artifact).unwrap_or_abort(),
     )
-    .expect("write perf artifact");
+    .unwrap_or_abort();
 
     let recorded: serde_json::Value =
-        serde_json::from_slice(&fs::read(&artifact_path).expect("read written perf artifact"))
-            .expect("perf artifact json parses");
+        serde_json::from_slice(&fs::read(&artifact_path).unwrap_or_abort()).unwrap_or_abort();
     assert_eq!(recorded["schema_version"], "harness-large-session-perf-v1");
     assert_eq!(recorded["corpus"]["session_count"], SESSION_COUNT);
     assert_eq!(recorded["corpus"]["total_events"], total_events);
@@ -186,14 +181,14 @@ fn write_large_session_corpus(session_root: &Path, workspace_root: &Path) {
     for index in 0..SESSION_COUNT {
         let run_id = format!("run_perf_large_{index:03}");
         let run_dir = session_root.join(&run_id);
-        fs::create_dir_all(&run_dir).expect("run dir");
+        fs::create_dir_all(&run_dir).unwrap_or_abort();
         let events = large_session_events(&run_id, index, workspace_root);
         let body = events
             .iter()
-            .map(|event| serde_json::to_string(event).expect("serialize event"))
+            .map(|event| serde_json::to_string(event).unwrap_or_abort())
             .collect::<Vec<_>>()
             .join("\n");
-        fs::write(run_dir.join("events.jsonl"), format!("{body}\n")).expect("events jsonl");
+        fs::write(run_dir.join("events.jsonl"), format!("{body}\n")).unwrap_or_abort();
     }
 }
 
@@ -329,7 +324,7 @@ where
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
-        .expect("tokio runtime");
+        .unwrap_or_abort();
     runtime.block_on(future)
 }
 
@@ -346,6 +341,6 @@ fn perf_artifact_root() -> PathBuf {
 fn now_unix_ms() -> u128 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .expect("system time after epoch")
+        .unwrap_or_abort()
         .as_millis()
 }

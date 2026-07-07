@@ -1,5 +1,4 @@
-#![allow(dead_code)]
-
+use harness::UnwrapOrAbort;
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::ffi::OsString;
@@ -22,16 +21,12 @@ pub(crate) struct CliHarnessOutput {
     pub(crate) stdout: Vec<u8>,
     pub(crate) stderr: Vec<u8>,
     pub(crate) session_capture: Option<CliHarnessSessionCapture>,
-    #[allow(dead_code)]
     pub(crate) workspace: Option<TestWorkspace>,
 }
 
 impl CliHarnessOutput {
     pub(crate) fn single_run(&self) -> &CliHarnessRunCapture {
-        let capture = self
-            .session_capture
-            .as_ref()
-            .expect("CliHarnessOutput was not configured to capture a session dir");
+        let capture = self.session_capture.as_ref().unwrap_or_abort();
         assert_eq!(
             capture.runs.len(),
             1,
@@ -61,7 +56,6 @@ pub(crate) struct CliHarnessRunCapture {
 pub(crate) struct CliHarnessArtifactCapture {
     pub(crate) path: PathBuf,
     pub(crate) relative_path: PathBuf,
-    #[allow(dead_code)]
     pub(crate) bytes: Vec<u8>,
 }
 
@@ -75,7 +69,6 @@ impl CliHarnessStatus {
         self.code == 0
     }
 
-    #[allow(dead_code)]
     pub(crate) fn code(self) -> i32 {
         self.code
     }
@@ -186,7 +179,7 @@ impl CliHarness {
             .as_deref()
             .map(capture_session_dir_contents)
             .transpose()
-            .expect("capture session dir");
+            .unwrap_or_abort();
 
         CliHarnessOutput {
             status: CliHarnessStatus { code: outcome.code },
@@ -245,10 +238,7 @@ fn collect_artifacts(
         if path.is_dir() {
             collect_artifacts(run_dir, &path, artifacts)?;
         } else if path.is_file() {
-            let relative_path = path
-                .strip_prefix(run_dir)
-                .expect("artifact path lives under run dir")
-                .to_path_buf();
+            let relative_path = path.strip_prefix(run_dir).unwrap_or_abort().to_path_buf();
             let bytes = fs::read(&path)?;
             artifacts.push(CliHarnessArtifactCapture {
                 path,

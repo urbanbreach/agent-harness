@@ -1,3 +1,4 @@
+use harness_tools::UnwrapOrAbort;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -58,7 +59,7 @@ fn spawn_question_coordinator(session_dir: PathBuf, ask_timeout_ms: u64) -> Coor
 fn question_tool() -> Arc<dyn Tool> {
     coordinator_registry(Default::default())
         .get("question")
-        .expect("question tool")
+        .unwrap_or_abort()
 }
 
 fn spawn_question_tool_call(

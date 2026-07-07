@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 fn build_operator_sidebar_selection_snapshot(
     app: &AppState,
@@ -195,7 +196,7 @@ impl OperatorSidebarSelectionSnapshot {
             }
             if row_idx != start_row && row.continues_previous && !lines.is_empty() {
                 let continuation = text.trim_start_matches(' ');
-                let current = lines.last_mut().expect("continuation has previous line");
+                let current = lines.last_mut().unwrap_or_abort();
                 if !continuation.is_empty() && !current.ends_with(char::is_whitespace) {
                     current.push(' ');
                 }
@@ -636,7 +637,8 @@ pub(super) fn operator_sidebar_body_area(
     title: Option<&OperatorRailTitle>,
 ) -> Option<Rect> {
     let title_text = build_operator_rail_title_text(title, theme, inner.width);
-    let title_height = title_text.lines.len().min(usize::from(u16::MAX)) as u16;
+    let title_height =
+        u16::try_from(title_text.lines.len().min(usize::from(u16::MAX))).unwrap_or(u16::MAX);
     let footer_height = operator_sidebar_footer_height(app, theme, inner.width);
     let sections = Layout::default()
         .direction(Direction::Vertical)
@@ -653,9 +655,12 @@ pub(super) fn operator_sidebar_body_area(
 pub(super) fn operator_sidebar_footer_height(app: &AppState, theme: &Theme, width: u16) -> u16 {
     app.sidebar_directory_branch_label()
         .map(|label| {
-            operator_sidebar_directory_footer_text(label, theme, width, theme.surface.panel)
-                .height()
-                .min(usize::from(u16::MAX)) as u16
+            u16::try_from(
+                operator_sidebar_directory_footer_text(label, theme, width, theme.surface.panel)
+                    .height()
+                    .min(usize::from(u16::MAX)),
+            )
+            .unwrap_or(u16::MAX)
         })
         .unwrap_or(0)
 }

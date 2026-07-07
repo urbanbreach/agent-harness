@@ -1,10 +1,11 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 pub(super) fn typing_at_opens_file_mention_menu_with_directories() {
-    let tempdir = tempfile::tempdir().expect("tempdir");
-    std::fs::create_dir(tempdir.path().join("src")).expect("create src");
-    std::fs::write(tempdir.path().join("src/lib.rs"), "lib").expect("write lib");
-    std::fs::write(tempdir.path().join("README.md"), "readme").expect("write readme");
+    let tempdir = tempfile::tempdir().unwrap_or_abort();
+    std::fs::create_dir(tempdir.path().join("src")).unwrap_or_abort();
+    std::fs::write(tempdir.path().join("src/lib.rs"), "lib").unwrap_or_abort();
+    std::fs::write(tempdir.path().join("README.md"), "readme").unwrap_or_abort();
 
     let mut app = AppState::new_live(None, false, None);
     app.set_file_mention_workspace_root_for_test(tempdir.path().to_path_buf());
@@ -18,9 +19,9 @@ pub(super) fn typing_at_opens_file_mention_menu_with_directories() {
 }
 
 pub(super) fn file_mention_tab_expands_directory_without_closing_menu() {
-    let tempdir = tempfile::tempdir().expect("tempdir");
-    std::fs::create_dir_all(tempdir.path().join("src/bin")).expect("create nested dir");
-    std::fs::write(tempdir.path().join("src/main.rs"), "fn main() {}").expect("write main");
+    let tempdir = tempfile::tempdir().unwrap_or_abort();
+    std::fs::create_dir_all(tempdir.path().join("src/bin")).unwrap_or_abort();
+    std::fs::write(tempdir.path().join("src/main.rs"), "fn main() {}").unwrap_or_abort();
 
     let mut app = AppState::new_live(None, false, None);
     app.set_file_mention_workspace_root_for_test(tempdir.path().to_path_buf());
@@ -38,9 +39,9 @@ pub(super) fn file_mention_tab_expands_directory_without_closing_menu() {
 }
 
 pub(super) fn file_mention_enter_inserts_selected_file_with_space() {
-    let tempdir = tempfile::tempdir().expect("tempdir");
-    std::fs::create_dir(tempdir.path().join("src")).expect("create src");
-    std::fs::write(tempdir.path().join("src/main.rs"), "fn main() {}").expect("write main");
+    let tempdir = tempfile::tempdir().unwrap_or_abort();
+    std::fs::create_dir(tempdir.path().join("src")).unwrap_or_abort();
+    std::fs::write(tempdir.path().join("src/main.rs"), "fn main() {}").unwrap_or_abort();
 
     let mut app = AppState::new_live(None, false, None);
     app.set_file_mention_workspace_root_for_test(tempdir.path().to_path_buf());
@@ -96,13 +97,13 @@ pub(super) fn file_mentions_use_injected_scanner_workspace_and_clock() {
 }
 
 pub(super) fn submitting_selected_file_mention_emits_structured_file_part() {
-    let tempdir = tempfile::tempdir().expect("tempdir");
-    std::fs::create_dir(tempdir.path().join("src")).expect("create src");
-    std::fs::write(tempdir.path().join("src/main.rs"), "fn main() {}").expect("write main");
+    let tempdir = tempfile::tempdir().unwrap_or_abort();
+    std::fs::create_dir(tempdir.path().join("src")).unwrap_or_abort();
+    std::fs::write(tempdir.path().join("src/main.rs"), "fn main() {}").unwrap_or_abort();
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
         let intents = Arc::clone(&intents);
-        Arc::new(move |intent| intents.lock().expect("lock intents").push(intent))
+        Arc::new(move |intent| intents.lock().unwrap_or_abort().push(intent))
     };
 
     let mut app = AppState::new_live(None, false, Some(sink));
@@ -114,7 +115,7 @@ pub(super) fn submitting_selected_file_mention_emits_structured_file_part() {
     app.handle_key(key(KeyCode::Enter));
     app.handle_key(key(KeyCode::Enter));
 
-    let intents = intents.lock().expect("lock intents");
+    let intents = intents.lock().unwrap_or_abort();
     let [UiIntent::SubmitPrompt {
         text,
         selected_file_tags,
@@ -192,9 +193,9 @@ pub(super) fn file_mention_picker_selects_mcp_resource_parts_from_launch_metadat
 }
 
 pub(super) fn file_mention_tag_is_removed_when_user_edits_inside_it() {
-    let tempdir = tempfile::tempdir().expect("tempdir");
-    std::fs::create_dir(tempdir.path().join("src")).expect("create src");
-    std::fs::write(tempdir.path().join("src/main.rs"), "fn main() {}").expect("write main");
+    let tempdir = tempfile::tempdir().unwrap_or_abort();
+    std::fs::create_dir(tempdir.path().join("src")).unwrap_or_abort();
+    std::fs::write(tempdir.path().join("src/main.rs"), "fn main() {}").unwrap_or_abort();
 
     let mut app = AppState::new_live(None, false, None);
     app.set_file_mention_workspace_root_for_test(tempdir.path().to_path_buf());

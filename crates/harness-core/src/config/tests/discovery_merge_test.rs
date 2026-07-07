@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 /// Minimal config with a model so shipped agents exist, plus an optional
 /// extra agent block injected into the legacy `agents` map.
@@ -74,16 +75,14 @@ pub(super) fn empty_custom_agent() -> String {
 #[test]
 fn merge_markdown_description_takes_effect_when_config_empty() {
     // arrange
-    let _lock = CONFIG_DISCOVERY_TEST_LOCK
-        .lock()
-        .expect("lock discovery tests");
-    let temp = tempfile::tempdir().expect("tempdir");
+    let _lock = CONFIG_DISCOVERY_TEST_LOCK.lock().unwrap_or_abort();
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let repo = temp.path().join("repo");
-    fs::create_dir_all(&repo).expect("create repo dir");
-    fs::create_dir_all(repo.join(".git")).expect("create git dir");
+    fs::create_dir_all(&repo).unwrap_or_abort();
+    fs::create_dir_all(repo.join(".git")).unwrap_or_abort();
 
     let config_path = repo.join("harness.jsonc");
-    fs::write(&config_path, merge_test_config(&empty_custom_agent())).expect("write config");
+    fs::write(&config_path, merge_test_config(&empty_custom_agent())).unwrap_or_abort();
     write_agent_markdown(
         &repo,
         "custom",
@@ -98,10 +97,10 @@ Prompt body."#,
     );
 
     // act
-    let parsed = load_config_from_file(&config_path).expect("merged config should parse");
+    let parsed = load_config_from_file(&config_path).unwrap_or_abort();
 
     // assert
-    let custom = parsed.agents.get("custom").expect("custom agent exists");
+    let custom = parsed.agents.get("custom").unwrap_or_abort();
     assert_eq!(
         custom.description, "From markdown",
         "markdown description must take effect when config description is empty"
@@ -111,16 +110,14 @@ Prompt body."#,
 #[test]
 fn merge_markdown_model_ref_takes_effect_for_shipped_agent() {
     // arrange
-    let _lock = CONFIG_DISCOVERY_TEST_LOCK
-        .lock()
-        .expect("lock discovery tests");
-    let temp = tempfile::tempdir().expect("tempdir");
+    let _lock = CONFIG_DISCOVERY_TEST_LOCK.lock().unwrap_or_abort();
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let repo = temp.path().join("repo");
-    fs::create_dir_all(&repo).expect("create repo dir");
-    fs::create_dir_all(repo.join(".git")).expect("create git dir");
+    fs::create_dir_all(&repo).unwrap_or_abort();
+    fs::create_dir_all(repo.join(".git")).unwrap_or_abort();
 
     let config_path = repo.join("harness.jsonc");
-    fs::write(&config_path, merge_test_config("")).expect("write config");
+    fs::write(&config_path, merge_test_config("")).unwrap_or_abort();
     write_agent_markdown(
         &repo,
         "build",
@@ -135,10 +132,10 @@ Build prompt."#,
     );
 
     // act
-    let parsed = load_config_from_file(&config_path).expect("merged config should parse");
+    let parsed = load_config_from_file(&config_path).unwrap_or_abort();
 
     // assert
-    let build = parsed.agents.get("build").expect("build agent exists");
+    let build = parsed.agents.get("build").unwrap_or_abort();
     assert_eq!(
         build.model_ref, "default/gpt-4o",
         "markdown model_ref must take effect for shipped agent (model_ref_explicit=false)"
@@ -152,16 +149,14 @@ Build prompt."#,
 #[test]
 fn merge_markdown_variant_takes_effect_when_config_has_none() {
     // arrange
-    let _lock = CONFIG_DISCOVERY_TEST_LOCK
-        .lock()
-        .expect("lock discovery tests");
-    let temp = tempfile::tempdir().expect("tempdir");
+    let _lock = CONFIG_DISCOVERY_TEST_LOCK.lock().unwrap_or_abort();
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let repo = temp.path().join("repo");
-    fs::create_dir_all(&repo).expect("create repo dir");
-    fs::create_dir_all(repo.join(".git")).expect("create git dir");
+    fs::create_dir_all(&repo).unwrap_or_abort();
+    fs::create_dir_all(repo.join(".git")).unwrap_or_abort();
 
     let config_path = repo.join("harness.jsonc");
-    fs::write(&config_path, merge_test_config(&empty_custom_agent())).expect("write config");
+    fs::write(&config_path, merge_test_config(&empty_custom_agent())).unwrap_or_abort();
     write_agent_markdown(
         &repo,
         "custom",
@@ -177,10 +172,10 @@ Prompt."#,
     );
 
     // act
-    let parsed = load_config_from_file(&config_path).expect("merged config should parse");
+    let parsed = load_config_from_file(&config_path).unwrap_or_abort();
 
     // assert
-    let custom = parsed.agents.get("custom").expect("custom agent exists");
+    let custom = parsed.agents.get("custom").unwrap_or_abort();
     assert_eq!(
         custom.variant.as_deref(),
         Some("high"),
@@ -191,16 +186,14 @@ Prompt."#,
 #[test]
 fn merge_markdown_temperature_takes_effect_when_config_has_none() {
     // arrange
-    let _lock = CONFIG_DISCOVERY_TEST_LOCK
-        .lock()
-        .expect("lock discovery tests");
-    let temp = tempfile::tempdir().expect("tempdir");
+    let _lock = CONFIG_DISCOVERY_TEST_LOCK.lock().unwrap_or_abort();
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let repo = temp.path().join("repo");
-    fs::create_dir_all(&repo).expect("create repo dir");
-    fs::create_dir_all(repo.join(".git")).expect("create git dir");
+    fs::create_dir_all(&repo).unwrap_or_abort();
+    fs::create_dir_all(repo.join(".git")).unwrap_or_abort();
 
     let config_path = repo.join("harness.jsonc");
-    fs::write(&config_path, merge_test_config(&empty_custom_agent())).expect("write config");
+    fs::write(&config_path, merge_test_config(&empty_custom_agent())).unwrap_or_abort();
     write_agent_markdown(
         &repo,
         "custom",
@@ -216,10 +209,10 @@ Prompt."#,
     );
 
     // act
-    let parsed = load_config_from_file(&config_path).expect("merged config should parse");
+    let parsed = load_config_from_file(&config_path).unwrap_or_abort();
 
     // assert
-    let custom = parsed.agents.get("custom").expect("custom agent exists");
+    let custom = parsed.agents.get("custom").unwrap_or_abort();
     assert_eq!(
         custom.temperature,
         Some(0.3),
@@ -230,16 +223,14 @@ Prompt."#,
 #[test]
 fn merge_markdown_permissions_takes_effect_when_config_has_none() {
     // arrange
-    let _lock = CONFIG_DISCOVERY_TEST_LOCK
-        .lock()
-        .expect("lock discovery tests");
-    let temp = tempfile::tempdir().expect("tempdir");
+    let _lock = CONFIG_DISCOVERY_TEST_LOCK.lock().unwrap_or_abort();
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let repo = temp.path().join("repo");
-    fs::create_dir_all(&repo).expect("create repo dir");
-    fs::create_dir_all(repo.join(".git")).expect("create git dir");
+    fs::create_dir_all(&repo).unwrap_or_abort();
+    fs::create_dir_all(repo.join(".git")).unwrap_or_abort();
 
     let config_path = repo.join("harness.jsonc");
-    fs::write(&config_path, merge_test_config(&empty_custom_agent())).expect("write config");
+    fs::write(&config_path, merge_test_config(&empty_custom_agent())).unwrap_or_abort();
     write_agent_markdown(
         &repo,
         "custom",
@@ -258,14 +249,11 @@ Prompt."#,
     );
 
     // act
-    let parsed = load_config_from_file(&config_path).expect("merged config should parse");
+    let parsed = load_config_from_file(&config_path).unwrap_or_abort();
 
     // assert
-    let custom = parsed.agents.get("custom").expect("custom agent exists");
-    let permissions = custom
-        .permissions
-        .as_ref()
-        .expect("markdown permissions must take effect");
+    let custom = parsed.agents.get("custom").unwrap_or_abort();
+    let permissions = custom.permissions.as_ref().unwrap_or_abort();
     assert_eq!(
         permissions.shell,
         Some(PermissionMode::Ask),
@@ -281,16 +269,14 @@ Prompt."#,
 #[test]
 fn merge_markdown_max_iters_takes_effect_when_config_has_none() {
     // arrange
-    let _lock = CONFIG_DISCOVERY_TEST_LOCK
-        .lock()
-        .expect("lock discovery tests");
-    let temp = tempfile::tempdir().expect("tempdir");
+    let _lock = CONFIG_DISCOVERY_TEST_LOCK.lock().unwrap_or_abort();
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let repo = temp.path().join("repo");
-    fs::create_dir_all(&repo).expect("create repo dir");
-    fs::create_dir_all(repo.join(".git")).expect("create git dir");
+    fs::create_dir_all(&repo).unwrap_or_abort();
+    fs::create_dir_all(repo.join(".git")).unwrap_or_abort();
 
     let config_path = repo.join("harness.jsonc");
-    fs::write(&config_path, merge_test_config(&empty_custom_agent())).expect("write config");
+    fs::write(&config_path, merge_test_config(&empty_custom_agent())).unwrap_or_abort();
     write_agent_markdown(
         &repo,
         "custom",
@@ -306,10 +292,10 @@ Prompt."#,
     );
 
     // act
-    let parsed = load_config_from_file(&config_path).expect("merged config should parse");
+    let parsed = load_config_from_file(&config_path).unwrap_or_abort();
 
     // assert
-    let custom = parsed.agents.get("custom").expect("custom agent exists");
+    let custom = parsed.agents.get("custom").unwrap_or_abort();
     assert_eq!(
         custom.max_iters,
         Some(5),
@@ -320,16 +306,14 @@ Prompt."#,
 #[test]
 fn merge_markdown_tool_failure_mode_takes_effect_when_config_has_serde_default() {
     // arrange
-    let _lock = CONFIG_DISCOVERY_TEST_LOCK
-        .lock()
-        .expect("lock discovery tests");
-    let temp = tempfile::tempdir().expect("tempdir");
+    let _lock = CONFIG_DISCOVERY_TEST_LOCK.lock().unwrap_or_abort();
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let repo = temp.path().join("repo");
-    fs::create_dir_all(&repo).expect("create repo dir");
-    fs::create_dir_all(repo.join(".git")).expect("create git dir");
+    fs::create_dir_all(&repo).unwrap_or_abort();
+    fs::create_dir_all(repo.join(".git")).unwrap_or_abort();
 
     let config_path = repo.join("harness.jsonc");
-    fs::write(&config_path, merge_test_config(&empty_custom_agent())).expect("write config");
+    fs::write(&config_path, merge_test_config(&empty_custom_agent())).unwrap_or_abort();
     write_agent_markdown(
         &repo,
         "custom",
@@ -345,10 +329,10 @@ Prompt."#,
     );
 
     // act
-    let parsed = load_config_from_file(&config_path).expect("merged config should parse");
+    let parsed = load_config_from_file(&config_path).unwrap_or_abort();
 
     // assert
-    let custom = parsed.agents.get("custom").expect("custom agent exists");
+    let custom = parsed.agents.get("custom").unwrap_or_abort();
     assert_eq!(
         custom.tool_failure_mode,
         ToolFailureMode::FailTurn,
@@ -359,16 +343,14 @@ Prompt."#,
 #[test]
 fn merge_markdown_tools_take_effect_when_config_has_empty_tools() {
     // arrange
-    let _lock = CONFIG_DISCOVERY_TEST_LOCK
-        .lock()
-        .expect("lock discovery tests");
-    let temp = tempfile::tempdir().expect("tempdir");
+    let _lock = CONFIG_DISCOVERY_TEST_LOCK.lock().unwrap_or_abort();
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let repo = temp.path().join("repo");
-    fs::create_dir_all(&repo).expect("create repo dir");
-    fs::create_dir_all(repo.join(".git")).expect("create git dir");
+    fs::create_dir_all(&repo).unwrap_or_abort();
+    fs::create_dir_all(repo.join(".git")).unwrap_or_abort();
 
     let config_path = repo.join("harness.jsonc");
-    fs::write(&config_path, merge_test_config(&empty_custom_agent())).expect("write config");
+    fs::write(&config_path, merge_test_config(&empty_custom_agent())).unwrap_or_abort();
     write_agent_markdown(
         &repo,
         "custom",
@@ -384,10 +366,10 @@ Prompt."#,
     );
 
     // act
-    let parsed = load_config_from_file(&config_path).expect("merged config should parse");
+    let parsed = load_config_from_file(&config_path).unwrap_or_abort();
 
     // assert
-    let custom = parsed.agents.get("custom").expect("custom agent exists");
+    let custom = parsed.agents.get("custom").unwrap_or_abort();
     assert_eq!(
         custom.tools,
         vec!["read", "grep", "list"],
@@ -398,13 +380,11 @@ Prompt."#,
 #[test]
 fn merge_config_wins_when_both_present_for_all_fields() {
     // arrange
-    let _lock = CONFIG_DISCOVERY_TEST_LOCK
-        .lock()
-        .expect("lock discovery tests");
-    let temp = tempfile::tempdir().expect("tempdir");
+    let _lock = CONFIG_DISCOVERY_TEST_LOCK.lock().unwrap_or_abort();
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let repo = temp.path().join("repo");
-    fs::create_dir_all(&repo).expect("create repo dir");
-    fs::create_dir_all(repo.join(".git")).expect("create git dir");
+    fs::create_dir_all(&repo).unwrap_or_abort();
+    fs::create_dir_all(repo.join(".git")).unwrap_or_abort();
 
     let config_path = repo.join("harness.jsonc");
     fs::write(
@@ -427,7 +407,7 @@ fn merge_config_wins_when_both_present_for_all_fields() {
             "#,
         ),
     )
-    .expect("write config");
+    .unwrap_or_abort();
     write_agent_markdown(
         &repo,
         "custom",
@@ -451,10 +431,10 @@ Prompt."#,
     );
 
     // act
-    let parsed = load_config_from_file(&config_path).expect("merged config should parse");
+    let parsed = load_config_from_file(&config_path).unwrap_or_abort();
 
     // assert
-    let custom = parsed.agents.get("custom").expect("custom agent exists");
+    let custom = parsed.agents.get("custom").unwrap_or_abort();
     assert_eq!(
         custom.description, "From config",
         "config description must win when both present"
@@ -473,10 +453,7 @@ Prompt."#,
         Some(0.1),
         "config temperature must win when both present"
     );
-    let permissions = custom
-        .permissions
-        .as_ref()
-        .expect("config permissions must be present");
+    let permissions = custom.permissions.as_ref().unwrap_or_abort();
     assert_eq!(
         permissions.shell,
         Some(PermissionMode::Deny),

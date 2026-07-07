@@ -1,14 +1,15 @@
+use harness_core::UnwrapOrAbort;
 #[tokio::test]
 async fn replay_preserves_native_tool_artifacts_and_task_lineage() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let workspace_root = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace_root).expect("create workspace root");
+    fs::create_dir_all(&workspace_root).unwrap_or_abort();
 
     let coordinator = test_coordinator(temp_dir.path(), task_alias_registry());
     let run = coordinator
         .start_run("native_metadata_replay", workspace_root)
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let tool_call_id = coordinator
         .request_tool_call(
@@ -21,10 +22,10 @@ async fn replay_preserves_native_tool_artifacts_and_task_lineage() {
             }),
         )
         .await
-        .expect("request delegated task");
+        .unwrap_or_abort();
 
     wait_for_tool_call_finish(&run.events_path, &tool_call_id).await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let events = load_events(&run.events_path);
 
@@ -36,11 +37,11 @@ async fn replay_preserves_native_tool_artifacts_and_task_lineage() {
             }
             _ => None,
         })
-        .expect("tool call requested event");
+        .unwrap_or_abort();
     let requested_metadata = requested
         .metadata
         .as_ref()
-        .expect("requested metadata should be present");
+        .unwrap_or_abort();
     assert_eq!(
         requested_metadata.canonical_tool_id.as_deref(),
         Some("task")
@@ -55,12 +56,12 @@ async fn replay_preserves_native_tool_artifacts_and_task_lineage() {
             }
             _ => None,
         })
-        .expect("tool call finished event");
+        .unwrap_or_abort();
     assert_eq!(finished.status, ToolCallStatus::Succeeded);
     let finished_metadata = finished
         .metadata
         .as_ref()
-        .expect("finished metadata should be present");
+        .unwrap_or_abort();
     assert_eq!(finished_metadata.canonical_tool_id.as_deref(), Some("task"));
     assert_eq!(finished_metadata.alias_source_tool_id.as_deref(), None);
     assert_eq!(
@@ -81,10 +82,10 @@ async fn replay_preserves_native_tool_artifacts_and_task_lineage() {
     let output_json = finished
         .output_json
         .as_ref()
-        .expect("stable output json should be present");
+        .unwrap_or_abort();
     let harness = output_json
         .get("_harness")
-        .expect("stable output json should include _harness metadata");
+        .unwrap_or_abort();
     assert_eq!(
         harness
             .get("artifact_refs")
@@ -99,11 +100,11 @@ async fn replay_preserves_native_tool_artifacts_and_task_lineage() {
             EventV1::TaskCompleted(payload) => Some(payload),
             _ => None,
         })
-        .expect("task completed event");
+        .unwrap_or_abort();
     let completed_metadata = completed
         .metadata
         .as_ref()
-        .expect("task completion metadata should be present");
+        .unwrap_or_abort();
     assert_eq!(
         completed_metadata
             .lineage
@@ -130,7 +131,7 @@ async fn replay_preserves_native_tool_artifacts_and_task_lineage() {
             }
             _ => None,
         })
-        .expect("artifact written event with tool call ref");
+        .unwrap_or_abort();
     assert_eq!(
         artifact_written
             .tool_metadata
@@ -143,7 +144,7 @@ async fn replay_preserves_native_tool_artifacts_and_task_lineage() {
     let replay_tool = plan
         .tool_calls
         .get(&tool_call_id)
-        .expect("resume plan should retain tool metadata");
+        .unwrap_or_abort();
     assert_eq!(replay_tool.tool_id.as_deref(), Some("task"));
     assert_eq!(
         replay_tool
@@ -203,7 +204,7 @@ async fn replay_preserves_native_tool_artifacts_and_task_lineage() {
     let replay_task = plan
         .completed_tasks
         .get(&completed.task_id)
-        .expect("resume plan should retain completed task metadata");
+        .unwrap_or_abort();
     assert_eq!(
         replay_task
             .metadata
@@ -215,7 +216,7 @@ async fn replay_preserves_native_tool_artifacts_and_task_lineage() {
 }
 #[tokio::test]
 async fn legacy_sessions_remain_loadable_after_native_metadata_extension() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_legacy_native_metadata";
     let run_dir = temp_dir.path().join(run_id);
     write_events(
@@ -335,8 +336,8 @@ async fn legacy_sessions_remain_loadable_after_native_metadata_extension() {
     let resumed = coordinator
         .resume_run(run_id, "interactive")
         .await
-        .expect("legacy run should still resume");
-    coordinator.stop_run().await.expect("stop resumed run");
+        .unwrap_or_abort();
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let events = load_events(&resumed.events_path);
     assert!(
@@ -348,11 +349,11 @@ async fn legacy_sessions_remain_loadable_after_native_metadata_extension() {
 async fn resume_projection_handles_checkpoint_between_turn_and_provider_restart() {
     REPLAY_GUARD_TOOL_CALLS.store(0, Ordering::SeqCst);
 
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_resume_checkpoint_between_turn_and_provider_restart";
     let run_dir = temp_dir.path().join(run_id);
     fs::create_dir_all(run_dir.join("artifacts/compactions/agent_000001"))
-        .expect("create checkpoint dirs");
+        .unwrap_or_abort();
     fs::write(
         run_dir.join("artifacts/compactions/agent_000001/checkpoint_000002.json"),
         serde_json::to_string(&ProviderContextCheckpoint {
@@ -386,9 +387,9 @@ async fn resume_projection_handles_checkpoint_between_turn_and_provider_restart(
             summary_source: None,
             timeline_entry: None,
         })
-        .expect("serialize checkpoint"),
+        .unwrap_or_abort(),
     )
-    .expect("write checkpoint");
+    .unwrap_or_abort();
 
     write_events(
         &run_dir,
@@ -467,8 +468,8 @@ async fn resume_projection_handles_checkpoint_between_turn_and_provider_restart(
     let resumed = coordinator
         .resume_run(run_id, "interactive")
         .await
-        .expect("resume run with checkpointed history");
-    coordinator.stop_run().await.expect("stop resumed run");
+        .unwrap_or_abort();
+    coordinator.stop_run().await.unwrap_or_abort();
 
     assert_eq!(REPLAY_GUARD_TOOL_CALLS.load(Ordering::SeqCst), 0);
     assert!(load_events(&resumed.events_path).len() > 6);

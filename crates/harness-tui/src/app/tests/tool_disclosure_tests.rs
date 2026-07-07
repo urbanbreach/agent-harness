@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 pub(super) fn mouse_click_toggles_transcript_tool_disclosure() {
     let mut app = AppState::new_live(None, false, None);
@@ -74,14 +75,14 @@ pub(super) fn mouse_click_toggles_transcript_tool_disclosure() {
         .contains("tc_shell_toggle"));
 }
 pub(super) fn mouse_click_toggles_apply_patch_file_disclosure() {
-    let run_dir = tempfile::tempdir().expect("create run dir");
+    let run_dir = tempfile::tempdir().unwrap_or_abort();
     let artifacts_dir = run_dir.path().join("artifacts");
-    fs::create_dir_all(&artifacts_dir).expect("create artifacts dir");
+    fs::create_dir_all(&artifacts_dir).unwrap_or_abort();
     fs::write(
         artifacts_dir.join("apply-a.diff"),
         "@@ -1,1 +1,1 @@\n-old a\n+new a\n",
     )
-    .expect("write apply patch diff");
+    .unwrap_or_abort();
 
     let mut app = AppState::new_live(Some(run_dir.path().to_path_buf()), false, None);
     app.ingest_event(envelope(

@@ -3,6 +3,7 @@ use crate::read_window::READ_DEFAULT_LIMIT;
 use crate::test_support::{
     read_spilled_artifact, tool_context as fs_read_context, write_workspace_file,
 };
+use crate::UnwrapOrAbort;
 use harness_core::edit::hashline::compute_line_hash;
 use harness_core::tool::{Tool, ToolError, ToolResultContent};
 use serde_json::json;
@@ -13,7 +14,7 @@ mod read_tool;
 #[tokio::test]
 async fn fs_read_supports_offset_and_limit_with_line_numbers() {
     // arrange
-    let temp = tempfile::tempdir().expect("tempdir");
+    let temp = tempfile::tempdir().unwrap_or_abort();
     write_workspace_file(
         temp.path(),
         "fixture.txt",
@@ -33,7 +34,7 @@ async fn fs_read_supports_offset_and_limit_with_line_numbers() {
             }),
         )
         .await
-        .expect("fs.read should succeed");
+        .unwrap_or_abort();
 
     // assert
     assert!(result.display_text.contains("<type>file</type>"));
@@ -45,7 +46,7 @@ async fn fs_read_supports_offset_and_limit_with_line_numbers() {
         .contains("(End of file - total 3 lines)"));
     assert!(result.artifacts.is_empty());
 
-    let metadata = result.structured_json.expect("structured json");
+    let metadata = result.structured_json.unwrap_or_abort();
     assert_eq!(metadata["offset"], json!(2));
     assert_eq!(metadata["limit"], json!(2));
     assert_eq!(metadata["total_lines"], json!(3));
@@ -55,7 +56,7 @@ async fn fs_read_supports_offset_and_limit_with_line_numbers() {
 #[tokio::test]
 async fn fs_read_can_render_hashline_anchors() {
     // arrange
-    let temp = tempfile::tempdir().expect("tempdir");
+    let temp = tempfile::tempdir().unwrap_or_abort();
     write_workspace_file(temp.path(), "fixture.txt", "alpha\nbeta\n");
 
     let tool = FsReadTool::new(false);
@@ -70,7 +71,7 @@ async fn fs_read_can_render_hashline_anchors() {
             }),
         )
         .await
-        .expect("fs.read hashline mode should succeed");
+        .unwrap_or_abort();
 
     // assert
     assert!(result.display_text.contains("<type>file</type>"));
@@ -80,7 +81,7 @@ async fn fs_read_can_render_hashline_anchors() {
         compute_line_hash("beta")
     )));
 
-    let metadata = result.structured_json.expect("structured json");
+    let metadata = result.structured_json.unwrap_or_abort();
     assert_eq!(metadata["hashline_anchors"], json!(true));
     assert_eq!(metadata["anchors"][0]["line"], json!(1));
     assert_eq!(
@@ -99,7 +100,7 @@ async fn fs_read_can_render_hashline_anchors() {
 #[tokio::test]
 async fn fs_read_strips_crlf_line_endings() {
     // arrange
-    let temp = tempfile::tempdir().expect("tempdir");
+    let temp = tempfile::tempdir().unwrap_or_abort();
     write_workspace_file(temp.path(), "fixture.txt", "alpha\r\nbeta\r\n");
 
     let tool = FsReadTool::new(false);
@@ -113,7 +114,7 @@ async fn fs_read_strips_crlf_line_endings() {
             }),
         )
         .await
-        .expect("fs.read should read CRLF text");
+        .unwrap_or_abort();
 
     // assert
     assert!(result.display_text.contains("<content>\n1: alpha\n2: beta"));
@@ -122,7 +123,7 @@ async fn fs_read_strips_crlf_line_endings() {
 #[tokio::test]
 async fn fs_read_normalizes_zero_offset_and_limit_to_defaults() {
     // arrange
-    let temp = tempfile::tempdir().expect("tempdir");
+    let temp = tempfile::tempdir().unwrap_or_abort();
     write_workspace_file(
         temp.path(),
         "fixture.txt",
@@ -142,14 +143,14 @@ async fn fs_read_normalizes_zero_offset_and_limit_to_defaults() {
             }),
         )
         .await
-        .expect("fs.read should normalize zero paging values");
+        .unwrap_or_abort();
 
     // assert
     assert!(result
         .display_text
         .contains("<content>\n1: line one\n2: line two\n3: line three"));
 
-    let metadata = result.structured_json.expect("structured json");
+    let metadata = result.structured_json.unwrap_or_abort();
     assert_eq!(metadata["offset"], json!(1));
     assert_eq!(metadata["limit"], json!(READ_DEFAULT_LIMIT));
     assert_eq!(metadata["hashline_anchors"], json!(false));
@@ -158,7 +159,7 @@ async fn fs_read_normalizes_zero_offset_and_limit_to_defaults() {
 #[tokio::test]
 async fn fs_read_rejects_offset_beyond_end_of_file() {
     // arrange
-    let temp = tempfile::tempdir().expect("tempdir");
+    let temp = tempfile::tempdir().unwrap_or_abort();
     write_workspace_file(temp.path(), "fixture.txt", "alpha\nbeta\ngamma\n");
 
     let tool = FsReadTool::new(false);
@@ -187,7 +188,7 @@ async fn fs_read_rejects_offset_beyond_end_of_file() {
 #[tokio::test]
 async fn fs_read_truncates_lines_longer_than_baseline_limit() {
     // arrange
-    let temp = tempfile::tempdir().expect("tempdir");
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let prefix = "a".repeat(2000);
     let long_line = format!("{prefix}tail");
     let expected = format!("{prefix}... (line truncated to 2000 chars)");
@@ -204,13 +205,13 @@ async fn fs_read_truncates_lines_longer_than_baseline_limit() {
             }),
         )
         .await
-        .expect("fs.read should succeed with a truncated long line");
+        .unwrap_or_abort();
 
     // assert
     assert!(result.display_text.contains(&format!("1: {expected}")));
     assert!(!result.display_text.contains(&long_line));
 
-    let metadata = result.structured_json.expect("structured json");
+    let metadata = result.structured_json.unwrap_or_abort();
     assert_eq!(metadata["metadata"]["preview"], json!(expected));
     assert_eq!(metadata["metadata"]["display"]["text"], json!(expected));
 }
@@ -218,7 +219,7 @@ async fn fs_read_truncates_lines_longer_than_baseline_limit() {
 #[tokio::test]
 async fn fs_read_adds_truncation_marker_and_spills_full_output_artifact() {
     // arrange
-    let temp = tempfile::tempdir().expect("tempdir");
+    let temp = tempfile::tempdir().unwrap_or_abort();
     write_workspace_file(temp.path(), "fixture.txt", "alpha\nbeta\ngamma\ndelta\n");
 
     let context = fs_read_context(temp.path(), "toolcall-truncated");
@@ -234,7 +235,7 @@ async fn fs_read_adds_truncation_marker_and_spills_full_output_artifact() {
             }),
         )
         .await
-        .expect("fs.read should succeed");
+        .unwrap_or_abort();
 
     // assert
     assert!(result.display_text.contains("1: alpha\n2: beta"));
@@ -243,7 +244,7 @@ async fn fs_read_adds_truncation_marker_and_spills_full_output_artifact() {
     assert!(result.display_text.contains("full output artifact:"));
     assert_eq!(result.artifacts.len(), 1);
 
-    let metadata = result.structured_json.expect("structured json");
+    let metadata = result.structured_json.unwrap_or_abort();
     assert_eq!(metadata["truncated"], json!(true));
     assert_eq!(metadata["total_lines"], json!(4));
 
@@ -255,7 +256,7 @@ async fn fs_read_adds_truncation_marker_and_spills_full_output_artifact() {
 #[tokio::test]
 async fn fs_read_spill_artifact_hashes_source_line_when_visible_line_is_truncated() {
     // arrange
-    let temp = tempfile::tempdir().expect("tempdir");
+    let temp = tempfile::tempdir().unwrap_or_abort();
     let prefix = "a".repeat(2000);
     let long_line = format!("{prefix}tail");
     let visible_line = format!("{prefix}... (line truncated to 2000 chars)");
@@ -275,7 +276,7 @@ async fn fs_read_spill_artifact_hashes_source_line_when_visible_line_is_truncate
             }),
         )
         .await
-        .expect("fs.read should spill hashline artifact for truncated output");
+        .unwrap_or_abort();
 
     // assert
     assert_eq!(result.artifacts.len(), 1);
@@ -293,7 +294,7 @@ async fn fs_read_spill_artifact_hashes_source_line_when_visible_line_is_truncate
 #[tokio::test]
 async fn fs_read_rejects_binary_files() {
     // arrange
-    let temp = tempfile::tempdir().expect("tempdir");
+    let temp = tempfile::tempdir().unwrap_or_abort();
     write_workspace_file(temp.path(), "fixture.bin", [0xff_u8, 0xfe, 0x00]);
 
     let tool = FsReadTool::new(false);
@@ -319,7 +320,7 @@ async fn fs_read_rejects_binary_files() {
 #[tokio::test]
 async fn fs_read_returns_image_attachment_content() {
     // arrange
-    let temp = tempfile::tempdir().expect("tempdir");
+    let temp = tempfile::tempdir().unwrap_or_abort();
     write_workspace_file(
         temp.path(),
         "pixel.png",
@@ -337,7 +338,7 @@ async fn fs_read_returns_image_attachment_content() {
             }),
         )
         .await
-        .expect("fs.read should read supported image media");
+        .unwrap_or_abort();
 
     // assert
     assert_eq!(result.display_text, "Image read successfully");
@@ -353,7 +354,7 @@ async fn fs_read_returns_image_attachment_content() {
     assert_eq!(name.as_deref(), Some("pixel.png"));
     assert!(uri.starts_with("data:image/png;base64,"));
 
-    let metadata = result.structured_json.expect("structured json");
+    let metadata = result.structured_json.unwrap_or_abort();
     assert_eq!(
         metadata["metadata"]["preview"],
         json!("Image read successfully")
@@ -364,7 +365,7 @@ async fn fs_read_returns_image_attachment_content() {
 #[tokio::test]
 async fn fs_read_returns_pdf_attachment_content() {
     // arrange
-    let temp = tempfile::tempdir().expect("tempdir");
+    let temp = tempfile::tempdir().unwrap_or_abort();
     write_workspace_file(temp.path(), "doc.pdf", b"%PDF-1.7\nfixture-pdf-bytes");
 
     let tool = FsReadTool::new(false);
@@ -378,7 +379,7 @@ async fn fs_read_returns_pdf_attachment_content() {
             }),
         )
         .await
-        .expect("fs.read should read supported PDF media");
+        .unwrap_or_abort();
 
     // assert
     assert_eq!(result.display_text, "PDF read successfully");

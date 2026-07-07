@@ -1,14 +1,15 @@
+use harness_tools::UnwrapOrAbort;
 #[tokio::test]
 #[expect(
     clippy::await_holding_lock,
     reason = "the global test lock intentionally serializes LSP registry mutations across awaits"
 )]
 async fn native_code_lsp_supports_configured_custom_servers() {
-    let _lock = test_lock().lock().expect("test lock");
+    let _lock = test_lock().lock().unwrap_or_abort();
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let fake_bin = temp_dir.path().join("fake-lsp-bin");
-    fs::create_dir_all(&fake_bin).expect("fake bin dir");
+    fs::create_dir_all(&fake_bin).unwrap_or_abort();
     install_fake_lsp_binary(
         &fake_bin,
         "custom-rust-analyzer",
@@ -100,7 +101,7 @@ async fn native_code_lsp_supports_configured_custom_servers() {
     });
 
     let registry = coordinator_registry(ShellAllowlist::default());
-    let lsp = registry.get("lsp").expect("lsp tool");
+    let lsp = registry.get("lsp").unwrap_or_abort();
 
     let rust_result = lsp
         .call(
@@ -113,7 +114,7 @@ async fn native_code_lsp_supports_configured_custom_servers() {
             }),
         )
         .await
-        .expect("configured rust request");
+        .unwrap_or_abort();
     assert!(rust_result.display_text.contains("rust-definition.rs"));
     assert!(rust_result.display_text.contains("Diagnostics:"));
     assert!(rust_result
@@ -122,7 +123,7 @@ async fn native_code_lsp_supports_configured_custom_servers() {
     let rust_json = rust_result
         .structured_json
         .clone()
-        .expect("configured rust structured json");
+        .unwrap_or_abort();
     assert_eq!(rust_json["server"]["name"], json!("rust"));
     assert_server_command(&rust_json, &["custom-rust-analyzer"]);
     assert!(
@@ -140,14 +141,14 @@ async fn native_code_lsp_supports_configured_custom_servers() {
             }),
         )
         .await
-        .expect("configured typescript request");
+        .unwrap_or_abort();
     assert!(ts_result
         .display_text
         .contains("typescript override diagnostic"));
     let ts_json = ts_result
         .structured_json
         .clone()
-        .expect("configured typescript structured json");
+        .unwrap_or_abort();
     assert_eq!(ts_json["server"]["name"], json!("typescript"));
     assert_server_command(&ts_json, &["custom-ts-lsp"]);
     assert!(first_diagnostic_message(&ts_json).contains("env_ok=True; lang_ok=True; init_ok=True"));
@@ -163,19 +164,19 @@ async fn native_code_lsp_supports_configured_custom_servers() {
             }),
         )
         .await
-        .expect("configured custom request");
+        .unwrap_or_abort();
     assert!(custom_result.display_text.contains("custom-definition.foo"));
     assert!(custom_result
         .display_text
         .contains("custom server diagnostic"));
     let custom_json = custom_result
         .structured_json
-        .expect("configured custom structured json");
+        .unwrap_or_abort();
     assert_eq!(custom_json["server"]["name"], json!("custom-local"));
     assert_server_command(&custom_json, &["custom-local-lsp"]);
     assert!(custom_json["diagnostics"][0]["file_path"]
         .as_str()
-        .expect("custom diagnostic file path")
+        .unwrap_or_abort()
         .ends_with("custom/schema.foo"));
     assert!(
         first_diagnostic_message(&custom_json).contains("env_ok=True; lang_ok=True; init_ok=True")
@@ -187,11 +188,11 @@ async fn native_code_lsp_supports_configured_custom_servers() {
     reason = "the global test lock intentionally serializes LSP registry mutations across awaits"
 )]
 async fn native_code_lsp_returns_empty_definition_without_retry_loop() {
-    let _lock = test_lock().lock().expect("test lock");
+    let _lock = test_lock().lock().unwrap_or_abort();
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let bin_dir = temp_dir.path().join("bin");
-    fs::create_dir_all(&bin_dir).expect("bin dir");
+    fs::create_dir_all(&bin_dir).unwrap_or_abort();
     let counter_path = temp_dir.path().join("definition-count.txt");
     install_empty_definition_lsp_binary(&bin_dir, "custom-rust-analyzer", &counter_path);
     let _config_guard = LspConfigGuard::install(LspConfig {
@@ -209,7 +210,7 @@ async fn native_code_lsp_returns_empty_definition_without_retry_loop() {
     });
 
     let registry = coordinator_registry(ShellAllowlist::default());
-    let lsp = registry.get("lsp").expect("lsp tool");
+    let lsp = registry.get("lsp").unwrap_or_abort();
     let result = lsp
         .call(
             test_context(&workspace, "empty-definition"),
@@ -221,11 +222,11 @@ async fn native_code_lsp_returns_empty_definition_without_retry_loop() {
             }),
         )
         .await
-        .expect("empty definition request should succeed");
+        .unwrap_or_abort();
 
     assert_eq!(result.display_text, "No results found for goToDefinition");
     assert_eq!(
-        fs::read_to_string(&counter_path).expect("read counter"),
+        fs::read_to_string(&counter_path).unwrap_or_abort(),
         "1"
     );
 }
@@ -239,11 +240,11 @@ fn native_code_lsp_supports_configured_builtin_and_custom_servers() {
     reason = "the global test lock intentionally serializes LSP registry mutations across awaits"
 )]
 async fn native_code_lsp_supports_additional_builtin_server_presets() {
-    let _lock = test_lock().lock().expect("test lock");
+    let _lock = test_lock().lock().unwrap_or_abort();
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let fake_bin = temp_dir.path().join("fake-lsp-bin");
-    fs::create_dir_all(&fake_bin).expect("fake bin dir");
+    fs::create_dir_all(&fake_bin).unwrap_or_abort();
     install_fake_lsp_binary(
         &fake_bin,
         "custom-python-lsp",
@@ -370,7 +371,7 @@ async fn native_code_lsp_supports_additional_builtin_server_presets() {
     });
 
     let registry = coordinator_registry(ShellAllowlist::default());
-    let lsp = registry.get("lsp").expect("lsp tool");
+    let lsp = registry.get("lsp").unwrap_or_abort();
 
     let python_result = lsp
         .call(
@@ -383,11 +384,11 @@ async fn native_code_lsp_supports_additional_builtin_server_presets() {
             }),
         )
         .await
-        .expect("python preset request");
+        .unwrap_or_abort();
     let python_json = python_result
         .structured_json
         .clone()
-        .expect("python structured json");
+        .unwrap_or_abort();
     assert_eq!(python_json["server"]["name"], json!("python"));
     assert_server_command(&python_json, &["custom-python-lsp", "--stdio"]);
     assert!(
@@ -405,11 +406,11 @@ async fn native_code_lsp_supports_additional_builtin_server_presets() {
             }),
         )
         .await
-        .expect("go preset request");
+        .unwrap_or_abort();
     let go_json = go_result
         .structured_json
         .clone()
-        .expect("go structured json");
+        .unwrap_or_abort();
     assert_eq!(go_json["server"]["name"], json!("go"));
     assert_server_command(&go_json, &["custom-go-lsp"]);
     assert!(first_diagnostic_message(&go_json).contains("env_ok=True; lang_ok=True; init_ok=True"));
@@ -425,11 +426,11 @@ async fn native_code_lsp_supports_additional_builtin_server_presets() {
             }),
         )
         .await
-        .expect("json preset request");
+        .unwrap_or_abort();
     let json_json = json_result
         .structured_json
         .clone()
-        .expect("json structured json");
+        .unwrap_or_abort();
     assert_eq!(json_json["server"]["name"], json!("json"));
     assert_server_command(&json_json, &["custom-json-lsp", "--stdio"]);
     assert!(
@@ -445,8 +446,8 @@ async fn native_code_lsp_supports_additional_builtin_server_presets() {
             }),
         )
         .await
-        .expect("yaml preset request");
-    let yaml_json = yaml_result.structured_json.expect("yaml structured json");
+        .unwrap_or_abort();
+    let yaml_json = yaml_result.structured_json.unwrap_or_abort();
     assert_eq!(yaml_json["server"]["name"], json!("yaml"));
     assert_server_command(&yaml_json, &["custom-yaml-lsp", "--stdio"]);
     assert!(

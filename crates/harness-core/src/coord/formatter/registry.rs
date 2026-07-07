@@ -1,4 +1,3 @@
-// allow: SIZE_OK — pure data table of 26 OpenCode formatters; splitting would
 // fragment the canonical registry order and command/extension mappings.
 //! Built-in formatter registry for OpenCode-parity formatting.
 //!
@@ -250,7 +249,6 @@ pub static BUILTIN_FORMATTERS: &[FormatterInfo] = &[
 ///
 /// `extension` may be passed with or without a leading dot; the registry
 /// extensions always include the dot.
-#[allow(dead_code)]
 pub fn formatter_info_by_extension(extension: &str) -> Option<&'static FormatterInfo> {
     let needle = extension.strip_prefix('.').unwrap_or(extension);
     BUILTIN_FORMATTERS.iter().find(|info| {
@@ -263,6 +261,7 @@ pub fn formatter_info_by_extension(extension: &str) -> Option<&'static Formatter
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::UnwrapOrAbort;
 
     #[test]
     fn formatter_registry_contains_all_expected_names() {
@@ -366,10 +365,10 @@ mod tests {
     fn formatter_registry_lookup_by_extension_finds_match() {
         // arrange
         // act
-        let rust = formatter_info_by_extension("rs").expect("lookup rs");
+        let rust = formatter_info_by_extension("rs").unwrap_or_abort();
         // assert
         assert_eq!(rust.name, "rustfmt");
-        let python = formatter_info_by_extension(".py").expect("lookup .py");
+        let python = formatter_info_by_extension(".py").unwrap_or_abort();
         assert_eq!(python.name, "ruff");
         assert!(formatter_info_by_extension("not-an-ext").is_none());
     }

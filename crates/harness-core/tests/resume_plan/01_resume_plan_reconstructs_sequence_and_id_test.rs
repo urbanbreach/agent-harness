@@ -1,6 +1,7 @@
+use harness_core::UnwrapOrAbort;
 #[test]
 fn resume_plan_reconstructs_sequence_and_id_watermarks() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_dir = temp_dir.path().join("run_resume_ok");
     write_events(
         &run_dir,
@@ -135,7 +136,7 @@ fn resume_plan_reconstructs_sequence_and_id_watermarks() {
 }
 #[test]
 fn resume_plan_preserves_run_scoped_permission_grants_across_resume_markers() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_dir = temp_dir.path().join("run_permission_grant_resume");
     let grant = PermissionGrant {
         grant_id: "grant_perm_000001".to_string(),
@@ -202,7 +203,7 @@ fn resume_plan_preserves_run_scoped_permission_grants_across_resume_markers() {
 }
 #[test]
 fn replay_old_loop_events_without_provider_metadata() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_dir = temp_dir.path().join("run_old_loop_events");
     write_events(
         &run_dir,
@@ -258,7 +259,7 @@ fn replay_old_loop_events_without_provider_metadata() {
 }
 #[test]
 fn replay_new_loop_metadata_is_non_semantic_for_run_summary() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let base_dir = temp_dir.path().join("run_metadata_equivalence");
     let legacy_dir = base_dir.join("legacy");
     let metadata_dir = base_dir.join("metadata");
@@ -415,8 +416,8 @@ fn replay_new_loop_metadata_is_non_semantic_for_run_summary() {
     write_events(&legacy_dir, &legacy_events);
     write_events(&metadata_dir, &metadata_events);
 
-    let legacy_summary = project_run_summary(legacy_events.iter()).expect("legacy summary");
-    let metadata_summary = project_run_summary(metadata_events.iter()).expect("metadata summary");
+    let legacy_summary = project_run_summary(legacy_events.iter()).unwrap_or_abort();
+    let metadata_summary = project_run_summary(metadata_events.iter()).unwrap_or_abort();
 
     assert_eq!(legacy_summary, metadata_summary);
     assert_eq!(legacy_summary.status, RunStatus::Finished);

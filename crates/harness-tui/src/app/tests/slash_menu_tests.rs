@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 pub(super) fn slash_menu_closes_after_whitespace() {
     let mut app = AppState::new_startup(Vec::new(), None);
@@ -74,7 +75,7 @@ pub(super) fn slash_alias_executes_matching_command_without_menu() {
     let sink = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
 
@@ -86,7 +87,7 @@ pub(super) fn slash_alias_executes_matching_command_without_menu() {
 
     assert!(app.should_quit);
     assert_eq!(
-        intents.lock().expect("lock intents").as_slice(),
+        intents.lock().unwrap_or_abort().as_slice(),
         &[UiIntent::QuitRequested]
     );
 }
@@ -137,7 +138,7 @@ pub(super) fn slash_exit_matches_quit_requested_behavior() {
     let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
 
@@ -149,7 +150,7 @@ pub(super) fn slash_exit_matches_quit_requested_behavior() {
 
     assert!(app.should_quit);
     assert_eq!(
-        intents.lock().expect("lock intents").as_slice(),
+        intents.lock().unwrap_or_abort().as_slice(),
         &[UiIntent::QuitRequested]
     );
 }
@@ -178,7 +179,7 @@ pub(super) fn resume_history_surface_uses_meaningful_session_title() {
     let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
 
@@ -195,9 +196,7 @@ pub(super) fn resume_history_surface_uses_meaningful_session_title() {
         app.startup_launcher_action,
         StartupLauncherAction::ContinueSession
     );
-    let selected = app
-        .selected_session_history_entry()
-        .expect("titled session should be selected");
+    let selected = app.selected_session_history_entry().unwrap_or_abort();
     assert_eq!(
         session_navigation::session_history_display_title(selected),
         "map chat renderers"
@@ -211,7 +210,7 @@ pub(super) fn resume_history_surface_uses_meaningful_session_title() {
 
     app.handle_key(key(KeyCode::Enter));
     assert_eq!(
-        intents.lock().expect("lock intents").as_slice(),
+        intents.lock().unwrap_or_abort().as_slice(),
         &[UiIntent::ContinueSession {
             run_id: "run-title".to_string(),
             run_dir: PathBuf::from("/tmp/run-title"),
@@ -226,16 +225,16 @@ pub(super) fn slash_menu_supports_mouse_selection() {
     let frame = Rect::new(0, 0, 100, 24);
     let overlay = crate::layout::FrameLayoutPlan::for_app(&app, frame)
         .slash_overlay
-        .expect("slash overlay");
+        .unwrap_or_abort();
     let list_area = crate::layout::slash_command_overlay_content_area(overlay);
     let target_index = app
         .slash_filtered
         .iter()
         .position(|command| command == "new")
-        .expect("new slash command visible");
+        .unwrap_or_abort();
     let target_row = list_area
         .y
-        .saturating_add(u16::try_from(target_index).expect("target row fits in u16"));
+        .saturating_add(u16::try_from(target_index).unwrap_or_abort());
 
     app.handle_mouse(
         MouseEvent {
@@ -313,7 +312,7 @@ pub(super) fn rename_slash_command_emits_update_session_title_intent() {
     let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
 
@@ -328,7 +327,7 @@ pub(super) fn rename_slash_command_emits_update_session_title_intent() {
     assert_eq!(app.composer.prompt_buffer, "draft preserved");
     assert!(!app.slash_visible);
     assert_eq!(
-        intents.lock().expect("lock intents").as_slice(),
+        intents.lock().unwrap_or_abort().as_slice(),
         &[UiIntent::UpdateSessionTitle {
             title: "New Title".to_string(),
         }]
@@ -340,7 +339,7 @@ pub(super) fn rename_slash_empty_title_emits_error_toast() {
     let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
         let intents = Arc::clone(&intents);
         Arc::new(move |intent: UiIntent| {
-            intents.lock().expect("lock intents").push(intent);
+            intents.lock().unwrap_or_abort().push(intent);
         })
     };
 
@@ -353,7 +352,7 @@ pub(super) fn rename_slash_empty_title_emits_error_toast() {
 
     assert!(!intents
         .lock()
-        .expect("lock intents")
+        .unwrap_or_abort()
         .iter()
         .any(|intent| matches!(intent, UiIntent::UpdateSessionTitle { .. })));
     assert_eq!(

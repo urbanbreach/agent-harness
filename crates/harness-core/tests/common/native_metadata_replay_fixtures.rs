@@ -1,3 +1,4 @@
+use harness_core::UnwrapOrAbort;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
@@ -159,11 +160,11 @@ fn envelope(run_id: &str, seq: u64, payload: EventV1) -> EventEnvelopeV1 {
 }
 
 fn write_events(run_dir: &Path, events: &[EventEnvelopeV1]) {
-    fs::create_dir_all(run_dir.join("artifacts")).expect("create run directory");
+    fs::create_dir_all(run_dir.join("artifacts")).unwrap_or_abort();
     let mut body = String::new();
     for event in events {
-        body.push_str(&serde_json::to_string(event).expect("serialize event"));
+        body.push_str(&serde_json::to_string(event).unwrap_or_abort());
         body.push('\n');
     }
-    fs::write(run_dir.join("events.jsonl"), body).expect("write events");
+    fs::write(run_dir.join("events.jsonl"), body).unwrap_or_abort();
 }

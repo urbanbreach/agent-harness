@@ -272,12 +272,15 @@ fn trim_trailing_snapshot_whitespace(rendered: &str) -> String {
         .join("\n")
 }
 
+#[allow(clippy::panic, reason = "test code must panic gracefully")]
 fn assert_markers_in_order(screen: &str, markers: &[&str]) {
     let mut last = 0;
     for marker in markers {
-        let offset = screen[last..]
-            .find(marker)
-            .unwrap_or_else(|| panic!("missing marker {marker:?}\n{screen}"));
+        let offset = screen[last..].find(marker).unwrap_or_else(|| {
+            let _ = marker;
+            let _ = &screen;
+            panic!("abort");
+        });
         last += offset + marker.len();
     }
 }

@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::ffi::OsStr;
 use std::io::{self, IsTerminal, Write};
 use std::process::{Command, Stdio};
@@ -204,6 +205,7 @@ pub(crate) fn set_copy_on_select_disabled_override(value: CopyOnSelectDisabledOv
 #[cfg(test)]
 mod tests {
     use super::{copy_impl, copy_on_select_disabled_from_env};
+    use crate::UnwrapOrAbort;
     use std::ffi::OsStr;
     use std::io;
     use std::sync::{Arc, Mutex};
@@ -257,14 +259,14 @@ mod tests {
             move |text| {
                 osc52_calls
                     .lock()
-                    .expect("lock calls")
+                    .unwrap_or_abort()
                     .push(format!("osc52:{text}"));
                 Err(io::Error::other("osc52 failed"))
             },
             move |text| {
                 native_calls
                     .lock()
-                    .expect("lock calls")
+                    .unwrap_or_abort()
                     .push(format!("native:{text}"));
                 Ok(true)
             },
@@ -272,7 +274,7 @@ mod tests {
 
         assert!(result.is_ok());
         assert_eq!(
-            calls.lock().expect("lock calls").as_slice(),
+            calls.lock().unwrap_or_abort().as_slice(),
             ["osc52:fallback text", "native:fallback text"]
         );
     }

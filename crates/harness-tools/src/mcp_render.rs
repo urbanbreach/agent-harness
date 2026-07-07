@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use reqwest::StatusCode;
 use serde_json::{json, Value};
 
@@ -257,6 +258,7 @@ mod tests {
         describe_upstream_non_json_response, normalize_mcp_error_message,
         render_mcp_http_parse_error, render_mcp_http_status_error,
     };
+    use crate::UnwrapOrAbort;
     use reqwest::{header::HeaderMap, StatusCode};
     use serde_json::Value;
 
@@ -300,10 +302,7 @@ mod tests {
     #[test]
     fn mcp_http_status_error_marks_rate_limits_and_retry_after() {
         let mut headers = HeaderMap::new();
-        headers.insert(
-            reqwest::header::RETRY_AFTER,
-            "12".parse().expect("retry-after"),
-        );
+        headers.insert(reqwest::header::RETRY_AFTER, "12".parse().unwrap_or_abort());
 
         let message = render_mcp_http_status_error(
             StatusCode::TOO_MANY_REQUESTS,

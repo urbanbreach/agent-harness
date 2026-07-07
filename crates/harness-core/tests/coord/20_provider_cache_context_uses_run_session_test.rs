@@ -1,6 +1,7 @@
+use harness_core::UnwrapOrAbort;
 #[tokio::test]
 async fn provider_prompt_cache_context_uses_run_id_not_reused_agent_id() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = CapturingProvider::new(vec!["first answer", "second answer"]);
     let coordinator =
         test_agent_coordinator_with_provider(temp_dir.path(), Arc::new(provider.clone()), 1);
@@ -8,16 +9,16 @@ async fn provider_prompt_cache_context_uses_run_id_not_reused_agent_id() {
     let first_run = coordinator
         .start_run("first cache-key run", PathBuf::from("/workspace/project"))
         .await
-        .expect("start first run");
+        .unwrap_or_abort();
     let first_agent = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn first agent");
+        .unwrap_or_abort();
     assert_eq!(first_agent, "agent_000001");
     let first_request = coordinator
         .request_agent_turn(supervisor_actor(), first_agent.clone(), "first prompt")
         .await
-        .expect("request first turn");
+        .unwrap_or_abort();
     wait_for_events(&first_run.events_path, Duration::from_secs(1), |events| {
         events.iter().any(|event| {
             matches!(
@@ -29,21 +30,21 @@ async fn provider_prompt_cache_context_uses_run_id_not_reused_agent_id() {
         })
     })
     .await;
-    coordinator.stop_run().await.expect("stop first run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let second_run = coordinator
         .start_run("second cache-key run", PathBuf::from("/workspace/project"))
         .await
-        .expect("start second run");
+        .unwrap_or_abort();
     let second_agent = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn second agent");
+        .unwrap_or_abort();
     assert_eq!(second_agent, "agent_000001");
     let second_request = coordinator
         .request_agent_turn(supervisor_actor(), second_agent, "second prompt")
         .await
-        .expect("request second turn");
+        .unwrap_or_abort();
     wait_for_events(&second_run.events_path, Duration::from_secs(1), |events| {
         events.iter().any(|event| {
             matches!(
@@ -55,7 +56,7 @@ async fn provider_prompt_cache_context_uses_run_id_not_reused_agent_id() {
         })
     })
     .await;
-    coordinator.stop_run().await.expect("stop second run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let requests = provider.requests();
     assert_eq!(requests.len(), 2, "expected one provider request per run");

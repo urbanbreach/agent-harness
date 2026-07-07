@@ -1,3 +1,4 @@
+use harness::UnwrapOrAbort;
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::future::Future;
@@ -32,43 +33,30 @@ use tempfile::tempdir;
 mod common;
 use common::{CliHarness, CliHarnessOutput};
 
-#[allow(dead_code)]
 #[path = "../../src/bootstrap.rs"]
 mod bootstrap;
-#[allow(dead_code)]
 #[path = "../../src/cli_config.rs"]
 mod cli_config;
-#[allow(dead_code)]
 #[path = "../../src/cli_io.rs"]
 mod cli_io;
-#[allow(dead_code)]
 #[path = "../../src/cli_labels.rs"]
 mod cli_labels;
-#[allow(dead_code)]
 #[path = "../../src/defaults.rs"]
 mod defaults;
-#[allow(dead_code)]
 #[path = "../../src/dynamic_prompt.rs"]
 mod dynamic_prompt;
-#[allow(dead_code)]
 #[path = "../../src/generated_model_catalog.rs"]
 mod generated_model_catalog;
-#[allow(dead_code)]
 #[path = "../../src/logging.rs"]
 mod logging;
-#[allow(dead_code)]
 #[path = "../../src/recovery.rs"]
 mod recovery;
-#[allow(dead_code)]
 #[path = "../../src/replay.rs"]
 mod replay;
-#[allow(dead_code)]
 #[path = "../../src/runtime_catalog.rs"]
 mod runtime_catalog;
-#[allow(dead_code)]
 #[path = "../../src/scenarios.rs"]
 mod scenarios;
-#[allow(dead_code)]
 #[path = "../../src/tui.rs"]
 mod tui_impl;
 
@@ -182,7 +170,7 @@ struct CapturingInteractiveProvider {
 
 impl CapturingInteractiveProvider {
     fn requests(&self) -> Vec<CompletionRequest> {
-        self.requests.lock().expect("provider requests").clone()
+        self.requests.lock().unwrap_or_abort().clone()
     }
 }
 
@@ -197,7 +185,7 @@ impl Provider for CapturingInteractiveProvider {
     {
         self.requests
             .lock()
-            .expect("provider requests")
+            .unwrap_or_abort()
             .push(req.clone());
         Box::pin(async move {
             let digest = harness_providers::mock::request_digest(&req);
@@ -230,11 +218,11 @@ fn capturing_interactive_provider_router() -> (
     let router = ProviderRouter::new(BTreeMap::from([
         (
             "default".to_string(),
-            default_provider.clone() as Arc<dyn Provider>,
+            Arc::clone(&default_provider) as Arc<dyn Provider>,
         ),
         (
             "anthropic".to_string(),
-            ops_provider.clone() as Arc<dyn Provider>,
+            Arc::clone(&ops_provider) as Arc<dyn Provider>,
         ),
     ]));
     (default_provider, ops_provider, Arc::new(router))
@@ -243,10 +231,10 @@ fn capturing_interactive_provider_router() -> (
 fn write_events_jsonl(run_dir: &std::path::Path, events: &[EventEnvelopeV1]) {
     let body = events
         .iter()
-        .map(|event| serde_json::to_string(event).expect("serialize event"))
+        .map(|event| serde_json::to_string(event).unwrap_or_abort())
         .collect::<Vec<_>>()
         .join("\n");
-    std::fs::write(run_dir.join("events.jsonl"), format!("{body}\n")).expect("write events");
+    std::fs::write(run_dir.join("events.jsonl"), format!("{body}\n")).unwrap_or_abort();
 }
 
 fn envelope(seq: u64, payload: EventV1) -> EventEnvelopeV1 {

@@ -167,8 +167,8 @@ impl LspPosition {
         }
 
         Ok(Self {
-            line: (line as u32) - 1,
-            character: (character as u32) - 1,
+            line: (u32::try_from(line).unwrap_or(u32::MAX)) - 1,
+            character: (u32::try_from(character).unwrap_or(u32::MAX)) - 1,
         })
     }
 
@@ -439,9 +439,7 @@ pub(crate) fn execute_lsp_operation(
                 json!({ "item": item }),
             )
         }
-        LspOperation::FileDiagnostics | LspOperation::WorkspaceDiagnostics => {
-            unreachable!("diagnostics-first operations return before navigation dispatch")
-        }
+        LspOperation::FileDiagnostics | LspOperation::WorkspaceDiagnostics => std::process::abort(),
     }?;
 
     Ok(LspOperationResponse {

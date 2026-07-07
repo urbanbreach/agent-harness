@@ -91,10 +91,16 @@ pub(super) fn composer_shortcut_hints(app: &AppState, composer_disabled: bool) -
 
 fn compact_usage_count(value: u64) -> String {
     if value >= 1_000_000 {
-        return format!("{:.1}M", value as f64 / 1_000_000.0);
+        return format!(
+            "{:.1}M",
+            f64::from(u32::try_from(value).unwrap_or(u32::MAX)) / 1_000_000.0
+        );
     }
     if value >= 1_000 {
-        return format!("{:.1}K", value as f64 / 1_000.0);
+        return format!(
+            "{:.1}K",
+            f64::from(u32::try_from(value).unwrap_or(u32::MAX)) / 1_000.0
+        );
     }
     value.to_string()
 }
@@ -110,10 +116,8 @@ fn composer_context_usage(app: &AppState) -> (String, Option<String>) {
     let percent = app.current_context_window_tokens().and_then(|limit| {
         (limit > 0).then(|| {
             format!(
-                "{}%",
-                ((f64::from(total) / f64::from(limit)) * 100.0)
-                    .round()
-                    .clamp(0.0, 999.0) as u64
+                "{:.0}%",
+                ((f64::from(total) / f64::from(limit)) * 100.0).clamp(0.0, 999.0)
             )
         })
     });

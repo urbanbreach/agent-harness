@@ -1,3 +1,4 @@
+use crate::UnwrapOrAbort;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -324,8 +325,7 @@ fn latest_resumable_session(
 }
 
 fn scenario(cmd: &RunCommand) -> ScenarioName {
-    cmd.scenario
-        .expect("scenario runner dispatch requires --scenario")
+    cmd.scenario.unwrap_or_abort()
 }
 
 fn resolve_settings(
@@ -526,6 +526,7 @@ mod tests {
     use crate::replay::summarize_session;
     use crate::scenarios::{deterministic_run_id, ScenarioName};
     use crate::CliIo;
+    use crate::UnwrapOrAbort;
     use harness_core::config::ShellAllowlist;
     use harness_core::event::ToolCallStatus as EventToolCallStatus;
     use harness_core::event::{EventV1, PermissionDecision as EventPermissionDecision};
@@ -563,7 +564,7 @@ mod tests {
 
     #[tokio::test]
     async fn deterministic_golden_path_twice_produces_identical_sha256_digest() {
-        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let temp_dir = tempfile::tempdir().unwrap_or_abort();
         let settings = RunSettings {
             config: None,
             session_dir: temp_dir.path().join("sessions"),
@@ -579,13 +580,13 @@ mod tests {
 
         let run_a = run_once(&command, &settings, &mut io, &crate::CliDeps::real())
             .await
-            .expect("first deterministic run");
-        let digest_a = sha256_hex(&std::fs::read(&run_a.events_path).expect("read first jsonl"));
+            .unwrap_or_abort();
+        let digest_a = sha256_hex(&std::fs::read(&run_a.events_path).unwrap_or_abort());
 
         let run_b = run_once(&command, &settings, &mut io, &crate::CliDeps::real())
             .await
-            .expect("second deterministic run");
-        let digest_b = sha256_hex(&std::fs::read(&run_b.events_path).expect("read second jsonl"));
+            .unwrap_or_abort();
+        let digest_b = sha256_hex(&std::fs::read(&run_b.events_path).unwrap_or_abort());
 
         assert_eq!(digest_a, digest_b);
     }
@@ -604,7 +605,7 @@ mod tests {
 
     #[tokio::test]
     async fn deterministic_run_writes_stable_meta_json_with_null_created_at() {
-        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let temp_dir = tempfile::tempdir().unwrap_or_abort();
         let settings = RunSettings {
             config: None,
             session_dir: temp_dir.path().join("sessions"),
@@ -620,23 +621,23 @@ mod tests {
 
         let run_a = run_once(&command, &settings, &mut io, &crate::CliDeps::real())
             .await
-            .expect("first deterministic run");
-        let meta_a = std::fs::read(run_a.run_dir.join("meta.json")).expect("read first meta");
+            .unwrap_or_abort();
+        let meta_a = std::fs::read(run_a.run_dir.join("meta.json")).unwrap_or_abort();
 
         let run_b = run_once(&command, &settings, &mut io, &crate::CliDeps::real())
             .await
-            .expect("second deterministic run");
-        let meta_b = std::fs::read(run_b.run_dir.join("meta.json")).expect("read second meta");
+            .unwrap_or_abort();
+        let meta_b = std::fs::read(run_b.run_dir.join("meta.json")).unwrap_or_abort();
 
         assert_eq!(meta_a, meta_b);
-        let value: serde_json::Value = serde_json::from_slice(&meta_a).expect("parse meta json");
+        let value: serde_json::Value = serde_json::from_slice(&meta_a).unwrap_or_abort();
         assert!(value.get("created_at").is_some());
         assert!(value.get("created_at").unwrap().is_null());
     }
 
     #[tokio::test]
     async fn replay_summary_matches_expected_values_for_golden_path() {
-        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let temp_dir = tempfile::tempdir().unwrap_or_abort();
         let settings = RunSettings {
             config: None,
             session_dir: temp_dir.path().join("sessions"),
@@ -652,8 +653,8 @@ mod tests {
 
         let run = run_once(&command, &settings, &mut io, &crate::CliDeps::real())
             .await
-            .expect("deterministic golden path run");
-        let summary = summarize_session(&run.run_dir).expect("replay summary");
+            .unwrap_or_abort();
+        let summary = summarize_session(&run.run_dir).unwrap_or_abort();
 
         assert_eq!(summary.status, RunStatus::Finished);
         assert_eq!(summary.counts_by_type.get("run_finished"), Some(&1));
@@ -664,7 +665,7 @@ mod tests {
 
     #[tokio::test]
     async fn edit_applied_diff_refs_match_artifact_written() {
-        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let temp_dir = tempfile::tempdir().unwrap_or_abort();
         let settings = RunSettings {
             config: None,
             session_dir: temp_dir.path().join("sessions"),
@@ -680,8 +681,8 @@ mod tests {
 
         let run = run_once(&command, &settings, &mut io, &crate::CliDeps::real())
             .await
-            .expect("deterministic golden path run");
-        let events = load_events_file(&run.events_path).expect("load events");
+            .unwrap_or_abort();
+        let events = load_events_file(&run.events_path).unwrap_or_abort();
 
         let (diff_path, diff_digest) = events
             .iter()
@@ -691,13 +692,13 @@ mod tests {
                 }
                 _ => None,
             })
-            .expect("edit applied event");
+            .unwrap_or_abort();
 
         assert!(diff_path.is_some(), "EditApplied.diff_rel_path must be set");
         assert!(diff_digest.is_some(), "EditApplied.diff_digest must be set");
 
-        let diff_path = diff_path.expect("diff path");
-        let diff_digest = diff_digest.expect("diff digest");
+        let diff_path = diff_path.unwrap_or_abort();
+        let diff_digest = diff_digest.unwrap_or_abort();
         let artifact_digest = events
             .iter()
             .find_map(|event| match &event.payload {
@@ -706,7 +707,7 @@ mod tests {
                 }
                 _ => None,
             })
-            .expect("artifact_written for diff path");
+            .unwrap_or_abort();
 
         assert_eq!(artifact_digest, diff_digest);
     }
@@ -714,7 +715,7 @@ mod tests {
     #[tokio::test]
     async fn interactive_golden_path_deny_emits_edit_rejected_without_applying_file() {
         // arrange
-        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let temp_dir = tempfile::tempdir().unwrap_or_abort();
         let session_dir = temp_dir.path().join("sessions");
         let settings = RunSettings {
             config: None,
@@ -742,7 +743,7 @@ mod tests {
 
         let run_id = deterministic_run_id(2028, ScenarioName::GoldenPathInteractive);
         let run_dir = session_dir.join(&run_id);
-        let events = load_events_file(&run_dir.join("events.jsonl")).expect("load events");
+        let events = load_events_file(&run_dir.join("events.jsonl")).unwrap_or_abort();
         let tool_call_id = events
             .iter()
             .find_map(|event| match &event.payload {
@@ -751,7 +752,7 @@ mod tests {
                 }
                 _ => None,
             })
-            .expect("edit tool call request");
+            .unwrap_or_abort();
         let permission_id = events
             .iter()
             .find_map(|event| match &event.payload {
@@ -762,7 +763,7 @@ mod tests {
                 }
                 _ => None,
             })
-            .expect("edit permission request");
+            .unwrap_or_abort();
 
         assert!(events.iter().any(|event| {
             matches!(
@@ -798,14 +799,14 @@ mod tests {
                 EventV1::RunFailed(data) if data.error.contains("tool call did not succeed: Failed")
             )
         }));
-        let summary = summarize_session(&run_dir).expect("replay summary");
+        let summary = summarize_session(&run_dir).unwrap_or_abort();
         assert_eq!(summary.status, RunStatus::Failed);
         assert_eq!(summary.counts_by_type.get("run_failed"), Some(&1));
 
         let workspace = session_dir
             .join("workspaces")
             .join(format!("golden_path_interactive-{run_id}"));
-        let demo = std::fs::read_to_string(workspace.join("demo.txt")).expect("read demo file");
+        let demo = std::fs::read_to_string(workspace.join("demo.txt")).unwrap_or_abort();
         assert_eq!(demo, "alpha\nbeta\ngamma\n");
     }
 

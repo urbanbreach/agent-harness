@@ -1,3 +1,4 @@
+use harness_providers::UnwrapOrAbort;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -69,7 +70,7 @@ async fn openai_compatible_serializes_native_tool_schema_without_alias_dupes() {
         "http://127.0.0.1/v1/responses",
         HttpOutput::text(200, responses_done_sse_transcript()),
     )]));
-    let transport = Arc::new(FakeOpenAiTransport::new(http.clone()));
+    let transport = Arc::new(FakeOpenAiTransport::new(Arc::clone(&http)));
 
     let provider = OpenAiCompatibleProvider::with_transport(
         OpenAiCompatibleProviderConfig {
@@ -79,9 +80,9 @@ async fn openai_compatible_serializes_native_tool_schema_without_alias_dupes() {
             timeout_ms: 60_000,
             headers: BTreeMap::new(),
         },
-        transport.clone(),
+        Arc::<FakeOpenAiTransport>::clone(&transport),
     )
-    .expect("provider should build");
+    .unwrap_or_abort();
 
     let events = provider
         .stream_completion(native_surface_request())
@@ -115,7 +116,7 @@ async fn openai_compatible_serializes_native_tool_schema_without_alias_dupes() {
     let tools = body
         .get("tools")
         .and_then(serde_json::Value::as_array)
-        .expect("responses request should serialize tools");
+        .unwrap_or_abort();
     assert_eq!(tools.len(), 2);
 
     let names = tools
@@ -123,7 +124,7 @@ async fn openai_compatible_serializes_native_tool_schema_without_alias_dupes() {
         .map(|tool| {
             tool.get("name")
                 .and_then(serde_json::Value::as_str)
-                .expect("responses tool name")
+                .unwrap_or_abort()
         })
         .collect::<Vec<_>>();
     assert_eq!(names, vec!["read", "bash"]);

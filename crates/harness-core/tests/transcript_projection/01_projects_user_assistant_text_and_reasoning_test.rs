@@ -1,3 +1,4 @@
+use harness_core::UnwrapOrAbort;
 #[test]
 fn projects_user_assistant_text_and_reasoning_parts() {
     let events = vec![
@@ -100,17 +101,17 @@ fn projects_user_assistant_text_and_reasoning_parts() {
         ),
     ];
 
-    let projection = project_transcript(&events).expect("project transcript");
+    let projection = project_transcript(&events).unwrap_or_abort();
 
     assert_eq!(projection.session.status, TranscriptRunStatus::Finished);
     assert_eq!(projection.session.run_name.as_deref(), Some("interactive"));
-    serde_json::to_value(&projection).expect("projection is serializable");
+    serde_json::to_value(&projection).unwrap_or_abort();
 
     let user = projection
         .messages
         .iter()
         .find(|message| message.role == ProjectedMessageRole::User)
-        .expect("user message");
+        .unwrap_or_abort();
     assert_eq!(user.request_id.as_deref(), Some("req_000001"));
     let ProjectedPart::Text(user_text) = &user.parts[0] else {
         panic!("expected user text part")
@@ -118,7 +119,7 @@ fn projects_user_assistant_text_and_reasoning_parts() {
     assert_eq!(user_text.text, "Explain the plan.");
 
     let assistant = assistant_message(&projection, "req_000001");
-    let provider = assistant.provider.as_ref().expect("provider metadata");
+    let provider = assistant.provider.as_ref().unwrap_or_abort();
     assert_eq!(
         provider.provider_request_id.as_deref(),
         Some("provider_req_1")
@@ -201,7 +202,7 @@ fn keeps_tool_results_on_source_ordered_tool_parts_when_finishes_arrive_out_of_o
         ),
     ];
 
-    let projection = project_transcript(&events).expect("project transcript");
+    let projection = project_transcript(&events).unwrap_or_abort();
     let assistant = assistant_message(&projection, "req_000001");
     let tool_parts = assistant
         .parts
@@ -309,14 +310,14 @@ fn projects_compaction_checkpoint_requested_written_applied_and_failed_state() {
         ),
     ];
 
-    let projection = project_transcript(&events).expect("project transcript");
+    let projection = project_transcript(&events).unwrap_or_abort();
 
     assert_eq!(projection.compaction_checkpoints.len(), 2);
     let applied = projection
         .compaction_checkpoints
         .iter()
         .find(|checkpoint| checkpoint.checkpoint_id.as_deref() == Some("checkpoint_000001"))
-        .expect("applied checkpoint");
+        .unwrap_or_abort();
     assert_eq!(applied.status, CompactionCheckpointStatus::Applied);
     assert_eq!(applied.trigger_reason.as_deref(), Some("manual"));
     assert_eq!(
@@ -330,7 +331,7 @@ fn projects_compaction_checkpoint_requested_written_applied_and_failed_state() {
         .compaction_checkpoints
         .iter()
         .find(|checkpoint| checkpoint.checkpoint_id.as_deref() == Some("checkpoint_000002"))
-        .expect("failed checkpoint");
+        .unwrap_or_abort();
     assert_eq!(failed.status, CompactionCheckpointStatus::Failed);
     assert_eq!(
         failed.reason.as_deref(),
@@ -433,7 +434,7 @@ fn projects_artifact_metadata_without_reading_artifact_contents() {
         ),
     ];
 
-    let projection = project_transcript(&events).expect("project transcript");
+    let projection = project_transcript(&events).unwrap_or_abort();
 
     assert_eq!(projection.artifacts.len(), 3);
     assert!(projection.artifacts.iter().any(|artifact| {

@@ -17,7 +17,6 @@ use super::ui_transcript_surface::{
 
 const TRANSCRIPT_SECTION_GAP_HEIGHT: usize = 1;
 
-#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, Clone)]
 pub(super) struct MeasuredTranscriptSection {
     pub(super) top_row: usize,

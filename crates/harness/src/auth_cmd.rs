@@ -383,7 +383,7 @@ fn execute_login_selection(
     match method {
         AuthLoginMethod::Device => run_device_login(auth_provider, enterprise_url, io, store, ui),
         AuthLoginMethod::Browser => run_codex_browser_login(auth_provider, io, store, ui),
-        AuthLoginMethod::ApiKey => unreachable!("api-key handled above"),
+        AuthLoginMethod::ApiKey => std::process::abort(),
     }
 }
 

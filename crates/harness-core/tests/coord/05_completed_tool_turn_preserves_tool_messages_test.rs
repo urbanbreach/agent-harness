@@ -1,6 +1,7 @@
+use harness_core::UnwrapOrAbort;
 #[tokio::test]
 async fn completed_tool_turn_preserves_tool_messages_for_followup_context() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![
         vec![
             ProviderStreamEvent::Start,
@@ -55,12 +56,12 @@ async fn completed_tool_turn_preserves_tool_messages_for_followup_context() {
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     let first_request_id = coordinator
         .request_agent_turn(
             supervisor_actor(),
@@ -68,7 +69,7 @@ async fn completed_tool_turn_preserves_tool_messages_for_followup_context() {
             "edit docs/config.md",
         )
         .await
-        .expect("first turn");
+        .unwrap_or_abort();
     wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
         events.iter().any(|event| {
             matches!(
@@ -84,7 +85,7 @@ async fn completed_tool_turn_preserves_tool_messages_for_followup_context() {
     coordinator
         .request_agent_turn(supervisor_actor(), "agent_000001", "what tool did you use?")
         .await
-        .expect("follow-up turn");
+        .unwrap_or_abort();
     wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
         events.iter().any(|event| {
             matches!(
@@ -94,7 +95,7 @@ async fn completed_tool_turn_preserves_tool_messages_for_followup_context() {
         })
     })
     .await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let requests = provider.requests();
     assert_eq!(
@@ -111,11 +112,11 @@ async fn completed_tool_turn_preserves_tool_messages_for_followup_context() {
                 .as_ref()
                 .is_some_and(|calls| calls.iter().any(|call| call.tool_call_id == "call_edit"))
         })
-        .expect("follow-up context should include prior assistant tool call");
+        .unwrap_or_abort();
     let calls = tool_call_message
         .assistant_tool_calls
         .as_ref()
-        .expect("assistant tool calls");
+        .unwrap_or_abort();
     assert_eq!(calls[0].function_name, "shell_run");
     assert_eq!(
         calls[0].arguments_json,
@@ -128,7 +129,7 @@ async fn completed_tool_turn_preserves_tool_messages_for_followup_context() {
             message.role == MessageRole::Tool
                 && message.tool_call_id.as_deref() == Some("call_edit")
         })
-        .expect("follow-up context should include prior tool result");
+        .unwrap_or_abort();
     assert_eq!(tool_result_message.name.as_deref(), Some("shell_run"));
     assert!(tool_result_message
         .content
@@ -141,7 +142,7 @@ async fn completed_tool_turn_preserves_tool_messages_for_followup_context() {
 }
 #[tokio::test]
 async fn resumed_tool_turn_preserves_tool_messages_for_followup_context() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let initial_provider = SequentialScriptedProvider::new(vec![
         vec![
             ProviderStreamEvent::Start,
@@ -185,11 +186,11 @@ async fn resumed_tool_turn_preserves_tool_messages_for_followup_context() {
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     initial
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     let first_request_id = initial
         .request_agent_turn(
             supervisor_actor(),
@@ -197,7 +198,7 @@ async fn resumed_tool_turn_preserves_tool_messages_for_followup_context() {
             "edit docs/config.md",
         )
         .await
-        .expect("first turn");
+        .unwrap_or_abort();
     wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
         events.iter().any(|event| {
             matches!(
@@ -209,7 +210,7 @@ async fn resumed_tool_turn_preserves_tool_messages_for_followup_context() {
         })
     })
     .await;
-    initial.stop_run().await.expect("stop initial run");
+    initial.stop_run().await.unwrap_or_abort();
 
     let resumed_provider = CapturingProvider::new(vec!["I used shell.run."]);
     let resumed =
@@ -217,13 +218,13 @@ async fn resumed_tool_turn_preserves_tool_messages_for_followup_context() {
     resumed
         .resume_run(&run.run_id, "interactive")
         .await
-        .expect("resume run");
+        .unwrap_or_abort();
     resumed
         .request_agent_turn(supervisor_actor(), "agent_000001", "what tool did you use?")
         .await
-        .expect("follow-up turn");
+        .unwrap_or_abort();
     tokio::task::yield_now().await;
-    resumed.stop_run().await.expect("stop resumed run");
+    resumed.stop_run().await.unwrap_or_abort();
 
     let requests = resumed_provider.requests();
     assert_eq!(requests.len(), 1, "expected one resumed provider request");
@@ -236,11 +237,11 @@ async fn resumed_tool_turn_preserves_tool_messages_for_followup_context() {
                 .as_ref()
                 .is_some_and(|calls| calls.iter().any(|call| call.function_name == "shell_run"))
         })
-        .expect("resumed follow-up context should include prior assistant tool call");
+        .unwrap_or_abort();
     let calls = tool_call_message
         .assistant_tool_calls
         .as_ref()
-        .expect("assistant tool calls");
+        .unwrap_or_abort();
     assert_eq!(calls[0].function_name, "shell_run");
     assert_eq!(
         calls[0].arguments_json,
@@ -254,7 +255,7 @@ async fn resumed_tool_turn_preserves_tool_messages_for_followup_context() {
             message.role == MessageRole::Tool
                 && message.tool_call_id.as_deref() == Some(reconstructed_tool_call_id)
         })
-        .expect("resumed follow-up context should include prior tool result");
+        .unwrap_or_abort();
     assert_eq!(tool_result_message.name.as_deref(), Some("shell_run"));
     assert!(tool_result_message
         .content
@@ -262,7 +263,7 @@ async fn resumed_tool_turn_preserves_tool_messages_for_followup_context() {
 }
 #[tokio::test]
 async fn provider_stream_metadata_persists_to_jsonl_events() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![vec![
         ProviderStreamEvent::Started {
             metadata: Some(ProviderStreamStartMetadata {
@@ -302,15 +303,15 @@ async fn provider_stream_metadata_persists_to_jsonl_events() {
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     let turn_request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id, "inspect provider metadata")
         .await
-        .expect("request agent turn");
+        .unwrap_or_abort();
 
     wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
         events.iter().any(|event| {
@@ -323,7 +324,7 @@ async fn provider_stream_metadata_persists_to_jsonl_events() {
         })
     })
     .await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let events = load_events(&run.events_path);
     let started = events
@@ -336,8 +337,8 @@ async fn provider_stream_metadata_persists_to_jsonl_events() {
             }
             _ => None,
         })
-        .expect("provider request started event");
-    let started_metadata = started.metadata.as_ref().expect("started metadata");
+        .unwrap_or_abort();
+    let started_metadata = started.metadata.as_ref().unwrap_or_abort();
     assert_eq!(
         started_metadata.turn_id.as_deref(),
         Some(turn_request_id.as_str())
@@ -365,8 +366,8 @@ async fn provider_stream_metadata_persists_to_jsonl_events() {
             }
             _ => None,
         })
-        .expect("provider request finished event");
-    let finished_metadata = finished.metadata.as_ref().expect("finished metadata");
+        .unwrap_or_abort();
+    let finished_metadata = finished.metadata.as_ref().unwrap_or_abort();
     assert_eq!(
         finished_metadata.turn_id.as_deref(),
         Some(turn_request_id.as_str())
@@ -396,7 +397,7 @@ async fn provider_stream_metadata_persists_to_jsonl_events() {
     let assistant_message = finished_metadata
         .assistant_message
         .as_ref()
-        .expect("assistant message metadata");
+        .unwrap_or_abort();
     assert_eq!(
         assistant_message.message_id.as_deref(),
         Some("msg-observed-1")
@@ -406,7 +407,7 @@ async fn provider_stream_metadata_persists_to_jsonl_events() {
     let thinking = finished_metadata
         .thinking
         .as_ref()
-        .expect("thinking metadata");
+        .unwrap_or_abort();
     assert_eq!(
         thinking.summary.as_deref(),
         Some("provider supplied thinking summary")
@@ -422,7 +423,7 @@ async fn provider_stream_metadata_persists_to_jsonl_events() {
 }
 #[tokio::test]
 async fn provider_reasoning_metadata_persists_digest_without_raw_summary_fallback() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![vec![
         ProviderStreamEvent::Start,
         ProviderStreamEvent::ReasoningDelta("private reasoning text".to_string()),
@@ -443,15 +444,15 @@ async fn provider_reasoning_metadata_persists_digest_without_raw_summary_fallbac
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
-        .expect("spawn idle alpha");
+        .unwrap_or_abort();
     let turn_request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id, "inspect reasoning metadata")
         .await
-        .expect("request agent turn");
+        .unwrap_or_abort();
 
     wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
         events.iter().any(|event| {
@@ -464,7 +465,7 @@ async fn provider_reasoning_metadata_persists_digest_without_raw_summary_fallbac
         })
     })
     .await;
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
 
     let events = load_events(&run.events_path);
     let thinking = events
@@ -477,7 +478,7 @@ async fn provider_reasoning_metadata_persists_digest_without_raw_summary_fallbac
             }
             _ => None,
         })
-        .expect("thinking metadata");
+        .unwrap_or_abort();
 
     assert_eq!(thinking.summary, None);
     assert!(thinking.summary_digest.is_some());

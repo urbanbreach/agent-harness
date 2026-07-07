@@ -1,8 +1,10 @@
+use harness::UnwrapOrAbort;
+#[allow(clippy::clone_on_ref_ptr, reason = "trait object coercion requires .clone() not Arc::clone")]
 #[tokio::test]
 async fn prompt_cli_routes_non_default_profile_to_matching_provider() {
     let provider = ScriptedPromptProvider::fixed(text_events("Hello"));
 
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let config_path = temp.path().join("harness.multi-provider.jsonc");
     let session_dir = temp.path().join("sessions");
 
@@ -11,7 +13,7 @@ async fn prompt_cli_routes_non_default_profile_to_matching_provider() {
         "https://ops.fixture/v1",
         &session_dir,
     );
-    fs::write(&config_path, config).expect("write config");
+    fs::write(&config_path, config).unwrap_or_abort();
 
     let config_arg = config_path.clone();
     let temp_path = temp.path().to_path_buf();
@@ -19,7 +21,7 @@ async fn prompt_cli_routes_non_default_profile_to_matching_provider() {
     let output = tokio::task::spawn_blocking(move || {
         run_harness_in_with_provider(temp_path, [
                 "--config",
-                config_arg.to_str().expect("config path utf-8"),
+                config_arg.to_str().unwrap_or_abort(),
                 "prompt",
                 "--profile",
                 "ops",
@@ -28,7 +30,7 @@ async fn prompt_cli_routes_non_default_profile_to_matching_provider() {
             ], provider_for_run)
     })
     .await
-    .expect("join blocking command");
+    .unwrap_or_abort();
 
     assert!(
         output.status.success(),
@@ -42,6 +44,7 @@ async fn prompt_cli_routes_non_default_profile_to_matching_provider() {
     assert_eq!(requests[0].provider_id.as_deref(), Some("anthropic"));
     assert_eq!(requests[0].model_id, "claude-3.7");
 }
+#[allow(clippy::clone_on_ref_ptr, reason = "trait object coercion requires .clone() not Arc::clone")]
 #[tokio::test]
 async fn prompt_cli_executes_tool_call_and_completes_turn() {
     let provider = ScriptedPromptProvider::sequence(vec![
@@ -53,16 +56,16 @@ async fn prompt_cli_executes_tool_call_and_completes_turn() {
         text_events("Read complete: alpha beta gamma."),
     ]);
 
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let config_path = temp.path().join("harness.tool-loop.jsonc");
     let session_dir = temp.path().join("sessions");
     let out_path = temp.path().join("events.jsonl");
     fs::write(temp.path().join("tool-target.txt"), "alpha\nbeta\ngamma\n")
-        .expect("seed tool target");
+        .unwrap_or_abort();
 
     let config = prompt_cli_config("https://fixture.test/v1", &session_dir, &["read"]);
 
-    fs::write(&config_path, config).expect("write config");
+    fs::write(&config_path, config).unwrap_or_abort();
 
     let config_arg = config_path.clone();
     let out_arg = out_path.clone();
@@ -71,16 +74,16 @@ async fn prompt_cli_executes_tool_call_and_completes_turn() {
     let output = tokio::task::spawn_blocking(move || {
         run_harness_in_with_provider(temp_path, [
                 "--config",
-                config_arg.to_str().expect("config path utf-8"),
+                config_arg.to_str().unwrap_or_abort(),
                 "prompt",
                 "--text",
                 "Read tool-target.txt and then summarize it.",
                 "--out",
-                out_arg.to_str().expect("out path utf-8"),
+                out_arg.to_str().unwrap_or_abort(),
             ], provider_for_run)
     })
     .await
-    .expect("join blocking command");
+    .unwrap_or_abort();
 
     assert!(
         output.status.success(),
@@ -89,7 +92,7 @@ async fn prompt_cli_executes_tool_call_and_completes_turn() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let events_body = fs::read_to_string(&out_path).expect("read prompt events");
+    let events_body = fs::read_to_string(&out_path).unwrap_or_abort();
     assert!(events_body.contains("\"event_type\":\"tool_call_requested\""));
     assert!(events_body.contains("\"event_type\":\"tool_call_started\""));
     assert!(events_body.contains("\"event_type\":\"tool_call_finished\""));
@@ -112,18 +115,18 @@ async fn prompt_cli_executes_tool_call_and_completes_turn() {
         .body
         .get("messages")
         .and_then(serde_json::Value::as_array)
-        .expect("completion request should contain messages array");
+        .unwrap_or_abort();
 
     let function_call_index = messages
         .iter()
         .position(|message| message.get("assistant_tool_calls").is_some())
-        .expect("expected follow-up request to replay the assistant tool call");
+        .unwrap_or_abort();
     let function_call_output_index = messages
         .iter()
         .position(|message| {
             message.get("role") == Some(&serde_json::Value::String("tool".to_string()))
         })
-        .expect("expected follow-up request to include a tool result message");
+        .unwrap_or_abort();
 
     assert!(
         function_call_index < function_call_output_index,
@@ -134,7 +137,7 @@ async fn prompt_cli_executes_tool_call_and_completes_turn() {
         .get("assistant_tool_calls")
         .and_then(serde_json::Value::as_array)
         .and_then(|calls| calls.first())
-        .expect("assistant replay message should include tool call metadata");
+        .unwrap_or_abort();
     assert_eq!(
         assistant_tool_call.get("tool_call_id"),
         Some(&serde_json::Value::String("call_1".to_string()))
@@ -144,9 +147,9 @@ async fn prompt_cli_executes_tool_call_and_completes_turn() {
     let arguments = assistant_tool_call
         .get("arguments_json")
         .and_then(serde_json::Value::as_str)
-        .expect("function_call replay item should include serialized arguments");
+        .unwrap_or_abort();
     let parsed_arguments: serde_json::Value =
-        serde_json::from_str(arguments).expect("function_call arguments should be JSON");
+        serde_json::from_str(arguments).unwrap_or_abort();
     assert_eq!(
         parsed_arguments.get("path"),
         Some(&serde_json::Value::String("tool-target.txt".to_string()))
@@ -156,18 +159,18 @@ async fn prompt_cli_executes_tool_call_and_completes_turn() {
 async fn prompt_cli_exits_nonzero_on_provider_error_finish() {
     let provider = ScriptedPromptProvider::fixed(provider_error_events());
 
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let config_path = temp.path().join("harness.provider-error.jsonc");
     let session_dir = temp.path().join("sessions");
     fs::write(
         &config_path,
         prompt_cli_config("https://fixture.test/v1", &session_dir, &[]),
     )
-    .expect("write config");
+    .unwrap_or_abort();
 
     let output = run_harness_in_blocking_with_provider(temp.path(), [
             "--config",
-            config_path.to_str().expect("config path utf-8"),
+            config_path.to_str().unwrap_or_abort(),
             "prompt",
             "--text",
             "Trigger a provider error.",
@@ -187,13 +190,13 @@ async fn prompt_cli_exits_nonzero_on_provider_error_finish() {
     );
 
     let run_dirs = fs::read_dir(&session_dir)
-        .expect("read session dir")
-        .map(|entry| entry.expect("session dir entry").path())
+        .unwrap_or_abort()
+        .map(|entry| entry.unwrap_or_abort().path())
         .filter(|path| path.is_dir())
         .collect::<Vec<_>>();
     assert_eq!(run_dirs.len(), 1, "expected one prompt run dir");
     let events_body =
-        fs::read_to_string(run_dirs[0].join("events.jsonl")).expect("read provider error events");
+        fs::read_to_string(run_dirs[0].join("events.jsonl")).unwrap_or_abort();
     assert!(events_body.contains("\"event_type\":\"provider_request_finished\""));
     assert!(events_body.contains("\"finish_reason\":\"error\""));
     assert!(events_body.contains("\"event_type\":\"task_cancelled\""));
@@ -208,20 +211,20 @@ async fn prompt_cli_surfaces_provider_error_categories_in_stderr_and_events() {
         ProviderErrorCategory::ContextWindowExceeded,
     ] {
         let provider = ScriptedPromptProvider::fixed(categorized_provider_error_events(category));
-        let temp = tempdir().expect("tempdir");
+        let temp = tempdir().unwrap_or_abort();
         let config_path = temp.path().join("harness.categorized-provider-error.jsonc");
         let session_dir = temp.path().join("sessions");
         fs::write(
             &config_path,
             prompt_cli_config("https://fixture.test/v1", &session_dir, &[]),
         )
-        .expect("write config");
+        .unwrap_or_abort();
 
         let output = run_harness_in_blocking_with_provider(
             temp.path(),
             [
                 "--config",
-                config_path.to_str().expect("config path utf-8"),
+                config_path.to_str().unwrap_or_abort(),
                 "prompt",
                 "--text",
                 "Trigger a categorized provider error.",
@@ -245,13 +248,13 @@ async fn prompt_cli_surfaces_provider_error_categories_in_stderr_and_events() {
         );
 
         let run_dirs = fs::read_dir(&session_dir)
-            .expect("read session dir")
-            .map(|entry| entry.expect("session dir entry").path())
+            .unwrap_or_abort()
+            .map(|entry| entry.unwrap_or_abort().path())
             .filter(|path| path.is_dir())
             .collect::<Vec<_>>();
         assert_eq!(run_dirs.len(), 1, "expected one prompt run dir");
         let events_body = fs::read_to_string(run_dirs[0].join("events.jsonl"))
-            .expect("read provider error events");
+            .unwrap_or_abort();
         assert!(events_body.contains("\"finish_reason\":\"error\""));
         assert!(events_body.contains(&format!(
             "\"provider_error_category\":\"{}\"",
@@ -261,6 +264,7 @@ async fn prompt_cli_surfaces_provider_error_categories_in_stderr_and_events() {
     }
 }
 
+#[allow(clippy::clone_on_ref_ptr, reason = "trait object coercion requires .clone() not Arc::clone")]
 #[tokio::test]
 async fn prompt_cli_continues_after_tool_failure_as_tool_message() {
     let provider = ScriptedPromptProvider::sequence(vec![
@@ -272,7 +276,7 @@ async fn prompt_cli_continues_after_tool_failure_as_tool_message() {
         text_events("Recovered after the failed read tool call."),
     ]);
 
-    let temp = tempdir().expect("tempdir");
+    let temp = tempdir().unwrap_or_abort();
     let output = run_prompt_with_single_tool(
         temp.path(),
         provider.clone(),
@@ -290,7 +294,7 @@ async fn prompt_cli_continues_after_tool_failure_as_tool_message() {
     assert!(String::from_utf8_lossy(&output.stdout)
         .contains("Recovered after the failed read tool call."));
 
-    let events_body = fs::read_to_string(temp.path().join("events.jsonl")).expect("read events");
+    let events_body = fs::read_to_string(temp.path().join("events.jsonl")).unwrap_or_abort();
     assert!(events_body.contains("\"event_type\":\"tool_call_finished\""));
     assert!(events_body.contains("\"status\":\"failed\""));
     assert!(events_body.contains("missing-tool-target.txt"));
@@ -305,11 +309,11 @@ async fn prompt_cli_continues_after_tool_failure_as_tool_message() {
         .body
         .get("messages")
         .and_then(serde_json::Value::as_array)
-        .expect("completion request should contain messages array");
+        .unwrap_or_abort();
     let tool_output = messages
         .iter()
         .find(|message| message.get("role") == Some(&serde_json::json!("tool")))
-        .expect("follow-up request includes failed tool message");
+        .unwrap_or_abort();
     assert_eq!(
         tool_output.get("tool_call_id"),
         Some(&serde_json::json!("call_missing"))
@@ -318,7 +322,7 @@ async fn prompt_cli_continues_after_tool_failure_as_tool_message() {
         tool_output
             .get("content")
             .and_then(serde_json::Value::as_str)
-            .expect("function call output text")
+            .unwrap_or_abort()
             .contains("tool call `read` failed"),
         "failed tool result should be sent back to the provider: {}",
         requests[1].body
@@ -335,11 +339,11 @@ async fn prompt_cli_executes_fs_glob_and_completes_turn() {
         text_events("Glob complete: fixtures/a.txt and fixtures/nested/b.txt."),
     ]);
 
-    let temp = tempdir().expect("tempdir");
-    fs::create_dir_all(temp.path().join("fixtures/nested")).expect("create fixtures tree");
-    fs::write(temp.path().join("fixtures/a.txt"), "alpha\n").expect("write a.txt");
-    fs::write(temp.path().join("fixtures/nested/b.txt"), "beta\n").expect("write b.txt");
-    fs::write(temp.path().join("fixtures/c.md"), "ignore\n").expect("write c.md");
+    let temp = tempdir().unwrap_or_abort();
+    fs::create_dir_all(temp.path().join("fixtures/nested")).unwrap_or_abort();
+    fs::write(temp.path().join("fixtures/a.txt"), "alpha\n").unwrap_or_abort();
+    fs::write(temp.path().join("fixtures/nested/b.txt"), "beta\n").unwrap_or_abort();
+    fs::write(temp.path().join("fixtures/c.md"), "ignore\n").unwrap_or_abort();
 
     let output = run_prompt_with_single_tool(
         temp.path(),
@@ -349,7 +353,7 @@ async fn prompt_cli_executes_fs_glob_and_completes_turn() {
     )
     .await;
 
-    let events_body = fs::read_to_string(temp.path().join("events.jsonl")).expect("read events");
+    let events_body = fs::read_to_string(temp.path().join("events.jsonl")).unwrap_or_abort();
     assert_successful_tool_roundtrip(&output, &events_body, "glob");
     assert!(events_body.contains("fixtures/a.txt"));
     assert!(events_body.contains("fixtures/nested/b.txt"));
@@ -365,10 +369,10 @@ async fn prompt_cli_executes_fs_ls_and_completes_turn() {
         text_events("Directory listing complete: alpha/, beta.txt, zeta.log."),
     ]);
 
-    let temp = tempdir().expect("tempdir");
-    fs::create_dir_all(temp.path().join("fixtures/alpha")).expect("create alpha dir");
-    fs::write(temp.path().join("fixtures/beta.txt"), "beta\n").expect("write beta.txt");
-    fs::write(temp.path().join("fixtures/zeta.log"), "zeta\n").expect("write zeta.log");
+    let temp = tempdir().unwrap_or_abort();
+    fs::create_dir_all(temp.path().join("fixtures/alpha")).unwrap_or_abort();
+    fs::write(temp.path().join("fixtures/beta.txt"), "beta\n").unwrap_or_abort();
+    fs::write(temp.path().join("fixtures/zeta.log"), "zeta\n").unwrap_or_abort();
 
     let output = run_prompt_with_single_tool(
         temp.path(),
@@ -378,7 +382,7 @@ async fn prompt_cli_executes_fs_ls_and_completes_turn() {
     )
     .await;
 
-    let events_body = fs::read_to_string(temp.path().join("events.jsonl")).expect("read events");
+    let events_body = fs::read_to_string(temp.path().join("events.jsonl")).unwrap_or_abort();
     assert_successful_tool_roundtrip(&output, &events_body, "list");
     assert!(events_body.contains("alpha/"));
     assert!(events_body.contains("beta.txt"));

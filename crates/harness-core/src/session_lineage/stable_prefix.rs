@@ -154,7 +154,7 @@ fn validate_event_log(events: &[EventEnvelopeV1]) -> Result<u64, SessionLineageE
 fn stable_prefix_from_state(cutoff_seq: u64, state: &PrefixState) -> StableSessionPrefix {
     StableSessionPrefix {
         cutoff_seq,
-        event_count: cutoff_seq as usize,
+        event_count: usize::try_from(cutoff_seq).unwrap_or(usize::MAX),
         run_id: state.run_id.clone(),
         status: state.lifecycle.status(),
     }
@@ -162,7 +162,10 @@ fn stable_prefix_from_state(cutoff_seq: u64, state: &PrefixState) -> StableSessi
 
 fn project_prefix_state(events: &[EventEnvelopeV1], cutoff_seq: u64) -> PrefixState {
     let mut state = PrefixState::default();
-    for event in events.iter().take(cutoff_seq as usize) {
+    for event in events
+        .iter()
+        .take(usize::try_from(cutoff_seq).unwrap_or(usize::MAX))
+    {
         state.apply(event);
     }
     state

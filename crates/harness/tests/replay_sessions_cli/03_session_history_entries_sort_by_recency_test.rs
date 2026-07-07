@@ -1,8 +1,9 @@
+use harness::UnwrapOrAbort;
 #[test]
 fn session_history_entries_sort_by_recency() {
-    let session_dir = tempdir().expect("tempdir");
+    let session_dir = tempdir().unwrap_or_abort();
     let older_dir = session_dir.path().join("alpha_session");
-    std::fs::create_dir_all(&older_dir).expect("create older run dir");
+    std::fs::create_dir_all(&older_dir).unwrap_or_abort();
     let older_events = [
         envelope(
             "run_older",
@@ -24,7 +25,7 @@ fn session_history_entries_sort_by_recency() {
     let older_sort_ms = events_modified_unix_ms(&older_dir);
 
     let newer_dir = session_dir.path().join("omega_session");
-    std::fs::create_dir_all(&newer_dir).expect("create newer run dir");
+    std::fs::create_dir_all(&newer_dir).unwrap_or_abort();
     let newer_events = [
         envelope(
             "run_newer",
@@ -59,7 +60,7 @@ fn session_history_entries_sort_by_recency() {
 
     let output = run_harness([
             "--session-dir",
-            session_dir.path().to_str().expect("session dir utf-8"),
+            session_dir.path().to_str().unwrap_or_abort(),
             "sessions",
             "list",
         ]);
@@ -84,11 +85,11 @@ fn session_history_entries_sort_by_recency() {
 }
 #[test]
 fn session_history_marks_corrupt_runs_without_hiding_them() {
-    let session_dir = tempdir().expect("tempdir");
+    let session_dir = tempdir().unwrap_or_abort();
     let good_dir = session_dir.path().join("run_good");
     let corrupt_dir = session_dir.path().join("run_corrupt");
-    std::fs::create_dir_all(&good_dir).expect("create good run dir");
-    std::fs::create_dir_all(&corrupt_dir).expect("create corrupt run dir");
+    std::fs::create_dir_all(&good_dir).unwrap_or_abort();
+    std::fs::create_dir_all(&corrupt_dir).unwrap_or_abort();
 
     write_events_jsonl(
         &good_dir,
@@ -114,7 +115,7 @@ fn session_history_marks_corrupt_runs_without_hiding_them() {
 
     let output = run_harness([
             "--session-dir",
-            session_dir.path().to_str().expect("session dir utf-8"),
+            session_dir.path().to_str().unwrap_or_abort(),
             "sessions",
             "list",
         ]);
@@ -133,11 +134,11 @@ fn session_history_marks_corrupt_runs_without_hiding_them() {
 }
 #[test]
 fn session_history_excludes_scenario_fixture_runs_by_default() {
-    let session_dir = tempdir().expect("tempdir");
+    let session_dir = tempdir().unwrap_or_abort();
     let interactive_dir = session_dir.path().join("interactive_run");
     let scenario_dir = session_dir.path().join("scenario_run");
-    std::fs::create_dir_all(&interactive_dir).expect("create interactive run dir");
-    std::fs::create_dir_all(&scenario_dir).expect("create scenario run dir");
+    std::fs::create_dir_all(&interactive_dir).unwrap_or_abort();
+    std::fs::create_dir_all(&scenario_dir).unwrap_or_abort();
 
     write_events_jsonl(
         &interactive_dir,
@@ -182,7 +183,7 @@ fn session_history_excludes_scenario_fixture_runs_by_default() {
 
     let output = run_harness([
             "--session-dir",
-            session_dir.path().to_str().expect("session dir utf-8"),
+            session_dir.path().to_str().unwrap_or_abort(),
             "sessions",
             "list",
         ]);
@@ -201,9 +202,9 @@ fn session_history_excludes_scenario_fixture_runs_by_default() {
 }
 #[test]
 fn session_history_exposes_profile_and_model_labels() {
-    let session_dir = tempdir().expect("tempdir");
+    let session_dir = tempdir().unwrap_or_abort();
     let run_dir = session_dir.path().join("run_profile_model");
-    std::fs::create_dir_all(&run_dir).expect("create run dir");
+    std::fs::create_dir_all(&run_dir).unwrap_or_abort();
 
     write_events_jsonl(
         &run_dir,
@@ -249,7 +250,7 @@ fn session_history_exposes_profile_and_model_labels() {
 
     let output = run_harness([
             "--session-dir",
-            session_dir.path().to_str().expect("session dir utf-8"),
+            session_dir.path().to_str().unwrap_or_abort(),
             "sessions",
             "list",
         ]);
@@ -265,9 +266,9 @@ fn session_history_exposes_profile_and_model_labels() {
 }
 #[test]
 fn session_history_flags_non_resumable_sessions_with_reason() {
-    let session_dir = tempdir().expect("tempdir");
+    let session_dir = tempdir().unwrap_or_abort();
     let prompt_run_dir = session_dir.path().join("prompt_run");
-    std::fs::create_dir_all(&prompt_run_dir).expect("create run dir");
+    std::fs::create_dir_all(&prompt_run_dir).unwrap_or_abort();
 
     write_events_jsonl(
         &prompt_run_dir,
@@ -292,7 +293,7 @@ fn session_history_flags_non_resumable_sessions_with_reason() {
 
     let output = run_harness([
             "--session-dir",
-            session_dir.path().to_str().expect("session dir utf-8"),
+            session_dir.path().to_str().unwrap_or_abort(),
             "sessions",
             "list",
         ]);
@@ -309,15 +310,15 @@ fn session_history_flags_non_resumable_sessions_with_reason() {
 }
 #[test]
 fn sessions_list_surfaces_artifact_and_lineage_columns() {
-    let session_dir = tempdir().expect("tempdir");
+    let session_dir = tempdir().unwrap_or_abort();
     let run_dir = session_dir.path().join("run_context");
-    std::fs::create_dir_all(&run_dir).expect("create run dir");
+    std::fs::create_dir_all(&run_dir).unwrap_or_abort();
 
     write_events_jsonl(&run_dir, &delegated_recovery_events("run_context"));
 
     let output = run_harness([
             "--session-dir",
-            session_dir.path().to_str().expect("session dir utf-8"),
+            session_dir.path().to_str().unwrap_or_abort(),
             "sessions",
             "list",
         ]);

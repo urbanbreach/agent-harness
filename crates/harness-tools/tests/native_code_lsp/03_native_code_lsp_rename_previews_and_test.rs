@@ -1,14 +1,15 @@
+use harness_tools::UnwrapOrAbort;
 #[tokio::test]
 #[expect(
     clippy::await_holding_lock,
     reason = "the global test lock intentionally serializes LSP registry mutations across awaits"
 )]
 async fn native_code_lsp_rename_previews_and_applies_workspace_edits() {
-    let _lock = test_lock().lock().expect("test lock");
+    let _lock = test_lock().lock().unwrap_or_abort();
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let fake_bin = temp_dir.path().join("fake-rename-lsp-bin");
-    fs::create_dir_all(&fake_bin).expect("fake rename bin dir");
+    fs::create_dir_all(&fake_bin).unwrap_or_abort();
     let primary_uri = file_uri(&workspace.join("src/lib.rs"));
     let secondary_uri = file_uri(&workspace.join("src/other.rs"));
     install_fake_rename_lsp_binary(
@@ -34,7 +35,7 @@ async fn native_code_lsp_rename_previews_and_applies_workspace_edits() {
     });
 
     let registry = coordinator_registry(ShellAllowlist::default());
-    let rename_tool = registry.get("lsp.rename").expect("lsp.rename tool");
+    let rename_tool = registry.get("lsp.rename").unwrap_or_abort();
 
     let preview = rename_tool
         .call(
@@ -48,14 +49,14 @@ async fn native_code_lsp_rename_previews_and_applies_workspace_edits() {
             }),
         )
         .await
-        .expect("rename preview");
+        .unwrap_or_abort();
     assert!(preview.display_text.contains("Prepared LSP rename preview"));
     assert!(preview.display_text.contains("helper"));
     assert!(preview.display_text.contains("Re-run with `apply: true`"));
     let preview_json = preview
         .structured_json
         .clone()
-        .expect("rename preview structured json");
+        .unwrap_or_abort();
     assert_eq!(preview_json["operation"], json!("renameSymbol"));
     assert_eq!(preview_json["applied"], json!(false));
     assert_eq!(preview_json["symbol"], json!("helper"));
@@ -67,7 +68,7 @@ async fn native_code_lsp_rename_previews_and_applies_workspace_edits() {
     );
     assert!(first_diagnostic_message(&preview_json).contains("prepare_ok=True; workspace_ok=True"));
     assert_eq!(
-        fs::read_to_string(workspace.join("src/lib.rs")).expect("read lib.rs after preview"),
+        fs::read_to_string(workspace.join("src/lib.rs")).unwrap_or_abort(),
         "fn helper() {}\n\nfn caller() {\n    helper();\n}\n"
     );
 
@@ -83,17 +84,17 @@ async fn native_code_lsp_rename_previews_and_applies_workspace_edits() {
             }),
         )
         .await
-        .expect("rename apply");
+        .unwrap_or_abort();
     assert!(apply.display_text.contains("Applied LSP rename"));
     assert_eq!(
-        fs::read_to_string(workspace.join("src/lib.rs")).expect("read lib.rs after apply"),
+        fs::read_to_string(workspace.join("src/lib.rs")).unwrap_or_abort(),
         "fn renamed() {}\n\nfn caller() {\n    helper();\n}\n"
     );
     assert_eq!(
-        fs::read_to_string(workspace.join("src/other.rs")).expect("read other.rs after apply"),
+        fs::read_to_string(workspace.join("src/other.rs")).unwrap_or_abort(),
         "fn another() {\n    renamed();\n}\n"
     );
-    let apply_json = apply.structured_json.expect("rename apply structured json");
+    let apply_json = apply.structured_json.unwrap_or_abort();
     assert_eq!(apply_json["applied"], json!(true));
     assert_eq!(apply_json["appliedEdits"].as_array().map(Vec::len), Some(2),);
     assert_eq!(
@@ -111,11 +112,11 @@ async fn native_code_lsp_rename_previews_and_applies_workspace_edits() {
     reason = "the global test lock intentionally serializes LSP registry mutations across awaits"
 )]
 async fn native_code_lsp_rename_reports_unsupported_server_behavior() {
-    let _lock = test_lock().lock().expect("test lock");
+    let _lock = test_lock().lock().unwrap_or_abort();
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let fake_bin = temp_dir.path().join("fake-rename-lsp-bin");
-    fs::create_dir_all(&fake_bin).expect("fake rename bin dir");
+    fs::create_dir_all(&fake_bin).unwrap_or_abort();
     let primary_uri = file_uri(&workspace.join("src/lib.rs"));
     let secondary_uri = file_uri(&workspace.join("src/other.rs"));
     install_fake_rename_lsp_binary(
@@ -141,7 +142,7 @@ async fn native_code_lsp_rename_reports_unsupported_server_behavior() {
     });
 
     let registry = coordinator_registry(ShellAllowlist::default());
-    let rename_tool = registry.get("lsp.rename").expect("lsp.rename tool");
+    let rename_tool = registry.get("lsp.rename").unwrap_or_abort();
     let error = rename_tool
         .call(
             test_context(&workspace, "rename-unsupported"),

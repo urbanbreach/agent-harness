@@ -70,7 +70,7 @@ fn approximate_conversation_message_tokens(message: &ConversationMessage) -> u32
 }
 
 pub(in crate::coord) fn approximate_text_tokens(text: &str) -> u32 {
-    (text.chars().count() as u32 / 4).max(1)
+    (u32::try_from(text.chars().count()).unwrap_or(u32::MAX) / 4).max(1)
 }
 
 pub(in crate::coord) fn approximate_provider_context_tokens(context: &ProviderContext) -> u32 {

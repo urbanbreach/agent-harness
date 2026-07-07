@@ -1,4 +1,5 @@
 use super::*;
+use crate::UnwrapOrAbort;
 
 #[test]
 fn openai_responses_request_sends_system_prompt_as_instructions() {
@@ -37,7 +38,7 @@ fn openai_responses_request_sends_system_prompt_as_instructions() {
     let body = serde_json::to_value(OpenAiResponsesRequest::from_completion_request(
         request, false, true,
     ))
-    .expect("serialize responses request");
+    .unwrap_or_abort();
     assert_eq!(
         body.get("instructions"),
         Some(&serde_json::Value::String("base instructions".to_string()))
@@ -45,7 +46,7 @@ fn openai_responses_request_sends_system_prompt_as_instructions() {
     let input = body
         .get("input")
         .and_then(serde_json::Value::as_array)
-        .expect("responses request input array");
+        .unwrap_or_abort();
     assert_eq!(input.len(), 1);
     assert_eq!(
         input[0].get("role"),
@@ -105,12 +106,11 @@ fn openai_responses_request_replays_assistant_tool_call_before_function_call_out
         stream: true,
     };
 
-    let body = serde_json::to_value(OpenAiResponsesRequest::from(request))
-        .expect("serialize responses request");
+    let body = serde_json::to_value(OpenAiResponsesRequest::from(request)).unwrap_or_abort();
     let input = body
         .get("input")
         .and_then(serde_json::Value::as_array)
-        .expect("responses request input array");
+        .unwrap_or_abort();
     assert!(body.get("instructions").is_none());
 
     assert!(input
@@ -147,7 +147,7 @@ fn openai_responses_request_replays_assistant_tool_call_before_function_call_out
         .position(|item| {
             item.get("type") == Some(&serde_json::Value::String("function_call".to_string()))
         })
-        .expect("assistant tool call should replay as function_call item");
+        .unwrap_or_abort();
     let function_call_output_index = input
         .iter()
         .position(|item| {
@@ -156,7 +156,7 @@ fn openai_responses_request_replays_assistant_tool_call_before_function_call_out
                     "function_call_output".to_string(),
                 ))
         })
-        .expect("tool result should serialize as function_call_output item");
+        .unwrap_or_abort();
 
     assert!(
         function_call_index < function_call_output_index,
@@ -238,19 +238,18 @@ fn openai_responses_request_omits_empty_assistant_output_text_for_tool_only_turn
         stream: true,
     };
 
-    let body = serde_json::to_value(OpenAiResponsesRequest::from(request))
-        .expect("serialize responses request");
+    let body = serde_json::to_value(OpenAiResponsesRequest::from(request)).unwrap_or_abort();
     let input = body
         .get("input")
         .and_then(serde_json::Value::as_array)
-        .expect("responses request input array");
+        .unwrap_or_abort();
 
     let function_call_index = input
         .iter()
         .position(|item| {
             item.get("type") == Some(&serde_json::Value::String("function_call".to_string()))
         })
-        .expect("assistant tool call should replay as function_call item");
+        .unwrap_or_abort();
     let function_call_output_index = input
         .iter()
         .position(|item| {
@@ -259,7 +258,7 @@ fn openai_responses_request_omits_empty_assistant_output_text_for_tool_only_turn
                     "function_call_output".to_string(),
                 ))
         })
-        .expect("tool result should serialize as function_call_output item");
+        .unwrap_or_abort();
 
     assert_eq!(
         function_call_index, 2,
@@ -327,18 +326,17 @@ fn openai_chat_request_replays_assistant_tool_call_in_tool_calls_field() {
         stream: true,
     };
 
-    let body = serde_json::to_value(OpenAiChatCompletionsRequest::from(request))
-        .expect("serialize chat request");
+    let body = serde_json::to_value(OpenAiChatCompletionsRequest::from(request)).unwrap_or_abort();
     let messages = body
         .get("messages")
         .and_then(serde_json::Value::as_array)
-        .expect("chat request messages array");
+        .unwrap_or_abort();
 
     let assistant = &messages[2];
     let tool_calls = assistant
         .get("tool_calls")
         .and_then(serde_json::Value::as_array)
-        .expect("assistant message should include tool_calls replay");
+        .unwrap_or_abort();
     assert_eq!(tool_calls.len(), 1);
     assert_eq!(
         tool_calls[0].get("id"),

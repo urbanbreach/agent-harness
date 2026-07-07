@@ -1,3 +1,4 @@
+use harness_tools::UnwrapOrAbort;
 use std::sync::Mutex;
 
 use async_trait::async_trait;
@@ -27,10 +28,7 @@ impl ShellCommandRunner for SingleSurfaceShellRunner {
         invocation: ShellCommandInvocation,
         _timeout_ms: u64,
     ) -> Result<ShellProcessOutput, ToolError> {
-        self.calls
-            .lock()
-            .expect("lock shell calls")
-            .push(invocation.clone());
+        self.calls.lock().unwrap_or_abort().push(invocation.clone());
         let command = invocation
             .args
             .get(1)

@@ -1,3 +1,4 @@
+use harness_core::UnwrapOrAbort;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -50,7 +51,7 @@ impl Tool for TestAstGrepReplaceTool {
 #[tokio::test]
 async fn ast_grep_replace_list_paths_are_permission_checked_before_tool_execution() {
     // arrange
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let coordinator = test_coordinator(
         temp_dir.path(),
         worker_profile(),
@@ -63,12 +64,12 @@ async fn ast_grep_replace_list_paths_are_permission_checked_before_tool_executio
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let worker_agent_id = coordinator
         .spawn_agent(supervisor_actor(), "worker", None)
         .await
-        .expect("spawn worker");
+        .unwrap_or_abort();
 
     // act
     let error = coordinator
@@ -90,7 +91,7 @@ async fn ast_grep_replace_list_paths_are_permission_checked_before_tool_executio
         other => panic!("expected PermissionDenied, got {other:?}"),
     };
 
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
     let events = load_events(&run.events_path);
 
     // assert
@@ -116,7 +117,7 @@ async fn ast_grep_replace_list_paths_are_permission_checked_before_tool_executio
 #[tokio::test]
 async fn ast_grep_replace_allowed_list_paths_execute_normally() {
     // arrange
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let coordinator = test_coordinator(
         temp_dir.path(),
         worker_profile(),
@@ -129,12 +130,12 @@ async fn ast_grep_replace_allowed_list_paths_execute_normally() {
             PathBuf::from("/workspace/project"),
         )
         .await
-        .expect("start run");
+        .unwrap_or_abort();
 
     let worker_agent_id = coordinator
         .spawn_agent(supervisor_actor(), "worker", None)
         .await
-        .expect("spawn worker");
+        .unwrap_or_abort();
 
     // act
     let allowed_tool_call_id = coordinator
@@ -149,10 +150,10 @@ async fn ast_grep_replace_allowed_list_paths_execute_normally() {
             }),
         )
         .await
-        .expect("allowed ast_grep_replace path must execute");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &allowed_tool_call_id).await;
 
-    coordinator.stop_run().await.expect("stop run");
+    coordinator.stop_run().await.unwrap_or_abort();
     let events = load_events(&run.events_path);
 
     // assert

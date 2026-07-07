@@ -1,3 +1,4 @@
+use harness_tools::UnwrapOrAbort;
 #[tokio::test]
 async fn background_output_block_waits_for_running_child_completion() {
     let temp_dir = setup_workspace();
@@ -29,12 +30,12 @@ async fn background_output_block_waits_for_running_child_completion() {
             }),
         )
         .await
-        .expect("request task");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &task_tool_call_id).await;
 
     let task_events = read_events(&run.events_path);
     let task_finished = find_finished(&task_events, &task_tool_call_id);
-    let task_output = task_finished.output_json.expect("task structured output");
+    let task_output = task_finished.output_json.unwrap_or_abort();
     assert_eq!(
         task_output["loaded_skills"][0]["stable_id"],
         json!("skill:project:background-skill")
@@ -45,7 +46,7 @@ async fn background_output_block_waits_for_running_child_completion() {
         .contains("BACKGROUND SKILL BODY SENTINEL"));
     let request_id = task_output["child_request_id"]
         .as_str()
-        .expect("child request id")
+        .unwrap_or_abort()
         .to_string();
 
     let output_tool_call_id = handle
@@ -60,7 +61,7 @@ async fn background_output_block_waits_for_running_child_completion() {
             }),
         )
         .await
-        .expect("request blocking background output");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &output_tool_call_id).await;
 
     let events = read_events(&run.events_path);
@@ -68,7 +69,7 @@ async fn background_output_block_waits_for_running_child_completion() {
     assert_eq!(finished.status, ToolCallStatus::Succeeded);
     let output = finished
         .output_json
-        .expect("background output structured json");
+        .unwrap_or_abort();
     assert_eq!(output["request_id"], json!(request_id));
     assert_eq!(output["status"], json!("completed"));
     assert_eq!(output["terminal"], json!(true));
@@ -108,18 +109,18 @@ async fn background_output_retrieves_child_result_after_coordinator_resume() {
             }),
         )
         .await
-        .expect("request task");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &task_tool_call_id).await;
 
     let task_events = read_events(&run.events_path);
     let task_finished = find_finished(&task_events, &task_tool_call_id);
-    let task_output = task_finished.output_json.expect("task structured output");
+    let task_output = task_finished.output_json.unwrap_or_abort();
     let request_id = task_output["child_request_id"]
         .as_str()
-        .expect("child request id")
+        .unwrap_or_abort()
         .to_string();
     wait_for_request_terminal(&run.events_path, &request_id).await;
-    handle.stop_run().await.expect("stop original coordinator");
+    handle.stop_run().await.unwrap_or_abort();
 
     let session_dir = workspace.join("sessions");
     let mut config = CoordinatorConfig::new(session_dir);
@@ -159,7 +160,7 @@ async fn background_output_retrieves_child_result_after_coordinator_resume() {
     let resumed_run = resumed
         .resume_run(run.run_id.clone(), run.run_name.clone())
         .await
-        .expect("resume run");
+        .unwrap_or_abort();
 
     let output_tool_call_id = resumed
         .request_tool_call(
@@ -169,7 +170,7 @@ async fn background_output_retrieves_child_result_after_coordinator_resume() {
             json!({ "request_id": request_id }),
         )
         .await
-        .expect("request background output after resume");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&resumed_run.events_path, &output_tool_call_id).await;
 
     let events = read_events(&resumed_run.events_path);
@@ -177,7 +178,7 @@ async fn background_output_retrieves_child_result_after_coordinator_resume() {
     assert_eq!(finished.status, ToolCallStatus::Succeeded);
     let output = finished
         .output_json
-        .expect("background output structured json");
+        .unwrap_or_abort();
     assert_eq!(output["request_id"], json!(request_id));
     assert_eq!(output["status"], json!("completed"));
     assert_eq!(output["result_summary"], json!("static child result"));
@@ -207,15 +208,15 @@ async fn background_cancel_uses_same_coordinator_cancellation_path() {
             }),
         )
         .await
-        .expect("request task");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &task_tool_call_id).await;
 
     let task_events = read_events(&run.events_path);
     let task_finished = find_finished(&task_events, &task_tool_call_id);
-    let task_output = task_finished.output_json.expect("task structured output");
+    let task_output = task_finished.output_json.unwrap_or_abort();
     let request_id = task_output["child_request_id"]
         .as_str()
-        .expect("child request id")
+        .unwrap_or_abort()
         .to_string();
 
     let cancel_tool_call_id = handle
@@ -229,7 +230,7 @@ async fn background_cancel_uses_same_coordinator_cancellation_path() {
             }),
         )
         .await
-        .expect("request explicit background cancellation");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &cancel_tool_call_id).await;
 
     let events = read_events(&run.events_path);
@@ -237,7 +238,7 @@ async fn background_cancel_uses_same_coordinator_cancellation_path() {
     assert_eq!(finished.status, ToolCallStatus::Succeeded);
     let output = finished
         .output_json
-        .expect("background_cancel structured json");
+        .unwrap_or_abort();
     assert_eq!(output["request_id"], json!(request_id));
     assert_eq!(output["source"], json!("event_replay"));
     assert_eq!(output["previous_status"], json!("running"));
@@ -278,15 +279,15 @@ async fn background_output_can_cancel_authorized_child_request() {
             }),
         )
         .await
-        .expect("request task");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &task_tool_call_id).await;
 
     let task_events = read_events(&run.events_path);
     let task_finished = find_finished(&task_events, &task_tool_call_id);
-    let task_output = task_finished.output_json.expect("task structured output");
+    let task_output = task_finished.output_json.unwrap_or_abort();
     let request_id = task_output["child_request_id"]
         .as_str()
-        .expect("child request id")
+        .unwrap_or_abort()
         .to_string();
 
     let cancel_tool_call_id = handle
@@ -301,7 +302,7 @@ async fn background_output_can_cancel_authorized_child_request() {
             }),
         )
         .await
-        .expect("request background cancellation");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &cancel_tool_call_id).await;
 
     let events = read_events(&run.events_path);
@@ -309,7 +310,7 @@ async fn background_output_can_cancel_authorized_child_request() {
     assert_eq!(finished.status, ToolCallStatus::Succeeded);
     let output = finished
         .output_json
-        .expect("background cancel structured json");
+        .unwrap_or_abort();
     assert_eq!(output["request_id"], json!(request_id));
     assert_eq!(output["status"], json!("cancelled"));
     assert_eq!(output["terminal"], json!(true));
@@ -348,15 +349,15 @@ async fn background_output_cancel_after_terminal_does_not_report_performed() {
             }),
         )
         .await
-        .expect("request task");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &task_tool_call_id).await;
 
     let task_events = read_events(&run.events_path);
     let task_finished = find_finished(&task_events, &task_tool_call_id);
-    let task_output = task_finished.output_json.expect("task structured output");
+    let task_output = task_finished.output_json.unwrap_or_abort();
     let request_id = task_output["child_request_id"]
         .as_str()
-        .expect("child request id")
+        .unwrap_or_abort()
         .to_string();
     wait_for_request_terminal(&run.events_path, &request_id).await;
 
@@ -372,7 +373,7 @@ async fn background_output_cancel_after_terminal_does_not_report_performed() {
             }),
         )
         .await
-        .expect("request terminal cancellation status");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &cancel_tool_call_id).await;
 
     let events = read_events(&run.events_path);
@@ -380,7 +381,7 @@ async fn background_output_cancel_after_terminal_does_not_report_performed() {
     assert_eq!(finished.status, ToolCallStatus::Succeeded);
     let output = finished
         .output_json
-        .expect("terminal cancel structured json");
+        .unwrap_or_abort();
     assert_eq!(output["request_id"], json!(request_id));
     assert_eq!(output["status"], json!("completed"));
     assert_eq!(output["terminal"], json!(true));
@@ -403,7 +404,7 @@ async fn background_output_cancel_after_terminal_does_not_report_performed() {
             }),
         )
         .await
-        .expect("request terminal explicit cancellation status");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &explicit_cancel_tool_call_id).await;
 
     let events = read_events(&run.events_path);
@@ -411,7 +412,7 @@ async fn background_output_cancel_after_terminal_does_not_report_performed() {
     assert_eq!(finished.status, ToolCallStatus::Succeeded);
     let output = finished
         .output_json
-        .expect("terminal explicit cancel structured json");
+        .unwrap_or_abort();
     assert_eq!(output["request_id"], json!(request_id));
     assert_eq!(output["final_status"], json!("completed"));
     assert_eq!(output["terminal"], json!(true));
@@ -432,7 +433,7 @@ async fn background_output_rejects_sibling_request_ids() {
     let sibling_worker_id = handle
         .spawn_agent(anonymous_supervisor_actor(), "deep", None)
         .await
-        .expect("spawn sibling worker");
+        .unwrap_or_abort();
 
     let task_tool_call_id = handle
         .request_tool_call(
@@ -448,15 +449,15 @@ async fn background_output_rejects_sibling_request_ids() {
             }),
         )
         .await
-        .expect("request task");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &task_tool_call_id).await;
 
     let task_events = read_events(&run.events_path);
     let task_finished = find_finished(&task_events, &task_tool_call_id);
-    let task_output = task_finished.output_json.expect("task structured output");
+    let task_output = task_finished.output_json.unwrap_or_abort();
     let request_id = task_output["child_request_id"]
         .as_str()
-        .expect("child request id")
+        .unwrap_or_abort()
         .to_string();
 
     let output_tool_call_id = handle
@@ -470,7 +471,7 @@ async fn background_output_rejects_sibling_request_ids() {
             }),
         )
         .await
-        .expect("request unauthorized background output");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &output_tool_call_id).await;
 
     let events = read_events(&run.events_path);
@@ -491,7 +492,7 @@ async fn background_cancel_rejects_sibling_request_ids() {
     let sibling_worker_id = handle
         .spawn_agent(anonymous_supervisor_actor(), "deep", None)
         .await
-        .expect("spawn sibling worker");
+        .unwrap_or_abort();
 
     let task_tool_call_id = handle
         .request_tool_call(
@@ -507,15 +508,15 @@ async fn background_cancel_rejects_sibling_request_ids() {
             }),
         )
         .await
-        .expect("request task");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &task_tool_call_id).await;
 
     let task_events = read_events(&run.events_path);
     let task_finished = find_finished(&task_events, &task_tool_call_id);
-    let task_output = task_finished.output_json.expect("task structured output");
+    let task_output = task_finished.output_json.unwrap_or_abort();
     let request_id = task_output["child_request_id"]
         .as_str()
-        .expect("child request id")
+        .unwrap_or_abort()
         .to_string();
 
     // act
@@ -530,7 +531,7 @@ async fn background_cancel_rejects_sibling_request_ids() {
             }),
         )
         .await
-        .expect("request unauthorized background cancel");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &cancel_tool_call_id).await;
 
     // assert
@@ -561,7 +562,7 @@ async fn background_output_rejects_excessive_block_timeout() {
             }),
         )
         .await
-        .expect("request background output");
+        .unwrap_or_abort();
     wait_for_tool_call_finish(&run.events_path, &output_tool_call_id).await;
 
     let events = read_events(&run.events_path);
