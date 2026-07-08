@@ -250,7 +250,7 @@ fn envelope_with_correlation(
         schema_version: SCHEMA_VERSION,
         event_id: format!("evt-{seq:04}"),
         seq,
-        run_id: "run_fixture".to_string(),
+        run_id: "run_fixture".into(),
         mono_ms: seq,
         ts: None,
         actor: EventActor::new(ActorKind::System, Some("test".to_string())),

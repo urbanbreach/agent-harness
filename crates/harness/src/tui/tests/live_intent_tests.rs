@@ -117,7 +117,7 @@ async fn event_forwarder_stops_after_terminal_event_when_requested() {
             "run_forwarder_terminal",
             "started",
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "forwarder terminal".to_string(),
+                run_name: "forwarder terminal".into(),
                 workspace_root: "/workspace".to_string(),
             }),
         ))

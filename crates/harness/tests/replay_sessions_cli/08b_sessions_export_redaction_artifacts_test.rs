@@ -13,7 +13,7 @@ fn sessions_export_cli_redacts_secret_payloads_and_reports_manifest() {
                 "run_export_redaction",
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "export-redaction".to_string(),
+                    run_name: "export-redaction".into(),
                     workspace_root: "/tmp/workspace".to_string(),
                 }),
             ),
@@ -21,7 +21,7 @@ fn sessions_export_cli_redacts_secret_payloads_and_reports_manifest() {
                 "run_export_redaction",
                 2,
                 EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                    tool_call_id: "toolcall_000001".to_string(),
+                    tool_call_id: "toolcall_000001".into(),
                     status: ToolCallStatus::Succeeded,
                     output_summary: Some(
                         "raw token sk-AbCdEf0123456789 and Authorization: Bearer abc.def-ghi_123"

@@ -16,7 +16,7 @@ fn sessions_list_cli_filters_machine_readable_selectors() {
                 "run_resumable",
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/tmp/workspace".to_string(),
                 }),
             ),
@@ -34,7 +34,7 @@ fn sessions_list_cli_filters_machine_readable_selectors() {
                 3,
                 EventActor::new(ActorKind::Worker, Some("agent_1".to_string())),
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req_1".to_string(),
+                    request_id: "req_1".into(),
                     provider_id: "openai".to_string(),
                     model_id: "gpt-5.4-mini".to_string(),
                     prompt_summary: "hello".to_string(),
@@ -59,7 +59,7 @@ fn sessions_list_cli_filters_machine_readable_selectors() {
                 "run_prompt_filtered",
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "prompt".to_string(),
+                    run_name: "prompt".into(),
                     workspace_root: "/tmp/workspace".to_string(),
                 }),
             ),
@@ -96,7 +96,7 @@ fn sessions_list_cli_filters_machine_readable_selectors() {
                 "run_failed_filtered",
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/tmp/workspace".to_string(),
                 }),
             ),
@@ -174,7 +174,7 @@ fn sessions_inspect_cli_accepts_positional_session_selector() {
                 "run_inspect_positional",
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "inspectable".to_string(),
+                    run_name: "inspectable".into(),
                     workspace_root: "/tmp/workspace".to_string(),
                 }),
             ),
@@ -234,7 +234,7 @@ fn sessions_replay_cli_resolves_run_id_from_session_catalog() {
                 "run_resolved",
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "resolved".to_string(),
+                    run_name: "resolved".into(),
                     workspace_root: "/tmp/workspace".to_string(),
                 }),
             ),
@@ -281,7 +281,7 @@ fn sessions_list_cli_supports_run_id_sorting() {
                     run_id,
                     1,
                     EventV1::RunStarted(RunStartedEvent {
-                        run_name: format!("{run_id}-name"),
+                        run_name: format!("{run_id}-name").into(),
                         workspace_root: "/tmp/workspace".to_string(),
                     }),
                 ),

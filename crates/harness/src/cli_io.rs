@@ -60,7 +60,7 @@ pub async fn wait_for_permission_id(
         let events = load_events_file(events_path)?;
         if let Some(permission_id) = events.into_iter().find_map(|event| match event.payload {
             EventV1::PermissionRequested(data)
-                if data.tool_call_id.as_deref() == Some(tool_call_id) =>
+                if data.tool_call_id.as_ref().map(|id| id.as_str()) == Some(tool_call_id) =>
             {
                 Some(data.permission_id)
             }
@@ -90,7 +90,7 @@ pub(crate) async fn wait_for_tool_finished(
         let events = load_events_file(events_path)?;
 
         if let Some(status) = events.iter().find_map(|event| match &event.payload {
-            EventV1::ToolCallFinished(data) if data.tool_call_id == tool_call_id => {
+            EventV1::ToolCallFinished(data) if data.tool_call_id.as_str() == tool_call_id => {
                 Some(data.status)
             }
             _ => None,
@@ -142,7 +142,7 @@ mod tests {
             schema_version: SCHEMA_VERSION,
             event_id: event_id.to_string(),
             seq,
-            run_id: "run1".to_string(),
+            run_id: "run1".into(),
             mono_ms: seq * 100,
             ts: None,
             actor: EventActor::new(ActorKind::System, None),

@@ -9,7 +9,7 @@ fn replay_cli_prints_json_summary() {
                 "run_replay_json",
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "json-fixture".to_string(),
+                    run_name: "json-fixture".into(),
                     workspace_root: "/tmp/workspace".to_string(),
                 }),
             ),
@@ -17,7 +17,7 @@ fn replay_cli_prints_json_summary() {
                 "run_replay_json",
                 2,
                 EventV1::TaskScheduled(TaskScheduledEvent {
-                    task_id: "task_123".to_string(),
+                    task_id: "task_123".to_string().into(),
                     state: TaskScheduleState::Queued,
                     queue_key: Some("deep/default:gpt-5.4-mini".to_string()),
                 }),
@@ -107,7 +107,7 @@ fn replay_cli_prints_human_summary() {
                 "run_replay_human",
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "human-fixture".to_string(),
+                    run_name: "human-fixture".into(),
                     workspace_root: "/tmp/workspace".to_string(),
                 }),
             ),
@@ -347,7 +347,7 @@ fn replay_cli_surfaces_recovery_context_in_json_summary() {
                 "run_replay_context",
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/tmp/workspace".to_string(),
                 }),
             ),
@@ -364,7 +364,7 @@ fn replay_cli_surfaces_recovery_context_in_json_summary() {
                 "run_replay_context",
                 3,
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req_1".to_string(),
+                    request_id: "req_1".into(),
                     provider_id: "openai".to_string(),
                     model_id: "gpt-5.4-mini".to_string(),
                     prompt_summary: "resume safely".to_string(),
@@ -376,7 +376,7 @@ fn replay_cli_surfaces_recovery_context_in_json_summary() {
                 "run_replay_context",
                 4,
                 EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                    tool_call_id: "toolcall_1".to_string(),
+                    tool_call_id: "toolcall_1".into(),
                     status: ToolCallStatus::Succeeded,
                     output_summary: Some("wrote diff".to_string()),
                     output_digest: Some("digest-tool-output".to_string()),

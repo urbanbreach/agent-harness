@@ -11,7 +11,7 @@ fn sessions_fork_rejects_invalid_cutoff() {
                 "run_unstable_source",
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/tmp/workspace".to_string(),
                 }),
             ),
@@ -19,7 +19,7 @@ fn sessions_fork_rejects_invalid_cutoff() {
                 "run_unstable_source",
                 2,
                 EventV1::TaskScheduled(TaskScheduledEvent {
-                    task_id: "task_in_flight".to_string(),
+                    task_id: "task_in_flight".to_string().into(),
                     state: TaskScheduleState::Started,
                     queue_key: Some("provider_model:default:gpt-5.4-mini".to_string()),
                 }),

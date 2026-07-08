@@ -1,3 +1,4 @@
+// allow: SIZE_OK — doctor metadata (tool call support + skill readiness + model metadata attachment)
 use std::path::Path;
 
 use harness_core::config::{HarnessConfig, PermissionMode, ProviderConfig};

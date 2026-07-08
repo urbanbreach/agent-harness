@@ -62,7 +62,7 @@ fn lineage_test_event(seq: u64, payload: EventV1) -> EventEnvelopeV1 {
         schema_version: SCHEMA_VERSION,
         event_id: format!("evt_tui_lineage_{seq:04}"),
         seq,
-        run_id: "run_tui_lineage_source".to_string(),
+        run_id: "run_tui_lineage_source".into(),
         mono_ms: seq,
         ts: Some(format!("2026-05-03T00:00:{seq:02}Z")),
         actor: EventActor::new(ActorKind::System, Some("tui-lineage-test".to_string())),
@@ -78,7 +78,7 @@ fn stable_lineage_test_events() -> Vec<EventEnvelopeV1> {
         lineage_test_event(
             1,
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "tui lineage source".to_string(),
+                run_name: "tui lineage source".into(),
                 workspace_root: "/workspace".to_string(),
             }),
         ),
@@ -96,7 +96,7 @@ fn active_stable_lineage_test_events() -> Vec<EventEnvelopeV1> {
         lineage_test_event(
             1,
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "tui active lineage source".to_string(),
+                run_name: "tui active lineage source".into(),
                 workspace_root: "/workspace".to_string(),
             }),
         ),
@@ -111,7 +111,7 @@ fn active_stable_lineage_test_events() -> Vec<EventEnvelopeV1> {
         lineage_test_event(
             3,
             EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                request_id: "req_000001".to_string(),
+                request_id: "req_000001".into(),
                 provider_id: "default".to_string(),
                 model_id: "gpt-5.5".to_string(),
                 prompt_summary: "first turn".to_string(),
@@ -122,7 +122,7 @@ fn active_stable_lineage_test_events() -> Vec<EventEnvelopeV1> {
         lineage_test_event(
             4,
             EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
-                request_id: "req_000001".to_string(),
+                request_id: "req_000001".into(),
                 finish_reason: "stop".to_string(),
                 output_digest: Some("digest-output".to_string()),
                 usage: None,
@@ -137,7 +137,7 @@ fn first_prompt_lineage_test_events() -> Vec<EventEnvelopeV1> {
         lineage_test_event(
             1,
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "tui first prompt lineage source".to_string(),
+                run_name: "tui first prompt lineage source".into(),
                 workspace_root: "/workspace".to_string(),
             }),
         ),
@@ -188,7 +188,7 @@ fn catalog_event(run_id: &str, seq: u64, payload: EventV1) -> EventEnvelopeV1 {
         schema_version: SCHEMA_VERSION,
         event_id: format!("evt_{run_id}_{seq:04}"),
         seq,
-        run_id: run_id.to_string(),
+        run_id: run_id.to_string().into(),
         mono_ms: seq,
         ts: Some(format!("2026-05-03T00:01:{seq:02}Z")),
         actor: EventActor::new(ActorKind::System, Some("tui-catalog-test".to_string())),
@@ -207,7 +207,7 @@ fn forwarder_event_draft(
     EventEnvelopeWithoutSeqV1 {
         schema_version: SCHEMA_VERSION,
         event_id: format!("evt_forwarder_{marker}"),
-        run_id: run_id.to_string(),
+        run_id: run_id.to_string().into(),
         mono_ms: 0,
         ts: Some("2026-05-03T00:02:00Z".to_string()),
         actor: EventActor::new(ActorKind::System, Some("tui-forwarder-test".to_string())),
@@ -224,7 +224,7 @@ fn catalog_events(run_id: &str) -> Vec<EventEnvelopeV1> {
             run_id,
             1,
             EventV1::RunStarted(RunStartedEvent {
-                run_name: run_id.replace('_', " "),
+                run_name: run_id.replace('_', " ").into(),
                 workspace_root: "/workspace".to_string(),
             }),
         ),

@@ -540,7 +540,7 @@ fn write_resume_fixture_events(run_dir: &std::path::Path) {
             "run_resume_cli",
             1,
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "interactive".to_string(),
+                run_name: "interactive".into(),
                 workspace_root: "/tmp/workspace".to_string(),
             }),
         ),
@@ -557,7 +557,7 @@ fn write_resume_fixture_events(run_dir: &std::path::Path) {
             "run_resume_cli",
             3,
             EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-                request_id: "req_000001".to_string(),
+                request_id: "req_000001".into(),
                 text: "Original prompt".to_string(),
             }),
         ),
@@ -565,7 +565,7 @@ fn write_resume_fixture_events(run_dir: &std::path::Path) {
             "run_resume_cli",
             4,
             EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                request_id: "req_000001".to_string(),
+                request_id: "req_000001".into(),
                 provider_id: "default".to_string(),
                 model_id: "gpt-4o-mini".to_string(),
                 prompt_summary: "Original prompt".to_string(),
@@ -577,7 +577,7 @@ fn write_resume_fixture_events(run_dir: &std::path::Path) {
             "run_resume_cli",
             5,
             EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
-                request_id: "req_000001".to_string(),
+                request_id: "req_000001".into(),
                 finish_reason: "stop".to_string(),
                 output_digest: Some("digest-output".to_string()),
                 usage: None,
@@ -606,7 +606,7 @@ fn resume_envelope(run_id: &str, seq: u64, payload: EventV1) -> EventEnvelopeV1 
         schema_version: SCHEMA_VERSION,
         event_id: format!("evt-{seq:04}"),
         seq,
-        run_id: run_id.to_string(),
+        run_id: run_id.to_string().into(),
         mono_ms: seq,
         ts: None,
         actor: EventActor::new(ActorKind::Supervisor, Some("resume-test".to_string())),

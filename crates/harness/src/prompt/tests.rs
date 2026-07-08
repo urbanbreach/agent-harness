@@ -128,7 +128,7 @@ fn parse_wait_timeout_ms_parses_positive_milliseconds() {
 fn evaluate_prompt_completion_reports_cancelled_task_as_error() {
     let events = vec![event_with_correlation(
         EventV1::TaskCancelled(TaskCancelledEvent {
-            task_id: "task_000001".to_string(),
+            task_id: "task_000001".to_string().into(),
             reason: "provider denied request".to_string(),
             task_scope: Some(harness_core::event::TaskTerminalScope::AgentTurn),
         }),
@@ -148,7 +148,7 @@ fn evaluate_prompt_completion_reports_cancelled_task_as_error() {
 fn evaluate_prompt_completion_waits_for_cancellation_after_provider_finish_error() {
     let events = vec![event(EventV1::ProviderRequestFinished(
         ProviderRequestFinishedEvent {
-            request_id: "req_000001".to_string(),
+            request_id: "req_000001".into(),
             finish_reason: "error".to_string(),
             output_digest: None,
             usage: None,
@@ -166,7 +166,7 @@ fn evaluate_prompt_completion_waits_for_prompt_task_completion_after_provider_fi
         provider_task_scheduled_event("task_000001", "req_000001"),
         event(EventV1::ProviderRequestFinished(
             ProviderRequestFinishedEvent {
-                request_id: "req_000001".to_string(),
+                request_id: "req_000001".into(),
                 finish_reason: "done".to_string(),
                 output_digest: Some("abc123".to_string()),
                 usage: None,
@@ -192,7 +192,7 @@ async fn prompt_tracker_waits_for_agent_turn_end_not_provider_finish() {
     store
         .append(draft_event(
             EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
-                request_id: "provider_call_000001".to_string(),
+                request_id: "provider_call_000001".into(),
                 finish_reason: "done".to_string(),
                 output_digest: Some("abc123".to_string()),
                 usage: None,
@@ -211,7 +211,7 @@ async fn prompt_tracker_waits_for_agent_turn_end_not_provider_finish() {
     store
         .append(draft_event(
             EventV1::TaskCompleted(TaskCompletedEvent {
-                task_id: "task_000001".to_string(),
+                task_id: "task_000001".to_string().into(),
                 result_summary: "ok".to_string(),
                 result_digest: "def456".to_string(),
                 metadata: Some(TaskCompletionMetadata {
@@ -234,7 +234,7 @@ fn evaluate_prompt_completion_waits_for_tool_task_completion() {
         provider_task_scheduled_event("task_000001", "req_000001"),
         event_with_correlation(
             EventV1::TaskCompleted(TaskCompletedEvent {
-                task_id: "task_000002".to_string(),
+                task_id: "task_000002".to_string().into(),
                 result_summary: "tool ok".to_string(),
                 result_digest: "def456".to_string(),
                 metadata: Some(TaskCompletionMetadata {
@@ -259,7 +259,7 @@ fn evaluate_prompt_completion_waits_for_tool_task_completion() {
 fn evaluate_prompt_completion_ignores_tool_task_without_agent_turn_schedule() {
     let events = vec![event_with_correlation(
         EventV1::TaskCompleted(TaskCompletedEvent {
-            task_id: "task_000002".to_string(),
+            task_id: "task_000002".to_string().into(),
             result_summary: "tool ok".to_string(),
             result_digest: "def456".to_string(),
             metadata: Some(TaskCompletionMetadata {
@@ -285,7 +285,7 @@ fn evaluate_prompt_completion_ignores_cancelled_child_tool_task() {
         provider_task_scheduled_event("task_000001", "req_000001"),
         event_with_correlation(
             EventV1::TaskCancelled(TaskCancelledEvent {
-                task_id: "task_000002".to_string(),
+                task_id: "task_000002".to_string().into(),
                 reason: "tool execution failed: expected audit error".to_string(),
                 task_scope: Some(harness_core::event::TaskTerminalScope::ToolCall),
             }),
@@ -293,7 +293,7 @@ fn evaluate_prompt_completion_ignores_cancelled_child_tool_task() {
         ),
         event_with_correlation(
             EventV1::TaskCompleted(TaskCompletedEvent {
-                task_id: "task_000001".to_string(),
+                task_id: "task_000001".to_string().into(),
                 result_summary: "ok".to_string(),
                 result_digest: "abc123".to_string(),
                 metadata: Some(TaskCompletionMetadata {
@@ -317,7 +317,7 @@ fn evaluate_prompt_completion_reports_success_for_prompt_task_completed() {
         provider_task_scheduled_event("task_000001", "req_000001"),
         event_with_correlation(
             EventV1::TaskCompleted(TaskCompletedEvent {
-                task_id: "task_000001".to_string(),
+                task_id: "task_000001".to_string().into(),
                 result_summary: "ok".to_string(),
                 result_digest: "abc123".to_string(),
                 metadata: None,
@@ -334,7 +334,7 @@ fn evaluate_prompt_completion_reports_success_for_prompt_task_completed() {
 fn evaluate_prompt_completion_reports_success_for_terminal_only_agent_turn_completion() {
     let events = vec![event_with_correlation(
         EventV1::TaskCompleted(TaskCompletedEvent {
-            task_id: "task_000001".to_string(),
+            task_id: "task_000001".to_string().into(),
             result_summary: "ok".to_string(),
             result_digest: "abc123".to_string(),
             metadata: Some(TaskCompletionMetadata {
@@ -370,7 +370,7 @@ fn evaluate_prompt_completion_prioritizes_run_failed() {
 fn has_provider_error_finish_detects_error_finish_reason() {
     let events = vec![event_with_correlation(
         EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
-            request_id: "provider_call_000007".to_string(),
+            request_id: "provider_call_000007".into(),
             finish_reason: "error".to_string(),
             output_digest: None,
             usage: None,
@@ -387,7 +387,7 @@ fn has_provider_error_finish_detects_error_finish_reason() {
 fn evaluate_prompt_completion_supports_correlated_task_id_equals_request_id_fallback() {
     let events = vec![event_with_correlation(
         EventV1::TaskCompleted(TaskCompletedEvent {
-            task_id: "req_000123".to_string(),
+            task_id: "req_000123".to_string().into(),
             result_summary: "ok".to_string(),
             result_digest: "abc123".to_string(),
             metadata: None,
@@ -403,7 +403,7 @@ fn evaluate_prompt_completion_supports_correlated_task_id_equals_request_id_fall
 fn evaluate_prompt_completion_ignores_uncorrelated_agent_turn_completion() {
     let events = vec![event_with_correlation(
         EventV1::TaskCompleted(TaskCompletedEvent {
-            task_id: "task_000999".to_string(),
+            task_id: "task_000999".to_string().into(),
             result_summary: "other turn".to_string(),
             result_digest: "abc123".to_string(),
             metadata: Some(TaskCompletionMetadata {
@@ -427,7 +427,7 @@ async fn wait_for_prompt_completion_subscribes_once_and_streams_new_events() {
         store
             .append(draft_event(
                 EventV1::TaskCompleted(TaskCompletedEvent {
-                    task_id: format!("tool_task_{index:04}"),
+                    task_id: format!("tool_task_{index:04}").into(),
                     result_summary: "ok".to_string(),
                     result_digest: format!("digest_{index:04}"),
                     metadata: None,
@@ -448,7 +448,7 @@ async fn wait_for_prompt_completion_subscribes_once_and_streams_new_events() {
     store
         .append(draft_event(
             EventV1::TaskScheduled(TaskScheduledEvent {
-                task_id: "task_000001".to_string(),
+                task_id: "task_000001".to_string().into(),
                 state: TaskScheduleState::Started,
                 queue_key: Some("provider_model:default:gpt-4o-mini".to_string()),
             }),
@@ -458,7 +458,7 @@ async fn wait_for_prompt_completion_subscribes_once_and_streams_new_events() {
     store
         .append(draft_event(
             EventV1::TaskCompleted(TaskCompletedEvent {
-                task_id: "task_000001".to_string(),
+                task_id: "task_000001".to_string().into(),
                 result_summary: "ok".to_string(),
                 result_digest: "abc123".to_string(),
                 metadata: None,
@@ -480,7 +480,7 @@ fn draft_event(payload: EventV1, correlation_id: Option<&str>) -> EventEnvelopeW
     EventEnvelopeWithoutSeqV1 {
         schema_version: 1,
         event_id: "evt_1".to_string(),
-        run_id: "run_1".to_string(),
+        run_id: "run_1".into(),
         mono_ms: 0,
         ts: None,
         actor: EventActor::new(ActorKind::System, Some("coordinator".to_string())),
@@ -494,7 +494,7 @@ fn draft_event(payload: EventV1, correlation_id: Option<&str>) -> EventEnvelopeW
 fn provider_task_scheduled_event(task_id: &str, request_id: &str) -> EventEnvelopeV1 {
     event_with_correlation(
         EventV1::TaskScheduled(TaskScheduledEvent {
-            task_id: task_id.to_string(),
+            task_id: task_id.to_string().into(),
             state: TaskScheduleState::Started,
             queue_key: Some("provider_model:default:gpt-4o-mini".to_string()),
         }),
@@ -507,7 +507,7 @@ fn event_with_correlation(payload: EventV1, correlation_id: Option<&str>) -> Eve
         schema_version: 1,
         event_id: "evt_1".to_string(),
         seq: 1,
-        run_id: "run_1".to_string(),
+        run_id: "run_1".into(),
         mono_ms: 0,
         ts: None,
         actor: EventActor::new(ActorKind::System, Some("coordinator".to_string())),

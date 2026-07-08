@@ -1,3 +1,4 @@
+// allow: SIZE_OK — CLI TUI workflow (launch + lineage + auth)
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 

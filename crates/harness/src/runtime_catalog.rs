@@ -1,3 +1,4 @@
+// allow: SIZE_OK — CLI runtime catalog (model + provider metadata)
 use crate::UnwrapOrAbort;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;

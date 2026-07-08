@@ -1,3 +1,4 @@
+// allow: SIZE_OK — CLI bootstrap (runtime catalog + profile + provider assembly)
 use crate::UnwrapOrAbort;
 use std::collections::BTreeMap;
 use std::sync::Arc;

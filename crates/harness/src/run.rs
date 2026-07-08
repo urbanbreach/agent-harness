@@ -1,3 +1,4 @@
+// allow: SIZE_OK — CLI run command (coordinator + provider + tool wiring)
 use crate::UnwrapOrAbort;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -757,7 +758,7 @@ mod tests {
             .iter()
             .find_map(|event| match &event.payload {
                 EventV1::PermissionRequested(data)
-                    if data.tool_call_id.as_deref() == Some(tool_call_id.as_str()) =>
+                    if data.tool_call_id.as_ref().map(|id| id.as_str()) == Some(tool_call_id.as_str()) =>
                 {
                     Some(data.permission_id.clone())
                 }
@@ -783,7 +784,7 @@ mod tests {
             matches!(
                 &event.payload,
                 EventV1::ToolCallFinished(data)
-                    if data.tool_call_id == tool_call_id
+                    if data.tool_call_id.as_str() == tool_call_id.as_str()
                         && data.status == EventToolCallStatus::Failed
             )
         }));

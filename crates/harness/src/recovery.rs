@@ -1,3 +1,4 @@
+// allow: SIZE_OK — recovery prompt context (error state + session resume + context entry assembly)
 //! Headless session recovery helpers shared by CLI entrypoints.
 
 use std::collections::BTreeMap;
@@ -205,7 +206,7 @@ pub fn inspect_session_recovery(run_dir: &Path) -> Result<SessionRecoverySummary
 pub fn latest_run_name(events: &[EventEnvelopeV1]) -> Option<String> {
     events.iter().rev().find_map(|event| match &event.payload {
         EventV1::SessionTitleUpdated(data) => Some(data.title.clone()),
-        EventV1::RunStarted(data) => Some(data.run_name.clone()),
+        EventV1::RunStarted(data) => Some(data.run_name.to_string()),
         _ => None,
     })
 }
@@ -271,14 +272,14 @@ fn collect_prompt_context(events: &[EventEnvelopeV1]) -> Vec<RecoveryPromptConte
             EventV1::UserMessageSubmitted(payload) => Some(RecoveryPromptContextEntry {
                 seq: event.seq,
                 kind: "user_message".to_string(),
-                request_id: Some(payload.request_id.clone()),
+                request_id: Some(payload.request_id.to_string()),
                 agent_id: None,
                 text: payload.text.clone(),
             }),
             EventV1::ProviderRequestStarted(payload) => Some(RecoveryPromptContextEntry {
                 seq: event.seq,
                 kind: "provider_prompt".to_string(),
-                request_id: Some(payload.request_id.clone()),
+                request_id: Some(payload.request_id.to_string()),
                 agent_id: event.actor.agent_id.clone(),
                 text: payload.prompt_summary.clone(),
             }),
@@ -350,7 +351,7 @@ fn collect_artifacts(resume_plan: &ResumePlan) -> Vec<RecoveryArtifactEntry> {
         .session_artifacts
         .values()
         .map(|artifact| RecoveryArtifactEntry {
-            tool_call_id: artifact.tool_call_id.clone(),
+            tool_call_id: artifact.tool_call_id.as_ref().map(|id| id.to_string()),
             tool_id: artifact.tool_id.clone(),
             kind: artifact.artifact_kind.clone(),
             path: artifact.path.clone(),
@@ -427,7 +428,7 @@ mod tests {
             schema_version: SCHEMA_VERSION,
             event_id: format!("evt-{}", seq),
             seq,
-            run_id: "test-run".to_string(),
+            run_id: "test-run".into(),
             mono_ms: seq * 100,
             ts: None,
             actor: EventActor::new(
@@ -474,7 +475,7 @@ mod tests {
                 1,
                 None,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/tmp".to_string(),
                 }),
             ),
@@ -491,7 +492,7 @@ mod tests {
                 3,
                 Some("agent-1"),
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req_1".to_string(),
+                    request_id: "req_1".into(),
                     provider_id: "mock".to_string(),
                     model_id: "model-1".to_string(),
                     prompt_summary: "hello".to_string(),
@@ -549,7 +550,7 @@ mod tests {
                 1,
                 None,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "prompt".to_string(), // prompt runs are not resumable
+                    run_name: "prompt".into(), // prompt runs are not resumable
                     workspace_root: "/tmp".to_string(),
                 }),
             ),
@@ -593,7 +594,7 @@ mod tests {
             1,
             None,
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "my-run".to_string(),
+                run_name: "my-run".into(),
                 workspace_root: "/tmp".to_string(),
             }),
         )];
@@ -619,7 +620,7 @@ mod tests {
                 1,
                 None,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "my-run".to_string(),
+                    run_name: "my-run".into(),
                     workspace_root: "/tmp".to_string(),
                 }),
             ),
@@ -658,7 +659,7 @@ mod tests {
                 2,
                 None,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "later-run".to_string(),
+                    run_name: "later-run".into(),
                     workspace_root: "/tmp".to_string(),
                 }),
             ),
@@ -678,7 +679,7 @@ mod tests {
                 1,
                 None,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/tmp".to_string(),
                 }),
             ),
@@ -704,7 +705,7 @@ mod tests {
                 4,
                 Some("agent-1"),
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req_1".to_string(),
+                    request_id: "req_1".into(),
                     provider_id: "mock".to_string(),
                     model_id: "model-1".to_string(),
                     prompt_summary: "hello from 1".to_string(),
@@ -716,7 +717,7 @@ mod tests {
                 5,
                 Some("agent-2"),
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req_2".to_string(),
+                    request_id: "req_2".into(),
                     provider_id: "mock".to_string(),
                     model_id: "model-1".to_string(),
                     prompt_summary: "hello from 2".to_string(),

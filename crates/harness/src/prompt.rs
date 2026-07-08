@@ -1,3 +1,4 @@
+// allow: SIZE_OK — CLI prompt command (streaming output + asset composition)
 use std::fs;
 use std::io::{Read, Write};
 use std::path::PathBuf;

@@ -26,7 +26,7 @@ fn sessions_export_cli_fails_closed_for_resolved_config_credentials_in_events() 
                 "run_export_config_credentials",
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "config-credentials".to_string(),
+                    run_name: "config-credentials".into(),
                     workspace_root: workspace.path().display().to_string(),
                 }),
             ),
@@ -34,7 +34,7 @@ fn sessions_export_cli_fails_closed_for_resolved_config_credentials_in_events() 
                 "run_export_config_credentials",
                 2,
                 EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                    tool_call_id: "toolcall_000003".to_string(),
+                    tool_call_id: "toolcall_000003".into(),
                     status: ToolCallStatus::Succeeded,
                     output_summary: Some(
                         "plain-provider-secret-value plain-env-config-secret-value plain-header-secret-value plain-auth-secret-value".to_string(),
@@ -102,7 +102,7 @@ fn sessions_export_cli_uses_session_workspace_for_readiness_when_config_is_impli
                 "run_export_session_rooted_readiness",
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "session-rooted-readiness".to_string(),
+                    run_name: "session-rooted-readiness".into(),
                     workspace_root: session_workspace.path().display().to_string(),
                 }),
             ),
@@ -201,7 +201,7 @@ fn sessions_export_cli_fails_closed_for_hidden_prompt_config_values_in_events() 
                 "run_export_prompt_secrets",
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "prompt-secrets".to_string(),
+                    run_name: "prompt-secrets".into(),
                     workspace_root: workspace.path().display().to_string(),
                 }),
             ),
@@ -209,7 +209,7 @@ fn sessions_export_cli_fails_closed_for_hidden_prompt_config_values_in_events() 
                 "run_export_prompt_secrets",
                 2,
                 EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                    tool_call_id: "toolcall_000004".to_string(),
+                    tool_call_id: "toolcall_000004".into(),
                     status: ToolCallStatus::Succeeded,
                     output_summary: Some(
                         "plain-hidden-instruction-secret plain-hidden-agent-prompt-secret"
@@ -291,7 +291,7 @@ fn sessions_export_cli_excludes_stored_credentials_and_scans_for_leaks() {
                 "run_export_stored_credentials",
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "stored-credentials".to_string(),
+                    run_name: "stored-credentials".into(),
                     workspace_root: workspace.path().display().to_string(),
                 }),
             ),
@@ -352,7 +352,7 @@ fn sessions_export_cli_excludes_stored_credentials_and_scans_for_leaks() {
                 "run_export_stored_credential_leak",
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "stored-credential-leak".to_string(),
+                    run_name: "stored-credential-leak".into(),
                     workspace_root: workspace.path().display().to_string(),
                 }),
             ),
@@ -360,7 +360,7 @@ fn sessions_export_cli_excludes_stored_credentials_and_scans_for_leaks() {
                 "run_export_stored_credential_leak",
                 2,
                 EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                    tool_call_id: "toolcall_000005".to_string(),
+                    tool_call_id: "toolcall_000005".into(),
                     status: ToolCallStatus::Succeeded,
                     output_summary: Some("stored-access-secret-value".to_string()),
                     output_digest: Some("digest-stored-credential-leak".to_string()),

@@ -1,3 +1,4 @@
+// allow: SIZE_OK — CLI TUI handoff (launch + setup + config)
 use std::fs;
 use std::io::Write;
 #[cfg(test)]
@@ -693,7 +694,7 @@ async fn run_continue_session_bootstrap(
         .get(&resume_agent_id)
         .map(String::as_str);
     let continue_metadata = continue_launch_metadata(
-        &run.run_id,
+        run.run_id.as_str(),
         recorded_runtime_context.as_ref(),
         &historical_events,
         &resume_agent_id,

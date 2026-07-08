@@ -1,3 +1,4 @@
+// allow: SIZE_OK — CLI replay (event replay + output rendering)
 use crate::UnwrapOrAbort;
 use std::cmp::Reverse;
 use std::collections::BTreeMap;
@@ -196,17 +197,17 @@ pub fn summarize_session(run_dir: &Path) -> Result<ReplaySummary, String> {
     let (meta, _meta_error) = load_meta_lossy(run_dir);
     let catalog = project_session_catalog_entry(
         events.iter(),
-        &run_id,
+        run_id.as_str(),
         meta.as_ref().map(|it| &it.catalog),
         None,
         None,
     )
     .map_err(|err| err.to_string())?;
-    let run_name = run_started_event(&events).map(|data| data.run_name.clone());
-    let (artifacts, child_sessions) = summarize_recovery_story(run_dir, &events, &run_id);
+    let run_name = run_started_event(&events).map(|data| data.run_name.to_string());
+    let (artifacts, child_sessions) = summarize_recovery_story(run_dir, &events, run_id.as_str());
 
     Ok(ReplaySummary {
-        run_id,
+        run_id: run_id.to_string(),
         run_name,
         session_path: run_dir.to_path_buf(),
         status: projection.status,
@@ -303,9 +304,9 @@ fn inspect_single_session(run_dir: &Path) -> SessionInspectionEntry {
         Err(err) => SessionCatalogEntry {
             run_id: events
                 .first()
-                .map(|event| event.run_id.clone())
+                .map(|event| event.run_id.to_string())
                 .unwrap_or_else(|| run_id_fallback.to_string()),
-            run_name: run_started_event(&events).map(|data| data.run_name.clone()),
+            run_name: run_started_event(&events).map(|data| data.run_name.to_string()),
             status: None,
             last_updated_at,
             workspace_root: run_started_event(&events).map(|data| data.workspace_root.clone()),
@@ -643,7 +644,7 @@ fn sanitize_human_text(value: &str) -> String {
             '\r' => sanitized.push_str("\\r"),
             '\t' => sanitized.push_str("\\t"),
             c if c.is_control() => {
-                let _ = write!(&mut sanitized, "\\u{{{:x}}}", c as u32);
+                let _ = write!(&mut sanitized, "\\u{{{:x}}}", u32::from(c));
             }
             _ => sanitized.push(ch),
         }
@@ -680,7 +681,7 @@ mod tests {
             schema_version: SCHEMA_VERSION,
             event_id: format!("evt-{seq:04}"),
             seq,
-            run_id: run_id.to_string(),
+            run_id: run_id.to_string().into(),
             mono_ms: seq,
             ts: None,
             actor: EventActor::new(ActorKind::System, Some("test".to_string())),
@@ -707,7 +708,7 @@ mod tests {
         SessionInspectionEntry {
             run_dir,
             catalog: SessionCatalogEntry {
-                run_id: "run-id".to_string(),
+                run_id: "run-id".into(),
                 run_name: None,
                 status: None,
                 last_updated_at: None,
@@ -781,7 +782,7 @@ mod tests {
                 "run1_id",
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "run1-name".to_string(),
+                    run_name: "run1-name".into(),
                     workspace_root: "/tmp/workspace".to_string(),
                 }),
             )],
@@ -796,7 +797,7 @@ mod tests {
                 "run2_id",
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "run2-name".to_string(),
+                    run_name: "run2-name".into(),
                     workspace_root: "/tmp/workspace".to_string(),
                 }),
             )],

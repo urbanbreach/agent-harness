@@ -33,7 +33,7 @@ fn envelope(run_id: &str, seq: u64, payload: EventV1) -> EventEnvelopeV1 {
         schema_version: SCHEMA_VERSION,
         event_id: format!("evt-{seq:04}"),
         seq,
-        run_id: run_id.to_string(),
+        run_id: run_id.to_string().into(),
         mono_ms: seq,
         ts: None,
         actor: EventActor::new(ActorKind::System, Some("test".to_string())),
@@ -49,7 +49,7 @@ fn agent_envelope(run_id: &str, seq: u64, agent_id: &str, payload: EventV1) -> E
         schema_version: SCHEMA_VERSION,
         event_id: format!("evt-{seq:04}"),
         seq,
-        run_id: run_id.to_string(),
+        run_id: run_id.to_string().into(),
         mono_ms: seq,
         ts: None,
         actor: EventActor::new(ActorKind::Worker, Some(agent_id.to_string())),
@@ -70,7 +70,7 @@ fn envelope_with_actor(
         schema_version: SCHEMA_VERSION,
         event_id: format!("evt-{seq:04}"),
         seq,
-        run_id: run_id.to_string(),
+        run_id: run_id.to_string().into(),
         mono_ms: seq,
         ts: None,
         actor,
@@ -192,7 +192,7 @@ fn resumable_finished_events(run_id: &str) -> Vec<EventEnvelopeV1> {
             run_id,
             1,
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "interactive".to_string(),
+                run_name: "interactive".into(),
                 workspace_root: "/tmp/workspace".to_string(),
             }),
         ),
@@ -210,7 +210,7 @@ fn resumable_finished_events(run_id: &str) -> Vec<EventEnvelopeV1> {
             3,
             "agent_1",
             EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                request_id: "req_1".to_string(),
+                request_id: "req_1".into(),
                 provider_id: "default".to_string(),
                 model_id: "gpt-5.4-mini".to_string(),
                 prompt_summary: "continue safely".to_string(),
@@ -223,7 +223,7 @@ fn resumable_finished_events(run_id: &str) -> Vec<EventEnvelopeV1> {
             4,
             "agent_1",
             EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
-                request_id: "req_1".to_string(),
+                request_id: "req_1".into(),
                 finish_reason: "stop".to_string(),
                 output_digest: Some("digest-output".to_string()),
                 usage: None,
@@ -293,7 +293,7 @@ fn delegated_recovery_events(run_id: &str) -> Vec<EventEnvelopeV1> {
             run_id,
             1,
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "recovery-fixture".to_string(),
+                run_name: "recovery-fixture".into(),
                 workspace_root: "/tmp/workspace".to_string(),
             }),
         ),
@@ -310,7 +310,7 @@ fn delegated_recovery_events(run_id: &str) -> Vec<EventEnvelopeV1> {
             run_id,
             3,
             EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                tool_call_id: "toolcall_1".to_string(),
+                tool_call_id: "toolcall_1".into(),
                 tool_id: "task".to_string(),
                 args_summary: "delegate".to_string(),
                 args_digest: "args-digest-001".to_string(),
@@ -324,7 +324,7 @@ fn delegated_recovery_events(run_id: &str) -> Vec<EventEnvelopeV1> {
                 path: "artifacts/delegated/task-output.json".to_string(),
                 digest: "artifact-digest-001".to_string(),
                 bytes: 42,
-                tool_call_id: Some("toolcall_1".to_string()),
+                tool_call_id: Some("toolcall_1".into()),
                 tool_metadata: Some(ToolIdentityMetadata {
                     canonical_tool_id: Some("agent.spawn".to_string()),
                     alias_source_tool_id: Some("task".to_string()),
@@ -336,7 +336,7 @@ fn delegated_recovery_events(run_id: &str) -> Vec<EventEnvelopeV1> {
             run_id,
             5,
             EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                tool_call_id: "toolcall_1".to_string(),
+                tool_call_id: "toolcall_1".into(),
                 status: ToolCallStatus::Succeeded,
                 output_summary: Some("delegated".to_string()),
                 output_digest: Some("output-digest-001".to_string()),
@@ -398,7 +398,7 @@ fn delegated_recovery_events(run_id: &str) -> Vec<EventEnvelopeV1> {
             run_id,
             6,
             EventV1::TaskCompleted(TaskCompletedEvent {
-                task_id: "task_1".to_string(),
+                task_id: "task_1".to_string().into(),
                 result_summary: "delegated result".to_string(),
                 result_digest: "result-digest-001".to_string(),
                 metadata: Some(TaskCompletionMetadata {
@@ -417,11 +417,11 @@ fn delegated_recovery_events(run_id: &str) -> Vec<EventEnvelopeV1> {
             run_id,
             7,
             EventV1::BackgroundTaskNotification(BackgroundTaskNotificationEvent {
-                parent_session_id: "agent_supervisor".to_string(),
+                parent_session_id: "agent_supervisor".into(),
                 parent_agent_id: Some("agent_supervisor".to_string()),
-                child_session_id: "child-run-001".to_string(),
+                child_session_id: "child-run-001".into(),
                 child_request_id: "child-req-001".to_string(),
-                task_id: "task_1".to_string(),
+                task_id: "task_1".to_string().into(),
                 description: "delegate".to_string(),
                 status: BackgroundTaskNotificationStatus::Completed,
                 summary: "background child completed".to_string(),
@@ -471,7 +471,7 @@ fn delegated_recovery_events_with_control_chars(run_id: &str) -> Vec<EventEnvelo
             run_id,
             1,
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "recovery-fixture".to_string(),
+                run_name: "recovery-fixture".into(),
                 workspace_root: "/tmp/workspace".to_string(),
             }),
         ),
@@ -488,7 +488,7 @@ fn delegated_recovery_events_with_control_chars(run_id: &str) -> Vec<EventEnvelo
             run_id,
             3,
             EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                tool_call_id: "toolcall_1".to_string(),
+                tool_call_id: "toolcall_1".into(),
                 tool_id: "task".to_string(),
                 args_summary: "delegate".to_string(),
                 args_digest: "args-digest-002".to_string(),
@@ -502,7 +502,7 @@ fn delegated_recovery_events_with_control_chars(run_id: &str) -> Vec<EventEnvelo
                 path: artifact_path.clone(),
                 digest: "artifact-digest-002".to_string(),
                 bytes: 42,
-                tool_call_id: Some("toolcall_1".to_string()),
+                tool_call_id: Some("toolcall_1".into()),
                 tool_metadata: Some(ToolIdentityMetadata {
                     canonical_tool_id: Some("agent.spawn".to_string()),
                     alias_source_tool_id: Some("task".to_string()),
@@ -514,7 +514,7 @@ fn delegated_recovery_events_with_control_chars(run_id: &str) -> Vec<EventEnvelo
             run_id,
             5,
             EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                tool_call_id: "toolcall_1".to_string(),
+                tool_call_id: "toolcall_1".into(),
                 status: ToolCallStatus::Succeeded,
                 output_summary: Some("delegated".to_string()),
                 output_digest: Some("output-digest-002".to_string()),
@@ -526,7 +526,7 @@ fn delegated_recovery_events_with_control_chars(run_id: &str) -> Vec<EventEnvelo
             run_id,
             6,
             EventV1::TaskCompleted(TaskCompletedEvent {
-                task_id: "task_1".to_string(),
+                task_id: "task_1".to_string().into(),
                 result_summary: "delegated result".to_string(),
                 result_digest: "result-digest-002".to_string(),
                 metadata: Some(TaskCompletionMetadata {

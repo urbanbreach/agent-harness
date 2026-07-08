@@ -1,3 +1,4 @@
+// allow: SIZE_OK — model probe utility (models.dev API fetch + catalog merge + capability inference)
 use crate::UnwrapOrAbort;
 use std::collections::BTreeMap;
 use std::fs;

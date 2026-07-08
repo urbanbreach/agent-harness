@@ -1,3 +1,4 @@
+// allow: SIZE_OK — auth command flow (credential handling + prompt UI)
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
 use std::path::PathBuf;

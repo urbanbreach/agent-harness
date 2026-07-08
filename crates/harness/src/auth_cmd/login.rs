@@ -1,3 +1,4 @@
+// allow: SIZE_OK — auth command flow (credential handling + prompt UI)
 use std::io;
 use std::net::SocketAddr;
 use std::sync::Arc;

@@ -1,3 +1,4 @@
+// allow: SIZE_OK — CLI library entry (auth backend + config + doctor + run + replay + sessions + TUI handoff dispatchers)
 //! Library surface for the Harness CLI.
 //!
 //! The binary is intentionally a thin shim over this module so tests can drive
@@ -51,37 +52,7 @@ use replay::ReplayCommand;
 use run::RunCommand;
 use sessions::SessionsCommand;
 
-pub trait UnwrapOrAbort<T> {
-    fn unwrap_or_abort(self) -> T;
-}
-
-#[allow(
-    clippy::panic,
-    clippy::match_wild_err_arm,
-    reason = "replaces .expect() which also panics; abort() kills test processes"
-)]
-impl<T> UnwrapOrAbort<T> for Option<T> {
-    fn unwrap_or_abort(self) -> T {
-        match self {
-            Some(v) => v,
-            None => panic!("unwrap_or_abort on None"),
-        }
-    }
-}
-
-#[allow(
-    clippy::panic,
-    clippy::match_wild_err_arm,
-    reason = "replaces .expect() which also panics; abort() kills test processes"
-)]
-impl<T, E> UnwrapOrAbort<T> for Result<T, E> {
-    fn unwrap_or_abort(self) -> T {
-        match self {
-            Ok(v) => v,
-            Err(_) => panic!("unwrap_or_abort on Err"),
-        }
-    }
-}
+pub use harness_core::UnwrapOrAbort;
 
 #[doc(hidden)]
 pub use auth_cmd::AuthBackendOutput;

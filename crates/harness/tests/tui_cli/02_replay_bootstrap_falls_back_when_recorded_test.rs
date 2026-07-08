@@ -8,7 +8,7 @@ fn replay_bootstrap_falls_back_when_recorded_runtime_context_missing() {
             envelope(
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/tmp/workspace".to_string(),
                 }),
             ),
@@ -24,7 +24,7 @@ fn replay_bootstrap_falls_back_when_recorded_runtime_context_missing() {
                 3,
                 Some("req_000001"),
                 EventV1::ProviderRequestStarted(harness_core::event::ProviderRequestStartedEvent {
-                    request_id: "req_000001".to_string(),
+                    request_id: "req_000001".into(),
                     provider_id: "legacy-provider".to_string(),
                     model_id: "legacy-model".to_string(),
                     prompt_summary: "hello".to_string(),
@@ -70,7 +70,7 @@ fn replay_bootstrap_prefers_recorded_runtime_context_from_meta() {
             envelope(
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/tmp/workspace".to_string(),
                 }),
             ),
@@ -86,7 +86,7 @@ fn replay_bootstrap_prefers_recorded_runtime_context_from_meta() {
                 3,
                 Some("req_000001"),
                 EventV1::ProviderRequestStarted(harness_core::event::ProviderRequestStartedEvent {
-                    request_id: "req_000001".to_string(),
+                    request_id: "req_000001".into(),
                     provider_id: "legacy-provider".to_string(),
                     model_id: "legacy-model".to_string(),
                     prompt_summary: "hello".to_string(),
@@ -139,7 +139,7 @@ fn tui_replay_and_continue_headers_are_distinct() {
         envelope(
             1,
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "interactive".to_string(),
+                run_name: "interactive".into(),
                 workspace_root: "/tmp/workspace".to_string(),
             }),
         ),

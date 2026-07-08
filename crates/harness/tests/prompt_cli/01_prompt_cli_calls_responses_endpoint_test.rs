@@ -130,7 +130,7 @@ async fn prompt_cli_generates_harness_session_title() {
         })
         .unwrap_or_abort();
     assert!(
-        harness_core::session_title::is_default_title(&run_started.run_name),
+        harness_core::session_title::is_default_title(run_started.run_name.as_str()),
         "initial title should be harness default, got `{}`",
         run_started.run_name
     );
@@ -142,7 +142,7 @@ async fn prompt_cli_generates_harness_session_title() {
         Some("Debugging production 500 errors")
     );
 
-    let meta_path = session_dir.join(&events[0].run_id).join("meta.json");
+    let meta_path = session_dir.join(events[0].run_id.as_str()).join("meta.json");
     let meta: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&meta_path).unwrap_or_abort())
             .unwrap_or_abort();
@@ -225,7 +225,7 @@ async fn prompt_tracker_waits_for_agent_turn_end_not_provider_finish() {
                     "provider finish should be correlated to the stable agent turn id"
                 );
                 assert_ne!(
-                    payload.request_id, turn_request_id,
+                    payload.request_id.as_str(), turn_request_id,
                     "provider finish payload id is the provider-call id, not the prompt completion id"
                 );
                 Some(event.seq)

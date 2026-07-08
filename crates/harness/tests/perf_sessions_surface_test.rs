@@ -180,9 +180,9 @@ fn perf_large_session_list_reopen_and_session_search_write_artifact() {
 fn write_large_session_corpus(session_root: &Path, workspace_root: &Path) {
     for index in 0..SESSION_COUNT {
         let run_id = format!("run_perf_large_{index:03}");
-        let run_dir = session_root.join(&run_id);
+        let run_dir = session_root.join(run_id.as_str());
         fs::create_dir_all(&run_dir).unwrap_or_abort();
-        let events = large_session_events(&run_id, index, workspace_root);
+        let events = large_session_events(run_id.as_str(), index, workspace_root);
         let body = events
             .iter()
             .map(|event| serde_json::to_string(event).unwrap_or_abort())
@@ -201,7 +201,7 @@ fn large_session_events(run_id: &str, index: usize, workspace_root: &Path) -> Ve
             seq,
             EventActor::new(ActorKind::System, None),
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "interactive".to_string(),
+                run_name: "interactive".into(),
                 workspace_root: workspace_root.display().to_string(),
             }),
         ),
@@ -224,11 +224,11 @@ fn large_session_events(run_id: &str, index: usize, workspace_root: &Path) -> Ve
         let task_id = format!("task_{counter}");
         for payload in [
             EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-                request_id: request_id.clone(),
+                request_id: request_id.clone().into(),
                 text: format!("{SEARCH_NEEDLE} user prompt {index:03}/{turn:03}"),
             }),
             EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                request_id: request_id.clone(),
+                request_id: request_id.clone().into(),
                 provider_id: "mock".to_string(),
                 model_id: "gpt-5.4-mini".to_string(),
                 prompt_summary: format!("{SEARCH_NEEDLE} provider prompt {index:03}/{turn:03}"),
@@ -236,19 +236,19 @@ fn large_session_events(run_id: &str, index: usize, workspace_root: &Path) -> Ve
                 metadata: None,
             }),
             EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
-                request_id: request_id.clone(),
+                request_id: request_id.clone().into(),
                 finish_reason: "stop".to_string(),
                 output_digest: Some(format!("output-digest-{index:03}-{turn:03}")),
                 usage: None,
                 metadata: None,
             }),
             EventV1::AssistantMessageFinished(AssistantMessageFinishedEvent {
-                request_id: request_id.clone(),
+                request_id: request_id.clone().into(),
                 tool_call_count: 0,
                 assistant_message: None,
             }),
             EventV1::TaskCompleted(TaskCompletedEvent {
-                task_id: task_id.clone(),
+                task_id: task_id.clone().into(),
                 result_summary: format!("{SEARCH_NEEDLE} completed turn {index:03}/{turn:03}"),
                 result_digest: format!("task-digest-{index:03}-{turn:03}"),
                 metadata: None,
@@ -282,7 +282,7 @@ fn envelope(run_id: &str, seq: u64, actor: EventActor, payload: EventV1) -> Even
         schema_version: SCHEMA_VERSION,
         event_id: format!("evt-{seq:06}"),
         seq,
-        run_id: run_id.to_string(),
+        run_id: run_id.to_string().into(),
         mono_ms: seq,
         ts: None,
         actor,
@@ -304,12 +304,12 @@ fn tool_context(workspace_root: &Path, tool_call_id: &str) -> ToolContext {
         Arc::new(DefaultRedactor::default()),
     );
     ToolContext {
-        run_id: "run-perf-session-surfaces".to_string(),
+        run_id: "run-perf-session-surfaces".into(),
         workspace_root: workspace_root.to_path_buf(),
         artifacts_dir: workspace_root.join("artifacts"),
         actor: EventActor::new(ActorKind::Supervisor, None),
         category: None,
-        tool_call_id: tool_call_id.to_string(),
+        tool_call_id: tool_call_id.into(),
         current_model_ref: None,
         current_model_settings: None,
         tool_state: ToolRunState::default(),

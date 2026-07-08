@@ -1,3 +1,4 @@
+// allow: SIZE_OK — dynamic prompt context (variable interpolation + asset resolution + template assembly)
 use crate::UnwrapOrAbort;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};

@@ -1,3 +1,4 @@
+// allow: SIZE_OK — CLI TUI workflow (launch + lineage + auth)
 use std::collections::{BTreeMap, BTreeSet};
 
 use harness_core::agent::{AgentModelSettings, AgentProfile};

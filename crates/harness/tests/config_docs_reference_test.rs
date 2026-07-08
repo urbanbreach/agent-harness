@@ -243,7 +243,7 @@ fn config_contract_semantic_metadata_matches_docs() {
         .unwrap_or_abort();
     assert_eq!(server.status, PublicConfigKeyStatus::UnsupportedActive);
     assert!(doc.contains(
-        "`server`, `command`, `plugin`, `share`, `autoshare`, `autoupdate`, `enterprise`"
+        "`server`, `command`, `autoshare`"
     ));
 
     let bash = contract

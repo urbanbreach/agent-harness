@@ -1,3 +1,4 @@
+// allow: SIZE_OK — auth CLI command (login + logout + status + credential store dispatchers)
 use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand};

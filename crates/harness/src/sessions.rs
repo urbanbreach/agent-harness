@@ -1,3 +1,4 @@
+// allow: SIZE_OK — sessions CLI command (list + inspect + export + tree + fork + clone + rename dispatchers)
 use crate::UnwrapOrAbort;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -631,7 +632,7 @@ mod tests {
         SessionInspectionEntry {
             run_dir: PathBuf::from(format!("/tmp/{run_id}")),
             catalog: SessionCatalogEntry {
-                run_id: run_id.to_string(),
+                run_id: run_id.to_string().into(),
                 run_name: Some(format!("{run_id}-name")),
                 status,
                 last_updated_at: Some(sort_unix_ms.to_string()),
@@ -669,7 +670,7 @@ mod tests {
             catalog,
             metadata: None,
             replay: ReplaySummary {
-                run_id: "run-secret-export".to_string(),
+                run_id: "run-secret-export".into(),
                 run_name: Some("secret-export".to_string()),
                 session_path: PathBuf::from("/tmp/run-secret-export"),
                 status: RunStatus::Finished,
@@ -792,7 +793,7 @@ mod tests {
             schema_version: harness_core::event::SCHEMA_VERSION,
             event_id: "event-reasoning".to_string(),
             seq: 1,
-            run_id: "run-secret-export".to_string(),
+            run_id: "run-secret-export".into(),
             mono_ms: 1,
             ts: None,
             actor: harness_core::event::EventActor::new(
@@ -804,7 +805,7 @@ mod tests {
             stream_key: None,
             payload: harness_core::event::EventV1::ProviderReasoningDelta(
                 harness_core::event::ProviderReasoningDeltaEvent {
-                    request_id: "provider-request-1".to_string(),
+                    request_id: "provider-request-1".into(),
                     delta: raw_reasoning.to_string(),
                 },
             ),

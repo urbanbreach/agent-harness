@@ -1,3 +1,4 @@
+// allow: SIZE_OK — CLI scenarios (deterministic built-in run scenarios)
 use crate::UnwrapOrAbort;
 use std::collections::BTreeMap;
 use std::fs;

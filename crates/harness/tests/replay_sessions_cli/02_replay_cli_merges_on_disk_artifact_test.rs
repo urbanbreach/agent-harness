@@ -16,7 +16,7 @@ fn replay_cli_merges_on_disk_artifact_discovery_with_recovery_metadata() {
                 "run_recovery_detail",
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/tmp/workspace".to_string(),
                 }),
             ),
@@ -34,7 +34,7 @@ fn replay_cli_merges_on_disk_artifact_discovery_with_recovery_metadata() {
                 3,
                 "agent_child",
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req_1".to_string(),
+                    request_id: "req_1".into(),
                     provider_id: "openai".to_string(),
                     model_id: "gpt-5.4-mini".to_string(),
                     prompt_summary: "delegate".to_string(),
@@ -46,7 +46,7 @@ fn replay_cli_merges_on_disk_artifact_discovery_with_recovery_metadata() {
                 "run_recovery_detail",
                 4,
                 EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                    tool_call_id: "toolcall_1".to_string(),
+                    tool_call_id: "toolcall_1".into(),
                     status: ToolCallStatus::Succeeded,
                     output_summary: Some("wrote artifact".to_string()),
                     output_digest: Some("tool-digest".to_string()),
@@ -78,7 +78,7 @@ fn replay_cli_merges_on_disk_artifact_discovery_with_recovery_metadata() {
                     path: "artifacts/notes/output.txt".to_string(),
                     digest: "artifact-digest".to_string(),
                     bytes: 14,
-                    tool_call_id: Some("toolcall_1".to_string()),
+                    tool_call_id: Some("toolcall_1".into()),
                     tool_metadata: Default::default(),
                     metadata: Default::default(),
                 }),
@@ -160,7 +160,7 @@ fn sessions_list_cli_prints_finished_and_failed_runs() {
                 "run_finished",
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/tmp/workspace".to_string(),
                 }),
             ),
@@ -181,7 +181,7 @@ fn sessions_list_cli_prints_finished_and_failed_runs() {
                 "run_failed",
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/tmp/workspace".to_string(),
                 }),
             ),
@@ -285,7 +285,7 @@ fn sessions_inspect_cli_surfaces_recovery_details() {
                 "run_recovery_inspect",
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/tmp/workspace".to_string(),
                 }),
             ),
@@ -312,7 +312,7 @@ fn sessions_inspect_cli_surfaces_recovery_details() {
                 4,
                 "agent_child",
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req_1".to_string(),
+                    request_id: "req_1".into(),
                     provider_id: "openai".to_string(),
                     model_id: "gpt-5.4-mini".to_string(),
                     prompt_summary: "delegate".to_string(),
@@ -324,7 +324,7 @@ fn sessions_inspect_cli_surfaces_recovery_details() {
                 "run_recovery_inspect",
                 5,
                 EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                    tool_call_id: "toolcall_1".to_string(),
+                    tool_call_id: "toolcall_1".into(),
                     status: ToolCallStatus::Succeeded,
                     output_summary: Some("wrote artifact".to_string()),
                     output_digest: Some("tool-digest".to_string()),
@@ -356,7 +356,7 @@ fn sessions_inspect_cli_surfaces_recovery_details() {
                     path: "artifacts/notes/output.txt".to_string(),
                     digest: "artifact-digest".to_string(),
                     bytes: 14,
-                    tool_call_id: Some("toolcall_1".to_string()),
+                    tool_call_id: Some("toolcall_1".into()),
                     tool_metadata: Default::default(),
                     metadata: Default::default(),
                 }),

@@ -363,7 +363,7 @@ fn tui_continue_session_bootstraps_live_with_preloaded_history() {
         envelope(
             1,
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "interactive".to_string(),
+                run_name: "interactive".into(),
                 workspace_root: "/tmp/workspace".to_string(),
             }),
         ),
@@ -371,7 +371,7 @@ fn tui_continue_session_bootstraps_live_with_preloaded_history() {
             2,
             Some("req_000001"),
             EventV1::UserMessageSubmitted(harness_core::event::UserMessageSubmittedEvent {
-                request_id: "req_000001".to_string(),
+                request_id: "req_000001".into(),
                 text: "first question".to_string(),
             }),
         ),
@@ -379,7 +379,7 @@ fn tui_continue_session_bootstraps_live_with_preloaded_history() {
             3,
             Some("req_000001"),
             EventV1::ProviderRequestStarted(harness_core::event::ProviderRequestStartedEvent {
-                request_id: "req_000001".to_string(),
+                request_id: "req_000001".into(),
                 provider_id: "mock".to_string(),
                 model_id: "model-1".to_string(),
                 prompt_summary: "first question".to_string(),
@@ -391,7 +391,7 @@ fn tui_continue_session_bootstraps_live_with_preloaded_history() {
             4,
             Some("req_000001"),
             EventV1::ProviderStreamDelta(harness_core::event::ProviderStreamDeltaEvent {
-                request_id: "req_000001".to_string(),
+                request_id: "req_000001".into(),
                 delta: "first answer".to_string(),
             }),
         ),
@@ -399,7 +399,7 @@ fn tui_continue_session_bootstraps_live_with_preloaded_history() {
             5,
             Some("req_000001"),
             EventV1::TaskCompleted(TaskCompletedEvent {
-                task_id: "task_000001".to_string(),
+                task_id: "task_000001".to_string().into(),
                 result_summary: "first answer".to_string(),
                 result_digest: "digest-out".to_string(),
                 metadata: None,

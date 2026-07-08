@@ -1,3 +1,4 @@
+// allow: SIZE_OK — CLI TUI workflow (launch + lineage + auth)
 use std::fs;
 use std::path::PathBuf;
 use std::sync::mpsc as std_mpsc;

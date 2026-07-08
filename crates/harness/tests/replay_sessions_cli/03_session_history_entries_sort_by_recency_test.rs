@@ -9,7 +9,7 @@ fn session_history_entries_sort_by_recency() {
             "run_older",
             1,
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "older-run".to_string(),
+                run_name: "older-run".into(),
                 workspace_root: "/tmp/workspace".to_string(),
             }),
         ),
@@ -31,7 +31,7 @@ fn session_history_entries_sort_by_recency() {
             "run_newer",
             1,
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "newer-run".to_string(),
+                run_name: "newer-run".into(),
                 workspace_root: "/tmp/workspace".to_string(),
             }),
         ),
@@ -98,7 +98,7 @@ fn session_history_marks_corrupt_runs_without_hiding_them() {
                 "run_good",
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/tmp/workspace".to_string(),
                 }),
             ),
@@ -147,7 +147,7 @@ fn session_history_excludes_scenario_fixture_runs_by_default() {
                 "run_interactive",
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/tmp/workspace".to_string(),
                 }),
             ),
@@ -167,7 +167,7 @@ fn session_history_excludes_scenario_fixture_runs_by_default() {
                 "run_scenario",
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "golden_path".to_string(),
+                    run_name: "golden_path".into(),
                     workspace_root: "/tmp/workspace".to_string(),
                 }),
             ),
@@ -213,7 +213,7 @@ fn session_history_exposes_profile_and_model_labels() {
                 "run_profile_model",
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/tmp/workspace".to_string(),
                 }),
             ),
@@ -230,7 +230,7 @@ fn session_history_exposes_profile_and_model_labels() {
                 "run_profile_model",
                 3,
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req_1".to_string(),
+                    request_id: "req_1".into(),
                     provider_id: "openai".to_string(),
                     model_id: "gpt-5.4-mini".to_string(),
                     prompt_summary: "hello".to_string(),
@@ -277,7 +277,7 @@ fn session_history_flags_non_resumable_sessions_with_reason() {
                 "run_prompt",
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "prompt".to_string(),
+                    run_name: "prompt".into(),
                     workspace_root: "/tmp/workspace".to_string(),
                 }),
             ),

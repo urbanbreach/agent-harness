@@ -18,7 +18,7 @@ fn sessions_export_cli_writes_json_bundle() {
                 "run_export",
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "exportable".to_string(),
+                    run_name: "exportable".into(),
                     workspace_root: "/tmp/workspace".to_string(),
                 }),
             ),
@@ -36,7 +36,7 @@ fn sessions_export_cli_writes_json_bundle() {
                 3,
                 "agent_1",
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req_1".to_string(),
+                    request_id: "req_1".into(),
                     provider_id: "mock".to_string(),
                     model_id: "model-1".to_string(),
                     prompt_summary: "trusted edit".to_string(),
@@ -48,7 +48,7 @@ fn sessions_export_cli_writes_json_bundle() {
                 "run_export",
                 4,
                 EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                    tool_call_id: "toolcall_000000".to_string(),
+                    tool_call_id: "toolcall_000000".into(),
                     tool_id: "edit".to_string(),
                     args_summary: "edit demo.txt".to_string(),
                     args_digest: "digest-edit-args".to_string(),
@@ -61,7 +61,7 @@ fn sessions_export_cli_writes_json_bundle() {
                 EventV1::PermissionRequested(PermissionRequestedEvent {
                     permission_id: "perm_1".to_string(),
                     kind: "edit".to_string(),
-                    tool_call_id: Some("toolcall_000000".to_string()),
+                    tool_call_id: Some("toolcall_000000".into()),
                     summary: "edit demo.txt".to_string(),
                     request_digest: "digest-permission".to_string(),
                     timeout_ms: 30_000,
@@ -81,7 +81,7 @@ fn sessions_export_cli_writes_json_bundle() {
                 "run_export",
                 7,
                 EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                    tool_call_id: "toolcall_000000".to_string(),
+                    tool_call_id: "toolcall_000000".into(),
                     status: ToolCallStatus::Succeeded,
                     output_summary: Some("edit complete".to_string()),
                     output_digest: Some("digest-edit-output".to_string()),
@@ -93,7 +93,7 @@ fn sessions_export_cli_writes_json_bundle() {
                 "run_export",
                 8,
                 EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                    tool_call_id: "toolcall_000001".to_string(),
+                    tool_call_id: "toolcall_000001".into(),
                     status: ToolCallStatus::Succeeded,
                     output_summary: Some("task scheduled".to_string()),
                     output_digest: Some("digest-route-output".to_string()),
@@ -265,7 +265,7 @@ fn sessions_export_cli_support_includes_readiness_and_config_summaries() {
                 "run_export_support_readiness",
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "support-readiness".to_string(),
+                    run_name: "support-readiness".into(),
                     workspace_root: workspace.path().display().to_string(),
                 }),
             ),
@@ -441,7 +441,7 @@ fn sessions_export_cli_redacts_support_bundle_secret_shapes() {
                 "run_export_secret_shapes",
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "secret-shapes".to_string(),
+                    run_name: "secret-shapes".into(),
                     workspace_root: workspace.path().display().to_string(),
                 }),
             ),
@@ -449,7 +449,7 @@ fn sessions_export_cli_redacts_support_bundle_secret_shapes() {
                 "run_export_secret_shapes",
                 2,
                 EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                    tool_call_id: "toolcall_000002".to_string(),
+                    tool_call_id: "toolcall_000002".into(),
                     status: ToolCallStatus::Succeeded,
                     output_summary: Some(
                         "sk-proj-output_secret_0123456789abcdef Cookie: sid=sessionid-abc123; theme=light\n-----BEGIN PRIVATE KEY-----\nprivate-key-material\n-----END PRIVATE KEY-----\nAKIA1234567890ABCDEF\nAuthorization: bearer abc+/def==~\nghp_1234567890ABCDEFGHIJ github_pat_1234567890ABCDEFGHIJ".to_string(),

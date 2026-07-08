@@ -1,3 +1,4 @@
+// allow: SIZE_OK — auth command flow (credential handling + prompt UI)
 use std::collections::BTreeMap;
 use std::io::{self, IsTerminal, Write};
 

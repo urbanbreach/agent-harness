@@ -202,7 +202,7 @@ fn sessions_fork_clone_reject_active_or_writer_locked_source() {
             "run_active_lineage_source",
             1,
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "interactive".to_string(),
+                run_name: "interactive".into(),
                 workspace_root: "/tmp/workspace".to_string(),
             }),
         )],

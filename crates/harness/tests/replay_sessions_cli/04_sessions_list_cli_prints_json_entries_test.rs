@@ -48,7 +48,7 @@ fn sessions_reopen_json_surfaces_prompt_context_child_sessions_and_artifacts() {
             "run_resume_fixture",
             1,
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "interactive".to_string(),
+                run_name: "interactive".into(),
                 workspace_root: "/tmp/workspace".to_string(),
             }),
         ),
@@ -65,7 +65,7 @@ fn sessions_reopen_json_surfaces_prompt_context_child_sessions_and_artifacts() {
             "run_resume_fixture",
             3,
             EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-                request_id: "req_000001".to_string(),
+                request_id: "req_000001".into(),
                 text: "Recover this session headlessly".to_string(),
             }),
         ),
@@ -74,7 +74,7 @@ fn sessions_reopen_json_surfaces_prompt_context_child_sessions_and_artifacts() {
             4,
             EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
             EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                request_id: "req_000001".to_string(),
+                request_id: "req_000001".into(),
                 provider_id: "default".to_string(),
                 model_id: "gpt-4o-mini".to_string(),
                 prompt_summary: "Recover this session headlessly".to_string(),
@@ -88,7 +88,7 @@ fn sessions_reopen_json_surfaces_prompt_context_child_sessions_and_artifacts() {
         5,
         EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
         EventV1::TaskCompleted(TaskCompletedEvent {
-            task_id: "task_000099".to_string(),
+            task_id: "task_000099".to_string().into(),
             result_summary: "Recovered summary".to_string(),
             result_digest: "digest-parent".to_string(),
             metadata: None,
@@ -110,7 +110,7 @@ fn sessions_reopen_json_surfaces_prompt_context_child_sessions_and_artifacts() {
         7,
         EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
         EventV1::ToolCallRequested(ToolCallRequestedEvent {
-            tool_call_id: "toolcall_000001".to_string(),
+            tool_call_id: "toolcall_000001".into(),
             tool_id: "fs.read".to_string(),
             args_summary: "read report.txt".to_string(),
             args_digest: "digest-tool".to_string(),
@@ -145,7 +145,7 @@ fn sessions_reopen_json_surfaces_prompt_context_child_sessions_and_artifacts() {
         8,
         EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
         EventV1::ToolCallFinished(ToolCallFinishedEvent {
-            tool_call_id: "toolcall_000001".to_string(),
+            tool_call_id: "toolcall_000001".into(),
             status: ToolCallStatus::Succeeded,
             output_summary: Some("read artifact".to_string()),
             output_digest: Some("digest-output".to_string()),
@@ -181,7 +181,7 @@ fn sessions_reopen_json_surfaces_prompt_context_child_sessions_and_artifacts() {
         9,
         EventActor::new(ActorKind::Worker, Some("agent_000002".to_string())),
         EventV1::TaskScheduled(TaskScheduledEvent {
-            task_id: "task_000001".to_string(),
+            task_id: "task_000001".to_string().into(),
             state: TaskScheduleState::Started,
             queue_key: Some("provider_model:default:gpt-4o-mini".to_string()),
         }),
@@ -191,7 +191,7 @@ fn sessions_reopen_json_surfaces_prompt_context_child_sessions_and_artifacts() {
         10,
         EventActor::new(ActorKind::Worker, Some("agent_000002".to_string())),
         EventV1::TaskCompleted(TaskCompletedEvent {
-            task_id: "task_000001".to_string(),
+            task_id: "task_000001".to_string().into(),
             result_summary: "child completed".to_string(),
             result_digest: "digest-child".to_string(),
             metadata: Some(TaskCompletionMetadata {
@@ -281,7 +281,7 @@ fn sessions_surfaces_checkpoint_artifacts_in_catalog_and_recovery_views() {
                 "run_checkpoint_artifacts",
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/tmp/workspace".to_string(),
                 }),
             ),

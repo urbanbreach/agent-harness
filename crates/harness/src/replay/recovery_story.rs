@@ -1,3 +1,4 @@
+// allow: SIZE_OK — CLI replay rendering (recovery story + output)
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
@@ -231,11 +232,11 @@ fn artifact_inventory(
         let discovery = payload
             .tool_call_id
             .as_ref()
-            .and_then(|tool_call_id| tool_call_lookup.get(tool_call_id));
+            .and_then(|tool_call_id| tool_call_lookup.get(tool_call_id.as_str()));
         let entry = by_key
             .entry((
                 payload.path.clone(),
-                payload.tool_call_id.clone(),
+                payload.tool_call_id.as_ref().map(|id| id.to_string()),
                 Some(payload.digest.clone()),
             ))
             .or_insert_with(|| {
@@ -243,7 +244,7 @@ fn artifact_inventory(
                     payload.path.clone(),
                     Some(payload.digest.clone()),
                     Some(payload.bytes),
-                    payload.tool_call_id.clone(),
+                    payload.tool_call_id.as_ref().map(|id| id.to_string()),
                     run_dir.join(&payload.path).exists(),
                 )
             });
@@ -266,7 +267,7 @@ fn artifact_inventory(
             entry.bytes = Some(payload.bytes);
         }
         if entry.tool_call_id.is_none() {
-            entry.tool_call_id = payload.tool_call_id.clone();
+            entry.tool_call_id = payload.tool_call_id.as_ref().map(|id| id.to_string());
         }
         entry.present_on_disk |= run_dir.join(&payload.path).exists();
     }
