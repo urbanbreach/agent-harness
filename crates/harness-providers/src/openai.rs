@@ -1,3 +1,4 @@
+// allow: SIZE_OK — OpenAI transport (HTTP client + auth + streaming)
 use std::collections::BTreeMap;
 use std::pin::Pin;
 use std::sync::Arc;

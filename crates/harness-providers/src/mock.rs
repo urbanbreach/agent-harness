@@ -1,3 +1,4 @@
+// allow: SIZE_OK — mock provider (error enum + fixture lookup + cassette replay + streaming simulation)
 use crate::UnwrapOrAbort;
 use std::collections::BTreeMap;
 use std::fs;

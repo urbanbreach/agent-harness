@@ -1,3 +1,4 @@
+// allow: SIZE_OK — OpenAI tool call accumulator (streaming delta merge + function call assembly + finish reason)
 use std::collections::BTreeMap;
 
 use tokio::sync::mpsc;

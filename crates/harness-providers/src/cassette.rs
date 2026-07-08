@@ -1,3 +1,4 @@
+// allow: SIZE_OK — provider cassette recording/replay (versioned JSONL + request digest + response capture)
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};

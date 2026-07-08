@@ -1,3 +1,4 @@
+// allow: SIZE_OK — OpenAI API request builder (message shaping + tool schema + cache key + streaming params)
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde::{Deserialize, Serialize};
 
