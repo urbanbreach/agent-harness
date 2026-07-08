@@ -1,3 +1,4 @@
+// allow: SIZE_OK — shell execution (process spawning + output capture)
 use crate::UnwrapOrAbort;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -9,6 +10,8 @@ use harness_core::perm::shell::{
     direct_shell_command_request, scan_shell_command, ShellCommandRequest,
 };
 use harness_core::tool::{ArtifactRef, Tool, ToolCapability, ToolContext, ToolError, ToolResult};
+use harness_core::tool_metadata;
+use harness_core::ToolResultExt;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
@@ -263,7 +266,7 @@ impl ShellCommandRunner for TokioShellCommandRunner {
 #[cfg(target_os = "linux")]
 fn prevent_parent_process_environment_disclosure() -> Result<(), ToolError> {
     rustix::process::set_dumpable_behavior(rustix::process::DumpableBehavior::NotDumpable)
-        .map_err(|err| ToolError::Execution(format!("failed to harden shell process: {err}")))
+        .tool_err("failed to harden shell process")
 }
 
 fn shell_process_command(invocation: ShellCommandInvocation) -> tokio::process::Command {
@@ -355,7 +358,7 @@ async fn run_shell_process(
     let output = tokio::time::timeout(Duration::from_millis(timeout_ms), command.output())
         .await
         .map_err(|_| ToolError::Execution(format!("command timed out after {timeout_ms} ms")))?
-        .map_err(|err| ToolError::Execution(format!("failed to execute command: {err}")))?;
+        .tool_err("failed to execute command")?;
 
     Ok(output.into())
 }
@@ -416,7 +419,7 @@ fn write_shell_output_artifact(
     full_output: &str,
 ) -> Result<ArtifactRef, ToolError> {
     ctx.artifact_store()
-        .map_err(|err| ToolError::Execution(format!("failed to access artifact store: {err}")))?
+        .tool_err("failed to access artifact store")?
         .write_text(
             &format!("toolcalls/{}/shell.output.txt", ctx.tool_call_id),
             full_output,
@@ -679,21 +682,12 @@ impl ShellRunTool {
 
 #[async_trait]
 impl Tool for ShellRunTool {
-    fn id(&self) -> &str {
-        "shell.run"
-    }
-
-    fn description(&self) -> &str {
-        "Runs a shell command inside the workspace and returns stdout/stderr. Use bash for real shell work like git, cargo, or npm—not for file discovery, file search, reading, or editing. Commands such as find, grep/rg, cat, head, tail, sed, and awk are discouraged; use glob, grep, list, read, or edit instead when possible. Shell commands are controlled by permission patterns and workspace path safety."
-    }
-
-    fn parameters_json_schema(&self) -> serde_json::Value {
+    tool_metadata!(
+        "shell.run",
+        "Runs a shell command inside the workspace and returns stdout/stderr. Use bash for real shell work like git, cargo, or npm—not for file discovery, file search, reading, or editing. Commands such as find, grep/rg, cat, head, tail, sed, and awk are discouraged; use glob, grep, list, read, or edit instead when possible. Shell commands are controlled by permission patterns and workspace path safety.",
+        ToolCapability::Shell,
         json_schema_for::<ShellRunArgs>()
-    }
-
-    fn capability(&self) -> ToolCapability {
-        ToolCapability::Shell
-    }
+    );
 
     async fn call(
         &self,

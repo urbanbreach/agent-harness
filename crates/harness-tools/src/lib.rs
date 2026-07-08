@@ -1,3 +1,4 @@
+// allow: SIZE_OK — tools library entry (coordinator registry + tool registration + native tool surface)
 //! Built-in tool registry and tool implementations for filesystem, shell, and
 //! hashline edit operations.
 //!
@@ -119,37 +120,7 @@ pub use tool_catalog::{native_tool_catalog_entries, NativeToolCatalogEntry};
 mod plan;
 use plan::{PlanEnterTool, PlanExitTool};
 
-pub trait UnwrapOrAbort<T> {
-    fn unwrap_or_abort(self) -> T;
-}
-
-#[allow(
-    clippy::panic,
-    clippy::match_wild_err_arm,
-    reason = "replaces .expect() which also panics; abort() kills test processes"
-)]
-impl<T> UnwrapOrAbort<T> for Option<T> {
-    fn unwrap_or_abort(self) -> T {
-        match self {
-            Some(v) => v,
-            None => panic!("unwrap_or_abort on None"),
-        }
-    }
-}
-
-#[allow(
-    clippy::panic,
-    clippy::match_wild_err_arm,
-    reason = "replaces .expect() which also panics; abort() kills test processes"
-)]
-impl<T, E> UnwrapOrAbort<T> for Result<T, E> {
-    fn unwrap_or_abort(self) -> T {
-        match self {
-            Ok(v) => v,
-            Err(_) => panic!("unwrap_or_abort on Err"),
-        }
-    }
-}
+pub use harness_core::UnwrapOrAbort;
 
 pub use harness_core::tool::canonical_tool_id_for;
 
@@ -616,12 +587,12 @@ pub(crate) mod test_support {
             Arc::new(DefaultRedactor::default()),
         );
         ToolContext {
-            run_id: "run-harness-tools-tests".to_string(),
+            run_id: "run-harness-tools-tests".into(),
             workspace_root: workspace_root.to_path_buf(),
             artifacts_dir: workspace_root.join(".artifacts"),
             actor: EventActor::new(ActorKind::Supervisor, None),
             category: Some("deep".to_string()),
-            tool_call_id: tool_call_id.to_string(),
+            tool_call_id: tool_call_id.into(),
             current_model_ref: None,
             current_model_settings: None,
             tool_state: ToolRunState::default(),
@@ -717,10 +688,7 @@ mod tests {
 
     #[derive(Debug, Deserialize, JsonSchema)]
     #[serde(deny_unknown_fields)]
-    #[allow(
-        clippy::empty_structs_with_brackets,
-        reason = "unit struct changes JSON schema representation"
-    )]
+    #[allow(clippy::empty_structs_with_brackets, reason = "unit struct changes JSON schema representation")]
     struct EmptyObjectArgs {}
 
     #[test]

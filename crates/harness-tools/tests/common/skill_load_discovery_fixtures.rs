@@ -41,12 +41,12 @@ fn tool_context(workspace_root: &Path, tool_call_id: &str) -> ToolContext {
     );
 
     ToolContext {
-        run_id: "run-skill-load-tests".to_string(),
+        run_id: "run-skill-load-tests".into(),
         workspace_root: workspace_root.to_path_buf(),
         artifacts_dir: workspace_root.join(".artifacts"),
         actor: anonymous_supervisor_actor(),
         category: Some("deep".to_string()),
-        tool_call_id: tool_call_id.to_string(),
+        tool_call_id: tool_call_id.into(),
         current_model_ref: None,
         current_model_settings: None,
         tool_state: ToolRunState::default(),

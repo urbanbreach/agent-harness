@@ -47,7 +47,7 @@ pub(crate) fn envelope(run_id: &str, seq: u64, payload: EventV1) -> EventEnvelop
         schema_version: SCHEMA_VERSION,
         event_id: format!("evt-{seq:04}"),
         seq,
-        run_id: run_id.to_string(),
+        run_id: run_id.to_string().into(),
         mono_ms: seq,
         ts: None,
         actor: EventActor::new(ActorKind::System, None),
@@ -63,7 +63,7 @@ pub(crate) fn run_started(run_id: &str, workspace: &Path) -> EventEnvelopeV1 {
         run_id,
         1,
         EventV1::RunStarted(RunStartedEvent {
-            run_name: run_id.to_string(),
+            run_name: run_id.to_string().into(),
             workspace_root: workspace.display().to_string(),
         }),
     )

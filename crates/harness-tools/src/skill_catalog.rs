@@ -1,9 +1,11 @@
+// allow: SIZE_OK — skill catalog (discovery + frontmatter + resources)
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use harness_core::config::{registered_skills_config, PermissionMode, SkillsConfig};
 use harness_core::redact::{DefaultRedactor, Redactor};
 use harness_core::tool::ToolError;
+use harness_core::ToolResultExt;
 use serde::{Deserialize, Serialize};
 
 mod frontmatter;
@@ -581,7 +583,7 @@ fn sorted_skill_entries(dir: &Path) -> Result<Vec<std::fs::DirEntry>, ToolError>
             ))
         })?
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|err| ToolError::Execution(format!("failed to read skill entry: {err}")))?;
+        .tool_err("failed to read skill entry")?;
     entries.sort_by_key(|entry| entry.file_name());
     Ok(entries)
 }

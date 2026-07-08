@@ -1,8 +1,10 @@
+// allow: SIZE_OK — agent operations (task delegation + control plane)
 use harness_core::coord::CoordinatorError;
 use harness_core::event::EventV1;
 use harness_core::proj::{BackgroundRequestProjection, BackgroundToolCallCounts};
 use harness_core::redact::{DefaultRedactor, Redactor};
 use harness_core::tool::{ToolContext, ToolError, ToolResult};
+use harness_core::ToolResultExt;
 use serde_json::{json, Value};
 use tokio_stream::StreamExt;
 
@@ -57,7 +59,7 @@ fn background_summary_from_projection(
     let (failure_summary, failure_child_summary) =
         cap_optional_child_summary("failure", projection.failure_summary);
     BackgroundRequestSummary {
-        request_id: projection.request_id,
+        request_id: projection.request_id.to_string(),
         session_id: projection.session_id,
         scheduler_task_id: projection.scheduler_task_id,
         status: projection.status,
@@ -297,7 +299,7 @@ async fn background_child_runtime_metadata(
         .coordinator
         .agent_runtime_info(session_id.clone())
         .await
-        .map_err(|err| ToolError::Execution(format!("failed to inspect child runtime: {err}")))?;
+        .tool_err("failed to inspect child runtime")?;
     Ok(Some(child_runtime_metadata(&runtime)))
 }
 

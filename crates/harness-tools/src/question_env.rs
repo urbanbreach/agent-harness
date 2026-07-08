@@ -48,7 +48,7 @@ pub(crate) async fn question_answers_from_source_or_request(
     }
 
     ctx.coordinator
-        .request_question(ctx.actor.clone(), ctx.tool_call_id.clone(), questions)
+        .request_question(ctx.actor.clone(), ctx.tool_call_id.to_string(), questions)
         .await
         .map_err(coordinator_error)
 }

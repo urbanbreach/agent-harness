@@ -158,7 +158,7 @@ async fn background_output_retrieves_child_result_after_coordinator_resume() {
         Arc::new(DefaultRedactor::default()),
     );
     let resumed_run = resumed
-        .resume_run(run.run_id.clone(), run.run_name.clone())
+        .resume_run(run.run_id.to_string(), run.run_name.to_string())
         .await
         .unwrap_or_abort();
 

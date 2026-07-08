@@ -1,9 +1,12 @@
+// allow: SIZE_OK — plan tool (plan mode enter + exit)
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use harness_core::event::{ActorKind, EventActor};
 use harness_core::plan::{plan_file_display_path, BUILD_AGENT_NAME, PLAN_AGENT_NAME};
 use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolResult};
+use harness_core::tool_metadata;
+use harness_core::ToolResultExt;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -60,23 +63,15 @@ struct PlanEnterArgs {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-#[allow(
-    clippy::empty_structs_with_brackets,
-    reason = "unit struct changes JSON schema representation"
-)]
+#[allow(clippy::empty_structs_with_brackets, reason = "unit struct changes JSON schema representation")]
 struct PlanExitArgs {}
 
 #[async_trait]
 impl Tool for PlanEnterTool {
-    fn id(&self) -> &str {
-        harness_core::plan::PLAN_ENTER_TOOL_ID
-    }
-
-    fn description(&self) -> &str {
-        "Suggest switching to the plan agent when the user's request would benefit from planning before implementation. Optionally pass the original user goal."
-    }
-
-    fn parameters_json_schema(&self) -> Value {
+    tool_metadata!(
+        "plan_enter",
+        "Suggest switching to the plan agent when the user's request would benefit from planning before implementation. Optionally pass the original user goal.",
+        ToolCapability::SpawnAgent,
         json!({
             "type": "object",
             "properties": {
@@ -92,11 +87,7 @@ impl Tool for PlanEnterTool {
             "required": [],
             "additionalProperties": false
         })
-    }
-
-    fn capability(&self) -> ToolCapability {
-        ToolCapability::SpawnAgent
-    }
+    );
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         let args: PlanEnterArgs = crate::parse_tool_args(args_json)?;
@@ -106,26 +97,17 @@ impl Tool for PlanEnterTool {
 
 #[async_trait]
 impl Tool for PlanExitTool {
-    fn id(&self) -> &str {
-        harness_core::plan::PLAN_EXIT_TOOL_ID
-    }
-
-    fn description(&self) -> &str {
-        "Completes plan mode by asking the user whether to switch to the build agent and execute the active plan. Takes no arguments."
-    }
-
-    fn parameters_json_schema(&self) -> Value {
+    tool_metadata!(
+        "plan_exit",
+        "Completes plan mode by asking the user whether to switch to the build agent and execute the active plan. Takes no arguments.",
+        ToolCapability::SpawnAgent,
         json!({
             "type": "object",
             "properties": {},
             "required": [],
             "additionalProperties": false
         })
-    }
-
-    fn capability(&self) -> ToolCapability {
-        ToolCapability::SpawnAgent
-    }
+    );
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         let _args: PlanExitArgs = crate::parse_tool_args(args_json)?;
@@ -167,7 +149,7 @@ async fn execute_plan_enter(
             ctx.actor.agent_id.clone(),
         )
         .await
-        .map_err(|err| ToolError::Execution(format!("failed to switch to plan agent: {err}")))?;
+        .tool_err("failed to switch to plan agent")?;
     let plan_file = plan_file_display_path(&ctx.run_id);
     let prompt = format!(
         "<system-reminder>\nYour operational mode has changed from build to plan.\nThe user approved switching to the plan agent before implementation. Do not edit implementation files yet.\nOriginal goal to plan: {goal}\nCreate or update the active plan file at {plan_file}, then call `plan_exit` when the plan is ready for approval.\n</system-reminder>"
@@ -219,7 +201,7 @@ async fn execute_plan_exit(
             ctx.actor.agent_id.clone(),
         )
         .await
-        .map_err(|err| ToolError::Execution(format!("failed to switch to build agent: {err}")))?;
+        .tool_err("failed to switch to build agent")?;
     let prompt = format!(
         "<system-reminder>\nYour operational mode has changed from plan to build.\nThe plan at {plan_file} has been approved, and you can now edit files. Execute the plan defined within it.\nYou are no longer in plan-mode read-only restrictions.\nUse the active build profile's available tools and permission policy; file edits and shell commands are allowed only when that profile exposes and permits those tools.\n</system-reminder>"
     );

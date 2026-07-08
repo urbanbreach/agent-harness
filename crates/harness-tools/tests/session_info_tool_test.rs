@@ -77,7 +77,7 @@ fn envelope(run_id: &str, seq: u64, payload: EventV1) -> EventEnvelopeV1 {
         schema_version: SCHEMA_VERSION,
         event_id: format!("evt-{seq:04}"),
         seq,
-        run_id: run_id.to_string(),
+        run_id: run_id.to_string().into(),
         mono_ms: seq,
         ts: None,
         actor: EventActor::new(ActorKind::System, None),
@@ -127,7 +127,7 @@ fn run_started(run_id: &str, seq: u64, run_name: &str, workspace: &Path) -> Even
         run_id,
         seq,
         EventV1::RunStarted(RunStartedEvent {
-            run_name: run_name.to_string(),
+            run_name: run_name.to_string().into(),
             workspace_root: workspace.display().to_string(),
         }),
     )
@@ -175,7 +175,7 @@ async fn session_info_reports_failed_replay_only_child_lineage_and_missing_sessi
                 "run_child_lineage",
                 2,
                 EventV1::TaskCompleted(TaskCompletedEvent {
-                    task_id: "task_1".to_string(),
+                    task_id: "task_1".to_string().into(),
                     result_summary: "child done".to_string(),
                     result_digest: "digest-child".to_string(),
                     metadata: Some(TaskCompletionMetadata {

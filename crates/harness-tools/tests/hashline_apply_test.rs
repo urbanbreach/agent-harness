@@ -89,7 +89,7 @@ async fn hashline_apply_success_writes_file_and_emits_applied_event() {
         matches!(
             &event.payload,
             EventV1::ToolCallFinished(data)
-                if data.tool_call_id == tool_call_id && data.status == ToolCallStatus::Succeeded
+                if data.tool_call_id.as_str() == tool_call_id && data.status == ToolCallStatus::Succeeded
         )
     }));
 }
@@ -155,7 +155,7 @@ async fn hashline_apply_mismatch_leaves_file_unchanged() {
         matches!(
             &event.payload,
             EventV1::ToolCallFinished(data)
-                if data.tool_call_id == tool_call_id && data.status == ToolCallStatus::Failed
+                if data.tool_call_id.as_str() == tool_call_id && data.status == ToolCallStatus::Failed
         )
     }));
 }
@@ -241,7 +241,7 @@ async fn hashline_apply_overlap_rejection_explains_recovery() {
         matches!(
             &event.payload,
             EventV1::ToolCallFinished(data)
-                if data.tool_call_id == tool_call_id && data.status == ToolCallStatus::Failed
+                if data.tool_call_id.as_str() == tool_call_id && data.status == ToolCallStatus::Failed
         )
     }));
 }
@@ -290,13 +290,13 @@ async fn hashline_apply_permission_ask_blocks_until_resolved() {
         matches!(
             &event.payload,
             EventV1::PermissionRequested(data)
-                if data.tool_call_id.as_deref() == Some(tool_call_id.as_str())
+                if data.tool_call_id.as_ref().map(|id| id.as_str()) == Some(tool_call_id.as_str())
         )
     }));
     assert!(!before_resolve.iter().any(|event| {
         matches!(
             &event.payload,
-            EventV1::ToolCallStarted(data) if data.tool_call_id == tool_call_id
+            EventV1::ToolCallStarted(data) if data.tool_call_id.as_str() == tool_call_id
         )
     }));
     assert!(!before_resolve.iter().any(|event| {
@@ -307,7 +307,7 @@ async fn hashline_apply_permission_ask_blocks_until_resolved() {
         .iter()
         .find_map(|event| match &event.payload {
             EventV1::PermissionRequested(data)
-                if data.tool_call_id.as_deref() == Some(tool_call_id.as_str()) =>
+                if data.tool_call_id.as_ref().map(|id| id.as_str()) == Some(tool_call_id.as_str()) =>
             {
                 Some(data.permission_id.clone())
             }
@@ -335,7 +335,7 @@ async fn hashline_apply_permission_ask_blocks_until_resolved() {
             matches!(
                 &event.payload,
                 EventV1::PermissionRequested(data)
-                    if data.tool_call_id.as_deref() == Some(tool_call_id.as_str())
+                    if data.tool_call_id.as_ref().map(|id| id.as_str()) == Some(tool_call_id.as_str())
             )
         })
         .unwrap_or_abort();
@@ -354,7 +354,7 @@ async fn hashline_apply_permission_ask_blocks_until_resolved() {
         .position(|event| {
             matches!(
                 &event.payload,
-                EventV1::ToolCallStarted(data) if data.tool_call_id == tool_call_id
+                EventV1::ToolCallStarted(data) if data.tool_call_id.as_str() == tool_call_id
             )
         })
         .unwrap_or_abort();

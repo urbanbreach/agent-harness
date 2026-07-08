@@ -12,7 +12,7 @@ async fn native_question_tool_rejects_or_times_out_cleanly() {
 
     let reject_task = spawn_question_tool_call(
         reject_coordinator.clone(),
-        &reject_run.run_id,
+        reject_run.run_id.as_str(),
         reject_workspace_root,
         &reject_run.artifacts_dir,
         "native-question-reject",
@@ -62,7 +62,7 @@ async fn native_question_tool_rejects_or_times_out_cleanly() {
 
     let timeout_task = spawn_question_tool_call(
         timeout_coordinator.clone(),
-        &timeout_run.run_id,
+        timeout_run.run_id.as_str(),
         timeout_workspace_root,
         &timeout_run.artifacts_dir,
         "native-question-timeout",

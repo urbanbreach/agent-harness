@@ -1,3 +1,4 @@
+// allow: SIZE_OK — hashline editing (anchor validation + atomic apply)
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
@@ -6,6 +7,8 @@ use harness_core::edit::hashline::{
     apply_hashline_patch, ChangedLineRange, HashlinePatch, HashlineWorkspaceOp,
 };
 use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolResult};
+use harness_core::tool_metadata;
+use harness_core::ToolResultExt;
 use serde_json::json;
 use similar::TextDiff;
 
@@ -16,15 +19,10 @@ pub struct HashlineApplyTool;
 
 #[async_trait]
 impl Tool for HashlineApplyTool {
-    fn id(&self) -> &str {
-        "edit.hashline_apply"
-    }
-
-    fn description(&self) -> &str {
-        "Applies a hashline patch to a workspace file using LINE#HASH anchors and writes an artifact diff. Re-read anchors first if the file may have changed."
-    }
-
-    fn parameters_json_schema(&self) -> serde_json::Value {
+    tool_metadata!(
+        "edit.hashline_apply",
+        "Applies a hashline patch to a workspace file using LINE#HASH anchors and writes an artifact diff. Re-read anchors first if the file may have changed.",
+        ToolCapability::EditFs,
         json!({
             "type": "object",
             "additionalProperties": false,
@@ -148,11 +146,7 @@ impl Tool for HashlineApplyTool {
                 }
             }
         })
-    }
-
-    fn capability(&self) -> ToolCapability {
-        ToolCapability::EditFs
-    }
+    );
 
     async fn call(
         &self,
@@ -384,7 +378,7 @@ fn delete_workspace_file(
     let source = read_existing_file(&resolved_path, "failed to read file for delete")?;
 
     std::fs::remove_file(&resolved_path)
-        .map_err(|err| ToolError::Execution(format!("failed to delete file: {err}")))?;
+        .tool_err("failed to delete file")?;
 
     build_full_file_change_result(ctx, edit_id, &resolved_path, &source, "")
 }
@@ -402,7 +396,7 @@ fn move_workspace_file(
     let source = read_existing_file(&from_resolved_path, "failed to read file for move")?;
     create_parent_dir(&to_resolved_path)?;
     std::fs::rename(&from_resolved_path, &to_resolved_path)
-        .map_err(|err| ToolError::Execution(format!("failed to move file: {err}")))?;
+        .tool_err("failed to move file")?;
 
     build_move_file_result(
         ctx,
@@ -546,9 +540,9 @@ fn write_diff_artifact(
     diff: &str,
 ) -> Result<harness_core::tool::ArtifactRef, ToolError> {
     ctx.artifact_store()
-        .map_err(|e| ToolError::Execution(format!("failed to access artifact store: {e}")))?
+        .tool_err("failed to access artifact store")?
         .write_text(&format!("edit-{edit_id}.diff"), diff)
-        .map_err(|e| ToolError::Execution(format!("failed to write diff artifact: {e}")))
+        .tool_err("failed to write diff artifact")
 }
 
 fn write_before_artifact(
@@ -557,9 +551,9 @@ fn write_before_artifact(
     before: &str,
 ) -> Result<harness_core::tool::ArtifactRef, ToolError> {
     ctx.artifact_store()
-        .map_err(|e| ToolError::Execution(format!("failed to access artifact store: {e}")))?
+        .tool_err("failed to access artifact store")?
         .write_text(&format!("edit-{edit_id}.before"), before)
-        .map_err(|e| ToolError::Execution(format!("failed to write before artifact: {e}")))
+        .tool_err("failed to write before artifact")
 }
 
 fn line_count(content: &str) -> u32 {
@@ -568,7 +562,7 @@ fn line_count(content: &str) -> u32 {
 
 fn read_existing_file(path: &Path, failure_context: &str) -> Result<String, ToolError> {
     std::fs::read_to_string(path)
-        .map_err(|err| ToolError::Execution(format!("{failure_context}: {err}")))
+        .tool_err(failure_context)
 }
 
 fn read_optional_existing_file(path: &Path, failure_context: &str) -> Result<String, ToolError> {
@@ -600,15 +594,15 @@ pub(crate) fn write_atomic(path: &Path, content: &str) -> Result<(), ToolError> 
         .prefix(".hashline-")
         .suffix(".tmp")
         .tempfile_in(parent)
-        .map_err(|err| ToolError::Execution(format!("failed to create temp file: {err}")))?;
+        .tool_err("failed to create temp file")?;
 
     temp.write_all(content.as_bytes())
-        .map_err(|err| ToolError::Execution(format!("failed to write temp file: {err}")))?;
+        .tool_err("failed to write temp file")?;
     temp.flush()
-        .map_err(|err| ToolError::Execution(format!("failed to flush temp file: {err}")))?;
+        .tool_err("failed to flush temp file")?;
     temp.as_file()
         .sync_data()
-        .map_err(|err| ToolError::Execution(format!("failed to sync temp file: {err}")))?;
+        .tool_err("failed to sync temp file")?;
 
     temp.persist(path).map_err(|err| {
         ToolError::Execution(format!(

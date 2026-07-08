@@ -1,3 +1,4 @@
+// allow: SIZE_OK — MCP tool integration (server registration + rendering)
 use crate::UnwrapOrAbort;
 use std::collections::BTreeMap;
 use std::io;
@@ -6,6 +7,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use harness_core::config::McpServerConfig;
 use harness_core::tool::ToolError;
+use harness_core::ToolResultExt;
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
@@ -298,7 +300,7 @@ impl StdioMcpSession {
 
     async fn write_message(&mut self, message: &Value) -> Result<(), ToolError> {
         let body = serde_json::to_vec(message)
-            .map_err(|err| ToolError::Execution(format!("failed to encode MCP message: {err}")))?;
+            .tool_err("failed to encode MCP message")?;
         timeout(self.timeout, async {
             self.stdin.write_all(&body).await?;
             self.stdin.write_all(b"\n").await?;
@@ -306,8 +308,8 @@ impl StdioMcpSession {
         })
         .await
         .map_err(|_| ToolError::Execution("MCP stdio write timed out".to_string()))?
-        .map_err(|err| ToolError::Execution(format!("failed to write MCP message: {err}")))
-        .map_err(|err| ToolError::Execution(format!("failed to flush MCP message: {err}")))
+        .tool_err("failed to write MCP message")
+        .tool_err("failed to flush MCP message")
     }
 
     async fn read_message(&mut self) -> Result<Value, ToolError> {
@@ -316,7 +318,7 @@ impl StdioMcpSession {
             let read = timeout(self.timeout, self.stdout.read_line(&mut line))
                 .await
                 .map_err(|_| ToolError::Execution("MCP stdio read timed out".to_string()))?
-                .map_err(|err| ToolError::Execution(format!("failed to read MCP output: {err}")))?;
+                .tool_err("failed to read MCP output")?;
             if read == 0 {
                 return Err(ToolError::Execution(
                     "MCP stdio server closed the connection".to_string(),
@@ -575,7 +577,7 @@ async fn read_sse_response(
     while let Some(chunk) = response
         .chunk()
         .await
-        .map_err(|err| ToolError::Execution(format!("failed to read MCP SSE chunk: {err}")))?
+        .tool_err("failed to read MCP SSE chunk")?
     {
         buffer.push_str(&String::from_utf8_lossy(&chunk));
         while let Some(index) = find_sse_event_boundary(&buffer) {
@@ -659,7 +661,7 @@ fn parse_content_length(line: &str) -> Result<usize, ToolError> {
         .map(|(_, value)| value.trim())
         .ok_or_else(|| ToolError::Execution("invalid MCP content-length header".to_string()))?
         .parse::<usize>()
-        .map_err(|err| ToolError::Execution(format!("invalid MCP content length: {err}")))
+        .tool_err("invalid MCP content length")
 }
 
 #[cfg(test)]

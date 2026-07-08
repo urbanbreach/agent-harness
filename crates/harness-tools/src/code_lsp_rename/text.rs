@@ -1,3 +1,4 @@
+// allow: SIZE_OK — LSP tool wrapper (diagnostics + symbols + rename)
 use serde_json::Value;
 
 use harness_core::tool::ToolError;

@@ -3,6 +3,7 @@ use std::path::Path;
 
 use harness_core::edit::hashline::LineAnchor;
 use harness_core::tool::ToolError;
+use harness_core::ToolResultExt;
 
 use super::render::{
     build_fs_read_line_anchor, format_fs_read_hashline_line, format_fs_read_output_line,
@@ -143,7 +144,7 @@ pub(super) fn open_fs_read_file(
     path: &Path,
 ) -> Result<std::io::BufReader<std::fs::File>, ToolError> {
     let file = std::fs::File::open(path)
-        .map_err(|err| ToolError::Execution(format!("failed to read file: {err}")))?;
+        .tool_err("failed to read file")?;
     Ok(std::io::BufReader::new(file))
 }
 
@@ -159,7 +160,7 @@ pub(super) fn visit_fs_read_lines(
         raw_line.clear();
         let bytes_read = reader
             .read_until(b'\n', &mut raw_line)
-            .map_err(|err| ToolError::Execution(format!("failed to read file: {err}")))?;
+            .tool_err("failed to read file")?;
         if bytes_read == 0 {
             break;
         }

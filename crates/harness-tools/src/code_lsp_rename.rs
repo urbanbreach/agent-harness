@@ -1,3 +1,4 @@
+// allow: SIZE_OK — LSP tool wrapper (diagnostics + symbols + rename)
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
@@ -5,6 +6,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use harness_core::edit::hashline::HashlineWorkspaceOp;
 use harness_core::tool::{ArtifactRef, Tool, ToolCapability, ToolContext, ToolError, ToolResult};
+use harness_core::tool_metadata;
+use harness_core::ToolResultExt;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
@@ -52,7 +55,7 @@ impl CodeLspRenameExecutor {
             }
         })
         .await
-        .map_err(|err| ToolError::Execution(format!("lsp rename task failed: {err}")))??;
+        .tool_err("lsp rename task failed")??;
 
         let plan = RenamePlan::from_workspace_edit(ctx, &response.workspace_edit)?;
         let symbol_preview = RenamePreparePreview::from_prepare_result(&response.prepare_result)
@@ -737,21 +740,12 @@ impl MissingTargetPolicy {
 
 #[async_trait]
 impl Tool for CodeLspRenameTool {
-    fn id(&self) -> &str {
-        "lsp.rename"
-    }
-
-    fn description(&self) -> &str {
-        "Previews or applies a semantic LSP rename through an explicit workspace-editing flow."
-    }
-
-    fn parameters_json_schema(&self) -> Value {
+    tool_metadata!(
+        "lsp.rename",
+        "Previews or applies a semantic LSP rename through an explicit workspace-editing flow.",
+        ToolCapability::EditFs,
         super::json_schema_for::<CodeLspRenameArgs>()
-    }
-
-    fn capability(&self) -> ToolCapability {
-        ToolCapability::EditFs
-    }
+    );
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         let args: CodeLspRenameArgs = parse_tool_args(args_json)?;

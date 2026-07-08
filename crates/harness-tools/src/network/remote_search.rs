@@ -1,3 +1,4 @@
+// allow: SIZE_OK — network tool wrapper (web fetch + search)
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -7,6 +8,7 @@ use harness_core::config::{
     DEFAULT_REMOTE_SEARCH_RETRY_BACKOFF_MS, DEFAULT_REMOTE_SEARCH_TIMEOUT_SECS,
 };
 use harness_core::tool::ToolError;
+use harness_core::ToolResultExt;
 use serde_json::{json, Value};
 
 use crate::env_vars::{first_env_entry, first_non_empty_env_value};
@@ -557,7 +559,7 @@ fn parse_sse_text_result(body: &str) -> Result<Option<String>, ToolError> {
         };
         saw_data_frame = true;
         let value: Value = serde_json::from_str(data)
-            .map_err(|err| ToolError::Execution(format!("failed to parse sse payload: {err}")))?;
+            .tool_err("failed to parse sse payload")?;
         if let Some(content) = value["result"]["content"].as_array() {
             return Ok(extract_text_result(content));
         }

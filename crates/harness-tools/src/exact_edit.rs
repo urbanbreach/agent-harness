@@ -1,5 +1,6 @@
 use harness_core::edit::hashline::HashlineWorkspaceOp;
 use harness_core::tool::{ToolContext, ToolError, ToolResult};
+use harness_core::ToolResultExt;
 use serde_json::json;
 
 use crate::exact_edit_match::select_replacement_plan;
@@ -95,7 +96,7 @@ struct DecodedText {
 
 fn decode_utf8_preserving_bom(path: &std::path::Path) -> Result<DecodedText, ToolError> {
     let bytes = std::fs::read(path)
-        .map_err(|err| ToolError::Execution(format!("Unable to edit {}: {err}", path.display())))?;
+        .tool_err(format!("Unable to edit {}", path.display()))?;
     let bom = bytes.starts_with(&[0xef, 0xbb, 0xbf]);
     let content = if bom { bytes[3..].to_vec() } else { bytes };
     let text = String::from_utf8(content).map_err(|_| {

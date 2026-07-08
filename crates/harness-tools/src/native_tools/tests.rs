@@ -28,12 +28,12 @@ async fn recursive_tree_renders_direct_children_once_in_sorted_order() {
         Arc::new(DefaultRedactor::default()),
     );
     let ctx = ToolContext {
-        run_id: "run-tree-tests".to_string(),
+        run_id: "run-tree-tests".into(),
         workspace_root: root.to_path_buf(),
         artifacts_dir: root.join("artifacts"),
         actor: EventActor::new(ActorKind::Worker, Some("worker-1".to_string())),
         category: Some("quick".to_string()),
-        tool_call_id: "tree-test".to_string(),
+        tool_call_id: "tree-test".into(),
         current_model_ref: None,
         current_model_settings: None,
         tool_state: ToolRunState::default(),

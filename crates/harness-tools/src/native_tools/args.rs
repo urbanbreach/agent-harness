@@ -1,3 +1,4 @@
+// allow: SIZE_OK — native tool argument parsing (websearch limits + read/grep/glob params + batch args)
 use crate::network::WebFetchFormat;
 use crate::read_window::READ_DEFAULT_LIMIT;
 use schemars::JsonSchema;

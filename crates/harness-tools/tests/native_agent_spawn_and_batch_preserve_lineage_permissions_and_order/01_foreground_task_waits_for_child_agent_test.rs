@@ -86,7 +86,7 @@ async fn foreground_task_waits_for_child_agent_turn_after_child_tool_result() {
     let parent_task_tool_finish_seq = events
         .iter()
         .find_map(|event| match &event.payload {
-            EventV1::ToolCallFinished(data) if data.tool_call_id == task_tool_call_id => {
+            EventV1::ToolCallFinished(data) if data.tool_call_id.as_str() == task_tool_call_id => {
                 Some(event.seq)
             }
             _ => None,

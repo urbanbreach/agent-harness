@@ -137,7 +137,7 @@ async fn session_read_spills_redacted_replay_only_large_sessions() {
         run_id,
         2,
         EventV1::ToolCallRequested(ToolCallRequestedEvent {
-            tool_call_id: "tool-bash-replay-only".to_string(),
+            tool_call_id: "tool-bash-replay-only".into(),
             tool_id: "bash".to_string(),
             args_summary: format!("touch {}", marker.display()),
             args_digest: "digest".to_string(),
@@ -149,7 +149,7 @@ async fn session_read_spills_redacted_replay_only_large_sessions() {
             run_id,
             seq,
             EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-                request_id: format!("req-{seq}"),
+                request_id: format!("req-{seq}").into(),
                 text: format!("message-{seq} sk-test-{}", "a".repeat(80)),
             }),
         ));

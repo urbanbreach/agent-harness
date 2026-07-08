@@ -1,3 +1,4 @@
+// allow: SIZE_OK — filesystem tool (read + glob + grep)
 use crate::UnwrapOrAbort;
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -5,6 +6,7 @@ use std::path::Path;
 use async_trait::async_trait;
 use globset::{Glob, GlobMatcher};
 use harness_core::tool::{ArtifactRef, Tool, ToolCapability, ToolContext, ToolError, ToolResult};
+use harness_core::tool_metadata;
 use regex::Regex;
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -91,21 +93,12 @@ enum Utf8FileLines {
 
 #[async_trait]
 impl Tool for FsGrepTool {
-    fn id(&self) -> &str {
-        "fs.grep"
-    }
-
-    fn description(&self) -> &str {
-        "Searches UTF-8 workspace files or directories for regex matches with optional include glob and context lines."
-    }
-
-    fn parameters_json_schema(&self) -> serde_json::Value {
+    tool_metadata!(
+        "fs.grep",
+        "Searches UTF-8 workspace files or directories for regex matches with optional include glob and context lines.",
+        ToolCapability::ReadFs,
         super::json_schema_for::<FsGrepArgs>()
-    }
-
-    fn capability(&self) -> ToolCapability {
-        ToolCapability::ReadFs
-    }
+    );
 
     async fn call(
         &self,
@@ -525,12 +518,12 @@ mod tests {
             Arc::new(DefaultRedactor::default()),
         );
         ToolContext {
-            run_id: "run-fs-grep-tests".to_string(),
+            run_id: "run-fs-grep-tests".into(),
             workspace_root: workspace_root.to_path_buf(),
             artifacts_dir: workspace_root.join(".artifacts"),
             actor: EventActor::new(ActorKind::Worker, Some("worker-1".to_string())),
             category: Some("deep".to_string()),
-            tool_call_id: tool_call_id.to_string(),
+            tool_call_id: tool_call_id.into(),
             current_model_ref: None,
             current_model_settings: None,
             tool_state: ToolRunState::default(),

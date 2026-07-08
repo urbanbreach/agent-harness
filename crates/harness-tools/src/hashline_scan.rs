@@ -3,6 +3,8 @@ use async_trait::async_trait;
 use harness_core::edit::hashline::{compute_line_hash, LineAnchor};
 use harness_core::redact::{redact_value, DefaultRedactor};
 use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolResult};
+use harness_core::tool_metadata;
+use harness_core::ToolResultExt;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -30,21 +32,12 @@ struct HashlineAnchor {
 
 #[async_trait]
 impl Tool for HashlineScanTool {
-    fn id(&self) -> &str {
-        "edit.hashline_scan"
-    }
-
-    fn description(&self) -> &str {
-        "Internal helper that scans workspace file lines and returns hashline anchors for low-level hashline patch tests. Normal agents should use read and edit instead."
-    }
-
-    fn parameters_json_schema(&self) -> serde_json::Value {
+    tool_metadata!(
+        "edit.hashline_scan",
+        "Internal helper that scans workspace file lines and returns hashline anchors for low-level hashline patch tests. Normal agents should use read and edit instead.",
+        ToolCapability::ReadFs,
         super::json_schema_for::<HashlineScanArgs>()
-    }
-
-    fn capability(&self) -> ToolCapability {
-        ToolCapability::ReadFs
-    }
+    );
 
     async fn call(
         &self,
@@ -55,7 +48,7 @@ impl Tool for HashlineScanTool {
 
         let resolved_path = crate::workspace_paths::resolve_existing_path(&ctx, &args.path)?;
         let source = std::fs::read_to_string(&resolved_path)
-            .map_err(|err| ToolError::Execution(format!("failed to read target file: {err}")))?;
+            .tool_err("failed to read target file")?;
 
         let start_line = normalize_read_offset(args.start_line.unwrap_or(READ_DEFAULT_OFFSET));
         let limit = args.limit.unwrap_or(READ_DEFAULT_LIMIT);
@@ -90,7 +83,7 @@ impl Tool for HashlineScanTool {
         let artifact_name = format!("hashline_scan/{}.json", sanitize_artifact_name(&args.path));
         let artifact = ctx
             .artifact_store()
-            .map_err(|err| ToolError::Execution(format!("failed to access artifact store: {err}")))?
+            .tool_err("failed to access artifact store")?
             .write_text(&artifact_name, &redacted_artifact_text)
             .map_err(|err| {
                 ToolError::Execution(format!("failed to write hashline scan artifact: {err}"))
@@ -178,12 +171,12 @@ mod tests {
             Arc::new(DefaultRedactor::default()),
         );
         ToolContext {
-            run_id: "run-1".to_string(),
+            run_id: "run-1".into(),
             workspace_root: workspace_root.to_path_buf(),
             artifacts_dir: artifacts_dir.to_path_buf(),
             actor: EventActor::new(ActorKind::Worker, Some("worker-1".to_string())),
             category: Some("deep".to_string()),
-            tool_call_id: "tool-call-1".to_string(),
+            tool_call_id: "tool-call-1".into(),
             current_model_ref: None,
             current_model_settings: None,
             tool_state: ToolRunState::default(),

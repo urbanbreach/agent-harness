@@ -1,8 +1,10 @@
+// allow: SIZE_OK — control plane tools (question + skill + todos)
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use harness_core::question_answers::{validate_question_answers, QuestionAnswerPrompt};
 use harness_core::tool::{ToolContext, ToolError, ToolResult};
+use harness_core::ToolResultExt;
 use schemars::JsonSchema;
 use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -106,7 +108,7 @@ impl ControlPlaneExecutor {
                 ToolError::Execution(format!("failed to serialize questions: {err}"))
             })?,
         )
-        .map_err(|err| ToolError::Execution(format!("failed to write question state: {err}")))?;
+        .tool_err("failed to write question state")?;
 
         let answers = question_answers_from_source_or_request(
             self.question_answer_source.as_ref(),
@@ -505,7 +507,7 @@ fn read_todo_state(ctx: &ToolContext) -> Result<Vec<TodoItem>, ToolError> {
             path.display()
         ))
     })?)
-    .map_err(|err| ToolError::Execution(format!("failed to parse todo state: {err}")))
+    .tool_err("failed to parse todo state")
 }
 
 fn validate_todo_items(todos: &[TodoItem]) -> Result<(), String> {
@@ -543,7 +545,7 @@ fn validate_todo_items(todos: &[TodoItem]) -> Result<(), String> {
 
 fn render_todos_result(todos: Vec<TodoItem>) -> Result<ToolResult, ToolError> {
     let display_text = serde_json::to_string_pretty(&todos)
-        .map_err(|err| ToolError::Execution(format!("failed to render todos: {err}")))?;
+        .tool_err("failed to render todos")?;
     Ok(crate::text_json_tool_result(
         display_text,
         json!({ "todos": todos }),
@@ -558,7 +560,7 @@ fn write_todo_state(ctx: &ToolContext, todos: &[TodoItem]) -> Result<(), ToolErr
         })?;
     }
     let bytes = serde_json::to_vec_pretty(todos)
-        .map_err(|err| ToolError::Execution(format!("failed to serialize todos: {err}")))?;
+        .tool_err("failed to serialize todos")?;
     let temp_path = path.with_extension(format!("{}.tmp", ctx.tool_call_id));
     std::fs::write(&temp_path, bytes).map_err(|err| {
         ToolError::Execution(format!(

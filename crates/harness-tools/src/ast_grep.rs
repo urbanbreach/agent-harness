@@ -1,3 +1,4 @@
+// allow: SIZE_OK — ast-grep tool wrapper (search + replace + schema)
 use crate::UnwrapOrAbort;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -5,6 +6,8 @@ use std::path::{Path, PathBuf};
 use async_trait::async_trait;
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use harness_core::tool::{ArtifactRef, Tool, ToolCapability, ToolContext, ToolError, ToolResult};
+use harness_core::tool_metadata;
+use harness_core::ToolResultExt;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -175,21 +178,12 @@ struct ReplacementFilePlan {
 
 #[async_trait]
 impl Tool for AstGrepSearchTool {
-    fn id(&self) -> &str {
-        "ast_grep_search"
-    }
-
-    fn description(&self) -> &str {
-        "Performs read-only structural code search through the ast-grep CLI with workspace path safety, explicit or safely inferred language, hard caps, and artifact spill for large output."
-    }
-
-    fn parameters_json_schema(&self) -> Value {
+    tool_metadata!(
+        "ast_grep_search",
+        "Performs read-only structural code search through the ast-grep CLI with workspace path safety, explicit or safely inferred language, hard caps, and artifact spill for large output.",
+        ToolCapability::ReadFs,
         crate::json_schema_for::<AstGrepSearchArgs>()
-    }
-
-    fn capability(&self) -> ToolCapability {
-        ToolCapability::ReadFs
-    }
+    );
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         let args: AstGrepSearchArgs = parse_tool_args(args_json)?;
@@ -311,21 +305,12 @@ impl Tool for AstGrepSearchTool {
 
 #[async_trait]
 impl Tool for AstGrepReplaceTool {
-    fn id(&self) -> &str {
-        "ast_grep_replace"
-    }
-
-    fn description(&self) -> &str {
-        "Plans or applies structural code rewrites through ast-grep JSON rewrite output. The adapter never mutates the workspace directly; apply mode writes files only through the Harness edit-permission path with workspace path checks, atomic writes, and diff artifacts. Defaults to dry_run."
-    }
-
-    fn parameters_json_schema(&self) -> Value {
+    tool_metadata!(
+        "ast_grep_replace",
+        "Plans or applies structural code rewrites through ast-grep JSON rewrite output. The adapter never mutates the workspace directly; apply mode writes files only through the Harness edit-permission path with workspace path checks, atomic writes, and diff artifacts. Defaults to dry_run.",
+        ToolCapability::EditFs,
         crate::json_schema_for::<AstGrepReplaceArgs>()
-    }
-
-    fn capability(&self) -> ToolCapability {
-        ToolCapability::EditFs
-    }
+    );
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         let args: AstGrepReplaceArgs = parse_tool_args(args_json)?;
@@ -978,7 +963,7 @@ fn maybe_spill_json_with_artifacts(
     mut artifacts: Vec<ArtifactRef>,
 ) -> Result<ToolResult, ToolError> {
     let body = serde_json::to_string_pretty(&payload)
-        .map_err(|err| ToolError::Execution(format!("failed to serialize output: {err}")))?;
+        .tool_err("failed to serialize output")?;
     if body.len() <= MAX_INLINE_JSON_CHARS {
         if artifacts.is_empty() {
             return Ok(text_json_tool_result(display_text, payload));

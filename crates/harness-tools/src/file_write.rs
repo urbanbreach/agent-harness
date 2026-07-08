@@ -3,6 +3,7 @@ use harness_core::config::registered_formatter_config;
 use harness_core::coord::run_formatter_for_path;
 use harness_core::edit::hashline::HashlineWorkspaceOp;
 use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolResult};
+use harness_core::tool_metadata;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -30,15 +31,10 @@ struct WriteArgs {
 
 #[async_trait]
 impl Tool for WriteTool {
-    fn id(&self) -> &str {
-        "write"
-    }
-
-    fn description(&self) -> &str {
-        "Write content to one file. Relative paths resolve within the workspace; absolute paths must stay inside the workspace."
-    }
-
-    fn parameters_json_schema(&self) -> Value {
+    tool_metadata!(
+        "write",
+        "Write content to one file. Relative paths resolve within the workspace; absolute paths must stay inside the workspace.",
+        ToolCapability::EditFs,
         json!({
             "type": "object",
             "additionalProperties": false,
@@ -54,11 +50,7 @@ impl Tool for WriteTool {
                 }
             }
         })
-    }
-
-    fn capability(&self) -> ToolCapability {
-        ToolCapability::EditFs
-    }
+    );
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         let args: WriteArgs = crate::parse_tool_args(args_json)?;

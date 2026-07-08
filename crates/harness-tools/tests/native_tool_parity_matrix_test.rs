@@ -182,8 +182,11 @@ fn bash_safety_guidance_and_ast_grep_replace_catalog_match_runtime_sources() {
     );
 
     let doc = std::fs::read_to_string(repo_path("docs/native-tool-catalog.md")).unwrap_or_abort();
-    let doctor =
-        std::fs::read_to_string(repo_path("crates/harness/src/doctor.rs")).unwrap_or_abort();
+    let doctor = [
+        std::fs::read_to_string(repo_path("crates/harness/src/doctor.rs")).unwrap_or_abort(),
+        std::fs::read_to_string(repo_path("crates/harness/src/doctor/checks.rs")).unwrap_or_abort(),
+    ]
+    .join("\n");
     let claims =
         std::fs::read_to_string(repo_path("docs/claim-evidence-matrix.md")).unwrap_or_abort();
     let shell_run = std::fs::read_to_string(repo_path("crates/harness-tools/src/shell_run.rs"))

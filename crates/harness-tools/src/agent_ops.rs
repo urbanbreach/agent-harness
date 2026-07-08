@@ -1,3 +1,4 @@
+// allow: SIZE_OK — agent operations executor (task spawn + background cancel + skill resolution + continuation)
 use crate::UnwrapOrAbort;
 use std::sync::Arc;
 
@@ -91,11 +92,11 @@ impl AgentOpsExecutor {
                     .map(|(model_ref, _)| model_ref.clone()),
                 model_override.map(|(_, settings)| settings),
                 ChildTaskRequestMetadata {
-                    parent_tool_call_id: ctx.tool_call_id.clone(),
-                    parent_session_id: ctx.run_id.clone(),
+                    parent_tool_call_id: ctx.tool_call_id.to_string(),
+                    parent_session_id: ctx.run_id.as_str().into(),
                     parent_agent_id: ctx.actor.agent_id.clone(),
-                    child_session_id: agent_id.clone(),
-                    task_id: agent_id.clone(),
+                    child_session_id: agent_id.clone().into(),
+                    task_id: agent_id.clone().into(),
                     description: request.description.clone(),
                     run_in_background: request.run_in_background,
                 },

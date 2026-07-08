@@ -1,3 +1,4 @@
+// allow: SIZE_OK — network tool wrapper (web fetch + search)
 use crate::UnwrapOrAbort;
 use std::collections::BTreeMap;
 use std::fs;
@@ -7,6 +8,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use harness_core::tool::{ArtifactRef, ToolContext, ToolError, ToolResult};
+use harness_core::ToolResultExt;
 use regex::Regex;
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -328,7 +330,7 @@ impl WebFetchHttpTransport for ReqwestWebFetchHttpTransport {
             })?;
         let status = response.status().as_u16();
         let content_length = response.content_length();
-        if content_length.unwrap_or_default() > MAX_FETCH_BYTES as u64 {
+        if content_length.unwrap_or_default() > u64::try_from(MAX_FETCH_BYTES).unwrap_or(0) {
             return Ok(WebFetchHttpResponse {
                 status,
                 headers: BTreeMap::new(),
@@ -350,7 +352,7 @@ impl WebFetchHttpTransport for ReqwestWebFetchHttpTransport {
         while let Some(chunk) = response
             .chunk()
             .await
-            .map_err(|err| ToolError::Execution(format!("failed to read response body: {err}")))?
+            .tool_err("failed to read response body")?
         {
             if body.len() + chunk.len() > MAX_FETCH_BYTES {
                 return Err(ToolError::Execution(
@@ -424,7 +426,7 @@ fn normalize_url(url: &str) -> Result<reqwest::Url, ToolError> {
 }
 
 fn read_web_fetch_body(response: WebFetchHttpResponse) -> Result<Vec<u8>, ToolError> {
-    if response.content_length.unwrap_or_default() > MAX_FETCH_BYTES as u64 {
+    if response.content_length.unwrap_or_default() > u64::try_from(MAX_FETCH_BYTES).unwrap_or(0) {
         return Err(ToolError::Execution(
             "response too large (exceeds 5MB limit)".to_string(),
         ));

@@ -1,4 +1,5 @@
 use harness_core::tool::{canonical_tool_id_for, ToolContext, ToolError, ToolResult};
+use harness_core::ToolResultExt;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -88,7 +89,7 @@ pub(super) async fn execute_batch(
 
     while let Some(joined) = join_set.join_next().await {
         outcomes
-            .push(joined.map_err(|err| ToolError::Execution(format!("batch join failed: {err}")))?);
+            .push(joined.tool_err("batch join failed")?);
     }
 
     outcomes.sort_by_key(|outcome| outcome.index);

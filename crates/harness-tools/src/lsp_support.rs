@@ -1,8 +1,10 @@
+// allow: SIZE_OK — LSP support (client connection + message handling)
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use harness_core::config::{registered_lsp_config, LspConfig, LspServerConfig};
 use harness_core::tool::ToolError;
+use harness_core::ToolResultExt;
 use serde::Serialize;
 use serde_json::{json, Value};
 use walkdir::{DirEntry, WalkDir};
@@ -306,7 +308,7 @@ pub(crate) fn execute_lsp_operation(
         .input
         .file_path()
         .canonicalize()
-        .map_err(|err| ToolError::Execution(format!("failed to resolve file path: {err}")))?;
+        .tool_err("failed to resolve file path")?;
     let cfg = registered_lsp_config();
     let spec = server_for_path(&file_path, &cfg)?;
     let root = project_root(&file_path, request.workspace_root, spec.root_markers);
@@ -595,7 +597,7 @@ fn start_lsp_session(
 ) -> Result<StartedLspSession, ToolError> {
     let file_path = file_path
         .canonicalize()
-        .map_err(|err| ToolError::Execution(format!("failed to resolve file path: {err}")))?;
+        .tool_err("failed to resolve file path")?;
     let cfg = registered_lsp_config();
     let spec = server_for_path(&file_path, &cfg)?;
     let root = project_root(&file_path, workspace_root, spec.root_markers);

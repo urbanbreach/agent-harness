@@ -12,7 +12,7 @@ pub(crate) async fn wait_for_tool_call_finish(path: &Path, tool_call_id: &str) {
         if read_events(path).iter().any(|event| {
             matches!(
                 &event.payload,
-                EventV1::ToolCallFinished(payload) if payload.tool_call_id == tool_call_id
+                EventV1::ToolCallFinished(payload) if payload.tool_call_id.as_str() == tool_call_id
             )
         }) {
             return;
@@ -40,7 +40,7 @@ pub(crate) async fn wait_for_succeeded_tool_call_finish(
                 matches!(
                     &event.payload,
                     EventV1::ToolCallFinished(data)
-                        if data.tool_call_id == tool_call_id
+                        if data.tool_call_id.as_str() == tool_call_id
                             && data.status == ToolCallStatus::Succeeded
                 )
             })
@@ -86,7 +86,7 @@ pub(crate) fn find_finished(
     events
         .iter()
         .find_map(|event| match &event.payload {
-            EventV1::ToolCallFinished(payload) if payload.tool_call_id == tool_call_id => {
+            EventV1::ToolCallFinished(payload) if payload.tool_call_id.as_str() == tool_call_id => {
                 Some(payload.clone())
             }
             _ => None,

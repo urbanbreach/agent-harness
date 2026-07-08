@@ -184,16 +184,16 @@ async fn agent_spawn_returns_child_session_status_duration_and_counts() {
     assert!(child_events
         .iter()
         .enumerate()
-        .all(|(index, event)| event.seq == index as u64 + 1 && event.run_id == child_session_id));
+        .all(|(index, event)| event.seq == index as u64 + 1 && event.run_id.as_str() == child_session_id));
     assert!(child_events.iter().any(|event| matches!(
         &event.payload,
         EventV1::RunStarted(data)
-            if data.run_name == "Observe child failure metadata (@parent subagent)"
+            if data.run_name.as_str() == "Observe child failure metadata (@parent subagent)"
     )));
     assert!(child_events.iter().any(|event| matches!(
         &event.payload,
         EventV1::UserMessageSubmitted(data)
-            if data.request_id == child_request_id && data.text.contains("no provider configured")
+            if data.request_id.as_str() == child_request_id && data.text.contains("no provider configured")
     )));
 
     let child_meta: Value = serde_json::from_str(
@@ -221,7 +221,7 @@ async fn agent_spawn_returns_child_session_status_duration_and_counts() {
         Arc::new(DefaultRedactor::default()),
     );
     resumed_handle
-        .resume_run(&run.run_id, "resumed parent")
+        .resume_run(run.run_id.as_str(), "resumed parent")
         .await
         .unwrap_or_abort();
     resumed_handle.stop_run().await.unwrap_or_abort();

@@ -2,6 +2,7 @@ use crate::UnwrapOrAbort;
 use std::path::{Path, PathBuf};
 
 use harness_core::tool::{ToolContext, ToolError};
+use harness_core::ToolResultExt;
 
 use crate::fs_walk::normalize_relative_path;
 
@@ -21,7 +22,7 @@ pub(crate) fn workspace_relative_path_from_file_uri(
     uri: &str,
 ) -> Result<String, ToolError> {
     let url = reqwest::Url::parse(uri)
-        .map_err(|err| ToolError::Execution(format!("invalid workspace edit uri: {err}")))?;
+        .tool_err("invalid workspace edit uri")?;
     let path = url.to_file_path().map_err(|_| {
         ToolError::Execution(format!(
             "workspace edit uri does not map to a local filesystem path: {uri}"
@@ -45,7 +46,7 @@ pub(crate) fn resolve_existing_path(ctx: &ToolContext, input: &str) -> Result<Pa
     } else {
         candidate
             .canonicalize()
-            .map_err(|err| ToolError::Execution(format!("failed to resolve path: {err}")))?
+            .tool_err("failed to resolve path")?
     };
     ensure_within_workspace_path(&workspace, &canonical)?;
     Ok(canonical)
@@ -54,7 +55,7 @@ pub(crate) fn resolve_existing_path(ctx: &ToolContext, input: &str) -> Result<Pa
 pub(crate) fn canonical_workspace_root(ctx: &ToolContext) -> Result<PathBuf, ToolError> {
     ctx.workspace_root
         .canonicalize()
-        .map_err(|err| ToolError::Execution(format!("failed to resolve workspace root: {err}")))
+        .tool_err("failed to resolve workspace root")
 }
 
 pub(crate) fn ensure_within_workspace_path(

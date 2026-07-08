@@ -1,3 +1,4 @@
+// allow: SIZE_OK — session management (lineage + projection + inspection)
 use crate::UnwrapOrAbort;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -10,6 +11,8 @@ use harness_core::proj::{
 };
 use harness_core::redact::{redact_value, DefaultRedactor};
 use harness_core::tool::{ArtifactRef, Tool, ToolCapability, ToolContext, ToolError, ToolResult};
+use harness_core::tool_metadata;
+use harness_core::ToolResultExt;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -119,21 +122,12 @@ struct SessionEntry {
 
 #[async_trait]
 impl Tool for SessionListTool {
-    fn id(&self) -> &str {
-        "session_list"
-    }
-
-    fn description(&self) -> &str {
-        "Lists replay-derived Harness sessions from the local session root with filtering, sorting, caps, and redaction. This tool is side-effect free and does not call providers, tools, hooks, MCP servers, or the Harness CLI."
-    }
-
-    fn parameters_json_schema(&self) -> Value {
+    tool_metadata!(
+        "session_list",
+        "Lists replay-derived Harness sessions from the local session root with filtering, sorting, caps, and redaction. This tool is side-effect free and does not call providers, tools, hooks, MCP servers, or the Harness CLI.",
+        ToolCapability::ReadFs,
         crate::json_schema_for::<SessionListArgs>()
-    }
-
-    fn capability(&self) -> ToolCapability {
-        ToolCapability::ReadFs
-    }
+    );
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         let args: SessionListArgs = parse_tool_args(args_json)?;
@@ -198,21 +192,12 @@ impl Tool for SessionListTool {
 
 #[async_trait]
 impl Tool for SessionReadTool {
-    fn id(&self) -> &str {
-        "session_read"
-    }
-
-    fn description(&self) -> &str {
-        "Reads a bounded, redacted, replay-derived event/message window for one Harness session. This is side-effect free and never shells out to the Harness CLI."
-    }
-
-    fn parameters_json_schema(&self) -> Value {
+    tool_metadata!(
+        "session_read",
+        "Reads a bounded, redacted, replay-derived event/message window for one Harness session. This is side-effect free and never shells out to the Harness CLI.",
+        ToolCapability::ReadFs,
         crate::json_schema_for::<SessionReadArgs>()
-    }
-
-    fn capability(&self) -> ToolCapability {
-        ToolCapability::ReadFs
-    }
+    );
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         let args: SessionReadArgs = parse_tool_args(args_json)?;
@@ -277,21 +262,12 @@ impl Tool for SessionReadTool {
 
 #[async_trait]
 impl Tool for SessionSearchTool {
-    fn id(&self) -> &str {
-        "session_search"
-    }
-
-    fn description(&self) -> &str {
-        "Searches replay-safe session text (user messages, provider prompt summaries, tool summaries, titles, and metadata) with capped, redacted excerpts."
-    }
-
-    fn parameters_json_schema(&self) -> Value {
+    tool_metadata!(
+        "session_search",
+        "Searches replay-safe session text (user messages, provider prompt summaries, tool summaries, titles, and metadata) with capped, redacted excerpts.",
+        ToolCapability::ReadFs,
         crate::json_schema_for::<SessionSearchArgs>()
-    }
-
-    fn capability(&self) -> ToolCapability {
-        ToolCapability::ReadFs
-    }
+    );
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         let args: SessionSearchArgs = parse_tool_args(args_json)?;
@@ -365,21 +341,12 @@ impl Tool for SessionSearchTool {
 
 #[async_trait]
 impl Tool for SessionInfoTool {
-    fn id(&self) -> &str {
-        "session_info"
-    }
-
-    fn description(&self) -> &str {
-        "Reports replay-derived metadata, lineage, status, event counts, artifacts, and recovery notes for one Harness session without dumping whole logs."
-    }
-
-    fn parameters_json_schema(&self) -> Value {
+    tool_metadata!(
+        "session_info",
+        "Reports replay-derived metadata, lineage, status, event counts, artifacts, and recovery notes for one Harness session without dumping whole logs.",
+        ToolCapability::ReadFs,
         crate::json_schema_for::<SessionInfoArgs>()
-    }
-
-    fn capability(&self) -> ToolCapability {
-        ToolCapability::ReadFs
-    }
+    );
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         let args: SessionInfoArgs = parse_tool_args(args_json)?;
@@ -464,13 +431,13 @@ fn load_session_entries(session_root: &Path) -> Result<Vec<SessionEntry>, ToolEr
     }
     let canonical_root = session_root
         .canonicalize()
-        .map_err(|err| ToolError::Execution(format!("failed to resolve session root: {err}")))?;
+        .tool_err("failed to resolve session root")?;
     let mut entries = Vec::new();
     for entry in fs::read_dir(session_root)
-        .map_err(|err| ToolError::Execution(format!("failed to read session root: {err}")))?
+        .tool_err("failed to read session root")?
     {
         let entry = entry
-            .map_err(|err| ToolError::Execution(format!("failed to inspect session: {err}")))?;
+            .tool_err("failed to inspect session")?;
         let path = entry.path();
         if path.is_dir() {
             let canonical = path.canonicalize().map_err(|err| {
@@ -583,7 +550,7 @@ fn load_session_entry(run_dir: &Path) -> Result<SessionEntry, ToolError> {
     .unwrap_or_else(|err| SessionCatalogEntry {
         run_id: events
             .first()
-            .map(|event| event.run_id.clone())
+            .map(|event| event.run_id.to_string())
             .unwrap_or_else(|| fallback_run_id.to_string()),
         run_name: None,
         status: None,
@@ -793,7 +760,7 @@ fn maybe_spill_json(
     payload: Value,
 ) -> Result<ToolResult, ToolError> {
     let body = serde_json::to_string_pretty(&payload)
-        .map_err(|err| ToolError::Execution(format!("failed to serialize output: {err}")))?;
+        .tool_err("failed to serialize output")?;
     if body.len() <= MAX_TOOL_INLINE_JSON_CHARS {
         return Ok(text_json_tool_result(display_text, payload));
     }

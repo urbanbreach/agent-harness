@@ -5,6 +5,7 @@ use std::path::Path;
 use async_trait::async_trait;
 use globset::{Glob, GlobMatcher};
 use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolResult};
+use harness_core::tool_metadata;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
@@ -56,21 +57,12 @@ struct GlobMatches {
 
 #[async_trait]
 impl Tool for FsGlobTool {
-    fn id(&self) -> &str {
-        "fs.glob"
-    }
-
-    fn description(&self) -> &str {
-        "Finds workspace files matching a globset pattern (supports ** recursive globs) with deterministic sorted output."
-    }
-
-    fn parameters_json_schema(&self) -> serde_json::Value {
+    tool_metadata!(
+        "fs.glob",
+        "Finds workspace files matching a globset pattern (supports ** recursive globs) with deterministic sorted output.",
+        ToolCapability::ReadFs,
         super::json_schema_for::<FsGlobArgs>()
-    }
-
-    fn capability(&self) -> ToolCapability {
-        ToolCapability::ReadFs
-    }
+    );
 
     async fn call(
         &self,
@@ -211,12 +203,12 @@ mod tests {
             Arc::new(DefaultRedactor::default()),
         );
         ToolContext {
-            run_id: "run-fs-glob-tests".to_string(),
+            run_id: "run-fs-glob-tests".into(),
             workspace_root: workspace_root.to_path_buf(),
             artifacts_dir: workspace_root.join("artifacts"),
             actor: EventActor::new(ActorKind::Worker, Some("worker-1".to_string())),
             category: Some("deep".to_string()),
-            tool_call_id: tool_call_id.to_string(),
+            tool_call_id: tool_call_id.into(),
             current_model_ref: None,
             current_model_settings: None,
             tool_state: ToolRunState::default(),

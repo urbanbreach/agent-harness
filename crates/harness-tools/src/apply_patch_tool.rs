@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use harness_core::edit::hashline::HashlineWorkspaceOp;
 use harness_core::tool::{ArtifactRef, Tool, ToolCapability, ToolContext, ToolError, ToolResult};
+use harness_core::tool_metadata;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -26,15 +27,10 @@ struct ApplyPatchArgs {
 
 #[async_trait]
 impl Tool for ApplyPatchTool {
-    fn id(&self) -> &str {
-        "apply_patch"
-    }
-
-    fn description(&self) -> &str {
-        "Apply one patch containing add, update, and delete file operations. Operations apply sequentially; earlier operations remain applied if a later operation fails."
-    }
-
-    fn parameters_json_schema(&self) -> Value {
+    tool_metadata!(
+        "apply_patch",
+        "Apply one patch containing add, update, and delete file operations. Operations apply sequentially; earlier operations remain applied if a later operation fails.",
+        ToolCapability::EditFs,
         json!({
             "type": "object",
             "additionalProperties": false,
@@ -46,11 +42,7 @@ impl Tool for ApplyPatchTool {
                 }
             }
         })
-    }
-
-    fn capability(&self) -> ToolCapability {
-        ToolCapability::EditFs
-    }
+    );
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         let args: ApplyPatchArgs = crate::parse_tool_args(args_json)?;

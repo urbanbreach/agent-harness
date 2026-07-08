@@ -191,7 +191,7 @@ fn read_capped_resource(
     let mut file = File::open(path)?;
     let mut bytes = Vec::new();
     file.by_ref()
-        .take(budget.saturating_add(1) as u64)
+        .take(u64::try_from(budget.saturating_add(1)).unwrap_or(0))
         .read_to_end(&mut bytes)?;
     let truncated = bytes.len() > budget;
     if truncated {

@@ -1,3 +1,4 @@
+// allow: SIZE_OK — agent operations (task delegation + control plane)
 use std::time::Duration;
 
 use harness_core::config::registered_profile_model_metadata;
@@ -11,6 +12,7 @@ use harness_core::event::{
 use harness_core::redact::{DefaultRedactor, Redactor};
 use harness_core::store::{EventStoreError, EventStream};
 use harness_core::tool::{ToolContext, ToolError};
+use harness_core::ToolResultExt;
 use serde::Serialize;
 use serde_json::{json, Value};
 use tokio::time::{sleep, Instant};
@@ -261,10 +263,10 @@ async fn subscribe_events(ctx: &ToolContext) -> Result<EventStream, ToolError> {
         .coordinator
         .event_store()
         .await
-        .map_err(|err| ToolError::Execution(format!("failed to access event store: {err}")))?;
+        .tool_err("failed to access event store")?;
     store
         .subscribe(1)
-        .map_err(|err| ToolError::Execution(format!("failed to subscribe to events: {err}")))
+        .tool_err("failed to subscribe to events")
 }
 
 pub(super) async fn replay_events(ctx: &ToolContext) -> Result<EventStream, ToolError> {
@@ -272,10 +274,10 @@ pub(super) async fn replay_events(ctx: &ToolContext) -> Result<EventStream, Tool
         .coordinator
         .event_store()
         .await
-        .map_err(|err| ToolError::Execution(format!("failed to access event store: {err}")))?;
+        .tool_err("failed to access event store")?;
     store
         .replay(1)
-        .map_err(|err| ToolError::Execution(format!("failed to replay events: {err}")))
+        .tool_err("failed to replay events")
 }
 
 fn map_event_stream_error(err: EventStoreError) -> ToolError {

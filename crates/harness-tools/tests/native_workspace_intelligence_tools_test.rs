@@ -19,7 +19,7 @@ fn envelope(run_id: &str, seq: u64, payload: EventV1) -> EventEnvelopeV1 {
         schema_version: SCHEMA_VERSION,
         event_id: format!("evt-{seq:04}"),
         seq,
-        run_id: run_id.to_string(),
+        run_id: run_id.to_string().into(),
         mono_ms: seq,
         ts: None,
         actor: EventActor::new(ActorKind::System, None),
@@ -56,7 +56,7 @@ fn run_started(run_id: &str, seq: u64, run_name: &str, workspace: &Path) -> Even
         run_id,
         seq,
         EventV1::RunStarted(RunStartedEvent {
-            run_name: run_name.to_string(),
+            run_name: run_name.to_string().into(),
             workspace_root: workspace.display().to_string(),
         }),
     )
@@ -266,7 +266,7 @@ async fn model_visible_session_tools_are_replay_safe_redacted_and_capped() {
                 "run_session_tools",
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "session-tools".to_string(),
+                    run_name: "session-tools".into(),
                     workspace_root: workspace.workspace().display().to_string(),
                 }),
             ),
@@ -274,7 +274,7 @@ async fn model_visible_session_tools_are_replay_safe_redacted_and_capped() {
                 "run_session_tools",
                 2,
                 EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-                    request_id: "req-1".to_string(),
+                    request_id: "req-1".into(),
                     text: "hello sk-test_secret_0123456789".to_string(),
                 }),
             ),
@@ -282,7 +282,7 @@ async fn model_visible_session_tools_are_replay_safe_redacted_and_capped() {
                 "run_session_tools",
                 3,
                 EventV1::AssistantMessageFinished(AssistantMessageFinishedEvent {
-                    request_id: "req-1".to_string(),
+                    request_id: "req-1".into(),
                     tool_call_count: 1,
                     assistant_message: Some(ProviderAssistantMessageMetadata {
                         message_id: Some("msg-1".to_string()),
@@ -295,7 +295,7 @@ async fn model_visible_session_tools_are_replay_safe_redacted_and_capped() {
                 "run_session_tools",
                 4,
                 EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                    tool_call_id: "tool-1".to_string(),
+                    tool_call_id: "tool-1".into(),
                     status: ToolCallStatus::Succeeded,
                     output_summary: Some("hello tool summary".to_string()),
                     output_digest: Some("digest".to_string()),

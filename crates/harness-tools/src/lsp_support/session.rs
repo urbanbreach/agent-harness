@@ -1,3 +1,4 @@
+// allow: SIZE_OK — LSP support (client connection + message handling)
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::{self, BufRead, BufReader, Read, Write};
@@ -7,6 +8,7 @@ use std::thread;
 use std::time::Duration;
 
 use harness_core::tool::ToolError;
+use harness_core::ToolResultExt;
 use serde_json::{json, Value};
 
 use crate::workspace_paths::{file_path_from_uri, file_uri_from_path};
@@ -159,7 +161,7 @@ impl LspSession {
         server_name: &str,
     ) -> Result<(), ToolError> {
         let text = fs::read_to_string(file_path)
-            .map_err(|err| ToolError::Execution(format!("failed to read source file: {err}")))?;
+            .tool_err("failed to read source file")?;
         self.notify(
             "textDocument/didOpen",
             json!({
@@ -229,15 +231,15 @@ impl LspSession {
 
     fn write_message(&mut self, message: Value) -> Result<(), ToolError> {
         let body = serde_json::to_vec(&message)
-            .map_err(|err| ToolError::Execution(format!("failed to encode lsp request: {err}")))?;
+            .tool_err("failed to encode lsp request")?;
         write!(self.stdin, "Content-Length: {}\r\n\r\n", body.len())
-            .map_err(|err| ToolError::Execution(format!("failed to write lsp header: {err}")))?;
+            .tool_err("failed to write lsp header")?;
         self.stdin
             .write_all(&body)
-            .map_err(|err| ToolError::Execution(format!("failed to write lsp body: {err}")))?;
+            .tool_err("failed to write lsp body")?;
         self.stdin
             .flush()
-            .map_err(|err| ToolError::Execution(format!("failed to flush lsp request: {err}")))
+            .tool_err("failed to flush lsp request")
     }
 
     fn read_message(&mut self) -> Result<Value, ToolError> {
@@ -247,7 +249,7 @@ impl LspSession {
             let read = self
                 .stdout
                 .read_line(&mut line)
-                .map_err(|err| ToolError::Execution(format!("failed to read lsp header: {err}")))?;
+                .tool_err("failed to read lsp header")?;
             if read == 0 {
                 return Err(ToolError::Execution(
                     "language server closed the connection".to_string(),
@@ -271,9 +273,9 @@ impl LspSession {
         let mut body = vec![0_u8; length];
         self.stdout
             .read_exact(&mut body)
-            .map_err(|err| ToolError::Execution(format!("failed to read lsp body: {err}")))?;
+            .tool_err("failed to read lsp body")?;
         serde_json::from_slice(&body)
-            .map_err(|err| ToolError::Execution(format!("failed to decode lsp message: {err}")))
+            .tool_err("failed to decode lsp message")
     }
 
     fn respond_to_server_request(

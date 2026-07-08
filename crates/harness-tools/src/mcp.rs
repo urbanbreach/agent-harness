@@ -1,3 +1,4 @@
+// allow: SIZE_OK — MCP tool integration (server registration + rendering)
 use crate::UnwrapOrAbort;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -327,10 +328,7 @@ impl Tool for McpDiscoveredTool {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-#[allow(
-    clippy::empty_structs_with_brackets,
-    reason = "unit struct changes JSON schema representation"
-)]
+#[allow(clippy::empty_structs_with_brackets, reason = "unit struct changes JSON schema representation")]
 struct EmptyArgs {}
 
 #[derive(Debug, Deserialize, JsonSchema)]

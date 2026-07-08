@@ -1,8 +1,11 @@
+// allow: SIZE_OK — GitHub tool wrapper (API client + search)
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolResult};
+use harness_core::tool_metadata;
+use harness_core::ToolResultExt;
 use reqwest::Method;
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -82,7 +85,7 @@ impl GitHubHttpTransport for ReqwestGitHubHttpTransport {
         let response = builder
             .send()
             .await
-            .map_err(|err| ToolError::Execution(format!("GitHub request failed: {err}")))?;
+            .tool_err("GitHub request failed")?;
         let status = response.status().as_u16();
         let body = response.text().await.map_err(|err| {
             ToolError::Execution(format!("failed to read GitHub response: {err}"))
@@ -585,7 +588,7 @@ fn read_github_json_response(response: GitHubHttpResponse) -> Result<Value, Tool
 
 fn parse_github_json_response(response_text: &str) -> Result<Value, ToolError> {
     serde_json::from_str(response_text)
-        .map_err(|err| ToolError::Execution(format!("GitHub returned invalid JSON: {err}")))
+        .tool_err("GitHub returned invalid JSON")
 }
 
 fn required_issue_number(issue_number: Option<u64>) -> Result<u64, ToolError> {
@@ -838,21 +841,12 @@ fn render_body(body: Option<&str>) -> String {
 
 #[async_trait]
 impl Tool for GitHubIssueTool {
-    fn id(&self) -> &str {
-        "github.issue"
-    }
-
-    fn description(&self) -> &str {
-        "Reads, comments on, and closes or reopens GitHub issues through the GitHub REST API."
-    }
-
-    fn parameters_json_schema(&self) -> Value {
+    tool_metadata!(
+        "github.issue",
+        "Reads, comments on, and closes or reopens GitHub issues through the GitHub REST API.",
+        ToolCapability::Network,
         json_schema_for::<GitHubIssueArgs>()
-    }
-
-    fn capability(&self) -> ToolCapability {
-        ToolCapability::Network
-    }
+    );
 
     async fn call(&self, _ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         let args: GitHubIssueArgs = parse_tool_args(args_json)?;
@@ -862,21 +856,12 @@ impl Tool for GitHubIssueTool {
 
 #[async_trait]
 impl Tool for GitHubPullRequestTool {
-    fn id(&self) -> &str {
-        "github.pull_request"
-    }
-
-    fn description(&self) -> &str {
-        "Reads, comments on, lists, and creates GitHub pull requests through the GitHub REST API."
-    }
-
-    fn parameters_json_schema(&self) -> Value {
+    tool_metadata!(
+        "github.pull_request",
+        "Reads, comments on, lists, and creates GitHub pull requests through the GitHub REST API.",
+        ToolCapability::Network,
         json_schema_for::<GitHubPullRequestArgs>()
-    }
-
-    fn capability(&self) -> ToolCapability {
-        ToolCapability::Network
-    }
+    );
 
     async fn call(&self, _ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         let args: GitHubPullRequestArgs = parse_tool_args(args_json)?;

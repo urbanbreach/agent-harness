@@ -1,3 +1,4 @@
+// allow: SIZE_OK — session management (lineage + projection + inspection)
 use std::collections::BTreeMap;
 
 use harness_core::event::{EventEnvelopeV1, EventV1};

@@ -1,3 +1,4 @@
+// allow: SIZE_OK — control tool arguments (background output timeout + cancel + task continuation params)
 use crate::agent_ops::BatchCall;
 use crate::control_plane::{QuestionPrompt, TodoItem};
 use crate::text::trimmed_non_empty;

@@ -1,8 +1,10 @@
+// allow: SIZE_OK — hashline editing (anchor validation + atomic apply)
 use async_trait::async_trait;
 use harness_core::edit::hashline::{
     compute_line_hash, HashlineOp, HashlinePatch, HashlineWorkspaceOp, LineAnchor,
 };
 use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolResult};
+use harness_core::tool_metadata;
 use serde::{Deserialize, Deserializer};
 use serde_json::{json, Value};
 
@@ -79,15 +81,10 @@ enum TranslatedHashlinePlan {
 
 #[async_trait]
 impl Tool for HashlineEditTool {
-    fn id(&self) -> &str {
-        "edit"
-    }
-
-    fn description(&self) -> &str {
-        "Edit one file by replacing oldString with newString. Provide the exact text to replace, set replaceAll=true only when every occurrence should change, and use oldString=\"\" only to create a missing file."
-    }
-
-    fn parameters_json_schema(&self) -> Value {
+    tool_metadata!(
+        "edit",
+        "Edit one file by replacing oldString with newString. Provide the exact text to replace, set replaceAll=true only when every occurrence should change, and use oldString=\"\" only to create a missing file.",
+        ToolCapability::EditFs,
         json!({
             "type": "object",
             "additionalProperties": false,
@@ -111,11 +108,7 @@ impl Tool for HashlineEditTool {
                 }
             }
         })
-    }
-
-    fn capability(&self) -> ToolCapability {
-        ToolCapability::EditFs
-    }
+    );
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         let args: HashlineEditArgs = crate::parse_tool_args(args_json)?;

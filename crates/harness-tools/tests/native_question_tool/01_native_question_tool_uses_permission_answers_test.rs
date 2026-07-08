@@ -13,7 +13,7 @@ async fn native_question_tool_uses_permission_answers() {
 
     let tool_task = spawn_question_tool_call(
         coordinator.clone(),
-        &run.run_id,
+        run.run_id.as_str(),
         workspace_root,
         &run.artifacts_dir,
         "native-question-success",
@@ -116,7 +116,7 @@ async fn native_question_tool_accepts_string_option_shorthand() {
 
     let tool_task = spawn_question_tool_call(
         coordinator.clone(),
-        &run.run_id,
+        run.run_id.as_str(),
         workspace_root,
         &run.artifacts_dir,
         "native-question-shorthand",
@@ -191,7 +191,7 @@ async fn native_question_tool_accepts_single_question_shape_and_legacy_fields() 
 
     let tool_task = spawn_question_tool_call(
         coordinator.clone(),
-        &run.run_id,
+        run.run_id.as_str(),
         workspace_root,
         &run.artifacts_dir,
         "native-question-single-legacy",
@@ -264,7 +264,7 @@ async fn native_question_tool_accepts_allow_freeform_legacy_field() {
 
     let tool_task = spawn_question_tool_call(
         coordinator.clone(),
-        &run.run_id,
+        run.run_id.as_str(),
         workspace_root,
         &run.artifacts_dir,
         "native-question-allow-freeform-legacy",
@@ -321,7 +321,7 @@ async fn native_question_tool_accepts_text_prompt_compat_shape_and_schema_advert
 
     let tool_task = spawn_question_tool_call(
         coordinator.clone(),
-        &run.run_id,
+        run.run_id.as_str(),
         workspace_root,
         &run.artifacts_dir,
         "native-question-text-compat",
@@ -380,7 +380,7 @@ async fn native_question_tool_waits_indefinitely_when_timeout_disabled() {
 
     let tool_task = spawn_question_tool_call(
         coordinator.clone(),
-        &run.run_id,
+        run.run_id.as_str(),
         workspace_root,
         &run.artifacts_dir,
         "native-question-no-timeout",

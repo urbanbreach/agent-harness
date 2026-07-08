@@ -90,7 +90,7 @@ async fn native_edit_create_routes_through_hashline_and_emits_edit_events() {
         matches!(
             &event.payload,
             EventV1::ToolCallFinished(data)
-                if data.tool_call_id == tool_call_id && data.status == ToolCallStatus::Succeeded
+                if data.tool_call_id.as_str() == tool_call_id && data.status == ToolCallStatus::Succeeded
         )
     }));
 }

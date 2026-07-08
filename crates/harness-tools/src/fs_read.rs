@@ -1,3 +1,4 @@
+// allow: SIZE_OK — filesystem tool (read + glob + grep)
 use std::io::Read;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -8,6 +9,7 @@ use harness_core::edit::hashline::LineAnchor;
 use harness_core::tool::{
     ArtifactRef, Tool, ToolCapability, ToolContext, ToolError, ToolResult, ToolResultContent,
 };
+use harness_core::ToolResultExt;
 use serde_json::json;
 
 use crate::workspace_edit::{record_file_hashline_read, record_file_read};
@@ -123,7 +125,7 @@ fn build_fs_read_media_result(
     };
 
     let bytes = std::fs::read(resolved)
-        .map_err(|err| ToolError::Execution(format!("failed to read file: {err}")))?;
+        .tool_err("failed to read file")?;
     let media = FsReadMediaResult {
         message,
         data_url: format!("data:{mime};base64,{}", STANDARD.encode(bytes)),
@@ -145,11 +147,11 @@ fn build_fs_read_media_result(
 
 fn read_fs_read_media_sample(path: &Path) -> Result<Vec<u8>, ToolError> {
     let mut file = std::fs::File::open(path)
-        .map_err(|err| ToolError::Execution(format!("failed to read file: {err}")))?;
+        .tool_err("failed to read file")?;
     let mut buffer = vec![0_u8; MEDIA_SAMPLE_BYTES];
     let bytes_read = file
         .read(&mut buffer)
-        .map_err(|err| ToolError::Execution(format!("failed to read file: {err}")))?;
+        .tool_err("failed to read file")?;
     buffer.truncate(bytes_read);
     Ok(buffer)
 }
@@ -343,7 +345,7 @@ fn write_fs_read_artifact_streaming(
     let target = prepare_fs_read_artifact_target(ctx)?;
     let mut reader = open_fs_read_file(path)?;
     let artifact = std::fs::File::create(&target.file_path)
-        .map_err(|err| ToolError::Execution(format!("failed to write fs.read artifact: {err}")))?;
+        .tool_err("failed to write fs.read artifact")?;
     let mut artifact_writer = FsReadArtifactWriter::new(artifact);
 
     visit_fs_read_lines(&mut reader, start_line_index, |line_number, line| {
@@ -410,6 +412,6 @@ impl<W: Write> FsReadArtifactWriter<W> {
     fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), ToolError> {
         self.artifact
             .write_all(bytes)
-            .map_err(|err| ToolError::Execution(format!("failed to write fs.read artifact: {err}")))
+            .tool_err("failed to write fs.read artifact")
     }
 }

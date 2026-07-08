@@ -1,7 +1,9 @@
+// allow: SIZE_OK — LSP tool wrapper (diagnostics + symbols + rename)
 use crate::UnwrapOrAbort;
 use std::path::{Path, PathBuf};
 
 use harness_core::tool::{ToolContext, ToolError, ToolResult};
+use harness_core::ToolResultExt;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -133,7 +135,7 @@ async fn run_lsp_operation(
         }
     })
     .await
-    .map_err(|err| ToolError::Execution(format!("lsp task failed: {err}")))?
+    .tool_err("lsp task failed")?
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -269,7 +271,7 @@ fn render_display_text(
         format!("No results found for {operation_name}")
     } else {
         serde_json::to_string_pretty(&response.result)
-            .map_err(|err| ToolError::Execution(format!("failed to render lsp result: {err}")))?
+            .tool_err("failed to render lsp result")?
     };
 
     let diagnostics = format_diagnostics(&response.diagnostics);

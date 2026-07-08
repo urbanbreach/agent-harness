@@ -1,3 +1,4 @@
+// allow: SIZE_OK — native tool surface (registry + schema)
 use std::path::Path;
 use std::sync::Arc;
 
@@ -23,6 +24,8 @@ use crate::{
 use async_trait::async_trait;
 use harness_core::config::ShellAllowlist;
 use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolResult};
+use harness_core::tool_metadata;
+use harness_core::ToolResultExt;
 use serde_json::{json, Value};
 
 mod args;
@@ -40,11 +43,6 @@ use self::args::{
 use self::tree::{build_recursive_tree, resolve_directory_path};
 
 const DEFAULT_LIST_LIMIT: usize = 100;
-const TODO_WRITE_DESCRIPTION: &str = r#"Use this tool to create and manage a structured task list for your current coding session. This helps track progress on complex work and makes progress visible to the user.
-
-Use todowrite proactively for complex multi-step tasks, non-trivial work that requires planning, explicit user requests for a todo item/list/checklist/test todo, user requests with multiple tasks, and whenever new instructions change the current plan. If the user explicitly asks you to make/add/create/update a todo, call this tool even when the request is otherwise trivial; never reply only "Done". Skip it only for single straightforward tasks, trivial work that does not benefit from tracking, and purely informational answers that did not ask for todos.
-
-Task states are: pending, in_progress, completed, cancelled. Priority values are: high, medium, low. Keep at most one item in_progress, mark tasks completed immediately after finishing them, and update the list in real time as work progresses."#;
 
 pub(crate) struct ReadTool {
     default_hashline_anchors: bool,
@@ -300,7 +298,7 @@ fn build_directory_read_result(
 
 fn read_directory_entries(directory: &Path) -> Result<Vec<String>, ToolError> {
     let mut entries = std::fs::read_dir(directory)
-        .map_err(|err| ToolError::Execution(format!("failed to list directory: {err}")))?
+        .tool_err("failed to list directory")?
         .map(directory_entry_display_name)
         .collect::<Result<Vec<_>, _>>()?;
     entries.sort();
@@ -311,7 +309,7 @@ fn directory_entry_display_name(
     entry: std::io::Result<std::fs::DirEntry>,
 ) -> Result<String, ToolError> {
     let entry = entry
-        .map_err(|err| ToolError::Execution(format!("failed to read directory entry: {err}")))?;
+        .tool_err("failed to read directory entry")?;
     let file_type = entry.file_type().map_err(|err| {
         ToolError::Execution(format!("failed to read directory entry type: {err}"))
     })?;
@@ -325,21 +323,12 @@ fn directory_entry_display_name(
 
 #[async_trait]
 impl Tool for ListTool {
-    fn id(&self) -> &str {
-        "list"
-    }
-
-    fn description(&self) -> &str {
-        "Recursively lists directory contents in the canonical tree format."
-    }
-
-    fn parameters_json_schema(&self) -> Value {
+    tool_metadata!(
+        "list",
+        "Recursively lists directory contents in the canonical tree format.",
+        ToolCapability::ReadFs,
         super::json_schema_for::<ListArgs>()
-    }
-
-    fn capability(&self) -> ToolCapability {
-        ToolCapability::ReadFs
-    }
+    );
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         let args: ListArgs = parse_tool_args(args_json)?;
@@ -359,21 +348,12 @@ impl Tool for ListTool {
 
 #[async_trait]
 impl Tool for GlobTool {
-    fn id(&self) -> &str {
-        "glob"
-    }
-
-    fn description(&self) -> &str {
-        "Matches files by glob pattern with canonical harness arguments."
-    }
-
-    fn parameters_json_schema(&self) -> Value {
+    tool_metadata!(
+        "glob",
+        "Matches files by glob pattern with canonical harness arguments.",
+        ToolCapability::ReadFs,
         glob_parameters_json_schema()
-    }
-
-    fn capability(&self) -> ToolCapability {
-        ToolCapability::ReadFs
-    }
+    );
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         let args: GlobArgs = parse_tool_args(args_json)?;
@@ -392,21 +372,12 @@ impl Tool for GlobTool {
 
 #[async_trait]
 impl Tool for GrepTool {
-    fn id(&self) -> &str {
-        "grep"
-    }
-
-    fn description(&self) -> &str {
-        "Searches file or directory contents by regex. Use path, include, and limit to narrow results."
-    }
-
-    fn parameters_json_schema(&self) -> Value {
+    tool_metadata!(
+        "grep",
+        "Searches file or directory contents by regex. Use path, include, and limit to narrow results.",
+        ToolCapability::ReadFs,
         grep_parameters_json_schema()
-    }
-
-    fn capability(&self) -> ToolCapability {
-        ToolCapability::ReadFs
-    }
+    );
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         let args: GrepArgs = parse_tool_args(args_json)?;
@@ -428,21 +399,12 @@ impl Tool for GrepTool {
 
 #[async_trait]
 impl Tool for BashTool {
-    fn id(&self) -> &str {
-        "bash"
-    }
-
-    fn description(&self) -> &str {
-        "Executes a shell command using the canonical bash arguments. Use bash for real shell work like git, cargo, or npm—not for file discovery, content search, reading files, or editing. Native `read`, `glob`, `grep`, `list`, and `edit` tools are preferred for file IO, search, and edits. Shell file/search/edit utilities are controlled by permission patterns and workspace path safety, not a static executable allowlist."
-    }
-
-    fn parameters_json_schema(&self) -> Value {
+    tool_metadata!(
+        "bash",
+        "Executes a shell command using the canonical bash arguments. Use bash for real shell work like git, cargo, or npm—not for file discovery, content search, reading files, or editing. Native `read`, `glob`, `grep`, `list`, and `edit` tools are preferred for file IO, search, and edits. Shell file/search/edit utilities are controlled by permission patterns and workspace path safety, not a static executable allowlist.",
+        ToolCapability::Shell,
         bash_parameters_json_schema()
-    }
-
-    fn capability(&self) -> ToolCapability {
-        ToolCapability::Shell
-    }
+    );
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         let args: BashArgs = parse_tool_args(args_json)?;
@@ -462,21 +424,12 @@ impl Tool for BashTool {
 
 #[async_trait]
 impl Tool for WebFetchTool {
-    fn id(&self) -> &str {
-        "webfetch"
-    }
-
-    fn description(&self) -> &str {
-        "Fetches web content and returns text, markdown, or html."
-    }
-
-    fn parameters_json_schema(&self) -> Value {
+    tool_metadata!(
+        "webfetch",
+        "Fetches web content and returns text, markdown, or html.",
+        ToolCapability::Network,
         super::json_schema_for::<WebFetchArgs>()
-    }
-
-    fn capability(&self) -> ToolCapability {
-        ToolCapability::Network
-    }
+    );
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         let args: WebFetchArgs = parse_tool_args(args_json)?;
@@ -495,21 +448,16 @@ impl Tool for WebFetchTool {
 
 #[async_trait]
 impl Tool for TodoWriteTool {
-    fn id(&self) -> &str {
-        "todowrite"
-    }
+    tool_metadata!(
+        "todowrite",
+        r#"Use this tool to create and manage a structured task list for your current coding session. This helps track progress on complex work and makes progress visible to the user.
 
-    fn description(&self) -> &str {
-        TODO_WRITE_DESCRIPTION
-    }
+Use todowrite proactively for complex multi-step tasks, non-trivial work that requires planning, explicit user requests for a todo item/list/checklist/test todo, user requests with multiple tasks, and whenever new instructions change the current plan. If the user explicitly asks you to make/add/create/update a todo, call this tool even when the request is otherwise trivial; never reply only "Done". Skip it only for single straightforward tasks, trivial work that does not benefit from tracking, and purely informational answers that did not ask for todos.
 
-    fn parameters_json_schema(&self) -> Value {
+Task states are: pending, in_progress, completed, cancelled. Priority values are: high, medium, low. Keep at most one item in_progress, mark tasks completed immediately after finishing them, and update the list in real time as work progresses."#,
+        ToolCapability::ReadFs,
         todo_write_parameters_json_schema()
-    }
-
-    fn capability(&self) -> ToolCapability {
-        ToolCapability::ReadFs
-    }
+    );
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         let args: TodoWriteArgs = parse_tool_args(args_json)?;
@@ -519,26 +467,17 @@ impl Tool for TodoWriteTool {
 
 #[async_trait]
 impl Tool for TodoReadTool {
-    fn id(&self) -> &str {
-        "todoread"
-    }
-
-    fn description(&self) -> &str {
-        "Reads the per-run todo list stored by todowrite."
-    }
-
-    fn parameters_json_schema(&self) -> Value {
+    tool_metadata!(
+        "todoread",
+        "Reads the per-run todo list stored by todowrite.",
+        ToolCapability::ReadFs,
         json!({
             "type": "object",
             "properties": {},
             "required": [],
             "additionalProperties": false
         })
-    }
-
-    fn capability(&self) -> ToolCapability {
-        ToolCapability::ReadFs
-    }
+    );
 
     async fn call(&self, ctx: ToolContext, _args_json: Value) -> Result<ToolResult, ToolError> {
         self.executor.read_todos(&ctx)
@@ -547,21 +486,12 @@ impl Tool for TodoReadTool {
 
 #[async_trait]
 impl Tool for TaskTool {
-    fn id(&self) -> &str {
-        "task"
-    }
-
-    fn description(&self) -> &str {
-        "Delegates work to another configured harness profile/category. Exactly one of `category` or `subagent_type` is required for new child tasks; use task_id/session_id only when continuing a prior task. `run_in_background` is required: run_in_background=false waits and returns the child result synchronously; sync child tasks do not emit background wakeup notifications. run_in_background=true returns task_id/request_id immediately and is required when testing or exercising background scheduling, completion reminders, or background_output retrieval. `load_skills` is required, even when empty; listed skills are resolved before spawning and injected into the child prompt. For non-trivial delegation, make `prompt` a structured body with sections: context, goal, downstream use, request, required tools, must-do, and must-not-do. Use background_output with the returned request_id for interim status checks, and with cancel=true anytime for cancellation. For the final result, wait for the coordinator/system completion notification before retrieving with background_output. `command` is prepended to the child prompt as explicit delegation context."
-    }
-
-    fn parameters_json_schema(&self) -> Value {
+    tool_metadata!(
+        "task",
+        "Delegates work to another configured harness profile/category. Exactly one of `category` or `subagent_type` is required for new child tasks; use task_id/session_id only when continuing a prior task. `run_in_background` is required: run_in_background=false waits and returns the child result synchronously; sync child tasks do not emit background wakeup notifications. run_in_background=true returns task_id/request_id immediately and is required when testing or exercising background scheduling, completion reminders, or background_output retrieval. `load_skills` is required, even when empty; listed skills are resolved before spawning and injected into the child prompt. For non-trivial delegation, make `prompt` a structured body with sections: context, goal, downstream use, request, required tools, must-do, and must-not-do. Use background_output with the returned request_id for interim status checks, and with cancel=true anytime for cancellation. For the final result, wait for the coordinator/system completion notification before retrieving with background_output. `command` is prepended to the child prompt as explicit delegation context.",
+        ToolCapability::SpawnAgent,
         super::json_schema_for::<TaskArgs>()
-    }
-
-    fn capability(&self) -> ToolCapability {
-        ToolCapability::SpawnAgent
-    }
+    );
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         let args: TaskArgs = parse_tool_args(args_json)?;
@@ -588,21 +518,12 @@ impl Tool for TaskTool {
 
 #[async_trait]
 impl Tool for BackgroundOutputTool {
-    fn id(&self) -> &str {
-        "background_output"
-    }
-
-    fn description(&self) -> &str {
-        "Provides durable retrieval of the current status or terminal result for a child task scheduled with task(run_in_background=true). Use it for interim status checks before completion, and for final result retrieval only after the coordinator/system completion notification. Prefer request_id from the task result; task_id/session_id resolve to the latest child request for compatibility. Set cancel=true anytime to request coordinator cancellation for a non-terminal child task."
-    }
-
-    fn parameters_json_schema(&self) -> Value {
+    tool_metadata!(
+        "background_output",
+        "Provides durable retrieval of the current status or terminal result for a child task scheduled with task(run_in_background=true). Use it for interim status checks before completion, and for final result retrieval only after the coordinator/system completion notification. Prefer request_id from the task result; task_id/session_id resolve to the latest child request for compatibility. Set cancel=true anytime to request coordinator cancellation for a non-terminal child task.",
+        ToolCapability::SpawnAgent,
         super::json_schema_for::<BackgroundOutputArgs>()
-    }
-
-    fn capability(&self) -> ToolCapability {
-        ToolCapability::SpawnAgent
-    }
+    );
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         let args: BackgroundOutputArgs = parse_tool_args(args_json)?;
@@ -625,21 +546,12 @@ impl Tool for BackgroundOutputTool {
 
 #[async_trait]
 impl Tool for BackgroundCancelTool {
-    fn id(&self) -> &str {
-        "background_cancel"
-    }
-
-    fn description(&self) -> &str {
-        "Requests coordinator-owned cancellation for a non-terminal background task by request_id. This is the explicit cancellation form; background_output(cancel=true) remains available for compatibility."
-    }
-
-    fn parameters_json_schema(&self) -> Value {
+    tool_metadata!(
+        "background_cancel",
+        "Requests coordinator-owned cancellation for a non-terminal background task by request_id. This is the explicit cancellation form; background_output(cancel=true) remains available for compatibility.",
+        ToolCapability::SpawnAgent,
         super::json_schema_for::<BackgroundCancelArgs>()
-    }
-
-    fn capability(&self) -> ToolCapability {
-        ToolCapability::SpawnAgent
-    }
+    );
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         let args: BackgroundCancelArgs = parse_tool_args(args_json)?;
@@ -657,21 +569,12 @@ impl Tool for BackgroundCancelTool {
 
 #[async_trait]
 impl Tool for BatchTool {
-    fn id(&self) -> &str {
-        "batch"
-    }
-
-    fn description(&self) -> &str {
-        "Executes multiple tool calls through the coordinator and waits for all results."
-    }
-
-    fn parameters_json_schema(&self) -> Value {
+    tool_metadata!(
+        "batch",
+        "Executes multiple tool calls through the coordinator and waits for all results.",
+        ToolCapability::ReadFs,
         super::json_schema_for::<BatchArgs>()
-    }
-
-    fn capability(&self) -> ToolCapability {
-        ToolCapability::ReadFs
-    }
+    );
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         let args: BatchArgs = parse_tool_args(args_json)?;
@@ -681,21 +584,12 @@ impl Tool for BatchTool {
 
 #[async_trait]
 impl Tool for SkillTool {
-    fn id(&self) -> &str {
-        "skill"
-    }
-
-    fn description(&self) -> &str {
-        "Loads user-installed skills from the configured skill directories."
-    }
-
-    fn parameters_json_schema(&self) -> Value {
+    tool_metadata!(
+        "skill",
+        "Loads user-installed skills from the configured skill directories.",
+        ToolCapability::ReadFs,
         super::json_schema_for::<SkillArgs>()
-    }
-
-    fn capability(&self) -> ToolCapability {
-        ToolCapability::ReadFs
-    }
+    );
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         let args: SkillArgs = parse_tool_args(args_json)?;
@@ -705,21 +599,12 @@ impl Tool for SkillTool {
 
 #[async_trait]
 impl Tool for InvalidTool {
-    fn id(&self) -> &str {
-        "invalid"
-    }
-
-    fn description(&self) -> &str {
-        "Builds a deterministic invalid-tool response."
-    }
-
-    fn parameters_json_schema(&self) -> Value {
+    tool_metadata!(
+        "invalid",
+        "Builds a deterministic invalid-tool response.",
+        ToolCapability::ReadFs,
         super::json_schema_for::<InvalidArgs>()
-    }
-
-    fn capability(&self) -> ToolCapability {
-        ToolCapability::ReadFs
-    }
+    );
 
     async fn call(&self, _ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         let args: InvalidArgs = parse_tool_args(args_json)?;
@@ -729,21 +614,12 @@ impl Tool for InvalidTool {
 
 #[async_trait]
 impl Tool for WebSearchTool {
-    fn id(&self) -> &str {
-        "websearch"
-    }
-
-    fn description(&self) -> &str {
-        "Searches the public web via the configured backend."
-    }
-
-    fn parameters_json_schema(&self) -> Value {
+    tool_metadata!(
+        "websearch",
+        "Searches the public web via the configured backend.",
+        ToolCapability::Network,
         web_search_parameters_json_schema()
-    }
-
-    fn capability(&self) -> ToolCapability {
-        ToolCapability::Network
-    }
+    );
 
     async fn call(&self, _ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         let args: WebSearchArgs = parse_tool_args(args_json)?;
@@ -761,21 +637,12 @@ impl Tool for WebSearchTool {
 
 #[async_trait]
 impl Tool for CodeSearchTool {
-    fn id(&self) -> &str {
-        "codesearch"
-    }
-
-    fn description(&self) -> &str {
-        "Searches remote/public code context via the configured backend. This is not local workspace symbol search. Use grep, ast_grep_search, or lsp for local workspace code and first-party symbols."
-    }
-
-    fn parameters_json_schema(&self) -> Value {
+    tool_metadata!(
+        "codesearch",
+        "Searches remote/public code context via the configured backend. This is not local workspace symbol search. Use grep, ast_grep_search, or lsp for local workspace code and first-party symbols.",
+        ToolCapability::Network,
         super::json_schema_for::<CodeSearchArgs>()
-    }
-
-    fn capability(&self) -> ToolCapability {
-        ToolCapability::Network
-    }
+    );
 
     async fn call(&self, _ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         let args: CodeSearchArgs = parse_tool_args(args_json)?;
@@ -790,21 +657,12 @@ impl Tool for CodeSearchTool {
 
 #[async_trait]
 impl Tool for QuestionTool {
-    fn id(&self) -> &str {
-        "question"
-    }
-
-    fn description(&self) -> &str {
-        "Asks structured questions and waits for answers from the coordinator."
-    }
-
-    fn parameters_json_schema(&self) -> Value {
+    tool_metadata!(
+        "question",
+        "Asks structured questions and waits for answers from the coordinator.",
+        ToolCapability::ReadFs,
         question_parameters_json_schema()
-    }
-
-    fn capability(&self) -> ToolCapability {
-        ToolCapability::ReadFs
-    }
+    );
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         let args: QuestionArgs = parse_tool_args(args_json)?;
@@ -814,21 +672,12 @@ impl Tool for QuestionTool {
 
 #[async_trait]
 impl Tool for LspTool {
-    fn id(&self) -> &str {
-        "lsp"
-    }
-
-    fn description(&self) -> &str {
-        "Performs LSP operations through local language servers."
-    }
-
-    fn parameters_json_schema(&self) -> Value {
+    tool_metadata!(
+        "lsp",
+        "Performs LSP operations through local language servers.",
+        ToolCapability::ReadFs,
         code_lsp_parameters_json_schema()
-    }
-
-    fn capability(&self) -> ToolCapability {
-        ToolCapability::ReadFs
-    }
+    );
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         self.executor

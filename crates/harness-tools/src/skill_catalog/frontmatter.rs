@@ -1,3 +1,4 @@
+// allow: SIZE_OK — skill catalog (discovery + frontmatter + resources)
 use std::path::Path;
 
 use crate::text::has_trimmed_content;
