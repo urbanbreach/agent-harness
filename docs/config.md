@@ -325,12 +325,11 @@ for those settings instead of mixing them into runtime config.
 | `$schema` | Optional schema URI for editor integration. |
 | `agent` | Optional agent overrides or custom agent definitions. |
 | `autoshare` | Upstream-compatible sharing flag; inactive `false` is accepted, active sharing is rejected. |
-| `autoupdate` | Upstream-compatible update flag; inactive `false` is accepted, active updates are rejected. |
 | `command` | Upstream command configuration; accepted only when empty because the harness does not execute configured commands. |
 | `default_agent` | Default interactive agent selected at startup; the shipped example keeps `build` as the default while `plan` remains selectable. |
 | `disabled_providers` | Upstream-compatible provider filter; hides matching configured and authenticated built-in providers from runtime model catalogs. |
 | `enabled_providers` | Upstream-compatible provider allow-list; when non-empty, only matching configured/authenticated built-in providers remain in runtime model catalogs. |
-| `enterprise` | Upstream enterprise configuration; accepted only when empty because the harness does not implement enterprise product integration. |
+
 | `formatter` | Formatter registry. `false` disables formatters; `true` enables all 26 built-in formatters (the default when the key is omitted). An object accepts `enabled`, `experimentalOxfmt`, and named formatter entries such as `<name>: { disabled?, command?, environment?, extensions? }`. Built-in formatter names are `gofmt`, `mix`, `prettier`, `oxfmt`, `biome`, `zig`, `clang-format`, `ktlint`, `ruff`, `air`, `uv`, `rubocop`, `standardrb`, `htmlbeautifier`, `dart`, `ocamlformat`, `terraform`, `latexindent`, `gleam`, `shfmt`, `nixfmt`, `rustfmt`, `pint`, `ormolu`, `cljfmt`, `dfmt`. Formatters are selected by name, not by extension; each built-in formatter declares its own extensions, and an `extensions` override replaces the built-in list. `command` overrides discovery entirely; `environment` merges with the built-in environment (override wins). `$FILE` is substituted with the target file path. When several formatters match a file, they run sequentially in built-in registry declaration order, followed by any custom override-only formatters; failures surface as non-fatal warnings. |
 | `instructions` | Optional inline instructions or instruction file paths prepended before agent prompts. |
 | `lsp` | Upstream-compatible LSP setting; `false` disables harness LSP overrides, object values map to harness LSP servers when possible. |
@@ -339,11 +338,11 @@ for those settings instead of mixing them into runtime config.
 | `model` | Default full-capability model reference. |
 | `model_profile` | Named model selectors that resolve to configured provider/model targets plus optional fallback metadata; runtime profile resolution selects the primary target in V1. |
 | `permission` | Default permission policy for the supported tool subset plus optional shell allowlist. |
-| `plugin` | Upstream plugin list; accepted only when empty because plugins are not loaded by the harness. |
+
 | `provider` | Provider definitions keyed by provider id. |
 | `runtime` | Runtime knobs that are not provider/model/agent definitions, currently including provider-context compaction settings and provider retry policy. |
 | `server` | Upstream server configuration; accepted only when empty because server commands are outside this runtime config. |
-| `share` | Upstream sharing mode; only `disabled` is accepted. |
+
 | `small_model` | Optional smaller model reference for custom secondary profiles. |
 | `skills` | Shared skill discovery roots and permission overrides for skill loading. |
 
@@ -847,7 +846,7 @@ values, config loading rejects the file instead of silently choosing one.
 ## Validation behavior
 
 - Unsupported top-level areas are limited to active unsupported product features and unknown keys.
-- Unsupported compatibility top-level areas that would trigger product side effects (`server`, `command`, `plugin`, `share`, `autoshare`, `autoupdate`, `enterprise`) are rejected when active; inactive forms such as empty maps/lists, `share: "disabled"`, or `autoupdate: false` are accepted.
+- Unsupported compatibility top-level areas that would trigger product side effects (`server`, `command`, `autoshare`) are rejected when active; inactive forms such as empty maps/lists are accepted. Compatibility-only keys (`plugin`, `share`, `autoupdate`, `enterprise`) are accepted in any form but have no effect.
 - Unsupported TUI fields are rejected explicitly.
 - `{env:VAR}` resolves to an empty string when `VAR` is unset.
 - `{file:path}` is supported for string references and resolves relative to the config file when the config comes from disk.

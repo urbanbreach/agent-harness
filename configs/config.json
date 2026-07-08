@@ -57,6 +57,63 @@
       },
       "type": "object"
     },
+    "FormatterConfig": {
+      "additionalProperties": {
+        "$ref": "#/definitions/FormatterOverride"
+      },
+      "description": "Runtime formatter configuration.\n\n`deny_unknown_fields` is intentionally omitted because `#[serde(flatten)]`\non the per-formatter overrides map allows arbitrary formatter-name keys in\nthe public object form; serde would otherwise reject those keys as unknown.",
+      "properties": {
+        "enabled": {
+          "default": true,
+          "type": "boolean"
+        },
+        "experimental_oxfmt": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "FormatterOverride": {
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "default": null,
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "disabled": {
+          "default": false,
+          "type": "boolean"
+        },
+        "environment": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": null,
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "extensions": {
+          "default": null,
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
     "InstructionList": {
       "anyOf": [
         {
@@ -69,6 +126,63 @@
           "type": "array"
         }
       ]
+    },
+    "LspConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "disabled": {
+          "default": false,
+          "type": "boolean"
+        },
+        "servers": {
+          "additionalProperties": {
+            "$ref": "#/definitions/LspServerConfig"
+          },
+          "default": {},
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "LspServerConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "default": null,
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "disabled": {
+          "default": false,
+          "type": "boolean"
+        },
+        "env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "extensions": {
+          "default": null,
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "initialization": {
+          "default": null
+        }
+      },
+      "type": "object"
     },
     "McpServerConfig": {
       "oneOf": [
@@ -1497,9 +1611,6 @@
         "null"
       ]
     },
-    "autoupdate": {
-      "default": null
-    },
     "command": {
       "default": null
     },
@@ -1530,10 +1641,15 @@
         "null"
       ]
     },
-    "enterprise": {
-      "default": null
-    },
     "formatter": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/FormatterConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
       "default": null
     },
     "instructions": {
@@ -1548,6 +1664,14 @@
       "default": null
     },
     "lsp": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/LspConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
       "default": null
     },
     "mcp": {
@@ -1614,9 +1738,6 @@
         "websearch": null
       }
     },
-    "plugin": {
-      "default": null
-    },
     "provider": {
       "additionalProperties": {
         "$ref": "#/definitions/ProviderConfig"
@@ -1648,9 +1769,6 @@
       }
     },
     "server": {
-      "default": null
-    },
-    "share": {
       "default": null
     },
     "skills": {
