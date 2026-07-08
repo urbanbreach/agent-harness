@@ -185,7 +185,7 @@ pub(crate) fn exact_test_transcript_user_and_reasoning_match_reference_entry_bod
         "assistant answer",
     );
     entry.user_message = Some(harness_core::event::UserMessageSubmittedEvent {
-        request_id: "request-entry-body".to_string(),
+        request_id: "request-entry-body".into(),
         text: "Explain transcript parity".to_string(),
     });
     entry.thinking_text = "Thinking: comparing reference entry body".to_string();
@@ -304,7 +304,7 @@ pub(crate) fn exact_test_transcript_tool_rows_follow_chronological_turn_order() 
             schema_version: harness_core::event::SCHEMA_VERSION,
             event_id: format!("evt_turn_order_{seq:04}"),
             seq,
-            run_id: "run_turn_order".to_string(),
+            run_id: "run_turn_order".into(),
             mono_ms: seq * 100,
             ts: Some("2026-03-22T14:36:00Z".to_string()),
             actor: harness_core::event::EventActor::new(
@@ -324,7 +324,7 @@ pub(crate) fn exact_test_transcript_tool_rows_follow_chronological_turn_order() 
         "req_ordered_turn",
         harness_core::event::EventV1::UserMessageSubmitted(
             harness_core::event::UserMessageSubmittedEvent {
-                request_id: "req_ordered_turn".to_string(),
+                request_id: "req_ordered_turn".into(),
                 text: "Check transcript parity".to_string(),
             },
         ),
@@ -334,7 +334,7 @@ pub(crate) fn exact_test_transcript_tool_rows_follow_chronological_turn_order() 
         "req_ordered_turn",
         harness_core::event::EventV1::ProviderRequestStarted(
             harness_core::event::ProviderRequestStartedEvent {
-                request_id: "req_ordered_turn".to_string(),
+                request_id: "req_ordered_turn".into(),
                 provider_id: "default".to_string(),
                 model_id: "gpt-5.4-mini".to_string(),
                 prompt_summary: "Check transcript parity".to_string(),
@@ -348,7 +348,7 @@ pub(crate) fn exact_test_transcript_tool_rows_follow_chronological_turn_order() 
         "req_ordered_turn",
         harness_core::event::EventV1::ProviderStreamDelta(
             harness_core::event::ProviderStreamDeltaEvent {
-                request_id: "req_ordered_turn".to_string(),
+                request_id: "req_ordered_turn".into(),
                 delta: "I’ll inspect the MCP result first.\n".to_string(),
             },
         ),
@@ -358,7 +358,7 @@ pub(crate) fn exact_test_transcript_tool_rows_follow_chronological_turn_order() 
         "req_ordered_turn",
         harness_core::event::EventV1::ToolCallRequested(
             harness_core::event::ToolCallRequestedEvent {
-                tool_call_id: "tc_docs".to_string(),
+                tool_call_id: "tc_docs".into(),
                 tool_id: "mcp.docs-rs.search".to_string(),
                 args_summary: r#"{"query":"ratatui"}"#.to_string(),
                 args_digest: "digest-docs-search".to_string(),
@@ -370,7 +370,7 @@ pub(crate) fn exact_test_transcript_tool_rows_follow_chronological_turn_order() 
         5,
         "req_ordered_turn",
         harness_core::event::EventV1::ToolCallStarted(harness_core::event::ToolCallStartedEvent {
-            tool_call_id: "tc_docs".to_string(),
+            tool_call_id: "tc_docs".into(),
         }),
     ));
     app.ingest_event(event(
@@ -378,7 +378,7 @@ pub(crate) fn exact_test_transcript_tool_rows_follow_chronological_turn_order() 
         "req_ordered_turn",
         harness_core::event::EventV1::ToolCallFinished(
             harness_core::event::ToolCallFinishedEvent {
-                tool_call_id: "tc_docs".to_string(),
+                tool_call_id: "tc_docs".into(),
                 status: harness_core::event::ToolCallStatus::Succeeded,
                 output_summary: Some("ratatui 0.29.0".to_string()),
                 output_digest: Some("digest-docs-result".to_string()),
@@ -392,7 +392,7 @@ pub(crate) fn exact_test_transcript_tool_rows_follow_chronological_turn_order() 
         "req_ordered_turn",
         harness_core::event::EventV1::ProviderStreamDelta(
             harness_core::event::ProviderStreamDeltaEvent {
-                request_id: "req_ordered_turn".to_string(),
+                request_id: "req_ordered_turn".into(),
                 delta: "It returns the crate metadata inline afterward.".to_string(),
             },
         ),
@@ -402,7 +402,7 @@ pub(crate) fn exact_test_transcript_tool_rows_follow_chronological_turn_order() 
         "req_ordered_turn",
         harness_core::event::EventV1::ProviderRequestFinished(
             harness_core::event::ProviderRequestFinishedEvent {
-                request_id: "req_ordered_turn".to_string(),
+                request_id: "req_ordered_turn".into(),
                 finish_reason: "stop".to_string(),
                 output_digest: Some("digest-turn-order-output".to_string()),
                 usage: None,
@@ -455,7 +455,7 @@ fn reasoning_after_tool_renders_in_new_block_below_tool() {
             schema_version: harness_core::event::SCHEMA_VERSION,
             event_id: format!("evt_reasoning_after_tool_{seq:04}"),
             seq,
-            run_id: "run_reasoning_after_tool".to_string(),
+            run_id: "run_reasoning_after_tool".into(),
             mono_ms: seq * 100,
             ts: Some("2026-03-22T15:00:00Z".to_string()),
             actor: harness_core::event::EventActor::new(
@@ -475,7 +475,7 @@ fn reasoning_after_tool_renders_in_new_block_below_tool() {
         "req_reasoning_after_tool",
         harness_core::event::EventV1::UserMessageSubmitted(
             harness_core::event::UserMessageSubmittedEvent {
-                request_id: "req_reasoning_after_tool".to_string(),
+                request_id: "req_reasoning_after_tool".into(),
                 text: "Inspect tokio docs".to_string(),
             },
         ),
@@ -485,7 +485,7 @@ fn reasoning_after_tool_renders_in_new_block_below_tool() {
         "req_reasoning_after_tool",
         harness_core::event::EventV1::ProviderRequestStarted(
             harness_core::event::ProviderRequestStartedEvent {
-                request_id: "req_reasoning_after_tool".to_string(),
+                request_id: "req_reasoning_after_tool".into(),
                 provider_id: "default".to_string(),
                 model_id: "gpt-5.4-mini".to_string(),
                 prompt_summary: "Inspect tokio docs".to_string(),
@@ -499,7 +499,7 @@ fn reasoning_after_tool_renders_in_new_block_below_tool() {
         "req_reasoning_after_tool",
         harness_core::event::EventV1::ProviderReasoningDelta(
             harness_core::event::ProviderReasoningDeltaEvent {
-                request_id: "req_reasoning_after_tool".to_string(),
+                request_id: "req_reasoning_after_tool".into(),
                 delta: "Inspecting Tokio docs first.".to_string(),
             },
         ),
@@ -509,7 +509,7 @@ fn reasoning_after_tool_renders_in_new_block_below_tool() {
         "req_reasoning_after_tool",
         harness_core::event::EventV1::ToolCallRequested(
             harness_core::event::ToolCallRequestedEvent {
-                tool_call_id: "tc_tokio_docs".to_string(),
+                tool_call_id: "tc_tokio_docs".into(),
                 tool_id: "mcp.docs-rs.search_in_crate".to_string(),
                 args_summary: r#"{"query":"spawn"}"#.to_string(),
                 args_digest: "digest-tokio-docs-args".to_string(),
@@ -522,7 +522,7 @@ fn reasoning_after_tool_renders_in_new_block_below_tool() {
         "req_reasoning_after_tool",
         harness_core::event::EventV1::ToolCallFinished(
             harness_core::event::ToolCallFinishedEvent {
-                tool_call_id: "tc_tokio_docs".to_string(),
+                tool_call_id: "tc_tokio_docs".into(),
                 status: harness_core::event::ToolCallStatus::Succeeded,
                 output_summary: Some("spawn docs".to_string()),
                 output_digest: Some("digest-tokio-docs-output".to_string()),
@@ -539,7 +539,7 @@ fn reasoning_after_tool_renders_in_new_block_below_tool() {
         "req_reasoning_after_tool",
         harness_core::event::EventV1::ProviderReasoningDelta(
             harness_core::event::ProviderReasoningDeltaEvent {
-                request_id: "req_reasoning_after_tool".to_string(),
+                request_id: "req_reasoning_after_tool".into(),
                 delta: "Now I can answer with the exact API.".to_string(),
             },
         ),
@@ -549,7 +549,7 @@ fn reasoning_after_tool_renders_in_new_block_below_tool() {
         "req_reasoning_after_tool",
         harness_core::event::EventV1::ProviderStreamDelta(
             harness_core::event::ProviderStreamDeltaEvent {
-                request_id: "req_reasoning_after_tool".to_string(),
+                request_id: "req_reasoning_after_tool".into(),
                 delta: "Use tokio::spawn for spawned tasks.".to_string(),
             },
         ),
@@ -559,7 +559,7 @@ fn reasoning_after_tool_renders_in_new_block_below_tool() {
         "req_reasoning_after_tool",
         harness_core::event::EventV1::ProviderRequestFinished(
             harness_core::event::ProviderRequestFinishedEvent {
-                request_id: "req_reasoning_after_tool".to_string(),
+                request_id: "req_reasoning_after_tool".into(),
                 finish_reason: "stop".to_string(),
                 output_digest: Some("digest-reasoning-after-tool-output".to_string()),
                 usage: None,
@@ -626,7 +626,7 @@ fn task_completion_summary_does_not_duplicate_streamed_assistant_text() {
             schema_version: harness_core::event::SCHEMA_VERSION,
             event_id: format!("evt_duplicate_body_{seq:04}"),
             seq,
-            run_id: "run_duplicate_body".to_string(),
+            run_id: "run_duplicate_body".into(),
             mono_ms: seq * 100,
             ts: Some("2026-03-22T14:40:00Z".to_string()),
             actor: harness_core::event::EventActor::new(
@@ -646,7 +646,7 @@ fn task_completion_summary_does_not_duplicate_streamed_assistant_text() {
         "req_duplicate_body",
         harness_core::event::EventV1::UserMessageSubmitted(
             harness_core::event::UserMessageSubmittedEvent {
-                request_id: "req_duplicate_body".to_string(),
+                request_id: "req_duplicate_body".into(),
                 text: "Say hello".to_string(),
             },
         ),
@@ -656,7 +656,7 @@ fn task_completion_summary_does_not_duplicate_streamed_assistant_text() {
         "req_duplicate_body",
         harness_core::event::EventV1::ProviderRequestStarted(
             harness_core::event::ProviderRequestStartedEvent {
-                request_id: "req_duplicate_body".to_string(),
+                request_id: "req_duplicate_body".into(),
                 provider_id: "default".to_string(),
                 model_id: "gpt-5.4-mini".to_string(),
                 prompt_summary: "Say hello".to_string(),
@@ -670,7 +670,7 @@ fn task_completion_summary_does_not_duplicate_streamed_assistant_text() {
         "req_duplicate_body",
         harness_core::event::EventV1::ProviderStreamDelta(
             harness_core::event::ProviderStreamDeltaEvent {
-                request_id: "req_duplicate_body".to_string(),
+                request_id: "req_duplicate_body".into(),
                 delta: "Hello!".to_string(),
             },
         ),
@@ -680,7 +680,7 @@ fn task_completion_summary_does_not_duplicate_streamed_assistant_text() {
         "req_duplicate_body",
         harness_core::event::EventV1::ProviderRequestFinished(
             harness_core::event::ProviderRequestFinishedEvent {
-                request_id: "req_duplicate_body".to_string(),
+                request_id: "req_duplicate_body".into(),
                 finish_reason: "stop".to_string(),
                 output_digest: Some("digest-duplicate-body-output".to_string()),
                 usage: None,
@@ -692,7 +692,7 @@ fn task_completion_summary_does_not_duplicate_streamed_assistant_text() {
         5,
         "req_duplicate_body",
         harness_core::event::EventV1::TaskCompleted(harness_core::event::TaskCompletedEvent {
-            task_id: "task_duplicate_body".to_string(),
+            task_id: "task_duplicate_body".to_string().into(),
             result_summary: "Hello!".to_string(),
             result_digest: "digest-task-duplicate-body".to_string(),
             metadata: None,
@@ -728,7 +728,7 @@ fn tool_task_completion_summary_does_not_render_as_assistant_body() {
             schema_version: harness_core::event::SCHEMA_VERSION,
             event_id: format!("evt_tool_task_body_{seq:04}"),
             seq,
-            run_id: "run_tool_task_body".to_string(),
+            run_id: "run_tool_task_body".into(),
             mono_ms: seq * 100,
             ts: Some("2026-03-22T14:45:00Z".to_string()),
             actor: harness_core::event::EventActor::new(
@@ -748,7 +748,7 @@ fn tool_task_completion_summary_does_not_render_as_assistant_body() {
         "req_tool_task_body",
         harness_core::event::EventV1::UserMessageSubmitted(
             harness_core::event::UserMessageSubmittedEvent {
-                request_id: "req_tool_task_body".to_string(),
+                request_id: "req_tool_task_body".into(),
                 text: "Inspect tokio docs".to_string(),
             },
         ),
@@ -758,7 +758,7 @@ fn tool_task_completion_summary_does_not_render_as_assistant_body() {
         "req_tool_task_body",
         harness_core::event::EventV1::ProviderRequestStarted(
             harness_core::event::ProviderRequestStartedEvent {
-                request_id: "req_tool_task_body".to_string(),
+                request_id: "req_tool_task_body".into(),
                 provider_id: "default".to_string(),
                 model_id: "gpt-5.4-mini".to_string(),
                 prompt_summary: "Inspect tokio docs".to_string(),
@@ -772,7 +772,7 @@ fn tool_task_completion_summary_does_not_render_as_assistant_body() {
         "req_tool_task_body",
         harness_core::event::EventV1::ToolCallRequested(
             harness_core::event::ToolCallRequestedEvent {
-                tool_call_id: "tc_docs_tokio".to_string(),
+                tool_call_id: "tc_docs_tokio".into(),
                 tool_id: "mcp.docs-rs.search_in_crate".to_string(),
                 args_summary: r#"{"crate_name":"tokio","query":"spawn"}"#.to_string(),
                 args_digest: "digest-docs-tokio-args".to_string(),
@@ -785,7 +785,7 @@ fn tool_task_completion_summary_does_not_render_as_assistant_body() {
         "req_tool_task_body",
         harness_core::event::EventV1::ToolCallFinished(
             harness_core::event::ToolCallFinishedEvent {
-                tool_call_id: "tc_docs_tokio".to_string(),
+                tool_call_id: "tc_docs_tokio".into(),
                 status: harness_core::event::ToolCallStatus::Succeeded,
                 output_summary: Some("fn spawn\nstruct JoinHandle".to_string()),
                 output_digest: Some("digest-docs-tokio-output".to_string()),
@@ -798,7 +798,7 @@ fn tool_task_completion_summary_does_not_render_as_assistant_body() {
         5,
         "req_tool_task_body",
         harness_core::event::EventV1::TaskCompleted(harness_core::event::TaskCompletedEvent {
-            task_id: "task_docs_tokio".to_string(),
+            task_id: "task_docs_tokio".to_string().into(),
             result_summary: "fn spawn\nstruct JoinHandle".to_string(),
             result_digest: "digest-task-docs-tokio".to_string(),
             metadata: Some(harness_core::event::TaskCompletionMetadata {

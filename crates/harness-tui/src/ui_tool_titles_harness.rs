@@ -1,6 +1,7 @@
 use crate::app::{ToolCallDisplayStatus, ToolCallEntry};
 
 use super::ui_tool_metadata::{tool_json_string, tool_summary_number, tool_summary_string};
+use super::ui_tool_style::status_label;
 
 pub(super) fn background_cancel_tool_title(tool_call: &ToolCallEntry) -> String {
     let request_id = tool_json_string(tool_call.output_json.as_ref(), &["request_id"])
@@ -8,14 +9,13 @@ pub(super) fn background_cancel_tool_title(tool_call: &ToolCallEntry) -> String 
         .or_else(|| tool_json_string(tool_call.output_json.as_ref(), &["task_id", "session_id"]))
         .or_else(|| tool_summary_string(&tool_call.args_summary, &["task_id", "session_id"]));
 
-    let label = match tool_call.status {
-        ToolCallDisplayStatus::PendingPermission | ToolCallDisplayStatus::Queued => {
-            "Cancel background task"
-        }
-        ToolCallDisplayStatus::Running => "Cancelling background task...",
-        ToolCallDisplayStatus::Succeeded => "Cancelled background task",
-        ToolCallDisplayStatus::Failed => "Background cancel failed",
-    };
+    let label = status_label(
+        tool_call.status,
+        "Cancel background task",
+        "Cancelling background task...",
+        "Cancelled background task",
+        "Background cancel failed",
+    );
     request_id
         .map(|id| format!("{label} · {id}"))
         .unwrap_or_else(|| label.to_string())
@@ -23,28 +23,31 @@ pub(super) fn background_cancel_tool_title(tool_call: &ToolCallEntry) -> String 
 
 pub(super) fn plan_enter_tool_title(tool_call: &ToolCallEntry) -> String {
     let goal = tool_summary_string(&tool_call.args_summary, &["goal", "reason"]);
-    match tool_call.status {
-        ToolCallDisplayStatus::PendingPermission | ToolCallDisplayStatus::Queued => {
-            "Enter plan mode".to_string()
-        }
-        ToolCallDisplayStatus::Running => "Entering plan mode...".to_string(),
-        ToolCallDisplayStatus::Succeeded => goal
+    if tool_call.status == ToolCallDisplayStatus::Succeeded {
+        return goal
             .as_deref()
             .map(|g| format!("Plan mode · {g}"))
-            .unwrap_or_else(|| "Entered plan mode".to_string()),
-        ToolCallDisplayStatus::Failed => "Plan mode entry failed".to_string(),
+            .unwrap_or_else(|| "Entered plan mode".to_string());
     }
+    status_label(
+        tool_call.status,
+        "Enter plan mode",
+        "Entering plan mode...",
+        "Entered plan mode",
+        "Plan mode entry failed",
+    )
+    .to_string()
 }
 
 pub(super) fn plan_exit_tool_title(tool_call: &ToolCallEntry) -> String {
-    match tool_call.status {
-        ToolCallDisplayStatus::PendingPermission | ToolCallDisplayStatus::Queued => {
-            "Exit plan mode".to_string()
-        }
-        ToolCallDisplayStatus::Running => "Exiting plan mode...".to_string(),
-        ToolCallDisplayStatus::Succeeded => "Exited plan mode".to_string(),
-        ToolCallDisplayStatus::Failed => "Plan mode exit failed".to_string(),
-    }
+    status_label(
+        tool_call.status,
+        "Exit plan mode",
+        "Exiting plan mode...",
+        "Exited plan mode",
+        "Plan mode exit failed",
+    )
+    .to_string()
 }
 
 pub(super) fn invalid_tool_title(tool_call: &ToolCallEntry) -> String {

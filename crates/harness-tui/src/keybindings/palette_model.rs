@@ -1,3 +1,4 @@
+// allow: SIZE_OK — keybinding data and command registry (palette entries)
 //! Opencode-compatible palette command model.
 //!
 //! Each entry uses a stable Opencode command ID as the contract key.

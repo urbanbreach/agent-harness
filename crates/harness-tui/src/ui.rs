@@ -1,3 +1,4 @@
+// allow: SIZE_OK — TUI UI rendering (widget layout + wheel target + render dispatch)
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -95,7 +96,7 @@ use ui_chrome::{
     compact_inline_payload, display_width, elevated_card_surface, interruptive_modal_block,
     live_transcript_shell_section, muted_meta_style, panel_block, panel_style, render_footer,
     render_header, render_unified_bottom_dock, runtime_state_color, status_badge,
-    subdued_payload_style, take_width_prefix, truncate_plain_text, ChromeFrame,
+    take_width_prefix, truncate_plain_text, ChromeFrame,
 };
 #[cfg(test)]
 pub(crate) use ui_chrome::{

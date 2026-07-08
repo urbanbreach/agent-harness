@@ -327,7 +327,7 @@ pub(super) fn assistant_markdown_renders_headings_lists_and_quotes() {
         1,
         Some("req_markdown"),
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_markdown".to_string(),
+            request_id: "req_markdown".into(),
             provider_id: "openai".to_string(),
             model_id: "gpt-5-codex".to_string(),
             prompt_summary: "Render markdown".to_string(),
@@ -339,7 +339,7 @@ pub(super) fn assistant_markdown_renders_headings_lists_and_quotes() {
         2,
         Some("req_markdown"),
         EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
-            request_id: "req_markdown".to_string(),
+            request_id: "req_markdown".into(),
             delta: "# Plan\n- [x] Capture transcript parity\n- [ ] Ship final polish\n> Keep the chrome muted".to_string(),
         }),
     ));
@@ -347,7 +347,7 @@ pub(super) fn assistant_markdown_renders_headings_lists_and_quotes() {
         3,
         Some("req_markdown"),
         EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
-            request_id: "req_markdown".to_string(),
+            request_id: "req_markdown".into(),
             finish_reason: "stop".to_string(),
             output_digest: Some("digest-markdown-finished".to_string()),
             usage: None,
@@ -386,7 +386,7 @@ pub(super) fn assistant_markdown_tables_match_reference_top_level_columns() {
         1,
         Some("req_markdown_table"),
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_markdown_table".to_string(),
+            request_id: "req_markdown_table".into(),
             provider_id: "openai".to_string(),
             model_id: "gpt-5-codex".to_string(),
             prompt_summary: "Render markdown table".to_string(),
@@ -398,7 +398,7 @@ pub(super) fn assistant_markdown_tables_match_reference_top_level_columns() {
         2,
         Some("req_markdown_table"),
         EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
-            request_id: "req_markdown_table".to_string(),
+            request_id: "req_markdown_table".into(),
             delta: "| Name | Age |\n|---|---|\n| Alice | 30 |\n| Bob | 5 |".to_string(),
         }),
     ));
@@ -406,7 +406,7 @@ pub(super) fn assistant_markdown_tables_match_reference_top_level_columns() {
         3,
         Some("req_markdown_table"),
         EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
-            request_id: "req_markdown_table".to_string(),
+            request_id: "req_markdown_table".into(),
             finish_reason: "stop".to_string(),
             output_digest: Some("digest-markdown-table-finished".to_string()),
             usage: None,
@@ -442,7 +442,7 @@ pub(super) fn block_style_tool_rows_render_titles_and_argument_blocks() {
         1,
         Some("req_shell"),
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_shell".to_string(),
+            request_id: "req_shell".into(),
             provider_id: "openai".to_string(),
             model_id: "gpt-5-codex".to_string(),
             prompt_summary: "Run the suite".to_string(),
@@ -454,7 +454,7 @@ pub(super) fn block_style_tool_rows_render_titles_and_argument_blocks() {
         2,
         Some("req_shell"),
         EventV1::ToolCallRequested(ToolCallRequestedEvent {
-            tool_call_id: "tc_shell".to_string(),
+            tool_call_id: "tc_shell".into(),
             tool_id: "shell.run".to_string(),
             args_summary: r#"{"cmd":"cargo test -p harness-tui","cwd":"/tmp/demo"}"#.to_string(),
             args_digest: "digest-shell-args".to_string(),
@@ -465,14 +465,14 @@ pub(super) fn block_style_tool_rows_render_titles_and_argument_blocks() {
         3,
         Some("req_shell"),
         EventV1::ToolCallStarted(ToolCallStartedEvent {
-            tool_call_id: "tc_shell".to_string(),
+            tool_call_id: "tc_shell".into(),
         }),
     ));
     app.ingest_event(envelope(
         4,
         Some("req_shell"),
         EventV1::ToolCallFinished(ToolCallFinishedEvent {
-            tool_call_id: "tc_shell".to_string(),
+            tool_call_id: "tc_shell".into(),
             status: ToolCallStatus::Failed,
             output_summary: Some("exit code: 1\nstderr: snapshot mismatch".to_string()),
             output_digest: None,
@@ -519,7 +519,7 @@ pub(super) fn generic_tool_output_toggle_reveals_block_payload() {
         1,
         Some("req_generic_tool"),
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_generic_tool".to_string(),
+            request_id: "req_generic_tool".into(),
             provider_id: "openai".to_string(),
             model_id: "gpt-5-codex".to_string(),
             prompt_summary: "Inspect generic tool output".to_string(),
@@ -531,7 +531,7 @@ pub(super) fn generic_tool_output_toggle_reveals_block_payload() {
         2,
         Some("req_generic_tool"),
         EventV1::ToolCallRequested(ToolCallRequestedEvent {
-            tool_call_id: "tc_generic_tool".to_string(),
+            tool_call_id: "tc_generic_tool".into(),
             tool_id: "background.cancel".to_string(),
             args_summary: r#"{"taskId":"bg_123"}"#.to_string(),
             args_digest: "digest-generic-tool-args".to_string(),
@@ -541,7 +541,7 @@ pub(super) fn generic_tool_output_toggle_reveals_block_payload() {
     app.ingest_event(envelope(
         3,
         Some("req_generic_tool"),
-        EventV1::ToolCallFinished(ToolCallFinishedEvent { tool_call_id: "tc_generic_tool".to_string(),
+        EventV1::ToolCallFinished(ToolCallFinishedEvent { tool_call_id: "tc_generic_tool".into(),
         status: ToolCallStatus::Succeeded,
         output_summary: Some(
             "cancelled background task\nstatus: complete\ntask: bg_123\nsource: palette\nresult: ok"

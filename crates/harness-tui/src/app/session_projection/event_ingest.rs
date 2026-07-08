@@ -1,3 +1,4 @@
+// allow: SIZE_OK — TUI app state (session projection + interaction)
 use super::*;
 
 impl SessionProjection {
@@ -17,7 +18,7 @@ impl SessionProjection {
                         request_digest: data.request_digest.clone(),
                         timeout_ms: data.timeout_ms,
                         default_decision: data.default_decision,
-                        tool_call_id: data.tool_call_id.clone(),
+                        tool_call_id: data.tool_call_id.as_ref().map(|id| id.to_string()),
                     },
                 );
                 self.attach_permission_request(event);
@@ -53,11 +54,11 @@ impl SessionProjection {
                 }
             }
             EventV1::UserMessageSubmitted(data) => {
-                self.note_child_agent_request(event, &data.request_id);
+                self.note_child_agent_request(event, data.request_id.as_str());
                 if let Some(index) = self.activity_index_for_user_message(data, event.seq) {
                     let status = if self.activities.iter().any(|activity| {
                         activity.status == ActivityStatus::Streaming
-                            && activity.request_id != data.request_id
+                            && activity.request_id != data.request_id.as_str()
                     }) {
                         ActivityStatus::Queued
                     } else {
@@ -85,7 +86,7 @@ impl SessionProjection {
                     };
                     self.activities.push_back(new_streaming_activity_entry(
                         NewStreamingActivityEntryArgs {
-                            request_id: data.request_id.clone(),
+                            request_id: data.request_id.to_string(),
                             profile_label: self.profile_label_for_event(event),
                             model_id: String::new(),
                             provider_id: String::new(),
@@ -103,8 +104,8 @@ impl SessionProjection {
                 }
             }
             EventV1::ProviderRequestStarted(data) => {
-                self.note_child_agent_request(event, &data.request_id);
-                let turn_id = Self::canonical_provider_turn_id(event, &data.request_id);
+                self.note_child_agent_request(event, data.request_id.as_str());
+                let turn_id = Self::canonical_provider_turn_id(event, data.request_id.as_str());
                 self.note_child_agent_request(event, turn_id);
                 for row in self.orchestration_tasks.values_mut() {
                     if row.effective_child_request_id() == Some(turn_id)
@@ -123,7 +124,7 @@ impl SessionProjection {
                         row.last_timestamp = event.ts.clone();
                     }
                 }
-                if let Some(index) = self.activity_index_for_provider_event(event, &data.request_id)
+                if let Some(index) = self.activity_index_for_provider_event(event, data.request_id.as_str())
                 {
                     let profile_label = self.profile_label_for_event(event);
                     if let Some(entry) = self.activities.get_mut(index) {
@@ -154,10 +155,10 @@ impl SessionProjection {
                 }
             }
             EventV1::ProviderStreamDelta(data) => {
-                self.note_child_agent_request(event, &data.request_id);
-                let turn_id = Self::canonical_provider_turn_id(event, &data.request_id);
+                self.note_child_agent_request(event, data.request_id.as_str());
+                let turn_id = Self::canonical_provider_turn_id(event, data.request_id.as_str());
                 self.note_child_agent_request(event, turn_id);
-                if let Some(index) = self.activity_index_for_provider_event(event, &data.request_id)
+                if let Some(index) = self.activity_index_for_provider_event(event, data.request_id.as_str())
                 {
                     if let Some(entry) = self.activities.get_mut(index) {
                         entry.status = ActivityStatus::Streaming;
@@ -184,10 +185,10 @@ impl SessionProjection {
                 self.enforce_transcript_memory_cap();
             }
             EventV1::ProviderReasoningDelta(data) => {
-                self.note_child_agent_request(event, &data.request_id);
-                let turn_id = Self::canonical_provider_turn_id(event, &data.request_id);
+                self.note_child_agent_request(event, data.request_id.as_str());
+                let turn_id = Self::canonical_provider_turn_id(event, data.request_id.as_str());
                 self.note_child_agent_request(event, turn_id);
-                if let Some(index) = self.activity_index_for_provider_event(event, &data.request_id)
+                if let Some(index) = self.activity_index_for_provider_event(event, data.request_id.as_str())
                 {
                     if let Some(entry) = self.activities.get_mut(index) {
                         entry.status = ActivityStatus::Streaming;
@@ -218,11 +219,11 @@ impl SessionProjection {
                 self.enforce_transcript_memory_cap();
             }
             EventV1::ProviderRequestFinished(data) => {
-                self.note_child_agent_request(event, &data.request_id);
-                let turn_id = Self::canonical_provider_turn_id(event, &data.request_id);
+                self.note_child_agent_request(event, data.request_id.as_str());
+                let turn_id = Self::canonical_provider_turn_id(event, data.request_id.as_str());
                 self.note_child_agent_request(event, turn_id);
                 let provider_error_detail = provider_error_detail(data);
-                if let Some(index) = self.activity_index_for_provider_event(event, &data.request_id)
+                if let Some(index) = self.activity_index_for_provider_event(event, data.request_id.as_str())
                 {
                     let should_mark_done = !self.has_active_turn_task_for_request(turn_id);
                     if let Some(entry) = self.activities.get_mut(index) {
@@ -335,8 +336,8 @@ impl SessionProjection {
                 });
             }
             EventV1::TaskCompleted(data) => {
-                let should_mark_done = self.is_turn_level_task_completion(&data.task_id, data);
-                self.update_orchestration_task(event, &data.task_id, |row| {
+                let should_mark_done = self.is_turn_level_task_completion(data.task_id.as_str(), data);
+                self.update_orchestration_task(event, data.task_id.as_str(), |row| {
                     row.state = OrchestrationTaskState::Completed;
                     row.warning = None;
                     row.result_summary = Some(data.result_summary.clone());
@@ -383,7 +384,7 @@ impl SessionProjection {
                         }
                     }
                 }
-                self.update_orchestration_task(event, &data.task_id, |row| {
+                self.update_orchestration_task(event, data.task_id.as_str(), |row| {
                     if let Some(queue_key) = data.queue_key.as_ref() {
                         row.queue_key = Some(queue_key.clone());
                     }
@@ -402,8 +403,8 @@ impl SessionProjection {
                 });
             }
             EventV1::TaskCancelled(data) => {
-                let should_mark_error = self.is_turn_level_task_cancellation(&data.task_id, data);
-                self.update_orchestration_task(event, &data.task_id, |row| {
+                let should_mark_error = self.is_turn_level_task_cancellation(data.task_id.as_str(), data);
+                self.update_orchestration_task(event, data.task_id.as_str(), |row| {
                     row.state = OrchestrationTaskState::Cancelled;
                     row.warning = non_empty_preserved_string(&data.reason);
                 });
@@ -430,14 +431,14 @@ impl SessionProjection {
                 }
             }
             EventV1::TaskResultLate(data) => {
-                self.update_orchestration_task(event, &data.task_id, |row| {
+                self.update_orchestration_task(event, data.task_id.as_str(), |row| {
                     row.state = OrchestrationTaskState::LateResult;
                     row.warning = Some("late result after stale cancellation".to_string());
                 });
             }
             EventV1::BackgroundTaskNotification(data) => {
-                self.update_orchestration_task(event, &data.task_id, |row| {
-                    row.child_session_id = Some(data.child_session_id.clone());
+                self.update_orchestration_task(event, data.task_id.as_str(), |row| {
+                    row.child_session_id = Some(data.child_session_id.to_string());
                     row.child_request_id = Some(data.child_request_id.clone());
                     row.result_summary = non_empty_preserved_string(&data.summary);
                     row.state = match data.status {
@@ -462,7 +463,7 @@ impl SessionProjection {
                 self.ensure_background_notification_activity(event, data);
             }
             EventV1::StaleDetected(data) => {
-                self.update_orchestration_task(event, &data.task_id, |row| {
+                self.update_orchestration_task(event, data.task_id.as_str(), |row| {
                     row.state = OrchestrationTaskState::Stale;
                     row.warning = Some(format!("stale for {} ms", data.stale_for_ms));
                 });
@@ -496,7 +497,7 @@ impl SessionProjection {
                         entry.bump_revision();
                     }
                     let tool_entry = ToolCallEntry {
-                        tool_call_id: data.tool_call_id.clone(),
+                        tool_call_id: data.tool_call_id.to_string(),
                         tool_id: data.tool_id.clone(),
                         canonical_tool_id: None,
                         alias_source_tool_id: None,
@@ -537,7 +538,7 @@ impl SessionProjection {
                 self.note_child_task_tool_call(event, data);
             }
             EventV1::ToolCallStarted(data) => {
-                if let Some(tool_entry) = self.find_tool_call_mut(&data.tool_call_id) {
+                if let Some(tool_entry) = self.find_tool_call_mut(data.tool_call_id.as_str()) {
                     tool_entry.lifecycle_state =
                         Some(harness_core::event::ToolCallLifecycleState::Running);
                     tool_entry.sync_display_status();
@@ -547,7 +548,7 @@ impl SessionProjection {
                 }
             }
             EventV1::ToolCallFinished(data) => {
-                if let Some(tool_entry) = self.find_tool_call_mut(&data.tool_call_id) {
+                if let Some(tool_entry) = self.find_tool_call_mut(data.tool_call_id.as_str()) {
                     tool_entry.lifecycle_state = Some(
                         harness_core::event::ToolCallLifecycleState::from_finish_status(
                             data.status,

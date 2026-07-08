@@ -13,7 +13,7 @@ pub(crate) fn keyboard_sidebar_subagent_selection_opens_child_session() {
         2,
         "req_parent",
         EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-            request_id: "req_parent".to_string(),
+            request_id: "req_parent".into(),
             text: "Start parent work".to_string(),
         }),
     ));
@@ -31,7 +31,7 @@ pub(crate) fn keyboard_sidebar_subagent_selection_opens_child_session() {
         "req_child",
         EventActor::new(ActorKind::Worker, Some("agent_child".to_string())),
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_child".to_string(),
+            request_id: "req_child".into(),
             provider_id: "default".to_string(),
             model_id: "model-child".to_string(),
             prompt_summary: "inspect child".to_string(),
@@ -87,7 +87,7 @@ pub(crate) fn live_subagent_hitbox_uses_rendered_transcript_area() {
         2,
         "req_parent",
         EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-            request_id: "req_parent".to_string(),
+            request_id: "req_parent".into(),
             text: "Start parent work".to_string(),
         }),
     ));
@@ -145,7 +145,7 @@ pub(crate) fn disk_backed_child_navigation_stays_in_live_tui_stack() {
             4,
             "req_1",
             EventV1::TaskScheduled(TaskScheduledEvent {
-                task_id: "task_000001".to_string(),
+                task_id: "task_000001".to_string().into(),
                 state: TaskScheduleState::Started,
                 queue_key: None,
             }),

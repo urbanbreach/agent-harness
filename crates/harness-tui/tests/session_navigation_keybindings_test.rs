@@ -17,7 +17,7 @@ fn envelope(seq: u64, request_id: &str, payload: EventV1) -> EventEnvelopeV1 {
         schema_version: SCHEMA_VERSION,
         event_id: format!("evt_session_nav_{seq:04}"),
         seq,
-        run_id: "run_session_nav_tests".to_string(),
+        run_id: "run_session_nav_tests".into(),
         mono_ms: seq,
         ts: Some("2026-02-03T12:00:00Z".to_string()),
         actor: EventActor::new(ActorKind::System, Some("session-nav-tests".to_string())),
@@ -67,7 +67,7 @@ fn run_started(seq: u64) -> EventEnvelopeV1 {
         seq,
         "req_run_started",
         EventV1::RunStarted(RunStartedEvent {
-            run_name: "interactive".to_string(),
+            run_name: "interactive".into(),
             workspace_root: "/tmp/workspace".to_string(),
         }),
     )
@@ -90,7 +90,7 @@ fn provider_started(seq: u64, request_id: &str, provider: &str, model: &str) -> 
         seq,
         request_id,
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: request_id.to_string(),
+            request_id: request_id.into(),
             provider_id: provider.to_string(),
             model_id: model.to_string(),
             prompt_summary: "prompt summary".to_string(),
@@ -111,7 +111,7 @@ fn child_link_requested(
         seq,
         request_id,
         EventV1::ToolCallRequested(ToolCallRequestedEvent {
-            tool_call_id: tool_call_id.to_string(),
+            tool_call_id: tool_call_id.into(),
             tool_id: "agent.spawn".to_string(),
             args_summary: "{}".to_string(),
             args_digest: format!("digest-{tool_call_id}"),
@@ -284,11 +284,11 @@ fn child_session_navigation_keybinds_follow_default_contract() {
         intents.lock().unwrap_or_abort().as_slice(),
         &[
             UiIntent::ReplaySession {
-                run_id: "parent".to_string(),
+                run_id: "parent".into(),
                 run_dir: parent_dir.clone(),
             },
             UiIntent::ReplaySession {
-                run_id: "child_a".to_string(),
+                run_id: "child_a".into(),
                 run_dir: child_a_dir,
             },
         ]

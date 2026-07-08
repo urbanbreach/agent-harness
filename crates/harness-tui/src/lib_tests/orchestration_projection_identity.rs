@@ -22,7 +22,7 @@ pub(super) fn orchestration_projection_resolves_owner_labels() {
             Some("agent_worker".to_string()),
         ),
         harness_core::event::EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
-            task_id: "task_worker".to_string(),
+            task_id: "task_worker".to_string().into(),
             state: harness_core::event::TaskScheduleState::Queued,
             queue_key: Some("agent:queued".to_string()),
         }),
@@ -32,7 +32,7 @@ pub(super) fn orchestration_projection_resolves_owner_labels() {
         None,
         harness_core::event::EventActor::new(harness_core::event::ActorKind::Supervisor, None),
         harness_core::event::EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
-            task_id: "task_supervisor".to_string(),
+            task_id: "task_supervisor".to_string().into(),
             state: harness_core::event::TaskScheduleState::Started,
             queue_key: Some("agent:supervisor".to_string()),
         }),
@@ -45,7 +45,7 @@ pub(super) fn orchestration_projection_resolves_owner_labels() {
             Some("coordinator".to_string()),
         ),
         harness_core::event::EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
-            task_id: "task_system".to_string(),
+            task_id: "task_system".to_string().into(),
             state: harness_core::event::TaskScheduleState::Queued,
             queue_key: Some("tool:shell.run".to_string()),
         }),
@@ -127,7 +127,7 @@ pub(super) fn orchestration_projection_ignores_duplicate_seq_events() {
             Some("agent_worker".to_string()),
         ),
         harness_core::event::EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
-            task_id: "task_dup".to_string(),
+            task_id: "task_dup".to_string().into(),
             state: harness_core::event::TaskScheduleState::Started,
             queue_key: Some("agent:running".to_string()),
         }),
@@ -140,7 +140,7 @@ pub(super) fn orchestration_projection_ignores_duplicate_seq_events() {
             Some("agent_worker".to_string()),
         ),
         harness_core::event::EventV1::StaleDetected(harness_core::event::StaleDetectedEvent {
-            task_id: "task_dup".to_string(),
+            task_id: "task_dup".to_string().into(),
             stale_for_ms: 3001,
         }),
     ));
@@ -181,7 +181,7 @@ pub(super) fn orchestration_projection_ignores_duplicate_seq_events() {
             Some("agent_worker".to_string()),
         ),
         harness_core::event::EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
-            task_id: "task_dup".to_string(),
+            task_id: "task_dup".to_string().into(),
             state: harness_core::event::TaskScheduleState::Queued,
             queue_key: Some("agent:queued".to_string()),
         }),
@@ -194,7 +194,7 @@ pub(super) fn orchestration_projection_ignores_duplicate_seq_events() {
             Some("agent_worker".to_string()),
         ),
         harness_core::event::EventV1::StaleDetected(harness_core::event::StaleDetectedEvent {
-            task_id: "task_dup".to_string(),
+            task_id: "task_dup".to_string().into(),
             stale_for_ms: 9999,
         }),
     ));
@@ -234,11 +234,11 @@ pub(super) fn orchestration_projection_preserves_background_notification_termina
         Some("background_task_notification:req_failed"),
         harness_core::event::EventV1::BackgroundTaskNotification(
             harness_core::event::BackgroundTaskNotificationEvent {
-                parent_session_id: "agent_parent".to_string(),
+                parent_session_id: "agent_parent".into(),
                 parent_agent_id: Some("agent_parent".to_string()),
-                child_session_id: "agent_failed".to_string(),
+                child_session_id: "agent_failed".into(),
                 child_request_id: "req_failed".to_string(),
-                task_id: "task_failed".to_string(),
+                task_id: "task_failed".to_string().into(),
                 description: "failed child".to_string(),
                 status: harness_core::event::BackgroundTaskNotificationStatus::Failed,
                 summary: "provider failed closed".to_string(),
@@ -253,11 +253,11 @@ pub(super) fn orchestration_projection_preserves_background_notification_termina
         Some("background_task_notification:req_timeout"),
         harness_core::event::EventV1::BackgroundTaskNotification(
             harness_core::event::BackgroundTaskNotificationEvent {
-                parent_session_id: "agent_parent".to_string(),
+                parent_session_id: "agent_parent".into(),
                 parent_agent_id: Some("agent_parent".to_string()),
-                child_session_id: "agent_timeout".to_string(),
+                child_session_id: "agent_timeout".into(),
                 child_request_id: "req_timeout".to_string(),
-                task_id: "task_timeout".to_string(),
+                task_id: "task_timeout".to_string().into(),
                 description: "timed out child".to_string(),
                 status: harness_core::event::BackgroundTaskNotificationStatus::TimedOut,
                 summary: "child timed out".to_string(),
@@ -307,11 +307,11 @@ pub(super) fn background_notification_projects_chat_reminder_without_duplicate_u
         Some("background_task_notification:req_child"),
         harness_core::event::EventV1::BackgroundTaskNotification(
             harness_core::event::BackgroundTaskNotificationEvent {
-                parent_session_id: "agent_parent".to_string(),
+                parent_session_id: "agent_parent".into(),
                 parent_agent_id: Some("agent_parent".to_string()),
-                child_session_id: "agent_child".to_string(),
+                child_session_id: "agent_child".into(),
                 child_request_id: "req_child".to_string(),
-                task_id: "agent_child".to_string(),
+                task_id: "agent_child".to_string().into(),
                 description: "summarize README \u{1b}]52;c;secret\u{7}".to_string(),
                 status: harness_core::event::BackgroundTaskNotificationStatus::Completed,
                 summary: r#"{"sessionId":"term-1","cols":80,"token":"secret"}"#.to_string(),
@@ -347,7 +347,7 @@ pub(super) fn background_notification_projects_chat_reminder_without_duplicate_u
         Some("req_parent_wakeup"),
         harness_core::event::EventV1::UserMessageSubmitted(
             harness_core::event::UserMessageSubmittedEvent {
-                request_id: "req_parent_wakeup".to_string(),
+                request_id: "req_parent_wakeup".into(),
                 text: "<system-reminder>canonical coordinator wakeup</system-reminder>".to_string(),
             },
         ),
@@ -373,7 +373,7 @@ pub(super) fn background_notification_projects_chat_reminder_without_duplicate_u
         ),
         harness_core::event::EventV1::ProviderRequestStarted(
             harness_core::event::ProviderRequestStartedEvent {
-                request_id: "req_parent_wakeup".to_string(),
+                request_id: "req_parent_wakeup".into(),
                 provider_id: "default".to_string(),
                 model_id: "gpt-5.4-mini".to_string(),
                 prompt_summary: "canonical coordinator wakeup".to_string(),
@@ -415,7 +415,7 @@ pub(super) fn operator_sidebar_shows_running_child_turn_before_task_tool_finishe
             Some("agent_child".to_string()),
         ),
         harness_core::event::EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
-            task_id: "task_child_turn".to_string(),
+            task_id: "task_child_turn".to_string().into(),
             state: harness_core::event::TaskScheduleState::Started,
             queue_key: Some("provider_model:mock:model-1".to_string()),
         }),
@@ -429,7 +429,7 @@ pub(super) fn operator_sidebar_shows_running_child_turn_before_task_tool_finishe
         ),
         harness_core::event::EventV1::ProviderRequestStarted(
             harness_core::event::ProviderRequestStartedEvent {
-                request_id: "req_child".to_string(),
+                request_id: "req_child".into(),
                 provider_id: "mock".to_string(),
                 model_id: "model-1".to_string(),
                 prompt_summary: "inspect task behavior".to_string(),

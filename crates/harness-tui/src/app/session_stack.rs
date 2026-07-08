@@ -1,3 +1,4 @@
+// allow: SIZE_OK — TUI app state (session projection + interaction)
 use crate::UnwrapOrAbort;
 use std::collections::BTreeSet;
 use std::fs;
@@ -243,12 +244,12 @@ impl AppState {
         set_pending_live_prompt_draft(Some(self.composer.prompt_buffer.clone()));
         if resume_plan.is_resumable {
             self.emit_ui_intent(UiIntent::ContinueSession {
-                run_id: session_id,
+                run_id: session_id.clone(),
                 run_dir: session_path,
             });
         } else {
             self.emit_ui_intent(UiIntent::ReplaySession {
-                run_id: session_id,
+                run_id: session_id.clone(),
                 run_dir: session_path,
             });
         }
@@ -623,7 +624,7 @@ mod tests {
             schema_version: harness_core::event::SCHEMA_VERSION,
             event_id: format!("evt_subagent_nav_{seq:04}"),
             seq,
-            run_id: "parent_run".to_string(),
+            run_id: "parent_run".into(),
             mono_ms: seq * 100,
             ts: Some(format!("2026-03-22T14:36:{seq:02}Z")),
             actor,
@@ -643,7 +644,7 @@ mod tests {
             Some("req_parent"),
             actor(harness_core::event::ActorKind::User, "interactive-user"),
             EventV1::UserMessageSubmitted(harness_core::event::UserMessageSubmittedEvent {
-                request_id: "req_parent".to_string(),
+                request_id: "req_parent".into(),
                 text: "Audit transcript parity".to_string(),
             }),
         ));
@@ -652,7 +653,7 @@ mod tests {
             Some("req_parent"),
             actor(harness_core::event::ActorKind::Worker, "agent_parent"),
             EventV1::ProviderRequestStarted(harness_core::event::ProviderRequestStartedEvent {
-                request_id: "req_parent".to_string(),
+                request_id: "req_parent".into(),
                 provider_id: "default".to_string(),
                 model_id: "model-1".to_string(),
                 prompt_summary: "Audit transcript parity".to_string(),
@@ -665,7 +666,7 @@ mod tests {
             Some("req_parent"),
             actor(harness_core::event::ActorKind::System, "coordinator"),
             EventV1::ToolCallRequested(harness_core::event::ToolCallRequestedEvent {
-                tool_call_id: "tc_task".to_string(),
+                tool_call_id: "tc_task".into(),
                 tool_id: "task".to_string(),
                 args_summary:
                     r#"{"description":"map chat renderers","subagent_type":"sisyphus-junior"}"#
@@ -699,7 +700,7 @@ mod tests {
             Some("req_child"),
             actor(harness_core::event::ActorKind::Worker, "agent_worker"),
             EventV1::ProviderRequestStarted(harness_core::event::ProviderRequestStartedEvent {
-                request_id: "req_child".to_string(),
+                request_id: "req_child".into(),
                 provider_id: "default".to_string(),
                 model_id: "model-1".to_string(),
                 prompt_summary: "map chat renderers".to_string(),
@@ -730,7 +731,7 @@ mod tests {
                 Some("req_parent"),
                 actor(harness_core::event::ActorKind::System, "coordinator"),
                 EventV1::ToolCallRequested(harness_core::event::ToolCallRequestedEvent {
-                    tool_call_id: "toolcall_000001".to_string(),
+                    tool_call_id: "toolcall_000001".into(),
                     tool_id: "task".to_string(),
                     args_summary:
                         r#"{"description":"map chat renderers","subagent_type":"researcher"}"#
@@ -765,7 +766,7 @@ mod tests {
             Some("req_parent"),
             actor(harness_core::event::ActorKind::System, "coordinator"),
             EventV1::ToolCallRequested(harness_core::event::ToolCallRequestedEvent {
-                tool_call_id: "tc_task".to_string(),
+                tool_call_id: "tc_task".into(),
                 tool_id: "task".to_string(),
                 args_summary: r#"{"description":"map chat renderers"}"#.to_string(),
                 args_digest: "digest-task-call".to_string(),

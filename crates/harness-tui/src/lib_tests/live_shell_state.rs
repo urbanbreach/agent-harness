@@ -142,7 +142,7 @@ pub(super) fn live_state_matrix_preserves_shell_structure() {
         Some("req_streaming_matrix"),
         harness_core::event::EventV1::ProviderRequestStarted(
             harness_core::event::ProviderRequestStartedEvent {
-                request_id: "req_streaming_matrix".to_string(),
+                request_id: "req_streaming_matrix".into(),
                 provider_id: "openai".to_string(),
                 model_id: "gpt-5-codex".to_string(),
                 prompt_summary: "streaming".to_string(),
@@ -156,7 +156,7 @@ pub(super) fn live_state_matrix_preserves_shell_structure() {
         Some("req_streaming_matrix"),
         harness_core::event::EventV1::ProviderStreamDelta(
             harness_core::event::ProviderStreamDeltaEvent {
-                request_id: "req_streaming_matrix".to_string(),
+                request_id: "req_streaming_matrix".into(),
                 delta: "partial output".to_string(),
             },
         ),

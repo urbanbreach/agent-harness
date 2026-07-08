@@ -292,7 +292,7 @@ fn sidebar_render_events() -> Vec<EventEnvelopeV1> {
             1,
             Some(request_id),
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "deterministic-sidebar".to_string(),
+                run_name: "deterministic-sidebar".into(),
                 workspace_root: "/tmp/workspace".to_string(),
             }),
         ),
@@ -300,7 +300,7 @@ fn sidebar_render_events() -> Vec<EventEnvelopeV1> {
             2,
             Some(request_id),
             EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-                request_id: request_id.to_string(),
+                request_id: request_id.into(),
                 text: "Inspect deterministic sidebar".to_string(),
             }),
         ),
@@ -308,7 +308,7 @@ fn sidebar_render_events() -> Vec<EventEnvelopeV1> {
             3,
             Some(request_id),
             EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                request_id: request_id.to_string(),
+                request_id: request_id.into(),
                 provider_id: "openai".to_string(),
                 model_id: "gpt-5.4-mini".to_string(),
                 prompt_summary: "Inspect deterministic sidebar".to_string(),
@@ -320,7 +320,7 @@ fn sidebar_render_events() -> Vec<EventEnvelopeV1> {
             4,
             Some(request_id),
             EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
-                request_id: request_id.to_string(),
+                request_id: request_id.into(),
                 delta: "Assistant verified the rendered shell.".to_string(),
             }),
         ),
@@ -334,7 +334,7 @@ fn sidebar_render_events() -> Vec<EventEnvelopeV1> {
             6,
             Some(request_id),
             EventV1::ToolCallStarted(ToolCallStartedEvent {
-                tool_call_id: "tool_call_search".to_string(),
+                tool_call_id: "tool_call_search".into(),
             }),
         ),
         tool_finished(
@@ -357,7 +357,7 @@ fn sidebar_render_events() -> Vec<EventEnvelopeV1> {
             9,
             Some(request_id),
             EventV1::ToolCallStarted(ToolCallStartedEvent {
-                tool_call_id: "tool_call_lsp".to_string(),
+                tool_call_id: "tool_call_lsp".into(),
             }),
         ),
         tool_finished(
@@ -381,7 +381,7 @@ fn sidebar_render_events() -> Vec<EventEnvelopeV1> {
             12,
             Some(request_id),
             EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
-                request_id: request_id.to_string(),
+                request_id: request_id.into(),
                 finish_reason: "stop".to_string(),
                 output_digest: Some("digest-sidebar-output".to_string()),
                 usage: None,
@@ -401,7 +401,7 @@ fn tool_requested(
         seq,
         Some("req_sidebar_det"),
         EventV1::ToolCallRequested(ToolCallRequestedEvent {
-            tool_call_id: tool_call_id.to_string(),
+            tool_call_id: tool_call_id.into(),
             tool_id: tool_id.to_string(),
             args_summary,
             args_digest: format!("digest-{tool_call_id}"),
@@ -423,7 +423,7 @@ fn tool_finished(
         seq,
         Some("req_sidebar_det"),
         EventV1::ToolCallFinished(ToolCallFinishedEvent {
-            tool_call_id: tool_call_id.to_string(),
+            tool_call_id: tool_call_id.into(),
             status: ToolCallStatus::Succeeded,
             output_summary: Some(output_summary.to_string()),
             output_digest: Some(format!("digest-{tool_call_id}-output")),
@@ -447,7 +447,7 @@ fn permission_requested_event(
         EventV1::PermissionRequested(PermissionRequestedEvent {
             permission_id: permission_id.to_string(),
             kind: "edit_fs".to_string(),
-            tool_call_id: Some(tool_call_id.to_string()),
+            tool_call_id: Some(tool_call_id.into()),
             summary: "Apply hashline edit to demo.txt".to_string(),
             request_digest: "digest-perm-det".to_string(),
             timeout_ms: 30_000,
@@ -467,7 +467,7 @@ fn question_permission_requested_event(
         EventV1::PermissionRequested(PermissionRequestedEvent {
             permission_id: permission_id.to_string(),
             kind: "question".to_string(),
-            tool_call_id: Some(tool_call_id.to_string()),
+            tool_call_id: Some(tool_call_id.into()),
             summary: serde_json::json!({
                 "questions": [{
                     "question": "Pick one",
@@ -490,7 +490,7 @@ fn replay_events() -> Vec<EventEnvelopeV1> {
             1,
             Some("run_fixture"),
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "replay-fixture".to_string(),
+                run_name: "replay-fixture".into(),
                 workspace_root: "/tmp/workspace".to_string(),
             }),
         ),
@@ -510,7 +510,7 @@ fn replay_failed_events() -> Vec<EventEnvelopeV1> {
             1,
             Some("run_fixture"),
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "replay-failed-fixture".to_string(),
+                run_name: "replay-failed-fixture".into(),
                 workspace_root: "/tmp/workspace".to_string(),
             }),
         ),
@@ -529,7 +529,7 @@ fn startup_session_history_entries() -> Vec<harness_tui::app::SessionHistoryEntr
         harness_tui::app::SessionHistoryEntry {
             run_dir: PathBuf::from("/tmp/sessions/run_resume"),
             catalog: SessionCatalogEntry {
-                run_id: "run_resume".to_string(),
+                run_id: "run_resume".into(),
                 run_name: Some("alpha-run".to_string()),
                 status: Some(RunStatus::Finished),
                 last_updated_at: Some("2026-03-08T12:34:56Z".to_string()),
@@ -547,7 +547,7 @@ fn startup_session_history_entries() -> Vec<harness_tui::app::SessionHistoryEntr
         harness_tui::app::SessionHistoryEntry {
             run_dir: PathBuf::from("/tmp/sessions/run_blocked"),
             catalog: SessionCatalogEntry {
-                run_id: "run_blocked".to_string(),
+                run_id: "run_blocked".into(),
                 run_name: Some("beta-blocked".to_string()),
                 status: Some(RunStatus::Running),
                 last_updated_at: Some("2026-03-07T03:21:00Z".to_string()),
@@ -570,7 +570,7 @@ fn envelope(seq: u64, correlation_id: Option<&str>, payload: EventV1) -> EventEn
         schema_version: SCHEMA_VERSION,
         event_id: format!("evt-det-{seq:04}"),
         seq,
-        run_id: "run_fixture".to_string(),
+        run_id: "run_fixture".into(),
         mono_ms: seq,
         ts: None,
         actor: EventActor::new(ActorKind::System, Some("deterministic-render".to_string())),

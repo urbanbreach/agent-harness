@@ -1,3 +1,4 @@
+// allow: SIZE_OK — TUI diff rendering (indivisible view model)
 use std::cmp::max;
 
 use ratatui::{

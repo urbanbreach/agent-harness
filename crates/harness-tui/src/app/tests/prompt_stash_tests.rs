@@ -195,7 +195,7 @@ pub(super) fn queued_prompt_count_tracks_queued_activities() {
         1,
         "req_active",
         EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-            request_id: "req_active".to_string(),
+            request_id: "req_active".into(),
             text: "active".to_string(),
         }),
     ));
@@ -203,7 +203,7 @@ pub(super) fn queued_prompt_count_tracks_queued_activities() {
         2,
         "req_active",
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_active".to_string(),
+            request_id: "req_active".into(),
             provider_id: "default".to_string(),
             model_id: "gpt-5.4-mini".to_string(),
             prompt_summary: "active".to_string(),
@@ -215,7 +215,7 @@ pub(super) fn queued_prompt_count_tracks_queued_activities() {
         3,
         "req_queued",
         EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-            request_id: "req_queued".to_string(),
+            request_id: "req_queued".into(),
             text: "queued".to_string(),
         }),
     ));
@@ -223,7 +223,7 @@ pub(super) fn queued_prompt_count_tracks_queued_activities() {
         4,
         "req_queued",
         EventV1::TaskScheduled(TaskScheduledEvent {
-            task_id: "task_queued".to_string(),
+            task_id: "task_queued".to_string().into(),
             state: TaskScheduleState::Queued,
             queue_key: Some("provider_model:default:gpt-5.4-mini".to_string()),
         }),
@@ -235,7 +235,7 @@ pub(super) fn queued_prompt_count_tracks_queued_activities() {
         5,
         "req_queued",
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_queued".to_string(),
+            request_id: "req_queued".into(),
             provider_id: "default".to_string(),
             model_id: "gpt-5.4-mini".to_string(),
             prompt_summary: "queued".to_string(),
@@ -253,7 +253,7 @@ pub(super) fn queued_prompt_indicator_renders_when_count_positive() {
         1,
         "req_active",
         EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-            request_id: "req_active".to_string(),
+            request_id: "req_active".into(),
             text: "active".to_string(),
         }),
     ));
@@ -261,7 +261,7 @@ pub(super) fn queued_prompt_indicator_renders_when_count_positive() {
         2,
         "req_active",
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_active".to_string(),
+            request_id: "req_active".into(),
             provider_id: "default".to_string(),
             model_id: "gpt-5.4-mini".to_string(),
             prompt_summary: "active".to_string(),
@@ -273,7 +273,7 @@ pub(super) fn queued_prompt_indicator_renders_when_count_positive() {
         3,
         "req_queued",
         EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-            request_id: "req_queued".to_string(),
+            request_id: "req_queued".into(),
             text: "queued".to_string(),
         }),
     ));
@@ -281,7 +281,7 @@ pub(super) fn queued_prompt_indicator_renders_when_count_positive() {
         4,
         "req_queued",
         EventV1::TaskScheduled(TaskScheduledEvent {
-            task_id: "task_queued".to_string(),
+            task_id: "task_queued".to_string().into(),
             state: TaskScheduleState::Queued,
             queue_key: Some("provider_model:default:gpt-5.4-mini".to_string()),
         }),

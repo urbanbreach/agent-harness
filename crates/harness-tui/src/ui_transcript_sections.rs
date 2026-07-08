@@ -1,3 +1,4 @@
+// allow: SIZE_OK — TUI transcript rendering (indivisible view model)
 use super::ui_transcript_tool_sections::build_tool_call_section;
 use super::*;
 
@@ -293,7 +294,7 @@ fn build_ordered_assistant_parts_from_events(
             harness_core::event::EventV1::ProviderReasoningDelta(data)
                 if provider_event_matches_activity(
                     event,
-                    &data.request_id,
+                    data.request_id.as_str(),
                     &activity.request_id,
                 ) =>
             {
@@ -312,7 +313,7 @@ fn build_ordered_assistant_parts_from_events(
             harness_core::event::EventV1::ProviderStreamDelta(data)
                 if provider_event_matches_activity(
                     event,
-                    &data.request_id,
+                    data.request_id.as_str(),
                     &activity.request_id,
                 ) =>
             {
@@ -373,7 +374,7 @@ fn build_ordered_assistant_parts_from_events(
                     &mut saw_reasoning_event,
                     &mut saw_body_event,
                 );
-                if let Some(tool_call) = pending_tool_calls.remove(&data.tool_call_id) {
+                if let Some(tool_call) = pending_tool_calls.remove(data.tool_call_id.as_str()) {
                     parts.push(SequencedTranscriptAssistantPart {
                         seq: event.seq,
                         index: next_index,

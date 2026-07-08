@@ -1,3 +1,4 @@
+// allow: SIZE_OK — keybinding data and command registry (palette entries)
 //! Command and palette registries for TUI keybindings.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

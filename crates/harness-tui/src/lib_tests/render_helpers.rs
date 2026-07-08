@@ -463,7 +463,7 @@ pub(crate) fn transcript_turn_group_test_activity(
         provider_id: "openai".to_string(),
         status,
         user_message: user_text.map(|text| harness_core::event::UserMessageSubmittedEvent {
-            request_id: request_id.to_string(),
+            request_id: request_id.into(),
             text: text.to_string(),
         }),
         user_timestamp: None,

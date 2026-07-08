@@ -12,7 +12,7 @@ pub(crate) fn tool_lifecycle_events() -> Vec<EventEnvelopeV1> {
             1,
             Some(request_id),
             EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-                request_id: request_id.to_string(),
+                request_id: request_id.into(),
                 text: "Inspect tool activity".to_string(),
             }),
         ),
@@ -20,7 +20,7 @@ pub(crate) fn tool_lifecycle_events() -> Vec<EventEnvelopeV1> {
             2,
             Some(request_id),
             EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                request_id: request_id.to_string(),
+                request_id: request_id.into(),
                 provider_id: "mock".to_string(),
                 model_id: "model-1".to_string(),
                 prompt_summary: "Inspect tool activity".to_string(),
@@ -152,7 +152,7 @@ pub(crate) fn tool_lifecycle_events() -> Vec<EventEnvelopeV1> {
             17,
             Some(request_id),
             EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
-                request_id: request_id.to_string(),
+                request_id: request_id.into(),
                 delta: "Tool summaries are now easier to scan, and edits stay inline.".to_string(),
             }),
         ),
@@ -160,7 +160,7 @@ pub(crate) fn tool_lifecycle_events() -> Vec<EventEnvelopeV1> {
             18,
             Some(request_id),
             EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
-                request_id: request_id.to_string(),
+                request_id: request_id.into(),
                 finish_reason: "stop".to_string(),
                 output_digest: Some("digest-tool-lifecycle-response".to_string()),
                 usage: None,
@@ -182,7 +182,7 @@ fn lifecycle_tool_requested(
         seq,
         Some(request_id),
         EventV1::ToolCallRequested(ToolCallRequestedEvent {
-            tool_call_id: tool_call_id.to_string(),
+            tool_call_id: tool_call_id.into(),
             tool_id: tool_id.to_string(),
             args_summary: args_summary.to_string(),
             args_digest: format!("digest-{tool_call_id}-args"),
@@ -196,7 +196,7 @@ fn lifecycle_tool_started(seq: u64, request_id: &str, tool_call_id: &str) -> Eve
         seq,
         Some(request_id),
         EventV1::ToolCallStarted(ToolCallStartedEvent {
-            tool_call_id: tool_call_id.to_string(),
+            tool_call_id: tool_call_id.into(),
         }),
     )
 }
@@ -214,7 +214,7 @@ fn lifecycle_tool_finished(
         seq,
         Some(request_id),
         EventV1::ToolCallFinished(ToolCallFinishedEvent {
-            tool_call_id: tool_call_id.to_string(),
+            tool_call_id: tool_call_id.into(),
             status,
             output_summary: output_summary.map(str::to_string),
             output_digest: Some(format!("digest-{tool_call_id}-output")),
@@ -239,7 +239,7 @@ fn envelope(seq: u64, correlation_id: Option<&str>, payload: EventV1) -> EventEn
         schema_version: SCHEMA_VERSION,
         event_id: format!("evt-tool-lifecycle-{seq:04}"),
         seq,
-        run_id: "run_fixture".to_string(),
+        run_id: "run_fixture".into(),
         mono_ms: seq,
         ts: None,
         actor: EventActor::new(ActorKind::System, Some("deterministic-render".to_string())),

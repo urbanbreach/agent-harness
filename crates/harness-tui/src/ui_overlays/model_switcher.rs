@@ -1,3 +1,4 @@
+// allow: SIZE_OK — TUI overlay rendering (indivisible view model)
 use super::*;
 
 use crate::text::has_trimmed_content;

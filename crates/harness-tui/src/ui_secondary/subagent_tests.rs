@@ -11,7 +11,7 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
         "req_subagents",
         harness_core::event::EventV1::UserMessageSubmitted(
             harness_core::event::UserMessageSubmittedEvent {
-                request_id: "req_subagents".to_string(),
+                request_id: "req_subagents".into(),
                 text: "Delegate the investigation".to_string(),
             },
         ),
@@ -22,7 +22,7 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
         "req_subagents",
         harness_core::event::EventV1::ToolCallRequested(
             harness_core::event::ToolCallRequestedEvent {
-                tool_call_id: "tool_call_task_running".to_string(),
+                tool_call_id: "tool_call_task_running".into(),
                 tool_id: "task".to_string(),
                 args_summary: serde_json::json!({
                     "description": "inspect README and summarize task background behavior in three bullets",
@@ -39,7 +39,7 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
         harness_core::event::EventActor::new(harness_core::event::ActorKind::Worker, None),
         "req_subagents",
         harness_core::event::EventV1::ToolCallStarted(harness_core::event::ToolCallStartedEvent {
-            tool_call_id: "tool_call_task_running".to_string(),
+            tool_call_id: "tool_call_task_running".into(),
         }),
     ));
     app.ingest_event(operator_rail_test_event_with_correlation(
@@ -48,7 +48,7 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
         "req_subagents",
         harness_core::event::EventV1::ToolCallRequested(
             harness_core::event::ToolCallRequestedEvent {
-                tool_call_id: "tool_call_task_explore_done".to_string(),
+                tool_call_id: "tool_call_task_explore_done".into(),
                 tool_id: "task".to_string(),
                 args_summary: serde_json::json!({
                     "description": "cross-check docs",
@@ -66,7 +66,7 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
         "req_subagents",
         harness_core::event::EventV1::ToolCallFinished(
             harness_core::event::ToolCallFinishedEvent {
-                tool_call_id: "tool_call_task_explore_done".to_string(),
+                tool_call_id: "tool_call_task_explore_done".into(),
                 status: harness_core::event::ToolCallStatus::Succeeded,
                 output_summary: Some("Task Result: cross-check docs".to_string()),
                 output_digest: Some("digest-task-explore-done-output".to_string()),
@@ -81,7 +81,7 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
         "req_subagents",
         harness_core::event::EventV1::ToolCallRequested(
             harness_core::event::ToolCallRequestedEvent {
-                tool_call_id: "tool_call_task_done".to_string(),
+                tool_call_id: "tool_call_task_done".into(),
                 tool_id: "task".to_string(),
                 args_summary: serde_json::json!({
                     "description": "summary",
@@ -98,7 +98,7 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
         harness_core::event::EventActor::new(harness_core::event::ActorKind::Worker, None),
         "req_subagents",
         harness_core::event::EventV1::TaskCompleted(harness_core::event::TaskCompletedEvent {
-            task_id: "task_done".to_string(),
+            task_id: "task_done".to_string().into(),
             result_summary: "summarized an intentionally long repository behavior report"
                 .to_string(),
             result_digest: "digest-done".to_string(),
@@ -111,7 +111,7 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
         "req_subagents",
         harness_core::event::EventV1::ToolCallFinished(
             harness_core::event::ToolCallFinishedEvent {
-                tool_call_id: "tool_call_task_done".to_string(),
+                tool_call_id: "tool_call_task_done".into(),
                 status: harness_core::event::ToolCallStatus::Succeeded,
                 output_summary: Some("Task Result: summary".to_string()),
                 output_digest: Some("digest-task-done-output".to_string()),
@@ -126,7 +126,7 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
         "req_subagents",
         harness_core::event::EventV1::ToolCallRequested(
             harness_core::event::ToolCallRequestedEvent {
-                tool_call_id: "tool_call_task_failed".to_string(),
+                tool_call_id: "tool_call_task_failed".into(),
                 tool_id: "task".to_string(),
                 args_summary: serde_json::json!({
                     "description": "cancelled",
@@ -144,7 +144,7 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
         "req_subagents",
         harness_core::event::EventV1::ToolCallFinished(
             harness_core::event::ToolCallFinishedEvent {
-                tool_call_id: "tool_call_task_failed".to_string(),
+                tool_call_id: "tool_call_task_failed".into(),
                 status: harness_core::event::ToolCallStatus::Failed,
                 output_summary: Some("operator cancelled".to_string()),
                 output_digest: Some("digest-task-failed-output".to_string()),
@@ -159,7 +159,7 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
         "req_subagents",
         harness_core::event::EventV1::ToolCallRequested(
             harness_core::event::ToolCallRequestedEvent {
-                tool_call_id: "tool_call_task_wrapped_child".to_string(),
+                tool_call_id: "tool_call_task_wrapped_child".into(),
                 tool_id: "task".to_string(),
                 args_summary: serde_json::json!({
                     "description": "open wrapped child session after reviewing enough sidebar text to wrap cleanly",
@@ -177,7 +177,7 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
         "req_subagents",
         harness_core::event::EventV1::ToolCallFinished(
             harness_core::event::ToolCallFinishedEvent {
-                tool_call_id: "tool_call_task_wrapped_child".to_string(),
+                tool_call_id: "tool_call_task_wrapped_child".into(),
                 status: harness_core::event::ToolCallStatus::Succeeded,
                 output_summary: Some("Task Result: wrapped child".to_string()),
                 output_digest: Some("digest-task-wrapped-child-output".to_string()),
@@ -195,7 +195,7 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
         harness_core::event::EventActor::new(harness_core::event::ActorKind::System, None),
         "req_subagents",
         harness_core::event::EventV1::RunStarted(harness_core::event::RunStartedEvent {
-            run_name: "subagent sidebar".to_string(),
+            run_name: "subagent sidebar".into(),
             workspace_root: "/tmp/subagent-sidebar-footer".to_string(),
         }),
     ));
@@ -204,7 +204,7 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
         harness_core::event::EventActor::new(harness_core::event::ActorKind::Worker, None),
         "req_orphan_running",
         harness_core::event::EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
-            task_id: "task_orphan_running".to_string(),
+            task_id: "task_orphan_running".to_string().into(),
             state: harness_core::event::TaskScheduleState::Started,
             queue_key: Some("agent:running:orphan".to_string()),
         }),
@@ -214,7 +214,7 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
         harness_core::event::EventActor::new(harness_core::event::ActorKind::Worker, None),
         "req_orphan_queued",
         harness_core::event::EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
-            task_id: "task_orphan_queued".to_string(),
+            task_id: "task_orphan_queued".to_string().into(),
             state: harness_core::event::TaskScheduleState::Queued,
             queue_key: Some("agent:queued:queued".to_string()),
         }),
@@ -450,7 +450,7 @@ pub(crate) fn exact_test_operator_rail_marks_background_subagent_terminal_from_n
         "req_background_parent",
         harness_core::event::EventV1::UserMessageSubmitted(
             harness_core::event::UserMessageSubmittedEvent {
-                request_id: "req_background_parent".to_string(),
+                request_id: "req_background_parent".into(),
                 text: "Start a background subagent".to_string(),
             },
         ),
@@ -461,7 +461,7 @@ pub(crate) fn exact_test_operator_rail_marks_background_subagent_terminal_from_n
         "req_background_parent",
         harness_core::event::EventV1::ToolCallRequested(
             harness_core::event::ToolCallRequestedEvent {
-                tool_call_id: "tool_call_background_task".to_string(),
+                tool_call_id: "tool_call_background_task".into(),
                 tool_id: "task".to_string(),
                 args_summary: serde_json::json!({
                     "description": "summarize README",
@@ -479,7 +479,7 @@ pub(crate) fn exact_test_operator_rail_marks_background_subagent_terminal_from_n
         "req_background_parent",
         harness_core::event::EventV1::ToolCallFinished(
             harness_core::event::ToolCallFinishedEvent {
-                tool_call_id: "tool_call_background_task".to_string(),
+                tool_call_id: "tool_call_background_task".into(),
                 status: harness_core::event::ToolCallStatus::Succeeded,
                 output_summary: Some("Background task scheduled".to_string()),
                 output_digest: Some("digest-background-task-output".to_string()),
@@ -504,11 +504,11 @@ pub(crate) fn exact_test_operator_rail_marks_background_subagent_terminal_from_n
         "background_task_notification:req_child",
         harness_core::event::EventV1::BackgroundTaskNotification(
             harness_core::event::BackgroundTaskNotificationEvent {
-                parent_session_id: "run_fixture".to_string(),
+                parent_session_id: "run_fixture".into(),
                 parent_agent_id: Some("agent_parent".to_string()),
-                child_session_id: "agent_child".to_string(),
+                child_session_id: "agent_child".into(),
                 child_request_id: "req_child".to_string(),
-                task_id: "agent_child".to_string(),
+                task_id: "agent_child".to_string().into(),
                 description: "summarize README".to_string(),
                 status: harness_core::event::BackgroundTaskNotificationStatus::Completed,
                 summary: "README summarized".to_string(),
@@ -534,7 +534,7 @@ pub(crate) fn exact_test_operator_rail_uses_simple_subagent_task_labels() {
         "req_simple_subagents",
         harness_core::event::EventV1::UserMessageSubmitted(
             harness_core::event::UserMessageSubmittedEvent {
-                request_id: "req_simple_subagents".to_string(),
+                request_id: "req_simple_subagents".into(),
                 text: "Run several subagents".to_string(),
             },
         ),
@@ -545,7 +545,7 @@ pub(crate) fn exact_test_operator_rail_uses_simple_subagent_task_labels() {
         "req_simple_subagents",
         harness_core::event::EventV1::ToolCallRequested(
             harness_core::event::ToolCallRequestedEvent {
-                tool_call_id: "tool_call_explore_background".to_string(),
+                tool_call_id: "tool_call_explore_background".into(),
                 tool_id: "task".to_string(),
                 args_summary: serde_json::json!({
                     "description": "Delegation context from parent: - investigate everything and return a detailed report",
@@ -564,7 +564,7 @@ pub(crate) fn exact_test_operator_rail_uses_simple_subagent_task_labels() {
         "req_simple_subagents",
         harness_core::event::EventV1::ToolCallFinished(
             harness_core::event::ToolCallFinishedEvent {
-                tool_call_id: "tool_call_explore_background".to_string(),
+                tool_call_id: "tool_call_explore_background".into(),
                 status: harness_core::event::ToolCallStatus::Succeeded,
                 output_summary: Some("Background task scheduled".to_string()),
                 output_digest: Some("digest-explore-background-output".to_string()),
@@ -585,11 +585,11 @@ pub(crate) fn exact_test_operator_rail_uses_simple_subagent_task_labels() {
         "background_task_notification:req_explore",
         harness_core::event::EventV1::BackgroundTaskNotification(
             harness_core::event::BackgroundTaskNotificationEvent {
-                parent_session_id: "run_fixture".to_string(),
+                parent_session_id: "run_fixture".into(),
                 parent_agent_id: Some("agent_parent".to_string()),
-                child_session_id: "agent_explore".to_string(),
+                child_session_id: "agent_explore".into(),
                 child_request_id: "req_explore".to_string(),
-                task_id: "agent_explore".to_string(),
+                task_id: "agent_explore".to_string().into(),
                 description: "Delegation context from parent: - investigate everything".to_string(),
                 status: harness_core::event::BackgroundTaskNotificationStatus::Completed,
                 summary: "{\"sessionId\":\"term-1\",\"cols\":80}".to_string(),
@@ -619,7 +619,7 @@ pub(crate) fn exact_test_operator_rail_uses_simple_subagent_task_labels() {
             "req_simple_subagents",
             harness_core::event::EventV1::ToolCallRequested(
                 harness_core::event::ToolCallRequestedEvent {
-                    tool_call_id: tool_call_id.to_string(),
+                    tool_call_id: tool_call_id.into(),
                     tool_id: "task".to_string(),
                     args_summary: serde_json::json!({
                         "description": "Use remote repositories and official docs; return references",
@@ -638,7 +638,7 @@ pub(crate) fn exact_test_operator_rail_uses_simple_subagent_task_labels() {
             "req_simple_subagents",
             harness_core::event::EventV1::ToolCallFinished(
                 harness_core::event::ToolCallFinishedEvent {
-                    tool_call_id: tool_call_id.to_string(),
+                    tool_call_id: tool_call_id.into(),
                     status: harness_core::event::ToolCallStatus::Succeeded,
                     output_summary: Some("Background task scheduled".to_string()),
                     output_digest: Some(format!("digest-{tool_call_id}-output")),
@@ -659,11 +659,11 @@ pub(crate) fn exact_test_operator_rail_uses_simple_subagent_task_labels() {
             &format!("background_task_notification:{request_id}"),
             harness_core::event::EventV1::BackgroundTaskNotification(
                 harness_core::event::BackgroundTaskNotificationEvent {
-                    parent_session_id: "run_fixture".to_string(),
+                    parent_session_id: "run_fixture".into(),
                     parent_agent_id: Some("agent_parent".to_string()),
-                    child_session_id: format!("agent_{request_id}"),
+                    child_session_id: format!("agent_{request_id}").into(),
                     child_request_id: request_id.to_string(),
-                    task_id: format!("agent_{request_id}"),
+                    task_id: format!("agent_{request_id}").into(),
                     description: "Use remote repositories and official docs".to_string(),
                     status,
                     summary: "remote search finished".to_string(),
@@ -724,11 +724,11 @@ pub(crate) fn exact_test_operator_rail_shows_wakeup_report_without_task_tool_row
         "background_task_notification:req_child",
         harness_core::event::EventV1::BackgroundTaskNotification(
             harness_core::event::BackgroundTaskNotificationEvent {
-                parent_session_id: "run_fixture".to_string(),
+                parent_session_id: "run_fixture".into(),
                 parent_agent_id: Some("agent_parent".to_string()),
-                child_session_id: "agent_child".to_string(),
+                child_session_id: "agent_child".into(),
                 child_request_id: "req_child".to_string(),
-                task_id: "task_child".to_string(),
+                task_id: "task_child".to_string().into(),
                 description: "Inspect sidebar wakeup".to_string(),
                 status: harness_core::event::BackgroundTaskNotificationStatus::Completed,
                 summary: "Wakeup report finished".to_string(),
@@ -764,11 +764,11 @@ pub(crate) fn exact_test_operator_rail_shows_replay_wakeup_report_without_task_t
             "background_task_notification:req_child",
             harness_core::event::EventV1::BackgroundTaskNotification(
                 harness_core::event::BackgroundTaskNotificationEvent {
-                    parent_session_id: "run_fixture".to_string(),
+                    parent_session_id: "run_fixture".into(),
                     parent_agent_id: Some("agent_parent".to_string()),
-                    child_session_id: "agent_child".to_string(),
+                    child_session_id: "agent_child".into(),
                     child_request_id: "req_child".to_string(),
-                    task_id: "task_child".to_string(),
+                    task_id: "task_child".to_string().into(),
                     description: "Inspect replay sidebar wakeup".to_string(),
                     status: harness_core::event::BackgroundTaskNotificationStatus::Completed,
                     summary: "Replay wakeup report finished".to_string(),
@@ -796,7 +796,7 @@ pub(crate) fn exact_test_operator_rail_keeps_subagents_visible_in_replay() {
             "req_replay_subagent",
             harness_core::event::EventV1::UserMessageSubmitted(
                 harness_core::event::UserMessageSubmittedEvent {
-                    request_id: "req_replay_subagent".to_string(),
+                    request_id: "req_replay_subagent".into(),
                     text: "Review replay sidebar parity".to_string(),
                 },
             ),
@@ -807,7 +807,7 @@ pub(crate) fn exact_test_operator_rail_keeps_subagents_visible_in_replay() {
             "req_replay_subagent",
             harness_core::event::EventV1::ToolCallRequested(
                 harness_core::event::ToolCallRequestedEvent {
-                    tool_call_id: "tool_call_replay_subagent".to_string(),
+                    tool_call_id: "tool_call_replay_subagent".into(),
                     tool_id: "task".to_string(),
                     args_summary: serde_json::json!({
                         "description": "audit replay subagent sidebar",
@@ -831,7 +831,7 @@ pub(crate) fn exact_test_operator_rail_keeps_subagents_visible_in_replay() {
             "req_replay_subagent",
             harness_core::event::EventV1::ToolCallFinished(
                 harness_core::event::ToolCallFinishedEvent {
-                    tool_call_id: "tool_call_replay_subagent".to_string(),
+                    tool_call_id: "tool_call_replay_subagent".into(),
                     status: harness_core::event::ToolCallStatus::Succeeded,
                     output_summary: Some("Replay sidebar audited".to_string()),
                     output_digest: Some("digest-replay-subagent-output".to_string()),

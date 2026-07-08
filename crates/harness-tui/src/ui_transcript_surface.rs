@@ -1,3 +1,4 @@
+// allow: SIZE_OK — TUI transcript rendering (indivisible view model)
 use ratatui::{
     layout::Rect,
     style::{Color, Style},
@@ -181,7 +182,7 @@ pub(super) fn append_prebuilt_nested_surface_lines(
     let prefix = nested_surface_prefix(indent, rail_color, surface);
     let prefix_width = nested_surface_prefix_width(indent);
     for line in prebuilt {
-        lines.push(nested_surface_line(
+        lines.push(surface_line(
             prefix.clone(),
             prefix_width,
             line.spans,
@@ -392,7 +393,7 @@ pub(super) fn append_nested_surface_row(
     let wrapped_rows = wrap_surface_spans(content_spans, content_width);
 
     if wrapped_rows.is_empty() {
-        lines.push(nested_surface_line(
+        lines.push(surface_line(
             prefix,
             prefix_width,
             Vec::new(),
@@ -403,7 +404,7 @@ pub(super) fn append_nested_surface_row(
     }
 
     for row in wrapped_rows {
-        lines.push(nested_surface_line(
+        lines.push(surface_line(
             prefix.clone(),
             prefix_width,
             row,
@@ -428,29 +429,6 @@ fn nested_surface_prefix(indent: &str, rail_color: Color, surface: Color) -> Vec
 
 pub(super) fn nested_surface_prefix_width(indent: &str) -> usize {
     display_width(indent) + display_width(TRANSCRIPT_RAIL_GLYPH) + 1
-}
-
-fn nested_surface_line(
-    mut prefix: Vec<Span<'static>>,
-    prefix_width: usize,
-    content_spans: Vec<Span<'static>>,
-    width: u16,
-    surface: Color,
-) -> Line<'static> {
-    let mut visible_width = prefix_width;
-    for span in content_spans {
-        visible_width += span.width();
-        prefix.push(surface_span(span.content.into_owned(), span.style, surface));
-    }
-    let remaining = usize::from(width).saturating_sub(visible_width);
-    if remaining > 0 {
-        prefix.push(surface_span(
-            " ".repeat(remaining),
-            Style::default(),
-            surface,
-        ));
-    }
-    Line::from(prefix)
 }
 
 pub(super) fn wrap_surface_spans(

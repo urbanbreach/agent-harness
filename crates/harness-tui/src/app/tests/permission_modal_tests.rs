@@ -20,7 +20,7 @@ pub(super) fn overlay_stack_orders_details_palette_permission() {
         EventV1::PermissionRequested(PermissionRequestedEvent {
             permission_id: "perm_overlay_stack".to_string(),
             kind: "edit_fs".to_string(),
-            tool_call_id: Some("tc_overlay_stack".to_string()),
+            tool_call_id: Some("tc_overlay_stack".into()),
             summary: "permission summary".to_string(),
             request_digest: "digest-overlay-stack".to_string(),
             timeout_ms: 30_000,
@@ -60,7 +60,7 @@ pub(super) fn permission_modal_preempts_palette() {
         EventV1::PermissionRequested(PermissionRequestedEvent {
             permission_id: "perm_overlay_preempt".to_string(),
             kind: "edit_fs".to_string(),
-            tool_call_id: Some("tc_overlay_preempt".to_string()),
+            tool_call_id: Some("tc_overlay_preempt".into()),
             summary: "permission summary".to_string(),
             request_digest: "digest-overlay-preempt".to_string(),
             timeout_ms: 30_000,
@@ -109,7 +109,7 @@ pub(super) fn permission_modal_ignores_unmapped_chars_without_buffering() {
         EventV1::PermissionRequested(PermissionRequestedEvent {
             permission_id: "perm_modal_quit".to_string(),
             kind: "edit_fs".to_string(),
-            tool_call_id: Some("tc_modal_quit".to_string()),
+            tool_call_id: Some("tc_modal_quit".into()),
             summary: "permission summary".to_string(),
             request_digest: "digest-modal-quit".to_string(),
             timeout_ms: 30_000,
@@ -142,7 +142,7 @@ pub(super) fn permission_modal_escape_rejects_without_hiding_pending_permission(
         EventV1::PermissionRequested(PermissionRequestedEvent {
             permission_id: "perm_modal_escape".to_string(),
             kind: "edit_fs".to_string(),
-            tool_call_id: Some("tc_modal_escape".to_string()),
+            tool_call_id: Some("tc_modal_escape".into()),
             summary: "permission summary".to_string(),
             request_digest: "digest-modal-escape".to_string(),
             timeout_ms: 30_000,
@@ -187,7 +187,7 @@ pub(super) fn permission_modal_ctrl_n_emits_deny_intent_without_hiding_pending_p
         EventV1::PermissionRequested(PermissionRequestedEvent {
             permission_id: "perm_modal_ctrl_n".to_string(),
             kind: "edit_fs".to_string(),
-            tool_call_id: Some("tc_modal_ctrl_n".to_string()),
+            tool_call_id: Some("tc_modal_ctrl_n".into()),
             summary: "permission summary".to_string(),
             request_digest: "digest-modal-ctrl-n".to_string(),
             timeout_ms: 30_000,
@@ -235,7 +235,7 @@ pub(super) fn question_permission_modal_collects_answers_and_emits_reason_payloa
         EventV1::PermissionRequested(PermissionRequestedEvent {
             permission_id: "perm_question_modal".to_string(),
             kind: "question".to_string(),
-            tool_call_id: Some("tc_question_modal".to_string()),
+            tool_call_id: Some("tc_question_modal".into()),
             summary: serde_json::json!({
                 "questions": [{
                     "question": "Pick one",
@@ -279,7 +279,7 @@ pub(super) fn question_permission_modal_multi_question_uses_tabs_before_submit()
         EventV1::PermissionRequested(PermissionRequestedEvent {
             permission_id: "perm_question_tabs".to_string(),
             kind: "question".to_string(),
-            tool_call_id: Some("tc_question_tabs".to_string()),
+            tool_call_id: Some("tc_question_tabs".into()),
             summary: serde_json::json!({
                 "questions": [
                     {
@@ -326,7 +326,7 @@ pub(super) fn question_modal_ignores_digits_past_visible_choices() {
         EventV1::PermissionRequested(PermissionRequestedEvent {
             permission_id: "perm_question_digit_bounds".to_string(),
             kind: "question".to_string(),
-            tool_call_id: Some("tool_call_question_digit_bounds".to_string()),
+            tool_call_id: Some("tool_call_question_digit_bounds".into()),
             summary: serde_json::json!({
                 "questions": [{
                     "question": "Pick one",
@@ -369,7 +369,7 @@ pub(super) fn question_modal_multi_custom_selection_toggles_saved_custom_answer(
         EventV1::PermissionRequested(PermissionRequestedEvent {
             permission_id: "perm_question_multi_custom".to_string(),
             kind: "question".to_string(),
-            tool_call_id: Some("tool_call_question_multi_custom".to_string()),
+            tool_call_id: Some("tool_call_question_multi_custom".into()),
             summary: serde_json::json!({
                 "questions": [{
                     "question": "Pick any",
@@ -419,7 +419,7 @@ pub(super) fn question_modal_submit_allows_unanswered_questions_on_confirm() {
         EventV1::PermissionRequested(PermissionRequestedEvent {
             permission_id: "perm_question_partial_submit".to_string(),
             kind: "question".to_string(),
-            tool_call_id: Some("tool_call_question_partial_submit".to_string()),
+            tool_call_id: Some("tool_call_question_partial_submit".into()),
             summary: serde_json::json!({
                 "questions": [
                     {
@@ -474,7 +474,7 @@ pub(super) fn permission_modal_allow_always_requests_durable_run_grant() {
         EventV1::PermissionRequested(PermissionRequestedEvent {
             permission_id: "perm_modal_allow_always_1".to_string(),
             kind: "edit_fs".to_string(),
-            tool_call_id: Some("tc_modal_allow_always_1".to_string()),
+            tool_call_id: Some("tc_modal_allow_always_1".into()),
             summary: "permission summary".to_string(),
             request_digest: "digest-modal-allow-always".to_string(),
             timeout_ms: 30_000,

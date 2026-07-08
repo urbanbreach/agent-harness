@@ -16,7 +16,7 @@ pub(super) fn child_task_requested_for_evidence(
         seq,
         "req_parent",
         EventV1::ToolCallRequested(ToolCallRequestedEvent {
-            tool_call_id: tool_call_id.to_string(),
+            tool_call_id: tool_call_id.into(),
             tool_id: "task".to_string(),
             args_summary: serde_json::json!({
                 "description": description,
@@ -55,7 +55,7 @@ pub(super) fn run_started(seq: u64) -> EventEnvelopeV1 {
         seq,
         "run",
         EventV1::RunStarted(RunStartedEvent {
-            run_name: "opencode-subagent-parity".to_string(),
+            run_name: "opencode-subagent-parity".into(),
             workspace_root: "inline-harness-parity".to_string(),
         }),
     )

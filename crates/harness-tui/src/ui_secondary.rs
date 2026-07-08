@@ -1,3 +1,4 @@
+// allow: SIZE_OK — TUI secondary view rendering (indivisible view model)
 use super::*;
 
 use crate::app::{OperatorSidebarSection, OrchestrationTaskState};

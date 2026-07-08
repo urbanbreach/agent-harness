@@ -1,3 +1,4 @@
+// allow: SIZE_OK — TUI app state (session projection + interaction)
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::AppState;

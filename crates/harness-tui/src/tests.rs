@@ -237,7 +237,7 @@ fn sample_replay_events() -> Vec<EventEnvelopeV1> {
             1,
             None,
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "replay-run".to_string(),
+                run_name: "replay-run".into(),
                 workspace_root: "/tmp/workspace".to_string(),
             }),
         ),
@@ -257,7 +257,7 @@ fn sample_live_events() -> Vec<EventEnvelopeV1> {
             1,
             None,
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "live-run".to_string(),
+                run_name: "live-run".into(),
                 workspace_root: "/tmp/workspace".to_string(),
             }),
         ),
@@ -265,7 +265,7 @@ fn sample_live_events() -> Vec<EventEnvelopeV1> {
             2,
             Some("req_1"),
             EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                request_id: "req_1".to_string(),
+                request_id: "req_1".into(),
                 provider_id: "mock".to_string(),
                 model_id: "model-1".to_string(),
                 prompt_summary: "summarized prompt".to_string(),
@@ -277,7 +277,7 @@ fn sample_live_events() -> Vec<EventEnvelopeV1> {
             3,
             Some("req_1"),
             EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
-                request_id: "req_1".to_string(),
+                request_id: "req_1".into(),
                 delta: "hello ".to_string(),
             }),
         ),
@@ -285,7 +285,7 @@ fn sample_live_events() -> Vec<EventEnvelopeV1> {
             4,
             Some("req_1"),
             EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
-                request_id: "req_1".to_string(),
+                request_id: "req_1".into(),
                 delta: "world".to_string(),
             }),
         ),
@@ -293,7 +293,7 @@ fn sample_live_events() -> Vec<EventEnvelopeV1> {
             5,
             Some("req_1"),
             EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
-                request_id: "req_1".to_string(),
+                request_id: "req_1".into(),
                 finish_reason: "stop".to_string(),
                 output_digest: Some("digest-output".to_string()),
                 usage: None,
@@ -329,7 +329,7 @@ fn sample_tool_spacing_events() -> Vec<EventEnvelopeV1> {
             1,
             None,
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "tool-spacing".to_string(),
+                run_name: "tool-spacing".into(),
                 workspace_root: "/tmp/workspace".to_string(),
             }),
         ),
@@ -337,7 +337,7 @@ fn sample_tool_spacing_events() -> Vec<EventEnvelopeV1> {
             2,
             Some("req_spacing"),
             EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-                request_id: "req_spacing".to_string(),
+                request_id: "req_spacing".into(),
                 text: "Match harness tool spacing".to_string(),
             }),
         ),
@@ -345,7 +345,7 @@ fn sample_tool_spacing_events() -> Vec<EventEnvelopeV1> {
             3,
             Some("req_spacing"),
             EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                request_id: "req_spacing".to_string(),
+                request_id: "req_spacing".into(),
                 provider_id: "openai".to_string(),
                 model_id: "gpt-5-codex".to_string(),
                 prompt_summary: "Match harness tool spacing".to_string(),
@@ -357,7 +357,7 @@ fn sample_tool_spacing_events() -> Vec<EventEnvelopeV1> {
             4,
             Some("req_spacing"),
             EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                tool_call_id: "tc_read_spacing".to_string(),
+                tool_call_id: "tc_read_spacing".into(),
                 tool_id: "fs.read".to_string(),
                 args_summary: r#"{"path":"src/ui_transcript.rs"}"#.to_string(),
                 args_digest: "digest-read-spacing".to_string(),
@@ -368,7 +368,7 @@ fn sample_tool_spacing_events() -> Vec<EventEnvelopeV1> {
             5,
             Some("req_spacing"),
             EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                tool_call_id: "tc_read_spacing".to_string(),
+                tool_call_id: "tc_read_spacing".into(),
                 status: ToolCallStatus::Succeeded,
                 output_summary: Some("24 lines read".to_string()),
                 output_digest: Some("digest-read-output".to_string()),
@@ -380,7 +380,7 @@ fn sample_tool_spacing_events() -> Vec<EventEnvelopeV1> {
             6,
             Some("req_spacing"),
             EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                tool_call_id: "tc_glob_spacing".to_string(),
+                tool_call_id: "tc_glob_spacing".into(),
                 tool_id: "fs.glob".to_string(),
                 args_summary: r#"{"pattern":"src/**/*.rs","path":"."}"#.to_string(),
                 args_digest: "digest-glob-spacing".to_string(),
@@ -391,7 +391,7 @@ fn sample_tool_spacing_events() -> Vec<EventEnvelopeV1> {
             7,
             Some("req_spacing"),
             EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                tool_call_id: "tc_glob_spacing".to_string(),
+                tool_call_id: "tc_glob_spacing".into(),
                 status: ToolCallStatus::Succeeded,
                 output_summary: Some("4 files".to_string()),
                 output_digest: Some("digest-glob-output".to_string()),
@@ -403,7 +403,7 @@ fn sample_tool_spacing_events() -> Vec<EventEnvelopeV1> {
             8,
             Some("req_spacing"),
             EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                tool_call_id: "tc_grep_spacing".to_string(),
+                tool_call_id: "tc_grep_spacing".into(),
                 tool_id: "fs.grep".to_string(),
                 args_summary: r#"{"pattern":"tool spacing","include":"*.rs","path":"src"}"#
                     .to_string(),
@@ -415,7 +415,7 @@ fn sample_tool_spacing_events() -> Vec<EventEnvelopeV1> {
             9,
             Some("req_spacing"),
             EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                tool_call_id: "tc_grep_spacing".to_string(),
+                tool_call_id: "tc_grep_spacing".into(),
                 status: ToolCallStatus::Succeeded,
                 output_summary: Some("3 matches".to_string()),
                 output_digest: Some("digest-grep-output".to_string()),
@@ -427,7 +427,7 @@ fn sample_tool_spacing_events() -> Vec<EventEnvelopeV1> {
             10,
             Some("req_spacing"),
             EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                tool_call_id: "tc_list_spacing".to_string(),
+                tool_call_id: "tc_list_spacing".into(),
                 tool_id: "fs.ls".to_string(),
                 args_summary: r#"{"path":"src"}"#.to_string(),
                 args_digest: "digest-list-spacing".to_string(),
@@ -438,7 +438,7 @@ fn sample_tool_spacing_events() -> Vec<EventEnvelopeV1> {
             11,
             Some("req_spacing"),
             EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                tool_call_id: "tc_list_spacing".to_string(),
+                tool_call_id: "tc_list_spacing".into(),
                 status: ToolCallStatus::Succeeded,
                 output_summary: Some("ui_transcript.rs\nlayout.rs".to_string()),
                 output_digest: Some("digest-list-output".to_string()),
@@ -450,7 +450,7 @@ fn sample_tool_spacing_events() -> Vec<EventEnvelopeV1> {
             12,
             Some("req_spacing"),
             EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                tool_call_id: "tc_shell_spacing".to_string(),
+                tool_call_id: "tc_shell_spacing".into(),
                 tool_id: "shell.run".to_string(),
                 args_summary:
                     r#"{"cmd":"cargo test -p harness-tui ui::ui_transcript::","cwd":"/tmp/demo"}"#
@@ -463,14 +463,14 @@ fn sample_tool_spacing_events() -> Vec<EventEnvelopeV1> {
             13,
             Some("req_spacing"),
             EventV1::ToolCallStarted(ToolCallStartedEvent {
-                tool_call_id: "tc_shell_spacing".to_string(),
+                tool_call_id: "tc_shell_spacing".into(),
             }),
         ),
         envelope(
             14,
             Some("req_spacing"),
             EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                tool_call_id: "tc_shell_spacing".to_string(),
+                tool_call_id: "tc_shell_spacing".into(),
                 status: ToolCallStatus::Failed,
                 output_summary: Some("exit code: 1\nstderr: snapshot mismatch".to_string()),
                 output_digest: Some("digest-shell-output".to_string()),
@@ -482,7 +482,7 @@ fn sample_tool_spacing_events() -> Vec<EventEnvelopeV1> {
             15,
             Some("req_spacing"),
             EventV1::ProviderReasoningDelta(harness_core::event::ProviderReasoningDeltaEvent {
-                request_id: "req_spacing".to_string(),
+                request_id: "req_spacing".into(),
                 delta:
                     "The grouped context rows need to stay compact before the visible shell block."
                         .to_string(),
@@ -492,7 +492,7 @@ fn sample_tool_spacing_events() -> Vec<EventEnvelopeV1> {
             16,
             Some("req_spacing"),
             EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
-                request_id: "req_spacing".to_string(),
+                request_id: "req_spacing".into(),
                 delta: "I matched the body-to-tool and tool-to-body spacing to the harness shell."
                     .to_string(),
             }),
@@ -501,7 +501,7 @@ fn sample_tool_spacing_events() -> Vec<EventEnvelopeV1> {
             17,
             Some("req_spacing"),
             EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
-                request_id: "req_spacing".to_string(),
+                request_id: "req_spacing".into(),
                 finish_reason: "stop".to_string(),
                 output_digest: Some("digest-spacing-output".to_string()),
                 usage: None,
@@ -529,7 +529,7 @@ fn permission_requested_event(
         EventV1::PermissionRequested(PermissionRequestedEvent {
             permission_id: permission_id.to_string(),
             kind: "edit_fs".to_string(),
-            tool_call_id: Some(tool_call_id.to_string()),
+            tool_call_id: Some(tool_call_id.into()),
             summary: "Apply hashline edit to demo.txt".to_string(),
             request_digest: "digest-perm".to_string(),
             timeout_ms: 30_000,
@@ -576,7 +576,7 @@ fn envelope_with_actor(
         schema_version: SCHEMA_VERSION,
         event_id: format!("evt-{seq:04}"),
         seq,
-        run_id: "run_fixture".to_string(),
+        run_id: "run_fixture".into(),
         mono_ms: seq,
         ts: None,
         actor,
@@ -611,7 +611,7 @@ fn write_diff_fixture(with_diff_file: bool) -> TempDir {
             1,
             None,
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "diff-fixture".to_string(),
+                run_name: "diff-fixture".into(),
                 workspace_root: "/tmp/workspace".to_string(),
             }),
         ),
@@ -619,7 +619,7 @@ fn write_diff_fixture(with_diff_file: bool) -> TempDir {
             2,
             Some("req_diff_1"),
             EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-                request_id: "req_diff_1".to_string(),
+                request_id: "req_diff_1".into(),
                 text: "Show me the changes inline".to_string(),
             }),
         ),
@@ -627,7 +627,7 @@ fn write_diff_fixture(with_diff_file: bool) -> TempDir {
             3,
             Some("req_diff_1"),
             EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                request_id: "req_diff_1".to_string(),
+                request_id: "req_diff_1".into(),
                 provider_id: "mock".to_string(),
                 model_id: "model-1".to_string(),
                 prompt_summary: "Show me the changes inline".to_string(),
@@ -639,7 +639,7 @@ fn write_diff_fixture(with_diff_file: bool) -> TempDir {
             4,
             Some("req_diff_1"),
             EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                tool_call_id: "tool_call_1".to_string(),
+                tool_call_id: "tool_call_1".into(),
                 tool_id: "edit.hashline_apply".to_string(),
                 args_summary: r#"{"path":"demo.txt"}"#.to_string(),
                 args_digest: "digest-inline-diff-tool".to_string(),
@@ -650,7 +650,7 @@ fn write_diff_fixture(with_diff_file: bool) -> TempDir {
             5,
             Some("tool_call_1"),
             EventV1::ToolCallStarted(ToolCallStartedEvent {
-                tool_call_id: "tool_call_1".to_string(),
+                tool_call_id: "tool_call_1".into(),
             }),
         ),
         envelope(
@@ -678,7 +678,7 @@ fn write_diff_fixture(with_diff_file: bool) -> TempDir {
             8,
             Some("tool_call_1"),
             EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                tool_call_id: "tool_call_1".to_string(),
+                tool_call_id: "tool_call_1".into(),
                 status: ToolCallStatus::Succeeded,
                 output_summary: Some("Edit applied".to_string()),
                 output_digest: Some("digest-inline-diff-output".to_string()),

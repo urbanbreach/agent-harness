@@ -1,3 +1,4 @@
+// allow: SIZE_OK — TUI app state (session projection + interaction)
 use super::prompt_history::PromptHistoryDraft;
 use super::*;
 
@@ -290,7 +291,7 @@ impl AppState {
             provider_id: String::new(),
             status,
             user_message: Some(UserMessageSubmittedEvent {
-                request_id: String::new(),
+                request_id: String::new().into(),
                 text,
             }),
             user_timestamp: None,

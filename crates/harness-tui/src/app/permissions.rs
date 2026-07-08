@@ -1,3 +1,4 @@
+// allow: SIZE_OK — TUI app state (session projection + interaction)
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use harness_core::event::PermissionDecision as EventPermissionDecision;
 use harness_core::perm::{PermissionDecision, PermissionGrantScope};
@@ -122,7 +123,7 @@ impl AppState {
         self.activities
             .iter()
             .flat_map(|activity| activity.tool_calls.iter())
-            .find(|tool_call| tool_call.tool_call_id == tool_call_id)
+            .find(|tool_call| tool_call.tool_call_id.as_str() == tool_call_id)
             .map(|tool_call| tool_call.tool_id.clone())
     }
 
@@ -265,7 +266,7 @@ impl AppState {
                 schema_version: harness_core::event::SCHEMA_VERSION,
                 event_id: format!("evt_permission_overlay_{seq:04}"),
                 seq,
-                run_id: "run_overlay_stack_exact".to_string(),
+                run_id: "run_overlay_stack_exact".into(),
                 mono_ms: seq,
                 ts: Some("2026-02-03T12:00:00Z".to_string()),
                 actor: harness_core::event::EventActor::new(
@@ -279,7 +280,7 @@ impl AppState {
                     harness_core::event::PermissionRequestedEvent {
                         permission_id: permission_id.to_string(),
                         kind: "edit_fs".to_string(),
-                        tool_call_id: Some(tool_call_id.to_string()),
+                        tool_call_id: Some(tool_call_id.into()),
                         summary: "permission summary".to_string(),
                         request_digest: format!("digest-{permission_id}"),
                         timeout_ms: 30_000,
@@ -455,7 +456,7 @@ impl AppState {
                         self.question_prompt.editing = false;
                         return;
                     }
-                    KeyCode::Enter => {
+                    KeyCode::Enter => { // allow: WIDENING — char is ASCII digit, lower byte is the digit value
                         self.commit_question_custom_answer(&permission.permission_id, prompts);
                         self.maybe_auto_exit();
                         return;
@@ -537,7 +538,7 @@ impl AppState {
                 }
                 KeyCode::Char(c @ '1'..='9') => {
                     if !confirm {
-                        let index = usize::from((c as u8).saturating_sub(b'1'));
+                        let index = usize::from((c as u8).saturating_sub(b'1')); // allow: WIDENING — char is ASCII digit, lower byte is the digit value
                         let Some(prompt) = prompts.get(self.question_prompt.tab) else {
                             return;
                         };

@@ -216,7 +216,7 @@ pub(super) fn double_escape_interrupts_active_live_turn_after_harness_confirmati
             Some("agent_worker".to_string()),
         ),
         harness_core::event::EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
-            task_id: "task_active".to_string(),
+            task_id: "task_active".to_string().into(),
             state: harness_core::event::TaskScheduleState::Started,
             queue_key: Some("provider_model:default:model-1".to_string()),
         }),
@@ -229,7 +229,7 @@ pub(super) fn double_escape_interrupts_active_live_turn_after_harness_confirmati
             Some("agent_sibling".to_string()),
         ),
         harness_core::event::EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
-            task_id: "task_sibling".to_string(),
+            task_id: "task_sibling".to_string().into(),
             state: harness_core::event::TaskScheduleState::Started,
             queue_key: Some("provider_model:default:model-2".to_string()),
         }),
@@ -274,7 +274,7 @@ pub(super) fn interrupt_confirmation_is_scoped_to_current_active_turn_set() {
             Some("agent_worker".to_string()),
         ),
         harness_core::event::EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
-            task_id: "task_old".to_string(),
+            task_id: "task_old".to_string().into(),
             state: harness_core::event::TaskScheduleState::Started,
             queue_key: Some("provider_model:default:model-1".to_string()),
         }),
@@ -287,7 +287,7 @@ pub(super) fn interrupt_confirmation_is_scoped_to_current_active_turn_set() {
         2,
         Some("req_old"),
         harness_core::event::EventV1::TaskCancelled(harness_core::event::TaskCancelledEvent {
-            task_id: "task_old".to_string(),
+            task_id: "task_old".to_string().into(),
             reason: "cancelled externally".to_string(),
             task_scope: Some(harness_core::event::TaskTerminalScope::AgentTurn),
         }),
@@ -300,7 +300,7 @@ pub(super) fn interrupt_confirmation_is_scoped_to_current_active_turn_set() {
             Some("agent_worker".to_string()),
         ),
         harness_core::event::EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
-            task_id: "task_new".to_string(),
+            task_id: "task_new".to_string().into(),
             state: harness_core::event::TaskScheduleState::Started,
             queue_key: Some("provider_model:default:model-1".to_string()),
         }),
@@ -616,7 +616,7 @@ pub(super) fn new_session_resets_transcript_but_keeps_unsent_draft() {
         Some("req_before_reset"),
         harness_core::event::EventV1::ProviderRequestStarted(
             harness_core::event::ProviderRequestStartedEvent {
-                request_id: "req_before_reset".to_string(),
+                request_id: "req_before_reset".into(),
                 provider_id: "openai".to_string(),
                 model_id: "gpt-5.4-mini".to_string(),
                 prompt_summary: "before reset".to_string(),

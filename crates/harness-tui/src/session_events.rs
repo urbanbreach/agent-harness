@@ -42,7 +42,7 @@ mod tests {
             schema_version: SCHEMA_VERSION,
             event_id: format!("evt-{seq:04}"),
             seq,
-            run_id: "run_fixture".to_string(),
+            run_id: "run_fixture".into(),
             mono_ms: seq,
             ts: None,
             actor: EventActor::new(ActorKind::System, Some("coordinator".to_string())),
@@ -50,7 +50,7 @@ mod tests {
             causation_id: None,
             stream_key: Some("run:run_fixture".to_string()),
             payload: EventV1::RunStarted(RunStartedEvent {
-                run_name: format!("run-{seq}"),
+                run_name: format!("run-{seq}").into(),
                 workspace_root: "/tmp".to_string(),
             }),
         }

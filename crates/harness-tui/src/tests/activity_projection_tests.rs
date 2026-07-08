@@ -45,7 +45,7 @@ pub(super) fn activity_groups_by_request_id() {
         1,
         Some("req_001"),
         EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-            request_id: "req_001".to_string(),
+            request_id: "req_001".into(),
             text: "Hello AI".to_string(),
         }),
     ));
@@ -54,7 +54,7 @@ pub(super) fn activity_groups_by_request_id() {
         2,
         Some("req_001"),
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_001".to_string(),
+            request_id: "req_001".into(),
             provider_id: "openai".to_string(),
             model_id: "gpt-5-codex".to_string(),
             prompt_summary: "Hello AI".to_string(),
@@ -79,7 +79,7 @@ pub(super) fn transcript_accumulates_stream_deltas() {
         1,
         Some("req_001"),
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_001".to_string(),
+            request_id: "req_001".into(),
             provider_id: "openai".to_string(),
             model_id: "gpt-5-codex".to_string(),
             prompt_summary: "test".to_string(),
@@ -92,7 +92,7 @@ pub(super) fn transcript_accumulates_stream_deltas() {
         2,
         Some("req_001"),
         EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
-            request_id: "req_001".to_string(),
+            request_id: "req_001".into(),
             delta: "Hello ".to_string(),
         }),
     ));
@@ -101,7 +101,7 @@ pub(super) fn transcript_accumulates_stream_deltas() {
         3,
         Some("req_001"),
         EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
-            request_id: "req_001".to_string(),
+            request_id: "req_001".into(),
             delta: "world!".to_string(),
         }),
     ));
@@ -117,7 +117,7 @@ pub(super) fn activity_status_done_on_request_finished() {
         1,
         Some("req_001"),
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_001".to_string(),
+            request_id: "req_001".into(),
             provider_id: "openai".to_string(),
             model_id: "gpt-5-codex".to_string(),
             prompt_summary: "test".to_string(),
@@ -135,7 +135,7 @@ pub(super) fn activity_status_done_on_request_finished() {
         2,
         Some("req_001"),
         EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
-            request_id: "req_001".to_string(),
+            request_id: "req_001".into(),
             finish_reason: "stop".to_string(),
             output_digest: Some("digest-out".to_string()),
             usage: None,
@@ -156,7 +156,7 @@ pub(super) fn activity_status_error_on_run_failed() {
         1,
         Some("req_001"),
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_001".to_string(),
+            request_id: "req_001".into(),
             provider_id: "openai".to_string(),
             model_id: "gpt-5-codex".to_string(),
             prompt_summary: "test".to_string(),
@@ -190,7 +190,7 @@ pub(super) fn memory_cap_enforces_max_events() {
             i,
             None,
             EventV1::RunStarted(RunStartedEvent {
-                run_name: format!("run-{}", i),
+                run_name: format!("run-{}", i).into(),
                 workspace_root: "/tmp".to_string(),
             }),
         ));
@@ -208,7 +208,7 @@ pub(super) fn memory_cap_enforces_max_transcript_chars() {
         1,
         Some("req_001"),
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_001".to_string(),
+            request_id: "req_001".into(),
             provider_id: "openai".to_string(),
             model_id: "gpt-5-codex".to_string(),
             prompt_summary: "test".to_string(),
@@ -223,7 +223,7 @@ pub(super) fn memory_cap_enforces_max_transcript_chars() {
             2 + i,
             Some("req_001"),
             EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
-                request_id: "req_001".to_string(),
+                request_id: "req_001".into(),
                 delta: "0123456789".to_string(),
             }),
         ));
@@ -239,7 +239,7 @@ pub(super) fn run_workspace_renders_activity_with_compact_format() {
         1,
         Some("req_000123"),
         EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-            request_id: "req_000123".to_string(),
+            request_id: "req_000123".into(),
             text: "Hello".to_string(),
         }),
     ));
@@ -248,7 +248,7 @@ pub(super) fn run_workspace_renders_activity_with_compact_format() {
         2,
         Some("req_000123"),
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_000123".to_string(),
+            request_id: "req_000123".into(),
             provider_id: "openai".to_string(),
             model_id: "gpt-5-codex".to_string(),
             prompt_summary: "Hello".to_string(),
@@ -280,7 +280,7 @@ pub(super) fn tool_call_requested_renders_pending_status() {
         1,
         Some("req_001"),
         EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-            request_id: "req_001".to_string(),
+            request_id: "req_001".into(),
             text: "Hello".to_string(),
         }),
     ));
@@ -289,7 +289,7 @@ pub(super) fn tool_call_requested_renders_pending_status() {
         2,
         Some("req_001"),
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_001".to_string(),
+            request_id: "req_001".into(),
             provider_id: "openai".to_string(),
             model_id: "gpt-5-codex".to_string(),
             prompt_summary: "Hello".to_string(),
@@ -302,7 +302,7 @@ pub(super) fn tool_call_requested_renders_pending_status() {
         3,
         Some("req_001"),
         EventV1::ToolCallRequested(ToolCallRequestedEvent {
-            tool_call_id: "tc_001".to_string(),
+            tool_call_id: "tc_001".into(),
             tool_id: "fs.read".to_string(),
             args_summary: r#"{"path":"test.txt"}"#.to_string(),
             args_digest: "digest-args".to_string(),
@@ -332,7 +332,7 @@ pub(super) fn tool_call_started_renders_running_status() {
         1,
         Some("req_001"),
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_001".to_string(),
+            request_id: "req_001".into(),
             provider_id: "openai".to_string(),
             model_id: "gpt-5-codex".to_string(),
             prompt_summary: "Hello".to_string(),
@@ -345,7 +345,7 @@ pub(super) fn tool_call_started_renders_running_status() {
         2,
         Some("req_001"),
         EventV1::ToolCallRequested(ToolCallRequestedEvent {
-            tool_call_id: "tc_001".to_string(),
+            tool_call_id: "tc_001".into(),
             tool_id: "fs.read".to_string(),
             args_summary: r#"{"path":"test.txt"}"#.to_string(),
             args_digest: "digest-args".to_string(),
@@ -357,7 +357,7 @@ pub(super) fn tool_call_started_renders_running_status() {
         3,
         Some("req_001"),
         EventV1::ToolCallStarted(ToolCallStartedEvent {
-            tool_call_id: "tc_001".to_string(),
+            tool_call_id: "tc_001".into(),
         }),
     ));
 
@@ -383,7 +383,7 @@ pub(super) fn tool_call_finished_renders_truncated_output() {
         1,
         Some("req_001"),
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_001".to_string(),
+            request_id: "req_001".into(),
             provider_id: "openai".to_string(),
             model_id: "gpt-5-codex".to_string(),
             prompt_summary: "Hello".to_string(),
@@ -396,7 +396,7 @@ pub(super) fn tool_call_finished_renders_truncated_output() {
         2,
         Some("req_001"),
         EventV1::ToolCallRequested(ToolCallRequestedEvent {
-            tool_call_id: "tc_001".to_string(),
+            tool_call_id: "tc_001".into(),
             tool_id: "fs.read".to_string(),
             args_summary: r#"{"path":"test.txt"}"#.to_string(),
             args_digest: "digest-args".to_string(),
@@ -408,7 +408,7 @@ pub(super) fn tool_call_finished_renders_truncated_output() {
         3,
         Some("req_001"),
         EventV1::ToolCallStarted(ToolCallStartedEvent {
-            tool_call_id: "tc_001".to_string(),
+            tool_call_id: "tc_001".into(),
         }),
     ));
 
@@ -417,7 +417,7 @@ pub(super) fn tool_call_finished_renders_truncated_output() {
         4,
         Some("req_001"),
         EventV1::ToolCallFinished(ToolCallFinishedEvent {
-            tool_call_id: "tc_001".to_string(),
+            tool_call_id: "tc_001".into(),
             status: ToolCallStatus::Succeeded,
             output_summary: Some(long_output.clone()),
             output_digest: Some("digest-output".to_string()),
@@ -452,7 +452,7 @@ pub(super) fn tool_call_failed_renders_error() {
         1,
         Some("req_001"),
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_001".to_string(),
+            request_id: "req_001".into(),
             provider_id: "openai".to_string(),
             model_id: "gpt-5-codex".to_string(),
             prompt_summary: "Hello".to_string(),
@@ -465,7 +465,7 @@ pub(super) fn tool_call_failed_renders_error() {
         2,
         Some("req_001"),
         EventV1::ToolCallRequested(ToolCallRequestedEvent {
-            tool_call_id: "tc_001".to_string(),
+            tool_call_id: "tc_001".into(),
             tool_id: "shell.run".to_string(),
             args_summary: r#"{"cmd":"false"}"#.to_string(),
             args_digest: "digest-args".to_string(),
@@ -477,7 +477,7 @@ pub(super) fn tool_call_failed_renders_error() {
         3,
         Some("req_001"),
         EventV1::ToolCallStarted(ToolCallStartedEvent {
-            tool_call_id: "tc_001".to_string(),
+            tool_call_id: "tc_001".into(),
         }),
     ));
 
@@ -485,7 +485,7 @@ pub(super) fn tool_call_failed_renders_error() {
         4,
         Some("req_001"),
         EventV1::ToolCallFinished(ToolCallFinishedEvent {
-            tool_call_id: "tc_001".to_string(),
+            tool_call_id: "tc_001".into(),
             status: ToolCallStatus::Failed,
             output_summary: Some("exit code: 1".to_string()),
             output_digest: None,
@@ -516,7 +516,7 @@ pub(super) fn task_scheduled_queued_does_not_reuse_tool_call_id_as_task_id() {
         1,
         Some("req_001"),
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_001".to_string(),
+            request_id: "req_001".into(),
             provider_id: "openai".to_string(),
             model_id: "gpt-5-codex".to_string(),
             prompt_summary: "Hello".to_string(),
@@ -529,7 +529,7 @@ pub(super) fn task_scheduled_queued_does_not_reuse_tool_call_id_as_task_id() {
         2,
         Some("req_001"),
         EventV1::ToolCallRequested(ToolCallRequestedEvent {
-            tool_call_id: "tc_001".to_string(),
+            tool_call_id: "tc_001".into(),
             tool_id: "fs.read".to_string(),
             args_summary: r#"{"path":"test.txt"}"#.to_string(),
             args_digest: "digest-args".to_string(),
@@ -541,7 +541,7 @@ pub(super) fn task_scheduled_queued_does_not_reuse_tool_call_id_as_task_id() {
         3,
         Some("req_001"),
         EventV1::TaskScheduled(TaskScheduledEvent {
-            task_id: "tc_001".to_string(),
+            task_id: "tc_001".to_string().into(),
             state: TaskScheduleState::Queued,
             queue_key: Some("tool:fs.read".to_string()),
         }),

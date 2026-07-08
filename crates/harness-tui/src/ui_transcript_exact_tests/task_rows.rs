@@ -13,7 +13,7 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
             schema_version: harness_core::event::SCHEMA_VERSION,
             event_id: format!("evt_task_rows_{seq:04}"),
             seq,
-            run_id: "run_task_rows".to_string(),
+            run_id: "run_task_rows".into(),
             mono_ms: seq * 100,
             ts: Some(ts.to_string()),
             actor,
@@ -35,7 +35,7 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
         Some("req_parent"),
         harness_core::event::EventV1::UserMessageSubmitted(
             harness_core::event::UserMessageSubmittedEvent {
-                request_id: "req_parent".to_string(),
+                request_id: "req_parent".into(),
                 text: "Audit transcript parity".to_string(),
             },
         ),
@@ -50,7 +50,7 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
         Some("req_parent"),
         harness_core::event::EventV1::ProviderRequestStarted(
             harness_core::event::ProviderRequestStartedEvent {
-                request_id: "req_parent".to_string(),
+                request_id: "req_parent".into(),
                 provider_id: "default".to_string(),
                 model_id: "model-1".to_string(),
                 prompt_summary: "Audit transcript parity".to_string(),
@@ -69,7 +69,7 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
         Some("req_parent"),
         harness_core::event::EventV1::ToolCallRequested(
             harness_core::event::ToolCallRequestedEvent {
-                tool_call_id: "tc_task".to_string(),
+                tool_call_id: "tc_task".into(),
                 tool_id: "task".to_string(),
                 args_summary:
                     r#"{"description":"audit transcript parity","subagent_type":"researcher"}"#
@@ -99,7 +99,7 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
         ),
         Some("req_parent"),
         harness_core::event::EventV1::ToolCallStarted(harness_core::event::ToolCallStartedEvent {
-            tool_call_id: "tc_task".to_string(),
+            tool_call_id: "tc_task".into(),
         }),
     ));
     app.ingest_event(event(
@@ -111,7 +111,7 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
         ),
         Some("req_child"),
         harness_core::event::EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
-            task_id: "task_child".to_string(),
+            task_id: "task_child".to_string().into(),
             state: harness_core::event::TaskScheduleState::Started,
             queue_key: Some("agent:running:researcher".to_string()),
         }),
@@ -126,7 +126,7 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
         Some("req_child"),
         harness_core::event::EventV1::ToolCallRequested(
             harness_core::event::ToolCallRequestedEvent {
-                tool_call_id: "tc_child_read".to_string(),
+                tool_call_id: "tc_child_read".into(),
                 tool_id: "fs.read".to_string(),
                 args_summary: r#"{"path":"src/ui.rs"}"#.to_string(),
                 args_digest: "digest-child-read".to_string(),
@@ -177,7 +177,7 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
         Some("req_child"),
         harness_core::event::EventV1::ProviderRequestStarted(
             harness_core::event::ProviderRequestStartedEvent {
-                request_id: "req_child".to_string(),
+                request_id: "req_child".into(),
                 provider_id: "default".to_string(),
                 model_id: "model-1".to_string(),
                 prompt_summary: "Audit transcript parity".to_string(),
@@ -229,7 +229,7 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
         Some("req_parent"),
         harness_core::event::EventV1::ToolCallFinished(
             harness_core::event::ToolCallFinishedEvent {
-                tool_call_id: "tc_task".to_string(),
+                tool_call_id: "tc_task".into(),
                 status: harness_core::event::ToolCallStatus::Succeeded,
                 output_summary: Some("foreground subagent moved to background".to_string()),
                 output_digest: Some("digest-task-backgrounded".to_string()),
@@ -293,7 +293,7 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
         Some("req_child"),
         harness_core::event::EventV1::ToolCallRequested(
             harness_core::event::ToolCallRequestedEvent {
-                tool_call_id: "tc_child_grep".to_string(),
+                tool_call_id: "tc_child_grep".into(),
                 tool_id: "fs.grep".to_string(),
                 args_summary: r#"{"pattern":"task row"}"#.to_string(),
                 args_digest: "digest-child-grep".to_string(),
@@ -311,7 +311,7 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
         Some("req_child"),
         harness_core::event::EventV1::ProviderStreamDelta(
             harness_core::event::ProviderStreamDeltaEvent {
-                request_id: "req_child".to_string(),
+                request_id: "req_child".into(),
                 delta: "CHILD SUBAGENT DETAILS SHOULD STAY OUT OF PARENT".to_string(),
             },
         ),
@@ -325,7 +325,7 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
         ),
         Some("req_child"),
         harness_core::event::EventV1::TaskCompleted(harness_core::event::TaskCompletedEvent {
-            task_id: "task_child".to_string(),
+            task_id: "task_child".to_string().into(),
             result_summary: "Found the inline transcript path.".to_string(),
             result_digest: "digest-task-child".to_string(),
             metadata: Some(harness_core::event::TaskCompletionMetadata {

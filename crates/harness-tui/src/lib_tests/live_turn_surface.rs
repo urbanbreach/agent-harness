@@ -94,7 +94,7 @@ pub(super) fn live_submitted_event_merges_duplicate_local_echo_before_rendering_
         Some("req_live_echo_merge"),
         harness_core::event::EventV1::UserMessageSubmitted(
             harness_core::event::UserMessageSubmittedEvent {
-                request_id: "req_live_echo_merge".to_string(),
+                request_id: "req_live_echo_merge".into(),
                 text: "ship it".to_string(),
             },
         ),
@@ -134,7 +134,7 @@ pub(super) fn live_provider_request_id_alias_reuses_local_turn_placeholder() {
         Some("turn_req_alias"),
         harness_core::event::EventV1::UserMessageSubmitted(
             harness_core::event::UserMessageSubmittedEvent {
-                request_id: "turn_req_alias".to_string(),
+                request_id: "turn_req_alias".into(),
                 text: "hi".to_string(),
             },
         ),
@@ -144,7 +144,7 @@ pub(super) fn live_provider_request_id_alias_reuses_local_turn_placeholder() {
         Some("turn_req_alias"),
         harness_core::event::EventV1::ProviderRequestStarted(
             harness_core::event::ProviderRequestStartedEvent {
-                request_id: "provider_req_alias".to_string(),
+                request_id: "provider_req_alias".into(),
                 provider_id: "default".to_string(),
                 model_id: "gpt-5.4-mini".to_string(),
                 prompt_summary: "hi".to_string(),
@@ -195,7 +195,7 @@ pub(super) fn live_submitted_event_adopts_matching_local_echo_that_is_not_last()
         Some("req_non_last_echo"),
         harness_core::event::EventV1::UserMessageSubmitted(
             harness_core::event::UserMessageSubmittedEvent {
-                request_id: "req_non_last_echo".to_string(),
+                request_id: "req_non_last_echo".into(),
                 text: "ship it".to_string(),
             },
         ),
@@ -227,7 +227,7 @@ pub(super) fn live_shell_inline_tool_state_snapshot() {
         Some("req_inline_tool"),
         harness_core::event::EventV1::UserMessageSubmitted(
             harness_core::event::UserMessageSubmittedEvent {
-                request_id: "req_inline_tool".to_string(),
+                request_id: "req_inline_tool".into(),
                 text: "Read the file".to_string(),
             },
         ),
@@ -237,7 +237,7 @@ pub(super) fn live_shell_inline_tool_state_snapshot() {
         Some("req_inline_tool"),
         harness_core::event::EventV1::ProviderRequestStarted(
             harness_core::event::ProviderRequestStartedEvent {
-                request_id: "req_inline_tool".to_string(),
+                request_id: "req_inline_tool".into(),
                 provider_id: "openai".to_string(),
                 model_id: "gpt-5-codex".to_string(),
                 prompt_summary: "Read the file".to_string(),
@@ -251,7 +251,7 @@ pub(super) fn live_shell_inline_tool_state_snapshot() {
         Some("req_inline_tool"),
         harness_core::event::EventV1::ToolCallRequested(
             harness_core::event::ToolCallRequestedEvent {
-                tool_call_id: "tc_inline_tool".to_string(),
+                tool_call_id: "tc_inline_tool".into(),
                 tool_id: "fs.read".to_string(),
                 args_summary: r#"{"path":"src/lib.rs"}"#.to_string(),
                 args_digest: "digest-inline-tool-args".to_string(),
@@ -290,7 +290,7 @@ pub(super) fn narrow_transcript_wrapped_top_level_turns_keep_alignment() {
         Some(request_id),
         harness_core::event::EventV1::UserMessageSubmitted(
             harness_core::event::UserMessageSubmittedEvent {
-                request_id: request_id.to_string(),
+                request_id: request_id.into(),
                 text: "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango".to_string(),
             },
         ),
@@ -300,7 +300,7 @@ pub(super) fn narrow_transcript_wrapped_top_level_turns_keep_alignment() {
         Some(request_id),
         harness_core::event::EventV1::ProviderRequestStarted(
             harness_core::event::ProviderRequestStartedEvent {
-                request_id: request_id.to_string(),
+                request_id: request_id.into(),
                 provider_id: "mock".to_string(),
                 model_id: "model-1".to_string(),
                 prompt_summary: "wrapping transcript rows".to_string(),
@@ -314,7 +314,7 @@ pub(super) fn narrow_transcript_wrapped_top_level_turns_keep_alignment() {
         Some(request_id),
         harness_core::event::EventV1::ProviderStreamDelta(
             harness_core::event::ProviderStreamDeltaEvent {
-                request_id: request_id.to_string(),
+                request_id: request_id.into(),
                 delta: "assistant reply wraps across the narrow transcript column while keeping the same left alignment on each continuation row for readability".to_string(),
             },
         ),
@@ -445,7 +445,7 @@ pub(super) fn live_status_strip_suppresses_request_digest_from_cancelled_summary
         1,
         None,
         harness_core::event::EventV1::TaskCancelled(harness_core::event::TaskCancelledEvent {
-            task_id: "req_cancelled_visual".to_string(),
+            task_id: "req_cancelled_visual".to_string().into(),
             reason: "mock fixture missing for request_digest=digest-cancelled-visual".to_string(),
             task_scope: Some(harness_core::event::TaskTerminalScope::AgentTurn),
         }),
@@ -492,7 +492,7 @@ pub(super) fn parent_view_ignores_streaming_child_activity_after_returning_from_
         ),
         harness_core::event::EventV1::UserMessageSubmitted(
             harness_core::event::UserMessageSubmittedEvent {
-                request_id: "req_parent".to_string(),
+                request_id: "req_parent".into(),
                 text: "Delegate the investigation".to_string(),
             },
         ),
@@ -506,7 +506,7 @@ pub(super) fn parent_view_ignores_streaming_child_activity_after_returning_from_
         ),
         harness_core::event::EventV1::ProviderRequestStarted(
             harness_core::event::ProviderRequestStartedEvent {
-                request_id: "provider_req_parent".to_string(),
+                request_id: "provider_req_parent".into(),
                 provider_id: "default".to_string(),
                 model_id: "gpt-5.4-mini".to_string(),
                 prompt_summary: "Delegate the investigation".to_string(),
@@ -524,7 +524,7 @@ pub(super) fn parent_view_ignores_streaming_child_activity_after_returning_from_
         ),
         harness_core::event::EventV1::ToolCallRequested(
             harness_core::event::ToolCallRequestedEvent {
-                tool_call_id: "tool_call_child".to_string(),
+                tool_call_id: "tool_call_child".into(),
                 tool_id: "task".to_string(),
                 args_summary: serde_json::json!({
                     "description": "inspect the lifecycle state",
@@ -546,7 +546,7 @@ pub(super) fn parent_view_ignores_streaming_child_activity_after_returning_from_
         ),
         harness_core::event::EventV1::ToolCallFinished(
             harness_core::event::ToolCallFinishedEvent {
-                tool_call_id: "tool_call_child".to_string(),
+                tool_call_id: "tool_call_child".into(),
                 status: harness_core::event::ToolCallStatus::Succeeded,
                 output_summary: Some("Background task scheduled".to_string()),
                 output_digest: Some("digest-tool-child-output".to_string()),
@@ -569,7 +569,7 @@ pub(super) fn parent_view_ignores_streaming_child_activity_after_returning_from_
         ),
         harness_core::event::EventV1::ProviderStreamDelta(
             harness_core::event::ProviderStreamDeltaEvent {
-                request_id: "provider_req_parent".to_string(),
+                request_id: "provider_req_parent".into(),
                 delta: "Child task is running in the background.".to_string(),
             },
         ),
@@ -583,7 +583,7 @@ pub(super) fn parent_view_ignores_streaming_child_activity_after_returning_from_
         ),
         harness_core::event::EventV1::ProviderRequestFinished(
             harness_core::event::ProviderRequestFinishedEvent {
-                request_id: "provider_req_parent".to_string(),
+                request_id: "provider_req_parent".into(),
                 finish_reason: "stop".to_string(),
                 output_digest: Some("digest-parent-finished".to_string()),
                 usage: None,
@@ -600,7 +600,7 @@ pub(super) fn parent_view_ignores_streaming_child_activity_after_returning_from_
         ),
         harness_core::event::EventV1::ProviderRequestStarted(
             harness_core::event::ProviderRequestStartedEvent {
-                request_id: "provider_req_child".to_string(),
+                request_id: "provider_req_child".into(),
                 provider_id: "default".to_string(),
                 model_id: "gpt-5.4-mini".to_string(),
                 prompt_summary: "Inspect the lifecycle state".to_string(),
@@ -618,7 +618,7 @@ pub(super) fn parent_view_ignores_streaming_child_activity_after_returning_from_
         ),
         harness_core::event::EventV1::ProviderStreamDelta(
             harness_core::event::ProviderStreamDeltaEvent {
-                request_id: "provider_req_child".to_string(),
+                request_id: "provider_req_child".into(),
                 delta: "child-only work is still streaming".to_string(),
             },
         ),

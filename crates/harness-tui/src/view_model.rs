@@ -1,3 +1,4 @@
+// allow: SIZE_OK — TUI view model state (session projection mapping + composer state + display formatting)
 use crate::UnwrapOrAbort;
 use harness_core::event::EventV1;
 

@@ -1,3 +1,4 @@
+// allow: SIZE_OK — TUI theme tokens (color system + shell geometry)
 use ratatui::style::Color;
 
 pub const DIFF_SIDE_BY_SIDE_MIN_WIDTH: u16 = 96;

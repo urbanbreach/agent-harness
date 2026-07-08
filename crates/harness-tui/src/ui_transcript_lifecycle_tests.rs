@@ -13,7 +13,7 @@ fn queued_runtime_status_without_pending_assistant_does_not_render_user_badge_or
             provider_id: "openai".to_string(),
             status: ActivityStatus::Done,
             user_message: Some(harness_core::event::UserMessageSubmittedEvent {
-                request_id: "request-complete".to_string(),
+                request_id: "request-complete".into(),
                 text: "completed turn".to_string(),
             }),
             user_timestamp: None,
@@ -38,7 +38,7 @@ fn queued_runtime_status_without_pending_assistant_does_not_render_user_badge_or
             provider_id: "openai".to_string(),
             status: ActivityStatus::Queued,
             user_message: Some(harness_core::event::UserMessageSubmittedEvent {
-                request_id: "request-queued-followup".to_string(),
+                request_id: "request-queued-followup".into(),
                 text: "follow up after the active turn finished".to_string(),
             }),
             user_timestamp: None,
@@ -87,7 +87,7 @@ fn streaming_turn_with_own_user_message_does_not_render_queued_badge() {
         provider_id: "openai".to_string(),
         status: ActivityStatus::Streaming,
         user_message: Some(harness_core::event::UserMessageSubmittedEvent {
-            request_id: "request-started-followup".to_string(),
+            request_id: "request-started-followup".into(),
             text: "follow up now running".to_string(),
         }),
         user_timestamp: None,
@@ -136,7 +136,7 @@ fn queued_user_followup_keeps_active_footer_on_streaming_turn() {
             provider_id: "openai".to_string(),
             status: ActivityStatus::Streaming,
             user_message: Some(harness_core::event::UserMessageSubmittedEvent {
-                request_id: "request-active".to_string(),
+                request_id: "request-active".into(),
                 text: "active turn".to_string(),
             }),
             user_timestamp: None,
@@ -161,7 +161,7 @@ fn queued_user_followup_keeps_active_footer_on_streaming_turn() {
             provider_id: "openai".to_string(),
             status: ActivityStatus::Queued,
             user_message: Some(harness_core::event::UserMessageSubmittedEvent {
-                request_id: "request-queued-followup".to_string(),
+                request_id: "request-queued-followup".into(),
                 text: "follow up while the current turn is still running".to_string(),
             }),
             user_timestamp: None,
@@ -216,7 +216,7 @@ fn transcript_wrapping_respects_display_width_for_wide_glyphs() {
         provider_id: "openai".to_string(),
         status: ActivityStatus::Done,
         user_message: Some(harness_core::event::UserMessageSubmittedEvent {
-            request_id: "request-wide-wrap".to_string(),
+            request_id: "request-wide-wrap".into(),
             text: "wrap this diff body".to_string(),
         }),
         user_timestamp: None,
@@ -261,7 +261,7 @@ fn transcript_selection_snapshot_cache_reuses_repeated_hit_tests() {
         provider_id: "default".to_string(),
         status: ActivityStatus::Done,
         user_message: Some(UserMessageSubmittedEvent {
-            request_id: "req_selection_cache".to_string(),
+            request_id: "req_selection_cache".into(),
             text: "Select this".to_string(),
         }),
         user_timestamp: None,

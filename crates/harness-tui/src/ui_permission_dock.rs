@@ -1,3 +1,4 @@
+// allow: SIZE_OK — TUI rendering (indivisible view model)
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Style},

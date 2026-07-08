@@ -7,6 +7,7 @@ use super::ui_tool_metadata::{
     task_tool_child_request_id_from_output, task_tool_child_session_id_from_output,
     tool_summary_string,
 };
+use super::ui_tool_paths::tool_id_matches;
 
 pub(super) fn task_tool_child_request_id(tool_call: &ToolCallEntry) -> Option<&str> {
     tool_call
@@ -34,8 +35,7 @@ pub(super) fn hidden_delegated_child_request_ids(app: &AppState) -> BTreeSet<&st
             .iter()
             .flat_map(|activity| activity.tool_calls.iter())
             .filter(|tool_call| {
-                matches!(tool_call.effective_tool_id(), "agent.spawn" | "task")
-                    || matches!(tool_call.tool_id.as_str(), "agent.spawn" | "task")
+                tool_id_matches(tool_call, &["agent.spawn", "task"])
             })
             .filter_map(|tool_call| {
                 let request_id = task_tool_child_request_id(tool_call)?;

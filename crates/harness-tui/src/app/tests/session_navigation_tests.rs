@@ -141,11 +141,11 @@ pub(super) fn child_session_navigation_keybinds_follow_default_contract() {
         intents.lock().unwrap_or_abort().as_slice(),
         &[
             UiIntent::ReplaySession {
-                run_id: "parent".to_string(),
+                run_id: "parent".into(),
                 run_dir: parent_dir.clone(),
             },
             UiIntent::ReplaySession {
-                run_id: "child_a".to_string(),
+                run_id: "child_a".into(),
                 run_dir: child_a_dir,
             },
         ]
@@ -282,7 +282,7 @@ pub(super) fn replay_handoff_parent_navigation_continues_resumable_parent_sessio
     assert_eq!(
         intents.lock().unwrap_or_abort().as_slice(),
         &[UiIntent::ContinueSession {
-            run_id: "parent".to_string(),
+            run_id: "parent".into(),
             run_dir: parent_dir,
         }]
     );
@@ -303,7 +303,7 @@ pub(super) fn task_child_navigation_opens_inline_subagent_view_without_child_run
             6,
             "req_child",
             EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-                request_id: "req_child".to_string(),
+                request_id: "req_child".into(),
                 text: "Inspect child".to_string(),
             }),
         ),
@@ -312,7 +312,7 @@ pub(super) fn task_child_navigation_opens_inline_subagent_view_without_child_run
             8,
             "req_child",
             EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
-                request_id: "req_child".to_string(),
+                request_id: "req_child".into(),
                 delta: "child subagent transcript is visible only in child view".to_string(),
             }),
         ),
@@ -320,7 +320,7 @@ pub(super) fn task_child_navigation_opens_inline_subagent_view_without_child_run
             9,
             "req_child",
             EventV1::ProviderRequestFinished(harness_core::event::ProviderRequestFinishedEvent {
-                request_id: "req_child".to_string(),
+                request_id: "req_child".into(),
                 finish_reason: "done".to_string(),
                 output_digest: Some("digest-child-finished".to_string()),
                 usage: None,
@@ -331,7 +331,7 @@ pub(super) fn task_child_navigation_opens_inline_subagent_view_without_child_run
             10,
             "req_parent",
             EventV1::ProviderRequestFinished(harness_core::event::ProviderRequestFinishedEvent {
-                request_id: "req_parent".to_string(),
+                request_id: "req_parent".into(),
                 finish_reason: "done".to_string(),
                 output_digest: Some("digest-parent-finished".to_string()),
                 usage: None,
@@ -386,7 +386,7 @@ pub(super) fn parent_child_navigation_ignores_nested_subagents_hidden_from_paren
             6,
             "req_child",
             EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-                request_id: "req_child".to_string(),
+                request_id: "req_child".into(),
                 text: "Inspect child".to_string(),
             }),
         ),
@@ -437,7 +437,7 @@ pub(super) fn live_inline_child_navigation_restores_live_parent_mode() {
             6,
             "req_child",
             EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-                request_id: "req_child".to_string(),
+                request_id: "req_child".into(),
                 text: "Inspect child".to_string(),
             }),
         ),
@@ -446,7 +446,7 @@ pub(super) fn live_inline_child_navigation_restores_live_parent_mode() {
             8,
             "req_child",
             EventV1::ProviderRequestFinished(harness_core::event::ProviderRequestFinishedEvent {
-                request_id: "req_child".to_string(),
+                request_id: "req_child".into(),
                 finish_reason: "done".to_string(),
                 output_digest: Some("digest-child-finished".to_string()),
                 usage: None,
@@ -457,7 +457,7 @@ pub(super) fn live_inline_child_navigation_restores_live_parent_mode() {
             9,
             "req_parent",
             EventV1::ProviderRequestFinished(harness_core::event::ProviderRequestFinishedEvent {
-                request_id: "req_parent".to_string(),
+                request_id: "req_parent".into(),
                 finish_reason: "done".to_string(),
                 output_digest: Some("digest-parent-finished".to_string()),
                 usage: None,
@@ -514,7 +514,7 @@ pub(super) fn live_parent_events_update_parent_snapshot_while_inline_child_is_se
             6,
             "req_child",
             EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-                request_id: "req_child".to_string(),
+                request_id: "req_child".into(),
                 text: "Inspect child".to_string(),
             }),
         ),
@@ -523,7 +523,7 @@ pub(super) fn live_parent_events_update_parent_snapshot_while_inline_child_is_se
             8,
             "req_child",
             EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
-                request_id: "req_child".to_string(),
+                request_id: "req_child".into(),
                 delta: "child-only transcript".to_string(),
             }),
         ),
@@ -543,7 +543,7 @@ pub(super) fn live_parent_events_update_parent_snapshot_while_inline_child_is_se
         9,
         "req_parent",
         EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
-            request_id: "req_parent".to_string(),
+            request_id: "req_parent".into(),
             delta: "parent response after child opened".to_string(),
         }),
     ));
@@ -555,7 +555,7 @@ pub(super) fn live_parent_events_update_parent_snapshot_while_inline_child_is_se
         10,
         "req_child",
         EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
-            request_id: "req_child".to_string(),
+            request_id: "req_child".into(),
             delta: " and live child update".to_string(),
         }),
     ));

@@ -10,7 +10,7 @@ pub(crate) fn exact_test_operator_rail_renders_todo_items_from_tool_state() {
         "req-todo",
         harness_core::event::EventV1::UserMessageSubmitted(
             harness_core::event::UserMessageSubmittedEvent {
-                request_id: "req-todo".to_string(),
+                request_id: "req-todo".into(),
                 text: "Track the implementation".to_string(),
             },
         ),
@@ -21,7 +21,7 @@ pub(crate) fn exact_test_operator_rail_renders_todo_items_from_tool_state() {
         "req-todo",
         harness_core::event::EventV1::ToolCallRequested(
             harness_core::event::ToolCallRequestedEvent {
-                tool_call_id: "tool_call_todo".to_string(),
+                tool_call_id: "tool_call_todo".into(),
                 tool_id: "todowrite".to_string(),
                 args_summary:
                     r#"{"todos":[{"content":"Plan work","status":"pending","priority":"high"}]}"#
@@ -37,7 +37,7 @@ pub(crate) fn exact_test_operator_rail_renders_todo_items_from_tool_state() {
         "req-todo",
         harness_core::event::EventV1::ToolCallFinished(
             harness_core::event::ToolCallFinishedEvent {
-                tool_call_id: "tool_call_todo".to_string(),
+                tool_call_id: "tool_call_todo".into(),
                 status: harness_core::event::ToolCallStatus::Succeeded,
                 output_summary: Some("todo list updated".to_string()),
                 output_digest: Some("digest-todo-output".to_string()),
@@ -101,7 +101,7 @@ pub(crate) fn exact_test_operator_rail_places_todo_below_subagents() {
         "req-sidebar-order",
         harness_core::event::EventV1::UserMessageSubmitted(
             harness_core::event::UserMessageSubmittedEvent {
-                request_id: "req-sidebar-order".to_string(),
+                request_id: "req-sidebar-order".into(),
                 text: "Inspect sidebar section order".to_string(),
             },
         ),
@@ -112,7 +112,7 @@ pub(crate) fn exact_test_operator_rail_places_todo_below_subagents() {
         "req-sidebar-order",
         harness_core::event::EventV1::ToolCallRequested(
             harness_core::event::ToolCallRequestedEvent {
-                tool_call_id: "tool_call_task_order".to_string(),
+                tool_call_id: "tool_call_task_order".into(),
                 tool_id: "task".to_string(),
                 args_summary: serde_json::json!({
                     "description": "inspect subagent ordering",
@@ -130,7 +130,7 @@ pub(crate) fn exact_test_operator_rail_places_todo_below_subagents() {
         "req-sidebar-order",
         harness_core::event::EventV1::ToolCallRequested(
             harness_core::event::ToolCallRequestedEvent {
-                tool_call_id: "tool_call_todo_order".to_string(),
+                tool_call_id: "tool_call_todo_order".into(),
                 tool_id: "todowrite".to_string(),
                 args_summary: r#"{"todos":[{"content":"Keep todo below subagents","status":"in_progress","priority":"high"}]}"#
                     .to_string(),
@@ -145,7 +145,7 @@ pub(crate) fn exact_test_operator_rail_places_todo_below_subagents() {
         "req-sidebar-order",
         harness_core::event::EventV1::ToolCallFinished(
             harness_core::event::ToolCallFinishedEvent {
-                tool_call_id: "tool_call_todo_order".to_string(),
+                tool_call_id: "tool_call_todo_order".into(),
                 status: harness_core::event::ToolCallStatus::Succeeded,
                 output_summary: Some("todo list updated".to_string()),
                 output_digest: Some("digest-todo-order-output".to_string()),
@@ -173,7 +173,7 @@ pub(crate) fn exact_test_operator_rail_hides_completed_todo_state() {
         "req-todo-completed",
         harness_core::event::EventV1::UserMessageSubmitted(
             harness_core::event::UserMessageSubmittedEvent {
-                request_id: "req-todo-completed".to_string(),
+                request_id: "req-todo-completed".into(),
                 text: "Finish the checklist".to_string(),
             },
         ),
@@ -184,7 +184,7 @@ pub(crate) fn exact_test_operator_rail_hides_completed_todo_state() {
         "req-todo-completed",
         harness_core::event::EventV1::ToolCallRequested(
             harness_core::event::ToolCallRequestedEvent {
-                tool_call_id: "tool_call_todo_completed".to_string(),
+                tool_call_id: "tool_call_todo_completed".into(),
                 tool_id: "todowrite".to_string(),
                 args_summary: r#"{"todos":[{"content":"Ship todo panel","status":"completed","priority":"high"}]}"#
                     .to_string(),
@@ -199,7 +199,7 @@ pub(crate) fn exact_test_operator_rail_hides_completed_todo_state() {
         "req-todo-completed",
         harness_core::event::EventV1::ToolCallFinished(
             harness_core::event::ToolCallFinishedEvent {
-                tool_call_id: "tool_call_todo_completed".to_string(),
+                tool_call_id: "tool_call_todo_completed".into(),
                 status: harness_core::event::ToolCallStatus::Succeeded,
                 output_summary: Some("todo list completed".to_string()),
                 output_digest: Some("digest-todo-completed-output".to_string()),
@@ -246,7 +246,7 @@ pub(crate) fn exact_test_operator_rail_renders_todo_items_from_artifact_state() 
         "req-todo-artifact",
         harness_core::event::EventV1::UserMessageSubmitted(
             harness_core::event::UserMessageSubmittedEvent {
-                request_id: "req-todo-artifact".to_string(),
+                request_id: "req-todo-artifact".into(),
                 text: "Render persisted todo state".to_string(),
             },
         ),
@@ -257,7 +257,7 @@ pub(crate) fn exact_test_operator_rail_renders_todo_items_from_artifact_state() 
         "req-todo-artifact",
         harness_core::event::EventV1::ToolCallRequested(
             harness_core::event::ToolCallRequestedEvent {
-                tool_call_id: "tool_call_todo_artifact".to_string(),
+                tool_call_id: "tool_call_todo_artifact".into(),
                 tool_id: "todowrite".to_string(),
                 args_summary: r#"{"todos":[{"content":"Persisted todo","status":"in_progress","priority":"high"}]}"#
                     .to_string(),
@@ -272,7 +272,7 @@ pub(crate) fn exact_test_operator_rail_renders_todo_items_from_artifact_state() 
         "req-todo-artifact",
         harness_core::event::EventV1::ToolCallFinished(
             harness_core::event::ToolCallFinishedEvent {
-                tool_call_id: "tool_call_todo_artifact".to_string(),
+                tool_call_id: "tool_call_todo_artifact".into(),
                 status: harness_core::event::ToolCallStatus::Succeeded,
                 output_summary: Some("todo list updated".to_string()),
                 output_digest: Some("digest-todo-artifact-output".to_string()),
@@ -302,7 +302,7 @@ pub(crate) fn exact_test_operator_rail_collapses_todo_section_body() {
         "req-todo-collapse",
         harness_core::event::EventV1::UserMessageSubmitted(
             harness_core::event::UserMessageSubmittedEvent {
-                request_id: "req-todo-collapse".to_string(),
+                request_id: "req-todo-collapse".into(),
                 text: "Track several tasks".to_string(),
             },
         ),
@@ -313,7 +313,7 @@ pub(crate) fn exact_test_operator_rail_collapses_todo_section_body() {
         "req-todo-collapse",
         harness_core::event::EventV1::ToolCallRequested(
             harness_core::event::ToolCallRequestedEvent {
-                tool_call_id: "tool_call_todo_collapse".to_string(),
+                tool_call_id: "tool_call_todo_collapse".into(),
                 tool_id: "todowrite".to_string(),
                 args_summary: r#"{"todos":[{"content":"One","status":"completed","priority":"high"},{"content":"Two","status":"in_progress","priority":"high"},{"content":"Three","status":"pending","priority":"medium"}]}"#
                     .to_string(),
@@ -328,7 +328,7 @@ pub(crate) fn exact_test_operator_rail_collapses_todo_section_body() {
         "req-todo-collapse",
         harness_core::event::EventV1::ToolCallFinished(
             harness_core::event::ToolCallFinishedEvent {
-                tool_call_id: "tool_call_todo_collapse".to_string(),
+                tool_call_id: "tool_call_todo_collapse".into(),
                 status: harness_core::event::ToolCallStatus::Succeeded,
                 output_summary: Some("todo list updated".to_string()),
                 output_digest: Some("digest-todo-collapse-output".to_string()),

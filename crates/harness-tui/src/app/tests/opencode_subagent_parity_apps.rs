@@ -16,7 +16,7 @@ pub(super) fn no_child_app() -> AppState {
         3,
         "req_parent",
         EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-            request_id: "req_parent".to_string(),
+            request_id: "req_parent".into(),
             text: "Start parent work".to_string(),
         }),
     ));

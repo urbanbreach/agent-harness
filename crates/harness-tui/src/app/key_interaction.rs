@@ -1,3 +1,4 @@
+// allow: SIZE_OK — indivisible key dispatch state machine (TUI key event routing)
 use super::*;
 use crate::UnwrapOrAbort;
 

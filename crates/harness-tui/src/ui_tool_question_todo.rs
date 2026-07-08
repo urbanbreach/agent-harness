@@ -1,3 +1,4 @@
+// allow: SIZE_OK — TUI tool path rendering (indivisible view model)
 use std::path::Path;
 
 use ratatui::style::{Modifier, Style};

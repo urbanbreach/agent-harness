@@ -49,22 +49,39 @@ pub(super) fn task_inline_tool_color(
 }
 
 pub(super) fn block_tool_color(status: ToolCallDisplayStatus, theme: &Theme) -> Color {
-    match status {
-        ToolCallDisplayStatus::PendingPermission => theme.status.warning,
-        ToolCallDisplayStatus::Failed => theme.status.error,
-        ToolCallDisplayStatus::Queued
-        | ToolCallDisplayStatus::Running
-        | ToolCallDisplayStatus::Succeeded => theme.text.primary,
-    }
+    block_status_color(status, theme, theme.text.primary)
 }
 
 pub(super) fn block_tool_rail_color(status: ToolCallDisplayStatus, theme: &Theme) -> Color {
+    block_status_color(status, theme, theme.text.accent)
+}
+
+fn block_status_color(
+    status: ToolCallDisplayStatus,
+    theme: &Theme,
+    active_color: Color,
+) -> Color {
     match status {
         ToolCallDisplayStatus::PendingPermission => theme.status.warning,
         ToolCallDisplayStatus::Failed => theme.status.error,
         ToolCallDisplayStatus::Queued
         | ToolCallDisplayStatus::Running
-        | ToolCallDisplayStatus::Succeeded => theme.text.accent,
+        | ToolCallDisplayStatus::Succeeded => active_color,
+    }
+}
+
+pub(super) fn status_label<'a>(
+    status: ToolCallDisplayStatus,
+    pending_queued: &'a str,
+    running: &'a str,
+    succeeded: &'a str,
+    failed: &'a str,
+) -> &'a str {
+    match status {
+        ToolCallDisplayStatus::PendingPermission | ToolCallDisplayStatus::Queued => pending_queued,
+        ToolCallDisplayStatus::Running => running,
+        ToolCallDisplayStatus::Succeeded => succeeded,
+        ToolCallDisplayStatus::Failed => failed,
     }
 }
 

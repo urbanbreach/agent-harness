@@ -25,7 +25,7 @@ pub(super) fn question_permission_modal_renders_questions_and_answer_input() {
         EventV1::PermissionRequested(PermissionRequestedEvent {
             permission_id: "perm_question_modal".to_string(),
             kind: "question".to_string(),
-            tool_call_id: Some("tool_call_question".to_string()),
+            tool_call_id: Some("tool_call_question".into()),
             summary: serde_json::json!({
                 "questions": [{
                     "question": "Pick one",
@@ -60,7 +60,7 @@ pub(super) fn question_permission_modal_matches_reference_palette_contract() {
         EventV1::PermissionRequested(PermissionRequestedEvent {
             permission_id: "perm_question_palette".to_string(),
             kind: "question".to_string(),
-            tool_call_id: Some("tool_call_question_palette".to_string()),
+            tool_call_id: Some("tool_call_question_palette".into()),
             summary: serde_json::json!({
                 "questions": [
                     {
@@ -115,7 +115,7 @@ pub(super) fn answered_questions_render_in_completed_tool_row() {
         1,
         Some("req_question_result"),
         EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-            request_id: "req_question_result".to_string(),
+            request_id: "req_question_result".into(),
             text: "Ask me a follow-up".to_string(),
         }),
     ));
@@ -123,7 +123,7 @@ pub(super) fn answered_questions_render_in_completed_tool_row() {
         2,
         Some("req_question_result"),
         EventV1::ToolCallRequested(ToolCallRequestedEvent {
-            tool_call_id: "tool_call_question_result".to_string(),
+            tool_call_id: "tool_call_question_result".into(),
             tool_id: "user.question".to_string(),
             args_summary: serde_json::json!({
                 "questions": [
@@ -150,7 +150,7 @@ pub(super) fn answered_questions_render_in_completed_tool_row() {
         EventV1::PermissionRequested(PermissionRequestedEvent {
             permission_id: "perm_question_result".to_string(),
             kind: "question".to_string(),
-            tool_call_id: Some("tool_call_question_result".to_string()),
+            tool_call_id: Some("tool_call_question_result".into()),
             summary: serde_json::json!({
                 "questions": [
                     {
@@ -184,7 +184,7 @@ pub(super) fn answered_questions_render_in_completed_tool_row() {
         5,
         Some("req_question_result"),
         EventV1::ToolCallFinished(ToolCallFinishedEvent {
-            tool_call_id: "tool_call_question_result".to_string(),
+            tool_call_id: "tool_call_question_result".into(),
             status: ToolCallStatus::Succeeded,
             output_summary: Some("User has answered your questions.".to_string()),
             output_digest: Some("digest-question-result-output".to_string()),

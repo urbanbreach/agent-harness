@@ -440,7 +440,7 @@ pub(super) fn palette_dispatch_new_session_clears_events() {
         1,
         "req_test",
         EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-            request_id: "req_test".to_string(),
+            request_id: "req_test".into(),
             text: "test".to_string(),
         }),
     ));
@@ -924,7 +924,7 @@ pub(super) fn palette_suggested_row_dispatches_via_enter() {
         1,
         "req_test",
         EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-            request_id: "req_test".to_string(),
+            request_id: "req_test".into(),
             text: "test".to_string(),
         }),
     ));
@@ -1814,7 +1814,7 @@ pub(super) fn palette_behavior_session_rename_opens_dialog() {
         1,
         "req_test",
         EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-            request_id: "req_test".to_string(),
+            request_id: "req_test".into(),
             text: "test".to_string(),
         }),
     ));
@@ -1846,7 +1846,7 @@ pub(super) fn palette_behavior_session_copy_copies_transcript() {
         1,
         "req_test",
         EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-            request_id: "req_test".to_string(),
+            request_id: "req_test".into(),
             text: "test message".to_string(),
         }),
     ));

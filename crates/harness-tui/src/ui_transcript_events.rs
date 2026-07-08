@@ -15,10 +15,10 @@ pub(super) fn turn_event_matches_activity(
 ) -> bool {
     match &event.payload {
         harness_core::event::EventV1::ProviderReasoningDelta(data) => {
-            provider_event_matches_activity(event, &data.request_id, request_id)
+            provider_event_matches_activity(event, data.request_id.as_str(), request_id)
         }
         harness_core::event::EventV1::ProviderStreamDelta(data) => {
-            provider_event_matches_activity(event, &data.request_id, request_id)
+            provider_event_matches_activity(event, data.request_id.as_str(), request_id)
         }
         harness_core::event::EventV1::TaskCompleted(_)
         | harness_core::event::EventV1::ToolCallRequested(_) => {

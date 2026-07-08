@@ -8,7 +8,7 @@ fn tool_call_entries_prefer_resolved_identity_and_lifecycle_contract() {
         1,
         "req_contract",
         EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-            request_id: "req_contract".to_string(),
+            request_id: "req_contract".into(),
             text: "Check tool contract".to_string(),
         }),
     ));
@@ -17,7 +17,7 @@ fn tool_call_entries_prefer_resolved_identity_and_lifecycle_contract() {
         3,
         "req_contract",
         EventV1::ToolCallRequested(ToolCallRequestedEvent {
-            tool_call_id: "tc_contract".to_string(),
+            tool_call_id: "tc_contract".into(),
             tool_id: "task".to_string(),
             args_summary: r#"{"description":"check tool contract","subagent_type":"researcher"}"#
                 .to_string(),
@@ -44,7 +44,7 @@ fn tool_call_entries_prefer_resolved_identity_and_lifecycle_contract() {
         EventV1::PermissionRequested(PermissionRequestedEvent {
             permission_id: "perm_contract".to_string(),
             kind: "question".to_string(),
-            tool_call_id: Some("tc_contract".to_string()),
+            tool_call_id: Some("tc_contract".into()),
             summary: "Need confirmation".to_string(),
             request_digest: "digest-perm-contract".to_string(),
             timeout_ms: 30_000,
@@ -81,7 +81,7 @@ fn tool_call_entries_prefer_resolved_identity_and_lifecycle_contract() {
         6,
         "req_contract",
         EventV1::ToolCallStarted(ToolCallStartedEvent {
-            tool_call_id: "tc_contract".to_string(),
+            tool_call_id: "tc_contract".into(),
         }),
     ));
 
@@ -93,7 +93,7 @@ fn tool_call_entries_prefer_resolved_identity_and_lifecycle_contract() {
         7,
         "req_contract",
         EventV1::ToolCallFinished(ToolCallFinishedEvent {
-            tool_call_id: "tc_contract".to_string(),
+            tool_call_id: "tc_contract".into(),
             status: ToolCallStatus::Succeeded,
             output_summary: Some("child completed".to_string()),
             output_digest: Some("digest-contract-output".to_string()),
@@ -118,7 +118,7 @@ fn activity_permission_resolution_updates_activity_level_entry() {
         1,
         "req_activity_permission",
         EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-            request_id: "req_activity_permission".to_string(),
+            request_id: "req_activity_permission".into(),
             text: "Check activity permission".to_string(),
         }),
     ));

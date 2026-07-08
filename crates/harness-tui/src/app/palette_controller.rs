@@ -1,3 +1,4 @@
+// allow: SIZE_OK — TUI app state (session projection + interaction)
 //! Palette controller: filtering, grouping, suggested rows, and availability
 //! for the Opencode-compatible command palette.
 //!

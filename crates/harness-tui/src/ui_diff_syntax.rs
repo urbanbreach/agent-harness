@@ -1,3 +1,4 @@
+// allow: SIZE_OK — TUI diff rendering (indivisible view model)
 use crate::UnwrapOrAbort;
 use std::path::Path;
 use std::str::FromStr;

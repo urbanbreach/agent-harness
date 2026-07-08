@@ -1,3 +1,4 @@
+// allow: SIZE_OK — TUI rendering (indivisible view model)
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -267,8 +268,8 @@ fn subagent_name_from_background_notification_row(
     row: &crate::app::OrchestrationTaskRow,
 ) -> Option<String> {
     let notification = background_notification_for_orchestration_row(app, row)?;
-    let agent_name = subagent_profile_for_agent_id(app, &notification.child_session_id)
-        .or_else(|| subagent_profile_for_agent_id(app, &notification.task_id))
+    let agent_name = subagent_profile_for_agent_id(app, notification.child_session_id.as_str())
+        .or_else(|| subagent_profile_for_agent_id(app, notification.task_id.as_str()))
         .unwrap_or_else(|| "Subagent".to_string());
     non_empty_sanitized_operator_sidebar_line(&agent_name)
 }
@@ -293,7 +294,7 @@ fn background_notification_for_orchestration_row<'a>(
         let harness_core::event::EventV1::BackgroundTaskNotification(data) = &event.payload else {
             return None;
         };
-        (data.task_id == row.task_id
+        (data.task_id.as_str() == row.task_id.as_str()
             || row.effective_child_request_id() == Some(data.child_request_id.as_str())
             || row.effective_child_session_id() == Some(data.child_session_id.as_str()))
         .then_some(data)

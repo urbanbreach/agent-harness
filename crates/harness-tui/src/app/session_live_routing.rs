@@ -86,7 +86,7 @@ fn child_request_id_from_event(event: &EventEnvelopeV1, child_session_id: &str) 
             .and_then(|metadata| metadata.lineage.as_ref())
             .and_then(|lineage| lineage_child_request_id(lineage, child_session_id)),
         EventV1::BackgroundTaskNotification(data)
-            if non_empty_trimmed(&data.child_session_id) == Some(child_session_id) =>
+            if non_empty_trimmed(data.child_session_id.as_str()) == Some(child_session_id) =>
         {
             non_empty_trimmed(&data.child_request_id).map(str::to_string)
         }
@@ -149,7 +149,7 @@ fn child_session_id_from_event(event: &EventEnvelopeV1) -> Option<String> {
             .and_then(|metadata| metadata.lineage.as_ref())
             .and_then(lineage_child_session_id),
         EventV1::BackgroundTaskNotification(data) => {
-            non_empty_trimmed(&data.child_session_id).map(str::to_string)
+            non_empty_trimmed(data.child_session_id.as_str()).map(str::to_string)
         }
         _ => None,
     }

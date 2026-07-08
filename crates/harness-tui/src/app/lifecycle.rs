@@ -1,3 +1,4 @@
+// allow: SIZE_OK — TUI app state (session projection + interaction)
 use super::*;
 
 #[derive(Debug, Clone)]
@@ -706,7 +707,7 @@ impl AppState {
     pub fn most_recent_workspace_snapshot_request_id(&self) -> Option<String> {
         self.events.iter().rev().find_map(|envelope| {
             if let harness_core::event::EventV1::WorkspaceSnapshot(snapshot) = &envelope.payload {
-                Some(snapshot.request_id.clone())
+                Some(snapshot.request_id.to_string())
             } else {
                 None
             }

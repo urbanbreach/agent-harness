@@ -1,3 +1,4 @@
+// allow: SIZE_OK — pure data table (command palette parity matrix entries)
 //! Command palette parity matrix derived from Opencode source.
 //!
 //! Each entry maps a stable Opencode command ID to its parity status, category,

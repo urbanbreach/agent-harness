@@ -75,10 +75,13 @@ fn tool_match_count(tool_call: &ToolCallEntry) -> Option<u64> {
         .and_then(serde_json::Value::as_u64)
         .or_else(|| {
             tool_call.output_summary.as_deref().map(|output| {
-                output
-                    .lines()
-                    .filter(|line| has_trimmed_content(line))
-                    .count() as u64
+                u64::try_from(
+                    output
+                        .lines()
+                        .filter(|line| has_trimmed_content(line))
+                        .count(),
+                )
+                .unwrap_or(0)
             })
         })
 }
@@ -108,6 +111,10 @@ pub(super) fn search_result_count_suffix(
 
 pub(super) fn todo_write_tool_id(tool_id: &str) -> bool {
     matches!(tool_id, "todo.write" | "todowrite")
+}
+
+pub(super) fn tool_id_matches(tool_call: &ToolCallEntry, expected: &[&str]) -> bool {
+    expected.contains(&tool_call.effective_tool_id()) || expected.contains(&tool_call.tool_id.as_str())
 }
 
 pub(super) fn context_group_tool_id(tool_id: &str) -> bool {

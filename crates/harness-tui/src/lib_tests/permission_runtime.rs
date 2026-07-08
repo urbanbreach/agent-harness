@@ -140,7 +140,7 @@ pub(super) fn live_status_strip_distinguishes_terminal_states() {
         Some("req_phase"),
         harness_core::event::EventV1::ProviderRequestStarted(
             harness_core::event::ProviderRequestStartedEvent {
-                request_id: "req_phase".to_string(),
+                request_id: "req_phase".into(),
                 provider_id: "openai".to_string(),
                 model_id: "gpt-5-codex".to_string(),
                 prompt_summary: "hello".to_string(),
@@ -154,7 +154,7 @@ pub(super) fn live_status_strip_distinguishes_terminal_states() {
         Some("req_phase"),
         harness_core::event::EventV1::ProviderStreamDelta(
             harness_core::event::ProviderStreamDeltaEvent {
-                request_id: "req_phase".to_string(),
+                request_id: "req_phase".into(),
                 delta: "streaming text".to_string(),
             },
         ),
@@ -170,7 +170,7 @@ pub(super) fn live_status_strip_distinguishes_terminal_states() {
         Some("req_phase"),
         harness_core::event::EventV1::ProviderRequestFinished(
             harness_core::event::ProviderRequestFinishedEvent {
-                request_id: "req_phase".to_string(),
+                request_id: "req_phase".into(),
                 finish_reason: "stop".to_string(),
                 output_digest: Some("digest-out".to_string()),
                 usage: None,
@@ -190,7 +190,7 @@ pub(super) fn live_status_strip_distinguishes_terminal_states() {
         Some("req_cancel"),
         harness_core::event::EventV1::ProviderRequestStarted(
             harness_core::event::ProviderRequestStartedEvent {
-                request_id: "req_cancel".to_string(),
+                request_id: "req_cancel".into(),
                 provider_id: "openai".to_string(),
                 model_id: "gpt-5-codex".to_string(),
                 prompt_summary: "cancel".to_string(),
@@ -203,7 +203,7 @@ pub(super) fn live_status_strip_distinguishes_terminal_states() {
         2,
         None,
         harness_core::event::EventV1::TaskCancelled(harness_core::event::TaskCancelledEvent {
-            task_id: "req_cancel".to_string(),
+            task_id: "req_cancel".to_string().into(),
             reason: "operator cancelled".to_string(),
             task_scope: Some(harness_core::event::TaskTerminalScope::AgentTurn),
         }),
@@ -221,7 +221,7 @@ pub(super) fn live_status_strip_distinguishes_terminal_states() {
         Some("req_error"),
         harness_core::event::EventV1::ProviderRequestStarted(
             harness_core::event::ProviderRequestStartedEvent {
-                request_id: "req_error".to_string(),
+                request_id: "req_error".into(),
                 provider_id: "openai".to_string(),
                 model_id: "gpt-5-codex".to_string(),
                 prompt_summary: "fail".to_string(),

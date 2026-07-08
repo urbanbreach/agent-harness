@@ -24,7 +24,7 @@ pub(super) fn provider_reasoning_delta_populates_thinking_stream_without_overwri
         2,
         "req_reasoning",
         EventV1::ProviderReasoningDelta(ProviderReasoningDeltaEvent {
-            request_id: "req_reasoning".to_string(),
+            request_id: "req_reasoning".into(),
             delta: "Drafting a careful answer.".to_string(),
         }),
     ));
@@ -32,7 +32,7 @@ pub(super) fn provider_reasoning_delta_populates_thinking_stream_without_overwri
         3,
         "req_reasoning",
         EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
-            request_id: "req_reasoning".to_string(),
+            request_id: "req_reasoning".into(),
             delta: "Hello world".to_string(),
         }),
     ));
@@ -49,7 +49,7 @@ pub(super) fn provider_request_finished_keeps_activity_streaming_until_turn_task
         1,
         "req_turn_task",
         EventV1::TaskScheduled(TaskScheduledEvent {
-            task_id: "task_turn_task".to_string(),
+            task_id: "task_turn_task".to_string().into(),
             state: TaskScheduleState::Started,
             queue_key: Some("provider_model:default:gpt-5.4-mini".to_string()),
         }),
@@ -58,7 +58,7 @@ pub(super) fn provider_request_finished_keeps_activity_streaming_until_turn_task
         2,
         "req_turn_task",
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "provider_req_turn_task".to_string(),
+            request_id: "provider_req_turn_task".into(),
             provider_id: "default".to_string(),
             model_id: "gpt-5.4-mini".to_string(),
             prompt_summary: "Investigate the harness".to_string(),
@@ -70,7 +70,7 @@ pub(super) fn provider_request_finished_keeps_activity_streaming_until_turn_task
         3,
         "req_turn_task",
         EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
-            request_id: "provider_req_turn_task".to_string(),
+            request_id: "provider_req_turn_task".into(),
             delta: "Looking into the turn loop".to_string(),
         }),
     ));
@@ -78,7 +78,7 @@ pub(super) fn provider_request_finished_keeps_activity_streaming_until_turn_task
         4,
         "req_turn_task",
         EventV1::ProviderRequestFinished(harness_core::event::ProviderRequestFinishedEvent {
-            request_id: "provider_req_turn_task".to_string(),
+            request_id: "provider_req_turn_task".into(),
             finish_reason: "done".to_string(),
             output_digest: Some("digest-turn-task-finished".to_string()),
             usage: None,
@@ -94,7 +94,7 @@ pub(super) fn provider_request_finished_keeps_activity_streaming_until_turn_task
         5,
         "req_turn_task",
         EventV1::TaskCompleted(TaskCompletedEvent {
-            task_id: "task_turn_task".to_string(),
+            task_id: "task_turn_task".to_string().into(),
             result_summary: "Final answer".to_string(),
             result_digest: "digest-turn-task-result".to_string(),
             metadata: Some(TaskCompletionMetadata {
@@ -118,7 +118,7 @@ pub(super) fn cache_read_write_tokens_render_as_separate_status_labels() {
         1,
         "req_cache",
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "provider_req_cache".to_string(),
+            request_id: "provider_req_cache".into(),
             provider_id: "default".to_string(),
             model_id: "gpt-5.4-mini".to_string(),
             prompt_summary: "Use cached prompt".to_string(),
@@ -130,7 +130,7 @@ pub(super) fn cache_read_write_tokens_render_as_separate_status_labels() {
         2,
         "req_cache",
         EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
-            request_id: "provider_req_cache".to_string(),
+            request_id: "provider_req_cache".into(),
             finish_reason: "done".to_string(),
             output_digest: Some("digest-cache-finish".to_string()),
             usage: None,
@@ -156,7 +156,7 @@ pub(super) fn task_cancelled_marks_matching_activity_as_error() {
         1,
         "req_cancelled_turn",
         EventV1::TaskScheduled(TaskScheduledEvent {
-            task_id: "task_cancelled_turn".to_string(),
+            task_id: "task_cancelled_turn".to_string().into(),
             state: TaskScheduleState::Started,
             queue_key: Some("provider_model:default:gpt-5.4-mini".to_string()),
         }),
@@ -165,7 +165,7 @@ pub(super) fn task_cancelled_marks_matching_activity_as_error() {
         2,
         "req_cancelled_turn",
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_cancelled_turn".to_string(),
+            request_id: "req_cancelled_turn".into(),
             provider_id: "default".to_string(),
             model_id: "gpt-5.4-mini".to_string(),
             prompt_summary: "Edit the docs".to_string(),
@@ -177,7 +177,7 @@ pub(super) fn task_cancelled_marks_matching_activity_as_error() {
         3,
         "req_cancelled_turn",
         EventV1::ProviderReasoningDelta(ProviderReasoningDeltaEvent {
-            request_id: "req_cancelled_turn".to_string(),
+            request_id: "req_cancelled_turn".into(),
             delta: "Still thinking".to_string(),
         }),
     ));
@@ -185,7 +185,7 @@ pub(super) fn task_cancelled_marks_matching_activity_as_error() {
         4,
         "req_cancelled_turn",
         EventV1::TaskCancelled(TaskCancelledEvent {
-            task_id: "task_cancelled_turn".to_string(),
+            task_id: "task_cancelled_turn".to_string().into(),
             reason: "agent turn exceeded profile max_iters=24".to_string(),
             task_scope: Some(harness_core::event::TaskTerminalScope::AgentTurn),
         }),
@@ -213,7 +213,7 @@ pub(super) fn provider_error_categories_surface_in_tui_activity_and_runtime_stat
             1,
             &request_id,
             EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                request_id: request_id.clone(),
+                request_id: request_id.clone().into(),
                 provider_id: "default".to_string(),
                 model_id: "gpt-5.4-mini".to_string(),
                 prompt_summary: "Trigger provider category".to_string(),
@@ -225,7 +225,7 @@ pub(super) fn provider_error_categories_surface_in_tui_activity_and_runtime_stat
             2,
             &request_id,
             EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
-                request_id: request_id.clone(),
+                request_id: request_id.clone().into(),
                 finish_reason: "error".to_string(),
                 output_digest: None,
                 usage: None,
@@ -240,7 +240,7 @@ pub(super) fn provider_error_categories_surface_in_tui_activity_and_runtime_stat
             3,
             &request_id,
             EventV1::TaskCancelled(TaskCancelledEvent {
-                task_id: "task_provider_category".to_string(),
+                task_id: "task_provider_category".to_string().into(),
                 reason: format!("{}: fixture provider failure", category.as_str()),
                 task_scope: Some(harness_core::event::TaskTerminalScope::AgentTurn),
             }),
@@ -280,7 +280,7 @@ pub(super) fn child_tool_task_completed_does_not_finish_parent_turn_activity() {
         1,
         "req_child_task_completed",
         EventV1::TaskScheduled(TaskScheduledEvent {
-            task_id: "task_parent_turn".to_string(),
+            task_id: "task_parent_turn".to_string().into(),
             state: TaskScheduleState::Started,
             queue_key: Some("provider_model:default:gpt-5.4-mini".to_string()),
         }),
@@ -289,7 +289,7 @@ pub(super) fn child_tool_task_completed_does_not_finish_parent_turn_activity() {
         2,
         "req_child_task_completed",
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_child_task_completed".to_string(),
+            request_id: "req_child_task_completed".into(),
             provider_id: "default".to_string(),
             model_id: "gpt-5.4-mini".to_string(),
             prompt_summary: "Inspect a file".to_string(),
@@ -301,7 +301,7 @@ pub(super) fn child_tool_task_completed_does_not_finish_parent_turn_activity() {
         3,
         "req_child_task_completed",
         EventV1::TaskScheduled(TaskScheduledEvent {
-            task_id: "task_child_tool".to_string(),
+            task_id: "task_child_tool".to_string().into(),
             state: TaskScheduleState::Started,
             queue_key: Some("tool:read".to_string()),
         }),
@@ -310,7 +310,7 @@ pub(super) fn child_tool_task_completed_does_not_finish_parent_turn_activity() {
         4,
         "req_child_task_completed",
         EventV1::TaskCompleted(TaskCompletedEvent {
-            task_id: "task_child_tool".to_string(),
+            task_id: "task_child_tool".to_string().into(),
             result_summary: "24 lines read".to_string(),
             result_digest: "digest-child-tool-result".to_string(),
             metadata: Some(TaskCompletionMetadata {
@@ -338,7 +338,7 @@ pub(super) fn child_tool_task_cancelled_does_not_mark_parent_turn_activity_error
         1,
         "req_child_task_cancelled",
         EventV1::TaskScheduled(TaskScheduledEvent {
-            task_id: "task_parent_turn".to_string(),
+            task_id: "task_parent_turn".to_string().into(),
             state: TaskScheduleState::Started,
             queue_key: Some("provider_model:default:gpt-5.4-mini".to_string()),
         }),
@@ -347,7 +347,7 @@ pub(super) fn child_tool_task_cancelled_does_not_mark_parent_turn_activity_error
         2,
         "req_child_task_cancelled",
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_child_task_cancelled".to_string(),
+            request_id: "req_child_task_cancelled".into(),
             provider_id: "default".to_string(),
             model_id: "gpt-5.4-mini".to_string(),
             prompt_summary: "Inspect a file".to_string(),
@@ -359,7 +359,7 @@ pub(super) fn child_tool_task_cancelled_does_not_mark_parent_turn_activity_error
         3,
         "req_child_task_cancelled",
         EventV1::TaskScheduled(TaskScheduledEvent {
-            task_id: "task_child_tool".to_string(),
+            task_id: "task_child_tool".to_string().into(),
             state: TaskScheduleState::Started,
             queue_key: Some("tool:read".to_string()),
         }),
@@ -368,7 +368,7 @@ pub(super) fn child_tool_task_cancelled_does_not_mark_parent_turn_activity_error
         4,
         "req_child_task_cancelled",
         EventV1::TaskCancelled(TaskCancelledEvent {
-            task_id: "task_child_tool".to_string(),
+            task_id: "task_child_tool".to_string().into(),
             reason: "tool request timed out".to_string(),
             task_scope: Some(harness_core::event::TaskTerminalScope::ToolCall),
         }),
@@ -387,7 +387,7 @@ pub(super) fn terminal_only_turn_completion_scope_marks_activity_done_without_ta
         1,
         "req_terminal_only_done",
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_terminal_only_done".to_string(),
+            request_id: "req_terminal_only_done".into(),
             provider_id: "default".to_string(),
             model_id: "gpt-5.4-mini".to_string(),
             prompt_summary: "Explain the fix".to_string(),
@@ -399,7 +399,7 @@ pub(super) fn terminal_only_turn_completion_scope_marks_activity_done_without_ta
         2,
         "req_terminal_only_done",
         EventV1::TaskCompleted(TaskCompletedEvent {
-            task_id: "task_terminal_only_done".to_string(),
+            task_id: "task_terminal_only_done".to_string().into(),
             result_summary: "Final answer".to_string(),
             result_digest: "digest-terminal-only-result".to_string(),
             metadata: Some(TaskCompletionMetadata {
@@ -424,7 +424,7 @@ pub(super) fn terminal_only_turn_cancellation_scope_marks_activity_error_without
         1,
         "req_terminal_only_cancel",
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_terminal_only_cancel".to_string(),
+            request_id: "req_terminal_only_cancel".into(),
             provider_id: "default".to_string(),
             model_id: "gpt-5.4-mini".to_string(),
             prompt_summary: "Explain the fix".to_string(),
@@ -436,7 +436,7 @@ pub(super) fn terminal_only_turn_cancellation_scope_marks_activity_error_without
         2,
         "req_terminal_only_cancel",
         EventV1::TaskCancelled(TaskCancelledEvent {
-            task_id: "task_terminal_only_cancel".to_string(),
+            task_id: "task_terminal_only_cancel".to_string().into(),
             reason: "agent turn exceeded profile max_iters=24".to_string(),
             task_scope: Some(harness_core::event::TaskTerminalScope::AgentTurn),
         }),
@@ -459,7 +459,7 @@ pub(super) fn terminal_only_tool_cancellation_scope_does_not_fail_activity_or_ru
         1,
         "req_terminal_only_tool_cancel",
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_terminal_only_tool_cancel".to_string(),
+            request_id: "req_terminal_only_tool_cancel".into(),
             provider_id: "default".to_string(),
             model_id: "gpt-5.4-mini".to_string(),
             prompt_summary: "Read the file".to_string(),
@@ -471,7 +471,7 @@ pub(super) fn terminal_only_tool_cancellation_scope_does_not_fail_activity_or_ru
         2,
         "req_terminal_only_tool_cancel",
         EventV1::TaskCancelled(TaskCancelledEvent {
-            task_id: "task_terminal_only_tool_cancel".to_string(),
+            task_id: "task_terminal_only_tool_cancel".to_string().into(),
             reason: "tool request timed out".to_string(),
             task_scope: Some(harness_core::event::TaskTerminalScope::ToolCall),
         }),

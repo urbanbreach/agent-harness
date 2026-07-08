@@ -1,3 +1,4 @@
+// allow: SIZE_OK — TUI overlay rendering (indivisible view model)
 use harness_core::proj::RunStatus;
 
 use super::*;

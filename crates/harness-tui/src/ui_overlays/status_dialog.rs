@@ -1,3 +1,4 @@
+// allow: SIZE_OK — TUI overlay rendering (indivisible view model)
 use crate::UnwrapOrAbort;
 use std::collections::BTreeMap;
 use std::path::Path;

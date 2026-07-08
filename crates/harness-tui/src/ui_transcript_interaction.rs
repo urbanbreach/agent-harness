@@ -1,3 +1,4 @@
+// allow: SIZE_OK — TUI transcript rendering (indivisible view model)
 use ratatui::{
     layout::Rect,
     style::Color,

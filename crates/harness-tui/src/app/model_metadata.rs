@@ -1,3 +1,4 @@
+// allow: SIZE_OK — TUI app state (session projection + interaction)
 use harness_core::agent::AgentModelRef;
 use harness_core::config::{registered_profile_model_metadata, ResolvedProfileModelMetadata};
 use serde_json::Value;

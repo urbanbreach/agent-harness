@@ -11,7 +11,7 @@ pub(super) fn footer_event(
         schema_version: harness_core::event::SCHEMA_VERSION,
         event_id: format!("evt-subagent-footer-exact-{seq:04}"),
         seq,
-        run_id: "agent_child".to_string(),
+        run_id: "agent_child".into(),
         mono_ms: seq * 100,
         ts: None,
         actor,
@@ -81,7 +81,7 @@ pub(crate) fn exact_test_subagent_footer_body_keeps_ordered_transcript_tool_rows
                 Some("req_child"),
                 harness_core::event::EventV1::ProviderRequestStarted(
                     harness_core::event::ProviderRequestStartedEvent {
-                        request_id: "req_child".to_string(),
+                        request_id: "req_child".into(),
                         provider_id: "mock".to_string(),
                         model_id: "model-1".to_string(),
                         prompt_summary: "audit transcript parity".to_string(),
@@ -96,7 +96,7 @@ pub(crate) fn exact_test_subagent_footer_body_keeps_ordered_transcript_tool_rows
                 Some("req_child"),
                 harness_core::event::EventV1::ProviderStreamDelta(
                     harness_core::event::ProviderStreamDeltaEvent {
-                        request_id: "req_child".to_string(),
+                        request_id: "req_child".into(),
                         delta: "First **markdown** answer.\n".to_string(),
                     },
                 ),
@@ -107,7 +107,7 @@ pub(crate) fn exact_test_subagent_footer_body_keeps_ordered_transcript_tool_rows
                 Some("req_child"),
                 harness_core::event::EventV1::ToolCallRequested(
                     harness_core::event::ToolCallRequestedEvent {
-                        tool_call_id: "tc_child_read".to_string(),
+                        tool_call_id: "tc_child_read".into(),
                         tool_id: "fs.read".to_string(),
                         args_summary: r#"{"path":"docs/rust.md"}"#.to_string(),
                         args_digest: "digest-child-read".to_string(),
@@ -121,7 +121,7 @@ pub(crate) fn exact_test_subagent_footer_body_keeps_ordered_transcript_tool_rows
                 Some("req_child"),
                 harness_core::event::EventV1::ToolCallStarted(
                     harness_core::event::ToolCallStartedEvent {
-                        tool_call_id: "tc_child_read".to_string(),
+                        tool_call_id: "tc_child_read".into(),
                     },
                 ),
             ),
@@ -131,7 +131,7 @@ pub(crate) fn exact_test_subagent_footer_body_keeps_ordered_transcript_tool_rows
                 Some("req_child"),
                 harness_core::event::EventV1::ProviderStreamDelta(
                     harness_core::event::ProviderStreamDeltaEvent {
-                        request_id: "req_child".to_string(),
+                        request_id: "req_child".into(),
                         delta: "Second body after tool.".to_string(),
                     },
                 ),
@@ -168,7 +168,7 @@ pub(crate) fn exact_test_subagent_footer_status_uses_running_and_cancelled_icons
         worker.clone(),
         Some("req_child"),
         harness_core::event::EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
-            task_id: "task_child".to_string(),
+            task_id: "task_child".to_string().into(),
             state: harness_core::event::TaskScheduleState::Started,
             queue_key: Some("agent:running:researcher".to_string()),
         }),
@@ -197,7 +197,7 @@ pub(crate) fn exact_test_subagent_footer_status_uses_running_and_cancelled_icons
                 Some("req_child"),
                 harness_core::event::EventV1::TaskCancelled(
                     harness_core::event::TaskCancelledEvent {
-                        task_id: "task_child".to_string(),
+                        task_id: "task_child".to_string().into(),
                         reason: "operator cancelled".to_string(),
                         task_scope: Some(harness_core::event::TaskTerminalScope::ToolCall),
                     },

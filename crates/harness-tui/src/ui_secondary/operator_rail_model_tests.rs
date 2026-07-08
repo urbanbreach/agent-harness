@@ -219,7 +219,7 @@ pub(crate) fn exact_test_operator_rail_matches_sidebar_text_styles() {
         lsp_request_id,
         harness_core::event::EventV1::UserMessageSubmitted(
             harness_core::event::UserMessageSubmittedEvent {
-                request_id: lsp_request_id.to_string(),
+                request_id: lsp_request_id.into(),
                 text: "Find the Rust definition".to_string(),
             },
         ),
@@ -230,7 +230,7 @@ pub(crate) fn exact_test_operator_rail_matches_sidebar_text_styles() {
         lsp_request_id,
         harness_core::event::EventV1::ToolCallRequested(
             harness_core::event::ToolCallRequestedEvent {
-                tool_call_id: "tool_call_style_lsp".to_string(),
+                tool_call_id: "tool_call_style_lsp".into(),
                 tool_id: "code.lsp".to_string(),
                 args_summary: r#"{"operation":"goto_definition","path":"src/ui_secondary.rs"}"#
                     .to_string(),
@@ -248,7 +248,7 @@ pub(crate) fn exact_test_operator_rail_matches_sidebar_text_styles() {
         lsp_request_id,
         harness_core::event::EventV1::ToolCallFinished(
             harness_core::event::ToolCallFinishedEvent {
-                tool_call_id: "tool_call_style_lsp".to_string(),
+                tool_call_id: "tool_call_style_lsp".into(),
                 status: harness_core::event::ToolCallStatus::Succeeded,
                 output_summary: Some("Found definition in src/ui_secondary.rs".to_string()),
                 output_digest: Some("digest-style-lsp-output".to_string()),
@@ -354,7 +354,7 @@ pub(crate) fn exact_test_operator_rail_uses_generated_session_title() {
         "req-title",
         harness_core::event::EventV1::UserMessageSubmitted(
             harness_core::event::UserMessageSubmittedEvent {
-                request_id: "req-title".to_string(),
+                request_id: "req-title".into(),
                 text: "Please implement the flaky retry button".to_string(),
             },
         ),
@@ -465,7 +465,7 @@ pub(crate) fn exact_test_operator_rail_section_model_keeps_native_prefix_tools_o
         harness_core::event::EventActor::new(harness_core::event::ActorKind::System, None),
         harness_core::event::EventV1::ProviderRequestStarted(
             harness_core::event::ProviderRequestStartedEvent {
-                request_id: "req_native_prefix_tool".to_string(),
+                request_id: "req_native_prefix_tool".into(),
                 provider_id: "openai".to_string(),
                 model_id: "gpt-5.4".to_string(),
                 prompt_summary: "Apply the sidebar patch".to_string(),
@@ -479,7 +479,7 @@ pub(crate) fn exact_test_operator_rail_section_model_keeps_native_prefix_tools_o
         harness_core::event::EventActor::new(harness_core::event::ActorKind::System, None),
         harness_core::event::EventV1::ToolCallRequested(
             harness_core::event::ToolCallRequestedEvent {
-                tool_call_id: "tool_call_edit".to_string(),
+                tool_call_id: "tool_call_edit".into(),
                 tool_id: "edit.hashline_apply".to_string(),
                 args_summary: serde_json::json!({"path": "src/ui_secondary.rs"}).to_string(),
                 args_digest: "digest-native-prefix-edit".to_string(),
@@ -492,7 +492,7 @@ pub(crate) fn exact_test_operator_rail_section_model_keeps_native_prefix_tools_o
         harness_core::event::EventActor::new(harness_core::event::ActorKind::System, None),
         harness_core::event::EventV1::ToolCallFinished(
             harness_core::event::ToolCallFinishedEvent {
-                tool_call_id: "tool_call_edit".to_string(),
+                tool_call_id: "tool_call_edit".into(),
                 status: harness_core::event::ToolCallStatus::Succeeded,
                 output_summary: Some("Applied inline hashline edit".to_string()),
                 output_digest: Some("digest-native-prefix-edit-output".to_string()),
@@ -607,7 +607,7 @@ pub(crate) fn exact_test_operator_rail_section_model_counts_generic_mcp_activity
         harness_core::event::EventActor::new(harness_core::event::ActorKind::User, None),
         harness_core::event::EventV1::UserMessageSubmitted(
             harness_core::event::UserMessageSubmittedEvent {
-                request_id: "req-mcp".to_string(),
+                request_id: "req-mcp".into(),
                 text: "Use the MCP fixture".to_string(),
             },
         ),
@@ -617,7 +617,7 @@ pub(crate) fn exact_test_operator_rail_section_model_counts_generic_mcp_activity
         worker.clone(),
         harness_core::event::EventV1::ToolCallRequested(
             harness_core::event::ToolCallRequestedEvent {
-                tool_call_id: "tool_call_mcp_1".to_string(),
+                tool_call_id: "tool_call_mcp_1".into(),
                 tool_id: "mcp.fixture.tool.call".to_string(),
                 args_summary: r#"{"tool":"echo"}"#.to_string(),
                 args_digest: "digest-mcp-1".to_string(),
@@ -633,7 +633,7 @@ pub(crate) fn exact_test_operator_rail_section_model_counts_generic_mcp_activity
         worker.clone(),
         harness_core::event::EventV1::ToolCallFinished(
             harness_core::event::ToolCallFinishedEvent {
-                tool_call_id: "tool_call_mcp_1".to_string(),
+                tool_call_id: "tool_call_mcp_1".into(),
                 status: harness_core::event::ToolCallStatus::Succeeded,
                 output_summary: Some("fixture ok".to_string()),
                 output_digest: Some("digest-output-mcp-1".to_string()),
@@ -650,7 +650,7 @@ pub(crate) fn exact_test_operator_rail_section_model_counts_generic_mcp_activity
         worker.clone(),
         harness_core::event::EventV1::ToolCallRequested(
             harness_core::event::ToolCallRequestedEvent {
-                tool_call_id: "tool_call_search_1".to_string(),
+                tool_call_id: "tool_call_search_1".into(),
                 tool_id: "search.web".to_string(),
                 args_summary: r#"{"query":"docs"}"#.to_string(),
                 args_digest: "digest-search-1".to_string(),
@@ -663,7 +663,7 @@ pub(crate) fn exact_test_operator_rail_section_model_counts_generic_mcp_activity
         worker,
         harness_core::event::EventV1::ToolCallFinished(
             harness_core::event::ToolCallFinishedEvent {
-                tool_call_id: "tool_call_search_1".to_string(),
+                tool_call_id: "tool_call_search_1".into(),
                 status: harness_core::event::ToolCallStatus::Failed,
                 output_summary: Some("search failed".to_string()),
                 output_digest: Some("digest-output-search-1".to_string()),

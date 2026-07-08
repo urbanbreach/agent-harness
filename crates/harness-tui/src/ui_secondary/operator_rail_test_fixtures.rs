@@ -41,7 +41,7 @@ pub(crate) fn operator_rail_test_app() -> AppState {
             Some("w1".to_string()),
         ),
         harness_core::event::EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
-            task_id: "task_queue".to_string(),
+            task_id: "task_queue".to_string().into(),
             state: harness_core::event::TaskScheduleState::Queued,
             queue_key: Some("tool:fs.read".to_string()),
         }),
@@ -92,7 +92,7 @@ pub(crate) fn operator_rail_activity_test_app() -> AppState {
         schema_version: harness_core::event::SCHEMA_VERSION,
         event_id: "evt_activity_request".to_string(),
         seq: 1,
-        run_id: "run_fixture".to_string(),
+        run_id: "run_fixture".into(),
         mono_ms: 10,
         ts: None,
         actor: harness_core::event::EventActor::new(harness_core::event::ActorKind::User, None),
@@ -101,7 +101,7 @@ pub(crate) fn operator_rail_activity_test_app() -> AppState {
         stream_key: Some("run:run_fixture".to_string()),
         payload: harness_core::event::EventV1::UserMessageSubmitted(
             harness_core::event::UserMessageSubmittedEvent {
-                request_id: "req_activity".to_string(),
+                request_id: "req_activity".into(),
                 text: "Inspect operator rail taxonomy".to_string(),
             },
         ),
@@ -111,7 +111,7 @@ pub(crate) fn operator_rail_activity_test_app() -> AppState {
         harness_core::event::EventActor::new(harness_core::event::ActorKind::System, None),
         harness_core::event::EventV1::ToolCallRequested(
             harness_core::event::ToolCallRequestedEvent {
-                tool_call_id: "tool_call_mcp".to_string(),
+                tool_call_id: "tool_call_mcp".into(),
                 tool_id: "exa.search".to_string(),
                 args_summary: r#"{"query":"ratatui sidebar"}"#.to_string(),
                 args_digest: "digest-tool-mcp".to_string(),
@@ -123,7 +123,7 @@ pub(crate) fn operator_rail_activity_test_app() -> AppState {
         3,
         harness_core::event::EventActor::new(harness_core::event::ActorKind::System, None),
         harness_core::event::EventV1::ToolCallStarted(harness_core::event::ToolCallStartedEvent {
-            tool_call_id: "tool_call_mcp".to_string(),
+            tool_call_id: "tool_call_mcp".into(),
         }),
     ));
     app.ingest_event(operator_rail_test_event(
@@ -131,7 +131,7 @@ pub(crate) fn operator_rail_activity_test_app() -> AppState {
         harness_core::event::EventActor::new(harness_core::event::ActorKind::System, None),
         harness_core::event::EventV1::ToolCallFinished(
             harness_core::event::ToolCallFinishedEvent {
-                tool_call_id: "tool_call_mcp".to_string(),
+                tool_call_id: "tool_call_mcp".into(),
                 status: harness_core::event::ToolCallStatus::Succeeded,
                 output_summary: Some("Returned 3 results".to_string()),
                 output_digest: Some("digest-tool-mcp-output".to_string()),
@@ -145,7 +145,7 @@ pub(crate) fn operator_rail_activity_test_app() -> AppState {
         harness_core::event::EventActor::new(harness_core::event::ActorKind::System, None),
         harness_core::event::EventV1::ToolCallRequested(
             harness_core::event::ToolCallRequestedEvent {
-                tool_call_id: "tool_call_web".to_string(),
+                tool_call_id: "tool_call_web".into(),
                 tool_id: "search.web".to_string(),
                 args_summary: r#"{"query":"sidebar parity"}"#.to_string(),
                 args_digest: "digest-tool-web".to_string(),
@@ -161,7 +161,7 @@ pub(crate) fn operator_rail_activity_test_app() -> AppState {
         harness_core::event::EventActor::new(harness_core::event::ActorKind::System, None),
         harness_core::event::EventV1::ToolCallFinished(
             harness_core::event::ToolCallFinishedEvent {
-                tool_call_id: "tool_call_web".to_string(),
+                tool_call_id: "tool_call_web".into(),
                 status: harness_core::event::ToolCallStatus::Succeeded,
                 output_summary: Some("Fetched sidebar examples".to_string()),
                 output_digest: Some("digest-tool-web-output".to_string()),
@@ -178,7 +178,7 @@ pub(crate) fn operator_rail_activity_test_app() -> AppState {
         harness_core::event::EventActor::new(harness_core::event::ActorKind::System, None),
         harness_core::event::EventV1::ToolCallRequested(
             harness_core::event::ToolCallRequestedEvent {
-                tool_call_id: "tool_call_batch".to_string(),
+                tool_call_id: "tool_call_batch".into(),
                 tool_id: "tool.batch".to_string(),
                 args_summary: r#"{"requested_call_count":2}"#.to_string(),
                 args_digest: "digest-tool-batch".to_string(),
@@ -193,7 +193,7 @@ pub(crate) fn operator_rail_activity_test_app() -> AppState {
         8,
         harness_core::event::EventActor::new(harness_core::event::ActorKind::System, None),
         harness_core::event::EventV1::ToolCallStarted(harness_core::event::ToolCallStartedEvent {
-            tool_call_id: "tool_call_batch".to_string(),
+            tool_call_id: "tool_call_batch".into(),
         }),
     ));
     app.ingest_event(operator_rail_test_event(
@@ -201,7 +201,7 @@ pub(crate) fn operator_rail_activity_test_app() -> AppState {
         harness_core::event::EventActor::new(harness_core::event::ActorKind::System, None),
         harness_core::event::EventV1::ToolCallRequested(
             harness_core::event::ToolCallRequestedEvent {
-                tool_call_id: "tool_call_lsp".to_string(),
+                tool_call_id: "tool_call_lsp".into(),
                 tool_id: "code.lsp".to_string(),
                 args_summary: r#"{"operation":"goto_definition","path":"src/ui_secondary.rs"}"#
                     .to_string(),
@@ -218,7 +218,7 @@ pub(crate) fn operator_rail_activity_test_app() -> AppState {
         harness_core::event::EventActor::new(harness_core::event::ActorKind::System, None),
         harness_core::event::EventV1::ToolCallFinished(
             harness_core::event::ToolCallFinishedEvent {
-                tool_call_id: "tool_call_lsp".to_string(),
+                tool_call_id: "tool_call_lsp".into(),
                 status: harness_core::event::ToolCallStatus::Succeeded,
                 output_summary: Some("Found definition in src/ui_secondary.rs".to_string()),
                 output_digest: Some("digest-tool-lsp-output".to_string()),
@@ -242,7 +242,7 @@ pub(crate) fn operator_rail_test_event(
         schema_version: harness_core::event::SCHEMA_VERSION,
         event_id: format!("evt_{seq}"),
         seq,
-        run_id: "run_fixture".to_string(),
+        run_id: "run_fixture".into(),
         mono_ms: seq * 10,
         ts: None,
         actor,

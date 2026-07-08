@@ -19,7 +19,7 @@ pub(crate) fn slash_exit_from_inline_subagent_restores_parent_before_quit() {
         2,
         "req_parent",
         EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-            request_id: "req_parent".to_string(),
+            request_id: "req_parent".into(),
             text: "Start parent work".to_string(),
         }),
     ));
@@ -37,7 +37,7 @@ pub(crate) fn slash_exit_from_inline_subagent_restores_parent_before_quit() {
         "req_child",
         EventActor::new(ActorKind::Worker, Some("agent_child".to_string())),
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_child".to_string(),
+            request_id: "req_child".into(),
             provider_id: "default".to_string(),
             model_id: "model-child".to_string(),
             prompt_summary: "inspect child".to_string(),

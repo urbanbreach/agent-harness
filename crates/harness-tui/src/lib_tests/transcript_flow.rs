@@ -8,7 +8,7 @@ pub(super) fn run_finished_keeps_transcript_and_ready_composer() {
         Some("req_done"),
         harness_core::event::EventV1::ProviderRequestStarted(
             harness_core::event::ProviderRequestStartedEvent {
-                request_id: "req_done".to_string(),
+                request_id: "req_done".into(),
                 provider_id: "openai".to_string(),
                 model_id: "gpt-5-codex".to_string(),
                 prompt_summary: "finished".to_string(),
@@ -22,7 +22,7 @@ pub(super) fn run_finished_keeps_transcript_and_ready_composer() {
         Some("req_done"),
         harness_core::event::EventV1::ProviderStreamDelta(
             harness_core::event::ProviderStreamDeltaEvent {
-                request_id: "req_done".to_string(),
+                request_id: "req_done".into(),
                 delta: "transcript remains visible".to_string(),
             },
         ),
@@ -32,7 +32,7 @@ pub(super) fn run_finished_keeps_transcript_and_ready_composer() {
         Some("req_done"),
         harness_core::event::EventV1::ProviderRequestFinished(
             harness_core::event::ProviderRequestFinishedEvent {
-                request_id: "req_done".to_string(),
+                request_id: "req_done".into(),
                 finish_reason: "stop".to_string(),
                 output_digest: Some("digest-done-out".to_string()),
                 usage: None,
@@ -60,7 +60,7 @@ pub(super) fn streaming_transcript_auto_scrolls_to_latest_wrapped_content() {
         Some("req_scroll"),
         harness_core::event::EventV1::ProviderRequestStarted(
             harness_core::event::ProviderRequestStartedEvent {
-                request_id: "req_scroll".to_string(),
+                request_id: "req_scroll".into(),
                 provider_id: "openai".to_string(),
                 model_id: "gpt-5-codex".to_string(),
                 prompt_summary: "scroll test".to_string(),
@@ -74,7 +74,7 @@ pub(super) fn streaming_transcript_auto_scrolls_to_latest_wrapped_content() {
         Some("req_scroll"),
         harness_core::event::EventV1::ProviderStreamDelta(
             harness_core::event::ProviderStreamDeltaEvent {
-                request_id: "req_scroll".to_string(),
+                request_id: "req_scroll".into(),
                 delta: [
                     "HEADTOKEN",
                     "alpha",
@@ -237,7 +237,7 @@ pub(super) fn disconnected_stream_disables_composer_with_reopen_guidance() {
         Some("req_disconnect"),
         harness_core::event::EventV1::ProviderRequestStarted(
             harness_core::event::ProviderRequestStartedEvent {
-                request_id: "req_disconnect".to_string(),
+                request_id: "req_disconnect".into(),
                 provider_id: "openai".to_string(),
                 model_id: "gpt-5-codex".to_string(),
                 prompt_summary: "disconnect".to_string(),
@@ -251,7 +251,7 @@ pub(super) fn disconnected_stream_disables_composer_with_reopen_guidance() {
         Some("req_disconnect"),
         harness_core::event::EventV1::ProviderStreamDelta(
             harness_core::event::ProviderStreamDeltaEvent {
-                request_id: "req_disconnect".to_string(),
+                request_id: "req_disconnect".into(),
                 delta: "transcript stays visible".to_string(),
             },
         ),
@@ -281,7 +281,7 @@ pub(super) fn transcript_renders_inline_tool_states_and_prompt_echo() {
         Some("req_inline"),
         harness_core::event::EventV1::ProviderRequestStarted(
             harness_core::event::ProviderRequestStartedEvent {
-                request_id: "req_inline".to_string(),
+                request_id: "req_inline".into(),
                 provider_id: "openai".to_string(),
                 model_id: "gpt-5-codex".to_string(),
                 prompt_summary: "Inspect src/ui.rs".to_string(),
@@ -295,7 +295,7 @@ pub(super) fn transcript_renders_inline_tool_states_and_prompt_echo() {
         Some("req_inline"),
         harness_core::event::EventV1::ProviderStreamDelta(
             harness_core::event::ProviderStreamDeltaEvent {
-                request_id: "req_inline".to_string(),
+                request_id: "req_inline".into(),
                 delta: "Drafting a plan".to_string(),
             },
         ),
@@ -305,7 +305,7 @@ pub(super) fn transcript_renders_inline_tool_states_and_prompt_echo() {
         Some("req_inline"),
         harness_core::event::EventV1::ToolCallRequested(
             harness_core::event::ToolCallRequestedEvent {
-                tool_call_id: "tc_inline".to_string(),
+                tool_call_id: "tc_inline".into(),
                 tool_id: "shell.run".to_string(),
                 args_summary: r#"{"cmd":"false"}"#.to_string(),
                 args_digest: "digest-inline-args".to_string(),
@@ -317,7 +317,7 @@ pub(super) fn transcript_renders_inline_tool_states_and_prompt_echo() {
         4,
         Some("req_inline"),
         harness_core::event::EventV1::ToolCallStarted(harness_core::event::ToolCallStartedEvent {
-            tool_call_id: "tc_inline".to_string(),
+            tool_call_id: "tc_inline".into(),
         }),
     ));
     app.ingest_event(envelope(
@@ -325,7 +325,7 @@ pub(super) fn transcript_renders_inline_tool_states_and_prompt_echo() {
         Some("req_inline"),
         harness_core::event::EventV1::ToolCallFinished(
             harness_core::event::ToolCallFinishedEvent {
-                tool_call_id: "tc_inline".to_string(),
+                tool_call_id: "tc_inline".into(),
                 status: harness_core::event::ToolCallStatus::Failed,
                 output_summary: Some("exit code: 1".to_string()),
                 output_digest: None,
@@ -350,7 +350,7 @@ pub(super) fn transcript_tool_rows_keep_status_but_not_raw_json_dump() {
         Some("req_tool_compact"),
         harness_core::event::EventV1::UserMessageSubmitted(
             harness_core::event::UserMessageSubmittedEvent {
-                request_id: "req_tool_compact".to_string(),
+                request_id: "req_tool_compact".into(),
                 text: "Read the file".to_string(),
             },
         ),
@@ -360,7 +360,7 @@ pub(super) fn transcript_tool_rows_keep_status_but_not_raw_json_dump() {
         Some("req_tool_compact"),
         harness_core::event::EventV1::ProviderRequestStarted(
             harness_core::event::ProviderRequestStartedEvent {
-                request_id: "req_tool_compact".to_string(),
+                request_id: "req_tool_compact".into(),
                 provider_id: "openai".to_string(),
                 model_id: "gpt-5-codex".to_string(),
                 prompt_summary: "Read the file".to_string(),
@@ -374,7 +374,7 @@ pub(super) fn transcript_tool_rows_keep_status_but_not_raw_json_dump() {
         Some("req_tool_compact"),
         harness_core::event::EventV1::ToolCallRequested(
             harness_core::event::ToolCallRequestedEvent {
-                tool_call_id: "tc_compact".to_string(),
+                tool_call_id: "tc_compact".into(),
                 tool_id: "fs.read".to_string(),
                 args_summary: r#"{"path":"src/lib.rs","start_line":42,"limit":20}"#.to_string(),
                 args_digest: "digest-tool-compact-args".to_string(),
@@ -386,7 +386,7 @@ pub(super) fn transcript_tool_rows_keep_status_but_not_raw_json_dump() {
         4,
         Some("req_tool_compact"),
         harness_core::event::EventV1::ToolCallStarted(harness_core::event::ToolCallStartedEvent {
-            tool_call_id: "tc_compact".to_string(),
+            tool_call_id: "tc_compact".into(),
         }),
     ));
     app.ingest_event(envelope(
@@ -394,7 +394,7 @@ pub(super) fn transcript_tool_rows_keep_status_but_not_raw_json_dump() {
         Some("req_tool_compact"),
         harness_core::event::EventV1::ToolCallFinished(
             harness_core::event::ToolCallFinishedEvent {
-                tool_call_id: "tc_compact".to_string(),
+                tool_call_id: "tc_compact".into(),
                 status: harness_core::event::ToolCallStatus::Succeeded,
                 output_summary: Some("12 lines read".to_string()),
                 output_digest: Some("digest-tool-compact-output".to_string()),
@@ -572,7 +572,7 @@ pub(super) fn failed_tool_rows_still_surface_error_summary() {
         Some("req_tool_error"),
         harness_core::event::EventV1::ProviderRequestStarted(
             harness_core::event::ProviderRequestStartedEvent {
-                request_id: "req_tool_error".to_string(),
+                request_id: "req_tool_error".into(),
                 provider_id: "openai".to_string(),
                 model_id: "gpt-5-codex".to_string(),
                 prompt_summary: "Run the command".to_string(),
@@ -586,7 +586,7 @@ pub(super) fn failed_tool_rows_still_surface_error_summary() {
         Some("req_tool_error"),
         harness_core::event::EventV1::ToolCallRequested(
             harness_core::event::ToolCallRequestedEvent {
-                tool_call_id: "tc_error".to_string(),
+                tool_call_id: "tc_error".into(),
                 tool_id: "shell.run".to_string(),
                 args_summary: r#"{"cmd":"false","cwd":"/tmp/demo"}"#.to_string(),
                 args_digest: "digest-tool-error-args".to_string(),
@@ -598,7 +598,7 @@ pub(super) fn failed_tool_rows_still_surface_error_summary() {
         3,
         Some("req_tool_error"),
         harness_core::event::EventV1::ToolCallStarted(harness_core::event::ToolCallStartedEvent {
-            tool_call_id: "tc_error".to_string(),
+            tool_call_id: "tc_error".into(),
         }),
     ));
     app.ingest_event(envelope(
@@ -606,7 +606,7 @@ pub(super) fn failed_tool_rows_still_surface_error_summary() {
         Some("req_tool_error"),
         harness_core::event::EventV1::ToolCallFinished(
             harness_core::event::ToolCallFinishedEvent {
-                tool_call_id: "tc_error".to_string(),
+                tool_call_id: "tc_error".into(),
                 status: harness_core::event::ToolCallStatus::Failed,
                 output_summary: Some("exit code: 1\nstderr: permission denied".to_string()),
                 output_digest: None,

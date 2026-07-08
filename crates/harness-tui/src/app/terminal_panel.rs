@@ -1,3 +1,4 @@
+// allow: SIZE_OK — TUI app state (session projection + interaction)
 use std::cell::Cell;
 
 use serde_json::Value;

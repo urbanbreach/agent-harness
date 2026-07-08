@@ -1,3 +1,4 @@
+// allow: SIZE_OK — TUI app state (session projection + interaction)
 use crate::UnwrapOrAbort;
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -247,7 +248,7 @@ impl SessionProjection {
                 model_id: String::new(),
                 provider_id: String::new(),
                 user_message: Some(UserMessageSubmittedEvent {
-                    request_id: request_id.to_string(),
+                    request_id: request_id.into(),
                     text,
                 }),
                 user_timestamp: event.ts.clone(),
@@ -290,14 +291,14 @@ impl SessionProjection {
         data: &harness_core::event::UserMessageSubmittedEvent,
         seq: u64,
     ) -> Option<usize> {
-        if let Some(index) = self.activity_index_for_request(&data.request_id) {
+        if let Some(index) = self.activity_index_for_request(data.request_id.as_str()) {
             self.remove_duplicate_local_prompt_echo(&data.text, index);
-            return self.activity_index_for_request(&data.request_id);
+            return self.activity_index_for_request(data.request_id.as_str());
         }
 
         self.local_prompt_echo_index_for_message(&data.text)
-            .and_then(|index| self.adopt_local_prompt_echo_at(index, &data.request_id, seq))
-            .or_else(|| self.adopt_local_prompt_echo(&data.request_id, seq))
+            .and_then(|index| self.adopt_local_prompt_echo_at(index, data.request_id.as_str(), seq))
+            .or_else(|| self.adopt_local_prompt_echo(data.request_id.as_str(), seq))
     }
 
     fn remove_duplicate_local_prompt_echo(&mut self, text: &str, keep_index: usize) {
@@ -317,7 +318,7 @@ impl SessionProjection {
         let permission_entry = super::PermissionEntry {
             permission_id: data.permission_id.clone(),
             kind: data.kind.clone(),
-            tool_call_id: data.tool_call_id.clone(),
+            tool_call_id: data.tool_call_id.as_ref().map(|id| id.to_string()),
             summary: data.summary.clone(),
             request_digest: data.request_digest.clone(),
             timeout_ms: data.timeout_ms,
@@ -328,7 +329,7 @@ impl SessionProjection {
             last_seq: event.seq,
         };
 
-        if let Some(tool_call_id) = data.tool_call_id.as_deref() {
+        if let Some(tool_call_id) = data.tool_call_id.as_ref().map(|id| id.as_str()) {
             if let Some(tool_entry) = self.find_tool_call_mut(tool_call_id) {
                 tool_entry.permissions.push(permission_entry);
                 tool_entry.sync_display_status();
@@ -963,7 +964,7 @@ mod tests {
             user_message: None,
             user_timestamp: None,
             request_data: Some(harness_core::event::ProviderRequestStartedEvent {
-                request_id: "req_retry".to_string(),
+                request_id: "req_retry".into(),
                 provider_id: "default".to_string(),
                 model_id: "gpt-5.4".to_string(),
                 prompt_summary: "prompt summary".to_string(),
@@ -1014,7 +1015,7 @@ mod tests {
             user_message: None,
             user_timestamp: None,
             request_data: Some(harness_core::event::ProviderRequestStartedEvent {
-                request_id: "req_done".to_string(),
+                request_id: "req_done".into(),
                 provider_id: "default".to_string(),
                 model_id: "gpt-5.4".to_string(),
                 prompt_summary: "prompt summary".to_string(),

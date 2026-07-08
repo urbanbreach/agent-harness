@@ -21,7 +21,7 @@ fn subagent_footer_body_sticks_to_latest_activity() {
                 Some("req_child"),
                 harness_core::event::EventV1::ProviderRequestStarted(
                     harness_core::event::ProviderRequestStartedEvent {
-                        request_id: "req_child".to_string(),
+                        request_id: "req_child".into(),
                         provider_id: "mock".to_string(),
                         model_id: "model-1".to_string(),
                         prompt_summary: "audit transcript parity".to_string(),
@@ -36,7 +36,7 @@ fn subagent_footer_body_sticks_to_latest_activity() {
                 Some("req_child"),
                 harness_core::event::EventV1::ProviderStreamDelta(
                     harness_core::event::ProviderStreamDeltaEvent {
-                        request_id: "req_child".to_string(),
+                        request_id: "req_child".into(),
                         delta: transcript,
                     },
                 ),
@@ -71,7 +71,7 @@ fn subagent_footer_body_renders_child_user_commit_without_assistant_summary() {
                 Some("req_child"),
                 harness_core::event::EventV1::UserMessageSubmitted(
                     harness_core::event::UserMessageSubmittedEvent {
-                        request_id: "req_child".to_string(),
+                        request_id: "req_child".into(),
                         text: "Inspect footer parity".to_string(),
                     },
                 ),
@@ -82,7 +82,7 @@ fn subagent_footer_body_renders_child_user_commit_without_assistant_summary() {
                 Some("req_child"),
                 harness_core::event::EventV1::ProviderRequestStarted(
                     harness_core::event::ProviderRequestStartedEvent {
-                        request_id: "req_child".to_string(),
+                        request_id: "req_child".into(),
                         provider_id: "mock".to_string(),
                         model_id: "model-1".to_string(),
                         prompt_summary: "Inspect footer parity".to_string(),
@@ -97,7 +97,7 @@ fn subagent_footer_body_renders_child_user_commit_without_assistant_summary() {
                 Some("req_child"),
                 harness_core::event::EventV1::ProviderStreamDelta(
                     harness_core::event::ProviderStreamDeltaEvent {
-                        request_id: "req_child".to_string(),
+                        request_id: "req_child".into(),
                         delta: "child body line".to_string(),
                     },
                 ),
@@ -130,7 +130,7 @@ fn subagent_footer_body_preserves_child_text_matching_parent_label() {
                 Some("req_child"),
                 harness_core::event::EventV1::ProviderRequestStarted(
                     harness_core::event::ProviderRequestStartedEvent {
-                        request_id: "req_child".to_string(),
+                        request_id: "req_child".into(),
                         provider_id: "mock".to_string(),
                         model_id: "model-1".to_string(),
                         prompt_summary: "audit transcript parity".to_string(),
@@ -145,7 +145,7 @@ fn subagent_footer_body_preserves_child_text_matching_parent_label() {
                 Some("req_child"),
                 harness_core::event::EventV1::ProviderStreamDelta(
                     harness_core::event::ProviderStreamDeltaEvent {
-                        request_id: "req_child".to_string(),
+                        request_id: "req_child".into(),
                         delta: "child output mentions parent_run literally".to_string(),
                     },
                 ),

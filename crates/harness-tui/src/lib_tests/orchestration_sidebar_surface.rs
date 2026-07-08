@@ -17,7 +17,7 @@ pub(super) fn operator_sidebar_dedupes_running_task_tool_against_child_orchestra
         Some("req_parent_sidebar"),
         harness_core::event::EventV1::UserMessageSubmitted(
             harness_core::event::UserMessageSubmittedEvent {
-                request_id: "req_parent_sidebar".to_string(),
+                request_id: "req_parent_sidebar".into(),
                 text: "Run an explore subagent".to_string(),
             },
         ),
@@ -27,7 +27,7 @@ pub(super) fn operator_sidebar_dedupes_running_task_tool_against_child_orchestra
         Some("req_parent_sidebar"),
         harness_core::event::EventV1::ToolCallRequested(
             harness_core::event::ToolCallRequestedEvent {
-                tool_call_id: "tool_call_explore_running".to_string(),
+                tool_call_id: "tool_call_explore_running".into(),
                 tool_id: "task".to_string(),
                 args_summary: serde_json::json!({
                     "description": "inspect sidebar lifecycle",
@@ -44,7 +44,7 @@ pub(super) fn operator_sidebar_dedupes_running_task_tool_against_child_orchestra
         4,
         Some("req_parent_sidebar"),
         harness_core::event::EventV1::ToolCallStarted(harness_core::event::ToolCallStartedEvent {
-            tool_call_id: "tool_call_explore_running".to_string(),
+            tool_call_id: "tool_call_explore_running".into(),
         }),
     ));
     app.ingest_event(envelope_with_actor(
@@ -55,7 +55,7 @@ pub(super) fn operator_sidebar_dedupes_running_task_tool_against_child_orchestra
             Some("agent_child".to_string()),
         ),
         harness_core::event::EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
-            task_id: "task_child_sidebar".to_string(),
+            task_id: "task_child_sidebar".to_string().into(),
             state: harness_core::event::TaskScheduleState::Started,
             queue_key: Some("agent:running:explore".to_string()),
         }),

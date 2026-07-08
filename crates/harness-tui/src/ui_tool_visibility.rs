@@ -2,7 +2,7 @@ use crate::app::{ToolCallDisplayStatus, ToolCallEntry};
 use crate::text::has_trimmed_content;
 
 use super::ui_tool_diffs::tool_call_has_preview_content;
-use super::ui_tool_paths::todo_write_tool_id;
+use super::ui_tool_paths::{todo_write_tool_id, tool_id_matches};
 use super::ui_tool_titles::is_mcp_tool_id;
 use super::ui_transcript_bash::shell_tool_output;
 
@@ -13,8 +13,7 @@ pub(super) enum TranscriptToolCallDisclosureState {
 }
 
 pub(super) fn tool_hidden_from_transcript(tool_call: &ToolCallEntry) -> bool {
-    matches!(tool_call.effective_tool_id(), "todo.read" | "todoread")
-        || matches!(tool_call.tool_id.as_str(), "todoread")
+    tool_id_matches(tool_call, &["todo.read", "todoread"])
 }
 
 pub(super) fn tool_call_should_remain_visible_without_tool_details(
@@ -24,15 +23,11 @@ pub(super) fn tool_call_should_remain_visible_without_tool_details(
         return true;
     }
 
-    if matches!(tool_call.effective_tool_id(), "agent.spawn" | "task")
-        || matches!(tool_call.tool_id.as_str(), "agent.spawn" | "task")
-    {
+    if tool_id_matches(tool_call, &["agent.spawn", "task"]) {
         return true;
     }
 
-    if matches!(tool_call.effective_tool_id(), "background_output")
-        || matches!(tool_call.tool_id.as_str(), "background_output")
-    {
+    if tool_id_matches(tool_call, &["background_output"]) {
         return true;
     }
 

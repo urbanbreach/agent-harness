@@ -72,7 +72,7 @@ pub(crate) fn exact_test_subagent_replay_suppresses_parent_replay_dock() {
             schema_version: harness_core::event::SCHEMA_VERSION,
             event_id: format!("evt-subagent-footer-{seq:04}"),
             seq,
-            run_id: "agent_alpha".to_string(),
+            run_id: "agent_alpha".into(),
             mono_ms: seq,
             ts: None,
             actor,
@@ -102,7 +102,7 @@ pub(crate) fn exact_test_subagent_replay_suppresses_parent_replay_dock() {
                 actor.clone(),
                 harness_core::event::EventV1::ToolCallRequested(
                     harness_core::event::ToolCallRequestedEvent {
-                        tool_call_id: "toolcall_000001".to_string(),
+                        tool_call_id: "toolcall_000001".into(),
                         tool_id: "task".to_string(),
                         args_summary: r#"{"description":"child lineage marker"}"#.to_string(),
                         args_digest: "digest-child-marker".to_string(),
@@ -124,7 +124,7 @@ pub(crate) fn exact_test_subagent_replay_suppresses_parent_replay_dock() {
                 worker.clone(),
                 harness_core::event::EventV1::ProviderRequestStarted(
                     harness_core::event::ProviderRequestStartedEvent {
-                        request_id: "req_000001".to_string(),
+                        request_id: "req_000001".into(),
                         provider_id: "mock".to_string(),
                         model_id: "model-1".to_string(),
                         prompt_summary: "audit transcript parity".to_string(),
@@ -139,7 +139,7 @@ pub(crate) fn exact_test_subagent_replay_suppresses_parent_replay_dock() {
                 worker,
                 harness_core::event::EventV1::ProviderRequestFinished(
                     harness_core::event::ProviderRequestFinishedEvent {
-                        request_id: "req_000001".to_string(),
+                        request_id: "req_000001".into(),
                         finish_reason: "stop".to_string(),
                         output_digest: Some("digest-child-output".to_string()),
                         usage: None,
@@ -371,7 +371,7 @@ pub(crate) fn exact_test_retry_summary_segment_prioritizes_retry_indicator() {
         user_message: None,
         user_timestamp: None,
         request_data: Some(harness_core::event::ProviderRequestStartedEvent {
-            request_id: "req_retry".to_string(),
+            request_id: "req_retry".into(),
             provider_id: "default".to_string(),
             model_id: "gpt-5.4".to_string(),
             prompt_summary: "prompt summary".to_string(),
@@ -442,7 +442,7 @@ pub(crate) fn exact_test_live_composer_disclosure_summarizes_compaction_metrics(
         schema_version: harness_core::event::SCHEMA_VERSION,
         event_id: "evt_compaction_applied".to_string(),
         seq: 1,
-        run_id: "run_fixture".to_string(),
+        run_id: "run_fixture".into(),
         mono_ms: 10,
         ts: None,
         actor: harness_core::event::EventActor::new(
@@ -614,7 +614,7 @@ pub(crate) fn exact_test_footer_status_cluster_shows_pending_permission_count() 
         schema_version: harness_core::event::SCHEMA_VERSION,
         event_id: "evt_footer_cluster".to_string(),
         seq: 1,
-        run_id: "run_footer_cluster".to_string(),
+        run_id: "run_footer_cluster".into(),
         mono_ms: 0,
         ts: None,
         actor: harness_core::event::EventActor::new(
@@ -628,7 +628,7 @@ pub(crate) fn exact_test_footer_status_cluster_shows_pending_permission_count() 
             harness_core::event::PermissionRequestedEvent {
                 permission_id: "perm_footer_cluster".to_string(),
                 kind: "edit_fs".to_string(),
-                tool_call_id: Some("tool_call_footer_cluster".to_string()),
+                tool_call_id: Some("tool_call_footer_cluster".into()),
                 summary: "Apply edit to demo.txt".to_string(),
                 request_digest: "digest-footer".to_string(),
                 timeout_ms: 30_000,

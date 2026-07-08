@@ -234,7 +234,7 @@ fn transcript_layout_cache_invalidates_when_theme_changes() {
         provider_id: "openai".to_string(),
         status: ActivityStatus::Done,
         user_message: Some(harness_core::event::UserMessageSubmittedEvent {
-            request_id: "request-theme-cache".to_string(),
+            request_id: "request-theme-cache".into(),
             text: "theme-sensitive prompt".to_string(),
         }),
         user_timestamp: None,
@@ -275,7 +275,7 @@ fn pending_permission_sections_render_warning_turn_container() {
         schema_version: harness_core::event::SCHEMA_VERSION,
         event_id: "evt_pending_permission_group".to_string(),
         seq: 1,
-        run_id: "run_pending_permission_group".to_string(),
+        run_id: "run_pending_permission_group".into(),
         mono_ms: 0,
         ts: None,
         actor: harness_core::event::EventActor::new(
@@ -289,7 +289,7 @@ fn pending_permission_sections_render_warning_turn_container() {
             harness_core::event::PermissionRequestedEvent {
                 permission_id: "perm_pending_permission_group".to_string(),
                 kind: "edit_fs".to_string(),
-                tool_call_id: Some("tool_call_pending_permission_group".to_string()),
+                tool_call_id: Some("tool_call_pending_permission_group".into()),
                 summary: "Apply hashline edit to demo.txt".to_string(),
                 request_digest: "digest-perm".to_string(),
                 timeout_ms: 30_000,
@@ -363,7 +363,7 @@ fn only_latest_turn_renders_footer_metadata() {
             provider_id: "openai".to_string(),
             status: ActivityStatus::Done,
             user_message: Some(harness_core::event::UserMessageSubmittedEvent {
-                request_id: "request-old-footer".to_string(),
+                request_id: "request-old-footer".into(),
                 text: "first".to_string(),
             }),
             user_timestamp: Some("2026-03-19T09:44:00Z".to_string()),
@@ -388,7 +388,7 @@ fn only_latest_turn_renders_footer_metadata() {
             provider_id: "openai".to_string(),
             status: ActivityStatus::Done,
             user_message: Some(harness_core::event::UserMessageSubmittedEvent {
-                request_id: "request-new-footer".to_string(),
+                request_id: "request-new-footer".into(),
                 text: "second".to_string(),
             }),
             user_timestamp: Some("2026-03-19T09:45:00Z".to_string()),
@@ -553,7 +553,7 @@ fn latest_completed_footer_follows_rendered_assistant_parts() {
             schema_version: harness_core::event::SCHEMA_VERSION,
             event_id: format!("evt_footer_rendered_parts_{seq:04}"),
             seq,
-            run_id: "run_footer_rendered_parts".to_string(),
+            run_id: "run_footer_rendered_parts".into(),
             mono_ms: seq * 100,
             ts: Some("2026-03-22T15:00:00Z".to_string()),
             actor: harness_core::event::EventActor::new(
@@ -573,7 +573,7 @@ fn latest_completed_footer_follows_rendered_assistant_parts() {
         "req_footer_rendered_parts",
         harness_core::event::EventV1::ProviderRequestStarted(
             harness_core::event::ProviderRequestStartedEvent {
-                request_id: "req_footer_rendered_parts".to_string(),
+                request_id: "req_footer_rendered_parts".into(),
                 provider_id: "default".to_string(),
                 model_id: "gpt-5.4-mini".to_string(),
                 prompt_summary: "Keep footer visible".to_string(),
@@ -587,7 +587,7 @@ fn latest_completed_footer_follows_rendered_assistant_parts() {
         "req_footer_rendered_parts",
         harness_core::event::EventV1::ProviderStreamDelta(
             harness_core::event::ProviderStreamDeltaEvent {
-                request_id: "req_footer_rendered_parts".to_string(),
+                request_id: "req_footer_rendered_parts".into(),
                 delta: "assistant reply from ordered events".to_string(),
             },
         ),
@@ -597,7 +597,7 @@ fn latest_completed_footer_follows_rendered_assistant_parts() {
         "req_footer_rendered_parts",
         harness_core::event::EventV1::ProviderRequestFinished(
             harness_core::event::ProviderRequestFinishedEvent {
-                request_id: "req_footer_rendered_parts".to_string(),
+                request_id: "req_footer_rendered_parts".into(),
                 finish_reason: "stop".to_string(),
                 output_digest: Some("digest-footer-rendered-parts-out".to_string()),
                 usage: None,
@@ -632,7 +632,7 @@ fn user_message_surface_keeps_timestamp_in_latest_footer_only() {
         provider_id: "openai".to_string(),
         status: ActivityStatus::Done,
         user_message: Some(harness_core::event::UserMessageSubmittedEvent {
-            request_id: "request-user-padding".to_string(),
+            request_id: "request-user-padding".into(),
             text: "hello".to_string(),
         }),
         user_timestamp: Some("2026-03-19T09:45:00Z".to_string()),
@@ -766,7 +766,7 @@ fn assistant_tool_surfaces_keep_same_trailing_gap_as_text_boxes() {
         "I’ll run a harmless shell command.",
     );
     activity.user_message = Some(UserMessageSubmittedEvent {
-        request_id: "request-shell-alignment".to_string(),
+        request_id: "request-shell-alignment".into(),
         text: "test out some tools".to_string(),
     });
 
@@ -1004,7 +1004,7 @@ fn transcript_measurement_wrap_correctness_across_widths_and_styles() {
                 provider_id: "openai".to_string(),
                 status: ActivityStatus::Done,
                 user_message: Some(harness_core::event::UserMessageSubmittedEvent {
-                    request_id: "request-wrap-correctness".to_string(),
+                    request_id: "request-wrap-correctness".into(),
                     text: "wrap correctness probe".to_string(),
                 }),
                 user_timestamp: None,
@@ -1154,7 +1154,7 @@ fn perf_500_event_streaming_transcript_cache_and_layout_budget() {
                 ),
             );
             entry.user_message = Some(UserMessageSubmittedEvent {
-                request_id: format!("req-{index:04}"),
+                request_id: format!("req-{index:04}").into(),
                 text: format!("User turn {index}: inspect the workspace."),
             });
             if index % 10 == 0 {

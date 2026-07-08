@@ -21,7 +21,7 @@ fn ctrl(ch: char) -> KeyEvent {
 
 fn catalog_entry(run_id: &str, parent: Option<&str>, updated: &str) -> SessionCatalogEntry {
     SessionCatalogEntry {
-        run_id: run_id.to_string(),
+        run_id: run_id.to_string().into(),
         run_name: Some(run_id.replace('-', " ")),
         status: Some(RunStatus::Finished),
         last_updated_at: Some(updated.to_string()),
@@ -49,7 +49,7 @@ fn envelope(seq: u64, payload: EventV1) -> EventEnvelopeV1 {
         schema_version: SCHEMA_VERSION,
         event_id: format!("evt_lineage_tui_{seq:04}"),
         seq,
-        run_id: "run_fork_source".to_string(),
+        run_id: "run_fork_source".into(),
         mono_ms: seq,
         ts: Some(format!("2026-05-03T00:0{seq}:00Z")),
         actor: EventActor::new(
@@ -68,7 +68,7 @@ fn fork_source_events() -> Vec<EventEnvelopeV1> {
         envelope(
             1,
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "fork source".to_string(),
+                run_name: "fork source".into(),
                 workspace_root: "/workspace".to_string(),
             }),
         ),
@@ -83,14 +83,14 @@ fn fork_source_events() -> Vec<EventEnvelopeV1> {
         envelope(
             3,
             EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-                request_id: "req_first".to_string(),
+                request_id: "req_first".into(),
                 text: "First prompt".to_string(),
             }),
         ),
         envelope(
             4,
             EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                request_id: "req_first".to_string(),
+                request_id: "req_first".into(),
                 provider_id: "mock".to_string(),
                 model_id: "model-1".to_string(),
                 prompt_summary: "First prompt".to_string(),
@@ -101,7 +101,7 @@ fn fork_source_events() -> Vec<EventEnvelopeV1> {
         envelope(
             5,
             EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                tool_call_id: "tool_1".to_string(),
+                tool_call_id: "tool_1".into(),
                 tool_id: "bash".to_string(),
                 args_summary: "{}".to_string(),
                 args_digest: "digest-tool-1".to_string(),
@@ -111,14 +111,14 @@ fn fork_source_events() -> Vec<EventEnvelopeV1> {
         envelope(
             6,
             EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-                request_id: "req_unstable".to_string(),
+                request_id: "req_unstable".into(),
                 text: "Unstable prompt".to_string(),
             }),
         ),
         envelope(
             7,
             EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                tool_call_id: "tool_1".to_string(),
+                tool_call_id: "tool_1".into(),
                 status: ToolCallStatus::Succeeded,
                 output_summary: Some("ok".to_string()),
                 output_digest: Some("digest-output-1".to_string()),
@@ -129,7 +129,7 @@ fn fork_source_events() -> Vec<EventEnvelopeV1> {
         envelope(
             8,
             EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
-                request_id: "req_first".to_string(),
+                request_id: "req_first".into(),
                 finish_reason: "stop".to_string(),
                 output_digest: Some("digest-first-output".to_string()),
                 usage: None,
@@ -139,7 +139,7 @@ fn fork_source_events() -> Vec<EventEnvelopeV1> {
         envelope(
             9,
             EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                request_id: "req_unstable".to_string(),
+                request_id: "req_unstable".into(),
                 provider_id: "mock".to_string(),
                 model_id: "model-1".to_string(),
                 prompt_summary: "Unstable prompt".to_string(),
@@ -150,7 +150,7 @@ fn fork_source_events() -> Vec<EventEnvelopeV1> {
         envelope(
             10,
             EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
-                request_id: "req_unstable".to_string(),
+                request_id: "req_unstable".into(),
                 finish_reason: "stop".to_string(),
                 output_digest: Some("digest-unstable-output".to_string()),
                 usage: None,
@@ -160,7 +160,7 @@ fn fork_source_events() -> Vec<EventEnvelopeV1> {
         envelope(
             11,
             EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-                request_id: "req_second".to_string(),
+                request_id: "req_second".into(),
                 text: "Second prompt".to_string(),
             }),
         ),
@@ -172,7 +172,7 @@ fn fork_source_events_with_completed_native_edit() -> Vec<EventEnvelopeV1> {
         envelope(
             1,
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "fork source".to_string(),
+                run_name: "fork source".into(),
                 workspace_root: "/workspace".to_string(),
             }),
         ),
@@ -227,7 +227,7 @@ fn fork_source_events_with_lingering_native_edit_state() -> Vec<EventEnvelopeV1>
         envelope(
             1,
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "fork source".to_string(),
+                run_name: "fork source".into(),
                 workspace_root: "/workspace".to_string(),
             }),
         ),
@@ -264,14 +264,14 @@ fn push_completed_turn(events: &mut Vec<EventEnvelopeV1>, request_id: &str, text
         envelope(
             next_seq,
             EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-                request_id: request_id.to_string(),
+                request_id: request_id.into(),
                 text: text.to_string(),
             }),
         ),
         envelope(
             next_seq + 1,
             EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                request_id: request_id.to_string(),
+                request_id: request_id.into(),
                 provider_id: "mock".to_string(),
                 model_id: "model-1".to_string(),
                 prompt_summary: text.to_string(),
@@ -282,7 +282,7 @@ fn push_completed_turn(events: &mut Vec<EventEnvelopeV1>, request_id: &str, text
         envelope(
             next_seq + 2,
             EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
-                request_id: request_id.to_string(),
+                request_id: request_id.into(),
                 finish_reason: "stop".to_string(),
                 output_digest: Some(format!("digest-{request_id}-output")),
                 usage: None,

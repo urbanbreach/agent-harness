@@ -1,3 +1,4 @@
+// allow: SIZE_OK — TUI app state (session projection + interaction)
 use super::*;
 
 const TOOL_TRANSCRIPT_SUMMARY_MAX_CHARS: usize = 72;

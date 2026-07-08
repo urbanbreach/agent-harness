@@ -30,7 +30,7 @@ pub(super) fn historical_task_completed_marks_turn_done_and_unblocks_first_resum
         1,
         "req_resume_1",
         EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-            request_id: "req_resume_1".to_string(),
+            request_id: "req_resume_1".into(),
             text: "previous question".to_string(),
         }),
     ));
@@ -38,7 +38,7 @@ pub(super) fn historical_task_completed_marks_turn_done_and_unblocks_first_resum
         2,
         "req_resume_1",
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_resume_1".to_string(),
+            request_id: "req_resume_1".into(),
             provider_id: "mock".to_string(),
             model_id: "model-1".to_string(),
             prompt_summary: "previous question".to_string(),
@@ -50,7 +50,7 @@ pub(super) fn historical_task_completed_marks_turn_done_and_unblocks_first_resum
         3,
         "req_resume_1",
         EventV1::ProviderStreamDelta(harness_core::event::ProviderStreamDeltaEvent {
-            request_id: "req_resume_1".to_string(),
+            request_id: "req_resume_1".into(),
             delta: "previous answer".to_string(),
         }),
     ));
@@ -58,7 +58,7 @@ pub(super) fn historical_task_completed_marks_turn_done_and_unblocks_first_resum
         4,
         "req_resume_1",
         EventV1::TaskCompleted(TaskCompletedEvent {
-            task_id: "task_000123".to_string(),
+            task_id: "task_000123".to_string().into(),
             result_summary: "previous answer".to_string(),
             result_digest: "digest-task-123".to_string(),
             metadata: None,
@@ -382,7 +382,7 @@ pub(super) fn post_run_handoff_ignores_completed_turns_without_terminal_event() 
         1,
         "req_completed_turn",
         EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-            request_id: "req_completed_turn".to_string(),
+            request_id: "req_completed_turn".into(),
             text: "status?".to_string(),
         }),
     ));
@@ -390,7 +390,7 @@ pub(super) fn post_run_handoff_ignores_completed_turns_without_terminal_event() 
         2,
         "req_completed_turn",
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_completed_turn".to_string(),
+            request_id: "req_completed_turn".into(),
             provider_id: "mock".to_string(),
             model_id: "model-1".to_string(),
             prompt_summary: "status?".to_string(),
@@ -402,7 +402,7 @@ pub(super) fn post_run_handoff_ignores_completed_turns_without_terminal_event() 
         3,
         "req_completed_turn",
         EventV1::TaskCompleted(TaskCompletedEvent {
-            task_id: "task_completed_turn".to_string(),
+            task_id: "task_completed_turn".to_string().into(),
             result_summary: "all done".to_string(),
             result_digest: "digest-task-completed-turn".to_string(),
             metadata: None,

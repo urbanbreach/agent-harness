@@ -136,7 +136,7 @@ pub(crate) fn exact_test_transcript_pending_permission_stays_after_last_activity
         schema_version: harness_core::event::SCHEMA_VERSION,
         event_id: "evt_pending_permission_order".to_string(),
         seq: 1,
-        run_id: "run_pending_permission_order".to_string(),
+        run_id: "run_pending_permission_order".into(),
         mono_ms: 0,
         ts: None,
         actor: harness_core::event::EventActor::new(
@@ -150,7 +150,7 @@ pub(crate) fn exact_test_transcript_pending_permission_stays_after_last_activity
             harness_core::event::PermissionRequestedEvent {
                 permission_id: "perm_pending_permission_order".to_string(),
                 kind: "edit_fs".to_string(),
-                tool_call_id: Some("tool_call_pending_permission_order".to_string()),
+                tool_call_id: Some("tool_call_pending_permission_order".into()),
                 summary: "Apply hashline edit to demo.txt".to_string(),
                 request_digest: "digest-perm-order".to_string(),
                 timeout_ms: 30_000,

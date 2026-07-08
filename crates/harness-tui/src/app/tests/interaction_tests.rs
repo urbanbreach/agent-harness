@@ -24,7 +24,7 @@ pub(super) fn details_drawer_toggles_without_stealing_transcript_state() {
         1,
         "req_a",
         EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-            request_id: "req_a".to_string(),
+            request_id: "req_a".into(),
             text: "First".to_string(),
         }),
     ));
@@ -32,7 +32,7 @@ pub(super) fn details_drawer_toggles_without_stealing_transcript_state() {
         2,
         "req_a",
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_a".to_string(),
+            request_id: "req_a".into(),
             provider_id: "openai".to_string(),
             model_id: "gpt-5-codex".to_string(),
             prompt_summary: "First".to_string(),
@@ -44,7 +44,7 @@ pub(super) fn details_drawer_toggles_without_stealing_transcript_state() {
         3,
         "req_b",
         EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-            request_id: "req_b".to_string(),
+            request_id: "req_b".into(),
             text: "Second".to_string(),
         }),
     ));
@@ -52,7 +52,7 @@ pub(super) fn details_drawer_toggles_without_stealing_transcript_state() {
         4,
         "req_b",
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_b".to_string(),
+            request_id: "req_b".into(),
             provider_id: "openai".to_string(),
             model_id: "gpt-5-codex".to_string(),
             prompt_summary: "Second".to_string(),
@@ -272,7 +272,7 @@ pub(super) fn diff_hunk_navigation_advances_and_retreats_between_hunks() {
         1,
         "req_diff_nav",
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_diff_nav".to_string(),
+            request_id: "req_diff_nav".into(),
             provider_id: "default".to_string(),
             model_id: "model-diff".to_string(),
             prompt_summary: "review diff hunks".to_string(),
@@ -284,7 +284,7 @@ pub(super) fn diff_hunk_navigation_advances_and_retreats_between_hunks() {
         2,
         "req_diff_nav",
         EventV1::ToolCallRequested(ToolCallRequestedEvent {
-            tool_call_id: "tc_diff_nav".to_string(),
+            tool_call_id: "tc_diff_nav".into(),
             tool_id: "apply_patch".to_string(),
             args_summary: r#"{"patchText":"*** Begin Patch"}"#.to_string(),
             args_digest: "digest-diff-nav-args".to_string(),
@@ -295,7 +295,7 @@ pub(super) fn diff_hunk_navigation_advances_and_retreats_between_hunks() {
         3,
         "req_diff_nav",
         EventV1::ToolCallFinished(ToolCallFinishedEvent {
-            tool_call_id: "tc_diff_nav".to_string(),
+            tool_call_id: "tc_diff_nav".into(),
             status: ToolCallStatus::Succeeded,
             output_summary: Some("Success. Updated the following files".to_string()),
             output_digest: Some("digest-diff-nav-output".to_string()),

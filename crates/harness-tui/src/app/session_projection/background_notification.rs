@@ -4,9 +4,9 @@ use super::ActivityEntry;
 
 pub(super) fn background_task_notification_text(data: &BackgroundTaskNotificationEvent) -> String {
     let status = data.status.as_str();
-    let task_id = background_notification_safe_field(&data.task_id);
+    let task_id = background_notification_safe_field(data.task_id.as_str());
     let child_request_id = background_notification_safe_field(&data.child_request_id);
-    let child_session_id = background_notification_safe_field(&data.child_session_id);
+    let child_session_id = background_notification_safe_field(data.child_session_id.as_str());
 
     format!(
         "<system-reminder>\n[BACKGROUND TASK {}]\nID: {}\nRequest ID: {}\nStatus: {}\n\nBackground task {}. Use background_output(request_id=\"{}\") for full details or task(session_id=\"{}\") to continue analysis from the child session.\n</system-reminder>",

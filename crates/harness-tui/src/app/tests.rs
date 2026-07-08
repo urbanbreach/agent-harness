@@ -54,7 +54,7 @@ fn envelope(seq: u64, request_id: &str, payload: EventV1) -> EventEnvelopeV1 {
         schema_version: SCHEMA_VERSION,
         event_id: format!("evt_app_{seq:04}"),
         seq,
-        run_id: "run_app_tests".to_string(),
+        run_id: "run_app_tests".into(),
         mono_ms: seq,
         ts: Some("2026-02-03T12:00:00Z".to_string()),
         actor: EventActor::new(ActorKind::System, Some("app-tests".to_string())),
@@ -314,7 +314,7 @@ fn transcript_selection_test_app_with_text(transcript_text: &str) -> AppState {
         provider_id: "default".to_string(),
         status: ActivityStatus::Done,
         user_message: Some(UserMessageSubmittedEvent {
-            request_id: "req_copy_select".to_string(),
+            request_id: "req_copy_select".into(),
             text: "Select this".to_string(),
         }),
         user_timestamp: None,
@@ -355,7 +355,7 @@ fn shell_card_selection_test_app() -> AppState {
         1,
         "req_shell_card_copy",
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_shell_card_copy".to_string(),
+            request_id: "req_shell_card_copy".into(),
             provider_id: "default".to_string(),
             model_id: "model-shell".to_string(),
             prompt_summary: "shell card copy".to_string(),
@@ -367,7 +367,7 @@ fn shell_card_selection_test_app() -> AppState {
         2,
         "req_shell_card_copy",
         EventV1::ToolCallRequested(ToolCallRequestedEvent {
-            tool_call_id: "tc_shell_card_copy".to_string(),
+            tool_call_id: "tc_shell_card_copy".into(),
             tool_id: "bash".to_string(),
             args_summary:
                 r#"{"command":"run-copy-command","description":"Run copy-safe shell card"}"#
@@ -380,14 +380,14 @@ fn shell_card_selection_test_app() -> AppState {
         3,
         "req_shell_card_copy",
         EventV1::ToolCallStarted(ToolCallStartedEvent {
-            tool_call_id: "tc_shell_card_copy".to_string(),
+            tool_call_id: "tc_shell_card_copy".into(),
         }),
     ));
     app.ingest_event(envelope(
         4,
         "req_shell_card_copy",
         EventV1::ToolCallFinished(ToolCallFinishedEvent {
-            tool_call_id: "tc_shell_card_copy".to_string(),
+            tool_call_id: "tc_shell_card_copy".into(),
             status: ToolCallStatus::Succeeded,
             output_summary: Some("copy target output".to_string()),
             output_digest: None,
@@ -411,7 +411,7 @@ fn operator_sidebar_selection_test_app() -> AppState {
         1,
         "req_sidebar_copy",
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_sidebar_copy".to_string(),
+            request_id: "req_sidebar_copy".into(),
             provider_id: "default".to_string(),
             model_id: "model-sidebar".to_string(),
             prompt_summary: "sidebar copy".to_string(),
@@ -423,7 +423,7 @@ fn operator_sidebar_selection_test_app() -> AppState {
         2,
         "req_sidebar_copy",
         EventV1::ToolCallRequested(ToolCallRequestedEvent {
-            tool_call_id: "tc_sidebar_todo".to_string(),
+            tool_call_id: "tc_sidebar_todo".into(),
             tool_id: "todo.write".to_string(),
             args_summary: "update todo list".to_string(),
             args_digest: "digest-sidebar-todo-args".to_string(),
@@ -434,7 +434,7 @@ fn operator_sidebar_selection_test_app() -> AppState {
         3,
         "req_sidebar_copy",
         EventV1::ToolCallFinished(ToolCallFinishedEvent {
-            tool_call_id: "tc_sidebar_todo".to_string(),
+            tool_call_id: "tc_sidebar_todo".into(),
             status: ToolCallStatus::Succeeded,
             output_summary: Some("todo list updated".to_string()),
             output_digest: None,
@@ -561,7 +561,7 @@ fn run_started(seq: u64) -> EventEnvelopeV1 {
         seq,
         "req_run_started",
         EventV1::RunStarted(RunStartedEvent {
-            run_name: "interactive".to_string(),
+            run_name: "interactive".into(),
             workspace_root: "/tmp/workspace".to_string(),
         }),
     )
@@ -601,7 +601,7 @@ fn provider_started(seq: u64, request_id: &str, provider: &str, model: &str) -> 
         seq,
         request_id,
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: request_id.to_string(),
+            request_id: request_id.into(),
             provider_id: provider.to_string(),
             model_id: model.to_string(),
             prompt_summary: "prompt summary".to_string(),
@@ -621,7 +621,7 @@ fn shell_requested(
         seq,
         request_id,
         EventV1::ToolCallRequested(ToolCallRequestedEvent {
-            tool_call_id: tool_call_id.to_string(),
+            tool_call_id: tool_call_id.into(),
             tool_id: "bash".to_string(),
             args_summary: args_summary.to_string(),
             args_digest: format!("digest-{tool_call_id}-args"),
@@ -644,7 +644,7 @@ fn shell_finished(
         seq,
         request_id,
         EventV1::ToolCallFinished(ToolCallFinishedEvent {
-            tool_call_id: tool_call_id.to_string(),
+            tool_call_id: tool_call_id.into(),
             status,
             output_summary: Some("shell output summary".to_string()),
             output_digest: Some(format!("digest-{tool_call_id}-output")),
@@ -670,7 +670,7 @@ fn shell_test_events(
             1,
             "req_shell_panel",
             EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-                request_id: "req_shell_panel".to_string(),
+                request_id: "req_shell_panel".into(),
                 text: "Run a shell command".to_string(),
             }),
         ),
@@ -685,7 +685,7 @@ fn shell_test_events(
             4,
             "req_shell_panel",
             EventV1::ToolCallStarted(ToolCallStartedEvent {
-                tool_call_id: "tc_shell_panel".to_string(),
+                tool_call_id: "tc_shell_panel".into(),
             }),
         ),
         shell_finished(5, "req_shell_panel", "tc_shell_panel", status, output_json),
@@ -701,7 +701,7 @@ fn shell_run_test_events(
             1,
             "req_shell_run_panel",
             EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-                request_id: "req_shell_run_panel".to_string(),
+                request_id: "req_shell_run_panel".into(),
                 text: "Run shell.run".to_string(),
             }),
         ),
@@ -710,7 +710,7 @@ fn shell_run_test_events(
             3,
             "req_shell_run_panel",
             EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                tool_call_id: "tc_shell_run_panel".to_string(),
+                tool_call_id: "tc_shell_run_panel".into(),
                 tool_id: "shell.run".to_string(),
                 args_summary: r#"{"cmd":"bash","args":["-lc","printf shell-run"],"cwd":"."}"#
                     .to_string(),
@@ -725,14 +725,14 @@ fn shell_run_test_events(
             4,
             "req_shell_run_panel",
             EventV1::ToolCallStarted(ToolCallStartedEvent {
-                tool_call_id: "tc_shell_run_panel".to_string(),
+                tool_call_id: "tc_shell_run_panel".into(),
             }),
         ),
         envelope(
             5,
             "req_shell_run_panel",
             EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                tool_call_id: "tc_shell_run_panel".to_string(),
+                tool_call_id: "tc_shell_run_panel".into(),
                 status,
                 output_summary: Some("shell-run".to_string()),
                 output_digest: Some("digest-tc-shell-run-output".to_string()),
@@ -761,7 +761,7 @@ fn child_link_requested(
         seq,
         request_id,
         EventV1::ToolCallRequested(ToolCallRequestedEvent {
-            tool_call_id: tool_call_id.to_string(),
+            tool_call_id: tool_call_id.into(),
             tool_id: "agent.spawn".to_string(),
             args_summary: "{}".to_string(),
             args_digest: format!("digest-{tool_call_id}"),
@@ -788,7 +788,7 @@ fn child_task_requested(
         seq,
         request_id,
         EventV1::ToolCallRequested(ToolCallRequestedEvent {
-            tool_call_id: tool_call_id.to_string(),
+            tool_call_id: tool_call_id.into(),
             tool_id: "task".to_string(),
             args_summary: r#"{"description":"inspect child","subagent_type":"explore"}"#
                 .to_string(),

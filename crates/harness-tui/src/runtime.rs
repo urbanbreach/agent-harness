@@ -1,3 +1,4 @@
+// allow: SIZE_OK — TUI runtime loop (poll interval + event dispatch + terminal resize + shutdown handling)
 use crate::UnwrapOrAbort;
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
@@ -838,7 +839,7 @@ mod tests {
         let entry = SessionHistoryEntry {
             run_dir: PathBuf::from("/tmp/session-history-refresh"),
             catalog: SessionCatalogEntry {
-                run_id: "session-history-refresh".to_string(),
+                run_id: "session-history-refresh".into(),
                 run_name: Some("session history refresh".to_string()),
                 status: Some(RunStatus::Finished),
                 last_updated_at: Some("2026-05-04T00:00:00Z".to_string()),

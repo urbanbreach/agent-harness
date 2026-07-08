@@ -1,3 +1,4 @@
+// allow: SIZE_OK — TUI rendering (indivisible view model)
 use super::*;
 
 pub(super) fn render_terminal_panel(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {

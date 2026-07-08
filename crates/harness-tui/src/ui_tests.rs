@@ -55,7 +55,7 @@ fn envelope(seq: u64, request_id: &str, payload: EventV1) -> EventEnvelopeV1 {
         schema_version: SCHEMA_VERSION,
         event_id: format!("evt_{seq:04}"),
         seq,
-        run_id: "run_ui_tests".to_string(),
+        run_id: "run_ui_tests".into(),
         mono_ms: seq,
         ts: Some("2026-02-03T12:00:00Z".to_string()),
         actor: EventActor::new(ActorKind::System, Some("ui-tests".to_string())),
@@ -100,7 +100,7 @@ fn live_anchor_stays_hidden_during_active_turn_and_permission_checkpoint_states(
         1,
         "req_anchor_streaming",
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_anchor_streaming".to_string(),
+            request_id: "req_anchor_streaming".into(),
             provider_id: "openai".to_string(),
             model_id: "gpt-5-codex".to_string(),
             prompt_summary: "hello".to_string(),
@@ -112,7 +112,7 @@ fn live_anchor_stays_hidden_during_active_turn_and_permission_checkpoint_states(
         2,
         "req_anchor_streaming",
         EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
-            request_id: "req_anchor_streaming".to_string(),
+            request_id: "req_anchor_streaming".into(),
             delta: "hello world".to_string(),
         }),
     ));
@@ -127,7 +127,7 @@ fn live_anchor_stays_hidden_during_active_turn_and_permission_checkpoint_states(
         1,
         "req_anchor_permission",
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_anchor_permission".to_string(),
+            request_id: "req_anchor_permission".into(),
             provider_id: "openai".to_string(),
             model_id: "gpt-5-codex".to_string(),
             prompt_summary: "edit the file".to_string(),
@@ -139,7 +139,7 @@ fn live_anchor_stays_hidden_during_active_turn_and_permission_checkpoint_states(
         2,
         "req_anchor_permission",
         EventV1::ToolCallRequested(ToolCallRequestedEvent {
-            tool_call_id: "tc_anchor_permission".to_string(),
+            tool_call_id: "tc_anchor_permission".into(),
             tool_id: "edit.hashline_apply".to_string(),
             args_summary: r#"{"path":"demo.txt"}"#.to_string(),
             args_digest: "digest-anchor-permission-args".to_string(),
@@ -152,7 +152,7 @@ fn live_anchor_stays_hidden_during_active_turn_and_permission_checkpoint_states(
         EventV1::PermissionRequested(PermissionRequestedEvent {
             permission_id: "perm_anchor_permission".to_string(),
             kind: "edit_fs".to_string(),
-            tool_call_id: Some("tc_anchor_permission".to_string()),
+            tool_call_id: Some("tc_anchor_permission".into()),
             summary: "Apply hashline edit to demo.txt".to_string(),
             request_digest: "digest-anchor-permission-request".to_string(),
             timeout_ms: 30_000,
@@ -177,7 +177,7 @@ fn transcript_debug_places_assistant_answer_before_nested_context() {
         1,
         "req_answer_first",
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_answer_first".to_string(),
+            request_id: "req_answer_first".into(),
             provider_id: "openai".to_string(),
             model_id: "gpt-5-codex".to_string(),
             prompt_summary: "Restyle the transcript shell".to_string(),
@@ -189,7 +189,7 @@ fn transcript_debug_places_assistant_answer_before_nested_context() {
         2,
         "req_answer_first",
         EventV1::ProviderReasoningDelta(ProviderReasoningDeltaEvent {
-            request_id: "req_answer_first".to_string(),
+            request_id: "req_answer_first".into(),
             delta: "Drafting a document-like plan".to_string(),
         }),
     ));
@@ -197,7 +197,7 @@ fn transcript_debug_places_assistant_answer_before_nested_context() {
         3,
         "req_answer_first",
         EventV1::ToolCallRequested(ToolCallRequestedEvent {
-            tool_call_id: "tc_answer_first".to_string(),
+            tool_call_id: "tc_answer_first".into(),
             tool_id: "fs.read".to_string(),
             args_summary: r#"{"path":"src/ui.rs"}"#.to_string(),
             args_digest: "digest-answer-first-args".to_string(),
@@ -208,7 +208,7 @@ fn transcript_debug_places_assistant_answer_before_nested_context() {
         4,
         "req_answer_first",
         EventV1::ToolCallFinished(ToolCallFinishedEvent {
-            tool_call_id: "tc_answer_first".to_string(),
+            tool_call_id: "tc_answer_first".into(),
             status: ToolCallStatus::Succeeded,
             output_summary: Some("24 lines read from src/ui.rs".to_string()),
             output_digest: Some("digest-answer-first-output".to_string()),
@@ -220,7 +220,7 @@ fn transcript_debug_places_assistant_answer_before_nested_context() {
         5,
         "req_answer_first",
         EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
-            request_id: "req_answer_first".to_string(),
+            request_id: "req_answer_first".into(),
             delta: "Found the transcript renderer and the composer chrome.".to_string(),
         }),
     ));
@@ -228,7 +228,7 @@ fn transcript_debug_places_assistant_answer_before_nested_context() {
         6,
         "req_answer_first",
         EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
-            request_id: "req_answer_first".to_string(),
+            request_id: "req_answer_first".into(),
             finish_reason: "stop".to_string(),
             output_digest: Some("digest-answer-first-finished".to_string()),
             usage: None,
@@ -268,7 +268,7 @@ fn wheel_hit_testing_uses_app_theme() {
         schema_version: harness_core::event::SCHEMA_VERSION,
         event_id: "evt_theme_probe_default".to_string(),
         seq: 1,
-        run_id: "run_theme_probe".to_string(),
+        run_id: "run_theme_probe".into(),
         mono_ms: 1,
         ts: None,
         actor: harness_core::event::EventActor::new(
@@ -294,7 +294,7 @@ fn wheel_hit_testing_uses_app_theme() {
         schema_version: harness_core::event::SCHEMA_VERSION,
         event_id: "evt_theme_probe_themed".to_string(),
         seq: 1,
-        run_id: "run_theme_probe".to_string(),
+        run_id: "run_theme_probe".into(),
         mono_ms: 1,
         ts: None,
         actor: harness_core::event::EventActor::new(
@@ -643,7 +643,7 @@ fn inspector_shows_tool_call_detail_for_selected_activity() {
         1,
         "req_tool_detail",
         EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-            request_id: "req_tool_detail".to_string(),
+            request_id: "req_tool_detail".into(),
             text: "Read the file".to_string(),
         }),
     ));
@@ -651,7 +651,7 @@ fn inspector_shows_tool_call_detail_for_selected_activity() {
         2,
         "req_tool_detail",
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_tool_detail".to_string(),
+            request_id: "req_tool_detail".into(),
             provider_id: "openai".to_string(),
             model_id: "gpt-5-codex".to_string(),
             prompt_summary: "Read src/lib.rs and report the first 20 lines".to_string(),
@@ -663,7 +663,7 @@ fn inspector_shows_tool_call_detail_for_selected_activity() {
         3,
         "req_tool_detail",
         EventV1::ToolCallRequested(ToolCallRequestedEvent {
-            tool_call_id: "tc_tool_detail".to_string(),
+            tool_call_id: "tc_tool_detail".into(),
             tool_id: "fs.read".to_string(),
             args_summary: r#"{"path":"src/lib.rs","start_line":1,"limit":20}"#.to_string(),
             args_digest: "digest-tool-detail-args".to_string(),
@@ -674,14 +674,14 @@ fn inspector_shows_tool_call_detail_for_selected_activity() {
         4,
         "req_tool_detail",
         EventV1::ToolCallStarted(ToolCallStartedEvent {
-            tool_call_id: "tc_tool_detail".to_string(),
+            tool_call_id: "tc_tool_detail".into(),
         }),
     ));
     app.ingest_event(envelope(
         5,
         "req_tool_detail",
         EventV1::ToolCallFinished(ToolCallFinishedEvent {
-            tool_call_id: "tc_tool_detail".to_string(),
+            tool_call_id: "tc_tool_detail".into(),
             status: ToolCallStatus::Succeeded,
             output_summary: Some(
                 r#"{"lines":["use std::path::PathBuf;","use std::sync::Arc;"]}"#.to_string(),
@@ -710,7 +710,7 @@ fn permission_detail_remains_available_outside_modal() {
         1,
         "req_permission_detail",
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_permission_detail".to_string(),
+            request_id: "req_permission_detail".into(),
             provider_id: "openai".to_string(),
             model_id: "gpt-5-codex".to_string(),
             prompt_summary: "Apply the edit".to_string(),
@@ -722,7 +722,7 @@ fn permission_detail_remains_available_outside_modal() {
         2,
         "req_permission_detail",
         EventV1::ToolCallRequested(ToolCallRequestedEvent {
-            tool_call_id: "tc_permission_detail".to_string(),
+            tool_call_id: "tc_permission_detail".into(),
             tool_id: "edit.hashline_apply".to_string(),
             args_summary: r#"{"path":"demo.txt","ops":[{"Replace":{"line":2}}]}"#.to_string(),
             args_digest: "digest-permission-detail-args".to_string(),
@@ -735,7 +735,7 @@ fn permission_detail_remains_available_outside_modal() {
         EventV1::PermissionRequested(PermissionRequestedEvent {
             permission_id: "perm_permission_detail".to_string(),
             kind: "edit_fs".to_string(),
-            tool_call_id: Some("tc_permission_detail".to_string()),
+            tool_call_id: Some("tc_permission_detail".into()),
             summary: "Apply hashline edit to demo.txt".to_string(),
             request_digest: "digest-permission-detail".to_string(),
             timeout_ms: 30_000,
@@ -777,7 +777,7 @@ fn transcript_tool_rows_keep_status_but_not_raw_json_dump() {
         1,
         "req_tool_compact",
         EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-            request_id: "req_tool_compact".to_string(),
+            request_id: "req_tool_compact".into(),
             text: "Read the file".to_string(),
         }),
     ));
@@ -785,7 +785,7 @@ fn transcript_tool_rows_keep_status_but_not_raw_json_dump() {
         2,
         "req_tool_compact",
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_tool_compact".to_string(),
+            request_id: "req_tool_compact".into(),
             provider_id: "openai".to_string(),
             model_id: "gpt-5-codex".to_string(),
             prompt_summary: "Read the file".to_string(),
@@ -797,7 +797,7 @@ fn transcript_tool_rows_keep_status_but_not_raw_json_dump() {
         3,
         "req_tool_compact",
         EventV1::ToolCallRequested(ToolCallRequestedEvent {
-            tool_call_id: "tc_compact".to_string(),
+            tool_call_id: "tc_compact".into(),
             tool_id: "fs.read".to_string(),
             args_summary: r#"{"path":"src/lib.rs","start_line":42,"limit":20}"#.to_string(),
             args_digest: "digest-tool-compact-args".to_string(),
@@ -808,14 +808,14 @@ fn transcript_tool_rows_keep_status_but_not_raw_json_dump() {
         4,
         "req_tool_compact",
         EventV1::ToolCallStarted(ToolCallStartedEvent {
-            tool_call_id: "tc_compact".to_string(),
+            tool_call_id: "tc_compact".into(),
         }),
     ));
     app.ingest_event(envelope(
         5,
         "req_tool_compact",
         EventV1::ToolCallFinished(ToolCallFinishedEvent {
-            tool_call_id: "tc_compact".to_string(),
+            tool_call_id: "tc_compact".into(),
             status: ToolCallStatus::Succeeded,
             output_summary: Some("12 lines read".to_string()),
             output_digest: Some("digest-tool-compact-output".to_string()),
@@ -842,7 +842,7 @@ fn failed_tool_rows_still_surface_error_summary() {
         1,
         "req_tool_error",
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_tool_error".to_string(),
+            request_id: "req_tool_error".into(),
             provider_id: "openai".to_string(),
             model_id: "gpt-5-codex".to_string(),
             prompt_summary: "Run the command".to_string(),
@@ -854,7 +854,7 @@ fn failed_tool_rows_still_surface_error_summary() {
         2,
         "req_tool_error",
         EventV1::ToolCallRequested(ToolCallRequestedEvent {
-            tool_call_id: "tc_error".to_string(),
+            tool_call_id: "tc_error".into(),
             tool_id: "shell.run".to_string(),
             args_summary: r#"{"cmd":"false","cwd":"/tmp/demo"}"#.to_string(),
             args_digest: "digest-tool-error-args".to_string(),
@@ -865,14 +865,14 @@ fn failed_tool_rows_still_surface_error_summary() {
         3,
         "req_tool_error",
         EventV1::ToolCallStarted(ToolCallStartedEvent {
-            tool_call_id: "tc_error".to_string(),
+            tool_call_id: "tc_error".into(),
         }),
     ));
     app.ingest_event(envelope(
         4,
         "req_tool_error",
         EventV1::ToolCallFinished(ToolCallFinishedEvent {
-            tool_call_id: "tc_error".to_string(),
+            tool_call_id: "tc_error".into(),
             status: ToolCallStatus::Failed,
             output_summary: Some("exit code: 1\nstderr: permission denied".to_string()),
             output_digest: None,
@@ -897,7 +897,7 @@ fn status_strip_surfaces_selected_tool_summary() {
         1,
         "req_tool_status",
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_tool_status".to_string(),
+            request_id: "req_tool_status".into(),
             provider_id: "openai".to_string(),
             model_id: "gpt-5-codex".to_string(),
             prompt_summary: "Check tool status".to_string(),
@@ -909,7 +909,7 @@ fn status_strip_surfaces_selected_tool_summary() {
         2,
         "req_tool_status",
         EventV1::ToolCallRequested(ToolCallRequestedEvent {
-            tool_call_id: "tc_status".to_string(),
+            tool_call_id: "tc_status".into(),
             tool_id: "shell.run".to_string(),
             args_summary: r#"{"cmd":"false"}"#.to_string(),
             args_digest: "digest-tool-status-args".to_string(),
@@ -920,7 +920,7 @@ fn status_strip_surfaces_selected_tool_summary() {
         3,
         "req_tool_status",
         EventV1::ToolCallStarted(ToolCallStartedEvent {
-            tool_call_id: "tc_status".to_string(),
+            tool_call_id: "tc_status".into(),
         }),
     ));
 

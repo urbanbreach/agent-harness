@@ -19,7 +19,7 @@ pub(super) fn exact_test_session_entry(run_id: &str, run_dir: &str) -> app::Sess
     app::SessionHistoryEntry {
         run_dir: PathBuf::from(run_dir),
         catalog: harness_core::proj::SessionCatalogEntry {
-            run_id: run_id.to_string(),
+            run_id: run_id.to_string().into(),
             run_name: Some("Resume target".to_string()),
             status: Some(harness_core::proj::RunStatus::Finished),
             last_updated_at: Some("2026-03-10T10:00:00Z".to_string()),
@@ -44,7 +44,7 @@ pub(crate) fn session_view_events() -> Vec<harness_core::event::EventEnvelopeV1>
             Some("req_001"),
             harness_core::event::EventV1::UserMessageSubmitted(
                 harness_core::event::UserMessageSubmittedEvent {
-                    request_id: "req_001".to_string(),
+                    request_id: "req_001".into(),
                     text: "Explain the refactor".to_string(),
                 },
             ),
@@ -54,7 +54,7 @@ pub(crate) fn session_view_events() -> Vec<harness_core::event::EventEnvelopeV1>
             Some("req_001"),
             harness_core::event::EventV1::ProviderRequestStarted(
                 harness_core::event::ProviderRequestStartedEvent {
-                    request_id: "req_001".to_string(),
+                    request_id: "req_001".into(),
                     provider_id: "openai".to_string(),
                     model_id: "gpt-5-codex".to_string(),
                     prompt_summary: "Explain the refactor".to_string(),
@@ -68,7 +68,7 @@ pub(crate) fn session_view_events() -> Vec<harness_core::event::EventEnvelopeV1>
             Some("req_001"),
             harness_core::event::EventV1::ProviderStreamDelta(
                 harness_core::event::ProviderStreamDeltaEvent {
-                    request_id: "req_001".to_string(),
+                    request_id: "req_001".into(),
                     delta: "Working through the steps.".to_string(),
                 },
             ),
@@ -78,7 +78,7 @@ pub(crate) fn session_view_events() -> Vec<harness_core::event::EventEnvelopeV1>
             Some("req_001"),
             harness_core::event::EventV1::ToolCallRequested(
                 harness_core::event::ToolCallRequestedEvent {
-                    tool_call_id: "tool_call_1".to_string(),
+                    tool_call_id: "tool_call_1".into(),
                     tool_id: "fs.read".to_string(),
                     args_summary: r#"{"path":"src/app.rs"}"#.to_string(),
                     args_digest: "digest-tool-args".to_string(),
@@ -92,7 +92,7 @@ pub(crate) fn session_view_events() -> Vec<harness_core::event::EventEnvelopeV1>
             7,
             Some("req_001"),
             harness_core::event::EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
-                task_id: "tool_call_1".to_string(),
+                task_id: "tool_call_1".to_string().into(),
                 state: harness_core::event::TaskScheduleState::Queued,
                 queue_key: Some("tool:fs.read".to_string()),
             }),
@@ -102,7 +102,7 @@ pub(crate) fn session_view_events() -> Vec<harness_core::event::EventEnvelopeV1>
             Some("req_001"),
             harness_core::event::EventV1::ToolCallStarted(
                 harness_core::event::ToolCallStartedEvent {
-                    tool_call_id: "tool_call_1".to_string(),
+                    tool_call_id: "tool_call_1".into(),
                 },
             ),
         ),
@@ -111,7 +111,7 @@ pub(crate) fn session_view_events() -> Vec<harness_core::event::EventEnvelopeV1>
             Some("req_001"),
             harness_core::event::EventV1::ToolCallFinished(
                 harness_core::event::ToolCallFinishedEvent {
-                    tool_call_id: "tool_call_1".to_string(),
+                    tool_call_id: "tool_call_1".into(),
                     status: harness_core::event::ToolCallStatus::Succeeded,
                     output_summary: Some("tool output".to_string()),
                     output_digest: Some("digest-tool-output".to_string()),
@@ -125,7 +125,7 @@ pub(crate) fn session_view_events() -> Vec<harness_core::event::EventEnvelopeV1>
             Some("req_001"),
             harness_core::event::EventV1::ProviderRequestFinished(
                 harness_core::event::ProviderRequestFinishedEvent {
-                    request_id: "req_001".to_string(),
+                    request_id: "req_001".into(),
                     finish_reason: "stop".to_string(),
                     output_digest: Some("digest-final".to_string()),
                     usage: None,
@@ -168,7 +168,7 @@ pub(super) fn orchestration_details_drawer_events(
                 Some("w1".to_string()),
             ),
             harness_core::event::EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
-                task_id: "task_stale".to_string(),
+                task_id: "task_stale".to_string().into(),
                 state: harness_core::event::TaskScheduleState::Started,
                 queue_key: Some("scan".to_string()),
             }),
@@ -181,7 +181,7 @@ pub(super) fn orchestration_details_drawer_events(
                 Some("w1".to_string()),
             ),
             harness_core::event::EventV1::StaleDetected(harness_core::event::StaleDetectedEvent {
-                task_id: "task_stale".to_string(),
+                task_id: "task_stale".to_string().into(),
                 stale_for_ms: 3001,
             }),
         ),
@@ -190,7 +190,7 @@ pub(super) fn orchestration_details_drawer_events(
             Some("req_001"),
             harness_core::event::EventActor::new(harness_core::event::ActorKind::Supervisor, None),
             harness_core::event::EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
-                task_id: "task_run".to_string(),
+                task_id: "task_run".to_string().into(),
                 state: harness_core::event::TaskScheduleState::Started,
                 queue_key: None,
             }),
@@ -203,7 +203,7 @@ pub(super) fn orchestration_details_drawer_events(
                 Some("coordinator".to_string()),
             ),
             harness_core::event::EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
-                task_id: "task_queue".to_string(),
+                task_id: "task_queue".to_string().into(),
                 state: harness_core::event::TaskScheduleState::Queued,
                 queue_key: Some("tool:read".to_string()),
             }),
@@ -216,7 +216,7 @@ pub(super) fn orchestration_details_drawer_events(
                 Some("w2".to_string()),
             ),
             harness_core::event::EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
-                task_id: "task_done".to_string(),
+                task_id: "task_done".to_string().into(),
                 state: harness_core::event::TaskScheduleState::Started,
                 queue_key: Some("tool:done".to_string()),
             }),
@@ -229,7 +229,7 @@ pub(super) fn orchestration_details_drawer_events(
                 Some("w2".to_string()),
             ),
             harness_core::event::EventV1::TaskCompleted(harness_core::event::TaskCompletedEvent {
-                task_id: "task_done".to_string(),
+                task_id: "task_done".to_string().into(),
                 result_summary: "done".to_string(),
                 result_digest: "digest-task-done".to_string(),
                 metadata: None,
@@ -248,7 +248,7 @@ pub(super) fn orchestration_details_drawer_events(
                 Some("w2".to_string()),
             ),
             harness_core::event::EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
-                task_id: task_id.clone(),
+                task_id: task_id.clone().into(),
                 state: harness_core::event::TaskScheduleState::Started,
                 queue_key: Some(format!("tail:{index}")),
             }),
@@ -262,7 +262,7 @@ pub(super) fn orchestration_details_drawer_events(
                 Some("w2".to_string()),
             ),
             harness_core::event::EventV1::TaskCompleted(harness_core::event::TaskCompletedEvent {
-                task_id,
+                task_id: task_id.into(),
                 result_summary: format!("tail {index} done"),
                 result_digest: format!("digest-tail-{index}"),
                 metadata: None,
@@ -349,7 +349,7 @@ pub(super) fn permission_requested_event(
             harness_core::event::PermissionRequestedEvent {
                 permission_id: permission_id.to_string(),
                 kind: "edit_fs".to_string(),
-                tool_call_id: Some(tool_call_id.to_string()),
+                tool_call_id: Some(tool_call_id.into()),
                 summary: "Apply hashline edit to demo.txt".to_string(),
                 request_digest: "digest-perm".to_string(),
                 timeout_ms: 30_000,
@@ -455,7 +455,7 @@ pub(super) fn startup_session_entry_with_mode_and_details(
     app::SessionHistoryEntry {
         run_dir: PathBuf::from(run_dir),
         catalog: harness_core::proj::SessionCatalogEntry {
-            run_id: run_id.to_string(),
+            run_id: run_id.to_string().into(),
             run_name: Some(run_name.to_string()),
             status,
             last_updated_at: last_updated_at.map(str::to_string),
@@ -525,7 +525,7 @@ pub(super) fn envelope_with_actor(
         schema_version: harness_core::event::SCHEMA_VERSION,
         event_id: format!("evt-{seq:04}"),
         seq,
-        run_id: "run_fixture".to_string(),
+        run_id: "run_fixture".into(),
         mono_ms: seq,
         ts: None,
         actor,
@@ -566,7 +566,7 @@ pub(super) fn orchestration_status_strip_fixture() -> app::AppState {
             Some("agent_alpha".to_string()),
         ),
         harness_core::event::EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
-            task_id: "task_queued".to_string(),
+            task_id: "task_queued".to_string().into(),
             state: harness_core::event::TaskScheduleState::Queued,
             queue_key: Some("agent:queued:alpha".to_string()),
         }),
@@ -579,7 +579,7 @@ pub(super) fn orchestration_status_strip_fixture() -> app::AppState {
             Some("agent_beta".to_string()),
         ),
         harness_core::event::EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
-            task_id: "task_running".to_string(),
+            task_id: "task_running".to_string().into(),
             state: harness_core::event::TaskScheduleState::Started,
             queue_key: Some("agent:running:beta".to_string()),
         }),
@@ -592,7 +592,7 @@ pub(super) fn orchestration_status_strip_fixture() -> app::AppState {
             Some("agent_alpha".to_string()),
         ),
         harness_core::event::EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
-            task_id: "task_stale".to_string(),
+            task_id: "task_stale".to_string().into(),
             state: harness_core::event::TaskScheduleState::Started,
             queue_key: Some("agent:running:alpha".to_string()),
         }),
@@ -605,7 +605,7 @@ pub(super) fn orchestration_status_strip_fixture() -> app::AppState {
             Some("agent_alpha".to_string()),
         ),
         harness_core::event::EventV1::StaleDetected(harness_core::event::StaleDetectedEvent {
-            task_id: "task_stale".to_string(),
+            task_id: "task_stale".to_string().into(),
             stale_for_ms: 3001,
         }),
     ));
@@ -701,7 +701,7 @@ pub(super) fn operator_sidebar_child_navigation_replay_app() -> app::AppState {
         Some("req_001"),
         harness_core::event::EventV1::ToolCallRequested(
             harness_core::event::ToolCallRequestedEvent {
-                tool_call_id: "tool_call_child_nav".to_string(),
+                tool_call_id: "tool_call_child_nav".into(),
                 tool_id: "task".to_string(),
                 args_summary: r#"{"title":"inspect child session"}"#.to_string(),
                 args_digest: "digest-tool-child-nav".to_string(),
@@ -714,7 +714,7 @@ pub(super) fn operator_sidebar_child_navigation_replay_app() -> app::AppState {
         Some("req_001"),
         harness_core::event::EventV1::ToolCallFinished(
             harness_core::event::ToolCallFinishedEvent {
-                tool_call_id: "tool_call_child_nav".to_string(),
+                tool_call_id: "tool_call_child_nav".into(),
                 status: harness_core::event::ToolCallStatus::Succeeded,
                 output_summary: Some("child session recorded".to_string()),
                 output_digest: Some("digest-tool-child-nav-output".to_string()),

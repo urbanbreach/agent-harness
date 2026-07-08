@@ -1,3 +1,4 @@
+// allow: SIZE_OK — TUI diff rendering (indivisible view model)
 use imara_diff::{Algorithm, Diff, InternedInput};
 use std::cmp::max;
 

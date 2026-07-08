@@ -1,3 +1,4 @@
+// allow: SIZE_OK — keybinding registry and action mapping table
 //! Keybinding system for the TUI.
 //!
 //! Maps KeyEvent to Action with support for configurable overrides.

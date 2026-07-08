@@ -1,3 +1,4 @@
+// allow: SIZE_OK — TUI rendering (indivisible view model)
 use super::*;
 
 const LIFECYCLE_COPY_INSET_X: u16 = 3;

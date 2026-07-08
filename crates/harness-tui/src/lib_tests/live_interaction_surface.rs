@@ -335,7 +335,7 @@ pub(super) fn composer_submits_queued_followup_while_streaming() {
         Some("req_001"),
         harness_core::event::EventV1::ProviderRequestStarted(
             harness_core::event::ProviderRequestStartedEvent {
-                request_id: "req_001".to_string(),
+                request_id: "req_001".into(),
                 provider_id: "openai".to_string(),
                 model_id: "gpt-5-codex".to_string(),
                 prompt_summary: "first".to_string(),
@@ -349,7 +349,7 @@ pub(super) fn composer_submits_queued_followup_while_streaming() {
         Some("req_001"),
         harness_core::event::EventV1::ProviderStreamDelta(
             harness_core::event::ProviderStreamDeltaEvent {
-                request_id: "req_001".to_string(),
+                request_id: "req_001".into(),
                 delta: "streaming".to_string(),
             },
         ),
@@ -438,7 +438,7 @@ pub(super) fn replay_mode_does_not_render_orchestration_summary() {
                 Some("agent_replay".to_string()),
             ),
             harness_core::event::EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
-                task_id: "task_replay_orch".to_string(),
+                task_id: "task_replay_orch".to_string().into(),
                 state: harness_core::event::TaskScheduleState::Queued,
                 queue_key: Some("agent:queued:replay".to_string()),
             }),
@@ -451,7 +451,7 @@ pub(super) fn replay_mode_does_not_render_orchestration_summary() {
                 Some("agent_replay".to_string()),
             ),
             harness_core::event::EventV1::StaleDetected(harness_core::event::StaleDetectedEvent {
-                task_id: "task_replay_orch".to_string(),
+                task_id: "task_replay_orch".to_string().into(),
                 stale_for_ms: 3001,
             }),
         ),

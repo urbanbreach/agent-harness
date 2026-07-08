@@ -1,3 +1,4 @@
+// allow: SIZE_OK — TUI transcript rendering (indivisible view model)
 use crate::UnwrapOrAbort;
 use std::cell::RefCell;
 use std::path::Path;

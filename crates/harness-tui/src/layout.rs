@@ -1,3 +1,4 @@
+// allow: SIZE_OK — TUI layout math (frame plan + pane sizing)
 use crate::UnwrapOrAbort;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},

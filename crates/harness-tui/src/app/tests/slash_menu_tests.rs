@@ -160,7 +160,7 @@ pub(super) fn resume_history_surface_uses_meaningful_session_title() {
     let entry = SessionHistoryEntry {
         run_dir: PathBuf::from("/tmp/run-title"),
         catalog: harness_core::proj::SessionCatalogEntry {
-            run_id: "run-title".to_string(),
+            run_id: "run-title".into(),
             run_name: Some("map chat renderers".to_string()),
             status: Some(harness_core::proj::RunStatus::Finished),
             last_updated_at: Some("2026-02-03T12:00:00Z".to_string()),
@@ -212,7 +212,7 @@ pub(super) fn resume_history_surface_uses_meaningful_session_title() {
     assert_eq!(
         intents.lock().unwrap_or_abort().as_slice(),
         &[UiIntent::ContinueSession {
-            run_id: "run-title".to_string(),
+            run_id: "run-title".into(),
             run_dir: PathBuf::from("/tmp/run-title"),
         }]
     );

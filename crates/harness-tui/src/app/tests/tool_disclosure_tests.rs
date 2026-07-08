@@ -7,7 +7,7 @@ pub(super) fn mouse_click_toggles_transcript_tool_disclosure() {
         1,
         "req_tool_toggle",
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_tool_toggle".to_string(),
+            request_id: "req_tool_toggle".into(),
             provider_id: "openai".to_string(),
             model_id: "gpt-5-codex".to_string(),
             prompt_summary: "Toggle shell tool".to_string(),
@@ -19,7 +19,7 @@ pub(super) fn mouse_click_toggles_transcript_tool_disclosure() {
         2,
         "req_tool_toggle",
         EventV1::ToolCallRequested(ToolCallRequestedEvent {
-            tool_call_id: "tc_shell_toggle".to_string(),
+            tool_call_id: "tc_shell_toggle".into(),
             tool_id: "shell.run".to_string(),
             args_summary: r#"{"cmd":"false"}"#.to_string(),
             args_digest: "digest-tool-toggle-args".to_string(),
@@ -30,7 +30,7 @@ pub(super) fn mouse_click_toggles_transcript_tool_disclosure() {
         3,
         "req_tool_toggle",
         EventV1::ToolCallFinished(ToolCallFinishedEvent {
-            tool_call_id: "tc_shell_toggle".to_string(),
+            tool_call_id: "tc_shell_toggle".into(),
             status: ToolCallStatus::Failed,
             output_summary: Some("exit code: 1\nstderr: nope".to_string()),
             output_digest: None,
@@ -89,7 +89,7 @@ pub(super) fn mouse_click_toggles_apply_patch_file_disclosure() {
         1,
         "req_patch_toggle",
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_patch_toggle".to_string(),
+            request_id: "req_patch_toggle".into(),
             provider_id: "openai".to_string(),
             model_id: "gpt-5-codex".to_string(),
             prompt_summary: "Toggle patch file".to_string(),
@@ -101,7 +101,7 @@ pub(super) fn mouse_click_toggles_apply_patch_file_disclosure() {
         2,
         "req_patch_toggle",
         EventV1::ToolCallRequested(ToolCallRequestedEvent {
-            tool_call_id: "tc_patch_toggle".to_string(),
+            tool_call_id: "tc_patch_toggle".into(),
             tool_id: "apply_patch".to_string(),
             args_summary: r#"{"patchText":"*** Begin Patch"}"#.to_string(),
             args_digest: "digest-patch-toggle-args".to_string(),
@@ -112,7 +112,7 @@ pub(super) fn mouse_click_toggles_apply_patch_file_disclosure() {
         3,
         "req_patch_toggle",
         EventV1::ToolCallFinished(ToolCallFinishedEvent {
-            tool_call_id: "tc_patch_toggle".to_string(),
+            tool_call_id: "tc_patch_toggle".into(),
             status: ToolCallStatus::Succeeded,
             output_summary: Some("Success. Updated the following files".to_string()),
             output_digest: None,
@@ -176,7 +176,7 @@ pub(super) fn apply_patch_default_expansion_skips_deleted_files() {
         1,
         "req_patch_defaults",
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_patch_defaults".to_string(),
+            request_id: "req_patch_defaults".into(),
             provider_id: "openai".to_string(),
             model_id: "gpt-5-codex".to_string(),
             prompt_summary: "Seed patch defaults".to_string(),
@@ -188,7 +188,7 @@ pub(super) fn apply_patch_default_expansion_skips_deleted_files() {
         2,
         "req_patch_defaults",
         EventV1::ToolCallRequested(ToolCallRequestedEvent {
-            tool_call_id: "tc_patch_defaults".to_string(),
+            tool_call_id: "tc_patch_defaults".into(),
             tool_id: "apply_patch".to_string(),
             args_summary: r#"{"patchText":"*** Begin Patch"}"#.to_string(),
             args_digest: "digest-patch-defaults-args".to_string(),
@@ -199,7 +199,7 @@ pub(super) fn apply_patch_default_expansion_skips_deleted_files() {
         3,
         "req_patch_defaults",
         EventV1::ToolCallFinished(ToolCallFinishedEvent {
-            tool_call_id: "tc_patch_defaults".to_string(),
+            tool_call_id: "tc_patch_defaults".into(),
             status: ToolCallStatus::Succeeded,
             output_summary: Some("Success. Updated the following files".to_string()),
             output_digest: None,

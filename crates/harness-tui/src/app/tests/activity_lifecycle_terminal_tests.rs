@@ -9,7 +9,7 @@ pub(crate) fn replay_terminal_only_turn_completion_scope_marks_activity_done_wit
                 1,
                 "req_replay_terminal_only_done",
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req_replay_terminal_only_done".to_string(),
+                    request_id: "req_replay_terminal_only_done".into(),
                     provider_id: "default".to_string(),
                     model_id: "gpt-5.4-mini".to_string(),
                     prompt_summary: "Explain the fix".to_string(),
@@ -21,7 +21,7 @@ pub(crate) fn replay_terminal_only_turn_completion_scope_marks_activity_done_wit
                 2,
                 "req_replay_terminal_only_done",
                 EventV1::TaskCompleted(TaskCompletedEvent {
-                    task_id: "task_replay_terminal_only_done".to_string(),
+                    task_id: "task_replay_terminal_only_done".to_string().into(),
                     result_summary: "Final answer".to_string(),
                     result_digest: "digest-replay-terminal-only-result".to_string(),
                     metadata: Some(TaskCompletionMetadata {
@@ -49,7 +49,7 @@ pub(crate) fn replay_terminal_only_turn_cancellation_scope_marks_activity_error_
                 1,
                 "req_replay_terminal_only_cancel",
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req_replay_terminal_only_cancel".to_string(),
+                    request_id: "req_replay_terminal_only_cancel".into(),
                     provider_id: "default".to_string(),
                     model_id: "gpt-5.4-mini".to_string(),
                     prompt_summary: "Explain the fix".to_string(),
@@ -61,7 +61,7 @@ pub(crate) fn replay_terminal_only_turn_cancellation_scope_marks_activity_error_
                 2,
                 "req_replay_terminal_only_cancel",
                 EventV1::TaskCancelled(TaskCancelledEvent {
-                    task_id: "task_replay_terminal_only_cancel".to_string(),
+                    task_id: "task_replay_terminal_only_cancel".to_string().into(),
                     reason: "agent turn exceeded profile max_iters=24".to_string(),
                     task_scope: Some(harness_core::event::TaskTerminalScope::AgentTurn),
                 }),
@@ -87,7 +87,7 @@ pub(crate) fn replay_terminal_only_tool_cancellation_scope_does_not_fail_activit
                 1,
                 "req_replay_terminal_only_tool_cancel",
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req_replay_terminal_only_tool_cancel".to_string(),
+                    request_id: "req_replay_terminal_only_tool_cancel".into(),
                     provider_id: "default".to_string(),
                     model_id: "gpt-5.4-mini".to_string(),
                     prompt_summary: "Read the file".to_string(),
@@ -99,7 +99,7 @@ pub(crate) fn replay_terminal_only_tool_cancellation_scope_does_not_fail_activit
                 2,
                 "req_replay_terminal_only_tool_cancel",
                 EventV1::TaskCancelled(TaskCancelledEvent {
-                    task_id: "task_replay_terminal_only_tool_cancel".to_string(),
+                    task_id: "task_replay_terminal_only_tool_cancel".to_string().into(),
                     reason: "tool request timed out".to_string(),
                     task_scope: Some(harness_core::event::TaskTerminalScope::ToolCall),
                 }),
@@ -119,7 +119,7 @@ pub(crate) fn queued_turn_schedule_keeps_activity_queued_until_provider_starts()
         1,
         "req_active",
         EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-            request_id: "req_active".to_string(),
+            request_id: "req_active".into(),
             text: "active".to_string(),
         }),
     ));
@@ -127,7 +127,7 @@ pub(crate) fn queued_turn_schedule_keeps_activity_queued_until_provider_starts()
         2,
         "req_active",
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_active".to_string(),
+            request_id: "req_active".into(),
             provider_id: "default".to_string(),
             model_id: "gpt-5.4-mini".to_string(),
             prompt_summary: "active".to_string(),
@@ -139,7 +139,7 @@ pub(crate) fn queued_turn_schedule_keeps_activity_queued_until_provider_starts()
         3,
         "req_queued",
         EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-            request_id: "req_queued".to_string(),
+            request_id: "req_queued".into(),
             text: "queued".to_string(),
         }),
     ));
@@ -147,7 +147,7 @@ pub(crate) fn queued_turn_schedule_keeps_activity_queued_until_provider_starts()
         4,
         "req_queued",
         EventV1::TaskScheduled(TaskScheduledEvent {
-            task_id: "task_queued".to_string(),
+            task_id: "task_queued".to_string().into(),
             state: TaskScheduleState::Queued,
             queue_key: Some("provider_model:default:gpt-5.4-mini".to_string()),
         }),
@@ -165,7 +165,7 @@ pub(crate) fn queued_turn_schedule_keeps_activity_queued_until_provider_starts()
         5,
         "req_queued",
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_queued".to_string(),
+            request_id: "req_queued".into(),
             provider_id: "default".to_string(),
             model_id: "gpt-5.4-mini".to_string(),
             prompt_summary: "queued".to_string(),
@@ -188,7 +188,7 @@ pub(crate) fn tool_task_completion_does_not_copy_tool_output_into_activity_trans
         1,
         "req_tool_completion_transcript",
         EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-            request_id: "req_tool_completion_transcript".to_string(),
+            request_id: "req_tool_completion_transcript".into(),
             text: "Inspect tokio docs".to_string(),
         }),
     ));
@@ -196,7 +196,7 @@ pub(crate) fn tool_task_completion_does_not_copy_tool_output_into_activity_trans
         2,
         "req_tool_completion_transcript",
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_tool_completion_transcript".to_string(),
+            request_id: "req_tool_completion_transcript".into(),
             provider_id: "mock".to_string(),
             model_id: "model-1".to_string(),
             prompt_summary: "Inspect tokio docs".to_string(),
@@ -208,7 +208,7 @@ pub(crate) fn tool_task_completion_does_not_copy_tool_output_into_activity_trans
         3,
         "req_tool_completion_transcript",
         EventV1::ToolCallRequested(ToolCallRequestedEvent {
-            tool_call_id: "tc_docs_tokio".to_string(),
+            tool_call_id: "tc_docs_tokio".into(),
             tool_id: "mcp.docs-rs.search_in_crate".to_string(),
             args_summary: r#"{"crate_name":"tokio","query":"spawn"}"#.to_string(),
             args_digest: "digest-docs-tokio-args".to_string(),
@@ -219,7 +219,7 @@ pub(crate) fn tool_task_completion_does_not_copy_tool_output_into_activity_trans
         4,
         "req_tool_completion_transcript",
         EventV1::TaskCompleted(TaskCompletedEvent {
-            task_id: "task_docs_tokio".to_string(),
+            task_id: "task_docs_tokio".to_string().into(),
             result_summary: "fn spawn\nstruct JoinHandle".to_string(),
             result_digest: "digest-task-docs-tokio".to_string(),
             metadata: Some(TaskCompletionMetadata {

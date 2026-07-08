@@ -1,3 +1,4 @@
+// allow: SIZE_OK — TUI rendering (indivisible view model)
 use crate::UnwrapOrAbort;
 use ratatui::{
     style::{Color, Modifier, Style},

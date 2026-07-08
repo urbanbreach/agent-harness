@@ -1,3 +1,4 @@
+// allow: SIZE_OK — TUI chrome rendering (indivisible view model)
 use super::*;
 
 use ratatui::widgets::Padding;
@@ -776,10 +777,6 @@ fn semantic_surface(theme: &Theme, mode: ChromeMode) -> Color {
 }
 
 pub(super) fn muted_meta_style(theme: &Theme) -> Style {
-    Style::default().fg(theme.text.secondary)
-}
-
-pub(super) fn subdued_payload_style(theme: &Theme) -> Style {
     Style::default().fg(theme.text.secondary)
 }
 

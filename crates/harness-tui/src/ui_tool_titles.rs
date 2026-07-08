@@ -1,8 +1,9 @@
-use crate::app::{ToolCallDisplayStatus, ToolCallEntry};
+use crate::app::ToolCallEntry;
 use crate::text::collapse_inline_whitespace;
 
 use super::ui_tool_input::{compact_tool_trigger_subtitle, tool_input_args, tool_input_label};
 use super::ui_tool_metadata::{tool_json_nested_string, tool_json_string, tool_summary_string};
+use super::ui_tool_style::status_label;
 
 pub(super) fn generic_tool_title(tool_call: &ToolCallEntry, tool_id: &str) -> String {
     let suffix = compact_tool_trigger_subtitle(
@@ -20,14 +21,14 @@ fn generic_tool_name(tool_id: &str) -> String {
 }
 
 pub(super) fn background_output_tool_title(tool_call: &ToolCallEntry) -> String {
-    match tool_call.status {
-        ToolCallDisplayStatus::PendingPermission | ToolCallDisplayStatus::Queued => {
-            "Check background output".to_string()
-        }
-        ToolCallDisplayStatus::Running => "Checking background output...".to_string(),
-        ToolCallDisplayStatus::Succeeded => "Checked background output".to_string(),
-        ToolCallDisplayStatus::Failed => "Background output check failed".to_string(),
-    }
+    status_label(
+        tool_call.status,
+        "Check background output",
+        "Checking background output...",
+        "Checked background output",
+        "Background output check failed",
+    )
+    .to_string()
 }
 
 pub(super) fn background_output_tool_subtitle(tool_call: &ToolCallEntry) -> Option<String> {
@@ -83,7 +84,7 @@ pub(super) fn batch_tool_title(tool_call: &ToolCallEntry) -> String {
                 .and_then(serde_json::Value::as_array)
                 .map(Vec::len)
         })
-        .map(|count| count as u64)
+        .map(|count| u64::try_from(count).unwrap_or(0))
         .or_else(|| {
             tool_call
                 .output_json

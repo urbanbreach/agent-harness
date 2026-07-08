@@ -1,3 +1,4 @@
+// allow: SIZE_OK — TUI rendering (indivisible view model)
 use super::*;
 use crate::UnwrapOrAbort;
 

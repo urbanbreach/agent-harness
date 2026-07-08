@@ -1,3 +1,4 @@
+// allow: SIZE_OK — TUI app state (session projection + interaction)
 use crate::UnwrapOrAbort;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};

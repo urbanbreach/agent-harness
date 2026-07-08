@@ -12,7 +12,7 @@ pub(crate) fn mouse_up_on_completed_general_task_row_opens_child_session() {
         2,
         "req_parent",
         EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-            request_id: "req_parent".to_string(),
+            request_id: "req_parent".into(),
             text: "Start parent work".to_string(),
         }),
     ));
@@ -21,7 +21,7 @@ pub(crate) fn mouse_up_on_completed_general_task_row_opens_child_session() {
         4,
         "req_parent",
         EventV1::ToolCallRequested(ToolCallRequestedEvent {
-            tool_call_id: "tc_general_child".to_string(),
+            tool_call_id: "tc_general_child".into(),
             tool_id: "task".to_string(),
             args_summary: r#"{"description":"Subagent functionality smoke test"}"#.to_string(),
             args_digest: "digest-general-child".to_string(),
@@ -37,7 +37,7 @@ pub(crate) fn mouse_up_on_completed_general_task_row_opens_child_session() {
         "req_child",
         EventActor::new(ActorKind::Worker, Some("agent_child".to_string())),
         EventV1::TaskCompleted(TaskCompletedEvent {
-            task_id: "task_general_child".to_string(),
+            task_id: "task_general_child".to_string().into(),
             result_summary: "child completed".to_string(),
             result_digest: "digest-general-child-result".to_string(),
             metadata: Some(TaskCompletionMetadata {
@@ -63,7 +63,7 @@ pub(crate) fn mouse_up_on_completed_general_task_row_opens_child_session() {
         "req_child",
         EventActor::new(ActorKind::Worker, Some("agent_child".to_string())),
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_child".to_string(),
+            request_id: "req_child".into(),
             provider_id: "default".to_string(),
             model_id: "model-child".to_string(),
             prompt_summary: "Subagent functionality smoke test".to_string(),
@@ -75,7 +75,7 @@ pub(crate) fn mouse_up_on_completed_general_task_row_opens_child_session() {
         8,
         "req_parent",
         EventV1::ToolCallFinished(ToolCallFinishedEvent {
-            tool_call_id: "tc_general_child".to_string(),
+            tool_call_id: "tc_general_child".into(),
             status: ToolCallStatus::Succeeded,
             output_summary: Some("child completed".to_string()),
             output_digest: Some("digest-general-child-result".to_string()),

@@ -202,7 +202,7 @@ pub(super) fn submit_prompt_while_turn_streams_echoes_as_queued_and_emits_intent
         1,
         "req_active",
         EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-            request_id: "req_active".to_string(),
+            request_id: "req_active".into(),
             text: "active".to_string(),
         }),
     ));
@@ -210,7 +210,7 @@ pub(super) fn submit_prompt_while_turn_streams_echoes_as_queued_and_emits_intent
         2,
         "req_active",
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_active".to_string(),
+            request_id: "req_active".into(),
             provider_id: "default".to_string(),
             model_id: "gpt-5.4-mini".to_string(),
             prompt_summary: "active".to_string(),

@@ -170,7 +170,7 @@ pub(crate) fn exact_test_persistent_operator_sidebar_uses_panel_gutter() {
         schema_version: harness_core::event::SCHEMA_VERSION,
         event_id: "evt_sidebar_panel".to_string(),
         seq: 1,
-        run_id: "run_sidebar_panel".to_string(),
+        run_id: "run_sidebar_panel".into(),
         mono_ms: 1,
         ts: None,
         actor: harness_core::event::EventActor::new(

@@ -349,7 +349,7 @@ pub(super) fn session_view_ignores_duplicate_seq_without_losing_ui_state() {
         1,
         Some("req_duplicate"),
         harness_core::event::EventV1::RunStarted(harness_core::event::RunStartedEvent {
-            run_name: "duplicate-seq".to_string(),
+            run_name: "duplicate-seq".into(),
             workspace_root: "/tmp".to_string(),
         }),
     ));

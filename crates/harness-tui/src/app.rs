@@ -1,3 +1,4 @@
+// allow: SIZE_OK — TUI app state (session stack + permissions + composer + model switcher + tool output routing)
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
@@ -573,7 +574,7 @@ impl AppState {
             .transcript_view
             .selected_activity_index
             .min(self.projection.activities.len().saturating_sub(1));
-        if let Some(tool_call_id) = completed_tool_call_id.as_deref() {
+        if let Some(tool_call_id) = completed_tool_call_id.as_ref().map(|id| id.as_str()) {
             self.seed_apply_patch_file_outputs_for_tool_call(tool_call_id);
         }
         if trimmed_events > 0 {

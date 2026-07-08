@@ -21,7 +21,7 @@ pub(super) fn orchestration_projection_tracks_queued_started_completed_counts() 
             Some("agent_worker".to_string()),
         ),
         harness_core::event::EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
-            task_id: "task_worker_primary".to_string(),
+            task_id: "task_worker_primary".to_string().into(),
             state: harness_core::event::TaskScheduleState::Queued,
             queue_key: Some("agent:queued:primary".to_string()),
         }),
@@ -61,7 +61,7 @@ pub(super) fn orchestration_projection_tracks_queued_started_completed_counts() 
             Some("agent_worker".to_string()),
         ),
         harness_core::event::EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
-            task_id: "task_worker_primary".to_string(),
+            task_id: "task_worker_primary".to_string().into(),
             state: harness_core::event::TaskScheduleState::Started,
             queue_key: Some("agent:running:primary".to_string()),
         }),
@@ -101,7 +101,7 @@ pub(super) fn orchestration_projection_tracks_queued_started_completed_counts() 
             Some("agent_worker".to_string()),
         ),
         harness_core::event::EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
-            task_id: "task_worker_secondary".to_string(),
+            task_id: "task_worker_secondary".to_string().into(),
             state: harness_core::event::TaskScheduleState::Queued,
             queue_key: Some("agent:queued:secondary".to_string()),
         }),
@@ -133,7 +133,7 @@ pub(super) fn orchestration_projection_tracks_queued_started_completed_counts() 
             Some("agent_worker".to_string()),
         ),
         harness_core::event::EventV1::TaskCompleted(harness_core::event::TaskCompletedEvent {
-            task_id: "task_worker_primary".to_string(),
+            task_id: "task_worker_primary".to_string().into(),
             result_summary: "primary completed".to_string(),
             result_digest: "digest-primary".to_string(),
             metadata: None,
@@ -158,7 +158,7 @@ pub(super) fn orchestration_projection_tracks_queued_started_completed_counts() 
             Some("agent_worker".to_string()),
         ),
         harness_core::event::EventV1::TaskCompleted(harness_core::event::TaskCompletedEvent {
-            task_id: "task_worker_secondary".to_string(),
+            task_id: "task_worker_secondary".to_string().into(),
             result_summary: "secondary completed".to_string(),
             result_digest: "digest-secondary".to_string(),
             metadata: None,
@@ -187,7 +187,7 @@ pub(super) fn orchestration_projection_tracks_queued_started_completed_counts() 
         None,
         harness_core::event::EventActor::new(harness_core::event::ActorKind::Supervisor, None),
         harness_core::event::EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
-            task_id: "task_supervisor_only".to_string(),
+            task_id: "task_supervisor_only".to_string().into(),
             state: harness_core::event::TaskScheduleState::Started,
             queue_key: Some("agent:supervisor".to_string()),
         }),
@@ -225,7 +225,7 @@ pub(super) fn orchestration_projection_tracks_stale_then_late_result() {
             Some("agent_worker".to_string()),
         ),
         harness_core::event::EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
-            task_id: "task_stale".to_string(),
+            task_id: "task_stale".to_string().into(),
             state: harness_core::event::TaskScheduleState::Started,
             queue_key: Some("agent:running:stale".to_string()),
         }),
@@ -249,7 +249,7 @@ pub(super) fn orchestration_projection_tracks_stale_then_late_result() {
             Some("agent_worker".to_string()),
         ),
         harness_core::event::EventV1::StaleDetected(harness_core::event::StaleDetectedEvent {
-            task_id: "task_stale".to_string(),
+            task_id: "task_stale".to_string().into(),
             stale_for_ms: 3001,
         }),
     ));
@@ -288,7 +288,7 @@ pub(super) fn orchestration_projection_tracks_stale_then_late_result() {
             Some("agent_worker".to_string()),
         ),
         harness_core::event::EventV1::TaskResultLate(harness_core::event::TaskResultLateEvent {
-            task_id: "task_stale".to_string(),
+            task_id: "task_stale".to_string().into(),
             result_digest: "digest-late".to_string(),
         }),
     ));
@@ -336,11 +336,11 @@ pub(super) fn orchestration_projection_distinguishes_background_failure_and_time
         Some("req_failed"),
         harness_core::event::EventV1::BackgroundTaskNotification(
             harness_core::event::BackgroundTaskNotificationEvent {
-                parent_session_id: "agent_parent".to_string(),
+                parent_session_id: "agent_parent".into(),
                 parent_agent_id: Some("agent_parent".to_string()),
-                child_session_id: "agent_failed".to_string(),
+                child_session_id: "agent_failed".into(),
                 child_request_id: "req_failed".to_string(),
-                task_id: "task_failed".to_string(),
+                task_id: "task_failed".to_string().into(),
                 description: "fail child".to_string(),
                 status: harness_core::event::BackgroundTaskNotificationStatus::Failed,
                 summary: "child failed".to_string(),
@@ -355,11 +355,11 @@ pub(super) fn orchestration_projection_distinguishes_background_failure_and_time
         Some("req_timeout"),
         harness_core::event::EventV1::BackgroundTaskNotification(
             harness_core::event::BackgroundTaskNotificationEvent {
-                parent_session_id: "agent_parent".to_string(),
+                parent_session_id: "agent_parent".into(),
                 parent_agent_id: Some("agent_parent".to_string()),
-                child_session_id: "agent_timeout".to_string(),
+                child_session_id: "agent_timeout".into(),
                 child_request_id: "req_timeout".to_string(),
-                task_id: "task_timeout".to_string(),
+                task_id: "task_timeout".to_string().into(),
                 description: "timeout child".to_string(),
                 status: harness_core::event::BackgroundTaskNotificationStatus::TimedOut,
                 summary: "child timed out".to_string(),
@@ -387,7 +387,7 @@ pub(super) fn orchestration_projection_retains_only_recent_terminal_rows() {
         1,
         None,
         harness_core::event::EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
-            task_id: "task_live_stale".to_string(),
+            task_id: "task_live_stale".to_string().into(),
             state: harness_core::event::TaskScheduleState::Started,
             queue_key: Some("agent:running:live".to_string()),
         }),
@@ -396,7 +396,7 @@ pub(super) fn orchestration_projection_retains_only_recent_terminal_rows() {
         2,
         None,
         harness_core::event::EventV1::StaleDetected(harness_core::event::StaleDetectedEvent {
-            task_id: "task_live_stale".to_string(),
+            task_id: "task_live_stale".to_string().into(),
             stale_for_ms: 4242,
         }),
     ));
@@ -404,7 +404,7 @@ pub(super) fn orchestration_projection_retains_only_recent_terminal_rows() {
         3,
         None,
         harness_core::event::EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
-            task_id: "task_live_queued".to_string(),
+            task_id: "task_live_queued".to_string().into(),
             state: harness_core::event::TaskScheduleState::Queued,
             queue_key: Some("agent:queued:live".to_string()),
         }),
@@ -414,7 +414,7 @@ pub(super) fn orchestration_projection_retains_only_recent_terminal_rows() {
         4,
         None,
         harness_core::event::EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
-            task_id: "task_terminal_1".to_string(),
+            task_id: "task_terminal_1".to_string().into(),
             state: harness_core::event::TaskScheduleState::Queued,
             queue_key: Some("terminal:q1".to_string()),
         }),
@@ -423,7 +423,7 @@ pub(super) fn orchestration_projection_retains_only_recent_terminal_rows() {
         5,
         None,
         harness_core::event::EventV1::TaskCompleted(harness_core::event::TaskCompletedEvent {
-            task_id: "task_terminal_1".to_string(),
+            task_id: "task_terminal_1".to_string().into(),
             result_summary: "terminal 1 completed".to_string(),
             result_digest: "digest-terminal-1".to_string(),
             metadata: None,
@@ -433,7 +433,7 @@ pub(super) fn orchestration_projection_retains_only_recent_terminal_rows() {
         6,
         None,
         harness_core::event::EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
-            task_id: "task_terminal_2".to_string(),
+            task_id: "task_terminal_2".to_string().into(),
             state: harness_core::event::TaskScheduleState::Started,
             queue_key: Some("terminal:q2".to_string()),
         }),
@@ -442,7 +442,7 @@ pub(super) fn orchestration_projection_retains_only_recent_terminal_rows() {
         7,
         None,
         harness_core::event::EventV1::TaskCancelled(harness_core::event::TaskCancelledEvent {
-            task_id: "task_terminal_2".to_string(),
+            task_id: "task_terminal_2".to_string().into(),
             reason: "cancelled 2".to_string(),
             task_scope: None,
         }),
@@ -451,7 +451,7 @@ pub(super) fn orchestration_projection_retains_only_recent_terminal_rows() {
         8,
         None,
         harness_core::event::EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
-            task_id: "task_terminal_3".to_string(),
+            task_id: "task_terminal_3".to_string().into(),
             state: harness_core::event::TaskScheduleState::Started,
             queue_key: Some("terminal:q3".to_string()),
         }),
@@ -460,7 +460,7 @@ pub(super) fn orchestration_projection_retains_only_recent_terminal_rows() {
         9,
         None,
         harness_core::event::EventV1::StaleDetected(harness_core::event::StaleDetectedEvent {
-            task_id: "task_terminal_3".to_string(),
+            task_id: "task_terminal_3".to_string().into(),
             stale_for_ms: 9003,
         }),
     ));
@@ -468,7 +468,7 @@ pub(super) fn orchestration_projection_retains_only_recent_terminal_rows() {
         10,
         None,
         harness_core::event::EventV1::TaskResultLate(harness_core::event::TaskResultLateEvent {
-            task_id: "task_terminal_3".to_string(),
+            task_id: "task_terminal_3".to_string().into(),
             result_digest: "digest-terminal-3".to_string(),
         }),
     ));
@@ -476,7 +476,7 @@ pub(super) fn orchestration_projection_retains_only_recent_terminal_rows() {
         11,
         None,
         harness_core::event::EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
-            task_id: "task_terminal_4".to_string(),
+            task_id: "task_terminal_4".to_string().into(),
             state: harness_core::event::TaskScheduleState::Queued,
             queue_key: Some("terminal:q4".to_string()),
         }),
@@ -485,7 +485,7 @@ pub(super) fn orchestration_projection_retains_only_recent_terminal_rows() {
         12,
         None,
         harness_core::event::EventV1::TaskCompleted(harness_core::event::TaskCompletedEvent {
-            task_id: "task_terminal_4".to_string(),
+            task_id: "task_terminal_4".to_string().into(),
             result_summary: "terminal 4 completed".to_string(),
             result_digest: "digest-terminal-4".to_string(),
             metadata: None,
@@ -495,7 +495,7 @@ pub(super) fn orchestration_projection_retains_only_recent_terminal_rows() {
         13,
         None,
         harness_core::event::EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
-            task_id: "task_terminal_5".to_string(),
+            task_id: "task_terminal_5".to_string().into(),
             state: harness_core::event::TaskScheduleState::Queued,
             queue_key: Some("terminal:q5".to_string()),
         }),
@@ -504,7 +504,7 @@ pub(super) fn orchestration_projection_retains_only_recent_terminal_rows() {
         14,
         None,
         harness_core::event::EventV1::TaskCancelled(harness_core::event::TaskCancelledEvent {
-            task_id: "task_terminal_5".to_string(),
+            task_id: "task_terminal_5".to_string().into(),
             reason: "cancelled 5".to_string(),
             task_scope: None,
         }),
@@ -513,7 +513,7 @@ pub(super) fn orchestration_projection_retains_only_recent_terminal_rows() {
         15,
         None,
         harness_core::event::EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
-            task_id: "task_terminal_6".to_string(),
+            task_id: "task_terminal_6".to_string().into(),
             state: harness_core::event::TaskScheduleState::Started,
             queue_key: Some("terminal:q6".to_string()),
         }),
@@ -522,7 +522,7 @@ pub(super) fn orchestration_projection_retains_only_recent_terminal_rows() {
         16,
         None,
         harness_core::event::EventV1::TaskCompleted(harness_core::event::TaskCompletedEvent {
-            task_id: "task_terminal_6".to_string(),
+            task_id: "task_terminal_6".to_string().into(),
             result_summary: "terminal 6 completed".to_string(),
             result_digest: "digest-terminal-6".to_string(),
             metadata: None,

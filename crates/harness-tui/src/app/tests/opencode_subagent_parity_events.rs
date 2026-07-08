@@ -21,7 +21,7 @@ pub(super) fn subagent_events(state: TaskFixtureState) -> Vec<EventEnvelopeV1> {
             3,
             "req_parent",
             EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-                request_id: "req_parent".to_string(),
+                request_id: "req_parent".into(),
                 text: "Audit transcript parity".to_string(),
             }),
         ),
@@ -37,7 +37,7 @@ pub(super) fn subagent_events(state: TaskFixtureState) -> Vec<EventEnvelopeV1> {
             6,
             "req_parent",
             EventV1::ToolCallStarted(ToolCallStartedEvent {
-                tool_call_id: "tc_task".to_string(),
+                tool_call_id: "tc_task".into(),
             }),
         ),
         event_helpers::agent_spawned_with_parent(7, "agent_worker", "researcher", Some("parent")),
@@ -46,7 +46,7 @@ pub(super) fn subagent_events(state: TaskFixtureState) -> Vec<EventEnvelopeV1> {
             "req_child",
             EventActor::new(ActorKind::Worker, Some("agent_worker".to_string())),
             EventV1::TaskScheduled(TaskScheduledEvent {
-                task_id: "task_child".to_string(),
+                task_id: "task_child".to_string().into(),
                 state: TaskScheduleState::Started,
                 queue_key: Some("agent:running:researcher".to_string()),
             }),
@@ -56,7 +56,7 @@ pub(super) fn subagent_events(state: TaskFixtureState) -> Vec<EventEnvelopeV1> {
             "req_child",
             EventActor::new(ActorKind::Worker, Some("agent_worker".to_string())),
             EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                request_id: "req_child".to_string(),
+                request_id: "req_child".into(),
                 provider_id: "default".to_string(),
                 model_id: "model-child".to_string(),
                 prompt_summary: "Audit transcript parity".to_string(),
@@ -68,7 +68,7 @@ pub(super) fn subagent_events(state: TaskFixtureState) -> Vec<EventEnvelopeV1> {
             10,
             "req_child",
             EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                tool_call_id: "tc_child_read".to_string(),
+                tool_call_id: "tc_child_read".into(),
                 tool_id: "fs.read".to_string(),
                 args_summary: r#"{"path":"src/ui.rs"}"#.to_string(),
                 args_digest: "digest-child-read".to_string(),
@@ -96,7 +96,7 @@ pub(super) fn detached_foreground_tool_call_event(seq: u64) -> EventEnvelopeV1 {
         seq,
         "req_parent",
         EventV1::ToolCallFinished(ToolCallFinishedEvent {
-            tool_call_id: "tc_task".to_string(),
+            tool_call_id: "tc_task".into(),
             status: ToolCallStatus::Succeeded,
             output_summary: Some("foreground subagent moved to background".to_string()),
             output_digest: Some("digest-task-backgrounded".to_string()),
@@ -161,7 +161,7 @@ fn retry_event(seq: u64) -> EventEnvelopeV1 {
         "req_child",
         EventActor::new(ActorKind::Worker, Some("agent_worker".to_string())),
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_child".to_string(),
+            request_id: "req_child".into(),
             provider_id: "default".to_string(),
             model_id: "model-child".to_string(),
             prompt_summary: "Audit transcript parity".to_string(),
@@ -185,7 +185,7 @@ fn completion_events(background: bool) -> Vec<EventEnvelopeV1> {
             11,
             "req_child",
             EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                tool_call_id: "tc_child_grep".to_string(),
+                tool_call_id: "tc_child_grep".into(),
                 tool_id: "fs.grep".to_string(),
                 args_summary: r#"{"pattern":"task row"}"#.to_string(),
                 args_digest: "digest-child-grep".to_string(),
@@ -197,7 +197,7 @@ fn completion_events(background: bool) -> Vec<EventEnvelopeV1> {
             "req_child",
             EventActor::new(ActorKind::Worker, Some("agent_worker".to_string())),
             EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
-                request_id: "req_child".to_string(),
+                request_id: "req_child".into(),
                 delta: "Child details stay out of the parent task row.".to_string(),
             }),
         ),
@@ -206,7 +206,7 @@ fn completion_events(background: bool) -> Vec<EventEnvelopeV1> {
             "req_child",
             EventActor::new(ActorKind::Worker, Some("agent_worker".to_string())),
             EventV1::TaskCompleted(TaskCompletedEvent {
-                task_id: "task_child".to_string(),
+                task_id: "task_child".to_string().into(),
                 result_summary: "Found the inline transcript path.".to_string(),
                 result_digest: "digest-task-child".to_string(),
                 metadata: Some(TaskCompletionMetadata {
@@ -225,7 +225,7 @@ fn completion_events(background: bool) -> Vec<EventEnvelopeV1> {
             14,
             "req_parent",
             EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                tool_call_id: "tc_task".to_string(),
+                tool_call_id: "tc_task".into(),
                 status: ToolCallStatus::Succeeded,
                 output_summary: Some("child session finished".to_string()),
                 output_digest: Some("digest-task-finished".to_string()),

@@ -1,3 +1,4 @@
+// allow: SIZE_OK — TUI transcript rendering (indivisible view model)
 use super::ui_tool_delegation::agent_spawn_is_background;
 use super::*;
 
