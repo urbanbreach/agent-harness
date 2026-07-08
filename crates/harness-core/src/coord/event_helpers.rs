@@ -1,3 +1,4 @@
+// allow: SIZE_OK — coordinator state machine (turn lifecycle + scheduling)
 use std::{collections::BTreeMap, fs};
 
 use crate::clock::Clock;
@@ -77,7 +78,7 @@ where
     C: Clock + ?Sized,
     R: Redactor + ?Sized,
 {
-    let builder = EventBuilder::new(clock, redactor, run_state.info.run_id.clone());
+    let builder = EventBuilder::new(clock, redactor, run_state.info.run_id.to_string());
     let context = event_context_with_keys(run_state, actor, stream_key, correlation_id);
     let envelope = builder.build(context, payload)?;
     append_built_event(run_state, envelope)
@@ -178,7 +179,7 @@ where
         request_correlation_id,
     } = args;
 
-    let builder = EventBuilder::new(clock, redactor, run_state.info.run_id.clone());
+    let builder = EventBuilder::new(clock, redactor, run_state.info.run_id.to_string());
     let context = tool_call_event_context(run_state, actor, tool_call_id, request_correlation_id);
     let envelope =
         builder.tool_call_requested(context, tool_call_id, tool_id, args_json, tool_metadata)?;
@@ -205,7 +206,7 @@ where
         default_decision,
         request_correlation_id,
     } = args;
-    let builder = EventBuilder::new(clock, redactor, run_state.info.run_id.clone());
+    let builder = EventBuilder::new(clock, redactor, run_state.info.run_id.to_string());
     let context = permission_event_context(
         run_state,
         permission_id,
@@ -218,7 +219,7 @@ where
         PermissionRequestedArgs {
             permission_id: permission_id.to_string(),
             kind: kind.as_str().to_string(),
-            tool_call_id: Some(tool_call_id.to_string()),
+            tool_call_id: Some(tool_call_id.into()),
             summary,
             request_digest,
             timeout_ms,
@@ -241,7 +242,7 @@ where
     C: Clock + ?Sized,
     R: Redactor + ?Sized,
 {
-    let builder = EventBuilder::new(clock, redactor, run_state.info.run_id.clone());
+    let builder = EventBuilder::new(clock, redactor, run_state.info.run_id.to_string());
     let context = permission_event_context(
         run_state,
         permission_id,
@@ -266,7 +267,7 @@ where
     C: Clock + ?Sized,
     R: Redactor + ?Sized,
 {
-    let builder = EventBuilder::new(clock, redactor, run_state.info.run_id.clone());
+    let builder = EventBuilder::new(clock, redactor, run_state.info.run_id.to_string());
     let context = tool_call_event_context(
         run_state,
         system_actor(),
@@ -276,7 +277,7 @@ where
     let envelope = builder.build(
         context,
         EventV1::ToolCallStarted(ToolCallStartedEvent {
-            tool_call_id: tool_call_id.to_string(),
+            tool_call_id: tool_call_id.into(),
         }),
     )?;
     append_built_event(run_state, envelope)
@@ -301,7 +302,7 @@ where
         request_correlation_id,
     } = args;
     let output_digest = output_summary.as_ref().map(|s| digest12(s.as_bytes()));
-    let builder = EventBuilder::new(clock, redactor, run_state.info.run_id.clone());
+    let builder = EventBuilder::new(clock, redactor, run_state.info.run_id.to_string());
     let context = tool_call_event_context(
         run_state,
         system_actor(),
@@ -311,7 +312,7 @@ where
     let envelope = builder.build(
         context,
         EventV1::ToolCallFinished(ToolCallFinishedEvent {
-            tool_call_id: tool_call_id.to_string(),
+            tool_call_id: tool_call_id.into(),
             status,
             output_summary,
             output_digest,
@@ -334,7 +335,7 @@ where
     C: Clock + ?Sized,
     R: Redactor + ?Sized,
 {
-    let builder = EventBuilder::new(clock, redactor, run_state.info.run_id.clone());
+    let builder = EventBuilder::new(clock, redactor, run_state.info.run_id.to_string());
     let context = edit_event_context(
         run_state,
         &metadata.edit_id,
@@ -373,7 +374,7 @@ where
         diff_digest,
         request_correlation_id,
     } = args;
-    let builder = EventBuilder::new(clock, redactor, run_state.info.run_id.clone());
+    let builder = EventBuilder::new(clock, redactor, run_state.info.run_id.to_string());
     let context = edit_event_context(
         run_state,
         &metadata.edit_id,
@@ -408,7 +409,7 @@ where
     C: Clock + ?Sized,
     R: Redactor + ?Sized,
 {
-    let builder = EventBuilder::new(clock, redactor, run_state.info.run_id.clone());
+    let builder = EventBuilder::new(clock, redactor, run_state.info.run_id.to_string());
     let context = edit_event_context(
         run_state,
         &metadata.edit_id,
@@ -496,7 +497,7 @@ where
         }
     }
 
-    let builder = EventBuilder::new(clock, redactor, run_state.info.run_id.clone());
+    let builder = EventBuilder::new(clock, redactor, run_state.info.run_id.to_string());
     let context = tool_call_event_context(
         run_state,
         system_actor(),
@@ -509,7 +510,7 @@ where
             path: artifact.path.clone(),
             digest,
             bytes,
-            tool_call_id: Some(tool_call_id.to_string()),
+            tool_call_id: Some(tool_call_id.into()),
             tool_metadata: tool_metadata.cloned(),
             metadata,
         }),

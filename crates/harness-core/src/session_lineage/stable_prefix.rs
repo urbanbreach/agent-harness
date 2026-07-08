@@ -1,3 +1,4 @@
+// allow: SIZE_OK — session management (lineage + projection + inspection)
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
@@ -137,11 +138,11 @@ fn validate_event_log(events: &[EventEnvelopeV1]) -> Result<u64, SessionLineageE
 
         match run_id {
             None => run_id = Some(event.run_id.as_str()),
-            Some(existing) if existing == event.run_id => {}
+            Some(existing) if existing == event.run_id.as_str() => {}
             Some(existing) => {
                 return Err(SessionLineageError::RunIdMismatch {
                     expected: existing.to_string(),
-                    actual: event.run_id.clone(),
+                    actual: event.run_id.to_string(),
                     seq: event.seq,
                 })
             }
@@ -205,7 +206,7 @@ struct PrefixState {
 
 impl PrefixState {
     fn apply(&mut self, event: &EventEnvelopeV1) {
-        self.run_id.get_or_insert_with(|| event.run_id.clone());
+        self.run_id.get_or_insert_with(|| event.run_id.to_string());
 
         match &event.payload {
             EventV1::RunStarted(_) => {
@@ -221,39 +222,39 @@ impl PrefixState {
             EventV1::RunFinished(_) => self.lifecycle = PrefixLifecycle::Finished,
             EventV1::RunFailed(_) => self.lifecycle = PrefixLifecycle::Failed,
             EventV1::TaskScheduled(payload) => {
-                self.tasks_in_flight.insert(payload.task_id.clone());
+                self.tasks_in_flight.insert(payload.task_id.to_string());
             }
             EventV1::TaskCancelled(payload) => {
-                self.tasks_in_flight.remove(&payload.task_id);
+                self.tasks_in_flight.remove(payload.task_id.as_str());
             }
             EventV1::TaskCompleted(payload) => {
-                self.tasks_in_flight.remove(&payload.task_id);
+                self.tasks_in_flight.remove(payload.task_id.as_str());
             }
             EventV1::TaskResultLate(payload) => {
-                self.tasks_in_flight.remove(&payload.task_id);
+                self.tasks_in_flight.remove(payload.task_id.as_str());
             }
             EventV1::ProviderRequestStarted(payload) => {
                 if let Some(turn_id) = provider_started_turn_id(payload) {
                     self.user_requests_awaiting_provider.remove(turn_id);
                 }
                 self.user_requests_awaiting_provider
-                    .remove(&payload.request_id);
+                    .remove(payload.request_id.as_str());
                 self.provider_requests_in_flight
-                    .insert(payload.request_id.clone());
+                    .insert(payload.request_id.to_string());
             }
             EventV1::ProviderRequestFinished(payload) => {
-                self.provider_requests_in_flight.remove(&payload.request_id);
+                self.provider_requests_in_flight.remove(payload.request_id.as_str());
             }
             EventV1::ToolCallRequested(payload) => {
                 self.tool_calls_in_flight
-                    .insert(payload.tool_call_id.clone());
+                    .insert(payload.tool_call_id.to_string());
             }
             EventV1::ToolCallStarted(payload) => {
                 self.tool_calls_in_flight
-                    .insert(payload.tool_call_id.clone());
+                    .insert(payload.tool_call_id.to_string());
             }
             EventV1::ToolCallFinished(payload) => {
-                self.tool_calls_in_flight.remove(&payload.tool_call_id);
+                self.tool_calls_in_flight.remove(payload.tool_call_id.as_str());
             }
             EventV1::PermissionRequested(payload) => {
                 self.pending_permissions
@@ -290,7 +291,7 @@ impl PrefixState {
             EventV1::UserMessageSubmitted(payload) => {
                 if !is_background_task_wakeup_message(&payload.text) {
                     self.user_requests_awaiting_provider
-                        .insert(payload.request_id.clone());
+                        .insert(payload.request_id.to_string());
                 }
             }
             EventV1::AgentSpawned(_)

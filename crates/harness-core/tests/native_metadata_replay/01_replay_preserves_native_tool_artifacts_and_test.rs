@@ -32,7 +32,7 @@ async fn replay_preserves_native_tool_artifacts_and_task_lineage() {
     let requested = events
         .iter()
         .find_map(|event| match &event.payload {
-            EventV1::ToolCallRequested(payload) if payload.tool_call_id == tool_call_id => {
+            EventV1::ToolCallRequested(payload) if payload.tool_call_id.as_str() == tool_call_id => {
                 Some(payload)
             }
             _ => None,
@@ -51,7 +51,7 @@ async fn replay_preserves_native_tool_artifacts_and_task_lineage() {
     let finished = events
         .iter()
         .find_map(|event| match &event.payload {
-            EventV1::ToolCallFinished(payload) if payload.tool_call_id == tool_call_id => {
+            EventV1::ToolCallFinished(payload) if payload.tool_call_id.as_str() == tool_call_id => {
                 Some(payload)
             }
             _ => None,
@@ -125,7 +125,7 @@ async fn replay_preserves_native_tool_artifacts_and_task_lineage() {
         .iter()
         .find_map(|event| match &event.payload {
             EventV1::ArtifactWritten(payload)
-                if payload.tool_call_id.as_deref() == Some(tool_call_id.as_str()) =>
+                if payload.tool_call_id.as_ref().map(|id| id.as_str()) == Some(tool_call_id.as_str()) =>
             {
                 Some(payload)
             }
@@ -203,7 +203,7 @@ async fn replay_preserves_native_tool_artifacts_and_task_lineage() {
 
     let replay_task = plan
         .completed_tasks
-        .get(&completed.task_id)
+        .get(completed.task_id.as_str())
         .unwrap_or_abort();
     assert_eq!(
         replay_task
@@ -226,7 +226,7 @@ async fn legacy_sessions_remain_loadable_after_native_metadata_extension() {
                 run_id,
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/workspace/project".to_string(),
                 }),
             ),
@@ -243,7 +243,7 @@ async fn legacy_sessions_remain_loadable_after_native_metadata_extension() {
                 run_id,
                 3,
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req_000001".to_string(),
+                    request_id: "req_000001".into(),
                     provider_id: "mock".to_string(),
                     model_id: "model-1".to_string(),
                     prompt_summary: "legacy prompt".to_string(),
@@ -255,7 +255,7 @@ async fn legacy_sessions_remain_loadable_after_native_metadata_extension() {
                 run_id,
                 4,
                 EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                    tool_call_id: "toolcall_000001".to_string(),
+                    tool_call_id: "toolcall_000001".into(),
                     tool_id: "shell.run".to_string(),
                     args_summary: "{\"cmd\":\"true\"}".to_string(),
                     args_digest: "digest-tool-args".to_string(),
@@ -266,14 +266,14 @@ async fn legacy_sessions_remain_loadable_after_native_metadata_extension() {
                 run_id,
                 5,
                 EventV1::ToolCallStarted(ToolCallStartedEvent {
-                    tool_call_id: "toolcall_000001".to_string(),
+                    tool_call_id: "toolcall_000001".into(),
                 }),
             ),
             envelope(
                 run_id,
                 6,
                 EventV1::TaskScheduled(TaskScheduledEvent {
-                    task_id: "task_000001".to_string(),
+                    task_id: "task_000001".to_string().into(),
                     state: TaskScheduleState::Started,
                     queue_key: Some("tool:shell.run".to_string()),
                 }),
@@ -282,7 +282,7 @@ async fn legacy_sessions_remain_loadable_after_native_metadata_extension() {
                 run_id,
                 7,
                 EventV1::TaskCompleted(TaskCompletedEvent {
-                    task_id: "task_000001".to_string(),
+                    task_id: "task_000001".to_string().into(),
                     result_summary: "legacy done".to_string(),
                     result_digest: "digest-task".to_string(),
                     metadata: None,
@@ -292,7 +292,7 @@ async fn legacy_sessions_remain_loadable_after_native_metadata_extension() {
                 run_id,
                 8,
                 EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                    tool_call_id: "toolcall_000001".to_string(),
+                    tool_call_id: "toolcall_000001".into(),
                     status: ToolCallStatus::Succeeded,
                     output_summary: Some("legacy ok".to_string()),
                     output_digest: Some("digest-tool-out".to_string()),
@@ -360,7 +360,7 @@ async fn resume_projection_handles_checkpoint_between_turn_and_provider_restart(
             metadata: ProviderContextCheckpointMetadata {
                 checkpoint_id: "checkpoint_000002".to_string(),
                 agent_id: "agent_000001".to_string(),
-                run_id: run_id.to_string(),
+                run_id: run_id.to_string().into(),
                 through_seq: 3,
                 through_request_id: Some("req_000001".to_string()),
                 provider_id: Some("default".to_string()),
@@ -398,7 +398,7 @@ async fn resume_projection_handles_checkpoint_between_turn_and_provider_restart(
                 run_id,
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/workspace/project".to_string(),
                 }),
             ),
@@ -406,7 +406,7 @@ async fn resume_projection_handles_checkpoint_between_turn_and_provider_restart(
                 run_id,
                 2,
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req_000001".to_string(),
+                    request_id: "req_000001".into(),
                     provider_id: "default".to_string(),
                     model_id: "model-1".to_string(),
                     prompt_summary: "turn before checkpoint".to_string(),
@@ -425,7 +425,7 @@ async fn resume_projection_handles_checkpoint_between_turn_and_provider_restart(
                 run_id,
                 4,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/workspace/project".to_string(),
                 }),
             ),
@@ -442,7 +442,7 @@ async fn resume_projection_handles_checkpoint_between_turn_and_provider_restart(
                 run_id,
                 6,
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req_000002".to_string(),
+                    request_id: "req_000002".into(),
                     provider_id: "default".to_string(),
                     model_id: "model-1".to_string(),
                     prompt_summary: "turn after restart".to_string(),

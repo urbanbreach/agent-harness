@@ -24,14 +24,14 @@ pub(super) fn operational_memory_redacts_secret_shaped_facts() {
             &first_answer,
             &second_answer,
             vec![EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                tool_call_id: "toolcall_secret_read".to_string(),
+                tool_call_id: "toolcall_secret_read".into(),
                 tool_id: "read".to_string(),
                 args_summary: format!("read {raw_secret_path}"),
                 args_digest: "digest-secret-read".to_string(),
                 metadata: Some(tool_metadata("read")),
             })],
             vec![EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                tool_call_id: "toolcall_secret_read".to_string(),
+                tool_call_id: "toolcall_secret_read".into(),
                 status: ToolCallStatus::Succeeded,
                 output_summary: Some(format!("read token-like path with {raw_bearer}")),
                 output_digest: Some("digest-secret-output".to_string()),
@@ -87,14 +87,14 @@ pub(super) fn operational_memory_dedupes_sorts_and_caps_paths() {
             &first_answer,
             &second_answer,
             vec![EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                tool_call_id: "toolcall_grep".to_string(),
+                tool_call_id: "toolcall_grep".into(),
                 tool_id: "grep".to_string(),
                 args_summary: "grep files".to_string(),
                 args_digest: "digest-grep".to_string(),
                 metadata: Some(tool_metadata("grep")),
             })],
             vec![EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                tool_call_id: "toolcall_grep".to_string(),
+                tool_call_id: "toolcall_grep".into(),
                 status: ToolCallStatus::Succeeded,
                 output_summary: Some("grep completed".to_string()),
                 output_digest: Some("digest-grep-output".to_string()),
@@ -145,14 +145,14 @@ pub(super) fn operational_memory_ignores_freeform_path_like_output() {
             &first_answer,
             &second_answer,
             vec![EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                tool_call_id: "toolcall_read".to_string(),
+                tool_call_id: "toolcall_read".into(),
                 tool_id: "read".to_string(),
                 args_summary: "read output".to_string(),
                 args_digest: "digest-read".to_string(),
                 metadata: Some(tool_metadata("read")),
             })],
             vec![EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                tool_call_id: "toolcall_read".to_string(),
+                tool_call_id: "toolcall_read".into(),
                 status: ToolCallStatus::Succeeded,
                 output_summary: Some(
                     "free-form text mentions src/freeform.rs and /workspace/project/src/secret.rs"
@@ -292,7 +292,7 @@ pub(super) fn operational_memory_resume_loads_checkpoint_facts_without_filesyste
                 EventActor::new(ActorKind::System, Some("coordinator".to_string())),
                 None,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/workspace/project".to_string(),
                 }),
             ),
@@ -374,7 +374,7 @@ fn compact_operational_memory_fixture(
             ProviderConversationTurn {
                 user_prompt: "first question".to_string(),
                 assistant_response: first_answer.to_string(),
-                request_id: Some("req_000001".to_string()),
+                request_id: Some("req_000001".into()),
                 first_seq: Some(2),
                 last_seq: None,
                 ..ProviderConversationTurn::default()
@@ -382,7 +382,7 @@ fn compact_operational_memory_fixture(
             ProviderConversationTurn {
                 user_prompt: "second question".to_string(),
                 assistant_response: second_answer.to_string(),
-                request_id: Some("req_000002".to_string()),
+                request_id: Some("req_000002".into()),
                 first_seq: None,
                 last_seq: None,
                 ..ProviderConversationTurn::default()
@@ -443,7 +443,7 @@ fn operational_memory_history_events(
             EventActor::new(ActorKind::System, Some("coordinator".to_string())),
             None,
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "interactive".to_string(),
+                run_name: "interactive".into(),
                 workspace_root: "/workspace/project".to_string(),
             }),
         ),
@@ -453,7 +453,7 @@ fn operational_memory_history_events(
             EventActor::new(ActorKind::User, None),
             None,
             EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-                request_id: "req_000001".to_string(),
+                request_id: "req_000001".into(),
                 text: "first question".to_string(),
             }),
         ),
@@ -463,7 +463,7 @@ fn operational_memory_history_events(
             EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
             Some("req_000001"),
             EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                request_id: "req_000001".to_string(),
+                request_id: "req_000001".into(),
                 provider_id: "default".to_string(),
                 model_id: "model-1".to_string(),
                 prompt_summary: "first question".to_string(),
@@ -489,7 +489,7 @@ fn operational_memory_history_events(
         EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
         Some("req_000001"),
         EventV1::TaskCompleted(TaskCompletedEvent {
-            task_id: "task_000001".to_string(),
+            task_id: "task_000001".to_string().into(),
             result_summary: first_answer.to_string(),
             result_digest: "digest-task-1".to_string(),
             metadata: None,
@@ -502,7 +502,7 @@ fn operational_memory_history_events(
         EventActor::new(ActorKind::User, None),
         None,
         EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-            request_id: "req_000002".to_string(),
+            request_id: "req_000002".into(),
             text: "second question".to_string(),
         }),
     ));
@@ -513,7 +513,7 @@ fn operational_memory_history_events(
         EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
         Some("req_000002"),
         EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_000002".to_string(),
+            request_id: "req_000002".into(),
             provider_id: "default".to_string(),
             model_id: "model-1".to_string(),
             prompt_summary: "second question".to_string(),
@@ -528,7 +528,7 @@ fn operational_memory_history_events(
         EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
         Some("req_000002"),
         EventV1::TaskCompleted(TaskCompletedEvent {
-            task_id: "task_000002".to_string(),
+            task_id: "task_000002".to_string().into(),
             result_summary: second_answer.to_string(),
             result_digest: "digest-task-2".to_string(),
             metadata: None,
@@ -557,7 +557,7 @@ fn checkpoint_metadata_for_run(
     ProviderContextCheckpointMetadata {
         checkpoint_id: checkpoint_id.to_string(),
         agent_id: "agent_000001".to_string(),
-        run_id: run_id.to_string(),
+        run_id: run_id.to_string().into(),
         through_seq,
         through_request_id: Some("req_000001".to_string()),
         provider_id: Some("default".to_string()),

@@ -97,16 +97,16 @@ fn apply_run_summary_event(summary: &mut RunSummary, event: &EventEnvelopeV1) {
             summary.last_error = Some(payload.error.clone());
         }
         EventV1::TaskScheduled(payload) => {
-            summary.tasks_in_flight.insert(payload.task_id.clone());
+            summary.tasks_in_flight.insert(payload.task_id.to_string());
         }
         EventV1::TaskCancelled(payload) => {
-            summary.tasks_in_flight.remove(&payload.task_id);
+            summary.tasks_in_flight.remove(payload.task_id.as_str());
         }
         EventV1::TaskCompleted(payload) => {
-            summary.tasks_in_flight.remove(&payload.task_id);
+            summary.tasks_in_flight.remove(payload.task_id.as_str());
         }
         EventV1::BackgroundTaskNotification(payload) => {
-            summary.tasks_in_flight.remove(&payload.task_id);
+            summary.tasks_in_flight.remove(payload.task_id.as_str());
             summary.tasks_in_flight.remove(&payload.terminal_task_id);
         }
         EventV1::PermissionRequested(payload) => {

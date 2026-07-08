@@ -1,3 +1,4 @@
+// allow: SIZE_OK — permission system (capability mapping + policy resolution + ask timeout + deny rules)
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};

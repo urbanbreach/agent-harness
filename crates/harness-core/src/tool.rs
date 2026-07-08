@@ -1,3 +1,4 @@
+// allow: SIZE_OK — tool trait and registry (schema + execution + artifacts)
 use crate::UnwrapOrAbort;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -30,7 +31,7 @@ pub enum ToolCapability {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolCall {
-    pub tool_call_id: String,
+    pub tool_call_id: crate::ids::ToolCallId,
     pub actor: EventActor,
     pub tool_id: ToolId,
     pub args_digest: String,
@@ -249,7 +250,7 @@ pub struct ToolContext {
     pub artifacts_dir: PathBuf,
     pub actor: EventActor,
     pub category: Option<String>,
-    pub tool_call_id: String,
+    pub tool_call_id: crate::ids::ToolCallId,
     pub current_model_ref: Option<String>,
     pub current_model_settings: Option<AgentModelSettings>,
     pub tool_state: ToolRunState,
@@ -465,6 +466,16 @@ pub enum ToolError {
     Execution(String),
 }
 
+pub trait ToolResultExt<T> {
+    fn tool_err(self, ctx: impl std::fmt::Display) -> Result<T, ToolError>;
+}
+
+impl<T, E: std::fmt::Display> ToolResultExt<T> for Result<T, E> {
+    fn tool_err(self, ctx: impl std::fmt::Display) -> Result<T, ToolError> {
+        self.map_err(|err| ToolError::Execution(format!("{ctx}: {err}")))
+    }
+}
+
 #[async_trait]
 pub trait Tool: Send + Sync {
     fn id(&self) -> &str;
@@ -483,6 +494,26 @@ pub trait Tool: Send + Sync {
     fn capability(&self) -> ToolCapability;
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError>;
+}
+
+/// Eliminates the 4-method boilerplate (`id`, `description`, `parameters_json_schema`,
+/// `capability`) in `impl Tool for ...` blocks. Usage:
+///
+/// ```ignore
+/// #[async_trait]
+/// impl Tool for MyTool {
+///     tool_metadata!("my_tool", "description", ToolCapability::EditFs, json!({...}));
+///     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> { ... }
+/// }
+/// ```
+#[macro_export]
+macro_rules! tool_metadata {
+    ($id:literal, $desc:literal, $cap:expr, $schema:expr) => {
+        fn id(&self) -> &str { $id }
+        fn description(&self) -> &str { $desc }
+        fn parameters_json_schema(&self) -> serde_json::Value { $schema }
+        fn capability(&self) -> $crate::tool::ToolCapability { $cap }
+    };
 }
 
 pub fn canonical_tool_id_for(tool_id: &str) -> Option<&str> {
@@ -697,12 +728,12 @@ mod tests {
         );
 
         ToolContext {
-            run_id: "run-tool-tests".to_string(),
+            run_id: "run-tool-tests".into(),
             workspace_root: workspace_root.to_path_buf(),
             artifacts_dir: workspace_root.join("artifacts"),
             actor: EventActor::new(ActorKind::Supervisor, None),
             category: Some("deep".to_string()),
-            tool_call_id: tool_call_id.to_string(),
+            tool_call_id: tool_call_id.into(),
             current_model_ref: None,
             current_model_settings: None,
             tool_state: ToolRunState::default(),

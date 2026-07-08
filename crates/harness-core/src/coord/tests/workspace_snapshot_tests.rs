@@ -32,7 +32,7 @@ pub(super) async fn snapshot_captures_workspace_and_emits_event() {
         .await
         .unwrap_or_abort();
 
-    assert_eq!(summary.request_id, "req_000001");
+    assert_eq!(summary.request_id, "req_000001".into());
     assert_eq!(summary.file_count, 2);
     assert!(summary.artifact_path.starts_with("snapshots/"));
     assert!(run.artifacts_dir.join(&summary.artifact_path).is_file());
@@ -45,7 +45,7 @@ pub(super) async fn snapshot_captures_workspace_and_emits_event() {
             _ => None,
         })
         .unwrap_or_abort();
-    assert_eq!(snapshot_event.request_id, "req_000001");
+    assert_eq!(snapshot_event.request_id, "req_000001".into());
     assert_eq!(snapshot_event.file_count, 2);
     assert!(!snapshot_event.artifact_digest.is_empty());
 }

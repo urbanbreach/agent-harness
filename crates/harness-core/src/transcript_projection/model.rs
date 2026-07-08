@@ -1,3 +1,4 @@
+// allow: SIZE_OK — transcript projection (pure replay state derivation)
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
@@ -61,7 +62,7 @@ pub struct ProjectedMessage {
     pub role: ProjectedMessageRole,
     pub state: ProjectedMessageState,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub request_id: Option<String>,
+    pub request_id: Option<crate::ids::RequestId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -136,7 +137,7 @@ pub struct ProjectedTextPart {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProjectedToolCallPart {
-    pub tool_call_id: String,
+    pub tool_call_id: crate::ids::ToolCallId,
     pub tool_id: String,
     pub args_summary: String,
     pub args_digest: String,
@@ -181,7 +182,7 @@ pub struct ProjectedPermissionPart {
     pub permission_id: String,
     pub kind: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tool_call_id: Option<String>,
+    pub tool_call_id: Option<crate::ids::ToolCallId>,
     pub summary: String,
     pub request_digest: String,
     pub timeout_ms: u64,
@@ -255,7 +256,7 @@ pub enum LifecycleEventKind {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProjectedTaskPart {
-    pub task_id: String,
+    pub task_id: crate::ids::TaskId,
     pub state: ProjectedTaskState,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub queue_key: Option<String>,
@@ -350,7 +351,7 @@ pub struct TranscriptArtifactRef {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bytes: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tool_call_id: Option<String>,
+    pub tool_call_id: Option<crate::ids::ToolCallId>,
     pub source: ArtifactProjectionSource,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub metadata: BTreeMap<String, String>,

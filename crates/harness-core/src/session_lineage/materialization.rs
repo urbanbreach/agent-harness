@@ -1,3 +1,4 @@
+// allow: SIZE_OK — session management (lineage + projection + inspection)
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsStr;
 use std::fs;
@@ -353,7 +354,7 @@ pub fn rewrite_child_event_envelope(
     let mut rewritten = source.clone();
     rewritten.event_id = child_event_id(child_run_id, child_seq);
     rewritten.seq = child_seq;
-    rewritten.run_id = child_run_id.to_string();
+    rewritten.run_id = crate::ids::RunId::from(child_run_id);
     rewritten.correlation_id = None;
     rewritten.causation_id = None;
     rewritten.stream_key =
@@ -370,7 +371,7 @@ fn rewrite_child_event_prefix(
         .iter()
         .enumerate()
         .map(|(index, event)| {
-            rewrite_child_event_envelope(event, source_run_id, child_run_id, index as u64 + 1)
+            rewrite_child_event_envelope(event, source_run_id, child_run_id, u64::try_from(index).unwrap_or(0) + 1)
         })
         .collect()
 }
@@ -382,7 +383,7 @@ fn append_materialized_terminal_event(events: &mut Vec<EventEnvelopeV1>, child_r
             events,
             child_run_id,
             EventV1::TaskCancelled(TaskCancelledEvent {
-                task_id,
+                task_id: task_id.into(),
                 reason: "fork snapshot terminalized copied live task state".to_string(),
                 task_scope: None,
             }),
@@ -413,7 +414,7 @@ fn append_materialized_system_event(
     child_run_id: &str,
     payload: EventV1,
 ) {
-    let child_seq = events.len() as u64 + 1;
+    let child_seq = u64::try_from(events.len()).unwrap_or(0) + 1;
     let mono_ms = events
         .last()
         .map(|event| event.mono_ms.saturating_add(1))
@@ -423,7 +424,7 @@ fn append_materialized_system_event(
         schema_version: SCHEMA_VERSION,
         event_id: child_event_id(child_run_id, child_seq),
         seq: child_seq,
-        run_id: child_run_id.to_string(),
+        run_id: child_run_id.to_string().into(),
         mono_ms,
         ts,
         actor: EventActor::new(ActorKind::System, Some("session-lineage".to_string())),
@@ -445,16 +446,16 @@ fn project_materialized_live_open_state(events: &[EventEnvelopeV1]) -> Materiali
     for event in events {
         match &event.payload {
             EventV1::TaskScheduled(payload) => {
-                state.tasks_in_flight.insert(payload.task_id.clone());
+                state.tasks_in_flight.insert(payload.task_id.to_string());
             }
             EventV1::TaskCancelled(payload) => {
-                state.tasks_in_flight.remove(&payload.task_id);
+                state.tasks_in_flight.remove(payload.task_id.as_str());
             }
             EventV1::TaskCompleted(payload) => {
-                state.tasks_in_flight.remove(&payload.task_id);
+                state.tasks_in_flight.remove(payload.task_id.as_str());
             }
             EventV1::TaskResultLate(payload) => {
-                state.tasks_in_flight.remove(&payload.task_id);
+                state.tasks_in_flight.remove(payload.task_id.as_str());
             }
             EventV1::PermissionRequested(payload) => {
                 state
@@ -649,7 +650,7 @@ fn copy_referenced_artifacts(
             }
         })?;
         if let Some(expected) = spec.bytes {
-            let actual = contents.len() as u64;
+            let actual = u64::try_from(contents.len()).unwrap_or(0);
             if actual != expected {
                 return Err(ChildSessionMaterializationError::ArtifactByteMismatch {
                     path: display_path(&source_path),

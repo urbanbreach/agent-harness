@@ -109,7 +109,7 @@ async fn ast_grep_replace_list_paths_are_permission_checked_before_tool_executio
     assert!(!events.iter().any(|event| {
         matches!(
             &event.payload,
-            EventV1::ToolCallStarted(data) if data.tool_call_id == denied_tool_call_id
+            EventV1::ToolCallStarted(data) if data.tool_call_id.as_str() == denied_tool_call_id
         )
     }));
 }
@@ -160,14 +160,14 @@ async fn ast_grep_replace_allowed_list_paths_execute_normally() {
     assert!(events.iter().any(|event| {
         matches!(
             &event.payload,
-            EventV1::ToolCallStarted(data) if data.tool_call_id == allowed_tool_call_id
+            EventV1::ToolCallStarted(data) if data.tool_call_id.as_str() == allowed_tool_call_id
         )
     }));
     assert!(events.iter().any(|event| {
         matches!(
             &event.payload,
             EventV1::ToolCallFinished(data)
-                if data.tool_call_id == allowed_tool_call_id
+                if data.tool_call_id.as_str() == allowed_tool_call_id
                     && data.status == ToolCallStatus::Succeeded
         )
     }));

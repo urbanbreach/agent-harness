@@ -216,7 +216,7 @@ async fn resumed_tool_turn_preserves_tool_messages_for_followup_context() {
     let resumed =
         test_resume_coordinator_with_provider(temp_dir.path(), Arc::new(resumed_provider.clone()));
     resumed
-        .resume_run(&run.run_id, "interactive")
+        .resume_run(run.run_id.as_str(), "interactive")
         .await
         .unwrap_or_abort();
     resumed

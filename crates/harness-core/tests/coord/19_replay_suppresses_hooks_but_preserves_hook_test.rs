@@ -35,7 +35,7 @@ fn replay_suppresses_hooks_but_preserves_hook_history() {
                 run_id,
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/workspace/project".to_string(),
                 }),
             ),
@@ -63,7 +63,7 @@ fn replay_suppresses_hooks_but_preserves_hook_history() {
                 EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
                 Some("req_000401"),
                 EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                    tool_call_id: "toolcall_000401".to_string(),
+                    tool_call_id: "toolcall_000401".into(),
                     tool_id: "agent.spawn".to_string(),
                     args_summary: "{\"task\":\"run with hooks\"}".to_string(),
                     args_digest: "digest-hook-req".to_string(),
@@ -83,7 +83,7 @@ fn replay_suppresses_hooks_but_preserves_hook_history() {
                 EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
                 Some("req_000401"),
                 EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                    tool_call_id: "toolcall_000401".to_string(),
+                    tool_call_id: "toolcall_000401".into(),
                     status: ToolCallStatus::Succeeded,
                     output_summary: Some("hook already executed live".to_string()),
                     output_digest: Some("digest-hook-finish".to_string()),
@@ -120,7 +120,7 @@ fn replay_suppresses_hooks_but_preserves_hook_history() {
                 EventActor::new(ActorKind::Worker, Some("agent_000401".to_string())),
                 Some("req_000401"),
                 EventV1::TaskScheduled(TaskScheduledEvent {
-                    task_id: "task_000401".to_string(),
+                    task_id: "task_000401".to_string().into(),
                     state: TaskScheduleState::Started,
                     queue_key: Some("provider_model:mock:model-hook".to_string()),
                 }),
@@ -131,7 +131,7 @@ fn replay_suppresses_hooks_but_preserves_hook_history() {
                 EventActor::new(ActorKind::Worker, Some("agent_000401".to_string())),
                 Some("req_000401"),
                 EventV1::TaskCompleted(TaskCompletedEvent {
-                    task_id: "task_000401".to_string(),
+                    task_id: "task_000401".to_string().into(),
                     result_summary: "child done".to_string(),
                     result_digest: "digest-child-hook".to_string(),
                     metadata: Some(TaskCompletionMetadata {

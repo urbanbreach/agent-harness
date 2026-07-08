@@ -17,7 +17,7 @@ pub(crate) async fn background_task_completion_notifies_parent_once_and_queues_a
         Some("task:task_child_terminal".to_string()),
         Some("req_child".to_string()),
         EventV1::TaskCompleted(TaskCompletedEvent {
-            task_id: "task_child_terminal".to_string(),
+            task_id: "task_child_terminal".to_string().into(),
             result_summary: long_summary.clone(),
             result_digest: "digest-child".to_string(),
             metadata: None,
@@ -72,7 +72,7 @@ pub(crate) async fn background_task_completion_notifies_parent_once_and_queues_a
         .collect::<Vec<_>>();
     assert_eq!(notifications.len(), 1);
     let notification = notifications[0];
-    assert_eq!(notification.task_id, "agent_child");
+    assert_eq!(notification.task_id.as_str(), "agent_child");
     assert_eq!(notification.child_request_id, "req_child");
     assert_eq!(notification.description, "Summarize the repository");
     assert_eq!(
@@ -88,7 +88,7 @@ pub(crate) async fn background_task_completion_notifies_parent_once_and_queues_a
         .iter()
         .find_map(|event| match &event.payload {
             EventV1::UserMessageSubmitted(payload)
-                if payload.request_id
+                if payload.request_id.as_str()
                     == notification
                         .delivered_turn_request_id
                         .clone()
@@ -135,7 +135,7 @@ pub(crate) async fn background_task_completion_caps_and_redacts_description_and_
         Some("task:task_child_terminal".to_string()),
         Some("req_child".to_string()),
         EventV1::TaskCompleted(TaskCompletedEvent {
-            task_id: "task_child_terminal".to_string(),
+            task_id: "task_child_terminal".to_string().into(),
             result_summary: "terminal summary".to_string(),
             result_digest: "digest-child".to_string(),
             metadata: None,

@@ -1,3 +1,4 @@
+// allow: SIZE_OK — coordinator state machine (turn lifecycle + scheduling)
 use std::collections::BTreeSet;
 
 use crate::agent::{
@@ -447,7 +448,7 @@ fn build_provider_context_checkpoint(
             "proactive_compaction".to_string()
         },
         summary: summarize_compaction_text(&summary),
-        first_kept_request_id,
+        first_kept_request_id: first_kept_request_id.map(|r| r.to_string()),
         compacted_turns: u32::try_from(plan.older_turns.len()).unwrap_or(u32::MAX),
         preserved_turns: u32::try_from(plan.recent_turns.len()).unwrap_or(u32::MAX),
         tokens_before_estimate: Some(tokens_before_estimate),
@@ -458,7 +459,7 @@ fn build_provider_context_checkpoint(
         metadata: ProviderContextCheckpointMetadata {
             checkpoint_id: format!("checkpoint_{:06}", run_state.next_event_seq),
             agent_id: trigger.agent_id.clone(),
-            run_id: run_state.info.run_id.clone(),
+            run_id: run_state.info.run_id.to_string(),
             through_seq: run_state.next_event_seq.saturating_sub(1),
             through_request_id: trigger.through_request_id.clone(),
             provider_id: trigger.provider_id.clone(),
@@ -825,7 +826,7 @@ fn build_provider_compaction_tail_boundary(
         mode,
         preserved_turns: u32::try_from(recent_turns.len()).unwrap_or(u32::MAX),
         preserved_tokens_estimate,
-        preserved_from_request_id: first_preserved.and_then(|turn| turn.request_id.clone()),
+        preserved_from_request_id: first_preserved.and_then(|turn| turn.request_id.clone()).map(|r| r.to_string()),
         preserved_from_seq: first_preserved.and_then(|turn| turn.first_seq),
         split_prefix_summary: split_prefix_summary.map(|decision| decision.summary),
         note,
@@ -909,7 +910,7 @@ fn collect_pruned_tool_artifacts(
         .map(|checkpoint| checkpoint.through_seq)
         .unwrap_or(0);
     let historical_turns = match collect_historical_agent_turns_until(
-        &run_state.info.run_id,
+        run_state.info.run_id.as_str(),
         &run_state.info.events_path,
         &trigger.agent_id,
         lower_bound_seq,

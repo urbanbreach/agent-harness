@@ -169,7 +169,7 @@ async fn lifecycle_hooks_use_injected_executor_without_spawning() {
         &runtime,
         HookInvocationContext {
             event: HookLifecycleEvent::RunStarted,
-            run_id: "run_fake_hook".to_string(),
+            run_id: "run_fake_hook".into(),
             workspace_root: temp_dir.path().to_path_buf(),
             artifacts_dir: temp_dir.path().join("artifacts"),
             actor: Some(EventActor::new(ActorKind::System, None)),
@@ -696,7 +696,7 @@ fn stale_tool_task_late_result_preserves_owner_actor() {
         matches!(
             &event.payload,
             EventV1::StaleDetected(data)
-                if data.task_id == task_id
+                if data.task_id.as_str() == task_id
                     && event.actor == owner_actor
                     && event.correlation_id.as_deref() == request_correlation_id.as_deref()
         )
@@ -705,7 +705,7 @@ fn stale_tool_task_late_result_preserves_owner_actor() {
         matches!(
             &event.payload,
             EventV1::TaskResultLate(data)
-                if data.task_id == task_id
+                if data.task_id.as_str() == task_id
                     && event.actor == owner_actor
                     && event.correlation_id.as_deref() == request_correlation_id.as_deref()
         )
@@ -795,9 +795,9 @@ async fn background_foreground_child_tasks_releases_parent_task_and_keeps_child_
                 latest_model_id: None,
                 child_task: Some(ChildTaskTurnState {
                     parent_tool_call_id: parent_tool_call_id.clone(),
-                    parent_session_id: run.run_id.clone(),
+                    parent_session_id: run.run_id.as_str().into(),
                     parent_agent_id: Some("agent_parent".to_string()),
-                    child_session_id: child_session_id.clone(),
+                    child_session_id: child_session_id.into(),
                     child_request_id: child_request_id.clone(),
                     task_id: child_task_id.clone(),
                     description: "Long child work".to_string(),
@@ -841,7 +841,7 @@ async fn background_foreground_child_tasks_releases_parent_task_and_keeps_child_
         matches!(
             &event.payload,
             EventV1::TaskCompleted(data)
-                if data.task_id == parent_task_id
+                if data.task_id.as_str() == parent_task_id
                     && data.result_summary.contains("Foreground subagent moved to background")
         )
     }));
@@ -849,7 +849,7 @@ async fn background_foreground_child_tasks_releases_parent_task_and_keeps_child_
         matches!(
             &event.payload,
             EventV1::ToolCallFinished(data)
-                if data.tool_call_id == parent_tool_call_id
+                if data.tool_call_id.as_str() == parent_tool_call_id
                     && data.status == ToolCallStatus::Succeeded
         )
     }));
@@ -1004,8 +1004,8 @@ fn test_run_state(session_dir: &Path, run_id: &str) -> RunState {
     fs::create_dir_all(&artifacts_dir).unwrap_or_abort();
     RunState {
         info: RunInfo {
-            run_id: run_id.to_string(),
-            run_name: "interactive".to_string(),
+            run_id: run_id.to_string().into(),
+            run_name: "interactive".into(),
             workspace_root: Path::new("/workspace/project").to_path_buf(),
             run_dir,
             artifacts_dir,
@@ -1090,7 +1090,7 @@ fn restore_fixture_event(
         schema_version: SCHEMA_VERSION,
         event_id: format!("evt-{seq:04}"),
         seq,
-        run_id: run_id.to_string(),
+        run_id: run_id.to_string().into(),
         mono_ms: seq,
         ts: None,
         actor,

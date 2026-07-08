@@ -84,7 +84,7 @@ pub(crate) async fn permission_rule_bash_selector_is_enforced_at_tool_call_site(
         |event| {
             matches!(
                 &event.payload,
-                EventV1::ToolCallStarted(data) if data.tool_call_id == allowed_tool_call_id
+                EventV1::ToolCallStarted(data) if data.tool_call_id.as_str() == allowed_tool_call_id
             )
         },
     )
@@ -102,7 +102,7 @@ pub(crate) async fn permission_rule_bash_selector_is_enforced_at_tool_call_site(
     assert!(events.iter().any(|event| {
         matches!(
             &event.payload,
-            EventV1::ToolCallStarted(data) if data.tool_call_id == allowed_tool_call_id
+            EventV1::ToolCallStarted(data) if data.tool_call_id.as_str() == allowed_tool_call_id
         )
     }));
 }
@@ -286,7 +286,7 @@ pub(crate) async fn perm_ask_path_blocks_until_resolved() {
             matches!(
                 &event.payload,
                 EventV1::PermissionRequested(data)
-                    if data.tool_call_id.as_deref() == Some(tool_call_id.as_str())
+                    if data.tool_call_id.as_ref().map(|id| id.as_str()) == Some(tool_call_id.as_str())
             )
         },
     )
@@ -295,7 +295,7 @@ pub(crate) async fn perm_ask_path_blocks_until_resolved() {
         !before_resolve.iter().any(|event| {
             matches!(
                 &event.payload,
-                EventV1::ToolCallStarted(data) if data.tool_call_id == tool_call_id
+                EventV1::ToolCallStarted(data) if data.tool_call_id.as_str() == tool_call_id
             )
         }),
         "tool call must not start before permission resolution"
@@ -305,7 +305,7 @@ pub(crate) async fn perm_ask_path_blocks_until_resolved() {
         .iter()
         .find_map(|event| match &event.payload {
             EventV1::PermissionRequested(data)
-                if data.tool_call_id.as_deref() == Some(tool_call_id.as_str()) =>
+                if data.tool_call_id.as_ref().map(|id| id.as_str()) == Some(tool_call_id.as_str()) =>
             {
                 Some(data.permission_id.clone())
             }
@@ -325,7 +325,7 @@ pub(crate) async fn perm_ask_path_blocks_until_resolved() {
         |event| {
             matches!(
                 &event.payload,
-                EventV1::ToolCallStarted(data) if data.tool_call_id == tool_call_id
+                EventV1::ToolCallStarted(data) if data.tool_call_id.as_str() == tool_call_id
             )
         },
     )
@@ -339,7 +339,7 @@ pub(crate) async fn perm_ask_path_blocks_until_resolved() {
             matches!(
                 &event.payload,
                 EventV1::PermissionRequested(data)
-                    if data.tool_call_id.as_deref() == Some(tool_call_id.as_str())
+                    if data.tool_call_id.as_ref().map(|id| id.as_str()) == Some(tool_call_id.as_str())
             )
         })
         .unwrap_or_abort();
@@ -358,7 +358,7 @@ pub(crate) async fn perm_ask_path_blocks_until_resolved() {
         .position(|event| {
             matches!(
                 &event.payload,
-                EventV1::ToolCallStarted(data) if data.tool_call_id == tool_call_id
+                EventV1::ToolCallStarted(data) if data.tool_call_id.as_str() == tool_call_id
             )
         })
         .unwrap_or_abort();

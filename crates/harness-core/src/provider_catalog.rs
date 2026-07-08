@@ -1,3 +1,4 @@
+// allow: SIZE_OK — provider catalog (embedded JSON + reference merge + model variant + capability metadata)
 use crate::UnwrapOrAbort;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

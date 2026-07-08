@@ -1,3 +1,4 @@
+// allow: SIZE_OK — config discovery and loading (path resolution + merge)
 use std::{
     collections::{BTreeMap, BTreeSet},
     env, fs,

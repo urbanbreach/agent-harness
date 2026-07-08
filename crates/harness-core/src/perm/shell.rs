@@ -1,3 +1,4 @@
+// allow: SIZE_OK — shell permission system (command request + allowlist + path validation + builtin rules)
 use crate::UnwrapOrAbort;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;

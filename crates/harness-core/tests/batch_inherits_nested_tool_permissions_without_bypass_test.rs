@@ -10,6 +10,7 @@ use harness_core::event::{EventV1, PermissionDecision};
 use harness_core::perm::{PermissionDecision as RuntimePermissionDecision, PermissionPolicy};
 use harness_core::redact::DefaultRedactor;
 use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult};
+use harness_core::ToolResultExt;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -72,7 +73,7 @@ impl Tool for TestBatchTool {
                     tool_call.parameters,
                 )
                 .await
-                .map_err(|err| ToolError::Execution(format!("nested batch tool failed: {err}")))?;
+                .tool_err("nested batch tool failed")?;
         }
 
         Ok(ToolResult::text("batch ok"))
@@ -114,7 +115,7 @@ async fn batch_inherits_nested_tool_permissions_without_bypass() {
         .iter()
         .find_map(|event| match &event.payload {
             EventV1::ToolCallRequested(data)
-                if data.tool_id == "shell.run" && data.tool_call_id != batch_tool_call_id =>
+                if data.tool_id == "shell.run" && data.tool_call_id.as_str() != batch_tool_call_id =>
             {
                 Some(data.tool_call_id.clone())
             }
@@ -126,7 +127,7 @@ async fn batch_inherits_nested_tool_permissions_without_bypass() {
         .iter()
         .find_map(|event| match &event.payload {
             EventV1::PermissionRequested(data)
-                if data.tool_call_id.as_deref() == Some(nested_tool_call_id.as_str()) =>
+                if data.tool_call_id.as_ref().map(|id| id.as_str()) == Some(nested_tool_call_id.as_str()) =>
             {
                 Some((data.permission_id.clone(), data.summary.clone()))
             }
@@ -153,7 +154,7 @@ async fn batch_inherits_nested_tool_permissions_without_bypass() {
     assert!(events.iter().any(|event| {
         matches!(
             &event.payload,
-            EventV1::ToolCallStarted(data) if data.tool_call_id == batch_tool_call_id
+            EventV1::ToolCallStarted(data) if data.tool_call_id.as_str() == batch_tool_call_id
         )
     }));
     assert!(events.iter().any(|event| {

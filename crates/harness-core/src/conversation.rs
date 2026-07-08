@@ -1,3 +1,4 @@
+// allow: SIZE_OK — conversation projection (message reconstruction + tool metadata + error mapping)
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
@@ -58,7 +59,7 @@ pub struct ConversationCheckpointTurn {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub failure_reason: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub request_id: Option<String>,
+    pub request_id: Option<crate::ids::RequestId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub first_seq: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -88,7 +89,7 @@ pub struct ConversationCheckpointMessage {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ConversationUserMessage {
-    pub request_id: String,
+    pub request_id: crate::ids::RequestId,
     pub text: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seq: Option<u64>,
@@ -98,7 +99,7 @@ pub struct ConversationUserMessage {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ConversationAssistantMessage {
-    pub request_id: String,
+    pub request_id: crate::ids::RequestId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_id: Option<String>,
     pub text: String,
@@ -120,7 +121,7 @@ pub struct ConversationAssistantMessage {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ConversationToolCall {
-    pub tool_call_id: String,
+    pub tool_call_id: crate::ids::ToolCallId,
     pub tool_id: String,
     pub args_summary: String,
     pub args_digest: String,
@@ -132,8 +133,8 @@ pub struct ConversationToolCall {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ConversationToolResultMessage {
-    pub request_id: String,
-    pub tool_call_id: String,
+    pub request_id: crate::ids::RequestId,
+    pub tool_call_id: crate::ids::ToolCallId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_id: Option<String>,
     pub status: ToolCallStatus,
@@ -192,7 +193,7 @@ pub fn project_conversation(
         match &event.payload {
             EventV1::UserMessageSubmitted(payload) => {
                 let state = request_states
-                    .entry(payload.request_id.clone())
+                    .entry(payload.request_id.to_string())
                     .or_default();
                 state.user = Some(ConversationUserMessage {
                     request_id: payload.request_id.clone(),
@@ -200,15 +201,15 @@ pub fn project_conversation(
                     seq: Some(event.seq),
                     agent_id: event.actor.agent_id.clone(),
                 });
-                if emitted_users.insert(payload.request_id.clone()) {
-                    request_order.push(OrderedConversationItem::User(payload.request_id.clone()));
+                if emitted_users.insert(payload.request_id.to_string()) {
+                    request_order.push(OrderedConversationItem::User(payload.request_id.to_string()));
                 }
             }
             EventV1::ProviderRequestStarted(payload) => {
-                let request_id = provider_turn_request_id(event, &payload.request_id);
+                let request_id = provider_turn_request_id(event, payload.request_id.as_str());
                 let state = request_states.entry(request_id.clone()).or_default();
                 state.assistant.first_seq.get_or_insert(event.seq);
-                state.assistant.request_id = request_id.clone();
+                state.assistant.request_id = request_id.clone().into();
                 state.assistant.agent_id = event.actor.agent_id.clone();
                 state.assistant.provider_id = Some(payload.provider_id.clone());
                 state.assistant.model_id = Some(payload.model_id.clone());
@@ -217,24 +218,24 @@ pub fn project_conversation(
                 }
             }
             EventV1::ProviderStreamDelta(payload) => {
-                let request_id = provider_turn_request_id(event, &payload.request_id);
+                let request_id = provider_turn_request_id(event, payload.request_id.as_str());
                 let state = request_states.entry(request_id.clone()).or_default();
-                state.assistant.request_id = request_id;
+                state.assistant.request_id = request_id.into();
                 state.assistant.text.push_str(&payload.delta);
                 state.assistant.last_seq = Some(event.seq);
             }
             EventV1::ProviderRequestFinished(payload) => {
-                let request_id = provider_turn_request_id(event, &payload.request_id);
+                let request_id = provider_turn_request_id(event, payload.request_id.as_str());
                 let state = request_states.entry(request_id.clone()).or_default();
-                state.assistant.request_id = request_id;
+                state.assistant.request_id = request_id.into();
                 state.assistant.stop_reason = Some(payload.finish_reason.clone());
                 state.assistant.output_digest = payload.output_digest.clone();
                 state.assistant.last_seq = Some(event.seq);
             }
             EventV1::AssistantMessageFinished(payload) => {
-                let request_id = provider_turn_request_id(event, &payload.request_id);
+                let request_id = provider_turn_request_id(event, payload.request_id.as_str());
                 let state = request_states.entry(request_id.clone()).or_default();
-                state.assistant.request_id = request_id;
+                state.assistant.request_id = request_id.into();
                 state.assistant.last_seq = Some(event.seq);
             }
             EventV1::ToolCallRequested(payload) => {
@@ -256,10 +257,10 @@ pub fn project_conversation(
                     continue;
                 };
                 tool_results.insert(
-                    payload.tool_call_id.clone(),
+                    payload.tool_call_id.to_string(),
                     ToolResultProjectionState {
                         request_id: request_id.to_string(),
-                        tool_call_id: payload.tool_call_id.clone(),
+                        tool_call_id: payload.tool_call_id.to_string(),
                         status: payload.status,
                         output_summary: payload.output_summary.clone(),
                         output_digest: payload.output_digest.clone(),
@@ -288,8 +289,8 @@ pub fn project_conversation(
                     continue;
                 };
                 let mut assistant = state.assistant.clone();
-                if assistant.request_id.is_empty() {
-                    assistant.request_id = request_id.clone();
+                if assistant.request_id.as_str().is_empty() {
+                    assistant.request_id = request_id.clone().into();
                 }
                 assistant.tool_calls = state.tool_calls.clone();
                 projection
@@ -297,13 +298,13 @@ pub fn project_conversation(
                     .push(ConversationMessage::Assistant(assistant));
 
                 for tool_call in &state.tool_calls {
-                    if let Some(result) = tool_results.get(&tool_call.tool_call_id) {
+                    if let Some(result) = tool_results.get(tool_call.tool_call_id.as_str()) {
                         projection
                             .messages
                             .push(ConversationMessage::ToolResult(Box::new(
                                 ConversationToolResultMessage {
-                                    request_id: result.request_id.clone(),
-                                    tool_call_id: result.tool_call_id.clone(),
+                                    request_id: result.request_id.clone().into(),
+                                    tool_call_id: result.tool_call_id.clone().into(),
                                     tool_id: Some(tool_call.tool_id.clone()),
                                     status: result.status,
                                     output_summary: result.output_summary.clone(),
@@ -405,7 +406,7 @@ fn append_checkpoint_turn(
     let request_id = turn
         .request_id
         .clone()
-        .unwrap_or_else(|| checkpoint.through_request_id.clone().unwrap_or_default());
+        .unwrap_or_else(|| checkpoint.through_request_id.clone().unwrap_or_default().into());
 
     messages.push(ConversationMessage::User(ConversationUserMessage {
         request_id: request_id.clone(),

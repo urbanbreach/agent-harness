@@ -44,7 +44,7 @@ fn completed_run_events(provider_turns: u64) -> Vec<EventEnvelopeV1> {
         seq,
         None,
         EventV1::RunStarted(RunStartedEvent {
-            run_name: "interactive".to_string(),
+            run_name: "interactive".into(),
             workspace_root: "/tmp/harness-perf".to_string(),
         }),
     ));
@@ -65,7 +65,7 @@ fn completed_run_events(provider_turns: u64) -> Vec<EventEnvelopeV1> {
             seq,
             Some(AGENT_ID),
             EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                request_id: format!("req_{request}"),
+                request_id: format!("req_{request}").into(),
                 provider_id: "mock".to_string(),
                 model_id: "gpt-5.4-mini".to_string(),
                 prompt_summary: format!("perf prompt {request}"),
@@ -91,7 +91,7 @@ fn envelope(seq: u64, agent_id: Option<&str>, payload: EventV1) -> EventEnvelope
         schema_version: SCHEMA_VERSION,
         event_id: format!("evt_{seq}"),
         seq,
-        run_id: RUN_ID.to_string(),
+        run_id: RUN_ID.into(),
         mono_ms: seq,
         ts: None,
         actor: EventActor::new(

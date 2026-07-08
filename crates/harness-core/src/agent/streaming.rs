@@ -1,3 +1,4 @@
+// allow: SIZE_OK — provider streaming pipeline (single-turn + multi-turn streaming + tool intent parsing + metadata assembly)
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::future::Future;
@@ -65,7 +66,7 @@ impl AgentModelRef {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProviderRequestStarted {
-    pub request_id: String,
+    pub request_id: crate::ids::RequestId,
     pub provider_id: String,
     pub model_id: String,
     pub prompt_summary: String,
@@ -75,7 +76,7 @@ pub struct ProviderRequestStarted {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProviderRequestFinished {
-    pub request_id: String,
+    pub request_id: crate::ids::RequestId,
     pub finish_reason: String,
     pub output_digest: Option<String>,
     pub usage: Option<CompletionUsage>,
@@ -198,7 +199,7 @@ pub struct MultiTurnStreamingRequest<'a> {
     pub provider: Arc<dyn Provider>,
     pub tool_registry: Arc<ToolRegistry>,
     pub profile: &'a AgentProfile,
-    pub request_id: String,
+    pub request_id: crate::ids::RequestId,
     pub request: AgentRequest,
     pub prior_context: &'a ProviderContext,
 }
@@ -219,7 +220,7 @@ pub struct StreamAssistantResponseOnceRequest<'a> {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct AssistantResponse {
-    pub request_id: String,
+    pub request_id: crate::ids::RequestId,
     pub text: String,
     pub reasoning: String,
     pub reasoning_deltas: Vec<String>,
@@ -233,14 +234,14 @@ pub struct AssistantResponse {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AssistantToolCallDelta {
-    pub tool_call_id: String,
+    pub tool_call_id: crate::ids::ToolCallId,
     pub function_name: Option<String>,
     pub arguments_delta: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct AssistantToolIntent {
-    pub tool_call_id: String,
+    pub tool_call_id: crate::ids::ToolCallId,
     pub function_name: String,
     pub tool_id: String,
     pub arguments_json: String,
@@ -282,7 +283,7 @@ where
         consume_provider_start_event(&mut stream).await;
     emit(AgentRuntimeEvent::ProviderRequestStarted(Box::new(
         ProviderRequestStarted {
-            request_id: request_id.clone(),
+            request_id: request_id.clone().into(),
             provider_id: model.provider_id,
             model_id: model.model_id,
             prompt_summary: truncate_with_ellipsis(&request.prompt, 256),
@@ -324,7 +325,7 @@ where
             ProviderStreamEvent::Done { usage } => {
                 emit(AgentRuntimeEvent::ProviderRequestFinished(Box::new(
                     ProviderRequestFinished {
-                        request_id: request_id.clone(),
+                        request_id: request_id.clone().into(),
                         finish_reason: "done".to_string(),
                         output_digest: Some(digest12(output.as_bytes())),
                         usage: Some(usage),
@@ -351,7 +352,7 @@ where
             } => {
                 emit(AgentRuntimeEvent::ProviderRequestFinished(Box::new(
                     ProviderRequestFinished {
-                        request_id: request_id.clone(),
+                        request_id: request_id.clone().into(),
                         finish_reason: "done".to_string(),
                         output_digest: Some(digest12(output.as_bytes())),
                         usage: Some(usage),
@@ -390,7 +391,7 @@ where
                 metadata.provider_error_remediation = remediation.clone();
                 emit(AgentRuntimeEvent::ProviderRequestFinished(Box::new(
                     ProviderRequestFinished {
-                        request_id: request_id.clone(),
+                        request_id: request_id.clone().into(),
                         finish_reason: "error".to_string(),
                         output_digest: None,
                         usage: None,
@@ -416,7 +417,7 @@ where
 
     emit(AgentRuntimeEvent::ProviderRequestFinished(Box::new(
         ProviderRequestFinished {
-            request_id: request_id.clone(),
+            request_id: request_id.clone().into(),
             finish_reason: "stream_ended".to_string(),
             output_digest: Some(digest12(output.as_bytes())),
             usage: None,
@@ -493,7 +494,7 @@ where
 
     emit(AgentRuntimeEvent::ProviderRequestStarted(Box::new(
         ProviderRequestStarted {
-            request_id: provider_request_id.clone(),
+            request_id: provider_request_id.clone().into(),
             provider_id: model.provider_id.clone(),
             model_id: model.model_id.clone(),
             prompt_summary: truncate_with_ellipsis(prompt_summary, 256),
@@ -545,7 +546,7 @@ where
                 arguments_delta,
             } => {
                 tool_call_deltas.push(AssistantToolCallDelta {
-                    tool_call_id,
+                    tool_call_id: tool_call_id.into(),
                     function_name,
                     arguments_delta,
                 });
@@ -611,7 +612,7 @@ where
     };
     emit(AgentRuntimeEvent::ProviderRequestFinished(Box::new(
         ProviderRequestFinished {
-            request_id: provider_request_id.clone(),
+            request_id: provider_request_id.clone().into(),
             finish_reason: stop_reason.clone(),
             output_digest,
             usage: usage.clone(),
@@ -634,7 +635,7 @@ where
     let tool_intents =
         parse_tool_intents(tool_calls, &function_to_tool_id).map_err(AgentTurnFailure::message)?;
     Ok(AssistantResponse {
-        request_id: provider_request_id,
+        request_id: provider_request_id.into(),
         text: output,
         reasoning,
         reasoning_deltas,
@@ -701,7 +702,7 @@ where
             profile,
             model,
             model_settings: request.model_settings.clone(),
-            turn_request_id: request_id,
+            turn_request_id: request_id.to_string(),
             provider_request_id,
             session_id: None,
             prompt_summary: &request.prompt,
@@ -780,7 +781,7 @@ fn parse_tool_intents(
         })?;
 
         intents.push(AssistantToolIntent {
-            tool_call_id: tool_call.tool_call_id,
+            tool_call_id: tool_call.tool_call_id.into(),
             function_name: tool_call.function_name,
             tool_id: tool_id.clone(),
             arguments_json: tool_call.arguments_json,

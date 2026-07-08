@@ -1,3 +1,4 @@
+// allow: SIZE_OK — provider boundary context (message shaping + tool metadata sanitization + streaming state)
 use harness_providers::{
     AssistantToolCall, CacheRetention, CompletionMessage, CompletionRequest, MessageRole,
     ProviderRequestContext, ProviderRequestInitiator, ToolChoice, ToolDef,
@@ -166,7 +167,7 @@ fn convert_projected_context_to_provider_messages(
                     name: tool_result.tool_id.as_deref().map(|tool_id| {
                         provider_function_name_for_tool_id(&tool_name_mapping, tool_id)
                     }),
-                    tool_call_id: Some(tool_result.tool_call_id.clone()),
+                    tool_call_id: Some(tool_result.tool_call_id.to_string()),
                     assistant_tool_calls: None,
                 });
             }
@@ -184,7 +185,7 @@ fn assistant_tool_calls_for_provider(
         tool_calls
             .iter()
             .map(|tool_call| AssistantToolCall {
-                tool_call_id: tool_call.tool_call_id.clone(),
+                tool_call_id: tool_call.tool_call_id.to_string(),
                 function_name: provider_function_name_for_tool_id(mapping, &tool_call.tool_id),
                 arguments_json: provider_tool_arguments_json(&tool_call.args_summary),
             })
@@ -245,7 +246,7 @@ pub(in crate::agent) fn project_provider_context_for_prompt(
             continue;
         }
 
-        let request_id = turn.request_id.clone().unwrap_or_default();
+        let request_id = turn.request_id.clone().unwrap_or_else(|| "".into());
         messages.push(ConversationMessage::User(ConversationUserMessage {
             request_id: request_id.clone(),
             text: turn.user_prompt.clone(),
@@ -281,7 +282,7 @@ pub(in crate::agent) fn project_provider_context_for_prompt(
     }
 
     messages.push(ConversationMessage::User(ConversationUserMessage {
-        request_id: String::new(),
+        request_id: String::new().into(),
         text: prompt.to_string(),
         seq: None,
         agent_id: None,

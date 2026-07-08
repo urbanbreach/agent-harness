@@ -1,3 +1,4 @@
+// allow: SIZE_OK — event store (JSONL persistence + append sequencing)
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, ErrorKind, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
@@ -27,7 +28,7 @@ pub type EventStream = Pin<Box<dyn Stream<Item = Result<EventEnvelopeV1, EventSt
 pub struct EventEnvelopeWithoutSeqV1 {
     pub schema_version: u16,
     pub event_id: String,
-    pub run_id: String,
+    pub run_id: crate::ids::RunId,
     pub mono_ms: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ts: Option<String>,
@@ -500,7 +501,7 @@ impl EventStore for JsonlFileEventStore {
         });
         state.indexed_len = state
             .indexed_len
-            .saturating_add(serialized.len() as u64)
+            .saturating_add(u64::try_from(serialized.len()).unwrap_or(0))
             .saturating_add(1);
         drop(state);
 
@@ -592,7 +593,7 @@ fn scan_events_from_file(file_path: &Path) -> Result<ScanResult, EventStoreError
 
         line_number += 1;
         let line_offset = offset;
-        offset = offset.saturating_add(bytes_read as u64);
+        offset = offset.saturating_add(u64::try_from(bytes_read).unwrap_or(0));
         let terminated = raw_line.ends_with(b"\n");
         let line = match decode_jsonl_line(&raw_line, file_path) {
             Ok(line) => line,

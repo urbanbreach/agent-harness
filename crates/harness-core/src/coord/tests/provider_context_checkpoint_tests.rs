@@ -140,7 +140,7 @@ pub(super) fn provider_context_checkpoint_legacy_round_trips_with_new_defaults()
                 EventActor::new(ActorKind::System, Some("coordinator".to_string())),
                 None,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/workspace/project".to_string(),
                 }),
             ),

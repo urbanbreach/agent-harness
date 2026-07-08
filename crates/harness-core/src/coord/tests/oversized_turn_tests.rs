@@ -23,7 +23,7 @@ pub(super) fn split_oversized_turn_pre_prompt_preserves_suffix_and_prefix_summar
             ProviderConversationTurn {
                 user_prompt: "latest oversized question".to_string(),
                 assistant_response: oversized_answer,
-                request_id: Some("req_latest".to_string()),
+                request_id: Some("req_latest".into()),
                 ..ProviderConversationTurn::default()
             },
         ]),
@@ -110,7 +110,7 @@ pub(super) fn split_oversized_failed_provider_error_preserves_incomplete_suffix(
                 status: ProviderConversationTurnStatus::Failed,
                 failure_stage: Some("provider_error".to_string()),
                 failure_reason: Some("provider exploded".to_string()),
-                request_id: Some("req_failed".to_string()),
+                request_id: Some("req_failed".into()),
                 ..ProviderConversationTurn::default()
             },
         ]),
@@ -194,7 +194,7 @@ pub(super) fn split_oversized_turn_refuses_tool_failure_to_avoid_orphan_tools() 
                 status: ProviderConversationTurnStatus::Failed,
                 failure_stage: Some("tool_failure".to_string()),
                 failure_reason: Some("tool failed closed".to_string()),
-                request_id: Some("req_tool_failed".to_string()),
+                request_id: Some("req_tool_failed".into()),
                 ..ProviderConversationTurn::default()
             },
         ]),
@@ -266,7 +266,7 @@ pub(super) fn split_oversized_turn_refuses_artifact_backed_turn() {
                 "G".repeat(4_000),
                 "H".repeat(7_900)
             ),
-            request_id: Some("req_artifact".to_string()),
+            request_id: Some("req_artifact".into()),
             artifacts: vec![EventArtifactRef {
                 path: "artifacts/toolcalls/toolcall_000001/result.txt".to_string(),
                 digest: Some("digest-artifact".to_string()),
@@ -343,20 +343,20 @@ pub(super) fn split_oversized_turn_refuses_provider_neutral_tool_messages() {
         ProviderContext::from_turns(vec![ProviderConversationTurn {
             user_prompt: "neutral tool latest question".to_string(),
             assistant_response: assistant_response.clone(),
-            request_id: Some("req_neutral_tool".to_string()),
+            request_id: Some("req_neutral_tool".into()),
             messages: vec![
                 ConversationMessage::User(ConversationUserMessage {
-                    request_id: "req_neutral_tool".to_string(),
+                    request_id: "req_neutral_tool".into(),
                     text: "neutral tool latest question".to_string(),
                     seq: None,
                     agent_id: Some("agent_000001".to_string()),
                 }),
                 ConversationMessage::Assistant(ConversationAssistantMessage {
-                    request_id: "req_neutral_tool".to_string(),
+                    request_id: "req_neutral_tool".into(),
                     agent_id: Some("agent_000001".to_string()),
                     text: String::new(),
                     tool_calls: vec![ConversationToolCall {
-                        tool_call_id: "toolcall_neutral".to_string(),
+                        tool_call_id: "toolcall_neutral".into(),
                         tool_id: "shell.run".to_string(),
                         args_summary: r#"{"command":"true"}"#.to_string(),
                         args_digest: "digest-args".to_string(),
@@ -371,8 +371,8 @@ pub(super) fn split_oversized_turn_refuses_provider_neutral_tool_messages() {
                     output_digest: None,
                 }),
                 ConversationMessage::ToolResult(Box::new(ConversationToolResultMessage {
-                    request_id: "req_neutral_tool".to_string(),
-                    tool_call_id: "toolcall_neutral".to_string(),
+                    request_id: "req_neutral_tool".into(),
+                    tool_call_id: "toolcall_neutral".into(),
                     tool_id: Some("shell.run".to_string()),
                     status: ToolCallStatus::Succeeded,
                     output_summary: Some("ok".to_string()),
@@ -382,7 +382,7 @@ pub(super) fn split_oversized_turn_refuses_provider_neutral_tool_messages() {
                     metadata: None,
                 })),
                 ConversationMessage::Assistant(ConversationAssistantMessage {
-                    request_id: "req_neutral_tool".to_string(),
+                    request_id: "req_neutral_tool".into(),
                     agent_id: Some("agent_000001".to_string()),
                     text: assistant_response,
                     tool_calls: Vec::new(),
@@ -460,7 +460,7 @@ pub(super) fn split_oversized_turn_prefix_summary_in_checkpoint_facts() {
                 "I".repeat(4_000),
                 "J".repeat(7_900)
             ),
-            request_id: Some("req_fact".to_string()),
+            request_id: Some("req_fact".into()),
             ..ProviderConversationTurn::default()
         }]),
     );

@@ -1,3 +1,4 @@
+// allow: SIZE_OK — coordinator state machine (turn lifecycle + scheduling)
 use super::*;
 use crate::event::HookExecutionStatus;
 use async_trait::async_trait;

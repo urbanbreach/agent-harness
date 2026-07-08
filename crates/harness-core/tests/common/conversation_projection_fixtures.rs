@@ -32,7 +32,7 @@ fn envelope(
         schema_version: SCHEMA_VERSION,
         event_id: format!("evt-{seq:020}"),
         seq,
-        run_id: "run_conversation_projection".to_string(),
+        run_id: "run_conversation_projection".into(),
         mono_ms: seq,
         ts: None,
         actor,
@@ -62,7 +62,7 @@ fn checkpoint_metadata() -> ProviderContextCheckpointMetadata {
     ProviderContextCheckpointMetadata {
         checkpoint_id: "checkpoint_1".to_string(),
         agent_id: "agent_1".to_string(),
-        run_id: "run_1".to_string(),
+        run_id: "run_1".into(),
         through_seq: 9,
         through_request_id: Some("req_prior".to_string()),
         provider_id: Some("mock".to_string()),

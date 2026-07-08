@@ -49,7 +49,7 @@ fn permission_requested_snapshot_is_stable_in_deterministic_mode() {
             PermissionRequestedArgs {
                 permission_id: "perm_001".to_string(),
                 kind: "edit".to_string(),
-                tool_call_id: Some("toolcall_001".to_string()),
+                tool_call_id: Some("toolcall_001".into()),
                 summary: "Apply patch to file with Bearer abc.def".to_string(),
                 request_digest: "req_90ac2e1e".to_string(),
                 timeout_ms: 30_000,

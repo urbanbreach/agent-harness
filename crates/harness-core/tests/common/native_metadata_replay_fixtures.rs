@@ -21,6 +21,7 @@ use harness_core::event::{
 use harness_core::proj::inspect_resume_plan;
 use harness_core::redact::DefaultRedactor;
 use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult};
+use harness_core::ToolResultExt;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -59,7 +60,7 @@ impl Tool for DelegatingAliasTaskTool {
 
         let store = ctx
             .artifact_store()
-            .map_err(|err| ToolError::Execution(format!("failed to open artifact store: {err}")))?;
+            .tool_err("failed to open artifact store")?;
         let artifact = store
             .write_text(
                 "delegated/task-output.json",
@@ -68,7 +69,7 @@ impl Tool for DelegatingAliasTaskTool {
                     args.child_session_id, args.child_request_id
                 ),
             )
-            .map_err(|err| ToolError::Execution(format!("failed to write artifact: {err}")))?;
+            .tool_err("failed to write artifact")?;
 
         Ok(ToolResult::structured_with_artifacts(
             format!("delegated work to child session {}", args.child_session_id),
@@ -148,7 +149,7 @@ fn envelope(run_id: &str, seq: u64, payload: EventV1) -> EventEnvelopeV1 {
         schema_version: SCHEMA_VERSION,
         event_id: format!("evt-{seq:04}"),
         seq,
-        run_id: run_id.to_string(),
+        run_id: run_id.to_string().into(),
         mono_ms: seq,
         ts: None,
         actor: EventActor::new(ActorKind::System, Some("coordinator".to_string())),

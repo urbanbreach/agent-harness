@@ -74,7 +74,7 @@ impl Coordinator {
             Some(format!("snapshot:{request_id}")),
             Some(request_id.clone()),
             EventV1::WorkspaceSnapshot(WorkspaceSnapshotEvent {
-                request_id: request_id.clone(),
+                request_id: request_id.clone().into(),
                 artifact_path: artifact_path.clone(),
                 artifact_digest,
                 file_count,
@@ -82,7 +82,7 @@ impl Coordinator {
         )?;
 
         Ok(WorkspaceSnapshotSummary {
-            request_id,
+            request_id: request_id.into(),
             artifact_path,
             file_count,
         })

@@ -1,3 +1,4 @@
+// allow: SIZE_OK — background projection (request ref + status tracking + result collection + artifact index)
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
@@ -11,7 +12,7 @@ use crate::text::non_empty_trimmed;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BackgroundRequestRef {
-    pub request_id: String,
+    pub request_id: crate::ids::RequestId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_id_hint: Option<String>,
 }
@@ -25,7 +26,7 @@ pub struct BackgroundToolCallCounts {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BackgroundRequestProjection {
-    pub request_id: String,
+    pub request_id: crate::ids::RequestId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -89,7 +90,7 @@ pub fn resolve_background_request_ref<'a>(
                 let matches_session = explicit_request_id.is_none()
                     && selector_hint.is_some_and(|selector| {
                         event.actor.agent_id.as_deref() == Some(selector)
-                            || data.task_id == selector
+                            || data.task_id.as_str() == selector
                     });
                 if !matches_explicit_request && !matches_session {
                     continue;
@@ -131,7 +132,7 @@ pub fn resolve_background_request_ref<'a>(
     };
 
     Ok(BackgroundRequestRef {
-        request_id,
+        request_id: request_id.into(),
         session_id_hint: selector_hint.map(str::to_string),
     })
 }
@@ -156,7 +157,7 @@ pub fn project_background_request<'a>(
         let matches_notification = matches!(
             &event.payload,
             EventV1::BackgroundTaskNotification(data)
-                if data.child_request_id == request_ref.request_id
+                if data.child_request_id == request_ref.request_id.as_str()
         );
         if event.correlation_id.as_deref() != Some(request_ref.request_id.as_str())
             && !matches_notification
@@ -173,7 +174,7 @@ pub fn project_background_request<'a>(
                     .is_some_and(|queue_key| queue_key.starts_with("provider_model:"))
                 {
                     latest_scheduled_state = Some(data.state);
-                    scheduler_task_id = Some(data.task_id.clone());
+                    scheduler_task_id = Some(data.task_id.to_string());
                     if let Some(agent_id) = event.actor.agent_id.as_ref() {
                         session_id = Some(agent_id.clone());
                     }
@@ -216,8 +217,8 @@ pub fn project_background_request<'a>(
             }
             EventV1::BackgroundTaskNotification(data) => {
                 terminal_status = Some(data.status.as_str().to_string());
-                session_id = Some(data.child_session_id.clone());
-                scheduler_task_id = Some(data.task_id.clone());
+                session_id = Some(data.child_session_id.to_string());
+                scheduler_task_id = Some(data.task_id.to_string());
                 match data.status {
                     BackgroundTaskNotificationStatus::Completed => {
                         result_summary = Some(data.summary.clone());
@@ -235,7 +236,7 @@ pub fn project_background_request<'a>(
 
     if !saw_event {
         return Err(BackgroundRequestProjectionError::MissingProjection(
-            request_ref.request_id.clone(),
+            request_ref.request_id.to_string(),
         ));
     }
 

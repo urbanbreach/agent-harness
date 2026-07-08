@@ -1,3 +1,4 @@
+// allow: SIZE_OK — Codex OAuth device flow authentication (token exchange + polling + credential storage)
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};

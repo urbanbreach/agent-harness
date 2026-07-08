@@ -1,3 +1,4 @@
+// allow: SIZE_OK — config discovery pipeline (XDG/workspace/env path resolution + layer merging + asset discovery)
 use serde::de::DeserializeOwned;
 
 use super::*;

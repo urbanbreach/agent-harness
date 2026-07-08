@@ -1,3 +1,4 @@
+// allow: SIZE_OK — provider context data structures (compaction checkpoint + conversation turn + facts + serde validation)
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::conversation::ConversationMessage;
@@ -97,7 +98,7 @@ pub struct ProviderConversationTurn {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub failure_reason: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub request_id: Option<String>,
+    pub request_id: Option<crate::ids::RequestId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub first_seq: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -143,7 +144,7 @@ pub struct ProviderContextCheckpointMetadata {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct ProviderCompactionTurnFact {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub request_id: Option<String>,
+    pub request_id: Option<crate::ids::RequestId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub first_seq: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

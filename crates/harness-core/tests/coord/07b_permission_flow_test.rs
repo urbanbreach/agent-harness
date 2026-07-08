@@ -31,7 +31,7 @@ async fn permission_flow_covers_allow_headless_ask_deny_and_worker_policy_violat
     wait_for_events(&allow_run.events_path, Duration::from_millis(500), |events| {
         events.iter().any(|event| matches!(
             &event.payload,
-            EventV1::ToolCallFinished(data) if data.tool_call_id == allowed_tool_call_id
+            EventV1::ToolCallFinished(data) if data.tool_call_id.as_str() == allowed_tool_call_id
         ))
     })
     .await;
@@ -42,7 +42,7 @@ async fn permission_flow_covers_allow_headless_ask_deny_and_worker_policy_violat
     assert!(allow_events.iter().any(|event| matches!(
         &event.payload,
         EventV1::ToolCallFinished(data)
-            if data.tool_call_id == allowed_tool_call_id && data.status == ToolCallStatus::Succeeded
+            if data.tool_call_id.as_str() == allowed_tool_call_id && data.status == ToolCallStatus::Succeeded
     )));
 
     // arrange
@@ -94,7 +94,7 @@ async fn permission_flow_covers_allow_headless_ask_deny_and_worker_policy_violat
     assert!(ask_events.iter().any(|event| matches!(
         &event.payload,
         EventV1::PermissionRequested(data)
-            if data.tool_call_id.as_deref() == Some(ask_tool_call_id.as_str())
+            if data.tool_call_id.as_ref().map(|id| id.as_str()) == Some(ask_tool_call_id.as_str())
                 && data.default_decision == EventPermissionDecision::Deny
                 && data.summary.contains("tool=shell.run")
                 && data.summary.contains("true")
@@ -102,7 +102,7 @@ async fn permission_flow_covers_allow_headless_ask_deny_and_worker_policy_violat
     assert!(ask_events.iter().any(|event| matches!(
         &event.payload,
         EventV1::ToolCallFinished(data)
-            if data.tool_call_id == ask_tool_call_id && data.status == ToolCallStatus::Failed
+            if data.tool_call_id.as_str() == ask_tool_call_id && data.status == ToolCallStatus::Failed
     )));
 
     // arrange
@@ -194,7 +194,7 @@ async fn repeated_shell_command_after_run_grant_uses_prefix_pattern() {
         events.iter().any(|event| matches!(
             &event.payload,
             EventV1::PermissionRequested(data)
-                if data.tool_call_id.as_deref() == Some(first_tool_call_id.as_str())
+                if data.tool_call_id.as_ref().map(|id| id.as_str()) == Some(first_tool_call_id.as_str())
         ))
     })
     .await;
@@ -202,7 +202,7 @@ async fn repeated_shell_command_after_run_grant_uses_prefix_pattern() {
         .iter()
         .find_map(|event| match &event.payload {
             EventV1::PermissionRequested(data)
-                if data.tool_call_id.as_deref() == Some(first_tool_call_id.as_str()) =>
+                if data.tool_call_id.as_ref().map(|id| id.as_str()) == Some(first_tool_call_id.as_str()) =>
             {
                 Some(data.permission_id.clone())
             }

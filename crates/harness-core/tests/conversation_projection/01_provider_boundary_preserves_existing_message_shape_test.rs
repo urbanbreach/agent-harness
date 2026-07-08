@@ -23,7 +23,7 @@ fn provider_boundary_preserves_existing_message_shape() {
         preserved_turns: vec![ProviderConversationTurn {
             user_prompt: "recent question".to_string(),
             assistant_response: "recent answer".to_string(),
-            request_id: Some("req_prior".to_string()),
+            request_id: Some("req_prior".into()),
             first_seq: Some(7),
             last_seq: Some(9),
             artifacts: Vec::new(),
@@ -47,7 +47,7 @@ fn provider_boundary_preserves_existing_message_shape() {
         .into_iter()
         .chain(std::iter::once(ConversationMessage::User(
             harness_core::conversation::ConversationUserMessage {
-                request_id: request.agent_id.clone(),
+                request_id: request.agent_id.clone().into(),
                 text: request.prompt.clone(),
                 seq: None,
                 agent_id: Some(request.agent_id.clone()),
@@ -128,7 +128,7 @@ fn conversation_projection_failed_checkpoint_turn_status() {
             status: ProviderConversationTurnStatus::Failed,
             failure_stage: Some("provider_error".to_string()),
             failure_reason: Some("connection reset".to_string()),
-            request_id: Some("req_failed".to_string()),
+            request_id: Some("req_failed".into()),
             first_seq: Some(7),
             last_seq: Some(9),
             artifacts: Vec::new(),
@@ -162,7 +162,7 @@ fn conversation_projection_reconstructs_user_assistant_tool_messages_from_events
         metadata: ProviderContextCheckpointMetadata {
             checkpoint_id: "checkpoint_000002".to_string(),
             agent_id: "agent_000001".to_string(),
-            run_id: "run_conversation_projection".to_string(),
+            run_id: "run_conversation_projection".into(),
             through_seq: 2,
             through_request_id: Some("req_000000".to_string()),
             provider_id: Some("default".to_string()),
@@ -181,7 +181,7 @@ fn conversation_projection_reconstructs_user_assistant_tool_messages_from_events
         recent_turns: vec![ProviderConversationTurn {
             user_prompt: "Earlier question".to_string(),
             assistant_response: "Earlier answer".to_string(),
-            request_id: Some("req_000000".to_string()),
+            request_id: Some("req_000000".into()),
             first_seq: Some(1),
             last_seq: Some(2),
             artifacts: Vec::new(),
@@ -201,7 +201,7 @@ fn conversation_projection_reconstructs_user_assistant_tool_messages_from_events
             EventActor::new(ActorKind::User, None),
             None,
             EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-                request_id: "req_000000".to_string(),
+                request_id: "req_000000".into(),
                 text: "duplicate pre-checkpoint user".to_string(),
             }),
         ),
@@ -210,7 +210,7 @@ fn conversation_projection_reconstructs_user_assistant_tool_messages_from_events
             worker(),
             Some("req_000000"),
             EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
-                request_id: "req_000000".to_string(),
+                request_id: "req_000000".into(),
                 delta: "duplicate pre-checkpoint assistant".to_string(),
             }),
         ),
@@ -219,7 +219,7 @@ fn conversation_projection_reconstructs_user_assistant_tool_messages_from_events
             EventActor::new(ActorKind::User, None),
             None,
             EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-                request_id: "req_000001".to_string(),
+                request_id: "req_000001".into(),
                 text: "Inspect the project status.".to_string(),
             }),
         ),
@@ -228,7 +228,7 @@ fn conversation_projection_reconstructs_user_assistant_tool_messages_from_events
             worker(),
             Some("req_000001"),
             EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                request_id: "req_000001".to_string(),
+                request_id: "req_000001".into(),
                 provider_id: "default".to_string(),
                 model_id: "gpt-5".to_string(),
                 prompt_summary: "Inspect the project status.".to_string(),
@@ -241,7 +241,7 @@ fn conversation_projection_reconstructs_user_assistant_tool_messages_from_events
             worker(),
             Some("req_000001"),
             EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
-                request_id: "req_000001".to_string(),
+                request_id: "req_000001".into(),
                 delta: "I'll ".to_string(),
             }),
         ),
@@ -250,7 +250,7 @@ fn conversation_projection_reconstructs_user_assistant_tool_messages_from_events
             worker(),
             Some("req_000001"),
             EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
-                request_id: "req_000001".to_string(),
+                request_id: "req_000001".into(),
                 delta: "check.".to_string(),
             }),
         ),
@@ -259,7 +259,7 @@ fn conversation_projection_reconstructs_user_assistant_tool_messages_from_events
             worker(),
             Some("req_000001"),
             EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
-                request_id: "req_000001".to_string(),
+                request_id: "req_000001".into(),
                 finish_reason: "tool_calls".to_string(),
                 output_digest: Some("digest-output".to_string()),
                 usage: None,
@@ -271,7 +271,7 @@ fn conversation_projection_reconstructs_user_assistant_tool_messages_from_events
             worker(),
             Some("req_000001"),
             EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                tool_call_id: "toolcall_000001".to_string(),
+                tool_call_id: "toolcall_000001".into(),
                 tool_id: "read".to_string(),
                 args_summary: "{\"filePath\":\"README.md\"}".to_string(),
                 args_digest: "digest-read-args".to_string(),
@@ -283,7 +283,7 @@ fn conversation_projection_reconstructs_user_assistant_tool_messages_from_events
             worker(),
             Some("req_000001"),
             EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                tool_call_id: "toolcall_000002".to_string(),
+                tool_call_id: "toolcall_000002".into(),
                 tool_id: "bash".to_string(),
                 args_summary: "{\"command\":\"git status\"}".to_string(),
                 args_digest: "digest-bash-args".to_string(),
@@ -295,7 +295,7 @@ fn conversation_projection_reconstructs_user_assistant_tool_messages_from_events
             EventActor::new(ActorKind::System, Some("coordinator".to_string())),
             Some("req_000001"),
             EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                tool_call_id: "toolcall_000002".to_string(),
+                tool_call_id: "toolcall_000002".into(),
                 status: ToolCallStatus::Succeeded,
                 output_summary: Some("clean".to_string()),
                 output_digest: Some("digest-bash-output".to_string()),
@@ -308,7 +308,7 @@ fn conversation_projection_reconstructs_user_assistant_tool_messages_from_events
             EventActor::new(ActorKind::System, Some("coordinator".to_string())),
             Some("req_000001"),
             EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                tool_call_id: "toolcall_000001".to_string(),
+                tool_call_id: "toolcall_000001".into(),
                 status: ToolCallStatus::Succeeded,
                 output_summary: Some("README contents".to_string()),
                 output_digest: Some("digest-read-output".to_string()),
@@ -341,7 +341,7 @@ fn conversation_projection_reconstructs_user_assistant_tool_messages_from_events
     let ConversationMessage::User(user) = &projection.messages[3] else {
         panic!("expected user message");
     };
-    assert_eq!(user.request_id, "req_000001");
+    assert_eq!(user.request_id, "req_000001".into());
     assert_eq!(user.text, "Inspect the project status.");
 
     let ConversationMessage::Assistant(assistant) = &projection.messages[4] else {
@@ -352,15 +352,15 @@ fn conversation_projection_reconstructs_user_assistant_tool_messages_from_events
     assert_eq!(assistant.provider_id.as_deref(), Some("default"));
     assert_eq!(assistant.model_id.as_deref(), Some("gpt-5"));
     assert_eq!(assistant.tool_calls.len(), 2);
-    assert_eq!(assistant.tool_calls[0].tool_call_id, "toolcall_000001");
+    assert_eq!(assistant.tool_calls[0].tool_call_id.as_str(), "toolcall_000001");
     assert_eq!(assistant.tool_calls[0].tool_id, "read");
-    assert_eq!(assistant.tool_calls[1].tool_call_id, "toolcall_000002");
+    assert_eq!(assistant.tool_calls[1].tool_call_id.as_str(), "toolcall_000002");
     assert_eq!(assistant.tool_calls[1].tool_id, "bash");
 
     let ConversationMessage::ToolResult(first_result) = &projection.messages[5] else {
         panic!("expected first tool result message");
     };
-    assert_eq!(first_result.tool_call_id, "toolcall_000001");
+    assert_eq!(first_result.tool_call_id.as_str(), "toolcall_000001");
     assert_eq!(first_result.tool_id.as_deref(), Some("read"));
     assert_eq!(
         first_result.output_summary.as_deref(),
@@ -370,7 +370,7 @@ fn conversation_projection_reconstructs_user_assistant_tool_messages_from_events
     let ConversationMessage::ToolResult(second_result) = &projection.messages[6] else {
         panic!("expected second tool result message");
     };
-    assert_eq!(second_result.tool_call_id, "toolcall_000002");
+    assert_eq!(second_result.tool_call_id.as_str(), "toolcall_000002");
     assert_eq!(second_result.tool_id.as_deref(), Some("bash"));
     assert_eq!(second_result.output_summary.as_deref(), Some("clean"));
 
@@ -418,7 +418,7 @@ fn provider_boundary_falls_back_for_non_json_historical_tool_args() {
             EventActor::new(ActorKind::User, None),
             Some("req_1"),
             EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-                request_id: "req_1".to_string(),
+                request_id: "req_1".into(),
                 text: "read a file".to_string(),
             }),
         ),
@@ -427,7 +427,7 @@ fn provider_boundary_falls_back_for_non_json_historical_tool_args() {
             worker(),
             Some("req_1"),
             EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                request_id: "provider_req_1".to_string(),
+                request_id: "provider_req_1".into(),
                 provider_id: "mock".to_string(),
                 model_id: "model-1".to_string(),
                 prompt_summary: "read a file".to_string(),
@@ -440,7 +440,7 @@ fn provider_boundary_falls_back_for_non_json_historical_tool_args() {
             worker(),
             Some("req_1"),
             EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                tool_call_id: "toolcall_1".to_string(),
+                tool_call_id: "toolcall_1".into(),
                 tool_id: "read".to_string(),
                 args_summary: "read README.md…".to_string(),
                 args_digest: "digest-args".to_string(),

@@ -18,7 +18,7 @@ async fn coordinator_update_session_title_appends_event_and_updates_metadata() {
         .unwrap_or_abort();
 
     assert_eq!(updated.run_id, run.run_id);
-    assert_eq!(updated.run_name, "renamed session");
+    assert_eq!(updated.run_name.as_str(), "renamed session");
     let events = load_events(&run.events_path);
     assert_eq!(
         events.iter().rev().find_map(|event| match &event.payload {

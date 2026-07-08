@@ -1,3 +1,4 @@
+// allow: SIZE_OK — coordinator turn completion state machine (lifecycle phases)
 use super::*;
 
 impl Coordinator {
@@ -76,7 +77,7 @@ impl Coordinator {
 
             let hook_context = HookInvocationContext {
                 event: HookLifecycleEvent::CompactionRequested,
-                run_id: run_state.info.run_id.clone(),
+                run_id: run_state.info.run_id.to_string(),
                 workspace_root: run_state.info.workspace_root.clone(),
                 artifacts_dir: run_state.info.artifacts_dir.clone(),
                 actor: Some(agent_actor(agent_id)),
@@ -371,7 +372,7 @@ impl Coordinator {
                 &self.config.hook_runtime_config,
                 HookInvocationContext {
                     event: HookLifecycleEvent::AgentTurnFinished,
-                    run_id: run_state.info.run_id.clone(),
+                    run_id: run_state.info.run_id.to_string(),
                     workspace_root: run_state.info.workspace_root.clone(),
                     artifacts_dir: run_state.info.artifacts_dir.clone(),
                     actor: Some(agent_actor(&running.agent_id)),
@@ -402,7 +403,7 @@ impl Coordinator {
                     &self.config.hook_runtime_config,
                     HookInvocationContext {
                         event: HookLifecycleEvent::SubagentFinished,
-                        run_id: run_state.info.run_id.clone(),
+                        run_id: run_state.info.run_id.to_string(),
                         workspace_root: run_state.info.workspace_root.clone(),
                         artifacts_dir: run_state.info.artifacts_dir.clone(),
                         actor: Some(agent_actor(&running.agent_id)),
@@ -477,7 +478,7 @@ impl Coordinator {
                                 Some(format!("task:{task_id}")),
                                 Some(request_id.clone()),
                                 EventV1::TaskCancelled(TaskCancelledEvent {
-                                    task_id: task_id.clone(),
+                                    task_id: task_id.clone().into(),
                                     reason,
                                     task_scope: Some(TaskTerminalScope::AgentTurn),
                                 }),
@@ -515,7 +516,7 @@ impl Coordinator {
                                 .push_turn(ProviderConversationTurn {
                                     user_prompt: running.request_prompt.clone(),
                                     assistant_response: output.clone(),
-                                    request_id: Some(request_id.clone()),
+                                    request_id: Some(request_id.clone().into()),
                                     first_seq: None,
                                     last_seq: None,
                                     artifacts: Vec::new(),
@@ -530,7 +531,7 @@ impl Coordinator {
                                 Some(format!("task:{task_id}")),
                                 Some(request_id.clone()),
                                 EventV1::TaskCompleted(TaskCompletedEvent {
-                                    task_id,
+                                    task_id: task_id.into(),
                                     result_digest: digest12(output.as_bytes()),
                                     result_summary: output,
                                     metadata: Some(TaskCompletionMetadata {
@@ -667,7 +668,7 @@ impl Coordinator {
                             Some(format!("task:{task_id}")),
                             Some(request_id.clone()),
                             EventV1::TaskCancelled(TaskCancelledEvent {
-                                task_id: task_id.clone(),
+                                task_id: task_id.clone().into(),
                                 reason: reason.clone(),
                                 task_scope: Some(TaskTerminalScope::AgentTurn),
                             }),
@@ -713,7 +714,7 @@ impl Coordinator {
         };
 
         for task in dequeued {
-            if let Some(queued) = run_state.queued_agent_turns.get(&task.task_id).cloned() {
+            if let Some(queued) = run_state.queued_agent_turns.get(task.task_id.as_str()).cloned() {
                 append_agent_turn_task_scheduled_event(
                     self.clock.as_ref(),
                     self.redactor.as_ref(),
@@ -727,7 +728,7 @@ impl Coordinator {
                     },
                 )?;
 
-                let Some(queued) = run_state.queued_agent_turns.remove(&task.task_id) else {
+                let Some(queued) = run_state.queued_agent_turns.remove(task.task_id.as_str()) else {
                     continue;
                 };
                 start_agent_turn_execution(
@@ -921,7 +922,7 @@ where
         serialize_provider_context_checkpoint(&checkpoint, trigger.estimate_source.as_deref())?;
     let artifact_store = crate::tool::ArtifactStore::new(run_state.info.artifacts_dir.clone())
         .map_err(|err| CoordinatorError::ResumeRestoreFailed {
-            run_id: run_state.info.run_id.clone(),
+            run_id: run_state.info.run_id.to_string(),
             reason: format!("failed to open compaction artifact store: {err}"),
         })?;
     let artifact_name = format!(
@@ -931,7 +932,7 @@ where
     let artifact = artifact_store
         .write_text(&artifact_name, &body)
         .map_err(|err| CoordinatorError::ResumeRestoreFailed {
-            run_id: run_state.info.run_id.clone(),
+            run_id: run_state.info.run_id.to_string(),
             reason: format!("failed to write compaction checkpoint artifact: {err}"),
         })?;
     append_compaction_artifact_written_event(clock, redactor, run_state, &checkpoint, &artifact)?;
@@ -946,7 +947,7 @@ where
             agent_id: checkpoint.metadata.agent_id.clone(),
             artifact_path: artifact.path.clone(),
             artifact_digest: artifact.digest.clone(),
-            artifact_bytes: body.len() as u64,
+            artifact_bytes: u64::try_from(body.len()).unwrap_or(0),
             trigger_reason: trigger.trigger_reason.clone(),
             through_seq: checkpoint.metadata.through_seq,
             through_request_id: checkpoint.metadata.through_request_id.clone(),

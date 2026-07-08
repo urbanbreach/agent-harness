@@ -1,3 +1,4 @@
+// allow: SIZE_OK — coordinator turn runtime (provider loop + tool dispatch)
 use super::*;
 
 impl Coordinator {
@@ -55,14 +56,14 @@ impl Coordinator {
             parent_agent_id: metadata.parent_agent_id,
             child_session_id: metadata.child_session_id,
             child_request_id: request_id.clone(),
-            task_id: metadata.task_id,
+            task_id: metadata.task_id.to_string(),
             description: metadata.description,
             run_in_background: metadata.run_in_background,
         });
 
         let prompt = if profile.name == crate::plan::PLAN_AGENT_NAME {
             Self::plan_mode_prompt(
-                &run_state.info.run_id,
+                run_state.info.run_id.as_str(),
                 &run_state.info.workspace_root,
                 &prompt,
             )
@@ -109,7 +110,7 @@ impl Coordinator {
             Some(format!("agent:{}", request.agent_id)),
             Some(request_id.clone()),
             EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-                request_id: request_id.clone(),
+                request_id: request_id.clone().into(),
                 text: request.prompt.clone(),
             }),
         )?;
@@ -150,7 +151,7 @@ impl Coordinator {
         let Some(run_state) = self.run_state.as_ref() else {
             return;
         };
-        if !is_parent_default_title(&run_state.info.run_name)
+        if !is_parent_default_title(run_state.info.run_name.as_str())
             || run_state.next_provider_request_id != 2
         {
             return;
@@ -173,7 +174,7 @@ impl Coordinator {
         let Some(run_state) = self.run_state.as_mut() else {
             return;
         };
-        if !is_parent_default_title(&run_state.info.run_name)
+        if !is_parent_default_title(run_state.info.run_name.as_str())
             || run_state.next_provider_request_id != 2
         {
             return;
@@ -192,7 +193,7 @@ impl Coordinator {
             title_event,
         )
         .map(|_| {
-            run_state.info.run_name = title;
+            run_state.info.run_name = title.into();
         })
         .and_then(|_| write_run_metadata(run_state, &self.config, self.clock.as_ref()));
         if let Err(err) = persist_result {
@@ -308,7 +309,7 @@ where
     let agent_id = request.agent_id.clone();
     let task_id = format!("task_{:06}", run_state.next_task_id);
     run_state.next_task_id += 1;
-    let session_id = run_state.info.run_id.clone();
+    let session_id = run_state.info.run_id.to_string();
 
     let provider_id = model.provider_id.clone();
     let model_id = model.model_id.clone();
@@ -341,7 +342,7 @@ where
         run_state.queue_agent_turn(QueuedAgentTurn {
             task_id,
             agent_id,
-            session_id,
+            session_id: session_id.into(),
             request_id,
             profile,
             request,
@@ -385,7 +386,7 @@ where
                 QueuedAgentTurn {
                     task_id,
                     agent_id,
-                    session_id,
+                    session_id: session_id.into(),
                     request_id,
                     profile,
                     request,
@@ -413,7 +414,7 @@ where
             run_state.queue_agent_turn(QueuedAgentTurn {
                 task_id,
                 agent_id,
-                session_id,
+                session_id: session_id.into(),
                 request_id,
                 profile,
                 request,
@@ -453,7 +454,7 @@ where
         Some(format!("task:{task_id}")),
         Some(request_id.to_string()),
         EventV1::TaskScheduled(TaskScheduledEvent {
-            task_id: task_id.to_string(),
+            task_id: task_id.into(),
             state,
             queue_key: Some(queue_key.queue_key()),
         }),
@@ -520,7 +521,7 @@ where
         hook_runtime_config,
         HookInvocationContext {
             event: HookLifecycleEvent::AgentTurnStarted,
-            run_id: run_state.info.run_id.clone(),
+            run_id: run_state.info.run_id.to_string(),
             workspace_root: run_state.info.workspace_root.clone(),
             artifacts_dir: run_state.info.artifacts_dir.clone(),
             actor: Some(agent_actor(&task.agent_id)),

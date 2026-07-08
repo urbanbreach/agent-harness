@@ -9,7 +9,7 @@ fn resume_plan_reconstructs_sequence_and_id_watermarks() {
             envelope(
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/workspace/project".to_string(),
                 }),
             ),
@@ -24,14 +24,14 @@ fn resume_plan_reconstructs_sequence_and_id_watermarks() {
             envelope(
                 3,
                 EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-                    request_id: "req_000003".to_string(),
+                    request_id: "req_000003".into(),
                     text: "hello".to_string(),
                 }),
             ),
             envelope(
                 4,
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req_000004".to_string(),
+                    request_id: "req_000004".into(),
                     provider_id: "default".to_string(),
                     model_id: "gpt-5".to_string(),
                     prompt_summary: "prompt".to_string(),
@@ -42,7 +42,7 @@ fn resume_plan_reconstructs_sequence_and_id_watermarks() {
             envelope(
                 5,
                 EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                    tool_call_id: "toolcall_000002".to_string(),
+                    tool_call_id: "toolcall_000002".into(),
                     tool_id: "shell.run".to_string(),
                     args_summary: "{\"cmd\":\"true\"}".to_string(),
                     args_digest: "digest-tool-args".to_string(),
@@ -52,13 +52,13 @@ fn resume_plan_reconstructs_sequence_and_id_watermarks() {
             envelope(
                 6,
                 EventV1::ToolCallStarted(ToolCallStartedEvent {
-                    tool_call_id: "toolcall_000002".to_string(),
+                    tool_call_id: "toolcall_000002".into(),
                 }),
             ),
             envelope(
                 7,
                 EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                    tool_call_id: "toolcall_000002".to_string(),
+                    tool_call_id: "toolcall_000002".into(),
                     status: ToolCallStatus::Succeeded,
                     output_summary: Some("ok".to_string()),
                     output_digest: Some("digest-tool-out".to_string()),
@@ -71,7 +71,7 @@ fn resume_plan_reconstructs_sequence_and_id_watermarks() {
                 EventV1::PermissionRequested(PermissionRequestedEvent {
                     permission_id: "perm_000002".to_string(),
                     kind: "shell".to_string(),
-                    tool_call_id: Some("toolcall_000002".to_string()),
+                    tool_call_id: Some("toolcall_000002".into()),
                     summary: "allow shell".to_string(),
                     request_digest: "digest-perm".to_string(),
                     timeout_ms: 1_000,
@@ -89,7 +89,7 @@ fn resume_plan_reconstructs_sequence_and_id_watermarks() {
             envelope(
                 10,
                 EventV1::TaskScheduled(TaskScheduledEvent {
-                    task_id: "task_000004".to_string(),
+                    task_id: "task_000004".to_string().into(),
                     state: TaskScheduleState::Started,
                     queue_key: Some("tool:shell.run".to_string()),
                 }),
@@ -97,7 +97,7 @@ fn resume_plan_reconstructs_sequence_and_id_watermarks() {
             envelope(
                 11,
                 EventV1::TaskCompleted(TaskCompletedEvent {
-                    task_id: "task_000004".to_string(),
+                    task_id: "task_000004".to_string().into(),
                     result_summary: "done".to_string(),
                     result_digest: "digest-task".to_string(),
                     metadata: None,
@@ -158,7 +158,7 @@ fn resume_plan_preserves_run_scoped_permission_grants_across_resume_markers() {
             envelope(
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/workspace/project".to_string(),
                 }),
             ),
@@ -177,7 +177,7 @@ fn resume_plan_preserves_run_scoped_permission_grants_across_resume_markers() {
             envelope(
                 4,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "continued".to_string(),
+                    run_name: "continued".into(),
                     workspace_root: "/workspace/project".to_string(),
                 }),
             ),
@@ -211,14 +211,14 @@ fn replay_old_loop_events_without_provider_metadata() {
             envelope(
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/workspace/project".to_string(),
                 }),
             ),
             envelope(
                 2,
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req_000001".to_string(),
+                    request_id: "req_000001".into(),
                     provider_id: "default".to_string(),
                     model_id: "gpt-5".to_string(),
                     prompt_summary: "prompt".to_string(),
@@ -229,7 +229,7 @@ fn replay_old_loop_events_without_provider_metadata() {
             envelope(
                 3,
                 EventV1::TaskScheduled(TaskScheduledEvent {
-                    task_id: "task_000001".to_string(),
+                    task_id: "task_000001".to_string().into(),
                     state: TaskScheduleState::Started,
                     queue_key: None,
                 }),
@@ -237,7 +237,7 @@ fn replay_old_loop_events_without_provider_metadata() {
             envelope(
                 4,
                 EventV1::TaskCompleted(TaskCompletedEvent {
-                    task_id: "task_000001".to_string(),
+                    task_id: "task_000001".to_string().into(),
                     result_summary: "done".to_string(),
                     result_digest: "digest-task".to_string(),
                     metadata: None,
@@ -268,14 +268,14 @@ fn replay_new_loop_metadata_is_non_semantic_for_run_summary() {
         envelope(
             1,
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "interactive".to_string(),
+                run_name: "interactive".into(),
                 workspace_root: "/workspace/project".to_string(),
             }),
         ),
         envelope(
             2,
             EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                request_id: "req_000001".to_string(),
+                request_id: "req_000001".into(),
                 provider_id: "default".to_string(),
                 model_id: "gpt-5".to_string(),
                 prompt_summary: "prompt".to_string(),
@@ -286,7 +286,7 @@ fn replay_new_loop_metadata_is_non_semantic_for_run_summary() {
         envelope(
             3,
             EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
-                request_id: "req_000001".to_string(),
+                request_id: "req_000001".into(),
                 finish_reason: "done".to_string(),
                 output_digest: Some("digest-output".to_string()),
                 usage: None,
@@ -296,7 +296,7 @@ fn replay_new_loop_metadata_is_non_semantic_for_run_summary() {
         envelope(
             4,
             EventV1::TaskScheduled(TaskScheduledEvent {
-                task_id: "task_000001".to_string(),
+                task_id: "task_000001".to_string().into(),
                 state: TaskScheduleState::Started,
                 queue_key: Some("tool:shell.run".to_string()),
             }),
@@ -304,7 +304,7 @@ fn replay_new_loop_metadata_is_non_semantic_for_run_summary() {
         envelope(
             5,
             EventV1::TaskCompleted(TaskCompletedEvent {
-                task_id: "task_000001".to_string(),
+                task_id: "task_000001".to_string().into(),
                 result_summary: "done".to_string(),
                 result_digest: "digest-task".to_string(),
                 metadata: None,
@@ -322,14 +322,14 @@ fn replay_new_loop_metadata_is_non_semantic_for_run_summary() {
         envelope(
             1,
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "interactive".to_string(),
+                run_name: "interactive".into(),
                 workspace_root: "/workspace/project".to_string(),
             }),
         ),
         envelope(
             2,
             EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                request_id: "req_000001".to_string(),
+                request_id: "req_000001".into(),
                 provider_id: "default".to_string(),
                 model_id: "gpt-5".to_string(),
                 prompt_summary: "prompt".to_string(),
@@ -346,7 +346,7 @@ fn replay_new_loop_metadata_is_non_semantic_for_run_summary() {
         envelope(
             3,
             EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
-                request_id: "req_000001".to_string(),
+                request_id: "req_000001".into(),
                 finish_reason: "done".to_string(),
                 output_digest: Some("digest-output".to_string()),
                 usage: None,
@@ -377,7 +377,7 @@ fn replay_new_loop_metadata_is_non_semantic_for_run_summary() {
         envelope(
             4,
             EventV1::TaskScheduled(TaskScheduledEvent {
-                task_id: "task_000001".to_string(),
+                task_id: "task_000001".to_string().into(),
                 state: TaskScheduleState::Started,
                 queue_key: Some("tool:shell.run".to_string()),
             }),
@@ -385,7 +385,7 @@ fn replay_new_loop_metadata_is_non_semantic_for_run_summary() {
         envelope(
             5,
             EventV1::TaskCompleted(TaskCompletedEvent {
-                task_id: "task_000001".to_string(),
+                task_id: "task_000001".to_string().into(),
                 result_summary: "done".to_string(),
                 result_digest: "digest-task".to_string(),
                 metadata: Some(harness_core::event::TaskCompletionMetadata {

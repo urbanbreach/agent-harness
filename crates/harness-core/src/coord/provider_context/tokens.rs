@@ -35,13 +35,13 @@ fn approximate_conversation_message_tokens(message: &ConversationMessage) -> u32
             approximate_text_tokens(&assistant.text),
             |tokens, tool_call| {
                 tokens
-                    .saturating_add(approximate_text_tokens(&tool_call.tool_call_id))
+                    .saturating_add(approximate_text_tokens(tool_call.tool_call_id.as_str()))
                     .saturating_add(approximate_text_tokens(&tool_call.tool_id))
                     .saturating_add(approximate_text_tokens(&tool_call.args_summary))
             },
         ),
         ConversationMessage::ToolResult(tool_result) => {
-            approximate_text_tokens(&tool_result.tool_call_id)
+            approximate_text_tokens(tool_result.tool_call_id.as_str())
                 .saturating_add(
                     tool_result
                         .tool_id

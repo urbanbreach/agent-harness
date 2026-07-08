@@ -27,7 +27,7 @@ pub enum EventBuildError {
 pub struct EventBuilder<'a, C: Clock + ?Sized, R: Redactor + ?Sized> {
     clock: &'a C,
     redactor: &'a R,
-    run_id: String,
+    run_id: crate::ids::RunId,
 }
 
 impl<'a, C: Clock + ?Sized, R: Redactor + ?Sized> EventBuilder<'a, C, R> {
@@ -35,7 +35,7 @@ impl<'a, C: Clock + ?Sized, R: Redactor + ?Sized> EventBuilder<'a, C, R> {
         Self {
             clock,
             redactor,
-            run_id: run_id.into(),
+            run_id: crate::ids::RunId::from(run_id.into()),
         }
     }
 
@@ -70,7 +70,7 @@ impl<'a, C: Clock + ?Sized, R: Redactor + ?Sized> EventBuilder<'a, C, R> {
         workspace_root: impl Into<String>,
     ) -> Result<EventEnvelopeV1, EventBuildError> {
         let payload = EventV1::RunStarted(RunStartedEvent {
-            run_name: run_name.into(),
+            run_name: crate::ids::RunName::from(run_name.into()),
             workspace_root: workspace_root.into(),
         });
         self.build(context, payload)
@@ -105,7 +105,7 @@ impl<'a, C: Clock + ?Sized, R: Redactor + ?Sized> EventBuilder<'a, C, R> {
     pub fn tool_call_requested(
         &self,
         context: EventContext,
-        tool_call_id: impl Into<String>,
+        tool_call_id: impl Into<crate::ids::ToolCallId>,
         tool_id: impl Into<String>,
         raw_args: &Value,
         metadata: Option<ToolCallMetadata>,

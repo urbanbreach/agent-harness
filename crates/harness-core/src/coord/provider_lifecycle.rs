@@ -1,3 +1,4 @@
+// allow: SIZE_OK — coordinator state machine (turn lifecycle + scheduling)
 use super::agent_turn_runtime::{
     provider_request_finished_metadata, provider_request_started_metadata,
 };
@@ -41,7 +42,7 @@ impl Coordinator {
             Some(format!("agent:{agent_id}")),
             Some(turn_request_id.clone()),
             EventV1::ProviderRequestStarted(crate::event::ProviderRequestStartedEvent {
-                request_id: request_id.clone(),
+                request_id: request_id.clone().into(),
                 provider_id: provider_id.clone(),
                 model_id: model_id.clone(),
                 prompt_summary: prompt_summary.clone(),
@@ -56,7 +57,7 @@ impl Coordinator {
             &self.config.hook_runtime_config,
             HookInvocationContext {
                 event: HookLifecycleEvent::ProviderRequestStarted,
-                run_id: run_state.info.run_id.clone(),
+                run_id: run_state.info.run_id.to_string(),
                 workspace_root: run_state.info.workspace_root.clone(),
                 artifacts_dir: run_state.info.artifacts_dir.clone(),
                 actor: Some(agent_actor(&agent_id)),
@@ -95,7 +96,7 @@ impl Coordinator {
                     Some(format!("task:{task_id}")),
                     Some(turn_request_id),
                     EventV1::TaskCancelled(TaskCancelledEvent {
-                        task_id,
+                        task_id: task_id.into(),
                         reason,
                         task_scope: Some(TaskTerminalScope::AgentTurn),
                     }),
@@ -133,7 +134,7 @@ impl Coordinator {
             Some(format!("agent:{agent_id}")),
             Some(turn_request_id),
             EventV1::ProviderStreamDelta(crate::event::ProviderStreamDeltaEvent {
-                request_id,
+                request_id: request_id.into(),
                 delta,
             }),
         )?;
@@ -167,7 +168,7 @@ impl Coordinator {
             agent_actor(&agent_id),
             Some(format!("agent:{agent_id}")),
             Some(turn_request_id),
-            EventV1::ProviderReasoningDelta(ProviderReasoningDeltaEvent { request_id, delta }),
+            EventV1::ProviderReasoningDelta(ProviderReasoningDeltaEvent { request_id: request_id.into(), delta }),
         )?;
 
         Ok(())
@@ -209,7 +210,7 @@ impl Coordinator {
             Some(format!("agent:{agent_id}")),
             Some(turn_request_id.clone()),
             EventV1::ProviderRequestFinished(crate::event::ProviderRequestFinishedEvent {
-                request_id: request_id.clone(),
+                request_id: request_id.clone().into(),
                 finish_reason: finish_reason.clone(),
                 output_digest: output_digest.clone(),
                 usage: usage.clone(),
@@ -223,7 +224,7 @@ impl Coordinator {
             &self.config.hook_runtime_config,
             HookInvocationContext {
                 event: HookLifecycleEvent::ProviderRequestFinished,
-                run_id: run_state.info.run_id.clone(),
+                run_id: run_state.info.run_id.to_string(),
                 workspace_root: run_state.info.workspace_root.clone(),
                 artifacts_dir: run_state.info.artifacts_dir.clone(),
                 actor: Some(agent_actor(&agent_id)),
@@ -260,7 +261,7 @@ impl Coordinator {
                     Some(format!("task:{task_id}")),
                     Some(turn_request_id),
                     EventV1::TaskCancelled(TaskCancelledEvent {
-                        task_id,
+                        task_id: task_id.into(),
                         reason,
                         task_scope: Some(TaskTerminalScope::AgentTurn),
                     }),
@@ -300,7 +301,7 @@ impl Coordinator {
             Some(format!("agent:{agent_id}")),
             Some(turn_request_id),
             EventV1::AssistantMessageFinished(crate::event::AssistantMessageFinishedEvent {
-                request_id: request_id.clone(),
+                request_id: request_id.clone().into(),
                 tool_call_count,
                 assistant_message,
             }),

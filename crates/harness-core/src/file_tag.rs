@@ -1,3 +1,4 @@
+// allow: SIZE_OK — file tag system (read limits + glob patterns + grep output + path display)
 use crate::UnwrapOrAbort;
 use std::collections::BTreeSet;
 use std::path::{Component, Path, PathBuf};

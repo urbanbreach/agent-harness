@@ -1,3 +1,4 @@
+// allow: SIZE_OK — coordinator state machine (turn lifecycle + scheduling)
 use std::time::Duration;
 
 use tokio::time::MissedTickBehavior;

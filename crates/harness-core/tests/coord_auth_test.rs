@@ -133,7 +133,7 @@ async fn tool_auth_uses_derived_worker_category_not_caller_category() {
     assert!(!events.iter().any(|event| {
         matches!(
             &event.payload,
-            EventV1::ToolCallStarted(data) if data.tool_call_id == denied_tool_call_id
+            EventV1::ToolCallStarted(data) if data.tool_call_id.as_str() == denied_tool_call_id
         )
     }));
 }
@@ -257,7 +257,7 @@ async fn shell_permission_summary_redacts_command_secrets() {
         .iter()
         .find_map(|event| match &event.payload {
             EventV1::PermissionRequested(data)
-                if data.tool_call_id.as_deref() == Some(tool_call_id.as_str()) =>
+                if data.tool_call_id.as_ref().map(|id| id.as_str()) == Some(tool_call_id.as_str()) =>
             {
                 Some(data.permission_id.clone())
             }
@@ -281,7 +281,7 @@ async fn shell_permission_summary_redacts_command_secrets() {
         .iter()
         .find_map(|event| match &event.payload {
             EventV1::PermissionRequested(data)
-                if data.tool_call_id.as_deref() == Some(tool_call_id.as_str()) =>
+                if data.tool_call_id.as_ref().map(|id| id.as_str()) == Some(tool_call_id.as_str()) =>
             {
                 Some(data.summary.as_str())
             }
@@ -328,7 +328,7 @@ async fn edit_rename_requires_permission_for_destination_path() {
         .spawn_agent(supervisor_actor(), "worker", None)
         .await
         .unwrap_or_abort();
-    let active_plan = harness_core::plan::plan_file_display_path(&run.run_id);
+    let active_plan = harness_core::plan::plan_file_display_path(run.run_id.as_str());
 
     let error = coordinator
         .request_tool_call(
@@ -366,7 +366,7 @@ async fn edit_rename_requires_permission_for_destination_path() {
     assert!(!events.iter().any(|event| {
         matches!(
             &event.payload,
-            EventV1::ToolCallStarted(data) if data.tool_call_id == denied_tool_call_id
+            EventV1::ToolCallStarted(data) if data.tool_call_id.as_str() == denied_tool_call_id
         )
     }));
 }
@@ -410,7 +410,7 @@ async fn plan_mode_edit_requires_active_plan_file_not_sibling_plan() {
         .spawn_agent(supervisor_actor(), "worker", None)
         .await
         .unwrap_or_abort();
-    let active_plan = harness_core::plan::plan_file_display_path(&run.run_id);
+    let active_plan = harness_core::plan::plan_file_display_path(run.run_id.as_str());
 
     let allowed_tool_call_id = coordinator
         .request_tool_call(
@@ -444,7 +444,7 @@ async fn plan_mode_edit_requires_active_plan_file_not_sibling_plan() {
     assert!(events.iter().any(|event| matches!(
         &event.payload,
         EventV1::ToolCallFinished(data)
-            if data.tool_call_id == allowed_tool_call_id && data.status == ToolCallStatus::Succeeded
+            if data.tool_call_id.as_str() == allowed_tool_call_id && data.status == ToolCallStatus::Succeeded
     )));
     assert!(events.iter().any(|event| matches!(
         &event.payload,
@@ -457,7 +457,7 @@ async fn plan_mode_edit_requires_active_plan_file_not_sibling_plan() {
     )));
     assert!(!events.iter().any(|event| matches!(
         &event.payload,
-        EventV1::ToolCallStarted(data) if data.tool_call_id == denied_tool_call_id
+        EventV1::ToolCallStarted(data) if data.tool_call_id.as_str() == denied_tool_call_id
     )));
 }
 
@@ -500,7 +500,7 @@ async fn plan_mode_edit_rejects_symlinked_active_plan_directory() {
         .spawn_agent(supervisor_actor(), "worker", None)
         .await
         .unwrap_or_abort();
-    let active_plan = harness_core::plan::plan_file_display_path(&run.run_id);
+    let active_plan = harness_core::plan::plan_file_display_path(run.run_id.as_str());
 
     let denied_error = coordinator
         .request_tool_call(
@@ -530,7 +530,7 @@ async fn plan_mode_edit_rejects_symlinked_active_plan_directory() {
     )));
     assert!(!events.iter().any(|event| matches!(
         &event.payload,
-        EventV1::ToolCallStarted(data) if data.tool_call_id == denied_tool_call_id
+        EventV1::ToolCallStarted(data) if data.tool_call_id.as_str() == denied_tool_call_id
     )));
 }
 

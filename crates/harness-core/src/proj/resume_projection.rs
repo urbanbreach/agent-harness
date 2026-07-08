@@ -1,3 +1,4 @@
+// allow: SIZE_OK — resume projection (plan reconstruction + state)
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
@@ -108,7 +109,7 @@ pub struct ResumeArtifactSnapshot {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bytes: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tool_call_id: Option<String>,
+    pub tool_call_id: Option<crate::ids::ToolCallId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -316,12 +317,12 @@ pub fn project_resume_plan<'a>(
         max_seq = event.seq;
 
         match run_id.as_deref() {
-            None => run_id = Some(event.run_id.clone()),
+            None => run_id = Some(event.run_id.to_string()),
             Some(existing) if existing == event.run_id.as_str() => {}
             Some(existing) => {
                 return Err(ProjectionError::RunIdMismatch {
                     expected: existing.to_string(),
-                    actual: event.run_id.clone(),
+                    actual: event.run_id.to_string(),
                 })
             }
         }
@@ -364,11 +365,11 @@ pub fn project_resume_plan<'a>(
             EventV1::TaskScheduled(payload) => {
                 update_id_watermark(
                     &mut id_watermarks.max_task_id,
-                    &payload.task_id,
+                    payload.task_id.as_str(),
                     TASK_ID_PREFIX,
                     "task",
                 )?;
-                tasks_in_flight.insert(payload.task_id.clone());
+                tasks_in_flight.insert(payload.task_id.to_string());
 
                 if payload.state == TaskScheduleState::Started {
                     let Some(queue_key) = payload.queue_key.as_deref() else {
@@ -390,7 +391,7 @@ pub fn project_resume_plan<'a>(
                         provider_id: Some(provider_id.clone()),
                         model_id: Some(model_id.clone()),
                     };
-                    agent_turns_in_flight.insert(payload.task_id.clone(), turn);
+                    agent_turns_in_flight.insert(payload.task_id.to_string(), turn);
 
                     let child = child_sessions
                         .entry(agent_id.clone())
@@ -410,13 +411,13 @@ pub fn project_resume_plan<'a>(
             EventV1::TaskCancelled(payload) => {
                 update_id_watermark(
                     &mut id_watermarks.max_task_id,
-                    &payload.task_id,
+                    payload.task_id.as_str(),
                     TASK_ID_PREFIX,
                     "task",
                 )?;
-                tasks_in_flight.remove(&payload.task_id);
+                tasks_in_flight.remove(payload.task_id.as_str());
 
-                if let Some(turn) = agent_turns_in_flight.remove(&payload.task_id) {
+                if let Some(turn) = agent_turns_in_flight.remove(payload.task_id.as_str()) {
                     apply_agent_turn_terminal_state(
                         &mut child_sessions,
                         &turn,
@@ -426,19 +427,19 @@ pub fn project_resume_plan<'a>(
                         None,
                         &[],
                     );
-                    agent_turns_terminal_pending_late.insert(payload.task_id.clone(), turn);
+                    agent_turns_terminal_pending_late.insert(payload.task_id.to_string(), turn);
                 }
             }
             EventV1::TaskCompleted(payload) => {
                 update_id_watermark(
                     &mut id_watermarks.max_task_id,
-                    &payload.task_id,
+                    payload.task_id.as_str(),
                     TASK_ID_PREFIX,
                     "task",
                 )?;
-                tasks_in_flight.remove(&payload.task_id);
+                tasks_in_flight.remove(payload.task_id.as_str());
                 completed_tasks.insert(
-                    payload.task_id.clone(),
+                    payload.task_id.to_string(),
                     ResumeTaskSnapshot {
                         result_digest: Some(payload.result_digest.clone()),
                         metadata: payload.metadata.clone(),
@@ -455,7 +456,7 @@ pub fn project_resume_plan<'a>(
                     );
                 }
 
-                if let Some(turn) = agent_turns_in_flight.remove(&payload.task_id) {
+                if let Some(turn) = agent_turns_in_flight.remove(payload.task_id.as_str()) {
                     let timing = payload
                         .metadata
                         .as_ref()
@@ -483,15 +484,15 @@ pub fn project_resume_plan<'a>(
             EventV1::TaskResultLate(payload) => {
                 update_id_watermark(
                     &mut id_watermarks.max_task_id,
-                    &payload.task_id,
+                    payload.task_id.as_str(),
                     TASK_ID_PREFIX,
                     "task",
                 )?;
-                tasks_in_flight.remove(&payload.task_id);
+                tasks_in_flight.remove(payload.task_id.as_str());
 
                 if let Some(turn) = agent_turns_terminal_pending_late
-                    .remove(&payload.task_id)
-                    .or_else(|| agent_turns_in_flight.remove(&payload.task_id))
+                    .remove(payload.task_id.as_str())
+                    .or_else(|| agent_turns_in_flight.remove(payload.task_id.as_str()))
                 {
                     apply_agent_turn_terminal_state(
                         &mut child_sessions,
@@ -514,18 +515,18 @@ pub fn project_resume_plan<'a>(
                 }
             }
             EventV1::BackgroundTaskNotification(payload) => {
-                tasks_in_flight.remove(&payload.task_id);
+                tasks_in_flight.remove(payload.task_id.as_str());
                 tasks_in_flight.remove(&payload.terminal_task_id);
-                agent_turns_in_flight.remove(&payload.task_id);
+                agent_turns_in_flight.remove(payload.task_id.as_str());
                 agent_turns_in_flight.remove(&payload.terminal_task_id);
-                agent_turns_terminal_pending_late.remove(&payload.task_id);
+                agent_turns_terminal_pending_late.remove(payload.task_id.as_str());
                 agent_turns_terminal_pending_late.remove(&payload.terminal_task_id);
 
                 let child = child_sessions
-                    .entry(payload.child_session_id.clone())
+                    .entry(payload.child_session_id.to_string())
                     .or_insert_with(ResumeChildSessionSnapshot::default);
                 if child.parent_session_id.is_none() {
-                    child.parent_session_id = Some(payload.parent_session_id.clone());
+                    child.parent_session_id = Some(payload.parent_session_id.to_string());
                 }
                 child.latest_child_request_id = Some(payload.child_request_id.clone());
                 child.terminal_state =
@@ -547,7 +548,7 @@ pub fn project_resume_plan<'a>(
             EventV1::ProviderRequestStarted(payload) => {
                 update_id_watermark(
                     &mut id_watermarks.max_request_id,
-                    &payload.request_id,
+                    payload.request_id.as_str(),
                     REQUEST_ID_PREFIX,
                     "request",
                 )?;
@@ -557,7 +558,7 @@ pub fn project_resume_plan<'a>(
                     let child = child_sessions
                         .entry(agent_id.clone())
                         .or_insert_with(ResumeChildSessionSnapshot::default);
-                    child.latest_child_request_id = Some(payload.request_id.clone());
+                    child.latest_child_request_id = Some(payload.request_id.to_string());
                     child.provider_id = Some(payload.provider_id.clone());
                     child.model_id = Some(payload.model_id.clone());
                     if let Some(metadata) = payload.metadata.clone() {
@@ -571,7 +572,7 @@ pub fn project_resume_plan<'a>(
             EventV1::ProviderStreamDelta(payload) => {
                 update_id_watermark(
                     &mut id_watermarks.max_request_id,
-                    &payload.request_id,
+                    payload.request_id.as_str(),
                     REQUEST_ID_PREFIX,
                     "request",
                 )?;
@@ -579,7 +580,7 @@ pub fn project_resume_plan<'a>(
             EventV1::ProviderReasoningDelta(payload) => {
                 update_id_watermark(
                     &mut id_watermarks.max_request_id,
-                    &payload.request_id,
+                    payload.request_id.as_str(),
                     REQUEST_ID_PREFIX,
                     "request",
                 )?;
@@ -587,7 +588,7 @@ pub fn project_resume_plan<'a>(
             EventV1::ProviderRequestFinished(payload) => {
                 update_id_watermark(
                     &mut id_watermarks.max_request_id,
-                    &payload.request_id,
+                    payload.request_id.as_str(),
                     REQUEST_ID_PREFIX,
                     "request",
                 )?;
@@ -606,7 +607,7 @@ pub fn project_resume_plan<'a>(
             EventV1::AssistantMessageFinished(payload) => {
                 update_id_watermark(
                     &mut id_watermarks.max_request_id,
-                    &payload.request_id,
+                    payload.request_id.as_str(),
                     REQUEST_ID_PREFIX,
                     "request",
                 )?;
@@ -626,12 +627,12 @@ pub fn project_resume_plan<'a>(
             EventV1::ToolCallRequested(payload) => {
                 update_id_watermark(
                     &mut id_watermarks.max_tool_call_id,
-                    &payload.tool_call_id,
+                    payload.tool_call_id.as_str(),
                     TOOL_CALL_ID_PREFIX,
                     "tool call",
                 )?;
                 let tool_call = tool_calls
-                    .entry(payload.tool_call_id.clone())
+                    .entry(payload.tool_call_id.to_string())
                     .or_insert_with(ResumeToolCallSnapshot::default);
                 tool_call.tool_id = Some(payload.tool_id.clone());
                 tool_call.lifecycle_state = Some(ToolCallLifecycleState::Pending);
@@ -653,7 +654,7 @@ pub fn project_resume_plan<'a>(
                     merge_tool_call_metadata(tool_call, metadata.clone());
                     merge_tool_metadata_artifacts(
                         &mut session_artifacts,
-                        &payload.tool_call_id,
+                        payload.tool_call_id.as_str(),
                         tool_call,
                         metadata,
                     );
@@ -662,24 +663,24 @@ pub fn project_resume_plan<'a>(
             EventV1::ToolCallStarted(payload) => {
                 update_id_watermark(
                     &mut id_watermarks.max_tool_call_id,
-                    &payload.tool_call_id,
+                    payload.tool_call_id.as_str(),
                     TOOL_CALL_ID_PREFIX,
                     "tool call",
                 )?;
                 let tool_call = tool_calls
-                    .entry(payload.tool_call_id.clone())
+                    .entry(payload.tool_call_id.to_string())
                     .or_insert_with(ResumeToolCallSnapshot::default);
                 tool_call.lifecycle_state = Some(ToolCallLifecycleState::Running);
             }
             EventV1::ToolCallFinished(payload) => {
                 update_id_watermark(
                     &mut id_watermarks.max_tool_call_id,
-                    &payload.tool_call_id,
+                    payload.tool_call_id.as_str(),
                     TOOL_CALL_ID_PREFIX,
                     "tool call",
                 )?;
                 let tool_call = tool_calls
-                    .entry(payload.tool_call_id.clone())
+                    .entry(payload.tool_call_id.to_string())
                     .or_insert_with(ResumeToolCallSnapshot::default);
                 tool_call.lifecycle_state =
                     Some(ToolCallLifecycleState::from_finish_status(payload.status));
@@ -704,7 +705,7 @@ pub fn project_resume_plan<'a>(
                     merge_tool_call_metadata(tool_call, metadata.clone());
                     merge_tool_metadata_artifacts(
                         &mut session_artifacts,
-                        &payload.tool_call_id,
+                        payload.tool_call_id.as_str(),
                         tool_call,
                         metadata,
                     );
@@ -713,7 +714,7 @@ pub fn project_resume_plan<'a>(
             EventV1::ArtifactWritten(payload) => {
                 if let Some(tool_call_id) = payload.tool_call_id.as_ref() {
                     let tool_call = tool_calls
-                        .entry(tool_call_id.clone())
+                        .entry(tool_call_id.to_string())
                         .or_insert_with(ResumeToolCallSnapshot::default);
                     if let Some(tool_metadata) = payload.tool_metadata.as_ref() {
                         let invoked_tool_id = tool_call.tool_id.clone();
@@ -772,7 +773,7 @@ pub fn project_resume_plan<'a>(
             EventV1::UserMessageSubmitted(payload) => {
                 update_id_watermark(
                     &mut id_watermarks.max_request_id,
-                    &payload.request_id,
+                    payload.request_id.as_str(),
                     REQUEST_ID_PREFIX,
                     "request",
                 )?;

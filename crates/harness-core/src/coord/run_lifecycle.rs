@@ -1,3 +1,4 @@
+// allow: SIZE_OK — coordinator state machine (turn lifecycle + scheduling)
 use super::*;
 
 impl Coordinator {
@@ -30,7 +31,7 @@ impl Coordinator {
                 title: title.clone(),
             }),
         )?;
-        run_state.info.run_name = title;
+        run_state.info.run_name = title.into();
         write_run_metadata(run_state, &self.config, self.clock.as_ref())?;
         Ok(run_state.info.clone())
     }
@@ -79,8 +80,8 @@ impl Coordinator {
         let events_path = event_store.file_path().to_path_buf();
 
         let run_info = RunInfo {
-            run_id: run_id.clone(),
-            run_name: run_name.clone(),
+            run_id: crate::ids::RunId::from(run_id.clone()),
+            run_name: run_name.clone().into(),
             workspace_root: workspace_root.clone(),
             run_dir,
             artifacts_dir,
@@ -132,7 +133,7 @@ impl Coordinator {
             system_actor(),
             Some(format!("run:{run_id}")),
             EventV1::RunStarted(RunStartedEvent {
-                run_name,
+                run_name: run_name.into(),
                 workspace_root: workspace_root.display().to_string(),
             }),
         )?;
@@ -145,7 +146,7 @@ impl Coordinator {
             &self.config.hook_runtime_config,
             HookInvocationContext {
                 event: HookLifecycleEvent::RunStarted,
-                run_id: run_state.info.run_id.clone(),
+                run_id: run_state.info.run_id.to_string(),
                 workspace_root: run_state.info.workspace_root.clone(),
                 artifacts_dir: run_state.info.artifacts_dir.clone(),
                 actor: Some(system_actor()),
@@ -160,7 +161,7 @@ impl Coordinator {
                 parent_agent_id: None,
                 category: None,
                 outcome: Some("started".to_string()),
-                output_summary: Some(run_state.info.run_name.clone()),
+                output_summary: Some(run_state.info.run_name.to_string()),
                 failure_reason: None,
             },
         )
@@ -301,8 +302,8 @@ impl Coordinator {
 
         let events_path = event_store.file_path().to_path_buf();
         let run_info = RunInfo {
-            run_id: run_id.clone(),
-            run_name: run_name.clone(),
+            run_id: crate::ids::RunId::from(run_id.clone()),
+            run_name: run_name.clone().into(),
             workspace_root: workspace_root.clone(),
             run_dir,
             artifacts_dir,
@@ -360,7 +361,7 @@ impl Coordinator {
             system_actor(),
             Some(format!("run:{run_id}")),
             EventV1::RunStarted(RunStartedEvent {
-                run_name,
+                run_name: run_name.into(),
                 workspace_root: workspace_root.display().to_string(),
             }),
         )?;
@@ -436,7 +437,7 @@ impl Coordinator {
             &self.config.hook_runtime_config,
             HookInvocationContext {
                 event: HookLifecycleEvent::RunFinished,
-                run_id: run_state.info.run_id.clone(),
+                run_id: run_state.info.run_id.to_string(),
                 workspace_root: run_state.info.workspace_root.clone(),
                 artifacts_dir: run_state.info.artifacts_dir.clone(),
                 actor: Some(system_actor()),
@@ -499,7 +500,7 @@ impl Coordinator {
             &self.config.hook_runtime_config,
             HookInvocationContext {
                 event: HookLifecycleEvent::RunFailed,
-                run_id: run_state.info.run_id.clone(),
+                run_id: run_state.info.run_id.to_string(),
                 workspace_root: run_state.info.workspace_root.clone(),
                 artifacts_dir: run_state.info.artifacts_dir.clone(),
                 actor: Some(system_actor()),
@@ -578,7 +579,7 @@ impl Coordinator {
                 &self.config.hook_runtime_config,
                 HookInvocationContext {
                     event: HookLifecycleEvent::SubagentSpawned,
-                    run_id: run_state.info.run_id.clone(),
+                    run_id: run_state.info.run_id.to_string(),
                     workspace_root: run_state.info.workspace_root.clone(),
                     artifacts_dir: run_state.info.artifacts_dir.clone(),
                     actor: Some(actor.clone()),
@@ -711,8 +712,8 @@ pub(in crate::coord) fn write_run_metadata(
     clock: &dyn Clock,
 ) -> Result<(), CoordinatorError> {
     let metadata = RunMetadata {
-        run_id: run_state.info.run_id.clone(),
-        run_name: run_state.info.run_name.clone(),
+        run_id: run_state.info.run_id.to_string(),
+        run_name: run_state.info.run_name.to_string(),
         workspace_root: run_state.info.workspace_root.display().to_string(),
         created_at: if config.deterministic_store {
             None

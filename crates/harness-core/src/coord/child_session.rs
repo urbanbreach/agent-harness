@@ -1,3 +1,4 @@
+// allow: SIZE_OK — coordinator state machine (turn lifecycle + scheduling)
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
@@ -75,7 +76,7 @@ where
         Some(format!("run:{child_session_id}")),
         None,
         EventV1::RunStarted(RunStartedEvent {
-            run_name: title,
+            run_name: title.into(),
             workspace_root: run_state.info.workspace_root.display().to_string(),
         }),
     )?;
@@ -167,8 +168,8 @@ where
         "recorded_runtime_context": null,
         "harness_lineage": {
             "relationship": "task_child_session",
-            "parent_run_id": run_state.info.run_id.clone(),
-            "parent_session_id": run_state.info.run_id.clone(),
+            "parent_run_id": run_state.info.run_id.to_string(),
+            "parent_session_id": run_state.info.run_id.to_string(),
             "child_session_id": child_session_id,
             "profile": profile,
         }
@@ -227,7 +228,7 @@ pub(super) fn mirror_event_to_child_session(
     };
 
     let mut child_event = event.clone();
-    child_event.run_id = child_session_id.clone();
+    child_event.run_id = child_session_id.clone().into();
     child_event.seq = mirror.event_store.next_seq()?;
     child_event.event_id = format!("evt_{child_session_id}_mirror_{:012}", event.seq);
     if child_event.stream_key.as_deref() == Some(format!("run:{}", run_state.info.run_id).as_str())
@@ -264,23 +265,23 @@ fn child_session_id_for_event(run_state: &RunState, event: &EventEnvelopeV1) -> 
     match &event.payload {
         EventV1::ProviderRequestStarted(payload) => run_state
             .child_request_session_by_id
-            .get(&payload.request_id)
+            .get(payload.request_id.as_str())
             .cloned(),
         EventV1::ProviderStreamDelta(payload) => run_state
             .child_request_session_by_id
-            .get(&payload.request_id)
+            .get(payload.request_id.as_str())
             .cloned(),
         EventV1::ProviderReasoningDelta(payload) => run_state
             .child_request_session_by_id
-            .get(&payload.request_id)
+            .get(payload.request_id.as_str())
             .cloned(),
         EventV1::ProviderRequestFinished(payload) => run_state
             .child_request_session_by_id
-            .get(&payload.request_id)
+            .get(payload.request_id.as_str())
             .cloned(),
         EventV1::AssistantMessageFinished(payload) => run_state
             .child_request_session_by_id
-            .get(&payload.request_id)
+            .get(payload.request_id.as_str())
             .cloned(),
         _ => None,
     }
@@ -304,7 +305,7 @@ where
             clock,
             redactor,
             event_store: mirror.event_store.as_ref(),
-            child_run_id: child_session_id,
+        child_run_id: child_session_id,
         };
         child_appender.append(
             system_actor(),

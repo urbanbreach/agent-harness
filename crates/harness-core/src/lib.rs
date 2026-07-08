@@ -13,6 +13,7 @@ pub mod edit;
 pub mod event;
 pub mod extension_manifest;
 pub mod file_tag;
+pub mod ids;
 pub mod model_resolution;
 pub(crate) mod path_display;
 pub(crate) mod path_selector;
@@ -33,34 +34,5 @@ pub mod tool;
 pub mod transcript_projection;
 pub mod workspace;
 
-pub trait UnwrapOrAbort<T> {
-    fn unwrap_or_abort(self) -> T;
-}
-
-#[allow(
-    clippy::panic,
-    clippy::match_wild_err_arm,
-    reason = "replaces .expect() which also panics; abort() kills test processes"
-)]
-impl<T> UnwrapOrAbort<T> for Option<T> {
-    fn unwrap_or_abort(self) -> T {
-        match self {
-            Some(v) => v,
-            None => panic!("unwrap_or_abort on None"),
-        }
-    }
-}
-
-#[allow(
-    clippy::panic,
-    clippy::match_wild_err_arm,
-    reason = "replaces .expect() which also panics; abort() kills test processes"
-)]
-impl<T, E> UnwrapOrAbort<T> for Result<T, E> {
-    fn unwrap_or_abort(self) -> T {
-        match self {
-            Ok(v) => v,
-            Err(_) => panic!("unwrap_or_abort on Err"),
-        }
-    }
-}
+pub use harness_providers::UnwrapOrAbort;
+pub use tool::ToolResultExt;

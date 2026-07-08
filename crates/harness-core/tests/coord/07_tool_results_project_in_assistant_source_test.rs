@@ -340,13 +340,13 @@ async fn denied_or_pending_tool_never_starts_before_permission_resolution() {
         matches!(
             &event.payload,
             EventV1::ToolCallFinished(data)
-                if data.tool_call_id == tool_call_id && data.status == ToolCallStatus::Failed
+                if data.tool_call_id.as_str() == tool_call_id && data.status == ToolCallStatus::Failed
         )
     }));
     assert!(!events.iter().any(|event| {
         matches!(
             &event.payload,
-            EventV1::ToolCallStarted(data) if data.tool_call_id == tool_call_id
+            EventV1::ToolCallStarted(data) if data.tool_call_id.as_str() == tool_call_id
         )
     }));
 
@@ -385,7 +385,7 @@ async fn denied_or_pending_tool_never_starts_before_permission_resolution() {
                 matches!(
                     &event.payload,
                     EventV1::PermissionRequested(data)
-                        if data.tool_call_id.as_deref() == Some(pending_tool_call_id.as_str())
+                        if data.tool_call_id.as_ref().map(|id| id.as_str()) == Some(pending_tool_call_id.as_str())
                 )
             })
         },
@@ -394,7 +394,7 @@ async fn denied_or_pending_tool_never_starts_before_permission_resolution() {
     assert!(!pending_events.iter().any(|event| {
         matches!(
             &event.payload,
-            EventV1::ToolCallStarted(data) if data.tool_call_id == pending_tool_call_id
+            EventV1::ToolCallStarted(data) if data.tool_call_id.as_str() == pending_tool_call_id
         )
     }));
 
@@ -402,7 +402,7 @@ async fn denied_or_pending_tool_never_starts_before_permission_resolution() {
         .iter()
         .find_map(|event| match &event.payload {
             EventV1::PermissionRequested(data)
-                if data.tool_call_id.as_deref() == Some(pending_tool_call_id.as_str()) =>
+                if data.tool_call_id.as_ref().map(|id| id.as_str()) == Some(pending_tool_call_id.as_str()) =>
             {
                 Some(data.permission_id.clone())
             }
@@ -456,7 +456,7 @@ async fn ask_pending_tool_call_never_emits_started_before_approval() {
             matches!(
                 &event.payload,
                 EventV1::PermissionRequested(data)
-                    if data.tool_call_id.as_deref() == Some(tool_call_id.as_str())
+                    if data.tool_call_id.as_ref().map(|id| id.as_str()) == Some(tool_call_id.as_str())
             )
         })
     })
@@ -464,7 +464,7 @@ async fn ask_pending_tool_call_never_emits_started_before_approval() {
     assert!(!events.iter().any(|event| {
         matches!(
             &event.payload,
-            EventV1::ToolCallStarted(data) if data.tool_call_id == tool_call_id
+            EventV1::ToolCallStarted(data) if data.tool_call_id.as_str() == tool_call_id
         )
     }));
 
@@ -472,7 +472,7 @@ async fn ask_pending_tool_call_never_emits_started_before_approval() {
         .iter()
         .find_map(|event| match &event.payload {
             EventV1::PermissionRequested(data)
-                if data.tool_call_id.as_deref() == Some(tool_call_id.as_str()) =>
+                if data.tool_call_id.as_ref().map(|id| id.as_str()) == Some(tool_call_id.as_str()) =>
             {
                 Some(data.permission_id.clone())
             }

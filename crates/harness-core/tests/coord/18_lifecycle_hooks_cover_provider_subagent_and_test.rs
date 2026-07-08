@@ -156,7 +156,7 @@ async fn lifecycle_hooks_cover_provider_subagent_and_permission_events() {
         events.iter().any(|event| {
             matches!(
                 &event.payload,
-                EventV1::PermissionRequested(data) if data.tool_call_id.as_deref() == Some(tool_call_id.as_str())
+                EventV1::PermissionRequested(data) if data.tool_call_id.as_ref().map(|id| id.as_str()) == Some(tool_call_id.as_str())
             )
         })
     })
@@ -165,7 +165,7 @@ async fn lifecycle_hooks_cover_provider_subagent_and_permission_events() {
         .iter()
         .find_map(|event| match &event.payload {
             EventV1::PermissionRequested(data)
-                if data.tool_call_id.as_deref() == Some(tool_call_id.as_str()) =>
+                if data.tool_call_id.as_ref().map(|id| id.as_str()) == Some(tool_call_id.as_str()) =>
             {
                 Some(data.permission_id.clone())
             }
@@ -187,7 +187,7 @@ async fn lifecycle_hooks_cover_provider_subagent_and_permission_events() {
             matches!(
                 &event.payload,
                 EventV1::ToolCallFinished(data)
-                    if data.tool_call_id == tool_call_id
+                    if data.tool_call_id.as_str() == tool_call_id
                         && data.status == ToolCallStatus::Succeeded
             )
         })
@@ -266,7 +266,7 @@ fn replay_reconstructs_parallel_child_sessions_and_timings() {
                 run_id,
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/workspace/project".to_string(),
                 }),
             ),
@@ -303,7 +303,7 @@ fn replay_reconstructs_parallel_child_sessions_and_timings() {
                 EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
                 Some("req_000010"),
                 EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                    tool_call_id: "toolcall_000201".to_string(),
+                    tool_call_id: "toolcall_000201".into(),
                     tool_id: "agent.spawn".to_string(),
                     args_summary: "{\"task\":\"child A\"}".to_string(),
                     args_digest: "digest-tool-a-req".to_string(),
@@ -323,7 +323,7 @@ fn replay_reconstructs_parallel_child_sessions_and_timings() {
                 EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
                 Some("req_000010"),
                 EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                    tool_call_id: "toolcall_000201".to_string(),
+                    tool_call_id: "toolcall_000201".into(),
                     status: ToolCallStatus::Succeeded,
                     output_summary: Some("child A scheduled".to_string()),
                     output_digest: Some("digest-tool-a-out".to_string()),
@@ -348,7 +348,7 @@ fn replay_reconstructs_parallel_child_sessions_and_timings() {
                 EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
                 Some("req_000010"),
                 EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                    tool_call_id: "toolcall_000202".to_string(),
+                    tool_call_id: "toolcall_000202".into(),
                     tool_id: "agent.spawn".to_string(),
                     args_summary: "{\"task\":\"child B\"}".to_string(),
                     args_digest: "digest-tool-b-req".to_string(),
@@ -368,7 +368,7 @@ fn replay_reconstructs_parallel_child_sessions_and_timings() {
                 EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
                 Some("req_000010"),
                 EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                    tool_call_id: "toolcall_000202".to_string(),
+                    tool_call_id: "toolcall_000202".into(),
                     status: ToolCallStatus::Succeeded,
                     output_summary: Some("child B scheduled".to_string()),
                     output_digest: Some("digest-tool-b-out".to_string()),
@@ -393,7 +393,7 @@ fn replay_reconstructs_parallel_child_sessions_and_timings() {
                 EventActor::new(ActorKind::Worker, Some("agent_000101".to_string())),
                 Some("req_000101"),
                 EventV1::TaskScheduled(TaskScheduledEvent {
-                    task_id: "task_000301".to_string(),
+                    task_id: "task_000301".to_string().into(),
                     state: TaskScheduleState::Started,
                     queue_key: Some("provider_model:mock:model-a".to_string()),
                 }),
@@ -404,7 +404,7 @@ fn replay_reconstructs_parallel_child_sessions_and_timings() {
                 EventActor::new(ActorKind::Worker, Some("agent_000101".to_string())),
                 Some("req_000101"),
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req_000101".to_string(),
+                    request_id: "req_000101".into(),
                     provider_id: "mock".to_string(),
                     model_id: "model-a".to_string(),
                     prompt_summary: "child a prompt".to_string(),
@@ -418,7 +418,7 @@ fn replay_reconstructs_parallel_child_sessions_and_timings() {
                 EventActor::new(ActorKind::Worker, Some("agent_000101".to_string())),
                 Some("req_000101"),
                 EventV1::TaskCompleted(TaskCompletedEvent {
-                    task_id: "task_000301".to_string(),
+                    task_id: "task_000301".to_string().into(),
                     result_summary: "child a done".to_string(),
                     result_digest: "digest-child-a-done".to_string(),
                     metadata: Some(TaskCompletionMetadata {
@@ -439,7 +439,7 @@ fn replay_reconstructs_parallel_child_sessions_and_timings() {
                 EventActor::new(ActorKind::Worker, Some("agent_000102".to_string())),
                 Some("req_000102"),
                 EventV1::TaskScheduled(TaskScheduledEvent {
-                    task_id: "task_000302".to_string(),
+                    task_id: "task_000302".to_string().into(),
                     state: TaskScheduleState::Started,
                     queue_key: Some("provider_model:mock:model-b".to_string()),
                 }),
@@ -450,7 +450,7 @@ fn replay_reconstructs_parallel_child_sessions_and_timings() {
                 EventActor::new(ActorKind::Worker, Some("agent_000102".to_string())),
                 Some("req_000102"),
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req_000102".to_string(),
+                    request_id: "req_000102".into(),
                     provider_id: "mock".to_string(),
                     model_id: "model-b".to_string(),
                     prompt_summary: "child b prompt".to_string(),
@@ -464,7 +464,7 @@ fn replay_reconstructs_parallel_child_sessions_and_timings() {
                 EventActor::new(ActorKind::Worker, Some("agent_000102".to_string())),
                 Some("req_000102"),
                 EventV1::TaskCancelled(TaskCancelledEvent {
-                    task_id: "task_000302".to_string(),
+                    task_id: "task_000302".to_string().into(),
                     reason: "cancelled while running".to_string(),
                     task_scope: Some(harness_core::event::TaskTerminalScope::AgentTurn),
                 }),
@@ -475,7 +475,7 @@ fn replay_reconstructs_parallel_child_sessions_and_timings() {
                 EventActor::new(ActorKind::Worker, Some("agent_000102".to_string())),
                 Some("req_000102"),
                 EventV1::TaskResultLate(TaskResultLateEvent {
-                    task_id: "task_000302".to_string(),
+                    task_id: "task_000302".to_string().into(),
                     result_digest: "digest-child-b-late".to_string(),
                 }),
             ),

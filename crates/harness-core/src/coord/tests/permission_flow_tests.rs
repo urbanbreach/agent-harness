@@ -45,7 +45,7 @@ pub(super) async fn allow_always_records_grant_and_authorizes_matching_future_sh
             matches!(
                 &event.payload,
                 EventV1::PermissionRequested(data)
-                    if data.tool_call_id.as_deref() == Some(first_tool_call_id.as_str())
+                    if data.tool_call_id.as_ref().map(|id| id.as_str()) == Some(first_tool_call_id.as_str())
             )
         },
     )
@@ -54,7 +54,7 @@ pub(super) async fn allow_always_records_grant_and_authorizes_matching_future_sh
         .iter()
         .find_map(|event| match &event.payload {
             EventV1::PermissionRequested(data)
-                if data.tool_call_id.as_deref() == Some(first_tool_call_id.as_str()) =>
+                if data.tool_call_id.as_ref().map(|id| id.as_str()) == Some(first_tool_call_id.as_str()) =>
             {
                 Some(data.permission_id.clone())
             }
@@ -96,7 +96,7 @@ pub(super) async fn allow_always_records_grant_and_authorizes_matching_future_sh
         |event| {
             matches!(
                 &event.payload,
-                EventV1::ToolCallStarted(data) if data.tool_call_id == second_tool_call_id
+                EventV1::ToolCallStarted(data) if data.tool_call_id.as_str() == second_tool_call_id
             )
         },
     )
@@ -115,13 +115,13 @@ pub(super) async fn allow_always_records_grant_and_authorizes_matching_future_sh
     assert!(events.iter().any(|event| {
         matches!(
             &event.payload,
-            EventV1::ToolCallStarted(data) if data.tool_call_id == first_tool_call_id
+            EventV1::ToolCallStarted(data) if data.tool_call_id.as_str() == first_tool_call_id
         )
     }));
     assert!(events.iter().any(|event| {
         matches!(
             &event.payload,
-            EventV1::ToolCallStarted(data) if data.tool_call_id == second_tool_call_id
+            EventV1::ToolCallStarted(data) if data.tool_call_id.as_str() == second_tool_call_id
         )
     }));
 }
@@ -161,7 +161,7 @@ pub(super) async fn allow_always_shell_run_grant_does_not_authorize_changed_args
             matches!(
                 &event.payload,
                 EventV1::PermissionRequested(data)
-                    if data.tool_call_id.as_deref() == Some(first_tool_call_id.as_str())
+                    if data.tool_call_id.as_ref().map(|id| id.as_str()) == Some(first_tool_call_id.as_str())
             )
         },
     )
@@ -169,7 +169,7 @@ pub(super) async fn allow_always_shell_run_grant_does_not_authorize_changed_args
     .iter()
     .find_map(|event| match &event.payload {
         EventV1::PermissionRequested(data)
-            if data.tool_call_id.as_deref() == Some(first_tool_call_id.as_str()) =>
+            if data.tool_call_id.as_ref().map(|id| id.as_str()) == Some(first_tool_call_id.as_str()) =>
         {
             Some(data.permission_id.clone())
         }
@@ -212,7 +212,7 @@ pub(super) async fn allow_always_shell_run_grant_does_not_authorize_changed_args
             matches!(
                 &event.payload,
                 EventV1::PermissionRequested(data)
-                    if data.tool_call_id.as_deref() == Some(second_tool_call_id.as_str())
+                    if data.tool_call_id.as_ref().map(|id| id.as_str()) == Some(second_tool_call_id.as_str())
             )
         },
     )
@@ -228,7 +228,7 @@ pub(super) async fn allow_always_shell_run_grant_does_not_authorize_changed_args
     assert!(!events.iter().any(|event| {
         matches!(
             &event.payload,
-            EventV1::ToolCallStarted(data) if data.tool_call_id == second_tool_call_id
+            EventV1::ToolCallStarted(data) if data.tool_call_id.as_str() == second_tool_call_id
         )
     }));
 }
@@ -272,7 +272,7 @@ pub(super) async fn static_deny_overrides_permission_grant() {
             matches!(
                 &event.payload,
                 EventV1::PermissionRequested(data)
-                    if data.tool_call_id.as_deref() == Some(granted_tool_call_id.as_str())
+                    if data.tool_call_id.as_ref().map(|id| id.as_str()) == Some(granted_tool_call_id.as_str())
             )
         },
     )
@@ -280,7 +280,7 @@ pub(super) async fn static_deny_overrides_permission_grant() {
     .iter()
     .find_map(|event| match &event.payload {
         EventV1::PermissionRequested(data)
-            if data.tool_call_id.as_deref() == Some(granted_tool_call_id.as_str()) =>
+            if data.tool_call_id.as_ref().map(|id| id.as_str()) == Some(granted_tool_call_id.as_str()) =>
         {
             Some(data.permission_id.clone())
         }
@@ -327,7 +327,7 @@ pub(super) async fn static_deny_overrides_permission_grant() {
     let denied_tool_started = events.iter().any(|event| {
         matches!(
             &event.payload,
-            EventV1::ToolCallStarted(data) if data.tool_call_id == "toolcall_000002"
+            EventV1::ToolCallStarted(data) if data.tool_call_id.as_str() == "toolcall_000002"
         )
     });
     assert!(!denied_tool_started);
@@ -365,7 +365,7 @@ pub(super) async fn permission_grant_event_does_not_persist_raw_shell_command_se
             matches!(
                 &event.payload,
                 EventV1::PermissionRequested(data)
-                    if data.tool_call_id.as_deref() == Some(tool_call_id.as_str())
+                    if data.tool_call_id.as_ref().map(|id| id.as_str()) == Some(tool_call_id.as_str())
             )
         },
     )
@@ -373,7 +373,7 @@ pub(super) async fn permission_grant_event_does_not_persist_raw_shell_command_se
     .iter()
     .find_map(|event| match &event.payload {
         EventV1::PermissionRequested(data)
-            if data.tool_call_id.as_deref() == Some(tool_call_id.as_str()) =>
+            if data.tool_call_id.as_ref().map(|id| id.as_str()) == Some(tool_call_id.as_str()) =>
         {
             Some(data.permission_id.clone())
         }
@@ -443,7 +443,7 @@ pub(super) async fn perm_timeout_path_denies_deterministically() {
             matches!(
                 &event.payload,
                 EventV1::ToolCallFinished(data)
-                    if data.tool_call_id == tool_call_id && data.status == ToolCallStatus::Failed
+                    if data.tool_call_id.as_str() == tool_call_id && data.status == ToolCallStatus::Failed
             )
         },
     )
@@ -463,13 +463,13 @@ pub(super) async fn perm_timeout_path_denies_deterministically() {
         matches!(
             &event.payload,
             EventV1::ToolCallFinished(data)
-                if data.tool_call_id == tool_call_id && data.status == ToolCallStatus::Failed
+                if data.tool_call_id.as_str() == tool_call_id && data.status == ToolCallStatus::Failed
         )
     }));
     assert!(!events.iter().any(|event| {
         matches!(
             &event.payload,
-            EventV1::ToolCallStarted(data) if data.tool_call_id == tool_call_id
+            EventV1::ToolCallStarted(data) if data.tool_call_id.as_str() == tool_call_id
         )
     }));
 }

@@ -492,7 +492,7 @@ fn find_requested(events: &[EventEnvelopeV1], tool_call_id: &str) -> ToolCallReq
     events
         .iter()
         .find_map(|event| match &event.payload {
-            EventV1::ToolCallRequested(payload) if payload.tool_call_id == tool_call_id => {
+            EventV1::ToolCallRequested(payload) if payload.tool_call_id.as_str() == tool_call_id => {
                 Some(payload.clone())
             }
             _ => None,
@@ -504,7 +504,7 @@ fn find_finished(events: &[EventEnvelopeV1], tool_call_id: &str) -> ToolCallFini
     events
         .iter()
         .find_map(|event| match &event.payload {
-            EventV1::ToolCallFinished(payload) if payload.tool_call_id == tool_call_id => {
+            EventV1::ToolCallFinished(payload) if payload.tool_call_id.as_str() == tool_call_id => {
                 Some(payload.clone())
             }
             _ => None,

@@ -1,3 +1,4 @@
+// allow: SIZE_OK — hashline editing (anchor validation + atomic apply)
 use crate::UnwrapOrAbort;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;

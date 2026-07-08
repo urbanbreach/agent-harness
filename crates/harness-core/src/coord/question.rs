@@ -154,7 +154,7 @@ impl super::Coordinator {
                 &self.config.hook_runtime_config,
                 HookInvocationContext {
                     event: HookLifecycleEvent::PermissionRequested,
-                    run_id: run_state.info.run_id.clone(),
+                    run_id: run_state.info.run_id.to_string(),
                     workspace_root: run_state.info.workspace_root.clone(),
                     artifacts_dir: run_state.info.artifacts_dir.clone(),
                     actor: Some(actor.clone()),
@@ -204,7 +204,7 @@ impl super::Coordinator {
                     &self.config.hook_runtime_config,
                     HookInvocationContext {
                         event: HookLifecycleEvent::PermissionResolved,
-                        run_id: run_state.info.run_id.clone(),
+                        run_id: run_state.info.run_id.to_string(),
                         workspace_root: run_state.info.workspace_root.clone(),
                         artifacts_dir: run_state.info.artifacts_dir.clone(),
                         actor: Some(actor.clone()),

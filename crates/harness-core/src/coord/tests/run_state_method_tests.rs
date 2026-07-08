@@ -135,7 +135,7 @@ fn queued_agent_turn_fixture(
     QueuedAgentTurn {
         task_id: task_id.to_string(),
         agent_id: agent_id.to_string(),
-        session_id: "run_test".to_string(),
+        session_id: "run_test".into(),
         request_id: format!("req_{task_id}"),
         profile: test_agent_profile(agent_id),
         request: crate::agent::AgentRequest {

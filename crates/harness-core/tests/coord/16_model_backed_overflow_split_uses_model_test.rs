@@ -394,7 +394,7 @@ async fn resume_rejects_missing_user_message_when_prompt_summary_is_truncated() 
                 run_id,
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/workspace/project".to_string(),
                 }),
             ),
@@ -413,7 +413,7 @@ async fn resume_rejects_missing_user_message_when_prompt_summary_is_truncated() 
                 EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
                 Some("req_000001"),
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req_000001".to_string(),
+                    request_id: "req_000001".into(),
                     provider_id: "mock".to_string(),
                     model_id: "model-1".to_string(),
                     prompt_summary: "truncated historical prompt…".to_string(),
@@ -427,7 +427,7 @@ async fn resume_rejects_missing_user_message_when_prompt_summary_is_truncated() 
                 EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
                 Some("req_000001"),
                 EventV1::ProviderStreamDelta(harness_core::event::ProviderStreamDeltaEvent {
-                    request_id: "req_000001".to_string(),
+                    request_id: "req_000001".into(),
                     delta: "first answer".to_string(),
                 }),
             ),
@@ -437,7 +437,7 @@ async fn resume_rejects_missing_user_message_when_prompt_summary_is_truncated() 
                 EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
                 Some("req_000001"),
                 EventV1::TaskCompleted(TaskCompletedEvent {
-                    task_id: "task_000001".to_string(),
+                    task_id: "task_000001".to_string().into(),
                     result_summary: "first answer".to_string(),
                     result_digest: "digest-task-1".to_string(),
                     metadata: None,

@@ -1,3 +1,4 @@
+// allow: SIZE_OK — extension manifest V1 parser (schema version + descriptor fields + validation)
 use std::collections::BTreeSet;
 
 use schemars::JsonSchema;

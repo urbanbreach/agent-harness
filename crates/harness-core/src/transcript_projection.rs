@@ -1,3 +1,4 @@
+// allow: SIZE_OK — transcript projection (pure replay state derivation)
 use std::collections::BTreeMap;
 
 use crate::event::{EventEnvelopeV1, EventV1, TaskScheduleState, ToolCallStatus};
@@ -31,13 +32,13 @@ pub fn project_transcript(
         projection
             .session
             .run_id
-            .get_or_insert(event.run_id.clone());
+            .get_or_insert(event.run_id.to_string());
         projection.session.max_seq = Some(event.seq);
 
         match &event.payload {
             EventV1::RunStarted(payload) => {
-                projection.session.run_id = Some(event.run_id.clone());
-                projection.session.run_name = Some(payload.run_name.clone());
+                projection.session.run_id = Some(event.run_id.to_string());
+                projection.session.run_name = Some(payload.run_name.to_string());
                 projection.session.workspace_root = Some(payload.workspace_root.clone());
                 projection.session.status = TranscriptRunStatus::Running;
                 projection.session.status_reason = None;
@@ -51,7 +52,7 @@ pub fn project_transcript(
                         agent_id: event.actor.agent_id.clone(),
                         profile: None,
                         parent_agent_id: None,
-                        summary: Some(payload.run_name.clone()),
+                        summary: Some(payload.run_name.to_string()),
                         error: None,
                         reason: None,
                         provenance: ProvenanceRange::from_event(event),
@@ -220,12 +221,12 @@ pub fn project_transcript(
                 let index = projection.messages.len();
                 projection.messages.push(message);
                 request_locations
-                    .entry(payload.request_id.clone())
+                    .entry(payload.request_id.to_string())
                     .or_default()
                     .user_message_index = Some(index);
             }
             EventV1::ProviderRequestStarted(payload) => {
-                let request_id = provider_turn_request_id(event, &payload.request_id);
+                let request_id = provider_turn_request_id(event, payload.request_id.as_str());
                 let message_index = ensure_assistant_message(
                     &mut projection,
                     &mut request_locations,
@@ -235,7 +236,7 @@ pub fn project_transcript(
                 let message = &mut projection.messages[message_index];
                 message.state = ProjectedMessageState::Streaming;
                 let provider = message.provider.get_or_insert_with(Default::default);
-                provider.provider_request_id = Some(payload.request_id.clone());
+                provider.provider_request_id = Some(payload.request_id.to_string());
                 provider.provider_id = Some(payload.provider_id.clone());
                 provider.model_id = Some(payload.model_id.clone());
                 provider.prompt_summary = Some(payload.prompt_summary.clone());
@@ -243,7 +244,7 @@ pub fn project_transcript(
                 message.provenance.extend(event);
             }
             EventV1::ProviderStreamDelta(payload) => {
-                let request_id = provider_turn_request_id(event, &payload.request_id);
+                let request_id = provider_turn_request_id(event, payload.request_id.as_str());
                 append_or_extend_assistant_text(
                     &mut projection,
                     &mut request_locations,
@@ -254,7 +255,7 @@ pub fn project_transcript(
                 );
             }
             EventV1::ProviderReasoningDelta(payload) => {
-                let request_id = provider_turn_request_id(event, &payload.request_id);
+                let request_id = provider_turn_request_id(event, payload.request_id.as_str());
                 append_or_extend_assistant_text(
                     &mut projection,
                     &mut request_locations,
@@ -265,7 +266,7 @@ pub fn project_transcript(
                 );
             }
             EventV1::ProviderRequestFinished(payload) => {
-                let request_id = provider_turn_request_id(event, &payload.request_id);
+                let request_id = provider_turn_request_id(event, payload.request_id.as_str());
                 let message_index = ensure_assistant_message(
                     &mut projection,
                     &mut request_locations,
@@ -279,7 +280,7 @@ pub fn project_transcript(
                     ProjectedMessageState::Complete
                 };
                 let provider = message.provider.get_or_insert_with(Default::default);
-                provider.provider_request_id = Some(payload.request_id.clone());
+                provider.provider_request_id = Some(payload.request_id.to_string());
                 provider.finish_reason = Some(payload.finish_reason.clone());
                 provider.output_digest = payload.output_digest.clone();
                 if let Some(metadata) = payload.metadata.as_ref() {
@@ -290,7 +291,7 @@ pub fn project_transcript(
                 message.provenance.extend(event);
             }
             EventV1::AssistantMessageFinished(payload) => {
-                let request_id = provider_turn_request_id(event, &payload.request_id);
+                let request_id = provider_turn_request_id(event, payload.request_id.as_str());
                 let message_index = ensure_assistant_message(
                     &mut projection,
                     &mut request_locations,
@@ -443,7 +444,7 @@ pub fn project_transcript(
                     push_unique_lineage(&mut projection.session_lineage, lineage.clone());
                 }
                 let metadata_artifacts = artifacts_from_tool_metadata(
-                    &payload.tool_call_id,
+                    payload.tool_call_id.as_str(),
                     payload.metadata.as_ref(),
                     event,
                 );
@@ -485,7 +486,7 @@ pub fn project_transcript(
                         event,
                     );
                     tool_locations.insert(
-                        payload.tool_call_id.clone(),
+                        payload.tool_call_id.to_string(),
                         PartLocation {
                             message_index,
                             part_index,
@@ -498,7 +499,7 @@ pub fn project_transcript(
                         ProjectedPart::ToolCall(Box::new(tool_part)),
                     );
                     tool_locations.insert(
-                        payload.tool_call_id.clone(),
+                        payload.tool_call_id.to_string(),
                         PartLocation {
                             message_index,
                             part_index: 0,
@@ -507,7 +508,7 @@ pub fn project_transcript(
                 }
             }
             EventV1::ToolCallStarted(payload) => {
-                if let Some(location) = tool_locations.get(&payload.tool_call_id).copied() {
+                if let Some(location) = tool_locations.get(payload.tool_call_id.as_str()).copied() {
                     if let Some(tool_call) = tool_call_part_mut(&mut projection, location) {
                         tool_call.state = ProjectedToolCallState::Running;
                         tool_call.started_seq = Some(event.seq);
@@ -521,13 +522,13 @@ pub fn project_transcript(
                         &mut projection,
                         event,
                         ProjectedPart::ToolCall(Box::new(placeholder_tool_call_part(
-                            &payload.tool_call_id,
+                            payload.tool_call_id.as_str(),
                             ProjectedToolCallState::Running,
                             event,
                         ))),
                     );
                     tool_locations.insert(
-                        payload.tool_call_id.clone(),
+                        payload.tool_call_id.to_string(),
                         PartLocation {
                             message_index,
                             part_index: 0,
@@ -537,7 +538,7 @@ pub fn project_transcript(
             }
             EventV1::ToolCallFinished(payload) => {
                 let metadata_artifacts = artifacts_from_tool_metadata(
-                    &payload.tool_call_id,
+                    payload.tool_call_id.as_str(),
                     payload.metadata.as_ref(),
                     event,
                 );
@@ -552,7 +553,7 @@ pub fn project_transcript(
                     push_unique_lineage(&mut projection.session_lineage, lineage.clone());
                 }
 
-                if let Some(location) = tool_locations.get(&payload.tool_call_id).copied() {
+                if let Some(location) = tool_locations.get(payload.tool_call_id.as_str()).copied() {
                     if let Some(tool_call) = tool_call_part_mut(&mut projection, location) {
                         tool_call.state = match payload.status {
                             ToolCallStatus::Succeeded => ProjectedToolCallState::Succeeded,
@@ -581,7 +582,7 @@ pub fn project_transcript(
                         .extend(event);
                 } else {
                     let mut tool_part = placeholder_tool_call_part(
-                        &payload.tool_call_id,
+                        payload.tool_call_id.as_str(),
                         match payload.status {
                             ToolCallStatus::Succeeded => ProjectedToolCallState::Succeeded,
                             ToolCallStatus::Failed => ProjectedToolCallState::Failed,
@@ -605,7 +606,7 @@ pub fn project_transcript(
                         ProjectedPart::ToolCall(Box::new(tool_part)),
                     );
                     tool_locations.insert(
-                        payload.tool_call_id.clone(),
+                        payload.tool_call_id.to_string(),
                         PartLocation {
                             message_index,
                             part_index: 0,
@@ -640,7 +641,7 @@ pub fn project_transcript(
                     },
                 );
                 if let Some(tool_call_id) = payload.tool_call_id.as_ref() {
-                    if let Some(tool_location) = tool_locations.get(tool_call_id).copied() {
+                    if let Some(tool_location) = tool_locations.get(tool_call_id.as_str()).copied() {
                         if let Some(tool_call) = tool_call_part_mut(&mut projection, tool_location)
                         {
                             tool_call.permissions.push(part);
@@ -691,7 +692,7 @@ pub fn project_transcript(
                 let artifact = artifact_from_written(payload, event);
                 push_unique_artifact(&mut projection.artifacts, artifact.clone());
                 if let Some(tool_call_id) = payload.tool_call_id.as_ref() {
-                    if let Some(location) = tool_locations.get(tool_call_id).copied() {
+                    if let Some(location) = tool_locations.get(tool_call_id.as_str()).copied() {
                         if let Some(tool_call) = tool_call_part_mut(&mut projection, location) {
                             push_unique_artifact(&mut tool_call.artifacts, artifact.clone());
                             tool_call.provenance.extend(event);

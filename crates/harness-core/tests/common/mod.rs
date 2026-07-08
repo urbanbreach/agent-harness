@@ -43,7 +43,7 @@ pub async fn wait_for_tool_call_finish(events_path: &Path, tool_call_id: &str) {
         if load_events(events_path).iter().any(|event| {
             matches!(
                 &event.payload,
-                EventV1::ToolCallFinished(payload) if payload.tool_call_id == tool_call_id
+                EventV1::ToolCallFinished(payload) if payload.tool_call_id.as_str() == tool_call_id
             )
         }) {
             return;

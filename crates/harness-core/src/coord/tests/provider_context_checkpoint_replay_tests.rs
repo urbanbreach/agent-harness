@@ -12,7 +12,7 @@ pub(crate) fn replay_equivalence_after_failed_turn_pre_prompt_compaction_resume(
         metadata: ProviderContextCheckpointMetadata {
             checkpoint_id: "checkpoint_000012".to_string(),
             agent_id: "agent_000001".to_string(),
-            run_id: run_id.to_string(),
+            run_id: run_id.to_string().into(),
             through_seq: 11,
             through_request_id: Some("req_000002".to_string()),
             provider_id: Some("default".to_string()),
@@ -34,7 +34,7 @@ pub(crate) fn replay_equivalence_after_failed_turn_pre_prompt_compaction_resume(
             status: ProviderConversationTurnStatus::Failed,
             failure_stage: Some("provider_error".to_string()),
             failure_reason: Some("provider exploded".to_string()),
-            request_id: Some("req_000002".to_string()),
+            request_id: Some("req_000002".into()),
             first_seq: Some(6),
             last_seq: Some(9),
             ..ProviderConversationTurn::default()
@@ -42,7 +42,7 @@ pub(crate) fn replay_equivalence_after_failed_turn_pre_prompt_compaction_resume(
         pruned_tool_artifacts: Vec::new(),
         facts: ProviderCompactionFacts {
             compacted_turns: vec![crate::agent::ProviderCompactionTurnFact {
-                request_id: Some("req_000001".to_string()),
+                request_id: Some("req_000001".into()),
                 first_seq: Some(2),
                 last_seq: Some(5),
                 user_excerpt: "first successful question".to_string(),
@@ -114,7 +114,7 @@ pub(crate) fn replay_equivalence_after_failed_turn_pre_prompt_compaction_resume(
                 EventActor::new(ActorKind::System, Some("coordinator".to_string())),
                 None,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/workspace/project".to_string(),
                 }),
             ),
@@ -124,7 +124,7 @@ pub(crate) fn replay_equivalence_after_failed_turn_pre_prompt_compaction_resume(
                 EventActor::new(ActorKind::User, None),
                 None,
                 EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-                    request_id: "req_000001".to_string(),
+                    request_id: "req_000001".into(),
                     text: "first successful question".to_string(),
                 }),
             ),
@@ -134,7 +134,7 @@ pub(crate) fn replay_equivalence_after_failed_turn_pre_prompt_compaction_resume(
                 EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
                 Some("req_000001"),
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req_000001".to_string(),
+                    request_id: "req_000001".into(),
                     provider_id: "default".to_string(),
                     model_id: "model-1".to_string(),
                     prompt_summary: "first successful question".to_string(),
@@ -148,7 +148,7 @@ pub(crate) fn replay_equivalence_after_failed_turn_pre_prompt_compaction_resume(
                 EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
                 Some("req_000001"),
                 EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                    tool_call_id: "toolcall_read".to_string(),
+                    tool_call_id: "toolcall_read".into(),
                     status: ToolCallStatus::Succeeded,
                     output_summary: Some("read before failure".to_string()),
                     output_digest: Some("digest-read".to_string()),
@@ -162,7 +162,7 @@ pub(crate) fn replay_equivalence_after_failed_turn_pre_prompt_compaction_resume(
                 EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
                 Some("req_000001"),
                 EventV1::TaskCompleted(TaskCompletedEvent {
-                    task_id: "task_000001".to_string(),
+                    task_id: "task_000001".to_string().into(),
                     result_summary: "first successful answer".to_string(),
                     result_digest: "digest-task-1".to_string(),
                     metadata: None,
@@ -174,7 +174,7 @@ pub(crate) fn replay_equivalence_after_failed_turn_pre_prompt_compaction_resume(
                 EventActor::new(ActorKind::User, None),
                 None,
                 EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-                    request_id: "req_000002".to_string(),
+                    request_id: "req_000002".into(),
                     text: "partial failing question".to_string(),
                 }),
             ),
@@ -184,7 +184,7 @@ pub(crate) fn replay_equivalence_after_failed_turn_pre_prompt_compaction_resume(
                 EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
                 Some("req_000002"),
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req_000002".to_string(),
+                    request_id: "req_000002".into(),
                     provider_id: "default".to_string(),
                     model_id: "model-1".to_string(),
                     prompt_summary: "partial failing question".to_string(),
@@ -198,7 +198,7 @@ pub(crate) fn replay_equivalence_after_failed_turn_pre_prompt_compaction_resume(
                 EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
                 Some("req_000002"),
                 EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
-                    request_id: "req_000002".to_string(),
+                    request_id: "req_000002".into(),
                     delta: "partial provider answer before error".to_string(),
                 }),
             ),
@@ -208,7 +208,7 @@ pub(crate) fn replay_equivalence_after_failed_turn_pre_prompt_compaction_resume(
                 EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
                 Some("req_000002"),
                 EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
-                    request_id: "req_000002".to_string(),
+                    request_id: "req_000002".into(),
                     finish_reason: "error".to_string(),
                     output_digest: None,
                     usage: None,
@@ -234,7 +234,7 @@ pub(crate) fn replay_equivalence_after_failed_turn_pre_prompt_compaction_resume(
                 EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
                 Some("req_000002"),
                 EventV1::TaskCancelled(TaskCancelledEvent {
-                    task_id: "task_000002".to_string(),
+                    task_id: "task_000002".to_string().into(),
                     reason: "provider exploded".to_string(),
                     task_scope: None,
                 }),

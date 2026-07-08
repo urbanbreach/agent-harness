@@ -1,3 +1,4 @@
+// allow: SIZE_OK — model catalog (merge thinking + variant resolution + capability inference + fallback metadata)
 use crate::model_resolution::{resolve_model, ModelResolution, ModelResolutionInput};
 
 use super::model_selection::{resolve_agent_model_selection, resolve_named_model_profile};

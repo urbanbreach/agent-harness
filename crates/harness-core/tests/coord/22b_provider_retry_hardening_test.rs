@@ -40,7 +40,7 @@ async fn provider_retry_cancellation_wins_during_backoff() {
         .await
         .unwrap_or_abort();
 
-    let task_id: String = wait_until(Duration::from_millis(700), || async {
+    let task_id = wait_until(Duration::from_millis(700), || async {
         load_events(&run.events_path)
             .into_iter()
             .find_map(|event| match &event.payload {
@@ -235,7 +235,7 @@ async fn old_replay_logs_without_provider_retry_metadata_replay_identically() {
         .append(harness_core::store::EventEnvelopeWithoutSeqV1 {
             schema_version: SCHEMA_VERSION,
             event_id: "evt-run-started".to_string(),
-            run_id: run_id.to_string(),
+            run_id: run_id.to_string().into(),
             mono_ms: 1,
             ts: None,
             actor: EventActor::new(ActorKind::Supervisor, None),
@@ -243,7 +243,7 @@ async fn old_replay_logs_without_provider_retry_metadata_replay_identically() {
             causation_id: None,
             stream_key: None,
             payload: EventV1::RunStarted(harness_core::event::RunStartedEvent {
-                run_name: run_id.to_string(),
+                run_name: run_id.to_string().into(),
                 workspace_root: "/workspace/project".to_string(),
             }),
         })
@@ -253,7 +253,7 @@ async fn old_replay_logs_without_provider_retry_metadata_replay_identically() {
         .append(harness_core::store::EventEnvelopeWithoutSeqV1 {
             schema_version: SCHEMA_VERSION,
             event_id: "evt-provider-started".to_string(),
-            run_id: run_id.to_string(),
+            run_id: run_id.to_string().into(),
             mono_ms: 2,
             ts: None,
             actor: actor.clone(),
@@ -261,7 +261,7 @@ async fn old_replay_logs_without_provider_retry_metadata_replay_identically() {
             causation_id: None,
             stream_key: None,
             payload: EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                request_id: "provider-call-1".to_string(),
+                request_id: "provider-call-1".into(),
                 provider_id: "mock".to_string(),
                 model_id: "model-1".to_string(),
                 prompt_summary: "old request".to_string(),

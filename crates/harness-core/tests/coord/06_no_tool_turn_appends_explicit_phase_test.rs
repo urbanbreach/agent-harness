@@ -243,7 +243,7 @@ async fn tool_turn_does_not_preflight_until_assistant_message_end_is_durable() {
                 &event.payload,
                 EventV1::ToolCallStarted(data)
                     if event.correlation_id.as_deref() == Some(request_id.as_str())
-                        && !data.tool_call_id.is_empty()
+                        && !data.tool_call_id.as_str().is_empty()
             )
         })
         .unwrap_or_abort();

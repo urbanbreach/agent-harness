@@ -1,3 +1,4 @@
+// allow: SIZE_OK — Copilot OAuth device flow authentication (token exchange + polling + credential storage)
 use crate::UnwrapOrAbort;
 use std::collections::BTreeMap;
 use std::sync::Arc;

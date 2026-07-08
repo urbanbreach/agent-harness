@@ -454,7 +454,7 @@ fn run_started_draft(run_id: &str, marker: u64) -> EventEnvelopeWithoutSeqV1 {
     EventEnvelopeWithoutSeqV1 {
         schema_version: SCHEMA_VERSION,
         event_id: format!("evt-{marker:04}"),
-        run_id: run_id.to_string(),
+        run_id: run_id.to_string().into(),
         mono_ms: marker,
         ts: None,
         actor: EventActor::new(ActorKind::System, Some("coordinator".to_string())),
@@ -462,7 +462,7 @@ fn run_started_draft(run_id: &str, marker: u64) -> EventEnvelopeWithoutSeqV1 {
         causation_id: None,
         stream_key: Some(format!("run:{run_id}")),
         payload: EventV1::RunStarted(RunStartedEvent {
-            run_name: format!("run-{marker}"),
+            run_name: format!("run-{marker}").into(),
             workspace_root: "/workspace/project".to_string(),
         }),
     }

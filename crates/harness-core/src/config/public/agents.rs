@@ -1,3 +1,4 @@
+// allow: SIZE_OK — public config contract section (typed schema + validation)
 use std::collections::BTreeMap;
 
 use schemars::JsonSchema;

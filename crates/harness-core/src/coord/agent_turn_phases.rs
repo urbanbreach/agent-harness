@@ -1,3 +1,4 @@
+// allow: SIZE_OK — coordinator turn phase state machine (scheduling + dispatch)
 use super::*;
 use crate::UnwrapOrAbort;
 use std::time::Duration;
@@ -118,7 +119,7 @@ pub(in crate::coord) async fn run_agent_turn_phase_loop(
                     "cancelled",
                     "job cancelled",
                     assistant_response.text.clone(),
-                    Some(assistant_response.request_id.clone()),
+                    Some(assistant_response.request_id.to_string()),
                 ),
             );
         }
@@ -153,7 +154,7 @@ pub(in crate::coord) async fn run_agent_turn_phase_loop(
                             "tool_failure",
                             reason,
                             assistant_response.text.clone(),
-                            Some(assistant_response.request_id.clone()),
+                            Some(assistant_response.request_id.to_string()),
                         ),
                     );
                 }
@@ -169,7 +170,7 @@ pub(in crate::coord) async fn run_agent_turn_phase_loop(
                     "cancelled",
                     "job cancelled",
                     assistant_response.text.clone(),
-                    Some(assistant_response.request_id.clone()),
+                    Some(assistant_response.request_id.to_string()),
                 ),
             );
         }
@@ -327,7 +328,7 @@ async fn run_provider_with_retry_phase(
             job_tx: job_tx.clone(),
             task_id: &task.task_id,
             agent_id: &task.agent_id,
-            session_id: &task.session_id,
+            session_id: task.session_id.as_str(),
         })
         .await;
 
@@ -459,7 +460,7 @@ async fn emit_agent_runtime_event_phase(
             .send(Command::AgentProviderRequestStarted {
                 task_id,
                 agent_id,
-                request_id: started.request_id,
+                request_id: started.request_id.to_string(),
                 provider_id: started.provider_id,
                 model_id: started.model_id,
                 prompt_summary: started.prompt_summary,
@@ -492,7 +493,7 @@ async fn emit_agent_runtime_event_phase(
                 .send(Command::AgentProviderRequestFinished {
                     task_id,
                     agent_id,
-                    request_id: finished.request_id,
+                    request_id: finished.request_id.to_string(),
                     finish_reason: finished.finish_reason,
                     output_digest: finished.output_digest,
                     usage: finished.usage,
@@ -521,7 +522,7 @@ async fn append_assistant_message_end_phase(
             .tool_intents
             .iter()
             .map(|tool_call| AssistantToolCall {
-                tool_call_id: tool_call.tool_call_id.clone(),
+                tool_call_id: tool_call.tool_call_id.to_string(),
                 function_name: tool_call.function_name.clone(),
                 arguments_json: tool_call.arguments_json.clone(),
             })
@@ -541,7 +542,7 @@ async fn append_assistant_message_end_phase(
         .send(Command::AgentAssistantMessageFinished {
             task_id: task_id.to_string(),
             agent_id: agent_id.to_string(),
-            request_id: response.request_id.clone(),
+            request_id: response.request_id.to_string(),
             assistant_output: response.text.clone(),
             tool_call_count: response.tool_intents.len(),
             assistant_message: response.finished_metadata.assistant_message.clone(),
@@ -685,7 +686,7 @@ fn append_tool_result_message_phase(
         role: MessageRole::Tool,
         content: tool_result_to_message_content(tool_result),
         name: Some(tool_call.function_name.clone()),
-        tool_call_id: Some(tool_call.tool_call_id.clone()),
+        tool_call_id: Some(tool_call.tool_call_id.to_string()),
         assistant_tool_calls: None,
     });
 }
@@ -706,7 +707,7 @@ pub(in crate::coord) fn completion_messages_to_conversation_messages(
             MessageRole::System => {}
             MessageRole::User => {
                 conversation_messages.push(ConversationMessage::User(ConversationUserMessage {
-                    request_id: request_id.to_string(),
+                    request_id: request_id.into(),
                     text: message.content.clone(),
                     seq: None,
                     agent_id: Some(agent_id.to_string()),
@@ -725,7 +726,7 @@ pub(in crate::coord) fn completion_messages_to_conversation_messages(
                             .to_string();
                         tool_ids_by_call_id.insert(tool_call.tool_call_id.clone(), tool_id.clone());
                         ConversationToolCall {
-                            tool_call_id: tool_call.tool_call_id.clone(),
+                            tool_call_id: tool_call.tool_call_id.clone().into(),
                             tool_id,
                             args_summary: provider_tool_arguments_json(&tool_call.arguments_json),
                             args_digest: digest12(tool_call.arguments_json.as_bytes()),
@@ -736,7 +737,7 @@ pub(in crate::coord) fn completion_messages_to_conversation_messages(
                     .collect();
                 conversation_messages.push(ConversationMessage::Assistant(
                     ConversationAssistantMessage {
-                        request_id: request_id.to_string(),
+                        request_id: request_id.into(),
                         agent_id: Some(agent_id.to_string()),
                         text: message.content.clone(),
                         tool_calls,
@@ -761,8 +762,8 @@ pub(in crate::coord) fn completion_messages_to_conversation_messages(
                     .or_else(|| message.name.clone());
                 conversation_messages.push(ConversationMessage::ToolResult(Box::new(
                     ConversationToolResultMessage {
-                        request_id: request_id.to_string(),
-                        tool_call_id,
+                        request_id: request_id.into(),
+                        tool_call_id: tool_call_id.into(),
                         tool_id,
                         status: provider_tool_message_status(&content),
                         output_summary: non_empty_trimmed(&content).map(|_| content.clone()),

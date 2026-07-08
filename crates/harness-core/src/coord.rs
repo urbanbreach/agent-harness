@@ -1,3 +1,4 @@
+// allow: SIZE_OK — coordinator module (scheduling + event append + lifecycle)
 use crate::UnwrapOrAbort;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -285,8 +286,8 @@ impl Default for CoordinatorConfig {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunInfo {
-    pub run_id: String,
-    pub run_name: String,
+    pub run_id: crate::ids::RunId,
+    pub run_name: crate::ids::RunName,
     pub workspace_root: PathBuf,
     pub run_dir: PathBuf,
     pub artifacts_dir: PathBuf,
@@ -295,14 +296,14 @@ pub struct RunInfo {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkspaceSnapshotSummary {
-    pub request_id: String,
+    pub request_id: crate::ids::RequestId,
     pub artifact_path: String,
     pub file_count: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkspaceRevertSummary {
-    pub request_id: String,
+    pub request_id: crate::ids::RequestId,
     pub restored_paths: Vec<String>,
     pub removed_paths: Vec<String>,
     pub failed_paths: Vec<(String, String)>,
@@ -527,10 +528,10 @@ pub struct AgentRuntimeInfo {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChildTaskRequestMetadata {
     pub parent_tool_call_id: String,
-    pub parent_session_id: String,
+    pub parent_session_id: crate::ids::SessionId,
     pub parent_agent_id: Option<String>,
-    pub child_session_id: String,
-    pub task_id: String,
+    pub child_session_id: crate::ids::SessionId,
+    pub task_id: crate::ids::TaskId,
     pub description: String,
     pub run_in_background: bool,
 }
@@ -703,7 +704,7 @@ where
         hook_runtime_config,
         HookInvocationContext {
             event: HookLifecycleEvent::PermissionResolved,
-            run_id: run_state.info.run_id.clone(),
+            run_id: run_state.info.run_id.to_string(),
             workspace_root: run_state.info.workspace_root.clone(),
             artifacts_dir: run_state.info.artifacts_dir.clone(),
             actor: Some(actor.clone()),

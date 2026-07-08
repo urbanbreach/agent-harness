@@ -209,10 +209,10 @@ async fn background_task_completion_after_tool_result_wakes_parent_in_followup_t
             None,
             ChildTaskRequestMetadata {
                 parent_tool_call_id: "toolcall_parent_task".to_string(),
-                parent_session_id: run.run_id.clone(),
+                parent_session_id: run.run_id.as_str().into(),
                 parent_agent_id: Some(parent_agent_id.clone()),
-                child_session_id: child_agent_id.clone(),
-                task_id: child_agent_id,
+                child_session_id: child_agent_id.clone().into(),
+                task_id: child_agent_id.into(),
                 description: "Child background task".to_string(),
                 run_in_background: true,
             },

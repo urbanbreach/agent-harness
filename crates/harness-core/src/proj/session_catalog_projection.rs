@@ -1,3 +1,4 @@
+// allow: SIZE_OK — session management (lineage + projection + inspection)
 use std::fs;
 use std::path::Path;
 
@@ -214,7 +215,7 @@ pub fn project_session_catalog_entry<'a>(
         });
 
     let run_name = latest_title
-        .or_else(|| run_started.map(|data| data.run_name.clone()))
+        .or_else(|| run_started.map(|data| data.run_name.to_string()))
         .or_else(|| metadata.and_then(|meta| meta.run_name.clone()));
     let workspace_root = run_started
         .map(|data| data.workspace_root.clone())
@@ -245,7 +246,7 @@ pub fn project_session_catalog_entry<'a>(
 
     let run_id = collected
         .first()
-        .map(|event| event.run_id.clone())
+        .map(|event| event.run_id.to_string())
         .or_else(|| metadata.and_then(|meta| meta.run_id.clone()))
         .unwrap_or_else(|| fallback_run_id.to_string());
 

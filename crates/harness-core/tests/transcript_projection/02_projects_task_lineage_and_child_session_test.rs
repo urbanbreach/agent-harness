@@ -43,7 +43,7 @@ fn projects_task_lineage_and_child_session_metadata() {
             system(),
             Some("req_000001"),
             EventV1::TaskScheduled(TaskScheduledEvent {
-                task_id: "task_000777".to_string(),
+                task_id: "task_000777".to_string().into(),
                 state: TaskScheduleState::Started,
                 queue_key: Some("provider_model:default:gpt-5".to_string()),
             }),
@@ -53,7 +53,7 @@ fn projects_task_lineage_and_child_session_metadata() {
             worker(),
             Some("req_000001"),
             EventV1::TaskCompleted(TaskCompletedEvent {
-                task_id: "task_000777".to_string(),
+                task_id: "task_000777".to_string().into(),
                 result_summary: "child completed".to_string(),
                 result_digest: "digest-task".to_string(),
                 metadata: Some(TaskCompletionMetadata {
@@ -135,7 +135,7 @@ fn tolerates_old_minimal_metadata_and_projects_incomplete_or_failed_states() {
             worker(),
             Some("req_legacy"),
             EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
-                request_id: "req_legacy".to_string(),
+                request_id: "req_legacy".into(),
                 delta: "legacy text".to_string(),
             }),
         ),
@@ -144,7 +144,7 @@ fn tolerates_old_minimal_metadata_and_projects_incomplete_or_failed_states() {
             worker(),
             Some("req_legacy"),
             EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
-                request_id: "req_legacy".to_string(),
+                request_id: "req_legacy".into(),
                 finish_reason: "error".to_string(),
                 output_digest: None,
                 usage: None,
@@ -190,7 +190,7 @@ fn tolerates_old_minimal_metadata_and_projects_incomplete_or_failed_states() {
             system(),
             None,
             EventV1::ToolCallStarted(ToolCallStartedEvent {
-                tool_call_id: "toolcall_legacy".to_string(),
+                tool_call_id: "toolcall_legacy".into(),
             }),
         ),
         envelope(
@@ -198,7 +198,7 @@ fn tolerates_old_minimal_metadata_and_projects_incomplete_or_failed_states() {
             system(),
             None,
             EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                tool_call_id: "toolcall_legacy".to_string(),
+                tool_call_id: "toolcall_legacy".into(),
                 status: ToolCallStatus::Failed,
                 output_summary: Some("failed".to_string()),
                 output_digest: None,
@@ -211,7 +211,7 @@ fn tolerates_old_minimal_metadata_and_projects_incomplete_or_failed_states() {
             system(),
             None,
             EventV1::TaskCancelled(TaskCancelledEvent {
-                task_id: "task_legacy".to_string(),
+                task_id: "task_legacy".to_string().into(),
                 reason: "cancelled".to_string(),
                 task_scope: None,
             }),
@@ -221,7 +221,7 @@ fn tolerates_old_minimal_metadata_and_projects_incomplete_or_failed_states() {
             system(),
             None,
             EventV1::TaskResultLate(TaskResultLateEvent {
-                task_id: "task_legacy".to_string(),
+                task_id: "task_legacy".to_string().into(),
                 result_digest: "digest-late".to_string(),
             }),
         ),
@@ -287,7 +287,7 @@ fn tolerates_old_minimal_metadata_and_projects_incomplete_or_failed_states() {
         .iter()
         .flat_map(|message| message.parts.iter())
         .find_map(|part| match part {
-            ProjectedPart::ToolCall(tool) if tool.tool_call_id == "toolcall_legacy" => {
+            ProjectedPart::ToolCall(tool) if tool.tool_call_id.as_str() == "toolcall_legacy" => {
                 Some(tool.as_ref())
             }
             _ => None,
@@ -316,7 +316,7 @@ fn rejects_out_of_order_seq_without_panic() {
             supervisor(),
             None,
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "interactive".to_string(),
+                run_name: "interactive".into(),
                 workspace_root: "/workspace/project".to_string(),
             }),
         ),

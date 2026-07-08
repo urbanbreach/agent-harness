@@ -21,7 +21,7 @@ pub(super) fn restore_provider_context_uses_task_completed_summary_for_iterative
                 EventActor::new(ActorKind::System, Some("coordinator".to_string())),
                 None,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/workspace/project".to_string(),
                 }),
             ),
@@ -42,7 +42,7 @@ pub(super) fn restore_provider_context_uses_task_completed_summary_for_iterative
                 EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
                 Some("req_000001"),
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req_000001".to_string(),
+                    request_id: "req_000001".into(),
                     provider_id: "mock".to_string(),
                     model_id: "model-1".to_string(),
                     prompt_summary: "first question".to_string(),
@@ -56,7 +56,7 @@ pub(super) fn restore_provider_context_uses_task_completed_summary_for_iterative
                 EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
                 Some("req_000001"),
                 EventV1::ProviderStreamDelta(crate::event::ProviderStreamDeltaEvent {
-                    request_id: "req_000001".to_string(),
+                    request_id: "req_000001".into(),
                     delta: "calling tool".to_string(),
                 }),
             ),
@@ -66,7 +66,7 @@ pub(super) fn restore_provider_context_uses_task_completed_summary_for_iterative
                 EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
                 Some("req_000001_iter_02"),
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req_000001_iter_02".to_string(),
+                    request_id: "req_000001_iter_02".into(),
                     provider_id: "mock".to_string(),
                     model_id: "model-1".to_string(),
                     prompt_summary: "tool result follow-up".to_string(),
@@ -80,7 +80,7 @@ pub(super) fn restore_provider_context_uses_task_completed_summary_for_iterative
                 EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
                 Some("req_000001_iter_02"),
                 EventV1::ProviderStreamDelta(crate::event::ProviderStreamDeltaEvent {
-                    request_id: "req_000001_iter_02".to_string(),
+                    request_id: "req_000001_iter_02".into(),
                     delta: "final answer".to_string(),
                 }),
             ),
@@ -90,7 +90,7 @@ pub(super) fn restore_provider_context_uses_task_completed_summary_for_iterative
                 EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
                 Some("req_000001"),
                 EventV1::TaskCompleted(TaskCompletedEvent {
-                    task_id: "task_000001".to_string(),
+                    task_id: "task_000001".to_string().into(),
                     result_summary: "final answer".to_string(),
                     result_digest: "digest-task".to_string(),
                     metadata: None,
@@ -168,7 +168,7 @@ pub(super) fn failed_response_compaction_does_not_double_compact_same_request() 
             status: ProviderConversationTurnStatus::Failed,
             failure_stage: Some("overflow_retry_failed".to_string()),
             failure_reason: Some("overflow persisted".to_string()),
-            request_id: Some("req_provider_retry".to_string()),
+            request_id: Some("req_provider_retry".into()),
             ..ProviderConversationTurn::default()
         });
     assert!(
@@ -194,7 +194,7 @@ pub(super) fn failed_turn_context_does_not_duplicate_completed_turns() {
                 EventActor::new(ActorKind::System, Some("coordinator".to_string())),
                 None,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/workspace/project".to_string(),
                 }),
             ),
@@ -204,7 +204,7 @@ pub(super) fn failed_turn_context_does_not_duplicate_completed_turns() {
                 EventActor::new(ActorKind::User, None),
                 None,
                 EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-                    request_id: "req_000001".to_string(),
+                    request_id: "req_000001".into(),
                     text: "completed question".to_string(),
                 }),
             ),
@@ -214,7 +214,7 @@ pub(super) fn failed_turn_context_does_not_duplicate_completed_turns() {
                 EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
                 Some("req_000001"),
                 EventV1::TaskScheduled(TaskScheduledEvent {
-                    task_id: "task_000001".to_string(),
+                    task_id: "task_000001".to_string().into(),
                     state: TaskScheduleState::Started,
                     queue_key: Some("provider_model:default:model-1".to_string()),
                 }),
@@ -225,7 +225,7 @@ pub(super) fn failed_turn_context_does_not_duplicate_completed_turns() {
                 EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
                 Some("req_000001"),
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req_000001_provider".to_string(),
+                    request_id: "req_000001_provider".into(),
                     provider_id: "default".to_string(),
                     model_id: "model-1".to_string(),
                     prompt_summary: "completed question".to_string(),
@@ -239,7 +239,7 @@ pub(super) fn failed_turn_context_does_not_duplicate_completed_turns() {
                 EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
                 Some("req_000001"),
                 EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
-                    request_id: "req_000001_provider".to_string(),
+                    request_id: "req_000001_provider".into(),
                     delta: "completed answer".to_string(),
                 }),
             ),
@@ -249,7 +249,7 @@ pub(super) fn failed_turn_context_does_not_duplicate_completed_turns() {
                 EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
                 Some("req_000001"),
                 EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
-                    request_id: "req_000001_provider".to_string(),
+                    request_id: "req_000001_provider".into(),
                     finish_reason: "done".to_string(),
                     output_digest: Some("digest-out-1".to_string()),
                     usage: None,
@@ -262,7 +262,7 @@ pub(super) fn failed_turn_context_does_not_duplicate_completed_turns() {
                 EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
                 Some("req_000001"),
                 EventV1::TaskCompleted(TaskCompletedEvent {
-                    task_id: "task_000001".to_string(),
+                    task_id: "task_000001".to_string().into(),
                     result_summary: "completed answer".to_string(),
                     result_digest: "digest-task-1".to_string(),
                     metadata: None,
@@ -274,7 +274,7 @@ pub(super) fn failed_turn_context_does_not_duplicate_completed_turns() {
                 EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
                 Some("req_000001"),
                 EventV1::TaskCancelled(TaskCancelledEvent {
-                    task_id: "task_000001".to_string(),
+                    task_id: "task_000001".to_string().into(),
                     reason: "late cancellation after completed turn".to_string(),
                     task_scope: Some(crate::event::TaskTerminalScope::AgentTurn),
                 }),
@@ -309,7 +309,7 @@ pub(super) fn restore_provider_context_from_history_rejects_checkpoint_metadata_
             metadata: ProviderContextCheckpointMetadata {
                 checkpoint_id: "checkpoint_000010".to_string(),
                 agent_id: "agent_000001".to_string(),
-                run_id: "wrong_run".to_string(),
+                run_id: "wrong_run".into(),
                 through_seq: 8,
                 through_request_id: Some("req_000002".to_string()),
                 provider_id: Some("default".to_string()),
@@ -350,7 +350,7 @@ pub(super) fn restore_provider_context_from_history_rejects_checkpoint_metadata_
                 EventActor::new(ActorKind::System, Some("coordinator".to_string())),
                 None,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/workspace/project".to_string(),
                 }),
             ),

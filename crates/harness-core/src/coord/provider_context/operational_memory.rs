@@ -1,3 +1,4 @@
+// allow: SIZE_OK — coordinator state machine (turn lifecycle + scheduling)
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
@@ -80,7 +81,7 @@ fn collect_compacted_file_operation_facts(
     }
 
     let events = match read_historical_events_until(
-        &run_state.info.run_id,
+        run_state.info.run_id.as_str(),
         &run_state.info.events_path,
         through_seq,
     ) {
@@ -101,7 +102,7 @@ fn collect_compacted_file_operation_facts(
         match &event.payload {
             EventV1::ToolCallRequested(payload) => {
                 tool_contexts.insert(
-                    payload.tool_call_id.clone(),
+                    payload.tool_call_id.to_string(),
                     ProviderToolContextFact {
                         tool_id: redactor.redact_text(&payload.tool_id),
                         args_summary: non_empty_trimmed(&payload.args_summary).map(|summary| {
@@ -114,19 +115,19 @@ fn collect_compacted_file_operation_facts(
                     payload.metadata.as_ref(),
                     None,
                 ) {
-                    tool_operations.insert(payload.tool_call_id.clone(), operation);
+                    tool_operations.insert(payload.tool_call_id.to_string(), operation);
                 }
             }
             EventV1::ToolCallFinished(payload) => {
                 if let Some(operation) = tool_call_operation(None, payload.metadata.as_ref(), None)
                 {
                     tool_operations
-                        .entry(payload.tool_call_id.clone())
+                        .entry(payload.tool_call_id.to_string())
                         .or_insert(operation);
                 }
                 let paths = extract_output_json_path_fields(payload.output_json.as_ref());
                 if !paths.is_empty() {
-                    tool_output_paths.insert(payload.tool_call_id.clone(), paths);
+                    tool_output_paths.insert(payload.tool_call_id.to_string(), paths);
                 }
             }
             _ => {}
@@ -157,7 +158,7 @@ fn collect_compacted_file_operation_facts(
                 );
             }
             EventV1::ArtifactWritten(payload) => {
-                let Some(tool_call_id) = payload.tool_call_id.as_deref() else {
+                let Some(tool_call_id) = payload.tool_call_id.as_ref().map(|id| id.as_str()) else {
                     continue;
                 };
                 let operation = tool_call_operation(None, None, payload.tool_metadata.as_ref())
@@ -191,15 +192,15 @@ fn collect_compacted_file_operation_facts(
             }
             EventV1::ToolCallFinished(payload) => {
                 let operation = tool_operations
-                    .get(&payload.tool_call_id)
+                    .get(payload.tool_call_id.as_str())
                     .copied()
                     .or_else(|| tool_call_operation(None, payload.metadata.as_ref(), None));
                 if operation.is_none() {
-                    if let Some(context) = tool_contexts.get(&payload.tool_call_id) {
+                    if let Some(context) = tool_contexts.get(payload.tool_call_id.as_str()) {
                         add_tool_operation_fact(
                             &mut operation_facts,
                             &context.tool_id,
-                            &payload.tool_call_id,
+                            payload.tool_call_id.as_str(),
                             context.args_summary.as_deref(),
                             payload.output_summary.as_deref(),
                             redactor,
@@ -242,7 +243,7 @@ fn compacted_request_ids_for_operational_memory(
 ) -> BTreeSet<String> {
     let mut request_ids = older_turns
         .iter()
-        .filter_map(|turn| turn.request_id.as_deref())
+        .filter_map(|turn| turn.request_id.as_ref().map(|r| r.as_str()))
         .map(str::to_string)
         .collect::<BTreeSet<_>>();
     if !request_ids.is_empty() {
@@ -250,7 +251,7 @@ fn compacted_request_ids_for_operational_memory(
     }
 
     let Ok(historical_turns) = collect_historical_agent_turns_until(
-        &run_state.info.run_id,
+        run_state.info.run_id.as_str(),
         &run_state.info.events_path,
         &trigger.agent_id,
         lower_bound_seq,

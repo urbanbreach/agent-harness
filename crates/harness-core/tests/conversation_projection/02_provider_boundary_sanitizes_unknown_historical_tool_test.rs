@@ -8,21 +8,21 @@ fn provider_boundary_sanitizes_unknown_historical_tool_ids() {
         preserved_turns: vec![ProviderConversationTurn {
             user_prompt: "use unknown tools".to_string(),
             assistant_response: "done".to_string(),
-            request_id: Some("req_unknown_tools".to_string()),
+            request_id: Some("req_unknown_tools".into()),
             messages: vec![
                 ConversationMessage::User(ConversationUserMessage {
-                    request_id: "req_unknown_tools".to_string(),
+                    request_id: "req_unknown_tools".into(),
                     text: "use unknown tools".to_string(),
                     seq: None,
                     agent_id: Some("agent_1".to_string()),
                 }),
                 ConversationMessage::Assistant(ConversationAssistantMessage {
-                    request_id: "req_unknown_tools".to_string(),
+                    request_id: "req_unknown_tools".into(),
                     agent_id: Some("agent_1".to_string()),
                     text: String::new(),
                     tool_calls: vec![
                         ConversationToolCall {
-                            tool_call_id: "toolcall_dot".to_string(),
+                            tool_call_id: "toolcall_dot".into(),
                             tool_id: "unknown.tool".to_string(),
                             args_summary: r#"{"value":1}"#.to_string(),
                             args_digest: "digest-dot".to_string(),
@@ -30,7 +30,7 @@ fn provider_boundary_sanitizes_unknown_historical_tool_ids() {
                             metadata: None,
                         },
                         ConversationToolCall {
-                            tool_call_id: "toolcall_slash".to_string(),
+                            tool_call_id: "toolcall_slash".into(),
                             tool_id: "unknown/tool".to_string(),
                             args_summary: r#"{"value":2}"#.to_string(),
                             args_digest: "digest-slash".to_string(),
@@ -46,8 +46,8 @@ fn provider_boundary_sanitizes_unknown_historical_tool_ids() {
                     output_digest: None,
                 }),
                 ConversationMessage::ToolResult(Box::new(ConversationToolResultMessage {
-                    request_id: "req_unknown_tools".to_string(),
-                    tool_call_id: "toolcall_dot".to_string(),
+                    request_id: "req_unknown_tools".into(),
+                    tool_call_id: "toolcall_dot".into(),
                     tool_id: Some("unknown.tool".to_string()),
                     status: ToolCallStatus::Succeeded,
                     output_summary: Some("dot ok".to_string()),
@@ -57,8 +57,8 @@ fn provider_boundary_sanitizes_unknown_historical_tool_ids() {
                     metadata: None,
                 })),
                 ConversationMessage::ToolResult(Box::new(ConversationToolResultMessage {
-                    request_id: "req_unknown_tools".to_string(),
-                    tool_call_id: "toolcall_slash".to_string(),
+                    request_id: "req_unknown_tools".into(),
+                    tool_call_id: "toolcall_slash".into(),
                     tool_id: Some("unknown/tool".to_string()),
                     status: ToolCallStatus::Succeeded,
                     output_summary: Some("slash ok".to_string()),
@@ -68,7 +68,7 @@ fn provider_boundary_sanitizes_unknown_historical_tool_ids() {
                     metadata: None,
                 })),
                 ConversationMessage::Assistant(ConversationAssistantMessage {
-                    request_id: "req_unknown_tools".to_string(),
+                    request_id: "req_unknown_tools".into(),
                     agent_id: Some("agent_1".to_string()),
                     text: "done".to_string(),
                     tool_calls: Vec::new(),

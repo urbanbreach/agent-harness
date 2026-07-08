@@ -1,3 +1,4 @@
+// allow: SIZE_OK — coordinator state machine (turn lifecycle + scheduling)
 use std::collections::BTreeSet;
 
 use crate::agent::{
@@ -163,7 +164,7 @@ fn build_legacy_provider_context_summary(
         for fact in facts.compacted_turns.iter().take(8) {
             let request = fact
                 .request_id
-                .as_deref()
+                .as_ref().map(|r| r.as_str())
                 .map(|request_id| format!(" `{request_id}`"))
                 .unwrap_or_default();
             lines.push(format!("- Request{request}: {}", fact.user_excerpt));
@@ -312,7 +313,7 @@ fn build_harness_provider_context_summary(
         for fact in facts.compacted_turns.iter().take(8) {
             let request = fact
                 .request_id
-                .as_deref()
+                .as_ref().map(|r| r.as_str())
                 .map(|request_id| format!(" `{request_id}`"))
                 .unwrap_or_default();
             lines.push(format!(

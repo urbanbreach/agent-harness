@@ -162,7 +162,7 @@ async fn coord_agent_turn_provider_events_have_isolated_correlation_ids() {
             .iter()
             .all(|event| event.correlation_id.as_deref() == Some(turn_id)));
         assert_ne!(
-            turn_id, provider_request_id,
+            turn_id, provider_request_id.as_str(),
             "provider request id should be distinct from stable turn correlation id"
         );
     }
@@ -321,7 +321,7 @@ async fn provider_single_call_returns_tool_intents_without_executing_tools() {
     assert!(events.iter().any(|event| matches!(
         event,
         AgentRuntimeEvent::ProviderRequestStarted(started)
-            if started.request_id == "provider_call_1"
+            if started.request_id.as_str() == "provider_call_1"
     )));
     assert!(events.iter().any(|event| matches!(
         event,
@@ -331,7 +331,7 @@ async fn provider_single_call_returns_tool_intents_without_executing_tools() {
     assert!(events.iter().any(|event| matches!(
         event,
         AgentRuntimeEvent::ProviderRequestFinished(finished)
-            if finished.request_id == "provider_call_1" && finished.finish_reason == "done"
+            if finished.request_id.as_str() == "provider_call_1" && finished.finish_reason == "done"
     )));
 }
 #[tokio::test]

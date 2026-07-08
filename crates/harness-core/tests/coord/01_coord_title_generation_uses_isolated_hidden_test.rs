@@ -165,7 +165,7 @@ async fn coord_plan_mode_prompt_includes_workflow_and_plan_file_lifecycle() {
         .unwrap_or_abort();
     tokio::task::yield_now().await;
 
-    let plan_file = harness_core::plan::plan_file_display_path(&run.run_id);
+    let plan_file = harness_core::plan::plan_file_display_path(run.run_id.as_str());
     let first_requests = provider.requests();
     let first_prompt = &first_requests
         .first()
@@ -181,7 +181,7 @@ async fn coord_plan_mode_prompt_includes_workflow_and_plan_file_lifecycle() {
     assert!(first_prompt.contains("call `plan_exit`"));
     assert!(first_prompt.contains("run non-readonly tools, change configs, or make commits"));
 
-    let plan_path = workspace.join(harness_core::plan::plan_file_relative_path(&run.run_id));
+    let plan_path = workspace.join(harness_core::plan::plan_file_relative_path(run.run_id.as_str()));
     fs::create_dir_all(plan_path.parent().unwrap_or_abort()).unwrap_or_abort();
     fs::write(&plan_path, "# Plan\n").unwrap_or_abort();
 

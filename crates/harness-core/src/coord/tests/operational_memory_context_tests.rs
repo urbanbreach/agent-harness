@@ -15,7 +15,7 @@ pub(crate) fn operational_memory_records_read_and_modified_files_from_events() {
             &first_answer,
             &second_answer,
             vec![EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                tool_call_id: "toolcall_read".to_string(),
+                tool_call_id: "toolcall_read".into(),
                 tool_id: "read".to_string(),
                 args_summary: "read src/lib.rs".to_string(),
                 args_digest: "digest-read".to_string(),
@@ -23,7 +23,7 @@ pub(crate) fn operational_memory_records_read_and_modified_files_from_events() {
             })],
             vec![
                 EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                    tool_call_id: "toolcall_read".to_string(),
+                    tool_call_id: "toolcall_read".into(),
                     status: ToolCallStatus::Succeeded,
                     output_summary: Some("read completed".to_string()),
                     output_digest: Some("digest-read-output".to_string()),
@@ -41,7 +41,7 @@ pub(crate) fn operational_memory_records_read_and_modified_files_from_events() {
                     path: "artifacts/toolcalls/toolcall_edit/result.json".to_string(),
                     digest: "digest-artifact".to_string(),
                     bytes: 42,
-                    tool_call_id: Some("toolcall_edit".to_string()),
+                    tool_call_id: Some("toolcall_edit".into()),
                     tool_metadata: Some(ToolIdentityMetadata {
                         canonical_tool_id: Some("edit".to_string()),
                         alias_source_tool_id: None,
@@ -108,14 +108,14 @@ pub(crate) fn compaction_preserves_file_tool_skill_todo_and_plan_context() {
             &second_answer,
             vec![
                 EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                    tool_call_id: "toolcall_read".to_string(),
+                    tool_call_id: "toolcall_read".into(),
                     tool_id: "read".to_string(),
                     args_summary: "read src/lib.rs".to_string(),
                     args_digest: "digest-read".to_string(),
                     metadata: Some(tool_metadata("read")),
                 }),
                 EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                    tool_call_id: "toolcall_read".to_string(),
+                    tool_call_id: "toolcall_read".into(),
                     status: ToolCallStatus::Succeeded,
                     output_summary: Some("read current library surface".to_string()),
                     output_digest: Some("digest-read-output".to_string()),
@@ -123,14 +123,14 @@ pub(crate) fn compaction_preserves_file_tool_skill_todo_and_plan_context() {
                     metadata: Some(tool_metadata("read")),
                 }),
                 EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                    tool_call_id: "toolcall_bash".to_string(),
+                    tool_call_id: "toolcall_bash".into(),
                     tool_id: "bash".to_string(),
                     args_summary: "run focused compaction verification".to_string(),
                     args_digest: "digest-bash".to_string(),
                     metadata: Some(tool_metadata("bash")),
                 }),
                 EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                    tool_call_id: "toolcall_bash".to_string(),
+                    tool_call_id: "toolcall_bash".into(),
                     status: ToolCallStatus::Succeeded,
                     output_summary: Some("focused compaction verification passed".to_string()),
                     output_digest: Some("digest-bash-output".to_string()),
@@ -138,14 +138,14 @@ pub(crate) fn compaction_preserves_file_tool_skill_todo_and_plan_context() {
                     metadata: Some(tool_metadata("bash")),
                 }),
                 EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                    tool_call_id: "toolcall_skill".to_string(),
+                    tool_call_id: "toolcall_skill".into(),
                     tool_id: "skill".to_string(),
                     args_summary: "load karpathy-guidelines".to_string(),
                     args_digest: "digest-skill".to_string(),
                     metadata: Some(tool_metadata("skill")),
                 }),
                 EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                    tool_call_id: "toolcall_skill".to_string(),
+                    tool_call_id: "toolcall_skill".into(),
                     status: ToolCallStatus::Succeeded,
                     output_summary: Some("loaded skill karpathy-guidelines".to_string()),
                     output_digest: Some("digest-skill-output".to_string()),
@@ -153,14 +153,14 @@ pub(crate) fn compaction_preserves_file_tool_skill_todo_and_plan_context() {
                     metadata: Some(tool_metadata("skill")),
                 }),
                 EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                    tool_call_id: "toolcall_todo".to_string(),
+                    tool_call_id: "toolcall_todo".into(),
                     tool_id: "todowrite".to_string(),
                     args_summary: "record preservation checklist".to_string(),
                     args_digest: "digest-todo".to_string(),
                     metadata: Some(tool_metadata("todowrite")),
                 }),
                 EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                    tool_call_id: "toolcall_todo".to_string(),
+                    tool_call_id: "toolcall_todo".into(),
                     status: ToolCallStatus::Succeeded,
                     output_summary: Some("todo checklist keeps compaction preservation pending".to_string()),
                     output_digest: Some("digest-todo-output".to_string()),
@@ -168,14 +168,14 @@ pub(crate) fn compaction_preserves_file_tool_skill_todo_and_plan_context() {
                     metadata: Some(tool_metadata("todowrite")),
                 }),
                 EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                    tool_call_id: "toolcall_plan".to_string(),
+                    tool_call_id: "toolcall_plan".into(),
                     tool_id: "plan_exit".to_string(),
                     args_summary: "handoff .agent-harness/plans/run_compaction_preservation.md".to_string(),
                     args_digest: "digest-plan".to_string(),
                     metadata: Some(tool_metadata("plan_exit")),
                 }),
                 EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                    tool_call_id: "toolcall_plan".to_string(),
+                    tool_call_id: "toolcall_plan".into(),
                     status: ToolCallStatus::Succeeded,
                     output_summary: Some(
                         "plan handoff references .agent-harness/plans/run_compaction_preservation.md"

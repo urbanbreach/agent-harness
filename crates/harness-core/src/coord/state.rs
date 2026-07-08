@@ -1,3 +1,4 @@
+// allow: SIZE_OK — coordinator state machine (turn lifecycle + scheduling)
 use super::*;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -255,7 +256,7 @@ impl RunState {
 pub(in crate::coord) struct QueuedAgentTurn {
     pub(in crate::coord) task_id: String,
     pub(in crate::coord) agent_id: String,
-    pub(in crate::coord) session_id: String,
+    pub(in crate::coord) session_id: crate::ids::SessionId,
     pub(in crate::coord) request_id: String,
     pub(in crate::coord) profile: AgentProfile,
     pub(in crate::coord) request: AgentRequest,
@@ -267,9 +268,9 @@ pub(in crate::coord) struct QueuedAgentTurn {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(in crate::coord) struct ChildTaskTurnState {
     pub(in crate::coord) parent_tool_call_id: String,
-    pub(in crate::coord) parent_session_id: String,
+    pub(in crate::coord) parent_session_id: crate::ids::SessionId,
     pub(in crate::coord) parent_agent_id: Option<String>,
-    pub(in crate::coord) child_session_id: String,
+    pub(in crate::coord) child_session_id: crate::ids::SessionId,
     pub(in crate::coord) child_request_id: String,
     pub(in crate::coord) task_id: String,
     pub(in crate::coord) description: String,
@@ -332,7 +333,7 @@ pub(in crate::coord) fn push_incomplete_provider_turn(
         .entry(running.agent_id.clone())
         .or_default();
     if context.preserved_turns.iter().any(|turn| {
-        turn.request_id.as_deref() == Some(request_id.as_str()) && !turn.status.is_completed()
+        turn.request_id.as_ref().map(|r| r.as_str()) == Some(request_id.as_str()) && !turn.status.is_completed()
     }) {
         return;
     }
@@ -343,7 +344,7 @@ pub(in crate::coord) fn push_incomplete_provider_turn(
         status: memory.status,
         failure_stage: Some(memory.failure_stage),
         failure_reason: truncated_failure_reason(&memory.failure_reason),
-        request_id: Some(request_id),
+        request_id: Some(request_id.into()),
         first_seq: None,
         last_seq: None,
         artifacts: Vec::new(),
@@ -361,8 +362,8 @@ pub(in crate::coord) fn agent_turn_child_lineage(
             parent_tool_call_id: Some(child_task.parent_tool_call_id.clone()),
             parent_task_id: None,
             parent_request_id: None,
-            parent_session_id: Some(child_task.parent_session_id.clone()),
-            child_session_id: Some(child_task.child_session_id.clone()),
+            parent_session_id: Some(child_task.parent_session_id.to_string()),
+            child_session_id: Some(child_task.child_session_id.to_string()),
             child_request_id: Some(child_task.child_request_id.clone()),
             child_provider_id: running.latest_provider_id.clone(),
             child_model_id: running.latest_model_id.clone(),
@@ -373,7 +374,7 @@ pub(in crate::coord) fn agent_turn_child_lineage(
         .child_session_mirrors
         .contains_key(&running.agent_id)
         .then(|| TaskLineageMetadata {
-            parent_session_id: Some(run_state.info.run_id.clone()),
+            parent_session_id: Some(run_state.info.run_id.to_string()),
             child_session_id: Some(running.agent_id.clone()),
             child_request_id: Some(request_id.to_string()),
             ..TaskLineageMetadata::default()

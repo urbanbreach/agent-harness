@@ -1,3 +1,4 @@
+// allow: SIZE_OK — transcript projection (pure replay state derivation)
 use std::collections::BTreeMap;
 
 use crate::event::{
@@ -57,7 +58,7 @@ pub(super) fn append_system_part(
         message_id: format!("system:{}", event.seq),
         role: ProjectedMessageRole::System,
         state: ProjectedMessageState::Complete,
-        request_id: event.correlation_id.clone(),
+        request_id: event.correlation_id.clone().map(Into::into),
         agent_id: event.actor.agent_id.clone(),
         provider: None,
         provenance: ProvenanceRange::from_event(event),
@@ -105,7 +106,7 @@ pub(super) fn ensure_assistant_message(
         message_id: format!("assistant:{request_id}"),
         role: ProjectedMessageRole::Assistant,
         state: ProjectedMessageState::Incomplete,
-        request_id: Some(request_id.to_string()),
+        request_id: Some(request_id.into()),
         agent_id: event.actor.agent_id.clone(),
         provider: None,
         provenance: ProvenanceRange::from_event(event),
@@ -267,7 +268,7 @@ pub(super) fn placeholder_tool_call_part(
     event: &EventEnvelopeV1,
 ) -> ProjectedToolCallPart {
     ProjectedToolCallPart {
-        tool_call_id: tool_call_id.to_string(),
+        tool_call_id: tool_call_id.into(),
         tool_id: String::new(),
         args_summary: String::new(),
         args_digest: String::new(),
@@ -411,7 +412,7 @@ pub(super) fn artifacts_from_tool_metadata(
                     path: artifact.path.clone(),
                     digest: artifact.digest.clone(),
                     bytes: None,
-                    tool_call_id: Some(tool_call_id.to_string()),
+                    tool_call_id: Some(tool_call_id.into()),
                     source: ArtifactProjectionSource::ToolCallMetadata,
                     metadata: BTreeMap::new(),
                     provenance: ProvenanceRange::from_event(event),

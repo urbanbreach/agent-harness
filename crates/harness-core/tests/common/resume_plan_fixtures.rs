@@ -31,7 +31,7 @@ fn envelope(seq: u64, payload: EventV1) -> EventEnvelopeV1 {
         schema_version: SCHEMA_VERSION,
         event_id: format!("evt-{seq:04}"),
         seq,
-        run_id: "run_resume_fixture".to_string(),
+        run_id: "run_resume_fixture".into(),
         mono_ms: seq,
         ts: None,
         actor: EventActor::new(ActorKind::System, Some("coordinator".to_string())),

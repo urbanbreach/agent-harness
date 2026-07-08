@@ -1,3 +1,4 @@
+// allow: SIZE_OK — auth provider integration (credential handling + storage)
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::fs::{self, OpenOptions};

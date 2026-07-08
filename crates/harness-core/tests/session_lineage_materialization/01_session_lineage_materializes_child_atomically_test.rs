@@ -69,7 +69,7 @@ fn session_lineage_materializes_child_atomically() {
     assert_eq!(child_events.len(), events.len());
     for (index, (source, child)) in events.iter().zip(&child_events).enumerate() {
         assert_eq!(child.seq, index as u64 + 1);
-        assert_eq!(child.run_id, result.child_run_id);
+        assert_eq!(child.run_id.as_str(), result.child_run_id);
         assert_ne!(child.event_id, source.event_id);
         assert!(child.event_id.contains(&result.child_run_id));
         assert_eq!(child.correlation_id, None);
@@ -180,7 +180,7 @@ fn session_lineage_tui_live_snapshot_terminalizes_open_state_for_resume() {
     assert!(child_events.iter().any(|event| matches!(
         &event.payload,
         EventV1::TaskCancelled(payload)
-            if payload.task_id == "task_000001"
+            if payload.task_id.as_str() == "task_000001"
                 && payload.reason.contains("terminalized copied live task state")
     )));
     assert!(child_events.iter().any(|event| matches!(
@@ -441,7 +441,7 @@ fn session_lineage_source_event_log_mismatch_rolls_back_before_publish() {
         source_run_id,
         6,
         EventV1::RunStarted(RunStartedEvent {
-            run_name: "modified after load".to_string(),
+            run_name: "modified after load".into(),
             workspace_root: "/workspace/source".to_string(),
         }),
     ));

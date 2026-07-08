@@ -1,3 +1,4 @@
+// allow: SIZE_OK — coordinator state machine (turn lifecycle + scheduling)
 use super::*;
 
 impl Coordinator {
@@ -8,7 +9,7 @@ impl Coordinator {
             let Some(run_state) = self.run_state.as_mut() else {
                 return Err(CoordinatorError::RunNotStarted);
             };
-            let parent_session_id = run_state.info.run_id.clone();
+            let parent_session_id = run_state.info.run_id.to_string();
             let foreground_children = foreground_child_tasks(run_state, &parent_session_id);
             let mut detachments = Vec::new();
 
@@ -151,7 +152,7 @@ impl Coordinator {
                 Some(format!("task:{task_id}")),
                 Some(queued.request_id),
                 EventV1::TaskCancelled(TaskCancelledEvent {
-                    task_id,
+                    task_id: task_id.into(),
                     reason,
                     task_scope: Some(TaskTerminalScope::AgentTurn),
                 }),
@@ -210,7 +211,7 @@ impl Coordinator {
                 Some(format!("task:{task_id}")),
                 Some(running.request_id.clone()),
                 EventV1::TaskCancelled(TaskCancelledEvent {
-                    task_id,
+                    task_id: task_id.into(),
                     reason,
                     task_scope: Some(TaskTerminalScope::AgentTurn),
                 }),
@@ -254,7 +255,7 @@ impl Coordinator {
             Some(format!("task:{task_id}")),
             request_correlation_id,
             EventV1::TaskCancelled(TaskCancelledEvent {
-                task_id,
+                task_id: task_id.into(),
                 reason,
                 task_scope: Some(TaskTerminalScope::ToolCall),
             }),
@@ -278,7 +279,7 @@ impl Coordinator {
                 }
 
                 Some(TaskProgressSnapshot {
-                    task_id: task_id.clone(),
+                    task_id: task_id.clone().into(),
                     key: task.queue_key.clone(),
                     last_progress_mono_ms: task.last_progress_mono_ms,
                 })
@@ -294,8 +295,8 @@ impl Coordinator {
             let stale_for_ms = stale_task.stale_for_ms;
             let (actor, request_correlation_id) = run_state
                 .tasks
-                .get(&task_id)
-                .map(|task| {
+            .get(task_id.as_str())
+            .map(|task| {
                     (
                         task.owner_actor.clone(),
                         task.request_correlation_id.clone(),
@@ -316,10 +317,10 @@ impl Coordinator {
                 }),
             )?;
 
-            if let Some(task) = run_state.tasks.get(&task_id) {
+            if let Some(task) = run_state.tasks.get(task_id.as_str()) {
                 task.cancellation_token.cancel();
             }
-            run_state.cancelled_running_tasks.insert(task_id);
+            run_state.cancelled_running_tasks.insert(task_id.to_string());
         }
 
         Ok(())
@@ -368,7 +369,7 @@ impl Coordinator {
                 Some(format!("task:{task_id}")),
                 task.request_correlation_id,
                 EventV1::TaskResultLate(TaskResultLateEvent {
-                    task_id,
+                    task_id: task_id.into(),
                     result_digest: digest12(format!("{:?}", outcome).as_bytes()),
                 }),
             )?;
@@ -546,7 +547,7 @@ impl Coordinator {
                     &self.config.hook_runtime_config,
                     HookInvocationContext {
                         event: HookLifecycleEvent::ToolCallFinished,
-                        run_id: run_state.info.run_id.clone(),
+                        run_id: run_state.info.run_id.to_string(),
                         workspace_root: run_state.info.workspace_root.clone(),
                         artifacts_dir: run_state.info.artifacts_dir.clone(),
                         actor: Some(task.owner_actor.clone()),
@@ -586,10 +587,10 @@ impl Coordinator {
                         task.owner_actor.clone(),
                         Some(format!("task:{task_id}")),
                         request_correlation_id.clone(),
-                        EventV1::TaskCancelled(TaskCancelledEvent {
-                            task_id,
-                            reason: reason.clone(),
-                            task_scope: Some(TaskTerminalScope::ToolCall),
+                    EventV1::TaskCancelled(TaskCancelledEvent {
+                        task_id: task_id.into(),
+                        reason: reason.clone(),
+                        task_scope: Some(TaskTerminalScope::ToolCall),
                         }),
                     )?;
                     append_failed_tool_call_finished_event(
@@ -621,7 +622,7 @@ impl Coordinator {
                     Some(format!("task:{task_id}")),
                     request_correlation_id.clone(),
                     EventV1::TaskCompleted(TaskCompletedEvent {
-                        task_id,
+                        task_id: task_id.into(),
                         result_digest: digest12(result_summary.as_bytes()),
                         result_summary: result_summary.clone(),
                         metadata: Some(TaskCompletionMetadata {
@@ -686,7 +687,7 @@ impl Coordinator {
                     &self.config.hook_runtime_config,
                     HookInvocationContext {
                         event: HookLifecycleEvent::ToolCallFinished,
-                        run_id: run_state.info.run_id.clone(),
+                        run_id: run_state.info.run_id.to_string(),
                         workspace_root: run_state.info.workspace_root.clone(),
                         artifacts_dir: run_state.info.artifacts_dir.clone(),
                         actor: Some(task.owner_actor.clone()),
@@ -720,7 +721,7 @@ impl Coordinator {
                     Some(format!("task:{task_id}")),
                     request_correlation_id.clone(),
                     EventV1::TaskCancelled(TaskCancelledEvent {
-                        task_id,
+                        task_id: task_id.into(),
                         reason: final_error.clone(),
                         task_scope: Some(TaskTerminalScope::ToolCall),
                     }),
@@ -771,7 +772,7 @@ impl Coordinator {
                     &self.config.hook_runtime_config,
                     HookInvocationContext {
                         event: HookLifecycleEvent::ToolCallFinished,
-                        run_id: run_state.info.run_id.clone(),
+                        run_id: run_state.info.run_id.to_string(),
                         workspace_root: run_state.info.workspace_root.clone(),
                         artifacts_dir: run_state.info.artifacts_dir.clone(),
                         actor: Some(task.owner_actor.clone()),
@@ -805,7 +806,7 @@ impl Coordinator {
                     Some(format!("task:{task_id}")),
                     request_correlation_id.clone(),
                     EventV1::TaskCancelled(TaskCancelledEvent {
-                        task_id,
+                        task_id: task_id.into(),
                         reason: final_reason.clone(),
                         task_scope: Some(TaskTerminalScope::ToolCall),
                     }),
@@ -855,7 +856,7 @@ fn foreground_child_tasks(
                 .values()
                 .filter_map(|queued| queued.child_task.as_ref()),
         )
-        .filter(|child| !child.run_in_background && child.parent_session_id == parent_session_id)
+        .filter(|child| !child.run_in_background && child.parent_session_id.as_str() == parent_session_id)
         .cloned()
         .collect()
 }

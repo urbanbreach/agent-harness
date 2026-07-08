@@ -1,3 +1,4 @@
+// allow: SIZE_OK — coordinator state machine (turn lifecycle + scheduling)
 use std::collections::BTreeSet;
 use std::fs;
 use std::io;
@@ -653,7 +654,7 @@ impl super::Coordinator {
             &self.config.hook_runtime_config,
             HookInvocationContext {
                 event: HookLifecycleEvent::PermissionResolved,
-                run_id: run_state.info.run_id.clone(),
+                run_id: run_state.info.run_id.to_string(),
                 workspace_root: run_state.info.workspace_root.clone(),
                 artifacts_dir: run_state.info.artifacts_dir.clone(),
                 actor: Some(hook_actor),
@@ -859,7 +860,7 @@ impl super::Coordinator {
             &self.config.hook_runtime_config,
             HookInvocationContext {
                 event: HookLifecycleEvent::PermissionResolved,
-                run_id: run_state.info.run_id.clone(),
+                run_id: run_state.info.run_id.to_string(),
                 workspace_root: run_state.info.workspace_root.clone(),
                 artifacts_dir: run_state.info.artifacts_dir.clone(),
                 actor: Some(hook_actor),

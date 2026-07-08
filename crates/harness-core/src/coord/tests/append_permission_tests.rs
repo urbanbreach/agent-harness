@@ -263,7 +263,7 @@ async fn perm_allow_path_proceeds() {
             matches!(
                 &event.payload,
                 EventV1::ToolCallFinished(data)
-                    if data.tool_call_id == tool_call_id && data.status == ToolCallStatus::Succeeded
+                    if data.tool_call_id.as_str() == tool_call_id && data.status == ToolCallStatus::Succeeded
             )
         },
     )
@@ -275,7 +275,7 @@ async fn perm_allow_path_proceeds() {
         matches!(
             &event.payload,
             EventV1::ToolCallRequested(data)
-                if data.tool_call_id == tool_call_id
+                if data.tool_call_id.as_str() == tool_call_id
                     && event.correlation_id.as_deref() == Some(tool_call_id.as_str())
         )
     }));
@@ -283,7 +283,7 @@ async fn perm_allow_path_proceeds() {
         matches!(
             &event.payload,
             EventV1::ToolCallStarted(data)
-                if data.tool_call_id == tool_call_id
+                if data.tool_call_id.as_str() == tool_call_id
                     && event.correlation_id.as_deref() == Some(tool_call_id.as_str())
         )
     }));
@@ -291,7 +291,7 @@ async fn perm_allow_path_proceeds() {
         matches!(
             &event.payload,
             EventV1::ToolCallFinished(data)
-                if data.tool_call_id == tool_call_id
+                if data.tool_call_id.as_str() == tool_call_id
                     && data.status == ToolCallStatus::Succeeded
                     && event.correlation_id.as_deref() == Some(tool_call_id.as_str())
         )

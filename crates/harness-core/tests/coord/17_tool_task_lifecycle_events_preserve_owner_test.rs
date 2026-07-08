@@ -60,7 +60,7 @@ async fn tool_task_lifecycle_events_preserve_owner_actor() {
         .filter(|event| {
             matches!(
                 &event.payload,
-                EventV1::TaskScheduled(data) if tool_task_ids.contains(&data.task_id)
+                EventV1::TaskScheduled(data) if tool_task_ids.contains(data.task_id.as_str())
             )
         })
         .collect::<Vec<_>>();
@@ -78,10 +78,10 @@ async fn tool_task_lifecycle_events_preserve_owner_actor() {
         .filter(|event| {
             matches!(
                 &event.payload,
-                EventV1::TaskCompleted(data) if tool_task_ids.contains(&data.task_id)
+                EventV1::TaskCompleted(data) if tool_task_ids.contains(data.task_id.as_str())
             ) || matches!(
                 &event.payload,
-                EventV1::TaskCancelled(data) if tool_task_ids.contains(&data.task_id)
+                EventV1::TaskCancelled(data) if tool_task_ids.contains(data.task_id.as_str())
             )
         })
         .collect::<Vec<_>>();
@@ -325,7 +325,7 @@ async fn critical_hook_failure_fails_closed_and_records_metadata() {
     let tool_finished = events
         .iter()
         .find_map(|event| match &event.payload {
-            EventV1::ToolCallFinished(data) if data.tool_call_id == tool_call_id => Some(data),
+            EventV1::ToolCallFinished(data) if data.tool_call_id.as_str() == tool_call_id => Some(data),
             _ => None,
         })
         .unwrap_or_abort();
@@ -462,7 +462,7 @@ async fn noncritical_hook_failure_records_metadata_without_cancelling_task() {
     let tool_finished = events
         .iter()
         .find_map(|event| match &event.payload {
-            EventV1::ToolCallFinished(data) if data.tool_call_id == tool_call_id => Some(data),
+            EventV1::ToolCallFinished(data) if data.tool_call_id.as_str() == tool_call_id => Some(data),
             _ => None,
         })
         .unwrap_or_abort();

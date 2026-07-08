@@ -29,7 +29,7 @@ fn assistant_message<'a>(
         .iter()
         .find(|message| {
             message.role == ProjectedMessageRole::Assistant
-                && message.request_id.as_deref() == Some(request_id)
+                && message.request_id.as_ref().map(|r| r.as_str()) == Some(request_id)
         })
         .unwrap_or_abort()
 }
@@ -47,7 +47,7 @@ fn tool_requested(
         worker(),
         Some(request_id),
         EventV1::ToolCallRequested(ToolCallRequestedEvent {
-            tool_call_id: tool_call_id.to_string(),
+            tool_call_id: tool_call_id.into(),
             tool_id: tool_id.to_string(),
             args_summary: args_summary.to_string(),
             args_digest: format!("digest-{tool_call_id}"),
@@ -82,7 +82,7 @@ fn envelope(
         schema_version: SCHEMA_VERSION,
         event_id: format!("evt-{seq:020}"),
         seq,
-        run_id: "run_transcript_projection".to_string(),
+        run_id: "run_transcript_projection".into(),
         mono_ms: seq,
         ts: None,
         actor,

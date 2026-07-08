@@ -9,14 +9,14 @@ fn resume_plan_resolves_tool_identity_and_lifecycle_without_tui_inference() {
             envelope(
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/workspace/project".to_string(),
                 }),
             ),
             envelope(
                 2,
                 EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                    tool_call_id: "toolcall_000101".to_string(),
+                    tool_call_id: "toolcall_000101".into(),
                     tool_id: "task".to_string(),
                     args_summary: "{\"prompt\":\"delegate\"}".to_string(),
                     args_digest: "digest-task-request".to_string(),
@@ -33,7 +33,7 @@ fn resume_plan_resolves_tool_identity_and_lifecycle_without_tui_inference() {
             envelope(
                 3,
                 EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                    tool_call_id: "toolcall_000102".to_string(),
+                    tool_call_id: "toolcall_000102".into(),
                     tool_id: "mcp.fixture.echo".to_string(),
                     args_summary: "{\"text\":\"hello\"}".to_string(),
                     args_digest: "digest-mcp-direct-request".to_string(),
@@ -50,13 +50,13 @@ fn resume_plan_resolves_tool_identity_and_lifecycle_without_tui_inference() {
             envelope(
                 4,
                 EventV1::ToolCallStarted(ToolCallStartedEvent {
-                    tool_call_id: "toolcall_000102".to_string(),
+                    tool_call_id: "toolcall_000102".into(),
                 }),
             ),
             envelope(
                 5,
                 EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                    tool_call_id: "toolcall_000103".to_string(),
+                    tool_call_id: "toolcall_000103".into(),
                     tool_id: "mcp.fixture.tool.call".to_string(),
                     args_summary: "{\"tool\":\"echo\"}".to_string(),
                     args_digest: "digest-mcp-wrapper-request".to_string(),
@@ -73,7 +73,7 @@ fn resume_plan_resolves_tool_identity_and_lifecycle_without_tui_inference() {
             envelope(
                 6,
                 EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                    tool_call_id: "toolcall_000103".to_string(),
+                    tool_call_id: "toolcall_000103".into(),
                     status: ToolCallStatus::Failed,
                     output_summary: Some("wrapper failed".to_string()),
                     output_digest: Some("digest-mcp-wrapper-failed".to_string()),
@@ -91,7 +91,7 @@ fn resume_plan_resolves_tool_identity_and_lifecycle_without_tui_inference() {
             envelope(
                 7,
                 EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                    tool_call_id: "toolcall_000104".to_string(),
+                    tool_call_id: "toolcall_000104".into(),
                     tool_id: "agent.spawn".to_string(),
                     args_summary: "{\"prompt\":\"native\"}".to_string(),
                     args_digest: "digest-native-request".to_string(),
@@ -108,13 +108,13 @@ fn resume_plan_resolves_tool_identity_and_lifecycle_without_tui_inference() {
             envelope(
                 8,
                 EventV1::ToolCallStarted(ToolCallStartedEvent {
-                    tool_call_id: "toolcall_000104".to_string(),
+                    tool_call_id: "toolcall_000104".into(),
                 }),
             ),
             envelope(
                 9,
                 EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                    tool_call_id: "toolcall_000104".to_string(),
+                    tool_call_id: "toolcall_000104".into(),
                     status: ToolCallStatus::Succeeded,
                     output_summary: Some("native ok".to_string()),
                     output_digest: Some("digest-native-ok".to_string()),
@@ -268,7 +268,7 @@ fn resume_plan_rejects_sessions_with_pending_permissions() {
             envelope(
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/workspace/project".to_string(),
                 }),
             ),
@@ -283,7 +283,7 @@ fn resume_plan_rejects_sessions_with_pending_permissions() {
             envelope(
                 3,
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req_000001".to_string(),
+                    request_id: "req_000001".into(),
                     provider_id: "default".to_string(),
                     model_id: "gpt-5".to_string(),
                     prompt_summary: "prompt".to_string(),
@@ -329,7 +329,7 @@ fn resume_plan_rejects_sessions_with_tasks_in_flight() {
             envelope(
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/workspace/project".to_string(),
                 }),
             ),
@@ -344,7 +344,7 @@ fn resume_plan_rejects_sessions_with_tasks_in_flight() {
             envelope(
                 3,
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req_000001".to_string(),
+                    request_id: "req_000001".into(),
                     provider_id: "default".to_string(),
                     model_id: "gpt-5".to_string(),
                     prompt_summary: "prompt".to_string(),
@@ -355,7 +355,7 @@ fn resume_plan_rejects_sessions_with_tasks_in_flight() {
             envelope(
                 4,
                 EventV1::TaskScheduled(TaskScheduledEvent {
-                    task_id: "task_000001".to_string(),
+                    task_id: "task_000001".to_string().into(),
                     state: TaskScheduleState::Started,
                     queue_key: Some("tool:shell.run".to_string()),
                 }),
@@ -387,7 +387,7 @@ fn resume_plan_rejects_non_monotonic_or_corrupt_logs() {
             envelope(
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/workspace/project".to_string(),
                 }),
             ),
@@ -412,7 +412,7 @@ fn resume_plan_rejects_non_monotonic_or_corrupt_logs() {
     let valid_first_line = serde_json::to_string(&envelope(
         1,
         EventV1::RunStarted(RunStartedEvent {
-            run_name: "interactive".to_string(),
+            run_name: "interactive".into(),
             workspace_root: "/workspace/project".to_string(),
         }),
     ))

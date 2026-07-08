@@ -127,7 +127,7 @@ async fn deterministic_runs_suppress_live_hook_execution() {
     let tool_finished = events
         .iter()
         .find_map(|event| match &event.payload {
-            EventV1::ToolCallFinished(data) if data.tool_call_id == tool_call_id => Some(data),
+            EventV1::ToolCallFinished(data) if data.tool_call_id.as_str() == tool_call_id => Some(data),
             _ => None,
         })
         .unwrap_or_abort();
@@ -477,7 +477,7 @@ fn tool_task_ids(events: &[EventEnvelopeV1]) -> BTreeSet<String> {
                     .as_deref()
                     .is_some_and(|queue_key| queue_key.starts_with("tool:")) =>
             {
-                Some(data.task_id.clone())
+                Some(data.task_id.to_string())
             }
             _ => None,
         })
@@ -554,7 +554,7 @@ fn write_resumable_history_fixture(session_dir: &Path, run_id: &str) {
             run_id,
             1,
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "interactive".to_string(),
+                run_name: "interactive".into(),
                 workspace_root: "/workspace/project".to_string(),
             }),
         ),
@@ -573,7 +573,7 @@ fn write_resumable_history_fixture(session_dir: &Path, run_id: &str) {
             EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
             Some("req_000001"),
             EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                request_id: "req_000001".to_string(),
+                request_id: "req_000001".into(),
                 provider_id: "mock".to_string(),
                 model_id: "model-1".to_string(),
                 prompt_summary: "first question".to_string(),
@@ -587,7 +587,7 @@ fn write_resumable_history_fixture(session_dir: &Path, run_id: &str) {
             EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
             Some("req_000001"),
             EventV1::ProviderStreamDelta(harness_core::event::ProviderStreamDeltaEvent {
-                request_id: "req_000001".to_string(),
+                request_id: "req_000001".into(),
                 delta: "first answer".to_string(),
             }),
         ),
@@ -597,7 +597,7 @@ fn write_resumable_history_fixture(session_dir: &Path, run_id: &str) {
             EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
             Some("req_000001"),
             EventV1::ProviderRequestFinished(harness_core::event::ProviderRequestFinishedEvent {
-                request_id: "req_000001".to_string(),
+                request_id: "req_000001".into(),
                 finish_reason: "done".to_string(),
                 output_digest: Some("digest-out-1".to_string()),
                 usage: None,
@@ -610,7 +610,7 @@ fn write_resumable_history_fixture(session_dir: &Path, run_id: &str) {
             EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
             Some("req_000001"),
             EventV1::TaskCompleted(TaskCompletedEvent {
-                task_id: "task_000001".to_string(),
+                task_id: "task_000001".to_string().into(),
                 result_summary: "first answer".to_string(),
                 result_digest: "digest-task-1".to_string(),
                 metadata: None,
@@ -633,7 +633,7 @@ fn write_resumable_multi_turn_history_fixture(session_dir: &Path, run_id: &str) 
             run_id,
             1,
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "interactive".to_string(),
+                run_name: "interactive".into(),
                 workspace_root: "/workspace/project".to_string(),
             }),
         ),
@@ -652,7 +652,7 @@ fn write_resumable_multi_turn_history_fixture(session_dir: &Path, run_id: &str) 
             EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
             Some("req_000001"),
             EventV1::TaskScheduled(TaskScheduledEvent {
-                task_id: "task_000001".to_string(),
+                task_id: "task_000001".to_string().into(),
                 state: TaskScheduleState::Started,
                 queue_key: Some("provider_model:mock:model-1".to_string()),
             }),
@@ -663,7 +663,7 @@ fn write_resumable_multi_turn_history_fixture(session_dir: &Path, run_id: &str) 
             EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
             Some("req_000001"),
             EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                request_id: "req_000001".to_string(),
+                request_id: "req_000001".into(),
                 provider_id: "mock".to_string(),
                 model_id: "model-1".to_string(),
                 prompt_summary: "first question".to_string(),
@@ -677,7 +677,7 @@ fn write_resumable_multi_turn_history_fixture(session_dir: &Path, run_id: &str) 
             EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
             Some("req_000001"),
             EventV1::ProviderStreamDelta(harness_core::event::ProviderStreamDeltaEvent {
-                request_id: "req_000001".to_string(),
+                request_id: "req_000001".into(),
                 delta: "calling tool".to_string(),
             }),
         ),
@@ -687,7 +687,7 @@ fn write_resumable_multi_turn_history_fixture(session_dir: &Path, run_id: &str) 
             EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
             Some("req_000001"),
             EventV1::ProviderRequestFinished(harness_core::event::ProviderRequestFinishedEvent {
-                request_id: "req_000001".to_string(),
+                request_id: "req_000001".into(),
                 finish_reason: "done".to_string(),
                 output_digest: Some("digest-out-1".to_string()),
                 usage: None,
@@ -700,7 +700,7 @@ fn write_resumable_multi_turn_history_fixture(session_dir: &Path, run_id: &str) 
             EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
             Some("req_000001"),
             EventV1::TaskScheduled(TaskScheduledEvent {
-                task_id: "task_000002".to_string(),
+                task_id: "task_000002".to_string().into(),
                 state: TaskScheduleState::Started,
                 queue_key: Some("tool:edit.hashline_apply".to_string()),
             }),
@@ -711,7 +711,7 @@ fn write_resumable_multi_turn_history_fixture(session_dir: &Path, run_id: &str) 
             EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
             Some("req_000001"),
             EventV1::TaskCompleted(TaskCompletedEvent {
-                task_id: "task_000002".to_string(),
+                task_id: "task_000002".to_string().into(),
                 result_summary: "tool output".to_string(),
                 result_digest: "digest-tool-task".to_string(),
                 metadata: None,
@@ -723,7 +723,7 @@ fn write_resumable_multi_turn_history_fixture(session_dir: &Path, run_id: &str) 
             EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
             Some("req_000002"),
             EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                request_id: "req_000002".to_string(),
+                request_id: "req_000002".into(),
                 provider_id: "mock".to_string(),
                 model_id: "model-1".to_string(),
                 prompt_summary: "tool result + continue".to_string(),
@@ -737,7 +737,7 @@ fn write_resumable_multi_turn_history_fixture(session_dir: &Path, run_id: &str) 
             EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
             Some("req_000002"),
             EventV1::ProviderStreamDelta(harness_core::event::ProviderStreamDeltaEvent {
-                request_id: "req_000002".to_string(),
+                request_id: "req_000002".into(),
                 delta: "first final answer".to_string(),
             }),
         ),
@@ -747,7 +747,7 @@ fn write_resumable_multi_turn_history_fixture(session_dir: &Path, run_id: &str) 
             EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
             Some("req_000002"),
             EventV1::ProviderRequestFinished(harness_core::event::ProviderRequestFinishedEvent {
-                request_id: "req_000002".to_string(),
+                request_id: "req_000002".into(),
                 finish_reason: "done".to_string(),
                 output_digest: Some("digest-out-2".to_string()),
                 usage: None,
@@ -760,7 +760,7 @@ fn write_resumable_multi_turn_history_fixture(session_dir: &Path, run_id: &str) 
             EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
             Some("req_000001"),
             EventV1::TaskCompleted(TaskCompletedEvent {
-                task_id: "task_000001".to_string(),
+                task_id: "task_000001".to_string().into(),
                 result_summary: "first final answer".to_string(),
                 result_digest: "digest-task-1".to_string(),
                 metadata: None,
@@ -814,7 +814,7 @@ fn resume_fixture_event_with_actor_and_correlation(
         schema_version: SCHEMA_VERSION,
         event_id: format!("evt-{seq:04}"),
         seq,
-        run_id: run_id.to_string(),
+        run_id: run_id.to_string().into(),
         mono_ms: seq,
         ts: None,
         actor,

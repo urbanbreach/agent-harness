@@ -9,7 +9,7 @@ fn resume_plan_uses_latest_lifecycle_segment_instead_of_any_terminal_event() {
             envelope(
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/workspace/older".to_string(),
                 }),
             ),
@@ -24,7 +24,7 @@ fn resume_plan_uses_latest_lifecycle_segment_instead_of_any_terminal_event() {
             envelope(
                 3,
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req_000001".to_string(),
+                    request_id: "req_000001".into(),
                     provider_id: "default".to_string(),
                     model_id: "gpt-5".to_string(),
                     prompt_summary: "old".to_string(),
@@ -41,7 +41,7 @@ fn resume_plan_uses_latest_lifecycle_segment_instead_of_any_terminal_event() {
             envelope(
                 5,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/workspace/newer".to_string(),
                 }),
             ),
@@ -56,7 +56,7 @@ fn resume_plan_uses_latest_lifecycle_segment_instead_of_any_terminal_event() {
             envelope(
                 7,
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req_000002".to_string(),
+                    request_id: "req_000002".into(),
                     provider_id: "default".to_string(),
                     model_id: "gpt-5".to_string(),
                     prompt_summary: "new".to_string(),
@@ -91,7 +91,7 @@ fn resume_plan_keeps_provider_model_after_open_and_quit_resumed_segment() {
             envelope(
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/workspace/original".to_string(),
                 }),
             ),
@@ -106,7 +106,7 @@ fn resume_plan_keeps_provider_model_after_open_and_quit_resumed_segment() {
             envelope(
                 3,
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req_000001".to_string(),
+                    request_id: "req_000001".into(),
                     provider_id: "default".to_string(),
                     model_id: "gpt-5".to_string(),
                     prompt_summary: "hello".to_string(),
@@ -123,7 +123,7 @@ fn resume_plan_keeps_provider_model_after_open_and_quit_resumed_segment() {
             envelope(
                 5,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/workspace/resumed".to_string(),
                 }),
             ),
@@ -181,7 +181,7 @@ fn resume_plan_preserves_child_session_lineage_across_open_and_quit_resumed_segm
             envelope(
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/workspace/original".to_string(),
                 }),
             ),
@@ -196,7 +196,7 @@ fn resume_plan_preserves_child_session_lineage_across_open_and_quit_resumed_segm
             envelope(
                 3,
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req_000001".to_string(),
+                    request_id: "req_000001".into(),
                     provider_id: "default".to_string(),
                     model_id: "gpt-5".to_string(),
                     prompt_summary: "parent turn".to_string(),
@@ -207,7 +207,7 @@ fn resume_plan_preserves_child_session_lineage_across_open_and_quit_resumed_segm
             envelope(
                 4,
                 EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                    tool_call_id: "toolcall_000777".to_string(),
+                    tool_call_id: "toolcall_000777".into(),
                     tool_id: "agent.spawn".to_string(),
                     args_summary: "{\"task\":\"spawn child\"}".to_string(),
                     args_digest: "digest-child-spawn-req".to_string(),
@@ -224,7 +224,7 @@ fn resume_plan_preserves_child_session_lineage_across_open_and_quit_resumed_segm
             envelope(
                 5,
                 EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                    tool_call_id: "toolcall_000777".to_string(),
+                    tool_call_id: "toolcall_000777".into(),
                     status: ToolCallStatus::Succeeded,
                     output_summary: Some("child spawned".to_string()),
                     output_digest: Some("digest-child-spawn-finished".to_string()),
@@ -248,7 +248,7 @@ fn resume_plan_preserves_child_session_lineage_across_open_and_quit_resumed_segm
             envelope(
                 7,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/workspace/resumed".to_string(),
                 }),
             ),
@@ -292,7 +292,7 @@ fn session_catalog_counts_checkpoint_artifacts_alongside_tool_artifacts() {
             path: "artifacts/toolcalls/toolcall_000001/result.json".to_string(),
             digest: "digest-tool".to_string(),
             bytes: 42,
-            tool_call_id: Some("toolcall_000001".to_string()),
+            tool_call_id: Some("toolcall_000001".into()),
             tool_metadata: None,
             metadata: BTreeMap::new(),
         }),
@@ -305,7 +305,7 @@ fn session_catalog_counts_checkpoint_artifacts_alongside_tool_artifacts() {
             envelope(
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/workspace/project".to_string(),
                 }),
             ),

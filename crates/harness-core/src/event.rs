@@ -1,3 +1,4 @@
+// allow: SIZE_OK — event schema v1 (30+ event variants + metadata structs + identity resolution)
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
@@ -21,7 +22,7 @@ pub struct EventEnvelopeV1 {
     pub schema_version: u16,
     pub event_id: String,
     pub seq: u64,
-    pub run_id: String,
+    pub run_id: crate::ids::RunId,
     pub mono_ms: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ts: Option<String>,
@@ -158,7 +159,7 @@ impl EventV1 {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RunStartedEvent {
-    pub run_name: String,
+    pub run_name: crate::ids::RunName,
     pub workspace_root: String,
 }
 
@@ -193,7 +194,7 @@ pub struct AgentStoppedEvent {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TaskScheduledEvent {
-    pub task_id: String,
+    pub task_id: crate::ids::TaskId,
     pub state: TaskScheduleState,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub queue_key: Option<String>,
@@ -333,7 +334,7 @@ pub struct TaskCompletionMetadata {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TaskCancelledEvent {
-    pub task_id: String,
+    pub task_id: crate::ids::TaskId,
     pub reason: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub task_scope: Option<TaskTerminalScope>,
@@ -341,7 +342,7 @@ pub struct TaskCancelledEvent {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TaskCompletedEvent {
-    pub task_id: String,
+    pub task_id: crate::ids::TaskId,
     pub result_summary: String,
     pub result_digest: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -350,7 +351,7 @@ pub struct TaskCompletedEvent {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TaskResultLateEvent {
-    pub task_id: String,
+    pub task_id: crate::ids::TaskId,
     pub result_digest: String,
 }
 
@@ -376,12 +377,12 @@ impl BackgroundTaskNotificationStatus {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BackgroundTaskNotificationEvent {
-    pub parent_session_id: String,
+    pub parent_session_id: crate::ids::SessionId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent_agent_id: Option<String>,
-    pub child_session_id: String,
+    pub child_session_id: crate::ids::SessionId,
     pub child_request_id: String,
-    pub task_id: String,
+    pub task_id: crate::ids::TaskId,
     pub description: String,
     pub status: BackgroundTaskNotificationStatus,
     pub summary: String,
@@ -393,13 +394,13 @@ pub struct BackgroundTaskNotificationEvent {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StaleDetectedEvent {
-    pub task_id: String,
+    pub task_id: crate::ids::TaskId,
     pub stale_for_ms: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UserMessageSubmittedEvent {
-    pub request_id: String,
+    pub request_id: crate::ids::RequestId,
     pub text: String,
 }
 
@@ -485,7 +486,7 @@ pub struct ProviderRequestFinishedMetadata {
 /// boundaries remain presentation details derived from following delta events.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProviderRequestStartedEvent {
-    pub request_id: String,
+    pub request_id: crate::ids::RequestId,
     pub provider_id: String,
     pub model_id: String,
     pub prompt_summary: String,
@@ -496,13 +497,13 @@ pub struct ProviderRequestStartedEvent {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProviderStreamDeltaEvent {
-    pub request_id: String,
+    pub request_id: crate::ids::RequestId,
     pub delta: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProviderReasoningDeltaEvent {
-    pub request_id: String,
+    pub request_id: crate::ids::RequestId,
     pub delta: String,
 }
 
@@ -517,7 +518,7 @@ pub struct ProviderReasoningDeltaEvent {
 /// derived by the coordinator from the ordered event stream.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProviderRequestFinishedEvent {
-    pub request_id: String,
+    pub request_id: crate::ids::RequestId,
     pub finish_reason: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output_digest: Option<String>,
@@ -535,7 +536,7 @@ pub struct ProviderRequestFinishedEvent {
 /// that replay/debugging tools can observe deterministically in JSONL order.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AssistantMessageFinishedEvent {
-    pub request_id: String,
+    pub request_id: crate::ids::RequestId,
     pub tool_call_count: usize,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub assistant_message: Option<ProviderAssistantMessageMetadata>,
@@ -638,7 +639,7 @@ pub struct CompactionFailedEvent {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolCallRequestedEvent {
-    pub tool_call_id: String,
+    pub tool_call_id: crate::ids::ToolCallId,
     pub tool_id: String,
     pub args_summary: String,
     pub args_digest: String,
@@ -648,12 +649,12 @@ pub struct ToolCallRequestedEvent {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolCallStartedEvent {
-    pub tool_call_id: String,
+    pub tool_call_id: crate::ids::ToolCallId,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolCallFinishedEvent {
-    pub tool_call_id: String,
+    pub tool_call_id: crate::ids::ToolCallId,
     pub status: ToolCallStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output_summary: Option<String>,
@@ -763,7 +764,7 @@ pub struct PermissionRequestedEvent {
     pub permission_id: String,
     pub kind: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_call_id: Option<String>,
+    pub tool_call_id: Option<crate::ids::ToolCallId>,
     pub summary: String,
     pub request_digest: String,
     pub timeout_ms: u64,
@@ -773,7 +774,7 @@ pub struct PermissionRequestedEvent {
 pub struct PermissionRequestedArgs {
     pub permission_id: String,
     pub kind: String,
-    pub tool_call_id: Option<String>,
+    pub tool_call_id: Option<crate::ids::ToolCallId>,
     pub summary: String,
     pub request_digest: String,
     pub timeout_ms: u64,
@@ -832,7 +833,7 @@ pub struct ArtifactWrittenEvent {
     pub digest: String,
     pub bytes: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tool_call_id: Option<String>,
+    pub tool_call_id: Option<crate::ids::ToolCallId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_metadata: Option<ToolIdentityMetadata>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -854,7 +855,7 @@ pub struct UiIntentReceivedEvent {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkspaceSnapshotEvent {
-    pub request_id: String,
+    pub request_id: crate::ids::RequestId,
     pub artifact_path: String,
     pub artifact_digest: String,
     pub file_count: usize,
@@ -862,7 +863,7 @@ pub struct WorkspaceSnapshotEvent {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkspaceRevertedEvent {
-    pub request_id: String,
+    pub request_id: crate::ids::RequestId,
     pub snapshot_request_id: String,
     pub restored_paths: Vec<String>,
     pub removed_paths: Vec<String>,

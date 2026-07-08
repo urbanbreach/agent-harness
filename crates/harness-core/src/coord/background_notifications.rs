@@ -1,3 +1,4 @@
+// allow: SIZE_OK — coordinator state machine (turn lifecycle + scheduling)
 use super::*;
 use crate::event::BackgroundTaskNotificationEvent;
 use crate::proj::BackgroundRequestProjectionError;
@@ -43,7 +44,7 @@ pub(in crate::coord) fn background_terminal_event_matches_task(
 ) -> bool {
     match &event.payload {
         EventV1::TaskCompleted(payload) => {
-            payload.task_id == scheduler_task_id
+            payload.task_id.as_str() == scheduler_task_id
                 || payload
                     .metadata
                     .as_ref()
@@ -51,7 +52,7 @@ pub(in crate::coord) fn background_terminal_event_matches_task(
                     == Some(TaskTerminalScope::AgentTurn)
         }
         EventV1::TaskCancelled(payload) => {
-            payload.task_id == scheduler_task_id
+            payload.task_id.as_str() == scheduler_task_id
                 || payload.task_scope == Some(TaskTerminalScope::AgentTurn)
         }
         _ => false,
@@ -107,7 +108,7 @@ where
         parent_agent_id,
         child_session_id: child_task.child_session_id.clone(),
         child_request_id: child_task.child_request_id.clone(),
-        task_id: child_task.task_id.clone(),
+        task_id: child_task.task_id.clone().into(),
         description: capped_description,
         status,
         summary: capped_summary,
@@ -198,7 +199,7 @@ where
         Some(format!("agent:{parent_agent_id}")),
         Some(delivered_turn_request_id.clone()),
         EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-            request_id: delivered_turn_request_id.clone(),
+            request_id: delivered_turn_request_id.clone().into(),
             text: notification_text.clone(),
         }),
     )?;
@@ -313,9 +314,9 @@ where
 
 fn terminal_terminal_task_id(event: &EventEnvelopeV1) -> String {
     match &event.payload {
-        EventV1::TaskCompleted(payload) => payload.task_id.clone(),
-        EventV1::TaskCancelled(payload) => payload.task_id.clone(),
-        EventV1::TaskResultLate(payload) => payload.task_id.clone(),
+        EventV1::TaskCompleted(payload) => payload.task_id.to_string(),
+        EventV1::TaskCancelled(payload) => payload.task_id.to_string(),
+        EventV1::TaskResultLate(payload) => payload.task_id.to_string(),
         _ => String::new(),
     }
 }

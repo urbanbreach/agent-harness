@@ -34,7 +34,7 @@ fn stable_events(
             run_id,
             1,
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "parent".to_string(),
+                run_name: "parent".into(),
                 workspace_root: "/workspace/source".to_string(),
             }),
         ),
@@ -42,7 +42,7 @@ fn stable_events(
             run_id,
             2,
             EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                tool_call_id: "toolcall_000001".to_string(),
+                tool_call_id: "toolcall_000001".into(),
                 tool_id: "bash".to_string(),
                 args_summary: "{}".to_string(),
                 args_digest: "argsdigest".to_string(),
@@ -59,7 +59,7 @@ fn stable_events(
             run_id,
             3,
             EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                tool_call_id: "toolcall_000001".to_string(),
+                tool_call_id: "toolcall_000001".into(),
                 status: ToolCallStatus::Succeeded,
                 output_summary: Some("wrote artifact".to_string()),
                 output_digest: Some("outputdigest".to_string()),
@@ -74,7 +74,7 @@ fn stable_events(
                 path: artifact_path.to_string(),
                 digest: artifact_digest.to_string(),
                 bytes: artifact_bytes as u64,
-                tool_call_id: Some("toolcall_000001".to_string()),
+                tool_call_id: Some("toolcall_000001".into()),
                 tool_metadata: None,
                 metadata: BTreeMap::new(),
             }),
@@ -95,7 +95,7 @@ fn live_snapshot_with_open_state(run_id: &str) -> Vec<EventEnvelopeV1> {
             run_id,
             1,
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "interactive".to_string(),
+                run_name: "interactive".into(),
                 workspace_root: "/workspace/source".to_string(),
             }),
         ),
@@ -112,7 +112,7 @@ fn live_snapshot_with_open_state(run_id: &str) -> Vec<EventEnvelopeV1> {
             run_id,
             3,
             EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-                request_id: "req_000001".to_string(),
+                request_id: "req_000001".into(),
                 text: "edit file".to_string(),
             }),
         ),
@@ -120,7 +120,7 @@ fn live_snapshot_with_open_state(run_id: &str) -> Vec<EventEnvelopeV1> {
             run_id,
             4,
             EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                request_id: "req_000001".to_string(),
+                request_id: "req_000001".into(),
                 provider_id: "default".to_string(),
                 model_id: "gpt-5".to_string(),
                 prompt_summary: "edit file".to_string(),
@@ -132,7 +132,7 @@ fn live_snapshot_with_open_state(run_id: &str) -> Vec<EventEnvelopeV1> {
             run_id,
             5,
             EventV1::TaskScheduled(TaskScheduledEvent {
-                task_id: "task_000001".to_string(),
+                task_id: "task_000001".to_string().into(),
                 state: TaskScheduleState::Started,
                 queue_key: Some("tool:edit".to_string()),
             }),
@@ -143,7 +143,7 @@ fn live_snapshot_with_open_state(run_id: &str) -> Vec<EventEnvelopeV1> {
             EventV1::PermissionRequested(PermissionRequestedEvent {
                 permission_id: "perm_000001".to_string(),
                 kind: "edit".to_string(),
-                tool_call_id: Some("toolcall_000001".to_string()),
+                tool_call_id: Some("toolcall_000001".into()),
                 summary: "allow edit".to_string(),
                 request_digest: "digest-perm".to_string(),
                 timeout_ms: 60_000,
@@ -158,7 +158,7 @@ fn envelope(run_id: &str, seq: u64, payload: EventV1) -> EventEnvelopeV1 {
         schema_version: SCHEMA_VERSION,
         event_id: format!("evt-parent-{seq:04}"),
         seq,
-        run_id: run_id.to_string(),
+        run_id: run_id.to_string().into(),
         mono_ms: seq,
         ts: None,
         actor: EventActor::new(ActorKind::System, Some("coordinator".to_string())),

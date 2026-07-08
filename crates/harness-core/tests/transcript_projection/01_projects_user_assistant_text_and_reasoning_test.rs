@@ -7,7 +7,7 @@ fn projects_user_assistant_text_and_reasoning_parts() {
             supervisor(),
             None,
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "interactive".to_string(),
+                run_name: "interactive".into(),
                 workspace_root: "/workspace/project".to_string(),
             }),
         ),
@@ -16,7 +16,7 @@ fn projects_user_assistant_text_and_reasoning_parts() {
             user(),
             None,
             EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-                request_id: "req_000001".to_string(),
+                request_id: "req_000001".into(),
                 text: "Explain the plan.".to_string(),
             }),
         ),
@@ -25,7 +25,7 @@ fn projects_user_assistant_text_and_reasoning_parts() {
             worker(),
             Some("req_000001"),
             EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                request_id: "provider_req_1".to_string(),
+                request_id: "provider_req_1".into(),
                 provider_id: "default".to_string(),
                 model_id: "gpt-5".to_string(),
                 prompt_summary: "Explain the plan.".to_string(),
@@ -38,7 +38,7 @@ fn projects_user_assistant_text_and_reasoning_parts() {
             worker(),
             Some("req_000001"),
             EventV1::ProviderReasoningDelta(ProviderReasoningDeltaEvent {
-                request_id: "provider_req_1".to_string(),
+                request_id: "provider_req_1".into(),
                 delta: "think ".to_string(),
             }),
         ),
@@ -47,7 +47,7 @@ fn projects_user_assistant_text_and_reasoning_parts() {
             worker(),
             Some("req_000001"),
             EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
-                request_id: "provider_req_1".to_string(),
+                request_id: "provider_req_1".into(),
                 delta: "The ".to_string(),
             }),
         ),
@@ -56,7 +56,7 @@ fn projects_user_assistant_text_and_reasoning_parts() {
             worker(),
             Some("req_000001"),
             EventV1::ProviderReasoningDelta(ProviderReasoningDeltaEvent {
-                request_id: "provider_req_1".to_string(),
+                request_id: "provider_req_1".into(),
                 delta: "first".to_string(),
             }),
         ),
@@ -65,7 +65,7 @@ fn projects_user_assistant_text_and_reasoning_parts() {
             worker(),
             Some("req_000001"),
             EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
-                request_id: "provider_req_1".to_string(),
+                request_id: "provider_req_1".into(),
                 delta: "plan.".to_string(),
             }),
         ),
@@ -74,7 +74,7 @@ fn projects_user_assistant_text_and_reasoning_parts() {
             worker(),
             Some("req_000001"),
             EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
-                request_id: "provider_req_1".to_string(),
+                request_id: "provider_req_1".into(),
                 finish_reason: "stop".to_string(),
                 output_digest: Some("digest-output".to_string()),
                 usage: None,
@@ -86,7 +86,7 @@ fn projects_user_assistant_text_and_reasoning_parts() {
             worker(),
             Some("req_000001"),
             EventV1::AssistantMessageFinished(AssistantMessageFinishedEvent {
-                request_id: "provider_req_1".to_string(),
+                request_id: "provider_req_1".into(),
                 tool_call_count: 0,
                 assistant_message: None,
             }),
@@ -112,7 +112,7 @@ fn projects_user_assistant_text_and_reasoning_parts() {
         .iter()
         .find(|message| message.role == ProjectedMessageRole::User)
         .unwrap_or_abort();
-    assert_eq!(user.request_id.as_deref(), Some("req_000001"));
+    assert_eq!(user.request_id.as_ref().map(|r| r.as_str()), Some("req_000001"));
     let ProjectedPart::Text(user_text) = &user.parts[0] else {
         panic!("expected user text part")
     };
@@ -150,7 +150,7 @@ fn keeps_tool_results_on_source_ordered_tool_parts_when_finishes_arrive_out_of_o
             worker(),
             Some("req_000001"),
             EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                request_id: "req_000001".to_string(),
+                request_id: "req_000001".into(),
                 provider_id: "default".to_string(),
                 model_id: "gpt-5".to_string(),
                 prompt_summary: "use tools".to_string(),
@@ -179,7 +179,7 @@ fn keeps_tool_results_on_source_ordered_tool_parts_when_finishes_arrive_out_of_o
             system(),
             Some("req_000001"),
             EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                tool_call_id: "toolcall_000002".to_string(),
+                tool_call_id: "toolcall_000002".into(),
                 status: ToolCallStatus::Succeeded,
                 output_summary: Some("clean".to_string()),
                 output_digest: Some("digest-bash".to_string()),
@@ -192,7 +192,7 @@ fn keeps_tool_results_on_source_ordered_tool_parts_when_finishes_arrive_out_of_o
             system(),
             Some("req_000001"),
             EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                tool_call_id: "toolcall_000001".to_string(),
+                tool_call_id: "toolcall_000001".into(),
                 status: ToolCallStatus::Succeeded,
                 output_summary: Some("readme contents".to_string()),
                 output_digest: Some("digest-read".to_string()),
@@ -214,7 +214,7 @@ fn keeps_tool_results_on_source_ordered_tool_parts_when_finishes_arrive_out_of_o
         .collect::<Vec<_>>();
 
     assert_eq!(tool_parts.len(), 2);
-    assert_eq!(tool_parts[0].tool_call_id, "toolcall_000001");
+    assert_eq!(tool_parts[0].tool_call_id.as_str(), "toolcall_000001");
     assert_eq!(tool_parts[0].tool_id, "read");
     assert_eq!(tool_parts[0].state, ProjectedToolCallState::Succeeded);
     assert_eq!(
@@ -222,7 +222,7 @@ fn keeps_tool_results_on_source_ordered_tool_parts_when_finishes_arrive_out_of_o
         Some("readme contents")
     );
     assert_eq!(tool_parts[0].finished_seq, Some(5));
-    assert_eq!(tool_parts[1].tool_call_id, "toolcall_000002");
+    assert_eq!(tool_parts[1].tool_call_id.as_str(), "toolcall_000002");
     assert_eq!(tool_parts[1].tool_id, "bash");
     assert_eq!(tool_parts[1].state, ProjectedToolCallState::Succeeded);
     assert_eq!(tool_parts[1].output_summary.as_deref(), Some("clean"));
@@ -386,7 +386,7 @@ fn projects_artifact_metadata_without_reading_artifact_contents() {
             EventV1::PermissionRequested(PermissionRequestedEvent {
                 permission_id: "perm_000001".to_string(),
                 kind: "edit".to_string(),
-                tool_call_id: Some("toolcall_000001".to_string()),
+                tool_call_id: Some("toolcall_000001".into()),
                 summary: "read file".to_string(),
                 request_digest: "digest-permission".to_string(),
                 timeout_ms: 1000,
@@ -411,7 +411,7 @@ fn projects_artifact_metadata_without_reading_artifact_contents() {
                 path: "artifacts/toolcalls/toolcall_000001/stdout.txt".to_string(),
                 digest: "digest-stdout".to_string(),
                 bytes: 42,
-                tool_call_id: Some("toolcall_000001".to_string()),
+                tool_call_id: Some("toolcall_000001".into()),
                 tool_metadata: None,
                 metadata: BTreeMap::from([
                     ("artifact_kind".to_string(), "tool_output".to_string()),
@@ -424,7 +424,7 @@ fn projects_artifact_metadata_without_reading_artifact_contents() {
             system(),
             Some("req_000001"),
             EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                tool_call_id: "toolcall_000001".to_string(),
+                tool_call_id: "toolcall_000001".into(),
                 status: ToolCallStatus::Succeeded,
                 output_summary: Some("summary only".to_string()),
                 output_digest: Some("digest-output".to_string()),

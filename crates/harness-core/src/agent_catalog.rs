@@ -1,3 +1,4 @@
+// allow: SIZE_OK — agent catalog (profile discovery + metadata)
 use crate::UnwrapOrAbort;
 use std::collections::BTreeMap;
 

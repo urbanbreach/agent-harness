@@ -39,12 +39,12 @@ impl ConcurrencyKey {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaskSpec {
-    pub task_id: String,
+    pub task_id: crate::ids::TaskId,
     pub key: ConcurrencyKey,
 }
 
 impl TaskSpec {
-    pub fn new(task_id: impl Into<String>, key: ConcurrencyKey) -> Self {
+    pub fn new(task_id: impl Into<crate::ids::TaskId>, key: ConcurrencyKey) -> Self {
         Self {
             task_id: task_id.into(),
             key,
@@ -92,14 +92,14 @@ pub enum ScheduleDecision {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaskProgressSnapshot {
-    pub task_id: String,
+    pub task_id: crate::ids::TaskId,
     pub key: ConcurrencyKey,
     pub last_progress_mono_ms: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StaleTask {
-    pub task_id: String,
+    pub task_id: crate::ids::TaskId,
     pub stale_for_ms: u64,
 }
 
@@ -119,7 +119,7 @@ impl Scheduler {
 
     pub fn schedule(
         &mut self,
-        task_id: impl Into<String>,
+        task_id: impl Into<crate::ids::TaskId>,
         key: ConcurrencyKey,
     ) -> ScheduleDecision {
         let task = TaskSpec::new(task_id, key.clone());
@@ -163,7 +163,7 @@ impl Scheduler {
         let mut compact_key: Option<ConcurrencyKey> = None;
 
         for (key, gate) in self.gates.iter_mut() {
-            let Some(index) = gate.queue.iter().position(|task| task.task_id == task_id) else {
+            let Some(index) = gate.queue.iter().position(|task| task.task_id.as_str() == task_id) else {
                 continue;
             };
 
@@ -249,16 +249,16 @@ mod tests {
 
         assert!(matches!(
             first,
-            ScheduleDecision::Started(task) if task.task_id == "task_1"
+            ScheduleDecision::Started(task) if task.task_id.as_str() == "task_1"
         ));
         assert!(matches!(
             second,
-            ScheduleDecision::Queued(task) if task.task_id == "task_2"
+            ScheduleDecision::Queued(task) if task.task_id.as_str() == "task_2"
         ));
 
         let dequeued = scheduler.complete(&key);
         assert_eq!(dequeued.len(), 1);
-        assert_eq!(dequeued[0].task_id, "task_2");
+        assert_eq!(dequeued[0].task_id.as_str(), "task_2");
     }
 
     #[test]
@@ -276,7 +276,7 @@ mod tests {
         let _ = scheduler.schedule("task_2", key);
 
         let cancelled = scheduler.cancel_queued("task_2").unwrap_or_abort();
-        assert_eq!(cancelled.task_id, "task_2");
+        assert_eq!(cancelled.task_id.as_str(), "task_2");
     }
 
     #[test]
@@ -296,14 +296,14 @@ mod tests {
             1_500,
             1_000,
             &[TaskProgressSnapshot {
-                task_id: "task_1".to_string(),
+                task_id: "task_1".to_string().into(),
                 key,
                 last_progress_mono_ms: 0,
             }],
         );
 
         assert_eq!(stale.len(), 1);
-        assert_eq!(stale[0].task_id, "task_1");
+        assert_eq!(stale[0].task_id.as_str(), "task_1");
         assert_eq!(stale[0].stale_for_ms, 1_500);
     }
 
@@ -325,19 +325,19 @@ mod tests {
 
         assert!(matches!(
             first,
-            ScheduleDecision::Started(task) if task.task_id == "task_1"
+            ScheduleDecision::Started(task) if task.task_id.as_str() == "task_1"
         ));
         assert!(matches!(
             second,
-            ScheduleDecision::Started(task) if task.task_id == "task_2"
+            ScheduleDecision::Started(task) if task.task_id.as_str() == "task_2"
         ));
         assert!(matches!(
             third,
-            ScheduleDecision::Queued(task) if task.task_id == "task_3"
+            ScheduleDecision::Queued(task) if task.task_id.as_str() == "task_3"
         ));
 
         let dequeued = scheduler.complete(&key);
         assert_eq!(dequeued.len(), 1);
-        assert_eq!(dequeued[0].task_id, "task_3");
+        assert_eq!(dequeued[0].task_id.as_str(), "task_3");
     }
 }

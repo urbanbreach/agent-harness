@@ -112,7 +112,7 @@ mod tests {
                 1,
                 None,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "demo".to_string(),
+                    run_name: "demo".into(),
                     workspace_root: "/workspace/project".to_string(),
                 }),
             ),
@@ -120,7 +120,7 @@ mod tests {
                 2,
                 Some("corr-1"),
                 EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                    tool_call_id: "toolcall_1".to_string(),
+                    tool_call_id: "toolcall_1".into(),
                     tool_id: "shell.run".to_string(),
                     args_summary: "{\"cmd\":\"touch /tmp/should_not_run\"}".to_string(),
                     args_digest: "digest123456".to_string(),
@@ -133,7 +133,7 @@ mod tests {
                 EventV1::PermissionRequested(PermissionRequestedEvent {
                     permission_id: "perm_1".to_string(),
                     kind: "shell".to_string(),
-                    tool_call_id: Some("toolcall_1".to_string()),
+                    tool_call_id: Some("toolcall_1".into()),
                     summary: "allow command".to_string(),
                     request_digest: "reqdigest1234".to_string(),
                     timeout_ms: 1000,
@@ -153,7 +153,7 @@ mod tests {
                 5,
                 Some("corr-1"),
                 EventV1::TaskScheduled(TaskScheduledEvent {
-                    task_id: "task_1".to_string(),
+                    task_id: "task_1".to_string().into(),
                     state: TaskScheduleState::Started,
                     queue_key: None,
                 }),
@@ -162,7 +162,7 @@ mod tests {
                 6,
                 Some("corr-1"),
                 EventV1::TaskCompleted(TaskCompletedEvent {
-                    task_id: "task_1".to_string(),
+                    task_id: "task_1".to_string().into(),
                     result_summary: "done".to_string(),
                     result_digest: "resultdigest".to_string(),
                     metadata: None,
@@ -197,7 +197,7 @@ mod tests {
                 2,
                 None,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "demo".to_string(),
+                    run_name: "demo".into(),
                     workspace_root: "/workspace/project".to_string(),
                 }),
             ),
@@ -248,7 +248,7 @@ mod tests {
                 Some("req_child"),
                 child_actor.clone(),
                 EventV1::TaskScheduled(TaskScheduledEvent {
-                    task_id: "task_000001".to_string(),
+                    task_id: "task_000001".to_string().into(),
                     state: TaskScheduleState::Started,
                     queue_key: Some("provider_model:mock:model-1".to_string()),
                 }),
@@ -258,7 +258,7 @@ mod tests {
                 Some("req_child"),
                 child_actor.clone(),
                 EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                    tool_call_id: "toolcall_000001".to_string(),
+                    tool_call_id: "toolcall_000001".into(),
                     tool_id: "read".to_string(),
                     args_summary: "{}".to_string(),
                     args_digest: "argsdigest".to_string(),
@@ -270,7 +270,7 @@ mod tests {
                 Some("req_child"),
                 child_actor.clone(),
                 EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                    tool_call_id: "toolcall_000001".to_string(),
+                    tool_call_id: "toolcall_000001".into(),
                     status: ToolCallStatus::Succeeded,
                     output_summary: Some("read ok".to_string()),
                     output_digest: Some("outdigest".to_string()),
@@ -283,7 +283,7 @@ mod tests {
                 Some("req_child"),
                 child_actor,
                 EventV1::TaskCompleted(TaskCompletedEvent {
-                    task_id: "task_000001".to_string(),
+                    task_id: "task_000001".to_string().into(),
                     result_summary: "child done".to_string(),
                     result_digest: "resultdigest".to_string(),
                     metadata: None,
@@ -296,7 +296,7 @@ mod tests {
                 .unwrap_or_abort();
         let projection = project_background_request(events.iter(), &request_ref).unwrap_or_abort();
 
-        assert_eq!(projection.request_id, "req_child");
+        assert_eq!(projection.request_id, "req_child".into());
         assert_eq!(projection.session_id.as_deref(), Some("agent_child"));
         assert_eq!(projection.scheduler_task_id.as_deref(), Some("task_000001"));
         assert_eq!(projection.status, "completed");
@@ -335,7 +335,7 @@ mod tests {
                 Some("req_child"),
                 child_actor,
                 EventV1::TaskScheduled(TaskScheduledEvent {
-                    task_id: "task_000001".to_string(),
+                    task_id: "task_000001".to_string().into(),
                     state: TaskScheduleState::Started,
                     queue_key: Some("provider_model:mock:model-1".to_string()),
                 }),
@@ -344,11 +344,11 @@ mod tests {
                 4,
                 Some("background_task_notification:req_child"),
                 EventV1::BackgroundTaskNotification(BackgroundTaskNotificationEvent {
-                    parent_session_id: "agent_parent".to_string(),
+                    parent_session_id: "agent_parent".into(),
                     parent_agent_id: Some("agent_parent".to_string()),
-                    child_session_id: "agent_child".to_string(),
+                    child_session_id: "agent_child".into(),
                     child_request_id: "req_child".to_string(),
-                    task_id: "task_000001".to_string(),
+                    task_id: "task_000001".to_string().into(),
                     description: "investigate".to_string(),
                     status: BackgroundTaskNotificationStatus::Failed,
                     summary: "provider failed closed".to_string(),
@@ -412,7 +412,7 @@ mod tests {
                 Some("req_child"),
                 EventActor::new(ActorKind::Worker, Some("agent_child".to_string())),
                 EventV1::TaskScheduled(TaskScheduledEvent {
-                    task_id: "task_000001".to_string(),
+                    task_id: "task_000001".to_string().into(),
                     state: TaskScheduleState::Queued,
                     queue_key: Some("provider_model:mock:model-1".to_string()),
                 }),
@@ -444,7 +444,7 @@ mod tests {
                 Some("req_first"),
                 child_actor.clone(),
                 EventV1::TaskScheduled(TaskScheduledEvent {
-                    task_id: "task_000001".to_string(),
+                    task_id: "task_000001".to_string().into(),
                     state: TaskScheduleState::Started,
                     queue_key: Some("provider_model:mock:model-1".to_string()),
                 }),
@@ -454,7 +454,7 @@ mod tests {
                 Some("req_second"),
                 child_actor,
                 EventV1::TaskScheduled(TaskScheduledEvent {
-                    task_id: "task_000002".to_string(),
+                    task_id: "task_000002".to_string().into(),
                     state: TaskScheduleState::Started,
                     queue_key: Some("provider_model:mock:model-1".to_string()),
                 }),
@@ -469,7 +469,7 @@ mod tests {
         )
         .unwrap_or_abort();
 
-        assert_eq!(request_ref.request_id, "req_first");
+        assert_eq!(request_ref.request_id, "req_first".into());
     }
 
     #[test]
@@ -491,7 +491,7 @@ mod tests {
                 Some("req_child"),
                 child_actor.clone(),
                 EventV1::TaskScheduled(TaskScheduledEvent {
-                    task_id: "task_000001".to_string(),
+                    task_id: "task_000001".to_string().into(),
                     state: TaskScheduleState::Started,
                     queue_key: Some("provider_model:mock:model-1".to_string()),
                 }),
@@ -501,7 +501,7 @@ mod tests {
                 Some("req_child"),
                 child_actor.clone(),
                 EventV1::TaskCancelled(TaskCancelledEvent {
-                    task_id: "task_000001".to_string(),
+                    task_id: "task_000001".to_string().into(),
                     reason: "cancelled by test".to_string(),
                     task_scope: Some(TaskTerminalScope::AgentTurn),
                 }),
@@ -511,7 +511,7 @@ mod tests {
                 Some("req_child"),
                 child_actor,
                 EventV1::TaskResultLate(TaskResultLateEvent {
-                    task_id: "task_000001".to_string(),
+                    task_id: "task_000001".to_string().into(),
                     result_digest: "latedigest".to_string(),
                 }),
             ),
@@ -554,7 +554,7 @@ mod tests {
                 Some("req_child"),
                 child_actor.clone(),
                 EventV1::TaskScheduled(TaskScheduledEvent {
-                    task_id: "task_000001".to_string(),
+                    task_id: "task_000001".to_string().into(),
                     state: TaskScheduleState::Started,
                     queue_key: Some("provider_model:mock:model-1".to_string()),
                 }),
@@ -564,7 +564,7 @@ mod tests {
                 Some("req_child"),
                 child_actor.clone(),
                 EventV1::TaskScheduled(TaskScheduledEvent {
-                    task_id: "task_000002".to_string(),
+                    task_id: "task_000002".to_string().into(),
                     state: TaskScheduleState::Started,
                     queue_key: Some("tool:read".to_string()),
                 }),
@@ -574,7 +574,7 @@ mod tests {
                 Some("req_child"),
                 child_actor,
                 EventV1::TaskCompleted(TaskCompletedEvent {
-                    task_id: "task_000002".to_string(),
+                    task_id: "task_000002".to_string().into(),
                     result_summary: "tool done".to_string(),
                     result_digest: "tooldigest".to_string(),
                     metadata: None,
@@ -598,7 +598,7 @@ mod tests {
             schema_version: SCHEMA_VERSION,
             event_id: format!("evt-{seq:04}"),
             seq,
-            run_id: "run_projection".to_string(),
+            run_id: "run_projection".into(),
             mono_ms: seq,
             ts: None,
             actor: EventActor::new(ActorKind::System, Some("coordinator".to_string())),

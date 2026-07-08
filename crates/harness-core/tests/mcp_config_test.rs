@@ -174,12 +174,22 @@ fn integrations_mcp_rejects_legacy_local_and_remote_server_shapes() {
 #[test]
 fn config_schema_exports_top_level_mcp_servers() {
     let schema = harness_schema_pretty_json().unwrap_or_abort();
+    let parsed: serde_json::Value = serde_json::from_str(&schema).unwrap_or_abort();
 
     assert!(schema.contains("\"mcp\""));
     assert!(schema.contains("\"transport\""));
     assert!(schema.contains("\"http\""));
     assert!(!schema.contains("\"integrations\""));
-    assert!(!schema.contains("\"servers\""));
+    // Top-level properties must not include "servers" (MCP servers live under "mcp")
+    let top_level_props = parsed
+        .get("properties")
+        .and_then(|p| p.as_object())
+        .map(|m| m.keys().cloned().collect::<std::collections::HashSet<_>>())
+        .unwrap_or_default();
+    assert!(
+        !top_level_props.contains("servers"),
+        "top-level schema must not export a 'servers' property"
+    );
 }
 
 #[test]

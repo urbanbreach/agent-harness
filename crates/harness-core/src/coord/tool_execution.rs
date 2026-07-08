@@ -1,3 +1,4 @@
+// allow: SIZE_OK — coordinator state machine (turn lifecycle + scheduling)
 use super::*;
 use crate::UnwrapOrAbort;
 
@@ -173,7 +174,7 @@ impl Coordinator {
         if let Some(reason) = plan_mode_edit_boundary_denial(
             effective_category.as_deref(),
             maybe_kind,
-            &run_state.info.run_id,
+            run_state.info.run_id.as_str(),
             &run_state.info.workspace_root,
             &args_json,
         ) {
@@ -287,7 +288,7 @@ impl Coordinator {
                         run_state,
                         self.config.hook_runtime_config.clone(),
                         ToolCallExecutionArgs {
-                            tool_call_id: tool_call_id.clone(),
+            tool_call_id: tool_call_id.clone(),
                             tool_id,
                             args_json,
                             actor,
@@ -324,7 +325,7 @@ impl Coordinator {
                     &self.config.hook_runtime_config,
                     HookInvocationContext {
                         event: HookLifecycleEvent::PermissionRequested,
-                        run_id: run_state.info.run_id.clone(),
+                        run_id: run_state.info.run_id.to_string(),
                         workspace_root: run_state.info.workspace_root.clone(),
                         artifacts_dir: run_state.info.artifacts_dir.clone(),
                         actor: Some(actor.clone()),
@@ -377,7 +378,7 @@ impl Coordinator {
                         &self.config.hook_runtime_config,
                         HookInvocationContext {
                             event: HookLifecycleEvent::PermissionResolved,
-                            run_id: run_state.info.run_id.clone(),
+                            run_id: run_state.info.run_id.to_string(),
                             workspace_root: run_state.info.workspace_root.clone(),
                             artifacts_dir: run_state.info.artifacts_dir.clone(),
                             actor: match &pending.resolution {
@@ -599,7 +600,7 @@ where
         &hook_runtime_config,
         HookInvocationContext {
             event: HookLifecycleEvent::ToolCallStarted,
-            run_id: run_state.info.run_id.clone(),
+            run_id: run_state.info.run_id.to_string(),
             workspace_root: run_state.info.workspace_root.clone(),
             artifacts_dir: run_state.info.artifacts_dir.clone(),
             actor: Some(actor.clone()),
@@ -659,7 +660,7 @@ where
         Some(format!("task:{task_id}")),
         request_correlation_id.clone(),
         EventV1::TaskScheduled(TaskScheduledEvent {
-            task_id: task_id.clone(),
+            task_id: task_id.clone().into(),
             state: TaskScheduleState::Started,
             queue_key: Some(queue_key.queue_key()),
         }),
@@ -667,7 +668,7 @@ where
 
     let cancellation_token = run_state.shutdown_token.child_token();
     let tool_state = run_state.tool_state.clone();
-    let run_id = run_state.info.run_id.clone();
+    let run_id = run_state.info.run_id.to_string();
     let workspace_root = run_state.info.workspace_root.clone();
     let artifacts_dir = run_state.info.artifacts_dir.clone();
     let coordinator = CoordinatorHandle { tx: job_tx.clone() };
@@ -718,7 +719,7 @@ where
             artifacts_dir,
             actor,
             category,
-            tool_call_id: tool_call_id.clone(),
+            tool_call_id: tool_call_id.clone().into(),
             current_model_ref: current_model
                 .as_ref()
                 .map(|(model_ref, _)| model_ref.clone()),

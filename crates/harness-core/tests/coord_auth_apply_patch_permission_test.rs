@@ -115,7 +115,7 @@ async fn apply_patch_requires_permission_for_patch_text_paths() {
     assert!(!events.iter().any(|event| {
         matches!(
             &event.payload,
-            EventV1::ToolCallStarted(data) if data.tool_call_id == denied_tool_call_id
+            EventV1::ToolCallStarted(data) if data.tool_call_id.as_str() == denied_tool_call_id
         )
     }));
 }

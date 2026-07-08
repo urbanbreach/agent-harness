@@ -1,3 +1,4 @@
+// allow: SIZE_OK — provider context restore (historical event replay + checkpoint discovery + conversation reconstruction)
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::{self, BufRead, BufReader};
@@ -140,14 +141,14 @@ pub(super) fn collect_historical_agent_turns_until(
 
         match &event.payload {
             EventV1::UserMessageSubmitted(payload) => {
-                let request = requests.entry(payload.request_id.clone()).or_default();
+                let request = requests.entry(payload.request_id.to_string()).or_default();
                 request.first_seq.get_or_insert(event.seq);
                 request.user_text = Some(payload.text.clone());
             }
             EventV1::ProviderRequestStarted(payload)
                 if event.actor.agent_id.as_deref() == Some(agent_id) =>
             {
-                let request = requests.entry(payload.request_id.clone()).or_default();
+                let request = requests.entry(payload.request_id.to_string()).or_default();
                 request.first_seq.get_or_insert(event.seq);
                 request.prompt_summary = Some(payload.prompt_summary.clone());
                 request.agent_id = Some(agent_id.to_string());
@@ -156,7 +157,7 @@ pub(super) fn collect_historical_agent_turns_until(
                 if event.actor.agent_id.as_deref() == Some(agent_id) =>
             {
                 requests
-                    .entry(payload.request_id.clone())
+                    .entry(payload.request_id.to_string())
                     .or_default()
                     .assistant_output
                     .push_str(&payload.delta);
@@ -177,11 +178,11 @@ pub(super) fn collect_historical_agent_turns_until(
                 };
 
                 if let Some(scope) = scope {
-                    historical_task_scopes.insert(payload.task_id.clone(), scope);
+                    historical_task_scopes.insert(payload.task_id.to_string(), scope);
                     if matches!(scope, TaskTerminalScope::AgentTurn) {
                         if let Some(request_id) = event.correlation_id.as_deref() {
                             request_turn_task_ids
-                                .insert(request_id.to_string(), payload.task_id.clone());
+                                .insert(request_id.to_string(), payload.task_id.to_string());
                         }
                     }
                 }
@@ -243,7 +244,7 @@ pub(super) fn collect_historical_agent_turns_until(
                 artifact_refs
                     .dedup_by(|left, right| left.path == right.path && left.digest == right.digest);
                 turns.push(HistoricalCompletedAgentTurn {
-                    request_id: request_id.to_string(),
+                    request_id: request_id.into(),
                     user_prompt,
                     assistant_response,
                     artifact_refs,
@@ -368,7 +369,7 @@ pub(in crate::coord) fn restore_provider_context_from_history(
     let mut histories = BTreeMap::new();
     for (agent_id, checkpoint) in &applied_checkpoints {
         let checkpoint_artifact = load_provider_context_checkpoint(run_id, &run_dir, checkpoint)?;
-        if checkpoint_artifact.metadata.run_id != run_id {
+        if checkpoint_artifact.metadata.run_id.as_str() != run_id {
             return Err(CoordinatorError::ResumeRestoreFailed {
                 run_id: run_id.to_string(),
                 reason: format!(
@@ -438,7 +439,7 @@ pub(in crate::coord) fn restore_provider_context_from_history(
 
         match &event.payload {
             EventV1::UserMessageSubmitted(payload) => {
-                let request = requests.entry(payload.request_id.clone()).or_default();
+                let request = requests.entry(payload.request_id.to_string()).or_default();
                 request.first_seq.get_or_insert(event.seq);
                 request.user_text = Some(payload.text.clone());
             }
@@ -450,14 +451,14 @@ pub(in crate::coord) fn restore_provider_context_from_history(
                     .correlation_id
                     .as_deref()
                     .and_then(non_empty_trimmed)
-                    .unwrap_or(&payload.request_id);
+                    .unwrap_or(payload.request_id.as_str());
                 let request = requests.entry(request_id.to_string()).or_default();
                 request.first_seq.get_or_insert(event.seq);
                 request.prompt_summary = Some(payload.prompt_summary.clone());
-                request.provider_request_id = Some(payload.request_id.clone());
+                request.provider_request_id = Some(payload.request_id.to_string());
                 request.messages.push(ConversationMessage::Assistant(
                     ConversationAssistantMessage {
-                        request_id: request_id.to_string(),
+                        request_id: request_id.into(),
                         agent_id: event.actor.agent_id.clone(),
                         text: String::new(),
                         tool_calls: Vec::new(),
@@ -484,7 +485,7 @@ pub(in crate::coord) fn restore_provider_context_from_history(
                     .correlation_id
                     .as_deref()
                     .and_then(non_empty_trimmed)
-                    .unwrap_or(&payload.request_id);
+                    .unwrap_or(payload.request_id.as_str());
                 let request = requests.entry(request_id.to_string()).or_default();
                 request.assistant_output.push_str(&payload.delta);
                 if let Some(index) = request.active_assistant_message_index {
@@ -504,10 +505,10 @@ pub(in crate::coord) fn restore_provider_context_from_history(
                     .correlation_id
                     .as_deref()
                     .and_then(non_empty_trimmed)
-                    .unwrap_or(&payload.request_id);
+                    .unwrap_or(payload.request_id.as_str());
                 let request = requests.entry(request_id.to_string()).or_default();
                 request.first_seq.get_or_insert(event.seq);
-                request.provider_request_id = Some(payload.request_id.clone());
+                request.provider_request_id = Some(payload.request_id.to_string());
                 request.provider_finish_reason = Some(payload.finish_reason.clone());
                 if let Some(index) = request.active_assistant_message_index {
                     if let Some(ConversationMessage::Assistant(assistant)) =
@@ -536,7 +537,7 @@ pub(in crate::coord) fn restore_provider_context_from_history(
                 };
 
                 if let Some(scope) = scope {
-                    historical_task_scopes.insert(payload.task_id.clone(), scope);
+                    historical_task_scopes.insert(payload.task_id.to_string(), scope);
                     if matches!(scope, TaskTerminalScope::AgentTurn) {
                         if let Some(request_id) = event.correlation_id.as_deref() {
                             requests
@@ -545,10 +546,10 @@ pub(in crate::coord) fn restore_provider_context_from_history(
                                 .first_seq
                                 .get_or_insert(event.seq);
                             request_turn_task_ids
-                                .insert(request_id.to_string(), payload.task_id.clone());
+                                .insert(request_id.to_string(), payload.task_id.to_string());
                             if let Some(agent_id) = event.actor.agent_id.as_deref() {
                                 agent_turn_agent_by_task
-                                    .insert(payload.task_id.clone(), agent_id.to_string());
+                                    .insert(payload.task_id.to_string(), agent_id.to_string());
                             }
                         }
                     }
@@ -576,7 +577,7 @@ pub(in crate::coord) fn restore_provider_context_from_history(
                 let request = requests.entry(request_id.to_string()).or_default();
                 request
                     .tool_ids_by_call_id
-                    .insert(payload.tool_call_id.clone(), payload.tool_id.clone());
+                    .insert(payload.tool_call_id.to_string(), payload.tool_id.clone());
                 if let Some(index) = request.active_assistant_message_index {
                     if let Some(ConversationMessage::Assistant(assistant)) =
                         request.messages.get_mut(index)
@@ -605,7 +606,7 @@ pub(in crate::coord) fn restore_provider_context_from_history(
                 };
                 let Some(tool_id) = request
                     .tool_ids_by_call_id
-                    .get(&payload.tool_call_id)
+                    .get(payload.tool_call_id.as_str())
                     .cloned()
                 else {
                     continue;
@@ -614,7 +615,7 @@ pub(in crate::coord) fn restore_provider_context_from_history(
                     .messages
                     .push(ConversationMessage::ToolResult(Box::new(
                         ConversationToolResultMessage {
-                            request_id: request_id.to_string(),
+                            request_id: request_id.into(),
                             tool_call_id: payload.tool_call_id.clone(),
                             tool_id: Some(tool_id),
                             status: payload.status,
@@ -628,10 +629,10 @@ pub(in crate::coord) fn restore_provider_context_from_history(
             }
             EventV1::TaskCompleted(payload) => {
                 if matches!(
-                    historical_task_scopes.get(&payload.task_id),
+                    historical_task_scopes.get(payload.task_id.as_str()),
                     Some(TaskTerminalScope::AgentTurn)
                 ) {
-                    agent_turn_agent_by_task.remove(&payload.task_id);
+                    agent_turn_agent_by_task.remove(payload.task_id.as_str());
                 }
                 if !replay_agent_event {
                     continue;
@@ -704,7 +705,7 @@ pub(in crate::coord) fn restore_provider_context_from_history(
                     .push_turn(ProviderConversationTurn {
                         user_prompt,
                         assistant_response,
-                        request_id: Some(request_id.to_string()),
+                        request_id: Some(request_id.into()),
                         first_seq: request_state.first_seq,
                         last_seq: Some(event.seq),
                         artifacts,
@@ -714,10 +715,10 @@ pub(in crate::coord) fn restore_provider_context_from_history(
             }
             EventV1::TaskCancelled(payload) => {
                 let agent_id_from_task = if matches!(
-                    historical_task_scopes.get(&payload.task_id),
+                    historical_task_scopes.get(payload.task_id.as_str()),
                     Some(TaskTerminalScope::AgentTurn)
                 ) {
-                    agent_turn_agent_by_task.remove(&payload.task_id)
+                    agent_turn_agent_by_task.remove(payload.task_id.as_str())
                 } else {
                     None
                 };
@@ -787,7 +788,7 @@ pub(in crate::coord) fn restore_provider_context_from_history(
                         status,
                         failure_stage: Some(failure_stage),
                         failure_reason: truncated_failure_reason(&payload.reason),
-                        request_id: Some(provider_request_id),
+                        request_id: Some(provider_request_id.into()),
                         first_seq: request_state.first_seq,
                         last_seq: Some(event.seq),
                         artifacts: Vec::new(),
@@ -911,12 +912,12 @@ fn historical_task_completion_marks_agent_turn(
         return matches!(scope, TaskTerminalScope::AgentTurn);
     }
 
-    if let Some(scope) = historical_task_scopes.get(&payload.task_id) {
+    if let Some(scope) = historical_task_scopes.get(payload.task_id.as_str()) {
         return matches!(scope, TaskTerminalScope::AgentTurn);
     }
 
     if let Some(turn_task_id) = request_turn_task_ids.get(request_id) {
-        return turn_task_id == &payload.task_id;
+        return turn_task_id.as_str() == payload.task_id.as_str();
     }
 
     true
@@ -932,12 +933,12 @@ fn historical_task_cancellation_marks_agent_turn(
         return matches!(scope, TaskTerminalScope::AgentTurn);
     }
 
-    if let Some(scope) = historical_task_scopes.get(&payload.task_id) {
+    if let Some(scope) = historical_task_scopes.get(payload.task_id.as_str()) {
         return matches!(scope, TaskTerminalScope::AgentTurn);
     }
 
     if let Some(turn_task_id) = request_turn_task_ids.get(request_id) {
-        return turn_task_id == &payload.task_id;
+        return turn_task_id.as_str() == payload.task_id.as_str();
     }
 
     false

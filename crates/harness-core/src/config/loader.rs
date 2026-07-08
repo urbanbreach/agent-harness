@@ -1,3 +1,4 @@
+// allow: SIZE_OK — config loader (JSON5 parse + translate + validate + registry refresh pipeline)
 use super::discovery::{
     resolve_config_layer_paths_with_context, resolve_configured_instruction_entries,
     resolve_discovered_prompt_assets, resolve_discovered_prompt_assets_with_current_dir,

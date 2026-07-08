@@ -47,7 +47,7 @@ pub(super) fn write_resume_acceptance_fixture() -> ResumeAcceptanceFixture {
                 run_id,
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "resume acceptance coding session".to_string(),
+                    run_name: "resume acceptance coding session".into(),
                     workspace_root: workspace_root.display().to_string(),
                 }),
             ),
@@ -66,7 +66,7 @@ pub(super) fn write_resume_acceptance_fixture() -> ResumeAcceptanceFixture {
                 supervisor_actor(),
                 Some("req_000001"),
                 EventV1::UserMessageSubmitted(harness_core::event::UserMessageSubmittedEvent {
-                    request_id: "req_000001".to_string(),
+                    request_id: "req_000001".into(),
                     text: "Implement resume acceptance slice".to_string(),
                 }),
             ),
@@ -76,7 +76,7 @@ pub(super) fn write_resume_acceptance_fixture() -> ResumeAcceptanceFixture {
                 worker.clone(),
                 Some("req_000001"),
                 EventV1::TaskScheduled(TaskScheduledEvent {
-                    task_id: "task_000001".to_string(),
+                    task_id: "task_000001".to_string().into(),
                     state: TaskScheduleState::Started,
                     queue_key: Some("provider_model:mock:model-1".to_string()),
                 }),
@@ -87,7 +87,7 @@ pub(super) fn write_resume_acceptance_fixture() -> ResumeAcceptanceFixture {
                 worker.clone(),
                 Some("req_000001"),
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req_000002".to_string(),
+                    request_id: "req_000002".into(),
                     provider_id: "mock".to_string(),
                     model_id: "model-1".to_string(),
                     prompt_summary: "Implement resume acceptance slice".to_string(),
@@ -101,7 +101,7 @@ pub(super) fn write_resume_acceptance_fixture() -> ResumeAcceptanceFixture {
                 worker.clone(),
                 Some("req_000001"),
                 EventV1::ProviderStreamDelta(harness_core::event::ProviderStreamDeltaEvent {
-                    request_id: "req_000002".to_string(),
+                    request_id: "req_000002".into(),
                     delta: "Preparing resume acceptance tools.".to_string(),
                 }),
             ),
@@ -112,7 +112,7 @@ pub(super) fn write_resume_acceptance_fixture() -> ResumeAcceptanceFixture {
                 Some("req_000001"),
                 EventV1::ProviderRequestFinished(
                     harness_core::event::ProviderRequestFinishedEvent {
-                        request_id: "req_000002".to_string(),
+                        request_id: "req_000002".into(),
                         finish_reason: "done".to_string(),
                         output_digest: Some("digest-provider-output-1".to_string()),
                         usage: None,
@@ -127,7 +127,7 @@ pub(super) fn write_resume_acceptance_fixture() -> ResumeAcceptanceFixture {
                 Some("req_000001"),
                 EventV1::AssistantMessageFinished(
                     harness_core::event::AssistantMessageFinishedEvent {
-                        request_id: "req_000002".to_string(),
+                        request_id: "req_000002".into(),
                         tool_call_count: 4,
                         assistant_message: None,
                     },
@@ -139,7 +139,7 @@ pub(super) fn write_resume_acceptance_fixture() -> ResumeAcceptanceFixture {
                 worker.clone(),
                 Some("req_000001"),
                 EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                    tool_call_id: "toolcall_000001".to_string(),
+                    tool_call_id: "toolcall_000001".into(),
                     tool_id: "skill".to_string(),
                     args_summary: "load karpathy-guidelines".to_string(),
                     args_digest: "digest-skill".to_string(),
@@ -152,7 +152,7 @@ pub(super) fn write_resume_acceptance_fixture() -> ResumeAcceptanceFixture {
                 worker.clone(),
                 Some("req_000001"),
                 EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                    tool_call_id: "toolcall_000001".to_string(),
+                    tool_call_id: "toolcall_000001".into(),
                     status: ToolCallStatus::Succeeded,
                     output_summary: Some("loaded skill karpathy-guidelines".to_string()),
                     output_digest: Some("digest-skill-output".to_string()),
@@ -166,7 +166,7 @@ pub(super) fn write_resume_acceptance_fixture() -> ResumeAcceptanceFixture {
                 worker.clone(),
                 Some("req_000001"),
                 EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                    tool_call_id: "toolcall_000002".to_string(),
+                    tool_call_id: "toolcall_000002".into(),
                     tool_id: "todowrite".to_string(),
                     args_summary: "record resume acceptance todo checklist".to_string(),
                     args_digest: "digest-todo".to_string(),
@@ -179,7 +179,7 @@ pub(super) fn write_resume_acceptance_fixture() -> ResumeAcceptanceFixture {
                 worker.clone(),
                 Some("req_000001"),
                 EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                    tool_call_id: "toolcall_000002".to_string(),
+                    tool_call_id: "toolcall_000002".into(),
                     status: ToolCallStatus::Succeeded,
                     output_summary: Some(
                         "todo checklist keeps resume acceptance in progress".to_string(),
@@ -195,7 +195,7 @@ pub(super) fn write_resume_acceptance_fixture() -> ResumeAcceptanceFixture {
                 worker.clone(),
                 Some("req_000001"),
                 EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                    tool_call_id: "toolcall_000003".to_string(),
+                    tool_call_id: "toolcall_000003".into(),
                     tool_id: "plan_exit".to_string(),
                     args_summary: "handoff .agent-harness/plans/run_resume_acceptance_realistic.md"
                         .to_string(),
@@ -209,7 +209,7 @@ pub(super) fn write_resume_acceptance_fixture() -> ResumeAcceptanceFixture {
                 worker.clone(),
                 Some("req_000001"),
                 EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                    tool_call_id: "toolcall_000003".to_string(),
+                    tool_call_id: "toolcall_000003".into(),
                     status: ToolCallStatus::Succeeded,
                     output_summary: Some(
                         "plan handoff references .agent-harness/plans/run_resume_acceptance_realistic.md"
@@ -226,7 +226,7 @@ pub(super) fn write_resume_acceptance_fixture() -> ResumeAcceptanceFixture {
                 worker.clone(),
                 Some("req_000001"),
                 EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                    tool_call_id: "toolcall_000004".to_string(),
+                    tool_call_id: "toolcall_000004".into(),
                     tool_id: "shell.run".to_string(),
                     args_summary: shell_args.to_string(),
                     args_digest: "digest-shell".to_string(),
@@ -241,7 +241,7 @@ pub(super) fn write_resume_acceptance_fixture() -> ResumeAcceptanceFixture {
                 EventV1::PermissionRequested(PermissionRequestedEvent {
                     permission_id: "perm_000001".to_string(),
                     kind: "shell".to_string(),
-                    tool_call_id: Some("toolcall_000004".to_string()),
+                    tool_call_id: Some("toolcall_000004".into()),
                     summary: "allow resume acceptance shell artifact".to_string(),
                     request_digest: shell_request_digest,
                     timeout_ms: 5_000,
@@ -274,7 +274,7 @@ pub(super) fn write_resume_acceptance_fixture() -> ResumeAcceptanceFixture {
                 test_system_actor(),
                 Some("req_000001"),
                 EventV1::ToolCallStarted(harness_core::event::ToolCallStartedEvent {
-                    tool_call_id: "toolcall_000004".to_string(),
+                    tool_call_id: "toolcall_000004".into(),
                 }),
             ),
             resume_fixture_event_with_actor_and_correlation(
@@ -283,7 +283,7 @@ pub(super) fn write_resume_acceptance_fixture() -> ResumeAcceptanceFixture {
                 worker.clone(),
                 Some("req_000001"),
                 EventV1::TaskScheduled(TaskScheduledEvent {
-                    task_id: "task_000002".to_string(),
+                    task_id: "task_000002".to_string().into(),
                     state: TaskScheduleState::Started,
                     queue_key: Some("tool:shell.run".to_string()),
                 }),
@@ -297,7 +297,7 @@ pub(super) fn write_resume_acceptance_fixture() -> ResumeAcceptanceFixture {
                     path: artifact_path.to_string(),
                     digest: artifact_digest.clone(),
                     bytes: artifact_body.len() as u64,
-                    tool_call_id: Some("toolcall_000004".to_string()),
+                    tool_call_id: Some("toolcall_000004".into()),
                     tool_metadata: Some(harness_core::event::ToolIdentityMetadata {
                         canonical_tool_id: Some("shell.run".to_string()),
                         alias_source_tool_id: None,
@@ -311,7 +311,7 @@ pub(super) fn write_resume_acceptance_fixture() -> ResumeAcceptanceFixture {
                 worker.clone(),
                 Some("req_000001"),
                 EventV1::TaskCompleted(TaskCompletedEvent {
-                    task_id: "task_000002".to_string(),
+                    task_id: "task_000002".to_string().into(),
                     result_summary: "resume artifact written".to_string(),
                     result_digest: "digest-shell-task".to_string(),
                     metadata: Some(TaskCompletionMetadata {
@@ -328,7 +328,7 @@ pub(super) fn write_resume_acceptance_fixture() -> ResumeAcceptanceFixture {
                 test_system_actor(),
                 Some("req_000001"),
                 EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                    tool_call_id: "toolcall_000004".to_string(),
+                    tool_call_id: "toolcall_000004".into(),
                     status: ToolCallStatus::Succeeded,
                     output_summary: Some("resume artifact written".to_string()),
                     output_digest: Some("digest-shell-output".to_string()),
@@ -354,7 +354,7 @@ pub(super) fn write_resume_acceptance_fixture() -> ResumeAcceptanceFixture {
                 worker.clone(),
                 Some("req_000001"),
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req_000003".to_string(),
+                    request_id: "req_000003".into(),
                     provider_id: "mock".to_string(),
                     model_id: "model-1".to_string(),
                     prompt_summary: "tool result + finish".to_string(),
@@ -368,7 +368,7 @@ pub(super) fn write_resume_acceptance_fixture() -> ResumeAcceptanceFixture {
                 worker.clone(),
                 Some("req_000001"),
                 EventV1::ProviderStreamDelta(harness_core::event::ProviderStreamDeltaEvent {
-                    request_id: "req_000003".to_string(),
+                    request_id: "req_000003".into(),
                     delta: "First turn final answer after artifact, skill, todo, and plan."
                         .to_string(),
                 }),
@@ -380,7 +380,7 @@ pub(super) fn write_resume_acceptance_fixture() -> ResumeAcceptanceFixture {
                 Some("req_000001"),
                 EventV1::ProviderRequestFinished(
                     harness_core::event::ProviderRequestFinishedEvent {
-                        request_id: "req_000003".to_string(),
+                        request_id: "req_000003".into(),
                         finish_reason: "done".to_string(),
                         output_digest: Some("digest-provider-output-2".to_string()),
                         usage: None,
@@ -395,7 +395,7 @@ pub(super) fn write_resume_acceptance_fixture() -> ResumeAcceptanceFixture {
                 Some("req_000001"),
                 EventV1::AssistantMessageFinished(
                     harness_core::event::AssistantMessageFinishedEvent {
-                        request_id: "req_000003".to_string(),
+                        request_id: "req_000003".into(),
                         tool_call_count: 0,
                         assistant_message: None,
                     },
@@ -407,7 +407,7 @@ pub(super) fn write_resume_acceptance_fixture() -> ResumeAcceptanceFixture {
                 worker.clone(),
                 Some("req_000001"),
                 EventV1::TaskCompleted(TaskCompletedEvent {
-                    task_id: "task_000001".to_string(),
+                    task_id: "task_000001".to_string().into(),
                     result_summary:
                         "First turn final answer after artifact, skill, todo, and plan."
                             .to_string(),
@@ -426,7 +426,7 @@ pub(super) fn write_resume_acceptance_fixture() -> ResumeAcceptanceFixture {
                 supervisor_actor(),
                 Some("req_000004"),
                 EventV1::UserMessageSubmitted(harness_core::event::UserMessageSubmittedEvent {
-                    request_id: "req_000004".to_string(),
+                    request_id: "req_000004".into(),
                     text: "Continue after resume acceptance checkpoint".to_string(),
                 }),
             ),
@@ -436,7 +436,7 @@ pub(super) fn write_resume_acceptance_fixture() -> ResumeAcceptanceFixture {
                 worker.clone(),
                 Some("req_000004"),
                 EventV1::TaskScheduled(TaskScheduledEvent {
-                    task_id: "task_000003".to_string(),
+                    task_id: "task_000003".to_string().into(),
                     state: TaskScheduleState::Started,
                     queue_key: Some("provider_model:mock:model-1".to_string()),
                 }),
@@ -447,7 +447,7 @@ pub(super) fn write_resume_acceptance_fixture() -> ResumeAcceptanceFixture {
                 worker.clone(),
                 Some("req_000004"),
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req_000005".to_string(),
+                    request_id: "req_000005".into(),
                     provider_id: "mock".to_string(),
                     model_id: "model-1".to_string(),
                     prompt_summary: "Continue after resume acceptance checkpoint".to_string(),
@@ -461,7 +461,7 @@ pub(super) fn write_resume_acceptance_fixture() -> ResumeAcceptanceFixture {
                 worker.clone(),
                 Some("req_000004"),
                 EventV1::ProviderStreamDelta(harness_core::event::ProviderStreamDeltaEvent {
-                    request_id: "req_000005".to_string(),
+                    request_id: "req_000005".into(),
                     delta: "Second turn recorded todos and plan still available.".to_string(),
                 }),
             ),
@@ -472,7 +472,7 @@ pub(super) fn write_resume_acceptance_fixture() -> ResumeAcceptanceFixture {
                 Some("req_000004"),
                 EventV1::ProviderRequestFinished(
                     harness_core::event::ProviderRequestFinishedEvent {
-                        request_id: "req_000005".to_string(),
+                        request_id: "req_000005".into(),
                         finish_reason: "done".to_string(),
                         output_digest: Some("digest-provider-output-3".to_string()),
                         usage: None,
@@ -487,7 +487,7 @@ pub(super) fn write_resume_acceptance_fixture() -> ResumeAcceptanceFixture {
                 Some("req_000004"),
                 EventV1::AssistantMessageFinished(
                     harness_core::event::AssistantMessageFinishedEvent {
-                        request_id: "req_000005".to_string(),
+                        request_id: "req_000005".into(),
                         tool_call_count: 0,
                         assistant_message: None,
                     },
@@ -499,7 +499,7 @@ pub(super) fn write_resume_acceptance_fixture() -> ResumeAcceptanceFixture {
                 worker,
                 Some("req_000004"),
                 EventV1::TaskCompleted(TaskCompletedEvent {
-                    task_id: "task_000003".to_string(),
+                    task_id: "task_000003".to_string().into(),
                     result_summary: "Second turn recorded todos and plan still available."
                         .to_string(),
                     result_digest: "digest-agent-turn-2".to_string(),

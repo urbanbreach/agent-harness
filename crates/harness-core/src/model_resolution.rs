@@ -1,3 +1,4 @@
+// allow: SIZE_OK — model resolution (variant + capability inference)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModelFamily {
     OpenAiReasoning,

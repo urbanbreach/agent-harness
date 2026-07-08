@@ -11,7 +11,7 @@ async fn resume_existing_run_restores_sequence_and_ids() {
                 run_id,
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/workspace/project".to_string(),
                 }),
             ),
@@ -28,7 +28,7 @@ async fn resume_existing_run_restores_sequence_and_ids() {
                 run_id,
                 3,
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req_000008".to_string(),
+                    request_id: "req_000008".into(),
                     provider_id: "mock".to_string(),
                     model_id: "model-1".to_string(),
                     prompt_summary: "existing prompt".to_string(),
@@ -40,7 +40,7 @@ async fn resume_existing_run_restores_sequence_and_ids() {
                 run_id,
                 4,
                 EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                    tool_call_id: "toolcall_000005".to_string(),
+                    tool_call_id: "toolcall_000005".into(),
                     tool_id: "shell.run".to_string(),
                     args_summary: "{\"cmd\":\"true\"}".to_string(),
                     args_digest: "digest-tool".to_string(),
@@ -53,7 +53,7 @@ async fn resume_existing_run_restores_sequence_and_ids() {
                 EventV1::PermissionRequested(PermissionRequestedEvent {
                     permission_id: "perm_000004".to_string(),
                     kind: "shell".to_string(),
-                    tool_call_id: Some("toolcall_000005".to_string()),
+                    tool_call_id: Some("toolcall_000005".into()),
                     summary: "allow shell".to_string(),
                     request_digest: "digest-perm".to_string(),
                     timeout_ms: 1_000,
@@ -73,7 +73,7 @@ async fn resume_existing_run_restores_sequence_and_ids() {
                 run_id,
                 7,
                 EventV1::TaskScheduled(TaskScheduledEvent {
-                    task_id: "task_000009".to_string(),
+                    task_id: "task_000009".to_string().into(),
                     state: TaskScheduleState::Started,
                     queue_key: Some("tool:shell.run".to_string()),
                 }),
@@ -82,7 +82,7 @@ async fn resume_existing_run_restores_sequence_and_ids() {
                 run_id,
                 8,
                 EventV1::TaskCompleted(TaskCompletedEvent {
-                    task_id: "task_000009".to_string(),
+                    task_id: "task_000009".to_string().into(),
                     result_summary: "done".to_string(),
                     result_digest: "digest-task".to_string(),
                     metadata: None,
@@ -110,7 +110,7 @@ async fn resume_existing_run_restores_sequence_and_ids() {
             &event.payload,
             EventV1::RunStarted(data)
                 if event.seq == 10
-                    && data.run_name == "interactive"
+                    && data.run_name.as_str() == "interactive"
                     && data.workspace_root == "/workspace/project"
         )
     }));
@@ -161,19 +161,19 @@ async fn resume_existing_run_restores_sequence_and_ids() {
             &event.payload,
             EventV1::PermissionRequested(data)
                 if data.permission_id == "perm_000005"
-                    && data.tool_call_id.as_deref() == Some("toolcall_000006")
+                    && data.tool_call_id.as_ref().map(|id| id.as_str()) == Some("toolcall_000006")
         )
     }));
     assert!(events.iter().any(|event| {
         matches!(
             &event.payload,
-            EventV1::TaskScheduled(data) if data.task_id == "task_000010"
+            EventV1::TaskScheduled(data) if data.task_id.as_str() == "task_000010"
         )
     }));
     assert!(events.iter().any(|event| {
         matches!(
             &event.payload,
-            EventV1::TaskScheduled(data) if data.task_id == "task_000011"
+            EventV1::TaskScheduled(data) if data.task_id.as_str() == "task_000011"
         )
     }));
 }
@@ -189,7 +189,7 @@ async fn resume_existing_run_reuses_same_run_id_and_directory() {
                 run_id,
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/workspace/project".to_string(),
                 }),
             ),
@@ -206,7 +206,7 @@ async fn resume_existing_run_reuses_same_run_id_and_directory() {
                 run_id,
                 3,
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req_000001".to_string(),
+                    request_id: "req_000001".into(),
                     provider_id: "mock".to_string(),
                     model_id: "model-1".to_string(),
                     prompt_summary: "existing prompt".to_string(),
@@ -230,7 +230,7 @@ async fn resume_existing_run_reuses_same_run_id_and_directory() {
         .await
         .unwrap_or_abort();
 
-    assert_eq!(run.run_id, run_id);
+    assert_eq!(run.run_id.as_str(), run_id);
     assert_eq!(run.run_dir, temp_dir.path().join(run_id));
     assert_eq!(
         run.events_path,
@@ -290,7 +290,7 @@ async fn resume_existing_run_restores_subagent_parent_lineage_for_hooks_and_repl
                 run_id,
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: workspace_root.clone(),
                 }),
             ),
@@ -316,7 +316,7 @@ async fn resume_existing_run_restores_subagent_parent_lineage_for_hooks_and_repl
                 run_id,
                 4,
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req_000001".to_string(),
+                    request_id: "req_000001".into(),
                     provider_id: "mock".to_string(),
                     model_id: "model-1".to_string(),
                     prompt_summary: "existing prompt".to_string(),
@@ -386,7 +386,7 @@ async fn resume_existing_run_restores_agent_profile_bindings() {
                 run_id,
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/workspace/project".to_string(),
                 }),
             ),
@@ -403,7 +403,7 @@ async fn resume_existing_run_restores_agent_profile_bindings() {
                 run_id,
                 3,
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req_000001".to_string(),
+                    request_id: "req_000001".into(),
                     provider_id: "mock".to_string(),
                     model_id: "model-1".to_string(),
                     prompt_summary: "existing prompt".to_string(),
@@ -447,7 +447,7 @@ async fn resumed_run_agent_ids_skip_existing_child_session_directories() {
                 run_id,
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/workspace/project".to_string(),
                 }),
             ),
@@ -464,7 +464,7 @@ async fn resumed_run_agent_ids_skip_existing_child_session_directories() {
                 run_id,
                 3,
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req_000001".to_string(),
+                    request_id: "req_000001".into(),
                     provider_id: "mock".to_string(),
                     model_id: "model-1".to_string(),
                     prompt_summary: "existing prompt".to_string(),

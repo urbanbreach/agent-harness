@@ -1,3 +1,4 @@
+// allow: SIZE_OK — public config contract section (typed schema + validation)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PublicConfigSurface {
     Runtime,
@@ -186,6 +187,17 @@ macro_rules! runtime_key {
             inactive_value: None,
         }
     };
+    ($name:literal, UnsupportedActive, no_schema, no_docs, inactive = $inactive:ident) => {
+        PublicConfigTopLevelKey {
+            name: $name,
+            surface: PublicConfigSurface::Runtime,
+            status: PublicConfigKeyStatus::UnsupportedActive,
+            schema_property: false,
+            docs_table_row: false,
+            canonical_name: None,
+            inactive_value: Some(PublicUnsupportedInactiveValue::$inactive),
+        }
+    };
 }
 
 const PUBLIC_RUNTIME_TOP_LEVEL_CONFIG_KEYS: &[PublicConfigTopLevelKey] = &[
@@ -201,8 +213,8 @@ const PUBLIC_RUNTIME_TOP_LEVEL_CONFIG_KEYS: &[PublicConfigTopLevelKey] = &[
     runtime_key!(
         "autoupdate",
         UnsupportedActive,
-        schema,
-        docs,
+        no_schema,
+        no_docs,
         inactive = BoolFalse
     ),
     runtime_key!(
@@ -219,8 +231,8 @@ const PUBLIC_RUNTIME_TOP_LEVEL_CONFIG_KEYS: &[PublicConfigTopLevelKey] = &[
     runtime_key!(
         "enterprise",
         UnsupportedActive,
-        schema,
-        docs,
+        no_schema,
+        no_docs,
         inactive = EmptyObject
     ),
     runtime_key!("experimental", InertCompatibility, no_schema, no_docs),
@@ -237,8 +249,8 @@ const PUBLIC_RUNTIME_TOP_LEVEL_CONFIG_KEYS: &[PublicConfigTopLevelKey] = &[
     runtime_key!(
         "plugin",
         UnsupportedActive,
-        schema,
-        docs,
+        no_schema,
+        no_docs,
         inactive = EmptyArray
     ),
     runtime_key!("provider", Canonical, schema, docs),
@@ -253,8 +265,8 @@ const PUBLIC_RUNTIME_TOP_LEVEL_CONFIG_KEYS: &[PublicConfigTopLevelKey] = &[
     runtime_key!(
         "share",
         UnsupportedActive,
-        schema,
-        docs,
+        no_schema,
+        no_docs,
         inactive = DisabledString
     ),
     runtime_key!("shell", InertCompatibility, no_schema, no_docs),

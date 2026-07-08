@@ -11,7 +11,7 @@ async fn resume_existing_run_persists_bindings_for_future_reresume() {
                 run_id,
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/workspace/project".to_string(),
                 }),
             ),
@@ -28,7 +28,7 @@ async fn resume_existing_run_persists_bindings_for_future_reresume() {
                 run_id,
                 3,
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req_000001".to_string(),
+                    request_id: "req_000001".into(),
                     provider_id: "mock".to_string(),
                     model_id: "model-1".to_string(),
                     prompt_summary: "existing prompt".to_string(),
@@ -102,7 +102,7 @@ async fn resume_existing_run_remains_resumable_after_open_and_quit_without_promp
                 run_id,
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/workspace/project".to_string(),
                 }),
             ),
@@ -119,7 +119,7 @@ async fn resume_existing_run_remains_resumable_after_open_and_quit_without_promp
                 run_id,
                 3,
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req_000001".to_string(),
+                    request_id: "req_000001".into(),
                     provider_id: "mock".to_string(),
                     model_id: "model-1".to_string(),
                     prompt_summary: "existing prompt".to_string(),
@@ -188,7 +188,7 @@ async fn resume_existing_run_rejects_missing_historical_profile_binding() {
                 run_id,
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/workspace/project".to_string(),
                 }),
             ),
@@ -205,7 +205,7 @@ async fn resume_existing_run_rejects_missing_historical_profile_binding() {
                 run_id,
                 3,
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req_000001".to_string(),
+                    request_id: "req_000001".into(),
                     provider_id: "mock".to_string(),
                     model_id: "model-1".to_string(),
                     prompt_summary: "existing prompt".to_string(),
@@ -259,7 +259,7 @@ async fn resume_existing_run_rejects_second_writer_lock() {
 
     let second = test_resume_coordinator(temp_dir.path());
     let error = second
-        .resume_run(&run.run_id, "interactive")
+        .resume_run(run.run_id.as_str(), "interactive")
         .await
         .expect_err("second writer must fail lock acquisition");
 
@@ -282,7 +282,7 @@ async fn resume_existing_run_does_not_append_on_restore_failure() {
                 run_id,
                 1,
                 EventV1::RunStarted(RunStartedEvent {
-                    run_name: "interactive".to_string(),
+                    run_name: "interactive".into(),
                     workspace_root: "/workspace/project".to_string(),
                 }),
             ),
@@ -299,7 +299,7 @@ async fn resume_existing_run_does_not_append_on_restore_failure() {
                 run_id,
                 3,
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                    request_id: "req_000001".to_string(),
+                    request_id: "req_000001".into(),
                     provider_id: "mock".to_string(),
                     model_id: "model-1".to_string(),
                     prompt_summary: "existing prompt".to_string(),

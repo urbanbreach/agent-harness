@@ -77,7 +77,7 @@ async fn recorded_runtime_context_meta_roundtrips() {
         thinking: None,
     };
 
-    assert_eq!(metadata.run_id, run.run_id);
+    assert_eq!(metadata.run_id, run.run_id.as_str());
     assert_eq!(metadata.run_name, "interactive");
     assert_eq!(
         metadata.workspace_root,
@@ -98,7 +98,7 @@ async fn recorded_runtime_context_meta_roundtrips() {
     let events = load_events(&run.events_path);
     let entry = project_session_catalog_entry(
         events.iter(),
-        &run.run_id,
+        run.run_id.as_str(),
         Some(&catalog_metadata),
         None,
         None,
@@ -136,7 +136,7 @@ fn session_catalog_entry_tolerates_legacy_meta_without_runtime_context() {
             "run_legacy",
             1,
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "interactive".to_string(),
+                run_name: "interactive".into(),
                 workspace_root: "/workspace/legacy".to_string(),
             }),
         ),
@@ -284,7 +284,7 @@ fn envelope(run_id: &str, seq: u64, payload: EventV1) -> EventEnvelopeV1 {
         schema_version: SCHEMA_VERSION,
         event_id: format!("evt-{seq:04}"),
         seq,
-        run_id: run_id.to_string(),
+        run_id: run_id.to_string().into(),
         mono_ms: seq,
         ts: None,
         actor: EventActor::new(ActorKind::System, Some("coordinator".to_string())),

@@ -76,7 +76,7 @@ let provider = CapturingProvider::new(vec!["post-resume answer"]);
             matches!(
                 &event.payload,
                 EventV1::ToolCallFinished(payload)
-                    if payload.tool_call_id == "toolcall_000005"
+                    if payload.tool_call_id.as_str() == "toolcall_000005"
                         && payload.status == ToolCallStatus::Succeeded
             )
         })

@@ -105,7 +105,7 @@ impl Coordinator {
             Some(format!("revert:{request_id}")),
             Some(request_id.clone()),
             EventV1::WorkspaceReverted(WorkspaceRevertedEvent {
-                request_id: request_id.clone(),
+                request_id: request_id.clone().into(),
                 snapshot_request_id,
                 restored_paths: restored_paths.clone(),
                 removed_paths: removed_paths.clone(),
@@ -114,7 +114,7 @@ impl Coordinator {
         )?;
 
         Ok(WorkspaceRevertSummary {
-            request_id,
+            request_id: request_id.into(),
             restored_paths,
             removed_paths,
             failed_paths,

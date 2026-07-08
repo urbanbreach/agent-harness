@@ -72,7 +72,7 @@ fn session_lineage_accepts_stable_prefix() {
         envelope(
             1,
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "interactive".to_string(),
+                run_name: "interactive".into(),
                 workspace_root: "/workspace".to_string(),
             }),
         ),
@@ -87,7 +87,7 @@ fn session_lineage_accepts_stable_prefix() {
         envelope(
             3,
             EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                request_id: "req_000001".to_string(),
+                request_id: "req_000001".into(),
                 provider_id: "default".to_string(),
                 model_id: "gpt-5".to_string(),
                 prompt_summary: "prompt".to_string(),
@@ -98,7 +98,7 @@ fn session_lineage_accepts_stable_prefix() {
         envelope(
             4,
             EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
-                request_id: "req_000001".to_string(),
+                request_id: "req_000001".into(),
                 finish_reason: "stop".to_string(),
                 output_digest: Some("digest-out".to_string()),
                 usage: None,
@@ -114,7 +114,7 @@ fn session_lineage_accepts_stable_prefix() {
         envelope(
             6,
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "resumed".to_string(),
+                run_name: "resumed".into(),
                 workspace_root: "/workspace".to_string(),
             }),
         ),
@@ -136,21 +136,21 @@ fn session_lineage_clears_user_prompt_by_provider_turn_metadata() {
         envelope(
             1,
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "interactive".to_string(),
+                run_name: "interactive".into(),
                 workspace_root: "/workspace".to_string(),
             }),
         ),
         envelope(
             2,
             EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-                request_id: "req_turn".to_string(),
+                request_id: "req_turn".into(),
                 text: "do work".to_string(),
             }),
         ),
         envelope(
             3,
             EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-                request_id: "provider_req".to_string(),
+                request_id: "provider_req".into(),
                 provider_id: "default".to_string(),
                 model_id: "gpt-5".to_string(),
                 prompt_summary: "do work".to_string(),
@@ -165,7 +165,7 @@ fn session_lineage_clears_user_prompt_by_provider_turn_metadata() {
         envelope(
             4,
             EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
-                request_id: "provider_req".to_string(),
+                request_id: "provider_req".into(),
                 finish_reason: "stop".to_string(),
                 output_digest: Some("digest-out".to_string()),
                 usage: None,
@@ -190,14 +190,14 @@ fn session_lineage_treats_background_wakeup_message_as_delivered() {
         envelope(
             1,
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "interactive".to_string(),
+                run_name: "interactive".into(),
                 workspace_root: "/workspace".to_string(),
             }),
         ),
         envelope(
             2,
             EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-                request_id: "req_background_wakeup".to_string(),
+                request_id: "req_background_wakeup".into(),
                 text: "<system-reminder>\n[BACKGROUND TASK COMPLETED]\nID: agent_child\n</system-reminder>"
                     .to_string(),
             }),
@@ -220,14 +220,14 @@ fn session_lineage_rejects_in_flight_prefix() {
         envelope(
             1,
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "interactive".to_string(),
+                run_name: "interactive".into(),
                 workspace_root: "/workspace".to_string(),
             }),
         ),
         envelope(
             2,
             EventV1::TaskScheduled(TaskScheduledEvent {
-                task_id: "task_000001".to_string(),
+                task_id: "task_000001".to_string().into(),
                 state: TaskScheduleState::Started,
                 queue_key: Some("provider_model:default:gpt-5".to_string()),
             }),
@@ -258,7 +258,7 @@ fn session_lineage_tui_accepts_live_message_snapshot_with_unanswered_prompt() {
         envelope(
             1,
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "interactive".to_string(),
+                run_name: "interactive".into(),
                 workspace_root: "/workspace".to_string(),
             }),
         ),
@@ -273,7 +273,7 @@ fn session_lineage_tui_accepts_live_message_snapshot_with_unanswered_prompt() {
         envelope(
             3,
             EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-                request_id: "req_unanswered".to_string(),
+                request_id: "req_unanswered".into(),
                 text: "Unanswered prompt".to_string(),
             }),
         ),
@@ -294,7 +294,7 @@ fn session_lineage_tui_closes_historical_native_edit_id_mismatch_by_path() {
         envelope(
             1,
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "interactive".to_string(),
+                run_name: "interactive".into(),
                 workspace_root: "/workspace".to_string(),
             }),
         ),
@@ -339,7 +339,7 @@ fn session_lineage_tui_accepts_live_snapshot_with_unfinished_native_edit() {
         envelope(
             1,
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "interactive".to_string(),
+                run_name: "interactive".into(),
                 workspace_root: "/workspace".to_string(),
             }),
         ),
@@ -366,7 +366,7 @@ fn session_lineage_rejects_corrupt_non_contiguous_logs() {
         envelope(
             1,
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "interactive".to_string(),
+                run_name: "interactive".into(),
                 workspace_root: "/workspace".to_string(),
             }),
         ),
@@ -401,7 +401,7 @@ fn session_lineage_rejects_corrupt_non_contiguous_logs() {
         envelope(
             1,
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "interactive".to_string(),
+                run_name: "interactive".into(),
                 workspace_root: "/workspace".to_string(),
             }),
         ),
@@ -412,7 +412,7 @@ fn session_lineage_rejects_corrupt_non_contiguous_logs() {
             }),
         ),
     ];
-    run_mismatch[1].run_id = "run_other".to_string();
+    run_mismatch[1].run_id = crate::ids::RunId::from("run_other");
     assert!(matches!(
         validate_stable_prefix(&run_mismatch, 2),
         Err(SessionLineageError::RunIdMismatch { seq: 2, .. })
@@ -424,7 +424,7 @@ fn session_lineage_rejects_unstable_prefixes() {
     let active = vec![envelope(
         1,
         EventV1::RunStarted(RunStartedEvent {
-            run_name: "interactive".to_string(),
+            run_name: "interactive".into(),
             workspace_root: "/workspace".to_string(),
         }),
     )];
@@ -438,7 +438,7 @@ fn session_lineage_rejects_unstable_prefixes() {
         envelope(
             1,
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "interactive".to_string(),
+                run_name: "interactive".into(),
                 workspace_root: "/workspace".to_string(),
             }),
         ),
@@ -473,7 +473,7 @@ fn session_lineage_clone_rejects_running_source_without_stable_prefix() {
     let events = vec![envelope(
         1,
         EventV1::RunStarted(RunStartedEvent {
-            run_name: "interactive".to_string(),
+            run_name: "interactive".into(),
             workspace_root: "/workspace".to_string(),
         }),
     )];
@@ -491,7 +491,7 @@ fn session_lineage_handles_first_last_and_out_of_range_cutoffs() {
         envelope(
             1,
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "interactive".to_string(),
+                run_name: "interactive".into(),
                 workspace_root: "/workspace".to_string(),
             }),
         ),
@@ -568,14 +568,14 @@ fn session_lineage_tracks_tool_call_in_flight_cutoffs() {
         envelope(
             1,
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "interactive".to_string(),
+                run_name: "interactive".into(),
                 workspace_root: "/workspace".to_string(),
             }),
         ),
         envelope(
             2,
             EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                tool_call_id: "toolcall_000001".to_string(),
+                tool_call_id: "toolcall_000001".into(),
                 tool_id: "bash".to_string(),
                 args_summary: "{}".to_string(),
                 args_digest: "digest-tool".to_string(),
@@ -591,7 +591,7 @@ fn session_lineage_tracks_tool_call_in_flight_cutoffs() {
         envelope(
             4,
             EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                tool_call_id: "toolcall_000001".to_string(),
+                tool_call_id: "toolcall_000001".into(),
                 status: ToolCallStatus::Succeeded,
                 output_summary: Some("ok".to_string()),
                 output_digest: Some("digest-output".to_string()),
@@ -627,7 +627,7 @@ fn session_lineage_rejects_source_event_log_changed_while_materializing() {
     changed_events.push(envelope(
         3,
         EventV1::RunStarted(RunStartedEvent {
-            run_name: "changed".to_string(),
+            run_name: "changed".into(),
             workspace_root: "/workspace".to_string(),
         }),
     ));
@@ -770,7 +770,7 @@ fn envelope(seq: u64, payload: EventV1) -> EventEnvelopeV1 {
         schema_version: SCHEMA_VERSION,
         event_id: format!("evt-{seq:04}"),
         seq,
-        run_id: "run_session_lineage".to_string(),
+        run_id: "run_session_lineage".into(),
         mono_ms: seq,
         ts: None,
         actor: EventActor::new(ActorKind::System, Some("coordinator".to_string())),
@@ -786,7 +786,7 @@ fn finished_events() -> Vec<EventEnvelopeV1> {
         envelope(
             1,
             EventV1::RunStarted(RunStartedEvent {
-                run_name: "interactive".to_string(),
+                run_name: "interactive".into(),
                 workspace_root: "/workspace".to_string(),
             }),
         ),
@@ -850,7 +850,7 @@ fn entry(
     last_updated_at: &str,
 ) -> SessionCatalogEntry {
     SessionCatalogEntry {
-        run_id: run_id.to_string(),
+        run_id: run_id.to_string().into(),
         run_name: Some(run_id.to_string()),
         status: Some(RunStatus::Finished),
         last_updated_at: Some(last_updated_at.to_string()),

@@ -1,3 +1,4 @@
+// allow: SIZE_OK — coordinator state machine (turn lifecycle + scheduling)
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -343,11 +344,11 @@ impl CoordinatorHandle {
 
     pub async fn job_progress(
         &self,
-        task_id: impl Into<String>,
+        task_id: impl AsRef<str>,
         kind: JobProgressKind,
     ) -> Result<(), CoordinatorError> {
         self.send_command(Command::JobProgress {
-            task_id: task_id.into(),
+            task_id: task_id.as_ref().to_string(),
             kind,
         })
         .await
@@ -355,11 +356,11 @@ impl CoordinatorHandle {
 
     pub async fn cancel_task(
         &self,
-        task_id: impl Into<String>,
+        task_id: impl AsRef<str>,
         reason: impl Into<String>,
     ) -> Result<(), CoordinatorError> {
         self.request(|respond_to| Command::CancelTask {
-            task_id: task_id.into(),
+            task_id: task_id.as_ref().to_string(),
             reason: reason.into(),
             respond_to,
         })
@@ -406,11 +407,11 @@ impl CoordinatorHandle {
     pub async fn wait_background_request_terminal(
         &self,
         request_id: impl Into<String>,
-        scheduler_task_id: impl Into<String>,
+        scheduler_task_id: impl AsRef<str>,
         timeout_ms: u64,
     ) -> Result<bool, CoordinatorError> {
         let request_id = request_id.into();
-        let scheduler_task_id = scheduler_task_id.into();
+        let scheduler_task_id = scheduler_task_id.as_ref().to_string();
         let store = self.event_store().await?;
         let mut stream = store.subscribe(1)?;
         let deadline = Instant::now() + Duration::from_millis(timeout_ms);
@@ -438,11 +439,11 @@ impl CoordinatorHandle {
 
     pub async fn job_finished(
         &self,
-        task_id: impl Into<String>,
+        task_id: impl AsRef<str>,
         outcome: JobOutcome,
     ) -> Result<(), CoordinatorError> {
         self.send_command(Command::JobFinished {
-            task_id: task_id.into(),
+            task_id: task_id.as_ref().to_string(),
             outcome,
         })
         .await

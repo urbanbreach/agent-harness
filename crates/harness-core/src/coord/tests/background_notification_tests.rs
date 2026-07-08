@@ -22,7 +22,7 @@ pub(super) async fn background_task_completion_schedules_pending_wakeup_when_par
         Some("task:task_child_terminal".to_string()),
         Some("req_child".to_string()),
         EventV1::TaskCompleted(TaskCompletedEvent {
-            task_id: "task_child_terminal".to_string(),
+            task_id: "task_child_terminal".to_string().into(),
             result_summary: "child output".to_string(),
             result_digest: "digest-child".to_string(),
             metadata: None,
@@ -99,7 +99,7 @@ pub(super) async fn background_task_completion_queues_parent_when_parent_is_idle
         Some("task:task_child_terminal".to_string()),
         Some("req_child".to_string()),
         EventV1::TaskCompleted(TaskCompletedEvent {
-            task_id: "task_child_terminal".to_string(),
+            task_id: "task_child_terminal".to_string().into(),
             result_summary: "child output".to_string(),
             result_digest: "digest-child".to_string(),
             metadata: None,
@@ -168,7 +168,7 @@ pub(super) async fn background_task_completion_sync_spawn_does_not_notify() {
         Some("task:task_child_terminal".to_string()),
         Some("req_child".to_string()),
         EventV1::TaskCompleted(TaskCompletedEvent {
-            task_id: "task_child_terminal".to_string(),
+            task_id: "task_child_terminal".to_string().into(),
             result_summary: "sync child output".to_string(),
             result_digest: "digest-child".to_string(),
             metadata: None,
@@ -217,7 +217,7 @@ pub(super) async fn background_task_completion_records_pending_notification_when
         Some("task:task_child_terminal".to_string()),
         Some("req_child".to_string()),
         EventV1::TaskCompleted(TaskCompletedEvent {
-            task_id: "task_child_terminal".to_string(),
+            task_id: "task_child_terminal".to_string().into(),
             result_summary: "child output".to_string(),
             result_digest: "digest-child".to_string(),
             metadata: None,
@@ -277,7 +277,7 @@ pub(super) async fn background_task_completion_cancellation_and_late_terminal_do
         Some("task:task_child_terminal".to_string()),
         Some("req_child".to_string()),
         EventV1::TaskCancelled(TaskCancelledEvent {
-            task_id: "task_child_terminal".to_string(),
+            task_id: "task_child_terminal".to_string().into(),
             reason: "provider failed closed".to_string(),
             task_scope: Some(crate::event::TaskTerminalScope::AgentTurn),
         }),
@@ -310,7 +310,7 @@ pub(super) async fn background_task_completion_cancellation_and_late_terminal_do
         Some("task:task_child_terminal_late".to_string()),
         Some("req_child".to_string()),
         EventV1::TaskCompleted(TaskCompletedEvent {
-            task_id: "task_child_terminal_late".to_string(),
+            task_id: "task_child_terminal_late".to_string().into(),
             result_summary: "late output".to_string(),
             result_digest: "digest-late".to_string(),
             metadata: None,
@@ -360,11 +360,11 @@ pub(super) fn background_task_completion_replay_projection_is_side_effect_free()
         EventActor::new(ActorKind::System, Some("coordinator".to_string())),
         Some("req_child"),
         EventV1::BackgroundTaskNotification(crate::event::BackgroundTaskNotificationEvent {
-            parent_session_id: run_id.to_string(),
+            parent_session_id: run_id.into(),
             parent_agent_id: Some("agent_parent".to_string()),
-            child_session_id: "agent_child".to_string(),
+            child_session_id: "agent_child".into(),
             child_request_id: "req_child".to_string(),
-            task_id: "agent_child".to_string(),
+            task_id: "agent_child".to_string().into(),
             description: "Summarize the repository".to_string(),
             status: BackgroundTaskNotificationStatus::Completed,
             summary: "child summary".to_string(),
@@ -469,9 +469,9 @@ fn child_agent_profile() -> AgentProfile {
 fn background_child_task(run_in_background: bool) -> ChildTaskTurnState {
     ChildTaskTurnState {
         parent_tool_call_id: "toolcall_parent_task".to_string(),
-        parent_session_id: "run_bg_once".to_string(),
+        parent_session_id: "run_bg_once".into(),
         parent_agent_id: Some("agent_parent".to_string()),
-        child_session_id: "agent_child".to_string(),
+        child_session_id: "agent_child".into(),
         child_request_id: "req_child".to_string(),
         task_id: "agent_child".to_string(),
         description: "Summarize the repository".to_string(),

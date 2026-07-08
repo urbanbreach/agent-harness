@@ -12,7 +12,7 @@ pub(super) fn merge_session_artifact(
     let tool_snapshot = payload
         .tool_call_id
         .as_ref()
-        .and_then(|tool_call_id| tool_calls.get(tool_call_id));
+        .and_then(|tool_call_id| tool_calls.get(tool_call_id.as_str()));
     let lineage = tool_snapshot
         .and_then(|snapshot| snapshot.metadata.as_ref())
         .and_then(|metadata| metadata.lineage.as_ref());
@@ -98,7 +98,7 @@ pub(super) fn merge_tool_metadata_artifacts(
             .entry(key)
             .and_modify(|entry| {
                 if entry.tool_call_id.is_none() {
-                    entry.tool_call_id = Some(tool_call_id.to_string());
+                    entry.tool_call_id = Some(tool_call_id.into());
                 }
                 if entry.tool_id.is_none() {
                     entry.tool_id = snapshot.tool_id.clone();
@@ -132,7 +132,7 @@ pub(super) fn merge_tool_metadata_artifacts(
                 path: artifact.path.clone(),
                 digest: artifact.digest.clone(),
                 bytes: None,
-                tool_call_id: Some(tool_call_id.to_string()),
+                tool_call_id: Some(tool_call_id.into()),
                 tool_id: snapshot.tool_id.clone(),
                 artifact_kind: None,
                 summary_contract_version: None,
