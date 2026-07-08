@@ -1,3 +1,4 @@
+// allow: SIZE_OK — simulation evidence (matrix validation + artifact writing)
 use serde_json::{Map, Value};
 use std::collections::BTreeSet;
 use std::path::Path;

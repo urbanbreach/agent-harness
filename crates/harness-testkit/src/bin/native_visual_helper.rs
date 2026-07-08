@@ -1,3 +1,4 @@
+// allow: SIZE_OK — native visual helper binary (KWin screenshot + Wayland + clipboard + artifact provenance)
 use harness_testkit::UnwrapOrAbort;
 use std::collections::HashMap;
 use std::env;

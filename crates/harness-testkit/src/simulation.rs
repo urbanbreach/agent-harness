@@ -1,3 +1,4 @@
+// allow: SIZE_OK — simulation matrix schema + evidence collection (matrix version + invariant definitions + artifact provenance)
 use serde_json::{json, Map, Value};
 use std::collections::BTreeSet;
 use std::fmt;

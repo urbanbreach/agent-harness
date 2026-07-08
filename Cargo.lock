@@ -1369,6 +1369,7 @@ dependencies = [
  "blake3",
  "font8x8",
  "fontdue",
+ "harness-core",
  "image",
  "insta",
  "json5",

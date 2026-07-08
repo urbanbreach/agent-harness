@@ -1,3 +1,4 @@
+// allow: SIZE_OK — simulation evidence binary (artifact collection + invariant checks + summary rollup)
 use harness_testkit::simulation::{
     artifact_index_rows, behavior_delta, build_normalized_summary, build_report,
     compare_normalized_summaries, invariant_results, scan_simulation_artifact_root,

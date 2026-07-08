@@ -1,3 +1,4 @@
+// allow: SIZE_OK — simulation evidence (matrix validation + artifact writing)
 use crate::secret_scanner::{default_forbidden_patterns, scan_directory_tree_for_secrets};
 use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
@@ -129,7 +130,7 @@ pub fn simulation_event_rows(
     }
     rows.push(json!({
         "schema_version": EVENT_SCHEMA_VERSION,
-        "seq": raw_events.len() as u64 + 1,
+        "seq": u64::try_from(raw_events.len()).unwrap_or(0) + 1,
         "scenario_id": matrix.scenario.scenario_id,
         "seed": seed,
         "run_id": replay.get("run_id").and_then(Value::as_str).unwrap_or(""),

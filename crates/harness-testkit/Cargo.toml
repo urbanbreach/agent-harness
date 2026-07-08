@@ -15,6 +15,7 @@ regex = "1"
 serde_json.workspace = true
 tempfile.workspace = true
 zbus = "5.14"
+harness-core = { path = "../harness-core" }
 
 [dev-dependencies]
 base64 = "0.22"

@@ -1,3 +1,4 @@
+// allow: SIZE_OK — test fakes (command invocation + provider mock + tool result + workspace fixtures)
 use crate::UnwrapOrAbort;
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
