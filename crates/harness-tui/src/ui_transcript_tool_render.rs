@@ -635,9 +635,34 @@ fn append_tool_call_todo_list(
     base_surface: Color,
     card_shell: Option<TranscriptToolCardShell>,
 ) {
+    if items.is_empty() {
+        return;
+    }
     let render_width = transcript_surface_content_width(width, false);
     let ordered = ordered_todo_items(items);
-    for item in ordered {
+
+    if !lines.is_empty() {
+        append_card_surface_row(
+            lines,
+            card_shell,
+            TRANSCRIPT_OPCODE_EDIT_INDENT,
+            base_surface,
+            Vec::new(),
+            render_width,
+        );
+    }
+
+    for (index, item) in ordered.iter().enumerate() {
+        if index > 0 {
+            append_card_surface_row(
+                lines,
+                card_shell,
+                TRANSCRIPT_OPCODE_EDIT_INDENT,
+                base_surface,
+                Vec::new(),
+                render_width,
+            );
+        }
         let marker_style = item.status.style(theme);
         let content_style = item.status.content_style(theme);
         let spans = vec![
@@ -650,6 +675,17 @@ fn append_tool_call_todo_list(
             TRANSCRIPT_OPCODE_EDIT_INDENT,
             base_surface,
             spans,
+            render_width,
+        );
+    }
+
+    for _ in 0..2 {
+        append_card_surface_row(
+            lines,
+            card_shell,
+            TRANSCRIPT_OPCODE_EDIT_INDENT,
+            base_surface,
+            Vec::new(),
             render_width,
         );
     }

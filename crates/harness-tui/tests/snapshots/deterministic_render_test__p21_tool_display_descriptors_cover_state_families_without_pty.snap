@@ -8,27 +8,27 @@ expression: trim_trailing_snapshot_whitespace(&rendered)
   ┃                                                                                                                                         ▼ MCP
                                                                                                                                             • No MCP servers configured
      ≡ List session
-     → LSP diagnostics src/main.rs                                                                                                          ▼ LSP
-     ┃ ✱ AST Search "foo" · Failed                                                                                                          • rust
+                                                                                                                                            ▼ LSP
+     → LSP diagnostics src/main.rs                                                                                                          • rust
+
+     ┃ ✱ AST Search "foo" · Failed                                                                                                          ▶ Modified Files
      ┃ ast-grep binary not found
-     → Skill "denied-skill" · Denied                                                                                                        ▶ Modified Files
+
+     → Skill "denied-skill" · Denied
       Operator denied skill load
+
      → Read session · run-123
+
      ✕ Cancelled background task · req-bg-child
+
      ↻ Checked background output · req-bg-late · late_result · 3 child tool calls · 2ms
+
      ⊕ Plan mode · Plan the refactor
+
 
      P2.1 tool display descriptors cover all state families.
 
      ▪ Assistant · model-1 · 27ms
-
-
-
-
-
-
-
-
 
 
 

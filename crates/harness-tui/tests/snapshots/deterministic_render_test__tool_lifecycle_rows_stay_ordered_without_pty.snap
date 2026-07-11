@@ -8,23 +8,23 @@ expression: trim_trailing_snapshot_whitespace(&rendered)
   ┃                                                                                                                                         ▼ Subagents
                                                                                                                                             • ✓ Researcher Task
      → Read src/ui.rs [offset=1, limit=24]
-     ┃ ← Patch · ui.rs  ▸                                                                                                                   ▼ MCP
-     ┃ crates/harness-tui/src                                                                                                               • No MCP servers configured
-     ┃ Remove diff review surface · Diff preview unavailable (artifacts/tool-lifecycle-inline.diff)
-     ✓ Researcher Task — audit tool lifecycle parity                                                                                        ▼ LSP
-      Found the whole-tool parity path.                                                                                                     • No active LSP servers
+                                                                                                                                            ▼ MCP
+     ┃ ← Patch · ui.rs  ▸                                                                                                                   • No MCP servers configured
+     ┃ crates/harness-tui/src
+     ┃ Remove diff review surface · Diff preview unavailable (artifacts/tool-lifecycle-inline.diff)                                         ▼ LSP
+                                                                                                                                            • No active LSP servers
+     ✓ Researcher Task — audit tool lifecycle parity
+      Found the whole-tool parity path.                                                                                                     ▼ Modified Files
+                                                                                                                                            • crates/harness-tui/src/ui.rs
+
      $ cargo test -p harness-tui  ▸
-      exit code: 1                                                                                                                          ▼ Modified Files
-      stderr: snapshot mismatch                                                                                                             • crates/harness-tui/src/ui.rs
+      exit code: 1
+      stderr: snapshot mismatch
+
 
      Tool summaries are now easier to scan, and edits stay inline.
 
      ▪ Assistant · model-1 · 17ms
-
-
-
-
-
 
 
 
