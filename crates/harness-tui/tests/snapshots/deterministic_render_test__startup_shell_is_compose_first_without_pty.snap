@@ -1,6 +1,5 @@
 ---
 source: crates/harness-tui/tests/deterministic_render_test.rs
-assertion_line: 32
 expression: trim_trailing_snapshot_whitespace(&rendered)
 ---
 
@@ -26,4 +25,4 @@ expression: trim_trailing_snapshot_whitespace(&rendered)
                                            ctrl+t variants  tab agents  ctrl+p commands
 
 
-            ~/Projects/agent-harness/crates/harness-tui:refactorin…  Ctrl+p open  q quit
+            ~/Projects/agent-harness/crates/harness-tui:dev          Ctrl+p open  q quit
