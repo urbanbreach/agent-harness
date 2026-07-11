@@ -11,6 +11,9 @@ mod stream_payload;
 mod tool_call;
 mod transport;
 
+#[cfg(test)]
+mod tests;
+
 pub use self::config::{
     OpenAiApiMode, OpenAiAuthProfile, OpenAiCompatibleProviderConfig, OpenAiCompatibleProviderError,
 };
