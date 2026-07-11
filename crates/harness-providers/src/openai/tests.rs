@@ -14,11 +14,11 @@ use serde_json::json;
 use tokio::time::timeout;
 use tokio_stream::StreamExt;
 
+use super::request::{OpenAiChatCompletionsRequest, OpenAiResponsesRequest};
 use super::{
     OpenAiApiMode, OpenAiAuthProfile, OpenAiCompatibleProvider, OpenAiCompatibleProviderConfig,
     OpenAiHttpResponse, OpenAiHttpTransport, CODEX_API_ENDPOINT, COPILOT_API_BASE,
 };
-use super::request::{OpenAiChatCompletionsRequest, OpenAiResponsesRequest};
 use crate::{
     CacheRetention, CompletionMessage, CompletionRequest, CompletionUsage, MessageRole, Provider,
     ProviderBearerToken, ProviderCredentialKind, ProviderCredentialSource, ProviderErrorCategory,
