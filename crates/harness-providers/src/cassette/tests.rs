@@ -3,12 +3,16 @@ use crate::{CompletionMessage, CompletionRequest, MessageRole, ProviderStreamEve
 
 #[test]
 fn safety_scan_rejects_common_secret_shapes() {
+    // arrange
     let cassette = ProviderCassette::new(vec![CassetteInteraction::new(
         request_with_content("leaked sk-testsecret123"),
         vec![ProviderStreamEvent::TextDelta("never written".to_string())],
     )]);
 
+    // act
     let err = assert_cassette_is_safe(&cassette).expect_err("unsafe cassette");
+
+    // assert
     assert!(err.to_string().contains("openai_api_key"));
 }
 

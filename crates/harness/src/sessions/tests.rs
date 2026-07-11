@@ -233,6 +233,7 @@ fn support_export_omits_provider_reasoning_delta_events() {
 
 #[test]
 fn collect_list_entries_applies_filters_and_hides_non_operator_modes() {
+    // arrange
     let entries = vec![
         sample_entry(&SampleEntryInput {
             run_id: "run-running",
@@ -276,13 +277,17 @@ fn collect_list_entries_applies_filters_and_hides_non_operator_modes() {
         ..SessionsListCommand::default()
     };
 
+    // act
     let filtered = collect_list_entries(entries, &command);
+
+    // assert
     assert_eq!(filtered.len(), 1);
     assert_eq!(filtered[0].catalog.run_id, "run-running");
 }
 
 #[test]
 fn collect_list_entries_supports_machine_sorting() {
+    // arrange
     let entries = vec![
         sample_entry(&SampleEntryInput {
             run_id: "run-b",
@@ -324,17 +329,20 @@ fn collect_list_entries_supports_machine_sorting() {
         ..SessionsListCommand::default()
     };
 
+    // act
     let filtered = collect_list_entries(entries, &command);
     let run_ids = filtered
         .iter()
         .map(|entry| entry.catalog.run_id.as_str())
         .collect::<Vec<_>>();
 
+    // assert
     assert_eq!(run_ids, vec!["run-a", "run-b", "run-c"]);
 }
 
 #[test]
 fn render_json_session_list_emits_machine_readable_fields() {
+    // arrange
     let entries = vec![sample_entry(&SampleEntryInput {
         run_id: "run-json",
         sort_unix_ms: 42,
@@ -347,9 +355,11 @@ fn render_json_session_list_emits_machine_readable_fields() {
         parent_session_id: Some("run-parent"),
     })];
 
+    // act
     let rendered = render_json_session_list(&entries).unwrap();
     let parsed: serde_json::Value = serde_json::from_str(&rendered).unwrap();
 
+    // assert
     assert_eq!(
         parsed,
         json!([
@@ -375,6 +385,7 @@ fn render_json_session_list_emits_machine_readable_fields() {
 
 #[test]
 fn render_human_session_table_keeps_operator_facing_default() {
+    // arrange
     let entries = vec![sample_entry(&SampleEntryInput {
         run_id: "run-human",
         sort_unix_ms: 42,
@@ -387,8 +398,10 @@ fn render_human_session_table_keeps_operator_facing_default() {
         parent_session_id: Some("run-parent"),
     })];
 
+    // act
     let rendered = render_human_session_table(&entries);
 
+    // assert
     assert!(rendered.contains("run_id"));
     assert!(rendered.contains("artifacts"));
     assert!(rendered.contains("children"));
