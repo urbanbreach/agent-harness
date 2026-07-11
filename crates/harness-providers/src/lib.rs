@@ -25,7 +25,14 @@ pub trait UnwrapOrAbort<T> {
     fn unwrap_or_abort(self) -> T;
 }
 
-#[allow(clippy::panic, clippy::match_wild_err_arm, reason = "replaces expect() which also panics; abort() kills test processes")]
+#[allow(
+    clippy::panic,
+    reason = "replaces expect() which also panics; abort() kills test processes"
+)]
+#[allow(
+    clippy::match_wild_err_arm,
+    reason = "replaces expect() which also panics; abort() kills test processes"
+)]
 impl<T> UnwrapOrAbort<T> for Option<T> {
     fn unwrap_or_abort(self) -> T {
         match self {
@@ -35,7 +42,14 @@ impl<T> UnwrapOrAbort<T> for Option<T> {
     }
 }
 
-#[allow(clippy::panic, clippy::match_wild_err_arm, reason = "replaces expect() which also panics; abort() kills test processes")]
+#[allow(
+    clippy::panic,
+    reason = "replaces expect() which also panics; abort() kills test processes"
+)]
+#[allow(
+    clippy::match_wild_err_arm,
+    reason = "replaces expect() which also panics; abort() kills test processes"
+)]
 impl<T, E> UnwrapOrAbort<T> for Result<T, E> {
     fn unwrap_or_abort(self) -> T {
         match self {

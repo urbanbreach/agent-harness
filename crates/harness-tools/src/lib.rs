@@ -688,7 +688,10 @@ mod tests {
 
     #[derive(Debug, Deserialize, JsonSchema)]
     #[serde(deny_unknown_fields)]
-    #[allow(clippy::empty_structs_with_brackets, reason = "unit struct changes JSON schema representation"    )]
+    #[allow(
+        clippy::empty_structs_with_brackets,
+        reason = "unit struct changes JSON schema representation"
+    )]
     struct EmptyObjectArgs {}
 
     #[test]

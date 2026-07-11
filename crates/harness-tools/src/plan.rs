@@ -63,7 +63,10 @@ struct PlanEnterArgs {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-#[allow(clippy::empty_structs_with_brackets, reason = "unit struct changes JSON schema representation")]
+#[allow(
+    clippy::empty_structs_with_brackets,
+    reason = "unit struct changes JSON schema representation"
+)]
 struct PlanExitArgs {}
 
 #[async_trait]
