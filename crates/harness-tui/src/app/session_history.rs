@@ -598,9 +598,7 @@ impl AppState {
                     run_id: selected_run_id,
                     run_dir: selected_run_dir,
                 });
-                if self.startup_mode {
-                    self.should_quit = true;
-                }
+                self.should_quit = true;
                 self.close_session_history();
             }
             StartupLauncherAction::ReplaySession => {
@@ -610,9 +608,7 @@ impl AppState {
                     run_id: selected_run_id,
                     run_dir: selected_run_dir,
                 });
-                if self.startup_mode {
-                    self.should_quit = true;
-                }
+                self.should_quit = true;
                 self.close_session_history();
             }
         }

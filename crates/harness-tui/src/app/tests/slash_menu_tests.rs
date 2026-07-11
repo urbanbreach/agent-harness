@@ -218,6 +218,112 @@ pub(super) fn resume_history_surface_uses_meaningful_session_title() {
     );
 }
 
+pub(super) fn live_session_picker_continue_quits_tui_and_emits_intent() {
+    let entry = SessionHistoryEntry {
+        run_dir: PathBuf::from("/tmp/run-live-continue"),
+        catalog: harness_core::proj::SessionCatalogEntry {
+            run_id: "run-live-continue".into(),
+            run_name: Some("live continue target".to_string()),
+            status: Some(harness_core::proj::RunStatus::Finished),
+            last_updated_at: Some("2026-02-03T12:00:00Z".to_string()),
+            workspace_root: Some("/tmp/workspace".to_string()),
+            profile_preset: Some("build".to_string()),
+            provider_model: Some("mock/model".to_string()),
+            mode_source: harness_core::proj::SessionModeSource::InteractiveLive,
+            is_resumable: true,
+            resume_disabled_reason: None,
+            artifact_count: 0,
+            child_session_count: 0,
+            parent_session_id: None,
+        },
+    };
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().unwrap_or_abort().push(intent);
+        })
+    };
+
+    let mut app = AppState::new_live(
+        Some(PathBuf::from("/tmp/run-live-current")),
+        false,
+        Some(sink),
+    );
+    app.set_session_history_entries(vec![entry.clone()]);
+    app.execute_slash_command("sessions", None);
+
+    assert!(app.session_history_visible);
+    assert_eq!(
+        app.startup_launcher_action,
+        StartupLauncherAction::ContinueSession
+    );
+
+    app.handle_key(key(KeyCode::Enter));
+
+    assert!(app.should_quit, "selecting a continue target from the live session picker should exit the TUI so the outer workflow can switch sessions");
+    assert_eq!(
+        intents.lock().unwrap_or_abort().as_slice(),
+        &[UiIntent::ContinueSession {
+            run_id: "run-live-continue".into(),
+            run_dir: PathBuf::from("/tmp/run-live-continue"),
+        }]
+    );
+}
+
+pub(super) fn live_session_picker_replay_quits_tui_and_emits_intent() {
+    let entry = SessionHistoryEntry {
+        run_dir: PathBuf::from("/tmp/run-live-replay"),
+        catalog: harness_core::proj::SessionCatalogEntry {
+            run_id: "run-live-replay".into(),
+            run_name: Some("live replay target".to_string()),
+            status: Some(harness_core::proj::RunStatus::Finished),
+            last_updated_at: Some("2026-02-03T12:00:00Z".to_string()),
+            workspace_root: Some("/tmp/workspace".to_string()),
+            profile_preset: Some("build".to_string()),
+            provider_model: Some("mock/model".to_string()),
+            mode_source: harness_core::proj::SessionModeSource::InteractiveLive,
+            is_resumable: true,
+            resume_disabled_reason: None,
+            artifact_count: 0,
+            child_session_count: 0,
+            parent_session_id: None,
+        },
+    };
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().unwrap_or_abort().push(intent);
+        })
+    };
+
+    let mut app = AppState::new_live(
+        Some(PathBuf::from("/tmp/run-live-current")),
+        false,
+        Some(sink),
+    );
+    app.set_session_history_entries(vec![entry.clone()]);
+    app.execute_slash_command("replay", None);
+
+    assert!(app.session_history_visible);
+    assert_eq!(
+        app.startup_launcher_action,
+        StartupLauncherAction::ReplaySession
+    );
+
+    app.handle_key(key(KeyCode::Enter));
+
+    assert!(app.should_quit, "selecting a replay target from the live session picker should exit the TUI so the outer workflow can switch sessions");
+    assert_eq!(
+        intents.lock().unwrap_or_abort().as_slice(),
+        &[UiIntent::ReplaySession {
+            run_id: "run-live-replay".into(),
+            run_dir: PathBuf::from("/tmp/run-live-replay"),
+        }]
+    );
+}
+
 pub(super) fn slash_menu_supports_mouse_selection() {
     let mut app = AppState::new_startup(Vec::new(), None);
     app.handle_key(key(KeyCode::Char('/')));
