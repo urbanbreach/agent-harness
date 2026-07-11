@@ -371,7 +371,12 @@ fn rewrite_child_event_prefix(
         .iter()
         .enumerate()
         .map(|(index, event)| {
-            rewrite_child_event_envelope(event, source_run_id, child_run_id, u64::try_from(index).unwrap_or(0) + 1)
+            rewrite_child_event_envelope(
+                event,
+                source_run_id,
+                child_run_id,
+                u64::try_from(index).unwrap_or(0) + 1,
+            )
         })
         .collect()
 }

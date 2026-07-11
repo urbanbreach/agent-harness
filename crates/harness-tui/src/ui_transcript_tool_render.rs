@@ -108,13 +108,7 @@ fn append_card_prebuilt_surface_lines(
             width,
         );
     } else {
-        append_prebuilt_surface_lines(
-            lines,
-            fallback_indent,
-            fallback_surface,
-            prebuilt,
-            width,
-        );
+        append_prebuilt_surface_lines(lines, fallback_indent, fallback_surface, prebuilt, width);
     }
 }
 

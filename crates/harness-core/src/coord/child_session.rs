@@ -305,7 +305,7 @@ where
             clock,
             redactor,
             event_store: mirror.event_store.as_ref(),
-        child_run_id: child_session_id,
+            child_run_id: child_session_id,
         };
         child_appender.append(
             system_actor(),

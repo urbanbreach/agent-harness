@@ -13,7 +13,7 @@ const MAX_MEDIA_ENCODED_BYTES: usize = 28 * 1024 * 1024;
 const MAX_MEDIA_DECODED_BYTES: usize = 20 * 1024 * 1024;
 
 #[derive(Debug, Serialize)]
-pub(super) struct OpenAiChatCompletionsRequest {
+pub(crate) struct OpenAiChatCompletionsRequest {
     model: String,
     messages: Vec<OpenAiChatMessage>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -253,7 +253,7 @@ struct OpenAiChatToolFunction {
 }
 
 #[derive(Debug, Serialize)]
-pub(super) struct OpenAiResponsesRequest {
+pub(crate) struct OpenAiResponsesRequest {
     model: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     instructions: Option<String>,

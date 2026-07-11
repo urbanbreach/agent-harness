@@ -308,8 +308,7 @@ fn read_directory_entries(directory: &Path) -> Result<Vec<String>, ToolError> {
 fn directory_entry_display_name(
     entry: std::io::Result<std::fs::DirEntry>,
 ) -> Result<String, ToolError> {
-    let entry = entry
-        .tool_err("failed to read directory entry")?;
+    let entry = entry.tool_err("failed to read directory entry")?;
     let file_type = entry.file_type().map_err(|err| {
         ToolError::Execution(format!("failed to read directory entry type: {err}"))
     })?;

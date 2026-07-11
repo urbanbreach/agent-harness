@@ -2,7 +2,7 @@ use super::*;
 use crate::UnwrapOrAbort;
 
 mod events {
-    include!("opencode_subagent_parity_events.rs");
+    include!("opencode_subagent_parity_events_test.rs");
 }
 
 pub(super) fn no_child_app() -> AppState {

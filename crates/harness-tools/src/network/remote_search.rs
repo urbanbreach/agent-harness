@@ -558,8 +558,7 @@ fn parse_sse_text_result(body: &str) -> Result<Option<String>, ToolError> {
             continue;
         };
         saw_data_frame = true;
-        let value: Value = serde_json::from_str(data)
-            .tool_err("failed to parse sse payload")?;
+        let value: Value = serde_json::from_str(data).tool_err("failed to parse sse payload")?;
         if let Some(content) = value["result"]["content"].as_array() {
             return Ok(extract_text_result(content));
         }

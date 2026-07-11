@@ -299,8 +299,7 @@ impl StdioMcpSession {
     }
 
     async fn write_message(&mut self, message: &Value) -> Result<(), ToolError> {
-        let body = serde_json::to_vec(message)
-            .tool_err("failed to encode MCP message")?;
+        let body = serde_json::to_vec(message).tool_err("failed to encode MCP message")?;
         timeout(self.timeout, async {
             self.stdin.write_all(&body).await?;
             self.stdin.write_all(b"\n").await?;

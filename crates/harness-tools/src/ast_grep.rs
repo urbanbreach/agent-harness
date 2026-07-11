@@ -962,8 +962,7 @@ fn maybe_spill_json_with_artifacts(
     payload: Value,
     mut artifacts: Vec<ArtifactRef>,
 ) -> Result<ToolResult, ToolError> {
-    let body = serde_json::to_string_pretty(&payload)
-        .tool_err("failed to serialize output")?;
+    let body = serde_json::to_string_pretty(&payload).tool_err("failed to serialize output")?;
     if body.len() <= MAX_INLINE_JSON_CHARS {
         if artifacts.is_empty() {
             return Ok(text_json_tool_result(display_text, payload));

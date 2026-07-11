@@ -124,7 +124,8 @@ impl SessionProjection {
                         row.last_timestamp = event.ts.clone();
                     }
                 }
-                if let Some(index) = self.activity_index_for_provider_event(event, data.request_id.as_str())
+                if let Some(index) =
+                    self.activity_index_for_provider_event(event, data.request_id.as_str())
                 {
                     let profile_label = self.profile_label_for_event(event);
                     if let Some(entry) = self.activities.get_mut(index) {
@@ -158,7 +159,8 @@ impl SessionProjection {
                 self.note_child_agent_request(event, data.request_id.as_str());
                 let turn_id = Self::canonical_provider_turn_id(event, data.request_id.as_str());
                 self.note_child_agent_request(event, turn_id);
-                if let Some(index) = self.activity_index_for_provider_event(event, data.request_id.as_str())
+                if let Some(index) =
+                    self.activity_index_for_provider_event(event, data.request_id.as_str())
                 {
                     if let Some(entry) = self.activities.get_mut(index) {
                         entry.status = ActivityStatus::Streaming;
@@ -188,7 +190,8 @@ impl SessionProjection {
                 self.note_child_agent_request(event, data.request_id.as_str());
                 let turn_id = Self::canonical_provider_turn_id(event, data.request_id.as_str());
                 self.note_child_agent_request(event, turn_id);
-                if let Some(index) = self.activity_index_for_provider_event(event, data.request_id.as_str())
+                if let Some(index) =
+                    self.activity_index_for_provider_event(event, data.request_id.as_str())
                 {
                     if let Some(entry) = self.activities.get_mut(index) {
                         entry.status = ActivityStatus::Streaming;
@@ -223,7 +226,8 @@ impl SessionProjection {
                 let turn_id = Self::canonical_provider_turn_id(event, data.request_id.as_str());
                 self.note_child_agent_request(event, turn_id);
                 let provider_error_detail = provider_error_detail(data);
-                if let Some(index) = self.activity_index_for_provider_event(event, data.request_id.as_str())
+                if let Some(index) =
+                    self.activity_index_for_provider_event(event, data.request_id.as_str())
                 {
                     let should_mark_done = !self.has_active_turn_task_for_request(turn_id);
                     if let Some(entry) = self.activities.get_mut(index) {
@@ -336,7 +340,8 @@ impl SessionProjection {
                 });
             }
             EventV1::TaskCompleted(data) => {
-                let should_mark_done = self.is_turn_level_task_completion(data.task_id.as_str(), data);
+                let should_mark_done =
+                    self.is_turn_level_task_completion(data.task_id.as_str(), data);
                 self.update_orchestration_task(event, data.task_id.as_str(), |row| {
                     row.state = OrchestrationTaskState::Completed;
                     row.warning = None;
@@ -403,7 +408,8 @@ impl SessionProjection {
                 });
             }
             EventV1::TaskCancelled(data) => {
-                let should_mark_error = self.is_turn_level_task_cancellation(data.task_id.as_str(), data);
+                let should_mark_error =
+                    self.is_turn_level_task_cancellation(data.task_id.as_str(), data);
                 self.update_orchestration_task(event, data.task_id.as_str(), |row| {
                     row.state = OrchestrationTaskState::Cancelled;
                     row.warning = non_empty_preserved_string(&data.reason);

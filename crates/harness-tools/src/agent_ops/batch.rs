@@ -88,8 +88,7 @@ pub(super) async fn execute_batch(
     }
 
     while let Some(joined) = join_set.join_next().await {
-        outcomes
-            .push(joined.tool_err("batch join failed")?);
+        outcomes.push(joined.tool_err("batch join failed")?);
     }
 
     outcomes.sort_by_key(|outcome| outcome.index);

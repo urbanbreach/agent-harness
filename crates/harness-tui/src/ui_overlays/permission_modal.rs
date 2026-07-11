@@ -461,7 +461,14 @@ fn question_prompt_tint(base: Color, overlay: Color, alpha: f32) -> Color {
             Color::Rgb(base_red, base_green, base_blue),
             Color::Rgb(overlay_red, overlay_green, overlay_blue),
         ) => {
-            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, reason = "float-to-int cast is safe: value is clamped to [0, 255] before cast")]
+            #[allow(
+                clippy::cast_possible_truncation,
+                reason = "float-to-int cast is safe: value is clamped to [0, 255] before cast"
+            )]
+            #[allow(
+                clippy::cast_sign_loss,
+                reason = "float-to-int cast is safe: value is clamped to [0, 255] before cast"
+            )]
             let blend = |base: u8, overlay: u8| -> u8 {
                 let value = (f32::from(base) * (1.0 - alpha)) + (f32::from(overlay) * alpha);
                 value.round().clamp(0.0, 255.0) as u8 // allow: WIDENING — value is clamped to [0, 255] before cast

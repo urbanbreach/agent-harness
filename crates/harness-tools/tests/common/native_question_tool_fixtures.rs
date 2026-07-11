@@ -33,7 +33,7 @@ fn question_tool_context(
     tool_call_id: &str,
 ) -> ToolContext {
     ToolContext {
-        run_id: run_id.to_string().into(),
+        run_id: run_id.to_string(),
         workspace_root: workspace_root.to_path_buf(),
         artifacts_dir: artifacts_dir.to_path_buf(),
         actor: worker_actor("agent-worker"),

@@ -54,7 +54,8 @@ pub(super) async fn allow_always_records_grant_and_authorizes_matching_future_sh
         .iter()
         .find_map(|event| match &event.payload {
             EventV1::PermissionRequested(data)
-                if data.tool_call_id.as_ref().map(|id| id.as_str()) == Some(first_tool_call_id.as_str()) =>
+                if data.tool_call_id.as_ref().map(|id| id.as_str())
+                    == Some(first_tool_call_id.as_str()) =>
             {
                 Some(data.permission_id.clone())
             }

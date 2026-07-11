@@ -160,8 +160,7 @@ impl LspSession {
         file_path: &Path,
         server_name: &str,
     ) -> Result<(), ToolError> {
-        let text = fs::read_to_string(file_path)
-            .tool_err("failed to read source file")?;
+        let text = fs::read_to_string(file_path).tool_err("failed to read source file")?;
         self.notify(
             "textDocument/didOpen",
             json!({
@@ -230,16 +229,13 @@ impl LspSession {
     }
 
     fn write_message(&mut self, message: Value) -> Result<(), ToolError> {
-        let body = serde_json::to_vec(&message)
-            .tool_err("failed to encode lsp request")?;
+        let body = serde_json::to_vec(&message).tool_err("failed to encode lsp request")?;
         write!(self.stdin, "Content-Length: {}\r\n\r\n", body.len())
             .tool_err("failed to write lsp header")?;
         self.stdin
             .write_all(&body)
             .tool_err("failed to write lsp body")?;
-        self.stdin
-            .flush()
-            .tool_err("failed to flush lsp request")
+        self.stdin.flush().tool_err("failed to flush lsp request")
     }
 
     fn read_message(&mut self) -> Result<Value, ToolError> {
@@ -274,8 +270,7 @@ impl LspSession {
         self.stdout
             .read_exact(&mut body)
             .tool_err("failed to read lsp body")?;
-        serde_json::from_slice(&body)
-            .tool_err("failed to decode lsp message")
+        serde_json::from_slice(&body).tool_err("failed to decode lsp message")
     }
 
     fn respond_to_server_request(

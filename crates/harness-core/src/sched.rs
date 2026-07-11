@@ -163,7 +163,11 @@ impl Scheduler {
         let mut compact_key: Option<ConcurrencyKey> = None;
 
         for (key, gate) in self.gates.iter_mut() {
-            let Some(index) = gate.queue.iter().position(|task| task.task_id.as_str() == task_id) else {
+            let Some(index) = gate
+                .queue
+                .iter()
+                .position(|task| task.task_id.as_str() == task_id)
+            else {
                 continue;
             };
 

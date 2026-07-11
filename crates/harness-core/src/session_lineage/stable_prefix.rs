@@ -243,7 +243,8 @@ impl PrefixState {
                     .insert(payload.request_id.to_string());
             }
             EventV1::ProviderRequestFinished(payload) => {
-                self.provider_requests_in_flight.remove(payload.request_id.as_str());
+                self.provider_requests_in_flight
+                    .remove(payload.request_id.as_str());
             }
             EventV1::ToolCallRequested(payload) => {
                 self.tool_calls_in_flight
@@ -254,7 +255,8 @@ impl PrefixState {
                     .insert(payload.tool_call_id.to_string());
             }
             EventV1::ToolCallFinished(payload) => {
-                self.tool_calls_in_flight.remove(payload.tool_call_id.as_str());
+                self.tool_calls_in_flight
+                    .remove(payload.tool_call_id.as_str());
             }
             EventV1::PermissionRequested(payload) => {
                 self.pending_permissions

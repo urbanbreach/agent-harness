@@ -292,7 +292,7 @@ delegate_test!(subagent_footer_scrollbar_drag_release_does_not_navigate => subag
 delegate_test!(subagent_footer_up_only_release_does_not_activate => subagent_footer_navigation_tests::subagent_footer_up_only_release_does_not_activate);
 
 #[cfg(test)]
-#[path = "tests/opencode_subagent_parity_apps.rs"]
+#[path = "tests/opencode_subagent_parity_apps_test.rs"]
 mod opencode_subagent_parity_apps;
 
 fn write_events_jsonl(run_dir: &Path, events: &[EventEnvelopeV1]) {
@@ -1198,7 +1198,7 @@ delegate_test!(palette_golden_ranking_stable_tie_order => palette_parity_tests::
 delegate_test!(palette_inventory_comprehensive_fields => palette_parity_tests::palette_inventory_comprehensive_fields);
 
 #[cfg(test)]
-#[path = "tests/opencode_subagent_parity_evidence.rs"]
+#[path = "tests/opencode_subagent_parity_evidence_test.rs"]
 mod opencode_subagent_parity_evidence;
 
 #[test]

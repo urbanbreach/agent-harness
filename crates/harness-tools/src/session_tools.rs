@@ -433,11 +433,8 @@ fn load_session_entries(session_root: &Path) -> Result<Vec<SessionEntry>, ToolEr
         .canonicalize()
         .tool_err("failed to resolve session root")?;
     let mut entries = Vec::new();
-    for entry in fs::read_dir(session_root)
-        .tool_err("failed to read session root")?
-    {
-        let entry = entry
-            .tool_err("failed to inspect session")?;
+    for entry in fs::read_dir(session_root).tool_err("failed to read session root")? {
+        let entry = entry.tool_err("failed to inspect session")?;
         let path = entry.path();
         if path.is_dir() {
             let canonical = path.canonicalize().map_err(|err| {
@@ -759,8 +756,7 @@ fn maybe_spill_json(
     display_text: String,
     payload: Value,
 ) -> Result<ToolResult, ToolError> {
-    let body = serde_json::to_string_pretty(&payload)
-        .tool_err("failed to serialize output")?;
+    let body = serde_json::to_string_pretty(&payload).tool_err("failed to serialize output")?;
     if body.len() <= MAX_TOOL_INLINE_JSON_CHARS {
         return Ok(text_json_tool_result(display_text, payload));
     }

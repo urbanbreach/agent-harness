@@ -714,7 +714,11 @@ impl Coordinator {
         };
 
         for task in dequeued {
-            if let Some(queued) = run_state.queued_agent_turns.get(task.task_id.as_str()).cloned() {
+            if let Some(queued) = run_state
+                .queued_agent_turns
+                .get(task.task_id.as_str())
+                .cloned()
+            {
                 append_agent_turn_task_scheduled_event(
                     self.clock.as_ref(),
                     self.redactor.as_ref(),
@@ -728,7 +732,8 @@ impl Coordinator {
                     },
                 )?;
 
-                let Some(queued) = run_state.queued_agent_turns.remove(task.task_id.as_str()) else {
+                let Some(queued) = run_state.queued_agent_turns.remove(task.task_id.as_str())
+                else {
                     continue;
                 };
                 start_agent_turn_execution(

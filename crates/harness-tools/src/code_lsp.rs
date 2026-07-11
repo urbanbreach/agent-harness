@@ -270,8 +270,7 @@ fn render_display_text(
     let mut text = if lsp_result_is_empty(&response.result) {
         format!("No results found for {operation_name}")
     } else {
-        serde_json::to_string_pretty(&response.result)
-            .tool_err("failed to render lsp result")?
+        serde_json::to_string_pretty(&response.result).tool_err("failed to render lsp result")?
     };
 
     let diagnostics = format_diagnostics(&response.diagnostics);

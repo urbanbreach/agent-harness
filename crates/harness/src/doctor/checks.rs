@@ -135,7 +135,9 @@ pub(super) fn check_native_tool_catalog(config: &HarnessConfig) -> DoctorCheck {
     )
 }
 
-pub(super) fn profile_description_overrides_by_tool(config: &HarnessConfig) -> BTreeMap<String, Vec<String>> {
+pub(super) fn profile_description_overrides_by_tool(
+    config: &HarnessConfig,
+) -> BTreeMap<String, Vec<String>> {
     let mut overrides = BTreeMap::new();
     overrides.insert(
         "task".to_string(),

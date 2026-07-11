@@ -168,7 +168,10 @@ impl Coordinator {
             agent_actor(&agent_id),
             Some(format!("agent:{agent_id}")),
             Some(turn_request_id),
-            EventV1::ProviderReasoningDelta(ProviderReasoningDeltaEvent { request_id: request_id.into(), delta }),
+            EventV1::ProviderReasoningDelta(ProviderReasoningDeltaEvent {
+                request_id: request_id.into(),
+                delta,
+            }),
         )?;
 
         Ok(())

@@ -544,8 +544,7 @@ fn validate_todo_items(todos: &[TodoItem]) -> Result<(), String> {
 }
 
 fn render_todos_result(todos: Vec<TodoItem>) -> Result<ToolResult, ToolError> {
-    let display_text = serde_json::to_string_pretty(&todos)
-        .tool_err("failed to render todos")?;
+    let display_text = serde_json::to_string_pretty(&todos).tool_err("failed to render todos")?;
     Ok(crate::text_json_tool_result(
         display_text,
         json!({ "todos": todos }),
@@ -559,8 +558,7 @@ fn write_todo_state(ctx: &ToolContext, todos: &[TodoItem]) -> Result<(), ToolErr
             ToolError::Execution(format!("failed to create todo state directory: {err}"))
         })?;
     }
-    let bytes = serde_json::to_vec_pretty(todos)
-        .tool_err("failed to serialize todos")?;
+    let bytes = serde_json::to_vec_pretty(todos).tool_err("failed to serialize todos")?;
     let temp_path = path.with_extension(format!("{}.tmp", ctx.tool_call_id));
     std::fs::write(&temp_path, bytes).map_err(|err| {
         ToolError::Execution(format!(

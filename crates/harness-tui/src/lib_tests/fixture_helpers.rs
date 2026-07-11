@@ -19,7 +19,7 @@ pub(super) fn exact_test_session_entry(run_id: &str, run_dir: &str) -> app::Sess
     app::SessionHistoryEntry {
         run_dir: PathBuf::from(run_dir),
         catalog: harness_core::proj::SessionCatalogEntry {
-            run_id: run_id.to_string().into(),
+            run_id: run_id.to_string(),
             run_name: Some("Resume target".to_string()),
             status: Some(harness_core::proj::RunStatus::Finished),
             last_updated_at: Some("2026-03-10T10:00:00Z".to_string()),
@@ -455,7 +455,7 @@ pub(super) fn startup_session_entry_with_mode_and_details(
     app::SessionHistoryEntry {
         run_dir: PathBuf::from(run_dir),
         catalog: harness_core::proj::SessionCatalogEntry {
-            run_id: run_id.to_string().into(),
+            run_id: run_id.to_string(),
             run_name: Some(run_name.to_string()),
             status,
             last_updated_at: last_updated_at.map(str::to_string),

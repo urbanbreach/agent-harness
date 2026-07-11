@@ -82,10 +82,7 @@ impl GitHubHttpTransport for ReqwestGitHubHttpTransport {
             builder = builder.json(&body);
         }
 
-        let response = builder
-            .send()
-            .await
-            .tool_err("GitHub request failed")?;
+        let response = builder.send().await.tool_err("GitHub request failed")?;
         let status = response.status().as_u16();
         let body = response.text().await.map_err(|err| {
             ToolError::Execution(format!("failed to read GitHub response: {err}"))
@@ -587,8 +584,7 @@ fn read_github_json_response(response: GitHubHttpResponse) -> Result<Value, Tool
 }
 
 fn parse_github_json_response(response_text: &str) -> Result<Value, ToolError> {
-    serde_json::from_str(response_text)
-        .tool_err("GitHub returned invalid JSON")
+    serde_json::from_str(response_text).tool_err("GitHub returned invalid JSON")
 }
 
 fn required_issue_number(issue_number: Option<u64>) -> Result<u64, ToolError> {

@@ -758,7 +758,8 @@ mod tests {
             .iter()
             .find_map(|event| match &event.payload {
                 EventV1::PermissionRequested(data)
-                    if data.tool_call_id.as_ref().map(|id| id.as_str()) == Some(tool_call_id.as_str()) =>
+                    if data.tool_call_id.as_ref().map(|id| id.as_str())
+                        == Some(tool_call_id.as_str()) =>
                 {
                     Some(data.permission_id.clone())
                 }

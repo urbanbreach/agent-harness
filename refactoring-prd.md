@@ -514,12 +514,29 @@ find crates -name "*.rs" \
 
 - [x] **G5: Zero Unjustified #[allow]**
 ```bash
-grep -rn '#\[allow(' crates/ --include="*.rs" \
-  | grep -v '/tests/' \
-  | grep -viE 'test|fixture|snapshot' \
-  | grep -v 'reason ='
+python3 - <<'PY'
+import re
+from pathlib import Path
+
+violations = []
+for path in Path('crates').rglob('*.rs'):
+    p = str(path)
+    if '/tests/' in p:
+        continue
+    if any(x in p.lower() for x in ['test_', '_test.rs', '_tests.rs', '/tests.rs', 'fixture', 'snapshot']):
+        continue
+    text = path.read_text()
+    for m in re.finditer(r'#\[allow\((.*?)\)\]', text, re.DOTALL):
+        block = m.group(1)
+        if 'reason =' not in block:
+            line_num = text[:m.start()].count('\n') + 1
+            violations.append(f'{p}:{line_num}: {m.group(0)}')
+
+if violations:
+    print('\n'.join(violations))
+PY
 ```
-**Status:** Must output zero lines. All `#[allow]` must have `reason = "..."` field.
+**Status:** Must output zero lines. Every `#[allow(...)]` attribute (including multi-line attributes) must contain a `reason = "..."` field.
 
 - [x] **G6: Zero serde_json::Value in Public Config**
 ```bash

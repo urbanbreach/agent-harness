@@ -95,8 +95,7 @@ struct DecodedText {
 }
 
 fn decode_utf8_preserving_bom(path: &std::path::Path) -> Result<DecodedText, ToolError> {
-    let bytes = std::fs::read(path)
-        .tool_err(format!("Unable to edit {}", path.display()))?;
+    let bytes = std::fs::read(path).tool_err(format!("Unable to edit {}", path.display()))?;
     let bom = bytes.starts_with(&[0xef, 0xbb, 0xbf]);
     let content = if bom { bytes[3..].to_vec() } else { bytes };
     let text = String::from_utf8(content).map_err(|_| {

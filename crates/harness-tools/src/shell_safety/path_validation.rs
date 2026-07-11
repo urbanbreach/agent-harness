@@ -267,4 +267,3 @@ pub(super) fn deepest_existing_ancestor(path: &Path) -> Option<&Path> {
     }
     None
 }
-
