@@ -21,17 +21,35 @@ ALLOWED_DIRS: Final[set[str]] = {".git", ".sisyphus", "inspirations", "target"}
 # Files and PRDs that intentionally reference the upstream terminal product
 # while implementing command-palette/provider parity.
 ALLOWED_PARITY_PATHS: Final[set[Path]] = {
+    Path("crates/harness-tui/src/keybindings/parity_matrix.rs"),
+    Path("crates/harness-core/src/coord/formatter/real_discovery.rs"),
+    Path("crates/harness-core/src/coord/formatter/real_discovery/support.rs"),
+    Path("crates/harness-core/src/coord/formatter/real_discovery/rule_tests.rs"),
+    Path("crates/harness-core/src/coord/formatter/real_discovery/tests.rs"),
+    Path("crates/harness-core/src/coord/formatter/registry.rs"),
+    Path("crates/harness-core/src/coord/formatter/resolver.rs"),
     Path("crates/harness-core/src/coord/task_lifecycle.rs"),
     Path("crates/harness-tui/src/app/auth_dialog/provider_menu.rs"),
     Path("crates/harness-tui/src/app/auth_dialog/tests.rs"),
     Path("crates/harness-tui/src/app/palette_controller.rs"),
+    Path("crates/harness-tui/src/app/tests.rs"),
     Path("crates/harness-tui/src/app/tests/palette_parity_tests.rs"),
+    Path("crates/harness-tui/src/app/tests/opencode_subagent_parity_apps_test.rs"),
+    Path("crates/harness-tui/src/app/tests/opencode_subagent_parity_event_helpers_test.rs"),
+    Path("crates/harness-tui/src/app/tests/opencode_subagent_parity_events_test.rs"),
+    Path("crates/harness-tui/src/app/tests/opencode_subagent_parity_evidence_test.rs"),
+    Path("crates/harness-tui/src/app/tests/subagent_footer_navigation_tests.rs"),
     Path("crates/harness-tui/src/keybindings/palette_model.rs"),
     Path("crates/harness-tui/src/keybindings/paritymatrix.rs"),
     Path("crates/harness-tui/src/layout.rs"),
+    Path("crates/harness-tui/src/ui_chrome_exact_tests.rs"),
+    Path("crates/harness-tui/src/ui_subagent_footer_entry_body_tests.rs"),
+    Path("crates/harness-tui/src/ui_subagent_footer_exact_tests.rs"),
+    Path("crates/harness-tui/src/ui_transcript_exact_tests/task_rows.rs"),
     Path("docs/chat-rendering-parity.md"),
     Path("docs/ctrl-p-command-palette-parity-plan.md"),
     Path("docs/onboarding-terminal-migration-prd.md"),
+    Path("docs/parity-gaps/opencode-parity-gaps.md"),
 }
 ALLOWED_MATCH_LINES: Final[dict[Path, set[int]]] = {
     Path("scripts/check-forbidden-branding.py"): set(),
@@ -40,10 +58,10 @@ ALLOWED_MATCH_LINES: Final[dict[Path, set[int]]] = {
     Path("crates/harness-core/src/config/public.rs"): {
         60, 193, 315, 477, 483, 489, 497, 660,
     },
-    Path("crates/harness-core/src/coord/formatter/real_discovery/mod.rs"): {1, 21},
-    Path("crates/harness-core/src/coord/formatter/real_discovery/support.rs"): {1},
+    Path("crates/harness-core/src/config/public/normalization.rs"): {262},
+    Path("crates/harness-core/src/coord/formatter/real_discovery.rs"): {1, 21},
     Path("crates/harness-core/src/coord/formatter/registry.rs"): {1, 3, 60},
-    Path("crates/harness-core/src/coord/formatter/resolver.rs"): {18},
+    Path("crates/harness-core/src/coord/formatter/resolver.rs"): {17},
     Path("crates/harness-tui/src/keybindings.rs"): {595},
     Path("crates/harness/src/models.rs"): {17},
     Path("crates/harness/tests/config_docs_reference_test.rs"): {95},
@@ -124,6 +142,8 @@ def parse_root() -> Path:
 
 def is_allowed(path: Path) -> bool:
     """Return True if the path is exempt from branding checks."""
+    if path.name == "check-forbidden-branding.py":
+        return True
     if path in ALLOWED_PARITY_PATHS:
         return True
     if any(part in ALLOWED_DIRS for part in path.parts):
