@@ -21,7 +21,7 @@ use super::ui_transcript_surface::{
 };
 
 pub(super) const TRANSCRIPT_COMMAND_TOOL_INDENT: &str = "";
-pub(super) const HARNESS_BASH_OUTPUT_LINE_CLAMP: usize = 10;
+pub(super) const HARNESS_BASH_OUTPUT_LINE_CLAMP: usize = 15;
 const HARNESS_BLOCK_TOOL_MARGIN_TOP: usize = 1;
 const HARNESS_BLOCK_TOOL_PADDING_TOP: usize = 1;
 const HARNESS_BLOCK_TOOL_PADDING_BOTTOM: usize = 1;

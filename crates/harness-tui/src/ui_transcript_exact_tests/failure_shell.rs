@@ -408,7 +408,7 @@ fn batch_write_edit_and_patch_rows_match_reference_headers() {
 }
 
 #[test]
-fn consecutive_tool_rows_do_not_insert_terminal_blank_rows() {
+fn consecutive_tool_rows_insert_single_blank_row() {
     let mut app = AppState::default();
     let mut activity =
         transcript_section_model_test_activity("request-tool-stacking", ActivityStatus::Done, "");
@@ -456,8 +456,8 @@ fn consecutive_tool_rows_do_not_insert_terminal_blank_rows() {
 
     assert_eq!(
         lsp_surface.top_offset,
-        cancel_surface.top_offset + cancel_surface.height,
-        "consecutive tool surfaces should stack without an extra blank terminal row"
+        cancel_surface.top_offset + cancel_surface.height + 1,
+        "consecutive tool surfaces should have 1 blank row between them to match Opencode 12px gap"
     );
 }
 
@@ -519,7 +519,7 @@ fn shell_tool_cards_render_harness_bash_panel_with_chrome_and_clamping() {
     tool_call.args_summary = r#"{"command":"echo hi","description":"list files"}"#.to_string();
     tool_call.status = ToolCallDisplayStatus::Succeeded;
     tool_call.output_summary = Some(
-        (1..=11)
+        (1..=20)
             .map(|line| format!("line {line}"))
             .collect::<Vec<_>>()
             .join("\n"),
@@ -536,13 +536,13 @@ fn shell_tool_cards_render_harness_bash_panel_with_chrome_and_clamping() {
         false,
         None,
     );
-    // assert - output is clamped to 10 lines with expand hint
+    // assert - output is clamped to 15 lines with expand hint
     assert_eq!(
         section.detail_blocks[0],
         TranscriptToolCallDetailBlock::BashPanel {
             command: "echo hi".to_string(),
             output:
-                "line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\n…"
+                "line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\nline 11\nline 12\nline 13\nline 14\nline 15\n…"
                     .to_string(),
             description: None,
             expand_hint: Some("Click to expand".to_string()),
@@ -568,10 +568,10 @@ fn shell_tool_cards_render_harness_bash_panel_with_chrome_and_clamping() {
     );
     assert!(rendered.contains("$ echo hi"));
     assert!(!rendered.contains("stdout>"));
-    assert!(rendered.contains("line 10"));
+    assert!(rendered.contains("line 15"));
     assert!(
-        !rendered.contains("line 11"),
-        "output should be clamped at 10 lines"
+        !rendered.contains("line 16"),
+        "output should be clamped at 15 lines"
     );
     assert!(rendered.contains("Click to expand"));
 }
@@ -923,7 +923,7 @@ fn shell_tool_cards_render_full_overflow_without_expand_hints() {
     tool_call.args_summary = r#"{"command":"seq 12"}"#.to_string();
     tool_call.status = ToolCallDisplayStatus::Succeeded;
     tool_call.output_summary = Some(
-        (1..=12)
+        (1..=20)
             .map(|line| format!("line {line}"))
             .collect::<Vec<_>>()
             .join("\n"),
@@ -940,11 +940,11 @@ fn shell_tool_cards_render_full_overflow_without_expand_hints() {
         false,
         None,
     );
-    // assert - output is clamped to 10 lines with expand hint
+    // assert - output is clamped to 15 lines with expand hint
     assert!(matches!(
         &collapsed.detail_blocks[0],
         TranscriptToolCallDetailBlock::BashPanel { output, expand_hint, .. }
-            if !output.contains("line 12") && expand_hint.is_some()
+            if !output.contains("line 16") && expand_hint.is_some()
     ));
 }
 
