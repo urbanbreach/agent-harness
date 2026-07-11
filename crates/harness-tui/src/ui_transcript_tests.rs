@@ -743,7 +743,7 @@ fn fenced_code_blocks_render_frameless_with_highlighting() {
 }
 
 #[test]
-fn transcript_turn_sections_keep_exactly_one_blank_row_between_sections() {
+fn transcript_turn_sections_keep_two_blank_rows_between_sections() {
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![
         transcript_section_model_test_activity("request-a", ActivityStatus::Done, "first"),
@@ -755,7 +755,130 @@ fn transcript_turn_sections_keep_exactly_one_blank_row_between_sections() {
 
     assert_eq!(layout.sections.len(), 2);
     assert_eq!(layout.sections[0].leading_gap_height, 0);
-    assert_eq!(layout.sections[1].leading_gap_height, 1);
+    assert_eq!(
+        layout.sections[1].leading_gap_height, 2,
+        "turn-to-turn gap should be 2 blank rows to match Opencode 24px session-turn-list gap"
+    );
+}
+
+#[test]
+fn markdown_headings_get_blank_row_before_when_preceded_by_text() {
+    let mut app = AppState::default();
+    app.activities =
+        std::collections::VecDeque::from(vec![transcript_section_model_test_activity(
+            "request-heading-gap",
+            ActivityStatus::Done,
+            "Some intro text\n# Heading",
+        )]);
+    app.transcript_view.selected_activity_index = 0;
+
+    let lines = transcript_test_line_texts(build_transcript_lines_for_width(
+        &app,
+        &Theme::default(),
+        80,
+    ));
+
+    let intro_row = lines
+        .iter()
+        .position(|line| line.contains("Some intro text"))
+        .unwrap_or_abort();
+    let heading_row = lines
+        .iter()
+        .position(|line| line.contains("Heading"))
+        .unwrap_or_abort();
+
+    assert_eq!(
+        heading_row,
+        intro_row + 2,
+        "heading should have exactly 1 blank row between it and the preceding text\n{lines:#?}"
+    );
+    assert!(
+        lines[intro_row + 1].trim().is_empty(),
+        "row between intro and heading should be blank\n{lines:#?}"
+    );
+}
+
+#[test]
+fn markdown_paragraphs_get_trailing_blank_row_for_margin_bottom() {
+    let mut app = AppState::default();
+    app.activities = std::collections::VecDeque::from(vec![
+        transcript_section_model_test_activity(
+            "request-para-margin-first",
+            ActivityStatus::Done,
+            "First paragraph",
+        ),
+        transcript_section_model_test_activity(
+            "request-para-margin-second",
+            ActivityStatus::Done,
+            "Second paragraph",
+        ),
+    ]);
+    app.transcript_view.selected_activity_index = 1;
+
+    let layout = build_measured_transcript_layout_for_width(&app, &Theme::default(), 80);
+    let body_surface = layout.sections[0]
+        .surfaces
+        .iter()
+        .find(|surface| {
+            transcript_test_line_texts(surface.lines.clone())
+                .iter()
+                .any(|line| line.contains("First paragraph"))
+        })
+        .unwrap_or_abort();
+    let body_lines = transcript_test_line_texts(body_surface.lines.clone());
+
+    assert!(
+        body_lines.last().is_some_and(|line| line.trim().is_empty()),
+        "body surface should end with a blank row for paragraph margin-bottom\n{body_lines:#?}"
+    );
+}
+
+#[test]
+fn code_block_bottom_margin_is_two_blank_rows() {
+    let mut app = AppState::default();
+    app.activities = std::collections::VecDeque::from(vec![
+        transcript_section_model_test_activity(
+            "request-code-margin",
+            ActivityStatus::Done,
+            "```rust\nfn main() {}\n```",
+        ),
+        transcript_section_model_test_activity(
+            "request-code-margin-second",
+            ActivityStatus::Done,
+            "second",
+        ),
+    ]);
+    app.transcript_view.selected_activity_index = 1;
+
+    let layout = build_measured_transcript_layout_for_width(&app, &Theme::default(), 100);
+    let body_surface = layout.sections[0]
+        .surfaces
+        .iter()
+        .find(|surface| {
+            transcript_test_line_texts(surface.lines.clone())
+                .iter()
+                .any(|line| line.contains("fn main()"))
+        })
+        .unwrap_or_abort();
+    let body_lines = transcript_test_line_texts(body_surface.lines.clone());
+
+    let code_end_row = body_lines
+        .iter()
+        .rposition(|line| line.contains("fn main()"))
+        .unwrap_or_abort();
+
+    assert!(
+        body_lines
+            .get(code_end_row + 1)
+            .is_some_and(|line| line.trim().is_empty()),
+        "first row after code block should be blank (margin-bottom)\n{body_lines:#?}"
+    );
+    assert!(
+        body_lines
+            .get(code_end_row + 2)
+            .is_some_and(|line| line.trim().is_empty()),
+        "second row after code block should be blank (24px margin-bottom)\n{body_lines:#?}"
+    );
 }
 
 #[test]
@@ -885,8 +1008,8 @@ fn assistant_tool_surface_spacing_matches_shell_rhythm() {
             Some(TranscriptRenderSurfaceKind::AssistantReasoning),
             TranscriptRenderSurfaceKind::AssistantBody,
         ),
-        0,
-        "reasoning-to-body spacing is carried by the nested blank row inside the body surface"
+        1,
+        "reasoning-to-body surface gap should be 1 to match Opencode 12px assistant-content gap"
     );
     assert_eq!(
         transcript_surface_leading_gap(
@@ -899,7 +1022,7 @@ fn assistant_tool_surface_spacing_matches_shell_rhythm() {
 }
 
 #[test]
-fn reasoning_to_answer_transition_uses_single_blank_row() {
+fn reasoning_to_answer_transition_uses_two_blank_rows() {
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
         "request-reasoning-gap",
@@ -926,10 +1049,11 @@ fn reasoning_to_answer_transition_uses_single_blank_row() {
 
     assert_eq!(
         answer_row,
-        reasoning_row + 2,
-        "reasoning and answer should be separated by exactly one blank terminal row\n{lines:#?}"
+        reasoning_row + 3,
+        "reasoning and answer should be separated by 2 blank rows (surface gap + prepend gap)\n{lines:#?}"
     );
     assert!(lines[reasoning_row + 1].is_empty());
+    assert!(lines[reasoning_row + 2].is_empty());
 }
 
 #[test]
@@ -1230,4 +1354,240 @@ fn perf_500_event_streaming_transcript_cache_and_layout_budget() {
         "per-delta layout time {max_layout:?} exceeded budget {LAYOUT_BUDGET:?} \
          (avg delta {avg_delta:?}, {STREAMING_DELTA_COUNT} deltas, {ACTIVITY_COUNT} activities)"
     );
+}
+
+#[test]
+fn capture_all_spacing_evidence() {
+    let dir = std::path::Path::new(".omo/evidence/chat-spacing-parity");
+    std::fs::create_dir_all(dir).unwrap_or_abort();
+
+    let write_evidence = |name: &str, app: &AppState, width: u16| {
+        let lines = transcript_test_line_texts(build_transcript_lines_for_width(
+            app,
+            &Theme::default(),
+            width,
+        ));
+        std::fs::write(dir.join(format!("{name}.txt")), lines.join("\n")).unwrap_or_abort();
+    };
+
+    let single_turn = || {
+        let mut app = AppState::default();
+        app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
+            request_id: "req-single".to_string(),
+            profile_label: "default".to_string(),
+            model_id: "gpt-5.4-mini".to_string(),
+            provider_id: "openai".to_string(),
+            status: ActivityStatus::Done,
+            user_message: Some(UserMessageSubmittedEvent {
+                request_id: "req-single".into(),
+                text: "Hello".to_string(),
+            }),
+            user_timestamp: None,
+            request_data: None,
+            thinking_text: String::new(),
+            transcript_text: "Hi there!".to_string(),
+            usage: None,
+            cache_usage: None,
+            error_message: None,
+            permissions: Vec::new(),
+            tool_calls: Vec::new(),
+            first_seq: 1,
+            last_seq: 1,
+            first_mono_ms: 1,
+            last_mono_ms: 1,
+            revision: 0,
+        }]);
+        app.transcript_view.selected_activity_index = 0;
+        app
+    };
+
+    let two_turns = || {
+        let mut app = AppState::default();
+        app.activities = std::collections::VecDeque::from(vec![
+            ActivityEntry {
+                request_id: "req-two-a".to_string(),
+                profile_label: "default".to_string(),
+                model_id: "gpt-5.4-mini".to_string(),
+                provider_id: "openai".to_string(),
+                status: ActivityStatus::Done,
+                user_message: Some(UserMessageSubmittedEvent {
+                    request_id: "req-two-a".into(),
+                    text: "First question".to_string(),
+                }),
+                user_timestamp: None,
+                request_data: None,
+                thinking_text: String::new(),
+                transcript_text: "First answer".to_string(),
+                usage: None,
+                cache_usage: None,
+                error_message: None,
+                permissions: Vec::new(),
+                tool_calls: Vec::new(),
+                first_seq: 1,
+                last_seq: 1,
+                first_mono_ms: 1,
+                last_mono_ms: 1,
+                revision: 0,
+            },
+            ActivityEntry {
+                request_id: "req-two-b".to_string(),
+                profile_label: "default".to_string(),
+                model_id: "gpt-5.4-mini".to_string(),
+                provider_id: "openai".to_string(),
+                status: ActivityStatus::Done,
+                user_message: Some(UserMessageSubmittedEvent {
+                    request_id: "req-two-b".into(),
+                    text: "Second question".to_string(),
+                }),
+                user_timestamp: None,
+                request_data: None,
+                thinking_text: String::new(),
+                transcript_text: "Second answer".to_string(),
+                usage: None,
+                cache_usage: None,
+                error_message: None,
+                permissions: Vec::new(),
+                tool_calls: Vec::new(),
+                first_seq: 2,
+                last_seq: 2,
+                first_mono_ms: 2,
+                last_mono_ms: 2,
+                revision: 0,
+            },
+        ]);
+        app.transcript_view.selected_activity_index = 1;
+        app
+    };
+
+    let reasoning_to_body = || {
+        let mut app = AppState::default();
+        let mut entry = transcript_section_model_test_activity(
+            "req-reasoning",
+            ActivityStatus::Done,
+            "Here is my answer",
+        );
+        entry.thinking_text = "Let me think about this".to_string();
+        entry.user_message = Some(UserMessageSubmittedEvent {
+            request_id: "req-reasoning".into(),
+            text: "What is 2+2?".to_string(),
+        });
+        app.activities = std::collections::VecDeque::from(vec![entry]);
+        app.transcript_view.selected_activity_index = 0;
+        app
+    };
+
+    let tool_to_body = || {
+        let mut app = AppState::default();
+        let mut activity = transcript_section_model_test_activity(
+            "req-tool-body",
+            ActivityStatus::Done,
+            "The file contains the configuration",
+        );
+        activity.user_message = Some(UserMessageSubmittedEvent {
+            request_id: "req-tool-body".into(),
+            text: "Read the file".to_string(),
+        });
+        let mut tool = transcript_section_model_test_tool_call("tc-read", "fs.read");
+        tool.status = ToolCallDisplayStatus::Succeeded;
+        tool.output_summary = Some("24 lines read".to_string());
+        tool.truncated_output = Some("24 lines read".to_string());
+        activity.tool_calls.push(tool);
+        app.activities = std::collections::VecDeque::from(vec![activity]);
+        app.transcript_view.selected_activity_index = 0;
+        app
+    };
+
+    let consecutive_tools = || {
+        let mut app = AppState::default();
+        let mut activity = transcript_section_model_test_activity(
+            "req-tools",
+            ActivityStatus::Done,
+            "Done checking",
+        );
+        activity.user_message = Some(UserMessageSubmittedEvent {
+            request_id: "req-tools".into(),
+            text: "Check the files".to_string(),
+        });
+        let mut tool1 = transcript_section_model_test_tool_call("tc-read-1", "fs.read");
+        tool1.status = ToolCallDisplayStatus::Succeeded;
+        tool1.output_summary = Some("10 lines".to_string());
+        tool1.truncated_output = Some("10 lines".to_string());
+        let mut tool2 = transcript_section_model_test_tool_call("tc-read-2", "fs.read");
+        tool2.status = ToolCallDisplayStatus::Succeeded;
+        tool2.output_summary = Some("20 lines".to_string());
+        tool2.truncated_output = Some("20 lines".to_string());
+        activity.tool_calls.push(tool1);
+        activity.tool_calls.push(tool2);
+        app.activities = std::collections::VecDeque::from(vec![activity]);
+        app.transcript_view.selected_activity_index = 0;
+        app
+    };
+
+    let bash_output = || {
+        let mut app = AppState::default();
+        let mut activity = transcript_section_model_test_activity(
+            "req-bash",
+            ActivityStatus::Done,
+            "Tests passed",
+        );
+        activity.user_message = Some(UserMessageSubmittedEvent {
+            request_id: "req-bash".into(),
+            text: "Run the tests".to_string(),
+        });
+        let mut tool = transcript_section_model_test_tool_call("tc-bash", "shell.run");
+        tool.args_summary = r#"{"command":"seq 20","description":"Generate 20 lines"}"#.to_string();
+        tool.status = ToolCallDisplayStatus::Succeeded;
+        let output = (1..=20)
+            .map(|n| format!("line {n}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        tool.output_summary = Some(output.clone());
+        tool.truncated_output = Some(output);
+        activity.tool_calls.push(tool);
+        app.activities = std::collections::VecDeque::from(vec![activity]);
+        app.transcript_view.selected_activity_index = 0;
+        app
+    };
+
+    let markdown_headings = || {
+        let mut app = AppState::default();
+        app.activities =
+            std::collections::VecDeque::from(vec![transcript_section_model_test_activity(
+                "req-markdown",
+                ActivityStatus::Done,
+                "Intro paragraph\n\n# Heading\n\nBody text after heading",
+            )]);
+        app.transcript_view.selected_activity_index = 0;
+        app
+    };
+
+    let todos = || {
+        let mut app = AppState::default();
+        let mut activity = transcript_section_model_test_activity(
+            "req-todos",
+            ActivityStatus::Done,
+            "Here is the plan",
+        );
+        activity.user_message = Some(UserMessageSubmittedEvent {
+            request_id: "req-todos".into(),
+            text: "Show me the plan".to_string(),
+        });
+        let mut tool = transcript_section_model_test_tool_call("tc-todos", "task");
+        tool.status = ToolCallDisplayStatus::Succeeded;
+        tool.output_summary = Some("Plan created".to_string());
+        tool.truncated_output = Some("Plan created".to_string());
+        activity.tool_calls.push(tool);
+        app.activities = std::collections::VecDeque::from(vec![activity]);
+        app.transcript_view.selected_activity_index = 0;
+        app
+    };
+
+    write_evidence("single-turn", &single_turn(), 80);
+    write_evidence("two-turns", &two_turns(), 80);
+    write_evidence("reasoning-to-body", &reasoning_to_body(), 80);
+    write_evidence("tool-to-body", &tool_to_body(), 80);
+    write_evidence("consecutive-tools", &consecutive_tools(), 80);
+    write_evidence("bash-output", &bash_output(), 80);
+    write_evidence("markdown-headings-paragraphs", &markdown_headings(), 80);
+    write_evidence("todos", &todos(), 80);
 }

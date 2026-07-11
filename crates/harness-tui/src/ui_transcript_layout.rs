@@ -15,7 +15,7 @@ use super::ui_transcript_surface::{
     transcript_surface_leading_gap, transcript_surface_render_width,
 };
 
-const TRANSCRIPT_SECTION_GAP_HEIGHT: usize = 1;
+const TRANSCRIPT_SECTION_GAP_HEIGHT: usize = 2;
 
 #[derive(Debug, Clone)]
 pub(super) struct MeasuredTranscriptSection {

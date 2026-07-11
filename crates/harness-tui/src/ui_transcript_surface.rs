@@ -24,18 +24,6 @@ pub(super) fn transcript_surface_leading_gap(
     match previous {
         Some(previous)
             if transcript_surface_is_assistant_tool_like(previous)
-                && transcript_surface_is_assistant_tool_like(current) =>
-        {
-            0
-        }
-        Some(previous)
-            if previous == TranscriptRenderSurfaceKind::AssistantReasoning
-                && current == TranscriptRenderSurfaceKind::AssistantBody =>
-        {
-            0
-        }
-        Some(previous)
-            if transcript_surface_is_assistant_tool_like(previous)
                 && current == TranscriptRenderSurfaceKind::AssistantReasoning =>
         {
             0

@@ -212,6 +212,12 @@ fn assistant_part_needs_leading_gap(
         ) | (
             Some(TranscriptAssistantPart::ToolCall(_)),
             TranscriptAssistantPart::Reasoning(_)
+        ) | (
+            Some(TranscriptAssistantPart::ToolCall(_)),
+            TranscriptAssistantPart::Body(_)
+        ) | (
+            Some(TranscriptAssistantPart::Body(_)),
+            TranscriptAssistantPart::Body(_)
         )
     )
 }

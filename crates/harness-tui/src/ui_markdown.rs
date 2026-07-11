@@ -257,6 +257,7 @@ pub(super) fn append_rich_text_block(
                 }
                 append_prebuilt_plain_lines(lines, prefix, highlighted, width);
                 lines.push(Line::default());
+                lines.push(Line::default());
             }
         }
     }
@@ -289,6 +290,10 @@ fn append_markdownish_text_block(
     if text.is_empty() {
         append_prefixed_wrapped_spans_line(lines, prefix, base_style, Vec::new(), width);
     }
+
+    if !lines.is_empty() && !last_line_is_visually_blank(lines) {
+        lines.push(Line::default());
+    }
 }
 
 fn append_markdownish_line(
@@ -313,6 +318,9 @@ fn append_markdownish_line(
         .max(1);
 
     if let Some(text) = markdown_heading_text(trimmed) {
+        if !lines.is_empty() && !last_line_is_visually_blank(lines) {
+            lines.push(Line::default());
+        }
         append_prefixed_wrapped_spans_line(
             lines,
             &format!("{prefix}{indent}"),
@@ -395,4 +403,14 @@ fn raw_url_length(text: &str) -> Option<usize> {
     let tail = &text[prefix.len()..];
     let extra = tail.find(char::is_whitespace).unwrap_or(tail.len());
     Some(prefix.len() + extra)
+}
+
+fn last_line_is_visually_blank(lines: &[Line<'static>]) -> bool {
+    lines.last().is_some_and(|line| {
+        line.spans.is_empty()
+            || line
+                .spans
+                .iter()
+                .all(|span| span.content.chars().all(char::is_whitespace))
+    })
 }
