@@ -6,7 +6,7 @@ use harness_tui::app::{AppState, SessionHistoryEntry};
 
 fn catalog_entry(run_id: &str, parent: Option<&str>, updated: &str) -> SessionCatalogEntry {
     SessionCatalogEntry {
-        run_id: run_id.to_string().into(),
+        run_id: run_id.to_string(),
         run_name: Some(run_id.replace('-', " ")),
         status: Some(RunStatus::Finished),
         last_updated_at: Some(updated.to_string()),

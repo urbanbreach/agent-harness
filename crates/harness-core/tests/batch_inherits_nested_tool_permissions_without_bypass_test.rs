@@ -115,7 +115,8 @@ async fn batch_inherits_nested_tool_permissions_without_bypass() {
         .iter()
         .find_map(|event| match &event.payload {
             EventV1::ToolCallRequested(data)
-                if data.tool_id == "shell.run" && data.tool_call_id.as_str() != batch_tool_call_id =>
+                if data.tool_id == "shell.run"
+                    && data.tool_call_id.as_str() != batch_tool_call_id =>
             {
                 Some(data.tool_call_id.clone())
             }
@@ -127,7 +128,8 @@ async fn batch_inherits_nested_tool_permissions_without_bypass() {
         .iter()
         .find_map(|event| match &event.payload {
             EventV1::PermissionRequested(data)
-                if data.tool_call_id.as_ref().map(|id| id.as_str()) == Some(nested_tool_call_id.as_str()) =>
+                if data.tool_call_id.as_ref().map(|id| id.as_str())
+                    == Some(nested_tool_call_id.as_str()) =>
             {
                 Some((data.permission_id.clone(), data.summary.clone()))
             }

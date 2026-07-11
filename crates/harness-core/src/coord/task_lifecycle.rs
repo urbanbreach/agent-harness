@@ -295,8 +295,8 @@ impl Coordinator {
             let stale_for_ms = stale_task.stale_for_ms;
             let (actor, request_correlation_id) = run_state
                 .tasks
-            .get(task_id.as_str())
-            .map(|task| {
+                .get(task_id.as_str())
+                .map(|task| {
                     (
                         task.owner_actor.clone(),
                         task.request_correlation_id.clone(),
@@ -320,7 +320,9 @@ impl Coordinator {
             if let Some(task) = run_state.tasks.get(task_id.as_str()) {
                 task.cancellation_token.cancel();
             }
-            run_state.cancelled_running_tasks.insert(task_id.to_string());
+            run_state
+                .cancelled_running_tasks
+                .insert(task_id.to_string());
         }
 
         Ok(())
@@ -587,10 +589,10 @@ impl Coordinator {
                         task.owner_actor.clone(),
                         Some(format!("task:{task_id}")),
                         request_correlation_id.clone(),
-                    EventV1::TaskCancelled(TaskCancelledEvent {
-                        task_id: task_id.into(),
-                        reason: reason.clone(),
-                        task_scope: Some(TaskTerminalScope::ToolCall),
+                        EventV1::TaskCancelled(TaskCancelledEvent {
+                            task_id: task_id.into(),
+                            reason: reason.clone(),
+                            task_scope: Some(TaskTerminalScope::ToolCall),
                         }),
                     )?;
                     append_failed_tool_call_finished_event(
@@ -856,7 +858,9 @@ fn foreground_child_tasks(
                 .values()
                 .filter_map(|queued| queued.child_task.as_ref()),
         )
-        .filter(|child| !child.run_in_background && child.parent_session_id.as_str() == parent_session_id)
+        .filter(|child| {
+            !child.run_in_background && child.parent_session_id.as_str() == parent_session_id
+        })
         .cloned()
         .collect()
 }

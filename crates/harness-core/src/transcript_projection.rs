@@ -641,7 +641,8 @@ pub fn project_transcript(
                     },
                 );
                 if let Some(tool_call_id) = payload.tool_call_id.as_ref() {
-                    if let Some(tool_location) = tool_locations.get(tool_call_id.as_str()).copied() {
+                    if let Some(tool_location) = tool_locations.get(tool_call_id.as_str()).copied()
+                    {
                         if let Some(tool_call) = tool_call_part_mut(&mut projection, tool_location)
                         {
                             tool_call.permissions.push(part);

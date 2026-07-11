@@ -143,8 +143,7 @@ pub(super) fn read_fs_window(
 pub(super) fn open_fs_read_file(
     path: &Path,
 ) -> Result<std::io::BufReader<std::fs::File>, ToolError> {
-    let file = std::fs::File::open(path)
-        .tool_err("failed to read file")?;
+    let file = std::fs::File::open(path).tool_err("failed to read file")?;
     Ok(std::io::BufReader::new(file))
 }
 

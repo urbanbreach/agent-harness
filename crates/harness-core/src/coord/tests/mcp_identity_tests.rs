@@ -72,7 +72,9 @@ pub(super) async fn mcp_effective_identity_persists_for_direct_and_wrapper_calls
     let direct_requested = events
         .iter()
         .find_map(|event| match &event.payload {
-            EventV1::ToolCallRequested(data) if data.tool_call_id.as_str() == direct_call_id => Some(data),
+            EventV1::ToolCallRequested(data) if data.tool_call_id.as_str() == direct_call_id => {
+                Some(data)
+            }
             _ => None,
         })
         .unwrap_or_abort();
@@ -95,7 +97,9 @@ pub(super) async fn mcp_effective_identity_persists_for_direct_and_wrapper_calls
     let wrapper_requested = events
         .iter()
         .find_map(|event| match &event.payload {
-            EventV1::ToolCallRequested(data) if data.tool_call_id.as_str() == wrapper_call_id => Some(data),
+            EventV1::ToolCallRequested(data) if data.tool_call_id.as_str() == wrapper_call_id => {
+                Some(data)
+            }
             _ => None,
         })
         .unwrap_or_abort();
@@ -118,7 +122,9 @@ pub(super) async fn mcp_effective_identity_persists_for_direct_and_wrapper_calls
     let wrapper_finished = events
         .iter()
         .find_map(|event| match &event.payload {
-            EventV1::ToolCallFinished(data) if data.tool_call_id.as_str() == wrapper_call_id => Some(data),
+            EventV1::ToolCallFinished(data) if data.tool_call_id.as_str() == wrapper_call_id => {
+                Some(data)
+            }
             _ => None,
         })
         .unwrap_or_abort();

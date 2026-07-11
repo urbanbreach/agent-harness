@@ -1,8 +1,7 @@
 target/
 target.bak/
-sessions/
+/sessions/
 artifacts/
-docs/
 .agent-harness/*
 !.agent-harness/agents/
 !.agent-harness/agents/**

@@ -184,7 +184,8 @@ async fn agent_spawn_returns_child_session_status_duration_and_counts() {
     assert!(child_events
         .iter()
         .enumerate()
-        .all(|(index, event)| event.seq == index as u64 + 1 && event.run_id.as_str() == child_session_id));
+        .all(|(index, event)| event.seq == index as u64 + 1
+            && event.run_id.as_str() == child_session_id));
     assert!(child_events.iter().any(|event| matches!(
         &event.payload,
         EventV1::RunStarted(data)

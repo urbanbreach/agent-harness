@@ -142,7 +142,11 @@ impl<'a, W: Write + ?Sized> PromptStreamPrinter<'a, W> {
         match &event.payload {
             EventV1::ProviderReasoningDelta(data)
                 if self.show_thinking
-                    && provider_event_matches_prompt(event, data.request_id.as_str(), request_id) =>
+                    && provider_event_matches_prompt(
+                        event,
+                        data.request_id.as_str(),
+                        request_id,
+                    ) =>
             {
                 self.write_thinking(&data.delta);
             }
@@ -368,7 +372,8 @@ impl<'a> PromptCompletionTracker<'a> {
         data: &TaskCompletedEvent,
     ) -> bool {
         if !event_matches_request(event, self.request_id) {
-            return task_completed_marks_agent_turn(data) && data.task_id.as_str() == self.request_id;
+            return task_completed_marks_agent_turn(data)
+                && data.task_id.as_str() == self.request_id;
         }
 
         if task_completed_marks_agent_turn(data) {
@@ -389,7 +394,8 @@ impl<'a> PromptCompletionTracker<'a> {
         data: &TaskCancelledEvent,
     ) -> bool {
         if !event_matches_request(event, self.request_id) {
-            return task_cancelled_marks_agent_turn(data) && data.task_id.as_str() == self.request_id;
+            return task_cancelled_marks_agent_turn(data)
+                && data.task_id.as_str() == self.request_id;
         }
 
         if task_cancelled_marks_agent_turn(data) {
@@ -487,7 +493,8 @@ pub(super) fn evaluate_prompt_completion(
             event_matches_request(event, request_id)
                 && (task_completed_marks_agent_turn(data)
                     || (!task_completed_marks_child_tool(data)
-                        && (agent_turn_task_id.is_some_and(|task_id| data.task_id.as_str() == task_id)
+                        && (agent_turn_task_id
+                            .is_some_and(|task_id| data.task_id.as_str() == task_id)
                             || data.task_id.as_str() == request_id)))
         }
         _ => false,

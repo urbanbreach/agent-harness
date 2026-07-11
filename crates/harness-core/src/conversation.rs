@@ -202,7 +202,9 @@ pub fn project_conversation(
                     agent_id: event.actor.agent_id.clone(),
                 });
                 if emitted_users.insert(payload.request_id.to_string()) {
-                    request_order.push(OrderedConversationItem::User(payload.request_id.to_string()));
+                    request_order.push(OrderedConversationItem::User(
+                        payload.request_id.to_string(),
+                    ));
                 }
             }
             EventV1::ProviderRequestStarted(payload) => {
@@ -403,10 +405,13 @@ fn append_checkpoint_turn(
         return;
     }
 
-    let request_id = turn
-        .request_id
-        .clone()
-        .unwrap_or_else(|| checkpoint.through_request_id.clone().unwrap_or_default().into());
+    let request_id = turn.request_id.clone().unwrap_or_else(|| {
+        checkpoint
+            .through_request_id
+            .clone()
+            .unwrap_or_default()
+            .into()
+    });
 
     messages.push(ConversationMessage::User(ConversationUserMessage {
         request_id: request_id.clone(),

@@ -242,9 +242,7 @@ fn config_contract_semantic_metadata_matches_docs() {
         .find(|key| key.name == "server")
         .unwrap_or_abort();
     assert_eq!(server.status, PublicConfigKeyStatus::UnsupportedActive);
-    assert!(doc.contains(
-        "`server`, `command`, `autoshare`"
-    ));
+    assert!(doc.contains("`server`, `command`, `autoshare`"));
 
     let bash = contract
         .permission_names

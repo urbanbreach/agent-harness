@@ -509,10 +509,18 @@ pub trait Tool: Send + Sync {
 #[macro_export]
 macro_rules! tool_metadata {
     ($id:literal, $desc:literal, $cap:expr, $schema:expr) => {
-        fn id(&self) -> &str { $id }
-        fn description(&self) -> &str { $desc }
-        fn parameters_json_schema(&self) -> serde_json::Value { $schema }
-        fn capability(&self) -> $crate::tool::ToolCapability { $cap }
+        fn id(&self) -> &str {
+            $id
+        }
+        fn description(&self) -> &str {
+            $desc
+        }
+        fn parameters_json_schema(&self) -> serde_json::Value {
+            $schema
+        }
+        fn capability(&self) -> $crate::tool::ToolCapability {
+            $cap
+        }
     };
 }
 

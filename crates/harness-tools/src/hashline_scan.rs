@@ -47,8 +47,8 @@ impl Tool for HashlineScanTool {
         let args: HashlineScanArgs = parse_tool_args(args_json)?;
 
         let resolved_path = crate::workspace_paths::resolve_existing_path(&ctx, &args.path)?;
-        let source = std::fs::read_to_string(&resolved_path)
-            .tool_err("failed to read target file")?;
+        let source =
+            std::fs::read_to_string(&resolved_path).tool_err("failed to read target file")?;
 
         let start_line = normalize_read_offset(args.start_line.unwrap_or(READ_DEFAULT_OFFSET));
         let limit = args.limit.unwrap_or(READ_DEFAULT_LIMIT);

@@ -288,7 +288,7 @@ impl Coordinator {
                         run_state,
                         self.config.hook_runtime_config.clone(),
                         ToolCallExecutionArgs {
-            tool_call_id: tool_call_id.clone(),
+                            tool_call_id: tool_call_id.clone(),
                             tool_id,
                             args_json,
                             actor,

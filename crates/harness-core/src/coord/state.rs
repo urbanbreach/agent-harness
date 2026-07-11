@@ -333,7 +333,8 @@ pub(in crate::coord) fn push_incomplete_provider_turn(
         .entry(running.agent_id.clone())
         .or_default();
     if context.preserved_turns.iter().any(|turn| {
-        turn.request_id.as_ref().map(|r| r.as_str()) == Some(request_id.as_str()) && !turn.status.is_completed()
+        turn.request_id.as_ref().map(|r| r.as_str()) == Some(request_id.as_str())
+            && !turn.status.is_completed()
     }) {
         return;
     }

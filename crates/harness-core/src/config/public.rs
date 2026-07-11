@@ -9,13 +9,13 @@ use self::agents::{default_shipped_agents, public_agent_to_profile};
 mod agents;
 mod contract;
 mod normalization;
-pub(crate) use normalization::translate_public_formatter_config;
 pub use self::agents::{PublicAgentConfig, PublicAgentMap, PublicAgentTools};
 pub use self::contract::{
     public_config_contract, PublicConfigAlias, PublicConfigAliasScope, PublicConfigCompactionKnob,
     PublicConfigContract, PublicConfigKeyStatus, PublicConfigPermissionName, PublicConfigSurface,
     PublicConfigTopLevelKey, PublicUnsupportedInactiveValue,
 };
+pub(crate) use normalization::translate_public_formatter_config;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -591,8 +591,7 @@ pub(super) fn translate_public_runtime_root(
         merge_config_value(&mut integrations, value.clone());
     }
     if let Some(value) = object.get("mcp") {
-        let mcp_value =
-            serde_json::json!({ "servers": normalization::normalize_public_mcp_servers(value.clone()) });
+        let mcp_value = serde_json::json!({ "servers": normalization::normalize_public_mcp_servers(value.clone()) });
         if let Some(integrations_object) = integrations.as_object_mut() {
             match integrations_object.get_mut("mcp") {
                 Some(existing) => merge_config_value(existing, mcp_value),
@@ -621,10 +620,16 @@ pub(super) fn translate_public_runtime_root(
     }
 
     if let Some(value) = object.get("skills") {
-        translated.insert("skills".to_string(), normalization::normalize_public_skills_config(value));
+        translated.insert(
+            "skills".to_string(),
+            normalization::normalize_public_skills_config(value),
+        );
     }
 
-    if let Some(value) = object.get("lsp").and_then(normalization::normalize_public_lsp_config) {
+    if let Some(value) = object
+        .get("lsp")
+        .and_then(normalization::normalize_public_lsp_config)
+    {
         translated.insert("lsp".to_string(), value);
     }
 
@@ -654,9 +659,7 @@ pub fn harness_schema_pretty_json() -> Result<String, ConfigError> {
             .into_root_schema_for::<PublicRuntimeConfig>(),
     )
     .map_err(|err| ConfigError::SerializeSchema(err.to_string()))?;
-    let definitions = schema
-        .get_mut("definitions")
-        .and_then(Value::as_object_mut);
+    let definitions = schema.get_mut("definitions").and_then(Value::as_object_mut);
     if let Some(definitions) = definitions {
         if let Some(agent_map) = definitions
             .get_mut("PublicAgentMap")

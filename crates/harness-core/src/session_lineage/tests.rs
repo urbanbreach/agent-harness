@@ -850,7 +850,7 @@ fn entry(
     last_updated_at: &str,
 ) -> SessionCatalogEntry {
     SessionCatalogEntry {
-        run_id: run_id.to_string().into(),
+        run_id: run_id.to_string(),
         run_name: Some(run_id.to_string()),
         status: Some(RunStatus::Finished),
         last_updated_at: Some(last_updated_at.to_string()),

@@ -12,7 +12,7 @@ pub(crate) fn replay_equivalence_after_failed_turn_pre_prompt_compaction_resume(
         metadata: ProviderContextCheckpointMetadata {
             checkpoint_id: "checkpoint_000012".to_string(),
             agent_id: "agent_000001".to_string(),
-            run_id: run_id.to_string().into(),
+            run_id: run_id.to_string(),
             through_seq: 11,
             through_request_id: Some("req_000002".to_string()),
             provider_id: Some("default".to_string()),

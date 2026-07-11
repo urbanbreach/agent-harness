@@ -826,7 +826,9 @@ fn build_provider_compaction_tail_boundary(
         mode,
         preserved_turns: u32::try_from(recent_turns.len()).unwrap_or(u32::MAX),
         preserved_tokens_estimate,
-        preserved_from_request_id: first_preserved.and_then(|turn| turn.request_id.clone()).map(|r| r.to_string()),
+        preserved_from_request_id: first_preserved
+            .and_then(|turn| turn.request_id.clone())
+            .map(|r| r.to_string()),
         preserved_from_seq: first_preserved.and_then(|turn| turn.first_seq),
         split_prefix_summary: split_prefix_summary.map(|decision| decision.summary),
         note,

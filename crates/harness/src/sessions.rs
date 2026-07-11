@@ -632,7 +632,7 @@ mod tests {
         SessionInspectionEntry {
             run_dir: PathBuf::from(format!("/tmp/{run_id}")),
             catalog: SessionCatalogEntry {
-                run_id: run_id.to_string().into(),
+                run_id: run_id.to_string(),
                 run_name: Some(format!("{run_id}-name")),
                 status,
                 last_updated_at: Some(sort_unix_ms.to_string()),

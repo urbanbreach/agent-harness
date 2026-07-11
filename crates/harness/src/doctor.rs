@@ -238,4 +238,3 @@ fn build_report(
         checks,
     }
 }
-

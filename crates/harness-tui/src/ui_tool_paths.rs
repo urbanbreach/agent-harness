@@ -114,7 +114,8 @@ pub(super) fn todo_write_tool_id(tool_id: &str) -> bool {
 }
 
 pub(super) fn tool_id_matches(tool_call: &ToolCallEntry, expected: &[&str]) -> bool {
-    expected.contains(&tool_call.effective_tool_id()) || expected.contains(&tool_call.tool_id.as_str())
+    expected.contains(&tool_call.effective_tool_id())
+        || expected.contains(&tool_call.tool_id.as_str())
 }
 
 pub(super) fn context_group_tool_id(tool_id: &str) -> bool {

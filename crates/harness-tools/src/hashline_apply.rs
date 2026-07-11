@@ -377,8 +377,7 @@ fn delete_workspace_file(
     let resolved_path = resolve_workspace_target_path(ctx, file_path)?;
     let source = read_existing_file(&resolved_path, "failed to read file for delete")?;
 
-    std::fs::remove_file(&resolved_path)
-        .tool_err("failed to delete file")?;
+    std::fs::remove_file(&resolved_path).tool_err("failed to delete file")?;
 
     build_full_file_change_result(ctx, edit_id, &resolved_path, &source, "")
 }
@@ -395,8 +394,7 @@ fn move_workspace_file(
 
     let source = read_existing_file(&from_resolved_path, "failed to read file for move")?;
     create_parent_dir(&to_resolved_path)?;
-    std::fs::rename(&from_resolved_path, &to_resolved_path)
-        .tool_err("failed to move file")?;
+    std::fs::rename(&from_resolved_path, &to_resolved_path).tool_err("failed to move file")?;
 
     build_move_file_result(
         ctx,
@@ -561,8 +559,7 @@ fn line_count(content: &str) -> u32 {
 }
 
 fn read_existing_file(path: &Path, failure_context: &str) -> Result<String, ToolError> {
-    std::fs::read_to_string(path)
-        .tool_err(failure_context)
+    std::fs::read_to_string(path).tool_err(failure_context)
 }
 
 fn read_optional_existing_file(path: &Path, failure_context: &str) -> Result<String, ToolError> {
@@ -598,8 +595,7 @@ pub(crate) fn write_atomic(path: &Path, content: &str) -> Result<(), ToolError> 
 
     temp.write_all(content.as_bytes())
         .tool_err("failed to write temp file")?;
-    temp.flush()
-        .tool_err("failed to flush temp file")?;
+    temp.flush().tool_err("failed to flush temp file")?;
     temp.as_file()
         .sync_data()
         .tool_err("failed to sync temp file")?;

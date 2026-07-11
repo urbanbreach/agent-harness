@@ -124,8 +124,7 @@ fn build_fs_read_media_result(
         return Ok(None);
     };
 
-    let bytes = std::fs::read(resolved)
-        .tool_err("failed to read file")?;
+    let bytes = std::fs::read(resolved).tool_err("failed to read file")?;
     let media = FsReadMediaResult {
         message,
         data_url: format!("data:{mime};base64,{}", STANDARD.encode(bytes)),
@@ -146,12 +145,9 @@ fn build_fs_read_media_result(
 }
 
 fn read_fs_read_media_sample(path: &Path) -> Result<Vec<u8>, ToolError> {
-    let mut file = std::fs::File::open(path)
-        .tool_err("failed to read file")?;
+    let mut file = std::fs::File::open(path).tool_err("failed to read file")?;
     let mut buffer = vec![0_u8; MEDIA_SAMPLE_BYTES];
-    let bytes_read = file
-        .read(&mut buffer)
-        .tool_err("failed to read file")?;
+    let bytes_read = file.read(&mut buffer).tool_err("failed to read file")?;
     buffer.truncate(bytes_read);
     Ok(buffer)
 }
@@ -344,8 +340,8 @@ fn write_fs_read_artifact_streaming(
 ) -> Result<ArtifactRef, ToolError> {
     let target = prepare_fs_read_artifact_target(ctx)?;
     let mut reader = open_fs_read_file(path)?;
-    let artifact = std::fs::File::create(&target.file_path)
-        .tool_err("failed to write fs.read artifact")?;
+    let artifact =
+        std::fs::File::create(&target.file_path).tool_err("failed to write fs.read artifact")?;
     let mut artifact_writer = FsReadArtifactWriter::new(artifact);
 
     visit_fs_read_lines(&mut reader, start_line_index, |line_number, line| {

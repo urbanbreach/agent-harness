@@ -264,9 +264,7 @@ async fn subscribe_events(ctx: &ToolContext) -> Result<EventStream, ToolError> {
         .event_store()
         .await
         .tool_err("failed to access event store")?;
-    store
-        .subscribe(1)
-        .tool_err("failed to subscribe to events")
+    store.subscribe(1).tool_err("failed to subscribe to events")
 }
 
 pub(super) async fn replay_events(ctx: &ToolContext) -> Result<EventStream, ToolError> {
@@ -275,9 +273,7 @@ pub(super) async fn replay_events(ctx: &ToolContext) -> Result<EventStream, Tool
         .event_store()
         .await
         .tool_err("failed to access event store")?;
-    store
-        .replay(1)
-        .tool_err("failed to replay events")
+    store.replay(1).tool_err("failed to replay events")
 }
 
 fn map_event_stream_error(err: EventStoreError) -> ToolError {

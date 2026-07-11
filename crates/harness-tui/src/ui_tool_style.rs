@@ -56,11 +56,7 @@ pub(super) fn block_tool_rail_color(status: ToolCallDisplayStatus, theme: &Theme
     block_status_color(status, theme, theme.text.accent)
 }
 
-fn block_status_color(
-    status: ToolCallDisplayStatus,
-    theme: &Theme,
-    active_color: Color,
-) -> Color {
+fn block_status_color(status: ToolCallDisplayStatus, theme: &Theme, active_color: Color) -> Color {
     match status {
         ToolCallDisplayStatus::PendingPermission => theme.status.warning,
         ToolCallDisplayStatus::Failed => theme.status.error,

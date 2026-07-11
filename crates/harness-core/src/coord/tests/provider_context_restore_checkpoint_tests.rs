@@ -15,7 +15,7 @@ pub(crate) fn restore_provider_context_from_history_uses_checkpoint_then_replays
             metadata: ProviderContextCheckpointMetadata {
                 checkpoint_id: "checkpoint_000010".to_string(),
                 agent_id: "agent_000001".to_string(),
-                run_id: run_id.to_string().into(),
+                run_id: run_id.to_string(),
                 through_seq: 9,
                 through_request_id: Some("req_000002".to_string()),
                 provider_id: Some("default".to_string()),
@@ -263,7 +263,7 @@ pub(crate) fn failed_turn_context_resume_reconstructs_failed_turn_after_checkpoi
             metadata: ProviderContextCheckpointMetadata {
                 checkpoint_id: "checkpoint_000010".to_string(),
                 agent_id: "agent_000001".to_string(),
-                run_id: run_id.to_string().into(),
+                run_id: run_id.to_string(),
                 through_seq: 5,
                 through_request_id: Some("req_000001".to_string()),
                 provider_id: Some("default".to_string()),

@@ -21,8 +21,7 @@ pub(crate) fn workspace_relative_path_from_file_uri(
     workspace_root: &Path,
     uri: &str,
 ) -> Result<String, ToolError> {
-    let url = reqwest::Url::parse(uri)
-        .tool_err("invalid workspace edit uri")?;
+    let url = reqwest::Url::parse(uri).tool_err("invalid workspace edit uri")?;
     let path = url.to_file_path().map_err(|_| {
         ToolError::Execution(format!(
             "workspace edit uri does not map to a local filesystem path: {uri}"

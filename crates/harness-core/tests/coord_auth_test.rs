@@ -257,7 +257,8 @@ async fn shell_permission_summary_redacts_command_secrets() {
         .iter()
         .find_map(|event| match &event.payload {
             EventV1::PermissionRequested(data)
-                if data.tool_call_id.as_ref().map(|id| id.as_str()) == Some(tool_call_id.as_str()) =>
+                if data.tool_call_id.as_ref().map(|id| id.as_str())
+                    == Some(tool_call_id.as_str()) =>
             {
                 Some(data.permission_id.clone())
             }
@@ -281,7 +282,8 @@ async fn shell_permission_summary_redacts_command_secrets() {
         .iter()
         .find_map(|event| match &event.payload {
             EventV1::PermissionRequested(data)
-                if data.tool_call_id.as_ref().map(|id| id.as_str()) == Some(tool_call_id.as_str()) =>
+                if data.tool_call_id.as_ref().map(|id| id.as_str())
+                    == Some(tool_call_id.as_str()) =>
             {
                 Some(data.summary.as_str())
             }

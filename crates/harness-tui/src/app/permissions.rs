@@ -456,7 +456,8 @@ impl AppState {
                         self.question_prompt.editing = false;
                         return;
                     }
-                    KeyCode::Enter => { // allow: WIDENING — char is ASCII digit, lower byte is the digit value
+                    KeyCode::Enter => {
+                        // allow: WIDENING — char is ASCII digit, lower byte is the digit value
                         self.commit_question_custom_answer(&permission.permission_id, prompts);
                         self.maybe_auto_exit();
                         return;

@@ -34,9 +34,7 @@ pub(super) fn hidden_delegated_child_request_ids(app: &AppState) -> BTreeSet<&st
         app.activities
             .iter()
             .flat_map(|activity| activity.tool_calls.iter())
-            .filter(|tool_call| {
-                tool_id_matches(tool_call, &["agent.spawn", "task"])
-            })
+            .filter(|tool_call| tool_id_matches(tool_call, &["agent.spawn", "task"]))
             .filter_map(|tool_call| {
                 let request_id = task_tool_child_request_id(tool_call)?;
                 let child_session_id = task_tool_child_session_id(tool_call);

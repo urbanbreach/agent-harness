@@ -75,9 +75,7 @@ impl ShellSafety {
             return Ok(cwd);
         }
 
-        let canonical = cwd
-            .canonicalize()
-            .tool_err("failed to resolve cwd")?;
+        let canonical = cwd.canonicalize().tool_err("failed to resolve cwd")?;
 
         let allowed = self.allowlist.cwd_roots.iter().any(|root| {
             ctx.resolve_workspace_path(Path::new(root))
