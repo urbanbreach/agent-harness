@@ -392,6 +392,8 @@ impl Tool for GrepTool {
                     "literal": args.literal,
                     "limit": args.limit.unwrap_or(u32::try_from(DEFAULT_GREP_LIMIT).unwrap_or(u32::MAX)),
                     "context": DEFAULT_GREP_CONTEXT,
+                    "output_mode": args.output_mode,
+                    "head_limit": args.head_limit,
                 }),
             )
             .await

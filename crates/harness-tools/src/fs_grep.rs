@@ -10,7 +10,8 @@ use harness_core::tool_metadata;
 use regex::Regex;
 use schemars::JsonSchema;
 use serde::Deserialize;
-use serde_json::json;
+use serde::Serialize;
+use serde_json::{json, Value};
 
 use crate::fs_walk::{
     collect_workspace_files, resolve_search_base, workspace_file_from_path, WorkspaceFile,
@@ -23,6 +24,15 @@ pub(crate) const DEFAULT_GREP_CONTEXT: usize = 0;
 pub(crate) const MAX_GREP_RENDER_BYTES: usize = 50 * 1024;
 
 pub(crate) struct FsGrepTool;
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum GrepOutputMode {
+    #[default]
+    Content,
+    FilesWithMatches,
+    Count,
+}
 
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -38,6 +48,10 @@ struct FsGrepArgs {
     limit: Option<u32>,
     #[serde(default)]
     context: Option<u32>,
+    #[serde(default)]
+    output_mode: GrepOutputMode,
+    #[serde(default)]
+    head_limit: Option<u32>,
 }
 
 impl FsGrepArgs {
@@ -52,6 +66,8 @@ impl FsGrepArgs {
             context: self
                 .context
                 .map_or(DEFAULT_GREP_CONTEXT, |value| value as usize),
+            output_mode: self.output_mode,
+            head_limit: self.head_limit.map(|value| value as usize),
         }
     }
 }
@@ -84,6 +100,8 @@ struct GrepSearch<'a> {
     include: Option<&'a str>,
     limit: usize,
     context: usize,
+    output_mode: GrepOutputMode,
+    head_limit: Option<usize>,
 }
 
 enum Utf8FileLines {
@@ -116,87 +134,195 @@ impl Tool for FsGrepTool {
         }
 
         let search = args.search();
-        let full_output_search = GrepSearch {
-            pattern: search.pattern,
-            literal: search.literal,
-            include: search.include,
-            limit: usize::MAX,
-            context: search.context,
-        };
-        let limit = search.limit;
-        let context = search.context;
-        let matches = collect_grep_matches(
-            &workspace_root,
-            &resolved_base,
-            search,
-            MAX_GREP_RENDER_BYTES,
-        )?;
-        let output_artifact = if matches.is_truncated {
-            let full_output = collect_grep_matches(
-                &workspace_root,
-                &resolved_base,
-                full_output_search,
-                usize::MAX,
-            )?
-            .lines
-            .join("\n");
+        let output_mode = args.output_mode;
+        let head_limit = args.head_limit;
 
-            Some(
-                ctx.artifact_store()
-                    .map_err(|err| {
-                        ToolError::Execution(format!("failed to access artifact store: {err}"))
-                    })?
-                    .write_text(
-                        &format!("toolcalls/{}/fs.grep.full.txt", ctx.tool_call_id),
-                        &full_output,
+        match output_mode {
+            GrepOutputMode::Content => {
+                let full_output_search = GrepSearch {
+                    pattern: search.pattern,
+                    literal: search.literal,
+                    include: search.include,
+                    limit: usize::MAX,
+                    context: search.context,
+                    output_mode,
+                    head_limit: None,
+                };
+                let limit = search.limit;
+                let context = search.context;
+                let matches = collect_grep_matches(
+                    &workspace_root,
+                    &resolved_base,
+                    search,
+                    MAX_GREP_RENDER_BYTES,
+                )?;
+                let output_artifact = if matches.is_truncated {
+                    let full_output = collect_grep_matches(
+                        &workspace_root,
+                        &resolved_base,
+                        full_output_search,
+                        usize::MAX,
+                    )?
+                    .lines
+                    .join("\n");
+
+                    Some(
+                        ctx.artifact_store()
+                            .map_err(|err| {
+                                ToolError::Execution(format!(
+                                    "failed to access artifact store: {err}"
+                                ))
+                            })?
+                            .write_text(
+                                &format!("toolcalls/{}/fs.grep.full.txt", ctx.tool_call_id),
+                                &full_output,
+                            )
+                            .map_err(|err| {
+                                ToolError::Execution(format!(
+                                    "failed to write fs.grep artifact: {err}"
+                                ))
+                            })?,
                     )
-                    .map_err(|err| {
-                        ToolError::Execution(format!("failed to write fs.grep artifact: {err}"))
-                    })?,
-            )
-        } else {
-            None
-        };
-        let artifacts = output_artifact.iter().cloned().collect::<Vec<_>>();
-        let guidance = output_artifact
-            .as_ref()
-            .map(|artifact| grep_truncation_guidance(&matches, artifact));
-        let mut display_text = matches.display_text.clone();
-        if let Some(guidance) = guidance.as_ref() {
-            if !display_text.is_empty() {
-                display_text.push('\n');
+                } else {
+                    None
+                };
+                let artifacts = output_artifact.iter().cloned().collect::<Vec<_>>();
+                let guidance = output_artifact
+                    .as_ref()
+                    .map(|artifact| grep_truncation_guidance(&matches, artifact));
+                let mut display_text = matches.display_text.clone();
+                if let Some(guidance) = guidance.as_ref() {
+                    if !display_text.is_empty() {
+                        display_text.push('\n');
+                    }
+                    display_text.push_str(guidance);
+                }
+                let mut structured_json = json!({
+                    "pattern": args.pattern,
+                    "path": display_path,
+                    "resolved_path": resolved_base.display().to_string(),
+                    "include": args.include,
+                    "literal": args.literal,
+                    "limit": limit,
+                    "context": context,
+                    "output_mode": "content",
+                    "head_limit": head_limit,
+                    "matches": matches.lines,
+                    "total_count": matches.total_count,
+                    "returned_count": matches.returned_count,
+                    "truncated_count": matches.truncated_count,
+                    "truncated": matches.is_truncated,
+                    "skipped_dirs": SKIPPED_WORKSPACE_DIRS,
+                });
+
+                if let Some(artifact) = output_artifact.as_ref() {
+                    structured_json["output_artifact"] = json!({
+                        "path": artifact.path,
+                        "digest": artifact.digest,
+                    });
+                    structured_json["guidance"] = json!(guidance);
+                }
+
+                Ok(crate::text_json_artifacts_tool_result(
+                    display_text,
+                    structured_json,
+                    artifacts,
+                ))
             }
-            display_text.push_str(guidance);
-        }
-        let mut structured_json = json!({
-            "pattern": args.pattern,
-            "path": display_path,
-            "resolved_path": resolved_base.display().to_string(),
-            "include": args.include,
-            "literal": args.literal,
-            "limit": limit,
-            "context": context,
-            "matches": matches.lines,
-            "total_count": matches.total_count,
-            "returned_count": matches.returned_count,
-            "truncated_count": matches.truncated_count,
-            "truncated": matches.is_truncated,
-            "skipped_dirs": SKIPPED_WORKSPACE_DIRS,
-        });
+            GrepOutputMode::FilesWithMatches => {
+                let (files, total_matching_files) =
+                    collect_grep_file_paths(&workspace_root, &resolved_base, &search)?;
 
-        if let Some(artifact) = output_artifact.as_ref() {
-            structured_json["output_artifact"] = json!({
-                "path": artifact.path,
-                "digest": artifact.digest,
-            });
-            structured_json["guidance"] = json!(guidance);
-        }
+                let returned_count = files.len();
+                let is_truncated = total_matching_files > returned_count;
+                let mut display_lines = vec![format!(
+                    "Found {total_matching_files} files with matches{}",
+                    if is_truncated {
+                        " (more files available)"
+                    } else {
+                        ""
+                    }
+                )];
+                for file_path in &files {
+                    display_lines.push(file_path.clone());
+                }
+                if is_truncated {
+                    display_lines.push(String::new());
+                    display_lines.push(
+                        "(Results truncated. Consider using a more specific path or pattern.)"
+                            .to_string(),
+                    );
+                }
+                let display_text = display_lines.join("\n");
+                let structured_json = json!({
+                    "pattern": args.pattern,
+                    "path": display_path,
+                    "resolved_path": resolved_base.display().to_string(),
+                    "include": args.include,
+                    "literal": args.literal,
+                    "output_mode": "files_with_matches",
+                    "head_limit": head_limit,
+                    "files": files,
+                    "total_count": total_matching_files,
+                    "returned_count": returned_count,
+                    "truncated": is_truncated,
+                    "skipped_dirs": SKIPPED_WORKSPACE_DIRS,
+                });
 
-        Ok(crate::text_json_artifacts_tool_result(
-            display_text,
-            structured_json,
-            artifacts,
-        ))
+                Ok(crate::text_json_tool_result(display_text, structured_json))
+            }
+            GrepOutputMode::Count => {
+                let (counts, total_match_count) =
+                    collect_grep_counts(&workspace_root, &resolved_base, &search)?;
+
+                let returned_files = counts.len();
+                let is_truncated = total_match_count > 0
+                    && counts
+                        .iter()
+                        .map(|(_, c)| c)
+                        .sum::<usize>()
+                        < total_match_count;
+                let mut display_lines = vec![format!(
+                    "Found {total_match_count} matches across files{}",
+                    if is_truncated {
+                        " (more files available)"
+                    } else {
+                        ""
+                    }
+                )];
+                for (file_path, count) in &counts {
+                    display_lines.push(format!("{file_path}: {count}"));
+                }
+                if is_truncated {
+                    display_lines.push(String::new());
+                    display_lines.push(
+                        "(Results truncated. Consider using a more specific path or pattern.)"
+                            .to_string(),
+                    );
+                }
+                let display_text = display_lines.join("\n");
+                let counts_json: Vec<Value> = counts
+                    .iter()
+                    .map(|(file, count)| json!({"file": file, "count": count}))
+                    .collect();
+                let structured_json = json!({
+                    "pattern": args.pattern,
+                    "path": display_path,
+                    "resolved_path": resolved_base.display().to_string(),
+                    "include": args.include,
+                    "literal": args.literal,
+                    "output_mode": "count",
+                    "head_limit": head_limit,
+                    "counts": counts_json,
+                    "total_count": total_match_count,
+                    "returned_count": returned_files,
+                    "truncated": is_truncated,
+                    "skipped_dirs": SKIPPED_WORKSPACE_DIRS,
+                });
+
+                Ok(crate::text_json_tool_result(display_text, structured_json))
+            }
+        }
     }
 }
 
@@ -220,6 +346,8 @@ fn collect_grep_matches(
     let mut entries = Vec::new();
     let mut total_count = 0usize;
     let mut selected_count = 0usize;
+    let mut files_returned = 0usize;
+    let head_limit = search.head_limit.filter(|&n| n > 0);
 
     for file in files {
         let lines = match read_utf8_lines(&file.path)? {
@@ -230,14 +358,20 @@ fn collect_grep_matches(
             continue;
         }
 
-        let file_matches =
-            select_file_matches(&regex, &lines, search.limit.saturating_sub(selected_count));
+        let remaining_limit = if head_limit.is_some_and(|limit| files_returned >= limit) {
+            0
+        } else {
+            search.limit.saturating_sub(selected_count)
+        };
+        let file_matches = select_file_matches(&regex, &lines, remaining_limit);
         total_count += file_matches.total_count;
-        selected_count += file_matches.selected_line_indexes.len();
 
         if file_matches.selected_line_indexes.is_empty() {
             continue;
         }
+
+        selected_count += file_matches.selected_line_indexes.len();
+        files_returned += 1;
 
         append_grep_entries(
             &mut entries,
@@ -270,6 +404,86 @@ fn collect_grep_matches(
         truncated_count,
         is_truncated,
     })
+}
+
+fn collect_grep_file_paths(
+    workspace_root: &Path,
+    search_path: &Path,
+    search: &GrepSearch<'_>,
+) -> Result<(Vec<String>, usize), ToolError> {
+    let regex = compile_grep_regex(search.pattern, search.literal)?;
+    let include_matcher = compile_include_matcher(search.include)?;
+    let files = collect_sorted_grep_files(workspace_root, search_path, include_matcher.as_ref())?;
+
+    let mut file_paths = Vec::new();
+    let mut total_matching_files = 0usize;
+    let head_limit = search.head_limit.filter(|&n| n > 0);
+
+    for file in files {
+        let lines = match read_utf8_lines(&file.path)? {
+            Utf8FileLines::Lines(lines) => lines,
+            Utf8FileLines::NonUtf8 => continue,
+        };
+        if lines.is_empty() {
+            continue;
+        }
+
+        let has_match = lines.iter().any(|line| regex.is_match(line));
+        if !has_match {
+            continue;
+        }
+
+        total_matching_files += 1;
+
+        if head_limit.is_some_and(|limit| file_paths.len() >= limit) {
+            continue;
+        }
+
+        let display_path = workspace_root.join(&file.relative_path).display().to_string();
+        file_paths.push(display_path);
+    }
+
+    Ok((file_paths, total_matching_files))
+}
+
+fn collect_grep_counts(
+    workspace_root: &Path,
+    search_path: &Path,
+    search: &GrepSearch<'_>,
+) -> Result<(Vec<(String, usize)>, usize), ToolError> {
+    let regex = compile_grep_regex(search.pattern, search.literal)?;
+    let include_matcher = compile_include_matcher(search.include)?;
+    let files = collect_sorted_grep_files(workspace_root, search_path, include_matcher.as_ref())?;
+
+    let mut counts = Vec::new();
+    let mut total_count = 0usize;
+    let head_limit = search.head_limit.filter(|&n| n > 0);
+
+    for file in files {
+        let lines = match read_utf8_lines(&file.path)? {
+            Utf8FileLines::Lines(lines) => lines,
+            Utf8FileLines::NonUtf8 => continue,
+        };
+        if lines.is_empty() {
+            continue;
+        }
+
+        let file_count = lines.iter().filter(|line| regex.is_match(line)).count();
+        if file_count == 0 {
+            continue;
+        }
+
+        total_count += file_count;
+
+        if head_limit.is_some_and(|limit| counts.len() >= limit) {
+            continue;
+        }
+
+        let display_path = workspace_root.join(&file.relative_path).display().to_string();
+        counts.push((display_path, file_count));
+    }
+
+    Ok((counts, total_count))
 }
 
 fn truncate_display_text_by_bytes(text: &str, max_bytes: usize) -> (String, bool) {
@@ -497,9 +711,11 @@ mod tests {
     use harness_core::event::{ActorKind, EventActor};
     use harness_core::redact::DefaultRedactor;
     use harness_core::tool::{Tool, ToolContext, ToolRunState};
-    use serde_json::json;
+use serde_json::{json, Value};
 
-    use super::{collect_grep_matches, FsGrepTool, GrepSearch, MAX_GREP_RENDER_BYTES};
+    use super::{
+        collect_grep_matches, FsGrepTool, GrepOutputMode, GrepSearch, MAX_GREP_RENDER_BYTES,
+    };
 
     fn grep_search(pattern: &str) -> GrepSearch<'_> {
         GrepSearch {
@@ -508,6 +724,8 @@ mod tests {
             include: None,
             limit: 100,
             context: 0,
+            output_mode: GrepOutputMode::Content,
+            head_limit: None,
         }
     }
 
@@ -725,5 +943,212 @@ mod tests {
         assert!(result.display_text.contains("  Line 1: #[tokio::main]"));
         let structured = result.structured_json.unwrap_or_abort();
         assert_eq!(structured.get("path"), Some(&json!(".")));
+    }
+
+    #[tokio::test]
+    async fn fs_grep_files_with_matches_returns_file_paths() {
+        let tempdir = tempfile::tempdir().unwrap_or_abort();
+        let root = tempdir.path();
+        write_file(root, "a.txt", "TODO a\n");
+        write_file(root, "b.log", "TODO b\n");
+        write_file(root, "c.txt", "no match\n");
+
+        let result = FsGrepTool
+            .call(
+                test_context(root, "grep-files-with-matches"),
+                json!({
+                    "pattern": "TODO",
+                    "output_mode": "files_with_matches"
+                }),
+            )
+            .await
+            .unwrap_or_abort();
+
+        let structured = result.structured_json.unwrap_or_abort();
+        assert_eq!(structured.get("output_mode"), Some(&json!("files_with_matches")));
+        let files = structured.get("files").and_then(|f| f.as_array()).unwrap_or_abort();
+        assert_eq!(files.len(), 2);
+        assert!(files.iter().any(|f| f.as_str().is_some_and(|s| s.ends_with("a.txt"))));
+        assert!(files.iter().any(|f| f.as_str().is_some_and(|s| s.ends_with("b.log"))));
+        assert_eq!(structured.get("total_count"), Some(&json!(2)));
+        assert_eq!(structured.get("returned_count"), Some(&json!(2)));
+        assert_eq!(structured.get("truncated"), Some(&json!(false)));
+        assert!(result.display_text.contains("Found 2 files with matches"));
+        assert!(result.display_text.contains("a.txt"));
+        assert!(result.display_text.contains("b.log"));
+        assert!(!result.display_text.contains("c.txt"));
+    }
+
+    #[tokio::test]
+    async fn fs_grep_count_returns_per_file_match_counts() {
+        let tempdir = tempfile::tempdir().unwrap_or_abort();
+        let root = tempdir.path();
+        write_file(root, "a.txt", "TODO a\nTODO b\n");
+        write_file(root, "b.log", "TODO c\n");
+        write_file(root, "c.txt", "no match\n");
+
+        let result = FsGrepTool
+            .call(
+                test_context(root, "grep-count"),
+                json!({
+                    "pattern": "TODO",
+                    "output_mode": "count"
+                }),
+            )
+            .await
+            .unwrap_or_abort();
+
+        let structured = result.structured_json.unwrap_or_abort();
+        assert_eq!(structured.get("output_mode"), Some(&json!("count")));
+        let counts = structured.get("counts").and_then(|c| c.as_array()).unwrap_or_abort();
+        assert_eq!(counts.len(), 2);
+        let a_entry = counts
+            .iter()
+            .find(|e| e.get("file").and_then(|f| f.as_str()).is_some_and(|s| s.ends_with("a.txt")))
+            .unwrap_or_abort();
+        assert_eq!(a_entry.get("count"), Some(&json!(2)));
+        let b_entry = counts
+            .iter()
+            .find(|e| e.get("file").and_then(|f| f.as_str()).is_some_and(|s| s.ends_with("b.log")))
+            .unwrap_or_abort();
+        assert_eq!(b_entry.get("count"), Some(&json!(1)));
+        assert_eq!(structured.get("total_count"), Some(&json!(3)));
+        assert_eq!(structured.get("returned_count"), Some(&json!(2)));
+        assert!(result.display_text.contains("Found 3 matches across files"));
+        assert!(result.display_text.contains("a.txt: 2"));
+        assert!(result.display_text.contains("b.log: 1"));
+    }
+
+    #[tokio::test]
+    async fn fs_grep_head_limit_restricts_files_in_files_with_matches_mode() {
+        let tempdir = tempfile::tempdir().unwrap_or_abort();
+        let root = tempdir.path();
+        write_file(root, "a.txt", "TODO a\n");
+        write_file(root, "b.txt", "TODO b\n");
+        write_file(root, "c.txt", "TODO c\n");
+
+        let result = FsGrepTool
+            .call(
+                test_context(root, "grep-head-limit-files"),
+                json!({
+                    "pattern": "TODO",
+                    "output_mode": "files_with_matches",
+                    "head_limit": 2
+                }),
+            )
+            .await
+            .unwrap_or_abort();
+
+        let structured = result.structured_json.unwrap_or_abort();
+        let files = structured.get("files").and_then(|f| f.as_array()).unwrap_or_abort();
+        assert_eq!(files.len(), 2);
+        assert_eq!(structured.get("total_count"), Some(&json!(3)));
+        assert_eq!(structured.get("returned_count"), Some(&json!(2)));
+        assert_eq!(structured.get("truncated"), Some(&json!(true)));
+        assert!(result.display_text.contains("Found 3 files with matches"));
+        assert!(result.display_text.contains("more files available"));
+    }
+
+    #[tokio::test]
+    async fn fs_grep_head_limit_restricts_files_in_count_mode() {
+        let tempdir = tempfile::tempdir().unwrap_or_abort();
+        let root = tempdir.path();
+        write_file(root, "a.txt", "TODO a\n");
+        write_file(root, "b.txt", "TODO b\nTODO c\n");
+        write_file(root, "c.txt", "TODO d\n");
+
+        let result = FsGrepTool
+            .call(
+                test_context(root, "grep-head-limit-count"),
+                json!({
+                    "pattern": "TODO",
+                    "output_mode": "count",
+                    "head_limit": 2
+                }),
+            )
+            .await
+            .unwrap_or_abort();
+
+        let structured = result.structured_json.unwrap_or_abort();
+        let counts = structured.get("counts").and_then(|c| c.as_array()).unwrap_or_abort();
+        assert_eq!(counts.len(), 2);
+        assert_eq!(structured.get("total_count"), Some(&json!(4)));
+        assert_eq!(structured.get("truncated"), Some(&json!(true)));
+    }
+
+    #[tokio::test]
+    async fn fs_grep_content_default_behavior_unchanged_without_output_mode() {
+        let tempdir = tempfile::tempdir().unwrap_or_abort();
+        let root = tempdir.path();
+        write_file(root, "a.txt", "TODO a\n");
+
+        let result = FsGrepTool
+            .call(
+                test_context(root, "grep-content-default"),
+                json!({
+                    "pattern": "TODO"
+                }),
+            )
+            .await
+            .unwrap_or_abort();
+
+        let structured = result.structured_json.unwrap_or_abort();
+        assert_eq!(structured.get("output_mode"), Some(&json!("content")));
+        assert!(structured.get("matches").is_some());
+        assert_eq!(structured.get("total_count"), Some(&json!(1)));
+        assert!(result.display_text.contains("Found 1 matches"));
+        assert!(result.display_text.contains("  Line 1: TODO a"));
+    }
+
+    #[tokio::test]
+    async fn fs_grep_head_limit_in_content_mode_limits_files_returned() {
+        let tempdir = tempfile::tempdir().unwrap_or_abort();
+        let root = tempdir.path();
+        write_file(root, "a.txt", "TODO a\n");
+        write_file(root, "b.txt", "TODO b\n");
+        write_file(root, "c.txt", "TODO c\n");
+
+        let result = FsGrepTool
+            .call(
+                test_context(root, "grep-head-limit-content"),
+                json!({
+                    "pattern": "TODO",
+                    "head_limit": 1
+                }),
+            )
+            .await
+            .unwrap_or_abort();
+
+        let structured = result.structured_json.unwrap_or_abort();
+        assert_eq!(structured.get("output_mode"), Some(&json!("content")));
+        assert_eq!(structured.get("total_count"), Some(&json!(3)));
+        let matches = structured.get("matches").and_then(|m| m.as_array()).unwrap_or_abort();
+        assert_eq!(matches.len(), 1);
+        assert!(matches[0].as_str().is_some_and(|s| s.ends_with("a.txt:1: TODO a")));
+    }
+
+    #[tokio::test]
+    async fn fs_grep_head_limit_zero_treated_as_no_limit() {
+        let tempdir = tempfile::tempdir().unwrap_or_abort();
+        let root = tempdir.path();
+        write_file(root, "a.txt", "TODO a\n");
+        write_file(root, "b.txt", "TODO b\n");
+
+        let result = FsGrepTool
+            .call(
+                test_context(root, "grep-head-limit-zero"),
+                json!({
+                    "pattern": "TODO",
+                    "output_mode": "files_with_matches",
+                    "head_limit": 0
+                }),
+            )
+            .await
+            .unwrap_or_abort();
+
+        let structured = result.structured_json.unwrap_or_abort();
+        let files = structured.get("files").and_then(|f| f.as_array()).unwrap_or_abort();
+        assert_eq!(files.len(), 2);
+        assert_eq!(structured.get("truncated"), Some(&json!(false)));
     }
 }

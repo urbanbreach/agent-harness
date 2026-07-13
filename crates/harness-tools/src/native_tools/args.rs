@@ -1,4 +1,5 @@
 // allow: SIZE_OK — native tool argument parsing (websearch limits + read/grep/glob params + batch args)
+use crate::fs_grep::GrepOutputMode;
 use crate::network::WebFetchFormat;
 use crate::read_window::READ_DEFAULT_LIMIT;
 use schemars::JsonSchema;
@@ -121,6 +122,12 @@ pub(super) struct GrepArgs {
     #[schemars(description = "When true, search for `pattern` as plain text instead of a regex.")]
     #[serde(default)]
     pub(super) literal: bool,
+    #[schemars(description = "Output mode: `content` returns matched lines, `files_with_matches` returns file paths, `count` returns per-file match counts.")]
+    #[serde(default)]
+    pub(super) output_mode: GrepOutputMode,
+    #[schemars(description = "Maximum number of files to return in `files_with_matches` or `count` mode; in `content` mode limits files whose matches are returned.")]
+    #[serde(default)]
+    pub(super) head_limit: Option<u32>,
 }
 
 pub(super) fn grep_parameters_json_schema() -> Value {
@@ -145,6 +152,21 @@ pub(super) fn grep_parameters_json_schema() -> Value {
                 "type": "integer",
                 "minimum": 1,
                 "description": "Maximum number of matches to return"
+            },
+            "literal": {
+                "type": "boolean",
+                "description": "When true, search for pattern as plain text instead of a regex"
+            },
+            "output_mode": {
+                "type": "string",
+                "enum": ["content", "files_with_matches", "count"],
+                "description": "Output mode: content returns matched lines, files_with_matches returns file paths, count returns per-file match counts",
+                "default": "content"
+            },
+            "head_limit": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Maximum number of files to return in files_with_matches or count mode; in content mode limits files whose matches are returned"
             }
         }
     })

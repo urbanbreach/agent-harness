@@ -72,9 +72,9 @@ fn provider_tool_defs_match_current_core_filesystem_input_schemas() {
     assert_schema_properties(
         &defs,
         "grep",
-        &["pattern", "path", "include", "limit"],
+        &["pattern", "path", "include", "limit", "literal", "output_mode", "head_limit"],
         &["pattern"],
-        &["literal", "context"],
+        &["context"],
     );
     assert_schema_properties(
         &defs,
@@ -123,7 +123,7 @@ fn provider_tool_defs_do_not_advertise_runtime_only_grep_controls() {
     let schema_text = grep.parameters.to_string();
 
     // assert
-    for runtime_only in ["literal", "context"] {
+    for runtime_only in ["context"] {
         assert!(
             !description.contains(runtime_only),
             "grep provider description should not advertise runtime-only field {runtime_only}: {description}"
