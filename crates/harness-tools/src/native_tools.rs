@@ -351,7 +351,7 @@ impl Tool for ListTool {
 impl Tool for GlobTool {
     tool_metadata!(
         "glob",
-        "Matches files by glob pattern with canonical harness arguments.",
+        "Matches files by glob pattern, sorted by modification time (newest first).",
         ToolCapability::ReadFs,
         glob_parameters_json_schema()
     );

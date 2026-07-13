@@ -1,6 +1,6 @@
 use crate::UnwrapOrAbort;
-use std::collections::BTreeSet;
 use std::path::Path;
+use std::time::SystemTime;
 
 use async_trait::async_trait;
 use globset::{Glob, GlobMatcher};
@@ -59,7 +59,7 @@ struct GlobMatches {
 impl Tool for FsGlobTool {
     tool_metadata!(
         "fs.glob",
-        "Finds workspace files matching a globset pattern (supports ** recursive globs) with deterministic sorted output.",
+        "Finds workspace files matching a globset pattern (supports ** recursive globs), sorted by modification time (newest first).",
         ToolCapability::ReadFs,
         super::json_schema_for::<FsGlobArgs>()
     );
@@ -112,18 +112,33 @@ fn collect_matching_glob_paths(
     workspace_root: &Path,
     base_dir: &Path,
     matcher: &GlobMatcher,
-) -> Result<BTreeSet<String>, ToolError> {
-    let mut matched_paths = BTreeSet::new();
+) -> Result<Vec<String>, ToolError> {
+    let mut matched_paths = Vec::new();
     for file in collect_workspace_files(workspace_root, base_dir)? {
         let path_relative_to_base = normalize_base_relative_path(base_dir, &file.path);
         if matcher.is_match(path_relative_to_base) {
-            matched_paths.insert(file.relative_path);
+            matched_paths.push(file.relative_path);
         }
     }
+    sort_paths_by_mtime_desc(workspace_root, &mut matched_paths);
     Ok(matched_paths)
 }
 
-fn limit_glob_matches(matched_paths: BTreeSet<String>, limit: usize) -> GlobMatches {
+fn sort_paths_by_mtime_desc(workspace_root: &Path, paths: &mut [String]) {
+    paths.sort_by(|a, b| {
+        let mtime_a = path_mtime(workspace_root, a);
+        let mtime_b = path_mtime(workspace_root, b);
+        mtime_b.cmp(&mtime_a)
+    });
+}
+
+fn path_mtime(workspace_root: &Path, relative_path: &str) -> SystemTime {
+    std::fs::metadata(workspace_root.join(relative_path))
+        .and_then(|m| m.modified())
+        .unwrap_or(SystemTime::UNIX_EPOCH)
+}
+
+fn limit_glob_matches(matched_paths: Vec<String>, limit: usize) -> GlobMatches {
     let total_count = matched_paths.len();
     let limit_summary = summarize_limit(total_count, limit);
     let paths = matched_paths
@@ -174,6 +189,7 @@ mod tests {
     use std::fs;
     use std::path::Path;
     use std::sync::Arc;
+    use std::time::{Duration, SystemTime};
 
     use harness_core::clock::RealClock;
     use harness_core::coord::{spawn_coordinator, CoordinatorConfig};
@@ -194,6 +210,15 @@ mod tests {
 
     fn write_file(root: &Path, path: &str, contents: &str) {
         fs::write(root.join(path), contents).unwrap_or_abort();
+    }
+
+    fn set_mtime(root: &Path, path: &str, mtime: SystemTime) {
+        let file = fs::OpenOptions::new()
+            .write(true)
+            .open(root.join(path))
+            .unwrap_or_abort();
+        file.set_times(fs::FileTimes::new().set_modified(mtime))
+            .unwrap_or_abort();
     }
 
     fn test_context(workspace_root: &Path, tool_call_id: &str) -> ToolContext {
@@ -235,12 +260,16 @@ mod tests {
         write_file(root, ".git/objects/cache.rs", "ignored");
         write_file(root, ".agent-harness/sessions/run-1/session.rs", "ignored");
 
+        set_mtime(root, "src/lib.rs", SystemTime::UNIX_EPOCH + Duration::from_secs(100));
+        set_mtime(root, "src/nested/mod.rs", SystemTime::UNIX_EPOCH + Duration::from_secs(200));
+        set_mtime(root, "tests/glob.rs", SystemTime::UNIX_EPOCH + Duration::from_secs(300));
+
         let result =
             collect_glob_matches(root, root, glob_search("**/*.rs", 100)).unwrap_or_abort();
 
         assert_eq!(
             result.paths,
-            vec!["src/lib.rs", "src/nested/mod.rs", "tests/glob.rs"]
+            vec!["tests/glob.rs", "src/nested/mod.rs", "src/lib.rs"]
         );
         assert_eq!(result.total_count, 3);
         assert_eq!(result.returned_count, 3);
@@ -249,7 +278,7 @@ mod tests {
     }
 
     #[test]
-    fn collect_glob_matches_applies_limit_after_deterministic_sort() {
+    fn collect_glob_matches_applies_limit_after_mtime_sort() {
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let root = tempdir.path();
 
@@ -258,13 +287,43 @@ mod tests {
         write_file(root, "src/a.rs", "");
         write_file(root, "src/b.rs", "");
 
+        set_mtime(root, "src/c.rs", SystemTime::UNIX_EPOCH + Duration::from_secs(300));
+        set_mtime(root, "src/a.rs", SystemTime::UNIX_EPOCH + Duration::from_secs(200));
+        set_mtime(root, "src/b.rs", SystemTime::UNIX_EPOCH + Duration::from_secs(100));
+
         let result = collect_glob_matches(root, root, glob_search("**/*.rs", 2)).unwrap_or_abort();
 
-        assert_eq!(result.paths, vec!["src/a.rs", "src/b.rs"]);
+        assert_eq!(result.paths, vec!["src/c.rs", "src/a.rs"]);
         assert_eq!(result.total_count, 3);
         assert_eq!(result.returned_count, 2);
         assert_eq!(result.truncated_count, 1);
         assert!(result.is_truncated);
+    }
+
+    #[test]
+    fn collect_glob_matches_sorts_by_modification_time_newest_first() {
+        let tempdir = tempfile::tempdir().unwrap_or_abort();
+        let root = tempdir.path();
+
+        create_dir(root, "src");
+        write_file(root, "src/old.rs", "");
+        write_file(root, "src/middle.rs", "");
+        write_file(root, "src/new.rs", "");
+
+        set_mtime(root, "src/old.rs", SystemTime::UNIX_EPOCH + Duration::from_secs(100));
+        set_mtime(root, "src/middle.rs", SystemTime::UNIX_EPOCH + Duration::from_secs(200));
+        set_mtime(root, "src/new.rs", SystemTime::UNIX_EPOCH + Duration::from_secs(300));
+
+        let result =
+            collect_glob_matches(root, root, glob_search("**/*.rs", 100)).unwrap_or_abort();
+
+        assert_eq!(
+            result.paths,
+            vec!["src/new.rs", "src/middle.rs", "src/old.rs"]
+        );
+        assert_eq!(result.total_count, 3);
+        assert_eq!(result.returned_count, 3);
+        assert!(!result.is_truncated);
     }
 
     #[test]
