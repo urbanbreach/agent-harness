@@ -20,9 +20,10 @@ pub(in crate::native_tools) struct TodoWriteArgs {
 #[serde(deny_unknown_fields)]
 pub(in crate::native_tools) struct TaskArgs {
     #[schemars(
-        description = "Short label for the delegated work, used in child session titles and status output."
+        description = "Optional short label for the delegated work, used in child session titles and status output. When omitted, a short label is auto-generated from the first few words of the prompt."
     )]
-    pub(in crate::native_tools) description: String,
+    #[serde(default)]
+    pub(in crate::native_tools) description: Option<String>,
     #[schemars(
         description = "Task body delivered to the child. For non-trivial delegation, include context, goal, downstream use, request, required tools, must-do, and must-not-do sections."
     )]
@@ -44,12 +45,14 @@ pub(in crate::native_tools) struct TaskArgs {
     )]
     pub(in crate::native_tools) session_id: Option<String>,
     #[schemars(
-        description = "Required. false waits synchronously; true returns request_id/task_id immediately. Use background_output for interim status checks, or cancel=true anytime, but wait for the coordinator/system completion notification before final result retrieval."
+        description = "Optional, defaults to false. false waits synchronously; true returns request_id/task_id immediately. Use background_output for interim status checks, or cancel=true anytime, but wait for the coordinator/system completion notification before final result retrieval."
     )]
+    #[serde(default)]
     pub(in crate::native_tools) run_in_background: bool,
     #[schemars(
-        description = "Required list of skills to load before child spawn. Pass [] when no skills are needed."
+        description = "Optional list of skills to load before child spawn, defaults to empty. Pass [] when no skills are needed."
     )]
+    #[serde(default)]
     pub(in crate::native_tools) load_skills: Vec<String>,
     #[schemars(
         description = "Optional command/context string prepended to the child prompt as required delegation context."
@@ -150,7 +153,8 @@ fn default_background_output_timeout_ms() -> u64 {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct TaskArgsCompat {
-    description: String,
+    #[serde(default)]
+    description: Option<String>,
     prompt: String,
     #[serde(default)]
     subagent_type: Option<String>,
@@ -180,12 +184,8 @@ impl<'de> Deserialize<'de> for TaskArgs {
         D: Deserializer<'de>,
     {
         let compat = TaskArgsCompat::deserialize(deserializer)?;
-        let run_in_background = compat
-            .run_in_background
-            .ok_or_else(|| D::Error::custom("missing required field `run_in_background`"))?;
-        let load_skills = compat
-            .load_skills
-            .ok_or_else(|| D::Error::custom("missing required field `load_skills`"))?;
+        let run_in_background = compat.run_in_background.unwrap_or(false);
+        let load_skills = compat.load_skills.unwrap_or_default();
 
         Ok(Self {
             description: compat.description,

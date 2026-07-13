@@ -7,11 +7,13 @@
   structure it with `context`, `goal`, `downstream use`, `request`,
   `required tools`, `must-do`, and `must-not-do` sections so the child receives
   reviewable task context.
-- `run_in_background` is required: `false` waits for the child result and does
-  not emit a background wakeup; `true` returns ids immediately and later emits
-  the background completion reminder.
-- `load_skills` is required, even when empty.
-- `skills` and `load_skills` are equivalent aliases for the same list.
+- `description` is optional; when omitted, a short label is auto-generated from
+  the first few words of the prompt.
+- `run_in_background` defaults to `false`: `false` waits for the child result
+  and does not emit a background wakeup; `true` returns ids immediately and
+  later emits the background completion reminder.
+- `load_skills` defaults to an empty list; `skills` and `load_skills` are
+  equivalent aliases for the same list.
 - `command`, when provided, is prepended to the child prompt as delegation context.
 - Listed skills are resolved in request order before the child is spawned;
   duplicate names load once at their first occurrence. Missing, denied, disabled,

@@ -144,28 +144,49 @@ fn task_args_accept_skills_alias_for_load_skills() {
 }
 
 #[test]
-fn task_args_require_explicit_background_and_skills_fields() {
-    let missing_background = serde_json::from_value::<TaskArgs>(json!({
+fn task_args_default_background_and_skills_when_omitted() {
+    let args: TaskArgs = serde_json::from_value(json!({
         "description": "Explore codebase",
         "prompt": "Find auth flow",
-        "category": "explore",
-        "load_skills": []
+        "category": "explore"
     }))
-    .expect_err("task args should require run_in_background");
-    assert!(missing_background
-        .to_string()
-        .contains("missing required field `run_in_background`"));
+    .unwrap_or_abort();
 
-    let missing_skills = serde_json::from_value::<TaskArgs>(json!({
-        "description": "Explore codebase",
+    assert!(!args.run_in_background);
+    assert!(args.load_skills.is_empty());
+}
+
+#[test]
+fn task_args_default_all_optional_fields_when_omitted() {
+    let args: TaskArgs = serde_json::from_value(json!({
         "prompt": "Find auth flow",
-        "category": "explore",
-        "run_in_background": true
+        "category": "explore"
     }))
-    .expect_err("task args should require load_skills");
-    assert!(missing_skills
-        .to_string()
-        .contains("missing required field `load_skills`"));
+    .unwrap_or_abort();
+
+    assert_eq!(args.description, None);
+    assert!(!args.run_in_background);
+    assert!(args.load_skills.is_empty());
+}
+
+#[test]
+fn generate_task_description_produces_first_five_words_truncated() {
+    assert_eq!(
+        super::generate_task_description("Find the auth flow in the codebase"),
+        "Find the auth flow in"
+    );
+
+    let long_prompt = "Investigate authentication authorization mechanisms and report findings";
+    let desc = super::generate_task_description(long_prompt);
+    assert_eq!(desc.chars().count(), 43);
+    assert!(desc.ends_with("..."));
+
+    assert_eq!(
+        super::generate_task_description("short prompt"),
+        "short prompt"
+    );
+
+    assert_eq!(super::generate_task_description(""), "");
 }
 
 #[test]
@@ -175,8 +196,9 @@ fn task_and_background_output_descriptions_prefer_completion_notification() {
     let background_output = BackgroundOutputTool::new(executor);
 
     let task_description = task.description();
-    assert!(task_description.contains("`run_in_background` is required"));
-    assert!(task_description.contains("`load_skills` is required"));
+    assert!(task_description.contains("`run_in_background` defaults to false"));
+    assert!(task_description.contains("`load_skills` defaults to an empty list"));
+    assert!(task_description.contains("`description` is optional"));
     assert!(task_description.contains("run_in_background=true"));
     assert!(task_description.contains("returns task_id/request_id immediately"));
     assert!(

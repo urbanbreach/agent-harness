@@ -487,11 +487,22 @@ impl Tool for TodoReadTool {
     }
 }
 
+fn generate_task_description(prompt: &str) -> String {
+    let words: Vec<&str> = prompt.split_whitespace().take(5).collect();
+    let joined = words.join(" ");
+    if joined.chars().count() > 40 {
+        let truncated: String = joined.chars().take(40).collect();
+        format!("{truncated}...")
+    } else {
+        joined
+    }
+}
+
 #[async_trait]
 impl Tool for TaskTool {
     tool_metadata!(
         "task",
-        "Delegates work to another configured harness profile/category. Exactly one of `category` or `subagent_type` is required for new child tasks; use task_id/session_id only when continuing a prior task. `run_in_background` is required: run_in_background=false waits and returns the child result synchronously; sync child tasks do not emit background wakeup notifications. run_in_background=true returns task_id/request_id immediately and is required when testing or exercising background scheduling, completion reminders, or background_output retrieval. `load_skills` is required, even when empty; listed skills are resolved before spawning and injected into the child prompt. For non-trivial delegation, make `prompt` a structured body with sections: context, goal, downstream use, request, required tools, must-do, and must-not-do. Use background_output with the returned request_id for interim status checks, and with cancel=true anytime for cancellation. For the final result, wait for the coordinator/system completion notification before retrieving with background_output. `command` is prepended to the child prompt as explicit delegation context.",
+        "Delegates work to another configured harness profile/category. Exactly one of `category` or `subagent_type` is required for new child tasks; use task_id/session_id only when continuing a prior task. `run_in_background` defaults to false: run_in_background=false waits and returns the child result synchronously; sync child tasks do not emit background wakeup notifications. run_in_background=true returns task_id/request_id immediately and is required when testing or exercising background scheduling, completion reminders, or background_output retrieval. `load_skills` defaults to an empty list; listed skills are resolved before spawning and injected into the child prompt. `description` is optional; when omitted, a short label is auto-generated from the first few words of the prompt. For non-trivial delegation, make `prompt` a structured body with sections: context, goal, downstream use, request, required tools, must-do, and must-not-do. Use background_output with the returned request_id for interim status checks, and with cancel=true anytime for cancellation. For the final result, wait for the coordinator/system completion notification before retrieving with background_output. `command` is prepended to the child prompt as explicit delegation context.",
         ToolCapability::SpawnAgent,
         super::json_schema_for::<TaskArgs>()
     );
@@ -500,11 +511,14 @@ impl Tool for TaskTool {
         let args: TaskArgs = parse_tool_args(args_json)?;
         let selection =
             select_agent_selection(args.category.as_deref(), args.subagent_type.as_deref())?;
+        let description = args
+            .description
+            .unwrap_or_else(|| generate_task_description(&args.prompt));
         self.executor
             .spawn_agent(
                 &ctx,
                 AgentSpawnRequest {
-                    description: args.description,
+                    description,
                     profile_name: selection.profile_name,
                     category_selector: selection.category_selector,
                     prompt: args.prompt,
