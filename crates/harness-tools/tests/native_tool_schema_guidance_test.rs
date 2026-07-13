@@ -13,7 +13,18 @@ fn high_risk_provider_visible_tool_fields_have_model_guidance() {
         ("read", &["path", "offset", "limit"] as &[&str]),
         ("list", &["path", "ignore"] as &[&str]),
         ("glob", &["pattern", "path", "limit"]),
-        ("grep", &["pattern", "path", "include", "limit", "literal", "output_mode", "head_limit"]),
+        (
+            "grep",
+            &[
+                "pattern",
+                "path",
+                "include",
+                "limit",
+                "literal",
+                "output_mode",
+                "head_limit",
+            ],
+        ),
         ("edit", &["path", "oldString", "newString", "replaceAll"]),
         ("bash", &["command", "timeout", "workdir"]),
         (

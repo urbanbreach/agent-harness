@@ -83,12 +83,12 @@
     {
       "profile": "plan",
       "category": "plan",
-      "completion_request_digest": "43034b4b84d854967587545db784c3d77fbd228fa32b86364409d89385030cb7",
+      "completion_request_digest": "601c27e1f20dbd0ade17db0095f9c87ad61f7a340d234b5b0aeede3443d23260",
       "tools": [
         {
           "canonical_id": "glob",
           "provider_function_name": "glob",
-          "description_digest": "1ad1cbb0c1466fd05a59c2c7397046eeb4a66742e56c48d3fc1166f882700a58",
+          "description_digest": "a0e451a91780ae42e2e2032763659b9d5c10e310fef60afd2fb63bfcd87b0912",
           "parameters_digest": "dfc0dd1efae48379524369618f92be6f4c2f80e632d9a109cafe868936ea44e7",
           "parameters_type": "object"
         },
@@ -96,7 +96,7 @@
           "canonical_id": "grep",
           "provider_function_name": "grep",
           "description_digest": "d2c94dd58967fb414c53ff8187fa5708cb85a51f9e961e3c8d0c48ff776f4393",
-          "parameters_digest": "4ec0341e4ced67088486abb47fcd3f58753d773f7ff1749018ca492049240478",
+          "parameters_digest": "02bb111693d9acfd52bbe05e5d674c655c439b10420d58278fa6bc419b9277cd",
           "parameters_type": "object"
         },
         {
@@ -133,7 +133,7 @@
           "api_mode": "chat_completions",
           "endpoint_path": "/v1/chat/completions",
           "bearer_token": "<redacted>",
-          "request_body_digest": "57466aaf365adf78639199aed7fa626384d642f32a6efc220e1d545f5d9f3c56",
+          "request_body_digest": "0e87f85c38f4573694b10674b5fe6f81efbbdc1c489fb1453284123fc44dc7fd",
           "tool_function_names": [
             "glob",
             "grep",
@@ -147,7 +147,7 @@
           "api_mode": "responses",
           "endpoint_path": "/v1/responses",
           "bearer_token": "<redacted>",
-          "request_body_digest": "688d3516342f1c79b35a3ad215769e686b94f6613a6e674affbe359b1e2d9df0",
+          "request_body_digest": "e063cd7ad0aa3bfe6570ad26dfc0e12a886cb19ebbb8c4c44373d63a4dcc1312",
           "tool_function_names": [
             "glob",
             "grep",
@@ -162,13 +162,13 @@
     {
       "profile": "category",
       "category": "quick",
-      "completion_request_digest": "b7faf6eb6a60c948a3c5cc9a9ea91c4b5651d28fa37976a2e60e0e58b942fd84",
+      "completion_request_digest": "e2e910c438b500b0458bc79b26e4eb3d189c0561bd88e23f1512a3f7090919ce",
       "tools": [
         {
           "canonical_id": "background_output",
           "provider_function_name": "background_output",
           "description_digest": "d4d9b01f6dcaf018c8e0119c3b5eb4c18cb61215cc2f33a18510e34f9363aaf1",
-          "parameters_digest": "8145d6ae53462f087e1a7fd79b4c4689bf1c23fdc1721718d1e87271959b281e",
+          "parameters_digest": "7a4afabdaf076d9abfc4d2da1663dacd8814beef032b31bc2d478dcc21017ff8",
           "parameters_type": "object"
         },
         {
@@ -181,8 +181,8 @@
         {
           "canonical_id": "task",
           "provider_function_name": "task",
-          "description_digest": "a453dcb46242264dd536ba3a079bace7a81fe2674d8571f981207e3e3bf8cb14",
-          "parameters_digest": "f424f790fed9db6606053ab9130a078d68910419b64f8daee66576df02e3affc",
+          "description_digest": "8e43f9b53e9f7294ba58e661effb0332b3f7c8977716ef63f10a565e4a6ac763",
+          "parameters_digest": "31e41417d6b1a413e7638dacfad0b648fb54b73466a8252d44a3266c822b4bda",
           "parameters_type": "object"
         },
         {
@@ -198,7 +198,7 @@
           "api_mode": "chat_completions",
           "endpoint_path": "/v1/chat/completions",
           "bearer_token": "<redacted>",
-          "request_body_digest": "0945489aa5585594e09acd37e0af3d9786b836287018648c8381c7e3f6d3be8d",
+          "request_body_digest": "0e6853f3ec6c6d4928e8a4323ff3889ac120fea6ece4144cb46fbe6f2383e835",
           "tool_function_names": [
             "background_output",
             "skill",
@@ -210,7 +210,7 @@
           "api_mode": "responses",
           "endpoint_path": "/v1/responses",
           "bearer_token": "<redacted>",
-          "request_body_digest": "e3a7e17b940e9b2e7d2741aa3d522cff78de60e5866e82486e46045a02f484bf",
+          "request_body_digest": "456802dc4b045b02185343f0964744b5d0dcd5eb6eb6690f2f3f862bbe789a0e",
           "tool_function_names": [
             "background_output",
             "skill",

@@ -225,6 +225,142 @@ fn bash_safety_guidance_and_ast_grep_replace_catalog_match_runtime_sources() {
     assert!(claims.contains("`ast_grep_replace` ships behind edit permission"));
 }
 
+#[test]
+fn changed_tool_schemas_and_docs_reflect_parity_params() {
+    // arrange
+    // act
+    let registry = coordinator_registry(ShellAllowlist::default());
+    let doc = std::fs::read_to_string(repo_path("docs/native-tool-catalog.md")).unwrap_or_abort();
+
+    // assert
+    let grep_schema = registry
+        .get("grep")
+        .unwrap_or_abort()
+        .parameters_json_schema();
+    let grep_props = grep_schema
+        .get("properties")
+        .expect("grep schema has properties");
+    assert!(
+        grep_props.get("output_mode").is_some(),
+        "grep schema missing output_mode"
+    );
+    assert!(
+        grep_props.get("head_limit").is_some(),
+        "grep schema missing head_limit"
+    );
+    assert!(
+        doc.contains("output_mode") && doc.contains("head_limit"),
+        "docs missing grep params"
+    );
+
+    assert!(
+        doc.contains("modification time"),
+        "docs missing glob mtime note"
+    );
+
+    let bg_cancel_schema = registry
+        .get("background_cancel")
+        .unwrap_or_abort()
+        .parameters_json_schema();
+    let bg_cancel_props = bg_cancel_schema
+        .get("properties")
+        .expect("background_cancel schema has properties");
+    assert!(
+        bg_cancel_props.get("all").is_some(),
+        "background_cancel schema missing all"
+    );
+    assert!(
+        doc.contains("`all: true`"),
+        "docs missing background_cancel all param"
+    );
+
+    let task_schema = registry
+        .get("task")
+        .unwrap_or_abort()
+        .parameters_json_schema();
+    for field in ["description", "run_in_background", "load_skills"] {
+        let is_required = task_schema
+            .get("required")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().any(|v| v.as_str() == Some(field)))
+            .unwrap_or(false);
+        assert!(!is_required, "task schema should not require {field}");
+    }
+    assert!(
+        doc.contains("optional with defaults"),
+        "docs missing task optional args note"
+    );
+
+    let bg_output_schema = registry
+        .get("background_output")
+        .unwrap_or_abort()
+        .parameters_json_schema();
+    let bg_output_props = bg_output_schema
+        .get("properties")
+        .expect("background_output schema has properties");
+    for field in [
+        "full_session",
+        "include_thinking",
+        "message_limit",
+        "since_message_id",
+        "include_tool_results",
+        "thinking_max_chars",
+        "from_end",
+    ] {
+        assert!(
+            bg_output_props.get(field).is_some(),
+            "background_output schema missing {field}"
+        );
+    }
+    assert!(
+        doc.contains("full_session") && doc.contains("include_thinking"),
+        "docs missing background_output rich retrieval params"
+    );
+
+    let sr_schema = registry
+        .get("session_read")
+        .unwrap_or_abort()
+        .parameters_json_schema();
+    let sr_props = sr_schema
+        .get("properties")
+        .expect("session_read schema has properties");
+    assert!(
+        sr_props.get("includeTodos").is_some(),
+        "session_read schema missing includeTodos"
+    );
+    assert!(
+        sr_props.get("fromEnd").is_some(),
+        "session_read schema missing fromEnd"
+    );
+    assert!(
+        doc.contains("include_todos") && doc.contains("from_end"),
+        "docs missing session_read params"
+    );
+
+    let lsp_schema = registry
+        .get("lsp")
+        .unwrap_or_abort()
+        .parameters_json_schema();
+    let lsp_props = lsp_schema
+        .get("properties")
+        .expect("lsp schema has properties");
+    let lsp_op_enum = lsp_props
+        .get("operation")
+        .and_then(|v| v.get("enum"))
+        .and_then(|v| v.as_array())
+        .expect("lsp schema has operation enum");
+    assert!(
+        lsp_op_enum
+            .iter()
+            .any(|v| v.as_str() == Some("installDecision")),
+        "lsp schema missing installDecision operation"
+    );
+    assert!(
+        doc.contains("installDecision"),
+        "docs missing lsp installDecision note"
+    );
+}
+
 fn repo_path(relative: &str) -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")

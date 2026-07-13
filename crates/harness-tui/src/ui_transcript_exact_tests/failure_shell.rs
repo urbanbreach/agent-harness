@@ -457,7 +457,7 @@ fn consecutive_tool_rows_insert_single_blank_row() {
     assert_eq!(
         lsp_surface.top_offset,
         cancel_surface.top_offset + cancel_surface.height + 1,
-        "consecutive tool surfaces should have 1 blank row between them to match Opencode 12px gap"
+        "consecutive tool surfaces should have 1 blank row between them to match the 12px gap"
     );
 }
 

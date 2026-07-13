@@ -9,19 +9,19 @@ Tool execution still goes through the coordinator permission path before the too
 | `ast_grep_search` | `codesearch` | read-only | Capped JSON; large results spill to artifacts | Built-in ast-grep CLI structural search adapter. |
 | `ast_grep_replace` | `edit` | workspace mutation | Dry-run/apply JSON plus diff artifacts; large JSON spills to artifacts | Built-in ast-grep rewrite adapter. Defaults to dry-run; the ast-grep process runs in JSON rewrite mode and never mutates the workspace directly; apply mode writes through Harness workspace path checks and atomic edit writes. |
 | `apply_patch` | `edit` | workspace mutation | Sequential patch output plus diff artifacts | Applies add/update/delete patch text through Harness workspace path checks and atomic edit writes. Moves are rejected. |
-| `background_cancel` | `task` | control-plane mutation | Coordinator cancellation events; output is replay-derived | Canonical explicit cancellation wrapper for background child requests. Alias: `background_output(cancel=true)`. |
-| `background_output` | `task` | read/cancel compatibility | Replay-derived background status/result; `cancel: true` remains compatibility | Use for status/result retrieval; cancellation next-actions prefer `background_cancel`. Aliases: `task_id`, `session_id`. |
+| `background_cancel` | `task` | control-plane mutation | Coordinator cancellation events; output is replay-derived | Canonical explicit cancellation wrapper for background child requests. Supports `all: true` for bulk cancellation of non-terminal background tasks. Alias: `background_output(cancel=true)`. |
+| `background_output` | `task` | read/cancel compatibility | Replay-derived background status/result; `cancel: true` remains compatibility | Use for status/result retrieval; cancellation next-actions prefer `background_cancel`. Supports `full_session`, `include_thinking`, `message_limit`, `since_message_id`, `include_tool_results`, `thinking_max_chars`, and `from_end` for rich child-session retrieval. Aliases: `task_id`, `session_id`. |
 | `bash` | `bash` | host command | Captured output and artifacts when large | Shell allowlist and permission policy apply before execution. |
 | `batch` | none | depends on child calls | Preserves source order for model-visible results | Executes multiple native tool calls through coordinator tool execution; each child call keeps its own permission check. |
 | `codesearch` | `codesearch` | network/read-only | External I/O when called | Remote/public code-search integration; use `grep`, `ast_grep_search`, or `lsp` for local workspace symbols. |
 | `edit` | `edit` | workspace mutation | Hashline/diff artifacts | Normal file-changing route. Also accepts exact `oldString`/`newString` edits. |
 | `github.issue` | legacy `network` compatibility | network mutation/read | External I/O when called | GitHub integration wrapper; not required for offline V1 claims. |
 | `github.pull_request` | legacy `network` compatibility | network mutation/read | External I/O when called | GitHub integration wrapper; not required for offline V1 claims. |
-| `glob` | none | read-only | Inline capped output | Workspace-safe file discovery. |
-| `grep` | none | read-only | Large results spill to artifacts | Workspace-safe text search. |
+| `glob` | none | read-only | Inline capped output | Workspace-safe file discovery. Results sorted by modification time (newest first). |
+| `grep` | none | read-only | Large results spill to artifacts | Workspace-safe text search. Supports `output_mode` (`content`, `files_with_matches`, `count`) and `head_limit` to cap files returned. |
 | `invalid` | none | control-plane report | Summary only | Records malformed/unsupported tool calls as tool messages. |
 | `list` | none | read-only | Inline capped output | Workspace-safe directory listing. |
-| `lsp` | `lsp` | language read-only | Structured unsupported responses | Diagnostics/symbol/reference helpers. |
+| `lsp` | `lsp` | language read-only | Structured unsupported responses | Diagnostics/symbol/reference helpers. Supports `installDecision` operation for LSP server install consent. |
 | `lsp.rename` | `edit` | workspace mutation | Rename/diff artifacts | LSP rename path remains edit-permission gated. Alias: `rename_symbol`. |
 | `plan_enter` | `question` | control-plane question | Summary only | Requests Build → Plan handoff. |
 | `plan_exit` | `question` | control-plane question | Summary only | Requests Plan → Build continuation. |
@@ -29,11 +29,11 @@ Tool execution still goes through the coordinator permission path before the too
 | `read` | none | read-only | Hashline anchors; large output spills | Workspace-safe file read. Aliases: `filePath`, `path`. |
 | `session_info` | none | read-only | Replay-derived JSON; large output spills | Model-visible session metadata, lineage, event counts, artifacts, recovery notes. |
 | `session_list` | none | read-only | Replay-derived JSON | Model-visible session catalog listing with filters/sort/caps. |
-| `session_read` | none | read-only | Replay-derived JSON; large output spills | Bounded redacted event/message windows. |
+| `session_read` | none | read-only | Replay-derived JSON; large output spills | Bounded redacted event/message windows. Supports `include_todos` and `from_end` params. |
 | `session_search` | none | read-only | Replay-derived JSON; large output spills | Redacted search over safe replay-derived session text. |
 | `shell.run` | `bash` | host command | Captured output and artifacts when large | Lower-level shell id kept canonical for compatibility tests. |
 | `skill` | `task` | prompt/control-plane read | Summary plus loaded skill content | Loads configured markdown skills under skill permission rules. |
-| `task` | `task` | child scheduling | Child session events and structured route/runtime metadata | Canonical subagent delegation tool. Aliases: `agent`, `subagent_type`. |
+| `task` | `task` | child scheduling | Child session events and structured route/runtime metadata | Canonical subagent delegation tool. `description`, `run_in_background`, and `load_skills` are optional with defaults. Aliases: `agent`, `subagent_type`. |
 | `todoread` | `task` | read-only | Control-plane state output | Reads the run-local todo state. |
 | `todowrite` | `task` | control-plane mutation | Run-local state output | Writes validated todo state. |
 | `webfetch` | `webfetch` | network/read-only | External I/O when called | Fetches web content under permission policy. |

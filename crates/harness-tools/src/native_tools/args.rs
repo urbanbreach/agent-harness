@@ -122,10 +122,14 @@ pub(super) struct GrepArgs {
     #[schemars(description = "When true, search for `pattern` as plain text instead of a regex.")]
     #[serde(default)]
     pub(super) literal: bool,
-    #[schemars(description = "Output mode: `content` returns matched lines, `files_with_matches` returns file paths, `count` returns per-file match counts.")]
+    #[schemars(
+        description = "Output mode: `content` returns matched lines, `files_with_matches` returns file paths, `count` returns per-file match counts."
+    )]
     #[serde(default)]
     pub(super) output_mode: GrepOutputMode,
-    #[schemars(description = "Maximum number of files to return in `files_with_matches` or `count` mode; in `content` mode limits files whose matches are returned.")]
+    #[schemars(
+        description = "Maximum number of files to return in `files_with_matches` or `count` mode; in `content` mode limits files whose matches are returned."
+    )]
     #[serde(default)]
     pub(super) head_limit: Option<u32>,
 }

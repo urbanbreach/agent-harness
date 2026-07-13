@@ -371,7 +371,9 @@ fn background_cancel_args_all_false_requires_request_id() {
     }))
     .expect_err("all=false without request_id should fail");
 
-    assert!(err.to_string().contains("request_id is required when all is false"));
+    assert!(err
+        .to_string()
+        .contains("request_id is required when all is false"));
 }
 
 #[test]
@@ -381,7 +383,9 @@ fn background_cancel_args_default_requires_request_id() {
     }))
     .expect_err("omitting all and request_id should fail");
 
-    assert!(err.to_string().contains("request_id is required when all is false"));
+    assert!(err
+        .to_string()
+        .contains("request_id is required when all is false"));
 }
 
 #[test]

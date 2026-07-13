@@ -448,7 +448,9 @@ pub(crate) fn execute_lsp_operation(
                 json!({ "item": item }),
             )
         }
-        LspOperation::FileDiagnostics | LspOperation::WorkspaceDiagnostics | LspOperation::InstallDecision => std::process::abort(),
+        LspOperation::FileDiagnostics
+        | LspOperation::WorkspaceDiagnostics
+        | LspOperation::InstallDecision => std::process::abort(),
     }?;
 
     Ok(LspOperationResponse {

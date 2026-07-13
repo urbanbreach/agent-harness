@@ -1,24 +1,19 @@
 pub(crate) fn mapping_status(tool_id: &str) -> &'static str {
     match tool_id {
-        "apply_patch" | "codesearch" | "glob" | "invalid" | "question" | "skill" | "websearch" => {
-            "parity_ready"
-        }
-        "bash" | "batch" | "edit" | "grep" | "read" | "task" | "todoread" | "todowrite"
-        | "webfetch" | "write" => "harness_adapted",
+        "apply_patch" | "codesearch" | "glob" | "grep" | "invalid" | "question" | "skill"
+        | "webfetch" | "websearch" => "parity_ready",
+        "background_cancel" | "background_output" | "bash" | "batch" | "edit" | "lsp" | "read"
+        | "session_read" | "task" | "todoread" | "todowrite" | "write" => "harness_adapted",
         "ast_grep_replace"
         | "ast_grep_search"
-        | "background_cancel"
-        | "background_output"
         | "github.issue"
         | "github.pull_request"
         | "list"
-        | "lsp"
         | "lsp.rename"
         | "plan_enter"
         | "plan_exit"
         | "session_info"
         | "session_list"
-        | "session_read"
         | "session_search"
         | "shell.run" => "harness_only",
         _ => "harness_only",

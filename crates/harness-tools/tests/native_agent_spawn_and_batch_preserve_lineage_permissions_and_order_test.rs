@@ -64,3 +64,8 @@ mod part_08_background_output_full_session_and_thinking_test {
     use super::*;
     include!("native_agent_spawn_and_batch_preserve_lineage_permissions_and_order/08_background_output_full_session_and_thinking_test.rs");
 }
+
+mod part_09_background_cancel_all_bulk_test {
+    use super::*;
+    include!("native_agent_spawn_and_batch_preserve_lineage_permissions_and_order/09_background_cancel_all_bulk_test.rs");
+}

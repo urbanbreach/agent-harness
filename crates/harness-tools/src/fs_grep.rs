@@ -277,11 +277,7 @@ impl Tool for FsGrepTool {
 
                 let returned_files = counts.len();
                 let is_truncated = total_match_count > 0
-                    && counts
-                        .iter()
-                        .map(|(_, c)| c)
-                        .sum::<usize>()
-                        < total_match_count;
+                    && counts.iter().map(|(_, c)| c).sum::<usize>() < total_match_count;
                 let mut display_lines = vec![format!(
                     "Found {total_match_count} matches across files{}",
                     if is_truncated {
@@ -439,7 +435,10 @@ fn collect_grep_file_paths(
             continue;
         }
 
-        let display_path = workspace_root.join(&file.relative_path).display().to_string();
+        let display_path = workspace_root
+            .join(&file.relative_path)
+            .display()
+            .to_string();
         file_paths.push(display_path);
     }
 
@@ -479,7 +478,10 @@ fn collect_grep_counts(
             continue;
         }
 
-        let display_path = workspace_root.join(&file.relative_path).display().to_string();
+        let display_path = workspace_root
+            .join(&file.relative_path)
+            .display()
+            .to_string();
         counts.push((display_path, file_count));
     }
 
@@ -711,7 +713,7 @@ mod tests {
     use harness_core::event::{ActorKind, EventActor};
     use harness_core::redact::DefaultRedactor;
     use harness_core::tool::{Tool, ToolContext, ToolRunState};
-use serde_json::{json, Value};
+    use serde_json::{json, Value};
 
     use super::{
         collect_grep_matches, FsGrepTool, GrepOutputMode, GrepSearch, MAX_GREP_RENDER_BYTES,
@@ -965,11 +967,21 @@ use serde_json::{json, Value};
             .unwrap_or_abort();
 
         let structured = result.structured_json.unwrap_or_abort();
-        assert_eq!(structured.get("output_mode"), Some(&json!("files_with_matches")));
-        let files = structured.get("files").and_then(|f| f.as_array()).unwrap_or_abort();
+        assert_eq!(
+            structured.get("output_mode"),
+            Some(&json!("files_with_matches"))
+        );
+        let files = structured
+            .get("files")
+            .and_then(|f| f.as_array())
+            .unwrap_or_abort();
         assert_eq!(files.len(), 2);
-        assert!(files.iter().any(|f| f.as_str().is_some_and(|s| s.ends_with("a.txt"))));
-        assert!(files.iter().any(|f| f.as_str().is_some_and(|s| s.ends_with("b.log"))));
+        assert!(files
+            .iter()
+            .any(|f| f.as_str().is_some_and(|s| s.ends_with("a.txt"))));
+        assert!(files
+            .iter()
+            .any(|f| f.as_str().is_some_and(|s| s.ends_with("b.log"))));
         assert_eq!(structured.get("total_count"), Some(&json!(2)));
         assert_eq!(structured.get("returned_count"), Some(&json!(2)));
         assert_eq!(structured.get("truncated"), Some(&json!(false)));
@@ -1000,16 +1012,27 @@ use serde_json::{json, Value};
 
         let structured = result.structured_json.unwrap_or_abort();
         assert_eq!(structured.get("output_mode"), Some(&json!("count")));
-        let counts = structured.get("counts").and_then(|c| c.as_array()).unwrap_or_abort();
+        let counts = structured
+            .get("counts")
+            .and_then(|c| c.as_array())
+            .unwrap_or_abort();
         assert_eq!(counts.len(), 2);
         let a_entry = counts
             .iter()
-            .find(|e| e.get("file").and_then(|f| f.as_str()).is_some_and(|s| s.ends_with("a.txt")))
+            .find(|e| {
+                e.get("file")
+                    .and_then(|f| f.as_str())
+                    .is_some_and(|s| s.ends_with("a.txt"))
+            })
             .unwrap_or_abort();
         assert_eq!(a_entry.get("count"), Some(&json!(2)));
         let b_entry = counts
             .iter()
-            .find(|e| e.get("file").and_then(|f| f.as_str()).is_some_and(|s| s.ends_with("b.log")))
+            .find(|e| {
+                e.get("file")
+                    .and_then(|f| f.as_str())
+                    .is_some_and(|s| s.ends_with("b.log"))
+            })
             .unwrap_or_abort();
         assert_eq!(b_entry.get("count"), Some(&json!(1)));
         assert_eq!(structured.get("total_count"), Some(&json!(3)));
@@ -1040,7 +1063,10 @@ use serde_json::{json, Value};
             .unwrap_or_abort();
 
         let structured = result.structured_json.unwrap_or_abort();
-        let files = structured.get("files").and_then(|f| f.as_array()).unwrap_or_abort();
+        let files = structured
+            .get("files")
+            .and_then(|f| f.as_array())
+            .unwrap_or_abort();
         assert_eq!(files.len(), 2);
         assert_eq!(structured.get("total_count"), Some(&json!(3)));
         assert_eq!(structured.get("returned_count"), Some(&json!(2)));
@@ -1070,7 +1096,10 @@ use serde_json::{json, Value};
             .unwrap_or_abort();
 
         let structured = result.structured_json.unwrap_or_abort();
-        let counts = structured.get("counts").and_then(|c| c.as_array()).unwrap_or_abort();
+        let counts = structured
+            .get("counts")
+            .and_then(|c| c.as_array())
+            .unwrap_or_abort();
         assert_eq!(counts.len(), 2);
         assert_eq!(structured.get("total_count"), Some(&json!(4)));
         assert_eq!(structured.get("truncated"), Some(&json!(true)));
@@ -1122,9 +1151,14 @@ use serde_json::{json, Value};
         let structured = result.structured_json.unwrap_or_abort();
         assert_eq!(structured.get("output_mode"), Some(&json!("content")));
         assert_eq!(structured.get("total_count"), Some(&json!(3)));
-        let matches = structured.get("matches").and_then(|m| m.as_array()).unwrap_or_abort();
+        let matches = structured
+            .get("matches")
+            .and_then(|m| m.as_array())
+            .unwrap_or_abort();
         assert_eq!(matches.len(), 1);
-        assert!(matches[0].as_str().is_some_and(|s| s.ends_with("a.txt:1: TODO a")));
+        assert!(matches[0]
+            .as_str()
+            .is_some_and(|s| s.ends_with("a.txt:1: TODO a")));
     }
 
     #[tokio::test]
@@ -1147,7 +1181,10 @@ use serde_json::{json, Value};
             .unwrap_or_abort();
 
         let structured = result.structured_json.unwrap_or_abort();
-        let files = structured.get("files").and_then(|f| f.as_array()).unwrap_or_abort();
+        let files = structured
+            .get("files")
+            .and_then(|f| f.as_array())
+            .unwrap_or_abort();
         assert_eq!(files.len(), 2);
         assert_eq!(structured.get("truncated"), Some(&json!(false)));
     }

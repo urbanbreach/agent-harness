@@ -169,9 +169,7 @@ impl<'de> Deserialize<'de> for BackgroundCancelArgs {
     {
         let compat = BackgroundCancelArgsCompat::deserialize(deserializer)?;
         if !compat.all && compat.request_id.is_none() {
-            return Err(D::Error::custom(
-                "request_id is required when all is false",
-            ));
+            return Err(D::Error::custom("request_id is required when all is false"));
         }
         Ok(Self {
             request_id: compat.request_id,

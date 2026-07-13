@@ -123,16 +123,15 @@ fn provider_tool_defs_do_not_advertise_runtime_only_grep_controls() {
     let schema_text = grep.parameters.to_string();
 
     // assert
-    for runtime_only in ["context"] {
-        assert!(
-            !description.contains(runtime_only),
-            "grep provider description should not advertise runtime-only field {runtime_only}: {description}"
-        );
-        assert!(
-            !schema_text.contains(runtime_only),
-            "grep provider schema should not advertise runtime-only field {runtime_only}: {schema_text}"
-        );
-    }
+    let runtime_only = "context";
+    assert!(
+        !description.contains(runtime_only),
+        "grep provider description should not advertise runtime-only field {runtime_only}: {description}"
+    );
+    assert!(
+        !schema_text.contains(runtime_only),
+        "grep provider schema should not advertise runtime-only field {runtime_only}: {schema_text}"
+    );
 }
 
 #[test]

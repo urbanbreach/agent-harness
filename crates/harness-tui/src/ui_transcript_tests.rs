@@ -757,7 +757,7 @@ fn transcript_turn_sections_keep_two_blank_rows_between_sections() {
     assert_eq!(layout.sections[0].leading_gap_height, 0);
     assert_eq!(
         layout.sections[1].leading_gap_height, 2,
-        "turn-to-turn gap should be 2 blank rows to match Opencode 24px session-turn-list gap"
+        "turn-to-turn gap should be 2 blank rows to match the 24px session-turn-list gap"
     );
 }
 
@@ -1009,7 +1009,7 @@ fn assistant_tool_surface_spacing_matches_shell_rhythm() {
             TranscriptRenderSurfaceKind::AssistantBody,
         ),
         1,
-        "reasoning-to-body surface gap should be 1 to match Opencode 12px assistant-content gap"
+        "reasoning-to-body surface gap should be 1 to match the 12px assistant-content gap"
     );
     assert_eq!(
         transcript_surface_leading_gap(

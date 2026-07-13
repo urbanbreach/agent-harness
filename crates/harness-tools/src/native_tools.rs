@@ -585,9 +585,7 @@ impl Tool for BackgroundCancelTool {
                 .await
         } else {
             let request_id = args.request_id.ok_or_else(|| {
-                ToolError::InvalidArguments(
-                    "request_id is required when all is false".to_string(),
-                )
+                ToolError::InvalidArguments("request_id is required when all is false".to_string())
             })?;
             self.executor
                 .background_cancel(
@@ -736,12 +734,10 @@ fn record_lsp_install_decision(
     let mut decisions: Value = if artifact_path.exists() {
         let content = std::fs::read_to_string(&artifact_path)
             .tool_err("failed to read lsp install decisions artifact")?;
-        serde_json::from_str(&content)
-            .tool_err("failed to parse lsp install decisions artifact")?
+        serde_json::from_str(&content).tool_err("failed to parse lsp install decisions artifact")?
     } else {
         if let Some(parent) = artifact_path.parent() {
-            std::fs::create_dir_all(parent)
-                .tool_err("failed to create artifacts directory")?;
+            std::fs::create_dir_all(parent).tool_err("failed to create artifacts directory")?;
         }
         json!({})
     };

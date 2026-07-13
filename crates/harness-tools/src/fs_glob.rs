@@ -260,9 +260,21 @@ mod tests {
         write_file(root, ".git/objects/cache.rs", "ignored");
         write_file(root, ".agent-harness/sessions/run-1/session.rs", "ignored");
 
-        set_mtime(root, "src/lib.rs", SystemTime::UNIX_EPOCH + Duration::from_secs(100));
-        set_mtime(root, "src/nested/mod.rs", SystemTime::UNIX_EPOCH + Duration::from_secs(200));
-        set_mtime(root, "tests/glob.rs", SystemTime::UNIX_EPOCH + Duration::from_secs(300));
+        set_mtime(
+            root,
+            "src/lib.rs",
+            SystemTime::UNIX_EPOCH + Duration::from_secs(100),
+        );
+        set_mtime(
+            root,
+            "src/nested/mod.rs",
+            SystemTime::UNIX_EPOCH + Duration::from_secs(200),
+        );
+        set_mtime(
+            root,
+            "tests/glob.rs",
+            SystemTime::UNIX_EPOCH + Duration::from_secs(300),
+        );
 
         let result =
             collect_glob_matches(root, root, glob_search("**/*.rs", 100)).unwrap_or_abort();
@@ -287,9 +299,21 @@ mod tests {
         write_file(root, "src/a.rs", "");
         write_file(root, "src/b.rs", "");
 
-        set_mtime(root, "src/c.rs", SystemTime::UNIX_EPOCH + Duration::from_secs(300));
-        set_mtime(root, "src/a.rs", SystemTime::UNIX_EPOCH + Duration::from_secs(200));
-        set_mtime(root, "src/b.rs", SystemTime::UNIX_EPOCH + Duration::from_secs(100));
+        set_mtime(
+            root,
+            "src/c.rs",
+            SystemTime::UNIX_EPOCH + Duration::from_secs(300),
+        );
+        set_mtime(
+            root,
+            "src/a.rs",
+            SystemTime::UNIX_EPOCH + Duration::from_secs(200),
+        );
+        set_mtime(
+            root,
+            "src/b.rs",
+            SystemTime::UNIX_EPOCH + Duration::from_secs(100),
+        );
 
         let result = collect_glob_matches(root, root, glob_search("**/*.rs", 2)).unwrap_or_abort();
 
@@ -310,9 +334,21 @@ mod tests {
         write_file(root, "src/middle.rs", "");
         write_file(root, "src/new.rs", "");
 
-        set_mtime(root, "src/old.rs", SystemTime::UNIX_EPOCH + Duration::from_secs(100));
-        set_mtime(root, "src/middle.rs", SystemTime::UNIX_EPOCH + Duration::from_secs(200));
-        set_mtime(root, "src/new.rs", SystemTime::UNIX_EPOCH + Duration::from_secs(300));
+        set_mtime(
+            root,
+            "src/old.rs",
+            SystemTime::UNIX_EPOCH + Duration::from_secs(100),
+        );
+        set_mtime(
+            root,
+            "src/middle.rs",
+            SystemTime::UNIX_EPOCH + Duration::from_secs(200),
+        );
+        set_mtime(
+            root,
+            "src/new.rs",
+            SystemTime::UNIX_EPOCH + Duration::from_secs(300),
+        );
 
         let result =
             collect_glob_matches(root, root, glob_search("**/*.rs", 100)).unwrap_or_abort();
