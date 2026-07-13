@@ -14,3 +14,8 @@ mod part_03_native_code_lsp_rename_previews_and_test {
     use super::*;
     include!("native_code_lsp/03_native_code_lsp_rename_previews_and_test.rs");
 }
+
+mod part_04_native_code_lsp_install_decision_test {
+    use super::*;
+    include!("native_code_lsp/04_native_code_lsp_install_decision_test.rs");
+}

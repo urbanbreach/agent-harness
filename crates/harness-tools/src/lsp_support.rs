@@ -29,6 +29,7 @@ const SUPPORTED_LSP_OPERATION_NAMES: &[&str] = &[
     "outgoingCalls",
     "fileDiagnostics",
     "workspaceDiagnostics",
+    "installDecision",
 ];
 const POSITION_LSP_OPERATION_NAMES: &[&str] = &[
     "goToDefinition",
@@ -79,6 +80,7 @@ pub(crate) enum LspOperation {
     OutgoingCalls,
     FileDiagnostics,
     WorkspaceDiagnostics,
+    InstallDecision,
 }
 
 impl LspOperation {
@@ -95,6 +97,7 @@ impl LspOperation {
             "outgoingCalls" => Ok(Self::OutgoingCalls),
             "fileDiagnostics" => Ok(Self::FileDiagnostics),
             "workspaceDiagnostics" => Ok(Self::WorkspaceDiagnostics),
+            "installDecision" => Ok(Self::InstallDecision),
             "prepareRename" | "renameSymbol" => Err(ToolError::InvalidArguments(format!(
             "unsupported lsp operation: {value}; use lsp.rename for the explicit workspace-editing rename flow; supported operations: {}",
                 SUPPORTED_LSP_OPERATION_NAMES.join(", ")
@@ -119,6 +122,7 @@ impl LspOperation {
             Self::OutgoingCalls => "outgoingCalls",
             Self::FileDiagnostics => "fileDiagnostics",
             Self::WorkspaceDiagnostics => "workspaceDiagnostics",
+            Self::InstallDecision => "installDecision",
         }
     }
 
@@ -135,6 +139,7 @@ impl LspOperation {
                 LspOperationInputKind::File
             }
             Self::WorkspaceSymbol => LspOperationInputKind::Query,
+            Self::InstallDecision => LspOperationInputKind::None,
         }
     }
 
@@ -143,6 +148,7 @@ impl LspOperation {
             LspOperationInputKind::Position => POSITION_LSP_OPERATION_NAMES,
             LspOperationInputKind::File => FILE_LSP_OPERATION_NAMES,
             LspOperationInputKind::Query => QUERY_LSP_OPERATION_NAMES,
+            LspOperationInputKind::None => &[],
         }
     }
 }
@@ -152,6 +158,7 @@ pub(crate) enum LspOperationInputKind {
     Position,
     File,
     Query,
+    None,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -441,7 +448,7 @@ pub(crate) fn execute_lsp_operation(
                 json!({ "item": item }),
             )
         }
-        LspOperation::FileDiagnostics | LspOperation::WorkspaceDiagnostics => std::process::abort(),
+        LspOperation::FileDiagnostics | LspOperation::WorkspaceDiagnostics | LspOperation::InstallDecision => std::process::abort(),
     }?;
 
     Ok(LspOperationResponse {

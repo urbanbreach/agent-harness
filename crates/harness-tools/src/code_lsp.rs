@@ -78,6 +78,12 @@ impl CodeLspExecutor {
                     }),
                 )
             }
+            CodeLspRequest::InstallDecision { .. } => {
+                return Err(ToolError::Execution(
+                    "installDecision is handled before LSP dispatch and should not reach execute"
+                        .to_string(),
+                ));
+            }
         };
 
         let response = run_lsp_operation(ctx.workspace_root.clone(), operation, input).await?;
@@ -155,20 +161,28 @@ pub(crate) enum CodeLspRequest {
         file_path: String,
         query: String,
     },
+    InstallDecision {
+        server_id: String,
+        decision: String,
+    },
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct CodeLspArgs {
     operation: String,
-    #[serde(rename = "filePath")]
-    file_path: String,
+    #[serde(default, rename = "filePath")]
+    file_path: Option<String>,
     #[serde(default)]
     line: Option<i32>,
     #[serde(default)]
     character: Option<i32>,
     #[serde(default)]
     query: Option<String>,
+    #[serde(default, rename = "serverId")]
+    server_id: Option<String>,
+    #[serde(default)]
+    decision: Option<String>,
 }
 
 pub(crate) fn code_lsp_parameters_json_schema() -> Value {
@@ -192,9 +206,16 @@ pub(crate) fn code_lsp_parameters_json_schema() -> Value {
             },
             "query": {
                 "type": "string"
+            },
+            "serverId": {
+                "type": "string"
+            },
+            "decision": {
+                "type": "string",
+                "enum": ["allowed", "declined"]
             }
         },
-        "required": ["operation", "filePath"],
+        "required": ["operation"],
         "additionalProperties": false
     })
 }
@@ -210,6 +231,10 @@ fn supported_operation_names() -> Vec<&'static str> {
     names.extend_from_slice(LspOperation::supported_names_for(
         LspOperationInputKind::Query,
     ));
+    names.extend_from_slice(LspOperation::supported_names_for(
+        LspOperationInputKind::None,
+    ));
+    names.push("installDecision");
     names
 }
 
@@ -219,25 +244,43 @@ pub(crate) fn parse_code_lsp_request(args_json: Value) -> Result<CodeLspRequest,
 
     match operation.input_kind() {
         LspOperationInputKind::Position => {
+            let file_path = required_lsp_field(args.file_path, "filePath")?;
             let line = required_lsp_field(args.line, "line")?;
             let character = required_lsp_field(args.character, "character")?;
             Ok(CodeLspRequest::Position {
                 operation,
-                file_path: args.file_path,
+                file_path,
                 line,
                 character,
             })
         }
-        LspOperationInputKind::File => Ok(CodeLspRequest::File {
-            operation,
-            file_path: args.file_path,
-        }),
+        LspOperationInputKind::File => {
+            let file_path = required_lsp_field(args.file_path, "filePath")?;
+            Ok(CodeLspRequest::File {
+                operation,
+                file_path,
+            })
+        }
         LspOperationInputKind::Query => {
+            let file_path = required_lsp_field(args.file_path, "filePath")?;
             let query = required_lsp_field(args.query, "query")?;
             Ok(CodeLspRequest::Query {
                 operation,
-                file_path: args.file_path,
+                file_path,
                 query,
+            })
+        }
+        LspOperationInputKind::None => {
+            let server_id = required_lsp_field(args.server_id, "serverId")?;
+            let decision = required_lsp_field(args.decision, "decision")?;
+            if decision != "allowed" && decision != "declined" {
+                return Err(ToolError::InvalidArguments(format!(
+                    "decision must be 'allowed' or 'declined', got '{decision}'"
+                )));
+            }
+            Ok(CodeLspRequest::InstallDecision {
+                server_id,
+                decision,
             })
         }
     }
@@ -412,12 +455,66 @@ mod tests {
     }
 
     #[test]
+    fn parse_code_lsp_request_accepts_install_decision_without_file_path() {
+        let request = parse_code_lsp_request(json!({
+            "operation": "installDecision",
+            "serverId": "rust",
+            "decision": "allowed",
+        }))
+        .unwrap_or_abort();
+        assert!(matches!(
+            request,
+            CodeLspRequest::InstallDecision {
+                server_id,
+                decision,
+            } if server_id == "rust" && decision == "allowed"
+        ));
+    }
+
+    #[test]
+    fn parse_code_lsp_request_rejects_install_decision_missing_fields() {
+        let missing_server_id = parse_code_lsp_request(json!({
+            "operation": "installDecision",
+            "decision": "allowed",
+        }))
+        .expect_err("installDecision should require serverId");
+        assert!(matches!(
+            missing_server_id,
+            ToolError::InvalidArguments(message) if message.contains("missing field `serverId`")
+        ));
+
+        let missing_decision = parse_code_lsp_request(json!({
+            "operation": "installDecision",
+            "serverId": "rust",
+        }))
+        .expect_err("installDecision should require decision");
+        assert!(matches!(
+            missing_decision,
+            ToolError::InvalidArguments(message) if message.contains("missing field `decision`")
+        ));
+    }
+
+    #[test]
+    fn parse_code_lsp_request_rejects_install_decision_invalid_decision_value() {
+        let invalid = parse_code_lsp_request(json!({
+            "operation": "installDecision",
+            "serverId": "rust",
+            "decision": "maybe",
+        }))
+        .expect_err("installDecision should reject invalid decision value");
+        assert!(matches!(
+            invalid,
+            ToolError::InvalidArguments(message) if message.contains("decision must be 'allowed' or 'declined'")
+        ));
+    }
+
+    #[test]
     fn code_lsp_schema_is_cliproxy_compatible() {
         let schema = code_lsp_parameters_json_schema();
         assert_eq!(schema["type"], json!("object"));
         assert!(schema["properties"].is_object());
         assert_eq!(schema["additionalProperties"], json!(false));
-        assert_eq!(schema["required"], json!(["operation", "filePath"]));
+        assert_eq!(schema["required"], json!(["operation"]));
         assert_eq!(
             schema["properties"]["operation"]["enum"],
             json!([
@@ -432,6 +529,7 @@ mod tests {
                 "fileDiagnostics",
                 "workspaceDiagnostics",
                 "workspaceSymbol",
+                "installDecision",
             ])
         );
         for forbidden in ["oneOf", "anyOf", "allOf", "enum", "not"] {

@@ -6,7 +6,9 @@ use crate::agent_ops::{
     select_agent_selection, AgentOpsExecutor, AgentSpawnRequest, BackgroundCancelRequest,
     BackgroundOutputRequest,
 };
-use crate::code_lsp::{code_lsp_parameters_json_schema, parse_code_lsp_request, CodeLspExecutor};
+use crate::code_lsp::{
+    code_lsp_parameters_json_schema, parse_code_lsp_request, CodeLspExecutor, CodeLspRequest,
+};
 use crate::control_plane::{
     question_parameters_json_schema, todo_write_parameters_json_schema, ControlPlaneExecutor,
 };
@@ -679,8 +681,53 @@ impl Tool for LspTool {
     );
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
-        self.executor
-            .execute(&ctx, parse_code_lsp_request(args_json)?)
-            .await
+        let request = parse_code_lsp_request(args_json)?;
+        match request {
+            CodeLspRequest::InstallDecision {
+                server_id,
+                decision,
+            } => record_lsp_install_decision(&ctx, &server_id, &decision),
+            _ => self.executor.execute(&ctx, request).await,
+        }
     }
+}
+
+fn record_lsp_install_decision(
+    ctx: &ToolContext,
+    server_id: &str,
+    decision: &str,
+) -> Result<ToolResult, ToolError> {
+    let artifact_path = ctx.artifacts_dir.join("lsp-install-decisions.json");
+
+    let mut decisions: Value = if artifact_path.exists() {
+        let content = std::fs::read_to_string(&artifact_path)
+            .tool_err("failed to read lsp install decisions artifact")?;
+        serde_json::from_str(&content)
+            .tool_err("failed to parse lsp install decisions artifact")?
+    } else {
+        if let Some(parent) = artifact_path.parent() {
+            std::fs::create_dir_all(parent)
+                .tool_err("failed to create artifacts directory")?;
+        }
+        json!({})
+    };
+
+    if let Some(map) = decisions.as_object_mut() {
+        map.insert(server_id.to_string(), json!(decision));
+    }
+
+    let serialized = serde_json::to_string_pretty(&decisions)
+        .tool_err("failed to serialize lsp install decisions")?;
+    std::fs::write(&artifact_path, serialized)
+        .tool_err("failed to write lsp install decisions artifact")?;
+
+    let display_text = format!("Recorded decision '{decision}' for LSP server '{server_id}'.");
+    let structured_json = json!({
+        "operation": "installDecision",
+        "serverId": server_id,
+        "decision": decision,
+        "artifactPath": artifact_path.display().to_string(),
+    });
+
+    Ok(text_json_tool_result(display_text, structured_json))
 }
