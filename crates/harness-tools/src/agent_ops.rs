@@ -204,6 +204,14 @@ impl AgentOpsExecutor {
     ) -> Result<ToolResult, ToolError> {
         background::background_cancel(ctx, request).await
     }
+
+    pub(crate) async fn cancel_all_background_tasks(
+        &self,
+        ctx: &ToolContext,
+        reason: Option<String>,
+    ) -> Result<ToolResult, ToolError> {
+        background::cancel_all_background_tasks(ctx, reason).await
+    }
 }
 
 #[derive(Debug, Clone)]

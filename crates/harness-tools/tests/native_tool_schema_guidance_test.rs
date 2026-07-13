@@ -42,7 +42,7 @@ fn high_risk_provider_visible_tool_fields_have_model_guidance() {
                 "reason",
             ],
         ),
-        ("background_cancel", &["request_id", "reason"]),
+        ("background_cancel", &["request_id", "all", "reason"]),
         ("batch", &["tool_calls"]),
         ("skill", &["name"]),
         ("webfetch", &["url", "format", "timeout"]),

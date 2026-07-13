@@ -551,22 +551,33 @@ impl Tool for BackgroundOutputTool {
 impl Tool for BackgroundCancelTool {
     tool_metadata!(
         "background_cancel",
-        "Requests coordinator-owned cancellation for a non-terminal background task by request_id. This is the explicit cancellation form; background_output(cancel=true) remains available for compatibility.",
+        "Requests coordinator-owned cancellation for a non-terminal background task by request_id, or cancels all non-terminal background tasks for the current session when all=true. This is the explicit cancellation form; background_output(cancel=true) remains available for compatibility.",
         ToolCapability::SpawnAgent,
         super::json_schema_for::<BackgroundCancelArgs>()
     );
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         let args: BackgroundCancelArgs = parse_tool_args(args_json)?;
-        self.executor
-            .background_cancel(
-                &ctx,
-                BackgroundCancelRequest {
-                    request_id: args.request_id,
-                    reason: args.reason,
-                },
-            )
-            .await
+        if args.all {
+            self.executor
+                .cancel_all_background_tasks(&ctx, args.reason)
+                .await
+        } else {
+            let request_id = args.request_id.ok_or_else(|| {
+                ToolError::InvalidArguments(
+                    "request_id is required when all is false".to_string(),
+                )
+            })?;
+            self.executor
+                .background_cancel(
+                    &ctx,
+                    BackgroundCancelRequest {
+                        request_id,
+                        reason: args.reason,
+                    },
+                )
+                .await
+        }
     }
 }
 

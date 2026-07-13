@@ -4,8 +4,9 @@ use thiserror::Error;
 
 mod background_projection;
 pub use background_projection::{
-    project_background_request, resolve_background_request_ref, BackgroundRequestProjection,
-    BackgroundRequestProjectionError, BackgroundRequestRef, BackgroundToolCallCounts,
+    project_background_request, resolve_all_background_request_refs,
+    resolve_background_request_ref, BackgroundRequestProjection, BackgroundRequestProjectionError,
+    BackgroundRequestRef, BackgroundToolCallCounts,
 };
 
 mod run_projection;

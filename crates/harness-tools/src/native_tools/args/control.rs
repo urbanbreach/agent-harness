@@ -93,18 +93,54 @@ pub(in crate::native_tools) struct BackgroundOutputArgs {
     pub(in crate::native_tools) reason: Option<String>,
 }
 
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(in crate::native_tools) struct BackgroundCancelArgs {
     #[schemars(
-        description = "Canonical background request identifier returned by task(run_in_background=true)."
+        description = "Canonical background request identifier returned by task(run_in_background=true). Required when all is false or omitted."
     )]
-    pub(in crate::native_tools) request_id: String,
+    #[serde(default)]
+    pub(in crate::native_tools) request_id: Option<String>,
+    #[schemars(
+        description = "When true, cancel all non-terminal background tasks for the current session. When false (default), request_id is required."
+    )]
+    #[serde(default)]
+    pub(in crate::native_tools) all: bool,
     #[schemars(
         description = "Optional human-readable reason to record with the cancellation request."
     )]
     #[serde(default)]
     pub(in crate::native_tools) reason: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BackgroundCancelArgsCompat {
+    #[serde(default)]
+    request_id: Option<String>,
+    #[serde(default)]
+    all: bool,
+    #[serde(default)]
+    reason: Option<String>,
+}
+
+impl<'de> Deserialize<'de> for BackgroundCancelArgs {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let compat = BackgroundCancelArgsCompat::deserialize(deserializer)?;
+        if !compat.all && compat.request_id.is_none() {
+            return Err(D::Error::custom(
+                "request_id is required when all is false",
+            ));
+        }
+        Ok(Self {
+            request_id: compat.request_id,
+            all: compat.all,
+            reason: compat.reason,
+        })
+    }
 }
 
 fn default_background_output_timeout_ms() -> u64 {

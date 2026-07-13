@@ -1,7 +1,9 @@
 // allow: SIZE_OK — agent operations (task delegation + control plane)
 use harness_core::coord::CoordinatorError;
-use harness_core::event::EventV1;
-use harness_core::proj::{BackgroundRequestProjection, BackgroundToolCallCounts};
+use harness_core::event::{EventEnvelopeV1, EventV1};
+use harness_core::proj::{
+    resolve_all_background_request_refs, BackgroundRequestProjection, BackgroundToolCallCounts,
+};
 use harness_core::redact::{DefaultRedactor, Redactor};
 use harness_core::tool::{ToolContext, ToolError, ToolResult};
 use harness_core::ToolResultExt;
@@ -274,6 +276,85 @@ pub(super) async fn background_cancel(
             "runtime": child_runtime,
             "child_runtime": child_runtime,
             "next_actions": background_next_actions(&summary),
+            "source": "event_replay",
+        }),
+    ))
+}
+
+pub(super) async fn cancel_all_background_tasks(
+    ctx: &ToolContext,
+    reason: Option<String>,
+) -> Result<ToolResult, ToolError> {
+    let cancel_reason = sanitize_cancel_reason(
+        reason
+            .as_deref()
+            .and_then(|r| trimmed_selector(Some(r)))
+            .unwrap_or("cancelled by background_cancel all"),
+    );
+
+    let mut replay = replay_events(ctx).await?;
+    let mut events: Vec<EventEnvelopeV1> = Vec::new();
+    while let Some(next) = replay.next().await {
+        events.push(next.map_err(map_replay_stream_error)?);
+    }
+
+    let refs = resolve_all_background_request_refs(&events, &ctx.actor);
+
+    let mut cancelled = Vec::new();
+    let mut skipped = Vec::new();
+
+    for request_ref in &refs {
+        let projection = ctx
+            .coordinator
+            .background_request_projection(
+                ctx.actor.clone(),
+                Some(request_ref.request_id.to_string()),
+                request_ref.session_id_hint.clone(),
+            )
+            .await
+            .map_err(map_background_request_error)?;
+
+        if projection.terminal {
+            skipped.push(json!({
+                "request_id": request_ref.request_id,
+                "status": projection.status,
+                "terminal": true,
+            }));
+            continue;
+        }
+
+        let projection = ctx
+            .coordinator
+            .cancel_background_request(
+                ctx.actor.clone(),
+                Some(request_ref.request_id.to_string()),
+                request_ref.session_id_hint.clone(),
+                cancel_reason.clone(),
+            )
+            .await
+            .map_err(map_background_request_error)?;
+
+        cancelled.push(json!({
+            "request_id": request_ref.request_id,
+            "status": projection.status,
+            "terminal": projection.terminal,
+        }));
+    }
+
+    let cancelled_count = cancelled.len();
+    let skipped_count = skipped.len();
+
+    Ok(text_json_tool_result(
+        format!(
+            "Bulk cancellation requested for {cancelled_count} background task(s); {skipped_count} already terminal."
+        ),
+        json!({
+            "all": true,
+            "cancelled": cancelled,
+            "skipped": skipped,
+            "cancelled_count": cancelled_count,
+            "skipped_count": skipped_count,
+            "cancel_reason": cancel_reason,
             "source": "event_replay",
         }),
     ))

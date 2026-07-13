@@ -137,6 +137,59 @@ pub fn resolve_background_request_ref<'a>(
     })
 }
 
+/// Collect all authorized background request refs for the given actor.
+///
+/// Unlike [`resolve_background_request_ref`] which returns the latest matching
+/// ref for a single selector, this function returns every distinct background
+/// request id that the actor is authorized to inspect. Only `TaskScheduled`
+/// events whose `queue_key` starts with `provider_model:` are considered
+/// background agent turns.
+pub fn resolve_all_background_request_refs<'a>(
+    events: impl IntoIterator<Item = &'a EventEnvelopeV1>,
+    actor: &EventActor,
+) -> Vec<BackgroundRequestRef> {
+    let mut parent_by_agent = BTreeMap::new();
+    let mut seen_request_ids = BTreeSet::new();
+    let mut refs = Vec::new();
+
+    for event in events {
+        match &event.payload {
+            EventV1::AgentSpawned(data) => {
+                if let Some(parent_agent_id) = data.parent_agent_id.as_deref() {
+                    parent_by_agent.insert(data.agent_id.clone(), parent_agent_id.to_string());
+                }
+            }
+            EventV1::TaskScheduled(data) => {
+                let Some(queue_key) = data.queue_key.as_deref() else {
+                    continue;
+                };
+                if !queue_key.starts_with("provider_model:") {
+                    continue;
+                }
+                let Some(correlation_id) = event.correlation_id.as_deref() else {
+                    continue;
+                };
+                if !background_request_authorized(
+                    actor,
+                    &parent_by_agent,
+                    event.actor.agent_id.as_deref(),
+                ) {
+                    continue;
+                }
+                if seen_request_ids.insert(correlation_id.to_string()) {
+                    refs.push(BackgroundRequestRef {
+                        request_id: correlation_id.into(),
+                        session_id_hint: event.actor.agent_id.as_deref().map(str::to_string),
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+
+    refs
+}
+
 pub fn project_background_request<'a>(
     events: impl IntoIterator<Item = &'a EventEnvelopeV1>,
     request_ref: &BackgroundRequestRef,

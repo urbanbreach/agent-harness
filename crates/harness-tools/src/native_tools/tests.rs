@@ -1,6 +1,6 @@
 use super::{
-    build_recursive_tree, AgentOpsExecutor, BackgroundOutputTool, BatchArgs, ControlPlaneExecutor,
-    QuestionArgs, SkillArgs, SkillTool, TaskArgs, TaskTool,
+    build_recursive_tree, AgentOpsExecutor, BackgroundCancelArgs, BackgroundOutputTool, BatchArgs,
+    ControlPlaneExecutor, QuestionArgs, SkillArgs, SkillTool, TaskArgs, TaskTool,
 };
 use crate::UnwrapOrAbort;
 use std::sync::Arc;
@@ -328,4 +328,61 @@ fn batch_args_accept_args_alias_inside_tool_calls() {
         args.tool_calls[0].parameters,
         json!({"filePath": "Cargo.toml"})
     );
+}
+
+#[test]
+fn background_cancel_args_all_true_no_request_id() {
+    let args: BackgroundCancelArgs = serde_json::from_value(json!({
+        "all": true
+    }))
+    .unwrap_or_abort();
+
+    assert!(args.all);
+    assert!(args.request_id.is_none());
+    assert!(args.reason.is_none());
+}
+
+#[test]
+fn background_cancel_args_all_false_requires_request_id() {
+    let err = serde_json::from_value::<BackgroundCancelArgs>(json!({
+        "all": false
+    }))
+    .expect_err("all=false without request_id should fail");
+
+    assert!(err.to_string().contains("request_id is required when all is false"));
+}
+
+#[test]
+fn background_cancel_args_default_requires_request_id() {
+    let err = serde_json::from_value::<BackgroundCancelArgs>(json!({
+        "reason": "some reason"
+    }))
+    .expect_err("omitting all and request_id should fail");
+
+    assert!(err.to_string().contains("request_id is required when all is false"));
+}
+
+#[test]
+fn background_cancel_args_single_cancel_with_request_id() {
+    let args: BackgroundCancelArgs = serde_json::from_value(json!({
+        "request_id": "req_123",
+        "reason": "explicit cancellation"
+    }))
+    .unwrap_or_abort();
+
+    assert!(!args.all);
+    assert_eq!(args.request_id.as_deref(), Some("req_123"));
+    assert_eq!(args.reason.as_deref(), Some("explicit cancellation"));
+}
+
+#[test]
+fn background_cancel_args_all_true_with_reason() {
+    let args: BackgroundCancelArgs = serde_json::from_value(json!({
+        "all": true,
+        "reason": "bulk cancel reason"
+    }))
+    .unwrap_or_abort();
+
+    assert!(args.all);
+    assert_eq!(args.reason.as_deref(), Some("bulk cancel reason"));
 }
