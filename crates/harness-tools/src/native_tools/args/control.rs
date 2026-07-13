@@ -94,6 +94,41 @@ pub(in crate::native_tools) struct BackgroundOutputArgs {
     #[schemars(description = "Optional cancellation reason recorded when cancel=true succeeds.")]
     #[serde(default)]
     pub(in crate::native_tools) reason: Option<String>,
+    #[schemars(
+        description = "When true, read the child session events.jsonl and return the complete event stream as structured JSON. Spills to artifact if output exceeds the inline char threshold."
+    )]
+    #[serde(default)]
+    pub(in crate::native_tools) full_session: bool,
+    #[schemars(
+        description = "When true, extract ProviderReasoningDelta events from the child session. Thinking content is spilled to an artifact; only the artifact reference is returned inline."
+    )]
+    #[serde(default)]
+    pub(in crate::native_tools) include_thinking: bool,
+    #[schemars(
+        description = "Cap the number of messages returned in the full_session payload. Maximum 200."
+    )]
+    #[serde(default)]
+    pub(in crate::native_tools) message_limit: Option<u32>,
+    #[schemars(
+        description = "Filter full_session messages to those after this event_id (exclusive)."
+    )]
+    #[serde(default)]
+    pub(in crate::native_tools) since_message_id: Option<String>,
+    #[schemars(
+        description = "When true, include ToolCallFinishedEvent.output_summary for each tool call in the full_session payload."
+    )]
+    #[serde(default)]
+    pub(in crate::native_tools) include_tool_results: bool,
+    #[schemars(
+        description = "Cap each thinking block to this many characters when include_thinking is true. Defaults to 2000."
+    )]
+    #[serde(default)]
+    pub(in crate::native_tools) thinking_max_chars: Option<u32>,
+    #[schemars(
+        description = "When true, reverse message order so the most recent messages appear first."
+    )]
+    #[serde(default)]
+    pub(in crate::native_tools) from_end: bool,
 }
 
 #[derive(Debug, JsonSchema)]

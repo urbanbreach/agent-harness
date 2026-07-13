@@ -5,7 +5,7 @@ use harness_core::proj::{
     resolve_all_background_request_refs, BackgroundRequestProjection, BackgroundToolCallCounts,
 };
 use harness_core::redact::{DefaultRedactor, Redactor};
-use harness_core::tool::{ToolContext, ToolError, ToolResult};
+use harness_core::tool::{ArtifactRef, ToolContext, ToolError, ToolResult};
 use harness_core::ToolResultExt;
 use serde_json::{json, Value};
 use tokio_stream::StreamExt;
@@ -14,7 +14,10 @@ use super::child_metadata::{
     cap_optional_child_summary, child_runtime_metadata, map_replay_stream_error, replay_events,
     ChildRuntimeMetadata, ChildSummary, ChildToolCallCounts,
 };
-use crate::text_json_tool_result;
+use crate::session_tools::{
+    load_child_session_events, summarize_event, MAX_TOOL_INLINE_JSON_CHARS,
+};
+use crate::{text_json_artifacts_tool_result, text_json_tool_result};
 
 const MAX_BACKGROUND_OUTPUT_TIMEOUT_MS: u64 = 300_000;
 
@@ -27,6 +30,13 @@ pub(crate) struct BackgroundOutputRequest {
     pub(crate) timeout_ms: u64,
     pub(crate) cancel: bool,
     pub(crate) reason: Option<String>,
+    pub(crate) full_session: bool,
+    pub(crate) include_thinking: bool,
+    pub(crate) message_limit: Option<u32>,
+    pub(crate) since_message_id: Option<String>,
+    pub(crate) include_tool_results: bool,
+    pub(crate) thinking_max_chars: Option<u32>,
+    pub(crate) from_end: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -168,36 +178,97 @@ pub(super) async fn background_output(
     let child_runtime = background_child_runtime_metadata(ctx, &summary).await?;
     let route = background_route_metadata(ctx, &summary.request_id).await?;
 
-    Ok(text_json_tool_result(
-        format_background_output(&summary, timed_out),
-        json!({
-            "request_id": summary.request_id,
-            "task_id": summary.session_id,
-            "session_id": summary.session_id,
-            "scheduler_task_id": summary.scheduler_task_id,
-            "status": summary.status,
-            "mode": "background",
-            "terminal": summary.terminal,
-            "block": request.block,
-            "timed_out": timed_out,
-            "timeout_ms": request.timeout_ms,
-            "duration_ms": summary.duration_ms,
-            "result_summary": summary.result_summary,
-            "failure_summary": summary.failure_summary,
-            "child_summary": summary.child_summary,
-            "child_tool_call_count": summary.tool_calls.requested,
-            "child_tool_call_counts": summary.tool_calls,
-            "late_result": summary.late_result,
-            "cancel_requested": summary.cancel_requested,
-            "cancel_performed": summary.cancel_performed,
-            "cancel_reason": summary.cancel_reason,
-            "route": route,
-            "runtime": child_runtime,
-            "child_runtime": child_runtime,
-            "next_actions": background_next_actions(&summary),
-            "source": "event_replay",
-        }),
-    ))
+    let mut artifacts = Vec::new();
+    let mut full_session_value = Value::Null;
+    let mut thinking_value = Value::Null;
+
+    if request.full_session || request.include_thinking {
+        if let Some(session_id) = summary.session_id.as_deref() {
+            if let Some(child_events) = load_child_session_events(ctx, session_id)? {
+                if request.full_session {
+                    let payload = build_full_session_payload(&child_events, &request);
+                    let payload_str = serde_json::to_string_pretty(&payload)
+                        .tool_err("failed to serialize full_session payload")?;
+                    if payload_str.len() > MAX_TOOL_INLINE_JSON_CHARS {
+                        let artifact = ctx
+                            .artifact_store()
+                            .map_err(|err| ToolError::Execution(err.to_string()))?
+                            .write_text("background-full-session.json", &payload_str)
+                            .map_err(|err| ToolError::Execution(err.to_string()))?;
+                        let artifact_ref = ArtifactRef {
+                            path: artifact.path,
+                            digest: artifact.digest,
+                        };
+                        artifacts.push(artifact_ref.clone());
+                        full_session_value = json!({
+                            "spilled": true,
+                            "artifact": artifact_ref,
+                            "event_count": payload.get("event_count").and_then(Value::as_u64).unwrap_or(0),
+                        });
+                    } else {
+                        full_session_value = payload;
+                    }
+                }
+
+                if request.include_thinking {
+                    if let Some((inline, artifact_ref)) =
+                        build_thinking_artifact(ctx, &child_events, &request)?
+                    {
+                        artifacts.push(artifact_ref);
+                        thinking_value = inline;
+                    }
+                }
+            }
+        }
+    }
+
+    let mut payload = json!({
+        "request_id": summary.request_id,
+        "task_id": summary.session_id,
+        "session_id": summary.session_id,
+        "scheduler_task_id": summary.scheduler_task_id,
+        "status": summary.status,
+        "mode": "background",
+        "terminal": summary.terminal,
+        "block": request.block,
+        "timed_out": timed_out,
+        "timeout_ms": request.timeout_ms,
+        "duration_ms": summary.duration_ms,
+        "result_summary": summary.result_summary,
+        "failure_summary": summary.failure_summary,
+        "child_summary": summary.child_summary,
+        "child_tool_call_count": summary.tool_calls.requested,
+        "child_tool_call_counts": summary.tool_calls,
+        "late_result": summary.late_result,
+        "cancel_requested": summary.cancel_requested,
+        "cancel_performed": summary.cancel_performed,
+        "cancel_reason": summary.cancel_reason,
+        "route": route,
+        "runtime": child_runtime,
+        "child_runtime": child_runtime,
+        "next_actions": background_next_actions(&summary),
+        "source": "event_replay",
+    });
+
+    if !full_session_value.is_null() {
+        payload["full_session"] = full_session_value;
+    }
+    if !thinking_value.is_null() {
+        payload["thinking"] = thinking_value;
+    }
+
+    if artifacts.is_empty() {
+        Ok(text_json_tool_result(
+            format_background_output(&summary, timed_out),
+            payload,
+        ))
+    } else {
+        Ok(text_json_artifacts_tool_result(
+            format_background_output(&summary, timed_out),
+            payload,
+            artifacts,
+        ))
+    }
 }
 
 pub(super) async fn background_cancel(
@@ -533,4 +604,134 @@ fn sanitize_cancel_reason(reason: &str) -> String {
     } else {
         capped
     }
+}
+
+fn build_full_session_payload(
+    events: &[EventEnvelopeV1],
+    request: &BackgroundOutputRequest,
+) -> Value {
+    let all_event_summaries: Vec<Value> = events.iter().map(summarize_event).collect();
+
+    let mut messages: Vec<Value> = events
+        .iter()
+        .filter(|event| {
+            matches!(
+                event.payload,
+                EventV1::UserMessageSubmitted(_) | EventV1::AssistantMessageFinished(_)
+            )
+        })
+        .map(summarize_event)
+        .collect();
+
+    if let Some(since_id) = request.since_message_id.as_deref() {
+        let position = messages
+            .iter()
+            .position(|msg| msg.get("event_id").and_then(Value::as_str) == Some(since_id));
+        if let Some(pos) = position {
+            messages = messages.split_at(pos + 1).1.to_vec();
+        }
+    }
+
+    if request.from_end {
+        messages.reverse();
+    }
+
+    let max_messages = request
+        .message_limit
+        .map(|n| (n as usize).min(200))
+        .unwrap_or(200);
+    messages.truncate(max_messages);
+
+    let mut payload = json!({
+        "events": all_event_summaries,
+        "messages": messages,
+        "event_count": all_event_summaries.len(),
+        "message_count": messages.len(),
+    });
+
+    if request.include_tool_results {
+        let tool_results: Vec<Value> = events
+            .iter()
+            .filter(|event| matches!(event.payload, EventV1::ToolCallFinished(_)))
+            .map(summarize_event)
+            .collect();
+        payload["tool_results"] = json!(tool_results);
+    }
+
+    payload
+}
+
+fn build_thinking_artifact(
+    ctx: &ToolContext,
+    events: &[EventEnvelopeV1],
+    request: &BackgroundOutputRequest,
+) -> Result<Option<(Value, ArtifactRef)>, ToolError> {
+    let max_chars = request.thinking_max_chars.unwrap_or(2000) as usize;
+
+    let mut thinking_blocks: Vec<(String, String)> = Vec::new();
+    let mut current_request_id: Option<String> = None;
+    let mut current_text = String::new();
+
+    for event in events {
+        if let EventV1::ProviderReasoningDelta(data) = &event.payload {
+            let req_id = data.request_id.to_string();
+            if current_request_id.as_deref() != Some(req_id.as_str()) {
+                if let Some(prev_id) = current_request_id.take() {
+                    thinking_blocks.push((prev_id, std::mem::take(&mut current_text)));
+                }
+                current_request_id = Some(req_id);
+            }
+            current_text.push_str(&data.delta);
+        }
+    }
+    if let Some(req_id) = current_request_id {
+        thinking_blocks.push((req_id, current_text));
+    }
+
+    if thinking_blocks.is_empty() {
+        return Ok(None);
+    }
+
+    let thinking_json: Vec<Value> = thinking_blocks
+        .iter()
+        .map(|(req_id, text)| {
+            let char_count = text.chars().count();
+            let truncated = char_count > max_chars;
+            let capped = if truncated {
+                let mut s: String = text.chars().take(max_chars).collect();
+                s.push('…');
+                s
+            } else {
+                text.clone()
+            };
+            json!({
+                "request_id": req_id,
+                "thinking": capped,
+                "original_chars": char_count,
+                "truncated": truncated,
+            })
+        })
+        .collect();
+
+    let body = serde_json::to_string_pretty(&json!(thinking_json))
+        .tool_err("failed to serialize thinking content")?;
+
+    let artifact = ctx
+        .artifact_store()
+        .map_err(|err| ToolError::Execution(err.to_string()))?
+        .write_text("background-thinking.json", &body)
+        .map_err(|err| ToolError::Execution(err.to_string()))?;
+
+    let artifact_ref = ArtifactRef {
+        path: artifact.path,
+        digest: artifact.digest,
+    };
+
+    let inline = json!({
+        "artifact": artifact_ref,
+        "block_count": thinking_json.len(),
+        "spilled": true,
+    });
+
+    Ok(Some((inline, artifact_ref)))
 }

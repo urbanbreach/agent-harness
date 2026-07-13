@@ -555,6 +555,13 @@ impl Tool for BackgroundOutputTool {
                     timeout_ms: args.timeout,
                     cancel: args.cancel,
                     reason: args.reason,
+                    full_session: args.full_session,
+                    include_thinking: args.include_thinking,
+                    message_limit: args.message_limit,
+                    since_message_id: args.since_message_id,
+                    include_tool_results: args.include_tool_results,
+                    thinking_max_chars: args.thinking_max_chars,
+                    from_end: args.from_end,
                 },
             )
             .await

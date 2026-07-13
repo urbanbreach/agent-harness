@@ -43,7 +43,7 @@ const DEFAULT_SEARCH_LIMIT: usize = 50;
 const MAX_SEARCH_LIMIT: usize = 200;
 const DEFAULT_SEARCH_CONTEXT_LIMIT: usize = 80;
 const MAX_SEARCH_CONTEXT_LIMIT: usize = 500;
-const MAX_TOOL_INLINE_JSON_CHARS: usize = 24_000;
+pub(crate) const MAX_TOOL_INLINE_JSON_CHARS: usize = 24_000;
 
 pub(crate) struct SessionListTool;
 pub(crate) struct SessionReadTool;
@@ -782,4 +782,57 @@ fn maybe_spill_json(
         }),
         vec![artifact_ref],
     ))
+}
+
+/// Load events from a child session by session_id (agent_id).
+/// Returns `Ok(None)` when the session directory or events file does not exist.
+pub(crate) fn load_child_session_events(
+    ctx: &ToolContext,
+    session_id: &str,
+) -> Result<Option<Vec<EventEnvelopeV1>>, ToolError> {
+    if session_id.trim().is_empty()
+        || session_id.contains("..")
+        || session_id.contains('/')
+        || session_id.contains('\\')
+    {
+        return Err(ToolError::InvalidArguments(
+            "session_id must be a non-empty identifier without path separators or parent traversal"
+                .to_string(),
+        ));
+    }
+    let session_root = ctx
+        .artifacts_dir
+        .parent()
+        .and_then(|p| p.parent())
+        .ok_or_else(|| {
+            ToolError::Execution("cannot derive session root from artifacts_dir".to_string())
+        })?;
+    let session_dir = session_root.join(session_id);
+    if !session_dir.is_dir() {
+        return Ok(None);
+    }
+    let events_path = session_dir.join(EVENTS_FILE_NAME);
+    if !events_path.exists() {
+        return Ok(None);
+    }
+    let text = fs::read_to_string(&events_path).map_err(|err| {
+        ToolError::Execution(format!(
+            "failed to read events file {}: {err}",
+            events_path.display()
+        ))
+    })?;
+    let mut events = Vec::new();
+    for line in text.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        if let Ok(event) = serde_json::from_str::<EventEnvelopeV1>(line) {
+            events.push(event);
+        }
+    }
+    Ok(Some(events))
+}
+
+pub(crate) fn summarize_event(event: &EventEnvelopeV1) -> Value {
+    summaries::safe_event_summary(event)
 }
