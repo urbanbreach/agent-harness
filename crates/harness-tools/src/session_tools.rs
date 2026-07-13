@@ -84,6 +84,10 @@ struct SessionReadArgs {
     message_offset: Option<u32>,
     #[serde(default, rename = "messageLimit", alias = "message_limit")]
     message_limit: Option<u32>,
+    #[serde(default, rename = "includeTodos", alias = "include_todos")]
+    include_todos: bool,
+    #[serde(default, rename = "fromEnd", alias = "from_end")]
+    from_end: bool,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -209,21 +213,41 @@ impl Tool for SessionReadTool {
         let message_limit =
             clamp_limit(args.message_limit, DEFAULT_MESSAGE_LIMIT, MAX_MESSAGE_LIMIT);
         let total_count = entry.events.len();
-        let events = entry
-            .events
-            .iter()
-            .skip(offset)
-            .take(limit.effective)
-            .map(safe_event_summary)
-            .collect::<Vec<_>>();
+        let events = if args.from_end {
+            entry
+                .events
+                .iter()
+                .rev()
+                .skip(offset)
+                .take(limit.effective)
+                .map(safe_event_summary)
+                .collect::<Vec<_>>()
+        } else {
+            entry
+                .events
+                .iter()
+                .skip(offset)
+                .take(limit.effective)
+                .map(safe_event_summary)
+                .collect::<Vec<_>>()
+        };
         let message_summaries = safe_message_summaries(&entry);
         let total_message_count = message_summaries.len();
-        let messages = message_summaries
-            .into_iter()
-            .skip(message_offset)
-            .take(message_limit.effective)
-            .collect::<Vec<_>>();
-        let payload = redact_json(json!({
+        let messages = if args.from_end {
+            message_summaries
+                .into_iter()
+                .rev()
+                .skip(message_offset)
+                .take(message_limit.effective)
+                .collect::<Vec<_>>()
+        } else {
+            message_summaries
+                .into_iter()
+                .skip(message_offset)
+                .take(message_limit.effective)
+                .collect::<Vec<_>>()
+        };
+        let mut payload = json!({
             "source": "event_replay",
             "redacted": true,
             "session_root": display_path(&session_root),
@@ -247,10 +271,15 @@ impl Tool for SessionReadTool {
             "total_message_count": total_message_count,
             "returned_message_count": messages.len(),
             "message_truncated": message_offset.saturating_add(messages.len()) < total_message_count,
+            "from_end": args.from_end,
             "parse_errors": entry.parse_errors,
             "events": events,
             "messages": messages,
-        }));
+        });
+        if args.include_todos {
+            payload["todos"] = load_session_todos(&entry.run_dir)?;
+        }
+        let payload = redact_json(payload);
         maybe_spill_json(
             &ctx,
             "session-read.json",
@@ -619,6 +648,21 @@ fn load_session_metadata(run_dir: &Path) -> Result<Option<SessionCatalogMetadata
     Ok(serde_json::from_str(&body).ok())
 }
 
+fn load_session_todos(run_dir: &Path) -> Result<Value, ToolError> {
+    let Some(path) = resolve_existing_session_child_path(run_dir, "control-plane/todos.json")?
+    else {
+        return Ok(json!([]));
+    };
+    let bytes = fs::read(&path).map_err(|err| {
+        ToolError::Execution(format!(
+            "failed to read todo state {}: {err}",
+            path.display()
+        ))
+    })?;
+    serde_json::from_slice(&bytes)
+        .map_err(|err| ToolError::Execution(format!("failed to parse todo state: {err}")))
+}
+
 fn resolve_existing_session_child_path(
     run_dir: &Path,
     child_name: &str,
@@ -835,4 +879,241 @@ pub(crate) fn load_child_session_events(
 
 pub(crate) fn summarize_event(event: &EventEnvelopeV1) -> Value {
     summaries::safe_event_summary(event)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::UnwrapOrAbort;
+    use std::fs;
+    use std::path::Path;
+    use std::sync::Arc;
+
+    use harness_core::clock::RealClock;
+    use harness_core::coord::{spawn_coordinator, CoordinatorConfig};
+    use harness_core::event::{
+        ActorKind, EventActor, EventEnvelopeV1, EventV1, RunFailedEvent, RunStartedEvent,
+        SCHEMA_VERSION,
+    };
+    use harness_core::redact::DefaultRedactor;
+    use harness_core::tool::{Tool, ToolContext, ToolRunState};
+    use serde_json::{json, Value};
+
+    use super::SessionReadTool;
+
+    fn test_context(workspace_root: &Path, tool_call_id: &str) -> ToolContext {
+        let coordinator = spawn_coordinator(
+            CoordinatorConfig::default(),
+            Arc::new(RealClock::new()),
+            Arc::new(DefaultRedactor::default()),
+        );
+        ToolContext {
+            run_id: "run-session-read-tests".into(),
+            workspace_root: workspace_root.to_path_buf(),
+            artifacts_dir: workspace_root.join("artifacts"),
+            actor: EventActor::new(ActorKind::Worker, Some("worker-1".to_string())),
+            category: Some("deep".to_string()),
+            tool_call_id: tool_call_id.into(),
+            current_model_ref: None,
+            current_model_settings: None,
+            tool_state: ToolRunState::default(),
+            coordinator,
+        }
+    }
+
+    fn envelope(run_id: &str, seq: u64, payload: EventV1) -> EventEnvelopeV1 {
+        EventEnvelopeV1 {
+            schema_version: SCHEMA_VERSION,
+            event_id: format!("evt-{seq:04}"),
+            seq,
+            run_id: run_id.to_string().into(),
+            mono_ms: seq,
+            ts: None,
+            actor: EventActor::new(ActorKind::System, None),
+            correlation_id: None,
+            causation_id: None,
+            stream_key: Some(format!("run:{run_id}")),
+            payload,
+        }
+    }
+
+    fn run_started(run_id: &str, seq: u64, workspace: &Path) -> EventEnvelopeV1 {
+        envelope(
+            run_id,
+            seq,
+            EventV1::RunStarted(RunStartedEvent {
+                run_name: format!("run {run_id}").into(),
+                workspace_root: workspace.display().to_string(),
+            }),
+        )
+    }
+
+    fn run_failed(run_id: &str, seq: u64) -> EventEnvelopeV1 {
+        envelope(
+            run_id,
+            seq,
+            EventV1::RunFailed(RunFailedEvent {
+                error: "test failure".to_string(),
+            }),
+        )
+    }
+
+    fn write_session_events(workspace: &Path, run_id: &str, events: &[EventEnvelopeV1]) {
+        let run_dir = workspace.join(".agent-harness/sessions").join(run_id);
+        fs::create_dir_all(&run_dir).unwrap_or_abort();
+        let body = events
+            .iter()
+            .map(|event| serde_json::to_string(event).unwrap_or_abort())
+            .collect::<Vec<_>>()
+            .join("\n");
+        fs::write(run_dir.join("events.jsonl"), format!("{body}\n")).unwrap_or_abort();
+    }
+
+    fn write_session_todos(workspace: &Path, run_id: &str, todos: &Value) {
+        let run_dir = workspace.join(".agent-harness/sessions").join(run_id);
+        fs::create_dir_all(run_dir.join("control-plane")).unwrap_or_abort();
+        fs::write(
+            run_dir.join("control-plane/todos.json"),
+            serde_json::to_vec_pretty(todos).unwrap_or_abort(),
+        )
+        .unwrap_or_abort();
+    }
+
+    async fn session_read(workspace: &Path, tool_call_id: &str, args: Value) -> Value {
+        let ctx = test_context(workspace, tool_call_id);
+        SessionReadTool
+            .call(ctx, args)
+            .await
+            .unwrap_or_abort()
+            .structured_json
+            .unwrap_or_abort()
+    }
+
+    #[tokio::test]
+    async fn session_read_include_todos_returns_todo_state_from_session_dir() {
+        let tempdir = tempfile::tempdir().unwrap_or_abort();
+        let workspace = tempdir.path();
+        write_session_events(
+            workspace,
+            "run_todos",
+            &[run_started("run_todos", 1, workspace)],
+        );
+        let todos = json!([
+            {"content": "task one", "status": "pending", "priority": "high"},
+            {"content": "task two", "status": "in_progress", "priority": "medium"},
+            {"content": "task three", "status": "completed", "priority": "low"}
+        ]);
+        write_session_todos(workspace, "run_todos", &todos);
+
+        let result = session_read(
+            workspace,
+            "read-todos",
+            json!({"session": "run_todos", "includeTodos": true}),
+        )
+        .await;
+
+        assert_eq!(result.get("todos"), Some(&todos));
+    }
+
+    #[tokio::test]
+    async fn session_read_without_include_todos_omits_todos_key() {
+        let tempdir = tempfile::tempdir().unwrap_or_abort();
+        let workspace = tempdir.path();
+        write_session_events(
+            workspace,
+            "run_no_todos_key",
+            &[run_started("run_no_todos_key", 1, workspace)],
+        );
+        write_session_todos(
+            workspace,
+            "run_no_todos_key",
+            &json!([{"content": "task", "status": "pending", "priority": "high"}]),
+        );
+
+        let result = session_read(
+            workspace,
+            "read-no-todos",
+            json!({"session": "run_no_todos_key"}),
+        )
+        .await;
+
+        assert!(result.get("todos").is_none());
+    }
+
+    #[tokio::test]
+    async fn session_read_include_todos_returns_empty_array_when_missing() {
+        let tempdir = tempfile::tempdir().unwrap_or_abort();
+        let workspace = tempdir.path();
+        write_session_events(
+            workspace,
+            "run_no_todo_file",
+            &[run_started("run_no_todo_file", 1, workspace)],
+        );
+
+        let result = session_read(
+            workspace,
+            "read-missing-todos",
+            json!({"session": "run_no_todo_file", "includeTodos": true}),
+        )
+        .await;
+
+        assert_eq!(result.get("todos"), Some(&json!([])));
+    }
+
+    #[tokio::test]
+    async fn session_read_from_end_reverses_event_order() {
+        let tempdir = tempfile::tempdir().unwrap_or_abort();
+        let workspace = tempdir.path();
+        write_session_events(
+            workspace,
+            "run_reversed",
+            &[
+                run_started("run_reversed", 1, workspace),
+                run_failed("run_reversed", 2),
+            ],
+        );
+
+        let result = session_read(
+            workspace,
+            "read-from-end",
+            json!({"session": "run_reversed", "fromEnd": true}),
+        )
+        .await;
+
+        let events = result
+            .get("events")
+            .and_then(Value::as_array)
+            .unwrap_or_abort();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].get("seq"), Some(&json!(2)));
+        assert_eq!(events[1].get("seq"), Some(&json!(1)));
+    }
+
+    #[tokio::test]
+    async fn session_read_from_end_false_preserves_chronological_order() {
+        let tempdir = tempfile::tempdir().unwrap_or_abort();
+        let workspace = tempdir.path();
+        write_session_events(
+            workspace,
+            "run_chrono",
+            &[
+                run_started("run_chrono", 1, workspace),
+                run_failed("run_chrono", 2),
+            ],
+        );
+
+        let result = session_read(
+            workspace,
+            "read-chrono",
+            json!({"session": "run_chrono", "fromEnd": false}),
+        )
+        .await;
+
+        let events = result
+            .get("events")
+            .and_then(Value::as_array)
+            .unwrap_or_abort();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].get("seq"), Some(&json!(1)));
+        assert_eq!(events[1].get("seq"), Some(&json!(2)));
+    }
 }
