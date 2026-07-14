@@ -1,6 +1,8 @@
 // allow: SIZE_OK — TUI transcript rendering (indivisible view model)
+use super::ui_transcript_surface::TRANSCRIPT_SURFACE_TRAILING_GAP_WIDTH;
 use super::ui_transcript_tool_render::{
     append_assistant_error_box, append_tool_call_section_lines, shell_tool_uses_harness_bash_card,
+    tool_call_is_todo,
 };
 use super::*;
 
@@ -336,7 +338,13 @@ fn build_assistant_part_render_surface(
             } else {
                 TranscriptRenderSurfaceKind::AssistantTool
             };
-            let render_width = transcript_surface_render_width(width, kind);
+            let render_width = if tool_call_is_todo(tool_call) {
+                width
+                    .saturating_sub(TRANSCRIPT_SURFACE_TRAILING_GAP_WIDTH)
+                    .max(1)
+            } else {
+                transcript_surface_render_width(width, kind)
+            };
             let render =
                 append_tool_call_section_lines(tool_call, theme, render_width, base_surface);
             lines = render.lines;

@@ -332,17 +332,32 @@ pub(super) fn build_transcript_tool_call_section(
             false,
         ),
         "todo.write" | "todowrite" => {
-            if !todo_items.is_empty() {
-                detail_blocks.push(TranscriptToolCallDetailBlock::TodoList {
-                    items: todo_items.clone(),
-                });
+            let still_running = matches!(
+                tool_call.status,
+                ToolCallDisplayStatus::Running
+                    | ToolCallDisplayStatus::Queued
+                    | ToolCallDisplayStatus::PendingPermission
+            );
+            if still_running && todo_items.is_empty() {
+                (
+                    "Updating todos...".to_string(),
+                    Some("⚙"),
+                    TranscriptToolCallVisualStyle::Inline,
+                    false,
+                )
+            } else {
+                if !todo_items.is_empty() {
+                    detail_blocks.push(TranscriptToolCallDetailBlock::TodoList {
+                        items: todo_items.clone(),
+                    });
+                }
+                (
+                    "# Todos".to_string(),
+                    None,
+                    TranscriptToolCallVisualStyle::Block,
+                    false,
+                )
             }
-            (
-                "# Todos".to_string(),
-                None,
-                TranscriptToolCallVisualStyle::Block,
-                false,
-            )
         }
         "fs.write" => {
             let rendered_diff = push_tool_call_diff_blocks(
@@ -522,10 +537,12 @@ pub(super) fn build_transcript_tool_call_section(
     push_failed_tool_error_block(&mut detail_blocks, tool_call);
     push_truncated_output_artifact_block(&mut detail_blocks, tool_call);
 
-    let disclosure_state = if matches!(display_tool_id, "agent.spawn" | "task")
-        || uses_generic_output_visibility
-            && tool_call.status == ToolCallDisplayStatus::Succeeded
-            && !generic_output_visible
+    let disclosure_state = if matches!(
+        display_tool_id,
+        "agent.spawn" | "task" | "todo.write" | "todowrite"
+    ) || uses_generic_output_visibility
+        && tool_call.status == ToolCallDisplayStatus::Succeeded
+        && !generic_output_visible
     {
         None
     } else {

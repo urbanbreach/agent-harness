@@ -1,7 +1,7 @@
 // allow: SIZE_OK — TUI tool path rendering (indivisible view model)
 use std::path::Path;
 
-use ratatui::style::{Modifier, Style};
+use ratatui::style::Style;
 
 use crate::app::{PermissionEntry, ToolCallEntry};
 use crate::text::collapse_inline_whitespace;
@@ -173,20 +173,14 @@ impl TranscriptTodoStatus {
     pub(super) fn style(self, theme: &Theme) -> Style {
         match self {
             Self::InProgress => Style::default().fg(theme.status.warning),
-            Self::Cancelled => Style::default()
-                .fg(theme.text.secondary)
-                .add_modifier(Modifier::CROSSED_OUT),
-            Self::Completed | Self::Pending => Style::default().fg(theme.text.secondary),
+            Self::Cancelled | Self::Completed | Self::Pending => {
+                Style::default().fg(theme.text.secondary)
+            }
         }
     }
 
     pub(super) fn content_style(self, theme: &Theme) -> Style {
-        let style = self.style(theme);
-        if matches!(self, Self::Cancelled) {
-            style.add_modifier(Modifier::CROSSED_OUT)
-        } else {
-            style
-        }
+        self.style(theme)
     }
 }
 

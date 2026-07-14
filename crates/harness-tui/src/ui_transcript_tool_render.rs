@@ -1,6 +1,13 @@
 // allow: SIZE_OK — TUI transcript rendering (indivisible view model)
 use super::*;
 
+// Empty indent places the todo-block rail at column 0 (matching the user
+// message box rail). One leading content space offsets the nested rail glyph
+// and its trailing gap so todo text starts at column 3, matching user-message
+// and assistant-body text.
+const TRANSCRIPT_TODO_BLOCK_INDENT: &str = "";
+const TRANSCRIPT_TODO_BLOCK_CONTENT_LEADING: &str = " ";
+
 fn build_tool_header_spans(
     header: &TranscriptToolCallHeader,
     theme: &Theme,
@@ -45,6 +52,7 @@ fn append_card_surface_row_with_target(
                 indent: shell.indent,
                 rail_color: shell.rail_color,
                 surface: shell.surface,
+                content_leading_spaces: shell.content_leading_spaces,
             },
             content_spans,
             width,
@@ -76,6 +84,7 @@ fn append_card_surface_row(
             shell.indent,
             shell.rail_color,
             shell.surface,
+            shell.content_leading_spaces,
             content_spans,
             width,
         );
@@ -276,20 +285,58 @@ fn append_block_tool_section_lines(
         return;
     }
 
-    let surface = base_surface;
+    let is_todo_block = matches!(
+        tool_call.header.tool_id.as_str(),
+        "todo.write" | "todowrite"
+    );
+    let surface = if is_todo_block {
+        theme.surface.panel
+    } else {
+        base_surface
+    };
     let card_shell = Some(TranscriptToolCardShell {
-        indent: TRANSCRIPT_ASSISTANT_BODY_PREFIX,
-        rail_color: block_tool_rail_color(tool_call.header.status, theme),
+        indent: if is_todo_block {
+            TRANSCRIPT_TODO_BLOCK_INDENT
+        } else {
+            TRANSCRIPT_ASSISTANT_BODY_PREFIX
+        },
+        rail_color: if is_todo_block {
+            theme.surface.shell
+        } else {
+            block_tool_rail_color(tool_call.header.status, theme)
+        },
         surface,
+        content_leading_spaces: if is_todo_block {
+            TRANSCRIPT_TODO_BLOCK_CONTENT_LEADING
+        } else {
+            ""
+        },
     });
     let title_style = tool_call_header_style(
         tool_call.header.struck_out,
-        block_tool_color(tool_call.header.status, theme),
+        if is_todo_block {
+            theme.text.secondary
+        } else {
+            block_tool_color(tool_call.header.status, theme)
+        },
     );
     let header_target = tool_header_target(
         &tool_call.tool_call_id,
         tool_call.header.disclosure_state.is_some(),
     );
+
+    if is_todo_block {
+        append_card_surface_row_with_target(
+            &mut render.lines,
+            &mut render.interaction_rows,
+            None,
+            card_shell,
+            TRANSCRIPT_ASSISTANT_BODY_PREFIX,
+            surface,
+            Vec::new(),
+            transcript_surface_content_width(width, false),
+        );
+    }
 
     let title_spans = build_tool_header_spans(&tool_call.header, theme, title_style);
 
@@ -322,6 +369,26 @@ fn append_block_tool_section_lines(
     }
 
     append_tool_call_detail_blocks(render, tool_call, theme, width, base_surface, card_shell);
+
+    if is_todo_block {
+        append_card_surface_row_with_target(
+            &mut render.lines,
+            &mut render.interaction_rows,
+            None,
+            card_shell,
+            TRANSCRIPT_ASSISTANT_BODY_PREFIX,
+            surface,
+            Vec::new(),
+            transcript_surface_content_width(width, false),
+        );
+    }
+}
+
+pub(super) fn tool_call_is_todo(tool_call: &TranscriptToolCallSection) -> bool {
+    matches!(
+        tool_call.header.tool_id.as_str(),
+        "todo.write" | "todowrite"
+    )
 }
 
 pub(super) fn shell_tool_uses_harness_bash_card(tool_call: &TranscriptToolCallSection) -> bool {
@@ -619,6 +686,7 @@ pub(super) fn append_assistant_error_box(
         TRANSCRIPT_NESTED_INDENT,
         theme.status.error,
         surface,
+        "",
         vec![Span::styled(
             text.trim().to_string(),
             Style::default().fg(theme.text.secondary),
@@ -641,28 +709,7 @@ fn append_tool_call_todo_list(
     let render_width = transcript_surface_content_width(width, false);
     let ordered = ordered_todo_items(items);
 
-    if !lines.is_empty() {
-        append_card_surface_row(
-            lines,
-            card_shell,
-            TRANSCRIPT_OPCODE_EDIT_INDENT,
-            base_surface,
-            Vec::new(),
-            render_width,
-        );
-    }
-
-    for (index, item) in ordered.iter().enumerate() {
-        if index > 0 {
-            append_card_surface_row(
-                lines,
-                card_shell,
-                TRANSCRIPT_OPCODE_EDIT_INDENT,
-                base_surface,
-                Vec::new(),
-                render_width,
-            );
-        }
+    for item in ordered {
         let marker_style = item.status.style(theme);
         let content_style = item.status.content_style(theme);
         let spans = vec![
@@ -675,17 +722,6 @@ fn append_tool_call_todo_list(
             TRANSCRIPT_OPCODE_EDIT_INDENT,
             base_surface,
             spans,
-            render_width,
-        );
-    }
-
-    for _ in 0..2 {
-        append_card_surface_row(
-            lines,
-            card_shell,
-            TRANSCRIPT_OPCODE_EDIT_INDENT,
-            base_surface,
-            Vec::new(),
             render_width,
         );
     }
