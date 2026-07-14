@@ -42,6 +42,7 @@ pub(super) struct NestedSurfaceChrome<'a> {
     pub(super) indent: &'a str,
     pub(super) rail_color: Color,
     pub(super) surface: Color,
+    pub(super) content_leading_spaces: &'a str,
 }
 
 pub(super) fn transcript_target_is_hovered(
@@ -223,6 +224,7 @@ pub(super) fn append_nested_surface_row_with_target(
         chrome.indent,
         chrome.rail_color,
         chrome.surface,
+        chrome.content_leading_spaces,
         content_spans,
         width,
     );

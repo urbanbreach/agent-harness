@@ -5,6 +5,7 @@ pub(super) struct TranscriptToolCardShell {
     pub(super) indent: &'static str,
     pub(super) rail_color: Color,
     pub(super) surface: Color,
+    pub(super) content_leading_spaces: &'static str,
 }
 
 pub(super) const THINKING_TRACE_LABEL: &str = "Thinking:";

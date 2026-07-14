@@ -14,7 +14,7 @@ use super::ui_transcript::{TranscriptRenderSurface, TranscriptRenderSurfaceKind}
 use super::ui_transcript_layout::MeasuredTranscriptSurface;
 
 const TRANSCRIPT_SURFACE_RAIL_WIDTH: u16 = 1;
-const TRANSCRIPT_SURFACE_TRAILING_GAP_WIDTH: u16 = 2;
+pub(super) const TRANSCRIPT_SURFACE_TRAILING_GAP_WIDTH: u16 = 2;
 pub(super) const TRANSCRIPT_RAIL_GLYPH: &str = "┃";
 
 pub(super) fn transcript_surface_leading_gap(
@@ -372,12 +372,17 @@ pub(super) fn append_nested_surface_row(
     indent: &str,
     rail_color: Color,
     surface: Color,
+    content_leading_spaces: &str,
     content_spans: Vec<Span<'static>>,
     width: u16,
 ) {
     let prefix = nested_surface_prefix(indent, rail_color, surface);
     let prefix_width = nested_surface_prefix_width(indent);
-    let content_width = usize::from(width).saturating_sub(prefix_width).max(1);
+    let leading_width = display_width(content_leading_spaces);
+    let content_width = usize::from(width)
+        .saturating_sub(prefix_width)
+        .saturating_sub(leading_width)
+        .max(1);
     let wrapped_rows = wrap_surface_spans(content_spans, content_width);
 
     if wrapped_rows.is_empty() {
@@ -391,7 +396,20 @@ pub(super) fn append_nested_surface_row(
         return;
     }
 
+    let leading_span = if content_leading_spaces.is_empty() {
+        None
+    } else {
+        Some(Span::styled(
+            content_leading_spaces.to_string(),
+            Style::default().bg(surface),
+        ))
+    };
+
     for row in wrapped_rows {
+        let mut row = row;
+        if let Some(leading) = leading_span.clone() {
+            row.insert(0, leading);
+        }
         lines.push(surface_line(
             prefix.clone(),
             prefix_width,
