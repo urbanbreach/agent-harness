@@ -1057,6 +1057,144 @@ fn reasoning_to_answer_transition_uses_two_blank_rows() {
 }
 
 #[test]
+fn streaming_reasoning_header_renders_spinner_and_thinking_label() {
+    let mut app = AppState::default();
+    let mut entry = transcript_section_model_test_activity(
+        "request-streaming-reasoning",
+        ActivityStatus::Streaming,
+        "",
+    );
+    entry.thinking_text = "analyzing the problem".to_string();
+    app.activities = std::collections::VecDeque::from(vec![entry]);
+    app.transcript_view.selected_activity_index = 0;
+
+    let lines = transcript_test_line_texts(build_transcript_lines_for_width(
+        &app,
+        &Theme::default(),
+        80,
+    ));
+    let rendered = lines.join("\n");
+    assert!(
+        rendered.contains("⠋ Thinking"),
+        "streaming reasoning should show a spinner + Thinking header\n{rendered}"
+    );
+    assert!(
+        rendered.contains("analyzing the problem"),
+        "body text should still render\n{rendered}"
+    );
+}
+
+#[test]
+fn streaming_reasoning_header_with_title_renders_thinking_colon_title() {
+    let mut app = AppState::default();
+    let mut entry = transcript_section_model_test_activity(
+        "request-streaming-reasoning-title",
+        ActivityStatus::Streaming,
+        "",
+    );
+    entry.thinking_text = "**Planning approach**\n\nDetailed analysis".to_string();
+    app.activities = std::collections::VecDeque::from(vec![entry]);
+    app.transcript_view.selected_activity_index = 0;
+
+    let lines = transcript_test_line_texts(build_transcript_lines_for_width(
+        &app,
+        &Theme::default(),
+        80,
+    ));
+    let rendered = lines.join("\n");
+    assert!(
+        rendered.contains("⠋ Thinking: Planning approach"),
+        "streaming reasoning header should include the extracted title\n{rendered}"
+    );
+    assert!(
+        rendered.contains("Detailed analysis"),
+        "body should render without the title\n{rendered}"
+    );
+}
+
+#[test]
+fn completed_reasoning_header_renders_thought_with_title_and_duration() {
+    let mut app = AppState::default();
+    let mut entry = transcript_section_model_test_activity(
+        "request-completed-reasoning",
+        ActivityStatus::Done,
+        "Final answer",
+    );
+    entry.thinking_text = "**Review**\n\nbody text".to_string();
+    entry.last_mono_ms = 1501;
+    app.activities = std::collections::VecDeque::from(vec![entry]);
+    app.transcript_view.selected_activity_index = 0;
+
+    let lines = transcript_test_line_texts(build_transcript_lines_for_width(
+        &app,
+        &Theme::default(),
+        80,
+    ));
+    let rendered = lines.join("\n");
+    assert!(
+        rendered.contains("Thought: Review · 1.5s"),
+        "completed reasoning should show Thought with title and duration\n{rendered}"
+    );
+    assert!(
+        rendered.contains("body text"),
+        "body text should still render\n{rendered}"
+    );
+}
+
+#[test]
+fn completed_reasoning_header_without_title_renders_thought_and_duration() {
+    let mut app = AppState::default();
+    let mut entry = transcript_section_model_test_activity(
+        "request-completed-reasoning-no-title",
+        ActivityStatus::Done,
+        "Final answer",
+    );
+    entry.thinking_text = "simple reasoning".to_string();
+    entry.last_mono_ms = 1501;
+    app.activities = std::collections::VecDeque::from(vec![entry]);
+    app.transcript_view.selected_activity_index = 0;
+
+    let lines = transcript_test_line_texts(build_transcript_lines_for_width(
+        &app,
+        &Theme::default(),
+        80,
+    ));
+    let rendered = lines.join("\n");
+    assert!(
+        rendered.contains("Thought: 1.5s"),
+        "completed reasoning should show Thought with duration when no title\n{rendered}"
+    );
+    assert!(
+        rendered.contains("simple reasoning"),
+        "body text should still render\n{rendered}"
+    );
+}
+
+#[test]
+fn reasoning_header_suppresses_empty_redacted_reasoning() {
+    let mut app = AppState::default();
+    let mut entry = transcript_section_model_test_activity(
+        "request-redacted-only",
+        ActivityStatus::Done,
+        "answer",
+    );
+    entry.thinking_text = "[REDACTED]".to_string();
+    app.activities = std::collections::VecDeque::from(vec![entry]);
+    app.transcript_view.selected_activity_index = 0;
+
+    let lines = transcript_test_line_texts(build_transcript_lines_for_width(
+        &app,
+        &Theme::default(),
+        80,
+    ));
+    let rendered = lines.join("\n");
+    assert!(
+        !rendered.contains("Thought"),
+        "redacted-only reasoning should not render a header\n{rendered}"
+    );
+}
+
+#[test]
 fn streaming_assistant_footer_spinner_uses_deterministic_braille_frames() {
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
@@ -1590,4 +1728,139 @@ fn capture_all_spacing_evidence() {
     write_evidence("bash-output", &bash_output(), 80);
     write_evidence("markdown-headings-paragraphs", &markdown_headings(), 80);
     write_evidence("todos", &todos(), 80);
+}
+
+#[test]
+fn reasoning_body_plain_text_has_no_dim_modifier() {
+    let mut app = AppState::default();
+    let mut entry =
+        transcript_section_model_test_activity("req-no-dim", ActivityStatus::Done, "answer");
+    entry.thinking_text = "Plain reasoning text without markdown markers".to_string();
+    app.activities = std::collections::VecDeque::from(vec![entry]);
+    app.transcript_view.selected_activity_index = 0;
+
+    let lines = build_transcript_lines_for_width(&app, &Theme::default(), 80);
+
+    let reasoning_line = lines
+        .iter()
+        .find(|line| {
+            line.spans
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect::<String>()
+                .contains("Plain reasoning")
+        })
+        .unwrap_or_abort();
+
+    for span in &reasoning_line.spans {
+        assert!(
+            !span.style.add_modifier.contains(Modifier::DIM),
+            "span {:?} should not have DIM modifier",
+            span.content
+        );
+    }
+}
+
+#[test]
+fn reasoning_body_screenshot_text_no_false_positives() {
+    let screenshot_text =
+        "18. sessionlist, sessionread, sessionsearch, sessioninfo - session tools\n\
+                           19. backgroundoutput, backgroundcancel - background task tools\n\
+                           20. mcp tools (docs-rs, gh_grep)";
+    let mut app = AppState::default();
+    let mut entry = transcript_section_model_test_activity(
+        "req-screenshot-text",
+        ActivityStatus::Done,
+        "answer",
+    );
+    entry.thinking_text = screenshot_text.to_string();
+    app.activities = std::collections::VecDeque::from(vec![entry]);
+    app.transcript_view.selected_activity_index = 0;
+
+    let lines = build_transcript_lines_for_width(&app, &Theme::default(), 80);
+
+    let keywords = [
+        "sessionlist",
+        "sessionread",
+        "sessionsearch",
+        "sessioninfo",
+        "backgroundoutput",
+        "backgroundcancel",
+        "gh_grep",
+        "docs-rs",
+    ];
+
+    for keyword in &keywords {
+        let keyword_line = lines
+            .iter()
+            .find(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<String>()
+                    .contains(keyword)
+            })
+            .unwrap_or_abort();
+
+        for span in &keyword_line.spans {
+            assert!(
+                !span.style.add_modifier.contains(Modifier::ITALIC),
+                "span {:?} in line with {keyword:?} should not have ITALIC — \
+                 intraword delimiters must not trigger emphasis",
+                span.content
+            );
+        }
+    }
+}
+
+#[test]
+fn reasoning_body_markdown_constructs_use_blended_colors() {
+    let mut app = AppState::default();
+    let mut entry =
+        transcript_section_model_test_activity("req-md-blend", ActivityStatus::Done, "answer");
+    entry.thinking_text = "See `inline_code` and **bold** and *italic*".to_string();
+    app.activities = std::collections::VecDeque::from(vec![entry]);
+    app.transcript_view.selected_activity_index = 0;
+
+    let theme = Theme::default();
+    let lines = build_transcript_lines_for_width(&app, &theme, 80);
+
+    let all_spans: Vec<_> = lines.iter().flat_map(|line| line.spans.iter()).collect();
+
+    let code_span = all_spans
+        .iter()
+        .find(|span| span.content == "inline_code")
+        .unwrap_or_abort();
+    assert_ne!(
+        code_span.style.fg,
+        Some(theme.markdown.code),
+        "inline code should use blended (not raw) code color"
+    );
+    assert_ne!(
+        code_span.style.fg,
+        Some(theme.text.secondary),
+        "inline code should not use base color"
+    );
+
+    let bold_span = all_spans
+        .iter()
+        .find(|span| span.content == "bold")
+        .unwrap_or_abort();
+    assert_ne!(
+        bold_span.style.fg,
+        Some(theme.markdown.strong),
+        "bold should use blended (not raw) strong color"
+    );
+    assert!(bold_span.style.add_modifier.contains(Modifier::BOLD));
+
+    let italic_span = all_spans
+        .iter()
+        .find(|span| span.content == "italic")
+        .unwrap_or_abort();
+    assert_ne!(
+        italic_span.style.fg,
+        Some(theme.markdown.emph),
+        "italic should use blended (not raw) emph color"
+    );
+    assert!(italic_span.style.add_modifier.contains(Modifier::ITALIC));
 }

@@ -279,11 +279,15 @@ fn build_assistant_part_render_surface(
                 &mut lines,
                 thinking,
                 theme,
-                transcript_surface_content_width(width, true),
+                transcript_surface_content_width(width, false),
+                turn.header.status == ActivityStatus::Streaming,
+                turn.animation_phase,
+                turn.header.duration_ms,
+                base_surface,
             );
             (
                 TranscriptRenderSurfaceKind::AssistantReasoning,
-                true,
+                false,
                 theme.border.subtle,
                 base_surface,
                 None,
@@ -450,46 +454,60 @@ pub(super) fn append_reasoning_block(
     thinking: &TranscriptLabeledTextSection,
     theme: &Theme,
     width: u16,
+    is_streaming: bool,
+    animation_phase: usize,
+    duration_ms: Option<u64>,
+    surface: Color,
 ) {
-    let label_style = Style::default()
-        .fg(theme.text.secondary)
-        .add_modifier(Modifier::DIM)
-        .add_modifier(Modifier::ITALIC);
-    let reasoning_style = Style::default()
-        .fg(theme.text.secondary)
-        .add_modifier(Modifier::DIM);
-    let mut rendered_any_line = false;
-    let text = reference_reasoning_body_text(&thinking.text);
+    let header_color = thinking_header_color(theme, surface);
+    let header_style = Style::default().fg(header_color);
 
-    for row in text.lines() {
-        let mut spans = Vec::new();
-        if !row.is_empty() {
-            spans.extend(parse_inline_markdown_spans(
-                row,
-                reasoning_style,
-                theme.text.secondary,
-                theme,
-            ));
+    let (title, body) = reasoning_summary(&thinking.text);
+    if title.is_none() && body.trim().is_empty() {
+        return;
+    }
+
+    let header_text = if is_streaming {
+        let spinner = transcript_streaming_spinner_frame(animation_phase);
+        match title {
+            Some(title) => format!("{spinner} Thinking: {title}"),
+            None => format!("{spinner} Thinking"),
         }
-        append_prefixed_wrapped_spans_line(
-            lines,
-            TRANSCRIPT_REASONING_BODY_PREFIX,
-            reasoning_style,
-            spans,
-            width,
-        );
-        rendered_any_line = true;
+    } else {
+        let mut text = "Thought".to_string();
+        if title.is_some() || duration_ms.is_some() {
+            text.push(':');
+        }
+        if let Some(ref title) = title {
+            text.push(' ');
+            text.push_str(title);
+        }
+        if let Some(duration_ms) = duration_ms {
+            if title.is_some() {
+                text.push_str(" · ");
+            } else {
+                text.push(' ');
+            }
+            text.push_str(&format_duration_ms(duration_ms));
+        }
+        text
+    };
+
+    append_prefixed_wrapped_spans_line(
+        lines,
+        TRANSCRIPT_REASONING_BODY_PREFIX,
+        header_style,
+        vec![Span::styled(header_text, header_style)],
+        width,
+    );
+    lines.push(Line::default());
+
+    let body = reference_reasoning_body_text(&body);
+    if body.trim().is_empty() {
+        return;
     }
 
-    if !rendered_any_line {
-        append_prefixed_wrapped_spans_line(
-            lines,
-            TRANSCRIPT_REASONING_BODY_PREFIX,
-            reasoning_style,
-            vec![Span::styled(thinking.label.to_string(), label_style)],
-            width,
-        );
-    }
+    super::ui_reasoning_markdown::append_reasoning_body_lines(lines, &body, theme, surface, width);
 }
 
 fn reference_reasoning_body_text(raw: &str) -> String {
@@ -505,6 +523,35 @@ fn reference_reasoning_body_text(raw: &str) -> String {
     }
 
     clean
+}
+
+fn reasoning_summary(text: &str) -> (Option<String>, String) {
+    let content = text.replace("[REDACTED]", "").trim().to_string();
+    let Some(after_open) = content.strip_prefix("**") else {
+        return (None, content);
+    };
+    let Some(close_pos) = after_open.find("**") else {
+        return (None, content);
+    };
+    let title = &after_open[..close_pos];
+    if title.is_empty() || title.contains('*') || title.contains('\n') || title.contains('\r') {
+        return (None, content);
+    }
+
+    let after_close = &after_open[close_pos + 2..];
+    if after_close.is_empty() {
+        return (Some(title.trim().to_string()), String::new());
+    }
+
+    let body = if let Some(body) = after_close.strip_prefix("\n\n") {
+        body.trim_end().to_string()
+    } else if let Some(body) = after_close.strip_prefix("\r\n\r\n") {
+        body.trim_end().to_string()
+    } else {
+        return (None, content);
+    };
+
+    (Some(title.trim().to_string()), body)
 }
 
 #[expect(
@@ -694,4 +741,61 @@ fn build_assistant_footer_line(
         spans.push(Span::styled(timestamp.to_string(), muted_meta_style(theme)));
     }
     Line::from(spans)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::reasoning_summary;
+
+    #[test]
+    fn reasoning_summary_extracts_title_and_body() {
+        let (title, body) = reasoning_summary(
+            "**Continuing Quality Review**\n\nDetails.\n\n**Next section**\n\nMore.",
+        );
+        assert_eq!(title.as_deref(), Some("Continuing Quality Review"));
+        assert_eq!(body, "Details.\n\n**Next section**\n\nMore.");
+    }
+
+    #[test]
+    fn reasoning_summary_extracts_title_without_body() {
+        let (title, body) = reasoning_summary("**Continuing Quality Review**");
+        assert_eq!(title.as_deref(), Some("Continuing Quality Review"));
+        assert!(body.is_empty());
+    }
+
+    #[test]
+    fn reasoning_summary_preserves_indented_body() {
+        let (title, body) =
+            reasoning_summary("**Continuing Quality Review**\n\n    const value = true\n");
+        assert_eq!(title.as_deref(), Some("Continuing Quality Review"));
+        assert_eq!(body, "    const value = true");
+    }
+
+    #[test]
+    fn reasoning_summary_rejects_inline_bold_title() {
+        let (title, body) = reasoning_summary("**Important:** keep this in the body.");
+        assert!(title.is_none());
+        assert_eq!(body, "**Important:** keep this in the body.");
+    }
+
+    #[test]
+    fn reasoning_summary_passes_through_plain_text() {
+        let (title, body) = reasoning_summary("Details only.");
+        assert!(title.is_none());
+        assert_eq!(body, "Details only.");
+    }
+
+    #[test]
+    fn reasoning_summary_strips_redacted_placeholder() {
+        let (title, body) = reasoning_summary("[REDACTED]");
+        assert!(title.is_none());
+        assert!(body.is_empty());
+    }
+
+    #[test]
+    fn reasoning_summary_strips_redacted_and_extracts_title() {
+        let (title, body) = reasoning_summary("[REDACTED]**Title**\n\nbody");
+        assert_eq!(title.as_deref(), Some("Title"));
+        assert_eq!(body, "body");
+    }
 }

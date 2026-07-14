@@ -10,7 +10,10 @@ use crate::theme::DIFF_SIDE_BY_SIDE_MIN_WIDTH;
 use crate::time_format::short_time_or_trimmed;
 
 use super::ui_diff::{render_structured_diff_lines_with_hunk_offsets, StructuredDiffRenderOptions};
-use super::ui_markdown::{append_rich_text_block, parse_inline_markdown_spans};
+use super::ui_markdown::{
+    append_rich_text_block, markdown_heading_text, markdown_rule, parse_inline_markdown_spans,
+    raw_url_length,
+};
 use super::ui_tool_delegation::{
     agent_spawn_description, agent_spawn_subtitle, agent_spawn_title,
     hidden_delegated_child_request_ids, task_tool_child_session_id,
@@ -86,8 +89,9 @@ use super::ui_transcript_selection::{
 };
 use super::ui_transcript_style::{
     activity_status_supports_footer_only, assistant_footer_label, assistant_primary_label_color,
-    assistant_primary_rail_color, selected_foreground_for_badge, transcript_emphasized_surface,
-    transcript_nested_rail_color, transcript_streaming_spinner_frame,
+    assistant_primary_rail_color, blend_color, selected_foreground_for_badge,
+    thinking_header_color, transcript_emphasized_surface, transcript_nested_rail_color,
+    transcript_streaming_spinner_frame,
 };
 use super::ui_transcript_surface::{
     append_nested_surface_row, append_prebuilt_nested_surface_lines, append_prebuilt_surface_lines,
@@ -100,6 +104,9 @@ mod ui_transcript_types;
 
 #[path = "ui_transcript_render.rs"]
 mod ui_transcript_render;
+
+#[path = "ui_reasoning_markdown.rs"]
+mod ui_reasoning_markdown;
 
 #[path = "ui_transcript_tool_render.rs"]
 mod ui_transcript_tool_render;
