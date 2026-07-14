@@ -16,6 +16,17 @@ use super::ui_transcript_surface::{
     append_prebuilt_plain_lines, append_prefixed_wrapped_spans_line,
 };
 
+fn is_flanking_pair(prev: Option<char>, content: &str, after_close: &str) -> bool {
+    !content.is_empty()
+        && !prev.is_some_and(char::is_alphanumeric)
+        && !content.starts_with(char::is_whitespace)
+        && !content.ends_with(char::is_whitespace)
+        && !after_close
+            .chars()
+            .next()
+            .is_some_and(char::is_alphanumeric)
+}
+
 pub(super) fn parse_inline_markdown_spans(
     text: &str,
     base_style: Style,
@@ -23,9 +34,16 @@ pub(super) fn parse_inline_markdown_spans(
     theme: &Theme,
 ) -> Vec<Span<'static>> {
     let mut spans = Vec::new();
-    let mut remaining = text;
+    let mut pos = 0;
 
-    while !remaining.is_empty() {
+    while pos < text.len() {
+        let remaining = &text[pos..];
+        let prev = if pos > 0 {
+            text[..pos].chars().next_back()
+        } else {
+            None
+        };
+
         if let Some(rest) = remaining.strip_prefix('[') {
             if let Some(label_end) = rest.find("](") {
                 let after_label = &rest[label_end + 2..];
@@ -33,47 +51,53 @@ pub(super) fn parse_inline_markdown_spans(
                     spans.push(Span::styled(
                         rest[..label_end].to_string(),
                         base_style
-                            .fg(theme.text.accent)
+                            .fg(theme.markdown.link_text)
                             .add_modifier(Modifier::UNDERLINED),
                     ));
-                    remaining = &after_label[url_end + 1..];
+                    pos += 1 + label_end + 2 + url_end + 1;
                     continue;
                 }
             }
         }
 
-        if let Some(url_end) = raw_url_length(remaining) {
+        if let Some(url_len) = raw_url_length(remaining) {
             spans.push(Span::styled(
-                remaining[..url_end].to_string(),
+                remaining[..url_len].to_string(),
                 base_style
-                    .fg(theme.text.accent)
+                    .fg(theme.markdown.link)
                     .add_modifier(Modifier::UNDERLINED),
             ));
-            remaining = &remaining[url_end..];
+            pos += url_len;
             continue;
         }
 
         if let Some(rest) = remaining.strip_prefix("**") {
             if let Some(end) = rest.find("**") {
-                spans.push(Span::styled(
-                    rest[..end].to_string(),
-                    base_style.fg(base_color).add_modifier(Modifier::BOLD),
-                ));
-                remaining = &rest[end + 2..];
-                continue;
+                let content = &rest[..end];
+                if is_flanking_pair(prev, content, &rest[end + 2..]) {
+                    spans.push(Span::styled(
+                        content.to_string(),
+                        base_style.fg(theme.markdown.strong).add_modifier(Modifier::BOLD),
+                    ));
+                    pos += 2 + end + 2;
+                    continue;
+                }
             }
         }
 
         if let Some(rest) = remaining.strip_prefix("~~") {
             if let Some(end) = rest.find("~~") {
-                spans.push(Span::styled(
-                    rest[..end].to_string(),
-                    base_style
-                        .fg(theme.text.secondary)
-                        .add_modifier(Modifier::CROSSED_OUT),
-                ));
-                remaining = &rest[end + 2..];
-                continue;
+                let content = &rest[..end];
+                if is_flanking_pair(prev, content, &rest[end + 2..]) {
+                    spans.push(Span::styled(
+                        content.to_string(),
+                        base_style
+                            .fg(theme.text.secondary)
+                            .add_modifier(Modifier::CROSSED_OUT),
+                    ));
+                    pos += 2 + end + 2;
+                    continue;
+                }
             }
         }
 
@@ -81,36 +105,42 @@ pub(super) fn parse_inline_markdown_spans(
             if let Some(end) = rest.find('`') {
                 spans.push(Span::styled(
                     rest[..end].to_string(),
-                    base_style.fg(theme.status.success),
+                    base_style.fg(theme.markdown.code),
                 ));
-                remaining = &rest[end + 1..];
+                pos += 1 + end + 1;
                 continue;
             }
         }
 
         if let Some(rest) = remaining.strip_prefix('*') {
             if let Some(end) = rest.find('*') {
-                spans.push(Span::styled(
-                    rest[..end].to_string(),
-                    base_style
-                        .fg(theme.status.warning)
-                        .add_modifier(Modifier::ITALIC),
-                ));
-                remaining = &rest[end + 1..];
-                continue;
+                let content = &rest[..end];
+                if is_flanking_pair(prev, content, &rest[end + 1..]) {
+                    spans.push(Span::styled(
+                        content.to_string(),
+                        base_style
+                            .fg(theme.markdown.emph)
+                            .add_modifier(Modifier::ITALIC),
+                    ));
+                    pos += 1 + end + 1;
+                    continue;
+                }
             }
         }
 
         if let Some(rest) = remaining.strip_prefix('_') {
             if let Some(end) = rest.find('_') {
-                spans.push(Span::styled(
-                    rest[..end].to_string(),
-                    base_style
-                        .fg(theme.status.warning)
-                        .add_modifier(Modifier::ITALIC),
-                ));
-                remaining = &rest[end + 1..];
-                continue;
+                let content = &rest[..end];
+                if is_flanking_pair(prev, content, &rest[end + 1..]) {
+                    spans.push(Span::styled(
+                        content.to_string(),
+                        base_style
+                            .fg(theme.markdown.emph)
+                            .add_modifier(Modifier::ITALIC),
+                    ));
+                    pos += 1 + end + 1;
+                    continue;
+                }
             }
         }
 
@@ -122,12 +152,12 @@ pub(super) fn parse_inline_markdown_spans(
         if next_marker == 0 {
             let ch = remaining.chars().next().unwrap_or_abort();
             spans.push(Span::styled(ch.to_string(), base_style.fg(base_color)));
-            remaining = &remaining[ch.len_utf8()..];
+            pos += ch.len_utf8();
             continue;
         }
         let plain = &remaining[..next_marker];
         spans.push(Span::styled(plain.to_string(), base_style.fg(base_color)));
-        remaining = &remaining[next_marker..];
+        pos += next_marker;
     }
 
     spans
@@ -180,7 +210,7 @@ pub(super) fn markdown_list_prefix<'a>(
                 "• ".to_string(),
                 text,
                 Style::default()
-                    .fg(theme.text.accent)
+                    .fg(theme.markdown.list_item)
                     .add_modifier(Modifier::BOLD),
                 Style::default().fg(theme.text.primary),
             ));
@@ -195,7 +225,7 @@ pub(super) fn markdown_list_prefix<'a>(
                 format!("{}{}", &line[..digits], ". "),
                 text,
                 Style::default()
-                    .fg(theme.text.accent)
+                    .fg(theme.markdown.list_enum)
                     .add_modifier(Modifier::BOLD),
                 Style::default().fg(theme.text.primary),
             ));
@@ -328,9 +358,9 @@ fn append_markdownish_line(
             parse_inline_markdown_spans(
                 text,
                 base_style
-                    .fg(theme.text.accent)
+                    .fg(theme.markdown.heading)
                     .add_modifier(Modifier::BOLD),
-                theme.text.accent,
+                theme.markdown.heading,
                 theme,
             ),
             width,
@@ -345,7 +375,7 @@ fn append_markdownish_line(
             base_style,
             vec![Span::styled(
                 "─".repeat(content_width),
-                Style::default().fg(theme.text.secondary),
+                Style::default().fg(theme.markdown.rule),
             )],
             width,
         );
@@ -356,13 +386,13 @@ fn append_markdownish_line(
         append_prefixed_wrapped_spans_line(
             lines,
             &format!("{prefix}{indent}▍ "),
-            Style::default().fg(theme.text.secondary),
+            Style::default().fg(theme.markdown.block_quote),
             parse_inline_markdown_spans(
                 text,
                 Style::default()
-                    .fg(theme.text.secondary)
+                    .fg(theme.markdown.block_quote)
                     .add_modifier(Modifier::ITALIC),
-                theme.text.secondary,
+                theme.markdown.block_quote,
                 theme,
             ),
             width,
@@ -391,7 +421,7 @@ fn append_markdownish_line(
     );
 }
 
-fn raw_url_length(text: &str) -> Option<usize> {
+pub(super) fn raw_url_length(text: &str) -> Option<usize> {
     let prefix = if text.starts_with("https://") {
         "https://"
     } else if text.starts_with("http://") {
@@ -413,4 +443,204 @@ fn last_line_is_visually_blank(lines: &[Line<'static>]) -> bool {
                 .iter()
                 .all(|span| span.content.chars().all(char::is_whitespace))
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn collect_spans<'a>(lines: &'a [Line<'static>]) -> Vec<&'a Span<'static>> {
+        lines.iter().flat_map(|line| line.spans.iter()).collect()
+    }
+
+    #[test]
+    fn bold_uses_markdown_strong_color() {
+        let theme = Theme::default();
+        let base = Style::default().fg(theme.text.primary);
+        let spans = parse_inline_markdown_spans("**bold**", base, theme.text.primary, &theme);
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].style.fg, Some(theme.markdown.strong));
+        assert!(spans[0].style.add_modifier.contains(Modifier::BOLD));
+    }
+
+    #[test]
+    fn italic_asterisk_uses_markdown_emph_color() {
+        let theme = Theme::default();
+        let base = Style::default().fg(theme.text.primary);
+        let spans = parse_inline_markdown_spans("*italic*", base, theme.text.primary, &theme);
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].style.fg, Some(theme.markdown.emph));
+        assert!(spans[0].style.add_modifier.contains(Modifier::ITALIC));
+    }
+
+    #[test]
+    fn italic_underscore_uses_markdown_emph_color() {
+        let theme = Theme::default();
+        let base = Style::default().fg(theme.text.primary);
+        let spans = parse_inline_markdown_spans("_italic_", base, theme.text.primary, &theme);
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].style.fg, Some(theme.markdown.emph));
+        assert!(spans[0].style.add_modifier.contains(Modifier::ITALIC));
+    }
+
+    #[test]
+    fn inline_code_uses_markdown_code_color() {
+        let theme = Theme::default();
+        let base = Style::default().fg(theme.text.primary);
+        let spans = parse_inline_markdown_spans("`code`", base, theme.text.primary, &theme);
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].style.fg, Some(theme.markdown.code));
+    }
+
+    #[test]
+    fn link_label_uses_markdown_link_text_color() {
+        let theme = Theme::default();
+        let base = Style::default().fg(theme.text.primary);
+        let spans =
+            parse_inline_markdown_spans("[label](https://example.com)", base, theme.text.primary, &theme);
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].content.as_ref(), "label");
+        assert_eq!(spans[0].style.fg, Some(theme.markdown.link_text));
+        assert!(spans[0].style.add_modifier.contains(Modifier::UNDERLINED));
+    }
+
+    #[test]
+    fn raw_url_uses_markdown_link_color() {
+        let theme = Theme::default();
+        let base = Style::default().fg(theme.text.primary);
+        let spans = parse_inline_markdown_spans(
+            "see https://example.com now",
+            base,
+            theme.text.primary,
+            &theme,
+        );
+        assert!(spans.iter().any(|s| {
+            s.style.fg == Some(theme.markdown.link)
+                && s.style.add_modifier.contains(Modifier::UNDERLINED)
+        }));
+    }
+
+    #[test]
+    fn strikethrough_uses_text_secondary_color() {
+        let theme = Theme::default();
+        let base = Style::default().fg(theme.text.primary);
+        let spans = parse_inline_markdown_spans("~~deleted~~", base, theme.text.primary, &theme);
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].style.fg, Some(theme.text.secondary));
+        assert!(spans[0].style.add_modifier.contains(Modifier::CROSSED_OUT));
+    }
+
+    #[test]
+    fn intraword_asterisks_not_emphasized() {
+        let theme = Theme::default();
+        let base = Style::default().fg(theme.text.primary);
+        let spans = parse_inline_markdown_spans("foo*bar*baz", base, theme.text.primary, &theme);
+        for span in &spans {
+            assert_eq!(span.style.fg, Some(theme.text.primary));
+            assert!(!span.style.add_modifier.contains(Modifier::ITALIC));
+        }
+    }
+
+    #[test]
+    fn intraword_underscores_not_emphasized() {
+        let theme = Theme::default();
+        let base = Style::default().fg(theme.text.primary);
+        let spans = parse_inline_markdown_spans("foo_bar_baz", base, theme.text.primary, &theme);
+        for span in &spans {
+            assert_eq!(span.style.fg, Some(theme.text.primary));
+            assert!(!span.style.add_modifier.contains(Modifier::ITALIC));
+        }
+    }
+
+    #[test]
+    fn intraword_underscores_in_identifiers_not_emphasized() {
+        let theme = Theme::default();
+        let base = Style::default().fg(theme.text.primary);
+        let spans = parse_inline_markdown_spans(
+            "background_output session_search",
+            base,
+            theme.text.primary,
+            &theme,
+        );
+        for span in &spans {
+            assert_eq!(span.style.fg, Some(theme.text.primary));
+            assert!(!span.style.add_modifier.contains(Modifier::ITALIC));
+        }
+    }
+
+    #[test]
+    fn heading_uses_markdown_heading_color() {
+        let theme = Theme::default();
+        let mut lines = Vec::new();
+        append_rich_text_block(&mut lines, "# Heading", theme.text.primary, "", &theme, 80);
+        let spans = collect_spans(&lines);
+        assert!(
+            spans.iter().any(|span| {
+                span.style.fg == Some(theme.markdown.heading)
+                    && span.style.add_modifier.contains(Modifier::BOLD)
+            }),
+            "heading should use theme.markdown.heading with BOLD, got: {spans:?}"
+        );
+    }
+
+    #[test]
+    fn blockquote_uses_markdown_block_quote_color() {
+        let theme = Theme::default();
+        let mut lines = Vec::new();
+        append_rich_text_block(&mut lines, "> Quote", theme.text.primary, "", &theme, 80);
+        let spans = collect_spans(&lines);
+        assert!(
+            spans.iter().any(|span| {
+                span.style.fg == Some(theme.markdown.block_quote)
+                    && span.style.add_modifier.contains(Modifier::ITALIC)
+            }),
+            "blockquote should use theme.markdown.block_quote with ITALIC, got: {spans:?}"
+        );
+    }
+
+    #[test]
+    fn rule_uses_markdown_rule_color() {
+        let theme = Theme::default();
+        let mut lines = Vec::new();
+        append_rich_text_block(&mut lines, "---", theme.text.primary, "", &theme, 80);
+        let spans = collect_spans(&lines);
+        assert!(
+            spans.iter().any(|span| span.style.fg == Some(theme.markdown.rule)),
+            "rule should use theme.markdown.rule, got: {spans:?}"
+        );
+    }
+
+    #[test]
+    fn bullet_marker_uses_markdown_list_item_color() {
+        let theme = Theme::default();
+        let (prefix, _, marker_style, _) = markdown_list_prefix("- item", &theme).unwrap();
+        assert_eq!(prefix, "• ");
+        assert_eq!(marker_style.fg, Some(theme.markdown.list_item));
+        assert!(marker_style.add_modifier.contains(Modifier::BOLD));
+    }
+
+    #[test]
+    fn enum_marker_uses_markdown_list_enum_color() {
+        let theme = Theme::default();
+        let (prefix, _, marker_style, _) = markdown_list_prefix("1. item", &theme).unwrap();
+        assert_eq!(prefix, "1. ");
+        assert_eq!(marker_style.fg, Some(theme.markdown.list_enum));
+        assert!(marker_style.add_modifier.contains(Modifier::BOLD));
+    }
+
+    #[test]
+    fn table_header_uses_markdown_heading_color() {
+        let theme = Theme::default();
+        let rows = ["Name | Value", "--- | ---", "foo | bar"];
+        let (lines, _) =
+            try_render_markdown_table_block(&rows, theme.text.primary, "", &theme, 80).unwrap();
+        let spans = collect_spans(&lines);
+        assert!(
+            spans.iter().any(|span| {
+                span.style.fg == Some(theme.markdown.heading)
+                    && span.style.add_modifier.contains(Modifier::BOLD)
+            }),
+            "table header should use theme.markdown.heading with BOLD, got: {spans:?}"
+        );
+    }
 }
