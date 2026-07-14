@@ -162,7 +162,7 @@
     {
       "profile": "category",
       "category": "quick",
-      "completion_request_digest": "e2e910c438b500b0458bc79b26e4eb3d189c0561bd88e23f1512a3f7090919ce",
+      "completion_request_digest": "d80ef14fc945974ab981f5a8aed251d2f71742938b468849eb507b8e5fed9387",
       "tools": [
         {
           "canonical_id": "background_output",
@@ -188,7 +188,7 @@
         {
           "canonical_id": "todowrite",
           "provider_function_name": "todowrite",
-          "description_digest": "e38a099c3976b891d910c67462fe34fab035453ae9f84b6b1858f1f13c12191c",
+          "description_digest": "a5e40d4b13246fcb6ec25dc6cc4a670e7e4281b92e2eeb0dcd6ee5da8f2dc818",
           "parameters_digest": "38c0fcf9266b5133500b2e6fbf06b2af4bf114fc2144d83806f9b20279de2f4f",
           "parameters_type": "object"
         }
@@ -198,7 +198,7 @@
           "api_mode": "chat_completions",
           "endpoint_path": "/v1/chat/completions",
           "bearer_token": "<redacted>",
-          "request_body_digest": "0e6853f3ec6c6d4928e8a4323ff3889ac120fea6ece4144cb46fbe6f2383e835",
+          "request_body_digest": "38282a97eaa21a875519c10ac8d21598b80974062bc50fc427e779c8941e8a6b",
           "tool_function_names": [
             "background_output",
             "skill",
@@ -210,7 +210,7 @@
           "api_mode": "responses",
           "endpoint_path": "/v1/responses",
           "bearer_token": "<redacted>",
-          "request_body_digest": "456802dc4b045b02185343f0964744b5d0dcd5eb6eb6690f2f3f862bbe789a0e",
+          "request_body_digest": "e54759e03e4bda8aa27c4700cf651f1dd5ca9dd2f66abffc1b1d742ca50a3060",
           "tool_function_names": [
             "background_output",
             "skill",
