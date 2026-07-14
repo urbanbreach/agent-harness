@@ -215,6 +215,7 @@ pub(crate) use ui_transcript::{
     exact_test_redacted_only_reasoning_matches_reference_empty_body,
     exact_test_skill_tool_rows_match_reference_title_and_icon,
     exact_test_todo_write_rows_render_open_checklist,
+    exact_test_todo_write_running_renders_inline_updating_indicator,
     exact_test_transcript_applied_edit_missing_diff_surfaces_fallback,
     exact_test_transcript_apply_patch_multifile_uses_output_edit_paths,
     exact_test_transcript_apply_patch_surfaces_rename_and_wrapped_inline_diffs,

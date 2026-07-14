@@ -892,6 +892,31 @@ pub(crate) fn exact_test_todo_write_rows_render_open_checklist() {
     assert!(rendered.contains("[•] Implement UI"));
     assert!(rendered.contains("[✓] Plan work"));
     assert!(rendered.contains("[ ] Verify tests"));
+
+    assert!(
+        rendered.starts_with('┃'),
+        "todo block rail should start at column 0"
+    );
+    let title_line = rendered
+        .lines()
+        .find(|line| line.contains("# Todos"))
+        .expect("title line should be present");
+    assert!(
+        title_line.starts_with("┃  # Todos"),
+        "title should be inset from rail by two spaces: {title_line}"
+    );
+    let active_line = rendered
+        .lines()
+        .find(|line| line.contains("[•] Implement UI"))
+        .expect("active todo line should be present");
+    assert!(
+        active_line.starts_with("┃  [•] Implement UI"),
+        "todo items should be inset from rail by two spaces: {active_line}"
+    );
+    assert!(
+        rendered.lines().last().unwrap().starts_with('┃'),
+        "todo block should end with a bottom padding line"
+    );
     let completed = rendered.find("[✓] Plan work").unwrap_or_abort();
     let active = rendered.find("[•] Implement UI").unwrap_or_abort();
     assert!(
@@ -951,7 +976,7 @@ pub(crate) fn exact_test_todo_write_rows_render_open_checklist() {
         })
         .unwrap_or_abort();
     assert!(
-        cancelled_line
+        !cancelled_line
             .spans
             .iter()
             .any(|span| (span.content == "[" || span.content == "]")
@@ -959,10 +984,10 @@ pub(crate) fn exact_test_todo_write_rows_render_open_checklist() {
                     .style
                     .add_modifier
                     .contains(ratatui::style::Modifier::CROSSED_OUT)),
-        "cancelled todo marker should be crossed out"
+        "cancelled todo marker should not be crossed out"
     );
     assert!(
-        cancelled_line
+        !cancelled_line
             .spans
             .iter()
             .any(|span| span.content.contains("Skip")
@@ -970,7 +995,7 @@ pub(crate) fn exact_test_todo_write_rows_render_open_checklist() {
                     .style
                     .add_modifier
                     .contains(ratatui::style::Modifier::CROSSED_OUT)),
-        "cancelled todo content should be crossed out"
+        "cancelled todo content should not be crossed out"
     );
 
     if std::env::var_os("HARNESS_TUI_TODO_RENDER_CAPTURE").is_some() {
@@ -1027,4 +1052,27 @@ pub(crate) fn exact_test_todo_write_rows_render_open_checklist() {
         None,
     )
     .is_none());
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_todo_write_running_renders_inline_updating_indicator() {
+    let app = AppState::new_live(None, false, None);
+
+    let mut running_call = transcript_section_model_test_tool_call("tc-todo-running", "todo.write");
+    running_call.status = ToolCallDisplayStatus::Running;
+    running_call.lifecycle_state = Some(harness_core::event::ToolCallLifecycleState::Running);
+    running_call.output_summary = Some("updating".to_string());
+
+    let section =
+        build_tool_call_section(&running_call, &app, false, false, false, false, false, None)
+            .unwrap_or_abort();
+    assert_eq!(
+        section.header.visual_style,
+        TranscriptToolCallVisualStyle::Inline
+    );
+    assert_eq!(
+        (section.header.icon, section.header.title.as_str()),
+        (Some("⚙"), "Updating todos...")
+    );
+    assert!(section.detail_blocks.is_empty());
 }
