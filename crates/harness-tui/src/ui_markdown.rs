@@ -77,7 +77,9 @@ pub(super) fn parse_inline_markdown_spans(
                 if is_flanking_pair(prev, content, &rest[end + 2..]) {
                     spans.push(Span::styled(
                         content.to_string(),
-                        base_style.fg(theme.markdown.strong).add_modifier(Modifier::BOLD),
+                        base_style
+                            .fg(theme.markdown.strong)
+                            .add_modifier(Modifier::BOLD),
                     ));
                     pos += 2 + end + 2;
                     continue;
@@ -496,8 +498,12 @@ mod tests {
     fn link_label_uses_markdown_link_text_color() {
         let theme = Theme::default();
         let base = Style::default().fg(theme.text.primary);
-        let spans =
-            parse_inline_markdown_spans("[label](https://example.com)", base, theme.text.primary, &theme);
+        let spans = parse_inline_markdown_spans(
+            "[label](https://example.com)",
+            base,
+            theme.text.primary,
+            &theme,
+        );
         assert_eq!(spans.len(), 1);
         assert_eq!(spans[0].content.as_ref(), "label");
         assert_eq!(spans[0].style.fg, Some(theme.markdown.link_text));
@@ -605,7 +611,9 @@ mod tests {
         append_rich_text_block(&mut lines, "---", theme.text.primary, "", &theme, 80);
         let spans = collect_spans(&lines);
         assert!(
-            spans.iter().any(|span| span.style.fg == Some(theme.markdown.rule)),
+            spans
+                .iter()
+                .any(|span| span.style.fg == Some(theme.markdown.rule)),
             "rule should use theme.markdown.rule, got: {spans:?}"
         );
     }
