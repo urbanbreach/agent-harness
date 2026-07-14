@@ -41,7 +41,7 @@ pub(super) fn try_render_markdown_table_block(
         &column_widths,
         prefix,
         Style::default()
-            .fg(theme.text.accent)
+            .fg(theme.markdown.heading)
             .add_modifier(Modifier::BOLD),
         width,
     );

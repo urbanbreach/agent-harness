@@ -458,6 +458,26 @@ pub struct StatusColors {
     pub disabled: Color,
 }
 
+/// Markdown token palette mirroring Opencode's `opencode.json` markdown rules.
+///
+/// Each field corresponds to an Opencode markdown syntax token (e.g.
+/// `markdownHeading`, `markdownCode`). When rendering reasoning bodies these
+/// colors are blended at `thinkingOpacity` (0.6) over the surface color to
+/// produce the subtle syntax-highlighted look from `generateSubtleSyntax`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MarkdownColors {
+    pub heading: Color,
+    pub link: Color,
+    pub link_text: Color,
+    pub code: Color,
+    pub emph: Color,
+    pub strong: Color,
+    pub block_quote: Color,
+    pub list_item: Color,
+    pub list_enum: Color,
+    pub rule: Color,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AgentColors {
     pub build: Color,
@@ -497,6 +517,7 @@ pub struct Theme {
     pub text: TextColors,
     pub question_prompt: QuestionPromptColors,
     pub status: StatusColors,
+    pub markdown: MarkdownColors,
     pub agents: AgentColors,
     pub scrollbar: ScrollbarColors,
     pub live_shell: LiveShellTokens,
@@ -831,6 +852,18 @@ impl Theme {
                 info: rgb(0x56, 0xB6, 0xC2),
                 disabled: rgb(0x80, 0x80, 0x80),
             },
+            markdown: MarkdownColors {
+                heading: rgb(0x9D, 0x7C, 0xD8),
+                link: rgb(0xFA, 0xB2, 0x83),
+                link_text: rgb(0x56, 0xB6, 0xC2),
+                code: rgb(0x7F, 0xD8, 0x8F),
+                emph: rgb(0xE5, 0xC0, 0x7B),
+                strong: rgb(0xF5, 0xA7, 0x42),
+                block_quote: rgb(0xE5, 0xC0, 0x7B),
+                list_item: rgb(0xFA, 0xB2, 0x83),
+                list_enum: rgb(0x56, 0xB6, 0xC2),
+                rule: rgb(0x80, 0x80, 0x80),
+            },
             agents: AgentColors {
                 build: rgb(0x5C, 0x9C, 0xF5),
                 plan: rgb(0x9D, 0x7C, 0xD8),
@@ -886,6 +919,18 @@ impl Theme {
                 error: Color::LightRed,
                 info: Color::LightCyan,
                 disabled: Color::DarkGray,
+            },
+            markdown: MarkdownColors {
+                heading: Color::Magenta,
+                link: Color::Yellow,
+                link_text: Color::Cyan,
+                code: Color::LightGreen,
+                emph: Color::Yellow,
+                strong: Color::Yellow,
+                block_quote: Color::Yellow,
+                list_item: Color::Yellow,
+                list_enum: Color::Cyan,
+                rule: Color::Gray,
             },
             agents: AgentColors {
                 build: Color::Cyan,
