@@ -544,10 +544,11 @@ fn validate_todo_items(todos: &[TodoItem]) -> Result<(), String> {
 }
 
 fn render_todos_result(todos: Vec<TodoItem>) -> Result<ToolResult, ToolError> {
+    let non_completed = todos.iter().filter(|t| t.status != "completed").count();
     let display_text = serde_json::to_string_pretty(&todos).tool_err("failed to render todos")?;
     Ok(crate::text_json_tool_result(
         display_text,
-        json!({ "todos": todos }),
+        json!({ "todos": todos, "title": format!("{} todos", non_completed) }),
     ))
 }
 

@@ -109,7 +109,8 @@ async fn native_control_plane_tools_cover_invalid_todo_and_skill() {
     assert_eq!(
         todo_write.structured_json,
         Some(json!({
-            "todos": [{"content": "task", "status": "pending", "priority": "high"}]
+            "todos": [{"content": "task", "status": "pending", "priority": "high"}],
+            "title": "1 todos"
         }))
     );
     let state_path = todo_state_file(&run);
@@ -210,7 +211,8 @@ async fn native_todo_write_rejects_multiple_in_progress_items() {
         Some(json!({
             "todos": [
                 {"content": "keep", "status": "pending", "priority": "high"}
-            ]
+            ],
+            "title": "1 todos"
         }))
     );
 

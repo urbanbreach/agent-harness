@@ -10,10 +10,8 @@ async fn native_execution_surface_tools_execute_through_native_ids() {
     let todo_read = registry.get("todoread").unwrap_or_abort();
     let invalid = registry.get("invalid").unwrap_or_abort();
     assert!(todo_write.description().contains("structured task list"));
-    assert!(todo_write.description().contains("test todo"));
-    assert!(todo_write
-        .description()
-        .contains("never reply only \"Done\""));
+    assert!(todo_write.description().contains("todo list"));
+    assert!(todo_write.description().contains("When in doubt, use it."));
     assert!(todo_write.description().contains("in_progress"));
 
     fs::write(workspace.join("surface.txt"), "before\n").unwrap_or_abort();
@@ -44,7 +42,8 @@ async fn native_execution_surface_tools_execute_through_native_ids() {
         Some(json!({
             "todos": [
                 {"content": "task", "status": "pending", "priority": "high"}
-            ]
+            ],
+            "title": "1 todos"
         }))
     );
 
@@ -94,7 +93,8 @@ async fn native_todowrite_accepts_legacy_text_shape_and_defaults_priority() {
             "todos": [
                 {"content": "legacy text entry", "status": "in_progress", "priority": "medium"},
                 {"content": "legacy title entry", "status": "pending", "priority": "low"}
-            ]
+            ],
+            "title": "2 todos"
         }))
     );
 
@@ -133,7 +133,8 @@ async fn native_todowrite_accepts_state_alias_from_model_tool_call() {
         Some(json!({
             "todos": [
                 {"content": "Test functionality", "status": "pending", "priority": "medium"}
-            ]
+            ],
+            "title": "1 todos"
         }))
     );
 }
@@ -172,7 +173,8 @@ async fn native_todowrite_accepts_done_shape_and_schema_advertises_it() {
             "todos": [
                 {"content": "stress-test harness tools", "status": "pending", "priority": "medium"},
                 {"content": "verify read/write/edit/pty paths", "status": "completed", "priority": "medium"}
-            ]
+            ],
+            "title": "1 todos"
         }))
     );
 }
