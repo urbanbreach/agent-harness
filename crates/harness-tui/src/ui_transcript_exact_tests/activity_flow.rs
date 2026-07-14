@@ -607,11 +607,12 @@ fn reasoning_after_tool_renders_in_new_block_below_tool() {
     assert!(first_reasoning_row < tool_row);
     assert!(tool_row < second_reasoning_row);
     assert!(second_reasoning_row < answer_row);
+    let line_before_second_reasoning = &lines[second_reasoning_row.saturating_sub(1)];
     assert!(
-        lines[second_reasoning_row.saturating_sub(1)]
-            .trim()
-            .is_empty()
-            || lines[second_reasoning_row.saturating_sub(1)].trim() == "┃"
+        line_before_second_reasoning.contains("Thought")
+            || line_before_second_reasoning.trim().is_empty()
+            || line_before_second_reasoning.trim() == "┃",
+        "reasoning block should start with a header or a separator; got: {line_before_second_reasoning:?}"
     );
 }
 

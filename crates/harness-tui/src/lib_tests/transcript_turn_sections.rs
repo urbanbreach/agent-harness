@@ -224,7 +224,6 @@ pub(super) fn transcript_turn_sections_keep_nested_tool_details() {
     let assistant_footer_column = first_alphanumeric_column(lines[assistant_footer]);
     let (reasoning_row_text, reasoning_row_fgs, _) =
         row_at(&buffer, 100, reasoning_row).unwrap_or_abort();
-    let reasoning_rail_column = reasoning_row_text.find('┃').unwrap_or_abort();
     let thinking_body_start = reasoning_row_text
         [..reasoning_row_text.find("tool planning").unwrap_or_abort()]
         .chars()
@@ -232,12 +231,12 @@ pub(super) fn transcript_turn_sections_keep_nested_tool_details() {
 
     assert!(reasoning_row_text.contains("tool planning"));
     assert!(
-        first_alphanumeric_column(lines[reasoning_row]) == assistant_body_column,
-        "thinking label should align with the assistant body column while keeping its own rail\n{rendered}"
+        !reasoning_row_text.contains('┃'),
+        "thinking traces should not have an outer rail\n{rendered}"
     );
-    assert_eq!(
-        reasoning_row_fgs[reasoning_rail_column], theme.border.subtle,
-        "thinking rail should use the subtle border color\n{rendered}"
+    assert!(
+        first_alphanumeric_column(lines[reasoning_row]) == assistant_body_column,
+        "thinking body should align with the assistant body column\n{rendered}"
     );
     assert!(
         reasoning_row_fgs
