@@ -335,6 +335,49 @@ pub(super) fn agent_cycle_preserves_user_selected_provider_model_across_profiles
     assert_eq!(launch_metadata.variant(), Some("high"));
 }
 
+pub(super) fn current_context_window_tokens_uses_runtime_context_after_model_switch() {
+    let mut runtime_option = runtime_context_model_option(
+        "deep",
+        "default",
+        "gpt-5.4-mini",
+        Some("deterministic"),
+        "GPT-5.4 Mini · Deterministic",
+    );
+    runtime_option.context_window_tokens = Some(64000);
+
+    let next_turn_option = runtime_context_model_option(
+        "deep",
+        "default",
+        "gpt-5.4-mini",
+        Some("creative"),
+        "GPT-5.4 Mini · Creative",
+    );
+
+    let mut app = AppState::new_live(None, false, None);
+    app.set_launch_metadata(LaunchMetadata::from_model_option(&runtime_option));
+    app.ingest_event(envelope(
+        1,
+        "req_ctx_window",
+        EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+            request_id: "req_ctx_window".into(),
+            text: "hello".to_string(),
+        }),
+    ));
+    app.set_launch_metadata(LaunchMetadata::from_model_option(&next_turn_option));
+
+    assert_eq!(
+        app.current_context_window_tokens(),
+        Some(64000),
+        "context window limit should follow the current runtime context, \
+         not the next-turn launch metadata"
+    );
+    assert_eq!(
+        app.launch_metadata().context_window_tokens(),
+        None,
+        "sanity: next-turn launch metadata has no context window in this test"
+    );
+}
+
 pub(super) fn switching_agent_after_submit_keeps_existing_turn_footer_agent() {
     let build_option =
         runtime_context_model_option("build", "default", "gpt-5.4-mini", None, "GPT-5.4 Mini");

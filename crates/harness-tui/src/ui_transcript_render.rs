@@ -206,22 +206,15 @@ fn assistant_part_needs_leading_gap(
     previous: Option<&TranscriptAssistantPart>,
     current: &TranscriptAssistantPart,
 ) -> bool {
-    matches!(
-        (previous, current),
-        (
-            Some(TranscriptAssistantPart::Reasoning(_)),
-            TranscriptAssistantPart::Body(_)
-        ) | (
-            Some(TranscriptAssistantPart::ToolCall(_)),
-            TranscriptAssistantPart::Reasoning(_)
-        ) | (
-            Some(TranscriptAssistantPart::ToolCall(_)),
-            TranscriptAssistantPart::Body(_)
-        ) | (
-            Some(TranscriptAssistantPart::Body(_)),
-            TranscriptAssistantPart::Body(_)
-        )
-    )
+    match (previous, current) {
+        (Some(TranscriptAssistantPart::Reasoning(_)), TranscriptAssistantPart::Body(_))
+        | (Some(TranscriptAssistantPart::ToolCall(_)), TranscriptAssistantPart::Reasoning(_))
+        | (Some(TranscriptAssistantPart::ToolCall(_)), TranscriptAssistantPart::Body(_))
+        | (Some(TranscriptAssistantPart::Body(_)), TranscriptAssistantPart::Body(_)) => true,
+        (Some(_), TranscriptAssistantPart::Compaction(_))
+        | (Some(TranscriptAssistantPart::Compaction(_)), _) => true,
+        _ => false,
+    }
 }
 
 fn context_tool_group_len(parts: &[TranscriptAssistantPart]) -> usize {
@@ -282,7 +275,9 @@ fn build_assistant_part_render_surface(
                 thinking,
                 theme,
                 transcript_surface_content_width(width, false),
-                turn.header.status == ActivityStatus::Streaming,
+                turn.header.status == ActivityStatus::Streaming
+                    && turn.body_blocks.is_empty()
+                    && turn.tool_calls.is_empty(),
                 turn.animation_phase,
                 turn.header.duration_ms,
                 base_surface,
@@ -368,6 +363,24 @@ fn build_assistant_part_render_surface(
                 None,
                 None,
                 Vec::new(),
+            )
+        }
+        TranscriptAssistantPart::Compaction(compaction) => {
+            let surface = super::ui_transcript_compaction::build_compaction_render_surface(
+                compaction,
+                theme,
+                width,
+                base_surface,
+            );
+            lines = surface.lines;
+            (
+                surface.kind,
+                surface.show_outer_rail,
+                surface.rail_color,
+                surface.surface,
+                surface.interaction_rows,
+                surface.selection_rows,
+                surface.diff_hunk_offsets,
             )
         }
     };

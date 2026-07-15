@@ -142,6 +142,8 @@ pub(crate) use ui_chrome::{
     exact_test_composer_viewport_wraps_by_display_width,
     exact_test_footer_status_cluster_empty_when_no_activity,
     exact_test_footer_status_cluster_shows_pending_permission_count,
+    exact_test_live_composer_disclosure_none_context_shows_est_zero,
+    exact_test_live_composer_disclosure_none_context_shows_percent_when_limit_known,
     exact_test_live_composer_disclosure_summarizes_compaction_metrics,
     exact_test_live_composer_metadata_omits_success_without_variant,
     exact_test_live_composer_reserves_right_gap,

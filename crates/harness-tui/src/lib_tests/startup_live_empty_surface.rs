@@ -165,7 +165,7 @@ pub(super) fn live_shell_orchestration_status_strip_snapshot() {
 
     insta::assert_snapshot!(
         status_row,
-        @"live 0  Ctrl+p commands"
+        @"live ctx 0 est  Ctrl+p commands"
     );
 }
 

@@ -25,4 +25,4 @@ expression: "render_live_lines(&app, 80,\n24).lines().map(str::trim_end).collect
   ┃
   ┃  gpt-5.4-mini openai
   ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
-                                                       live 0  Ctrl+p commands
+                                               live ctx 0 est  Ctrl+p commands

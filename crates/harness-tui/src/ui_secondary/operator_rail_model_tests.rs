@@ -1,3 +1,8 @@
+#![allow(
+    deprecated,
+    reason = "deprecated compaction event variants kept for backward compatibility tests"
+)]
+
 use super::operator_rail_test_fixtures::*;
 use super::*;
 use crate::app::{ActiveContextUsage, ActivityUsage};

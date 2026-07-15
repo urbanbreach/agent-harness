@@ -51,7 +51,50 @@ pub(super) fn build_transcript_sections(app: &AppState) -> Vec<TranscriptTurnSec
         }
     }
 
+    inject_compaction_events(app, &visible_activities, &mut turn_sections);
+
     turn_sections
+}
+
+fn inject_compaction_events(
+    app: &AppState,
+    visible_activities: &[(usize, &ActivityEntry)],
+    turn_sections: &mut Vec<TranscriptTurnSection>,
+) {
+    for event in &app.events {
+        let compaction_section = match &event.payload {
+            harness_core::event::EventV1::SessionCompaction(data) => TranscriptCompactionSection {
+                kind: TranscriptCompactionKind::SessionCompaction,
+                summary: data.summary.clone(),
+                tokens_before: Some(data.tokens_before),
+                read_files: data.read_files.clone(),
+                modified_files: data.modified_files.clone(),
+            },
+            harness_core::event::EventV1::BranchSummary(data) => TranscriptCompactionSection {
+                kind: TranscriptCompactionKind::BranchSummary,
+                summary: data.summary.clone(),
+                tokens_before: None,
+                read_files: data.read_files.clone(),
+                modified_files: data.modified_files.clone(),
+            },
+            _ => continue,
+        };
+
+        let target_turn_index = visible_activities
+            .iter()
+            .enumerate()
+            .filter(|(_, (_, activity))| activity.last_seq <= event.seq)
+            .map(|(turn_idx, _)| turn_idx)
+            .next_back()
+            .or_else(|| (!visible_activities.is_empty()).then_some(0));
+
+        if let Some(turn_index) = target_turn_index {
+            if let Some(turn) = turn_sections.get_mut(turn_index) {
+                turn.assistant_parts
+                    .push(TranscriptAssistantPart::Compaction(compaction_section));
+            }
+        }
+    }
 }
 
 fn turn_supports_assistant_footer(turn: &TranscriptTurnSection) -> bool {

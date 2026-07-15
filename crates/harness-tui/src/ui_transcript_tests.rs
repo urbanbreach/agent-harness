@@ -1085,6 +1085,100 @@ fn streaming_reasoning_header_renders_spinner_and_thinking_label() {
 }
 
 #[test]
+fn streaming_reasoning_stops_spinner_when_body_text_arrives() {
+    let mut app = AppState::default();
+    let mut entry = transcript_section_model_test_activity(
+        "request-streaming-reasoning-then-body",
+        ActivityStatus::Streaming,
+        "Here is my answer",
+    );
+    entry.thinking_text = "analyzing the problem".to_string();
+    app.activities = std::collections::VecDeque::from(vec![entry]);
+    app.transcript_view.selected_activity_index = 0;
+
+    let lines = transcript_test_line_texts(build_transcript_lines_for_width(
+        &app,
+        &Theme::default(),
+        80,
+    ));
+    let rendered = lines.join("\n");
+    assert!(
+        !rendered.contains("⠋ Thinking"),
+        "reasoning spinner should stop once body text arrives mid-turn\n{rendered}"
+    );
+    assert!(
+        rendered.contains("Thought"),
+        "reasoning header should show past-tense 'Thought' once body text arrives\n{rendered}"
+    );
+    assert!(
+        rendered.contains("analyzing the problem"),
+        "reasoning body text should still render\n{rendered}"
+    );
+    assert!(
+        rendered.contains("Here is my answer"),
+        "body text should still render\n{rendered}"
+    );
+}
+
+#[test]
+fn streaming_reasoning_stops_spinner_when_tool_call_arrives() {
+    let mut app = AppState::default();
+    let mut entry = transcript_section_model_test_activity(
+        "request-streaming-reasoning-then-tool",
+        ActivityStatus::Streaming,
+        "",
+    );
+    entry.thinking_text = "planning the approach".to_string();
+    entry.tool_calls.push(crate::app::ToolCallEntry {
+        tool_call_id: "call-1".to_string(),
+        tool_id: "shell.run".to_string(),
+        canonical_tool_id: None,
+        alias_source_tool_id: None,
+        resolved_tool_identity: None,
+        args_summary: r#"{"cmd":"ls"}"#.to_string(),
+        args_digest: "digest".to_string(),
+        lifecycle_state: None,
+        status: ToolCallDisplayStatus::Running,
+        output_summary: None,
+        output_digest: None,
+        output_json: None,
+        truncated_output: None,
+        edit: None,
+        lineage: None,
+        artifact_refs: Vec::new(),
+        timing_elapsed_ms: None,
+        permissions: Vec::new(),
+        first_seq: 2,
+        last_seq: 2,
+        first_mono_ms: 2,
+        last_mono_ms: 2,
+        first_timestamp: None,
+        last_timestamp: None,
+    });
+    app.activities = std::collections::VecDeque::from(vec![entry]);
+    app.transcript_view.selected_activity_index = 0;
+
+    let lines = transcript_test_line_texts(build_transcript_lines_for_width(
+        &app,
+        &Theme::default(),
+        80,
+    ));
+    let rendered = lines.join("\n");
+    assert!(
+        !rendered.contains("⠋ Thinking"),
+        "reasoning spinner should stop once a tool call arrives mid-turn\n{rendered}"
+    );
+    assert!(
+        rendered.contains("Thought"),
+        "reasoning header should show past-tense 'Thought' once a tool call arrives\n{rendered}"
+    );
+    assert!(
+        rendered.contains("planning the approach"),
+        "reasoning body text should still render\n{rendered}"
+    );
+}
+
+#[test]
 fn streaming_reasoning_header_with_title_renders_thinking_colon_title() {
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(

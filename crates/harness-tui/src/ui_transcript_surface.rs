@@ -150,11 +150,11 @@ pub(super) fn transcript_surface_render_width(
     kind: TranscriptRenderSurfaceKind,
 ) -> u16 {
     match kind {
-        TranscriptRenderSurfaceKind::User | TranscriptRenderSurfaceKind::AssistantCommandTool => {
-            width
-                .saturating_sub(TRANSCRIPT_SURFACE_TRAILING_GAP_WIDTH)
-                .max(1)
-        }
+        TranscriptRenderSurfaceKind::User
+        | TranscriptRenderSurfaceKind::AssistantCommandTool
+        | TranscriptRenderSurfaceKind::Compaction => width
+            .saturating_sub(TRANSCRIPT_SURFACE_TRAILING_GAP_WIDTH)
+            .max(1),
         _ => width.max(1),
     }
 }

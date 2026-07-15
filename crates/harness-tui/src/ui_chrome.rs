@@ -22,6 +22,8 @@ pub(crate) use ui_chrome_exact_tests::{
     exact_test_composer_viewport_wraps_by_display_width,
     exact_test_footer_status_cluster_empty_when_no_activity,
     exact_test_footer_status_cluster_shows_pending_permission_count,
+    exact_test_live_composer_disclosure_none_context_shows_est_zero,
+    exact_test_live_composer_disclosure_none_context_shows_percent_when_limit_known,
     exact_test_live_composer_disclosure_summarizes_compaction_metrics,
     exact_test_live_composer_metadata_omits_success_without_variant,
     exact_test_live_composer_reserves_right_gap,
@@ -253,21 +255,26 @@ pub(super) fn render_footer(
         } else {
             live_footer_status_candidates(app, usize::from(text_area.width), theme)
         };
-        let cluster_text = footer_status_cluster_text(app, theme);
-        let hint_with_cluster = if cluster_text.is_empty() {
-            hint_text
+        let cluster_spans = footer_status_cluster_text(app, theme);
+        let cluster_width: usize = cluster_spans
+            .iter()
+            .map(|span| display_width(span.content.as_ref()))
+            .sum::<usize>()
+            .saturating_add(if cluster_spans.is_empty() { 0 } else { 2 });
+        let available_hint_width = usize::from(text_area.width).saturating_sub(cluster_width);
+        let hint_text = truncate_plain_text(&hint_text, available_hint_width);
+
+        let hint_line = if cluster_spans.is_empty() {
+            Line::from(hint_text).style(style)
         } else {
-            format!("{cluster_text}  {hint_text}")
+            let mut spans = cluster_spans;
+            if !hint_text.is_empty() {
+                spans.push(Span::styled(format!("  {hint_text}"), style));
+            }
+            Line::from(spans)
         };
-        let hint_with_cluster =
-            truncate_plain_text(&hint_with_cluster, usize::from(text_area.width));
-        render_live_footer_row(
-            frame,
-            text_area,
-            style,
-            status_candidates,
-            hint_with_cluster,
-        );
+
+        render_live_footer_row(frame, text_area, style, status_candidates, hint_line);
     }
 }
 
@@ -276,14 +283,14 @@ fn render_live_footer_row(
     area: Rect,
     style: Style,
     status_candidates: Vec<String>,
-    hint_text: String,
+    hint_line: Line<'static>,
 ) {
     if area.width == 0 || area.height == 0 {
         return;
     }
 
     let max_width = usize::from(area.width);
-    let hint_width = hint_text.chars().count();
+    let hint_width = hint_line.width();
     let status_gap = usize::from(hint_width > 0 && !status_candidates.is_empty()) * 2;
     let status_width = max_width.saturating_sub(hint_width.saturating_add(status_gap));
     let status_text = if status_width == 0 {
@@ -308,11 +315,9 @@ fn render_live_footer_row(
     if !status_text.is_empty() && columns[0].width > 0 {
         frame.render_widget(Paragraph::new(status_text).style(style), columns[0]);
     }
-    if !hint_text.is_empty() && columns[1].width > 0 {
+    if hint_width > 0 && columns[1].width > 0 {
         frame.render_widget(
-            Paragraph::new(hint_text)
-                .style(style)
-                .alignment(Alignment::Right),
+            Paragraph::new(Text::from(hint_line)).alignment(Alignment::Right),
             columns[1],
         );
     }
@@ -387,39 +392,85 @@ fn live_footer_status_candidates(app: &AppState, max_width: usize, theme: &Theme
     options
 }
 
-fn footer_status_cluster_text(app: &AppState, theme: &Theme) -> String {
+fn footer_status_cluster_text(app: &AppState, theme: &Theme) -> Vec<Span<'static>> {
     if app.replay_mode || app.startup_shell_visible() {
-        return String::new();
+        return Vec::new();
     }
 
     let data = crate::ui::ui_secondary::footer_status_cluster_data(app);
-    let mut items: Vec<String> = Vec::new();
+    let mut spans: Vec<Span<'static>> = Vec::new();
+
+    if let Some(ctx_span) = footer_context_usage_span(app, theme) {
+        spans.push(ctx_span);
+    }
+
+    let mut text_items: Vec<String> = Vec::new();
 
     if data.pending_permissions > 0 {
-        items.push(format!("△{}", data.pending_permissions));
+        text_items.push(format!("△{}", data.pending_permissions));
     }
 
     if data.lsp_count > 0 {
-        let dot_color = if data.lsp_has_error {
+        let _dot_color = if data.lsp_has_error {
             theme.status.error
         } else if data.lsp_count > 1 {
             theme.status.warning
         } else {
             theme.status.success
         };
-        let _ = dot_color;
-        items.push(format!("•{}", data.lsp_count));
+        text_items.push(format!("•{}", data.lsp_count));
     }
 
     if data.mcp_count > 0 {
-        items.push(format!("⊙{}", data.mcp_count));
+        text_items.push(format!("⊙{}", data.mcp_count));
     }
 
-    if !items.is_empty() {
-        items.push("/status".to_string());
+    if !text_items.is_empty() {
+        text_items.push("/status".to_string());
     }
 
-    items.join(" ")
+    if !text_items.is_empty() {
+        if !spans.is_empty() {
+            spans.push(Span::raw("  "));
+        }
+        spans.push(Span::styled(
+            text_items.join(" "),
+            Style::default().fg(theme.text.tertiary),
+        ));
+    }
+
+    spans
+}
+
+fn footer_context_usage_span(app: &AppState, theme: &Theme) -> Option<Span<'static>> {
+    let active_context = app.active_context_usage()?;
+    if active_context.compacted_pending_refresh {
+        return Some(Span::styled(
+            "ctx compacted".to_string(),
+            Style::default().fg(theme.status.warning),
+        ));
+    }
+
+    let total = active_context.tokens.unwrap_or(0);
+    let limit = app.current_context_window_tokens()?;
+
+    if limit == 0 {
+        return None;
+    }
+
+    let percent = ((f64::from(total) / f64::from(limit)) * 100.0).clamp(0.0, 999.0);
+    let color = if percent > 80.0 {
+        theme.status.error
+    } else if percent >= 50.0 {
+        theme.status.warning
+    } else {
+        theme.status.success
+    };
+
+    Some(Span::styled(
+        format!("ctx: {:.0}%", percent),
+        Style::default().fg(color),
+    ))
 }
 
 fn header_identity_text(app: &AppState, header_mode: SessionHeaderMode) -> String {

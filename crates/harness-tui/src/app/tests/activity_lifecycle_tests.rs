@@ -1,5 +1,6 @@
 use super::*;
 use crate::UnwrapOrAbort;
+use harness_providers::CompletionUsage;
 
 #[path = "activity_lifecycle_terminal_tests.rs"]
 mod activity_lifecycle_terminal_tests;
@@ -40,6 +41,85 @@ pub(super) fn provider_reasoning_delta_populates_thinking_stream_without_overwri
     let activity = app.activities.back().unwrap_or_abort();
     assert_eq!(activity.thinking_text, "Drafting a careful answer.");
     assert_eq!(activity.transcript_text, "Hello world");
+}
+
+pub(super) fn provider_request_finished_total_tokens_populates_active_context_usage() {
+    let mut app = AppState::new_live(None, false, None);
+
+    app.ingest_event(envelope(
+        1,
+        "req_total_only",
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "provider_req_total_only".into(),
+            provider_id: "default".to_string(),
+            model_id: "gpt-5.4-mini".to_string(),
+            prompt_summary: "Hello".to_string(),
+            request_digest: "digest-total-only-start".to_string(),
+            metadata: None,
+        }),
+    ));
+    app.ingest_event(envelope(
+        2,
+        "req_total_only",
+        EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+            request_id: "provider_req_total_only".into(),
+            finish_reason: "done".to_string(),
+            output_digest: Some("digest-total-only-finish".to_string()),
+            usage: Some(CompletionUsage {
+                prompt_tokens: 0,
+                completion_tokens: 0,
+                total_tokens: 250,
+            }),
+            metadata: None,
+        }),
+    ));
+
+    assert_eq!(
+        app.active_context_usage(),
+        Some(ActiveContextUsage::estimate(250)),
+        "active context should use total_tokens when prompt/completion are not reported"
+    );
+    let activity = app.activities.back().unwrap_or_abort();
+    assert_eq!(
+        activity.usage.map(|usage| usage.total_tokens),
+        Some(250),
+        "activity usage should still record the reported total"
+    );
+}
+
+pub(super) fn provider_request_finished_without_usage_leaves_active_context_usage_none() {
+    // arrange: a live session with a provider request that finishes without usage
+    let mut app = AppState::new_live(None, false, None);
+    app.ingest_event(envelope(
+        1,
+        "req_no_usage",
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "provider_req_no_usage".into(),
+            provider_id: "default".to_string(),
+            model_id: "gpt-5.4-mini".to_string(),
+            prompt_summary: "Hello".to_string(),
+            request_digest: "digest-no-usage-start".to_string(),
+            metadata: None,
+        }),
+    ));
+    app.ingest_event(envelope(
+        2,
+        "req_no_usage",
+        EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+            request_id: "provider_req_no_usage".into(),
+            finish_reason: "done".to_string(),
+            output_digest: Some("digest-no-usage-finish".to_string()),
+            usage: None,
+            metadata: None,
+        }),
+    ));
+
+    // act & assert: active_context_usage stays None so the footer shows the placeholder style
+    assert_eq!(
+        app.active_context_usage(),
+        None,
+        "active context usage should stay None when the provider omits usage"
+    );
 }
 
 pub(super) fn provider_request_finished_keeps_activity_streaming_until_turn_task_completes() {

@@ -108,24 +108,27 @@ fn compact_usage_count(value: u64) -> String {
 
 fn composer_context_usage(app: &AppState) -> (String, Option<String>) {
     let Some(active_context) = app.active_context_usage() else {
-        return ("0".to_string(), None);
+        return ("ctx 0 est".to_string(), context_percent(app, 0));
     };
     if active_context.compacted_pending_refresh {
         return ("ctx compacted".to_string(), None);
     }
     let total = active_context.tokens.unwrap_or(0);
-    let percent = app.current_context_window_tokens().and_then(|limit| {
+    (
+        format!("ctx {} est", compact_usage_count(u64::from(total))),
+        context_percent(app, total),
+    )
+}
+
+fn context_percent(app: &AppState, total: u32) -> Option<String> {
+    app.current_context_window_tokens().and_then(|limit| {
         (limit > 0).then(|| {
             format!(
                 "{:.0}%",
                 ((f64::from(total) / f64::from(limit)) * 100.0).clamp(0.0, 999.0)
             )
         })
-    });
-    (
-        format!("ctx {} est", compact_usage_count(u64::from(total))),
-        percent,
-    )
+    })
 }
 
 pub(super) fn composer_context_summary_candidates(

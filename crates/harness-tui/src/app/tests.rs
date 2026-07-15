@@ -1,3 +1,8 @@
+#![allow(
+    deprecated,
+    reason = "deprecated compaction event variants kept for backward compatibility tests"
+)]
+
 use super::*;
 use crate::layout::FrameLayoutPlan;
 use crate::overlay::OverlayKind;
@@ -851,6 +856,7 @@ delegate_test!(live_switch_model_labels_next_turn_only => model_context_tests::l
 delegate_test!(tab_cycles_build_and_plan_primary_agents => model_context_tests::tab_cycles_build_and_plan_primary_agents);
 delegate_test!(agent_cycle_preserves_user_selected_provider_model_across_profiles => model_context_tests::agent_cycle_preserves_user_selected_provider_model_across_profiles);
 delegate_test!(switching_agent_after_submit_keeps_existing_turn_footer_agent => model_context_tests::switching_agent_after_submit_keeps_existing_turn_footer_agent);
+delegate_test!(current_context_window_tokens_uses_runtime_context_after_model_switch => model_context_tests::current_context_window_tokens_uses_runtime_context_after_model_switch);
 
 #[cfg(test)]
 #[path = "tests/interaction_tests.rs"]
@@ -924,6 +930,10 @@ delegate_test!(slash_new_then_submit_bootstraps_fresh_session_instead_of_live_tu
 mod activity_lifecycle_tests;
 
 delegate_test!(provider_reasoning_delta_populates_thinking_stream_without_overwriting_answer_text => activity_lifecycle_tests::provider_reasoning_delta_populates_thinking_stream_without_overwriting_answer_text);
+
+delegate_test!(provider_request_finished_total_tokens_populates_active_context_usage => activity_lifecycle_tests::provider_request_finished_total_tokens_populates_active_context_usage);
+
+delegate_test!(provider_request_finished_without_usage_leaves_active_context_usage_none => activity_lifecycle_tests::provider_request_finished_without_usage_leaves_active_context_usage_none);
 
 delegate_test!(provider_request_finished_keeps_activity_streaming_until_turn_task_completes => activity_lifecycle_tests::provider_request_finished_keeps_activity_streaming_until_turn_task_completes);
 

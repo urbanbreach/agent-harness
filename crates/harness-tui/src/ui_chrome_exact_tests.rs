@@ -1,3 +1,8 @@
+#![allow(
+    deprecated,
+    reason = "deprecated compaction event variants kept for backward compatibility tests"
+)]
+
 use super::*;
 use crate::UnwrapOrAbort;
 
@@ -489,6 +494,71 @@ pub(crate) fn exact_test_live_composer_disclosure_summarizes_compaction_metrics(
         .any(|candidate| candidate.contains("compactions 1")
             && candidate.contains("summary 80 tok")
             && candidate.contains("saved 380 tok")));
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_live_composer_disclosure_none_context_shows_est_zero() {
+    let app = AppState::new_live(None, false, None);
+
+    let surface = control_dock_surface(app.theme(), crate::view_model::ControlDockVariant::Live);
+    let candidates = composer_context_summary_candidates(&app, app.theme(), surface)
+        .into_iter()
+        .map(|spans| {
+            spans
+                .into_iter()
+                .map(|span| span.content.into_owned())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>();
+
+    assert!(candidates
+        .iter()
+        .any(|candidate| candidate.contains("live ctx 0 est")));
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_live_composer_disclosure_none_context_shows_percent_when_limit_known() {
+    let mut app = AppState::new_live(None, false, None);
+    let option = crate::app::ModelOption {
+        profile: "build".to_string(),
+        provider: "test".to_string(),
+        provider_display_label: None,
+        provider_backend_label: None,
+        model: "test-model".to_string(),
+        model_display_label: None,
+        variant: None,
+        variant_display_label: None,
+        display_label: None,
+        token_window_label: None,
+        context_window_tokens: Some(262144),
+        max_input_tokens: None,
+        max_output_tokens: None,
+        description: None,
+        profile_description: None,
+        reasoning_effort: None,
+        text_verbosity: None,
+        thinking: None,
+        recommended_for: None,
+    };
+    app.set_launch_metadata(crate::app::LaunchMetadata::from_model_option(&option));
+
+    let surface = control_dock_surface(app.theme(), crate::view_model::ControlDockVariant::Live);
+    let candidates = composer_context_summary_candidates(&app, app.theme(), surface)
+        .into_iter()
+        .map(|spans| {
+            spans
+                .into_iter()
+                .map(|span| span.content.into_owned())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>();
+
+    assert!(
+        candidates
+            .iter()
+            .any(|candidate| candidate.contains("live ctx 0 est") && candidate.contains("(0%)")),
+        "context indicator should always show percentage when limit is known, even without usage data: {candidates:?}"
+    );
 }
 
 #[cfg(test)]

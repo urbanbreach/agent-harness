@@ -181,21 +181,23 @@ impl AppState {
     }
 
     pub(crate) fn current_context_window_tokens(&self) -> Option<u32> {
-        self.launch_metadata.context_window_tokens().or_else(|| {
-            self.activities
-                .back()
-                .and_then(|activity| {
-                    non_empty_str(&activity.model_id).map(|model_id| {
-                        LaunchMetadata::new(
-                            self.active_profile(),
-                            self.active_provider(),
-                            Some(model_id.to_string()),
-                        )
-                        .context_window_tokens()
+        self.runtime_context_metadata()
+            .context_window_tokens()
+            .or_else(|| {
+                self.activities
+                    .back()
+                    .and_then(|activity| {
+                        non_empty_str(&activity.model_id).map(|model_id| {
+                            LaunchMetadata::new(
+                                self.runtime_context_profile(),
+                                self.runtime_context_provider(),
+                                Some(model_id.to_string()),
+                            )
+                            .context_window_tokens()
+                        })
                     })
-                })
-                .flatten()
-        })
+                    .flatten()
+            })
     }
 
     pub fn current_source_label(&self) -> Option<String> {

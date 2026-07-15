@@ -2,6 +2,10 @@
 use super::*;
 
 impl SessionProjection {
+    #[allow(
+        deprecated,
+        reason = "deprecated event variants kept for backward compatibility with existing session logs"
+    )]
     pub(super) fn update_derived_state_for_event(
         &mut self,
         event: &EventEnvelopeV1,
@@ -259,9 +263,8 @@ impl SessionProjection {
                             }
                         });
                         if let Some(usage) = data.usage.as_ref() {
-                            self.active_context_usage = Some(ActiveContextUsage::estimate(
-                                usage.prompt_tokens.saturating_add(usage.completion_tokens),
-                            ));
+                            self.active_context_usage =
+                                Some(ActiveContextUsage::estimate(usage.total_tokens));
                         }
                         entry.last_seq = event.seq;
                         entry.last_mono_ms = event.mono_ms;
@@ -337,6 +340,33 @@ impl SessionProjection {
                     trigger_reason: data.trigger_reason.clone(),
                     state: CompactionState::Failed,
                     message: format!("compaction failed · {}", data.reason),
+                });
+            }
+            EventV1::SessionCompaction(data) => {
+                self.compaction_usage_metrics.completed_count = self
+                    .compaction_usage_metrics
+                    .completed_count
+                    .saturating_add(1);
+                self.compaction_usage_metrics.last_tokens_before_estimate =
+                    Some(data.tokens_before);
+                self.compaction_status = Some(CompactionStatus {
+                    agent_id: data.agent_id.clone(),
+                    checkpoint_id: None,
+                    trigger_reason: data.trigger_reason.clone(),
+                    state: CompactionState::Applied,
+                    message: format!(
+                        "session compacted · {} tokens before · {}",
+                        data.tokens_before, data.trigger_reason
+                    ),
+                });
+            }
+            EventV1::BranchSummary(data) => {
+                self.compaction_status = Some(CompactionStatus {
+                    agent_id: data.agent_id.clone(),
+                    checkpoint_id: None,
+                    trigger_reason: "branch_summary".to_string(),
+                    state: CompactionState::Applied,
+                    message: "branch summary generated".to_string(),
                 });
             }
             EventV1::TaskCompleted(data) => {

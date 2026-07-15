@@ -117,6 +117,9 @@ mod ui_transcript_tool_sections;
 #[path = "ui_transcript_sections.rs"]
 mod ui_transcript_sections;
 
+#[path = "ui_transcript_compaction.rs"]
+mod ui_transcript_compaction;
+
 use ui_transcript_render::build_transcript_render_surfaces;
 use ui_transcript_sections::build_transcript_sections;
 #[cfg(test)]

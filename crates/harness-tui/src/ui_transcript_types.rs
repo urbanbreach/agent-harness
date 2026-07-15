@@ -42,6 +42,7 @@ pub(in crate::ui) enum TranscriptRenderSurfaceKind {
     AssistantCommandTool,
     AssistantError,
     AssistantFooter,
+    Compaction,
 }
 
 #[derive(Debug, Clone)]
@@ -186,12 +187,28 @@ pub(super) struct TranscriptErrorSection {
     pub(super) text: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum TranscriptCompactionKind {
+    SessionCompaction,
+    BranchSummary,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct TranscriptCompactionSection {
+    pub(super) kind: TranscriptCompactionKind,
+    pub(super) summary: String,
+    pub(super) tokens_before: Option<u32>,
+    pub(super) read_files: Vec<String>,
+    pub(super) modified_files: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum TranscriptAssistantPart {
     Reasoning(TranscriptLabeledTextSection),
     Body(TranscriptBodyBlock),
     ToolCall(Box<TranscriptToolCallSection>),
     Error(TranscriptErrorSection),
+    Compaction(TranscriptCompactionSection),
 }
 
 pub(super) const TRANSCRIPT_ASSISTANT_BODY_PREFIX: &str = "   ";
