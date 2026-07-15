@@ -54,7 +54,7 @@
           "api_mode": "chat_completions",
           "endpoint_path": "/v1/chat/completions",
           "bearer_token": "<redacted>",
-          "request_body_digest": "cdb955ce584559d29d7e7e71b163fad2d358e7364698ce4c9c2d05831f5bfaff",
+          "request_body_digest": "13a189e667672e60b37826501641a0035bf4b3e57d85dcfc1a2921b860943759",
           "tool_function_names": [
             "apply_patch",
             "bash",
@@ -133,7 +133,7 @@
           "api_mode": "chat_completions",
           "endpoint_path": "/v1/chat/completions",
           "bearer_token": "<redacted>",
-          "request_body_digest": "0e87f85c38f4573694b10674b5fe6f81efbbdc1c489fb1453284123fc44dc7fd",
+          "request_body_digest": "20c679d58e82b7441e2637f27c7ff96f00feef56b136615eff711af7758d19c6",
           "tool_function_names": [
             "glob",
             "grep",
@@ -198,7 +198,7 @@
           "api_mode": "chat_completions",
           "endpoint_path": "/v1/chat/completions",
           "bearer_token": "<redacted>",
-          "request_body_digest": "38282a97eaa21a875519c10ac8d21598b80974062bc50fc427e779c8941e8a6b",
+          "request_body_digest": "de95471605446fe83d0e8f50d0c746627e8d3c94b84d120032cf93c3c26ec809",
           "tool_function_names": [
             "background_output",
             "skill",
@@ -245,7 +245,7 @@
           "api_mode": "chat_completions",
           "endpoint_path": "/v1/chat/completions",
           "bearer_token": "<redacted>",
-          "request_body_digest": "e0111f69f1292d0bd4303da7097fb3640c8be7acb99dffab347f3b65ac36af16",
+          "request_body_digest": "535a9abc6f24a3749b29e7be0c04d455092aa23c50aea0c4c5d344232ca96962",
           "tool_function_names": [
             "mcp_docs_rs_tool_call",
             "mcp_docs_rs_tools_list"

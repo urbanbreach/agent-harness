@@ -110,44 +110,44 @@ async fn background_task_completion_after_tool_result_wakes_parent_in_followup_t
                 arguments_json: "{}".to_string(),
             },
             ProviderStreamEvent::Done {
-                usage: CompletionUsage {
+                usage: Some(CompletionUsage {
                     prompt_tokens: 2,
                     completion_tokens: 1,
                     total_tokens: 3,
-                },
+                }),
             },
         ],
         vec![
             ProviderStreamEvent::Start,
             ProviderStreamEvent::TextDelta("child completed".to_string()),
             ProviderStreamEvent::Done {
-                usage: CompletionUsage {
+                usage: Some(CompletionUsage {
                     prompt_tokens: 2,
                     completion_tokens: 2,
                     total_tokens: 4,
-                },
+                }),
             },
         ],
         vec![
             ProviderStreamEvent::Start,
             ProviderStreamEvent::TextDelta("parent final before wakeup".to_string()),
             ProviderStreamEvent::Done {
-                usage: CompletionUsage {
+                usage: Some(CompletionUsage {
                     prompt_tokens: 3,
                     completion_tokens: 2,
                     total_tokens: 5,
-                },
+                }),
             },
         ],
         vec![
             ProviderStreamEvent::Start,
             ProviderStreamEvent::TextDelta("wakeup acknowledged".to_string()),
             ProviderStreamEvent::Done {
-                usage: CompletionUsage {
+                usage: Some(CompletionUsage {
                     prompt_tokens: 3,
                     completion_tokens: 2,
                     total_tokens: 5,
-                },
+                }),
             },
         ],
     ]);

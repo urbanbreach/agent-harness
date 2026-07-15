@@ -15,11 +15,11 @@ async fn openai_compatible_offline_transport_parses_sse_deltas() {
             ProviderStreamEvent::TextDelta("Hello".to_string()),
             ProviderStreamEvent::TextDelta(" world".to_string()),
             ProviderStreamEvent::DoneWithMetadata {
-                usage: CompletionUsage {
+                usage: Some(CompletionUsage {
                     prompt_tokens: 4,
                     completion_tokens: 2,
                     total_tokens: 6,
-                },
+                }),
                 metadata: Some(ProviderStreamFinishedMetadata {
                     provider_response_id: Some("chatcmpl-1".to_string()),
                     provider_stop_reason: Some("stop".to_string()),

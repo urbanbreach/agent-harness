@@ -168,11 +168,11 @@ pub fn golden_path_provider() -> MockProvider {
                 ProviderStreamEvent::Start,
                 ProviderStreamEvent::TextDelta(format!("{prompt}-delta")),
                 ProviderStreamEvent::Done {
-                    usage: CompletionUsage {
+                    usage: Some(CompletionUsage {
                         prompt_tokens: 2,
                         completion_tokens: 1,
                         total_tokens: 3,
-                    },
+                    }),
                 },
             ],
         );
@@ -201,11 +201,11 @@ pub fn golden_path_provider() -> MockProvider {
                     ProviderStreamEvent::Start,
                     ProviderStreamEvent::TextDelta(format!("{prompt}-delta")),
                     ProviderStreamEvent::Done {
-                        usage: CompletionUsage {
+                        usage: Some(CompletionUsage {
                             prompt_tokens: 2,
                             completion_tokens: 1,
                             total_tokens: 3,
-                        },
+                        }),
                     },
                 ],
             );
@@ -251,11 +251,11 @@ pub fn golden_path_provider() -> MockProvider {
             ProviderStreamEvent::TextDelta("Hello".to_string()),
             ProviderStreamEvent::TextDelta(" world".to_string()),
             ProviderStreamEvent::Done {
-                usage: CompletionUsage {
+                usage: Some(CompletionUsage {
                     prompt_tokens: 4,
                     completion_tokens: 2,
                     total_tokens: 6,
-                },
+                }),
             },
         ],
     );
@@ -284,11 +284,11 @@ pub fn golden_path_provider() -> MockProvider {
             ProviderStreamEvent::TextDelta("Hello".to_string()),
             ProviderStreamEvent::TextDelta(" world".to_string()),
             ProviderStreamEvent::Done {
-                usage: CompletionUsage {
+                usage: Some(CompletionUsage {
                     prompt_tokens: 4,
                     completion_tokens: 2,
                     total_tokens: 6,
-                },
+                }),
             },
         ],
     );
@@ -336,11 +336,11 @@ pub fn golden_path_provider() -> MockProvider {
             ProviderStreamEvent::TextDelta("Shell parity".to_string()),
             ProviderStreamEvent::TextDelta(" looks good.".to_string()),
             ProviderStreamEvent::Done {
-                usage: CompletionUsage {
+                usage: Some(CompletionUsage {
                     prompt_tokens: 10,
                     completion_tokens: 4,
                     total_tokens: 14,
-                },
+                }),
             },
         ],
     );
@@ -396,11 +396,11 @@ fn insert_worker_text_response(
             ProviderStreamEvent::Start,
             ProviderStreamEvent::TextDelta(response.to_string()),
             ProviderStreamEvent::Done {
-                usage: CompletionUsage {
+                usage: Some(CompletionUsage {
                     prompt_tokens: 4,
                     completion_tokens: 2,
                     total_tokens: 6,
-                },
+                }),
             },
         ],
     );

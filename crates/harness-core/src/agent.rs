@@ -161,11 +161,11 @@ mod tests {
                 harness_providers::ProviderStreamEvent::Start,
                 harness_providers::ProviderStreamEvent::TextDelta("plain response".to_string()),
                 harness_providers::ProviderStreamEvent::Done {
-                    usage: CompletionUsage {
+                    usage: Some(CompletionUsage {
                         prompt_tokens: 10,
                         completion_tokens: 2,
                         total_tokens: 12,
-                    },
+                    }),
                 },
             ],
         );
@@ -237,11 +237,11 @@ mod tests {
                     arguments_json: r#"{"filePath":"/tmp/demo.txt"}"#.to_string(),
                 },
                 harness_providers::ProviderStreamEvent::Done {
-                    usage: CompletionUsage {
+                    usage: Some(CompletionUsage {
                         prompt_tokens: 10,
                         completion_tokens: 8,
                         total_tokens: 18,
-                    },
+                    }),
                 },
             ],
         );
@@ -603,11 +603,11 @@ mod tests {
                     arguments_json: "{}".to_string(),
                 },
                 harness_providers::ProviderStreamEvent::Done {
-                    usage: CompletionUsage {
+                    usage: Some(CompletionUsage {
                         prompt_tokens: 4,
                         completion_tokens: 3,
                         total_tokens: 7,
-                    },
+                    }),
                 },
             ],
         );
@@ -679,11 +679,11 @@ mod tests {
                     arguments_json: "{\"filePath\":\"/tmp/demo.txt\"".to_string(),
                 },
                 harness_providers::ProviderStreamEvent::Done {
-                    usage: CompletionUsage {
+                    usage: Some(CompletionUsage {
                         prompt_tokens: 4,
                         completion_tokens: 3,
                         total_tokens: 7,
-                    },
+                    }),
                 },
             ],
         );

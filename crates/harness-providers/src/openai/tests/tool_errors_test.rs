@@ -55,11 +55,11 @@ async fn openai_compatible_offline_transport_streams_chat_tool_calls() {
                 arguments_json: "{\"filePath\":\"/tmp/demo.txt\"}".to_string(),
             },
             ProviderStreamEvent::DoneWithMetadata {
-                usage: CompletionUsage {
+                usage: Some(CompletionUsage {
                     prompt_tokens: 12,
                     completion_tokens: 4,
                     total_tokens: 16,
-                },
+                }),
                 metadata: Some(ProviderStreamFinishedMetadata {
                     provider_response_id: Some("chatcmpl-tool-1".to_string()),
                     provider_stop_reason: Some("tool_calls".to_string()),

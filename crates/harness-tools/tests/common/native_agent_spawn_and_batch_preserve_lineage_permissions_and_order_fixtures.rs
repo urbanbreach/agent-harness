@@ -46,11 +46,11 @@ impl Provider for StaticProvider {
             ProviderStreamEvent::Start,
             ProviderStreamEvent::TextDelta("static child result".to_string()),
             ProviderStreamEvent::Done {
-                usage: CompletionUsage {
+                usage: Some(CompletionUsage {
                     prompt_tokens: 1,
                     completion_tokens: 1,
                     total_tokens: 2,
-                },
+                }),
             },
         ]))
     }
@@ -80,11 +80,11 @@ impl Provider for DelayedProvider {
             ProviderStreamEvent::Start,
             ProviderStreamEvent::TextDelta("delayed child result".to_string()),
             ProviderStreamEvent::Done {
-                usage: CompletionUsage {
+                usage: Some(CompletionUsage {
                     prompt_tokens: 1,
                     completion_tokens: 1,
                     total_tokens: 2,
-                },
+                }),
             },
         ]))
     }
@@ -129,11 +129,11 @@ impl Provider for ChildToolThenFinalProvider {
                     .to_string(),
                 },
                 ProviderStreamEvent::Done {
-                    usage: CompletionUsage {
+                    usage: Some(CompletionUsage {
                         prompt_tokens: 1,
                         completion_tokens: 1,
                         total_tokens: 2,
-                    },
+                    }),
                 },
             ]));
         }
@@ -143,11 +143,11 @@ impl Provider for ChildToolThenFinalProvider {
             ProviderStreamEvent::Start,
             ProviderStreamEvent::TextDelta("child final after read".to_string()),
             ProviderStreamEvent::Done {
-                usage: CompletionUsage {
+                usage: Some(CompletionUsage {
                     prompt_tokens: 1,
                     completion_tokens: 1,
                     total_tokens: 2,
-                },
+                }),
             },
         ]))
     }
@@ -199,11 +199,11 @@ impl Provider for DelegationContractProvider {
             ProviderStreamEvent::Start,
             ProviderStreamEvent::TextDelta(body),
             ProviderStreamEvent::Done {
-                usage: CompletionUsage {
+                usage: Some(CompletionUsage {
                     prompt_tokens: 1,
                     completion_tokens: 1,
                     total_tokens: 2,
-                },
+                }),
             },
         ]))
     }
@@ -233,11 +233,11 @@ impl Provider for TaskCallingProvider {
                     .to_string(),
                 },
                 ProviderStreamEvent::Done {
-                    usage: CompletionUsage {
+                    usage: Some(CompletionUsage {
                         prompt_tokens: 1,
                         completion_tokens: 1,
                         total_tokens: 2,
-                    },
+                    }),
                 },
             ]
         } else {
@@ -245,11 +245,11 @@ impl Provider for TaskCallingProvider {
                 ProviderStreamEvent::Start,
                 ProviderStreamEvent::TextDelta("done".to_string()),
                 ProviderStreamEvent::Done {
-                    usage: CompletionUsage {
+                    usage: Some(CompletionUsage {
                         prompt_tokens: 1,
                         completion_tokens: 1,
                         total_tokens: 2,
-                    },
+                    }),
                 },
             ]
         };

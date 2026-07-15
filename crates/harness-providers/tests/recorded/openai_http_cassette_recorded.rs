@@ -53,13 +53,64 @@ async fn replayed_http_cassette_drives_openai_parser_without_inner_transport() {
             ProviderStreamEvent::TextDelta("Hello".to_string()),
             ProviderStreamEvent::TextDelta(" cassette".to_string()),
             ProviderStreamEvent::DoneWithMetadata {
-                usage: CompletionUsage {
+                usage: Some(CompletionUsage {
                     prompt_tokens: 4,
                     completion_tokens: 2,
                     total_tokens: 6,
-                },
+                }),
                 metadata: Some(ProviderStreamFinishedMetadata {
                     provider_response_id: Some("chatcmpl-cassette".to_string()),
+                    provider_stop_reason: Some("stop".to_string()),
+                    ..ProviderStreamFinishedMetadata::default()
+                }),
+            },
+        ]
+    );
+}
+
+#[tokio::test]
+async fn replayed_http_cassette_reads_usage_from_choice_when_top_level_usage_is_absent() {
+    // arrange: a cassette whose final chunk has usage inside the choice object
+    let temp = tempdir().unwrap_or_abort();
+    let path = temp.path().join("openai-http-choice-usage.json");
+    OpenAiHttpCassette::new(vec![OpenAiHttpInteraction {
+        request: recorded_request("/v1/chat/completions", basic_chat_body()),
+        response: recorded_response(200, choice_level_usage_chat_sse()),
+    }])
+    .write_to(&path)
+    .unwrap_or_abort();
+
+    let inner = Arc::new(ScriptedTransport::default());
+    let inner_clone = Arc::clone(&inner);
+    let transport = Arc::new(
+        RecordedOpenAiHttpTransport::with_ci(inner_clone, &path, CassetteMode::Replay, false)
+            .unwrap_or_abort(),
+    );
+    let provider = provider_for_transport(transport, OpenAiApiMode::ChatCompletions);
+
+    // act: replay the cassette and collect events
+    let events = provider
+        .stream_completion(basic_request())
+        .await
+        .collect::<Vec<_>>()
+        .await;
+
+    // assert: usage is read from the choice object and no live transport is called
+    assert_eq!(inner.calls(), 0, "replay must not call live transport");
+    assert_eq!(
+        events,
+        vec![
+            ProviderStreamEvent::Started { metadata: None },
+            ProviderStreamEvent::TextDelta("Hello".to_string()),
+            ProviderStreamEvent::TextDelta(" choice".to_string()),
+            ProviderStreamEvent::DoneWithMetadata {
+                usage: Some(CompletionUsage {
+                    prompt_tokens: 4,
+                    completion_tokens: 2,
+                    total_tokens: 6,
+                }),
+                metadata: Some(ProviderStreamFinishedMetadata {
+                    provider_response_id: Some("chatcmpl-choice".to_string()),
                     provider_stop_reason: Some("stop".to_string()),
                     ..ProviderStreamFinishedMetadata::default()
                 }),
@@ -271,7 +322,8 @@ fn basic_chat_body() -> serde_json::Value {
         "messages": [{"role":"user","content":"Say hello from cassette"}],
         "temperature": 0.0,
         "max_tokens": 32,
-        "stream": true
+        "stream": true,
+        "stream_options": {"include_usage": true}
     })
 }
 
@@ -296,6 +348,16 @@ fn deterministic_chat_sse() -> String {
         "data: {\"id\":\"chatcmpl-cassette\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hello\"},\"finish_reason\":null}],\"usage\":null}\n\n",
         "data: {\"id\":\"chatcmpl-cassette\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\" cassette\"},\"finish_reason\":null}],\"usage\":null}\n\n",
         "data: {\"id\":\"chatcmpl-cassette\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":4,\"completion_tokens\":2,\"total_tokens\":6}}\n\n",
+        "data: [DONE]\n\n"
+    )
+    .to_string()
+}
+
+fn choice_level_usage_chat_sse() -> String {
+    concat!(
+        "data: {\"id\":\"chatcmpl-choice\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hello\"},\"finish_reason\":null}]}\n\n",
+        "data: {\"id\":\"chatcmpl-choice\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\" choice\"},\"finish_reason\":null}]}\n\n",
+        "data: {\"id\":\"chatcmpl-choice\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\",\"usage\":{\"prompt_tokens\":4,\"completion_tokens\":2,\"total_tokens\":6}}]}\n\n",
         "data: [DONE]\n\n"
     )
     .to_string()

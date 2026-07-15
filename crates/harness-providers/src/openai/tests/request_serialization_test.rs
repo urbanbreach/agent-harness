@@ -371,3 +371,41 @@ fn openai_chat_request_replays_assistant_tool_call_in_tool_calls_field() {
         Some(&serde_json::Value::String("ok".to_string()))
     );
 }
+
+#[test]
+fn openai_chat_streaming_request_asks_for_usage() {
+    // arrange: a streaming chat completion request
+    let request = CompletionRequest {
+        provider_id: None,
+        model_id: "gpt-4o-mini".to_string(),
+        messages: vec![CompletionMessage {
+            role: MessageRole::User,
+            content: "hello".to_string(),
+            name: None,
+            tool_call_id: None,
+            assistant_tool_calls: None,
+        }],
+        temperature: None,
+        max_tokens: None,
+        variant: None,
+        reasoning_effort: None,
+        text_verbosity: None,
+        reasoning_summary: None,
+        thinking: None,
+        tools: None,
+        tool_choice: None,
+        context: Default::default(),
+        stream: true,
+    };
+
+    // act: serialize the request body
+    let body = serde_json::to_value(OpenAiChatCompletionsRequest::from(request)).unwrap_or_abort();
+
+    // assert: the body asks the provider to include usage in the final chunk
+    assert_eq!(
+        body.get("stream_options")
+            .and_then(|value| value.get("include_usage")),
+        Some(&serde_json::Value::Bool(true)),
+        "streaming chat completions should request usage in the final chunk"
+    );
+}

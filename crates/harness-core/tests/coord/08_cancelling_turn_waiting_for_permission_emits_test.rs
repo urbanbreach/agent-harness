@@ -10,11 +10,11 @@ async fn cancelling_turn_waiting_for_permission_emits_turn_end_without_tool_star
             arguments_json: "{}".to_string(),
         },
         ProviderStreamEvent::Done {
-            usage: CompletionUsage {
+            usage: Some(CompletionUsage {
                 prompt_tokens: 2,
                 completion_tokens: 1,
                 total_tokens: 3,
-            },
+            }),
         },
     ]]);
     let coordinator = test_agent_tool_coordinator(
@@ -118,11 +118,11 @@ async fn late_tool_result_after_turn_cancellation_is_task_result_late() {
                 arguments_json: "{}".to_string(),
             },
             ProviderStreamEvent::Done {
-                usage: CompletionUsage {
+                usage: Some(CompletionUsage {
                     prompt_tokens: 2,
                     completion_tokens: 1,
                     total_tokens: 3,
-                },
+                }),
             },
         ],
         vec![
@@ -131,11 +131,11 @@ async fn late_tool_result_after_turn_cancellation_is_task_result_late() {
                 "should not be requested after cancellation".to_string(),
             ),
             ProviderStreamEvent::Done {
-                usage: CompletionUsage {
+                usage: Some(CompletionUsage {
                     prompt_tokens: 3,
                     completion_tokens: 2,
                     total_tokens: 5,
-                },
+                }),
             },
         ],
     ]);

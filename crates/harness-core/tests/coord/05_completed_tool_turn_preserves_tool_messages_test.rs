@@ -11,33 +11,33 @@ async fn completed_tool_turn_preserves_tool_messages_for_followup_context() {
                 arguments_json: r#"{"command":"touch docs/config.md"}"#.to_string(),
             },
             ProviderStreamEvent::Done {
-                usage: CompletionUsage {
+                usage: Some(CompletionUsage {
                     prompt_tokens: 2,
                     completion_tokens: 1,
                     total_tokens: 3,
-                },
+                }),
             },
         ],
         vec![
             ProviderStreamEvent::Start,
             ProviderStreamEvent::TextDelta("I edited docs/config.md.".to_string()),
             ProviderStreamEvent::Done {
-                usage: CompletionUsage {
+                usage: Some(CompletionUsage {
                     prompt_tokens: 3,
                     completion_tokens: 2,
                     total_tokens: 5,
-                },
+                }),
             },
         ],
         vec![
             ProviderStreamEvent::Start,
             ProviderStreamEvent::TextDelta("I used shell.run.".to_string()),
             ProviderStreamEvent::Done {
-                usage: CompletionUsage {
+                usage: Some(CompletionUsage {
                     prompt_tokens: 4,
                     completion_tokens: 2,
                     total_tokens: 6,
-                },
+                }),
             },
         ],
     ]);
@@ -152,22 +152,22 @@ async fn resumed_tool_turn_preserves_tool_messages_for_followup_context() {
                 arguments_json: r#"{"command":"touch docs/config.md"}"#.to_string(),
             },
             ProviderStreamEvent::Done {
-                usage: CompletionUsage {
+                usage: Some(CompletionUsage {
                     prompt_tokens: 2,
                     completion_tokens: 1,
                     total_tokens: 3,
-                },
+                }),
             },
         ],
         vec![
             ProviderStreamEvent::Start,
             ProviderStreamEvent::TextDelta("I edited docs/config.md.".to_string()),
             ProviderStreamEvent::Done {
-                usage: CompletionUsage {
+                usage: Some(CompletionUsage {
                     prompt_tokens: 3,
                     completion_tokens: 2,
                     total_tokens: 5,
-                },
+                }),
             },
         ],
     ]);
@@ -274,11 +274,11 @@ async fn provider_stream_metadata_persists_to_jsonl_events() {
         ProviderStreamEvent::ReasoningDelta("provider reasoning summary".to_string()),
         ProviderStreamEvent::TextDelta("metadata visible".to_string()),
         ProviderStreamEvent::DoneWithMetadata {
-            usage: CompletionUsage {
+            usage: Some(CompletionUsage {
                 prompt_tokens: 12,
                 completion_tokens: 4,
                 total_tokens: 16,
-            },
+            }),
             metadata: Some(ProviderStreamFinishedMetadata {
                 provider_response_id: Some("resp-observed-1".to_string()),
                 provider_session_id: Some("session-observed-1".to_string()),
@@ -429,11 +429,11 @@ async fn provider_reasoning_metadata_persists_digest_without_raw_summary_fallbac
         ProviderStreamEvent::ReasoningDelta("private reasoning text".to_string()),
         ProviderStreamEvent::TextDelta("visible answer".to_string()),
         ProviderStreamEvent::Done {
-            usage: CompletionUsage {
+            usage: Some(CompletionUsage {
                 prompt_tokens: 2,
                 completion_tokens: 2,
                 total_tokens: 4,
-            },
+            }),
         },
     ]]);
     let coordinator = test_agent_coordinator_with_provider(temp_dir.path(), Arc::new(provider), 1);

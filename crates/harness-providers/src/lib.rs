@@ -375,10 +375,12 @@ pub enum ProviderStreamEvent {
         arguments_json: String,
     },
     Done {
-        usage: CompletionUsage,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        usage: Option<CompletionUsage>,
     },
     DoneWithMetadata {
-        usage: CompletionUsage,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        usage: Option<CompletionUsage>,
         #[serde(skip_serializing_if = "Option::is_none")]
         metadata: Option<ProviderStreamFinishedMetadata>,
     },
@@ -625,11 +627,11 @@ mod tests {
             },
             ProviderStreamEvent::TextDelta("done".to_string()),
             ProviderStreamEvent::Done {
-                usage: CompletionUsage {
+                usage: Some(CompletionUsage {
                     prompt_tokens: 10,
                     completion_tokens: 5,
                     total_tokens: 15,
-                },
+                }),
             },
         ];
 

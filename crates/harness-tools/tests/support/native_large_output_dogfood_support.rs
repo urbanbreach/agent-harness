@@ -32,11 +32,11 @@ impl Provider for LargeSummaryProvider {
                 "x".repeat(1_600)
             )),
             ProviderStreamEvent::Done {
-                usage: CompletionUsage {
+                usage: Some(CompletionUsage {
                     prompt_tokens: 1,
                     completion_tokens: 1,
                     total_tokens: 2,
-                },
+                }),
             },
         ]))
     }

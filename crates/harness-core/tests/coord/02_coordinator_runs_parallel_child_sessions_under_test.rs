@@ -10,11 +10,11 @@ async fn coordinator_runs_parallel_child_sessions_under_slot_limits() {
                     ProviderStreamEvent::Start,
                     ProviderStreamEvent::TextDelta("alpha-ok".to_string()),
                     ProviderStreamEvent::Done {
-                        usage: CompletionUsage {
+                        usage: Some(CompletionUsage {
                             prompt_tokens: 2,
                             completion_tokens: 1,
                             total_tokens: 3,
-                        },
+                        }),
                     },
                 ],
             ),
@@ -24,11 +24,11 @@ async fn coordinator_runs_parallel_child_sessions_under_slot_limits() {
                     ProviderStreamEvent::Start,
                     ProviderStreamEvent::TextDelta("beta-ok".to_string()),
                     ProviderStreamEvent::Done {
-                        usage: CompletionUsage {
+                        usage: Some(CompletionUsage {
                             prompt_tokens: 2,
                             completion_tokens: 1,
                             total_tokens: 3,
-                        },
+                        }),
                     },
                 ],
             ),
@@ -189,11 +189,11 @@ async fn coordinator_isolates_parallel_child_failures() {
                     ProviderStreamEvent::Start,
                     ProviderStreamEvent::TextDelta("beta child ok".to_string()),
                     ProviderStreamEvent::Done {
-                        usage: CompletionUsage {
+                        usage: Some(CompletionUsage {
                             prompt_tokens: 2,
                             completion_tokens: 1,
                             total_tokens: 3,
-                        },
+                        }),
                     },
                 ],
             ),

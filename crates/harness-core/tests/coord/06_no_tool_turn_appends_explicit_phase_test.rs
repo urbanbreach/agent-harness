@@ -131,22 +131,22 @@ async fn tool_turn_does_not_preflight_until_assistant_message_end_is_durable() {
                 arguments_json: "{}".to_string(),
             },
             ProviderStreamEvent::Done {
-                usage: CompletionUsage {
+                usage: Some(CompletionUsage {
                     prompt_tokens: 2,
                     completion_tokens: 1,
                     total_tokens: 3,
-                },
+                }),
             },
         ],
         vec![
             ProviderStreamEvent::Start,
             ProviderStreamEvent::TextDelta("tool phase done".to_string()),
             ProviderStreamEvent::Done {
-                usage: CompletionUsage {
+                usage: Some(CompletionUsage {
                     prompt_tokens: 3,
                     completion_tokens: 2,
                     total_tokens: 5,
-                },
+                }),
             },
         ],
     ]);

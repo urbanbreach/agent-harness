@@ -34,7 +34,14 @@ pub(crate) struct OpenAiChatCompletionsRequest {
     tools: Option<Vec<OpenAiChatTool>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     tool_choice: Option<ToolChoice>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stream_options: Option<OpenAiStreamOptions>,
     stream: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct OpenAiStreamOptions {
+    include_usage: bool,
 }
 
 impl From<CompletionRequest> for OpenAiChatCompletionsRequest {
@@ -78,6 +85,9 @@ impl OpenAiChatCompletionsRequest {
             thinking,
             tools: tools.map(|tools| tools.into_iter().map(Into::into).collect()),
             tool_choice,
+            stream_options: stream.then_some(OpenAiStreamOptions {
+                include_usage: true,
+            }),
             stream,
         }
     }

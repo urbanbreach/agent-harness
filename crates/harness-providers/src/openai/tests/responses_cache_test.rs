@@ -33,11 +33,11 @@ async fn openai_responses_offline_transport_streams_tool_call_complete() {
                 arguments_json: "{\"filePath\":\"/tmp/demo.txt\"}".to_string(),
             },
             ProviderStreamEvent::DoneWithMetadata {
-                usage: CompletionUsage {
+                usage: Some(CompletionUsage {
                     prompt_tokens: 9,
                     completion_tokens: 3,
                     total_tokens: 12,
-                },
+                }),
                 metadata: Some(ProviderStreamFinishedMetadata {
                     provider_response_id: Some("resp-tool-1".to_string()),
                     provider_session_id: Some("session-tool-1".to_string()),
@@ -237,11 +237,11 @@ async fn openai_auto_loopback_falls_back_to_chat_completions_on_400() {
             ProviderStreamEvent::TextDelta("Hello".to_string()),
             ProviderStreamEvent::TextDelta(" world".to_string()),
             ProviderStreamEvent::DoneWithMetadata {
-                usage: CompletionUsage {
+                usage: Some(CompletionUsage {
                     prompt_tokens: 4,
                     completion_tokens: 2,
                     total_tokens: 6,
-                },
+                }),
                 metadata: Some(ProviderStreamFinishedMetadata {
                     provider_response_id: Some("chatcmpl-1".to_string()),
                     provider_stop_reason: Some("stop".to_string()),

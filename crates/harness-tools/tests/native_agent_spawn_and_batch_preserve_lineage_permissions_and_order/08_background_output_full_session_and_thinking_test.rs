@@ -18,11 +18,11 @@ impl Provider for ReasoningProvider {
             ProviderStreamEvent::ReasoningDelta(" The answer is straightforward.".to_string()),
             ProviderStreamEvent::TextDelta("reasoning child result".to_string()),
             ProviderStreamEvent::Done {
-                usage: CompletionUsage {
+                usage: Some(CompletionUsage {
                     prompt_tokens: 1,
                     completion_tokens: 1,
                     total_tokens: 2,
-                },
+                }),
             },
         ]))
     }

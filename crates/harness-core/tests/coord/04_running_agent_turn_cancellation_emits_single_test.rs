@@ -245,11 +245,11 @@ async fn provider_single_call_returns_tool_intents_without_executing_tools() {
                 arguments_json: r#"{"cmd":"two"}"#.to_string(),
             },
             ProviderStreamEvent::Done {
-                usage: CompletionUsage {
+                usage: Some(CompletionUsage {
                     prompt_tokens: 2,
                     completion_tokens: 3,
                     total_tokens: 5,
-                },
+                }),
             },
         ],
     );
@@ -346,22 +346,22 @@ async fn provider_calls_in_one_turn_have_unique_request_ids() {
                 arguments_json: "{}".to_string(),
             },
             ProviderStreamEvent::Done {
-                usage: CompletionUsage {
+                usage: Some(CompletionUsage {
                     prompt_tokens: 2,
                     completion_tokens: 1,
                     total_tokens: 3,
-                },
+                }),
             },
         ],
         vec![
             ProviderStreamEvent::Start,
             ProviderStreamEvent::TextDelta("final answer".to_string()),
             ProviderStreamEvent::Done {
-                usage: CompletionUsage {
+                usage: Some(CompletionUsage {
                     prompt_tokens: 3,
                     completion_tokens: 2,
                     total_tokens: 5,
-                },
+                }),
             },
         ],
     ]);

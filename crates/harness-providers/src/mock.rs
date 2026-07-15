@@ -296,10 +296,11 @@ impl From<FixtureStreamEvent> for ProviderStreamEvent {
                 function_name,
                 arguments_json,
             },
-            FixtureStreamEvent::Done { usage } => Self::Done { usage },
-            FixtureStreamEvent::DoneWithMetadata { usage, metadata } => {
-                Self::DoneWithMetadata { usage, metadata }
-            }
+            FixtureStreamEvent::Done { usage } => Self::Done { usage: Some(usage) },
+            FixtureStreamEvent::DoneWithMetadata { usage, metadata } => Self::DoneWithMetadata {
+                usage: Some(usage),
+                metadata,
+            },
             FixtureStreamEvent::Error { message } => Self::error(message),
         }
     }
@@ -337,11 +338,11 @@ mod tests {
                 ProviderStreamEvent::TextDelta(" from".to_string()),
                 ProviderStreamEvent::TextDelta(" mock provider.".to_string()),
                 ProviderStreamEvent::Done {
-                    usage: crate::CompletionUsage {
+                    usage: Some(crate::CompletionUsage {
                         prompt_tokens: 8,
                         completion_tokens: 4,
                         total_tokens: 12,
-                    }
+                    })
                 }
             ]
         );
@@ -444,11 +445,11 @@ mod tests {
                     arguments_json: "{\"filePath\":\"/tmp/demo.txt\"}".to_string(),
                 },
                 ProviderStreamEvent::Done {
-                    usage: crate::CompletionUsage {
+                    usage: Some(crate::CompletionUsage {
                         prompt_tokens: 21,
                         completion_tokens: 9,
                         total_tokens: 30,
-                    }
+                    })
                 }
             ]
         );

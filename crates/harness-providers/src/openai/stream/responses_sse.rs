@@ -1,6 +1,6 @@
 use tokio::sync::mpsc;
 
-use crate::{ProviderStreamEvent, ProviderStreamStartMetadata};
+use crate::{CompletionUsage, ProviderStreamEvent, ProviderStreamStartMetadata};
 
 use super::super::sse::next_sse_event;
 use super::super::stream_event::{
@@ -14,7 +14,7 @@ use super::super::tool_call::{
     handle_responses_tool_item_added, handle_responses_tool_item_done, ResponsesToolCallState,
 };
 use super::super::transport::OpenAiHttpResponse;
-use super::{warn_stream_processing_failure, warn_stream_send_failure, zero_usage};
+use super::{warn_stream_processing_failure, warn_stream_send_failure};
 
 pub(super) async fn consume_responses_sse_stream(
     response: OpenAiHttpResponse,
@@ -32,7 +32,7 @@ pub(super) async fn consume_responses_sse_stream(
         return;
     }
 
-    let mut usage = zero_usage();
+    let mut usage: Option<CompletionUsage> = None;
     let mut finished_metadata = provider_stream_finished_metadata_from_start(start_metadata);
     let mut done_emitted = false;
     let mut body = response.body;
@@ -143,7 +143,7 @@ pub(super) async fn consume_responses_sse_stream(
                     if let Some(completion_usage) =
                         response.usage.map(|usage| usage.completion_usage())
                     {
-                        usage = completion_usage;
+                        usage = Some(completion_usage);
                     }
                 }
 

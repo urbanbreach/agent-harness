@@ -1,7 +1,7 @@
 use tokio::sync::mpsc;
 use tokio_stream::{self as stream};
 
-use crate::{CompletionUsage, ProviderErrorCategory, ProviderEventStream, ProviderStreamEvent};
+use crate::{ProviderErrorCategory, ProviderEventStream, ProviderStreamEvent};
 
 use super::config::OpenAiApiMode;
 use super::request::{OpenAiChatCompletionsRequest, OpenAiResponsesRequest};
@@ -130,14 +130,6 @@ pub(crate) fn warn_stream_processing_failure(context: &str, message: &str) {
         message,
         "openai_compatible stream processing failed"
     );
-}
-
-fn zero_usage() -> CompletionUsage {
-    CompletionUsage {
-        prompt_tokens: 0,
-        completion_tokens: 0,
-        total_tokens: 0,
-    }
 }
 
 pub(crate) fn non_empty_string(value: &str) -> Option<&str> {
