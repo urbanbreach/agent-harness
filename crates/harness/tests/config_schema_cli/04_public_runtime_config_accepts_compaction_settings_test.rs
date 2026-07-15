@@ -6,13 +6,14 @@ fn public_runtime_config_accepts_compaction_settings() {
         {
           runtime: {
             compaction: {
-              modelBacked: true,
-              model: "default/gpt-5.4-mini",
-              splitOversizedTurns: true,
-              autoRetryOverflow: false,
-              structuredSummaryContract: false,
-              estimatedTokenTriggers: false,
-              fallbackInputTokens: 65536,
+              enabled: true,
+              reserve_tokens: 8192,
+              keep_recent_tokens: 4096,
+              split_oversized_turns: true,
+              auto_retry_overflow: false,
+              structured_summary_contract: false,
+              estimated_token_triggers: false,
+              fallback_input_tokens: 65536,
             }
           }
         }
@@ -20,11 +21,9 @@ fn public_runtime_config_accepts_compaction_settings() {
     )
     .unwrap_or_abort();
 
-    assert!(parsed.runtime.compaction.model_backed);
-    assert_eq!(
-        parsed.runtime.compaction.model_ref.as_deref(),
-        Some("default/gpt-5.4-mini")
-    );
+    assert!(parsed.runtime.compaction.enabled);
+    assert_eq!(parsed.runtime.compaction.reserve_tokens, 8_192);
+    assert_eq!(parsed.runtime.compaction.keep_recent_tokens, 4_096);
     assert!(parsed.runtime.compaction.split_oversized_turns);
     assert!(!parsed.runtime.compaction.auto_retry_overflow);
     assert!(!parsed.runtime.compaction.structured_summary_contract);

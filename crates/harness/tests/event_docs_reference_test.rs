@@ -17,7 +17,7 @@ fn event_variants_from_source(source: &str) -> BTreeSet<String> {
         .lines()
         .filter_map(|line| {
             let trimmed = line.trim();
-            if trimmed.is_empty() || trimmed.starts_with("#") {
+            if trimmed.is_empty() || trimmed.starts_with("#") || !trimmed.contains('(') {
                 return None;
             }
             trimmed

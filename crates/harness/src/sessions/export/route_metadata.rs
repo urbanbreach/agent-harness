@@ -35,6 +35,10 @@ pub(super) fn session_export_route_metadata(
     metadata
 }
 
+#[allow(
+    deprecated,
+    reason = "deprecated event variants kept for backward compatibility with existing session logs"
+)]
 fn session_replay_route_metadata(
     events: &[EventEnvelopeV1],
     replay: &ReplaySummary,
@@ -111,7 +115,9 @@ fn session_replay_route_metadata(
             | EventV1::ArtifactWritten(_)
             | EventV1::PolicyViolationDetected(_)
             | EventV1::UiIntentReceived(_)
-            | EventV1::WorkspaceSnapshot(_) => {}
+            | EventV1::WorkspaceSnapshot(_)
+            | EventV1::SessionCompaction(_)
+            | EventV1::BranchSummary(_) => {}
         }
     }
 

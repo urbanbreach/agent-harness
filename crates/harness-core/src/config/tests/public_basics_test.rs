@@ -2,35 +2,48 @@ use super::*;
 use crate::UnwrapOrAbort;
 
 #[test]
+fn compaction_settings_default_and_serialize_alias() {
+    let default_compaction: CompactionRuntimeConfig =
+        serde_json::from_value(serde_json::json!({})).unwrap_or_abort();
+    assert!(default_compaction.enabled);
+    assert_eq!(default_compaction.reserve_tokens, 16_384);
+    assert_eq!(default_compaction.keep_recent_tokens, 20_000);
+
+    let customized_via_alias: CompactionRuntimeConfig = serde_json::from_value(serde_json::json!({
+        "reserveTokens": 65_536,
+        "keepRecentTokens": 10_000,
+    }))
+    .unwrap_or_abort();
+    assert_eq!(customized_via_alias.reserve_tokens, 65_536);
+    assert_eq!(customized_via_alias.keep_recent_tokens, 10_000);
+
+    let serialized = serde_json::to_value(&customized_via_alias).unwrap_or_abort();
+    assert_eq!(
+        serialized.get("reserve_tokens"),
+        Some(&serde_json::Value::from(65_536))
+    );
+    assert_eq!(
+        serialized.get("keep_recent_tokens"),
+        Some(&serde_json::Value::from(10_000))
+    );
+}
+
+#[test]
 fn structured_summary_contract_defaults_on_and_serializes_alias() {
     let default_compaction: CompactionRuntimeConfig =
         serde_json::from_value(serde_json::json!({})).unwrap_or_abort();
     assert!(default_compaction.structured_summary_contract);
-    assert!(default_compaction.estimated_token_triggers);
-    assert_eq!(default_compaction.fallback_input_tokens, 32_768);
 
-    let disabled_via_alias: CompactionRuntimeConfig = serde_json::from_value(serde_json::json!({
+    let alias_compaction: CompactionRuntimeConfig = serde_json::from_value(serde_json::json!({
         "structuredSummaryContract": false,
-        "estimatedTokenTriggers": false,
-        "fallbackInputTokens": 65_536,
     }))
     .unwrap_or_abort();
-    assert!(!disabled_via_alias.structured_summary_contract);
-    assert!(!disabled_via_alias.estimated_token_triggers);
-    assert_eq!(disabled_via_alias.fallback_input_tokens, 65_536);
+    assert!(!alias_compaction.structured_summary_contract);
 
-    let serialized = serde_json::to_value(&disabled_via_alias).unwrap_or_abort();
+    let serialized = serde_json::to_value(&alias_compaction).unwrap_or_abort();
     assert_eq!(
         serialized.get("structured_summary_contract"),
         Some(&serde_json::Value::Bool(false))
-    );
-    assert_eq!(
-        serialized.get("estimated_token_triggers"),
-        Some(&serde_json::Value::Bool(false))
-    );
-    assert_eq!(
-        serialized.get("fallback_input_tokens"),
-        Some(&serde_json::Value::from(65_536))
     );
 }
 

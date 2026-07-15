@@ -476,6 +476,10 @@ fn project_materialized_live_open_state(events: &[EventEnvelopeV1]) -> Materiali
     state
 }
 
+#[allow(
+    deprecated,
+    reason = "deprecated event variants kept for backward compatibility with existing session logs"
+)]
 fn collect_referenced_artifacts(
     events: &[EventEnvelopeV1],
 ) -> Result<BTreeMap<PathBuf, ArtifactCopySpec>, ChildSessionMaterializationError> {
@@ -535,7 +539,9 @@ fn collect_referenced_artifacts(
             | EventV1::PolicyViolationDetected(_)
             | EventV1::UiIntentReceived(_)
             | EventV1::WorkspaceSnapshot(_)
-            | EventV1::WorkspaceReverted(_) => {}
+            | EventV1::WorkspaceReverted(_)
+            | EventV1::SessionCompaction(_)
+            | EventV1::BranchSummary(_) => {}
         }
     }
     Ok(specs)

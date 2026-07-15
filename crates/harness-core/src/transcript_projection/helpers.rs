@@ -8,12 +8,11 @@ use crate::event::{
 use crate::text::non_empty_trimmed;
 
 use super::model::{
-    ArtifactProjectionSource, CompactionCheckpointProjection, ProjectedCompactionPart,
-    ProjectedMessage, ProjectedMessageRole, ProjectedMessageState, ProjectedPart,
-    ProjectedPermissionPart, ProjectedPermissionState, ProjectedProviderMessageMetadata,
-    ProjectedTaskPart, ProjectedTextPart, ProjectedToolCallPart, ProjectedToolCallState,
-    ProvenanceRange, SessionLineageProjection, TranscriptArtifactRef, TranscriptProjection,
-    TranscriptProjectionError,
+    ArtifactProjectionSource, ProjectedMessage, ProjectedMessageRole, ProjectedMessageState,
+    ProjectedPart, ProjectedPermissionPart, ProjectedPermissionState,
+    ProjectedProviderMessageMetadata, ProjectedTaskPart, ProjectedTextPart, ProjectedToolCallPart,
+    ProjectedToolCallState, ProvenanceRange, SessionLineageProjection, TranscriptArtifactRef,
+    TranscriptProjection, TranscriptProjectionError,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -285,101 +284,6 @@ pub(super) fn placeholder_tool_call_part(
         artifacts: Vec::new(),
         lineage: None,
         provenance: ProvenanceRange::from_event(event),
-    }
-}
-
-pub(super) fn upsert_compaction_checkpoint(
-    projection: &mut TranscriptProjection,
-    compaction_locations: &mut BTreeMap<String, usize>,
-    event: &EventEnvelopeV1,
-    checkpoint: CompactionCheckpointProjection,
-) {
-    let key = checkpoint
-        .checkpoint_id
-        .clone()
-        .unwrap_or_else(|| format!("failed:{}:{}", checkpoint.agent_id, event.seq));
-    let index = if let Some(index) = compaction_locations.get(&key).copied() {
-        merge_compaction_checkpoint(&mut projection.compaction_checkpoints[index], checkpoint);
-        index
-    } else {
-        let index = projection.compaction_checkpoints.len();
-        projection.compaction_checkpoints.push(checkpoint);
-        compaction_locations.insert(key, index);
-        index
-    };
-
-    let stored = projection.compaction_checkpoints[index].clone();
-    append_system_part(
-        projection,
-        event,
-        ProjectedPart::Compaction(ProjectedCompactionPart {
-            checkpoint_id: stored.checkpoint_id,
-            agent_id: stored.agent_id,
-            status: stored.status,
-            trigger_reason: stored.trigger_reason,
-            reason: stored.reason,
-            through_seq: stored.through_seq,
-            through_request_id: stored.through_request_id,
-            artifact: stored.artifact,
-            provenance: ProvenanceRange::from_event(event),
-        }),
-    );
-}
-
-fn merge_compaction_checkpoint(
-    existing: &mut CompactionCheckpointProjection,
-    incoming: CompactionCheckpointProjection,
-) {
-    existing.status = incoming.status;
-    existing.provenance.last_seq = incoming.provenance.last_seq;
-    existing
-        .provenance
-        .event_ids
-        .extend(incoming.provenance.event_ids);
-    if existing.trigger_reason.is_none() {
-        existing.trigger_reason = incoming.trigger_reason;
-    }
-    if incoming.reason.is_some() {
-        existing.reason = incoming.reason;
-    }
-    if incoming.through_seq.is_some() {
-        existing.through_seq = incoming.through_seq;
-    }
-    if incoming.through_request_id.is_some() {
-        existing.through_request_id = incoming.through_request_id;
-    }
-    if incoming.provider_id.is_some() {
-        existing.provider_id = incoming.provider_id;
-    }
-    if incoming.model_id.is_some() {
-        existing.model_id = incoming.model_id;
-    }
-    if incoming.tokens_before.is_some() {
-        existing.tokens_before = incoming.tokens_before;
-    }
-    if incoming.tokens_before_estimate.is_some() {
-        existing.tokens_before_estimate = incoming.tokens_before_estimate;
-    }
-    if incoming.tokens_after_estimate.is_some() {
-        existing.tokens_after_estimate = incoming.tokens_after_estimate;
-    }
-    if incoming.summary_tokens_estimate.is_some() {
-        existing.summary_tokens_estimate = incoming.summary_tokens_estimate;
-    }
-    if incoming.compacted_turns.is_some() {
-        existing.compacted_turns = incoming.compacted_turns;
-    }
-    if incoming.reduction_tokens_estimate.is_some() {
-        existing.reduction_tokens_estimate = incoming.reduction_tokens_estimate;
-    }
-    if incoming.reduction_percent_estimate.is_some() {
-        existing.reduction_percent_estimate = incoming.reduction_percent_estimate;
-    }
-    if incoming.preserved_turns.is_some() {
-        existing.preserved_turns = incoming.preserved_turns;
-    }
-    if incoming.artifact.is_some() {
-        existing.artifact = incoming.artifact;
     }
 }
 

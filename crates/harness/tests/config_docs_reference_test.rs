@@ -274,7 +274,6 @@ fn config_contract_semantic_metadata_matches_docs() {
 
     // assert
     assert!(compaction_aliases.contains(&("fallbackInputTokens", "fallback_input_tokens")));
-    assert!(compaction_aliases.contains(&("model", "model_ref")));
 }
 
 #[test]

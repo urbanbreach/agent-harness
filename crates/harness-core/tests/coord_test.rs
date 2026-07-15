@@ -52,6 +52,10 @@ mod part_09_failed_turn_context_preserves_provider_error_test {
     include!("coord/09_failed_turn_context_preserves_provider_error_test.rs");
 }
 
+#[allow(
+    deprecated,
+    reason = "deprecated compaction event variants kept for backward compatibility tests"
+)]
 mod part_10_aborted_response_compaction_preserves_abort_marker_test {
     use super::*;
     include!("coord/10_aborted_response_compaction_preserves_abort_marker_test.rs");
@@ -72,11 +76,19 @@ mod part_12b_resume_acceptance_restores_realistic_interrupted_session_test {
     include!("coord/12b_resume_acceptance_restores_realistic_interrupted_session_test.rs");
 }
 
+#[allow(
+    deprecated,
+    reason = "deprecated compaction event variants kept for backward compatibility tests"
+)]
 mod part_13_overflow_retry_compacts_context_and_retries_test {
     use super::*;
     include!("coord/13_overflow_retry_compacts_context_and_retries_test.rs");
 }
 
+#[allow(
+    deprecated,
+    reason = "deprecated compaction event variants kept for backward compatibility tests"
+)]
 mod part_14_compaction_trigger_pre_prompt_runtime_uses_test {
     use super::*;
     include!("coord/14_compaction_trigger_pre_prompt_runtime_uses_test.rs");

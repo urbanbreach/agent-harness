@@ -3,16 +3,15 @@ use std::collections::BTreeMap;
 
 use harness_core::event::{
     ActorKind, AgentSpawnedEvent, AgentStoppedEvent, ArtifactWrittenEvent,
-    AssistantMessageFinishedEvent, CompactionAppliedEvent, CompactionFailedEvent,
-    CompactionRequestedEvent, CompactionWrittenEvent, EventActor, EventArtifactRef,
-    EventEnvelopeV1, EventV1, PermissionDecision, PermissionRequestedEvent,
-    PermissionResolvedEvent, PolicyViolationDetectedEvent, ProviderReasoningDeltaEvent,
-    ProviderRequestFinishedEvent, ProviderRequestStartedEvent, ProviderStreamDeltaEvent,
-    RunFailedEvent, RunFinishedEvent, RunStartedEvent, TaskCancelledEvent, TaskCompletedEvent,
+    AssistantMessageFinishedEvent, BranchSummaryEvent, EventActor, EventArtifactRef,
+    EventEnvelopeV1, EventV1, PermissionDecision, PermissionRequestedEvent, PermissionResolvedEvent,
+    PolicyViolationDetectedEvent, ProviderReasoningDeltaEvent, ProviderRequestFinishedEvent,
+    ProviderRequestStartedEvent, ProviderStreamDeltaEvent, RunFailedEvent, RunFinishedEvent,
+    RunStartedEvent, SessionCompactionEvent, TaskCancelledEvent, TaskCompletedEvent,
     TaskCompletionMetadata, TaskLineageMetadata, TaskResultLateEvent, TaskScheduleState,
-    TaskScheduledEvent, ToolCallFinishedEvent, ToolCallMetadata,
-    ToolCallRequestedEvent, ToolCallStartedEvent, ToolCallStatus, UiIntentReceivedEvent,
-    UserMessageSubmittedEvent, SCHEMA_VERSION,
+    TaskScheduledEvent, ToolCallFinishedEvent, ToolCallMetadata, ToolCallRequestedEvent,
+    ToolCallStartedEvent, ToolCallStatus, UiIntentReceivedEvent, UserMessageSubmittedEvent,
+    SCHEMA_VERSION,
 };
 use harness_core::transcript_projection::{
     project_transcript, ArtifactProjectionSource, CompactionCheckpointStatus, ProjectedMessageRole,

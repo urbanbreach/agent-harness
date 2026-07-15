@@ -1,16 +1,10 @@
 use harness_core::UnwrapOrAbort;
 #[tokio::test]
-async fn model_backed_overflow_split_uses_model_prefix_summary() {
+async fn overflow_compaction_appends_session_compaction_event_and_retries() {
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let oversized_answer = format!(
         "MODEL_PREFIX_ANCHOR {} MODEL_SUFFIX_ANCHOR",
         "M".repeat(12_000)
-    );
-    let model_prefix_summary = "## Original Request\nSummarize the latest oversized model-backed turn.\n\n## Early Progress\n- MODEL_PREFIX_SUMMARY captured early progress from the prefix.\n\n## Context for Suffix\n- Continue from the retained suffix using MODEL_PREFIX_SUMMARY.";
-    let model_checkpoint_summary = structured_split_model_summary(
-        "model split goal",
-        "continue after split",
-        model_prefix_summary,
     );
     let provider = SequentialScriptedProvider::new(vec![
         provider_text_events("first compacted answer"),
@@ -19,8 +13,7 @@ async fn model_backed_overflow_split_uses_model_prefix_summary() {
             ProviderStreamEvent::Start,
             ProviderStreamEvent::error("prompt token count of 128713 exceeds the limit of 128000"),
         ],
-        provider_text_events(model_prefix_summary),
-        provider_text_events(&model_checkpoint_summary),
+        provider_text_events("Compaction summary of earlier turns."),
         provider_text_events("recovered answer"),
     ]);
     let coordinator = test_agent_coordinator_with_provider_and_compaction(
@@ -28,16 +21,13 @@ async fn model_backed_overflow_split_uses_model_prefix_summary() {
         Arc::new(provider.clone()),
         1,
         CompactionRuntimeConfig {
-            model_backed: true,
-            model_ref: Some("mock:model-1".to_string()),
-            split_oversized_turns: true,
             ..CompactionRuntimeConfig::default()
         },
     );
 
     let run = coordinator
         .start_run(
-            "coord_model_backed_overflow_split_prefix",
+            "coord_overflow_compaction_retry",
             PathBuf::from("/workspace/project"),
         )
         .await
@@ -66,211 +56,18 @@ async fn model_backed_overflow_split_uses_model_prefix_summary() {
     let requests = provider.requests();
     assert_eq!(
         requests.len(),
-        6,
-        "two turns, failed turn, prefix summary, checkpoint summary, retry"
+        5,
+        "two turns, overflow error, summary call, retry"
     );
-    let prefix_request = &requests[3];
-    assert!(prefix_request
-        .messages
-        .iter()
-        .any(|message| message.content.contains("This is the PREFIX of a turn")));
-    assert!(prefix_request
-        .messages
-        .iter()
-        .any(|message| message.content.contains("MODEL_PREFIX_ANCHOR")));
-    assert!(requests[4]
-        .messages
-        .iter()
-        .any(|message| message.content.contains("MODEL_PREFIX_SUMMARY")));
 
     let events = load_events(&run.events_path);
-    let checkpoint = overflow_checkpoint(&run, &events);
-    let tail_boundary = checkpoint.tail_boundary.as_ref().unwrap_or_abort();
-    assert_eq!(tail_boundary.mode, "split_oversized_turn_tail");
-    assert!(tail_boundary
-        .split_prefix_summary
-        .as_deref()
-        .is_some_and(|summary| summary.contains("MODEL_PREFIX_SUMMARY")));
-    assert!(tail_boundary
-        .note
-        .as_deref()
-        .is_some_and(|note| note.contains("Split prefix summary source: model_backed.")));
-    assert!(checkpoint.summary.contains("MODEL_PREFIX_SUMMARY"));
-    let source = checkpoint.summary_source.unwrap_or_abort();
-    assert_eq!(source.strategy, "model_backed_summary");
-    assert!(source.model_backed);
-    assert!(!source.deterministic_fallback);
-}
-#[tokio::test]
-async fn model_backed_overflow_split_summary_without_prefix_content_falls_back() {
-    let temp_dir = tempfile::tempdir().unwrap_or_abort();
-    let oversized_answer = format!(
-        "MISSING_PREFIX_CONTENT_ANCHOR {} MISSING_SUFFIX_ANCHOR",
-        "P".repeat(12_000)
-    );
-    let model_prefix_summary = "## Original Request\nSummarize the latest oversized turn.\n\n## Early Progress\n- MISSING_MODEL_PREFIX_SUMMARY captured early work.\n\n## Context for Suffix\n- Continue with MISSING_MODEL_PREFIX_SUMMARY.";
-    let invalid_checkpoint_summary = structured_split_model_summary(
-        "invalid split goal",
-        "continue after invalid split",
-        "label present but actual prefix content omitted",
-    );
-    let provider = SequentialScriptedProvider::new(vec![
-        provider_text_events("first compacted answer"),
-        provider_text_events(&oversized_answer),
-        vec![
-            ProviderStreamEvent::Start,
-            ProviderStreamEvent::error("prompt token count of 128713 exceeds the limit of 128000"),
-        ],
-        provider_text_events(model_prefix_summary),
-        provider_text_events(&invalid_checkpoint_summary),
-        provider_text_events("recovered answer"),
-    ]);
-    let coordinator = test_agent_coordinator_with_provider_and_compaction(
-        temp_dir.path(),
-        Arc::new(provider.clone()),
-        1,
-        CompactionRuntimeConfig {
-            model_backed: true,
-            model_ref: Some("mock:model-1".to_string()),
-            split_oversized_turns: true,
-            ..CompactionRuntimeConfig::default()
-        },
-    );
-
-    let run = coordinator
-        .start_run(
-            "coord_model_backed_overflow_split_missing_prefix_content",
-            PathBuf::from("/workspace/project"),
+    assert!(events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::SessionCompaction(payload)
+                if payload.trigger_reason == "overflow"
         )
-        .await
-        .unwrap_or_abort();
-    let agent_id = coordinator
-        .spawn_agent_idle(supervisor_actor(), "alpha", None)
-        .await
-        .unwrap_or_abort();
-    coordinator
-        .request_agent_turn(supervisor_actor(), agent_id.clone(), "first question")
-        .await
-        .unwrap_or_abort();
-    tokio::task::yield_now().await;
-    coordinator
-        .request_agent_turn(supervisor_actor(), agent_id.clone(), "second question")
-        .await
-        .unwrap_or_abort();
-    tokio::task::yield_now().await;
-    coordinator
-        .request_agent_turn(supervisor_actor(), agent_id, "third question")
-        .await
-        .unwrap_or_abort();
-    tokio::task::yield_now().await;
-    coordinator.stop_run().await.unwrap_or_abort();
-
-    assert_eq!(
-        provider.requests().len(),
-        6,
-        "invalid checkpoint summary still allows deterministic compaction and retry"
-    );
-    let events = load_events(&run.events_path);
-    let checkpoint = overflow_checkpoint(&run, &events);
-    let source = checkpoint.summary_source.unwrap_or_abort();
-    assert_eq!(source.strategy, "model_backed_deterministic_fallback");
-    assert!(source.model_backed);
-    assert!(source.deterministic_fallback);
-    assert!(checkpoint.summary.contains("MISSING_PREFIX_CONTENT_ANCHOR"));
-    assert!(!checkpoint
-        .summary
-        .contains("label present but actual prefix content omitted"));
-    assert!(checkpoint
-        .tail_boundary
-        .as_ref()
-        .and_then(|boundary| boundary.split_prefix_summary.as_deref())
-        .is_some_and(|summary| summary.contains("MISSING_PREFIX_CONTENT_ANCHOR")));
-}
-#[tokio::test]
-async fn model_backed_overflow_split_empty_prefix_summary_falls_back_deterministically() {
-    let temp_dir = tempfile::tempdir().unwrap_or_abort();
-    let oversized_answer = format!(
-        "FALLBACK_PREFIX_ANCHOR {} FALLBACK_SUFFIX_ANCHOR",
-        "N".repeat(12_000)
-    );
-    let deterministic_prefix_excerpt = test_compaction_excerpt(&oversized_answer);
-    let model_checkpoint_summary = structured_split_model_summary(
-        "fallback split goal",
-        "continue after fallback split",
-        &deterministic_prefix_excerpt,
-    );
-    let provider = SequentialScriptedProvider::new(vec![
-        provider_text_events("first compacted answer"),
-        provider_text_events(&oversized_answer),
-        vec![
-            ProviderStreamEvent::Start,
-            ProviderStreamEvent::error("prompt token count of 128713 exceeds the limit of 128000"),
-        ],
-        provider_text_events(""),
-        provider_text_events(&model_checkpoint_summary),
-        provider_text_events("recovered answer"),
-    ]);
-    let coordinator = test_agent_coordinator_with_provider_and_compaction(
-        temp_dir.path(),
-        Arc::new(provider.clone()),
-        1,
-        CompactionRuntimeConfig {
-            model_backed: true,
-            model_ref: Some("mock:model-1".to_string()),
-            split_oversized_turns: true,
-            ..CompactionRuntimeConfig::default()
-        },
-    );
-
-    let run = coordinator
-        .start_run(
-            "coord_model_backed_overflow_split_prefix_fallback",
-            PathBuf::from("/workspace/project"),
-        )
-        .await
-        .unwrap_or_abort();
-    let agent_id = coordinator
-        .spawn_agent_idle(supervisor_actor(), "alpha", None)
-        .await
-        .unwrap_or_abort();
-    coordinator
-        .request_agent_turn(supervisor_actor(), agent_id.clone(), "first question")
-        .await
-        .unwrap_or_abort();
-    tokio::task::yield_now().await;
-    coordinator
-        .request_agent_turn(supervisor_actor(), agent_id.clone(), "second question")
-        .await
-        .unwrap_or_abort();
-    tokio::task::yield_now().await;
-    coordinator
-        .request_agent_turn(supervisor_actor(), agent_id, "third question")
-        .await
-        .unwrap_or_abort();
-    tokio::task::yield_now().await;
-    coordinator.stop_run().await.unwrap_or_abort();
-
-    assert_eq!(
-        provider.requests().len(),
-        6,
-        "empty prefix output still falls through to checkpoint summary and retry"
-    );
-    let events = load_events(&run.events_path);
-    let checkpoint = overflow_checkpoint(&run, &events);
-    let tail_boundary = checkpoint.tail_boundary.as_ref().unwrap_or_abort();
-    assert_eq!(tail_boundary.mode, "split_oversized_turn_tail");
-    assert!(tail_boundary
-        .split_prefix_summary
-        .as_deref()
-        .is_some_and(|summary| summary.contains("FALLBACK_PREFIX_ANCHOR")));
-    let note = tail_boundary.note.as_deref().unwrap_or_abort();
-    assert!(note.contains("Split prefix summary source: model_backed_deterministic_fallback."));
-    assert!(note.contains("model split prefix summary was empty"));
-    assert!(checkpoint.summary.contains("FALLBACK_PREFIX_ANCHOR"));
-    let source = checkpoint.summary_source.unwrap_or_abort();
-    assert_eq!(source.strategy, "model_backed_summary");
-    assert!(source.model_backed);
-    assert!(!source.deterministic_fallback);
+    }));
 }
 #[tokio::test]
 async fn overflow_auto_retry_can_be_disabled_by_compaction_config() {
@@ -319,7 +116,7 @@ async fn overflow_auto_retry_can_be_disabled_by_compaction_config() {
     let events = load_events(&run.events_path);
     assert!(events
         .iter()
-        .all(|event| !matches!(event.payload, EventV1::CompactionRequested(_))));
+        .all(|event| !matches!(event.payload, EventV1::SessionCompaction(_))));
     assert!(events.iter().any(|event| {
         matches!(
             &event.payload,
@@ -336,11 +133,11 @@ async fn manual_compaction_returns_noop_when_context_has_single_turn() {
         ProviderStreamEvent::Start,
         ProviderStreamEvent::TextDelta("first answer".to_string()),
         ProviderStreamEvent::Done {
-            usage: CompletionUsage {
+            usage: Some(CompletionUsage {
                 prompt_tokens: 32,
                 completion_tokens: 8,
                 total_tokens: 40,
-            },
+            }),
         },
     ]]);
     let coordinator =
@@ -376,9 +173,7 @@ async fn manual_compaction_returns_noop_when_context_has_single_turn() {
     assert!(events.iter().all(|event| {
         !matches!(
             event.payload,
-            EventV1::CompactionRequested(_)
-                | EventV1::CompactionWritten(_)
-                | EventV1::CompactionApplied(_)
+            EventV1::SessionCompaction(_)
         )
     }));
 }

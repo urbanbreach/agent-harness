@@ -1,6 +1,6 @@
 use super::{
-    ActorKind, EventActor, EventBuilder, EventContext, EventV1, PermissionDecision,
-    PermissionRequestedArgs, ToolCallRequestedEvent,
+    ActorKind, BranchSummaryEvent, EventActor, EventBuilder, EventContext, EventV1,
+    PermissionDecision, PermissionRequestedArgs, SessionCompactionEvent, ToolCallRequestedEvent,
 };
 use crate::clock::FakeClock;
 use crate::redact::DefaultRedactor;
@@ -102,4 +102,85 @@ fn tool_call_requested_uses_redacted_summary_and_digest() {
     assert!(args_summary.contains("Bearer [REDACTED]"));
     assert!(args_summary.contains("[REDACTED_API_KEY]"));
     assert_eq!(args_digest.len(), 12);
+}
+
+#[test]
+fn session_compaction_event_round_trips_through_serde_json() {
+    let event = SessionCompactionEvent {
+        agent_id: "agent-build".to_string(),
+        summary: "Compacted 12 turns of work on the auth module.".to_string(),
+        first_kept_event_seq: 42,
+        first_kept_request_id: Some("req_abc123".to_string()),
+        tokens_before: 8_192,
+        read_files: vec!["src/auth.rs".to_string(), "src/auth/session.rs".to_string()],
+        modified_files: vec!["src/auth/session.rs".to_string()],
+        trigger_reason: "token_budget_exceeded".to_string(),
+        from_hook: false,
+    };
+
+    let payload = EventV1::SessionCompaction(event.clone());
+    let json = serde_json::to_value(&payload).expect("serialize SessionCompaction");
+    let round_trip: EventV1 = serde_json::from_value(json).expect("deserialize SessionCompaction");
+
+    assert_eq!(payload, round_trip);
+}
+
+#[test]
+fn session_compaction_event_serializes_with_snake_case_tag_and_skips_empty_fields() {
+    let event = SessionCompactionEvent {
+        agent_id: "agent-build".to_string(),
+        summary: "Empty files and no request id.".to_string(),
+        first_kept_event_seq: 7,
+        first_kept_request_id: None,
+        tokens_before: 1_024,
+        read_files: Vec::new(),
+        modified_files: Vec::new(),
+        trigger_reason: "manual".to_string(),
+        from_hook: true,
+    };
+
+    let payload = EventV1::SessionCompaction(event);
+    let json = serde_json::to_value(&payload).expect("serialize");
+
+    assert_eq!(json["event_type"], "session_compaction");
+    assert!(json["data"].get("first_kept_request_id").is_none());
+    assert!(json["data"].get("read_files").is_none());
+    assert!(json["data"].get("modified_files").is_none());
+}
+
+#[test]
+fn branch_summary_event_round_trips_through_serde_json() {
+    let event = BranchSummaryEvent {
+        agent_id: "agent-explore".to_string(),
+        summary: "Branch explored the crate structure and found 3 entry points.".to_string(),
+        from_event_seq: 99,
+        read_files: vec!["src/main.rs".to_string()],
+        modified_files: vec!["src/config.rs".to_string(), "src/lib.rs".to_string()],
+        from_hook: false,
+    };
+
+    let payload = EventV1::BranchSummary(event.clone());
+    let json = serde_json::to_value(&payload).expect("serialize BranchSummary");
+    let round_trip: EventV1 = serde_json::from_value(json).expect("deserialize BranchSummary");
+
+    assert_eq!(payload, round_trip);
+}
+
+#[test]
+fn branch_summary_event_serializes_with_snake_case_tag_and_skips_empty_fields() {
+    let event = BranchSummaryEvent {
+        agent_id: "agent-explore".to_string(),
+        summary: "No files touched.".to_string(),
+        from_event_seq: 5,
+        read_files: Vec::new(),
+        modified_files: Vec::new(),
+        from_hook: true,
+    };
+
+    let payload = EventV1::BranchSummary(event);
+    let json = serde_json::to_value(&payload).expect("serialize");
+
+    assert_eq!(json["event_type"], "branch_summary");
+    assert!(json["data"].get("read_files").is_none());
+    assert!(json["data"].get("modified_files").is_none());
 }

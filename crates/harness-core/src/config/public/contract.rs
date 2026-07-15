@@ -453,41 +453,6 @@ const PUBLIC_RUNTIME_ALIASES: &[PublicConfigAlias] = &[
     },
     PublicConfigAlias {
         scope: PublicConfigAliasScope::RuntimeCompaction,
-        alias: "modelBacked",
-        canonical: "model_backed",
-    },
-    PublicConfigAlias {
-        scope: PublicConfigAliasScope::RuntimeCompaction,
-        alias: "modelRef",
-        canonical: "model_ref",
-    },
-    PublicConfigAlias {
-        scope: PublicConfigAliasScope::RuntimeCompaction,
-        alias: "model",
-        canonical: "model_ref",
-    },
-    PublicConfigAlias {
-        scope: PublicConfigAliasScope::RuntimeCompaction,
-        alias: "splitOversizedTurns",
-        canonical: "split_oversized_turns",
-    },
-    PublicConfigAlias {
-        scope: PublicConfigAliasScope::RuntimeCompaction,
-        alias: "autoRetryOverflow",
-        canonical: "auto_retry_overflow",
-    },
-    PublicConfigAlias {
-        scope: PublicConfigAliasScope::RuntimeCompaction,
-        alias: "structuredSummaryContract",
-        canonical: "structured_summary_contract",
-    },
-    PublicConfigAlias {
-        scope: PublicConfigAliasScope::RuntimeCompaction,
-        alias: "estimatedTokenTriggers",
-        canonical: "estimated_token_triggers",
-    },
-    PublicConfigAlias {
-        scope: PublicConfigAliasScope::RuntimeCompaction,
         alias: "fallbackInputTokens",
         canonical: "fallback_input_tokens",
     },
@@ -568,34 +533,19 @@ const PUBLIC_PERMISSION_NAMES: &[PublicConfigPermissionName] = &[
 
 const PUBLIC_COMPACTION_KNOBS: &[PublicConfigCompactionKnob] = &[
     PublicConfigCompactionKnob {
-        canonical_name: "model_backed",
-        aliases: &["modelBacked"],
-        default_value: "false",
-    },
-    PublicConfigCompactionKnob {
-        canonical_name: "model_ref",
-        aliases: &["model", "modelRef"],
-        default_value: "unset",
-    },
-    PublicConfigCompactionKnob {
-        canonical_name: "split_oversized_turns",
-        aliases: &["splitOversizedTurns"],
-        default_value: "false",
-    },
-    PublicConfigCompactionKnob {
-        canonical_name: "auto_retry_overflow",
-        aliases: &["autoRetryOverflow"],
+        canonical_name: "enabled",
+        aliases: &["enabled"],
         default_value: "true",
     },
     PublicConfigCompactionKnob {
-        canonical_name: "structured_summary_contract",
-        aliases: &["structuredSummaryContract"],
-        default_value: "true",
+        canonical_name: "reserve_tokens",
+        aliases: &["reserveTokens"],
+        default_value: "16384",
     },
     PublicConfigCompactionKnob {
-        canonical_name: "estimated_token_triggers",
-        aliases: &["estimatedTokenTriggers"],
-        default_value: "true",
+        canonical_name: "keep_recent_tokens",
+        aliases: &["keepRecentTokens"],
+        default_value: "20000",
     },
     PublicConfigCompactionKnob {
         canonical_name: "fallback_input_tokens",

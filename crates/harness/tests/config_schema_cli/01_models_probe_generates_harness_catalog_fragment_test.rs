@@ -477,7 +477,7 @@ fn config_validate_cli_accepts_shipped_example_config() {
             "category route {category} should not recursively redelegate by default"
         );
     }
-    assert!(!parsed.runtime.compaction.model_backed);
+    assert!(parsed.runtime.compaction.enabled);
     assert!(parsed.runtime.compaction.auto_retry_overflow);
     assert!(parsed.runtime.compaction.structured_summary_contract);
     assert!(parsed.runtime.compaction.estimated_token_triggers);

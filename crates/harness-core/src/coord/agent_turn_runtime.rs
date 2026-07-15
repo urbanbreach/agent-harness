@@ -289,7 +289,7 @@ pub(in crate::coord) async fn schedule_agent_turn<C, R>(
     job_tx: mpsc::Sender<Command>,
     run_state: &mut RunState,
     hook_runtime_config: HookRuntimeConfig,
-    compaction_config: CompactionRuntimeConfig,
+    compaction_config: CompactionSettings,
     provider_retry_config: ProviderRetryRuntimeConfig,
     args: ScheduleAgentTurnArgs,
 ) -> Result<(), CoordinatorError>
@@ -586,7 +586,7 @@ pub(in crate::coord) async fn start_agent_turn_execution<C, R>(
     job_tx: mpsc::Sender<Command>,
     run_state: &mut RunState,
     hook_runtime_config: HookRuntimeConfig,
-    compaction_config: CompactionRuntimeConfig,
+    compaction_config: CompactionSettings,
     provider_retry_config: ProviderRetryRuntimeConfig,
     provider: Arc<dyn Provider>,
     tool_registry: Arc<ToolRegistry>,
@@ -695,14 +695,15 @@ where
 
                     match &outcome {
                         AgentTurnOutcome::Failed { reason, memory }
-                            if compaction_config.auto_retry_overflow
+                            if compaction_config.enabled
+                                && compaction_config.auto_retry_overflow
                                 && !overflow_retry_attempted
                                 && is_provider_context_overflow_reason(reason) =>
                         {
                             match request_agent_context_compaction(
                                 &job_tx,
                                 &task,
-                                "overflow_retry",
+                                "overflow",
                                 None,
                             )
                             .await

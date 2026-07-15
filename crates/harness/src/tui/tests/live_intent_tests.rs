@@ -87,12 +87,12 @@ async fn compact_intent_reports_noop_status_for_idle_live_agent() {
 #[test]
 fn manual_compaction_success_message_reports_active_context_delta() {
     assert_eq!(
-        manual_compaction_success_message("checkpoint_000123", Some(18_200), Some(4_100)),
-        "manual compaction checkpoint written: checkpoint_000123 · active ctx 18.2K → 4.1K est"
+        manual_compaction_success_message("summary preview", 18_200, 4_100),
+        "manual compaction applied · ctx 18.2K → 4.1K est · summary preview"
     );
     assert_eq!(
-        manual_compaction_success_message("checkpoint_000124", Some(4_100), Some(4_100)),
-        "manual compaction checkpoint written: checkpoint_000124 · active ctx estimate unchanged"
+        manual_compaction_success_message("summary preview", 4_100, 4_100),
+        "manual compaction applied · ctx estimate unchanged · summary preview"
     );
 }
 

@@ -15,10 +15,8 @@ use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
 
 use crate::agent::{
-    AgentModelSettings, AgentProfile, ProviderCompactionFacts, ProviderCompactionSummarySource,
-    ProviderCompactionTailBoundary, ProviderContext, ProviderContextCheckpoint,
-    ProviderContextCheckpointMetadata, ProviderConversationTurn, ProviderConversationTurnStatus,
-    ProviderFileOperationFact,
+    AgentModelSettings, AgentProfile, ProviderContext, ProviderConversationTurn,
+    ProviderConversationTurnStatus,
 };
 use crate::clock::{FakeClock, RealClock};
 use crate::config::{
@@ -32,12 +30,12 @@ use crate::conversation::{
 };
 use crate::event::{
     ActorKind, AgentSpawnedEvent, ArtifactWrittenEvent, BackgroundTaskNotificationStatus,
-    CompactionAppliedEvent, CompactionWrittenEvent, EditAppliedEvent, EventActor, EventArtifactRef,
-    EventEnvelopeV1, EventV1, HookExecutionMetadata, HookExecutionStatus,
-    ProviderRequestFinishedEvent, ProviderRequestStartedEvent, ProviderStreamDeltaEvent,
-    RunFinishedEvent, RunStartedEvent, TaskCancelledEvent, TaskCompletedEvent, TaskScheduleState,
-    TaskScheduledEvent, ToolCallFinishedEvent, ToolCallMetadata, ToolCallRequestedEvent,
-    ToolCallStatus, ToolIdentityMetadata, UserMessageSubmittedEvent, SCHEMA_VERSION,
+    EditAppliedEvent, EventActor, EventArtifactRef, EventEnvelopeV1, EventV1,
+    HookExecutionMetadata, HookExecutionStatus, ProviderRequestFinishedEvent,
+    ProviderRequestStartedEvent, ProviderStreamDeltaEvent, RunFinishedEvent, RunStartedEvent,
+    TaskCancelledEvent, TaskCompletedEvent, TaskScheduleState, TaskScheduledEvent,
+    ToolCallFinishedEvent, ToolCallMetadata, ToolCallRequestedEvent, ToolCallStatus,
+    ToolIdentityMetadata, UserMessageSubmittedEvent, SCHEMA_VERSION,
 };
 use crate::perm::{
     PermissionDecision, PermissionGrant, PermissionGrantMatcher, PermissionGrantScope,
@@ -55,29 +53,25 @@ use crate::tool::{
 use super::{
     append_artifact_written_event, append_background_task_notification_and_schedule,
     append_edit_applied_event, append_edit_proposed_event, append_edit_rejected_event,
-    append_payload_event_with_correlation, append_permission_grant_recorded_event,
-    append_permission_requested_event, append_tool_call_finished_event,
-    append_tool_call_requested_event, append_tool_call_started_event,
-    build_model_compaction_prompt, build_provider_context_summary, compact_provider_context,
-    completion_messages_to_conversation_messages, permission_rule_request_selectors,
-    plan_mode_shell_boundary_denial, provider_context_summary_required_headings,
+    append_payload_event, append_payload_event_with_correlation,
+    append_permission_grant_recorded_event, append_permission_requested_event,
+    append_tool_call_finished_event, append_tool_call_requested_event,
+    append_tool_call_started_event, compact_session, completion_messages_to_conversation_messages,
+    permission_rule_request_selectors, plan_mode_shell_boundary_denial,
     provider_tool_message_status, restore_provider_context_from_history,
     schedule_pending_agent_wakeups_for_idle_agent, spawn_coordinator, summarize_hook_output,
-    validate_model_compaction_summary, ChildTaskTurnState, Coordinator, CoordinatorConfig,
+    system_actor, AppliedCompaction, ChildTaskTurnState, Coordinator, CoordinatorConfig,
     CoordinatorError, EditAppliedEventArgs, FailedTerminalCompactionRequest, HashlineEditMetadata,
     HookExecutionBatch, HookInvocationContext, JobOutcome, JobProgressKind,
     PendingPermissionResolution, PendingPermissionState, PermissionRequestedEventArgs,
-    ProviderCompactionTrigger, ProviderContextCompactionPlan, QueuedAgentTurn, RunInfo, RunState,
-    RunningAgentTurn, TaskExecutionState, TaskState, TokioLifecycleHookCommandExecutor,
-    ToolCallFinishedEventArgs, ToolCallRequestedEventArgs,
+    ProviderCompactionTrigger, QueuedAgentTurn, RunInfo, RunState, RunningAgentTurn,
+    TaskExecutionState, TaskState, TokioLifecycleHookCommandExecutor, ToolCallFinishedEventArgs,
+    ToolCallRequestedEventArgs,
 };
 use harness_providers::{CompletionMessage, MessageRole};
 
 use super::hooks::{
     LifecycleHookCommandExecutor, LifecycleHookCommandInvocation, LifecycleHookCommandOutput,
-};
-use super::provider_context::{
-    compaction_summary_override_from_hooks, ProviderContextCompactionRequest,
 };
 
 macro_rules! delegate_test {
@@ -565,62 +559,11 @@ delegate_tokio_test!(perm_timeout_path_denies_deterministically => permission_fl
 delegate_tokio_test!(malformed_question_answer_does_not_resolve_permission => permission_flow_tests::malformed_question_answer_does_not_resolve_permission);
 
 #[cfg(test)]
-#[path = "tests/operational_memory_tests.rs"]
-mod operational_memory_tests;
-
-delegate_test!(operational_memory_records_read_and_modified_files_from_events => operational_memory_tests::context_operational_memory_records_read_and_modified_files_from_events);
-delegate_test!(compaction_preserves_file_tool_skill_todo_and_plan_context => operational_memory_tests::context_compaction_preserves_file_tool_skill_todo_and_plan_context);
-delegate_test!(operational_memory_redacts_secret_shaped_facts => operational_memory_tests::operational_memory_redacts_secret_shaped_facts);
-delegate_test!(operational_memory_dedupes_sorts_and_caps_paths => operational_memory_tests::operational_memory_dedupes_sorts_and_caps_paths);
-delegate_test!(operational_memory_ignores_freeform_path_like_output => operational_memory_tests::operational_memory_ignores_freeform_path_like_output);
-delegate_test!(operational_memory_preserves_touched_files_legacy_union => operational_memory_tests::operational_memory_preserves_touched_files_legacy_union);
-delegate_test!(operational_memory_resume_loads_checkpoint_facts_without_filesystem_scan => operational_memory_tests::operational_memory_resume_loads_checkpoint_facts_without_filesystem_scan);
-
-#[cfg(test)]
 #[path = "tests/mcp_identity_tests.rs"]
 mod mcp_identity_tests;
 
 delegate_tokio_test!(mcp_effective_identity_persists_for_direct_and_wrapper_calls => mcp_identity_tests::mcp_effective_identity_persists_for_direct_and_wrapper_calls);
 delegate_test!(mcp_effective_identity_uses_registered_first_class_ids_for_reserved_wrapper_names => mcp_identity_tests::mcp_effective_identity_uses_registered_first_class_ids_for_reserved_wrapper_names);
-
-#[cfg(test)]
-#[path = "tests/oversized_turn_tests.rs"]
-mod oversized_turn_tests;
-
-delegate_test!(split_oversized_turn_pre_prompt_preserves_suffix_and_prefix_summary => oversized_turn_tests::split_oversized_turn_pre_prompt_preserves_suffix_and_prefix_summary);
-delegate_test!(split_oversized_failed_provider_error_preserves_incomplete_suffix => oversized_turn_tests::split_oversized_failed_provider_error_preserves_incomplete_suffix);
-delegate_test!(split_oversized_turn_refuses_tool_failure_to_avoid_orphan_tools => oversized_turn_tests::split_oversized_turn_refuses_tool_failure_to_avoid_orphan_tools);
-delegate_test!(split_oversized_turn_refuses_artifact_backed_turn => oversized_turn_tests::split_oversized_turn_refuses_artifact_backed_turn);
-delegate_test!(split_oversized_turn_refuses_provider_neutral_tool_messages => oversized_turn_tests::split_oversized_turn_refuses_provider_neutral_tool_messages);
-delegate_test!(split_oversized_turn_prefix_summary_in_checkpoint_facts => oversized_turn_tests::split_oversized_turn_prefix_summary_in_checkpoint_facts);
-
-#[cfg(test)]
-#[path = "tests/compaction_planning_tests.rs"]
-mod compaction_planning_tests;
-
-delegate_test!(proactive_compaction_writes_checkpoint_artifact_and_updates_provider_context => compaction_planning_tests::checkpoint_proactive_compaction_writes_checkpoint_artifact_and_updates_provider_context);
-delegate_test!(provider_context_compaction_request_returns_none_for_single_turn_manual_context => compaction_planning_tests::provider_context_compaction_request_returns_none_for_single_turn_manual_context);
-delegate_test!(provider_context_compaction_request_builds_checkpoint_decision_without_appending_events => compaction_planning_tests::provider_context_compaction_request_builds_checkpoint_decision_without_appending_events);
-delegate_test!(compaction_trigger_pre_prompt_uses_estimate_without_provider_usage => compaction_planning_tests::compaction_trigger_pre_prompt_uses_estimate_without_provider_usage);
-delegate_test!(compaction_trigger_uses_fallback_budget_without_model_metadata => compaction_planning_tests::compaction_trigger_uses_fallback_budget_without_model_metadata);
-delegate_test!(compaction_trigger_noops_below_estimated_threshold => compaction_planning_tests::compaction_trigger_noops_below_estimated_threshold);
-delegate_test!(structured_summary_contract_can_be_disabled_for_legacy_headings => compaction_planning_tests::structured_summary_contract_can_be_disabled_for_legacy_headings);
-delegate_test!(deterministic_summary_uses_required_harness_sections => compaction_planning_tests::deterministic_summary_uses_required_harness_sections);
-delegate_test!(model_summary_validation_rejects_missing_required_harness_section => compaction_planning_tests::model_summary_validation_rejects_missing_required_harness_section);
-delegate_test!(proactive_compaction_records_pruned_tool_artifacts_for_compacted_turns => compaction_planning_tests::checkpoint_proactive_compaction_records_pruned_tool_artifacts_for_compacted_turns);
-delegate_test!(repeated_compaction_updates_existing_summary_without_legacy_append_format => compaction_planning_tests::repeated_compaction_updates_existing_summary_without_legacy_append_format);
-delegate_test!(compaction_summary_override_uses_explicit_hook_prefix_only => compaction_planning_tests::compaction_summary_override_uses_explicit_hook_prefix_only);
-
-#[cfg(test)]
-#[path = "tests/provider_context_checkpoint_tests.rs"]
-mod provider_context_checkpoint_tests;
-
-delegate_test!(replay_equivalence_after_failed_turn_pre_prompt_compaction_resume => provider_context_checkpoint_tests::replay_replay_equivalence_after_failed_turn_pre_prompt_compaction_resume);
-delegate_test!(legacy_provider_context_checkpoint_deserializes => provider_context_checkpoint_tests::legacy_provider_context_checkpoint_deserializes);
-delegate_test!(provider_neutral_reconstruction_marks_continue_as_tool_message_failures => provider_context_checkpoint_tests::provider_neutral_reconstruction_marks_continue_as_tool_message_failures);
-delegate_test!(provider_context_checkpoint_legacy_round_trips_with_new_defaults => provider_context_checkpoint_tests::provider_context_checkpoint_legacy_round_trips_with_new_defaults);
-delegate_test!(failed_turn_status_defaults_to_completed_for_legacy_checkpoint => provider_context_checkpoint_tests::failed_turn_status_defaults_to_completed_for_legacy_checkpoint);
-delegate_test!(compaction_turn_facts_include_failed_turn_status => provider_context_checkpoint_tests::compaction_turn_facts_include_failed_turn_status);
 
 #[test]
 fn stale_tool_task_late_result_preserves_owner_actor() {
@@ -855,17 +798,6 @@ async fn background_foreground_child_tasks_releases_parent_task_and_keeps_child_
     }));
 }
 
-#[cfg(test)]
-#[path = "tests/provider_context_restore_tests.rs"]
-mod provider_context_restore_tests;
-
-delegate_test!(restore_provider_context_uses_task_completed_summary_for_iterative_history => provider_context_restore_tests::restore_provider_context_uses_task_completed_summary_for_iterative_history);
-delegate_test!(failed_response_compaction_does_not_double_compact_same_request => provider_context_restore_tests::failed_response_compaction_does_not_double_compact_same_request);
-delegate_test!(restore_provider_context_from_history_uses_checkpoint_then_replays_post_checkpoint_turns => provider_context_restore_tests::checkpoint_restore_provider_context_from_history_uses_checkpoint_then_replays_post_checkpoint_turns);
-delegate_test!(failed_turn_context_resume_reconstructs_failed_turn_after_checkpoint => provider_context_restore_tests::checkpoint_failed_turn_context_resume_reconstructs_failed_turn_after_checkpoint);
-delegate_test!(failed_turn_context_does_not_duplicate_completed_turns => provider_context_restore_tests::failed_turn_context_does_not_duplicate_completed_turns);
-delegate_test!(restore_provider_context_from_history_rejects_checkpoint_metadata_mismatch => provider_context_restore_tests::restore_provider_context_from_history_rejects_checkpoint_metadata_mismatch);
-
 fn compaction_profile_config() -> crate::config::HarnessConfig {
     load_config_from_str(
         r#"
@@ -948,6 +880,16 @@ mod run_state_method_tests;
 delegate_test!(run_state_turn_queue_methods_own_agent_turn_lifecycle_state => run_state_method_tests::run_state_turn_queue_methods_own_agent_turn_lifecycle_state);
 delegate_test!(run_state_permission_methods_own_pending_and_grant_state => run_state_method_tests::run_state_permission_methods_own_pending_and_grant_state);
 delegate_test!(run_state_compaction_methods_own_overflow_retry_attempt_state => run_state_method_tests::run_state_compaction_methods_own_overflow_retry_attempt_state);
+
+#[cfg(test)]
+#[path = "tests/session_compaction_tests.rs"]
+mod session_compaction_tests;
+
+#[cfg(test)]
+#[path = "tests/operational_memory_context_tests.rs"]
+mod operational_memory_context_tests;
+
+delegate_tokio_test!(operational_memory_records_read_and_modified_files_from_events => operational_memory_context_tests::operational_memory_records_read_and_modified_files_from_events);
 
 mod workspace_snapshot_secret_tests;
 

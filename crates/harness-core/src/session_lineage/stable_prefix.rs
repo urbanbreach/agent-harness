@@ -205,6 +205,10 @@ struct PrefixState {
 }
 
 impl PrefixState {
+    #[allow(
+        deprecated,
+        reason = "deprecated event variants kept for backward compatibility with existing session logs"
+    )]
     fn apply(&mut self, event: &EventEnvelopeV1) {
         self.run_id.get_or_insert_with(|| event.run_id.to_string());
 
@@ -309,7 +313,9 @@ impl PrefixState {
             | EventV1::PolicyViolationDetected(_)
             | EventV1::UiIntentReceived(_)
             | EventV1::WorkspaceSnapshot(_)
-            | EventV1::WorkspaceReverted(_) => {}
+            | EventV1::WorkspaceReverted(_)
+            | EventV1::SessionCompaction(_)
+            | EventV1::BranchSummary(_) => {}
         }
     }
 

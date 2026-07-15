@@ -185,6 +185,7 @@ fn overflow_checkpoint(run: &RunInfo, events: &[EventEnvelopeV1]) -> ProviderCon
     checkpoint_for_trigger(run, events, "overflow_retry")
 }
 
+#[allow(deprecated, reason = "deprecated compaction event variants kept for backward compatibility tests")]
 fn checkpoint_for_trigger(
     run: &RunInfo,
     events: &[EventEnvelopeV1],

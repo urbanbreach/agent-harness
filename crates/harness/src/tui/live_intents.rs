@@ -139,15 +139,15 @@ pub(super) async fn handle_ui_intents(
                     .compact_agent_context(agent_id, through_request_id, "manual")
                     .await
                 {
-                    Ok(ManualCompactionOutcome::CheckpointWritten {
-                        checkpoint_id,
-                        tokens_before_estimate,
-                        tokens_after_estimate,
+                    Ok(ManualCompactionOutcome::Compacted {
+                        tokens_before,
+                        tokens_after,
+                        summary_preview,
                     }) => (
                         manual_compaction_success_message(
-                            &checkpoint_id,
-                            tokens_before_estimate,
-                            tokens_after_estimate,
+                            &summary_preview,
+                            tokens_before,
+                            tokens_after,
                         ),
                         OperatorNoticeLevel::Info,
                     ),
@@ -349,20 +349,26 @@ pub(super) fn foreground_background_success_message(count: usize) -> String {
 }
 
 pub(super) fn manual_compaction_success_message(
-    checkpoint_id: &str,
-    tokens_before_estimate: Option<u32>,
-    tokens_after_estimate: Option<u32>,
+    summary_preview: &str,
+    tokens_before: u32,
+    tokens_after: u32,
 ) -> String {
-    let prefix = format!("manual compaction checkpoint written: {checkpoint_id}");
-    match (tokens_before_estimate, tokens_after_estimate) {
-        (Some(before), Some(after)) if before != after => format!(
-            "{prefix} · active ctx {} → {} est",
-            compact_token_estimate(before),
-            compact_token_estimate(after)
-        ),
-        (Some(_), Some(_)) => format!("{prefix} · active ctx estimate unchanged"),
-        _ => prefix,
-    }
+    let prefix = "manual compaction applied".to_string();
+    let token_info = if tokens_before != tokens_after {
+        format!(
+            " · ctx {} → {} est",
+            compact_token_estimate(tokens_before),
+            compact_token_estimate(tokens_after)
+        )
+    } else {
+        " · ctx estimate unchanged".to_string()
+    };
+    let preview = if summary_preview.is_empty() {
+        String::new()
+    } else {
+        format!(" · {summary_preview}")
+    };
+    format!("{prefix}{token_info}{preview}")
 }
 
 fn compact_token_estimate(value: u32) -> String {

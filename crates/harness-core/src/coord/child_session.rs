@@ -319,3 +319,15 @@ where
 
     Ok(())
 }
+
+// Branch summarization integration point:
+//
+// When a child session finishes and the user navigates back to the parent,
+// `Coordinator::summarize_session_branch` should be called to generate a
+// `BranchSummary` event for the abandoned branch. This is currently triggered
+// by the TUI/CLI session-switching path rather than here, because
+// `finish_child_session_mirrors` is a free function without provider access.
+//
+// To wire it here, pass `Arc<dyn Provider>` and `CompactionSettings` into this
+// function, then call `summarize_session_branch` for each child session's
+// agent before appending the `RunFinished` event above.

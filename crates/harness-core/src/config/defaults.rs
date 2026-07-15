@@ -63,6 +63,18 @@ pub(super) fn default_prompt_wait_timeout_ms() -> u64 {
     30_000
 }
 
+pub(super) fn default_compaction_enabled() -> bool {
+    true
+}
+
+pub(super) fn default_compaction_reserve_tokens() -> u32 {
+    16_384
+}
+
+pub(super) fn default_compaction_keep_recent_tokens() -> u32 {
+    20_000
+}
+
 pub(super) fn default_compaction_auto_retry_overflow() -> bool {
     true
 }

@@ -28,9 +28,11 @@ use self::defaults::{
     default_background_task_message_staleness_timeout_ms,
     default_background_task_model_concurrency, default_background_task_provider_concurrency,
     default_background_task_stale_timeout_ms, default_compaction_auto_retry_overflow,
-    default_compaction_estimated_token_triggers, default_compaction_fallback_input_tokens,
-    default_compaction_structured_summary_contract, default_hashline_edit, default_hook_timeout_ms,
-    default_logging_level, default_max_events_in_memory, default_max_transcript_chars_in_memory,
+    default_compaction_enabled, default_compaction_estimated_token_triggers,
+    default_compaction_fallback_input_tokens, default_compaction_keep_recent_tokens,
+    default_compaction_reserve_tokens, default_compaction_structured_summary_contract,
+    default_hashline_edit, default_hook_timeout_ms, default_logging_level,
+    default_max_events_in_memory, default_max_transcript_chars_in_memory,
     default_prompt_wait_timeout_ms, default_provider_retry_base_delay_ms,
     default_provider_retry_max_delay_ms, default_provider_retry_max_retries,
     default_runtime_ask_timeout_ms, default_runtime_tool_failure_mode, default_session_dir,
@@ -504,7 +506,7 @@ pub struct RuntimeConfig {
     #[serde(default)]
     pub deterministic: DeterministicConfig,
     #[serde(default)]
-    pub compaction: CompactionRuntimeConfig,
+    pub compaction: CompactionSettings,
     #[serde(default, alias = "providerRetry")]
     pub provider_retry: ProviderRetryRuntimeConfig,
 }
@@ -534,49 +536,51 @@ impl Default for ProviderRetryRuntimeConfig {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct CompactionRuntimeConfig {
-    #[serde(default, alias = "modelBacked")]
-    pub model_backed: bool,
-    #[serde(default, alias = "modelRef", alias = "model")]
-    pub model_ref: Option<String>,
-    #[serde(default, alias = "splitOversizedTurns")]
-    pub split_oversized_turns: bool,
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub struct CompactionSettings {
+    #[serde(default = "default_compaction_enabled")]
+    pub enabled: bool,
+    #[serde(default = "default_compaction_reserve_tokens", alias = "reserveTokens")]
+    pub reserve_tokens: u32,
     #[serde(
-        default = "default_compaction_auto_retry_overflow",
-        alias = "autoRetryOverflow"
+        default = "default_compaction_keep_recent_tokens",
+        alias = "keepRecentTokens"
     )]
+    pub keep_recent_tokens: u32,
+    #[serde(default = "default_compaction_auto_retry_overflow")]
     pub auto_retry_overflow: bool,
     #[serde(
         default = "default_compaction_structured_summary_contract",
         alias = "structuredSummaryContract"
     )]
     pub structured_summary_contract: bool,
-    #[serde(
-        default = "default_compaction_estimated_token_triggers",
-        alias = "estimatedTokenTriggers"
-    )]
+    #[serde(default = "default_compaction_estimated_token_triggers")]
     pub estimated_token_triggers: bool,
     #[serde(
         default = "default_compaction_fallback_input_tokens",
         alias = "fallbackInputTokens"
     )]
     pub fallback_input_tokens: u32,
+    #[serde(default)]
+    pub split_oversized_turns: bool,
 }
 
-impl Default for CompactionRuntimeConfig {
+impl Default for CompactionSettings {
     fn default() -> Self {
         Self {
-            model_backed: false,
-            model_ref: None,
-            split_oversized_turns: false,
+            enabled: default_compaction_enabled(),
+            reserve_tokens: default_compaction_reserve_tokens(),
+            keep_recent_tokens: default_compaction_keep_recent_tokens(),
             auto_retry_overflow: default_compaction_auto_retry_overflow(),
             structured_summary_contract: default_compaction_structured_summary_contract(),
             estimated_token_triggers: default_compaction_estimated_token_triggers(),
             fallback_input_tokens: default_compaction_fallback_input_tokens(),
+            split_oversized_turns: false,
         }
     }
 }
+
+pub type CompactionRuntimeConfig = CompactionSettings;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]

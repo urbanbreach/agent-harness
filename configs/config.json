@@ -18,10 +18,14 @@
       ],
       "type": "string"
     },
-    "CompactionRuntimeConfig": {
+    "CompactionSettings": {
       "additionalProperties": false,
       "properties": {
         "auto_retry_overflow": {
+          "default": true,
+          "type": "boolean"
+        },
+        "enabled": {
           "default": true,
           "type": "boolean"
         },
@@ -35,16 +39,17 @@
           "minimum": 0,
           "type": "integer"
         },
-        "model_backed": {
-          "default": false,
-          "type": "boolean"
+        "keep_recent_tokens": {
+          "default": 20000,
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
         },
-        "model_ref": {
-          "default": null,
-          "type": [
-            "string",
-            "null"
-          ]
+        "reserve_tokens": {
+          "default": 16384,
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
         },
         "split_oversized_turns": {
           "default": false,
@@ -1456,15 +1461,16 @@
         "compaction": {
           "allOf": [
             {
-              "$ref": "#/definitions/CompactionRuntimeConfig"
+              "$ref": "#/definitions/CompactionSettings"
             }
           ],
           "default": {
             "auto_retry_overflow": true,
+            "enabled": true,
             "estimated_token_triggers": true,
             "fallback_input_tokens": 32768,
-            "model_backed": false,
-            "model_ref": null,
+            "keep_recent_tokens": 20000,
+            "reserve_tokens": 16384,
             "split_oversized_turns": false,
             "structured_summary_contract": true
           }
@@ -1754,10 +1760,11 @@
       "default": {
         "compaction": {
           "auto_retry_overflow": true,
+          "enabled": true,
           "estimated_token_triggers": true,
           "fallback_input_tokens": 32768,
-          "model_backed": false,
-          "model_ref": null,
+          "keep_recent_tokens": 20000,
+          "reserve_tokens": 16384,
           "split_oversized_turns": false,
           "structured_summary_contract": true
         },

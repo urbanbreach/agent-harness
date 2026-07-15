@@ -218,6 +218,16 @@ pub struct ProjectedCompactionPart {
     pub through_request_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub artifact: Option<TranscriptArtifactRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tokens_before: Option<u32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub read_files: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub modified_files: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_hook: Option<bool>,
     pub provenance: ProvenanceRange,
 }
 
@@ -341,6 +351,8 @@ pub enum CompactionCheckpointStatus {
     Written,
     Applied,
     Failed,
+    SessionCompacted,
+    BranchSummary,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

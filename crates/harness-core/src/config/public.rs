@@ -89,7 +89,7 @@ pub struct PublicRuntimeConfig {
 #[serde(deny_unknown_fields)]
 pub struct PublicRuntimeSettingsConfig {
     #[serde(default)]
-    pub compaction: CompactionRuntimeConfig,
+    pub compaction: CompactionSettings,
     #[serde(default, alias = "providerRetry")]
     pub provider_retry: ProviderRetryRuntimeConfig,
 }
@@ -551,12 +551,14 @@ pub(super) fn translate_public_runtime_root(
             "seed": 42,
         },
         "compaction": {
-            "model_backed": false,
-            "split_oversized_turns": false,
+            "enabled": true,
+            "reserve_tokens": 16384,
+            "keep_recent_tokens": 20000,
             "auto_retry_overflow": true,
             "structured_summary_contract": true,
             "estimated_token_triggers": true,
             "fallback_input_tokens": 32768,
+            "split_oversized_turns": false,
         },
     });
     if let Some(value) = object.get("runtime") {
