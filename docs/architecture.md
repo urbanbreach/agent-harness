@@ -181,7 +181,8 @@ checks without scheduling work during replay.
 - `ProviderRequestFinished`
 - `AssistantMessageFinished` - Assistant message committed before tool preflight/execution
 - Provider tool-call deltas/completions are normalized before coordinator execution
-- `CompactionRequested` / `CompactionWritten` / `CompactionApplied` / `CompactionFailed` - provider-context checkpoint lifecycle; written/applied events carry additive active-context estimate metadata so projections can separate active context from cumulative token spend.
+- `SessionCompaction` - session-level compaction event; replaces the deprecated `CompactionRequested`/`CompactionWritten`/`CompactionApplied`/`CompactionFailed` sequence. Carries the compaction summary, token estimate before compaction, file lists, trigger reason, and hook provenance in a single event.
+- `BranchSummary` - branch-level summary event for forked/child session context.
 
 ### Provider lifecycle metadata contract
 
@@ -500,9 +501,9 @@ V1 compaction contract:
   files/artifacts, operational memory, tail-boundary metadata, and a reminder that preserved recent turns plus the live user prompt take precedence over the lossy recap.
 
 - `events.jsonl` remains append-only and stays the source of truth.
-- Compaction writes checkpoint artifacts under `artifacts/compactions/<agent_id>/<checkpoint_id>.json`.
-- The coordinator emits `CompactionRequested`, `ArtifactWritten`, `CompactionWritten`, and `CompactionApplied` for successful checkpoints, or `CompactionFailed` when a retry cannot shrink context safely.
-- Resume restores provider context from the latest applied checkpoint artifact, then replays post-checkpoint deltas from `events.jsonl`.
+- Compaction appends a single `SessionCompaction` event with the generated summary, token estimate, file lists, and trigger reason. No checkpoint artifacts are written — the summary lives entirely in the event and the in-memory `ProviderContext`.
+- The coordinator emits `SessionCompaction` for successful compactions, or `CompactionFailed` (deprecated) when a retry cannot shrink context safely.
+- Resume restores provider context from the latest `SessionCompaction` event, then replays post-compaction deltas from `events.jsonl`.
 
 Checkpoint payloads carry:
 
