@@ -85,6 +85,9 @@ pub fn canonical_permission_name(kind: PermissionKind) -> String {
         PermissionKind::WebSearch => "websearch",
         PermissionKind::CodeSearch => "codesearch",
         PermissionKind::Lsp => "lsp",
+        PermissionKind::Read => "read",
+        PermissionKind::ExternalDirectory => "external_directory",
+        PermissionKind::DoomLoop => "doom_loop",
     }
     .to_string()
 }

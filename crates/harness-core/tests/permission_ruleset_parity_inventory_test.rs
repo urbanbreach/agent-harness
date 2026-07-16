@@ -379,6 +379,9 @@ fn explore_permissions() -> ProfilePermissions {
         websearch: Some(PermissionMode::Allow),
         codesearch: Some(PermissionMode::Deny),
         lsp: Some(PermissionMode::Deny),
+        read: None,
+        external_directory: None,
+        doom_loop: None,
         rules: PermissionRuleSet::default(),
     }
 }
@@ -387,6 +390,9 @@ fn plan_permissions() -> ProfilePermissions {
     ProfilePermissions {
         edit: None,
         shell: Some(PermissionMode::Ask),
+        read: None,
+        external_directory: None,
+        doom_loop: None,
         rules: PermissionRuleSet {
             edit: vec![
                 PermissionSelectorRule {

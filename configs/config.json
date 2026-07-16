@@ -1247,7 +1247,29 @@
           ],
           "default": null
         },
+        "doom_loop": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "edit": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicRulePermissionValue"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "external_directory": {
           "anyOf": [
             {
               "$ref": "#/definitions/PublicRulePermissionValue"
@@ -1273,6 +1295,17 @@
           "anyOf": [
             {
               "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "read": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicRulePermissionValue"
             },
             {
               "type": "null"
@@ -1373,7 +1406,29 @@
           ],
           "default": null
         },
+        "doom_loop": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "edit": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicRulePermissionValue"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "external_directory": {
           "anyOf": [
             {
               "$ref": "#/definitions/PublicRulePermissionValue"
@@ -1399,6 +1454,17 @@
           "anyOf": [
             {
               "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "read": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicRulePermissionValue"
             },
             {
               "type": "null"
@@ -1735,9 +1801,12 @@
         "*": null,
         "bash": null,
         "codesearch": null,
+        "doom_loop": null,
         "edit": null,
+        "external_directory": null,
         "lsp": null,
         "question": null,
+        "read": null,
         "shell_allowlist": null,
         "task": null,
         "webfetch": null,

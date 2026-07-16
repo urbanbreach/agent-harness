@@ -1,7 +1,8 @@
 use super::{
-    permission_kind_for_capability, permission_kind_for_tool, PermissionDecision,
-    PermissionGrantMatcher, PermissionGrantRequest, PermissionGrantSet, PermissionKind,
-    PermissionPolicy, PermissionRuleRequest, PermissionToolSelector, PolicyDecision,
+    permission_kind_for_capability, permission_kind_for_tool, permission_kind_for_tool_call,
+    PermissionDecision, PermissionGrantMatcher, PermissionGrantRequest, PermissionGrantSet,
+    PermissionKind, PermissionPolicy, PermissionRuleRequest, PermissionToolSelector,
+    PolicyDecision,
 };
 use crate::config::{
     CategoryPermissions, PermissionMode, PermissionRuleSet, PermissionSelector,
@@ -158,6 +159,8 @@ fn permission_rule_precedence_for_bash_exact_prefix_and_catch_all() {
                 ],
                 edit: Vec::new(),
                 task: Vec::new(),
+                read: Vec::new(),
+                external_directory: Vec::new(),
             },
             ..CategoryPermissions::default()
         },
@@ -222,6 +225,8 @@ fn permission_rule_precedence_for_task_exact_glob_and_catch_all() {
                         mode: PermissionMode::Allow,
                     },
                 ],
+                read: Vec::new(),
+                external_directory: Vec::new(),
             },
             ..CategoryPermissions::default()
         },
@@ -295,6 +300,8 @@ fn config_permission_rule_precedence_for_bash_and_edit_exact_prefix_and_catch_al
                     },
                 ],
                 task: Vec::new(),
+                read: Vec::new(),
+                external_directory: Vec::new(),
             },
             ..CategoryPermissions::default()
         },
@@ -622,11 +629,11 @@ fn native_tool_ids_resolve_to_permission_kinds_without_aliases() {
 fn read_fs_capability_must_map_to_permission_kind_for_env_ask() {
     // Given: native `read` uses ToolCapability::ReadFs
     // When: the coordinator maps capability → PermissionKind
-    // Then: ReadFs must not be None (None skips permission entirely today)
-    assert!(
-        permission_kind_for_capability(ToolCapability::ReadFs).is_some(),
-        "ToolCapability::ReadFs must map to a permission kind so .env path patterns can Ask; \
-         current mapping is None and tool_execution skips the permission gate for reads"
+    // Then: ReadFs maps to Read (None would skip the permission gate)
+    assert_eq!(
+        permission_kind_for_capability(ToolCapability::ReadFs),
+        Some(PermissionKind::Read),
+        "ToolCapability::ReadFs must map to PermissionKind::Read so .env path patterns can Ask"
     );
 }
 
@@ -634,10 +641,17 @@ fn read_fs_capability_must_map_to_permission_kind_for_env_ask() {
 fn native_read_tool_id_must_map_to_permission_kind_for_env_patterns() {
     // Given: OpenCode applies .env ask rules only on the `read` permission name
     // When: permission_kind_for_tool("read") is consulted
-    // Then: native tool id `read` must resolve to a permission kind
-    assert!(
-        permission_kind_for_tool("read").is_some(),
-        "native tool id `read` must map to a permission kind for .env / .env.* path patterns; \
-         without this mapping, reads never emit PermissionRequested"
+    // Then: native tool id `read` maps to Read; glob/grep/list stay unmapped for .env
+    assert_eq!(
+        permission_kind_for_tool("read"),
+        Some(PermissionKind::Read),
+        "native tool id `read` must map to PermissionKind::Read for .env path patterns"
     );
+    assert_eq!(
+        permission_kind_for_tool_call("read", ToolCapability::ReadFs),
+        Some(PermissionKind::Read)
+    );
+    assert_eq!(permission_kind_for_tool("glob"), None);
+    assert_eq!(permission_kind_for_tool("grep"), None);
+    assert_eq!(permission_kind_for_tool("list"), None);
 }

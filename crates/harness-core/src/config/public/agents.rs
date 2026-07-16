@@ -242,6 +242,9 @@ pub(super) fn default_shipped_agents(
                     websearch: Some(PermissionMode::Allow),
                     codesearch: Some(PermissionMode::Allow),
                     lsp: Some(PermissionMode::Allow),
+                    read: None,
+                    external_directory: None,
+                    doom_loop: None,
                     rules: PermissionRuleSet::default(),
                 }),
                 max_iters: None,
@@ -307,6 +310,9 @@ pub(super) fn default_shipped_agents(
                     websearch: Some(PermissionMode::Allow),
                     codesearch: Some(PermissionMode::Allow),
                     lsp: Some(PermissionMode::Allow),
+                    read: None,
+                    external_directory: None,
+                    doom_loop: None,
                     rules: PermissionRuleSet {
                         edit: vec![
                             PermissionSelectorRule {
@@ -320,9 +326,21 @@ pub(super) fn default_shipped_agents(
                                 )),
                                 mode: PermissionMode::Allow,
                             },
+                            PermissionSelectorRule {
+                                selector: PermissionSelector::Glob(format!(
+                                    "{}/*.md",
+                                    crate::plan::PLAN_DIR
+                                )),
+                                mode: PermissionMode::Allow,
+                            },
                         ],
                         shell: Vec::new(),
-                        task: Vec::new(),
+                        task: vec![PermissionSelectorRule {
+                            selector: PermissionSelector::Exact("general".to_string()),
+                            mode: PermissionMode::Deny,
+                        }],
+                        read: Vec::new(),
+                        external_directory: Vec::new(),
                     },
                 }),
                 max_iters: None,
@@ -378,21 +396,25 @@ pub(super) fn default_shipped_agents(
                 permissions: Some(ProfilePermissions {
                     fallback: None,
                     edit: Some(PermissionMode::Deny),
-                    shell: Some(PermissionMode::Deny),
+                    shell: Some(PermissionMode::Allow),
                     network: Some(PermissionMode::Deny),
-                    question: Some(PermissionMode::Allow),
+                    question: Some(PermissionMode::Deny),
                     task: Some(PermissionMode::Deny),
-                    webfetch: Some(PermissionMode::Deny),
-                    websearch: Some(PermissionMode::Deny),
+                    webfetch: Some(PermissionMode::Allow),
+                    websearch: Some(PermissionMode::Allow),
                     codesearch: Some(PermissionMode::Deny),
-                    lsp: Some(PermissionMode::Allow),
+                    lsp: Some(PermissionMode::Deny),
+                    read: None,
+                    external_directory: None,
+                    doom_loop: None,
                     rules: PermissionRuleSet::default(),
                 }),
                 max_iters: None,
                 tool_failure_mode: ToolFailureMode::ContinueAsToolMessage,
                 tools: vec![
-                    "question",
-                    "lsp",
+                    "bash",
+                    "webfetch",
+                    "websearch",
                     "read",
                     "glob",
                     "grep",
@@ -438,6 +460,9 @@ pub(super) fn default_shipped_agents(
                     websearch: Some(PermissionMode::Allow),
                     codesearch: Some(PermissionMode::Allow),
                     lsp: Some(PermissionMode::Allow),
+                    read: None,
+                    external_directory: None,
+                    doom_loop: None,
                     rules: PermissionRuleSet::default(),
                 }),
                 max_iters: None,
@@ -536,6 +561,9 @@ pub(super) fn default_shipped_agents(
                     websearch: Some(PermissionMode::Deny),
                     codesearch: Some(PermissionMode::Deny),
                     lsp: Some(PermissionMode::Deny),
+                    read: None,
+                    external_directory: None,
+                    doom_loop: None,
                     rules: PermissionRuleSet::default(),
                 }),
                 max_iters: None,
@@ -570,6 +598,9 @@ pub(super) fn default_shipped_agents(
                     websearch: Some(PermissionMode::Deny),
                     codesearch: Some(PermissionMode::Deny),
                     lsp: Some(PermissionMode::Deny),
+                    read: None,
+                    external_directory: None,
+                    doom_loop: None,
                     rules: PermissionRuleSet::default(),
                 }),
                 max_iters: None,
@@ -604,6 +635,9 @@ pub(super) fn default_shipped_agents(
                     websearch: Some(PermissionMode::Deny),
                     codesearch: Some(PermissionMode::Deny),
                     lsp: Some(PermissionMode::Deny),
+                    read: None,
+                    external_directory: None,
+                    doom_loop: None,
                     rules: PermissionRuleSet::default(),
                 }),
                 max_iters: None,
@@ -646,7 +680,10 @@ fn category_routing_profile(
                 websearch: Some(PermissionMode::Allow),
                 codesearch: Some(PermissionMode::Allow),
                 lsp: Some(PermissionMode::Allow),
-                rules: PermissionRuleSet::default(),
+                read: None,
+                    external_directory: None,
+                    doom_loop: None,
+                    rules: PermissionRuleSet::default(),
             }),
             max_iters: None,
             tool_failure_mode: ToolFailureMode::ContinueAsToolMessage,
@@ -791,9 +828,14 @@ fn translate_public_profile_permissions(
     let edit = public_rule_mode(&permissions.edit);
     let shell = public_rule_mode(&permissions.bash);
     let task = public_rule_mode(&permissions.task);
+    let read = public_rule_mode(&permissions.read);
+    let external_directory = public_rule_mode(&permissions.external_directory);
     let edit_rules = public_selector_rules("edit", permissions.edit)?;
     let shell_rules = public_selector_rules("bash", permissions.bash)?;
     let task_rules = public_selector_rules("task", permissions.task)?;
+    let read_rules = public_selector_rules("read", permissions.read)?;
+    let external_directory_rules =
+        public_selector_rules("external_directory", permissions.external_directory)?;
 
     Ok(ProfilePermissions {
         fallback: permissions.fallback,
@@ -806,10 +848,15 @@ fn translate_public_profile_permissions(
         websearch: permissions.websearch,
         codesearch: permissions.codesearch,
         lsp: permissions.lsp,
+        read,
+        external_directory,
+        doom_loop: permissions.doom_loop,
         rules: PermissionRuleSet {
             shell: shell_rules,
             edit: edit_rules,
             task: task_rules,
+            read: read_rules,
+            external_directory: external_directory_rules,
         },
     })
 }

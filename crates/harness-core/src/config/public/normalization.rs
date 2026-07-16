@@ -113,7 +113,10 @@ pub(super) fn translate_public_permission_value(
                     webfetch: Some(mode.clone()),
                     websearch: Some(mode.clone()),
                     codesearch: Some(mode.clone()),
-                    lsp: Some(mode),
+                    lsp: Some(mode.clone()),
+                    read: Some(mode.clone()),
+                    external_directory: Some(mode.clone()),
+                    doom_loop: Some(mode),
                 },
                 fallback: None,
                 rules: PermissionRuleSet::default(),
@@ -133,9 +136,18 @@ pub(super) fn translate_public_permission_value(
     let task = public_rule_mode(&parsed.task)
         .or_else(|| global.clone())
         .or(fallback.defaults.task);
+    let read = public_rule_mode(&parsed.read)
+        .or_else(|| global.clone())
+        .or(fallback.defaults.read);
+    let external_directory = public_rule_mode(&parsed.external_directory)
+        .or_else(|| global.clone())
+        .or(fallback.defaults.external_directory);
     let edit_rules = public_selector_rules("edit", parsed.edit)?;
     let shell_rules = public_selector_rules("bash", parsed.bash)?;
     let task_rules = public_selector_rules("task", parsed.task)?;
+    let read_rules = public_selector_rules("read", parsed.read)?;
+    let external_directory_rules =
+        public_selector_rules("external_directory", parsed.external_directory)?;
 
     serde_json::to_value(PermissionsConfig {
         defaults: PermissionDefaultsConfig {
@@ -166,12 +178,20 @@ pub(super) fn translate_public_permission_value(
                 .lsp
                 .or_else(|| global.clone())
                 .or(fallback.defaults.lsp),
+            read,
+            external_directory,
+            doom_loop: parsed
+                .doom_loop
+                .or_else(|| global.clone())
+                .or(fallback.defaults.doom_loop),
         },
         fallback: parsed.fallback,
         rules: PermissionRuleSet {
             shell: shell_rules,
             edit: edit_rules,
             task: task_rules,
+            read: read_rules,
+            external_directory: external_directory_rules,
         },
         shell_allowlist: parsed.shell_allowlist.unwrap_or(fallback.shell_allowlist),
     })
@@ -259,7 +279,7 @@ pub(crate) fn translate_public_formatter_config(
                 }
             }
             // Backward-compatible alias: older harness configs used "uvformat"
-            // for the uv Python formatter. OpenCode uses "uv", which is now canonical.
+            // for the uv Python formatter. Harness uses "uv", which is now canonical.
             if let Some(value) = object.remove("uvformat") {
                 object.entry("uv".to_string()).or_insert(value);
             }

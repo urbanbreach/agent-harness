@@ -516,6 +516,27 @@ const PUBLIC_PERMISSION_NAMES: &[PublicConfigPermissionName] = &[
         supports_selectors: false,
     },
     PublicConfigPermissionName {
+        name: "read",
+        canonical_name: "read",
+        canonical: true,
+        schema_property: true,
+        supports_selectors: true,
+    },
+    PublicConfigPermissionName {
+        name: "external_directory",
+        canonical_name: "external_directory",
+        canonical: true,
+        schema_property: true,
+        supports_selectors: true,
+    },
+    PublicConfigPermissionName {
+        name: "doom_loop",
+        canonical_name: "doom_loop",
+        canonical: true,
+        schema_property: true,
+        supports_selectors: false,
+    },
+    PublicConfigPermissionName {
         name: "shell",
         canonical_name: "bash",
         canonical: false,

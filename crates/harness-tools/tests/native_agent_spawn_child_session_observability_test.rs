@@ -32,6 +32,7 @@ fn profile(name: &str, category: &str, toolset: &[&str]) -> AgentProfile {
         temperature: Some(0.0),
         tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
         toolset: toolset.iter().map(|tool| (*tool).to_string()).collect(),
+        permission_ruleset: Vec::new(),
     }
 }
 
@@ -41,7 +42,10 @@ fn child_observability_permission_policy() -> PermissionPolicy {
         ProfilePermissions {
             shell: Some(PermissionMode::Deny),
             ..ProfilePermissions::default()
-        },
+        read: None,
+                    external_directory: None,
+                    doom_loop: None,
+                },
     )
 }
 

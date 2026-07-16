@@ -836,6 +836,12 @@ pub struct ProfilePermissions {
     #[serde(default, alias = "codeLsp")]
     pub lsp: Option<PermissionMode>,
     #[serde(default)]
+    pub read: Option<PermissionMode>,
+    #[serde(default)]
+    pub external_directory: Option<PermissionMode>,
+    #[serde(default)]
+    pub doom_loop: Option<PermissionMode>,
+    #[serde(default)]
     pub rules: PermissionRuleSet,
 }
 
@@ -902,6 +908,12 @@ pub struct PermissionDefaultsConfig {
     pub codesearch: Option<PermissionMode>,
     #[serde(default, alias = "codeLsp")]
     pub lsp: Option<PermissionMode>,
+    #[serde(default)]
+    pub read: Option<PermissionMode>,
+    #[serde(default)]
+    pub external_directory: Option<PermissionMode>,
+    #[serde(default)]
+    pub doom_loop: Option<PermissionMode>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Default)]
@@ -913,6 +925,10 @@ pub struct PermissionRuleSet {
     pub edit: Vec<PermissionSelectorRule>,
     #[serde(default)]
     pub task: Vec<PermissionSelectorRule>,
+    #[serde(default)]
+    pub read: Vec<PermissionSelectorRule>,
+    #[serde(default)]
+    pub external_directory: Vec<PermissionSelectorRule>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

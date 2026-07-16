@@ -9,7 +9,15 @@ use crate::config::{
 };
 use crate::tool::{canonical_tool_id_for, ToolCapability};
 
+pub mod ruleset;
 pub mod shell;
+
+pub use ruleset::{
+    denied_task_agents, derive_subagent_session_permission, disabled_tools,
+    evaluate as evaluate_ruleset, from_profile_permissions, is_tool_disabled,
+    merge as merge_rulesets, tool_permission_name, visible_tools, ConfigPermissionValue,
+    PermissionAction, PermissionRule, PermissionRuleset,
+};
 
 const DEFAULT_ASK_TIMEOUT_MS: u64 = 0;
 
@@ -25,6 +33,9 @@ pub enum PermissionKind {
     WebSearch,
     CodeSearch,
     Lsp,
+    Read,
+    ExternalDirectory,
+    DoomLoop,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -206,6 +217,9 @@ impl PermissionKind {
             Self::WebSearch => "websearch",
             Self::CodeSearch => "codesearch",
             Self::Lsp => "lsp",
+            Self::Read => "read",
+            Self::ExternalDirectory => "external_directory",
+            Self::DoomLoop => "doom_loop",
         }
     }
 }
@@ -252,6 +266,9 @@ struct DefaultPermissionModes {
     websearch: PermissionMode,
     codesearch: PermissionMode,
     lsp: PermissionMode,
+    read: PermissionMode,
+    external_directory: PermissionMode,
+    doom_loop: PermissionMode,
 }
 
 impl DefaultPermissionModes {
@@ -292,6 +309,21 @@ impl DefaultPermissionModes {
                 .lsp
                 .clone()
                 .unwrap_or(PermissionMode::Allow),
+            read: config
+                .permissions
+                .read
+                .clone()
+                .unwrap_or(PermissionMode::Allow),
+            external_directory: config
+                .permissions
+                .external_directory
+                .clone()
+                .unwrap_or(PermissionMode::Ask),
+            doom_loop: config
+                .permissions
+                .doom_loop
+                .clone()
+                .unwrap_or(PermissionMode::Ask),
         }
     }
 
@@ -310,6 +342,9 @@ impl DefaultPermissionModes {
             websearch: network.clone(),
             codesearch: network,
             lsp: PermissionMode::Allow,
+            read: PermissionMode::Allow,
+            external_directory: PermissionMode::Ask,
+            doom_loop: PermissionMode::Ask,
         }
     }
 }
@@ -395,6 +430,9 @@ impl PermissionPolicy {
             PermissionKind::WebSearch => &self.defaults.websearch,
             PermissionKind::CodeSearch => &self.defaults.codesearch,
             PermissionKind::Lsp => &self.defaults.lsp,
+            PermissionKind::Read => &self.defaults.read,
+            PermissionKind::ExternalDirectory => &self.defaults.external_directory,
+            PermissionKind::DoomLoop => &self.defaults.doom_loop,
         }
     }
 }
@@ -432,6 +470,22 @@ fn rule_mode_for_kind<'a>(
                 | PermissionRuleRequest::TaskAgent(_) => None,
             }),
         ),
+        PermissionKind::Read => selector_rule_mode(
+            &rules.read,
+            selector.and_then(|selector| match selector {
+                PermissionRuleRequest::WorkspacePath(path) => Some(path.as_str()),
+                PermissionRuleRequest::ShellCommand { .. }
+                | PermissionRuleRequest::TaskAgent(_) => None,
+            }),
+        ),
+        PermissionKind::ExternalDirectory => selector_rule_mode(
+            &rules.external_directory,
+            selector.and_then(|selector| match selector {
+                PermissionRuleRequest::WorkspacePath(path) => Some(path.as_str()),
+                PermissionRuleRequest::ShellCommand { .. }
+                | PermissionRuleRequest::TaskAgent(_) => None,
+            }),
+        ),
         PermissionKind::Task => selector_rule_mode(
             &rules.task,
             selector.and_then(|selector| match selector {
@@ -445,7 +499,8 @@ fn rule_mode_for_kind<'a>(
         | PermissionKind::WebFetch
         | PermissionKind::WebSearch
         | PermissionKind::CodeSearch
-        | PermissionKind::Lsp => None,
+        | PermissionKind::Lsp
+        | PermissionKind::DoomLoop => None,
     }
 }
 
@@ -533,6 +588,7 @@ pub fn permission_kind_for_tool(tool_id: &str) -> Option<PermissionKind> {
         "lsp" => Some(PermissionKind::Lsp),
         "lsp.rename" => Some(PermissionKind::EditFs),
         "bash" => Some(PermissionKind::Shell),
+        "read" => Some(PermissionKind::Read),
         _ if canonical_tool_id.starts_with("edit.") => Some(PermissionKind::EditFs),
         _ if canonical_tool_id.starts_with("shell.") => Some(PermissionKind::Shell),
         _ if canonical_tool_id.starts_with("network.") || canonical_tool_id.starts_with("net.") => {
@@ -555,7 +611,7 @@ pub fn permission_kind_for_capability(capability: ToolCapability) -> Option<Perm
         ToolCapability::Shell => Some(PermissionKind::Shell),
         ToolCapability::Network => Some(PermissionKind::Network),
         ToolCapability::SpawnAgent => Some(PermissionKind::Task),
-        ToolCapability::ReadFs => None,
+        ToolCapability::ReadFs => Some(PermissionKind::Read),
     }
 }
 
@@ -582,6 +638,9 @@ fn mode_for_kind(
             .as_ref()
             .or(permissions.network.as_ref()),
         PermissionKind::Lsp => permissions.lsp.as_ref(),
+        PermissionKind::Read => permissions.read.as_ref(),
+        PermissionKind::ExternalDirectory => permissions.external_directory.as_ref(),
+        PermissionKind::DoomLoop => permissions.doom_loop.as_ref(),
     }
 }
 

@@ -29,6 +29,14 @@ use super::{
     PendingPermissionResolution, PendingPermissionState, ToolCallExecutionArgs,
 };
 
+#[must_use]
+pub(crate) fn permission_policy_denied_response_message(tool_id: &str) -> String {
+    format!(
+        "tool call denied: permission policy rejected `{tool_id}` \
+(do not retry the same call; pick an allowed tool or adjust permission rules)"
+    )
+}
+
 pub(super) fn event_permission_decision(decision: PermissionDecision) -> EventPermissionDecision {
     match decision {
         PermissionDecision::Allow => EventPermissionDecision::Allow,
@@ -120,7 +128,7 @@ fn permission_grant_matcher(
     match kind {
         PermissionKind::Shell => shell_command_selector(args_json, request_digest)
             .unwrap_or_else(|| request_digest_selector(request_digest)),
-        PermissionKind::EditFs => {
+        PermissionKind::EditFs | PermissionKind::Read => {
             let paths = workspace_path_selector_paths(workspace_root, args_json);
             if paths.len() == 1 {
                 PermissionGrantMatcher::WorkspacePath {
@@ -131,7 +139,15 @@ fn permission_grant_matcher(
                 request_digest_selector(request_digest)
             }
         }
-        _ => request_digest_selector(request_digest),
+        PermissionKind::ExternalDirectory
+        | PermissionKind::DoomLoop
+        | PermissionKind::Network
+        | PermissionKind::Question
+        | PermissionKind::Task
+        | PermissionKind::WebFetch
+        | PermissionKind::WebSearch
+        | PermissionKind::CodeSearch
+        | PermissionKind::Lsp => request_digest_selector(request_digest),
     }
 }
 
@@ -172,14 +188,20 @@ pub(super) fn permission_rule_request_selectors(
 ) -> Vec<PermissionRuleRequest> {
     match kind {
         PermissionKind::Shell => shell_command_rule_selector(args_json),
-        PermissionKind::EditFs => workspace_path_rule_selectors(workspace_root, args_json),
+        PermissionKind::EditFs | PermissionKind::Read => {
+            workspace_path_rule_selectors(workspace_root, args_json)
+        }
+        PermissionKind::ExternalDirectory => {
+            workspace_path_rule_selectors(workspace_root, args_json)
+        }
         PermissionKind::Task => task_agent_rule_selectors(args_json),
         PermissionKind::Network
         | PermissionKind::Question
         | PermissionKind::WebFetch
         | PermissionKind::WebSearch
         | PermissionKind::CodeSearch
-        | PermissionKind::Lsp => Vec::new(),
+        | PermissionKind::Lsp
+        | PermissionKind::DoomLoop => Vec::new(),
     }
 }
 
@@ -755,7 +777,7 @@ impl super::Coordinator {
                         } else {
                             (
                                 "permission denied".to_string(),
-                                "tool call denied: permission denied".to_string(),
+                                permission_policy_denied_response_message(&tool_id),
                             )
                         };
                     reject_pending_permission(
@@ -948,5 +970,31 @@ impl super::Coordinator {
                 Ok(())
             }
         };
+    }
+}
+
+#[cfg(test)]
+mod permission_deny_message_contract_tests {
+    use super::permission_policy_denied_response_message;
+
+    #[test]
+    fn permission_policy_deny_message_is_actionable_and_anti_thrash() {
+        // arrange
+        // act
+        let message = permission_policy_denied_response_message("edit");
+
+        // assert
+        assert!(
+            message.contains("tool call denied: permission policy rejected `edit`"),
+            "deny message must name the rejected tool: {message}"
+        );
+        assert!(
+            message.contains("do not retry the same call"),
+            "deny message must discourage thrash retries: {message}"
+        );
+        assert!(
+            message.contains("pick an allowed tool or adjust permission rules"),
+            "deny message must suggest recovery: {message}"
+        );
     }
 }

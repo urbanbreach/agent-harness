@@ -135,6 +135,12 @@ pub struct PublicPermissionConfig {
     pub codesearch: Option<PermissionMode>,
     #[serde(default, alias = "codeLsp")]
     pub lsp: Option<PermissionMode>,
+    #[serde(default)]
+    pub read: Option<PublicRulePermissionValue>,
+    #[serde(default)]
+    pub external_directory: Option<PublicRulePermissionValue>,
+    #[serde(default)]
+    pub doom_loop: Option<PermissionMode>,
     #[serde(default, skip_serializing)]
     #[schemars(skip)]
     pub network: Option<PermissionMode>,
@@ -163,6 +169,12 @@ pub struct PublicProfilePermissions {
     pub codesearch: Option<PermissionMode>,
     #[serde(default, alias = "codeLsp")]
     pub lsp: Option<PermissionMode>,
+    #[serde(default)]
+    pub read: Option<PublicRulePermissionValue>,
+    #[serde(default)]
+    pub external_directory: Option<PublicRulePermissionValue>,
+    #[serde(default)]
+    pub doom_loop: Option<PermissionMode>,
     #[serde(default, skip_serializing)]
     #[schemars(skip)]
     pub network: Option<PermissionMode>,
@@ -259,6 +271,9 @@ fn default_internal_permissions_config() -> PermissionsConfig {
             websearch: Some(PermissionMode::Ask),
             codesearch: Some(PermissionMode::Ask),
             lsp: Some(PermissionMode::Ask),
+            read: Some(PermissionMode::Allow),
+            external_directory: Some(PermissionMode::Ask),
+            doom_loop: Some(PermissionMode::Ask),
         },
         fallback: None,
         rules: PermissionRuleSet::default(),
@@ -299,8 +314,10 @@ fn public_permission_selector(
         "bash" => public_bash_selector(selector),
         "edit" => public_edit_selector(selector),
         "task" => public_task_selector(selector),
+        "read" => public_read_selector(selector),
+        "external_directory" => public_external_directory_selector(selector),
         _ => Err(ConfigError::InvalidReference(format!(
-            "permission selector rules are only supported for `bash`, `edit`, and `task`, not `{kind}`"
+            "permission selector rules are only supported for `bash`, `edit`, `task`, `read`, and `external_directory`, not `{kind}`"
         ))),
     }
 }
@@ -371,6 +388,43 @@ fn public_edit_selector(selector: &str) -> Result<PermissionSelector, ConfigErro
         ))
     })?;
     Ok(PermissionSelector::Exact(normalized))
+}
+
+fn public_read_selector(selector: &str) -> Result<PermissionSelector, ConfigError> {
+    let trimmed = selector.trim();
+    if trimmed == "*" {
+        return Ok(PermissionSelector::CatchAll);
+    }
+    if trimmed.is_empty() {
+        return Err(ConfigError::InvalidReference(format!(
+            "invalid read permission selector `{selector}`; use a basename glob (e.g. `*.env`), workspace-relative path, or `*`"
+        )));
+    }
+    if trimmed.contains('*') {
+        return Ok(PermissionSelector::Glob(trimmed.to_string()));
+    }
+    let normalized = normalize_public_workspace_selector(trimmed).ok_or_else(|| {
+        ConfigError::InvalidReference(format!(
+            "invalid read permission selector `{selector}`; use a basename glob (e.g. `*.env`), workspace-relative path, or `*`"
+        ))
+    })?;
+    Ok(PermissionSelector::Exact(normalized))
+}
+
+fn public_external_directory_selector(selector: &str) -> Result<PermissionSelector, ConfigError> {
+    let trimmed = selector.trim();
+    if trimmed == "*" {
+        return Ok(PermissionSelector::CatchAll);
+    }
+    if trimmed.is_empty() {
+        return Err(ConfigError::InvalidReference(format!(
+            "invalid external_directory permission selector `{selector}`; use an absolute path, glob pattern, or `*`"
+        )));
+    }
+    if trimmed.contains('*') {
+        return Ok(PermissionSelector::Glob(trimmed.to_string()));
+    }
+    Ok(PermissionSelector::Exact(trimmed.to_string()))
 }
 
 fn normalize_public_workspace_selector(selector: &str) -> Option<String> {

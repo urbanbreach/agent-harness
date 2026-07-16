@@ -182,6 +182,54 @@ fn permission_object_accepts_per_tool_scalar_modes() {
 }
 
 #[test]
+fn permission_object_accepts_read_external_directory_and_doom_loop_keys() {
+    let cfg = public_minimal_config_with_permission(
+        r#"{
+                read: {
+                  "*.env": "ask",
+                  "*.env.example": "allow"
+                },
+                external_directory: "ask",
+                doom_loop: "ask"
+            }"#,
+    );
+    let parsed = load_config_from_str(&cfg).unwrap_or_abort();
+    let policy = PermissionPolicy::from_config(&parsed);
+
+    assert_eq!(
+        parsed.permissions.defaults.external_directory,
+        Some(PermissionMode::Ask)
+    );
+    assert_eq!(
+        parsed.permissions.defaults.doom_loop,
+        Some(PermissionMode::Ask)
+    );
+    assert_eq!(parsed.permissions.rules.read.len(), 2);
+    assert!(parsed.permissions.rules.external_directory.is_empty());
+    assert!(matches!(
+        policy.evaluate(None, PermissionKind::ExternalDirectory),
+        PolicyDecision::Ask { .. }
+    ));
+    assert!(matches!(
+        policy.evaluate(None, PermissionKind::DoomLoop),
+        PolicyDecision::Ask { .. }
+    ));
+    assert_eq!(
+        policy.evaluate_request(
+            None,
+            PermissionKind::Read,
+            Some(&crate::perm::PermissionRuleRequest::WorkspacePath(
+                "foo.env".to_string()
+            )),
+        ),
+        PolicyDecision::Ask {
+            timeout_ms: 0,
+            default_decision: crate::perm::PermissionDecision::Deny,
+        }
+    );
+}
+
+#[test]
 fn permission_rule_object_preserves_shell_allowlist_and_rules() {
     let cfg = public_minimal_config_with_permission(
         r#"{
