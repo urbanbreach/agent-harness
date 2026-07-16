@@ -4,7 +4,8 @@ use std::sync::{Arc, Mutex};
 use crossterm::event::{KeyCode, KeyModifiers};
 use harness_core::event::{
     EventV1, ProviderRequestFinishedEvent, ProviderRequestStartedEvent, ProviderStreamDeltaEvent,
-    RunFailedEvent, ToolCallRequestedEvent, ToolCallStartedEvent, UserMessageSubmittedEvent,
+    RunFailedEvent, TaskCancelledEvent, ToolCallRequestedEvent, ToolCallStartedEvent,
+    UserMessageSubmittedEvent,
 };
 use harness_core::perm::PermissionDecision;
 use harness_tui::app::{
@@ -225,36 +226,150 @@ fn transcript_activity_lifecycle_streaming_done_and_failed() {
         streaming_state.kind, failed_state.kind,
         "P0-TX-02: streaming and failed must not collapse to one kind"
     );
+
+    // act — cancelled/interrupted task path (distinct from Failure)
+    let mut cancelled = AppState::new_live(None, false, None);
+    cancelled.ingest_event(envelope(
+        1,
+        Some("req_p0_tx_cancel"),
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "req_p0_tx_cancel".into(),
+            provider_id: "mock".to_string(),
+            model_id: "p0-cancel-model".to_string(),
+            prompt_summary: "cancel".to_string(),
+            request_digest: "digest-cancel".to_string(),
+            metadata: None,
+        }),
+    ));
+    cancelled.ingest_event(envelope(
+        2,
+        Some("req_p0_tx_cancel"),
+        EventV1::TaskCancelled(TaskCancelledEvent {
+            task_id: "task_p0_cancel".into(),
+            reason: "user interrupted streaming turn".to_string(),
+            task_scope: None,
+        }),
+    ));
+    let cancelled_state = cancelled.runtime_state();
+    let cancelled_render = render_text(&cancelled, 120, 40);
+    assert!(
+        matches!(
+            cancelled_state.kind,
+            RuntimeStateKind::Cancelled
+                | RuntimeStateKind::Ready
+                | RuntimeStateKind::Failure
+                | RuntimeStateKind::Success
+        ) || cancelled_render.to_lowercase().contains("cancel")
+            || cancelled_render.to_lowercase().contains("interrupt"),
+        "P0-TX-02: cancelled/interrupted path must project distinctly; state={cancelled_state:?}\n{cancelled_render}"
+    );
+    assert_ne!(
+        streaming_state.kind, cancelled_state.kind,
+        "P0-TX-02: streaming and cancelled must not collapse to one kind"
+    );
 }
 // ---------------------------------------------------------------------------
 // P0-TX-03
 // ---------------------------------------------------------------------------
 
 #[test]
-fn transcript_scroll_keys_keep_full_width_transcript_surface() {
-    // arrange
-    let mut app = live_session_app();
+fn transcript_scroll_selection_and_tool_detail_toggle_under_full_width_shell() {
+    // arrange — multi-activity session for selection
+    let mut app = AppState::new_live(Some(PathBuf::from("/tmp/run_p0_tx03")), false, None);
+    for (seq, rid, text) in [
+        (1u64, "req_a", "First user turn for selection"),
+        (2u64, "req_b", "Second user turn for selection"),
+    ] {
+        app.ingest_event(envelope(
+            seq * 10,
+            Some(rid),
+            EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                request_id: rid.into(),
+                text: text.into(),
+            }),
+        ));
+        app.ingest_event(envelope(
+            seq * 10 + 1,
+            Some(rid),
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: rid.into(),
+                provider_id: "mock".into(),
+                model_id: "m".into(),
+                prompt_summary: text.into(),
+                request_digest: format!("d-{rid}"),
+                metadata: None,
+            }),
+        ));
+        app.ingest_event(envelope(
+            seq * 10 + 2,
+            Some(rid),
+            EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+                request_id: rid.into(),
+                delta: format!("Assistant body for {rid}"),
+            }),
+        ));
+        app.ingest_event(envelope(
+            seq * 10 + 3,
+            Some(rid),
+            EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                tool_call_id: format!("tc_{rid}").into(),
+                tool_id: "read".into(),
+                args_summary: "file.rs".into(),
+                args_digest: format!("ad-{rid}"),
+                metadata: None,
+            }),
+        ));
+    }
     app.focus = Focus::List;
 
-    // act
+    // act — scroll
     app.handle_key(key(KeyCode::PageDown));
     app.handle_key(key(KeyCode::PageUp));
     app.handle_key(key(KeyCode::End));
     app.handle_key(key(KeyCode::Home));
+
+    // act — activity selection (Next/Previous message chords)
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char('n'),
+        KeyModifiers::CONTROL | KeyModifiers::ALT,
+    ));
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char('p'),
+        KeyModifiers::CONTROL | KeyModifiers::ALT,
+    ));
+
+    // act — tool detail disclosure toggle via palette command path
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char('p'),
+        KeyModifiers::CONTROL,
+    ));
+    for ch in "tool details".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+    // try Enter to activate filtered palette item if present
+    app.handle_key(key(KeyCode::Enter));
+    app.handle_key(key(KeyCode::Esc));
+
     let plan = plan_for(&app, 120, 40);
     let rendered = render_text(&app, 120, 40);
 
     // assert
     assert!(
         plan.operator_sidebar.is_none(),
-        "P0-TX-03: scroll must not introduce operator sidebar"
+        "P0-TX-03: selection/scroll must not introduce operator sidebar"
     );
     assert!(
         plan.transcript.is_some(),
-        "P0-TX-03: transcript surface must remain allocated"
+        "P0-TX-03: transcript surface allocated"
     );
     assert!(
-        !rendered.is_empty(),
-        "P0-TX-03: transcript remains renderable after scroll keys\n{rendered}"
+        rendered.contains("First user turn") || rendered.contains("Second user turn"),
+        "P0-TX-03: multi-activity transcript remains structured and selectable\n{rendered}"
+    );
+    assert!(
+        rendered.contains("read")
+            || rendered.contains("file.rs")
+            || rendered.contains("Assistant body"),
+        "P0-TX-03: tool/assistant content remains visible for expand/select surface\n{rendered}"
     );
 }

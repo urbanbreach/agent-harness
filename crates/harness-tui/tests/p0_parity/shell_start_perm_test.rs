@@ -282,6 +282,24 @@ fn permission_preempts_composer_and_preserves_draft_under_full_width_shell() {
         app.composer.prompt_buffer, draft,
         "P0-COMP-02: draft must still be preserved after permission Enter"
     );
+    // act/assert — empty submit is a no-op (no SubmitPrompt)
+    let empty_intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let empty_sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+        let empty_intents = Arc::clone(&empty_intents);
+        Arc::new(move |intent: UiIntent| {
+            empty_intents.lock().unwrap().push(intent);
+        })
+    };
+    let mut empty_app = AppState::new_live(None, false, Some(empty_sink));
+    empty_app.focus = harness_tui::app::Focus::Prompt;
+    empty_app.composer.prompt_buffer.clear();
+    empty_app.composer.prompt_cursor = 0;
+    empty_app.handle_key(key(KeyCode::Enter));
+    assert!(
+        empty_intents.lock().unwrap().is_empty(),
+        "P0-COMP-02: empty Enter must not submit; got {:?}",
+        empty_intents.lock().unwrap()
+    );
 }
 
 // ---------------------------------------------------------------------------

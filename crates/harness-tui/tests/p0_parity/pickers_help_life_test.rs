@@ -306,4 +306,51 @@ fn lifecycle_new_session_and_resume_intents_reachable() {
         palette_render.contains("New session") || palette_render.to_lowercase().contains("new"),
         "P0-LIFE-01: palette must expose new-session route\n{palette_render}"
     );
+
+    // act/assert — compact emits coordinator intent under full-width shell
+    let compact_intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let compact_sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+        let compact_intents = Arc::clone(&compact_intents);
+        Arc::new(move |intent: UiIntent| {
+            compact_intents.lock().unwrap().push(intent);
+        })
+    };
+    let mut compact_app = AppState::new_live(None, false, Some(compact_sink));
+    compact_app.execute_slash_command("compact", None);
+    assert!(
+        compact_intents
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|intent| matches!(intent, UiIntent::CompactSession)),
+        "P0-LIFE-01: /compact must emit CompactSession; got {:?}",
+        compact_intents.lock().unwrap()
+    );
+    assert!(
+        plan_for(&compact_app, 120, 40).operator_sidebar.is_none(),
+        "P0-LIFE-01: compact path keeps full-width shell"
+    );
+
+    // act/assert — fork/clone lineage routes are real (intent or blocked banner, not fake success)
+    let mut lineage = AppState::new_live(None, false, None);
+    lineage.execute_slash_command("fork", None);
+    let fork_render = render_text(&lineage, 120, 40);
+    lineage.execute_slash_command("clone", None);
+    let clone_render = render_text(&lineage, 120, 40);
+    assert!(
+        fork_render.to_lowercase().contains("fork")
+            || lineage
+                .status_banner
+                .as_ref()
+                .is_some_and(|b| b.to_lowercase().contains("fork")),
+        "P0-LIFE-01: /fork must surface fork route or blocked reason\n{fork_render}"
+    );
+    assert!(
+        clone_render.to_lowercase().contains("clone")
+            || lineage
+                .status_banner
+                .as_ref()
+                .is_some_and(|b| b.to_lowercase().contains("clone")),
+        "P0-LIFE-01: /clone must surface clone route or blocked reason\n{clone_render}"
+    );
 }

@@ -200,7 +200,7 @@ fn slash_command_filter_and_submit_harness_safe_routes() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn file_mention_at_opens_picker_and_inserts_agent_from_catalog() {
+fn file_mention_at_opens_picker_and_inserts_agent_or_catalog_entry() {
     // arrange
     let mut app = AppState::new_live(None, false, None);
     app.set_launch_metadata(
