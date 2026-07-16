@@ -185,7 +185,7 @@ fn inventory_by_id(inventory: &[ParityInventoryRow]) -> BTreeMap<&str, &ParityIn
 
 fn load_parity_inventory() -> Vec<ParityInventoryRow> {
     let fixture_dir = "crates/harness-tools/tests/fixtures";
-    let fixture_name: &str = concat!("open", "code", "_tools_parity_inventory.v1.json");
+    let fixture_name: &str = "tools_parity_inventory.v1.json";
     let inventory = std::fs::read_to_string(repo_path(&format!("{fixture_dir}/{fixture_name}")))
         .unwrap_or_abort();
     serde_json::from_str(&inventory).unwrap_or_abort()
