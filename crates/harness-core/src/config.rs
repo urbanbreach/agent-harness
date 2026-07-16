@@ -931,6 +931,37 @@ pub struct PermissionRuleSet {
     pub external_directory: Vec<PermissionSelectorRule>,
 }
 
+// Last-match-wins OC defaults: * allow, *.env ask, *.env.* ask, *.env.example allow.
+#[must_use]
+pub fn default_read_env_permission_rules() -> Vec<PermissionSelectorRule> {
+    vec![
+        PermissionSelectorRule {
+            selector: PermissionSelector::CatchAll,
+            mode: PermissionMode::Allow,
+        },
+        PermissionSelectorRule {
+            selector: PermissionSelector::Glob("*.env".to_string()),
+            mode: PermissionMode::Ask,
+        },
+        PermissionSelectorRule {
+            selector: PermissionSelector::Glob("*.env.*".to_string()),
+            mode: PermissionMode::Ask,
+        },
+        PermissionSelectorRule {
+            selector: PermissionSelector::Glob("*.env.example".to_string()),
+            mode: PermissionMode::Allow,
+        },
+    ]
+}
+
+#[must_use]
+pub fn default_permission_rule_set_with_read_env() -> PermissionRuleSet {
+    PermissionRuleSet {
+        read: default_read_env_permission_rules(),
+        ..PermissionRuleSet::default()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PermissionSelectorRule {

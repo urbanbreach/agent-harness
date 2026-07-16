@@ -419,6 +419,8 @@ pub fn from_permission_rule_set(rules: &PermissionRuleSet) -> PermissionRuleset 
     append_selector_rules(&mut out, "edit", &rules.edit);
     append_selector_rules(&mut out, "bash", &rules.shell);
     append_selector_rules(&mut out, "task", &rules.task);
+    append_selector_rules(&mut out, "read", &rules.read);
+    append_selector_rules(&mut out, "external_directory", &rules.external_directory);
     out
 }
 

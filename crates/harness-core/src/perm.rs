@@ -3,7 +3,10 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+use std::path::Path;
+
 use crate::config::{
+    default_permission_rule_set_with_read_env, default_read_env_permission_rules,
     CategoryPermissions, HarnessConfig, PermissionMode, PermissionRuleSet, PermissionSelector,
     PermissionSelectorRule,
 };
@@ -362,9 +365,14 @@ impl PermissionPolicy {
             })
             .collect();
 
+        let mut default_rules = config.permissions.rules.clone();
+        if default_rules.read.is_empty() {
+            default_rules.read = default_read_env_permission_rules();
+        }
+
         Self {
             defaults: DefaultPermissionModes::from_config(config),
-            default_rules: config.permissions.rules.clone(),
+            default_rules,
             profile_overrides,
             ask_timeout_ms: DEFAULT_ASK_TIMEOUT_MS,
         }
@@ -373,7 +381,7 @@ impl PermissionPolicy {
     pub fn new(edit: PermissionMode, shell: PermissionMode, network: PermissionMode) -> Self {
         Self {
             defaults: DefaultPermissionModes::from_legacy_defaults(edit, shell, network),
-            default_rules: PermissionRuleSet::default(),
+            default_rules: default_permission_rule_set_with_read_env(),
             profile_overrides: BTreeMap::new(),
             ask_timeout_ms: DEFAULT_ASK_TIMEOUT_MS,
         }
@@ -525,40 +533,17 @@ fn permission_selector_matches(selector: &PermissionSelector, value: &str) -> bo
     match selector {
         PermissionSelector::Exact(selector) => selector == value,
         PermissionSelector::Prefix(prefix) => value.starts_with(prefix),
-        PermissionSelector::Glob(pattern) => glob_matches(pattern, value),
+        PermissionSelector::Glob(pattern) => {
+            if ruleset::wildcard_match(value, pattern) {
+                return true;
+            }
+            Path::new(value)
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|base| base != value && ruleset::wildcard_match(base, pattern))
+        }
         PermissionSelector::CatchAll => true,
     }
-}
-
-fn glob_matches(pattern: &str, value: &str) -> bool {
-    if pattern == "*" {
-        return true;
-    }
-    let mut remainder = value;
-    let mut parts = pattern.split('*').peekable();
-    let mut anchored_start = !pattern.starts_with('*');
-    while let Some(part) = parts.next() {
-        if part.is_empty() {
-            anchored_start = false;
-            continue;
-        }
-        if anchored_start {
-            let Some(next) = remainder.strip_prefix(part) else {
-                return false;
-            };
-            remainder = next;
-            anchored_start = false;
-            continue;
-        }
-        let Some(index) = remainder.find(part) else {
-            return false;
-        };
-        remainder = &remainder[index + part.len()..];
-        if parts.peek().is_none() && !pattern.ends_with('*') {
-            return remainder.is_empty();
-        }
-    }
-    pattern.ends_with('*') || remainder.is_empty()
 }
 
 impl Default for PermissionPolicy {

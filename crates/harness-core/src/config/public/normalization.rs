@@ -119,7 +119,7 @@ pub(super) fn translate_public_permission_value(
                     doom_loop: Some(mode),
                 },
                 fallback: None,
-                rules: PermissionRuleSet::default(),
+                rules: crate::config::default_permission_rule_set_with_read_env(),
                 shell_allowlist: fallback.shell_allowlist,
             })
             .map_err(|err| ConfigError::ParseJson5(err.to_string()));

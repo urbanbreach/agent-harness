@@ -276,7 +276,7 @@ fn default_internal_permissions_config() -> PermissionsConfig {
             doom_loop: Some(PermissionMode::Ask),
         },
         fallback: None,
-        rules: PermissionRuleSet::default(),
+        rules: crate::config::default_permission_rule_set_with_read_env(),
         shell_allowlist: ShellAllowlist::default(),
     }
 }
