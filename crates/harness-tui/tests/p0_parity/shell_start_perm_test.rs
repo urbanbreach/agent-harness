@@ -66,7 +66,6 @@ fn canonical_viewports_allocate_full_width_transcript_and_bottom_composer() {
     }
 }
 
-
 // ---------------------------------------------------------------------------
 // P0-START-01
 // ---------------------------------------------------------------------------
@@ -115,7 +114,6 @@ fn startup_welcome_is_compose_first_with_harness_branding_no_reference_identity(
     );
 }
 
-
 // ---------------------------------------------------------------------------
 // P0-START-02
 // ---------------------------------------------------------------------------
@@ -157,7 +155,6 @@ fn startup_first_run_shows_onboarding_hint_returning_user_does_not() {
         "P0-START-02: session history path must not show first-run onboarding\n{picker_render}"
     );
 }
-
 
 // ---------------------------------------------------------------------------
 // P0-START-03
@@ -208,7 +205,6 @@ fn startup_submit_emits_submit_prompt_and_leaves_startup_shell() {
         "P0-START-03: exactly one mutating intent at the commit boundary; got {captured:?}"
     );
 }
-
 
 // ---------------------------------------------------------------------------
 // P0-COMP-02
@@ -288,7 +284,6 @@ fn permission_preempts_composer_and_preserves_draft_under_full_width_shell() {
     );
 }
 
-
 // ---------------------------------------------------------------------------
 // P0-PAL-01
 // ---------------------------------------------------------------------------
@@ -351,7 +346,6 @@ fn command_palette_opens_filters_and_dismisses_without_sidebar() {
         "P0-PAL-01: dismiss must leave operator_sidebar None"
     );
 }
-
 
 // ---------------------------------------------------------------------------
 // P0-PERM-01
@@ -448,4 +442,3 @@ fn permission_overlay_preempts_palette_and_slash() {
         "P0-PERM-01: full-width shell — no operator sidebar on slash path"
     );
 }
-

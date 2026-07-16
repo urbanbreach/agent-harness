@@ -20,14 +20,8 @@ use harness_tui::render_test::render_to_string;
 use harness_tui::{ui, FrameLayoutPlan};
 use ratatui::layout::Rect;
 
-pub const CANONICAL_VIEWPORTS: [(u16, u16); 6] = [
-    (120, 40),
-    (100, 30),
-    (80, 24),
-    (79, 24),
-    (80, 23),
-    (60, 20),
-];
+pub const CANONICAL_VIEWPORTS: [(u16, u16); 6] =
+    [(120, 40), (100, 30), (80, 24), (79, 24), (80, 23), (60, 20)];
 
 pub fn live_session_app() -> AppState {
     let mut app = AppState::new_live(

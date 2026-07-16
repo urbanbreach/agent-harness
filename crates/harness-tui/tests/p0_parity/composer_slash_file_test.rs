@@ -94,7 +94,6 @@ fn composer_multiline_history_and_cursor_basics() {
     );
 }
 
-
 // ---------------------------------------------------------------------------
 // P0-COMP-03
 // ---------------------------------------------------------------------------
@@ -131,7 +130,6 @@ fn composer_slash_mode_entry_opens_slash_overlay() {
         "P0-COMP-03: slash mode must keep full-width shell"
     );
 }
-
 
 // ---------------------------------------------------------------------------
 // P0-SLASH-01
@@ -197,7 +195,6 @@ fn slash_command_filter_and_submit_harness_safe_routes() {
     );
 }
 
-
 // ---------------------------------------------------------------------------
 // P0-FILE-01
 // ---------------------------------------------------------------------------
@@ -247,4 +244,3 @@ fn file_mention_at_opens_picker_and_inserts_agent_from_catalog() {
         "P0-FILE-01: file mention must keep full-width shell"
     );
 }
-

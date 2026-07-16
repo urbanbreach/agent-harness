@@ -74,7 +74,6 @@ fn question_overlay_parses_prompts_preserves_draft_and_renders() {
     );
 }
 
-
 // ---------------------------------------------------------------------------
 // P0-PICK-01
 // ---------------------------------------------------------------------------
@@ -131,7 +130,6 @@ fn model_switcher_opens_from_slash_with_real_catalog() {
     );
 }
 
-
 // ---------------------------------------------------------------------------
 // P0-PICK-02
 // ---------------------------------------------------------------------------
@@ -179,7 +177,6 @@ fn session_picker_opens_with_searchable_history() {
         "P0-PICK-02: empty/error path must stay Harness-branded\n{empty_render}"
     );
 }
-
 
 // ---------------------------------------------------------------------------
 // P0-HELP-01
@@ -233,7 +230,6 @@ fn help_and_toggles_surfaces_open_harness_safe() {
         "P0-HELP-01: toggles must not advertise OOS plugin marketplace\n{toggles_render}"
     );
 }
-
 
 // ---------------------------------------------------------------------------
 // P0-LIFE-01
@@ -311,4 +307,3 @@ fn lifecycle_new_session_and_resume_intents_reachable() {
         "P0-LIFE-01: palette must expose new-session route\n{palette_render}"
     );
 }
-
