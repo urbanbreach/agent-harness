@@ -1,3 +1,10 @@
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "integration test helpers use fail-fast messages for missing layout rects"
+)]
+
 use std::path::PathBuf;
 
 use harness_core::event::{
@@ -89,7 +96,11 @@ fn live_session_replacement_topology_holds_across_all_named_viewports() {
 }
 
 fn live_session_app() -> AppState {
-    let mut app = AppState::new_live(Some(PathBuf::from("/tmp/run_topology_contract")), false, None);
+    let mut app = AppState::new_live(
+        Some(PathBuf::from("/tmp/run_topology_contract")),
+        false,
+        None,
+    );
     for event in live_session_events() {
         app.ingest_event(event);
     }
@@ -123,11 +134,7 @@ fn assert_no_operator_rail_primary_chrome(plan: &FrameLayoutPlan, width: u16, he
     );
 }
 
-fn assert_full_width_transcript_above_composer(
-    plan: &FrameLayoutPlan,
-    width: u16,
-    height: u16,
-) {
+fn assert_full_width_transcript_above_composer(plan: &FrameLayoutPlan, width: u16, height: u16) {
     let transcript = plan.transcript.unwrap_or_else(|| {
         panic!("live session shell must keep a transcript surface at {width}x{height}")
     });
@@ -160,10 +167,10 @@ fn assert_composer_bottom_anchored(plan: &FrameLayoutPlan, width: u16, height: u
         panic!("live session shell must keep a composer rect at {width}x{height}")
     });
 
-    let dock_bottom = plan
-        .disclosure
-        .map(|disclosure| disclosure.y + disclosure.height)
-        .unwrap_or_else(|| composer.y + composer.height);
+    let dock_bottom = match plan.disclosure {
+        Some(disclosure) => disclosure.y + disclosure.height,
+        None => composer.y + composer.height,
+    };
 
     assert_eq!(
         dock_bottom,
@@ -235,7 +242,10 @@ fn envelope(seq: u64, correlation_id: Option<&str>, payload: EventV1) -> EventEn
         run_id: "run_topology_contract".into(),
         mono_ms: seq,
         ts: None,
-        actor: EventActor::new(ActorKind::System, Some("shell-topology-contract".to_string())),
+        actor: EventActor::new(
+            ActorKind::System,
+            Some("shell-topology-contract".to_string()),
+        ),
         correlation_id: correlation_id.map(str::to_string),
         causation_id: None,
         stream_key: Some("run:run_topology_contract".to_string()),
