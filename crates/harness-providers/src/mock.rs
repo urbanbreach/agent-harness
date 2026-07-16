@@ -11,9 +11,9 @@ use thiserror::Error;
 use tokio_stream::{self as stream, StreamExt};
 
 use crate::{
-    CompletionRequest, CompletionUsage, Provider, ProviderEventStream, ProviderRequestContext,
-    ProviderStreamEvent, ProviderStreamFinishedMetadata, ProviderStreamStartMetadata, ToolChoice,
-    ToolDef,
+    CompletionRequest, CompletionUsage, Provider, ProviderErrorCategory, ProviderEventStream,
+    ProviderRequestContext, ProviderStreamEvent, ProviderStreamFinishedMetadata,
+    ProviderStreamStartMetadata, ToolChoice, ToolDef,
 };
 
 #[derive(Debug, Error)]
@@ -268,6 +268,12 @@ enum FixtureStreamEvent {
     },
     Error {
         message: String,
+        #[serde(default)]
+        category: Option<ProviderErrorCategory>,
+        #[serde(default)]
+        remediation: Option<String>,
+        #[serde(default)]
+        retry_after_ms: Option<u64>,
     },
 }
 
@@ -301,7 +307,23 @@ impl From<FixtureStreamEvent> for ProviderStreamEvent {
                 usage: Some(usage),
                 metadata,
             },
-            FixtureStreamEvent::Error { message } => Self::error(message),
+            FixtureStreamEvent::Error {
+                message,
+                category,
+                remediation,
+                retry_after_ms,
+            } => match (category, remediation.as_ref()) {
+                (Some(category), None) => {
+                    Self::categorized_error_with_retry_after_ms(message, category, retry_after_ms)
+                }
+                (None, None) if retry_after_ms.is_none() => Self::error(message),
+                (category, _) => Self::Error {
+                    message,
+                    category,
+                    remediation,
+                    retry_after_ms,
+                },
+            },
         }
     }
 }
@@ -313,10 +335,12 @@ mod tests {
 
     use tokio_stream::StreamExt;
 
-    use super::{request_digest, MockProvider};
+    use std::collections::BTreeMap;
+
+    use super::{request_digest, FixtureStreamEvent, MockProvider};
     use crate::{
-        CompletionMessage, CompletionRequest, MessageRole, Provider, ProviderRequestContext,
-        ProviderStreamEvent,
+        CompletionMessage, CompletionRequest, MessageRole, Provider, ProviderErrorCategory,
+        ProviderRequestContext, ProviderStreamEvent,
     };
 
     #[tokio::test]
@@ -452,6 +476,297 @@ mod tests {
                     })
                 }
             ]
+        );
+    }
+
+    #[tokio::test]
+    async fn abort_mid_tool_call_emits_error_without_tool_call_complete() {
+        // arrange
+        let request = CompletionRequest {
+            provider_id: None,
+            model_id: "model-mock-abort".to_string(),
+            messages: vec![CompletionMessage {
+                role: MessageRole::User,
+                content: "Abort mid tool call residual.".to_string(),
+                name: None,
+                tool_call_id: None,
+                assistant_tool_calls: None,
+            }],
+            temperature: Some(0.0),
+            max_tokens: Some(16),
+            variant: None,
+            reasoning_effort: None,
+            text_verbosity: None,
+            reasoning_summary: None,
+            thinking: None,
+            tools: None,
+            tool_choice: None,
+            context: Default::default(),
+            stream: true,
+        };
+        let digest = request_digest(&request);
+        let mut scripted = BTreeMap::new();
+        scripted.insert(
+            digest,
+            vec![
+                ProviderStreamEvent::Start,
+                ProviderStreamEvent::ToolCallDelta {
+                    tool_call_id: "call_abort_1".to_string(),
+                    function_name: Some("filesystem_read".to_string()),
+                    arguments_delta: "{\"filePath\":".to_string(),
+                },
+                ProviderStreamEvent::error("stream aborted mid tool call"),
+            ],
+        );
+        let provider = MockProvider::new(scripted);
+
+        // act
+        let events: Vec<_> = provider.stream_completion(request).await.collect().await;
+
+        // assert
+        assert!(
+            matches!(events.first(), Some(ProviderStreamEvent::Start)),
+            "expected Start first: {events:?}"
+        );
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, ProviderStreamEvent::ToolCallDelta { .. })),
+            "expected at least one ToolCallDelta: {events:?}"
+        );
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, ProviderStreamEvent::Error { .. })),
+            "expected Error event: {events:?}"
+        );
+        assert!(
+            !events
+                .iter()
+                .any(|event| matches!(event, ProviderStreamEvent::ToolCallComplete { .. })),
+            "must not emit ToolCallComplete on mid-call abort: {events:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn richer_multi_chunk_tool_call_stream_splits_arguments_across_deltas() {
+        // arrange
+        let request = CompletionRequest {
+            provider_id: None,
+            model_id: "model-mock-multi-chunk".to_string(),
+            messages: vec![CompletionMessage {
+                role: MessageRole::User,
+                content: "Multi-chunk tool call residual.".to_string(),
+                name: None,
+                tool_call_id: None,
+                assistant_tool_calls: None,
+            }],
+            temperature: Some(0.0),
+            max_tokens: Some(32),
+            variant: None,
+            reasoning_effort: None,
+            text_verbosity: None,
+            reasoning_summary: None,
+            thinking: None,
+            tools: None,
+            tool_choice: None,
+            context: Default::default(),
+            stream: true,
+        };
+        let digest = request_digest(&request);
+        let mut scripted = BTreeMap::new();
+        scripted.insert(
+            digest,
+            vec![
+                ProviderStreamEvent::Start,
+                ProviderStreamEvent::TextDelta("Preparing tool call.".to_string()),
+                ProviderStreamEvent::ToolCallDelta {
+                    tool_call_id: "call_multi_1".to_string(),
+                    function_name: Some("filesystem_read".to_string()),
+                    arguments_delta: "{\"file".to_string(),
+                },
+                ProviderStreamEvent::ToolCallDelta {
+                    tool_call_id: "call_multi_1".to_string(),
+                    function_name: None,
+                    arguments_delta: "Path\":\"".to_string(),
+                },
+                ProviderStreamEvent::ToolCallDelta {
+                    tool_call_id: "call_multi_1".to_string(),
+                    function_name: None,
+                    arguments_delta: "/tmp/multi.txt\"}".to_string(),
+                },
+                ProviderStreamEvent::ToolCallComplete {
+                    tool_call_id: "call_multi_1".to_string(),
+                    function_name: "filesystem_read".to_string(),
+                    arguments_json: "{\"filePath\":\"/tmp/multi.txt\"}".to_string(),
+                },
+                ProviderStreamEvent::Done {
+                    usage: Some(crate::CompletionUsage {
+                        prompt_tokens: 12,
+                        completion_tokens: 8,
+                        total_tokens: 20,
+                    }),
+                },
+            ],
+        );
+        let provider = MockProvider::new(scripted);
+
+        // act
+        let events: Vec<_> = provider.stream_completion(request).await.collect().await;
+
+        // assert
+        assert_eq!(
+            events.len(),
+            7,
+            "expected full multi-chunk sequence: {events:?}"
+        );
+        let delta_count = events
+            .iter()
+            .filter(|event| matches!(event, ProviderStreamEvent::ToolCallDelta { .. }))
+            .count();
+        assert!(
+            delta_count >= 3,
+            "expected at least 3 ToolCallDelta chunks, got {delta_count}: {events:?}"
+        );
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, ProviderStreamEvent::TextDelta(_))),
+            "expected interleaved TextDelta: {events:?}"
+        );
+        assert_eq!(
+            events,
+            vec![
+                ProviderStreamEvent::Start,
+                ProviderStreamEvent::TextDelta("Preparing tool call.".to_string()),
+                ProviderStreamEvent::ToolCallDelta {
+                    tool_call_id: "call_multi_1".to_string(),
+                    function_name: Some("filesystem_read".to_string()),
+                    arguments_delta: "{\"file".to_string(),
+                },
+                ProviderStreamEvent::ToolCallDelta {
+                    tool_call_id: "call_multi_1".to_string(),
+                    function_name: None,
+                    arguments_delta: "Path\":\"".to_string(),
+                },
+                ProviderStreamEvent::ToolCallDelta {
+                    tool_call_id: "call_multi_1".to_string(),
+                    function_name: None,
+                    arguments_delta: "/tmp/multi.txt\"}".to_string(),
+                },
+                ProviderStreamEvent::ToolCallComplete {
+                    tool_call_id: "call_multi_1".to_string(),
+                    function_name: "filesystem_read".to_string(),
+                    arguments_json: "{\"filePath\":\"/tmp/multi.txt\"}".to_string(),
+                },
+                ProviderStreamEvent::Done {
+                    usage: Some(crate::CompletionUsage {
+                        prompt_tokens: 12,
+                        completion_tokens: 8,
+                        total_tokens: 20,
+                    }),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn fixture_error_message_only_remains_uncategorized() {
+        // arrange
+        let fixture = FixtureStreamEvent::Error {
+            message: "plain fixture failure".to_string(),
+            category: None,
+            remediation: None,
+            retry_after_ms: None,
+        };
+        // act
+        let event: ProviderStreamEvent = fixture.into();
+        // assert
+        assert_eq!(event, ProviderStreamEvent::error("plain fixture failure"));
+    }
+
+    #[test]
+    fn fixture_error_maps_categorized_fields_via_helpers() {
+        // arrange
+        let fixture = FixtureStreamEvent::Error {
+            message: "too many requests".to_string(),
+            category: Some(ProviderErrorCategory::RateLimited),
+            remediation: None,
+            retry_after_ms: Some(1_500),
+        };
+        // act
+        let event: ProviderStreamEvent = fixture.into();
+        // assert
+        assert_eq!(
+            event,
+            ProviderStreamEvent::categorized_error_with_retry_after_ms(
+                "too many requests",
+                ProviderErrorCategory::RateLimited,
+                Some(1_500),
+            )
+        );
+    }
+
+    #[test]
+    fn fixture_error_preserves_explicit_remediation_and_retry() {
+        // arrange
+        let fixture = FixtureStreamEvent::Error {
+            message: "custom transport failure".to_string(),
+            category: Some(ProviderErrorCategory::TransportFailure),
+            remediation: Some("retry with a different base URL".to_string()),
+            retry_after_ms: Some(250),
+        };
+        // act
+        let event: ProviderStreamEvent = fixture.into();
+        // assert
+        assert_eq!(
+            event,
+            ProviderStreamEvent::Error {
+                message: "custom transport failure".to_string(),
+                category: Some(ProviderErrorCategory::TransportFailure),
+                remediation: Some("retry with a different base URL".to_string()),
+                retry_after_ms: Some(250),
+            }
+        );
+    }
+
+    #[test]
+    fn fixture_error_json_message_only_deserializes_backward_compatibly() {
+        // arrange
+        let json = serde_json::json!({
+            "type": "error",
+            "message": "legacy message-only fixture"
+        });
+        // act
+        let fixture: FixtureStreamEvent = serde_json::from_value(json).unwrap_or_abort();
+        let event: ProviderStreamEvent = fixture.into();
+        // assert
+        assert_eq!(
+            event,
+            ProviderStreamEvent::error("legacy message-only fixture")
+        );
+    }
+
+    #[test]
+    fn fixture_error_json_maps_category_remediation_and_retry() {
+        // arrange
+        let json = serde_json::json!({
+            "type": "error",
+            "message": "payload too large",
+            "category": "context_window_exceeded",
+            "retry_after_ms": 0
+        });
+        // act
+        let fixture: FixtureStreamEvent = serde_json::from_value(json).unwrap_or_abort();
+        let event: ProviderStreamEvent = fixture.into();
+        // assert
+        assert_eq!(
+            event,
+            ProviderStreamEvent::categorized_error_with_retry_after_ms(
+                "payload too large",
+                ProviderErrorCategory::ContextWindowExceeded,
+                Some(0),
+            )
         );
     }
 

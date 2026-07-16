@@ -87,6 +87,12 @@ RUST_TEST_THREADS=1 cargo nextest run -p harness-testkit --test pty_e2e --test-t
 - For any coding work in this repository, load `karpathy-guidelines` and `programming` before the first edit. Coding work includes implementation, bug fixes, refactors, tests, build scripts, schemas, generated-code maintenance, and AGENTS guidance edits.
 - Delegated coding tasks must include the skills in `load_skills`; omit it only for pure read-only exploration, documentation-only lookup, or non-coding QA.
 
+## OFFLINE HARNESS DOGFOOD (product-touching changes)
+- After product-touching runtime, CLI, tool, scenario, or session-path changes, run offline mock dogfood in addition to owner nextest: `bash scripts/harness-qa-dogfood.sh --self-test` (or `--slug <name>`). Prefer the runtime skill `harness-qa` for process guidance.
+- Evidence lands under gitignored `artifacts/qa-evidence/<YYYYMMDD>-<slug>/` with isolation receipt; do not commit secrets or evidence trees.
+- Dogfood is **not** a substitute for owner nextest, simulation lane ownership, live provider proof, or PTY/native visual claims.
+- Keep layers separate: **project** coding skills (`karpathy-guidelines`, `programming`) vs **runtime** skills under `.agent-harness/skills/` (including `harness-qa`).
+
 ## UPDATE TOGETHER
 | Change | Also update |
 |--------|-------------|

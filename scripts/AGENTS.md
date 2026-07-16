@@ -10,6 +10,7 @@ Read root `AGENTS.md` first. Lane semantics are documented in `../docs/testing.m
 |------|----------|-------|
 | Lane runner | `test-lanes.sh` | Canonical mode dispatch and artifact writer. |
 | Stress harness | `stress-harness.sh` | Offline/live prompt stress lanes and binary reuse. |
+| Live smoke pack (WS-L1) | `harness-qa-live-smoke.sh` | Fail-closed without `HARNESS_LIVE_PROXY*`; budgeted live PONG smoke + redacted evidence. Not tool matrix / freestyle / multi-provider / PTY. |
 | Static test gates | `check-test-suite-gates.py` | Determinism, process-global state, real deps, snapshots, arrange/act/assert debt. |
 | Branding/source-term gate | `check-forbidden-branding.py` | Forbidden source-brand terms and allowlist handling. |
 | Coverage ratchet | `coverage-ratchet.sh` | `cargo-llvm-cov` line coverage artifact and baseline comparison. |

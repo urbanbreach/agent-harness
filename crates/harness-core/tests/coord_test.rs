@@ -40,6 +40,11 @@ mod part_07b_permission_flow_test {
     include!("coord/07b_permission_flow_test.rs");
 }
 
+mod part_07c_permission_mid_flight_deny_stress_test {
+    use super::*;
+    include!("coord/07c_permission_mid_flight_deny_stress_test.rs");
+}
+
 #[path = "coord/08_cancelling_turn_waiting_for_permission_emits_test.rs"]
 mod part_08_cancelling_turn_waiting_for_permission_emits_test {
 

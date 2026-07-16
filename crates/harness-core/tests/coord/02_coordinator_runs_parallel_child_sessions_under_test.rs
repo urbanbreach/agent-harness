@@ -314,6 +314,217 @@ async fn coordinator_isolates_parallel_child_failures() {
         "alpha failure should be recorded without cancelling sibling"
     );
 }
+
+#[tokio::test]
+async fn coordinator_stresses_many_parallel_children_under_tight_slot_limits() {
+    // arrange
+    const CHILD_COUNT: usize = 6;
+    const SLOT_LIMIT: usize = 2;
+    const QUEUE_KEY: &str = "provider_model:mock:model-1";
+
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
+    let provider = Arc::new(PromptScriptedProvider::new(
+        BTreeMap::from([
+            (
+                "alpha-prompt".to_string(),
+                vec![
+                    ProviderStreamEvent::Start,
+                    ProviderStreamEvent::error("stress child failed"),
+                ],
+            ),
+            (
+                "beta-prompt".to_string(),
+                vec![
+                    ProviderStreamEvent::Start,
+                    ProviderStreamEvent::TextDelta("stress child ok".to_string()),
+                    ProviderStreamEvent::Done {
+                        usage: Some(CompletionUsage {
+                            prompt_tokens: 2,
+                            completion_tokens: 1,
+                            total_tokens: 3,
+                        }),
+                    },
+                ],
+            ),
+        ]),
+        Duration::from_millis(40),
+    ));
+    let coordinator = test_agent_coordinator_with_provider(temp_dir.path(), provider, SLOT_LIMIT);
+
+    // act
+    let run = coordinator
+        .start_run(
+            "coord_stress_many_parallel_children_under_limits",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .unwrap_or_abort();
+
+    let actor = supervisor_actor();
+    let _failing_child = coordinator
+        .spawn_agent(actor.clone(), "alpha", None)
+        .await
+        .unwrap_or_abort();
+    for _ in 0..(CHILD_COUNT - 1) {
+        let _ok_child = coordinator
+            .spawn_agent(actor.clone(), "beta", None)
+            .await
+            .unwrap_or_abort();
+    }
+
+    let events = wait_for_events(&run.events_path, Duration::from_secs(10), |events| {
+        let started_task_ids = events
+            .iter()
+            .filter_map(|event| match &event.payload {
+                EventV1::TaskScheduled(data)
+                    if data.queue_key.as_deref() == Some(QUEUE_KEY)
+                        && data.state == TaskScheduleState::Started =>
+                {
+                    Some(data.task_id.clone())
+                }
+                _ => None,
+            })
+            .collect::<BTreeSet<_>>();
+        if started_task_ids.len() < CHILD_COUNT {
+            return false;
+        }
+        let terminal = events
+            .iter()
+            .filter(|event| {
+                matches!(
+                    &event.payload,
+                    EventV1::TaskCompleted(data) if started_task_ids.contains(&data.task_id)
+                ) || matches!(
+                    &event.payload,
+                    EventV1::TaskCancelled(data) if started_task_ids.contains(&data.task_id)
+                )
+            })
+            .count();
+        terminal >= CHILD_COUNT
+    })
+    .await;
+    coordinator.stop_run().await.unwrap_or_abort();
+
+    // assert
+    let started_task_ids = events
+        .iter()
+        .filter_map(|event| match &event.payload {
+            EventV1::TaskScheduled(data)
+                if data.queue_key.as_deref() == Some(QUEUE_KEY)
+                    && data.state == TaskScheduleState::Started =>
+            {
+                Some(data.task_id.clone())
+            }
+            _ => None,
+        })
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        started_task_ids.len(),
+        CHILD_COUNT,
+        "all {CHILD_COUNT} child provider tasks should eventually start under slots={SLOT_LIMIT}"
+    );
+
+    let queued = events
+        .iter()
+        .filter(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskScheduled(data)
+                    if data.queue_key.as_deref() == Some(QUEUE_KEY)
+                        && data.state == TaskScheduleState::Queued
+            )
+        })
+        .count();
+    assert!(
+        queued >= CHILD_COUNT - SLOT_LIMIT,
+        "slots={SLOT_LIMIT} with {CHILD_COUNT} children should queue at least {} tasks, got {queued}",
+        CHILD_COUNT - SLOT_LIMIT
+    );
+
+    let mut in_flight = 0usize;
+    let mut max_concurrent = 0usize;
+    let mut active = BTreeSet::new();
+    for event in &events {
+        match &event.payload {
+            EventV1::TaskScheduled(data)
+                if data.queue_key.as_deref() == Some(QUEUE_KEY)
+                    && data.state == TaskScheduleState::Started
+                    && active.insert(data.task_id.clone()) =>
+            {
+                in_flight += 1;
+                max_concurrent = max_concurrent.max(in_flight);
+            }
+            EventV1::TaskCompleted(data) if active.remove(&data.task_id) => {
+                in_flight = in_flight.saturating_sub(1);
+            }
+            EventV1::TaskCancelled(data) if active.remove(&data.task_id) => {
+                in_flight = in_flight.saturating_sub(1);
+            }
+            _ => {}
+        }
+    }
+    assert!(
+        max_concurrent <= SLOT_LIMIT,
+        "provider concurrency must stay within slots={SLOT_LIMIT}; observed max concurrent started tasks={max_concurrent}"
+    );
+    assert_eq!(
+        max_concurrent, SLOT_LIMIT,
+        "stress should saturate slots={SLOT_LIMIT}; observed max concurrent started tasks={max_concurrent}"
+    );
+
+    let completed = events
+        .iter()
+        .filter(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskCompleted(data) if started_task_ids.contains(&data.task_id)
+            )
+        })
+        .count();
+    let cancelled = events
+        .iter()
+        .filter_map(|event| match &event.payload {
+            EventV1::TaskCancelled(data) if started_task_ids.contains(&data.task_id) => {
+                Some(data.reason.clone())
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        completed + cancelled.len(),
+        CHILD_COUNT,
+        "every child should reach a terminal state (completed or cancelled)"
+    );
+    assert_eq!(
+        completed,
+        CHILD_COUNT - 1,
+        "siblings should complete despite one isolated failure"
+    );
+    assert_eq!(
+        cancelled.len(),
+        1,
+        "exactly one child failure should be isolated"
+    );
+    assert!(
+        cancelled
+            .iter()
+            .any(|reason| reason.contains("stress child failed")),
+        "failing child reason should be recorded without cancelling siblings"
+    );
+    assert!(
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskCompleted(data)
+                    if started_task_ids.contains(&data.task_id)
+                        && data.result_summary.contains("stress child ok")
+            )
+        }),
+        "successful siblings should complete under tight slot limits"
+    );
+}
+
 #[tokio::test]
 async fn immediate_agent_turn_emits_single_started_event() {
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
