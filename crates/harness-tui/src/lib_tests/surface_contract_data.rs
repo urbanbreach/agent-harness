@@ -45,7 +45,6 @@ pub(super) enum ComposerContract {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum SidebarContract {
-    PersistentWhenGeometryAllows,
     SecondaryOnly,
     SuppressedByOverlay,
     NotApplicable,
@@ -77,7 +76,7 @@ pub(super) const FULL_SURFACE_SCOPE_MATRIX: [SurfaceScopeContract; 11] = [
         hierarchy: ShellHierarchyContract::TranscriptFirstSession,
         chrome: ChromeContract::QuietSessionShell,
         composer: ComposerContract::LiveProgressiveDisclosure,
-        sidebar: SidebarContract::PersistentWhenGeometryAllows,
+        sidebar: SidebarContract::SecondaryOnly,
         default_tab_chrome: false,
         debug_inspector_in_primary_path: false,
     },
@@ -86,7 +85,7 @@ pub(super) const FULL_SURFACE_SCOPE_MATRIX: [SurfaceScopeContract; 11] = [
         hierarchy: ShellHierarchyContract::TranscriptFirstSession,
         chrome: ChromeContract::QuietSessionShell,
         composer: ComposerContract::LiveProgressiveDisclosure,
-        sidebar: SidebarContract::PersistentWhenGeometryAllows,
+        sidebar: SidebarContract::SecondaryOnly,
         default_tab_chrome: false,
         debug_inspector_in_primary_path: false,
     },
@@ -95,7 +94,7 @@ pub(super) const FULL_SURFACE_SCOPE_MATRIX: [SurfaceScopeContract; 11] = [
         hierarchy: ShellHierarchyContract::TranscriptFirstSession,
         chrome: ChromeContract::QuietSessionShell,
         composer: ComposerContract::DisabledLiveProgressiveDisclosure,
-        sidebar: SidebarContract::PersistentWhenGeometryAllows,
+        sidebar: SidebarContract::SecondaryOnly,
         default_tab_chrome: false,
         debug_inspector_in_primary_path: false,
     },
@@ -104,7 +103,7 @@ pub(super) const FULL_SURFACE_SCOPE_MATRIX: [SurfaceScopeContract; 11] = [
         hierarchy: ShellHierarchyContract::TranscriptFirstSession,
         chrome: ChromeContract::QuietSessionShell,
         composer: ComposerContract::ReplayReadOnlyProgressiveDisclosure,
-        sidebar: SidebarContract::PersistentWhenGeometryAllows,
+        sidebar: SidebarContract::SecondaryOnly,
         default_tab_chrome: false,
         debug_inspector_in_primary_path: false,
     },

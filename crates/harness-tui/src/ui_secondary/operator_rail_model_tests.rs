@@ -777,13 +777,7 @@ pub(crate) fn exact_test_operator_sidebar_hit_target_maps_section_headers() {
     let sidebar_area = crate::layout::FrameLayoutPlan::for_app(&app, frame_area)
         .details_overlay
         .unwrap_or_abort();
-    let inner = operator_sidebar_inner_area(
-        &app,
-        sidebar_area,
-        app.theme(),
-        OperatorSidebarChrome::Overlay,
-    )
-    .unwrap_or_abort();
+    let inner = operator_sidebar_inner_area(&app, sidebar_area, app.theme()).unwrap_or_abort();
     let column = inner.x.saturating_add(1);
     let hits = (inner.y..inner.y.saturating_add(inner.height))
         .filter_map(|row| operator_sidebar_section_hit_target(&app, frame_area, column, row))

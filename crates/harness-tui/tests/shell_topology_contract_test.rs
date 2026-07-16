@@ -95,6 +95,42 @@ fn live_session_replacement_topology_holds_across_all_named_viewports() {
     }
 }
 
+#[test]
+fn operator_sidebar_chrome_has_no_persistent_primary_variant() {
+    // arrange
+    let secondary_src = include_str!("../src/ui_secondary.rs");
+    let interaction_src = include_str!("../src/ui_secondary/sidebar_interaction.rs");
+    let ui_src = include_str!("../src/ui.rs");
+
+    // act
+    let chrome_absent = !secondary_src.contains("OperatorSidebarChrome")
+        && !interaction_src.contains("OperatorSidebarChrome")
+        && !ui_src.contains("OperatorSidebarChrome");
+    let persistent_absent = !secondary_src.contains("OperatorSidebarChrome::Persistent")
+        && !interaction_src.contains("OperatorSidebarChrome::Persistent")
+        && !ui_src.contains("OperatorSidebarChrome::Persistent")
+        && !secondary_src.contains("enum OperatorSidebarChrome");
+    let app = live_session_app();
+
+    // assert
+    assert!(
+        chrome_absent,
+        "P0-SHELL-02: OperatorSidebarChrome must be removed (overlay-only secondary surface)"
+    );
+    assert!(
+        persistent_absent,
+        "P0-SHELL-02: Persistent chrome path must not ship"
+    );
+    for (width, height) in WIDE_VIEWPORTS {
+        let plan = plan_for(&app, width, height);
+        assert!(
+            plan.operator_sidebar.is_none(),
+            "P0-SHELL-02: live FrameLayoutPlan.operator_sidebar must be None at {width}x{height}"
+        );
+        assert_full_width_transcript_above_composer(&plan, width, height);
+    }
+}
+
 fn live_session_app() -> AppState {
     let mut app = AppState::new_live(
         Some(PathBuf::from("/tmp/run_topology_contract")),

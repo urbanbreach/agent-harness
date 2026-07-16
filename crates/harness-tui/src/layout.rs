@@ -987,6 +987,26 @@ mod tests {
     }
 
     #[test]
+    fn live_details_drawer_uses_secondary_overlay_not_primary_sidebar() {
+        // arrange
+        let mut app = AppState::new_live(None, false, None);
+        app.live_details_drawer_open = true;
+        for (width, height) in [(160u16, 40u16), (120, 40), (100, 30)] {
+            // act
+            let plan = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, width, height));
+            // assert
+            assert!(
+                plan.operator_sidebar.is_none(),
+                "details drawer must not allocate primary operator_sidebar at {width}x{height}"
+            );
+            assert!(
+                plan.details_overlay.is_some(),
+                "details drawer must expose secondary overlay at {width}x{height}"
+            );
+        }
+    }
+
+    #[test]
     fn live_session_transcript_and_composer_span_full_shell_width() {
         // arrange
         let app = AppState::new_live(None, false, None);

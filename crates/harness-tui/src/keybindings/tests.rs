@@ -633,3 +633,108 @@ fn palette_exposes_lineage_browser_and_child_session_commands() {
         assert!(!description.trim().is_empty(), "{command_id} description");
     }
 }
+
+#[test]
+fn simple_mode_defaults_open_command_palette_on_ctrl_p() {
+    // arrange
+    let keymap = KeyMap::with_defaults();
+    // act
+    let action = keymap.get_action(&KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL));
+    // assert
+    assert_eq!(action, Some(Action::Palette));
+    assert_eq!(keymap.get_binding_str(Action::Palette), "Ctrl+p");
+}
+
+#[test]
+fn simple_mode_defaults_open_status_dialog_on_leader_s() {
+    // arrange
+    let keymap = KeyMap::with_defaults();
+    // act
+    let action = keymap.leader_action(&KeyEvent::new(KeyCode::Char('s'), KeyModifiers::NONE));
+    // assert
+    assert_eq!(action, Some(Action::OpenStatusDialog));
+    assert_eq!(keymap.get_binding_str(Action::OpenStatusDialog), "Ctrl+x s");
+    assert_eq!(
+        keymap.get_action(&KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL)),
+        None,
+        "Ctrl+S is not a direct KeyMap binding; status is leader+s rematerialization"
+    );
+}
+
+#[test]
+fn simple_mode_defaults_open_model_switcher_on_leader_m() {
+    // arrange
+    let keymap = KeyMap::with_defaults();
+    // act
+    let action = keymap.leader_action(&KeyEvent::new(KeyCode::Char('m'), KeyModifiers::NONE));
+    // assert
+    assert_eq!(action, Some(Action::OpenModelSwitcher));
+    assert_eq!(
+        keymap.get_binding_str(Action::OpenModelSwitcher),
+        "Ctrl+x m"
+    );
+    assert_eq!(
+        keymap.get_action(&KeyEvent::new(KeyCode::Char('m'), KeyModifiers::CONTROL)),
+        None,
+        "Ctrl+M is not a direct KeyMap binding; model switcher is leader+m rematerialization"
+    );
+}
+
+#[test]
+fn simple_mode_defaults_do_not_map_interrupt_or_cancel_as_keymap_action() {
+    // arrange
+    let keymap = KeyMap::with_defaults();
+    // act
+    let ctrl_c = keymap.get_action(&KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL));
+    let esc = keymap.get_action(&KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+    // assert
+    assert_eq!(
+        ctrl_c, None,
+        "Ctrl+C must not be a KeyMap cancel/interrupt action"
+    );
+    assert!(
+        matches!(esc, Some(Action::ClearPrompt) | Some(Action::DismissModal)),
+        "Esc is clear/dismiss in KeyMap, not a single-shot cancel action: {esc:?}"
+    );
+    assert!(
+        !keymap
+            .all_bindings()
+            .iter()
+            .any(|(_, action)| action.as_str().contains("interrupt")
+                || action.as_str().contains("cancel")),
+        "no interrupt/cancel Action exists in default KeyMap bindings"
+    );
+}
+
+#[test]
+fn simple_mode_harness_only_chords_are_mapped_rematerializations() {
+    // arrange
+    let keymap = KeyMap::with_defaults();
+    // act
+    let rematerializations = [
+        (Action::OpenStatusDialog, "Ctrl+x s"),
+        (Action::OpenModelSwitcher, "Ctrl+x m"),
+        (Action::OpenThemeDialog, "Ctrl+x t"),
+        (Action::OpenLineageBrowser, "Ctrl+x g"),
+        (Action::SessionChildFirst, "Ctrl+x ↓"),
+        (Action::SessionBackground, "Ctrl+b"),
+    ];
+    // assert
+    for (action, expected_label) in rematerializations {
+        assert_eq!(
+            keymap.get_binding_str(action),
+            expected_label,
+            "{} must keep rematerialized binding {expected_label}",
+            action.as_str()
+        );
+        assert!(
+            !keymap.get_bindings(action).is_empty(),
+            "{} must remain reachable",
+            action.as_str()
+        );
+    }
+    assert_eq!(
+        keymap.get_action(&KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL)),
+        Some(Action::Palette)
+    );
+}

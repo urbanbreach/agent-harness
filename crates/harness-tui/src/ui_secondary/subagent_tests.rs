@@ -267,9 +267,7 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
 
     let sidebar_area = Rect::new(0, 0, 32, 40);
     let theme = &theme;
-    let inner =
-        operator_sidebar_inner_area(&app, sidebar_area, theme, OperatorSidebarChrome::Overlay)
-            .unwrap_or_abort();
+    let inner = operator_sidebar_inner_area(&app, sidebar_area, theme).unwrap_or_abort();
     let rail = build_operator_rail_model(&app);
     let title_height = u16::try_from(
         build_operator_rail_title_text(rail.title.as_ref(), theme, inner.width)
@@ -289,7 +287,6 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
             &app,
             sidebar_area,
             theme,
-            OperatorSidebarChrome::Overlay,
             inner.x,
             inner
                 .y
@@ -322,7 +319,6 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
             &app,
             sidebar_area,
             theme,
-            OperatorSidebarChrome::Overlay,
             inner.x,
             wrapped_row,
         ),
@@ -333,7 +329,6 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
             &app,
             sidebar_area,
             theme,
-            OperatorSidebarChrome::Overlay,
             inner.x,
             wrapped_row.saturating_add(1),
         ),
@@ -358,7 +353,6 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
             &app,
             sidebar_area,
             theme,
-            OperatorSidebarChrome::Overlay,
             inner.x,
             footer_sections[2].y,
         ),
@@ -369,9 +363,7 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
     let frame_area = Rect::new(0, 0, 140, 40);
     let plan = crate::layout::FrameLayoutPlan::for_app(&app, frame_area);
     let sidebar_area = plan.details_overlay.unwrap_or_abort();
-    let inner =
-        operator_sidebar_inner_area(&app, sidebar_area, theme, OperatorSidebarChrome::Overlay)
-            .unwrap_or_abort();
+    let inner = operator_sidebar_inner_area(&app, sidebar_area, theme).unwrap_or_abort();
     let rail = build_operator_rail_model(&app);
     let body_area =
         operator_sidebar_body_area(&app, inner, theme, rail.title.as_ref()).unwrap_or_abort();

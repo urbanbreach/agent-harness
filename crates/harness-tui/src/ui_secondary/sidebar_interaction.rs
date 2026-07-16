@@ -27,9 +27,8 @@ pub(super) fn operator_sidebar_selection_snapshot_in_surface(
     app: &AppState,
     area: Rect,
     theme: &Theme,
-    chrome: OperatorSidebarChrome,
 ) -> Option<OperatorSidebarSelectionSnapshot> {
-    let inner = operator_sidebar_inner_area(app, area, theme, chrome)?;
+    let inner = operator_sidebar_inner_area(app, area, theme)?;
     build_operator_sidebar_selection_snapshot(app, inner, theme)
 }
 
@@ -41,23 +40,10 @@ fn operator_sidebar_selection_snapshot(
     let theme = app.theme();
 
     plan.operator_sidebar
-        .and_then(|area| {
-            operator_sidebar_selection_snapshot_in_surface(
-                app,
-                area,
-                theme,
-                OperatorSidebarChrome::Persistent,
-            )
-        })
+        .and_then(|area| operator_sidebar_selection_snapshot_in_surface(app, area, theme))
         .or_else(|| {
-            plan.details_overlay.and_then(|area| {
-                operator_sidebar_selection_snapshot_in_surface(
-                    app,
-                    area,
-                    theme,
-                    OperatorSidebarChrome::Overlay,
-                )
-            })
+            plan.details_overlay
+                .and_then(|area| operator_sidebar_selection_snapshot_in_surface(app, area, theme))
         })
 }
 
@@ -317,25 +303,11 @@ pub(crate) fn operator_sidebar_section_hit_target(
 
     plan.operator_sidebar
         .and_then(|area| {
-            operator_sidebar_section_hit_target_in_surface(
-                app,
-                area,
-                theme,
-                OperatorSidebarChrome::Persistent,
-                column,
-                row,
-            )
+            operator_sidebar_section_hit_target_in_surface(app, area, theme, column, row)
         })
         .or_else(|| {
             plan.details_overlay.and_then(|area| {
-                operator_sidebar_section_hit_target_in_surface(
-                    app,
-                    area,
-                    theme,
-                    OperatorSidebarChrome::Overlay,
-                    column,
-                    row,
-                )
+                operator_sidebar_section_hit_target_in_surface(app, area, theme, column, row)
             })
         })
 }
@@ -351,24 +323,12 @@ pub(crate) fn operator_sidebar_subagent_session_hit_target(
 
     plan.operator_sidebar
         .and_then(|area| {
-            operator_sidebar_subagent_session_hit_target_in_surface(
-                app,
-                area,
-                theme,
-                OperatorSidebarChrome::Persistent,
-                column,
-                row,
-            )
+            operator_sidebar_subagent_session_hit_target_in_surface(app, area, theme, column, row)
         })
         .or_else(|| {
             plan.details_overlay.and_then(|area| {
                 operator_sidebar_subagent_session_hit_target_in_surface(
-                    app,
-                    area,
-                    theme,
-                    OperatorSidebarChrome::Overlay,
-                    column,
-                    row,
+                    app, area, theme, column, row,
                 )
             })
         })
@@ -385,25 +345,11 @@ pub(crate) fn operator_sidebar_subagent_group_hit_target(
 
     plan.operator_sidebar
         .and_then(|area| {
-            operator_sidebar_subagent_group_hit_target_in_surface(
-                app,
-                area,
-                theme,
-                OperatorSidebarChrome::Persistent,
-                column,
-                row,
-            )
+            operator_sidebar_subagent_group_hit_target_in_surface(app, area, theme, column, row)
         })
         .or_else(|| {
             plan.details_overlay.and_then(|area| {
-                operator_sidebar_subagent_group_hit_target_in_surface(
-                    app,
-                    area,
-                    theme,
-                    OperatorSidebarChrome::Overlay,
-                    column,
-                    row,
-                )
+                operator_sidebar_subagent_group_hit_target_in_surface(app, area, theme, column, row)
             })
         })
 }
@@ -435,13 +381,13 @@ fn operator_sidebar_body_width_for_frame(
 
     plan.operator_sidebar
         .and_then(|area| {
-            operator_sidebar_inner_area(app, area, theme, OperatorSidebarChrome::Persistent)
+            operator_sidebar_inner_area(app, area, theme)
                 .and_then(|inner| operator_sidebar_body_area(app, inner, theme, title))
                 .map(|body| body.width)
         })
         .or_else(|| {
             plan.details_overlay.and_then(|area| {
-                operator_sidebar_inner_area(app, area, theme, OperatorSidebarChrome::Overlay)
+                operator_sidebar_inner_area(app, area, theme)
                     .and_then(|inner| operator_sidebar_body_area(app, inner, theme, title))
                     .map(|body| body.width)
             })
@@ -535,11 +481,10 @@ fn operator_sidebar_section_hit_target_in_surface(
     app: &AppState,
     area: Rect,
     theme: &Theme,
-    chrome: OperatorSidebarChrome,
     column: u16,
     row: u16,
 ) -> Option<OperatorSidebarSection> {
-    let inner = operator_sidebar_inner_area(app, area, theme, chrome)?;
+    let inner = operator_sidebar_inner_area(app, area, theme)?;
     if !rect_contains(inner, column, row) {
         return None;
     }
@@ -567,11 +512,10 @@ pub(super) fn operator_sidebar_subagent_session_hit_target_in_surface(
     app: &AppState,
     area: Rect,
     theme: &Theme,
-    chrome: OperatorSidebarChrome,
     column: u16,
     row: u16,
 ) -> Option<String> {
-    let inner = operator_sidebar_inner_area(app, area, theme, chrome)?;
+    let inner = operator_sidebar_inner_area(app, area, theme)?;
     if !rect_contains(inner, column, row) {
         return None;
     }
@@ -599,11 +543,10 @@ pub(super) fn operator_sidebar_subagent_group_hit_target_in_surface(
     app: &AppState,
     area: Rect,
     theme: &Theme,
-    chrome: OperatorSidebarChrome,
     column: u16,
     row: u16,
 ) -> Option<String> {
-    let inner = operator_sidebar_inner_area(app, area, theme, chrome)?;
+    let inner = operator_sidebar_inner_area(app, area, theme)?;
     if !rect_contains(inner, column, row) {
         return None;
     }
@@ -670,24 +613,11 @@ pub(super) fn operator_sidebar_inner_area(
     app: &AppState,
     area: Rect,
     theme: &Theme,
-    chrome: OperatorSidebarChrome,
 ) -> Option<Rect> {
     let is_focused = app.focus == Focus::List && activity_surface_visible(app);
-    let surface = match chrome {
-        OperatorSidebarChrome::Persistent => ui_chrome::divided_shell_surface(theme),
-        OperatorSidebarChrome::Overlay => ui_chrome::divided_shell_surface(theme),
-    };
-
-    let inner = match chrome {
-        OperatorSidebarChrome::Persistent => inset_rect(
-            area,
-            theme.live_shell.rhythm.sidebar_padding_x,
-            theme.live_shell.rhythm.sidebar_padding_y,
-        ),
-        OperatorSidebarChrome::Overlay => {
-            ui_chrome::secondary_pane_block(theme, Line::default(), is_focused, surface).inner(area)
-        }
-    };
+    let surface = ui_chrome::divided_shell_surface(theme);
+    let inner =
+        ui_chrome::secondary_pane_block(theme, Line::default(), is_focused, surface).inner(area);
 
     (inner.width > 0 && inner.height > 0).then_some(inner)
 }

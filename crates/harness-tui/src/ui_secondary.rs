@@ -4,12 +4,6 @@ use super::*;
 use crate::app::{OperatorSidebarSection, OrchestrationTaskState};
 use crate::text::has_trimmed_content;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum OperatorSidebarChrome {
-    Persistent,
-    Overlay,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct OperatorRailModel {
     title: Option<OperatorRailTitle>,
@@ -522,7 +516,7 @@ pub(super) fn render_operator_sidebar(
         return;
     }
 
-    render_operator_sidebar_surface(frame, app, area, theme, OperatorSidebarChrome::Persistent);
+    render_operator_sidebar_surface(frame, app, area, theme);
 }
 
 pub(super) fn render_live_details_overlay(
@@ -536,7 +530,7 @@ pub(super) fn render_live_details_overlay(
     };
 
     frame.render_widget(Clear, overlay);
-    render_operator_sidebar_surface(frame, app, overlay, theme, OperatorSidebarChrome::Overlay);
+    render_operator_sidebar_surface(frame, app, overlay, theme);
 }
 
 #[cfg(test)]
@@ -648,29 +642,14 @@ fn render_operator_sidebar_surface(
     app: &AppState,
     area: Rect,
     theme: &Theme,
-    chrome: OperatorSidebarChrome,
 ) {
     let is_focused = app.focus == Focus::List && activity_surface_visible(app);
-    let surface = match chrome {
-        OperatorSidebarChrome::Persistent => ui_chrome::divided_shell_surface(theme),
-        OperatorSidebarChrome::Overlay => ui_chrome::divided_shell_surface(theme),
-    };
+    let surface = ui_chrome::divided_shell_surface(theme);
 
     frame.render_widget(Block::default().style(Style::default().bg(surface)), area);
-    let inner = match chrome {
-        OperatorSidebarChrome::Persistent => inset_rect(
-            area,
-            theme.live_shell.rhythm.sidebar_padding_x,
-            theme.live_shell.rhythm.sidebar_padding_y,
-        ),
-        OperatorSidebarChrome::Overlay => {
-            let block =
-                ui_chrome::secondary_pane_block(theme, Line::default(), is_focused, surface);
-            let inner = block.inner(area);
-            frame.render_widget(block, area);
-            inner
-        }
-    };
+    let block = ui_chrome::secondary_pane_block(theme, Line::default(), is_focused, surface);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
 
     if inner.width == 0 || inner.height == 0 {
         return;
@@ -727,7 +706,7 @@ fn render_operator_sidebar_surface(
     render_operator_sidebar_selection(
         frame,
         app.operator_sidebar_selection(),
-        operator_sidebar_selection_snapshot_in_surface(app, area, theme, chrome),
+        operator_sidebar_selection_snapshot_in_surface(app, area, theme),
         body_area,
         theme,
     );

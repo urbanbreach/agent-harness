@@ -392,9 +392,10 @@ fn render_live_run_shell(frame: &mut Frame, app: &AppState, theme: &Theme, plan:
     if let Some(terminal_panel) = plan.terminal_panel {
         render_terminal_panel(frame, app, terminal_panel, theme);
     }
-    if let Some(operator_sidebar) = plan.operator_sidebar {
-        render_operator_sidebar(frame, app, operator_sidebar, theme);
-    }
+    debug_assert!(
+        plan.operator_sidebar.is_none(),
+        "live run shell must not reserve a primary operator sidebar rect"
+    );
     render_runtime_state_surface(frame, app, transcript_area, theme);
     render_live_details_overlay(frame, app, theme, plan.details_overlay);
     render_unified_bottom_dock(frame, app, dock, theme);
