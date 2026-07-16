@@ -310,7 +310,7 @@ entries, doctor checks stored credential presence before environment or inline f
 | TUI config file | `tui.json` / `tui.jsonc` | Runtime and TUI settings are intentionally split. |
 | Core runtime keys | Upstream-compatible `provider`, `model`, `small_model`, `agent`, `default_agent`, `permission`, `mcp`, `skills`, `instructions`, plus harness runtime extensions | Side-effectful upstream product areas are accepted only when inactive and rejected when active. |
 | TUI surface | `keybinds` | Unsupported TUI-only fields fail validation. |
-| Permission naming | `bash`, `edit`, `question`, `task`, `webfetch`, `websearch`, `codesearch`, `lsp` | Legacy `shell` / `network` remain compatibility-only. |
+| Permission naming | `bash`, `edit`, `question`, `task`, `webfetch`, `websearch`, `codesearch`, `lsp`, plus safety kinds `read`, `external_directory`, and `doom_loop` | Legacy `shell` / `network` remain compatibility-only. `external_directory` and `doom_loop` default to ask; `read` defaults to allow with `.env` pattern asks. |
 | Prompt asset discovery | `.agent-harness/agents/*.md` | `AGENTS.md` is still auto-discovered separately. |
 
 Runtime and TUI config stay separate. Runtime config controls providers,

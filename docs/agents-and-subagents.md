@@ -8,7 +8,7 @@ Harness resolves agent/profile/category metadata through the `harness-core::agen
 |---|---|---|
 | `build` | primary | Default implementation lane. |
 | `plan` | primary | Planning lane; edits are runtime-limited to the active plan file and Plan may delegate only to `explore`. |
-| `explore` | subagent | Read-only repository lookup and local code search. |
+| `explore` | subagent | Codebase search agent: read/search plus bash/webfetch/websearch; edit and task denied (ruleset-compatible). |
 | `general` | subagent | Focused implementation/research child work. |
 | `visual-engineering` | category | UI/UX, layout, styling, animation, visual design. |
 | `artistry` | category | Complex creative product or implementation work. |
@@ -27,6 +27,18 @@ Each catalog entry carries stable id, display name, role, mode, hidden flag, cat
 ## Category fallback
 
 Category routing uses ordinary configured profiles. When `task(category = "...")` names an unknown or disabled category, the fallback chain is visible and falls back to `general`, except parent profiles explicitly disabled by policy such as `plan`. Task output reports requested category, resolved profile, fallback chain, permission metadata, model metadata, toolset, loaded skills, and next actions.
+
+## Permission and toolset boundaries
+
+Shipped profiles expose tools and permissions together. The coordinator enforces both: a tool that is not in the profile toolset is unavailable to the model, and a tool that is denied by the profile permission rules is blocked before execution.
+
+- `build` allows ordinary tools; safety kinds `external_directory` and `doom_loop` ask by default.
+- `plan` allows `question`, `plan_exit`, and edit only inside `.agent-harness/plans/*`; `bash` asks and is further guarded to read-only inspection; `task` can delegate only to `explore`.
+- `explore` is read-only: `read`, `glob`, `grep`, `list`, `bash`, `webfetch`, and `websearch` are allowed, while `edit`, `task`, `codesearch`, `question`, `plan_enter`, and `plan_exit` are denied.
+- `general` allows ordinary tools and `task`, but denies `todowrite`, `question`, `plan_enter`, and `plan_exit`.
+- category routes (`visual-engineering`, `artistry`, `ultrabrain`, `deep`, `quick`, `unspecified-low`, `unspecified-high`, `writing`) deny recursive `task` delegation by default.
+
+These boundaries are shipped defaults. An operator can override them through the runtime config, but doing so changes both the advertised toolset and the coordinator permission posture.
 
 ## Structured delegation body
 
