@@ -123,7 +123,7 @@ fn transcript_projection_renders_structured_user_assistant_tool_blocks() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn transcript_activity_lifecycle_streaming_done_and_failed() {
+fn transcript_activity_lifecycle_streaming_done_failed_and_cancelled() {
     // arrange / act — streaming
     let mut streaming = AppState::new_live(None, false, None);
     let request_id = "req_p0_tx_life";
@@ -247,25 +247,24 @@ fn transcript_activity_lifecycle_streaming_done_and_failed() {
         EventV1::TaskCancelled(TaskCancelledEvent {
             task_id: "task_p0_cancel".into(),
             reason: "user interrupted streaming turn".to_string(),
-            task_scope: None,
+            task_scope: Some(harness_core::event::TaskTerminalScope::AgentTurn),
         }),
     ));
     let cancelled_state = cancelled.runtime_state();
     let cancelled_render = render_text(&cancelled, 120, 40);
-    assert!(
-        matches!(
-            cancelled_state.kind,
-            RuntimeStateKind::Cancelled
-                | RuntimeStateKind::Ready
-                | RuntimeStateKind::Failure
-                | RuntimeStateKind::Success
-        ) || cancelled_render.to_lowercase().contains("cancel")
-            || cancelled_render.to_lowercase().contains("interrupt"),
-        "P0-TX-02: cancelled/interrupted path must project distinctly; state={cancelled_state:?}\n{cancelled_render}"
+    assert_eq!(
+        cancelled_state.kind,
+        RuntimeStateKind::Cancelled,
+        "P0-TX-02: AgentTurn TaskCancelled must project Cancelled (not Failure); state={cancelled_state:?}\n{cancelled_render}"
     );
     assert_ne!(
         streaming_state.kind, cancelled_state.kind,
         "P0-TX-02: streaming and cancelled must not collapse to one kind"
+    );
+    assert_ne!(
+        cancelled_state.kind,
+        RuntimeStateKind::Failure,
+        "P0-TX-02: cancelled must remain distinct from Failure"
     );
 }
 // ---------------------------------------------------------------------------
