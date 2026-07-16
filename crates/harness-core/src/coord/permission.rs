@@ -84,6 +84,7 @@ pub(super) fn permission_summary(
     format!("tool={tool_id} args={args}")
 }
 
+// Doom-loop streak identity: digest12(tool_id || 0x1f || serde_json::to_vec(args)).
 pub(super) fn permission_request_digest(tool_id: &str, args_json: &Value) -> String {
     let canonical = serde_json::to_vec(args_json).unwrap_or_else(|_| b"null".to_vec());
     let mut bytes = Vec::with_capacity(tool_id.len() + 1 + canonical.len());
@@ -1062,6 +1063,9 @@ impl super::Coordinator {
                                 )?;
                             }
                         } else {
+                            if grant_request.kind == PermissionKind::DoomLoop {
+                                run_state.doom_loop_always_granted = true;
+                            }
                             let grant = PermissionGrant {
                                 grant_id: format!("grant_{permission_id}"),
                                 permission_id: permission_id.clone(),
@@ -1081,62 +1085,92 @@ impl super::Coordinator {
                             )?;
                             run_state.record_permission_grant(grant);
                         }
+                    } else if grant_request
+                        .as_ref()
+                        .is_some_and(|g| g.kind == PermissionKind::DoomLoop)
+                    {
+                        run_state.reset_identical_tool_call_streak();
                     }
 
-                    let is_external_resolution = grant_request
-                        .as_ref()
-                        .is_some_and(|g| g.kind == PermissionKind::ExternalDirectory);
-                    if is_external_resolution {
-                        let collection = collect_external_directory_paths(
-                            &run_state.info.workspace_root,
-                            &tool_id,
-                            &args_json,
-                        );
-                        tool_execution::start_tool_call_execution(
-                            clock.as_ref(),
-                            redactor.as_ref(),
-                            Arc::clone(&self.config.hook_command_executor),
-                            job_tx,
-                            run_state,
-                            self.config.hook_runtime_config.clone(),
-                            ToolCallExecutionArgs {
-                                tool_call_id,
-                                tool_id,
-                                args_json,
-                                actor,
-                                category,
-                                hook_executions: permission_hook_executions,
-                                tool_registry: Arc::clone(&self.config.tool_registry),
-                                request_correlation_id,
-                                respond_to,
-                                external_directory_allow_prefixes:
-                                    call_scoped_external_allow_prefixes(&collection.paths),
-                            },
-                        )
-                        .await?;
-                    } else {
-                        tool_execution::gate_external_directory_and_start(
-                            clock.as_ref(),
-                            redactor.as_ref(),
-                            Arc::clone(&self.config.hook_command_executor),
-                            job_tx,
-                            run_state,
-                            self.config.hook_runtime_config.clone(),
-                            &self.config.permission_policy,
-                            ToolCallExecutionArgs {
-                                tool_call_id,
-                                tool_id,
-                                args_json,
-                                actor,
-                                category,
-                                hook_executions: permission_hook_executions,
-                                tool_registry: Arc::clone(&self.config.tool_registry),
-                                request_correlation_id,
-                                respond_to,
-                                external_directory_allow_prefixes: Vec::new(),
-                            },
-                        )
-                        .await?;
+                    let resolved_kind = grant_request.as_ref().map(|g| g.kind);
+                    match resolved_kind {
+                        Some(PermissionKind::ExternalDirectory) => {
+                            let collection = collect_external_directory_paths(
+                                &run_state.info.workspace_root,
+                                &tool_id,
+                                &args_json,
+                            );
+                            tool_execution::start_tool_call_execution(
+                                clock.as_ref(),
+                                redactor.as_ref(),
+                                Arc::clone(&self.config.hook_command_executor),
+                                job_tx,
+                                run_state,
+                                self.config.hook_runtime_config.clone(),
+                                ToolCallExecutionArgs {
+                                    tool_call_id,
+                                    tool_id,
+                                    args_json,
+                                    actor,
+                                    category,
+                                    hook_executions: permission_hook_executions,
+                                    tool_registry: Arc::clone(&self.config.tool_registry),
+                                    request_correlation_id,
+                                    respond_to,
+                                    external_directory_allow_prefixes:
+                                        call_scoped_external_allow_prefixes(&collection.paths),
+                                },
+                            )
+                            .await?;
+                        }
+                        Some(PermissionKind::DoomLoop) => {
+                            tool_execution::gate_external_directory_and_start(
+                                clock.as_ref(),
+                                redactor.as_ref(),
+                                Arc::clone(&self.config.hook_command_executor),
+                                job_tx,
+                                run_state,
+                                self.config.hook_runtime_config.clone(),
+                                &self.config.permission_policy,
+                                ToolCallExecutionArgs {
+                                    tool_call_id,
+                                    tool_id,
+                                    args_json,
+                                    actor,
+                                    category,
+                                    hook_executions: permission_hook_executions,
+                                    tool_registry: Arc::clone(&self.config.tool_registry),
+                                    request_correlation_id,
+                                    respond_to,
+                                    external_directory_allow_prefixes: Vec::new(),
+                                },
+                            )
+                            .await?;
+                        }
+                        Some(_) | None => {
+                            tool_execution::gate_doom_loop_and_start(
+                                clock.as_ref(),
+                                redactor.as_ref(),
+                                Arc::clone(&self.config.hook_command_executor),
+                                job_tx,
+                                run_state,
+                                self.config.hook_runtime_config.clone(),
+                                &self.config.permission_policy,
+                                ToolCallExecutionArgs {
+                                    tool_call_id,
+                                    tool_id,
+                                    args_json,
+                                    actor,
+                                    category,
+                                    hook_executions: permission_hook_executions,
+                                    tool_registry: Arc::clone(&self.config.tool_registry),
+                                    request_correlation_id,
+                                    respond_to,
+                                    external_directory_allow_prefixes: Vec::new(),
+                                },
+                            )
+                            .await?;
+                        }
                     }
                 } else {
                     let (rejection_reason, response_message) =

@@ -280,7 +280,7 @@ impl Coordinator {
                 );
 
                 if run_state.permission_grant_authorizes(&grant_request) {
-                    gate_external_directory_and_start(
+                    gate_doom_loop_and_start(
                         clock.as_ref(),
                         redactor.as_ref(),
                         Arc::clone(&self.config.hook_command_executor),
@@ -459,7 +459,7 @@ impl Coordinator {
                 }
             }
             Some(PolicyDecision::Allow) | None => {
-                gate_external_directory_and_start(
+                gate_doom_loop_and_start(
                     clock.as_ref(),
                     redactor.as_ref(),
                     Arc::clone(&self.config.hook_command_executor),
@@ -485,6 +485,220 @@ impl Coordinator {
         }
 
         Ok(tool_call_id)
+    }
+}
+
+// Third consecutive identical call (tool id + permission_request_digest) → DoomLoop.
+pub(in crate::coord) const DOOM_LOOP_STREAK_THRESHOLD: u32 = 3;
+
+pub(in crate::coord) async fn gate_doom_loop_and_start<C, R>(
+    clock: &C,
+    redactor: &R,
+    hook_command_executor: Arc<dyn LifecycleHookCommandExecutor + Send + Sync>,
+    job_tx: mpsc::Sender<Command>,
+    run_state: &mut RunState,
+    hook_runtime_config: HookRuntimeConfig,
+    permission_policy: &PermissionPolicy,
+    mut args: ToolCallExecutionArgs,
+) -> Result<(), CoordinatorError>
+where
+    C: Clock + ?Sized,
+    R: Redactor + ?Sized,
+{
+    let digest = permission_request_digest(&args.tool_id, &args.args_json);
+    let streak = run_state.note_identical_tool_call(&args.tool_id, &digest);
+
+    if run_state.doom_loop_always_granted || streak < DOOM_LOOP_STREAK_THRESHOLD {
+        return gate_external_directory_and_start(
+            clock,
+            redactor,
+            hook_command_executor,
+            job_tx,
+            run_state,
+            hook_runtime_config,
+            permission_policy,
+            args,
+        )
+        .await;
+    }
+
+    let decision = evaluate_permission_rule_requests(
+        permission_policy,
+        args.category.as_deref(),
+        PermissionKind::DoomLoop,
+        &[],
+    );
+    let grant_request = permission_grant_request(
+        &run_state.info.workspace_root,
+        PermissionKind::DoomLoop,
+        &args.tool_id,
+        &args.args_json,
+        &digest,
+    );
+
+    if run_state.permission_grant_authorizes(&grant_request) {
+        return gate_external_directory_and_start(
+            clock,
+            redactor,
+            hook_command_executor,
+            job_tx,
+            run_state,
+            hook_runtime_config,
+            permission_policy,
+            args,
+        )
+        .await;
+    }
+
+    match decision {
+        PolicyDecision::Allow => {
+            gate_external_directory_and_start(
+                clock,
+                redactor,
+                hook_command_executor,
+                job_tx,
+                run_state,
+                hook_runtime_config,
+                permission_policy,
+                args,
+            )
+            .await
+        }
+        PolicyDecision::Deny => {
+            let reason = "policy denied doom_loop request";
+            let respond_to = args.respond_to.take();
+            finalize_permission_denied(
+                clock,
+                redactor,
+                hook_command_executor.as_ref(),
+                &hook_runtime_config,
+                run_state,
+                PermissionDeniedArgs {
+                    actor: args.actor.clone(),
+                    category: args.category.clone(),
+                    tool_id: &args.tool_id,
+                    args_json: &args.args_json,
+                    tool_call_id: &args.tool_call_id,
+                    hashline_edit: None,
+                    kind: PermissionKind::DoomLoop,
+                    reason,
+                    request_correlation_id: args.request_correlation_id.as_deref(),
+                },
+            )
+            .await?;
+            if let Some(respond_to) = respond_to {
+                let _ = respond_to.send(Err(format!("tool call denied: {reason}")));
+            }
+            Err(CoordinatorError::PermissionDenied(args.tool_call_id))
+        }
+        PolicyDecision::Ask {
+            timeout_ms,
+            default_decision,
+        } => {
+            let permission_id = format!("perm_{:06}", run_state.next_permission_id);
+            run_state.next_permission_id += 1;
+            let summary = format!(
+                "doom_loop: identical tool call streak={streak} tool={}",
+                args.tool_id
+            );
+            let hook_request_id = args
+                .request_correlation_id
+                .clone()
+                .or_else(|| Some(args.tool_call_id.clone()));
+
+            append_permission_requested_event(
+                clock,
+                redactor,
+                run_state,
+                PermissionRequestedEventArgs {
+                    permission_id: &permission_id,
+                    tool_call_id: &args.tool_call_id,
+                    kind: PermissionKind::DoomLoop,
+                    summary: summary.clone(),
+                    request_digest: digest,
+                    timeout_ms,
+                    default_decision: event_permission_decision(default_decision),
+                    request_correlation_id: args.request_correlation_id.as_deref(),
+                },
+            )?;
+
+            let requested_hook_batch = hooks::run_lifecycle_hooks(
+                clock,
+                hook_command_executor.as_ref(),
+                &hook_runtime_config,
+                HookInvocationContext {
+                    event: HookLifecycleEvent::PermissionRequested,
+                    run_id: run_state.info.run_id.to_string(),
+                    workspace_root: run_state.info.workspace_root.clone(),
+                    artifacts_dir: run_state.info.artifacts_dir.clone(),
+                    actor: Some(args.actor.clone()),
+                    agent_id: args.actor.agent_id.clone(),
+                    request_id: hook_request_id,
+                    permission_id: Some(permission_id.clone()),
+                    task_id: None,
+                    tool_call_id: Some(args.tool_call_id.clone()),
+                    tool_id: Some(args.tool_id.clone()),
+                    provider_id: None,
+                    model_id: None,
+                    parent_agent_id: None,
+                    category: args.category.clone(),
+                    outcome: Some("requested".to_string()),
+                    output_summary: Some(summary),
+                    failure_reason: None,
+                },
+            )
+            .await;
+
+            let pending = PendingPermissionState {
+                tool_call_id: args.tool_call_id.clone(),
+                request_correlation_id: args.request_correlation_id.clone(),
+                hook_executions: requested_hook_batch.hook_executions.clone(),
+                grant_request: Some(grant_request),
+                resolution: PendingPermissionResolution::ToolCall {
+                    tool_id: args.tool_id,
+                    args_json: args.args_json,
+                    actor: args.actor,
+                    category: args.category,
+                    respond_to: args.respond_to,
+                },
+            };
+
+            if let Some(reason) = requested_hook_batch.critical_failure {
+                let final_reason = format!("critical lifecycle hook failed: {reason}");
+                append_permission_resolved_event(
+                    clock,
+                    redactor,
+                    run_state,
+                    permission_id,
+                    EventPermissionDecision::Deny,
+                    Some(final_reason.clone()),
+                )?;
+                let response_message = format!("tool call denied: {final_reason}");
+                let pending_hook_executions = pending.hook_executions.clone();
+                reject_pending_permission(
+                    clock,
+                    redactor,
+                    run_state,
+                    &final_reason,
+                    &response_message,
+                    pending,
+                    &pending_hook_executions,
+                )?;
+                return Err(CoordinatorError::LifecycleHookFailed(final_reason));
+            }
+
+            run_state.insert_pending_permission(permission_id.clone(), pending);
+
+            if timeout_ms > 0 {
+                tokio::spawn(async move {
+                    tokio::time::sleep(Duration::from_millis(timeout_ms)).await;
+                    let _ = job_tx
+                        .send(Command::PermissionTimedOut { permission_id })
+                        .await;
+                });
+            }
+            Ok(())
+        }
     }
 }
 

@@ -482,6 +482,7 @@ fn test_agent_profile(name: &str) -> AgentProfile {
         temperature: None,
         tool_failure_mode: crate::config::ToolFailureMode::FailTurn,
         toolset: Vec::new(),
+        permission_ruleset: Vec::new(),
     }
 }
 
@@ -881,6 +882,8 @@ delegate_test!(run_state_turn_queue_methods_own_agent_turn_lifecycle_state => ru
 delegate_test!(run_state_permission_methods_own_pending_and_grant_state => run_state_method_tests::run_state_permission_methods_own_pending_and_grant_state);
 delegate_test!(run_state_compaction_methods_own_overflow_retry_attempt_state => run_state_method_tests::run_state_compaction_methods_own_overflow_retry_attempt_state);
 
+#[path = "tests/session_compaction_disabled_tests.rs"]
+mod session_compaction_disabled_tests;
 #[cfg(test)]
 #[path = "tests/session_compaction_tests.rs"]
 mod session_compaction_tests;
@@ -985,6 +988,9 @@ fn test_run_state(session_dir: &Path, run_id: &str) -> RunState {
         allow_initial_runtime_context_recording: false,
         shutdown_token: CancellationToken::new(),
         tool_state: ToolRunState::default(),
+        last_identical_tool_key: None,
+        identical_tool_call_streak: 0,
+        doom_loop_always_granted: false,
     }
 }
 

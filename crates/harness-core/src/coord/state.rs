@@ -114,6 +114,10 @@ pub(in crate::coord) struct RunState {
     pub(in crate::coord) allow_initial_runtime_context_recording: bool,
     pub(in crate::coord) shutdown_token: CancellationToken,
     pub(in crate::coord) tool_state: ToolRunState,
+    // (tool_id, permission_request_digest) for consecutive-identical doom_loop streak.
+    pub(in crate::coord) last_identical_tool_key: Option<(String, String)>,
+    pub(in crate::coord) identical_tool_call_streak: u32,
+    pub(in crate::coord) doom_loop_always_granted: bool,
 }
 
 impl RunState {
@@ -216,6 +220,32 @@ impl RunState {
         grant_request: &PermissionGrantRequest,
     ) -> bool {
         self.active_permission_grants.authorizes(grant_request)
+    }
+
+    pub(in crate::coord) fn note_identical_tool_call(
+        &mut self,
+        tool_id: &str,
+        args_digest: &str,
+    ) -> u32 {
+        match &self.last_identical_tool_key {
+            Some((prev_tool, prev_digest))
+                if prev_tool == tool_id && prev_digest == args_digest =>
+            {
+                self.identical_tool_call_streak =
+                    self.identical_tool_call_streak.saturating_add(1);
+            }
+            _ => {
+                self.last_identical_tool_key =
+                    Some((tool_id.to_string(), args_digest.to_string()));
+                self.identical_tool_call_streak = 1;
+            }
+        }
+        self.identical_tool_call_streak
+    }
+
+    pub(in crate::coord) fn reset_identical_tool_call_streak(&mut self) {
+        self.last_identical_tool_key = None;
+        self.identical_tool_call_streak = 0;
     }
 
     pub(in crate::coord) fn record_overflow_retry_compacted_context(
