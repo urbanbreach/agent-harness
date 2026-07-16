@@ -11,9 +11,7 @@ use crate::config::HookLifecycleEvent;
 use crate::digest::digest12;
 use crate::event::PermissionDecision as EventPermissionDecision;
 use crate::path_selector::workspace_relative_path_from_maybe_absolute;
-use crate::perm::shell::{
-    direct_shell_command_request, scan_shell_command, ShellCommandRequest, ShellPathPattern,
-};
+use crate::perm::shell::{direct_shell_command_request, scan_shell_command, ShellCommandRequest};
 use crate::perm::{
     always_external_path_prefix, PermissionDecision, PermissionGrant, PermissionGrantMatcher,
     PermissionGrantRequest, PermissionGrantScope, PermissionKind, PermissionPolicy,
@@ -464,9 +462,6 @@ pub(super) fn external_directory_summary(paths: &[PathBuf]) -> String {
         .join(", ");
     format!("external_directory paths=[{joined}]")
 }
-
-#[allow(dead_code)]
-fn _shell_path_pattern_type_use(_: &ShellPathPattern) {}
 
 pub(super) fn evaluate_permission_rule_requests(
     policy: &PermissionPolicy,
@@ -1036,7 +1031,8 @@ impl super::Coordinator {
                     && permission_hook_failure.is_none()
                     && !caller_cancelled
                 {
-                    if let (Some(scope), Some(grant_request)) = (grant_scope, grant_request.as_ref())
+                    if let (Some(scope), Some(grant_request)) =
+                        (grant_scope, grant_request.as_ref())
                     {
                         if grant_request.kind == PermissionKind::ExternalDirectory {
                             let collection = collect_external_directory_paths(

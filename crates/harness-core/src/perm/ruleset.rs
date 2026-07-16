@@ -564,9 +564,9 @@ mod tests {
             edit: None,
             shell: Some(PermissionMode::Ask),
             read: None,
-                    external_directory: None,
-                    doom_loop: None,
-                    rules: PermissionRuleSet {
+            external_directory: None,
+            doom_loop: None,
+            rules: PermissionRuleSet {
                 edit: vec![
                     PermissionSelectorRule {
                         selector: PermissionSelector::CatchAll,

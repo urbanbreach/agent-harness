@@ -429,9 +429,35 @@ impl PermissionPolicy {
         }
     }
 
+    pub fn allow_all() -> Self {
+        Self {
+            defaults: DefaultPermissionModes {
+                edit: PermissionMode::Allow,
+                shell: PermissionMode::Allow,
+                network: PermissionMode::Allow,
+                question: PermissionMode::Allow,
+                task: PermissionMode::Allow,
+                webfetch: PermissionMode::Allow,
+                websearch: PermissionMode::Allow,
+                codesearch: PermissionMode::Allow,
+                lsp: PermissionMode::Allow,
+                read: PermissionMode::Allow,
+                external_directory: PermissionMode::Allow,
+                doom_loop: PermissionMode::Allow,
+            },
+            default_rules: PermissionRuleSet::default(),
+            profile_overrides: BTreeMap::new(),
+            ask_timeout_ms: DEFAULT_ASK_TIMEOUT_MS,
+        }
+    }
+
     pub fn with_ask_timeout_ms(mut self, ask_timeout_ms: u64) -> Self {
         self.ask_timeout_ms = ask_timeout_ms;
         self
+    }
+
+    pub fn ask_timeout_ms(&self) -> u64 {
+        self.ask_timeout_ms
     }
 
     pub fn with_category_override(
@@ -605,7 +631,7 @@ pub fn permission_kind_for_tool(tool_id: &str) -> Option<PermissionKind> {
         "question" => Some(PermissionKind::Question),
         "plan_enter" | "plan_exit" => Some(PermissionKind::Question),
         "task" | "skill" => Some(PermissionKind::Task),
-        "background_cancel" => Some(PermissionKind::Task),
+        "background_cancel" | "background_output" => Some(PermissionKind::Task),
         "todoread" | "todowrite" => Some(PermissionKind::Task),
         "webfetch" => Some(PermissionKind::WebFetch),
         "websearch" => Some(PermissionKind::WebSearch),
@@ -614,13 +640,16 @@ pub fn permission_kind_for_tool(tool_id: &str) -> Option<PermissionKind> {
         "ast_grep_replace" => Some(PermissionKind::EditFs),
         "lsp" => Some(PermissionKind::Lsp),
         "lsp.rename" => Some(PermissionKind::EditFs),
-        "bash" => Some(PermissionKind::Shell),
+        "bash" | "shell.run" => Some(PermissionKind::Shell),
         "read" => Some(PermissionKind::Read),
+        "edit" | "write" | "apply_patch" => Some(PermissionKind::EditFs),
+        "github.issue" | "github.pull_request" => Some(PermissionKind::Network),
         _ if canonical_tool_id.starts_with("edit.") => Some(PermissionKind::EditFs),
         _ if canonical_tool_id.starts_with("shell.") => Some(PermissionKind::Shell),
         _ if canonical_tool_id.starts_with("network.") || canonical_tool_id.starts_with("net.") => {
             Some(PermissionKind::Network)
         }
+        _ if canonical_tool_id.starts_with("github.") => Some(PermissionKind::Network),
         _ => None,
     }
 }
@@ -629,6 +658,10 @@ pub fn permission_kind_for_tool_call(
     tool_id: &str,
     capability: ToolCapability,
 ) -> Option<PermissionKind> {
+    let canonical_tool_id = canonical_tool_id_for(tool_id).unwrap_or(tool_id);
+    if matches!(canonical_tool_id, "batch" | "invalid") {
+        return None;
+    }
     permission_kind_for_tool(tool_id).or_else(|| permission_kind_for_capability(capability))
 }
 

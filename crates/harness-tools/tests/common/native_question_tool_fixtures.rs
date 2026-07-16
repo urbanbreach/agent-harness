@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use harness_core::clock::RealClock;
+use harness_core::config::{PermissionMode, ProfilePermissions};
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig, CoordinatorHandle};
 use harness_core::event::EventV1;
 use harness_core::perm::PermissionDecision;
@@ -49,7 +50,15 @@ fn question_tool_context(
 
 fn spawn_question_coordinator(session_dir: PathBuf, ask_timeout_ms: u64) -> CoordinatorHandle {
     let mut config = CoordinatorConfig::new(session_dir);
-    config.permission_policy = allow_all_permission_policy().with_ask_timeout_ms(ask_timeout_ms);
+    config.permission_policy = allow_all_permission_policy()
+        .with_category_override(
+            "deep",
+            ProfilePermissions {
+                question: Some(PermissionMode::Ask),
+                ..ProfilePermissions::default()
+            },
+        )
+        .with_ask_timeout_ms(ask_timeout_ms);
     spawn_coordinator(
         config,
         Arc::new(RealClock::new()),

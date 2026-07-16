@@ -15,11 +15,7 @@ pub fn supervisor_actor_with_id(agent_id: &str) -> EventActor {
 }
 
 pub fn allow_all_permission_policy() -> PermissionPolicy {
-    PermissionPolicy::new(
-        PermissionMode::Allow,
-        PermissionMode::Allow,
-        PermissionMode::Allow,
-    )
+    PermissionPolicy::allow_all()
 }
 
 pub fn shell_denied_permission_policy() -> PermissionPolicy {

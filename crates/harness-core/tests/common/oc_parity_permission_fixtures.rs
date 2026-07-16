@@ -162,10 +162,7 @@ pub fn tool_finished_status(
     })
 }
 
-pub async fn request_read(
-    coordinator: &CoordinatorHandle,
-    file_path: impl Into<Value>,
-) -> String {
+pub async fn request_read(coordinator: &CoordinatorHandle, file_path: impl Into<Value>) -> String {
     coordinator
         .request_tool_call(
             super::common::supervisor_actor(),

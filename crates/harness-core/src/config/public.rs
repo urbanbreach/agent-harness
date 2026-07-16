@@ -96,6 +96,10 @@ pub struct PublicRuntimeSettingsConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "untagged serde permission config must stay unboxed for schema parity"
+)]
 pub enum PublicPermissionValue {
     Mode(PermissionMode),
     Config(PublicPermissionConfig),

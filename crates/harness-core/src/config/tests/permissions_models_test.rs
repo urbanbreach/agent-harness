@@ -244,7 +244,10 @@ fn permission_scalar_expands_to_public_kinds_and_network() {
         parsed.permissions.defaults.question,
         Some(PermissionMode::Deny)
     );
-    assert_eq!(parsed.permissions.defaults.task, Some(PermissionMode::Allow));
+    assert_eq!(
+        parsed.permissions.defaults.task,
+        Some(PermissionMode::Allow)
+    );
     assert_eq!(
         parsed.permissions.defaults.webfetch,
         Some(PermissionMode::Allow)
