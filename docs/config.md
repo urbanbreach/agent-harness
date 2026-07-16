@@ -120,7 +120,7 @@ fields that affect first-run behavior.
     "compaction": { "enable": true, "hidden": true }
   },
   "default_agent": "build",
-  "permission": "ask",
+  "permission": "allow",
   "mcp": {
     "cargo-mcp": {
       "transport": "stdio",
@@ -337,7 +337,7 @@ for those settings instead of mixing them into runtime config.
 | `mode` | Deprecated upstream alias for `agent`; entries are translated as agent definitions. |
 | `model` | Default full-capability model reference. |
 | `model_profile` | Named model selectors that resolve to configured provider/model targets plus optional fallback metadata; runtime profile resolution selects the primary target in V1. |
-| `permission` | Default permission policy for the supported tool subset plus optional shell allowlist. |
+| `permission` | Default permission policy for the supported tool subset plus optional shell allowlist. Supports scalar `allow`/`ask`/`deny` or per-tool maps (ruleset-compatible pattern rules). Catch-all deny hides tools from the model; last matching pattern wins. |
 
 | `provider` | Provider definitions keyed by provider id. |
 | `runtime` | Runtime knobs that are not provider/model/agent definitions, currently including provider-context compaction settings and provider retry policy. |
@@ -753,15 +753,17 @@ runtime config; `enable: true` documents that a shipped default remains active.
 
 ## Permission policy
 
-The canonical scalar form is:
+The canonical scalar form is OpenCode-aligned allow-by-default:
 
 ```jsonc
-{ "permission": "ask" }
+{ "permission": "allow" }
 ```
 
 `permission` accepts exactly `"ask"`, `"allow"`, or `"deny"`. A scalar applies to
 all canonical public permission kinds: `bash`, `edit`, `question`, `task`,
-`webfetch`, `websearch`, `codesearch`, and `lsp`.
+`webfetch`, `websearch`, `codesearch`, and `lsp`. When `permission` is omitted,
+ordinary tools default to allow; `external_directory` and `doom_loop` stay ask,
+and `read` stays allow with `.env` pattern asks.
 
 The V1 native tool catalog is documented in
 [`docs/native-tool-catalog.md`](native-tool-catalog.md). New control-plane tools

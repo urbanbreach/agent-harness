@@ -82,29 +82,31 @@ fn permission_policy_supports_native_tool_permission_kinds() {
 
     let policy = PermissionPolicy::from_config(&config).with_ask_timeout_ms(ASK_TIMEOUT_MS);
 
+    // Product default is allow-by-default for ordinary kinds when omitted from
+    // permissions.defaults (only edit/shell/network are set in this fixture).
     assert_eq!(
         policy.evaluate(None, PermissionKind::Question),
-        deny_default_ask_decision()
+        PolicyDecision::Allow
     );
     assert_eq!(
         policy.evaluate(None, PermissionKind::Task),
-        deny_default_ask_decision()
+        PolicyDecision::Allow
     );
     assert_eq!(
         policy.evaluate(None, PermissionKind::WebFetch),
-        deny_default_ask_decision()
+        PolicyDecision::Allow
     );
     assert_eq!(
         policy.evaluate(None, PermissionKind::WebSearch),
-        deny_default_ask_decision()
+        PolicyDecision::Allow
     );
     assert_eq!(
         policy.evaluate(None, PermissionKind::CodeSearch),
-        deny_default_ask_decision()
+        PolicyDecision::Allow
     );
     assert_eq!(
         policy.evaluate(None, PermissionKind::Lsp),
-        deny_default_ask_decision()
+        PolicyDecision::Allow
     );
 
     assert_eq!(
@@ -113,7 +115,7 @@ fn permission_policy_supports_native_tool_permission_kinds() {
     );
     assert_eq!(
         policy.evaluate(Some("deep"), PermissionKind::WebFetch),
-        deny_default_ask_decision()
+        PolicyDecision::Allow
     );
     assert_eq!(
         policy.evaluate(Some("deep"), PermissionKind::WebSearch),

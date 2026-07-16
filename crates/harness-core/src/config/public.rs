@@ -260,17 +260,19 @@ pub(super) fn validate_public_root_config_object(
 }
 
 fn default_internal_permissions_config() -> PermissionsConfig {
+    // OpenCode-aligned allow-by-default for ordinary tool kinds. Safety kinds stay
+    // Ask: external_directory, doom_loop. Read stays Allow with .env pattern rules.
     PermissionsConfig {
         defaults: PermissionDefaultsConfig {
-            edit: PermissionMode::Ask,
-            shell: PermissionMode::Ask,
-            network: PermissionMode::Ask,
-            question: Some(PermissionMode::Ask),
-            task: Some(PermissionMode::Ask),
-            webfetch: Some(PermissionMode::Ask),
-            websearch: Some(PermissionMode::Ask),
-            codesearch: Some(PermissionMode::Ask),
-            lsp: Some(PermissionMode::Ask),
+            edit: PermissionMode::Allow,
+            shell: PermissionMode::Allow,
+            network: PermissionMode::Allow,
+            question: Some(PermissionMode::Allow),
+            task: Some(PermissionMode::Allow),
+            webfetch: Some(PermissionMode::Allow),
+            websearch: Some(PermissionMode::Allow),
+            codesearch: Some(PermissionMode::Allow),
+            lsp: Some(PermissionMode::Allow),
             read: Some(PermissionMode::Allow),
             external_directory: Some(PermissionMode::Ask),
             doom_loop: Some(PermissionMode::Ask),
