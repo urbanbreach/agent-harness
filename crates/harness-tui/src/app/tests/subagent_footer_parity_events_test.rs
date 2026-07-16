@@ -2,7 +2,7 @@ use super::*;
 use harness_core::event::ProviderRequestStartedMetadata;
 
 mod event_helpers {
-    include!("opencode_subagent_parity_event_helpers_test.rs");
+    include!("subagent_footer_parity_event_helpers_test.rs");
 }
 
 #[derive(Clone, Copy)]

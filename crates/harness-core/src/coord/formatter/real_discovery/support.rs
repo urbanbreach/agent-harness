@@ -1,4 +1,4 @@
-//! Pure helper logic shared by the real OpenCode-parity discovery rules.
+//! Pure helper logic shared by the real Harness discovery rules.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

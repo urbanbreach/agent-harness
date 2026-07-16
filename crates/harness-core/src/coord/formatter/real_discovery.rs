@@ -1,4 +1,4 @@
-//! OpenCode-parity formatter discovery rules.
+//! Harness formatter discovery rules.
 
 use std::path::{Path, PathBuf};
 
@@ -18,7 +18,7 @@ pub(crate) use support::{
     first_line, has_dep, nearest_marker_dir, text_marker_contains, ComposerJson, PackageJson,
 };
 
-/// Real OpenCode-parity formatter discovery.
+/// Real Harness formatter discovery.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct RealFormatterDiscovery;
 

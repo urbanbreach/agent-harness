@@ -1,5 +1,5 @@
 // fragment the canonical registry order and command/extension mappings.
-//! Built-in formatter registry for OpenCode-parity formatting.
+//! Built-in formatter registry for Harness formatting.
 //!
 //! This module defines the canonical set of built-in formatters, their default
 //! file extensions, optional environment variables, and command templates. Each
@@ -56,7 +56,7 @@ const PRETTIER_BIOME_EXT: &[&str] = &[
 const RUBY_EXT: &[&str] = &[".rb", ".rake", ".gemspec", ".ru"];
 const BUN_ENV: Option<&[(&str, &str)]> = Some(&[("BUN_BE_BUN", "1")]);
 
-/// Canonical built-in formatters matching OpenCode's default formatter set.
+/// Canonical built-in formatter set.
 pub static BUILTIN_FORMATTERS: &[FormatterInfo] = &[
     FormatterInfo {
         name: "gofmt",

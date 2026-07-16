@@ -1,20 +1,20 @@
 // allow: SIZE_OK — pure data table (command palette parity matrix entries)
-//! Command palette parity matrix derived from Opencode source.
+//! Command palette parity matrix derived from Harness source.
 //!
-//! Each entry maps a stable Opencode command ID to its parity status, category,
+//! Each entry maps a stable Harness command ID to its parity status, category,
 //! title rule, and Harness dispatch path. Tests consume this matrix to assert
 //! exact included/excluded/hidden command IDs.
 
-/// Parity status for a command relative to the Opencode palette.
+/// Parity status for a command relative to the Harness palette.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParityStatus {
-    /// Visible/reachable Opencode palette command that Harness must include.
+    /// Visible/reachable Harness palette command that Harness must include.
     Included,
     /// Explicitly excluded by user request; must not appear in the palette.
     Excluded,
-    /// Hidden Opencode command; not a parity target.
+    /// Hidden Harness command; not a parity target.
     HiddenNonTarget,
-    /// Harness-only command with no Opencode equivalent; excluded from parity accounting.
+    /// Harness-only command with no Harness equivalent; excluded from parity accounting.
     HarnessOnly,
 }
 
@@ -98,20 +98,20 @@ pub enum DispatchPath {
     Action,
     /// Not yet implemented; opens placeholder.
     Placeholder,
-    /// Harness-only command with no Opencode equivalent.
+    /// Harness-only command with no Harness equivalent.
     HarnessOnly,
 }
 
 /// A single parity matrix entry.
 #[derive(Debug, Clone, Copy)]
 pub struct ParityEntry {
-    /// Stable Opencode command ID.
+    /// Stable Harness command ID.
     pub id: &'static str,
-    /// Opencode source file and line reference.
+    /// Harness source file and line reference.
     pub origin: &'static str,
     /// Parity status.
     pub status: ParityStatus,
-    /// Opencode category.
+    /// Harness category.
     pub category: &'static str,
     /// Title rule.
     pub title: TitleRule,
@@ -128,11 +128,11 @@ pub struct ParityEntry {
 /// The complete parity matrix.
 ///
 /// Derived from:
-/// - `inspirations/opencode/packages/tui/src/app.tsx:549` (app/global commands)
-/// - `inspirations/opencode/packages/tui/src/component/prompt/index.tsx:330` (prompt/stash commands)
-/// - `inspirations/opencode/packages/tui/src/routes/session/index.tsx:458` (session commands)
-/// - `inspirations/opencode/packages/tui/src/feature-plugins/system/plugins.tsx:238` (plugin commands)
-/// - `inspirations/opencode/packages/tui/src/feature-plugins/home/tips.tsx:10` (tips command)
+/// - `inspirations/packages/tui/src/app.tsx:549` (app/global commands)
+/// - `inspirations/packages/tui/src/component/prompt/index.tsx:330` (prompt/stash commands)
+/// - `inspirations/packages/tui/src/routes/session/index.tsx:458` (session commands)
+/// - `inspirations/packages/tui/src/feature-plugins/system/plugins.tsx:238` (plugin commands)
+/// - `inspirations/packages/tui/src/feature-plugins/home/tips.tsx:10` (tips command)
 pub const PARITY_MATRIX: &[ParityEntry] = &[
     // === App / Global Origin (app.tsx:549) ===
     ParityEntry {
@@ -268,7 +268,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
         harness_equivalent: "missing",
     },
     ParityEntry {
-        id: "opencode.status",
+        id: "harness.status",
         origin: "app.tsx:754",
         status: ParityStatus::Excluded,
         category: "System",
@@ -1212,7 +1212,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
         dispatch: DispatchPath::Placeholder,
         harness_equivalent: "harness.session_child_cycle_reverse",
     },
-    // === Harness-only commands (no Opencode equivalent) ===
+    // === Harness-only commands (no Harness equivalent) ===
     ParityEntry {
         id: "harness.close_review_surface",
         origin: "harness",
@@ -1469,7 +1469,7 @@ pub fn exclusion_rationale(id: &str) -> Option<&'static str> {
         ),
         ("tips.toggle", "Harness has no tips overlay"),
         (
-            "opencode.status",
+            "harness.status",
             "Harness has no status command; doctor covers readiness checks",
         ),
         (
@@ -1579,7 +1579,7 @@ mod tests {
             "help.show",
             "docs.open",
             "diff.open",
-            "opencode.status",
+            "harness.status",
             "plugins.list",
             "plugins.install",
             // Excluded with source-backed rationale (PRD Milestone 2):

@@ -48,11 +48,11 @@ fn subagent_footer_body_sticks_to_latest_activity() {
     assert!(rendered.contains("Researcher (1 of 1)"), "{rendered}");
     assert!(
         !rendered.contains("child activity line 01"),
-        "Opencode subagent footer should not embed child transcript body\n{rendered}"
+        "Harness subagent footer should not embed child transcript body\n{rendered}"
     );
     assert!(
         !rendered.contains("child activity line 24"),
-        "Opencode subagent footer should not embed child transcript body\n{rendered}"
+        "Harness subagent footer should not embed child transcript body\n{rendered}"
     );
 }
 

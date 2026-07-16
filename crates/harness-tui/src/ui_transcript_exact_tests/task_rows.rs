@@ -445,7 +445,7 @@ pub(crate) fn exact_test_transcript_task_rows_match_reference_inline_title_and_n
 
     assert!(
         rendered.contains("⠋ Researcher Task — audit transcript parity"),
-        "task row should use Opencode task title shape\n{rendered}"
+        "task row should use Harness task title shape\n{rendered}"
     );
     assert!(
         !rendered.contains("audit transcript parity · Researcher Agent"),

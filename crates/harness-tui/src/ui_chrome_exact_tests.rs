@@ -44,12 +44,12 @@ pub(crate) fn exact_test_subagent_footer_matches_harness_layout() {
         .collect::<Vec<_>>();
     assert!(
         rows[2].contains("Researcher (2 of 3)  12,345 (8%) · $0.42"),
-        "footer should render Opencode label, sibling count, and usage\n{}",
+        "footer should render Harness label, sibling count, and usage\n{}",
         rows[2]
     );
     assert!(
         rows[2].contains("Parent ↑") && rows[2].contains("Prev ←") && rows[2].contains("Next →"),
-        "footer should render Opencode navigation labels and shortcuts\n{}",
+        "footer should render Harness navigation labels and shortcuts\n{}",
         rows[2]
     );
     let rendered = rows.join("\n");

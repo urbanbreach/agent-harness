@@ -297,8 +297,8 @@ delegate_test!(subagent_footer_scrollbar_drag_release_does_not_navigate => subag
 delegate_test!(subagent_footer_up_only_release_does_not_activate => subagent_footer_navigation_tests::subagent_footer_up_only_release_does_not_activate);
 
 #[cfg(test)]
-#[path = "tests/opencode_subagent_parity_apps_test.rs"]
-mod opencode_subagent_parity_apps;
+#[path = "tests/subagent_footer_parity_apps_test.rs"]
+mod subagent_footer_parity_apps;
 
 fn write_events_jsonl(run_dir: &Path, events: &[EventEnvelopeV1]) {
     fs::create_dir_all(run_dir).unwrap_or_abort();
@@ -1210,11 +1210,11 @@ delegate_test!(palette_golden_ranking_stable_tie_order => palette_parity_tests::
 delegate_test!(palette_inventory_comprehensive_fields => palette_parity_tests::palette_inventory_comprehensive_fields);
 
 #[cfg(test)]
-#[path = "tests/opencode_subagent_parity_evidence_test.rs"]
-mod opencode_subagent_parity_evidence;
+#[path = "tests/subagent_footer_parity_evidence_test.rs"]
+mod subagent_footer_parity_evidence;
 
 #[test]
-#[ignore = "manual evidence export; set HARNESS_TUI_OPENCODE_SUBAGENT_EVIDENCE_DIR"]
-fn opencode_subagent_parity_evidence_export() {
-    opencode_subagent_parity_evidence::opencode_subagent_parity_evidence_export();
+#[ignore = "manual evidence export; set HARNESS_TUI_SUBAGENT_FOOTER_EVIDENCE_DIR"]
+fn subagent_footer_parity_evidence_export() {
+    subagent_footer_parity_evidence::subagent_footer_parity_evidence_export();
 }

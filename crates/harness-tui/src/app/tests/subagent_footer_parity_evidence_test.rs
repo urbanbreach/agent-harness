@@ -1,14 +1,14 @@
 use super::*;
 use crate::UnwrapOrAbort;
 
-use super::opencode_subagent_parity_apps as app_fixtures;
+use super::subagent_footer_parity_apps as app_fixtures;
 use crate::ui::render_app;
 use ratatui::style::{Color, Modifier};
 use ratatui::{backend::TestBackend, Terminal};
 
-const EVIDENCE_ENV: &str = "HARNESS_TUI_OPENCODE_SUBAGENT_EVIDENCE_DIR";
+const EVIDENCE_ENV: &str = "HARNESS_TUI_SUBAGENT_FOOTER_EVIDENCE_DIR";
 
-pub(super) fn opencode_subagent_parity_evidence_export() {
+pub(super) fn subagent_footer_parity_evidence_export() {
     let root = std::env::var_os(EVIDENCE_ENV)
         .map(PathBuf::from)
         .unwrap_or_else(|| {

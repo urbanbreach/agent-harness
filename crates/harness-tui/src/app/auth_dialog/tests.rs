@@ -89,7 +89,7 @@ fn catalog_providers_overlay_openai_auth_methods() {
 }
 
 #[test]
-fn connect_dialog_renders_opencode_style_provider_panel() {
+fn connect_dialog_renders_provider_panel() {
     let mut app = AppState::new_live(None, false, None);
     app.set_connect_dialog_providers(vec![
         api_key_provider("codex", "Codex"),

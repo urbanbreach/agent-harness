@@ -1,8 +1,8 @@
 // allow: SIZE_OK — TUI app state (session projection + interaction)
 //! Palette controller: filtering, grouping, suggested rows, and availability
-//! for the Opencode-compatible command palette.
+//! for the ruleset-compatible command palette.
 //!
-//! This module implements the Opencode palette semantics:
+//! This module implements the Harness palette semantics:
 //! - Fuzzy filtering on title and category only (not command IDs)
 //! - Title weighted higher than category
 //! - Results preserve category grouping even when filtered

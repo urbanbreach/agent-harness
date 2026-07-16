@@ -231,12 +231,10 @@ impl RunState {
             Some((prev_tool, prev_digest))
                 if prev_tool == tool_id && prev_digest == args_digest =>
             {
-                self.identical_tool_call_streak =
-                    self.identical_tool_call_streak.saturating_add(1);
+                self.identical_tool_call_streak = self.identical_tool_call_streak.saturating_add(1);
             }
             _ => {
-                self.last_identical_tool_key =
-                    Some((tool_id.to_string(), args_digest.to_string()));
+                self.last_identical_tool_key = Some((tool_id.to_string(), args_digest.to_string()));
                 self.identical_tool_call_streak = 1;
             }
         }

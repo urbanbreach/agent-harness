@@ -1,6 +1,6 @@
 use super::*;
 
-use super::opencode_subagent_parity_apps as app_fixtures;
+use super::subagent_footer_parity_apps as app_fixtures;
 
 pub(super) fn subagent_footer_hover_elevates_parent_target() {
     let mut app = app_fixtures::child_footer_app();

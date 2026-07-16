@@ -30,7 +30,7 @@ pub(crate) use surfaces::{
 
 const MIN_COMPOSER_LINES: u16 = 1;
 const MAX_COMPOSER_LINES: u16 = 6;
-const OPENCODE_PROMPT_MIN_MAX_HEIGHT: u16 = 6;
+const PROMPT_MIN_MAX_HEIGHT: u16 = 6;
 const COMPOSER_VISIBLE_TEXT_CHROME: u16 = 5;
 const LIVE_PROMPT_STANDARD_CHROME_ROWS: u16 = 4;
 const LIVE_PROMPT_DENSE_CHROME_ROWS: u16 = 3;
@@ -50,8 +50,8 @@ const DENSE_SESSION_PALETTE_MAX_WIDTH: u16 = 46;
 const PERSISTENT_SIDEBAR_MIN_WIDTH: u16 = 121;
 const STARTUP_COMPOSER_MAX_WIDTH: u16 = 75;
 const STARTUP_LOGO_TO_COMPOSER_GAP: u16 = 1;
-const OPENCODE_HOME_TOP_SPACER: u16 = 4;
-const OPENCODE_HOME_PROMPT_PADDING_TOP: u16 = 1;
+const HOME_TOP_SPACER: u16 = 4;
+const HOME_PROMPT_PADDING_TOP: u16 = 1;
 const SUBAGENT_FOOTER_ROWS: u16 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -549,7 +549,7 @@ pub(crate) fn composer_input_height(text: &str, width: u16) -> u16 {
 }
 
 pub(crate) fn startup_composer_input_height(text: &str, width: u16, terminal_height: u16) -> u16 {
-    composer_input_height_with_max_lines(text, width, opencode_prompt_max_height(terminal_height))
+    composer_input_height_with_max_lines(text, width, prompt_max_height(terminal_height))
 }
 
 fn composer_input_height_with_max_lines(text: &str, width: u16, max_lines: u16) -> u16 {
@@ -567,8 +567,8 @@ fn composer_input_height_with_max_lines(text: &str, width: u16, max_lines: u16) 
     u16::try_from(clamped_lines).unwrap_or(max_lines)
 }
 
-fn opencode_prompt_max_height(terminal_height: u16) -> u16 {
-    OPENCODE_PROMPT_MIN_MAX_HEIGHT.max(terminal_height / 3)
+fn prompt_max_height(terminal_height: u16) -> u16 {
+    PROMPT_MIN_MAX_HEIGHT.max(terminal_height / 3)
 }
 
 fn display_width(text: &str) -> usize {
@@ -796,19 +796,19 @@ fn centered_startup_dock_layout(
     } else {
         6
     };
-    let fixed_stack_height = OPENCODE_HOME_TOP_SPACER
+    let fixed_stack_height = HOME_TOP_SPACER
         .saturating_add(logo_height)
         .saturating_add(STARTUP_LOGO_TO_COMPOSER_GAP)
-        .saturating_add(OPENCODE_HOME_PROMPT_PADDING_TOP)
+        .saturating_add(HOME_PROMPT_PADDING_TOP)
         .saturating_add(shell_height);
     let top_flex = area.height.saturating_sub(fixed_stack_height) / 2;
     let target_y = area
         .y
         .saturating_add(top_flex)
-        .saturating_add(OPENCODE_HOME_TOP_SPACER)
+        .saturating_add(HOME_TOP_SPACER)
         .saturating_add(logo_height)
         .saturating_add(STARTUP_LOGO_TO_COMPOSER_GAP)
-        .saturating_add(OPENCODE_HOME_PROMPT_PADDING_TOP);
+        .saturating_add(HOME_PROMPT_PADDING_TOP);
     let max_y = area
         .y
         .saturating_add(area.height.saturating_sub(shell_height));
@@ -894,7 +894,7 @@ mod tests {
     }
 
     #[test]
-    fn startup_composer_input_height_uses_opencode_terminal_scaled_cap() {
+    fn startup_composer_input_height_uses_harness_terminal_scaled_cap() {
         let text = "line\n".repeat(20);
 
         assert_eq!(startup_composer_input_height(&text, 75, 18), 6);
@@ -902,7 +902,7 @@ mod tests {
     }
 
     #[test]
-    fn startup_dock_uses_opencode_vertical_stack_when_width_uncapped() {
+    fn startup_dock_uses_harness_vertical_stack_when_width_uncapped() {
         let app = AppState::new_startup(Vec::new(), None);
         let plan = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, 70, 24));
         let dock = plan.dock.unwrap_or_abort();

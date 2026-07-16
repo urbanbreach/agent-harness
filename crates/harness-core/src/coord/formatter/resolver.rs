@@ -14,7 +14,7 @@ pub struct ResolvedFormatter {
     pub(crate) environment: BTreeMap<String, String>,
 }
 
-/// Status entry for a single formatter, matching OpenCode's `Format.status()` shape.
+/// Status entry for a single formatter (`Format.status()` shape).
 #[derive(Debug, Clone)]
 pub struct FormatterStatus {
     pub name: String,

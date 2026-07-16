@@ -1,14 +1,14 @@
 // allow: SIZE_OK — keybinding data and command registry (palette entries)
-//! Opencode-compatible palette command model.
+//! ruleset-compatible palette command model.
 //!
-//! Each entry uses a stable Opencode command ID as the contract key.
+//! Each entry uses a stable Harness command ID as the contract key.
 //! Dynamic toggle commands use one command ID with a `DynamicTitle` rule
 //! instead of split show/hide entries. Harness-only commands are marked
-//! explicitly and excluded from Opencode parity accounting.
+//! explicitly and excluded from Harness parity accounting.
 
 use crate::keybindings::Action;
 
-/// Opencode-compatible palette command section (category).
+/// ruleset-compatible palette command section (category).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum PaletteCategory {
     Suggested,
@@ -92,10 +92,10 @@ pub enum PaletteDispatch {
     Placeholder,
 }
 
-/// A single Opencode-compatible palette command entry.
+/// A single ruleset-compatible palette command entry.
 #[derive(Debug, Clone, Copy)]
 pub struct PaletteCommandEntry {
-    /// Stable Opencode command ID (e.g., "session.new").
+    /// Stable Harness command ID (e.g., "session.new").
     pub id: &'static str,
     /// Category for grouping.
     pub category: PaletteCategory,
@@ -105,13 +105,13 @@ pub struct PaletteCommandEntry {
     pub description: &'static str,
     /// Suggested rule.
     pub suggested: SuggestedRule,
-    /// True if this is a Harness-only command with no Opencode equivalent.
+    /// True if this is a Harness-only command with no Harness equivalent.
     pub harness_only: bool,
     /// Dispatch target.
     pub dispatch: PaletteDispatch,
 }
 
-/// The complete Opencode-compatible palette command registry.
+/// The complete ruleset-compatible palette command registry.
 ///
 /// Derived from the parity matrix in `parity_matrix.rs`.
 /// Only `Included` commands appear here; excluded and hidden non-target
@@ -345,7 +345,7 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         harness_only: false,
         dispatch: PaletteDispatch::Action(Action::Quit),
     },
-    // === Harness-only commands (no Opencode equivalent) ===
+    // === Harness-only commands (no Harness equivalent) ===
     PaletteCommandEntry {
         id: "harness.close_review_surface",
         category: PaletteCategory::Session,
@@ -489,7 +489,7 @@ pub fn all_ids() -> Vec<&'static str> {
     PALETTE_COMMAND_ENTRIES.iter().map(|e| e.id).collect()
 }
 
-/// Get all Opencode-parity command IDs (excluding harness-only).
+/// Get all Harness-parity command IDs (excluding harness-only).
 pub fn parity_ids() -> Vec<&'static str> {
     PALETTE_COMMAND_ENTRIES
         .iter()

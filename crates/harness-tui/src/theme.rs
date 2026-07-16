@@ -458,9 +458,9 @@ pub struct StatusColors {
     pub disabled: Color,
 }
 
-/// Markdown token palette mirroring Opencode's `opencode.json` markdown rules.
+/// Markdown token palette mirroring Harness's `harness.json` markdown rules.
 ///
-/// Each field corresponds to an Opencode markdown syntax token (e.g.
+/// Each field corresponds to an Harness markdown syntax token (e.g.
 /// `markdownHeading`, `markdownCode`). When rendering reasoning bodies these
 /// colors are blended at `thinkingOpacity` (0.6) over the surface color to
 /// produce the subtle syntax-highlighted look from `generateSubtleSyntax`.

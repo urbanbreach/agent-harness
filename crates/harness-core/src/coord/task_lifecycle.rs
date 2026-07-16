@@ -394,7 +394,7 @@ impl Coordinator {
 
                 // Run formatters BEFORE computing digests so that the stored
                 // digest and EditApplied event reflect the post-format file
-                // content, matching OpenCode's behavior of re-reading the file
+                // content, re-reading the file
                 // after formatting.
                 let mut formatter_warnings = Vec::new();
                 let mut formatted_paths = std::collections::BTreeSet::new();
@@ -421,7 +421,7 @@ impl Coordinator {
                 }
 
                 // Regenerate diff artifacts to reflect post-format content,
-                // matching OpenCode's behavior of re-reading the file after
+                // re-reading the file after
                 // formatting and regenerating the diff from the original
                 // pre-edit content vs the formatted file.
                 for applied_edit in &mut applied_edits {

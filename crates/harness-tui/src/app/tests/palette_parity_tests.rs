@@ -430,7 +430,7 @@ pub(super) fn palette_dispatch_placeholder_shows_status_banner() {
         .collect();
     assert!(
         placeholders.is_empty(),
-        "no included OpenCode-parity command may dispatch to Placeholder: {placeholders:?}"
+        "no included Harness command may dispatch to Placeholder: {placeholders:?}"
     );
 }
 
@@ -1461,7 +1461,7 @@ pub(super) fn palette_inventory_zero_placeholders_for_included() {
         .collect();
     assert!(
         placeholders.is_empty(),
-        "no included OpenCode-parity command may dispatch to Placeholder: {placeholders:?}"
+        "no included Harness command may dispatch to Placeholder: {placeholders:?}"
     );
 }
 
@@ -1493,7 +1493,7 @@ pub(super) fn palette_slash_alias_inventory_complete() {
     let harness_slash_ids: std::collections::HashSet<&str> =
         slash_commands().iter().map(|s| s.id).collect();
 
-    let opencode_included: &[(&str, &[&str], &str)] = &[
+    let reference_included: &[(&str, &[&str], &str)] = &[
         ("sessions", &["resume", "continue"], "app.tsx:565-566"),
         ("new", &["clear"], "app.tsx:576-577"),
         ("models", &["mo"], "app.tsx:624-626"),
@@ -1519,7 +1519,7 @@ pub(super) fn palette_slash_alias_inventory_complete() {
         ),
     ];
 
-    let opencode_excluded: &[(&str, &str)] = &[
+    let reference_excluded: &[(&str, &str)] = &[
         (
             "workspaces",
             "app.tsx:605 - Harness has no workspace feature",
@@ -1570,34 +1570,34 @@ pub(super) fn palette_slash_alias_inventory_complete() {
         ),
     ];
 
-    for (name, aliases, source) in opencode_included {
+    for (name, aliases, source) in reference_included {
         assert!(
             harness_slash_ids.contains(*name),
-            "OpenCode slash '/{name}' ({source}) must be in Harness slash commands"
+            "Harness slash '/{name}' ({source}) must be in Harness slash commands"
         );
         for alias in *aliases {
             let harness_aliases = slash_command_aliases(name);
             assert!(
                 harness_aliases.contains(alias),
-                "OpenCode alias '{alias}' for '/{name}' ({source}) must be in Harness"
+                "Harness alias '{alias}' for '/{name}' ({source}) must be in Harness"
             );
         }
     }
 
-    for (name, rationale) in opencode_excluded {
+    for (name, rationale) in reference_excluded {
         assert!(
             !harness_slash_ids.contains(*name),
-            "excluded OpenCode slash '/{name}' ({rationale}) must not be in Harness"
+            "excluded Harness slash '/{name}' ({rationale}) must not be in Harness"
         );
     }
 
-    for (name, expected_aliases, _source) in opencode_included {
+    for (name, expected_aliases, _source) in reference_included {
         let harness_aliases: std::collections::HashSet<&str> =
             slash_command_aliases(name).iter().copied().collect();
         let expected: std::collections::HashSet<&str> = expected_aliases.iter().copied().collect();
         assert_eq!(
             harness_aliases, expected,
-            "alias set for '/{name}' must exactly match OpenCode: no extra aliases allowed"
+            "alias set for '/{name}' must exactly match Harness: no extra aliases allowed"
         );
     }
 }
@@ -2157,7 +2157,7 @@ pub(super) fn palette_tab_shift_tab_explicit_noop() {
 pub(super) fn palette_slash_alias_global_inventory() {
     use crate::keybindings::slash_commands;
 
-    let opencode_parity_ids: std::collections::HashSet<&str> = [
+    let harness_parity_ids: std::collections::HashSet<&str> = [
         "sessions",
         "new",
         "models",
@@ -2184,7 +2184,7 @@ pub(super) fn palette_slash_alias_global_inventory() {
             .cloned()
             .collect();
 
-    let mut expected_ids = opencode_parity_ids.clone();
+    let mut expected_ids = harness_parity_ids.clone();
     expected_ids.extend(harness_only_ids.iter().cloned());
 
     let actual_ids: std::collections::HashSet<&str> =
@@ -2192,14 +2192,14 @@ pub(super) fn palette_slash_alias_global_inventory() {
 
     assert_eq!(
         actual_ids, expected_ids,
-        "Harness slash command IDs must exactly match the union of OpenCode-parity and Harness-only sets"
+        "Harness slash command IDs must exactly match the union of Harness and Harness-only sets"
     );
 
     for cmd in slash_commands() {
         let id = cmd.id;
         assert!(
-            opencode_parity_ids.contains(id) || harness_only_ids.contains(id),
-            "slash command '/{id}' must be classified as OpenCode-parity or Harness-only"
+            harness_parity_ids.contains(id) || harness_only_ids.contains(id),
+            "slash command '/{id}' must be classified as Harness or Harness-only"
         );
     }
 }
@@ -2379,7 +2379,7 @@ pub(super) fn palette_inventory_comprehensive_fields() {
         );
         assert!(
             !entry.origin.is_empty(),
-            "entry '{}' has empty OpenCode source anchor (origin)",
+            "entry '{}' has empty Harness source anchor (origin)",
             entry.id
         );
         assert!(

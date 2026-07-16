@@ -55,7 +55,7 @@ pub(super) fn run_started(seq: u64) -> EventEnvelopeV1 {
         seq,
         "run",
         EventV1::RunStarted(RunStartedEvent {
-            run_name: "opencode-subagent-parity".into(),
+            run_name: "harness-subagent-parity".into(),
             workspace_root: "inline-harness-parity".to_string(),
         }),
     )
