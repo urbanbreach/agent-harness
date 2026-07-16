@@ -60,8 +60,7 @@ async fn bash_outside_workspace_emits_external_directory_ask() {
         .await
         .unwrap_or_abort();
 
-    let tool_call_id =
-        request_bash(&coordinator, "cat /tmp/harness-oc-parity-external.txt").await;
+    let tool_call_id = request_bash(&coordinator, "cat /tmp/harness-oc-parity-external.txt").await;
     let events = wait_for_tool_settled(&run.events_path, &tool_call_id, 80).await;
     coordinator.stop_run().await.unwrap_or_abort();
 

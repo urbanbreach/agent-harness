@@ -372,9 +372,7 @@ async fn always_grant_is_prefix_scoped_not_whole_fs() {
     let sibling_events = wait_for_tool_finished(&run.events_path, &sibling_id, 80).await;
     let sibling_kinds = permission_kinds_for_tool_call(&sibling_events, &sibling_id);
     assert!(
-        !sibling_kinds
-            .iter()
-            .any(|k| k == KIND_EXTERNAL_DIRECTORY),
+        !sibling_kinds.iter().any(|k| k == KIND_EXTERNAL_DIRECTORY),
         "sibling under always prefix must not re-ask; got {sibling_kinds:?}"
     );
     assert_eq!(
@@ -396,9 +394,7 @@ async fn always_grant_is_prefix_scoped_not_whole_fs() {
 
     let unrelated_kinds = permission_kinds_for_tool_call(&unrelated_events, &unrelated_id);
     assert!(
-        unrelated_kinds
-            .iter()
-            .any(|k| k == KIND_EXTERNAL_DIRECTORY),
+        unrelated_kinds.iter().any(|k| k == KIND_EXTERNAL_DIRECTORY),
         "path outside always prefix must still ask; got {unrelated_kinds:?}"
     );
 }

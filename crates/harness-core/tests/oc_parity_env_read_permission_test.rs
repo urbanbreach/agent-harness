@@ -1,7 +1,7 @@
 //! RED (T2): native `read` of env paths must Ask; `.env.example` / normal source Allow.
 
-use harness_core::UnwrapOrAbort;
 use harness_core::event::ToolCallStatus;
+use harness_core::UnwrapOrAbort;
 use serde_json::json;
 
 mod common;
@@ -112,7 +112,10 @@ async fn read_normal_source_allows_without_permission_requested() {
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let coordinator = parity_coordinator(temp_dir.path());
     let run = coordinator
-        .start_run("oc_parity_read_normal_source", temp_dir.path().to_path_buf())
+        .start_run(
+            "oc_parity_read_normal_source",
+            temp_dir.path().to_path_buf(),
+        )
         .await
         .unwrap_or_abort();
 

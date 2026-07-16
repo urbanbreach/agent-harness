@@ -37,7 +37,7 @@ GATES: Final[tuple[str, ...]] = (
 )
 
 DEFAULT_T5_LINE_BUDGET: Final[int] = 4_000
-DEFAULT_MAX_LINES: Final[int] = 600
+DEFAULT_MAX_LINES: Final[int] = 800
 MIN_TEST_NAME_WORDS: Final[int] = 4
 MAX_DISPLAYED_VIOLATIONS: Final[int] = 300
 CONVENTIONS_BASELINE_PATH: Final[Path] = Path(

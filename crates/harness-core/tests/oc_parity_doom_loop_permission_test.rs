@@ -12,8 +12,8 @@ mod oc_parity;
 
 use common::{load_events, supervisor_actor};
 use oc_parity::{
-    parity_coordinator, permission_kinds_for_tool_call, tool_finished_status, wait_for_tool_settled,
-    KIND_DOOM_LOOP,
+    parity_coordinator, permission_kinds_for_tool_call, tool_finished_status,
+    wait_for_tool_settled, KIND_DOOM_LOOP,
 };
 
 fn first_permission_id(events: &[EventEnvelopeV1], tool_call_id: &str) -> String {
@@ -159,7 +159,10 @@ async fn doom_loop_grant_once_allows_third_and_resets_streak() {
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let coordinator = parity_coordinator(temp_dir.path());
     let run = coordinator
-        .start_run("oc_parity_doom_loop_grant_once", temp_dir.path().to_path_buf())
+        .start_run(
+            "oc_parity_doom_loop_grant_once",
+            temp_dir.path().to_path_buf(),
+        )
         .await
         .unwrap_or_abort();
 
@@ -271,13 +274,15 @@ async fn doom_loop_timeout_denies_third_without_execute() {
     // Then: no ToolCallStarted/Succeeded for the third call
     use std::sync::Arc;
 
+    use async_trait::async_trait;
     use harness_core::clock::FakeClock;
     use harness_core::config::PermissionMode;
     use harness_core::coord::{spawn_coordinator, CoordinatorConfig};
     use harness_core::perm::PermissionPolicy;
     use harness_core::redact::DefaultRedactor;
-    use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult};
-    use async_trait::async_trait;
+    use harness_core::tool::{
+        Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult,
+    };
     use serde_json::Value;
 
     struct TestShellTool;

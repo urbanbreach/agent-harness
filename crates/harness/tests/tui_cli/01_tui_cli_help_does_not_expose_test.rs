@@ -84,6 +84,7 @@ async fn tui_new_live_bootstrap_stays_idle_until_first_user_prompt() {
             temperature: Some(0.0),
             tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
             toolset: Vec::new(),
+            permission_ruleset: Vec::new(),
         },
     );
 
@@ -280,6 +281,7 @@ async fn new_live_session_persists_selected_runtime_context_into_run_metadata() 
             temperature: Some(0.0),
             tool_failure_mode: ToolFailureMode::FailTurn,
             toolset: Vec::new(),
+            permission_ruleset: Vec::new(),
         },
     );
     coordinator_config.agent_profiles.insert(
@@ -295,6 +297,7 @@ async fn new_live_session_persists_selected_runtime_context_into_run_metadata() 
             temperature: Some(0.0),
             tool_failure_mode: ToolFailureMode::FailTurn,
             toolset: Vec::new(),
+            permission_ruleset: Vec::new(),
         },
     );
 

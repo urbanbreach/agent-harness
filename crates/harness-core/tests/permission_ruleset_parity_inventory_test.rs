@@ -50,9 +50,8 @@ fn fixture_path() -> PathBuf {
 }
 
 fn load_fixture() -> AgentDefaultsFixture {
-    let raw = std::fs::read_to_string(fixture_path())
-        .unwrap_or_else(|err| panic!("load agent_defaults.json: {err}"));
-    serde_json::from_str(&raw).unwrap_or_else(|err| panic!("parse agent_defaults.json: {err}"))
+    let raw = std::fs::read_to_string(fixture_path()).unwrap_or_abort();
+    serde_json::from_str(&raw).unwrap_or_abort()
 }
 
 #[derive(Debug, Deserialize)]
@@ -119,14 +118,8 @@ fn opencode_matrix_fixture_path() -> PathBuf {
 
 fn load_opencode_agent_ts_matrix() -> OpencodeAgentTsMatrixFixture {
     let path = opencode_matrix_fixture_path();
-    let raw = std::fs::read_to_string(&path)
-        .unwrap_or_else(|err| panic!("load opencode_agent_ts_matrix.json at {}: {err}", path.display()));
-    serde_json::from_str(&raw).unwrap_or_else(|err| {
-        panic!(
-            "parse opencode_agent_ts_matrix.json at {}: {err}",
-            path.display()
-        )
-    })
+    let raw = std::fs::read_to_string(&path).unwrap_or_abort();
+    serde_json::from_str(&raw).unwrap_or_abort()
 }
 
 const REQUIRED_SHIPPED_AGENTS: &[&str] = &[
@@ -156,10 +149,7 @@ fn t0_opencode_agent_ts_matrix_loads_without_panic() {
     // assert
     assert_eq!(fixture.schema_version, 1);
     assert!(
-        fixture
-            .source_of_truth
-            .path
-            .contains("agent/agent.ts"),
+        fixture.source_of_truth.path.contains("agent/agent.ts"),
         "source_of_truth must cite OC agent.ts, got {}",
         fixture.source_of_truth.path
     );
@@ -243,10 +233,7 @@ fn t0_opencode_matrix_entries_cite_oc_or_harness_divergence() {
         );
         for (perm, effective) in &entry.effective {
             assert!(
-                matches!(
-                    effective.action.as_str(),
-                    "allow" | "ask" | "deny"
-                ),
+                matches!(effective.action.as_str(), "allow" | "ask" | "deny"),
                 "agent `{name}` permission `{perm}` has invalid action {}",
                 effective.action
             );
@@ -269,7 +256,10 @@ fn t0_opencode_matrix_entries_cite_oc_or_harness_divergence() {
                 matches!(rule.action.as_str(), "allow" | "ask" | "deny"),
                 "agent `{name}` overlay rule invalid action"
             );
-            assert!(!rule.cite.is_empty(), "agent `{name}` overlay rule missing cite");
+            assert!(
+                !rule.cite.is_empty(),
+                "agent `{name}` overlay rule missing cite"
+            );
         }
         for note in &entry.notes {
             assert!(!note.is_empty(), "agent `{name}` has empty note");
@@ -292,7 +282,12 @@ fn t0_opencode_matrix_base_defaults_include_safety_exceptions() {
         .base_defaults
         .rules
         .iter()
-        .map(|r| ((r.permission.as_str(), r.pattern.as_str()), r.action.as_str()))
+        .map(|r| {
+            (
+                (r.permission.as_str(), r.pattern.as_str()),
+                r.action.as_str(),
+            )
+        })
         .collect();
 
     // assert
@@ -316,14 +311,8 @@ fn t0_opencode_matrix_base_defaults_include_safety_exceptions() {
 fn t0_opencode_matrix_documents_plan_shell_and_category_task_divergences() {
     // arrange
     let fixture = load_opencode_agent_ts_matrix();
-    let plan = fixture
-        .agents
-        .get("plan")
-        .expect("plan agent matrix entry");
-    let plan_bash = plan
-        .effective
-        .get("bash")
-        .expect("plan.effective.bash");
+    let plan = fixture.agents.get("plan").expect("plan agent matrix entry");
+    let plan_bash = plan.effective.get("bash").expect("plan.effective.bash");
 
     // assert
     assert_eq!(plan_bash.action, "ask");
