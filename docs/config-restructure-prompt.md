@@ -9,7 +9,7 @@ Use `umans-ai-coding-plan/umans-glm-5.2` with variant `high` for all your work. 
 Work through the 7 tasks in 3 waves as specified in the dependency graph (Section 9). Within each wave, tasks are independent and may be done in any order. Do not start Wave 2 until every task in Wave 1 is verified. Do not start Wave 3 until Wave 2 is verified.
 
 For each task:
-1. Read the relevant Opencode source file(s) listed in Section 4 of the spec
+1. Read the relevant Harness source file(s) listed in Section 4 of the spec
 2. Read the actual file(s) you will edit — do not edit from memory
 3. Write failing tests FIRST (TDD is mandatory, not optional)
 4. Implement the change
@@ -46,9 +46,9 @@ Section 7 of the spec lists 15 forbidden behaviors and 8 required behaviors. The
 - No modifying shipped agent markdown files (`.agent-harness/agents/*.md`). Use test fixtures in the test directory if you need sample markdown files.
 - No skipping the E2E verification. "Unit tests pass so E2E would pass too" is not valid reasoning. Run the actual harness binary.
 
-## OPENCODE REFERENCE
+## REFERENCE IMPLEMENTATION
 
-Before starting each task, read the Opencode source file(s) listed in Section 4.1 of the spec. The Opencode source is at `inspirations/opencode/`. Do not copy Opencode's TypeScript code — learn the patterns and implement in idiomatic Rust. The spec tells you exactly what to learn from each file.
+Before starting each task, read the Harness source file(s) listed in Section 4.1 of the spec. The Harness source is at `inspirations/`. Do not copy Harness's TypeScript code — learn the patterns and implement in idiomatic Rust. The spec tells you exactly what to learn from each file.
 
 ## YOUR FREEDOM
 

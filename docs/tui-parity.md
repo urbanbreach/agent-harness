@@ -1,43 +1,43 @@
-# Ctrl+P OpenCode Parity PRD
+# Ctrl+P Harness Parity PRD
 
-Provenance: Hyperplan team run `bb773baa-603e-4b6c-b3ac-078fd2acfb27`. Primary source anchors: Harness `crates/harness-tui/src/keybindings/palette_model.rs`, `crates/harness-tui/src/app/palette_controller.rs`, `crates/harness-tui/src/ui_overlays.rs`, `crates/harness-tui/src/app/tests/palette_parity_tests.rs`; OpenCode `inspirations/opencode/packages/tui/src/component/command-palette.tsx`, `inspirations/opencode/packages/tui/src/ui/dialog-select.tsx`, `inspirations/opencode/packages/tui/src/app.tsx`, `inspirations/opencode/packages/tui/src/component/prompt/index.tsx`, `inspirations/opencode/packages/tui/src/routes/session/index.tsx`.
+Provenance: Hyperplan team run `bb773baa-603e-4b6c-b3ac-078fd2acfb27`. Primary source anchors: Harness `crates/harness-tui/src/keybindings/palette_model.rs`, `crates/harness-tui/src/app/palette_controller.rs`, `crates/harness-tui/src/ui_overlays.rs`, `crates/harness-tui/src/app/tests/palette_parity_tests.rs`; Harness `inspirations/packages/tui/src/component/command-palette.tsx`, `inspirations/packages/tui/src/ui/dialog-select.tsx`, `inspirations/packages/tui/src/app.tsx`, `inspirations/packages/tui/src/component/prompt/index.tsx`, `inspirations/packages/tui/src/routes/session/index.tsx`.
 
 ## Objective
 
-Reach exact, evidence-backed Ctrl+P command palette parity with OpenCode for Harness TUI.
+Reach exact, evidence-backed Ctrl+P command palette parity with Harness for Harness TUI.
 
-The implementation loop must compare every Harness Ctrl+P palette item against the OpenCode source under `inspirations/opencode`, close every behavior/UI/UX gap, and leave a verified parity surface that can be maintained by tests rather than manual inspection.
+The implementation loop must compare every Harness Ctrl+P palette item against the Harness source under `inspirations/harness`, close every behavior/UI/UX gap, and leave a verified parity surface that can be maintained by tests rather than manual inspection.
 
 Parity means:
 
-- The set of OpenCode-compatible command palette entries exposed by Harness matches OpenCode’s reachable, visible command palette surface unless a documented scope decision explicitly excludes an OpenCode command.
-- Every included OpenCode-parity command has real behavior or a deliberate documented exclusion. `PaletteDispatch::Placeholder` is a failure for included commands.
-- Harness-only commands do not pollute the exact OpenCode-copy Ctrl+P palette unless they are moved behind a deliberate secondary/non-parity surface.
-- Filtering, grouping, suggestion duplication, keyboard navigation, mouse behavior, footers, row semantics, and dispatch lifecycle match OpenCode’s `CommandPaletteDialog` plus `DialogSelect` behavior.
-- Availability/hidden logic matches OpenCode’s route, session, provider, workspace, model, prompt, stash, share, revert, and editor-context state conditions.
+- The set of ruleset-compatible command palette entries exposed by Harness matches Harness’s reachable, visible command palette surface unless a documented scope decision explicitly excludes an Harness command.
+- Every included Harness command has real behavior or a deliberate documented exclusion. `PaletteDispatch::Placeholder` is a failure for included commands.
+- Harness-only commands do not pollute the exact Harness-copy Ctrl+P palette unless they are moved behind a deliberate secondary/non-parity surface.
+- Filtering, grouping, suggestion duplication, keyboard navigation, mouse behavior, footers, row semantics, and dispatch lifecycle match Harness’s `CommandPaletteDialog` plus `DialogSelect` behavior.
+- Availability/hidden logic matches Harness’s route, session, provider, workspace, model, prompt, stash, share, revert, and editor-context state conditions.
 - Parity is proven by deterministic tests, render tests, PTY/manual TUI evidence, live-provider dogfood, logs/events inspection, redaction checks, and documentation/evidence updates.
 
 ## Non-Goals
 
-- Do not change files under `inspirations/opencode`; they are read-only reference source.
-- Do not invent compatibility aliases or extra commands that OpenCode does not expose.
+- Do not change files under `inspirations/harness`; they are read-only reference source.
+- Do not invent compatibility aliases or extra commands that Harness does not expose.
 - Do not move runtime invariants out of `harness-core` or the coordinator to satisfy TUI behavior.
 - Do not claim visual parity without deterministic snapshot or PTY provenance.
 - Do not claim live-provider parity without logs/events/support-bundle evidence.
 - Do not weaken, remove, or loosen existing palette tests to make parity pass.
-- Do not implement speculative Harness-only features inside the exact OpenCode-copy Ctrl+P palette.
+- Do not implement speculative Harness-only features inside the exact Harness-copy Ctrl+P palette.
 
 ## Source-Of-Truth Inventory Model
 
-### OpenCode Source Of Truth
+### Harness Source Of Truth
 
-OpenCode command palette behavior is defined by:
+Harness command palette behavior is defined by:
 
-- `inspirations/opencode/packages/tui/src/component/command-palette.tsx`
-- `inspirations/opencode/packages/tui/src/ui/dialog-select.tsx`
-- `inspirations/opencode/packages/tui/src/app.tsx`
-- `inspirations/opencode/packages/tui/src/component/prompt/index.tsx`
-- `inspirations/opencode/packages/tui/src/routes/session/index.tsx`
+- `inspirations/packages/tui/src/component/command-palette.tsx`
+- `inspirations/packages/tui/src/ui/dialog-select.tsx`
+- `inspirations/packages/tui/src/app.tsx`
+- `inspirations/packages/tui/src/component/prompt/index.tsx`
+- `inspirations/packages/tui/src/routes/session/index.tsx`
 
 The implementation loop must treat these files as the behavioral reference.
 
@@ -65,7 +65,7 @@ The implementation loop must treat these files as the behavioral reference.
 
 Required correction: because `CommandPaletteDialog` does not pass `flat`, Harness command palette must not flatten filtered results and must not use category-as-footer due to flat mode.
 
-Required correction: current-dot/gutter exists in `DialogSelect`, but `CommandPaletteDialog` does not use it. If Harness shows current markers in the command palette, remove them. Do not claim OpenCode command palette has a current dot.
+Required correction: current-dot/gutter exists in `DialogSelect`, but `CommandPaletteDialog` does not use it. If Harness shows current markers in the command palette, remove them. Do not claim Harness command palette has a current dot.
 
 ### Harness Current Inventory Facts
 
@@ -81,7 +81,7 @@ Verified current Harness counts by direct search:
 | Registry Fact | Count |
 |---|---:|
 | Total palette entries | 59 |
-| OpenCode-parity entries where `harness_only: false` | 46 |
+| Harness entries where `harness_only: false` | 46 |
 | Harness-only entries where `harness_only: true` | 13 |
 | `Placeholder` dispatches | 26 |
 
@@ -89,11 +89,11 @@ These counts are the baseline to drive closure, not the target state.
 
 Target state:
 
-- Total count is allowed to change only through documented OpenCode source comparison.
-- OpenCode-parity entry count must equal the documented included OpenCode command set.
-- Harness-only entries must be absent from the exact OpenCode-copy Ctrl+P palette or moved to a deliberate secondary surface.
-- Placeholder count for included OpenCode-parity commands must be zero.
-- Every excluded command must have an explicit scope decision linked to the OpenCode source anchor and test coverage proving it is excluded.
+- Total count is allowed to change only through documented Harness source comparison.
+- Harness entry count must equal the documented included Harness command set.
+- Harness-only entries must be absent from the exact Harness-copy Ctrl+P palette or moved to a deliberate secondary surface.
+- Placeholder count for included Harness commands must be zero.
+- Every excluded command must have an explicit scope decision linked to the Harness source anchor and test coverage proving it is excluded.
 
 ### Inventory Generation Requirement
 
@@ -109,7 +109,7 @@ Add or update an automated inventory test/tool that emits a table with:
 - Binding/footer source.
 - Dispatch target.
 - Slash names/aliases, if any.
-- OpenCode source anchor.
+- Harness source anchor.
 - Harness implementation anchor.
 - Status: `implemented`, `excluded`, `harness_only_secondary`, or `failing_placeholder`.
 
@@ -117,20 +117,20 @@ This inventory must be used by tests and by this PRD’s acceptance matrix. It m
 
 ## Parity Matrix Requirements
 
-### Global Requirements For Every OpenCode-Parity Command
+### Global Requirements For Every Harness-Parity Command
 
 For each included command:
 
-- Command ID must exactly match OpenCode.
-- Title must match OpenCode’s static or dynamic title behavior.
-- Description must match OpenCode or have a documented product-language decision.
-- Category must match OpenCode.
+- Command ID must exactly match Harness.
+- Title must match Harness’s static or dynamic title behavior.
+- Description must match Harness or have a documented product-language decision.
+- Category must match Harness.
 - Footer must show registered keybindings, not category labels.
-- Suggested behavior must match OpenCode.
-- Hidden behavior must match OpenCode.
-- Availability/enabled behavior must match OpenCode.
-- Dispatch must perform the real OpenCode-equivalent behavior.
-- Dispatch must close/clear the dialog before executing when OpenCode does.
+- Suggested behavior must match Harness.
+- Hidden behavior must match Harness.
+- Availability/enabled behavior must match Harness.
+- Dispatch must perform the real Harness-equivalent behavior.
+- Dispatch must close/clear the dialog before executing when Harness does.
 - Failure must produce a visible, non-placeholder error path and structured log entry.
 - Tests must prove behavior, not just registry presence.
 
@@ -142,7 +142,7 @@ Commands requiring explicit behavior/exclusion decisions include:
 
 | Command | Required Decision |
 |---|---|
-| `session.rename` | Implement real rename behavior or exclude with OpenCode scope rationale. Placeholder is failure. |
+| `session.rename` | Implement real rename behavior or exclude with Harness scope rationale. Placeholder is failure. |
 | `session.timeline` | Implement jump-to-message timeline UI/dispatch or exclude with scope rationale. Placeholder is failure. |
 | `session.fork` | Implement fork session behavior or exclude with scope rationale. Placeholder is failure. |
 | `session.unshare` | Implement unshare only when share URL exists or exclude with scope rationale. Placeholder is failure. |
@@ -154,21 +154,21 @@ Commands requiring explicit behavior/exclusion decisions include:
 
 Acceptance:
 
-- Commands appear only on OpenCode-equivalent routes/states.
-- Unavailable commands are hidden or disabled exactly as OpenCode does.
+- Commands appear only on Harness-equivalent routes/states.
+- Unavailable commands are hidden or disabled exactly as Harness does.
 - Live session-affecting commands write expected events and logs.
 - Replay/session-state constraints do not execute providers, hooks, MCP, network, or CLI from replay-derived inspection.
 
 ### Agent Commands
 
-Agent command parity must cover reachable palette entries derived from app and prompt command sources, plus slash names and aliases where OpenCode derives slash entries from palette commands.
+Agent command parity must cover reachable palette entries derived from app and prompt command sources, plus slash names and aliases where Harness derives slash entries from palette commands.
 
 Acceptance:
 
-- Agent commands match OpenCode IDs, titles, descriptions, categories, footers, visibility, and dispatch.
+- Agent commands match Harness IDs, titles, descriptions, categories, footers, visibility, and dispatch.
 - Slash aliases derived from these commands are included in the alias inventory and tested.
 - Prompt-agent command availability respects prompt input and session state.
-- No Harness-only agent commands appear in the exact OpenCode-copy palette.
+- No Harness-only agent commands appear in the exact Harness-copy palette.
 
 ### Workspace Commands
 
@@ -178,14 +178,14 @@ Commands requiring explicit behavior/exclusion decisions include:
 
 | Command | Required Decision |
 |---|---|
-| `workspace.set` | Implement OpenCode-equivalent workspace selector/set behavior or exclude with scope rationale. Placeholder is failure. |
+| `workspace.set` | Implement Harness-equivalent workspace selector/set behavior or exclude with scope rationale. Placeholder is failure. |
 | `workspace.copy_path` | Implement path copy behavior with correct footer/logging or exclude with scope rationale. Placeholder is failure. |
 | `workspace.list` | Implement workspace list dialog or exclude with scope rationale. Placeholder is failure. |
-| `session.move` | If workspace-related in OpenCode behavior, verify workspace move semantics and route gating. |
+| `session.move` | If workspace-related in Harness behavior, verify workspace move semantics and route gating. |
 
 Acceptance:
 
-- Worktree workspace availability mirrors OpenCode.
+- Worktree workspace availability mirrors Harness.
 - Workspace commands do not run outside a valid workspace state.
 - Logs redact workspace paths when needed by the project’s redaction policy but preserve enough stable identifiers for debugging.
 
@@ -197,12 +197,12 @@ Commands requiring explicit behavior/exclusion decisions include:
 
 | Command | Required Decision |
 |---|---|
-| `variant.list` | Implement OpenCode-equivalent model/variant picker or exclude with scope rationale. Placeholder is failure. |
+| `variant.list` | Implement Harness-equivalent model/variant picker or exclude with scope rationale. Placeholder is failure. |
 | `console.org.switch` | Implement org switch behavior only when switchable org count allows it or exclude with scope rationale. Placeholder is failure. |
 
 Acceptance:
 
-- Provider commands are hidden/available exactly like OpenCode for disconnected, connected, single-org, multi-org, no-variant, and variant-capable states.
+- Provider commands are hidden/available exactly like Harness for disconnected, connected, single-org, multi-org, no-variant, and variant-capable states.
 - Live-provider dogfood demonstrates provider/session-affecting command behavior before and after a prompt run.
 - Logs/events contain redacted provider/model/session IDs and no secrets.
 
@@ -222,9 +222,9 @@ Commands requiring explicit behavior/exclusion decisions include:
 
 Acceptance:
 
-- Prompt command visibility mirrors OpenCode prompt input and editor-context state.
+- Prompt command visibility mirrors Harness prompt input and editor-context state.
 - Slash names and aliases are parity surface and must be inventoried.
-- Alias tests must prove each OpenCode slash alias maps to the expected palette command or documented exclusion.
+- Alias tests must prove each Harness slash alias maps to the expected palette command or documented exclusion.
 
 ### System Commands
 
@@ -255,7 +255,7 @@ Harness currently has 13 `harness_only: true` entries.
 
 Requirement:
 
-- Exact OpenCode-copy Ctrl+P mode must not show Harness-only commands.
+- Exact Harness-copy Ctrl+P mode must not show Harness-only commands.
 - If Harness retains Harness-specific commands, they must move to one of:
   - A secondary palette mode.
   - A Harness-specific category only visible behind an explicit non-parity setting.
@@ -267,7 +267,7 @@ Requirement:
 
 ### Dialog Lifecycle
 
-Harness must match OpenCode command palette lifecycle:
+Harness must match Harness command palette lifecycle:
 
 - Ctrl+P opens command palette dialog.
 - Dialog title is `Commands`.
@@ -275,19 +275,19 @@ Harness must match OpenCode command palette lifecycle:
 - Selecting a command clears/closes the dialog before dispatch.
 - Dispatch failure does not leave a stale placeholder banner as success.
 - The input is focused when dialog opens.
-- Filtering resets selection to the first filtered item as OpenCode does.
+- Filtering resets selection to the first filtered item as Harness does.
 - Mouse movement after filter changes must not incorrectly steal keyboard input mode.
 
 ### Filtering And Ranking
 
-Harness must empirically match OpenCode’s fuzzysort behavior.
+Harness must empirically match Harness’s fuzzysort behavior.
 
 Requirements:
 
 - Search keys: `title` and `category`.
 - Score function: title score weighted by 2 plus category score weighted by 1, matching `r[0].score * 2 + r[1].score`.
-- Typo tolerance and ranking must match OpenCode, not merely subsequence presence.
-- Either use a compatible Rust fuzzysort implementation or generate golden ranking tests from OpenCode.
+- Typo tolerance and ranking must match Harness, not merely subsequence presence.
+- Either use a compatible Rust fuzzysort implementation or generate golden ranking tests from Harness.
 - Filtering must exclude disabled options.
 - Filtering must preserve category grouping because `CommandPaletteDialog` does not pass `flat`.
 - Filtering must not duplicate suggested rows when filter is non-empty.
@@ -303,15 +303,15 @@ Acceptance tests:
 
 ### Grouping And Rows
 
-Harness must match OpenCode row semantics:
+Harness must match Harness row semantics:
 
 - Group by category.
 - Render category section headers.
-- Preserve category order according to OpenCode output order.
+- Preserve category order according to Harness output order.
 - Suggested duplicates use value prefix semantics equivalent to `suggested:${command}` or a Harness equivalent that prevents selection identity collisions.
 - Normal and suggested duplicate selection dispatch the same underlying command.
 - Details rows must render if command options provide details.
-- Command palette must not render current-dot/gutter unless OpenCode `CommandPaletteDialog` starts passing `current` or `gutter`.
+- Command palette must not render current-dot/gutter unless Harness `CommandPaletteDialog` starts passing `current` or `gutter`.
 
 ### Footer Semantics
 
@@ -319,11 +319,11 @@ Harness currently uses footer as action keybinding else category label. This mus
 
 Requirements:
 
-- Footer must be formatted registered keybindings where OpenCode provides bindings.
+- Footer must be formatted registered keybindings where Harness provides bindings.
 - Footer must not fall back to category label in command palette.
 - Footer actions must match `DialogSelect` behavior where applicable.
 - If no keybinding exists, footer should be blank/absent, not category-as-footer.
-- Registered bindings override entry bindings as OpenCode does.
+- Registered bindings override entry bindings as Harness does.
 
 ### Keyboard Navigation
 
@@ -346,7 +346,7 @@ Acceptance tests must cover wraparound, page step, home/end, enter dispatch, and
 
 ### Mouse Semantics
 
-Harness must match OpenCode `DialogSelect` mouse behavior:
+Harness must match Harness `DialogSelect` mouse behavior:
 
 - Mouse move switches input mode to mouse unless locked.
 - Mouse over moves selection only when input mode is mouse.
@@ -364,7 +364,7 @@ Harness must match visible structure:
 - Dim backdrop.
 - `Commands` title.
 - `esc` header affordance.
-- Search input with cursor behavior consistent with Harness rendering primitives and OpenCode intent.
+- Search input with cursor behavior consistent with Harness rendering primitives and Harness intent.
 - Grouped rows with active highlight.
 - Category headers styled distinctly.
 - Footer keybinding text, not category fallback.
@@ -390,20 +390,20 @@ Depends on: none.
 
 Work:
 
-- Build an OpenCode command inventory from the listed OpenCode anchors.
+- Build an Harness command inventory from the listed Harness anchors.
 - Build a Harness command inventory from `palette_model.rs`.
-- Include slash names and aliases from OpenCode command sources.
+- Include slash names and aliases from Harness command sources.
 - Record exact status for every command: included, excluded, Harness-only secondary, missing, or placeholder.
 - Add tests that assert current known Harness facts before changing behavior:
   - 59 total entries.
-  - 46 OpenCode-parity entries.
+  - 46 Harness entries.
   - 13 Harness-only entries.
   - 26 placeholders.
 
 Stop gate:
 
 - No implementation changes until the inventory test/tool exposes every command and placeholder explicitly.
-- Stop if OpenCode source reveals command IDs or aliases not represented in the matrix.
+- Stop if Harness source reveals command IDs or aliases not represented in the matrix.
 
 ### Milestone 2: Decide Scope For Every Placeholder And Harness-Only Entry
 
@@ -412,7 +412,7 @@ Depends on: Milestone 1.
 Work:
 
 - For each `PaletteDispatch::Placeholder`, choose:
-  - Implement as OpenCode parity.
+  - Implement as Harness parity.
   - Exclude with source-backed rationale.
 - For each Harness-only command, choose:
   - Move to secondary surface.
@@ -422,8 +422,8 @@ Work:
 
 Stop gate:
 
-- No placeholder may remain for an included OpenCode-parity command.
-- No Harness-only command may remain visible in exact OpenCode-copy Ctrl+P.
+- No placeholder may remain for an included Harness command.
+- No Harness-only command may remain visible in exact Harness-copy Ctrl+P.
 
 ### Milestone 3: Replace Filtering With Fuzzysort-Compatible Ranking
 
@@ -432,7 +432,7 @@ Depends on: Milestone 1.
 Work:
 
 - Replace handmade weighted fuzzy subsequence matching with fuzzysort-compatible ranking or golden-generated equivalent.
-- Preserve OpenCode score weighting: title weight 2, category weight 1.
+- Preserve Harness score weighting: title weight 2, category weight 1.
 - Preserve grouping while filtered.
 - Preserve suggested duplication only for empty filter.
 - Remove category-as-footer behavior from command palette.
@@ -466,7 +466,7 @@ Work:
 
 - Implement real dispatch behavior for each included command.
 - Keep runtime invariants in coordinator/core; TUI dispatch may request intents but must not own core invariants.
-- Add availability rules matching OpenCode.
+- Add availability rules matching Harness.
 - Add failure paths with structured logs.
 - Add per-command behavior tests.
 
@@ -482,14 +482,14 @@ Depends on: Milestone 1 and Milestone 5.
 
 Work:
 
-- Inventory slash names and aliases from OpenCode command sources.
+- Inventory slash names and aliases from Harness command sources.
 - Map aliases to Harness commands or documented exclusions.
 - Add tests for alias visibility, dispatch target, and hidden/availability rules.
 
 Stop gate:
 
 - Missing alias inventory is failure.
-- Alias tests must fail if any OpenCode alias silently disappears.
+- Alias tests must fail if any Harness alias silently disappears.
 
 ### Milestone 7: Logging, Events, And Support Evidence
 
@@ -530,16 +530,16 @@ For every command in the inventory, complete this checklist:
 
 | Check | Required Result |
 |---|---|
-| OpenCode source anchor | File and line/function/source section recorded. |
+| Harness source anchor | File and line/function/source section recorded. |
 | Harness source anchor | Registry entry and dispatch implementation recorded. |
-| Command ID | Exact OpenCode ID or documented Harness-only status. |
-| Title | Static/dynamic title matches OpenCode. |
-| Description | Matches OpenCode or documented copy decision. |
-| Category | Matches OpenCode. |
+| Command ID | Exact Harness ID or documented Harness-only status. |
+| Title | Static/dynamic title matches Harness. |
+| Description | Matches Harness or documented copy decision. |
+| Category | Matches Harness. |
 | Footer | Registered keybinding footer; no category fallback. |
-| Suggested | Matches OpenCode boolean/function behavior. |
-| Visibility | Hidden and `command.palette.show` rules match OpenCode. |
-| Availability | Route/session/provider/workspace/prompt state matches OpenCode. |
+| Suggested | Matches Harness boolean/function behavior. |
+| Visibility | Hidden and `command.palette.show` rules match Harness. |
+| Availability | Route/session/provider/workspace/prompt state matches Harness. |
 | Dispatch | Real behavior implemented or command excluded. |
 | Placeholder | Not allowed for included commands. |
 | Slash aliases | Inventory and tests complete where applicable. |
@@ -553,16 +553,16 @@ These commands must not be left as ambiguous placeholders:
 
 | Group | Command | Required Acceptance |
 |---|---|---|
-| Session | `session.rename` | Rename works on current session or command is excluded with OpenCode scope decision and absence test. |
-| Session | `session.timeline` | Jump-to-message UI works or command is excluded with OpenCode scope decision and absence test. |
-| Session | `session.fork` | Fork behavior works or command is excluded with OpenCode scope decision and absence test. |
+| Session | `session.rename` | Rename works on current session or command is excluded with Harness scope decision and absence test. |
+| Session | `session.timeline` | Jump-to-message UI works or command is excluded with Harness scope decision and absence test. |
+| Session | `session.fork` | Fork behavior works or command is excluded with Harness scope decision and absence test. |
 | Session | `session.unshare` | Visible only with share URL; removes share URL; logs redacted result; or excluded. |
 | Session | `session.undo` | Visible/enabled only with revert state; reverts expected message; event/log evidence; or excluded. |
 | Session | `session.redo` | Visible/enabled only with redo state; restores expected message; event/log evidence; or excluded. |
 | Session | `session.toggle.conceal` | Toggle works, title updates, render/evidence proves effect; or excluded. |
 | Session | `session.copy` | Copy behavior works with observable clipboard/status/log evidence; or excluded. |
 | Session | `session.move` | Move behavior works with workspace/session state evidence; or excluded. |
-| Workspace | `workspace.set` | Workspace selector/set behavior works and state persists as OpenCode-equivalent; or excluded. |
+| Workspace | `workspace.set` | Workspace selector/set behavior works and state persists as Harness-equivalent; or excluded. |
 | Workspace | `workspace.copy_path` | Copy path works with safe redaction/log evidence; or excluded. |
 | Workspace | `workspace.list` | Workspace list dialog works; or excluded. |
 | Provider | `variant.list` | Variant/model picker works with provider/model state; or excluded. |
@@ -592,7 +592,7 @@ Every behavior change must follow red/green/refactor:
 
 Required test-first examples:
 
-- Before replacing filter ranking, add golden tests that demonstrate current subsequence ranking differs from OpenCode fuzzysort.
+- Before replacing filter ranking, add golden tests that demonstrate current subsequence ranking differs from Harness fuzzysort.
 - Before changing suggested duplication, add tests for empty filter and non-empty filter behavior.
 - Before replacing placeholder dispatch, add a per-command test that fails because placeholder is reached.
 - Before removing category fallback footer, add render tests proving footer is blank or keybinding-only.
@@ -737,33 +737,33 @@ Required log tests:
 
 ## Slash Alias Requirements
 
-OpenCode slash names and aliases are parity surface because OpenCode derives slash entries from palette commands.
+Harness slash names and aliases are parity surface because Harness derives slash entries from palette commands.
 
 Requirements:
 
-- Inventory every slash name and alias from OpenCode command sources.
+- Inventory every slash name and alias from Harness command sources.
 - Map each slash alias to the corresponding palette command.
 - Include hidden/availability behavior for slash aliases.
 - Add tests proving:
-  - Alias exists when OpenCode exposes it.
+  - Alias exists when Harness exposes it.
   - Alias dispatches the same command target.
   - Alias is absent when the underlying command is excluded.
-  - No extra compatibility aliases exist unless OpenCode has them.
+  - No extra compatibility aliases exist unless Harness has them.
 
 The implementation loop must not declare parity complete until slash alias inventory and tests are complete.
 
 ## Guardrails For Loop Agents
 
-- Treat `inspirations/opencode` as read-only reference.
+- Treat `inspirations/harness` as read-only reference.
 - Start every command/group by adding a failing test.
 - Do not leave `PaletteDispatch::Placeholder` for included commands.
 - Do not hide failures behind placeholder banners.
-- Do not add compatibility aliases unless OpenCode has them.
-- Do not let Harness-only commands appear in the exact OpenCode-copy Ctrl+P palette.
+- Do not add compatibility aliases unless Harness has them.
+- Do not let Harness-only commands appear in the exact Harness-copy Ctrl+P palette.
 - Do not flatten filtered command palette results; `CommandPaletteDialog` does not pass `flat`.
 - Do not use category-as-footer in command palette.
 - Do not show current-dot/gutter in command palette.
-- Do not claim OpenCode command palette uses current markers.
+- Do not claim Harness command palette uses current markers.
 - Do not remove or weaken tests.
 - Do not move coordinator/core invariants into TUI code.
 - Do not execute providers, hooks, MCP, network, or CLI from replay-derived session inspection.
@@ -802,20 +802,20 @@ Do not combine unrelated command groups with UI infrastructure changes unless on
 
 Parity is done only when all of the following are true:
 
-- Inventory is complete and source-anchored to OpenCode and Harness.
+- Inventory is complete and source-anchored to Harness and Harness.
 - All 59 current Harness entries have an explicit final status.
-- All 46 current OpenCode-parity entries are implemented or explicitly excluded.
-- All 13 current Harness-only entries are absent from exact OpenCode-copy Ctrl+P or moved to a deliberate secondary surface.
+- All 46 current Harness entries are implemented or explicitly excluded.
+- All 13 current Harness-only entries are absent from exact Harness-copy Ctrl+P or moved to a deliberate secondary surface.
 - Included command placeholder count is zero.
 - Every command listed in the high-risk decision matrix is implemented or explicitly excluded with tests.
-- Availability mirrors OpenCode for route/session, worktree workspace, model variants, switchable org count, editor context, prompt input, stash, share URL, revert state, provider connected, and replay/session state.
-- Filtering empirically matches OpenCode fuzzysort behavior.
+- Availability mirrors Harness for route/session, worktree workspace, model variants, switchable org count, editor context, prompt input, stash, share URL, revert state, provider connected, and replay/session state.
+- Filtering empirically matches Harness fuzzysort behavior.
 - Suggested duplicates appear only when filter is empty.
 - Filtered results remain grouped.
-- Footer semantics match OpenCode registered keybindings.
+- Footer semantics match Harness registered keybindings.
 - Command palette does not use category-as-footer.
 - Command palette does not show current-dot/gutter.
-- Keyboard navigation matches OpenCode.
+- Keyboard navigation matches Harness.
 - Mouse semantics are implemented or platform limitation is documented with tests and evidence.
 - Slash alias inventory and alias tests are complete.
 - Logs include command ID, overlay/dialog transition, dispatch target, availability rejection reason, redacted IDs, and failure status.
@@ -828,5 +828,5 @@ Parity is done only when all of the following are true:
 - Live-provider dogfood evidence exists for live claims.
 - Support bundle export and secret scan evidence exists.
 - Docs/evidence are updated with artifact paths and verification commands.
-- No OpenCode reference files were modified.
+- No Harness reference files were modified.
 - Runtime invariants remain in coordinator/core.

@@ -125,6 +125,7 @@ Replay support is descriptor/config metadata only and does not render extension 
 | Agent profile prompts | core runtime behavior | n/a | enabled by config |
 | `frontend-ui-ux` skill | disableable built-in capability | `skill:project:frontend-ui-ux` | loadable |
 | `git-master` skill | disableable built-in capability | `skill:project:git-master` | loadable |
+| `harness-qa` skill | disableable built-in capability | `skill:project:harness-qa` | loadable |
 | `review-work` skill | disableable built-in capability | `skill:project:review-work` | loadable |
 
 ## Built-in capability order and state policy

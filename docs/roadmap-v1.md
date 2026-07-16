@@ -470,7 +470,7 @@ or artifact roots cited there.
 - [x] Branch/fork/clone session flows document how summaries, artifacts, and
   restored context behave across lineage.
 - [x] Session list/resume surfaces show meaningful generated titles, not only
-  paths or opaque run ids. Editable titles are tracked by the OpenCode/Pi
+  paths or opaque run ids. Editable titles are tracked by the reference backend
   backend hardening PRD until `UpdateSessionTitle` ships.
 - [x] A redacted support export or bug-report bundle captures enough session
   events, artifacts, doctor output, and provider/config summary to debug V1 user
@@ -645,7 +645,7 @@ V1 should be plugin-ready, not a broad arbitrary plugin host.
 - [ ]   OS-level execution sandbox for build/plan tool execution (Linux
   Landlock+seccomp, macOS Seatbelt), distinct from the operator permission layer;
   Windows remains best-effort/unsupported initially. See
-  [`docs/agent_harness_opencode_ui_pi_backend_prd.md`](agent_harness_opencode_ui_pi_backend_prd.md) §5.
+  [`docs/agent_harness_ui_backend_prd.md`](agent_harness_ui_backend_prd.md) §5.
 - [ ] Native Anthropic transport with explicit `cache_control` ephemeral
   breakpoints and per-model-capability TTL gating.
 - [ ] Server-side context reuse (`previous_response_id`) for the Responses API,
@@ -732,7 +732,7 @@ post-V1 unless this roadmap explicitly re-scopes it.
   continue without guessing.
 - [x] Session list, search, tree, fork, and clone surfaces expose meaningful
   generated titles instead of only paths or opaque run ids. Editable titles are
-  tracked by the OpenCode/Pi backend hardening PRD until `UpdateSessionTitle`
+  tracked by the reference backend backend hardening PRD until `UpdateSessionTitle`
   ships.
 
 ### Built-in skills and prompt rigor

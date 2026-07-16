@@ -1,4 +1,4 @@
-# OpenCode TUI Parity Gaps — Implementation Plan
+# Harness TUI Parity Gaps — Implementation Plan
 
 **Generated:** 2026-07-05
 **Method:** Hyperplan adversarial multi-agent analysis (5 category members, 3 rounds: independent analysis → cross-attack → convergence)
@@ -8,7 +8,7 @@
 
 ## Methodology
 
-Five adversarial analysts (structural, visual, interaction, feature-surface, state-model) independently compared Harness TUI (`crates/harness-tui/`) against Opencode TUI (`inspirations/opencode/packages/tui/`) to find UI/UX parity gaps. Each produced 3-5 candidate gaps with file:line evidence. In Round 2, each member ruthlessly attacked the other four's findings, verdicting every gap as STRONG, WEAK, DUPLICATE, or FALSE. 24 candidate gaps were narrowed to 5 that survived with STRONG consensus from 4/4 attacking members.
+Five adversarial analysts (structural, visual, interaction, feature-surface, state-model) independently compared Harness TUI (`crates/harness-tui/`) against Harness TUI (`inspirations/packages/tui/`) to find UI/UX parity gaps. Each produced 3-5 candidate gaps with file:line evidence. In Round 2, each member ruthlessly attacked the other four's findings, verdicting every gap as STRONG, WEAK, DUPLICATE, or FALSE. 24 candidate gaps were narrowed to 5 that survived with STRONG consensus from 4/4 attacking members.
 
 **Eliminated findings (FALSE):**
 - Startup branding (Harness is a different product — branding is intentional)
@@ -25,11 +25,11 @@ Five adversarial analysts (structural, visual, interaction, feature-surface, sta
 
 **Severity:** High — entire feature category absent
 
-**Opencode source:**
-- `inspirations/opencode/packages/tui/src/component/dialog-workspace-create.tsx` (308 lines) — workspace selection/warp dialog for switching sessions between workspaces, handles VCS file-change confirmation
-- `inspirations/opencode/packages/tui/src/component/dialog-workspace-list.tsx` (112 lines) — lists all connected workspaces with status indicators, allows deletion
-- `inspirations/opencode/packages/tui/src/component/dialog-workspace-file-changes.tsx` (144 lines) — shows uncommitted VCS file changes during workspace warp, asks "move these changes with the session?"
-- `inspirations/opencode/packages/tui/src/component/dialog-workspace-unavailable.tsx` (69 lines) — error recovery when session's workspace becomes unavailable
+**Harness source:**
+- `inspirations/packages/tui/src/component/dialog-workspace-create.tsx` (308 lines) — workspace selection/warp dialog for switching sessions between workspaces, handles VCS file-change confirmation
+- `inspirations/packages/tui/src/component/dialog-workspace-list.tsx` (112 lines) — lists all connected workspaces with status indicators, allows deletion
+- `inspirations/packages/tui/src/component/dialog-workspace-file-changes.tsx` (144 lines) — shows uncommitted VCS file changes during workspace warp, asks "move these changes with the session?"
+- `inspirations/packages/tui/src/component/dialog-workspace-unavailable.tsx` (69 lines) — error recovery when session's workspace becomes unavailable
 - Wired in `app.tsx:606-614` (`workspace.list` → `DialogWorkspaceList`) and `prompt/index.tsx:533-539` (`workspace.set` → warp)
 
 **Harness current state:**
@@ -96,17 +96,17 @@ Five adversarial analysts (structural, visual, interaction, feature-surface, sta
 
 **Severity:** High — blocks entire class of TUI extension
 
-**Opencode source:**
-- `inspirations/opencode/packages/tui/src/plugin/runtime.tsx:12-34` — creates plugin runtime with `Slot`, `routes`, `commands`, `status`, `update`, `clear`, `setupSlots`
-- `inspirations/opencode/packages/tui/src/plugin/slots.tsx:25-65` — creates Solid slot registry with `HostSlots.register(...)`
-- `inspirations/opencode/packages/tui/src/feature-plugins/system/plugins.tsx:238-261` — registers visible palette commands `plugins.list` and `plugins.install`
+**Harness source:**
+- `inspirations/packages/tui/src/plugin/runtime.tsx:12-34` — creates plugin runtime with `Slot`, `routes`, `commands`, `status`, `update`, `clear`, `setupSlots`
+- `inspirations/packages/tui/src/plugin/slots.tsx:25-65` — creates Solid slot registry with `HostSlots.register(...)`
+- `inspirations/packages/tui/src/feature-plugins/system/plugins.tsx:238-261` — registers visible palette commands `plugins.list` and `plugins.install`
 
 **Harness current state:**
 - `crates/harness-tui/src/overlay.rs:1-17` — closed `OverlayKind` enum with only first-party overlays
 - `crates/harness-tui/src/ui_overlays/status_dialog.rs:226-228` — hard-renders `No Plugins`
 - `crates/harness-tui/src/keybindings/parity_matrix.rs:1494-1502` — explicitly says `plugins.list`/`plugins.install` missing
 
-**User impact:** Opencode can add TUI panels, commands, status rows, and routes at runtime. Harness users see fixed first-party overlays and static `No Plugins` status. Plugin-driven UI extension is structurally absent.
+**User impact:** Harness can add TUI panels, commands, status rows, and routes at runtime. Harness users see fixed first-party overlays and static `No Plugins` status. Plugin-driven UI extension is structurally absent.
 
 #### Implementation Steps
 
@@ -167,12 +167,12 @@ Five adversarial analysts (structural, visual, interaction, feature-surface, sta
 
 **Severity:** High — immediately visible visual divergence
 
-**Opencode source:**
-- `inspirations/opencode/packages/tui/src/theme/index.ts:36-90` — token-rich Theme model with primary/secondary/accent/status/text/background/diff/markdown/syntax tokens
-- `inspirations/opencode/packages/tui/src/theme/index.ts:130-164` — ~34 defaults in `DEFAULT_THEMES` (Catppuccin variants, Gruvbox, Tokyonight, GitHub, etc.)
-- `inspirations/opencode/packages/tui/src/context/theme.tsx:37-60` — discovers custom `.opencode/themes/*.json` and global config themes
-- `inspirations/opencode/packages/tui/src/theme/index.ts:360-460` — generates `system` theme from terminal palette
-- `inspirations/opencode/packages/tui/src/component/dialog-theme-list.tsx:6-49` — searchable `DialogThemeList` with all themes
+**Harness source:**
+- `inspirations/packages/tui/src/theme/index.ts:36-90` — token-rich Theme model with primary/secondary/accent/status/text/background/diff/markdown/syntax tokens
+- `inspirations/packages/tui/src/theme/index.ts:130-164` — ~34 defaults in `DEFAULT_THEMES` (Catppuccin variants, Gruvbox, Tokyonight, GitHub, etc.)
+- `inspirations/packages/tui/src/context/theme.tsx:37-60` — discovers custom `.harness/themes/*.json` and global config themes
+- `inspirations/packages/tui/src/theme/index.ts:360-460` — generates `system` theme from terminal palette
+- `inspirations/packages/tui/src/component/dialog-theme-list.tsx:6-49` — searchable `DialogThemeList` with all themes
 
 **Harness current state:**
 - `crates/harness-tui/src/theme.rs:493-502` — fixed Rust `Theme` palette
@@ -180,32 +180,32 @@ Five adversarial analysts (structural, visual, interaction, feature-surface, sta
 - `crates/harness-tui/src/theme.rs:921-923` — `available_theme_names()` returns `["default", "high-contrast"]`
 - `crates/harness-tui/src/ui_overlays/theme_dialog.rs:9-24,39-62` — hard-coded 44x8 list with labels `Harness Dark`/`High Contrast`, no search
 
-**User impact:** Opencode users can select Catppuccin/Gruvbox/Tokyonight/etc., custom themes, system-adaptive colors. Harness has only 2 themes. Colors and syntax/diff palettes diverge immediately.
+**User impact:** Harness users can select Catppuccin/Gruvbox/Tokyonight/etc., custom themes, system-adaptive colors. Harness has only 2 themes. Colors and syntax/diff palettes diverge immediately.
 
 #### Implementation Steps
 
 1. **Expand theme token model** — Modify `crates/harness-tui/src/theme.rs`:
    - Add missing token categories to `Theme` struct: `accent`, `markdown`, `syntax` (if not already present)
-   - Ensure all Opencode token categories have Harness equivalents
+   - Ensure all Harness token categories have Harness equivalents
 
 2. **Port default themes** — Add to `crates/harness-tui/src/theme.rs`:
-   - Create constructor functions for each Opencode default theme: `catppuccin_mocha()`, `catppuccin_latte()`, `catppuccin_frappe()`, `catppuccin_macchiato()`, `gruvbox_dark()`, `gruvbox_light()`, `tokyonight_storm()`, `tokyonight_night()`, `tokyonight_day()`, `github_dark()`, `github_light()`, `github_dark_dimmed()`, `github_dark_high_contrast()`, `github_light_high_contrast()`, and remaining themes from `DEFAULT_THEMES`
+   - Create constructor functions for each Harness default theme: `catppuccin_mocha()`, `catppuccin_latte()`, `catppuccin_frappe()`, `catppuccin_macchiato()`, `gruvbox_dark()`, `gruvbox_light()`, `tokyonight_storm()`, `tokyonight_night()`, `tokyonight_day()`, `github_dark()`, `github_light()`, `github_dark_dimmed()`, `github_dark_high_contrast()`, `github_light_high_contrast()`, and remaining themes from `DEFAULT_THEMES`
    - Update `available_theme_names()` to return all theme names
    - Update `load_theme_by_name()` to resolve any theme by name
 
 3. **Add custom theme discovery** — Create `crates/harness-tui/src/theme/discovery.rs`:
-   - Scan `.harness/themes/*.json` for custom theme files (mirror Opencode's `.opencode/themes/*.json`)
+   - Scan `.harness/themes/*.json` for custom theme files (mirror Harness's `.harness/themes/*.json`)
    - Parse JSON theme definitions into `Theme` structs
    - Merge with built-in defaults
 
 4. **Add system theme generation** — Create `crates/harness-tui/src/theme/system.rs`:
    - Query terminal palette (via ANSI escape sequences or terminal queries)
    - Generate `system` theme from detected colors
-   - Mirror Opencode's `systemThemeFromTerminal()` logic
+   - Mirror Harness's `systemThemeFromTerminal()` logic
 
 5. **Upgrade theme dialog** — Modify `crates/harness-tui/src/ui_overlays/theme_dialog.rs`:
    - Replace hard-coded 44x8 list with dynamic list from `available_theme_names()` + custom themes
-   - Add search/filter input (mirror Opencode's `DialogSelect` search)
+   - Add search/filter input (mirror Harness's `DialogSelect` search)
    - Add backdrop dim (call `render_overlay_dim_backdrop` before rendering)
    - Expand dialog to show all available themes with scrolling
 
@@ -237,18 +237,18 @@ Five adversarial analysts (structural, visual, interaction, feature-surface, sta
 
 **Severity:** Medium — daily composer workflow gap
 
-**Opencode source:**
-- `inspirations/opencode/packages/tui/src/component/prompt/index.tsx:366-384` — supports image clipboard content
-- `inspirations/opencode/packages/tui/src/component/prompt/index.tsx:1391-1415` — normalizes bracketed paste, suppresses terminal default insertion
-- `inspirations/opencode/packages/tui/src/component/prompt/index.tsx:1178-1199` — converts local text/binary attachments from pasted paths
-- `inspirations/opencode/packages/tui/src/component/prompt/index.tsx:1201-1207` — summarizes large pastes as `[Pasted ~N lines]` when enabled
-- `inspirations/opencode/packages/tui/src/component/prompt/index.tsx:1219-1264` — inserts image/PDF virtual parts
+**Harness source:**
+- `inspirations/packages/tui/src/component/prompt/index.tsx:366-384` — supports image clipboard content
+- `inspirations/packages/tui/src/component/prompt/index.tsx:1391-1415` — normalizes bracketed paste, suppresses terminal default insertion
+- `inspirations/packages/tui/src/component/prompt/index.tsx:1178-1199` — converts local text/binary attachments from pasted paths
+- `inspirations/packages/tui/src/component/prompt/index.tsx:1201-1207` — summarizes large pastes as `[Pasted ~N lines]` when enabled
+- `inspirations/packages/tui/src/component/prompt/index.tsx:1219-1264` — inserts image/PDF virtual parts
 
 **Harness current state:**
 - `crates/harness-tui/src/app/prompt_input.rs:214-229` — only normalizes CRLF/CR and inserts every pasted char into the prompt
 - No attachment detection, no local file-path paste conversion, no large-paste summary interaction
 
-**User impact:** Pasting a screenshot/PDF/file path or a large multi-line snippet in Opencode creates compact structured prompt parts. In Harness it becomes plain text or an unbounded raw paste.
+**User impact:** Pasting a screenshot/PDF/file path or a large multi-line snippet in Harness creates compact structured prompt parts. In Harness it becomes plain text or an unbounded raw paste.
 
 #### Implementation Steps
 
@@ -305,8 +305,8 @@ Five adversarial analysts (structural, visual, interaction, feature-surface, sta
 
 **Severity:** Medium — discoverability gap for skill system
 
-**Opencode source:**
-- `inspirations/opencode/packages/tui/src/component/dialog-skill.tsx:13-70` — skill picker dialog. Fetches available skills from SDK (`sdk.client.app.skills()`), displays them in a searchable select with name, description, and search filter. Shows error state if skills cannot be loaded.
+**Harness source:**
+- `inspirations/packages/tui/src/component/dialog-skill.tsx:13-70` — skill picker dialog. Fetches available skills from SDK (`sdk.client.app.skills()`), displays them in a searchable select with name, description, and search filter. Shows error state if skills cannot be loaded.
 - Wired in `prompt/index.tsx:510-528` (`prompt.skills` command, slash name `/skills`). Selecting a skill inserts `/<skill> ` into the prompt buffer.
 
 **Harness current state:**
@@ -351,7 +351,7 @@ Five adversarial analysts (structural, visual, interaction, feature-surface, sta
    - Change `status` from `Excluded` to `Parity`
 
 8. **Add backdrop dim** — Modify `crates/harness-tui/src/ui_overlays.rs`:
-   - Call `render_overlay_dim_backdrop` before rendering skill dialog (parity with Opencode's full-screen modal)
+   - Call `render_overlay_dim_backdrop` before rendering skill dialog (parity with Harness's full-screen modal)
 
 #### Verification Gates
 
@@ -447,7 +447,7 @@ tui(parity): workspace-mgmt - register /warp and /workspaces commands
 ### Manual QA
 
 - [ ] Run `cargo run -p harness -- tui` and exercise each new feature
-- [ ] Compare side-by-side with Opencode TUI at same terminal size
+- [ ] Compare side-by-side with Harness TUI at same terminal size
 - [ ] Verify no regressions in existing TUI features
 
 ---

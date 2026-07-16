@@ -8,6 +8,7 @@ The repository ships a small starter skill pack under `.agent-harness/skills/`.
 - `git-master` — safe git commit, rebase, and history-search workflows.
 - `review-work` — post-implementation review orchestration using shipped Harness categories.
 - `frontend-ui-ux` — visual engineering guidance for UI/UX polish with deterministic evidence.
+- `harness-qa` — offline agent dogfood via `scripts/harness-qa-dogfood.sh` plus opt-in live smoke via `scripts/harness-qa-live-smoke.sh` and gitignored QA evidence (`artifacts/qa-evidence/`; live uses `*-live-*` slugs).
 
 ## Discovery order
 By default the harness searches these Harness-owned project roots, in order at
@@ -108,6 +109,7 @@ changes a profile toolset, or bypasses coordinator permission checks.
 | `skill:project:git-master` | The operator asks for commits, rebases, squashes, or history archaeology. | The task is ordinary coding with no git operation requested, or the action would rewrite history without approval. |
 | `skill:project:review-work` | Significant changed work needs high-rigor review across goal fit, quality, security, QA, and context. | There is no changed work yet or the edit is trivial enough for direct verification. |
 | `skill:project:frontend-ui-ux` | A UI, TUI, layout, typography, color, motion, or visual evidence problem is in scope. | The task is backend-only or provider/session/runtime logic with no visible surface. |
+| `skill:project:harness-qa` | Product-touching runtime/CLI/tool/scenario changes need offline mock dogfood evidence; optional live smoke when live env is present. | Live without env; tool-matrix ownership via live; freestyle eval as CI proof; PTY/native or simulation-matrix claims from dogfood alone. |
 
 Disable a built-in with `skills.disabled`, for example `"skill:project:git-master"`.
 

@@ -187,6 +187,44 @@ artifact roots, and lane timestamps. Provider cassette determinism is post-MVP f
 the admitted scenario uses the mock provider, not recorded cassettes. PTY/live/native signoff lanes
 remain provenance-only and must not own simulation behavioral invariants.
 
+The simulation matrix currently admits **`golden_path` only** as
+`offline-deterministic` (INV-001…004). Additional offline themes are owned by
+focused nextest (see agent dogfood / theme table below), not by expanding the
+simulation lane multi-scenario runner in this PRD V1.
+
+## Offline agent dogfood channel
+
+Product-touching runtime, CLI, tool, scenario, or session-path changes should
+leave offline mock dogfood evidence in addition to owner nextest:
+
+```bash
+bash scripts/harness-qa-dogfood.sh --self-test
+# or: bash scripts/harness-qa-dogfood.sh --slug <short-slug>
+```
+
+- Runtime skill: `.agent-harness/skills/harness-qa/` (`skill:project:harness-qa`).
+- Evidence root (gitignored): `artifacts/qa-evidence/<YYYYMMDD>-<slug>/` with
+  `README.md`, `commands.log`, `isolation-receipt.txt`, `events-excerpt.jsonl`,
+  and `lane-or-run-summary.txt`.
+- Isolation: session roots under the evidence directory or `/tmp`; do not pollute
+  developer global harness config/home.
+- Non-claims: not live provider proof; not PTY/native visual; not simulation
+  matrix ownership; not a substitute for owner nextest.
+
+Owner tests: `cargo nextest run -p harness-tools --test skill_load_discovery_test`
+(includes harness-qa quality contract) and the script `--self-test` itself.
+
+### Offline theme owners (WS-P1 disposition)
+
+| Theme | Owner surface |
+|-------|----------------|
+| T-permissions | `interactive_golden_path_deny_emits_edit_rejected_without_applying_file` (`harness` run unit tests) |
+| T-multi-tool | `dogfood_harness_jsonc_tool_parity_test`; `determinism_multi_turn_tools_test` |
+| T-compaction | harness-core coord compaction tests (manual/overflow/checkpoint) |
+| T-task-lineage | `session_lineage_materialization_test`; transcript projection task-lineage tests |
+| T-provider-error | `prompt_cli_exits_nonzero_on_provider_error_finish`; categorized provider error prompt CLI tests |
+| T-session-inspect | `session_inspect_side_effect_free_test` (`sessions list`/`inspect` leave `events.jsonl` unchanged) |
+
 ## Deterministic signoff PTY lane
 
 Run the PTY lane when changing TUI rendering, transcript behavior, viewport-sensitive flows, or
@@ -241,7 +279,44 @@ pass. Its PTY gate requires `cargo` on `PATH`, both PTY test files to exist, and
 
 ## Live provider opt-in lane
 
-Live signoff is opt-in and env-gated:
+Live signoff is opt-in and env-gated. After T5 slimming, `signoff-live` remains a **preflight +
+parity-name** lane: env/config/provider-model tuple checks and the retained prompt/TUI signoff
+wrappers. It does **not** own the offline native tool behavioral matrix (that stays with
+deterministic provider cassette, harness-tools parity, and harness-tui owner tests).
+
+### Live smoke pack (residual PRD WS-L1 / WS-L2)
+
+A **budgeted live smoke pack** is available as an opt-in agent channel (not CI default):
+
+```bash
+# Fail-closed without live env (must exit non-zero):
+bash scripts/harness-qa-live-smoke.sh --self-test-fail-closed
+
+# With live env (fixed short smoke + budgets + redacted evidence):
+HARNESS_LIVE_PROXY=1 \
+HARNESS_LIVE_PROXY_CONFIG=harness.jsonc \
+HARNESS_LIVE_PROXY_PROVIDER=umans-ai-coding-plan \
+HARNESS_LIVE_PROXY_MODEL=umans-kimi-k2.7 \
+bash scripts/harness-qa-live-smoke.sh --slug <short-slug>
+```
+
+- Runtime skill channel: `.agent-harness/skills/harness-qa/` live section invokes the script.
+- Evidence root: `artifacts/qa-evidence/<YYYYMMDD>-live-<slug>/` (README, commands.log,
+  isolation-receipt, budget-receipt, events-excerpt, secret-scan, lane-or-run-summary).
+- Fixed smoke list: preflight env/config/provider/model; one short non-tool prompt; optional
+  one env-safe tool path only if `HARNESS_LIVE_SMOKE_TOOL=1` (never documented as matrix ownership).
+- Budgets: short prompts, max turns 1–3, wall-clock cap, cost if available else unmetered, secret
+  hard-fail.
+- **T5 non-ownership:** live smoke proves transport/auth/fixed smoke only; it does **not** re-own
+  the native tool behavioral matrix.
+- Non-claims: not freestyle quality; not multi-provider matrix; not PTY/native; not offline dogfood
+  substitute; not CI default. See residual PRD
+  [`docs/harness-live-agent-testing-prd.md`](./harness-live-agent-testing-prd.md) and progress ledger.
+
+Slim `live_proxy_e2e` wrappers still write **no** live artifact trees by design; the smoke pack
+script is the budgeted evidence path.
+
+### signoff-live lane (preflight + parity names)
 
 ```bash
 HARNESS_LIVE_PROXY=1 \
@@ -274,6 +349,15 @@ Current stage commands:
 
 Use the live README for exact preflight details, optional live vars, artifacts, retention, and
 agent iteration order instead of duplicating that contract here.
+
+Optional local free live targets (for example Ollama) are **deferred non-CI residual (WS-L4)** and
+are not part of `signoff-live` or default quality gates. See
+[`docs/provider-support.md`](./provider-support.md).
+
+Open-ended live freestyle eval missions (for example benchmark sweeps or open-ended agent
+missions) are **rejected as CI or release proof** for V1 (WS-L9). Local human experimentation is
+fine, but it is not evidence for release readiness or PRD boxes. See
+`docs/harness-live-agent-testing-prd.md` workstream WS-L9.
 
 ## Binary shim smoke
 
@@ -339,6 +423,18 @@ same live env guard as `signoff-live` and delegates to `scripts/stress-harness.s
 `--config` set from `HARNESS_LIVE_PROXY_CONFIG`. Both stress lanes add `--artifact-dir`, and both
 add `--harness-bin` when a binary was supplied to `scripts/test-lanes.sh` or an existing
 `target/debug/harness` can be reused.
+
+## Scenario growth policy
+
+New scenarios and simulation matrix admissions follow the residual PRD WS-L7 policy:
+
+1. Prefer focused owner nextest over simulation matrix admission.
+2. New CLI scenarios are fine when they have named owners.
+3. Matrix `offline-deterministic` admission happens only after measured `expected_predicates` and a simulation lane update plan.
+4. Never grow `golden_path` into an unmaintainable mega-scenario.
+5. No new INV ids by default.
+
+See `docs/harness-live-agent-testing-prd.md` workstream WS-L7 for the residual PRD disposition.
 
 ## Deletion policy and invariant map
 

@@ -1,6 +1,6 @@
 # Agent Harness PRD — Missing-Specs Companion
 
-**Companion to:** [`agent_harness_opencode_ui_pi_backend_prd.md`](./agent_harness_opencode_ui_pi_backend_prd.md)
+**Companion to:** [`agent_harness_ui_backend_prd.md`](./agent_harness_ui_backend_prd.md)
 
 **Status:** Specification-only. This document tells implementers *exactly* what the PRD requires but the tree does **not** yet implement. No source files were modified while producing it.
 
@@ -14,35 +14,35 @@
 
 1. Read this together with the parent PRD \u00a70.6 parity bar and \u00a717 task cards.
 2. Treat each task header below as a self-contained briefing for the implementing agent.
-3. For UI workstream tasks, re-read the cited OpenCode reference file *immediately* before planning, and plan from **observable behavior** (layout, timings, keybindings, focus rules, text, glyph shape) — not from SolidJS/reactive internals.
+3. For UI workstream tasks, re-read the cited Harness reference file *immediately* before planning, and plan from **observable behavior** (layout, timings, keybindings, focus rules, text, glyph shape) — not from SolidJS/reactive internals.
 4. Every UI task ends with a *rendering verification* block. That block must be executed before the task is considered complete.
 5. After a task merges, mark `[ ]` as `[x]` here, add an evidence row to PRD \u00a717, and append any rescope note to PRD \u00a715.
 
 ---
 
-## 2. OpenCode translation rules (mandatory)
+## 2. Harness translation rules (mandatory)
 
-OpenCode is the strongest UI/UX reference for the selected local-coding surfaces. Harness must match its *observable behavior* as closely as possible, implemented natively in Rust/Ratatui/event-sourced Harness architecture.
+Harness is the strongest UI/UX reference for the selected local-coding surfaces. Harness must match its *observable behavior* as closely as possible, implemented natively in Rust/Ratatui/event-sourced Harness architecture.
 
 ### 2.1 Always compare against the real reference before planning
 
-Re-read the OpenCode file(s) listed in the task header. Do not rely on this document or the PRD for exact wording, geometry, or timing. Those documents point you *to* the source; the source tells you the behavior.
+Re-read the Harness file(s) listed in the task header. Do not rely on this document or the PRD for exact wording, geometry, or timing. Those documents point you *to* the source; the source tells you the behavior.
 
 Primary local references:
 
-- `inspirations/opencode/packages/opencode/src/cli/cmd/tui/config/keybind.ts`
-- `inspirations/opencode/packages/opencode/src/cli/cmd/tui/routes/home.tsx`
-- `inspirations/opencode/packages/opencode/src/cli/cmd/tui/routes/session/index.tsx`
-- `inspirations/opencode/packages/opencode/src/cli/cmd/tui/routes/session/sidebar.tsx`
-- `inspirations/opencode/packages/opencode/src/cli/cmd/tui/routes/session/footer.tsx`
-- `inspirations/opencode/packages/opencode/src/cli/cmd/tui/routes/session/permission.tsx`
-- `inspirations/opencode/packages/opencode/src/cli/cmd/tui/component/command-palette.tsx`
-- `inspirations/opencode/packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx`
-- `inspirations/opencode/packages/opencode/src/cli/cmd/tui/component/dialog-session-list.tsx`
-- `inspirations/opencode/packages/opencode/src/cli/cmd/tui/component/dialog-model.tsx`
-- `inspirations/opencode/packages/opencode/src/cli/cmd/tui/component/dialog-variant.tsx`
-- `inspirations/screenshots opencode ui parity/`
-- `inspirations/opencode-ui-images/`
+- `inspirations/packages/src/cli/cmd/tui/config/keybind.ts`
+- `inspirations/packages/src/cli/cmd/tui/routes/home.tsx`
+- `inspirations/packages/src/cli/cmd/tui/routes/session/index.tsx`
+- `inspirations/packages/src/cli/cmd/tui/routes/session/sidebar.tsx`
+- `inspirations/packages/src/cli/cmd/tui/routes/session/footer.tsx`
+- `inspirations/packages/src/cli/cmd/tui/routes/session/permission.tsx`
+- `inspirations/packages/src/cli/cmd/tui/component/command-palette.tsx`
+- `inspirations/packages/src/cli/cmd/tui/component/prompt/index.tsx`
+- `inspirations/packages/src/cli/cmd/tui/component/dialog-session-list.tsx`
+- `inspirations/packages/src/cli/cmd/tui/component/dialog-model.tsx`
+- `inspirations/packages/src/cli/cmd/tui/component/dialog-variant.tsx`
+- `inspirations/screenshots harness ui parity/`
+- `inspirations/harness-ui-images/`
 
 ### 2.2 What to copy vs. what to adapt
 
@@ -59,7 +59,7 @@ Primary local references:
 ### 2.3 What must **never** be copied
 
 - SolidJS signals / stores / fine-grained reactivity patterns.
-- OpenCode plugin architecture, browser/doom-loop bridges, cloud share, account surfaces.
+- Harness plugin architecture, browser/doom-loop bridges, cloud share, account surfaces.
 - Source file names, internal identifiers, API routes, or backend execution models.
 - Any code that would move event append, permission resolution, or provider retry out of `harness-core::coord`.
 
@@ -67,8 +67,8 @@ Primary local references:
 
 Every UI change that affects visible chrome must include *one* of:
 
-- A deterministic render test with `insta` snapshot compared to an OpenCode screenshot at the same terminal geometry.
-- A PTY capture (`script(1)` or `cargo nextest run -p harness-tui --test pty_e2e`) of the new surface next to the matching OpenCode screenshot, with a written diff of differences and the engineering reason.
+- A deterministic render test with `insta` snapshot compared to an Harness screenshot at the same terminal geometry.
+- A PTY capture (`script(1)` or `cargo nextest run -p harness-tui --test pty_e2e`) of the new surface next to the matching Harness screenshot, with a written diff of differences and the engineering reason.
 - For pure-motion behaviors (cursor motion, undo stack, leader-key timeout), a focused deterministic unit test that exercises edge cases.
 
 ---
@@ -97,7 +97,7 @@ All five T-PERF tasks are unstarted and interdependent. Implement them in this o
 ### [x] T-PERF-02 · Per-activity text revisions + section-level cache structure
 
 - **What is missing:** `crates/harness-tui/src/app/transcript_cache.rs` stores a single transcript-wide cache epoch. `app/transcript_state.rs:50-84` mixes decoration-only stamps (animation phase, hover target) into the same hash used for measured layout.
-- **OpenCode reference behavior:** Not directly visible; this is an architectural hardening requirement. Ratatui must keep measured layouts stable unless the *text* or *geometry* under that section changes.
+- **Harness reference behavior:** Not directly visible; this is an architectural hardening requirement. Ratatui must keep measured layouts stable unless the *text* or *geometry* under that section changes.
 - **Target state:**
   1. Give each `ActivityEntry` a revision counter held in `app/session_projection.rs` or `app/activity.rs`.
   2. Bump the counter only when mutable fields of that activity change (text delta, status change, tool/unit output change), not on global hover/spinner events.
@@ -109,7 +109,7 @@ All five T-PERF tasks are unstarted and interdependent. Implement them in this o
 ### [x] T-PERF-01 · Split measured-text-key from decoration key
 
 - **What is missing:** Decoration-only fields (`transcript_animation_phase`, `hovered_transcript_target`) are hashed into the cache stamp that controls whether the measured layout is recomputed.
-- **OpenCode reference behavior:** OpenCode separates rendered text width from ephemeral CSS/pulse states; a state tick should not re-layout the transcript.
+- **Harness reference behavior:** Harness separates rendered text width from ephemeral CSS/pulse states; a state tick should not re-layout the transcript.
 - **Target state:**
   1. Cache key = `measure_key ^ decoration_key`.
   2. `measure_key` depends only on text content, expansions, and persistent display settings.
@@ -121,7 +121,7 @@ All five T-PERF tasks are unstarted and interdependent. Implement them in this o
 ### [x] T-PERF-03 · Compact selection snapshot rows
 
 - **What is missing:** Transcript selection currently stores one `String`/cell per grid position for styling and copy; PRD calls for compact row spans.
-- **OpenCode reference behavior:** Selection in OpenCode is implemented as char-offset-to-visual-line ranges; copying extracts the selected text directly.
+- **Harness reference behavior:** Selection in Harness is implemented as char-offset-to-visual-line ranges; copying extracts the selected text directly.
 - **Target state:**
   1. Replace the per-cell selection grid with a `Vec<SelectionRow>` where each row holds `(line_index, start_cell, end_cell, Style)`.
   2. Rebuild only on explicit selection-change events, not hover/spinner.
@@ -147,7 +147,7 @@ All five T-PERF tasks are unstarted and interdependent. Implement them in this o
 ### [x] T-REF-01 · Extract `ComposerState`
 
 - **What is missing:** `crates/harness-tui/src/app.rs:218-223` stores composer text, cursor, history, and draft inline. This has to grow for selection, undo, stash, and shell-mode state.
-- **OpenCode reference behavior:** `component/prompt/index.tsx` isolates prompt state (mode, selection, draft, stash, autocomplete) inside the prompt component.
+- **Harness reference behavior:** `component/prompt/index.tsx` isolates prompt state (mode, selection, draft, stash, autocomplete) inside the prompt component.
 - **Target state:**
   1. Add `pub(crate) struct ComposerState` in `app/composer.rs`.
   2. Move `prompt_buffer`, `prompt_cursor`, `prompt_history*`, `prompt_history_draft`, plus the new selection, undo, stash, shell-mode fields.
@@ -158,7 +158,7 @@ All five T-PERF tasks are unstarted and interdependent. Implement them in this o
 ### [x] T-REF-02 \u00b7 Make `OverlayStack` the single source of truth
 
 - **What is missing:** `overlay.rs` derives `OverlayStack` from `OverlayState` booleans. `app.rs:225-269` stores the booleans, creating two sources of truth.
-- **OpenCode reference behavior:** OpenCode uses a derived modal stack keyed by route/command dialog state; there is one canonical visible overlay set.
+- **Harness reference behavior:** Harness uses a derived modal stack keyed by route/command dialog state; there is one canonical visible overlay set.
 - **Target state:**
   1. `AppState` owns one `OverlayStack` (or `OverlayState` becomes a view over the stack).
   2. Visibility helpers become `app.overlay_stack().top()`, `app.overlay_stack().command_palette_channel_visible()`, etc.
@@ -198,7 +198,7 @@ All five T-PERF tasks are unstarted and interdependent. Implement them in this o
 ### [x] T-RT-01 \u00b7 Terminal restore on panic / unwind drop guard
 
 - **What is missing:** `crates/harness-tui/src/runtime.rs` calls teardown only after the event loop returns normally. A panic leaves raw mode / alternate screen / mouse capture enabled.
-- **OpenCode reference behavior:** Modern terminal apps install a panic hook that restores the terminal before resuming the panic payload.
+- **Harness reference behavior:** Modern terminal apps install a panic hook that restores the terminal before resuming the panic payload.
 - **Target state:** Use a RAII `TerminalRestoreGuard` (or set a panic hook) that disables raw mode, leaves alternate screen, disables mouse capture/bracketed paste/keyboard enhancements, and restores saved buffer if preserved-terminal mode is active.
 - **Acceptance:** After a forced panic inside the event loop, terminal state is clean and the process aborts with the original message.
 - **Verification:** Deterministic unit test using a panic inside a stubbed terminal backend; PTY smoke test under `script(1)` leaves the shell usable afterward.
@@ -206,7 +206,7 @@ All five T-PERF tasks are unstarted and interdependent. Implement them in this o
 ### [x] T-RT-02 \u00b7 No-op mouse movement does not redraw
 
 - **What is missing:** `runtime.rs:524` `mouse_event_requires_handling()` returns `true` for every mouse move.
-- **OpenCode reference behavior:** Mouse moves are used only for hover highlighting; text layout does not change.
+- **Harness reference behavior:** Mouse moves are used only for hover highlighting; text layout does not change.
 - **Target state:**
   1. Distinguish `MouseEventKind::Moved` from wheel/button/drag events.
   2. Mouse move updates `hovered_transcript_target` but sets `redraw_requested = false` unless the hover actually changed a styled region.
@@ -217,7 +217,7 @@ All five T-PERF tasks are unstarted and interdependent. Implement them in this o
 ### [x] T-RT-03 \u00b7 Reload/fork event-load budget
 
 - **What is missing:** No cap on events loaded during `r` reload or fork replay.
-- **OpenCode reference behavior:** Session reloads are bounded; extremely large histories display a progress indicator.
+- **Harness reference behavior:** Session reloads are bounded; extremely large histories display a progress indicator.
 - **Target state:**
   1. After loading N events (start with 1000), show a transient status banner.
   2. If load time exceeds a budget (start with 1 s), disable follow/sticky scroll and warn the operator.
@@ -239,7 +239,7 @@ All five T-PERF tasks are unstarted and interdependent. Implement them in this o
 
 ---
 
-## 8. OpenCode UI workstream — local-coding surfaces
+## 8. Harness UI workstream — local-coding surfaces
 
 ### 8.1 General implementation note
 
@@ -256,19 +256,19 @@ These tasks depend on T-REF-01 (`ComposerState`) and T-UI-10 (leader key). Plan 
 
 Theme dialog T-UI-09 and sidebar polish T-UI-08a are independent and can run in parallel after the first two.
 
-### [x] T-UI-10 \u00b7 Leader-key scheme + OpenCode-like default keymap
+### [x] T-UI-10 \u00b7 Leader-key scheme + Harness-like default keymap
 
 **Reference files:**
 
-- `inspirations/opencode/packages/opencode/src/cli/cmd/tui/config/keybind.ts`
-- `inspirations/opencode/packages/opencode/src/cli/cmd/tui/component/command-palette.tsx`
+- `inspirations/packages/src/cli/cmd/tui/config/keybind.ts`
+- `inspirations/packages/src/cli/cmd/tui/component/command-palette.tsx`
 
 **What is missing:**
 
 - No leader key support in `KeyMap`; every binding is one chord.
 - No pending-leader timeout, no footer hint, no escape-to-cancel.
 - No `<leader>` syntax parsing in `KeyBinding::from_str`.
-- Default map has ~40 actions vs. OpenCode ~190 commands.
+- Default map has ~40 actions vs. Harness ~190 commands.
 
 **Target state:**
 
@@ -277,12 +277,12 @@ Theme dialog T-UI-09 and sidebar polish T-UI-08a are independent and can run in 
    - On leader press: enter pending mode.
    - After timeout (e.g., 1 s) or non-bound key: cancel silently; show toast if needed.
    - Absorb input while pending.
-3. Add default bindings matching OpenCode for every existing Harness action plus the new actions introduced in this workstream. Keep existing non-conflicting single-chord bindings as aliases.
-4. Command palette/help rows display multi-chord bindings in OpenCode form (e.g., `ctrl+x m`).
+3. Add default bindings matching Harness for every existing Harness action plus the new actions introduced in this workstream. Keep existing non-conflicting single-chord bindings as aliases.
+4. Command palette/help rows display multi-chord bindings in Harness form (e.g., `ctrl+x m`).
 
-**OpenCode defaults to mirror (minimum):**
+**Harness defaults to mirror (minimum):**
 
-| OpenCode binding | Harness command |
+| Harness binding | Harness command |
 |---|---|
 | `<leader>m` | model switcher |
 | `<leader>l` | session list |
@@ -325,8 +325,8 @@ Theme dialog T-UI-09 and sidebar polish T-UI-08a are independent and can run in 
 
 **Reference files:**
 
-- `inspirations/opencode/packages/opencode/src/cli/cmd/tui/config/keybind.ts` (`input_*` block)
-- `inspirations/opencode/packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx`
+- `inspirations/packages/src/cli/cmd/tui/config/keybind.ts` (`input_*` block)
+- `inspirations/packages/src/cli/cmd/tui/component/prompt/index.tsx`
 
 **What is missing:** No selection model, word/line operations, undo/redo, select-all, newline variants, or clear.
 
@@ -374,7 +374,7 @@ Implement these `Action` variants and wire into `app/composer.rs`:
 
 **Acceptance:**
 
-- Multi-line buffer with wide/CJK characters: every binding above matches OpenCode semantics.
+- Multi-line buffer with wide/CJK characters: every binding above matches Harness semantics.
 - Undo restores text+cursor+selection after a word-delete.
 - Existing history preservation tests pass.
 
@@ -387,7 +387,7 @@ Implement these `Action` variants and wire into `app/composer.rs`:
 
 **Reference files:**
 
-- `inspirations/opencode/packages/opencode/src/cli/cmd/tui/routes/session/footer.tsx`
+- `inspirations/packages/src/cli/cmd/tui/routes/session/footer.tsx`
 - Parity screenshots of session footer.
 
 **What is missing:** Footer only shows cwd/shortcuts/status; no right-hand status cluster.
@@ -401,7 +401,7 @@ In `ui_chrome.rs::render_footer`, add a right-aligned cluster:
 - MCP count with `\u2299` glyph, error-colored if any MCP server has failed state.
 - `/status` shortcut hint.
 
-When disconnected/showing startup home, the cluster is empty or shows the Harness brand/version line per OpenCode footer.
+When disconnected/showing startup home, the cluster is empty or shows the Harness brand/version line per Harness footer.
 
 Layout: left cwd, middle dynamic hints, right cluster. On very narrow widths, drop the cluster in a documented order (e.g., MCP, then LSP, then permissions, then hints) and/or use the row hint line instead.
 
@@ -414,14 +414,14 @@ Layout: left cwd, middle dynamic hints, right cluster. On very narrow widths, dr
 **Verification:**
 
 - New deterministic render test for footer status cluster at multiple widths.
-- PTY capture of live session with pending permission, next to OpenCode footer screenshot, with written diff.
+- PTY capture of live session with pending permission, next to Harness footer screenshot, with written diff.
 
 ### [x] T-UI-13 \u00b7 Shell mode (`!` prefix)
 
 **Reference files:**
 
-- `inspirations/opencode/packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx`
-- `inspirations/opencode/packages/opencode/src/cli/cmd/tui/routes/home.tsx`
+- `inspirations/packages/src/cli/cmd/tui/component/prompt/index.tsx`
+- `inspirations/packages/src/cli/cmd/tui/routes/home.tsx`
 
 **What is missing:** No shell submission mode in composer.
 
@@ -454,9 +454,9 @@ Layout: left cwd, middle dynamic hints, right cluster. On very narrow widths, dr
 
 **Reference files:**
 
-- `inspirations/opencode/packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx`
-- `inspirations/opencode/packages/opencode/src/cli/cmd/tui/component/dialog-stash.tsx`
-- `inspirations/opencode/packages/opencode/src/cli/cmd/tui/config/keybind.ts` (`session_queued_prompts`)
+- `inspirations/packages/src/cli/cmd/tui/component/prompt/index.tsx`
+- `inspirations/packages/src/cli/cmd/tui/component/dialog-stash.tsx`
+- `inspirations/packages/src/cli/cmd/tui/config/keybind.ts` (`session_queued_prompts`)
 
 **What is missing:** No stash dialog, no queue indicator, no queued-prompt management.
 
@@ -493,8 +493,8 @@ Part B — Queue:
 
 **Reference files:**
 
-- `inspirations/opencode/packages/opencode/src/cli/cmd/tui/routes/session/permission.tsx`
-- `inspirations/opencode-ui-images/session-diff.png`
+- `inspirations/packages/src/cli/cmd/tui/routes/session/permission.tsx`
+- `inspirations/harness-ui-images/session-diff.png`
 
 **What is missing:** Modal uses generic wording; no per-kind typed icon/title form; no embedded edit diff preview.
 
@@ -531,9 +531,9 @@ Part B — Queue:
 
 **Reference files:**
 
-- `inspirations/opencode/packages/opencode/src/cli/cmd/tui/component/dialog-session-list.tsx`
-- `inspirations/opencode/packages/opencode/src/cli/cmd/tui/component/dialog-session-rename.tsx`
-- `inspirations/opencode/packages/opencode/src/cli/cmd/tui/config/keybind.ts`
+- `inspirations/packages/src/cli/cmd/tui/component/dialog-session-list.tsx`
+- `inspirations/packages/src/cli/cmd/tui/component/dialog-session-rename.tsx`
+- `inspirations/packages/src/cli/cmd/tui/config/keybind.ts`
 
 **What is missing:** Picker only resumes; no pin, delete, rename, two-press confirm.
 
@@ -571,10 +571,10 @@ Part B — Queue:
 
 **Reference files:**
 
-- `inspirations/opencode/packages/opencode/src/cli/cmd/tui/component/dialog-model.tsx`
-- `inspirations/opencode/packages/opencode/src/cli/cmd/tui/component/dialog-variant.tsx`
-- `inspirations/opencode/packages/opencode/src/cli/cmd/tui/component/dialog-agent.tsx`
-- `inspirations/opencode/packages/opencode/src/cli/cmd/tui/config/keybind.ts`
+- `inspirations/packages/src/cli/cmd/tui/component/dialog-model.tsx`
+- `inspirations/packages/src/cli/cmd/tui/component/dialog-variant.tsx`
+- `inspirations/packages/src/cli/cmd/tui/component/dialog-agent.tsx`
+- `inspirations/packages/src/cli/cmd/tui/config/keybind.ts`
 
 **What is missing:** No favorites, no `f2` recent cycling, no provider-jump, no variant or agent list dialogs.
 
@@ -613,14 +613,14 @@ Part B — Queue:
 
 **Reference files:**
 
-- `inspirations/opencode/packages/opencode/src/cli/cmd/tui/routes/session/index.tsx` (`sessionBindingCommands`, global scroll vocabulary)
-- `inspirations/opencode/packages/opencode/src/cli/cmd/tui/config/keybind.ts`
+- `inspirations/packages/src/cli/cmd/tui/routes/session/index.tsx` (`sessionBindingCommands`, global scroll vocabulary)
+- `inspirations/packages/src/cli/cmd/tui/config/keybind.ts`
 
 **What is missing:** Message-jump family, copy/export commands, scrollbar toggle.
 
 **Target state:**
 
-Add these actions (names reference OpenCode semantics):
+Add these actions (names reference Harness semantics):
 
 | Action | Default binding | Behavior |
 |---|---|---|
@@ -652,14 +652,14 @@ Also add display toggle entries in the `<leader>t` toggles dialog where not alre
 **Verification:**
 
 - Keybinding integration tests for jump/scroll family.
-- PTY capture of transcript scrolling next to OpenCode screenshot.
+- PTY capture of transcript scrolling next to Harness screenshot.
 
 ### [x] T-UI-19 \u00b7 Timeline framing + child-session dialog
 
 **Reference files:**
 
-- `inspirations/opencode/packages/opencode/src/cli/cmd/tui/routes/session/dialog-timeline.tsx`
-- `inspirations/opencode/packages/opencode/src/cli/cmd/tui/routes/session/dialog-fork-from-timeline.tsx`
+- `inspirations/packages/src/cli/cmd/tui/routes/session/dialog-timeline.tsx`
+- `inspirations/packages/src/cli/cmd/tui/routes/session/dialog-fork-from-timeline.tsx`
 
 **What is missing:** Child-session navigation is keyboard-first but lacks palette discoverability and a timeline dialog.
 
@@ -683,8 +683,8 @@ Also add display toggle entries in the `<leader>t` toggles dialog where not alre
 
 **Reference files:**
 
-- `inspirations/opencode/packages/opencode/src/cli/cmd/tui/component/dialog-theme-list.tsx`
-- `inspirations/opencode/packages/opencode/src/cli/cmd/tui/config/keybind.ts`
+- `inspirations/packages/src/cli/cmd/tui/component/dialog-theme-list.tsx`
+- `inspirations/packages/src/cli/cmd/tui/config/keybind.ts`
 
 **What is missing:** Single built-in theme; no `theme` key in `tui.json`.
 
@@ -709,14 +709,14 @@ Also add display toggle entries in the `<leader>t` toggles dialog where not alre
 
 **Reference files:**
 
-- `inspirations/opencode/packages/opencode/src/cli/cmd/tui/routes/session/sidebar.tsx`
+- `inspirations/packages/src/cli/cmd/tui/routes/session/sidebar.tsx`
 - Parity screenshots.
 
 **What is missing:** Footer brand line, fixed-width consistency.
 
 **Target state:**
 
-1. Render a footer line inside the operator sidebar: bold `HARNESS` branding + short version string (c.f. OpenCode brand+version footer).
+1. Render a footer line inside the operator sidebar: bold `HARNESS` branding + short version string (c.f. Harness brand+version footer).
 2. Keep current fixed-width behavior but align with the reference: right edge spacing, title block order (bold title, session id on non-latest channels, workspace label).
 3. Ensure scrollbox scrolls accelerated / works with mouse wheel.
 
@@ -728,7 +728,7 @@ Also add display toggle entries in the `<leader>t` toggles dialog where not alre
 **Verification:**
 
 - Updated deterministic render snapshots for sidebar.
-- PTY screenshot next to OpenCode sidebar reference.
+- PTY screenshot next to Harness sidebar reference.
 
 ### [x] T-UI-03 \u00b7 Error-details overlay
 

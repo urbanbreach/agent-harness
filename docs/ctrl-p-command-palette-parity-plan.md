@@ -2,15 +2,15 @@
 
 **Generated:** 2026-06-27
 **Status:** Implemented
-**Provenance:** Produced from `/hyperplan` adversarial planning for Harness `Ctrl+P` parity with Opencode. The source of truth is the Opencode source under `inspirations/opencode/`, not memory or screenshots.
+**Provenance:** Produced from `/hyperplan` adversarial planning for Harness `Ctrl+P` parity with Harness. The source of truth is the Harness source under `inspirations/`, not memory or screenshots.
 
 ## Implementation Evidence
 
 **Date:** 2026-06-27
 **Commit:** `dev` branch
 **Files changed:**
-- `crates/harness-tui/src/keybindings/parity_matrix.rs` (new) — Opencode command parity matrix
-- `crates/harness-tui/src/keybindings/palette_model.rs` (new) — Opencode-compatible palette command registry
+- `crates/harness-tui/src/keybindings/parity_matrix.rs` (new) — Harness command parity matrix
+- `crates/harness-tui/src/keybindings/palette_model.rs` (new) — ruleset-compatible palette command registry
 - `crates/harness-tui/src/app/palette_controller.rs` (new) — Filtering, grouping, suggested rows, dispatch
 - `crates/harness-tui/src/app/tests/palette_parity_tests.rs` (new) — 59 palette parity contract tests
 - `crates/harness-tui/src/keybindings.rs` — Module declarations
@@ -29,7 +29,7 @@
 
 ## Objective
 
-Bring the Harness TUI `Ctrl+P` command palette to 1:1 parity with Opencode for every visible/reachable palette command except the explicit user exclusions below.
+Bring the Harness TUI `Ctrl+P` command palette to 1:1 parity with Harness for every visible/reachable palette command except the explicit user exclusions below.
 
 The implementation must preserve Harness runtime boundaries:
 
@@ -47,10 +47,10 @@ The implementation must preserve Harness runtime boundaries:
 | Help | `help.show` | Must not appear. |
 | Open docs | `docs.open` | Must not appear. |
 | Open diff viewer | `diff.open` | Must not appear. |
-| System status | `opencode.status` | Must not appear; the system status dialog surface was removed. |
+| System status | `harness.status` | Must not appear; the system status dialog surface was removed. |
 | Plugin management | `plugins.list`, `plugins.install` | Must not appear; plugin management surfaces were removed. |
 
-Hidden Opencode commands are also non-targets. Do not count them as missing parity:
+Hidden Harness commands are also non-targets. Do not count them as missing parity:
 
 - `command.palette.show`
 - quick-switch slots
@@ -59,7 +59,7 @@ Hidden Opencode commands are also non-targets. Do not count them as missing pari
 - `terminal.suspend`
 - `prompt.clear`, `prompt.submit`, `prompt.paste`, `session.interrupt`
 - session scroll/page/line/first/last/jump-last-user/message next/previous/background/child-parent navigation commands
-- which-key commands from `inspirations/opencode/packages/tui/src/feature-plugins/system/which-key.tsx:537`, because the read evidence shows no `namespace: "palette"`
+- which-key commands from `inspirations/packages/tui/src/feature-plugins/system/which-key.tsx:537`, because the read evidence shows no `namespace: "palette"`
 
 `session.unshare` is not excluded. It is distinct from `session.share` and must be included unless the user later excludes all sharing controls.
 
@@ -67,14 +67,14 @@ Hidden Opencode commands are also non-targets. Do not count them as missing pari
 
 | Area | Source |
 |---|---|
-| Opencode palette semantics | `inspirations/opencode/packages/tui/src/component/command-palette.tsx:15` |
-| Opencode select dialog filtering, grouping, navigation | `inspirations/opencode/packages/tui/src/ui/dialog-select.tsx:149` |
-| Opencode app/global commands | `inspirations/opencode/packages/tui/src/app.tsx:549` |
-| Opencode prompt/stash commands | `inspirations/opencode/packages/tui/src/component/prompt/index.tsx:330` |
-| Opencode session commands | `inspirations/opencode/packages/tui/src/routes/session/index.tsx:458` |
-| Opencode tips command | `inspirations/opencode/packages/tui/src/feature-plugins/home/tips.tsx:10` |
-| Explicitly excluded diff command | `inspirations/opencode/packages/tui/src/feature-plugins/system/diff-viewer.tsx:1053` |
-| Non-target which-key commands | `inspirations/opencode/packages/tui/src/feature-plugins/system/which-key.tsx:537` |
+| Harness palette semantics | `inspirations/packages/tui/src/component/command-palette.tsx:15` |
+| Harness select dialog filtering, grouping, navigation | `inspirations/packages/tui/src/ui/dialog-select.tsx:149` |
+| Harness app/global commands | `inspirations/packages/tui/src/app.tsx:549` |
+| Harness prompt/stash commands | `inspirations/packages/tui/src/component/prompt/index.tsx:330` |
+| Harness session commands | `inspirations/packages/tui/src/routes/session/index.tsx:458` |
+| Harness tips command | `inspirations/packages/tui/src/feature-plugins/home/tips.tsx:10` |
+| Explicitly excluded diff command | `inspirations/packages/tui/src/feature-plugins/system/diff-viewer.tsx:1053` |
+| Non-target which-key commands | `inspirations/packages/tui/src/feature-plugins/system/which-key.tsx:537` |
 | Current Harness command registry | `crates/harness-tui/src/keybindings/command_registry.rs` |
 | Current Harness palette filtering, availability, dispatch | `crates/harness-tui/src/app/session_navigation.rs:531` |
 | Current Harness key/action surface | `crates/harness-tui/src/keybindings.rs:17` |
@@ -82,9 +82,9 @@ Hidden Opencode commands are also non-targets. Do not count them as missing pari
 
 Implementation agents must read the root `AGENTS.md`, `crates/harness-tui/AGENTS.md`, and `crates/harness-core/AGENTS.md` before editing the relevant crates.
 
-## Opencode Palette Semantics to Match
+## Harness Palette Semantics to Match
 
-Harness must match these behaviors from Opencode:
+Harness must match these behaviors from Harness:
 
 1. `Ctrl+P` opens the command palette dialog.
 2. The palette queries commands with `namespace: "palette"` and `visibility: "reachable"`.
@@ -107,9 +107,9 @@ Each matrix entry must include:
 | Field | Requirement |
 |---|---|
 | `id` | Stable command ID. All parity assertions use this field. |
-| `origin` | Opencode source file and line reference. |
+| `origin` | Harness source file and line reference. |
 | `status` | `included`, `excluded`, `hidden_non_target`, or `harness_only`. |
-| `category` | Opencode category. |
+| `category` | Harness category. |
 | `title_rule` | Static title or dynamic title conditions. |
 | `suggested_rule` | Exact suggested condition. |
 | `availability_rule` | State-based visibility/enabled rule. |
@@ -125,11 +125,11 @@ Each matrix entry must include:
 
 ## Included Command Matrix Seed
 
-The implementation matrix must include at least these non-excluded visible/reachable Opencode palette commands.
+The implementation matrix must include at least these non-excluded visible/reachable Harness palette commands.
 
 ### App / Global Origin
 
-Source: `inspirations/opencode/packages/tui/src/app.tsx:549`
+Source: `inspirations/packages/tui/src/app.tsx:549`
 
 | ID | Category | Title / dynamic rule | Notes |
 |---|---|---|---|
@@ -155,11 +155,11 @@ Source: `inspirations/opencode/packages/tui/src/app.tsx:549`
 | `app.toggle.paste_summary` | System | Enable/Disable paste summary | Dynamic title. |
 | `app.toggle.session_directory_filter` | System | Enable/Disable session directory filtering | Dynamic title. |
 
-Excluded from this origin: `command.palette.show`, `opencode.status`, `theme.switch`, `theme.switch_mode`, `theme.mode.lock`, `help.show`, `docs.open`, plus hidden-only non-targets.
+Excluded from this origin: `command.palette.show`, `harness.status`, `theme.switch`, `theme.switch_mode`, `theme.mode.lock`, `help.show`, `docs.open`, plus hidden-only non-targets.
 
 ### Prompt / Stash Origin
 
-Source: `inspirations/opencode/packages/tui/src/component/prompt/index.tsx:330`
+Source: `inspirations/packages/tui/src/component/prompt/index.tsx:330`
 
 | ID | Category | Title / dynamic rule | Notes |
 |---|---|---|---|
@@ -175,7 +175,7 @@ Excluded from this origin: `prompt.editor`. Hidden non-targets: `prompt.clear`, 
 
 ### Session Origin
 
-Source: `inspirations/opencode/packages/tui/src/routes/session/index.tsx:458`
+Source: `inspirations/packages/tui/src/routes/session/index.tsx:458`
 
 | ID | Category | Title / dynamic rule | Notes |
 |---|---|---|---|
@@ -203,9 +203,9 @@ Excluded from this origin: `session.share`. Hidden scroll/navigation/background/
 
 | ID | Category | Title / dynamic rule | Source |
 |---|---|---|---|
-| `tips.toggle` | System | Show tips / Hide tips | `inspirations/opencode/packages/tui/src/feature-plugins/home/tips.tsx:10` |
+| `tips.toggle` | System | Show tips / Hide tips | `inspirations/packages/tui/src/feature-plugins/home/tips.tsx:10` |
 
-Excluded plugin commands: `plugins.list` and `plugins.install` from `inspirations/opencode/packages/tui/src/feature-plugins/system/plugins.tsx:238`, plus `diff.open` from `inspirations/opencode/packages/tui/src/feature-plugins/system/diff-viewer.tsx:1053`.
+Excluded plugin commands: `plugins.list` and `plugins.install` from `inspirations/packages/tui/src/feature-plugins/system/plugins.tsx:238`, plus `diff.open` from `inspirations/packages/tui/src/feature-plugins/system/diff-viewer.tsx:1053`.
 
 ## Current Harness Divergences to Resolve
 
@@ -213,12 +213,12 @@ Current Harness palette behavior is in `crates/harness-tui/src/keybindings/comma
 
 Known divergences:
 
-- Static registry with incomplete Opencode coverage.
-- Filtering can match internal IDs; Opencode filters title/category only.
-- Filtered results are flattened; Opencode keeps categories grouped.
-- Shortcut/footer text is static in places; Opencode derives from registered keybindings.
-- Toggle rows are split into show/hide entries where Opencode uses one dynamic command ID.
-- Some Harness-only or hidden-equivalent rows may be visible and must not count as Opencode parity.
+- Static registry with incomplete Harness coverage.
+- Filtering can match internal IDs; Harness filters title/category only.
+- Filtered results are flattened; Harness keeps categories grouped.
+- Shortcut/footer text is static in places; Harness derives from registered keybindings.
+- Toggle rows are split into show/hide entries where Harness uses one dynamic command ID.
+- Some Harness-only or hidden-equivalent rows may be visible and must not count as Harness parity.
 - Prompt, workspace, provider, and some session commands are missing or need safe Harness equivalents.
 
 ## Architecture Constraints
@@ -228,8 +228,8 @@ Known divergences:
 3. Do not direct-call providers, network, filesystem writes, event appends, tools, or permission-sensitive operations from palette dispatch.
 4. Preserve event-sourced runtime invariants. Coordinator remains the authority for event append, scheduling, permissions, hooks, compaction, and lifecycle.
 5. Avoid public config changes. If unavoidable, update docs/configs/tests as required by root `AGENTS.md`.
-6. Harness-only commands may remain only when explicitly marked Harness-only and excluded from Opencode parity accounting.
-7. Dynamic Opencode rows must be one command ID with dynamic title/availability, not separate show/hide IDs.
+6. Harness-only commands may remain only when explicitly marked Harness-only and excluded from Harness parity accounting.
+7. Dynamic Harness rows must be one command ID with dynamic title/availability, not separate show/hide IDs.
 8. Exclusions must be exact command-ID rules, not substring matching.
 
 ## Milestones and Checklists
@@ -245,7 +245,7 @@ Known divergences:
     - [x] Matrix includes every seed included command ID.
     - [x] Matrix includes every explicit exclusion.
     - [x] Matrix includes hidden-only non-targets.
-    - [x] Matrix distinguishes Opencode parity entries from Harness-only entries.
+    - [x] Matrix distinguishes Harness parity entries from Harness-only entries.
     - [x] At least one contract test consumes the matrix.
 
 - [x] **2. Palette Contract Test Harness**
@@ -270,9 +270,9 @@ Known divergences:
     - [x] Registry uses stable command IDs as contract keys.
     - [x] Dynamic rows use one command ID.
     - [x] Registry can mark Harness-only commands explicitly.
-    - [x] Existing Harness commands either map to Opencode IDs or are marked Harness-only.
+    - [x] Existing Harness commands either map to Harness IDs or are marked Harness-only.
 
-- [x] **4. Opencode Filtering, Grouping, Navigation**
+- [x] **4. Harness Filtering, Grouping, Navigation**
   - Category: `deep`
   - Skills: `karpathy-guidelines`, `rust-best-practices`
   - Depends on: tasks 2 and 3
@@ -329,9 +329,9 @@ Known divergences:
   - Blocks: task 9
   - Proof required:
     - [x] Explicit exclusions are absent in all representative states.
-    - [x] Hidden Opencode commands are absent.
+    - [x] Hidden Harness commands are absent.
     - [x] Harness-only commands are labeled and excluded from parity totals.
-    - [x] Split show/hide rows are collapsed where Opencode uses one dynamic ID.
+    - [x] Split show/hide rows are collapsed where Harness uses one dynamic ID.
     - [x] Absence tests assert exact IDs, not labels or substrings.
 
 ### Wave 5: Acceptance and Dogfood
@@ -384,7 +384,7 @@ scripts/test-lanes.sh fast
   - Skills: `karpathy-guidelines`, `git-master` for commits
   - Depends on: tasks 1 through 10
   - Proof required:
-    - [x] PR notes cite Opencode source refs and Harness files changed.
+    - [x] PR notes cite Harness source refs and Harness files changed.
     - [x] Public docs/configs/tests are updated if any public contract changed.
     - [x] Atomic commit strategy is followed if the user requests commits.
     - [x] Final verification evidence is attached or summarized.
@@ -436,8 +436,8 @@ scripts/test-lanes.sh fast
 1. Do not prove palette behavior by mutating `palette_filtered` or equivalent internal state.
 2. Do not assert labels only; parity must be by command ID.
 3. Do not exclude commands by substring heuristics.
-4. Do not count Harness-only commands as Opencode parity.
-5. Do not count hidden Opencode commands as missing parity.
+4. Do not count Harness-only commands as Harness parity.
+5. Do not count hidden Harness commands as missing parity.
 6. Do not implement direct side effects in palette dispatch.
 7. Do not fake dispatch by setting final state without driving `Ctrl+P` and Enter in at least one acceptance path per command class.
 8. Do not mark a milestone complete unless source refs are linked.
@@ -445,7 +445,7 @@ scripts/test-lanes.sh fast
 10. Do not mark a milestone complete unless absence tests pass.
 11. Do not mark a milestone complete unless dispatch path is exercised through `Ctrl+P`.
 12. Do not mark a milestone complete unless Harness remains functional after the milestone.
-13. Do not weaken tests to match implementation divergence; update implementation to match Opencode semantics unless the user approves an explicit Harness deviation.
+13. Do not weaken tests to match implementation divergence; update implementation to match Harness semantics unless the user approves an explicit Harness deviation.
 14. Do not introduce public config changes without updating docs/configs/tests per `AGENTS.md`.
 
 ## Rollout Strategy
@@ -463,7 +463,7 @@ scripts/test-lanes.sh fast
 
 | Risk | Mitigation |
 |---|---|
-| Dynamic Opencode labels drift | Assert command IDs and dynamic title rules. |
+| Dynamic Harness labels drift | Assert command IDs and dynamic title rules. |
 | Harness lacks equivalent for some commands | Add safe dialog/intent/coordinator path; do not direct-call side effects. |
 | Tests couple to implementation internals | Drive keyboard/render/AppState paths. |
 | Suggested duplicate rows dispatch incorrectly | Map `suggested:<id>` back to the same command ID. |
@@ -479,9 +479,9 @@ Only commit if the user explicitly requests it. Before committing, inspect `git 
 Recommended split:
 
 1. `test(tui): add command palette parity matrix`
-2. `test(tui): cover opencode palette interaction semantics`
+2. `test(tui): cover harness palette interaction semantics`
 3. `refactor(tui): model command palette entries by stable id`
-4. `fix(tui): match opencode palette filtering and grouping`
+4. `fix(tui): match harness palette filtering and grouping`
 5. `fix(tui): add dynamic command availability and suggested rows`
 6. `feat(tui): route palette commands through safe intents`
 7. `fix(tui): align exclusions and harness-only commands`
@@ -492,9 +492,9 @@ Recommended split:
 
 The implementation is complete only when:
 
-- [x] Harness `Ctrl+P` includes every non-excluded visible/reachable Opencode palette command ID from the matrix.
+- [x] Harness `Ctrl+P` includes every non-excluded visible/reachable Harness palette command ID from the matrix.
 - [x] Harness `Ctrl+P` excludes every explicit exclusion and hidden-only non-target.
-- [x] Filtering, grouping, navigation, empty state, suggested duplication, and keybinding footers match Opencode semantics.
+- [x] Filtering, grouping, navigation, empty state, suggested duplication, and keybinding footers match Harness semantics.
 - [x] Dynamic labels and availability match required representative states.
 - [x] Palette dispatch uses safe Harness architecture paths only.
 - [x] Tests drive real palette input/render/dispatch behavior.

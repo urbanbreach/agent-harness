@@ -14,7 +14,7 @@ Read root `AGENTS.md` first. Config-specific schema guidance lives in `../config
 | Permissions/privacy | `permissions.md`, `privacy-and-local-data.md` | Approval limits, local data, redaction, support bundles. |
 | Testing/evidence | `testing.md`, `budgets.md`, `claim-evidence-matrix.md`, `release-blockers.md` | Lane semantics, perf/coverage, evidence status. |
 | Simulation/TUI manifests | `simulation-matrix.json`, `tui-signoff-manifest.v1.json` | Machine-read validation inputs. |
-| PRDs/progress | `*-prd.md`, `*-progress.md`, `roadmap-v1.md` | Historical claims; keep evidence rows honest and dated. |
+| PRDs/progress | `*-prd.md`, `*-progress.md`, `roadmap-v1.md` | Historical claims; keep evidence rows honest and dated. **Active residual testing loop:** `harness-live-agent-testing-prd.md` + `harness-live-agent-testing-progress.md` (live smoke pack, live dogfood channel, skill-activation, cassette/chaos residual). **Closed predecessor:** `harness-testing-enhancement-prd.md` + `harness-testing-enhancement-progress.md` (offline dogfood + theme owners). |
 | Agents/troubleshooting | `agents-and-subagents.md`, `troubleshooting.md` | Agent routing, local troubleshooting. |
 | Extensions/migration | `extension-strategy.md`, `migration-notes.md`, `desktop-distribution-surface-map.md` | Extension strategy, migration history, desktop surfaces. |
 | Config restructure | `config-restructure-prompt.md`, `config-restructure-spec.md` | Historical config restructure specs. |

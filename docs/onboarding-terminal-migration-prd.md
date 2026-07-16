@@ -4,7 +4,7 @@
 
 **Audience:** One autonomous implementation agent working in this repository until the strict end-state goal below is true.
 
-**Product authority:** Onboarding should happen in the terminal on first run (like `opencode auth login`), not as a blocking 13-step TUI wizard. After first setup, the TUI should offer a lightweight non-blocking dialog for adding/changing providers (like Opencode's `/connect`).
+**Product authority:** Onboarding should happen in the terminal on first run (like `harness auth login`), not as a blocking 13-step TUI wizard. After first setup, the TUI should offer a lightweight non-blocking dialog for adding/changing providers (like Harness's `/connect`).
 
 ---
 
@@ -39,7 +39,7 @@ The harness currently runs a 13-step onboarding wizard as a TUI overlay inside t
 
 ### 1.2 Existing terminal auth CLI (already complete)
 
-The harness already has a full terminal-based auth CLI that mirrors Opencode's `opencode auth login`:
+The harness already has a full terminal-based auth CLI that mirrors Harness's `harness auth login`:
 
 - **Entry point**: `crates/harness/src/auth_cmd.rs` — `execute_login()` (line 301) dispatches to `execute_interactive_login()` (line 365) when no provider is specified.
 - **Interactive flow**: `execute_interactive_login()` calls `clack_intro` → `prompt_auth_provider` → `prompt_login_method` → `interactive_enterprise_url` → `execute_login_selection()`.
@@ -55,13 +55,13 @@ The TUI already has an `/auth` slash command:
 - `crates/harness-tui/src/app/session_slash.rs:55-72` — `auth_slash_args_from_prompt()` parses `/auth login`, `/auth list`, etc.
 - The `OpenAuthManager` intent is handled by `spawn_tui_auth_backend_task()` which runs the same `harness auth` CLI backend.
 
-### 1.4 How Opencode does it (reference)
+### 1.4 How Harness does it (reference)
 
-Opencode has two independent paths:
-- **CLI**: `opencode providers login` (alias `opencode auth`) — terminal flow using `@clack/prompts` (`select`, `autocomplete`, `password`, `spinner`). Writes to `auth.json`.
+Harness has two independent paths:
+- **CLI**: `harness providers login` (alias `harness auth`) — terminal flow using `@clack/prompts` (`select`, `autocomplete`, `password`, `spinner`). Writes to `auth.json`.
 - **TUI dialog**: `DialogProvider` component — auto-shows when `sync.data.provider.length === 0`. Also accessible via `/connect` slash command. Non-blocking (dismissable with `esc`). Handles auth via SDK/HTTP calls to the server backend.
 
-Key Opencode properties the harness should adopt:
+Key Harness properties the harness should adopt:
 - Onboarding can happen entirely in the terminal before the TUI launches.
 - The TUI dialog is non-blocking and simple (provider list → auth method → credential entry), not a 13-step wizard.
 - The TUI dialog is accessible after first setup via a slash command.
@@ -98,7 +98,7 @@ Key Opencode properties the harness should adopt:
 
 **Decision**: When `harness` is launched with no subcommand and credentials are missing, run the existing `execute_interactive_login()` terminal flow before entering the TUI.
 
-**Rationale**: The terminal flow already exists and works. Reusing it avoids duplication. The user gets a Clack-style terminal prompt (provider pick → method → credential entry), exactly like `opencode auth login`.
+**Rationale**: The terminal flow already exists and works. Reusing it avoids duplication. The user gets a Clack-style terminal prompt (provider pick → method → credential entry), exactly like `harness auth login`.
 
 **Flow**:
 ```
@@ -117,7 +117,7 @@ harness (no subcommand)
 
 **Decision**: Add a `/connect` slash command that opens a lightweight provider-connection dialog. This dialog is non-blocking and delegates to the same `spawn_tui_auth_backend_task()` mechanism.
 
-**Rationale**: Mirrors Opencode's `/connect` dialog. Users can add/change providers after first setup without leaving the TUI. The existing `OpenAuthManager` intent and `spawn_tui_auth_backend_task()` mechanism already handle the auth backend execution.
+**Rationale**: Mirrors Harness's `/connect` dialog. Users can add/change providers after first setup without leaving the TUI. The existing `OpenAuthManager` intent and `spawn_tui_auth_backend_task()` mechanism already handle the auth backend execution.
 
 **Dialog behavior**:
 - `/connect` opens a simple overlay: provider list → auth method selection → credential input (if API key) or OAuth device code display.
@@ -129,7 +129,7 @@ harness (no subcommand)
 
 **Decision**: Onboarding and `/connect` write only to the OS keyring (credential store). Config files are never modified.
 
-**Rationale**: This matches the current behavior and Opencode's separation of credentials (`auth.json`) from config (`opencode.json`). The harness already separates credentials (keyring) from config (`harness.jsonc`).
+**Rationale**: This matches the current behavior and Harness's separation of credentials (`auth.json`) from config (`harness.json`). The harness already separates credentials (keyring) from config (`harness.jsonc`).
 
 ---
 
@@ -500,6 +500,6 @@ Document any findings during implementation that suggest improvements:
 - Better terminal prompt UX (colored output, progress indicators)
 - `/connect` dialog with inline provider list (instead of delegating to CLI backend)
 - Auto-detection of available providers from config
-- Model selection after provider connection (like Opencode's `DialogModel`)
+- Model selection after provider connection (like Harness's `DialogModel`)
 
 These are NOT part of this PRD. Document them in the PRD progress file and leave them for future work.

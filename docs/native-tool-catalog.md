@@ -11,7 +11,7 @@ Tool execution still goes through the coordinator permission path before the too
 | `apply_patch` | `edit` | workspace mutation | Sequential patch output plus diff artifacts | Applies add/update/delete patch text through Harness workspace path checks and atomic edit writes. Moves are rejected. |
 | `background_cancel` | `task` | control-plane mutation | Coordinator cancellation events; output is replay-derived | Canonical explicit cancellation wrapper for background child requests. Supports `all: true` for bulk cancellation of non-terminal background tasks. Alias: `background_output(cancel=true)`. |
 | `background_output` | `task` | read/cancel compatibility | Replay-derived background status/result; `cancel: true` remains compatibility | Use for status/result retrieval; cancellation next-actions prefer `background_cancel`. Supports `full_session`, `include_thinking`, `message_limit`, `since_message_id`, `include_tool_results`, `thinking_max_chars`, and `from_end` for rich child-session retrieval. Aliases: `task_id`, `session_id`. |
-| `bash` | `bash` | host command | Captured output and artifacts when large | Shell allowlist and permission policy apply before execution. |
+| `bash` | `bash` | host command | Captured output and artifacts when large | Shell allowlist and permission policy apply before execution. Globs and `/dev/null` redirects are allowed under permission-patterns mode; true out-of-workspace paths fail as `external_directory` permission denials. Catch-all bash deny removes the tool from the model-visible list. |
 | `batch` | none | depends on child calls | Preserves source order for model-visible results | Executes multiple native tool calls through coordinator tool execution; each child call keeps its own permission check. |
 | `codesearch` | `codesearch` | network/read-only | External I/O when called | Remote/public code-search integration; use `grep`, `ast_grep_search`, or `lsp` for local workspace symbols. |
 | `edit` | `edit` | workspace mutation | Hashline/diff artifacts | Normal file-changing route. Also accepts exact `oldString`/`newString` edits. |
@@ -26,7 +26,7 @@ Tool execution still goes through the coordinator permission path before the too
 | `plan_enter` | `question` | control-plane question | Summary only | Requests Build → Plan handoff. |
 | `plan_exit` | `question` | control-plane question | Summary only | Requests Plan → Build continuation. |
 | `question` | `question` | user interaction | Summary only | Operator question/confirmation path. |
-| `read` | none | read-only | Hashline anchors; large output spills | Workspace-safe file read. Aliases: `filePath`, `path`. |
+| `read` | `read` | read-only | Hashline anchors; large output spills | Workspace-safe file read. `.env` basename patterns ask by default; out-of-workspace paths use `external_directory`. Aliases: `filePath`, `path`. |
 | `session_info` | none | read-only | Replay-derived JSON; large output spills | Model-visible session metadata, lineage, event counts, artifacts, recovery notes. |
 | `session_list` | none | read-only | Replay-derived JSON | Model-visible session catalog listing with filters/sort/caps. |
 | `session_read` | none | read-only | Replay-derived JSON; large output spills | Bounded redacted event/message windows. Supports `include_todos` and `from_end` params. |

@@ -1,14 +1,14 @@
-# OpenCode Tools Parity PRD
+# Harness Tools Parity PRD
 
 **Status:** Implementation evidence ledger. The parity work described here has
 been implemented where rows in the progress ledger cite passing tests and dogfood
 artifacts; unchecked or deferred items remain explicitly marked in this document
-and [`opencode-tools-parity-progress.md`](./opencode-tools-parity-progress.md).
+and [`tools-parity-progress.md`](./tools-parity-progress.md).
 
 **Date:** 2026-06-28
 
 **Audience:** Autonomous implementation agents and reviewers bringing the
-`agent-harness` native tool surface up to OpenCode-grade behavior.
+`agent-harness` native tool surface up to production-grade behavior.
 
 **Authority:** Subordinate to the root [`AGENTS.md`](../AGENTS.md),
 [`crates/harness-core/AGENTS.md`](../crates/harness-core/AGENTS.md),
@@ -26,20 +26,20 @@ runtime invariants, the invariants win.
 - Harness native schemas/results: `crates/harness-tools/src/lib.rs`,
   `crates/harness-tools/src/native_tools/args.rs`,
   `crates/harness-tools/src/agent_ops/background.rs`
-- OpenCode core tool contract:
-  `inspirations/opencode/packages/core/src/tool/tool.ts`
-- OpenCode registry/model filtering/custom tools:
-  `inspirations/shuvcode/packages/opencode/src/tool/registry.ts`
-- OpenCode provider schema transforms:
-  `inspirations/opencode/packages/opencode/src/provider/transform.ts`
-- OpenCode MCP conversion:
-  `inspirations/opencode/packages/opencode/src/mcp/catalog.ts`
-- OpenCode truncation/display reference:
-  `inspirations/shuvcode/packages/opencode/src/tool/truncation.ts`,
-  `inspirations/shuvcode/packages/opencode/src/cli/cmd/run.ts`
+- Harness core tool contract:
+  `inspirations/packages/core/src/tool/tool.ts`
+- Harness registry/model filtering/custom tools:
+  `inspirations/shuvcode/packages/src/tool/registry.ts`
+- Harness provider schema transforms:
+  `inspirations/packages/src/provider/transform.ts`
+- Harness MCP conversion:
+  `inspirations/packages/src/mcp/catalog.ts`
+- Harness truncation/display reference:
+  `inspirations/shuvcode/packages/src/tool/truncation.ts`,
+  `inspirations/shuvcode/packages/src/cli/cmd/run.ts`
 
 These anchors are **not enough for implementation**. Every implementation phase
-must re-read the current OpenCode source it depends on and record the exact
+must re-read the current Harness source it depends on and record the exact
 commit/path/line evidence used for that phase.
 
 ---
@@ -48,7 +48,7 @@ commit/path/line evidence used for that phase.
 
 ### 0.1 Governing objective
 
-Bring Agent Harness tools **on par with OpenCode for model-facing quality,
+Bring Agent Harness tools **on par with Harness for model-facing quality,
 native behavior, provider compatibility, operator trust, and dogfooded
 reliability**, while preserving Harness-native architecture:
 
@@ -65,44 +65,44 @@ reliability**, while preserving Harness-native architecture:
   include provider reasoning delta events as local session evidence; they are not
   public support material.
 
-OpenCode is the reference for tool ergonomics and compatibility, not an
+Harness is the reference for tool ergonomics and compatibility, not an
 instruction to copy TypeScript internals into Rust. The implementation must
 adapt observable behavior into Harness's event-sourced, permissioned runtime.
 
 ### 0.2 Definition of “on par”
 
-For this PRD, “on par with OpenCode in tools” means:
+For this PRD, “on par with Harness in tools” means:
 
 1. **Model-facing parity:** tool names, descriptions, argument schemas, required
    fields, examples, validation failures, and next-action guidance are as clear
-   and model-usable as OpenCode's equivalent tool definitions.
+   and model-usable as Harness's equivalent tool definitions.
 2. **Provider payload parity:** serialized request shapes for active Harness
    toolsets are provider-safe, tested against real registry tool definitions,
-   and normalized or explicitly rejected for provider families where OpenCode
+   and normalized or explicitly rejected for provider families where Harness
    has known transforms.
 3. **Native behavior parity:** overlapping tools behave equivalently for normal,
    edge, failure, permission-denied, large-output, and cancellation scenarios,
    unless a documented Harness invariant requires a different behavior.
 4. **Result/display parity:** tool results, truncation notices, artifacts,
    structured output, permission copy, transcript rows, and TUI/CLI summaries are
-   predictable and comparable to OpenCode's operator-facing surface.
+   predictable and comparable to Harness's operator-facing surface.
 5. **Dogfooded parity:** every implemented workstream is exercised through the
    real Harness surface, not just by source inspection or isolated unit tests.
-6. **Documented divergence:** OpenCode-only ecosystem features are either
+6. **Documented divergence:** Harness-only ecosystem features are either
    implemented, explicitly deferred with evidence, or intentionally rejected
    with a Harness-specific rationale.
 
 ### 0.3 Non-goals
 
 - Do not edit files under `inspirations/`; they are read-only reference source.
-- Do not copy OpenCode source code, package layout, branding, or UI copy without
+- Do not copy Harness source code, package layout, branding, or UI copy without
   adapting it to Harness terms and architecture.
 - Do not replace Harness canonical tool IDs with provider-function names in
   public docs or config.
-- Do not bypass coordinator permission checks to match OpenCode behavior.
+- Do not bypass coordinator permission checks to match Harness behavior.
 - Do not broaden descriptor-only extension seams into a runtime plugin host
   without a separate approved design.
-- Do not add dynamic JS/TS plugins or OpenCode HTTP API compatibility as
+- Do not add dynamic JS/TS plugins or Harness HTTP API compatibility as
   incidental “parity cleanup.” `write` and `apply_patch` are explicit §8
   promotion decisions, not incidental aliases.
 - Do not claim live, PTY, native visual, or provider evidence without artifact
@@ -118,22 +118,22 @@ phase or task card:
    crate-scoped `AGENTS.md` for every crate touched. Load `karpathy-guidelines`
    and `programming` before any Rust, TypeScript, schema, generated-code, build,
    or test edit.
-2. **Re-read OpenCode source before the edit.** The agent must inspect the
-   relevant OpenCode files for the exact behavior being implemented. Use the
-   local `inspirations/opencode` or `inspirations/shuvcode` reference when
+2. **Re-read Harness source before the edit.** The agent must inspect the
+   relevant Harness files for the exact behavior being implemented. Use the
+   local `inspirations/harness` or `inspirations/shuvcode` reference when
    present. If the local reference is missing or stale, inspect upstream
-   OpenCode and record the commit SHA. Do not implement from this PRD, memory,
+   Harness and record the commit SHA. Do not implement from this PRD, memory,
    prior chat summaries, or old reports alone.
 3. **Write a phase evidence note.** Before the first code edit in a phase, add or
    update an evidence note in the implementation branch's parity ledger
-   (`docs/opencode-tools-parity-progress.md` once created) with:
-   - OpenCode source files and commit/reference used.
+   (`docs/tools-parity-progress.md` once created) with:
+   - Harness source files and commit/reference used.
    - Harness source files touched or expected to be touched.
    - Behavior summary in the agent's own words.
    - Intended Harness adaptation.
    - Known conflicts with Harness invariants.
    - Tests and dogfood scenarios planned for the phase.
-4. **Think for yourself.** The PRD is not a script. If current OpenCode source
+4. **Think for yourself.** The PRD is not a script. If current Harness source
    contradicts this document, stop and update the evidence note before changing
    code. If a task appears unsafe, obsolete, or over-scoped, record the finding
    and choose the smaller invariant-preserving adaptation.
@@ -183,9 +183,9 @@ The first implementation phase must generate and maintain an inventory matrix.
 The matrix may be a test fixture, generated Markdown table, JSON artifact, or
 combination of those, but it must be reproducible and drift-tested.
 
-### 1.1 OpenCode inventory columns
+### 1.1 Harness inventory columns
 
-For every OpenCode reference tool considered, record:
+For every Harness reference tool considered, record:
 
 - Tool ID.
 - Source path and commit/reference.
@@ -219,7 +219,7 @@ For every Harness native tool and relevant dynamic tool wrapper, record:
 - Large-output/artifact behavior.
 - Native execution tests.
 - Dogfood scenario coverage.
-- OpenCode mapping status.
+- Harness mapping status.
 
 ### 1.3 Status values
 
@@ -231,9 +231,9 @@ Every row must have one status:
   product scope are stronger; documented and tested.
 - `needs_work` — in scope for P0/P1 work.
 - `deferred_decision` — blocked on §8 decision.
-- `harness_only` — no OpenCode equivalent; must still have Harness-native UX and
+- `harness_only` — no Harness equivalent; must still have Harness-native UX and
   dogfood coverage.
-- `opencode_only` — OpenCode feature not currently implemented by Harness.
+- `harness_only` — Harness feature not currently implemented by Harness.
 - `excluded` — explicitly out of scope, with evidence.
 
 The inventory must fail CI when a tool silently changes status, gains/loses a
@@ -263,18 +263,18 @@ implementation loop must verify them again before editing.
   `request_id`, compatibility `task_id`/`session_id`, terminal state, late-result
   state, cancellation fields, child runtime, route, and `next_actions`.
 
-### 2.2 OpenCode baseline
+### 2.2 Harness baseline
 
-- OpenCode core tools define descriptions, input schemas, output schemas, and
+- Harness core tools define descriptions, input schemas, output schemas, and
   optional `toModelOutput` behavior through its core tool contract.
-- OpenCode registry behavior includes built-ins, local custom tool files,
+- Harness registry behavior includes built-ins, local custom tool files,
   plugin-contributed tools, model/provider filtering, and plugin definition
   hooks in the referenced source.
-- OpenCode provider transforms include provider/model-specific schema handling
+- Harness provider transforms include provider/model-specific schema handling
   for OpenAI/Azure-like, Moonshot/Kimi-like, and Gemini/Google-like cases.
-- OpenCode MCP conversion normalizes tool names and input schemas for dynamic
+- Harness MCP conversion normalizes tool names and input schemas for dynamic
   MCP tools.
-- OpenCode truncation has a uniform output cap and writes large output to a
+- Harness truncation has a uniform output cap and writes large output to a
   tool-output path with model-facing guidance.
 
 ---
@@ -297,8 +297,8 @@ implementation loop must verify them again before editing.
 
 ### 3.2 Out of scope unless promoted by §8 decision
 
-- Full OpenCode local JS/TS plugin host parity.
-- OpenCode `/experimental/tool*` HTTP API parity.
+- Full Harness local JS/TS plugin host parity.
+- Harness `/experimental/tool*` HTTP API parity.
 - Model-gated edit/write/apply-patch swapping.
 - `ToolChoice::Required` across all providers.
 - Broad unknown-tool repair that weakens fail-closed safety.
@@ -315,10 +315,10 @@ Create the reproducible parity inventory from §1.
 Acceptance:
 
 - Inventory covers every row in `docs/native-tool-catalog.md`.
-- Inventory covers OpenCode built-ins from the current referenced registry.
+- Inventory covers Harness built-ins from the current referenced registry.
 - Inventory distinguishes canonical IDs from provider function names.
 - Inventory records profile description overrides and active toolsets.
-- Inventory records OpenCode model/provider gating and Harness adaptation status.
+- Inventory records Harness model/provider gating and Harness adaptation status.
 - Tests fail on unreviewed tool ID, permission, schema, or status drift.
 
 Dogfood:
@@ -354,7 +354,7 @@ Dogfood:
 
 ### 4.3 P0: Provider schema compatibility
 
-Compare Harness provider payload behavior against OpenCode provider transforms.
+Compare Harness provider payload behavior against Harness provider transforms.
 Do not blindly port transforms into `harness-core`; provider-family logic belongs
 at the provider/adapter boundary.
 
@@ -376,7 +376,7 @@ Dogfood:
 
 ### 4.4 P1: Model-facing tool descriptions and schemas
 
-Bring Harness tool descriptions and argument schemas up to OpenCode-grade model
+Bring Harness tool descriptions and argument schemas up to production-grade model
 ergonomics without weakening strict typed boundaries.
 
 Acceptance:
@@ -389,7 +389,7 @@ Acceptance:
 - `background_output` and `background_cancel` emphasize canonical `request_id`
   while preserving compatibility aliases.
 - `edit` continues to teach hashline workflow clearly; do not degrade the current
-  hashline safety contract to imitate OpenCode whole-file write behavior.
+  hashline safety contract to imitate Harness whole-file write behavior.
 - Snapshot/inventory tests prove description/schema improvements and prevent
   silent regression.
 
@@ -403,7 +403,7 @@ Dogfood:
 ### 4.5 P1: Native behavior parity for overlapping tools
 
 For `read`, `glob`, `grep`, `bash`, `edit`, `webfetch`, `websearch`, `task`,
-`todowrite`, `skill`, `lsp`, and `batch`, compare OpenCode observable behavior
+`todowrite`, `skill`, `lsp`, and `batch`, compare Harness observable behavior
 with Harness behavior.
 
 Acceptance:
@@ -419,8 +419,8 @@ Acceptance:
 
 Dogfood:
 
-- Run the same scenario family through Harness and OpenCode reference when the
-  reference runtime is available. If OpenCode cannot be run, record why and use
+- Run the same scenario family through Harness and Harness reference when the
+  reference runtime is available. If Harness cannot be run, record why and use
   current source comparison instead.
 
 ### 4.6 P1: Task, background, batch, and skill ergonomics
@@ -451,7 +451,7 @@ Dogfood:
 
 ### 4.7 P1: Result, truncation, artifact, and model-output presentation
 
-OpenCode has a uniform truncation surface. Harness must have an equally reliable
+Harness has a uniform truncation surface. Harness must have an equally reliable
 and redaction-safe result presentation, adapted to `ToolResult` and artifacts.
 
 Acceptance:
@@ -472,7 +472,7 @@ Dogfood:
 
 ### 4.8 P1: Invalid tool and invalid argument handling
 
-Harness may remain stricter than OpenCode, but failures must help the model
+Harness may remain stricter than Harness, but failures must help the model
 recover.
 
 Acceptance:
@@ -514,7 +514,7 @@ Dogfood:
 ### 4.10 P2: TUI/CLI transcript tool display
 
 After model-facing and native semantics are stable, bring operator display up to
-OpenCode-grade presentation.
+production-grade presentation.
 
 Acceptance:
 
@@ -541,7 +541,7 @@ The inventory must map and verify overlapping behavior for:
 
 | Family | Harness IDs | Required comparison |
 |---|---|---|
-| File read/list | `read`, `list` | OpenCode read/directory behavior, hashline anchors, caps, artifact spill. |
+| File read/list | `read`, `list` | Harness read/directory behavior, hashline anchors, caps, artifact spill. |
 | File search | `glob`, `grep` | Pattern semantics, caps, permission/path safety, output shape. |
 | Shell | `bash`, `shell.run` | Shell selection, cwd handling, timeout, blocked-command guidance, truncation. |
 | Edit | `edit`, `ast_grep_replace`, `lsp.rename` | Hashline workflow, diff artifacts, structural rewrite, rename permissions. |
@@ -556,11 +556,11 @@ The inventory must map and verify overlapping behavior for:
 Harness-only tools are not second-class. `session_*`, `ast_grep_*`,
 `github.*`, `background_*`, `plan_*`, `shell.run`, and `lsp.rename` must have
 Harness-native model descriptions, schemas, permission copy, output formatting,
-and dogfood coverage even when OpenCode has no direct equivalent.
+and dogfood coverage even when Harness has no direct equivalent.
 
-### 5.3 OpenCode-only tools
+### 5.3 Harness-only tools
 
-OpenCode-only tools or features must be routed through §8 decisions before
+Harness-only tools or features must be routed through §8 decisions before
 implementation. Do not silently add aliases or compatibility surfaces.
 
 ---
@@ -636,13 +636,13 @@ The implementation loop must maintain a reusable dogfood suite that covers:
 12. **TUI/PTY:** operator sees clear tool rows, permission prompts, artifacts,
     and failure states.
 
-### 7.3 OpenCode comparison dogfood
+### 7.3 Harness comparison dogfood
 
-For scenarios with a direct OpenCode equivalent:
+For scenarios with a direct Harness equivalent:
 
-- Run the scenario in OpenCode reference when feasible and record the transcript
+- Run the scenario in Harness reference when feasible and record the transcript
   or artifact.
-- If OpenCode cannot be run locally, inspect the current source and record the
+- If Harness cannot be run locally, inspect the current source and record the
   reason runtime comparison was unavailable.
 - Differences are allowed only when documented as `harness_adapted` or
   `deferred_decision` in the inventory.
@@ -656,15 +656,15 @@ explicit decisions. Agents must not implement them opportunistically.
 
 | Item | Default stance | Evidence required to promote |
 |---|---|---|
-| `write` tool | Implemented by 2026-06-29 promotion decision. Keep hashline `edit` as normal mutation route, but expose OpenCode-compatible whole-file create/overwrite as a public native tool for provider/toolcall parity. | Promotion record below covers source comparison, permission/replay/artifact design, docs/catalog updates, tests, and dogfood. |
-| `apply_patch` tool | Implemented by 2026-06-29 promotion decision. Expose OpenCode-compatible patch application as a public native tool; do not treat it as a stealth alias for `edit`. | Promotion record below covers source comparison, permission/replay/artifact design, docs/catalog updates, tests, and dogfood. |
+| `write` tool | Implemented by 2026-06-29 promotion decision. Keep hashline `edit` as normal mutation route, but expose ruleset-compatible whole-file create/overwrite as a public native tool for provider/toolcall parity. | Promotion record below covers source comparison, permission/replay/artifact design, docs/catalog updates, tests, and dogfood. |
+| `apply_patch` tool | Implemented by 2026-06-29 promotion decision. Expose ruleset-compatible patch application as a public native tool; do not treat it as a stealth alias for `edit`. | Promotion record below covers source comparison, permission/replay/artifact design, docs/catalog updates, tests, and dogfood. |
 | Model-gated edit/write/apply-patch swapping | Deferred. Preserve explicit profile toolsets first. | Real provider/model traces showing tool selection failures that profile descriptions cannot fix. |
 | Dynamic JS/TS local tool plugins | Deferred to extension strategy. | Approved runtime plugin-host design covering security, permissions, replay, config, dependency loading, and redaction. |
-| OpenCode `/experimental/tool*` API | Deferred. Static catalog endpoint is not enough. | Product requirement for API compatibility and a design matching provider/model/profile-filtered schemas. |
+| Harness `/experimental/tool*` API | Deferred. Static catalog endpoint is not enough. | Product requirement for API compatibility and a design matching provider/model/profile-filtered schemas. |
 | `ToolChoice::Required` | Deferred but kept visible. | Concrete provider/model flow requiring mandatory tool use beyond prompt/profile policy. |
 | Unknown-tool repair | Rejected for this PRD by 2026-06-30 disposition. Preserve strict fail-closed behavior plus deterministic recovery text; do not add narrow repair without live evidence. | Future evidence that narrow repair improves model recovery without hiding provider bugs. |
 | Binary/media attachments | Deferred for full general attachment parity. Limited `read` media/provider lowering is covered by implemented workstream evidence; broader binary/media attachment behavior remains out of scope. | Real `read`/webfetch use cases requiring model-visible image/PDF attachment parts and a redaction-safe artifact design. |
-| Full OpenCode ecosystem parity | Deferred. This PRD targets tool parity, not cloning OpenCode. | Maintainer decision that external users need OpenCode-compatible ecosystem behavior. |
+| Full Harness ecosystem parity | Deferred. This PRD targets tool parity, not cloning Harness. | Maintainer decision that external users need ruleset-compatible ecosystem behavior. |
 
 Each promoted decision must add:
 
@@ -678,9 +678,9 @@ Each promoted decision must add:
 
 Date: 2026-06-29.
 
-1. **Source comparison note.** The implementation re-read the local OpenCode
-   built-in registry at `inspirations/opencode/packages/core/src/tool/builtins.ts`
-   plus the matching OpenCode `write` and `apply_patch` tool definitions. Harness
+1. **Source comparison note.** The implementation re-read the local Harness
+   built-in registry at `inspirations/packages/core/src/tool/builtins.ts`
+   plus the matching Harness `write` and `apply_patch` tool definitions. Harness
    keeps hashline `edit` as the normal mutation workflow, while exposing explicit
    public `write` and `apply_patch` native IDs for model/toolcall compatibility.
 2. **Security/permission/replay design.** Both tools stay under the existing
@@ -691,7 +691,7 @@ Date: 2026-06-29.
    calls.
 3. **Public docs and catalog updates.** `docs/native-tool-catalog.md`, the native
    catalog, parity fixtures, provider payload snapshots, and native parity tests
-   list `write` and `apply_patch` as public native tools with OpenCode-compatible
+   list `write` and `apply_patch` as public native tools with ruleset-compatible
    provider names.
 4. **Tests.** `native_execution_surface_test` covers `write`, `apply_patch`, and
    exact edit behavior; `coord_auth_test` covers patch path-scoped permission
@@ -701,7 +701,7 @@ Date: 2026-06-29.
    literal behavior, provider-safe schema export, and path-scoped patch denial.
    Live-provider superiority evidence remains unavailable; deterministic parity
    evidence is sufficient for this promotion because the compatibility work
-   targets provider-visible OpenCode-shaped tool calls rather than replacing
+   targets provider-visible Harness-shaped tool calls rather than replacing
    Harness's canonical hashline edit workflow.
 
 ### 8.2 Rejected decision: narrow unknown-tool repair
@@ -709,7 +709,7 @@ Date: 2026-06-29.
 Date: 2026-06-30.
 
 1. **Source comparison note.** P1.4 inspected the local invalid-call references
-   under `inspirations/opencode` and `inspirations/shuvcode`. Harness keeps the
+   under `inspirations/harness` and `inspirations/shuvcode`. Harness keeps the
    existing deterministic `invalid` tool response and strict typed argument
    parsing, but rejects an automatic unknown-tool repair path for this PRD.
 2. **Security/permission/replay design.** Unknown or malformed tool calls stay
@@ -742,12 +742,12 @@ Implementation work must update docs together with code:
   tests.
 - Test lane or dogfood evidence shape: update `docs/testing.md` and lane scripts
   only when behavior actually changes.
-- Progress/evidence: create or update `docs/opencode-tools-parity-progress.md`
+- Progress/evidence: create or update `docs/tools-parity-progress.md`
   with dated rows. Do not edit historical status to hide old limitations.
 
 Progress rows should use this shape:
 
-| Date | Commit | Workstream | OpenCode source | Harness source | Tests | Dogfood evidence | Status | Notes |
+| Date | Commit | Workstream | Harness source | Harness source | Tests | Dogfood evidence | Status | Notes |
 |---|---|---|---|---|---|---|---|---|
 
 ---
@@ -760,7 +760,7 @@ Progress rows should use this shape:
 
 **Must not:** manually maintain an untested Markdown-only table.
 
-**Acceptance:** inventory covers all Harness native IDs and current OpenCode
+**Acceptance:** inventory covers all Harness native IDs and current Harness
 reference built-ins with status values.
 
 **Verification:** `cargo nextest run -p harness-tools --test native_tool_parity_matrix_test`
@@ -785,7 +785,7 @@ targeted provider serialization tests.
 
 ### P0.3 Add provider-family schema compatibility tests
 
-**Goal:** Prove or reject OpenCode-inspired schema normalization needs.
+**Goal:** Prove or reject Harness-inspired schema normalization needs.
 
 **Must not:** add provider-specific semantics to the coordinator.
 
@@ -867,7 +867,7 @@ TUI/transcript tests where display is changed.
 
 ### P2.1 Add TUI/CLI tool display descriptors
 
-**Goal:** Bring common tool rows to OpenCode-grade operator readability.
+**Goal:** Bring common tool rows to production-grade operator readability.
 
 **Must not:** claim visual parity without render/PTY evidence.
 
@@ -901,7 +901,7 @@ recorded in the progress ledger. The live Umans evidence covers GLM/Kimi model
 responses and model-requested `glob`/`read` tool use; `doctor` remains scoped to
 local readiness and does not claim provider execution proof.
 
-- [x] Current OpenCode source was inspected for every implemented task card.
+- [x] Current Harness source was inspected for every implemented task card.
 - [x] The parity inventory exists, is tested, and has no `needs_work` P0/P1
       rows.
 - [x] P0/P1 task cards are complete or explicitly re-scoped.

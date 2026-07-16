@@ -1,8 +1,8 @@
-# Agent Harness PRD: OpenCode-grade Ratatui UX and Pi-inspired Backend Hardening
+# Agent Harness PRD: production-grade Ratatui UX and reference-inspired Backend Hardening
 
 **Status:** Audit-complete implementation PRD. Produced from a read-only audit of the
 `dev` branch on 2026-06-10 (HEAD `d46894ef`); revised the same day to (a) fold in
-the detailed OpenCode UI findings from a deeper source comparison and (b) keep
+the detailed Harness UI findings from a deeper source comparison and (b) keep
 the overall plan balanced across performance, maintainability, UI, backend
 hardening, and evidence work. No source files were modified while producing
 this document.
@@ -24,7 +24,7 @@ weakening anything those documents already guarantee.
 The governing goal of this PRD:
 
 > Make Agent Harness faster, more maintainable, more reliable, and much closer
-> to the best inspiration harnesses, while making the TUI as close to OpenCode
+> to the best inspiration harnesses, while making the TUI as close to Harness
 > as is feasible for local coding surfaces without compromising Harness
 > architecture.
 
@@ -38,19 +38,19 @@ and an evidence gate around them:
    responsive. This is the first major technical priority after baseline.
 3. **TUI state maintainability** — focused, risk-reducing extractions from
    `AppState` and overlay-state unification. Supportive work, not a rewrite.
-4. **OpenCode UI workstream** — maximum feasible OpenCode UI/UX parity for the
+4. **Harness UI workstream** — maximum feasible Harness UI/UX parity for the
    selected local-coding TUI surfaces in §6.1/§6.5, adapted to Harness-native
    Rust/Ratatui/event-sourced architecture. One major workstream among five,
    not the governing structure of the plan.
-5. **Backend/session/tool/provider hardening** — audited adoptions from Pi,
-   OpenCode, OMO, Codex, and Senpi: bounded provider retry, error metadata and
+5. **Backend/session/tool/provider hardening** — audited adoptions from reference agent,
+   Harness, OMO, Codex, and Senpi: bounded provider retry, error metadata and
    recovery hints, session rename, queued-turn surfaces, diagnostics — all
    coordinator-owned.
 6. **Testing, docs, dogfooding, and evidence** — every workstream lands with
    deterministic coverage, updated docs/schemas, and recorded evidence.
 
 This is **not** a greenfield plan, **not** a rewrite plan, **not** a UI-only
-roadmap, and **not** a global OpenCode clone plan. OpenCode is the strongest
+roadmap, and **not** a global Harness clone plan. Harness is the strongest
 UI/UX reference for the TUI workstream; for everything else it is one
 inspiration among several. Every task in §17 traces back to a specific audited
 finding in §2–§14.
@@ -73,7 +73,7 @@ finding in §2–§14.
    (`scripts/test-lanes.sh fast` first; see `docs/testing.md`).
 7. Snapshot updates go through `cargo insta review` only after deciding whether
    behavior changed or the fixture drifted (see crate AGENTS anti-patterns).
-8. For OpenCode UI workstream tasks: **re-read the cited OpenCode reference
+8. For Harness UI workstream tasks: **re-read the cited Harness reference
    file and the parity screenshots before implementing.** Do not implement
    reference behavior from memory or from this document alone — this document
    tells you *where to look*, the reference tells you *what it does*.
@@ -110,7 +110,7 @@ finding in §2–§14.
   commands and recording the result.
 - Do not declare a UI parity task done by implementing a vaguely "similar"
   surface, and do not silently drift from the reference either: for selected
-  parity targets, differences from OpenCode are allowed only when documented in
+  parity targets, differences from Harness are allowed only when documented in
   §6.5 and justified by Harness architecture, scope, or safety.
 - Do not introduce new caching that cannot prove correctness: every new cache
   needs an invalidation test that mutates each key component and asserts a
@@ -137,29 +137,29 @@ This PRD is complete if and only if, simultaneously on the working branch:
 5. Docs named in §15 are updated together with the code that changed them.
 6. A dogfooding evidence note (§18.7) is recorded.
 
-### 0.6 OpenCode UI workstream parity bar (scope: TUI workstream only)
+### 0.6 Harness UI workstream parity bar (scope: TUI workstream only)
 
 For the TUI surfaces selected in §6.1/§6.5, the quality bar is **maximum
-feasible parity with OpenCode's local-coding UI/UX**, reimplemented natively:
+feasible parity with Harness's local-coding UI/UX**, reimplemented natively:
 
 - **Reference:** the local checkout under
-  `inspirations/opencode/packages/opencode/src/cli/cmd/tui/` (components,
+  `inspirations/packages/src/cli/cmd/tui/` (components,
   routes, `config/keybind.ts`) plus the parity screenshots in
-  `inspirations/screenshots opencode ui parity/` and
-  `inspirations/opencode-ui-images/`. OpenCode is the strongest UI/UX
+  `inspirations/screenshots harness ui parity/` and
+  `inspirations/harness-ui-images/`. Harness is the strongest UI/UX
   reference for these surfaces; this PRD selects which surfaces and records
   the adaptations.
 - **Parity means:** for a selected surface, the same screen composition,
   interaction flow, default keybindings (where the underlying feature exists),
   information density, and visual hierarchy — with Harness branding and
   Harness theme tokens, and with copy *shape* preserved.
-- **Adaptation is expected:** OpenCode behavior must be adapted to the
+- **Adaptation is expected:** Harness behavior must be adapted to the
   Harness-native Rust/Ratatui/event-sourced architecture. Where Harness
   semantics are stronger (durable event-recorded permission grants,
   replay-derived state, stable fork cutoffs), keep the stronger semantics and
   match the *presentation*. Every intended difference is recorded in §6.5.
 - **Selection, not totality:** only §6.5 *selected parity target* and *adapted*
-  rows are in scope. Excluded OpenCode features (cloud/share, plugins,
+  rows are in scope. Excluded Harness features (cloud/share, plugins,
   snapshots-based undo, multimodal paste, dev tooling) must remain excluded.
 - **Conflict rule:** when the reference conflicts with a §0.3 invariant,
   coordinator authority, replay safety, or roadmap scope, Harness wins and the
@@ -174,13 +174,13 @@ feasible parity with OpenCode's local-coding UI/UX**, reimplemented natively:
 ### 0.7 Missing-specs companion document
 
 A task-by-task breakdown of everything in this PRD that is not yet implemented,
-together with per-task OpenCode reverse-engineering targets and the recommended
+together with per-task Harness reverse-engineering targets and the recommended
 implementation order, lives in
-[`agent_harness_opencode_ui_pi_backend_prd_missing_specs.md`](./agent_harness_opencode_ui_pi_backend_prd_missing_specs.md).
+[`agent_harness_ui_backend_prd_missing_specs.md`](./agent_harness_ui_backend_prd_missing_specs.md).
 Every task card in §17 should be implemented as a standalone cycle with its own
 failing test, smallest correct change, and evidence row. UI/UX tasks in that
-companion document are specified for maximum feasible OpenCode parity and must be
-verified against the OpenCode reference (source + screenshots) at matching
+companion document are specified for maximum feasible Harness parity and must be
+verified against the Harness reference (source + screenshots) at matching
 terminal geometry before they are considered complete.
 
 ---
@@ -222,11 +222,11 @@ The audit found the highest-impact work in five areas, of comparable weight:
    structs, extracted only where they reduce risk for active work, will cut
    precedence bugs and make key handling testable per surface.
 
-3. **OpenCode UI workstream.** A file-level comparison against the OpenCode
+3. **Harness UI workstream.** A file-level comparison against the Harness
    source under `inspirations/` shows the Harness TUI is *close in skeleton* —
    compose-first home, transcript-first session shell, sidebar, palette,
    permission modal, diff review all exist — but has concrete gaps in
-   vocabulary and finish: no leader-key scheme or OpenCode-style default
+   vocabulary and finish: no leader-key scheme or ruleset-style default
    keymap (`config/keybind.ts` defines ~190 bindable commands; Harness has
    ~40 single-chord actions), thin composer editing (no selection, word/line
    ops, or undo), no shell mode / prompt stash / queued-prompt UX (the
@@ -236,8 +236,8 @@ The audit found the highest-impact work in five areas, of comparable weight:
    footer status cluster, and missing transcript navigation vocabulary. These
    are scoped as one workstream with a binding decision table (§6.5).
 
-4. **Backend reliability hardening (Pi-inspired, coordinator-owned).** The
-   highest-value adoption is Pi's bounded automatic retry for transient
+4. **Backend reliability hardening (reference-inspired, coordinator-owned).** The
+   highest-value adoption is the reference agent's bounded automatic retry for transient
    provider failures with operator-visible lifecycle — Harness currently has
    none (only the one-shot overflow-compaction retry). Supporting items:
    provider `retry_after_ms` metadata, exposed error recovery hints, a
@@ -301,7 +301,7 @@ Source (read in full or in targeted depth):
 
 ### 2.2 Inspiration files inspected (read-only, local)
 
-OpenCode TUI (`inspirations/opencode/packages/opencode/src/cli/cmd/tui/`):
+Harness TUI (`inspirations/packages/src/cli/cmd/tui/`):
 
 - `routes/home.tsx` (full): logo + centered prompt, per-mode placeholder
   lists, auto-submit of `--prompt`, footer slot.
@@ -365,14 +365,14 @@ OpenCode TUI (`inspirations/opencode/packages/opencode/src/cli/cmd/tui/`):
   `dialog-theme-list.tsx`, `dialog-agent.tsx`, `dialog-skill.tsx`,
   `dialog-stash.tsx`.
 
-Parity screenshots: `inspirations/screenshots opencode ui parity/Opencode/*`
+Parity screenshots: `inspirations/screenshots harness ui parity/Harness/*`
 (start screen, chat example 1, commands menu) and `.../Harness project/*`
 (current start screen, chat example 1, live_proxy captures);
-`inspirations/opencode-ui-images/session-diff.png` (side-by-side diff with
+`inspirations/harness-ui-images/session-diff.png` (side-by-side diff with
 line numbers, per-file `+/-` counts in sidebar, context token/cost block).
 
-Pi: `inspirations/pi_agent_rust/src` inventory (`session_index.rs` API,
-`compaction.rs` semantic-marker types), `inspirations/pi-mono/packages/coding-agent/src/core`
+reference agent: `inspirations/reference_agent_rust/src` inventory (`session_index.rs` API,
+`compaction.rs` semantic-marker types), `inspirations/reference-coding-agent/packages/coding-agent/src/core`
 inventory, `core/agent-session.ts` auto-retry state machine
 (`auto_retry_start`/`auto_retry_end`, `_retryAttempt`, exponential
 `baseDelayMs * 2^(attempt-1)`, abort-aware sleep, reset on success).
@@ -381,9 +381,9 @@ Codex: `inspirations/codex/codex-rs/tui/src` inventory (markdown_stream,
 diff_render, bottom_pane, key_hint, snapshot rigor).
 
 OMO/Senpi/shuvcode: README-level identification (`oh-my-openagent` = heavy
-OpenCode-based orchestration harness; `senpi` = light OMO on the pi-mono
+Harness-based orchestration harness; `senpi` = light OMO on the reference-coding-agent
 runtime with builtin intent-gate/todo/compaction/prompt-preset extensions;
-`shuvcode` = OpenCode fork). Used as corroboration that Harness's intent gate,
+`shuvcode` = Harness fork). Used as corroboration that Harness's intent gate,
 hashline editing, category routing, and skill systems already cover the
 transferable ideas.
 
@@ -434,7 +434,7 @@ not opened in the PTY capture (covered by `model_switcher_metadata_test`).
 | `crates/harness-tui/src/runtime.rs` | Sync event loop; drain budget 16 events / 8 ms; 100 ms active poll; animation cadence decoupled from redraw; preserved-terminal handoff; full crossterm setup/teardown with fallback | Replay mode never submits | Per-event ingest bumps the global render epoch (cost lands in render); no panic-unwind terminal restore | **Harden** (§11) |
 | `crates/harness-tui/src/event.rs` | Poll + normalize; coalesces resize and mouse-move/drag bursts with a one-slot stash | — | Low | **Keep** |
 | `crates/harness-tui/src/layout.rs`, `theme.rs` | Breakpoints (`PERSISTENT_SIDEBAR_MIN_WIDTH=121`, `DIFF_SIDE_BY_SIDE_MIN_WIDTH=120`, lifecycle geometry tiers), full token-family theme | Geometry only in layout/theme | Single built-in palette; no `tui.json` theme key; no leader-key support in `KeyMap` | **Harden** per UI workstream tasks (T-UI-10, T-UI-09) |
-| `crates/harness-tui/src/keybindings.rs` + `keybindings/command_registry.rs` | `Action` enum (~40 variants), `KeyMap` single-chord overrides, centralized palette command metadata | New bindings registered through configurable defaults | Vocabulary much smaller than OpenCode's; no leader sequences; several actions lack `metadata_id()` | **Harden** (T-UI-10, T-UI-04) |
+| `crates/harness-tui/src/keybindings.rs` + `keybindings/command_registry.rs` | `Action` enum (~40 variants), `KeyMap` single-chord overrides, centralized palette command metadata | New bindings registered through configurable defaults | Vocabulary much smaller than Harness's; no leader sequences; several actions lack `metadata_id()` | **Harden** (T-UI-10, T-UI-04) |
 | `crates/harness-testkit` | Deterministic fakes, simulation evidence, PTY/live/native lanes | Provenance classes never conflated | Low | **Keep** |
 
 ---
@@ -450,8 +450,8 @@ The user-visible end state this PRD drives toward:
 2. **Maintainable TUI internals.** Overlay visibility has one source of
    truth; modal/composer/transcript-view state live in focused structs; new
    surfaces land in focused modules instead of widening `app.rs`.
-3. **An OpenCode-caliber local coding TUI.** For the selected local-coding
-   surfaces (§6.5): OpenCode's interaction vocabulary (leader keymap, composer
+3. **An Harness-caliber local coding TUI.** For the selected local-coding
+   surfaces (§6.5): Harness's interaction vocabulary (leader keymap, composer
    editing, shell mode, stash/queue), dialog finish (session list, model/
    variant/agent/theme), permission modal depth (typed titles, embedded edit
    diff, staged allow/reject), transcript navigation, footer status, and
@@ -482,10 +482,10 @@ The user-visible end state this PRD drives toward:
 
 - **No full rewrite** of `AppState`, the transcript renderer, the coordinator,
   or any crate. Extractions are mechanical and behavior-preserving.
-- **No global OpenCode clone.** OpenCode parity applies to the §6.5-selected
+- **No global Harness clone.** Harness parity applies to the §6.5-selected
   TUI surfaces only; the PRD's other workstreams are not subordinate to it.
 - **No copying source code or architecture from inspirations.** SolidJS
-  reactive patterns, OpenCode's plugin-slot system, Pi's extension host, and
+  reactive patterns, Harness's plugin-slot system, the reference agent's extension host, and
   Codex's app-server are all out of scope; parity is *observable behavior and
   visual design*, reimplemented natively (§0.6).
 - **No moving coordinator authority out of `harness-core`.** The TUI never
@@ -499,7 +499,7 @@ The user-visible end state this PRD drives toward:
 - **No arbitrary plugin host.** The descriptor-only extension manifest stays
   descriptor-only (roadmap: post-V1).
 - **No replacing hashline editing** with patch-grammar or regex-based editing.
-- **No cloud/share/account surfaces** even though OpenCode ships them
+- **No cloud/share/account surfaces** even though Harness ships them
   (share/unshare, `/connect`, console-org, workspaces) — §6.5 excludes them;
   affected footer/dialog regions substitute Harness equivalents.
 - **No weakening tests/snapshots.** Snapshot churn is resolved by review, and
@@ -518,22 +518,22 @@ The user-visible end state this PRD drives toward:
 
 ## 6. Inspiration comparison
 
-### 6.1 OpenCode UI workstream: parity targets for selected surfaces
+### 6.1 Harness UI workstream: parity targets for selected surfaces
 
 > Scope note: this matrix is the **TUI workstream** of the PRD, not the whole
 > plan. Classification (P1 selected parity target / P2 later polish /
 > adapted / excluded) is finalized in the §6.5 decision table.
 >
 > Baseline note: the parity screenshot
-> `inspirations/screenshots opencode ui parity/Harness project/Harness current start screen.png`
+> `inspirations/screenshots harness ui parity/Harness project/Harness current start screen.png`
 > is **stale**. The PTY dogfood (§2.3) shows the current startup shell already
-> matches OpenCode's home *skeleton*. Entries below are the audited remaining
+> matches Harness's home *skeleton*. Entries below are the audited remaining
 > gaps, ordered roughly by how much of the UX identity they carry. Each
 > follows: reference behavior → inspected path → current Harness → gap →
 > Ratatui-native target → files → acceptance → tests.
 
-**U1. Keybinding scheme: leader key + OpenCode-like default keymap. [P1]**
-- Reference behavior: OpenCode's keymap (`config/keybind.ts`) is built around
+**U1. Keybinding scheme: leader key + Harness-like default keymap. [P1]**
+- Reference behavior: Harness's keymap (`config/keybind.ts`) is built around
   a leader key (default `ctrl+x`) followed by a mnemonic: `<leader>m` models,
   `<leader>l` session list, `<leader>n` new session, `<leader>s` status,
   `<leader>b` sidebar toggle, `<leader>c` compact, `<leader>g` timeline,
@@ -548,14 +548,14 @@ The user-visible end state this PRD drives toward:
   (bindings rendered as row footers).
 - Current Harness: `KeyMap` supports single-chord bindings with `tui.json`
   overrides; ~40 `Action` variants; no key-sequence (leader) support; some
-  OpenCode defaults coincidentally match (`ctrl+p`, `tab`/`shift+tab`,
+  Harness defaults coincidentally match (`ctrl+p`, `tab`/`shift+tab`,
   `ctrl+t`).
-- Gap: the keybinding scheme carries OpenCode's interaction identity; without
+- Gap: the keybinding scheme carries Harness's interaction identity; without
   leader sequences Harness cannot mirror the default map.
 - Target: extend `KeyMap` to support two-step sequences (leader + key) with a
   configurable leader (default `ctrl+x`), a pending-leader state with a brief
   footer hint (e.g. `ctrl+x …`), timeout/escape to cancel, and
-  multi-binding-per-action support. Ship the OpenCode default map for every
+  multi-binding-per-action support. Ship the Harness default map for every
   action Harness has (existing + new from this PRD), preserving current
   Harness bindings as *additional* bindings where non-conflicting. `tui.json`
   `keybinds` accepts `<leader>` syntax in values.
@@ -566,12 +566,12 @@ The user-visible end state this PRD drives toward:
   unbound key cancels with no side effect; leader is rebindable; shipped
   defaults match `config/keybind.ts` for commands Harness supports (table
   recorded in docs and drift-tested); palette/help rows show leader bindings
-  in OpenCode's display form (`ctrl+x m`).
+  in Harness's display form (`ctrl+x m`).
 - Tests: `keybindings/tests.rs` sequence dispatch + rebind tests; palette
   snapshot (one reviewed update); help overlay render test.
 
 **U2. Composer/input editing vocabulary. [P1]**
-- Reference behavior: OpenCode's input supports cursor movement by
+- Reference behavior: Harness's input supports cursor movement by
   char/word/line/visual-line/buffer; **selection** variants of each
   (shift+arrows, shift+home/end, select-all); delete word forward/back
   (`alt+d`/`ctrl+w`), delete line, delete to line start/end
@@ -829,7 +829,7 @@ The user-visible end state this PRD drives toward:
   per-server status colors, LSP list, modified files with per-file `+N -M`
   counts (screenshots).
 - Inspected: `routes/session/sidebar.tsx`; chat screenshots;
-  `opencode-ui-images/session-diff.png`.
+  `harness-ui-images/session-diff.png`.
 - Current Harness: sidebar content parity is **already strong** (Context
   tokens/%/$, MCP, LSP, Modified Files `+/-`, todo, subagents — dogfood +
   screenshots). Gaps: width/visual framing differences and the
@@ -936,10 +936,10 @@ The user-visible end state this PRD drives toward:
   fold verification into the §18.4 comparison; differences become follow-up
   cards.
 
-### 6.2 Pi backend/session/tooling patterns to adopt or adapt
+### 6.2 reference agent backend/session/tooling patterns to adopt or adapt
 
 **B1. Bounded automatic provider retry with operator-visible lifecycle.**
-- Reference behavior: pi-mono `core/agent-session.ts` — on transient provider
+- Reference behavior: reference-coding-agent `core/agent-session.ts` — on transient provider
   error, emit `auto_retry_start {attempt, maxAttempts, delayMs, errorMessage}`,
   sleep `baseDelayMs * 2^(attempt-1)` (abortable), resubmit; reset attempt
   counter on first successful assistant response; emit
@@ -986,7 +986,7 @@ The user-visible end state this PRD drives toward:
 
 **B2. Session-list scalability seam (incremental index) — adopt only the
 contract, defer the implementation.**
-- Reference behavior: pi_agent_rust `session_index.rs` maintains an on-disk
+- Reference behavior: reference_agent_rust `session_index.rs` maintains an on-disk
   session index with `refresh_incremental()`, `should_reindex(max_age)`, and
   snapshot-based indexing so `list_sessions` doesn't rescan every session log.
 - Current Harness behavior: `proj/session_catalog_projection.rs` derives
@@ -1003,11 +1003,11 @@ contract, defer the implementation.**
   `sessions list` output byte-identical with and without index.
 
 **B3. Composer editing depth (kill-ring / word-nav / undo) — corroboration.**
-Pi-mono's TUI ships `kill-ring.ts`, `word-navigation.ts`, `undo-stack.ts`;
+Reference coding agent's TUI ships `kill-ring.ts`, `word-navigation.ts`, `undo-stack.ts`;
 this independently confirms the value of U2's composer vocabulary. No
 additional work beyond U2.
 
-**B4. Compaction quality markers — explicitly NOT adopted now.** Pi's
+**B4. Compaction quality markers — explicitly NOT adopted now.** the reference agent's
 semantic compaction markers (`compaction.rs` marker kinds/severity/loss-class)
 are interesting, but Harness compaction already records structured
 summary-source, tail-boundary, and operational-memory metadata with
@@ -1019,7 +1019,7 @@ contract for marginal benefit. Revisit post-V1.
 **C1. Codex: streaming-markdown commit discipline (adapt the idea).**
 - Reference behavior: codex-rs TUI has dedicated `markdown_stream.rs` +
   `live_wrap.rs`: streamed text is appended to a raw buffer, only *committed*
-  lines (ending in newline, outside an open code fence) are markdown-rendered
+  lines (ending in newline, outside an harness fence) are markdown-rendered
   into history; the volatile tail renders separately.
 - Current Harness behavior: streaming deltas append to
   `ActivityEntry.transcript_text`; the whole text re-renders through
@@ -1052,28 +1052,28 @@ contractual, matching the existing `*_exact_tests.rs` style. Process rule for
 
 | Pattern | Source | Why excluded |
 |---|---|---|
-| Plugin slot system (`TuiPluginRuntime.Slot`) | OpenCode | Arbitrary plugin host is post-V1; conflicts with descriptor-only extension manifest invariant |
-| Share/unshare, share URLs, `/connect`, console-org, cloud workspaces | OpenCode | Cloud surfaces are explicitly post-V1 non-goals; footer/sidebar regions substitute Harness equivalents |
-| SolidJS reactive store architecture | OpenCode | Source architecture; Harness stays Ratatui immediate-mode with measured-layout caching |
-| Message undo/redo (`messages_undo`/`redo` restoring file snapshots) | OpenCode | Depends on OpenCode's workspace snapshot system; Harness has no snapshot store and adding one is a coordinator-scale feature. Fork-from-timeline (U12) is the Harness answer. Revisit post-V1 |
-| Image/SVG paste attachments | OpenCode | V1 provider path is text-first; multimodal input is post-V1 in the roadmap |
-| External `session.shell` server endpoint semantics | OpenCode | Shell mode is adapted to the coordinator `bash` tool path (U3) — never a TUI-side executor |
-| Extension host, JS/WASM hostcalls, swarm/validation-broker systems | pi_agent_rust | Post-V1 by roadmap |
-| SQLite session store (`session_sqlite.rs`, `store_v2`) | pi_agent_rust | JSONL event store is the source-of-truth contract |
+| Plugin slot system (`TuiPluginRuntime.Slot`) | Harness | Arbitrary plugin host is post-V1; conflicts with descriptor-only extension manifest invariant |
+| Share/unshare, share URLs, `/connect`, console-org, cloud workspaces | Harness | Cloud surfaces are explicitly post-V1 non-goals; footer/sidebar regions substitute Harness equivalents |
+| SolidJS reactive store architecture | Harness | Source architecture; Harness stays Ratatui immediate-mode with measured-layout caching |
+| Message undo/redo (`messages_undo`/`redo` restoring file snapshots) | Harness | Depends on Harness's workspace snapshot system; Harness has no snapshot store and adding one is a coordinator-scale feature. Fork-from-timeline (U12) is the Harness answer. Revisit post-V1 |
+| Image/SVG paste attachments | Harness | V1 provider path is text-first; multimodal input is post-V1 in the roadmap |
+| External `session.shell` server endpoint semantics | Harness | Shell mode is adapted to the coordinator `bash` tool path (U3) — never a TUI-side executor |
+| Extension host, JS/WASM hostcalls, swarm/validation-broker systems | reference_agent_rust | Post-V1 by roadmap |
+| SQLite session store (`session_sqlite.rs`, `store_v2`) | reference_agent_rust | JSONL event store is the source-of-truth contract |
 | `gpt-apply-patch` freeform patch grammar as an edit path | senpi | Competes with hashline editing — explicit non-goal |
 | Todo enforcer / idle continuation loop / Ralph loop | OMO/senpi | Explicitly post-V1 in roadmap |
 | Bazel build, app-server/IDE protocol layers | codex | Roadmap non-goal; IDE integration post-V1 |
-| Auto-retrying *inside the provider transport* | pi-mono `ai` package | Retry must be coordinator-owned so attempts are event-durable and cancellation-safe (§6.2 B1) |
+| Auto-retrying *inside the provider transport* | reference-coding-agent `ai` package | Retry must be coordinator-owned so attempts are event-durable and cancellation-safe (§6.2 B1) |
 
-### 6.5 OpenCode UI workstream decision table (binding for the UI workstream)
+### 6.5 Harness UI workstream decision table (binding for the UI workstream)
 
-Classifies the OpenCode TUI surfaces relevant to a local coding harness.
+Classifies the Harness TUI surfaces relevant to a local coding harness.
 *P1 selected parity target* rows have task cards in this PRD; *adapted* rows
 are selected with a recorded semantic difference; *P2 later polish* rows are
 defer-able with written disposition; *excluded* rows must not be built. This
 table governs the **UI workstream only**.
 
-| OpenCode surface / command family | Classification | Where / why |
+| Harness surface / command family | Classification | Where / why |
 |---|---|---|
 | Home screen (logo, prompt, placeholders, hints, footer) | P1 (mostly shipped) | U9 footer; placeholder rotation in U3 scope |
 | Leader-key scheme + default keymap | P1 | T-UI-10 |
@@ -1108,7 +1108,7 @@ table governs the **UI workstream only**.
 | Share/unshare, `/connect`, console-org, workspace dialogs | **excluded** | §6.4 cloud exclusion |
 | Message undo/redo | **excluded** (this PRD) | §6.4 snapshot dependency |
 | Image/SVG paste | **excluded** (this PRD) | §6.4 multimodal post-V1 |
-| Debug panel / heap snapshot / console | **excluded** | OpenCode dev tooling; Harness keeps replay/session inspection outside the TUI event-log review surface |
+| Debug panel / heap snapshot / console | **excluded** | Harness dev tooling; Harness keeps replay/session inspection outside the TUI event-log review surface |
 
 ---
 
@@ -1116,7 +1116,7 @@ table governs the **UI workstream only**.
 
 The Harness-side contract per surface. Items marked **[shipped]** were
 verified in the audit/dogfood and need preservation plus §18.4 verification
-only. For §6.5 P1 rows, the OpenCode reference is the behavioral spec
+only. For §6.5 P1 rows, the Harness reference is the behavioral spec
 (§0.6); for everything else this section is the spec.
 
 - **First launch.** **[shipped]** Onboarding (provider pick → auth → skill
@@ -1179,7 +1179,7 @@ only. For §6.5 P1 rows, the OpenCode reference is the behavioral spec
   (`StatusColors`, `LiveShellCopyTokens`, etc.). No literal `Color::…` in
   render helpers. The T-UI-09 parity pass adjusts token *values*, not the
   token system.
-- **Dialog primitive.** OpenCode builds nearly every picker on one
+- **Dialog primitive.** Harness builds nearly every picker on one
   `DialogSelect` primitive (title, filter, grouped options with
   title/description/footer/category, footer hints). Harness's pickers are
   hand-rolled per overlay. Before adding the new dialogs (stash, queue,
@@ -1643,7 +1643,7 @@ contract; `docs/sessions-and-replay.md`; `docs/native-tool-catalog.md`;
    orphaned sentence fragments — restore or remove (docs-only fix).
 4. **`docs/roadmap-v1.md` truncated bullets.** Lines ~81 and ~99 are
    mid-sentence artifacts; repair wording without changing checked status.
-5. **Stale parity screenshot.** `inspirations/screenshots opencode ui
+5. **Stale parity screenshot.** `inspirations/screenshots harness ui
    parity/Harness project/Harness current start screen.png` predates the
    current startup shell. `inspirations/` is read-only — noted here; fresh
    Harness-side captures are produced by the §18.4 review instead.
@@ -1745,8 +1745,8 @@ regression/evidence.
 - Risks: reset-path omissions (`replace_events`) — per-struct `reset()`
   methods called from one place.
 
-### Phase 4 — OpenCode UI workstream: interaction vocabulary
-- Goal: leader-key `KeyMap` + OpenCode-like default keymap (T-UI-10),
+### Phase 4 — Harness UI workstream: interaction vocabulary
+- Goal: leader-key `KeyMap` + Harness-like default keymap (T-UI-10),
   composer input-editing vocabulary (T-UI-11), shell mode (T-UI-13),
   stash + queued prompts (T-UI-12), contextual Suggested palette (T-UI-05),
   palette/help metadata coverage (T-UI-04), footer status cluster (T-UI-01),
@@ -1789,7 +1789,7 @@ regression/evidence.
 
 ### Phase 7 — Full regression, dogfooding, docs, evidence
 - Goal: run `scripts/test-lanes.sh all-deterministic`, `perf`,
-  `signoff-binary`, `signoff-pty`; produce the §18.4 OpenCode comparison for
+  `signoff-binary`, `signoff-pty`; produce the §18.4 Harness comparison for
   the selected parity-now surfaces; update every §15 doc row; record §18.7
   dogfooding evidence; disposition all P2 cards and every *P2 later polish*
   row in §6.5.
@@ -1841,7 +1841,7 @@ items 1–4.
 **T-RT-02 · Mouse-move no-op and paste regression coverage · P2 · testing** — §11.
 **T-RT-03 · Reload/fork event-load budget · P2 · perf** — §11 (measure first).
 
-**T-UI-10 · Leader-key scheme + OpenCode-like default keymap · P1 · UI workstream**
+**T-UI-10 · Leader-key scheme + Harness-like default keymap · P1 · UI workstream**
 - Per §6.1 U1. Files: `keybindings.rs`, `keybindings/`,
   `app/key_interaction.rs`, `configs/tui.example.jsonc`, `configs/tui.json`
   schema, `docs/config.md`.
@@ -1942,16 +1942,16 @@ preserved-terminal handoff ownership, pending-launch mailboxes.
    (`overlay_stack_is_single_source_of_visibility` green); new dialogs share
    the select-dialog primitive; no widened `app.rs`/`ui.rs`/large
    `ui_transcript_*`; all new feature state lives in focused modules.
-4. **OpenCode UI workstream (scoped comparison).** All §6.5 *P1 selected
+4. **Harness UI workstream (scoped comparison).** All §6.5 *P1 selected
    parity target* and *adapted* rows are implemented per their §6.1
    acceptance criteria. The selected parity-now local-coding surfaces are
-   compared against the OpenCode references (source + screenshots) at
+   compared against the Harness references (source + screenshots) at
    matching geometry; **differences are allowed if documented in §6.5 and
-   justified by Harness architecture, scope, or safety**; excluded OpenCode
+   justified by Harness architecture, scope, or safety**; excluded Harness
    features remain excluded. Comparison artifacts (PTY or native captures +
    a verdict table) are stored with the lane evidence; native screenshots
    follow `signoff-native` provenance rules, with PTY captures acceptable
-   where native is unavailable. Cloning every OpenCode surface is **not**
+   where native is unavailable. Cloning every Harness surface is **not**
    required.
 5. **Backend behavior.** Transient provider failures retry within configured
    bounds with durable, redacted attempt metadata; cancellation beats
@@ -2045,9 +2045,9 @@ preserved-terminal handoff ownership, pending-launch mailboxes.
 5. **Load required coding skills before coding.** `karpathy-guidelines` is
    mandatory for any code edit in this repo; include it in `load_skills` for
    delegated coding tasks.
-6. **For OpenCode UI workstream tasks, the reference is the behavioral spec
+6. **For Harness UI workstream tasks, the reference is the behavioral spec
    for that surface.** Before implementing any §6.1 item, re-open the cited
-   files under `inspirations/opencode/...` and the parity screenshots,
+   files under `inspirations/...` and the parity screenshots,
    enumerate the observable behaviors, and write the Harness test list
    first. Implement from the behavior list — never by translating the
    TypeScript. Where the reference conflicts with a §0.3 invariant or §6.5

@@ -1,4 +1,4 @@
-# Config Restructure Spec: Opencode-Style Agent Frontmatter Enrichment
+# Config Restructure Spec: Harness-Style Agent Frontmatter Enrichment
 
 **Created:** 2026-06-21
 **Provenance:** Hyperplan adversarial process (5-member team, 3 rounds: analysis → cross-attack → defend/refine/concede), refined by plan agent.
@@ -8,7 +8,7 @@
 
 ## 1. Executive Summary
 
-The agent-harness config is "almost there but not quite" when compared to Opencode. The adversarial analysis discovered that **most features that seem missing already exist** — wildcard permissions, variable substitution, markdown frontmatter parsing. The real gaps are:
+The agent-harness config is "almost there but not quite" when compared to Harness. The adversarial analysis discovered that **most features that seem missing already exist** — wildcard permissions, variable substitution, markdown frontmatter parsing. The real gaps are:
 
 1. **The merge function is broken** — it silently drops 9 of 14 markdown frontmatter fields
 2. **Discovery is first-wins** — project-level markdown can't override shipped agents
@@ -30,17 +30,17 @@ The agent-harness config has a split agent definition model:
 
 The merge function `merge_markdown_agent_with_config()` at `discovery.rs:136` is supposed to combine JSON config overrides with markdown frontmatter. But it gives JSON config winning precedence for 8 of 14 fields, even when JSON config has no value.
 
-### 2.2 Opencode Comparison
+### 2.2 Harness Comparison
 
-Opencode (source in `inspirations/opencode/`) uses markdown files with full frontmatter (model, tools, permissions, prompt body all in one file). The key difference is that Opencode's markdown files ARE the primary agent definition, while agent-harness's markdown files are secondary to JSON config.
+Harness (source in `inspirations/`) uses markdown files with full frontmatter (model, tools, permissions, prompt body all in one file). The key difference is that Harness's markdown files ARE the primary agent definition, while agent-harness's markdown files are secondary to JSON config.
 
-**What Opencode does that agent-harness already does (don't rebuild):**
+**What Harness does that agent-harness already does (don't rebuild):**
 - Markdown frontmatter parsing with typed structs
 - Variable substitution (`{env:VAR}`, `{file:path}`)
 - Wildcard permission selectors (`CatchAll`, `Prefix`, `Glob`, `Exact`)
 - Config layering (global → project)
 
-**What Opencode does that agent-harness should learn from:**
+**What Harness does that agent-harness should learn from:**
 - Full agent config in markdown frontmatter (not just description + prompt)
 - Last-wins discovery (project overrides global)
 - Clean schema (no inert keys)
@@ -159,38 +159,38 @@ While `PublicProfilePermissions` uses `bash` with `alias = "shell"`.
 
 ---
 
-## 4. Opencode Reference Guide
+## 4. Harness Reference Guide
 
-The implementer MUST actively refer to the Opencode source code in `inspirations/opencode/` throughout implementation. The following files are required reading:
+The implementer MUST actively refer to the Harness source code in `inspirations/` throughout implementation. The following files are required reading:
 
 ### 4.1 Required Reading (read before starting)
 
 | File | What to learn |
 |------|---------------|
-| `inspirations/opencode/packages/core/src/v1/config/agent.ts` | How Opencode defines agent config fields. Note the `mode`, `steps`, `permission`, `tools` fields. |
-| `inspirations/opencode/packages/core/src/v1/config/permission.ts` | How Opencode structures permissions (simple map + catch-all). |
-| `inspirations/opencode/packages/opencode/src/config/agent.ts` | How Opencode discovers and loads markdown agent files. Note `ConfigAgent.load()` and the `{agent,agents}/**/*.md` glob pattern. |
-| `inspirations/opencode/.opencode/agent/triage.md` | A real example of an Opencode agent markdown file with full frontmatter. **Note:** This file uses YAML frontmatter, NOT JSON5. Do not copy the format — agent-harness uses JSON5 frontmatter. |
-| `inspirations/opencode/specs/v2/config.md` | Opencode's V2 config spec. Learn what they're moving AWAY from (don't copy their mistakes). |
+| `inspirations/packages/core/src/v1/config/agent.ts` | How Harness defines agent config fields. Note the `mode`, `steps`, `permission`, `tools` fields. |
+| `inspirations/packages/core/src/v1/config/permission.ts` | How Harness structures permissions (simple map + catch-all). |
+| `inspirations/packages/src/config/agent.ts` | How Harness discovers and loads markdown agent files. Note `ConfigAgent.load()` and the `{agent,agents}/**/*.md` glob pattern. |
+| `inspirations/.harness/agent/triage.md` | A real example of an Harness agent markdown file with full frontmatter. **Note:** This file uses YAML frontmatter, NOT JSON5. Do not copy the format — agent-harness uses JSON5 frontmatter. |
+| `inspirations/specs/v2/config.md` | Harness's V2 config spec. Learn what they're moving AWAY from (don't copy their mistakes). |
 
 ### 4.2 Reference Reading (consult as needed)
 
 | File | What to learn |
 |------|---------------|
-| `inspirations/opencode/packages/core/src/v1/config/config.ts` | Full top-level config schema. Compare with `contract.rs`. |
-| `inspirations/opencode/packages/opencode/src/config/config.ts` | Config loading and merge logic. Note `mergeDeep` usage. |
-| `inspirations/opencode/packages/opencode/src/config/paths.ts` | Config path resolution and directory traversal. |
-| `inspirations/opencode/packages/core/src/permission/schema.ts` | V2 permission ruleset schema (ordered array of rules). |
-| `inspirations/opencode/packages/core/src/permission.ts` | V2 permission evaluation logic (`findLast` — last match wins). |
-| `inspirations/opencode/packages/core/src/util/wildcard.ts` | Wildcard matching implementation. |
+| `inspirations/packages/core/src/v1/config/config.ts` | Full top-level config schema. Compare with `contract.rs`. |
+| `inspirations/packages/src/config/config.ts` | Config loading and merge logic. Note `mergeDeep` usage. |
+| `inspirations/packages/src/config/paths.ts` | Config path resolution and directory traversal. |
+| `inspirations/packages/core/src/permission/schema.ts` | V2 permission ruleset schema (ordered array of rules). |
+| `inspirations/packages/core/src/permission.ts` | V2 permission evaluation logic (`findLast` — last match wins). |
+| `inspirations/packages/core/src/util/wildcard.ts` | Wildcard matching implementation. |
 
-### 4.3 How to Use the Opencode Source
+### 4.3 How to Use the Harness Source
 
-1. **Before each task**, read the relevant Opencode file to understand the pattern
-2. **When designing tests**, check how Opencode tests similar behavior
-3. **When making design decisions** (within your freedom), check what Opencode does and decide whether to follow or diverge
-4. **When documenting**, reference Opencode patterns where they inform the design
-5. **Do NOT copy Opencode's code** — this is a Rust workspace, not TypeScript. Learn the patterns, implement in idiomatic Rust.
+1. **Before each task**, read the relevant Harness file to understand the pattern
+2. **When designing tests**, check how Harness tests similar behavior
+3. **When making design decisions** (within your freedom), check what Harness does and decide whether to follow or diverge
+4. **When documenting**, reference Harness patterns where they inform the design
+5. **Do NOT copy Harness's code** — this is a Rust workspace, not TypeScript. Learn the patterns, implement in idiomatic Rust.
 
 ---
 
@@ -438,7 +438,7 @@ cargo run -p harness -- --config configs/harness.example.jsonc config validate
 
 3. Add variable substitution examples to `configs/harness.example.jsonc` in comments
 
-4. Reference Opencode's config documentation at `inspirations/opencode/packages/web/src/content/docs/config.mdx` for style and structure inspiration
+4. Reference Harness's config documentation at `inspirations/packages/web/src/content/docs/config.mdx` for style and structure inspiration
 
 **Verification:**
 ```bash
@@ -708,7 +708,7 @@ These rules are STRICTLY ENFORCED. Violations invalidate the work.
 2. **Read before write** — read the actual file before editing it. Do not edit from memory.
 3. **Verify after every change** — run the task-specific verification command after each change
 4. **Show evidence** — provide actual command output, not claims
-5. **Reference Opencode** — read the relevant Opencode source file before each task
+5. **Reference Harness** — read the relevant Harness source file before each task
 6. **Follow repo conventions** — read `AGENTS.md` files, follow lint rules, match code style
 7. **Atomic commits** — each task is one commit, buildable and testable independently
 8. **Update together** — follow the UPDATE TOGETHER table in root `AGENTS.md`
@@ -720,7 +720,7 @@ Before declaring a task complete, answer these questions honestly:
 1. Did I run the verification command and show its actual output?
 2. Did I write tests that assert real behavior (not just "doesn't panic")?
 3. Did I check that existing tests still pass?
-4. Did I read the relevant Opencode source file?
+4. Did I read the relevant Harness source file?
 5. Did I avoid all forbidden behaviors listed above?
 6. Did I stay within scope (no over-scoping, no under-scoping)?
 7. Did I provide a diff showing exactly what changed?
@@ -874,4 +874,4 @@ Each task is one atomic commit. Commits are buildable and testable independently
 | `configs/AGENTS.md` | Config directory guidance |
 | `docs/config.md` | Public config documentation |
 | `.agent-harness/AGENTS.md` | Runtime assets guidance |
-| `inspirations/opencode/` | Opencode source code for reference |
+| `inspirations/` | Harness source code for reference |
