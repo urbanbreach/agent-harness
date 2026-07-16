@@ -312,13 +312,12 @@ impl AppState {
                     .is_some_and(|area| rect_contains(area, mouse.column, mouse.row));
                 if in_operator_surface {
                     self.clear_transcript_selection();
-                    let operator_sidebar_session =
-                        ui::operator_sidebar_subagent_session_hit_target(
-                            self,
-                            frame_area,
-                            mouse.column,
-                            mouse.row,
-                        );
+                    let operator_sidebar_session = ui::operator_sidebar_subagent_session_hit_target(
+                        self,
+                        frame_area,
+                        mouse.column,
+                        mouse.row,
+                    );
                     let operator_sidebar_group = ui::operator_sidebar_subagent_group_hit_target(
                         self,
                         frame_area,
@@ -552,7 +551,9 @@ impl AppState {
         &self,
         section: OperatorSidebarSection,
     ) -> bool {
-        self.secondary_surfaces.collapsed_sections.contains(&section)
+        self.secondary_surfaces
+            .collapsed_sections
+            .contains(&section)
     }
 
     pub(crate) fn operator_sidebar_subagent_group_expanded(&self, agent_name: &str) -> bool {

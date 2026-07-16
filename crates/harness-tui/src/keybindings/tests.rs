@@ -535,10 +535,7 @@ fn leader_s_opens_status_dialog_by_default() {
     let action = keymap.leader_action(&KeyEvent::new(KeyCode::Char('s'), KeyModifiers::NONE));
     // assert
     assert_eq!(action, Some(Action::OpenStatusDialog));
-    assert_eq!(
-        keymap.get_binding_str(Action::OpenStatusDialog),
-        "Ctrl+x s"
-    );
+    assert_eq!(keymap.get_binding_str(Action::OpenStatusDialog), "Ctrl+x s");
 }
 
 #[test]

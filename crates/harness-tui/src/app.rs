@@ -44,7 +44,6 @@ mod model_metadata;
 mod model_switcher;
 mod mouse_interaction;
 mod operator_sidebar;
-mod secondary_surfaces;
 pub(crate) mod palette_controller;
 mod pending_live;
 mod permission_prompt;
@@ -54,6 +53,7 @@ mod prompt_input;
 mod prompt_stash;
 mod prompt_stash_actions;
 mod question_prompt;
+mod secondary_surfaces;
 pub(crate) mod session_history;
 mod session_live_routing;
 pub(crate) mod session_navigation;
@@ -130,7 +130,6 @@ pub(crate) use file_mentions::{
 };
 pub use lineage::{ForkSelectorState, LineageBrowserState};
 pub use model_metadata::{LaunchMetadata, McpResourceOption, ModelOption};
-use secondary_surfaces::SecondarySurfaceState;
 pub use pending_live::{
     set_pending_connect_providers, set_pending_live_launch_metadata,
     set_pending_live_prompt_auto_submit, set_pending_live_prompt_draft,
@@ -145,6 +144,7 @@ pub use permissions::{
 };
 pub use prompt_history::prompt_history_path_for_session_dir;
 pub use prompt_stash::prompt_stash_path_for_session_dir;
+use secondary_surfaces::SecondarySurfaceState;
 pub use toggles::{ToggleEntryConfig, ToggleEntryKind, ToggleMenuRow, TogglesConfig};
 
 /// Truncation limit for tool output display in the TUI (chars)

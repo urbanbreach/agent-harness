@@ -37,7 +37,8 @@ pub(super) fn secondary_surface_toggle_does_not_mutate_session_projection() {
     app.secondary_surfaces
         .set_selected_section(Some(OperatorSidebarSection::Todo));
     app.secondary_surfaces.set_focused(true);
-    app.secondary_surfaces.toggle_section(OperatorSidebarSection::Mcp);
+    app.secondary_surfaces
+        .toggle_section(OperatorSidebarSection::Mcp);
     app.secondary_surfaces.close_status_dialog();
     app.secondary_surfaces.set_focused(false);
     app.secondary_surfaces.set_selected_section(None);

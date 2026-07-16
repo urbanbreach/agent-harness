@@ -29,9 +29,9 @@ fn startup_shell_is_compose_first_without_pty() {
 
     let rendered = render_text(&app, 100, 24);
 
-    insta::assert_snapshot!(normalize_volatile_branch(&trim_trailing_snapshot_whitespace(
-        &rendered
-    )));
+    insta::assert_snapshot!(normalize_volatile_branch(
+        &trim_trailing_snapshot_whitespace(&rendered)
+    ));
 
     assert!(rendered.contains("Explain deterministic TUI tests"));
     assert!(rendered.contains("Worker model-1 mock"));
@@ -195,9 +195,9 @@ fn startup_session_history_picker_renders_without_pty() {
 
     let rendered = render_text(&app, 100, 24);
 
-    insta::assert_snapshot!(normalize_volatile_branch(&trim_trailing_snapshot_whitespace(
-        &rendered
-    )));
+    insta::assert_snapshot!(normalize_volatile_branch(
+        &trim_trailing_snapshot_whitespace(&rendered)
+    ));
 
     assert!(rendered.contains("Continue session"));
     assert!(rendered.contains("Search"));

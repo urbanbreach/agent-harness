@@ -1002,12 +1002,12 @@ mod tests {
         ] {
             // act
             let plan = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, width, height));
-            let transcript = plan.transcript.unwrap_or_else(|| {
-                panic!("transcript must exist at {width}x{height}")
-            });
-            let composer = plan.composer.unwrap_or_else(|| {
-                panic!("composer must exist at {width}x{height}")
-            });
+            let transcript = plan
+                .transcript
+                .unwrap_or_else(|| panic!("transcript must exist at {width}x{height}"));
+            let composer = plan
+                .composer
+                .unwrap_or_else(|| panic!("composer must exist at {width}x{height}"));
             // assert
             assert_eq!(
                 transcript.width, plan.shell.width,

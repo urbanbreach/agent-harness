@@ -36,7 +36,10 @@ fn projection_fingerprint(app: &AppState) -> (usize, Vec<u64>, Vec<String>, Opti
     )
 }
 
-fn intent_sink() -> (Arc<Mutex<Vec<UiIntent>>>, Arc<dyn Fn(UiIntent) + Send + Sync>) {
+fn intent_sink() -> (
+    Arc<Mutex<Vec<UiIntent>>>,
+    Arc<dyn Fn(UiIntent) + Send + Sync>,
+) {
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
         let intents = Arc::clone(&intents);
@@ -166,23 +169,25 @@ pub(super) fn pure_view_model_adapters_are_deterministic() {
     });
     assert_eq!(first, second);
 
-    let footer_a = crate::view_model::footer_hints_view_model(crate::view_model::FooterHintsInput {
-        replay_mode: false,
-        review_surface_active: false,
-        startup_shell_visible: false,
-        focus: Focus::Prompt,
-        composer_disabled: false,
-        completed_session_shell_active: false,
-        continued_live_run: false,
-    });
-    let footer_b = crate::view_model::footer_hints_view_model(crate::view_model::FooterHintsInput {
-        replay_mode: false,
-        review_surface_active: false,
-        startup_shell_visible: false,
-        focus: Focus::Prompt,
-        composer_disabled: false,
-        completed_session_shell_active: false,
-        continued_live_run: false,
-    });
+    let footer_a =
+        crate::view_model::footer_hints_view_model(crate::view_model::FooterHintsInput {
+            replay_mode: false,
+            review_surface_active: false,
+            startup_shell_visible: false,
+            focus: Focus::Prompt,
+            composer_disabled: false,
+            completed_session_shell_active: false,
+            continued_live_run: false,
+        });
+    let footer_b =
+        crate::view_model::footer_hints_view_model(crate::view_model::FooterHintsInput {
+            replay_mode: false,
+            review_surface_active: false,
+            startup_shell_visible: false,
+            focus: Focus::Prompt,
+            composer_disabled: false,
+            completed_session_shell_active: false,
+            continued_live_run: false,
+        });
     assert_eq!(footer_a, footer_b);
 }
