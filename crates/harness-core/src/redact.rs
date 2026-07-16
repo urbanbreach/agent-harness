@@ -92,15 +92,26 @@ fn non_redacted_match_count(regex: &Regex, s: &str) -> usize {
         .count()
 }
 
+fn ends_with_ignore_ascii_case(s: &str, suffix: &str) -> bool {
+    if s.len() >= suffix.len() {
+        let split_idx = s.len() - suffix.len();
+        if s.is_char_boundary(split_idx) {
+            return s[split_idx..].eq_ignore_ascii_case(suffix);
+        }
+    }
+    false
+}
+
 fn is_redacted_match_without_raw_prefix(text: &str) -> bool {
     let Some(marker_start) = text.find("[REDACTED") else {
         return false;
     };
-    let prefix = text[..marker_start].trim_end().to_ascii_lowercase();
+    let prefix = text[..marker_start].trim_end();
     if prefix.ends_with('=') || prefix.ends_with("://") {
         return true;
     }
-    prefix.ends_with("cookie:") || prefix.ends_with("set-cookie:")
+    ends_with_ignore_ascii_case(prefix, "cookie:")
+        || ends_with_ignore_ascii_case(prefix, "set-cookie:")
 }
 
 impl Redactor for DefaultRedactor {
@@ -178,15 +189,10 @@ fn redaction_marker_for_sensitive_key(key: &str) -> Option<&'static str> {
     if normalized == "credentials" {
         return None;
     }
-    let segments = key
-        .split(|character: char| !character.is_ascii_alphanumeric())
-        .filter(|segment| !segment.is_empty())
-        .map(|segment| segment.to_ascii_lowercase())
-        .collect::<Vec<_>>();
 
     if normalized == "apikey"
         || normalized.ends_with("apikey")
-        || adjacent_segments(&segments, "api", "key")
+        || adjacent_segments(key, "api", "key")
     {
         return Some("[REDACTED_API_KEY]");
     }
@@ -196,7 +202,7 @@ fn redaction_marker_for_sensitive_key(key: &str) -> Option<&'static str> {
     if normalized.contains("cookie") {
         return Some("[REDACTED_COOKIE]");
     }
-    if normalized.contains("privatekey") || adjacent_segments(&segments, "private", "key") {
+    if normalized.contains("privatekey") || adjacent_segments(key, "private", "key") {
         return Some("[REDACTED_PRIVATE_KEY]");
     }
     if normalized.contains("password")
@@ -204,7 +210,7 @@ fn redaction_marker_for_sensitive_key(key: &str) -> Option<&'static str> {
         || normalized.contains("secret")
         || normalized.contains("token")
         || normalized.contains("credential")
-        || credential_key_segments(&segments)
+        || credential_key_segments(key)
     {
         return Some("[REDACTED_SECRET]");
     }
@@ -212,39 +218,57 @@ fn redaction_marker_for_sensitive_key(key: &str) -> Option<&'static str> {
     None
 }
 
-fn adjacent_segments(segments: &[String], left: &str, right: &str) -> bool {
-    segments
-        .windows(2)
-        .any(|window| window[0] == left && window[1] == right)
-}
+fn adjacent_segments(key: &str, left: &str, right: &str) -> bool {
+    let mut segments = key
+        .split(|character: char| !character.is_ascii_alphanumeric())
+        .filter(|segment| !segment.is_empty());
 
-fn key_segments_contain(segments: &[String], needle: &str) -> bool {
-    segments.iter().any(|segment| segment == needle)
-}
-
-fn credential_key_segments(segments: &[String]) -> bool {
-    if !key_segments_contain(segments, "key") {
-        return false;
+    let mut prev = segments.next();
+    for curr in segments {
+        if prev.unwrap().eq_ignore_ascii_case(left) && curr.eq_ignore_ascii_case(right) {
+            return true;
+        }
+        prev = Some(curr);
     }
-    segments.iter().any(|segment| {
-        matches!(
-            segment.as_str(),
-            "access"
-                | "api"
-                | "auth"
-                | "bearer"
-                | "client"
-                | "credential"
-                | "github"
-                | "google"
-                | "openai"
-                | "private"
-                | "provider"
-                | "secret"
-                | "token"
-                | "aws"
-        )
-    })
+    false
+}
+
+fn credential_key_segments(key: &str) -> bool {
+    let mut has_key = false;
+    let mut has_target = false;
+
+    let targets = [
+        "access",
+        "api",
+        "auth",
+        "bearer",
+        "client",
+        "credential",
+        "github",
+        "google",
+        "openai",
+        "private",
+        "provider",
+        "secret",
+        "token",
+        "aws",
+    ];
+
+    for segment in key
+        .split(|character: char| !character.is_ascii_alphanumeric())
+        .filter(|segment| !segment.is_empty())
+    {
+        if segment.eq_ignore_ascii_case("key") {
+            has_key = true;
+        } else if targets
+            .iter()
+            .any(|&target| segment.eq_ignore_ascii_case(target))
+        {
+            has_target = true;
+        }
+    }
+
+    has_key && has_target
 }
 
 #[cfg(test)]
