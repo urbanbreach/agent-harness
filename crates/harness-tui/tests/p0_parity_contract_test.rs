@@ -28,14 +28,8 @@ use harness_tui::render_test::render_to_string;
 use harness_tui::{ui, FrameLayoutPlan};
 use ratatui::layout::Rect;
 
-const CANONICAL_VIEWPORTS: [(u16, u16); 6] = [
-    (120, 40),
-    (100, 30),
-    (80, 24),
-    (79, 24),
-    (80, 23),
-    (60, 20),
-];
+const CANONICAL_VIEWPORTS: [(u16, u16); 6] =
+    [(120, 40), (100, 30), (80, 24), (79, 24), (80, 23), (60, 20)];
 
 // ---------------------------------------------------------------------------
 // P0-GEOM-01
@@ -215,9 +209,7 @@ fn startup_submit_emits_submit_prompt_and_leaves_startup_shell() {
     let mutates_session = captured.iter().any(|intent| {
         matches!(
             intent,
-            UiIntent::NewSession
-                | UiIntent::SubmitPrompt { .. }
-                | UiIntent::ContinueSession { .. }
+            UiIntent::NewSession | UiIntent::SubmitPrompt { .. } | UiIntent::ContinueSession { .. }
         )
     });
     assert!(
@@ -319,7 +311,10 @@ fn command_palette_opens_filters_and_dismisses_without_sidebar() {
     let mut app = AppState::new_live(None, false, None);
 
     // act — open
-    app.handle_key(key_with_modifiers(KeyCode::Char('p'), KeyModifiers::CONTROL));
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char('p'),
+        KeyModifiers::CONTROL,
+    ));
     let open_plan = plan_for(&app, 120, 40);
     let open_render = render_text(&app, 120, 40);
 
@@ -377,7 +372,10 @@ fn command_palette_opens_filters_and_dismisses_without_sidebar() {
 fn permission_overlay_preempts_palette_and_slash() {
     // arrange
     let mut palette_app = AppState::new_live(None, false, None);
-    palette_app.handle_key(key_with_modifiers(KeyCode::Char('p'), KeyModifiers::CONTROL));
+    palette_app.handle_key(key_with_modifiers(
+        KeyCode::Char('p'),
+        KeyModifiers::CONTROL,
+    ));
     palette_app.handle_key(key(KeyCode::Char('d')));
     assert!(
         palette_app.palette_visible,
@@ -390,7 +388,10 @@ fn permission_overlay_preempts_palette_and_slash() {
         "perm_preempt_palette",
         "tool_call_preempt_palette",
     ));
-    palette_app.handle_key(key_with_modifiers(KeyCode::Char('p'), KeyModifiers::CONTROL));
+    palette_app.handle_key(key_with_modifiers(
+        KeyCode::Char('p'),
+        KeyModifiers::CONTROL,
+    ));
     let palette_plan = plan_for(&palette_app, 120, 40);
     let palette_render = render_text(&palette_app, 120, 40);
 

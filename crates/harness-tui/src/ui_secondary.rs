@@ -637,12 +637,7 @@ pub(crate) use subagent_tests::{
     exact_test_operator_rail_uses_simple_subagent_task_labels,
 };
 
-fn render_operator_sidebar_surface(
-    frame: &mut Frame,
-    app: &AppState,
-    area: Rect,
-    theme: &Theme,
-) {
+fn render_operator_sidebar_surface(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
     let is_focused = app.focus == Focus::List && activity_surface_visible(app);
     let surface = ui_chrome::divided_shell_surface(theme);
 
