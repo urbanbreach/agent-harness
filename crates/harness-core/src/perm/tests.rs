@@ -613,3 +613,31 @@ fn native_tool_ids_resolve_to_permission_kinds_without_aliases() {
         Some(PermissionKind::Task)
     );
 }
+
+// --- OC parity RED locks (T2): .env / external_directory / doom_loop gates ---
+// These fail until T3 maps ReadFs→Read and tool id `read`→Read. Keep them red
+// so T6–T8 cannot ship without the permission gate.
+
+#[test]
+fn read_fs_capability_must_map_to_permission_kind_for_env_ask() {
+    // Given: native `read` uses ToolCapability::ReadFs
+    // When: the coordinator maps capability → PermissionKind
+    // Then: ReadFs must not be None (None skips permission entirely today)
+    assert!(
+        permission_kind_for_capability(ToolCapability::ReadFs).is_some(),
+        "ToolCapability::ReadFs must map to a permission kind so .env path patterns can Ask; \
+         current mapping is None and tool_execution skips the permission gate for reads"
+    );
+}
+
+#[test]
+fn native_read_tool_id_must_map_to_permission_kind_for_env_patterns() {
+    // Given: OpenCode applies .env ask rules only on the `read` permission name
+    // When: permission_kind_for_tool("read") is consulted
+    // Then: native tool id `read` must resolve to a permission kind
+    assert!(
+        permission_kind_for_tool("read").is_some(),
+        "native tool id `read` must map to a permission kind for .env / .env.* path patterns; \
+         without this mapping, reads never emit PermissionRequested"
+    );
+}
