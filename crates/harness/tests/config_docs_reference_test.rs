@@ -69,7 +69,7 @@ fn shipped_builtin_skill_entries() -> Vec<(String, String)> {
         .filter(|entry| {
             matches!(
                 entry.name.as_str(),
-                "git-master" | "review-work" | "frontend-ui-ux"
+                "git-master" | "review-work" | "frontend-ui-ux" | "harness-qa"
             )
         })
         .map(|entry| (entry.name.clone(), entry.stable_id.clone()))
@@ -77,8 +77,8 @@ fn shipped_builtin_skill_entries() -> Vec<(String, String)> {
     entries.sort();
     assert_eq!(
         entries.len(),
-        3,
-        "expected the three V1 built-in skill candidates in the catalog"
+        4,
+        "expected the four V1 built-in skill candidates in the catalog"
     );
     entries
 }
@@ -252,9 +252,14 @@ fn config_contract_semantic_metadata_matches_docs() {
     assert!(bash.canonical);
     assert!(bash.schema_property);
     assert!(bash.supports_selectors);
-    assert!(doc.contains(
-        "`bash`, `edit`, `question`, `task`,\n`webfetch`, `websearch`, `codesearch`, and `lsp`"
-    ));
+    assert!(
+        doc.contains(
+            "`bash`, `edit`, `question`, `task`, `webfetch`, `websearch`, `codesearch`, `lsp`, plus safety kinds `read`, `external_directory`, and `doom_loop`"
+        ) || doc.contains(
+            "`bash`, `edit`, `question`, `task`,\n`webfetch`, `websearch`, `codesearch`, and `lsp`"
+        ),
+        "docs/config.md must list canonical permission names"
+    );
 
     let compaction = contract
         .compaction_knobs
