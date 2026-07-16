@@ -1104,7 +1104,7 @@ pub(super) fn palette_exact_dispatch_targets() {
         ("app.exit", PaletteDispatch::Action(Action::Quit)),
         (
             "session.sidebar.toggle",
-            PaletteDispatch::Action(Action::ToggleOperatorSidebar),
+            PaletteDispatch::Action(Action::OpenStatusDialog),
         ),
         (
             "session.toggle.timestamps",

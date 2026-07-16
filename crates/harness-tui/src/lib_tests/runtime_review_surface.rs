@@ -110,15 +110,14 @@ pub(super) fn details_drawer_toggles_without_leaving_live_surface() {
     assert_eq!(app.active_tab, app::Tab::Run);
     assert!(!app.details_drawer_open());
 
-    app.handle_key(focus_cycle_key());
-    app.handle_key(key(crossterm::event::KeyCode::Char('i')));
+    app.live_details_drawer_open = true;
 
     assert_eq!(app.active_tab, app::Tab::Run);
     assert!(app.details_drawer_open());
     let open_debug = render_live_buffer(&app, 80, 24);
     assert!(open_debug.contains("▼ MCP"));
 
-    app.handle_key(key(crossterm::event::KeyCode::Char('i')));
+    app.live_details_drawer_open = false;
 
     assert_eq!(app.active_tab, app::Tab::Run);
     assert!(!app.details_drawer_open());
@@ -230,6 +229,7 @@ pub(super) fn live_shell_no_longer_renders_debug_inspector_labels() {
     for event in session_view_events() {
         app.ingest_event(event);
     }
+    app.live_details_drawer_open = true;
 
     let rendered = render_live_lines(&app, 160, 48);
     assert!(!rendered.contains("Request ID"));

@@ -199,7 +199,7 @@ pub(super) fn hovered_wheel_target_uses_layout_plan() {
     let default_plan = layout::FrameLayoutPlan::for_app(&default_app, area);
     let default_transcript = default_plan.transcript.unwrap_or_abort();
     let themed_plan = layout::FrameLayoutPlan::for_app(&themed_app, area);
-    let themed_sidebar = themed_plan.operator_sidebar.unwrap_or_abort();
+    let themed_sidebar = themed_plan.details_overlay.unwrap_or_abort();
     let default_target = ui::hovered_wheel_target(
         &default_app,
         area,
@@ -213,7 +213,7 @@ pub(super) fn hovered_wheel_target_uses_layout_plan() {
         themed_sidebar.y.saturating_add(1),
     );
 
-    assert_ne!(default_plan.operator_sidebar, themed_plan.operator_sidebar);
+    assert_ne!(default_plan.details_overlay, themed_plan.details_overlay);
     assert_eq!(default_target, Some(ui::WheelTarget::Transcript));
     assert_eq!(themed_target, Some(ui::WheelTarget::Inspector));
 }
@@ -404,10 +404,7 @@ pub(super) fn layout_breakpoints_match_shell_parity_contract() {
     let wide_plan =
         layout::FrameLayoutPlan::for_app(&wide, ratatui::layout::Rect::new(0, 0, 160, 48));
     assert_eq!(wide_plan.header.height, 0);
-    assert_eq!(
-        wide_plan.operator_sidebar,
-        Some(ratatui::layout::Rect::new(118, 0, 42, 48))
-    );
+    assert_eq!(wide_plan.operator_sidebar, None);
 
     let mut primary = app::AppState::new_live(None, false, None);
     primary.active_tab = app::Tab::Run;

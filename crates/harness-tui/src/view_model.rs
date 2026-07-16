@@ -1,4 +1,6 @@
 // allow: SIZE_OK — TUI view model state (session projection mapping + composer state + display formatting)
+// Pure presentation adapters (AppState/SessionProjection → immutable view models).
+// Must not mutate app state, append events, or emit UiIntent.
 use crate::UnwrapOrAbort;
 use harness_core::event::EventV1;
 

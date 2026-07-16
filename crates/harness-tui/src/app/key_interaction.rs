@@ -30,7 +30,7 @@ impl AppState {
 
         if self.overlay_stack().top() == Some(OverlayKind::StatusDialog) {
             if key.code == KeyCode::Esc {
-                self.status_dialog_visible = false;
+                self.secondary_surfaces.close_status_dialog();
             }
             self.maybe_auto_exit();
             return;
@@ -62,7 +62,7 @@ impl AppState {
 
         if clipboard::copy_on_select_disabled()
             && (self.transcript_view.transcript_selection.is_some()
-                || self.operator_sidebar.selection.is_some())
+                || self.secondary_surfaces.selection.is_some())
         {
             if key.modifiers.contains(KeyModifiers::CONTROL)
                 && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('C'))
@@ -732,18 +732,8 @@ impl AppState {
                     self.transcript_view.transcript_scroll = 0;
                 }
             }
-            Action::ToggleOperatorSidebar
-                if !self.replay_mode && !self.post_run_handoff_visible() =>
-            {
-                let opening = self.active_review_surface.is_some() || !self.details_drawer_open();
-                self.active_tab = Tab::Run;
-                self.active_review_surface = None;
-                self.live_details_drawer_open = opening;
-                if (!opening && self.focus == Focus::List)
-                    || (opening && self.focus == Focus::Prompt)
-                {
-                    self.focus = Focus::Details;
-                }
+            Action::OpenStatusDialog => {
+                self.secondary_surfaces.open_status_dialog();
             }
             Action::CloseReviewSurface if self.focus != Focus::Prompt => {
                 self.close_review_surface();
@@ -1132,17 +1122,10 @@ impl AppState {
     }
 }
 
-fn action_preempts_text_input(action: Action, key: KeyEvent) -> bool {
+fn action_preempts_text_input(action: Action, _key: KeyEvent) -> bool {
     matches!(
         action,
         Action::SessionChildCycle | Action::SessionChildCycleReverse | Action::ToggleTerminalPanel
-    ) || matches!(
-        (action, key.code, key.modifiers),
-        (
-            Action::ToggleOperatorSidebar,
-            KeyCode::Char('2'),
-            KeyModifiers::NONE
-        )
     )
 }
 

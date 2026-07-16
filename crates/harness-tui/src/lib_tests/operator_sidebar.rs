@@ -26,7 +26,7 @@ pub(super) fn operator_sidebar_compact_empty_mode_preserves_anchor_copy_with_fix
         layout::FrameLayoutPlan::for_app(&live_empty, ratatui::layout::Rect::new(0, 0, 160, 30));
     let replay_empty_plan =
         layout::FrameLayoutPlan::for_app(&replay_empty, ratatui::layout::Rect::new(0, 0, 100, 30));
-    let live_populated_plan = layout::FrameLayoutPlan::for_app(
+    let _live_populated_plan = layout::FrameLayoutPlan::for_app(
         &live_populated,
         ratatui::layout::Rect::new(0, 0, 160, 30),
     );
@@ -35,13 +35,9 @@ pub(super) fn operator_sidebar_compact_empty_mode_preserves_anchor_copy_with_fix
         ratatui::layout::Rect::new(0, 0, 100, 30),
     );
 
-    let live_empty_sidebar = live_empty_plan.operator_sidebar.unwrap_or_abort();
     let replay_empty_sidebar = replay_empty_plan.operator_sidebar.unwrap_or_abort();
 
-    assert_eq!(
-        live_empty_sidebar.width,
-        live_populated_plan.operator_sidebar.unwrap_or_abort().width
-    );
+    assert!(live_empty_plan.operator_sidebar.is_none());
     assert_eq!(
         replay_empty_sidebar.width,
         replay_populated_plan
@@ -70,13 +66,6 @@ pub(super) fn operator_sidebar_compact_empty_mode_preserves_anchor_copy_with_fix
 }
 
 pub(super) fn operator_sidebar_width_stays_fixed_when_todo_or_modified_files_exist() {
-    let live_empty_width = layout::FrameLayoutPlan::for_app(
-        &operator_sidebar_empty_live_app(),
-        ratatui::layout::Rect::new(0, 0, 160, 30),
-    )
-    .operator_sidebar
-    .unwrap_or_abort()
-    .width;
     let replay_empty_width = layout::FrameLayoutPlan::for_app(
         &app::AppState::new_replay(PathBuf::from("/tmp/replay-session"), Vec::new()),
         ratatui::layout::Rect::new(0, 0, 100, 30),
@@ -89,13 +78,13 @@ pub(super) fn operator_sidebar_width_stays_fixed_when_todo_or_modified_files_exi
         &operator_sidebar_todo_live_app(),
         "▶ Modified Files",
         "Explain the refactor",
-        live_empty_width,
+        replay_empty_width,
     );
     assert_operator_sidebar_expanded(
         &operator_sidebar_modified_files_live_app(),
         "▼ Modified Files",
         "src/ui_secondary.rs",
-        live_empty_width,
+        replay_empty_width,
     );
     assert_operator_sidebar_expanded(
         &operator_sidebar_todo_replay_app(),

@@ -429,9 +429,9 @@ pub(crate) fn exact_test_live_composer_reserves_right_gap() {
     let plan = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, 160, 30));
     let dock = plan.dock.unwrap_or_abort();
 
-    assert!(plan.operator_sidebar.is_some());
+    assert!(plan.operator_sidebar.is_none());
     assert_eq!(dock.composer.x, dock.shell.x);
-    assert_eq!(dock.composer.width.saturating_add(2), dock.shell.width);
+    assert_eq!(dock.composer.width, dock.shell.width);
     assert_eq!(dock.disclosure.map(|area| area.x), Some(dock.composer.x));
     assert_eq!(
         dock.disclosure.map(|area| area.width),

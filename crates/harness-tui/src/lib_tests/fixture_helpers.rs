@@ -280,8 +280,7 @@ pub(super) fn orchestration_details_drawer_app(extra_terminal_rows: usize) -> ap
     for event in orchestration_details_drawer_events(extra_terminal_rows) {
         app.ingest_event(event);
     }
-    app.handle_key(focus_cycle_key());
-    app.handle_key(key(crossterm::event::KeyCode::Char('i')));
+    app.live_details_drawer_open = true;
     app
 }
 

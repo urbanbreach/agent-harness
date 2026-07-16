@@ -416,7 +416,9 @@ metadata.
 
 `tui.json{,c}` `keybinds` overrides use the action ids below. The table records
 the primary shipped binding for each default-bound action; some surfaces also
-keep secondary aliases for compatibility.
+keep secondary aliases for compatibility. The input-only alias
+`toggle_operator_sidebar` still maps to `open_status_dialog` so persisted user
+configs keep working; it is not a canonical example or serialization key.
 
 Set the special `leader` key to change the two-step leader prefix. The default
 leader is `Ctrl+x`. Action values can be comma-separated to keep multiple
@@ -438,7 +440,6 @@ bindings, and `<leader>` expands to the configured leader key, for example
 | `agent_cycle_reverse` | `Shift-Tab` | Cycle to the previous primary agent. |
 | `focus_next` | `Ctrl+Tab` | Move focus forward. |
 | `focus_prev` | `Ctrl+Shift-Tab` | Move focus backward. |
-| `toggle_operator_sidebar` | `Ctrl+x b` | Show or hide the operator sidebar/drawer. |
 | `toggle_terminal_panel` | `4` | Show or hide terminal output. |
 | `toggle_follow` | ` ` | Toggle transcript follow mode. |
 | `close_review_surface` | `1` | Return to the transcript-first session shell. |

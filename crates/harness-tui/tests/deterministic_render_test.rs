@@ -29,7 +29,9 @@ fn startup_shell_is_compose_first_without_pty() {
 
     let rendered = render_text(&app, 100, 24);
 
-    insta::assert_snapshot!(trim_trailing_snapshot_whitespace(&rendered));
+    insta::assert_snapshot!(normalize_volatile_branch(&trim_trailing_snapshot_whitespace(
+        &rendered
+    )));
 
     assert!(rendered.contains("Explain deterministic TUI tests"));
     assert!(rendered.contains("Worker model-1 mock"));
@@ -40,7 +42,7 @@ fn startup_shell_is_compose_first_without_pty() {
 }
 
 #[test]
-fn live_transcript_and_operator_sidebar_render_without_pty() {
+fn live_transcript_and_composer_shell_render_without_pty() {
     let mut app = AppState::new_live(Some(PathBuf::from("/tmp/run_fixture")), false, None);
     for event in sidebar_render_events() {
         app.ingest_event(event);
@@ -53,18 +55,26 @@ fn live_transcript_and_operator_sidebar_render_without_pty() {
         "live shell keeps transcript primary"
     );
     assert!(
-        plan.operator_sidebar.is_some(),
-        "wide live shell keeps the operator sidebar persistent"
+        plan.operator_sidebar.is_none(),
+        "live shell has no persistent operator sidebar"
     );
+    assert!(
+        plan.composer.is_some(),
+        "live shell keeps the composer dock"
+    );
+    if let Some(transcript) = plan.transcript {
+        assert!(
+            transcript.width == plan.shell.width,
+            "transcript spans the full shell width without a sidebar"
+        );
+    }
 
     let rendered = render_text(&app, area.width, area.height);
 
+    insta::assert_snapshot!(trim_trailing_snapshot_whitespace(&rendered));
+
     assert!(rendered.contains("Inspect deterministic sidebar"));
     assert!(rendered.contains("Assistant verified the rendered shell."));
-    let sidebar_markers: &[&str] = &["▼ MCP", "▼ LSP", "▼ Modified Files", "src/ui_secondary.rs"];
-    assert_markers_in_order(&rendered, sidebar_markers);
-    assert!(rendered.contains("• websearch Connected"));
-    assert!(rendered.contains("• rust"));
     assert!(!rendered.contains("Current runtime:"));
 }
 
@@ -182,7 +192,9 @@ fn startup_session_history_picker_renders_without_pty() {
 
     let rendered = render_text(&app, 100, 24);
 
-    insta::assert_snapshot!(trim_trailing_snapshot_whitespace(&rendered));
+    insta::assert_snapshot!(normalize_volatile_branch(&trim_trailing_snapshot_whitespace(
+        &rendered
+    )));
 
     assert!(rendered.contains("Continue session"));
     assert!(rendered.contains("Search"));
@@ -268,6 +280,33 @@ fn trim_trailing_snapshot_whitespace(rendered: &str) -> String {
     rendered
         .lines()
         .map(str::trim_end)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Normalize the volatile `:git_branch` suffix in the startup footer line so
+/// snapshots are deterministic across branches and checkout locations.
+///
+/// The startup footer renders `cwd:branch` from `WorkspaceEnvironment::current()`,
+/// which reflects the real git branch of the test workspace. Branch names like
+/// `dev` fit without truncation, while longer names like `ui-ux-experiments`
+/// get truncated to `ui-ux-expe…`. Both cases are normalized to `:test-branch`.
+fn normalize_volatile_branch(rendered: &str) -> String {
+    rendered
+        .lines()
+        .map(|line| {
+            if !line.contains("Ctrl+p open") {
+                return line.to_string();
+            }
+            let Some(colon_pos) = line.rfind(':') else {
+                return line.to_string();
+            };
+            let before = &line[..=colon_pos];
+            let after = &line[colon_pos + 1..];
+            let branch_end = after.find("  ").unwrap_or(after.len());
+            let rest = &after[branch_end..];
+            format!("{before}test-branch{rest}")
+        })
         .collect::<Vec<_>>()
         .join("\n")
 }

@@ -44,6 +44,7 @@ mod model_metadata;
 mod model_switcher;
 mod mouse_interaction;
 mod operator_sidebar;
+mod secondary_surfaces;
 pub(crate) mod palette_controller;
 mod pending_live;
 mod permission_prompt;
@@ -129,7 +130,7 @@ pub(crate) use file_mentions::{
 };
 pub use lineage::{ForkSelectorState, LineageBrowserState};
 pub use model_metadata::{LaunchMetadata, McpResourceOption, ModelOption};
-use operator_sidebar::OperatorSidebarState;
+use secondary_surfaces::SecondarySurfaceState;
 pub use pending_live::{
     set_pending_connect_providers, set_pending_live_launch_metadata,
     set_pending_live_prompt_auto_submit, set_pending_live_prompt_draft,
@@ -178,7 +179,7 @@ pub(crate) struct TranscriptScrollbarDragState {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum OperatorSidebarPendingClick {
+pub(in crate::app) enum OperatorSidebarPendingClick {
     Section(OperatorSidebarSection),
     SubagentGroup(String),
     SubagentSession(String),
@@ -210,7 +211,7 @@ pub struct AppState {
     pub details_scroll: u16,
     pub(crate) terminal_panel: TerminalPanelState,
     last_frame_area: Option<Rect>,
-    pub(crate) operator_sidebar: OperatorSidebarState,
+    pub(crate) secondary_surfaces: SecondarySurfaceState,
     pub(crate) transcript_view: TranscriptViewState,
     pub auto_exit_on_finish: bool,
     pub composer: ComposerState,
@@ -223,7 +224,6 @@ pub struct AppState {
     pub palette_selected: usize,
     pub palette_log: Vec<palette_controller::PaletteLogEntry>,
     palette_focus_return: Option<Focus>,
-    pub(crate) status_dialog_visible: bool,
     pub(crate) subagent_actions_session_id: Option<String>,
     pub(crate) hovered_subagent_footer_target: Option<SubagentFooterTarget>,
     pub(crate) pending_subagent_footer_target: Option<SubagentFooterTarget>,
@@ -315,7 +315,7 @@ impl Default for AppState {
             details_scroll: 0,
             terminal_panel: TerminalPanelState::default(),
             last_frame_area: None,
-            operator_sidebar: OperatorSidebarState::default(),
+            secondary_surfaces: SecondarySurfaceState::default(),
             transcript_view: TranscriptViewState::default(),
             auto_exit_on_finish: false,
             composer: ComposerState::default(),
@@ -328,7 +328,6 @@ impl Default for AppState {
             palette_selected: 0,
             palette_log: Vec::new(),
             palette_focus_return: None,
-            status_dialog_visible: false,
             subagent_actions_session_id: None,
             hovered_subagent_footer_target: None,
             pending_subagent_footer_target: None,
@@ -547,7 +546,7 @@ impl AppState {
         }
 
         if matches!(&event.payload, EventV1::EditApplied(_)) {
-            self.operator_sidebar
+            self.secondary_surfaces
                 .collapsed_sections
                 .remove(&OperatorSidebarSection::ModifiedFiles);
             self.file_mention_index = None;

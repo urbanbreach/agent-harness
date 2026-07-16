@@ -158,7 +158,7 @@ pub(super) fn startup_lifecycle_selection_surface(
 
 pub(crate) fn render_startup_lifecycle_flow(
     frame: &mut Frame,
-    _app: &AppState,
+    app: &AppState,
     area: Rect,
     theme: &Theme,
 ) {
@@ -171,7 +171,13 @@ pub(crate) fn render_startup_lifecycle_flow(
     let content_area = lifecycle_surface_copy_area(shell_area);
 
     let logo_height = startup_logo_height(content_area);
-    let content_height = logo_height;
+    let first_run = app.is_first_run();
+    let onboarding_height = u16::from(first_run);
+    let hint_gap = 1u16;
+    let hints_height = 1 + onboarding_height;
+    let content_height = logo_height
+        .saturating_add(hint_gap)
+        .saturating_add(hints_height);
     let top_gap = content_area.height.saturating_sub(content_height) / 2;
 
     frame.render_widget(
@@ -188,6 +194,8 @@ pub(crate) fn render_startup_lifecycle_flow(
         .constraints([
             Constraint::Length(top_gap),
             Constraint::Length(logo_height),
+            Constraint::Length(hint_gap),
+            Constraint::Length(hints_height),
             Constraint::Min(0),
         ])
         .split(content_area);
@@ -201,10 +209,33 @@ pub(crate) fn render_startup_lifecycle_flow(
             .wrap(Wrap { trim: false }),
         rows[1],
     );
+
+    render_lifecycle_copy_line(
+        frame,
+        rows[3],
+        theme.live_shell.startup.secondary_hint,
+        Style::default().fg(theme.text.secondary).bg(surface),
+        Alignment::Center,
+    );
+
+    if first_run {
+        let onboarding_row = Rect {
+            y: rows[3].y.saturating_add(1),
+            height: 1,
+            ..rows[3]
+        };
+        render_lifecycle_copy_line(
+            frame,
+            onboarding_row,
+            theme.live_shell.startup.onboarding_hint,
+            Style::default().fg(theme.text.tertiary).bg(surface),
+            Alignment::Center,
+        );
+    }
 }
 
 fn startup_lifecycle_flow_selection_surface(
-    _app: &AppState,
+    app: &AppState,
     area: Rect,
     theme: &Theme,
 ) -> Option<LifecycleSelectionSurface> {
@@ -218,13 +249,21 @@ fn startup_lifecycle_flow_selection_surface(
     }
 
     let logo_height = startup_logo_height(content_area);
-    let content_height = logo_height;
+    let first_run = app.is_first_run();
+    let onboarding_height = u16::from(first_run);
+    let hint_gap = 1u16;
+    let hints_height = 1 + onboarding_height;
+    let content_height = logo_height
+        .saturating_add(hint_gap)
+        .saturating_add(hints_height);
     let top_gap = content_area.height.saturating_sub(content_height) / 2;
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(top_gap),
             Constraint::Length(logo_height),
+            Constraint::Length(hint_gap),
+            Constraint::Length(hints_height),
             Constraint::Min(0),
         ])
         .split(content_area);
@@ -238,6 +277,30 @@ fn startup_lifecycle_flow_selection_surface(
             row: usize::from(rows[1].y.saturating_sub(content_area.y)).saturating_add(idx),
             max_height: 1,
             line,
+            alignment: Alignment::Center,
+        });
+    }
+
+    if rows[3].height > 0 {
+        text_rows.push(LifecycleSelectableText {
+            row: usize::from(rows[3].y.saturating_sub(content_area.y)),
+            max_height: 1,
+            line: Line::from(Span::raw(truncate_plain_text(
+                theme.live_shell.startup.secondary_hint,
+                usize::from(rows[3].width),
+            ))),
+            alignment: Alignment::Center,
+        });
+    }
+
+    if first_run && rows[3].height > 1 {
+        text_rows.push(LifecycleSelectableText {
+            row: usize::from(rows[3].y.saturating_sub(content_area.y)).saturating_add(1),
+            max_height: 1,
+            line: Line::from(Span::raw(truncate_plain_text(
+                theme.live_shell.startup.onboarding_hint,
+                usize::from(rows[3].width),
+            ))),
             alignment: Alignment::Center,
         });
     }

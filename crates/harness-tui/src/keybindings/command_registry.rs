@@ -419,6 +419,11 @@ const COMMAND_METADATA: &[CommandMetadata] = &[
         description: "Open the prompt stash dialog to browse stashed prompts",
     },
     CommandMetadata {
+        id: "open_status_dialog",
+        label: "Status dialog",
+        description: "Open the status dialog",
+    },
+    CommandMetadata {
         id: "open_lineage_browser",
         label: "Session tree",
         description: "Open the Harness session lineage browser",

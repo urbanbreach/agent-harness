@@ -33,12 +33,105 @@ struct LiveUpdateDrainState {
     budget_exhausted: bool,
 }
 
+/// Explicit model of terminal features the TUI may enable or rely on.
+///
+/// Interactive I/O features (keyboard enhancement, paste, mouse, alt-screen) are
+/// enabled only when setup succeeds. Static probes (truecolor, OSC52 suitability)
+/// come from the environment and never force setup. Restore undoes only what was
+/// successfully enabled and always attempts fail-safe raw-mode/alt-screen exit.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct TerminalCapabilityState {
+    pub keyboard_enhancement: bool,
+    pub truecolor: bool,
+    pub bracketed_paste: bool,
+    pub mouse_capture: bool,
+    pub osc52_clipboard: bool,
+    pub alternate_screen: bool,
+}
+
+/// Ordered restore steps derived from capability state (pure; no I/O).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct TerminalTeardownPlan {
+    pub disable_raw_mode: bool,
+    pub disable_mouse_capture: bool,
+    pub disable_bracketed_paste: bool,
+    pub pop_keyboard_enhancement: bool,
+    pub leave_alternate_screen: bool,
+}
+
+impl TerminalCapabilityState {
+    pub const fn absent() -> Self {
+        Self {
+            keyboard_enhancement: false,
+            truecolor: false,
+            bracketed_paste: false,
+            mouse_capture: false,
+            osc52_clipboard: false,
+            alternate_screen: false,
+        }
+    }
+
+    /// Full capability-present fixture for tests (not used as a live default).
+    pub const fn present() -> Self {
+        Self {
+            keyboard_enhancement: true,
+            truecolor: true,
+            bracketed_paste: true,
+            mouse_capture: true,
+            osc52_clipboard: true,
+            alternate_screen: true,
+        }
+    }
+
+    /// Static environment probes that do not require terminal I/O setup.
+    pub fn from_environment() -> Self {
+        let mut caps = Self::absent();
+        caps.truecolor = truecolor_from_colorterm(std::env::var("COLORTERM").ok().as_deref());
+        caps.osc52_clipboard = std::io::IsTerminal::is_terminal(&std::io::stdout());
+        caps
+    }
+
+    /// Fail-safe restore plan: always leave alt-screen/raw mode; reverse only
+    /// optional features that were successfully enabled during setup.
+    pub const fn teardown_plan(self) -> TerminalTeardownPlan {
+        TerminalTeardownPlan {
+            disable_raw_mode: true,
+            disable_mouse_capture: self.mouse_capture,
+            disable_bracketed_paste: self.bracketed_paste,
+            pop_keyboard_enhancement: self.keyboard_enhancement,
+            leave_alternate_screen: true,
+        }
+    }
+}
+
+fn truecolor_from_colorterm(value: Option<&str>) -> bool {
+    value
+        .map(str::to_ascii_lowercase)
+        .is_some_and(|lower| lower.contains("truecolor") || lower.contains("24bit"))
+}
+
+/// Merge static env probes with interactive setup success flags.
+fn apply_interactive_setup_results(
+    base: TerminalCapabilityState,
+    keyboard_ok: bool,
+    paste_ok: bool,
+    mouse_ok: bool,
+    alt_screen_ok: bool,
+) -> TerminalCapabilityState {
+    TerminalCapabilityState {
+        keyboard_enhancement: keyboard_ok,
+        truecolor: base.truecolor,
+        bracketed_paste: paste_ok,
+        mouse_capture: mouse_ok,
+        osc52_clipboard: base.osc52_clipboard,
+        alternate_screen: alt_screen_ok,
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 struct PreservedTerminalSession {
     active: bool,
-    keyboard_enhancements_enabled: bool,
-    mouse_capture_enabled: bool,
-    bracketed_paste_enabled: bool,
+    capabilities: TerminalCapabilityState,
     buffer: Option<Buffer>,
 }
 
@@ -50,22 +143,14 @@ fn recover_mutex_lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 }
 
 pub(crate) struct TerminalRestoreGuard {
-    keyboard_enhancements_enabled: bool,
-    mouse_capture_enabled: bool,
-    bracketed_paste_enabled: bool,
+    capabilities: TerminalCapabilityState,
     restored: bool,
 }
 
 impl TerminalRestoreGuard {
-    pub(crate) fn new(
-        keyboard_enhancements_enabled: bool,
-        mouse_capture_enabled: bool,
-        bracketed_paste_enabled: bool,
-    ) -> Self {
+    pub(crate) fn new(capabilities: TerminalCapabilityState) -> Self {
         Self {
-            keyboard_enhancements_enabled,
-            mouse_capture_enabled,
-            bracketed_paste_enabled,
+            capabilities,
             restored: false,
         }
     }
@@ -80,18 +165,8 @@ impl TerminalRestoreGuard {
     }
 
     #[cfg(test)]
-    pub(crate) fn keyboard_enhancements_enabled(&self) -> bool {
-        self.keyboard_enhancements_enabled
-    }
-
-    #[cfg(test)]
-    pub(crate) fn mouse_capture_enabled(&self) -> bool {
-        self.mouse_capture_enabled
-    }
-
-    #[cfg(test)]
-    pub(crate) fn bracketed_paste_enabled(&self) -> bool {
-        self.bracketed_paste_enabled
+    pub(crate) fn capabilities(&self) -> TerminalCapabilityState {
+        self.capabilities
     }
 }
 
@@ -101,12 +176,7 @@ impl Drop for TerminalRestoreGuard {
             return;
         }
         let mut stdout = std::io::stdout();
-        let _ = teardown_terminal_session(
-            &mut stdout,
-            self.keyboard_enhancements_enabled,
-            self.mouse_capture_enabled,
-            self.bracketed_paste_enabled,
-        );
+        let _ = teardown_terminal_session(&mut stdout, self.capabilities);
     }
 }
 
@@ -267,18 +337,25 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
 
     let preserved_terminal = recover_mutex_lock(preserved_terminal_session()).clone();
     let reusing_terminal = preserved_terminal.active;
-    let mut keyboard_enhancements_enabled = preserved_terminal.keyboard_enhancements_enabled;
-    let mut mouse_capture_enabled = preserved_terminal.mouse_capture_enabled;
-    let mut bracketed_paste_enabled = preserved_terminal.bracketed_paste_enabled;
+    let mut capabilities = if reusing_terminal {
+        preserved_terminal.capabilities
+    } else {
+        TerminalCapabilityState::from_environment()
+    };
 
     if !reusing_terminal {
         crossterm::terminal::enable_raw_mode().context("failed to enable terminal raw mode")?;
     }
     let mut stdout = std::io::stdout();
     if !reusing_terminal {
+        let mut keyboard_ok = false;
+        let mut paste_ok = false;
+        let mut mouse_ok = false;
+        let mut alt_screen_ok = false;
         let setup_result = (|| -> Result<()> {
             crossterm::execute!(stdout, crossterm::terminal::EnterAlternateScreen)
                 .context("failed to enter alternate screen before launching TUI")?;
+            alt_screen_ok = true;
 
             if crossterm::execute!(
                 stdout,
@@ -289,31 +366,29 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
             )
             .is_ok()
             {
-                keyboard_enhancements_enabled = true;
+                keyboard_ok = true;
             }
 
             crossterm::execute!(stdout, EnableBracketedPaste)
                 .context("failed to enable bracketed paste before launching TUI")?;
-            bracketed_paste_enabled = true;
+            paste_ok = true;
 
             crossterm::execute!(stdout, EnableMouseCapture)
                 .context("failed to enable mouse capture before launching TUI")?;
-            mouse_capture_enabled = true;
+            mouse_ok = true;
             Ok(())
         })();
 
+        capabilities = apply_interactive_setup_results(
+            capabilities,
+            keyboard_ok,
+            paste_ok,
+            mouse_ok,
+            alt_screen_ok,
+        );
+
         if let Err(err) = setup_result {
-            if mouse_capture_enabled {
-                let _ = crossterm::execute!(stdout, DisableMouseCapture);
-            }
-            if bracketed_paste_enabled {
-                let _ = crossterm::execute!(stdout, DisableBracketedPaste);
-            }
-            if keyboard_enhancements_enabled {
-                let _ = crossterm::execute!(stdout, PopKeyboardEnhancementFlags);
-            }
-            let _ = crossterm::execute!(stdout, crossterm::terminal::LeaveAlternateScreen);
-            let _ = crossterm::terminal::disable_raw_mode();
+            let _ = teardown_terminal_session(&mut stdout, capabilities);
             return Err(err);
         }
     }
@@ -326,11 +401,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         }
     }
 
-    let mut restore_guard = TerminalRestoreGuard::new(
-        keyboard_enhancements_enabled,
-        mouse_capture_enabled,
-        bracketed_paste_enabled,
-    );
+    let mut restore_guard = TerminalRestoreGuard::new(capabilities);
 
     let run_result = (|| -> Result<()> {
         let mut redraw_requested = true;
@@ -464,9 +535,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
     if run_result.is_ok() && preserve_terminal_on_exit {
         *recover_mutex_lock(preserved_terminal_session()) = PreservedTerminalSession {
             active: true,
-            keyboard_enhancements_enabled,
-            mouse_capture_enabled,
-            bracketed_paste_enabled,
+            capabilities,
             buffer: Some(terminal.current_buffer_mut().clone()),
         };
         restore_guard.mark_restored();
@@ -474,12 +543,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
     }
 
     *recover_mutex_lock(preserved_terminal_session()) = PreservedTerminalSession::default();
-    teardown_terminal_session(
-        terminal.backend_mut(),
-        keyboard_enhancements_enabled,
-        mouse_capture_enabled,
-        bracketed_paste_enabled,
-    )?;
+    teardown_terminal_session(terminal.backend_mut(), capabilities)?;
     restore_guard.mark_restored();
 
     run_result
@@ -495,37 +559,37 @@ pub fn close_preserved_terminal_session() -> Result<()> {
     // preserves the active terminal long enough for the next TUI invocation in the same process
     // to reuse it, and the interactive workflow closes it after the handoff completes or fails.
     let mut stdout = std::io::stdout();
-    teardown_terminal_session(
-        &mut stdout,
-        preserved.keyboard_enhancements_enabled,
-        preserved.mouse_capture_enabled,
-        preserved.bracketed_paste_enabled,
-    )
+    teardown_terminal_session(&mut stdout, preserved.capabilities)
 }
 
 fn teardown_terminal_session(
     writer: &mut impl std::io::Write,
-    keyboard_enhancements_enabled: bool,
-    mouse_capture_enabled: bool,
-    bracketed_paste_enabled: bool,
+    capabilities: TerminalCapabilityState,
 ) -> Result<()> {
-    crossterm::terminal::disable_raw_mode()
-        .context("failed to disable terminal raw mode after TUI")?;
+    let plan = capabilities.teardown_plan();
 
-    if mouse_capture_enabled {
+    if plan.disable_raw_mode {
+        crossterm::terminal::disable_raw_mode()
+            .context("failed to disable terminal raw mode after TUI")?;
+    }
+
+    if plan.disable_mouse_capture {
         crossterm::execute!(writer, DisableMouseCapture)
             .context("failed to disable mouse capture after TUI")?;
     }
-    if bracketed_paste_enabled {
+    if plan.disable_bracketed_paste {
         crossterm::execute!(writer, DisableBracketedPaste)
             .context("failed to disable bracketed paste after TUI")?;
     }
-    if keyboard_enhancements_enabled {
+    if plan.pop_keyboard_enhancement {
         crossterm::execute!(writer, PopKeyboardEnhancementFlags)
             .context("failed to pop keyboard enhancement flags after TUI")?;
     }
-    crossterm::execute!(writer, crossterm::terminal::LeaveAlternateScreen)
-        .context("failed to leave alternate screen after TUI")
+    if plan.leave_alternate_screen {
+        crossterm::execute!(writer, crossterm::terminal::LeaveAlternateScreen)
+            .context("failed to leave alternate screen after TUI")?;
+    }
+    Ok(())
 }
 
 pub fn run_tui() -> Result<()> {
@@ -938,7 +1002,7 @@ mod tests {
     #[test]
     fn terminal_restore_guard_marks_restored_on_normal_teardown() {
         // arrange
-        let mut guard = TerminalRestoreGuard::new(true, true, true);
+        let mut guard = TerminalRestoreGuard::new(TerminalCapabilityState::present());
         assert!(!guard.restored());
         // act
         guard.mark_restored();
@@ -947,13 +1011,107 @@ mod tests {
     }
 
     #[test]
-    fn terminal_restore_guard_carries_enabled_flags() {
-        // arrange
-        let guard = TerminalRestoreGuard::new(true, false, true);
-        // act
-        // assert
-        assert!(guard.keyboard_enhancements_enabled());
-        assert!(!guard.mouse_capture_enabled());
-        assert!(guard.bracketed_paste_enabled());
+    fn terminal_capability_state_absent_disables_all_features() {
+        let caps = TerminalCapabilityState::absent();
+        assert_eq!(
+            caps,
+            TerminalCapabilityState {
+                keyboard_enhancement: false,
+                truecolor: false,
+                bracketed_paste: false,
+                mouse_capture: false,
+                osc52_clipboard: false,
+                alternate_screen: false,
+            }
+        );
+        let plan = caps.teardown_plan();
+        assert!(plan.disable_raw_mode);
+        assert!(!plan.disable_mouse_capture);
+        assert!(!plan.disable_bracketed_paste);
+        assert!(!plan.pop_keyboard_enhancement);
+        assert!(plan.leave_alternate_screen);
+    }
+
+    #[test]
+    fn terminal_capability_state_present_enables_core_features() {
+        let caps = TerminalCapabilityState::present();
+        assert!(caps.keyboard_enhancement);
+        assert!(caps.truecolor);
+        assert!(caps.bracketed_paste);
+        assert!(caps.mouse_capture);
+        assert!(caps.osc52_clipboard);
+        assert!(caps.alternate_screen);
+
+        let plan = caps.teardown_plan();
+        assert!(plan.disable_raw_mode);
+        assert!(plan.disable_mouse_capture);
+        assert!(plan.disable_bracketed_paste);
+        assert!(plan.pop_keyboard_enhancement);
+        assert!(plan.leave_alternate_screen);
+    }
+
+    #[test]
+    fn terminal_restore_guard_carries_capability_state() {
+        let caps = apply_interactive_setup_results(
+            TerminalCapabilityState {
+                truecolor: true,
+                osc52_clipboard: false,
+                ..TerminalCapabilityState::absent()
+            },
+            true,
+            true,
+            false,
+            true,
+        );
+        let guard = TerminalRestoreGuard::new(caps);
+        assert_eq!(guard.capabilities(), caps);
+        assert!(guard.capabilities().keyboard_enhancement);
+        assert!(guard.capabilities().bracketed_paste);
+        assert!(!guard.capabilities().mouse_capture);
+        assert!(guard.capabilities().alternate_screen);
+        assert!(guard.capabilities().truecolor);
+        assert!(!guard.capabilities().osc52_clipboard);
+    }
+
+    #[test]
+    fn partial_setup_failure_keeps_only_successfully_enabled_capabilities() {
+        let base = TerminalCapabilityState {
+            truecolor: true,
+            osc52_clipboard: true,
+            ..TerminalCapabilityState::absent()
+        };
+        let caps = apply_interactive_setup_results(base, true, true, false, true);
+
+        assert!(caps.keyboard_enhancement);
+        assert!(caps.bracketed_paste);
+        assert!(!caps.mouse_capture);
+        assert!(caps.alternate_screen);
+        assert!(caps.truecolor);
+        assert!(caps.osc52_clipboard);
+
+        let plan = caps.teardown_plan();
+        assert!(plan.pop_keyboard_enhancement);
+        assert!(plan.disable_bracketed_paste);
+        assert!(!plan.disable_mouse_capture);
+        assert!(plan.leave_alternate_screen);
+        assert!(plan.disable_raw_mode);
+    }
+
+    #[test]
+    fn truecolor_detection_accepts_colorterm_truecolor_and_24bit() {
+        assert!(truecolor_from_colorterm(Some("truecolor")));
+        assert!(truecolor_from_colorterm(Some("24bit")));
+        assert!(truecolor_from_colorterm(Some("TRUECOLOR")));
+        assert!(!truecolor_from_colorterm(Some("")));
+        assert!(!truecolor_from_colorterm(Some("xterm-256color")));
+        assert!(!truecolor_from_colorterm(None));
+    }
+
+    #[test]
+    fn terminal_restore_guard_mark_restored_skips_drop_teardown_path() {
+        let mut guard = TerminalRestoreGuard::new(TerminalCapabilityState::present());
+        guard.mark_restored();
+        assert!(guard.restored());
+        drop(guard);
     }
 }

@@ -3,15 +3,15 @@ source: crates/harness-tui/tests/deterministic_render_test.rs
 expression: trim_trailing_snapshot_whitespace(&rendered)
 ---
 
-  ┃                                                                                                                                         Inspect P2.1 tool display descriptors
+  ┃
   ┃  Inspect P2.1 tool display descriptors
-  ┃                                                                                                                                         ▼ MCP
-                                                                                                                                            • No MCP servers configured
-     ≡ List session
-                                                                                                                                            ▼ LSP
-     → LSP diagnostics src/main.rs                                                                                                          • rust
+  ┃
 
-     ┃ ✱ AST Search "foo" · Failed                                                                                                          ▶ Modified Files
+     ≡ List session
+
+     → LSP diagnostics src/main.rs
+
+     ┃ ✱ AST Search "foo" · Failed
      ┃ ast-grep binary not found
 
      → Skill "denied-skill" · Denied
@@ -40,5 +40,5 @@ expression: trim_trailing_snapshot_whitespace(&rendered)
 ┃
 ┃
 ┃  model-1 mock
-╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    HARNESS 0.1.0
-                                                                                                         live ctx 0 est  Ctrl+p commands
+╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+                                                                                                                                                     live ctx 0 est  Ctrl+p commands

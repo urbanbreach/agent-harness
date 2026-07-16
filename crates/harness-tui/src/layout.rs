@@ -47,7 +47,6 @@ const DENSE_SESSION_MAX_HEIGHT: u16 = 18;
 const COMPACT_SESSION_MAX_WIDTH: u16 = 80;
 const COMPACT_SESSION_MAX_HEIGHT: u16 = 24;
 const DENSE_SESSION_PALETTE_MAX_WIDTH: u16 = 46;
-const PERSISTENT_SIDEBAR_MIN_WIDTH: u16 = 121;
 const STARTUP_COMPOSER_MAX_WIDTH: u16 = 75;
 const STARTUP_LOGO_TO_COMPOSER_GAP: u16 = 1;
 const HOME_TOP_SPACER: u16 = 4;
@@ -77,7 +76,6 @@ pub(crate) enum SessionFooterMode {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SessionSidebarMode {
-    Persistent { width: u16 },
     Overlay { width: u16 },
     Hidden,
 }
@@ -305,29 +303,21 @@ pub(crate) fn session_geometry_contract(
         SessionResponsiveMode::Split => SessionGeometryContract {
             header_mode: SessionHeaderMode::Hidden,
             footer_mode: SessionFooterMode::Standard,
-            sidebar_mode: session_sidebar_mode(area, shell),
+            sidebar_mode: SessionSidebarMode::Overlay {
+                width: shell.details_sidebar_width,
+            },
             palette_overlay_max_width: None,
             slash_overlay_max_width: None,
         },
         SessionResponsiveMode::Primary => SessionGeometryContract {
             header_mode: SessionHeaderMode::Hidden,
             footer_mode: SessionFooterMode::Standard,
-            sidebar_mode: session_sidebar_mode(area, shell),
+            sidebar_mode: SessionSidebarMode::Overlay {
+                width: shell.details_sidebar_width,
+            },
             palette_overlay_max_width: None,
             slash_overlay_max_width: None,
         },
-    }
-}
-
-fn session_sidebar_mode(area: Rect, shell: LiveShellLayout) -> SessionSidebarMode {
-    if area.width >= PERSISTENT_SIDEBAR_MIN_WIDTH {
-        SessionSidebarMode::Persistent {
-            width: shell.details_sidebar_width.max(1),
-        }
-    } else {
-        SessionSidebarMode::Overlay {
-            width: shell.details_sidebar_width.max(1),
-        }
     }
 }
 
@@ -402,24 +392,6 @@ pub(crate) fn session_shell_layout(
             }
         } else {
             match contract.sidebar_mode {
-                SessionSidebarMode::Persistent { width } => {
-                    let sidebar_width = width.min(area.width.saturating_sub(1)).max(1);
-                    if area.width
-                        >= min_transcript_width
-                            .saturating_add(gap)
-                            .saturating_add(sidebar_width)
-                    {
-                        let content_width =
-                            area.width.saturating_sub(sidebar_width).saturating_sub(gap);
-                        let sidebar_x = area.x.saturating_add(content_width).saturating_add(gap);
-                        (
-                            Rect::new(area.x, area.y, content_width, area.height),
-                            Some(Rect::new(sidebar_x, area.y, sidebar_width, area.height)),
-                        )
-                    } else {
-                        (area, None)
-                    }
-                }
                 SessionSidebarMode::Overlay { .. } | SessionSidebarMode::Hidden => (area, None),
             }
         };
@@ -971,5 +943,84 @@ mod tests {
             overlay.y,
             plan.content.y.saturating_add(plan.content.height / 4)
         );
+    }
+
+    #[test]
+    fn live_session_operator_sidebar_is_none_at_all_widths_including_wide() {
+        let app = AppState::new_live(None, false, None);
+        for (width, height) in [
+            (120u16, 40u16),
+            (100, 30),
+            (80, 24),
+            (79, 24),
+            (80, 23),
+            (60, 20),
+            (121, 40),
+            (140, 36),
+            (160, 40),
+        ] {
+            let plan = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, width, height));
+            assert!(
+                plan.operator_sidebar.is_none(),
+                "operator_sidebar must be None at {width}x{height}; got {:?}",
+                plan.operator_sidebar
+            );
+            assert!(
+                plan.details_overlay.is_none(),
+                "details_overlay must be None at {width}x{height}; got {:?}",
+                plan.details_overlay
+            );
+            assert!(
+                plan.wheel_hit_areas.inspector.is_none(),
+                "inspector hit area must be None at {width}x{height}; got {:?}",
+                plan.wheel_hit_areas.inspector
+            );
+            assert!(
+                plan.wheel_hit_areas.overlay.is_none(),
+                "overlay hit area must be None at {width}x{height}; got {:?}",
+                plan.wheel_hit_areas.overlay
+            );
+        }
+    }
+
+    #[test]
+    fn live_session_transcript_and_composer_span_full_shell_width() {
+        let app = AppState::new_live(None, false, None);
+        for (width, height) in [
+            (120u16, 40u16),
+            (100, 30),
+            (80, 24),
+            (79, 24),
+            (80, 23),
+            (60, 20),
+            (121, 40),
+            (160, 40),
+        ] {
+            let plan = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, width, height));
+            let transcript = plan.transcript.unwrap_or_else(|| {
+                panic!("transcript must exist at {width}x{height}")
+            });
+            let composer = plan.composer.unwrap_or_else(|| {
+                panic!("composer must exist at {width}x{height}")
+            });
+            assert_eq!(
+                transcript.width, plan.shell.width,
+                "transcript must span full shell width at {width}x{height}; transcript={transcript:?} shell={:?}",
+                plan.shell
+            );
+            assert_eq!(
+                composer.width, plan.shell.width,
+                "composer must span full shell width at {width}x{height}; composer={composer:?} shell={:?}",
+                plan.shell
+            );
+            assert_eq!(
+                transcript.x, plan.shell.x,
+                "transcript must share shell left edge at {width}x{height}"
+            );
+            assert!(
+                transcript.y + transcript.height <= composer.y,
+                "transcript must sit above composer at {width}x{height}; transcript={transcript:?} composer={composer:?}"
+            );
+        }
     }
 }

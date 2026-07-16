@@ -173,7 +173,7 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         description: "Toggle the operator sidebar",
         suggested: SuggestedRule::Never,
         harness_only: false,
-        dispatch: PaletteDispatch::Action(Action::ToggleOperatorSidebar),
+        dispatch: PaletteDispatch::Action(Action::OpenStatusDialog),
     },
     PaletteCommandEntry {
         id: "session.toggle.timestamps",

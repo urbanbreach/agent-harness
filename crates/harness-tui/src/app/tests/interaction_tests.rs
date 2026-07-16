@@ -66,7 +66,7 @@ pub(super) fn details_drawer_toggles_without_stealing_transcript_state() {
     app.transcript_view.selected_activity_index = 0;
     app.details_scroll = 7;
 
-    app.handle_key(key(KeyCode::Char('i')));
+    app.live_details_drawer_open = true;
     assert!(app.details_drawer_open());
     assert_eq!(app.active_tab, Tab::Run);
     assert_eq!(app.focus, Focus::Details);
@@ -74,7 +74,7 @@ pub(super) fn details_drawer_toggles_without_stealing_transcript_state() {
     assert_eq!(app.transcript_view.selected_activity_index, 0);
     assert_eq!(app.details_scroll, 7);
 
-    app.handle_key(key(KeyCode::Char('i')));
+    app.live_details_drawer_open = false;
     assert!(!app.details_drawer_open());
     assert_eq!(app.active_tab, Tab::Run);
     assert_eq!(app.focus, Focus::Details);

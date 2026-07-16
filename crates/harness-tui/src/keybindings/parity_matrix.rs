@@ -872,7 +872,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
         suggested: SuggestedRule::Never,
         availability: AvailabilityRule::NoReviewSurface,
         dispatch: DispatchPath::Action,
-        harness_equivalent: "toggle_operator_sidebar",
+        harness_equivalent: "open_status_dialog",
     },
     ParityEntry {
         id: "session.toggle.conceal",

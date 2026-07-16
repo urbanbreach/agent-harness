@@ -596,6 +596,10 @@ impl AppState {
         matches!(self.lifecycle_shell_state(), LifecycleShellState::Startup)
     }
 
+    pub(crate) fn is_first_run(&self) -> bool {
+        self.startup_mode && self.session_history_entries.is_empty()
+    }
+
     pub fn post_run_handoff_visible(&self) -> bool {
         matches!(self.lifecycle_shell_state(), LifecycleShellState::PostRun)
     }
@@ -673,7 +677,7 @@ impl AppState {
             slash_visible: self.slash_overlay_should_render(),
             file_mention_visible: self.file_mention_overlay_should_render(),
             palette_visible: self.palette_visible,
-            status_dialog_visible: self.status_dialog_visible,
+            status_dialog_visible: self.secondary_surfaces.status_dialog_visible(),
             subagent_actions_visible: self.subagent_actions_session_id.is_some(),
             session_history_visible: self.session_history_visible,
             model_switcher_visible: self.model_switcher_visible,

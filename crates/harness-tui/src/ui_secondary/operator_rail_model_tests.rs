@@ -760,6 +760,7 @@ pub(crate) fn exact_test_operator_rail_collapses_modified_files_section_body() {
 #[cfg(test)]
 pub(crate) fn exact_test_operator_sidebar_hit_target_maps_section_headers() {
     let mut app = operator_rail_test_app();
+    app.live_details_drawer_open = true;
     app.ingest_event(operator_rail_test_event(
         50,
         harness_core::event::EventActor::new(harness_core::event::ActorKind::System, None),
@@ -774,13 +775,13 @@ pub(crate) fn exact_test_operator_sidebar_hit_target_maps_section_headers() {
 
     let frame_area = Rect::new(0, 0, 160, 30);
     let sidebar_area = crate::layout::FrameLayoutPlan::for_app(&app, frame_area)
-        .operator_sidebar
+        .details_overlay
         .unwrap_or_abort();
     let inner = operator_sidebar_inner_area(
         &app,
         sidebar_area,
         app.theme(),
-        OperatorSidebarChrome::Persistent,
+        OperatorSidebarChrome::Overlay,
     )
     .unwrap_or_abort();
     let column = inner.x.saturating_add(1);

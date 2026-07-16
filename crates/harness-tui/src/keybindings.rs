@@ -31,7 +31,8 @@ pub enum Action {
     Palette,
     /// Open/close the help tab
     Help,
-    ToggleOperatorSidebar,
+    /// Open the status dialog (operator status surface)
+    OpenStatusDialog,
     ToggleTerminalPanel,
     /// Toggle follow mode
     ToggleFollow,
@@ -125,7 +126,7 @@ impl Action {
             Action::FocusPrev => Some("focus_prev"),
             Action::Palette => None,
             Action::Help => Some("help"),
-            Action::ToggleOperatorSidebar => None,
+            Action::OpenStatusDialog => Some("open_status_dialog"),
             Action::ToggleTerminalPanel => Some("toggle_terminal_panel"),
             Action::ToggleFollow => Some("toggle_follow"),
             Action::SubmitPrompt => Some("submit_prompt"),
@@ -221,7 +222,7 @@ impl Action {
             Action::FocusPrev => "focus_prev",
             Action::Palette => "palette",
             Action::Help => "help",
-            Action::ToggleOperatorSidebar => "toggle_operator_sidebar",
+            Action::OpenStatusDialog => "open_status_dialog",
             Action::ToggleTerminalPanel => "toggle_terminal_panel",
             Action::ToggleFollow => "toggle_follow",
             Action::SubmitPrompt => "submit_prompt",
@@ -341,7 +342,7 @@ impl FromStr for Action {
             "focus_prev" => Ok(Action::FocusPrev),
             "palette" => Ok(Action::Palette),
             "help" => Ok(Action::Help),
-            "toggle_operator_sidebar" => Ok(Action::ToggleOperatorSidebar),
+            "open_status_dialog" | "toggle_operator_sidebar" => Ok(Action::OpenStatusDialog),
             "toggle_terminal_panel" => Ok(Action::ToggleTerminalPanel),
             "toggle_follow" => Ok(Action::ToggleFollow),
             "submit_prompt" => Ok(Action::SubmitPrompt),
@@ -573,17 +574,8 @@ impl KeyMap {
             Action::CloseReviewSurface,
         );
         keymap.bind(
-            KeyBinding::new(KeyCode::Char('2'), KeyModifiers::NONE),
-            Action::ToggleOperatorSidebar,
-        );
-        keymap.bind(
             KeyBinding::new(KeyCode::Char('4'), KeyModifiers::NONE),
             Action::ToggleTerminalPanel,
-        );
-
-        keymap.bind(
-            KeyBinding::new(KeyCode::Char('i'), KeyModifiers::NONE),
-            Action::ToggleOperatorSidebar,
         );
 
         // Actions
@@ -1016,7 +1008,7 @@ impl KeyMap {
         );
         self.bind_sequence(
             KeyBinding::new(KeyCode::Char('s'), KeyModifiers::NONE),
-            Action::ToggleScrollbar,
+            Action::OpenStatusDialog,
         );
         self.bind_sequence(
             KeyBinding::new(KeyCode::Char('g'), KeyModifiers::NONE),

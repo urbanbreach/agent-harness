@@ -247,6 +247,10 @@ pub enum WheelTarget {
     Inspector,
 }
 
+/// Compose the full frame from `app` without mutating state or emitting intents.
+///
+/// Orchestration-only: layout plan → chrome/content/footer/overlays/toast.
+/// Event ingestion, key/mouse handlers, and UiIntent emission stay outside this path.
 pub fn render_app(frame: &mut Frame, app: &AppState) {
     let theme = app.theme();
     let area = frame.area();

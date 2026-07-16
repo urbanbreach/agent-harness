@@ -320,7 +320,7 @@ impl AppState {
             }
             "status" => {
                 self.restore_slash_draft(preserved_draft);
-                self.status_dialog_visible = true;
+                self.secondary_surfaces.open_status_dialog();
             }
             "help" => {
                 self.restore_slash_draft(preserved_draft);

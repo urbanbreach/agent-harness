@@ -321,23 +321,23 @@ fn wheel_hit_testing_uses_app_theme() {
 
     let default_transcript = default_plan.transcript.unwrap_or_abort();
     let themed_plan = FrameLayoutPlan::for_app(&themed_app, area);
-    let themed_rail = themed_plan.operator_sidebar.unwrap_or_abort();
+    let themed_rail = themed_plan.details_overlay.unwrap_or_abort();
 
     assert_eq!(
         default_plan.wheel_hit_areas.overlay,
-        default_plan.operator_sidebar
+        default_plan.details_overlay
     );
     assert_eq!(
         default_plan.wheel_hit_areas.inspector,
-        default_plan.operator_sidebar
+        default_plan.details_overlay
     );
     assert_eq!(
         themed_plan.wheel_hit_areas.overlay,
-        themed_plan.operator_sidebar
+        themed_plan.details_overlay
     );
     assert_eq!(
         themed_plan.wheel_hit_areas.inspector,
-        themed_plan.operator_sidebar
+        themed_plan.details_overlay
     );
 
     assert_eq!(

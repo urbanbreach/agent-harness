@@ -5,6 +5,7 @@ use crate::UnwrapOrAbort;
 #[cfg(test)]
 pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_state() {
     let mut app = AppState::new_live(None, false, None);
+    app.live_details_drawer_open = true;
     app.ingest_event(operator_rail_test_event_with_correlation(
         1,
         harness_core::event::EventActor::new(harness_core::event::ActorKind::User, None),
@@ -267,7 +268,7 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
     let sidebar_area = Rect::new(0, 0, 32, 40);
     let theme = &theme;
     let inner =
-        operator_sidebar_inner_area(&app, sidebar_area, theme, OperatorSidebarChrome::Persistent)
+        operator_sidebar_inner_area(&app, sidebar_area, theme, OperatorSidebarChrome::Overlay)
             .unwrap_or_abort();
     let rail = build_operator_rail_model(&app);
     let title_height = u16::try_from(
@@ -288,7 +289,7 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
             &app,
             sidebar_area,
             theme,
-            OperatorSidebarChrome::Persistent,
+            OperatorSidebarChrome::Overlay,
             inner.x,
             inner
                 .y
@@ -321,7 +322,7 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
             &app,
             sidebar_area,
             theme,
-            OperatorSidebarChrome::Persistent,
+            OperatorSidebarChrome::Overlay,
             inner.x,
             wrapped_row,
         ),
@@ -332,7 +333,7 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
             &app,
             sidebar_area,
             theme,
-            OperatorSidebarChrome::Persistent,
+            OperatorSidebarChrome::Overlay,
             inner.x,
             wrapped_row.saturating_add(1),
         ),
@@ -357,7 +358,7 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
             &app,
             sidebar_area,
             theme,
-            OperatorSidebarChrome::Persistent,
+            OperatorSidebarChrome::Overlay,
             inner.x,
             footer_sections[2].y,
         ),
@@ -367,9 +368,9 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
 
     let frame_area = Rect::new(0, 0, 140, 40);
     let plan = crate::layout::FrameLayoutPlan::for_app(&app, frame_area);
-    let sidebar_area = plan.operator_sidebar.unwrap_or_abort();
+    let sidebar_area = plan.details_overlay.unwrap_or_abort();
     let inner =
-        operator_sidebar_inner_area(&app, sidebar_area, theme, OperatorSidebarChrome::Persistent)
+        operator_sidebar_inner_area(&app, sidebar_area, theme, OperatorSidebarChrome::Overlay)
             .unwrap_or_abort();
     let rail = build_operator_rail_model(&app);
     let body_area =
@@ -384,6 +385,7 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
         .y
         .saturating_add(u16::try_from(group_region.top_row).unwrap_or(u16::MAX));
     let group_col = body_area.x;
+    app.set_frame_area(frame_area);
     for kind in [
         crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
         crossterm::event::MouseEventKind::Up(crossterm::event::MouseButton::Left),
@@ -421,14 +423,16 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
     assert_eq!(running.spans[1].style.fg, Some(theme.status.success));
     assert_eq!(running.spans[2].style.fg, Some(theme.text.primary));
 
+    let collapse_plan = crate::layout::FrameLayoutPlan::for_app(&app, frame_area);
+    let collapse_area = collapse_plan.details_overlay.unwrap_or_abort();
     app.handle_mouse(
         crossterm::event::MouseEvent {
             kind: crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
-            column: 0,
-            row: 0,
+            column: collapse_area.x.saturating_add(1),
+            row: collapse_area.y.saturating_add(1),
             modifiers: crossterm::event::KeyModifiers::NONE,
         },
-        Rect::new(0, 0, 140, 40),
+        frame_area,
         None,
         Some(OperatorSidebarSection::Subagents),
         None,

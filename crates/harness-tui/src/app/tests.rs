@@ -412,6 +412,7 @@ fn shell_card_selection_test_app() -> AppState {
 
 fn operator_sidebar_selection_test_app() -> AppState {
     let mut app = AppState::new_live(None, false, None);
+    app.live_details_drawer_open = true;
     app.ingest_event(envelope(
         1,
         "req_sidebar_copy",
@@ -485,8 +486,10 @@ fn operator_sidebar_text_bounds(app: &AppState, needle: &str) -> (u16, u16, u16)
         .draw(|frame| render_app(frame, app))
         .unwrap_or_abort();
     let buffer = terminal.backend().buffer();
-    let sidebar = FrameLayoutPlan::for_app(app, TEST_FRAME_AREA)
+    let plan = FrameLayoutPlan::for_app(app, TEST_FRAME_AREA);
+    let sidebar = plan
         .operator_sidebar
+        .or(plan.details_overlay)
         .unwrap_or_abort();
 
     for y in sidebar.y..sidebar.bottom() {
@@ -861,6 +864,22 @@ delegate_test!(current_context_window_tokens_uses_runtime_context_after_model_sw
 #[cfg(test)]
 #[path = "tests/interaction_tests.rs"]
 mod interaction_tests;
+
+#[cfg(test)]
+#[path = "tests/secondary_surface_ownership_tests.rs"]
+mod secondary_surface_ownership_tests;
+
+delegate_test!(secondary_surface_toggle_does_not_mutate_session_projection => secondary_surface_ownership_tests::secondary_surface_toggle_does_not_mutate_session_projection);
+delegate_test!(replay_activities_unchanged_when_opening_closing_status_dialog => secondary_surface_ownership_tests::replay_activities_unchanged_when_opening_closing_status_dialog);
+delegate_test!(status_dialog_visibility_is_owned_by_secondary_surface_state => secondary_surface_ownership_tests::status_dialog_visibility_is_owned_by_secondary_surface_state);
+
+#[cfg(test)]
+#[path = "tests/render_purity_tests.rs"]
+mod render_purity_tests;
+
+delegate_test!(repeated_projection_and_render_leaves_intent_queue_empty_and_projection_unchanged => render_purity_tests::repeated_projection_and_render_leaves_intent_queue_empty_and_projection_unchanged);
+delegate_test!(repeated_replay_projection_and_render_is_side_effect_free => render_purity_tests::repeated_replay_projection_and_render_is_side_effect_free);
+delegate_test!(pure_view_model_adapters_are_deterministic => render_purity_tests::pure_view_model_adapters_are_deterministic);
 
 delegate_test!(focus_returns_after_palette_close => interaction_tests::focus_returns_after_palette_close);
 

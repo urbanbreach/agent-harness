@@ -345,6 +345,9 @@ delegate_test!(lifecycle_shell_state_transitions => startup_lifecycle_surface::l
 delegate_test!(lifecycle_shell_snapshots_preserve_startup_and_handoff_contracts => startup_lifecycle_surface::lifecycle_shell_snapshots_preserve_startup_and_handoff_contracts);
 delegate_test!(session_history_browse_preserves_draft => startup_lifecycle_surface::session_history_browse_preserves_draft);
 delegate_test!(new_session_resets_transcript_but_keeps_unsent_draft => startup_lifecycle_surface::new_session_resets_transcript_but_keeps_unsent_draft);
+delegate_test!(startup_first_run_shows_onboarding_hint => startup_lifecycle_surface::startup_first_run_shows_onboarding_hint);
+delegate_test!(startup_returning_user_hides_onboarding_hint => startup_lifecycle_surface::startup_returning_user_hides_onboarding_hint);
+delegate_test!(startup_hints_stay_compose_first => startup_lifecycle_surface::startup_hints_stay_compose_first);
 
 mod live_interaction_surface;
 delegate_test!(permission_modal_preempts_prompt_submission => live_interaction_surface::permission_modal_preempts_prompt_submission);

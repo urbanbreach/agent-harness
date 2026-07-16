@@ -28,7 +28,7 @@ expression: snapshot.as_str()
                                   Rename session Rename the current session
                                   Fork session Fork the current session
                                   Compact session Write a manual context checkpoint
-                                  Show sidebar Toggle the operator sidebar           2
+                                  Show sidebar Toggle the operator sidebar    Ctrl+x s
                                   Show timestamps Toggle user message timestamps
                                   Collapse thinking Toggle inline thinking rows
 

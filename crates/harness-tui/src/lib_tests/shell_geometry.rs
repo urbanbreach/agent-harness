@@ -350,7 +350,7 @@ pub(super) fn live_shell_redesign_guardrails_preserve_primary_contract() {
             30,
             layout::SessionHeaderMode::Hidden,
             layout::SessionFooterMode::Standard,
-            layout::SessionSidebarMode::Persistent { width: 42 },
+            layout::SessionSidebarMode::Overlay { width: 42 },
         ),
     ] {
         let area = ratatui::layout::Rect::new(0, 0, width, height);
@@ -385,18 +385,6 @@ pub(super) fn live_shell_redesign_guardrails_preserve_primary_contract() {
         );
 
         match expected_sidebar {
-            layout::SessionSidebarMode::Persistent { .. } => {
-                let transcript = plan.transcript.unwrap_or_abort();
-                let sidebar = plan.operator_sidebar.unwrap_or_abort();
-                assert!(
-                    transcript.x < sidebar.x,
-                    "{label}: transcript-first layout must keep transcript left of the operator sidebar"
-                );
-                assert!(
-                    transcript.width > sidebar.width,
-                    "{label}: transcript-first layout must keep transcript primary over the operator sidebar"
-                );
-            }
             layout::SessionSidebarMode::Overlay { .. } | layout::SessionSidebarMode::Hidden => {
                 assert!(
                     plan.operator_sidebar.is_none(),

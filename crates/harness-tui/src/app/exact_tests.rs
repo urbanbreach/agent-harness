@@ -724,11 +724,7 @@ pub(crate) fn exact_test_compact_operator_rail_skips_focus_cycle() {
     assert_eq!(live.focus, Focus::Prompt);
     assert!(!live.details_drawer_open());
 
-    live.handle_key(KeyEvent::new(KeyCode::Char('2'), KeyModifiers::NONE));
-    assert_eq!(live.focus, Focus::Details);
-    assert!(live.details_drawer_open());
-
-    live.handle_key(KeyEvent::new(KeyCode::Char('2'), KeyModifiers::NONE));
+    live.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::CONTROL));
     assert_eq!(live.focus, Focus::Details);
     assert!(!live.details_drawer_open());
 
@@ -736,7 +732,7 @@ pub(crate) fn exact_test_compact_operator_rail_skips_focus_cycle() {
     assert_eq!(live.focus, Focus::Prompt);
     assert!(!live.details_drawer_open());
 
-    live.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::CONTROL));
+    live.handle_key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::CONTROL));
     assert_eq!(live.focus, Focus::Details);
     assert!(!live.details_drawer_open());
 
@@ -746,7 +742,7 @@ pub(crate) fn exact_test_compact_operator_rail_skips_focus_cycle() {
 
     let mut live_overlay = AppState::new_live(None, false, None);
     live_overlay.focus = Focus::Details;
-    live_overlay.handle_key(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE));
+    live_overlay.live_details_drawer_open = true;
     assert!(live_overlay.details_drawer_open());
 
     live_overlay.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::CONTROL));

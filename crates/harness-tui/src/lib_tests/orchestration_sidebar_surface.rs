@@ -125,8 +125,7 @@ pub(super) fn live_details_drawer_orchestration_warning_fallback() {
     for event in session_view_events() {
         app.ingest_event(event);
     }
-    app.handle_key(focus_cycle_key());
-    app.handle_key(key(crossterm::event::KeyCode::Char('i')));
+    app.live_details_drawer_open = true;
 
     let card_body = orchestration_details_drawer_card_body(&app, 7, 76);
     assert!(card_body.contains("watch · none"));
@@ -139,8 +138,7 @@ pub(super) fn layout_plan_primary_geometry_docks_live_details_sidebar() {
     for event in session_view_events() {
         app.ingest_event(event);
     }
-    app.handle_key(focus_cycle_key());
-    app.handle_key(key(crossterm::event::KeyCode::Char('i')));
+    app.live_details_drawer_open = true;
 
     let plan = layout::FrameLayoutPlan::for_app(&app, ratatui::layout::Rect::new(0, 0, 100, 30));
 
@@ -168,8 +166,7 @@ pub(super) fn layout_plan_primary_geometry_docks_live_details_sidebar() {
 pub(super) fn layout_plan_minimum_geometry_stacks_live_details_drawer() {
     let mut app = app::AppState::new_live(None, false, None);
     app.active_tab = app::Tab::Run;
-    app.handle_key(focus_cycle_key());
-    app.handle_key(key(crossterm::event::KeyCode::Char('i')));
+    app.live_details_drawer_open = true;
 
     let plan = layout::FrameLayoutPlan::for_app(&app, ratatui::layout::Rect::new(0, 0, 80, 24));
 
@@ -202,12 +199,9 @@ pub(super) fn live_session_shell_removes_tab_chrome_and_debug_drawer() {
     let plan = layout::FrameLayoutPlan::for_app(&app, ratatui::layout::Rect::new(0, 0, 160, 48));
     let rendered = render_live_lines(&app, 160, 48);
 
-    assert!(plan.operator_sidebar.is_some());
+    assert!(plan.operator_sidebar.is_none());
     assert!(plan.details_overlay.is_none());
     assert!(!rendered.contains("Tabs"));
-    assert!(rendered.contains("Explain the refactor"));
-    assert!(rendered.contains("▼ MCP"));
-    assert!(rendered.contains("▶ Modified Files"));
 }
 
 pub(super) fn wide_shell_hides_header_when_sidebar_is_visible() {
@@ -222,7 +216,7 @@ pub(super) fn wide_shell_hides_header_when_sidebar_is_visible() {
     let first_line = lines.first().copied().unwrap_or_default().to_string();
 
     assert_eq!(plan.header.height, 0);
-    assert!(plan.operator_sidebar.is_some());
+    assert!(plan.operator_sidebar.is_none());
     assert!(plan.live_anchor.is_none());
     assert!(!first_line.contains("run run_fixture"));
     assert!(

@@ -507,6 +507,108 @@ fn leader_g_opens_lineage_browser() {
 }
 
 #[test]
+fn open_status_dialog_is_canonical_and_toggle_operator_sidebar_aliases() {
+    // arrange
+    // act
+    let canonical = Action::from_str("open_status_dialog");
+    let alias = Action::from_str("toggle_operator_sidebar");
+    // assert
+    assert_eq!(canonical, Ok(Action::OpenStatusDialog));
+    assert_eq!(
+        alias,
+        Ok(Action::OpenStatusDialog),
+        "persisted toggle_operator_sidebar must alias open_status_dialog"
+    );
+    assert_eq!(Action::OpenStatusDialog.as_str(), "open_status_dialog");
+    assert_ne!(
+        Action::OpenStatusDialog.as_str(),
+        "toggle_operator_sidebar",
+        "canonical serialization must not emit the compatibility alias"
+    );
+}
+
+#[test]
+fn leader_s_opens_status_dialog_by_default() {
+    // arrange
+    let keymap = KeyMap::with_defaults();
+    // act
+    let action = keymap.leader_action(&KeyEvent::new(KeyCode::Char('s'), KeyModifiers::NONE));
+    // assert
+    assert_eq!(action, Some(Action::OpenStatusDialog));
+    assert_eq!(
+        keymap.get_binding_str(Action::OpenStatusDialog),
+        "Ctrl+x s"
+    );
+}
+
+#[test]
+fn open_status_dialog_override_remapping_is_preserved() {
+    // arrange
+    let mut overrides = BTreeMap::new();
+    overrides.insert("open_status_dialog".to_string(), "<leader>z".to_string());
+    let mut keymap = KeyMap::with_defaults();
+    // act
+    keymap.apply_overrides(&overrides);
+    // assert
+    assert_eq!(
+        keymap.leader_action(&KeyEvent::new(KeyCode::Char('z'), KeyModifiers::NONE)),
+        Some(Action::OpenStatusDialog)
+    );
+}
+
+#[test]
+fn toggle_operator_sidebar_override_aliases_to_status_dialog_action() {
+    // arrange
+    let mut overrides = BTreeMap::new();
+    overrides.insert(
+        "toggle_operator_sidebar".to_string(),
+        "<leader>b".to_string(),
+    );
+    let mut keymap = KeyMap::with_defaults();
+    // act
+    keymap.apply_overrides(&overrides);
+    // assert
+    assert_eq!(
+        keymap.leader_action(&KeyEvent::new(KeyCode::Char('b'), KeyModifiers::NONE)),
+        Some(Action::OpenStatusDialog),
+        "old config key must remap onto the status dialog action"
+    );
+}
+
+#[test]
+fn displaced_keybindings_rematerialized() {
+    // arrange
+    let keymap = KeyMap::with_defaults();
+    let example = include_str!("../../../../configs/tui.example.jsonc");
+    let mut overrides = BTreeMap::new();
+    overrides.insert("open_status_dialog".to_string(), "f9".to_string());
+    let mut remapped = KeyMap::with_defaults();
+    // act
+    remapped.apply_overrides(&overrides);
+    // assert
+    assert_eq!(
+        Action::from_str("toggle_operator_sidebar"),
+        Ok(Action::OpenStatusDialog)
+    );
+    assert_eq!(
+        keymap.leader_action(&KeyEvent::new(KeyCode::Char('s'), KeyModifiers::NONE)),
+        Some(Action::OpenStatusDialog)
+    );
+    assert!(
+        example.contains("\"open_status_dialog\""),
+        "example must document open_status_dialog"
+    );
+    assert!(
+        !example.contains("toggle_operator_sidebar"),
+        "canonical example must omit toggle_operator_sidebar"
+    );
+    assert_eq!(
+        remapped.get_action(&KeyEvent::new(KeyCode::F(9), KeyModifiers::NONE)),
+        Some(Action::OpenStatusDialog)
+    );
+}
+
+#[test]
 fn palette_exposes_lineage_browser_and_child_session_commands() {
     // arrange
     let palette_commands = Action::palette_commands();

@@ -3,19 +3,19 @@ source: crates/harness-tui/tests/deterministic_render_test.rs
 expression: trim_trailing_snapshot_whitespace(&rendered)
 ---
 
-  ┃                                                                                                                                         Inspect tool activity
+  ┃
   ┃  Inspect tool activity
-  ┃                                                                                                                                         ▼ Subagents
-                                                                                                                                            • ✓ Researcher Task
+  ┃
+
      → Read src/ui.rs [offset=1, limit=24]
-                                                                                                                                            ▼ MCP
-     ┃ ← Patch · ui.rs  ▸                                                                                                                   • No MCP servers configured
+
+     ┃ ← Patch · ui.rs  ▸
      ┃ crates/harness-tui/src
-     ┃ Remove diff review surface · Diff preview unavailable (artifacts/tool-lifecycle-inline.diff)                                         ▼ LSP
-                                                                                                                                            • No active LSP servers
+     ┃ Remove diff review surface · Diff preview unavailable (artifacts/tool-lifecycle-inline.diff)
+
      ✓ Researcher Task — audit tool lifecycle parity
-      Found the whole-tool parity path.                                                                                                     ▼ Modified Files
-                                                                                                                                            • crates/harness-tui/src/ui.rs
+      Found the whole-tool parity path.
+
 
      $ cargo test -p harness-tui  ▸
       exit code: 1
@@ -36,5 +36,5 @@ expression: trim_trailing_snapshot_whitespace(&rendered)
 ┃
 ┃
 ┃  model-1 mock
-╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    HARNESS 0.1.0
-                                                                                                         live ctx 0 est  Ctrl+p commands
+╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+                                                                                                                                                     live ctx 0 est  Ctrl+p commands

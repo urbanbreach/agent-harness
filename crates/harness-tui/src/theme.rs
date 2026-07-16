@@ -177,6 +177,7 @@ pub struct StartupLifecycleTokens {
     pub continue_session_purpose: &'static str,
     pub replay_session_purpose: &'static str,
     pub secondary_hint: &'static str,
+    pub onboarding_hint: &'static str,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -661,6 +662,7 @@ impl Theme {
             continue_session_purpose: "reopen interactive work",
             replay_session_purpose: "inspect saved runs read-only",
             secondary_hint: "Type to start immediately · Ctrl+P opens saved sessions",
+            onboarding_hint: "First run? `harness doctor` or `harness auth login`",
         },
         empty_state: EmptyStateTokens {
             max_width: 62,

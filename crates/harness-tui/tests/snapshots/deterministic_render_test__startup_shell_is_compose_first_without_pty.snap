@@ -1,9 +1,8 @@
 ---
 source: crates/harness-tui/tests/deterministic_render_test.rs
-expression: trim_trailing_snapshot_whitespace(&rendered)
+assertion_line: 32
+expression: normalize_volatile_branch(&trim_trailing_snapshot_whitespace(&rendered))
 ---
-
-
 
 
 
@@ -16,6 +15,8 @@ expression: trim_trailing_snapshot_whitespace(&rendered)
                      ██║  ██║██║  ██║██║  ██║██║ ╚████║███████╗███████╗███████║
                      ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝╚══════╝╚══════╝╚══════╝
 
+                       Type to start immediately · Ctrl+P opens saved sessions
+                         First run? `harness doctor` or `harness auth login`
 
             ┃
             ┃  Explain deterministic TUI tests
@@ -25,4 +26,4 @@ expression: trim_trailing_snapshot_whitespace(&rendered)
                                            ctrl+t variants  tab agents  ctrl+p commands
 
 
-            ~/Projects/agent-harness/crates/harness-tui:dev          Ctrl+p open  q quit
+            ~/Projects/agent-harness/crates/harness-tui:test-branch  Ctrl+p open  q quit

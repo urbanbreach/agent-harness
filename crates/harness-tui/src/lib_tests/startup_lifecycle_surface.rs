@@ -649,3 +649,73 @@ pub(super) fn new_session_resets_transcript_but_keeps_unsent_draft() {
         "unsent startup draft".chars().count()
     );
 }
+
+pub(super) fn startup_first_run_shows_onboarding_hint() {
+    let app = app::AppState::new_startup(Vec::new(), None);
+
+    assert!(app.is_first_run());
+
+    let rendered = render_live_lines(&app, 100, 24);
+    assert!(
+        rendered.contains("harness doctor"),
+        "first-run startup should show onboarding hint pointing to doctor setup\n{rendered}"
+    );
+    assert!(
+        rendered.contains("harness auth login"),
+        "first-run startup should show onboarding hint pointing to auth setup\n{rendered}"
+    );
+    assert!(
+        rendered.contains("Type to start immediately"),
+        "first-run startup should show the secondary hint\n{rendered}"
+    );
+}
+
+pub(super) fn startup_returning_user_hides_onboarding_hint() {
+    let app = app::AppState::new_startup(
+        vec![startup_session_entry(
+            "run_resume",
+            "/tmp/sessions/run_resume",
+            true,
+            None,
+        )],
+        None,
+    );
+
+    assert!(!app.is_first_run());
+
+    let rendered = render_live_lines(&app, 100, 24);
+    assert!(
+        !rendered.contains("harness doctor"),
+        "returning-user startup should not show first-run onboarding hint\n{rendered}"
+    );
+    assert!(
+        !rendered.contains("harness auth login"),
+        "returning-user startup should not show first-run onboarding hint\n{rendered}"
+    );
+    assert!(
+        rendered.contains("Type to start immediately"),
+        "returning-user startup should still show the secondary hint\n{rendered}"
+    );
+}
+
+pub(super) fn startup_hints_stay_compose_first() {
+    let app = app::AppState::new_startup(Vec::new(), None);
+
+    let rendered = render_live_lines(&app, 100, 24);
+    assert!(
+        rendered.contains("Ask anything"),
+        "startup with hints should still keep the composer accessible\n{rendered}"
+    );
+    assert!(
+        rendered.contains("ctrl+p commands"),
+        "startup with hints should still keep the footer shortcuts\n{rendered}"
+    );
+    assert!(
+        !rendered.contains("Actions:"),
+        "startup should not render an Actions label\n{rendered}"
+    );
+    assert!(
+        !rendered.contains("Dispatch a new run"),
+        "startup should not render the subtitle\n{rendered}"
+    );
+}

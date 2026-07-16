@@ -22,8 +22,7 @@ pub(super) fn session_shell_hides_tab_chrome_and_replay_review_is_command_driven
     assert!(!live_debug.contains("Activity ("));
     assert!(!live_debug.contains("Inspector"));
 
-    live.handle_key(focus_cycle_key());
-    live.handle_key(key(crossterm::event::KeyCode::Char('i')));
+    live.live_details_drawer_open = true;
     assert_eq!(live.review_surface(), None);
     assert!(live.details_drawer_open());
     live.handle_key(key_with_modifiers(

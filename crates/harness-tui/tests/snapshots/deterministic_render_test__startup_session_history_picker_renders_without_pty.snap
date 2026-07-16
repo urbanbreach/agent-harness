@@ -1,6 +1,7 @@
 ---
 source: crates/harness-tui/tests/deterministic_render_test.rs
-expression: trim_trailing_snapshot_whitespace(&rendered)
+assertion_line: 195
+expression: normalize_volatile_branch(&trim_trailing_snapshot_whitespace(&rendered))
 ---
 
 
@@ -8,7 +9,7 @@ expression: trim_trailing_snapshot_whitespace(&rendered)
 
 
 
-
+                     ██╗  ██╗ █████╗ ██████╗ ███╗   ██╗███████╗███████╗███████╗
 
                 Continue session                                                 esc
 
@@ -25,4 +26,4 @@ expression: trim_trailing_snapshot_whitespace(&rendered)
                                            ctrl+t variants  tab agents  ctrl+p commands
 
 
-            ~/Projects/agent-harness/crates/harness-tui:dev          Ctrl+p open  q quit
+            ~/Projects/agent-harness/crates/harness-tui:test-branch  Ctrl+p open  q quit

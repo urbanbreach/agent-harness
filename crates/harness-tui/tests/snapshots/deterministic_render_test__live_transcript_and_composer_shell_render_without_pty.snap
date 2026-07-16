@@ -1,0 +1,34 @@
+---
+source: crates/harness-tui/tests/deterministic_render_test.rs
+expression: trim_trailing_snapshot_whitespace(&rendered)
+---
+
+  ┃
+  ┃  Inspect deterministic sidebar
+  ┃
+
+     Thought: 10ms
+
+     Assistant verified the rendered shell.
+
+     ◈ Web Search "harness sidebar"
+
+     → LSP goto_definition src/ui_secondary.rs
+
+     ▪ Assistant · gpt-5.4-mini · 10ms
+
+
+
+
+
+
+
+
+
+
+┃
+┃
+┃
+┃  gpt-5.4-mini openai
+╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+                                                                                                                                 live ctx 0 est  Ctrl+p commands
