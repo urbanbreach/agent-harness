@@ -1012,7 +1012,9 @@ mod tests {
 
     #[test]
     fn terminal_capability_state_absent_disables_all_features() {
+        // arrange
         let caps = TerminalCapabilityState::absent();
+        // assert
         assert_eq!(
             caps,
             TerminalCapabilityState {
@@ -1024,7 +1026,9 @@ mod tests {
                 alternate_screen: false,
             }
         );
+        // act
         let plan = caps.teardown_plan();
+        // assert
         assert!(plan.disable_raw_mode);
         assert!(!plan.disable_mouse_capture);
         assert!(!plan.disable_bracketed_paste);
@@ -1034,7 +1038,9 @@ mod tests {
 
     #[test]
     fn terminal_capability_state_present_enables_core_features() {
+        // arrange
         let caps = TerminalCapabilityState::present();
+        // assert
         assert!(caps.keyboard_enhancement);
         assert!(caps.truecolor);
         assert!(caps.bracketed_paste);
@@ -1042,7 +1048,9 @@ mod tests {
         assert!(caps.osc52_clipboard);
         assert!(caps.alternate_screen);
 
+        // act
         let plan = caps.teardown_plan();
+        // assert
         assert!(plan.disable_raw_mode);
         assert!(plan.disable_mouse_capture);
         assert!(plan.disable_bracketed_paste);
@@ -1052,6 +1060,7 @@ mod tests {
 
     #[test]
     fn terminal_restore_guard_carries_capability_state() {
+        // arrange
         let caps = apply_interactive_setup_results(
             TerminalCapabilityState {
                 truecolor: true,
@@ -1063,7 +1072,9 @@ mod tests {
             false,
             true,
         );
+        // act
         let guard = TerminalRestoreGuard::new(caps);
+        // assert
         assert_eq!(guard.capabilities(), caps);
         assert!(guard.capabilities().keyboard_enhancement);
         assert!(guard.capabilities().bracketed_paste);
@@ -1075,13 +1086,16 @@ mod tests {
 
     #[test]
     fn partial_setup_failure_keeps_only_successfully_enabled_capabilities() {
+        // arrange
         let base = TerminalCapabilityState {
             truecolor: true,
             osc52_clipboard: true,
             ..TerminalCapabilityState::absent()
         };
+        // act
         let caps = apply_interactive_setup_results(base, true, true, false, true);
 
+        // assert
         assert!(caps.keyboard_enhancement);
         assert!(caps.bracketed_paste);
         assert!(!caps.mouse_capture);
@@ -1089,7 +1103,9 @@ mod tests {
         assert!(caps.truecolor);
         assert!(caps.osc52_clipboard);
 
+        // act
         let plan = caps.teardown_plan();
+        // assert
         assert!(plan.pop_keyboard_enhancement);
         assert!(plan.disable_bracketed_paste);
         assert!(!plan.disable_mouse_capture);
@@ -1099,6 +1115,9 @@ mod tests {
 
     #[test]
     fn truecolor_detection_accepts_colorterm_truecolor_and_24bit() {
+        // arrange (no setup needed)
+        // act (function calls below)
+        // assert
         assert!(truecolor_from_colorterm(Some("truecolor")));
         assert!(truecolor_from_colorterm(Some("24bit")));
         assert!(truecolor_from_colorterm(Some("TRUECOLOR")));
@@ -1109,8 +1128,11 @@ mod tests {
 
     #[test]
     fn terminal_restore_guard_mark_restored_skips_drop_teardown_path() {
+        // arrange
         let mut guard = TerminalRestoreGuard::new(TerminalCapabilityState::present());
+        // act
         guard.mark_restored();
+        // assert
         assert!(guard.restored());
         drop(guard);
     }

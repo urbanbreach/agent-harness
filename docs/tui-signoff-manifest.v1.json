@@ -1,6 +1,6 @@
 {
   "schema_version": "harness-tui-signoff-manifest-v1",
-  "description": "Strict-V1 TUI signoff manifest. It names deterministic render owners, PTY provenance stages, and the env-gated native visual gap for release-facing TUI flows; reference-image comparison is not required for this PRD.",
+  "description": "Strict-V1 TUI signoff manifest. It names deterministic render owners, PTY provenance stages, and the env-gated native visual gap for release-facing TUI flows; reference-image comparison is not required. Live shell topology is transcript-first full-width scrollback above a bottom composer (Grok-shaped); no persistent right-hand operator sidebar as primary chrome — operator facts stay on secondary surfaces (status dialog, details overlay, palette, slash).",
   "native_visual_policy": {
     "lane": "signoff-native",
     "stage": "native_visual_e2e_ignored",
@@ -9,7 +9,7 @@
       "DISPLAY=<display>"
     ],
     "missing_env_status": "documented_gap",
-    "roadmap_gap": "docs/roadmap-v1.md native visual checkbox remains unchecked until local signoff-native screenshots exist"
+    "gap_note": "native visual screenshots remain local opt-in signoff until signoff-native evidence is produced"
   },
   "flows": [
     {
@@ -131,5 +131,5 @@
       ]
     }
   ],
-  "reference_image_policy": "not_required_for_this_prd"
+  "reference_image_policy": "not_required"
 }

@@ -576,7 +576,7 @@ fn toggle_operator_sidebar_override_aliases_to_status_dialog_action() {
 }
 
 #[test]
-fn displaced_keybindings_rematerialized() {
+fn displaced_keybind_remaps_to_open_status_dialog() {
     // arrange
     let keymap = KeyMap::with_defaults();
     let example = include_str!("../../../../configs/tui.example.jsonc");

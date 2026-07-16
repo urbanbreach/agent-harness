@@ -947,6 +947,7 @@ mod tests {
 
     #[test]
     fn live_session_operator_sidebar_is_none_at_all_widths_including_wide() {
+        // arrange
         let app = AppState::new_live(None, false, None);
         for (width, height) in [
             (120u16, 40u16),
@@ -959,7 +960,9 @@ mod tests {
             (140, 36),
             (160, 40),
         ] {
+            // act
             let plan = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, width, height));
+            // assert
             assert!(
                 plan.operator_sidebar.is_none(),
                 "operator_sidebar must be None at {width}x{height}; got {:?}",
@@ -985,6 +988,7 @@ mod tests {
 
     #[test]
     fn live_session_transcript_and_composer_span_full_shell_width() {
+        // arrange
         let app = AppState::new_live(None, false, None);
         for (width, height) in [
             (120u16, 40u16),
@@ -996,6 +1000,7 @@ mod tests {
             (121, 40),
             (160, 40),
         ] {
+            // act
             let plan = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, width, height));
             let transcript = plan.transcript.unwrap_or_else(|| {
                 panic!("transcript must exist at {width}x{height}")
@@ -1003,6 +1008,7 @@ mod tests {
             let composer = plan.composer.unwrap_or_else(|| {
                 panic!("composer must exist at {width}x{height}")
             });
+            // assert
             assert_eq!(
                 transcript.width, plan.shell.width,
                 "transcript must span full shell width at {width}x{height}; transcript={transcript:?} shell={:?}",

@@ -43,13 +43,16 @@ fn startup_shell_is_compose_first_without_pty() {
 
 #[test]
 fn live_transcript_and_composer_shell_render_without_pty() {
+    // arrange
     let mut app = AppState::new_live(Some(PathBuf::from("/tmp/run_fixture")), false, None);
     for event in sidebar_render_events() {
         app.ingest_event(event);
     }
 
+    // act
     let area = Rect::new(0, 0, 160, 30);
     let plan = FrameLayoutPlan::for_app(&app, area);
+    // assert
     assert!(
         plan.transcript.is_some(),
         "live shell keeps transcript primary"

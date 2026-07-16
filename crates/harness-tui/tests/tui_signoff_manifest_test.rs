@@ -78,15 +78,12 @@ fn tui_signoff_manifest_covers_required_release_flows() {
         "diff_hunk_navigation_advances_and_retreats_between_hunks",
     );
 
-    assert_eq!(
-        manifest["reference_image_policy"],
-        "not_required_for_this_prd"
-    );
+    assert_eq!(manifest["reference_image_policy"], "not_required");
     assert!(
         flows
             .iter()
             .all(|flow| flow.get("reference_assets").is_none()),
-        "reference-image comparison is outside this PRD and must not be required"
+        "reference-image comparison must not be required"
     );
 }
 

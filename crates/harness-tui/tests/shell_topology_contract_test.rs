@@ -13,44 +13,57 @@ const WIDE_VIEWPORTS: [(u16, u16); 3] = [(121, 40), (140, 36), (160, 40)];
 
 #[test]
 fn live_session_shell_has_no_right_operator_sidebar_at_contract_viewports() {
+    // arrange
     let app = live_session_app();
 
     for (width, height) in CONTRACT_VIEWPORTS {
+        // act
         let plan = plan_for(&app, width, height);
+        // assert
         assert_no_operator_rail_primary_chrome(&plan, width, height);
     }
 }
 
 #[test]
 fn live_session_transcript_spans_full_shell_width_above_composer() {
+    // arrange
     let app = live_session_app();
 
     for (width, height) in CONTRACT_VIEWPORTS {
+        // act
         let plan = plan_for(&app, width, height);
+        // assert
         assert_full_width_transcript_above_composer(&plan, width, height);
     }
 }
 
 #[test]
 fn live_session_composer_is_bottom_anchored() {
+    // arrange
     let app = live_session_app();
 
     for (width, height) in CONTRACT_VIEWPORTS {
+        // act
         let plan = plan_for(&app, width, height);
+        // assert
         assert_composer_bottom_anchored(&plan, width, height);
     }
 }
 
 #[test]
 fn live_session_sidebar_must_not_reappear_as_primary_chrome_at_width_ge_121() {
+    // arrange
     let app = live_session_app();
 
     for (width, height) in WIDE_VIEWPORTS {
+        // assert
         assert!(
             width >= 121,
             "wide-viewport matrix must stay at/above the 121-column threshold"
         );
+        // act
         let plan = plan_for(&app, width, height);
+        // assert
         assert_no_operator_rail_primary_chrome(&plan, width, height);
         assert_full_width_transcript_above_composer(&plan, width, height);
         assert_composer_bottom_anchored(&plan, width, height);
@@ -59,13 +72,16 @@ fn live_session_sidebar_must_not_reappear_as_primary_chrome_at_width_ge_121() {
 
 #[test]
 fn live_session_replacement_topology_holds_across_all_named_viewports() {
+    // arrange
     let app = live_session_app();
     let mut cases = Vec::with_capacity(CONTRACT_VIEWPORTS.len() + WIDE_VIEWPORTS.len());
     cases.extend(CONTRACT_VIEWPORTS);
     cases.extend(WIDE_VIEWPORTS);
 
+    // act
     for (width, height) in cases {
         let plan = plan_for(&app, width, height);
+        // assert
         assert_no_operator_rail_primary_chrome(&plan, width, height);
         assert_full_width_transcript_above_composer(&plan, width, height);
         assert_composer_bottom_anchored(&plan, width, height);

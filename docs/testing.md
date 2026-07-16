@@ -46,7 +46,7 @@ signoff tests remain opt-in through explicit signoff lanes.
 ## Test-suite overhaul gates
 
 `scripts/check-test-suite-gates.py` is the static gate runner for the test-suite overhaul tracked
-by `docs/test-suite-prd.md` and this testing map:
+by this testing map:
 
 ```bash
 python3 scripts/check-test-suite-gates.py
@@ -252,7 +252,7 @@ The strict-V1 TUI signoff manifest is checked in at
 
 - deterministic owner tests/snapshots,
 - `signoff-pty` artifact stages,
-- an explicit note that reference-image comparison is not required for this PRD, and
+- an explicit note that reference-image comparison is not required, and
 - the native-visual policy for env-gated local screenshots.
 
 Required flow coverage is startup, command palette, session picker/resume, permission/question,
@@ -310,8 +310,7 @@ bash scripts/harness-qa-live-smoke.sh --slug <short-slug>
 - **T5 non-ownership:** live smoke proves transport/auth/fixed smoke only; it does **not** re-own
   the native tool behavioral matrix.
 - Non-claims: not freestyle quality; not multi-provider matrix; not PTY/native; not offline dogfood
-  substitute; not CI default. See residual PRD
-  [`docs/harness-live-agent-testing-prd.md`](./harness-live-agent-testing-prd.md) and progress ledger.
+  substitute; not CI default.
 
 Slim `live_proxy_e2e` wrappers still write **no** live artifact trees by design; the smoke pack
 script is the budgeted evidence path.
@@ -355,9 +354,8 @@ are not part of `signoff-live` or default quality gates. See
 [`docs/provider-support.md`](./provider-support.md).
 
 Open-ended live freestyle eval missions (for example benchmark sweeps or open-ended agent
-missions) are **rejected as CI or release proof** for V1 (WS-L9). Local human experimentation is
-fine, but it is not evidence for release readiness or PRD boxes. See
-`docs/harness-live-agent-testing-prd.md` workstream WS-L9.
+missions) are **rejected as CI or release proof** for V1. Local human experimentation is fine, but
+it is not evidence for release readiness.
 
 ## Binary shim smoke
 
@@ -426,15 +424,13 @@ add `--harness-bin` when a binary was supplied to `scripts/test-lanes.sh` or an 
 
 ## Scenario growth policy
 
-New scenarios and simulation matrix admissions follow the residual PRD WS-L7 policy:
+New scenarios and simulation matrix admissions follow this policy:
 
 1. Prefer focused owner nextest over simulation matrix admission.
 2. New CLI scenarios are fine when they have named owners.
 3. Matrix `offline-deterministic` admission happens only after measured `expected_predicates` and a simulation lane update plan.
 4. Never grow `golden_path` into an unmaintainable mega-scenario.
 5. No new INV ids by default.
-
-See `docs/harness-live-agent-testing-prd.md` workstream WS-L7 for the residual PRD disposition.
 
 ## Deletion policy and invariant map
 
@@ -463,17 +459,17 @@ Retired harness-tui PTY helper scenario owners:
 | Removed T5 helper scenario | Surviving deterministic owner |
 |---|---|
 | Startup shell / startup palette / startup session history | `cargo nextest run -p harness-tui --test deterministic_render_test startup_shell_is_compose_first_without_pty command_palette_renders_without_pty startup_session_history_picker_renders_without_pty`; `cargo nextest run -p harness-tui startup_slash_commands_execute_without_menu command_palette_renders_and_filters` |
-| Streamed response and completed live shell | `cargo nextest run -p harness-tui live_shell_enter_submits_and_echoes_prompt_snapshot live_shell_type_first_input_snapshot`; `cargo nextest run -p harness-tui --test deterministic_render_test live_transcript_and_operator_sidebar_render_without_pty` |
+| Streamed response and completed live shell | `cargo nextest run -p harness-tui live_shell_enter_submits_and_echoes_prompt_snapshot live_shell_type_first_input_snapshot`; `cargo nextest run -p harness-tui --test deterministic_render_test live_transcript_and_composer_shell_render_without_pty` |
 | Tool lifecycle and inline diff parity | `cargo nextest run -p harness-tui --test deterministic_render_test tool_lifecycle_rows_stay_ordered_without_pty`; `cargo nextest run -p harness-tui transcript_apply_patch_surfaces_rename_and_wrapped_inline_diffs transcript_inline_diff_stays_compact_between_tool_rows transcript_native_edit_renders_inline_diff_from_artifact` |
 | Permission and question overlays | `cargo nextest run -p harness-tui permission_modal_preempts_palette_and_slash permission_overlay_preserves_draft_and_transcript_context permission_overlay_ignores_plain_draft_input_once_prompt_is_active`; `cargo nextest run -p harness-tui --test deterministic_render_test permission_modal_preserves_draft_without_pty question_permission_prompt_renders_without_pty` |
-| Operator sidebar, details drawer, and orchestration states | `cargo nextest run -p harness-tui --test deterministic_render_test live_transcript_and_operator_sidebar_render_without_pty`; `cargo nextest run -p harness-tui operator_sidebar_preserves_section_order_and_copy live_shell_details_drawer_orchestration_snapshot orchestration_projection_tracks_queued_started_completed_counts orchestration_projection_tracks_stale_then_late_result` |
+| Full-width live shell, secondary operator surfaces, and orchestration states | `cargo nextest run -p harness-tui --test deterministic_render_test live_transcript_and_composer_shell_render_without_pty`; `cargo nextest run -p harness-tui --test shell_topology_contract_test`; `cargo nextest run -p harness-tui operator_sidebar_preserves_section_order_and_copy live_shell_details_drawer_orchestration_snapshot orchestration_projection_tracks_queued_started_completed_counts orchestration_projection_tracks_stale_then_late_result` |
 | Degraded/disconnected/replay shells | `cargo nextest run -p harness-tui live_shell_degraded_bootstrap_snapshot live_shell_disconnected_stream_snapshot`; `cargo nextest run -p harness-tui --test deterministic_render_test replay_shell_is_read_only_without_pty` |
 
 Narrowed harness-testkit PTY assertion owners:
 
 | Removed or narrowed T5 assertion | Surviving owner |
 |---|---|
-| Duplicate operator-sidebar screen-string assertions in `pty_e2e_sidebar_session_parity` and `pty_helper_operator_sidebar_session_contract` | `cargo nextest run -p harness-tui --test deterministic_render_test live_transcript_and_operator_sidebar_render_without_pty`; `cargo nextest run -p harness-tui operator_sidebar_preserves_section_order_and_copy`; remaining T5 manifest-backed screenshots assert only smoke/provenance markers. |
+| Duplicate operator-sidebar screen-string assertions in `pty_e2e_sidebar_session_parity` and `pty_helper_operator_sidebar_session_contract` | `cargo nextest run -p harness-tui --test deterministic_render_test live_transcript_and_composer_shell_render_without_pty`; `cargo nextest run -p harness-tui --test shell_topology_contract_test`; `cargo nextest run -p harness-tui operator_sidebar_preserves_section_order_and_copy`; remaining T5 manifest-backed screenshots assert only smoke/provenance markers. |
 | Duplicate permission-overlay screen-string assertions in `pty_e2e_permission_dock_parity` and `pty_helper_permission_with_draft` | `cargo nextest run -p harness-tui permission_modal_preempts_palette_and_slash permission_overlay_preserves_draft_and_transcript_context permission_overlay_ignores_plain_draft_input_once_prompt_is_active`; `cargo nextest run -p harness-tui --test deterministic_render_test permission_modal_preserves_draft_without_pty`; remaining T5 captures keep permission smoke/provenance markers. |
 
 Retired harness-testkit T5 scenario owners:
@@ -481,13 +477,12 @@ Retired harness-testkit T5 scenario owners:
 | Removed T5 scenario group | Surviving owner |
 |---|---|
 | PTY startup, command palette, replay/continue history, and type-first shell content checks | `cargo nextest run -p harness-tui --test deterministic_render_test startup_shell_is_compose_first_without_pty startup_session_history_picker_renders_without_pty replay_shell_is_read_only_without_pty`; `cargo nextest run -p harness-tui startup_slash_commands_execute_without_menu command_palette_renders_and_filters`; slim `cargo nextest run -p harness-testkit --test pty_e2e` keeps only single-thread/env/artifact-path smoke. |
-| PTY transcript, native-tool row, inline diff, MCP/background, and dense-log screen checks | `cargo nextest run -p harness-tui --test deterministic_render_test tool_lifecycle_rows_stay_ordered_without_pty live_transcript_and_operator_sidebar_render_without_pty`; `cargo nextest run -p harness-tui transcript_apply_patch_surfaces_rename_and_wrapped_inline_diffs transcript_inline_diff_stays_compact_between_tool_rows transcript_native_edit_renders_inline_diff_from_artifact`; `cargo nextest run -p harness-tools --test native_tool_parity_matrix_test`. |
+| PTY transcript, native-tool row, inline diff, MCP/background, and dense-log screen checks | `cargo nextest run -p harness-tui --test deterministic_render_test tool_lifecycle_rows_stay_ordered_without_pty live_transcript_and_composer_shell_render_without_pty`; `cargo nextest run -p harness-tui transcript_apply_patch_surfaces_rename_and_wrapped_inline_diffs transcript_inline_diff_stays_compact_between_tool_rows transcript_native_edit_renders_inline_diff_from_artifact`; `cargo nextest run -p harness-tools --test native_tool_parity_matrix_test`. |
 | PTY child-session, lineage, replay-read-only, active/unrestorable continue rejection checks | `cargo nextest run -p harness --test replay_sessions_cli_test`; `cargo nextest run -p harness-tui --test lineage_view_model_test`; `cargo nextest run -p harness-tui --test session_navigation_keybindings_test`; `cargo nextest run -p harness-core --test session_lineage_materialization_test`. |
 | Live proxy prompt/TUI/native tool-flow, provider parity, config mutation, request/evidence, and wiremock checks | `cargo nextest run -p harness-providers --test recorded_test`; `cargo nextest run -p harness-providers --test openai_compatible_serializes_native_tool_schema_without_alias_dupes_test`; `cargo nextest run -p harness-testkit --test live_proxy_e2e` for env-gated signoff names and fail-closed config preflight. |
 | Live visual manifest, vision, screenshot evidence, and artifact-retention checks | `cargo nextest run -p harness-tui --test deterministic_render_test`; `cargo nextest run -p harness-testkit --test native_visual_e2e`; opt-in `scripts/test-lanes.sh signoff-native` for local screenshot provenance only. |
 | Native visual startup geometry, navigation, permission, transcript, operator-sidebar, Ghostty, capture-helper, and managed-session checks | `cargo nextest run -p harness-tui --test deterministic_render_test`; `cargo nextest run -p harness-tui permission_modal_preempts_palette_and_slash operator_sidebar_preserves_section_order_and_copy`; `cargo nextest run -p harness-testkit --test native_visual_e2e`; `cargo nextest run -p harness-testkit --bin native_visual_helper -- --help` when validating the helper CLI. |
 | Shared T5 fixture/rendering helpers (`harness_bin`, session fixtures, temp paths, visual renderer, manifest writers, markers) | `cargo nextest run -p harness-testkit --lib`; `cargo nextest run -p harness-testkit --test secretscan_test`; deterministic fixture ownership moved to crate-local test helpers and harness-tui render fixtures rather than uncompiled T5 support. |
 
-The acceptance dossier for the test-suite overhaul is recorded in
-`docs/test-suite-prd.md` and this owner map. It maps the Section 12 A1–A15 gates to
-the concrete artifacts under `target/test-suite-overhaul/`.
+The acceptance owner map above is the source of truth for the test-suite overhaul. Concrete lane
+artifacts land under `target/test-suite-overhaul/` when those stages run.
