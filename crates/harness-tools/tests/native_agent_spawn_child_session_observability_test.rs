@@ -42,10 +42,7 @@ fn child_observability_permission_policy() -> PermissionPolicy {
         ProfilePermissions {
             shell: Some(PermissionMode::Deny),
             ..ProfilePermissions::default()
-        read: None,
-                    external_directory: None,
-                    doom_loop: None,
-                },
+        },
     )
 }
 

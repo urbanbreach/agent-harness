@@ -187,6 +187,7 @@ async fn provider_single_call_returns_tool_intents_without_executing_tools() {
         max_iters: Some(12),
         tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
         toolset: vec!["shell.run".to_string()],
+        permission_ruleset: Vec::new(),
     };
     let request = AgentRequest {
         agent_id: "agent_1".to_string(),

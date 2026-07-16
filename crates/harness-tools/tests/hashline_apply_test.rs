@@ -391,6 +391,7 @@ fn test_coordinator(session_dir: &Path, permission_policy: PermissionPolicy) -> 
             temperature: Some(0.0),
             tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
             toolset: vec!["edit.hashline_apply".to_string()],
+            permission_ruleset: Vec::new(),
         },
     );
 

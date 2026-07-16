@@ -202,6 +202,7 @@ fn worker_profile() -> AgentProfile {
         temperature: Some(0.0),
         tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
         toolset: vec![AST_GREP_REPLACE_TOOL_ID.to_string()],
+        permission_ruleset: Vec::new(),
     }
 }
 

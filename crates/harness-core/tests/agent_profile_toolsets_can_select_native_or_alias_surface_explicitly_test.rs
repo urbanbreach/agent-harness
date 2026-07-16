@@ -65,6 +65,7 @@ fn test_profile() -> AgentProfile {
         temperature: Some(0.0),
         tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
         toolset: vec!["read".to_string(), "bash".to_string(), "list".to_string()],
+        permission_ruleset: Vec::new(),
     }
 }
 

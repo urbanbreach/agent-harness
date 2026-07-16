@@ -270,6 +270,7 @@ fn worker_profile(toolset: &[&str]) -> AgentProfile {
         temperature: Some(0.0),
         tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
         toolset: toolset.iter().map(|tool| (*tool).to_string()).collect(),
+        permission_ruleset: Vec::new(),
     }
 }
 
@@ -285,6 +286,7 @@ fn named_worker_profile(name: &str, toolset: &[&str]) -> AgentProfile {
         temperature: Some(0.0),
         tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
         toolset: toolset.iter().map(|tool| (*tool).to_string()).collect(),
+        permission_ruleset: Vec::new(),
     }
 }
 
@@ -300,6 +302,7 @@ fn named_worker_profile_with_prompt(name: &str, toolset: &[&str], system_prompt:
         temperature: Some(0.0),
         tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
         toolset: toolset.iter().map(|tool| (*tool).to_string()).collect(),
+        permission_ruleset: Vec::new(),
     }
 }
 

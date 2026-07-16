@@ -4,11 +4,11 @@ use std::path::{Path, PathBuf};
 
 use harness::UnwrapOrAbort;
 use harness_core::agent::{build_provider_tool_defs, AgentProfile};
+use harness_core::config::PermissionMode;
 use harness_core::config::{
     load_config_from_file_with_context, load_config_from_str, ConfigLoadContext, HarnessConfig,
     ResolvedModelTarget,
 };
-use harness_core::config::PermissionMode;
 use harness_core::perm::{
     is_tool_disabled, permission_kind_for_tool_call, PermissionKind, PermissionPolicy,
     PermissionRuleRequest, PolicyDecision,

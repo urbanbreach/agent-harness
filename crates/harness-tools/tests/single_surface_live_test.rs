@@ -75,6 +75,7 @@ fn example_profiles(
                     temperature: profile.temperature,
                     tool_failure_mode: profile.tool_failure_mode,
                     toolset: profile.tools.clone(),
+                    permission_ruleset: Vec::new(),
                 },
             )
         })
@@ -94,6 +95,7 @@ fn example_profiles(
             max_iters: build_profile.max_iters,
             tool_failure_mode: build_profile.tool_failure_mode,
             toolset: surface_live_toolset(),
+            permission_ruleset: Vec::new(),
         },
     );
     profiles

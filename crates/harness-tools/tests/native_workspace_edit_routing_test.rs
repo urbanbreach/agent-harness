@@ -472,6 +472,7 @@ fn test_coordinator(
             temperature: Some(0.0),
             tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
             toolset,
+            permission_ruleset: Vec::new(),
         },
     );
 

@@ -149,6 +149,7 @@ fn profile(name: &str, category: &str, toolset: Vec<&str>) -> AgentProfile {
         max_iters: Some(3),
         tool_failure_mode: ToolFailureMode::FailTurn,
         toolset: toolset.into_iter().map(str::to_string).collect(),
+        permission_ruleset: Vec::new(),
     }
 }
 

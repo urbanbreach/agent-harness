@@ -55,6 +55,7 @@ fn boundary_profile() -> AgentProfile {
         max_iters: Some(12),
         tool_failure_mode: ToolFailureMode::FailTurn,
         toolset: vec!["read".to_string()],
+        permission_ruleset: Vec::new(),
     }
 }
 

@@ -14,6 +14,7 @@ fn native_provider_tool_defs_accept_edit_and_question_export_schemas() {
         temperature: Some(0.0),
         tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
         toolset: vec!["edit".to_string(), "question".to_string()],
+        permission_ruleset: Vec::new(),
     };
 
     // act
@@ -48,6 +49,7 @@ fn provider_tool_defs_match_current_core_filesystem_input_schemas() {
             "edit".to_string(),
             "write".to_string(),
         ],
+        permission_ruleset: Vec::new(),
     };
 
     // act
@@ -107,6 +109,7 @@ fn provider_tool_defs_do_not_advertise_runtime_only_grep_controls() {
         temperature: Some(0.0),
         tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
         toolset: vec!["grep".to_string()],
+        permission_ruleset: Vec::new(),
     };
 
     // act
@@ -154,6 +157,7 @@ fn native_provider_tool_defs_gate_patch_tools_like_baseline_registry() {
             "write".to_string(),
             "read".to_string(),
         ],
+        permission_ruleset: Vec::new(),
     };
 
     // act
@@ -191,6 +195,7 @@ fn native_provider_tool_defs_gate_edit_write_tools_for_non_patch_models() {
             "write".to_string(),
             "read".to_string(),
         ],
+        permission_ruleset: Vec::new(),
     };
 
     // act
@@ -228,6 +233,7 @@ fn native_provider_tool_defs_gate_patch_tools_by_actual_turn_model() {
             "write".to_string(),
             "read".to_string(),
         ],
+        permission_ruleset: Vec::new(),
     };
 
     // act

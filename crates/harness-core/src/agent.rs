@@ -1,6 +1,7 @@
-use crate::UnwrapOrAbort;
 use harness_providers::CacheRetention;
 use serde::{Deserialize, Serialize};
+
+use crate::UnwrapOrAbort;
 
 mod provider_boundary;
 mod provider_context;
@@ -51,6 +52,8 @@ pub struct AgentProfile {
     pub max_iters: Option<usize>,
     pub tool_failure_mode: ToolFailureMode,
     pub toolset: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub permission_ruleset: crate::perm::PermissionRuleset,
 }
 
 impl AgentProfile {
@@ -66,6 +69,7 @@ impl AgentProfile {
             max_iters: None,
             tool_failure_mode: ToolFailureMode::FailTurn,
             toolset: Vec::new(),
+            permission_ruleset: Vec::new(),
             name,
         }
     }
@@ -113,7 +117,6 @@ pub struct AgentModelSettings {
 
 #[cfg(test)]
 mod tests {
-    use crate::UnwrapOrAbort;
     use std::collections::BTreeMap;
     use std::sync::{Arc, Mutex};
 
@@ -136,6 +139,7 @@ mod tests {
     use crate::tool::{
         Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult, ToolResultContent,
     };
+    use crate::UnwrapOrAbort;
 
     #[tokio::test]
     async fn multi_turn_runner_returns_single_provider_response_without_tools() {
@@ -742,6 +746,7 @@ mod tests {
             temperature: Some(0.1),
             tool_failure_mode: ToolFailureMode::FailTurn,
             toolset: vec!["read".to_string()],
+            permission_ruleset: Vec::new(),
         }
     }
 
@@ -824,6 +829,7 @@ mod tests {
     fn broken_schema_profile() -> AgentProfile {
         AgentProfile {
             toolset: vec!["broken.tool".to_string()],
+            permission_ruleset: Vec::new(),
             ..test_profile()
         }
     }

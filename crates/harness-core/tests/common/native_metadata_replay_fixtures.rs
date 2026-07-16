@@ -139,6 +139,7 @@ fn agent_profiles() -> BTreeMap<String, AgentProfile> {
             temperature: Some(0.0),
             tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
             toolset: vec![],
+            permission_ruleset: Vec::new(),
         },
     );
     profiles

@@ -134,6 +134,7 @@ async fn coord_plan_mode_prompt_includes_workflow_and_plan_file_lifecycle() {
             temperature: Some(0.0),
             tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
             toolset: vec![],
+            permission_ruleset: Vec::new(),
         },
     )]);
 

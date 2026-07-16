@@ -438,6 +438,7 @@ pub fn golden_path_profiles() -> BTreeMap<String, AgentProfile> {
             temperature: Some(0.0),
             tool_failure_mode: harness_core::config::ToolFailureMode::ContinueAsToolMessage,
             toolset: vec![],
+            permission_ruleset: Vec::new(),
         },
     );
     profiles.insert(
@@ -453,6 +454,7 @@ pub fn golden_path_profiles() -> BTreeMap<String, AgentProfile> {
             temperature: Some(0.0),
             tool_failure_mode: harness_core::config::ToolFailureMode::ContinueAsToolMessage,
             toolset: vec!["edit".to_string()],
+            permission_ruleset: Vec::new(),
         },
     );
     profiles
