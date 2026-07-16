@@ -1,5 +1,4 @@
 // allow: SIZE_OK — CLI bootstrap (runtime catalog + profile + provider assembly)
-use crate::UnwrapOrAbort;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -28,6 +27,7 @@ use harness_tools::{
 };
 
 use crate::dynamic_prompt::{self, DynamicPromptContext};
+use crate::UnwrapOrAbort;
 
 const DEFAULT_INTERACTIVE_PROFILE: &str = "build";
 
@@ -470,6 +470,11 @@ fn interactive_agent_profiles_with_extra_tools(
                 cache_retention,
                 tool_failure_mode: profile_cfg.tool_failure_mode,
                 toolset,
+                permission_ruleset: profile_cfg
+                    .permissions
+                    .as_ref()
+                    .map(harness_core::perm::from_profile_permissions)
+                    .unwrap_or_default(),
             },
         );
     }
@@ -535,11 +540,11 @@ fn auto_mcp_tool_ids(tool_registry: &ToolRegistry) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use crate::UnwrapOrAbort;
     use harness_core::agent::build_provider_tool_defs;
     use harness_core::config::{load_config_from_file, load_config_from_str};
 
     use super::*;
+    use crate::UnwrapOrAbort;
 
     fn config_fixture(agents: &str) -> HarnessConfig {
         let raw = format!(
@@ -818,10 +823,22 @@ mod tests {
         assert!(profiles["explore"].toolset.contains(&"read".to_string()));
         assert!(profiles["explore"].toolset.contains(&"grep".to_string()));
         assert!(!profiles["explore"].toolset.contains(&"edit".to_string()));
-        assert!(!profiles["explore"].toolset.contains(&"bash".to_string()));
+        assert!(profiles["explore"].toolset.contains(&"bash".to_string()));
+        assert!(profiles["explore"]
+            .toolset
+            .contains(&"webfetch".to_string()));
+        assert!(profiles["explore"]
+            .toolset
+            .contains(&"websearch".to_string()));
         assert!(profiles["general"].toolset.contains(&"edit".to_string()));
         assert!(profiles["general"].toolset.contains(&"bash".to_string()));
-        assert!(!profiles["general"].toolset.contains(&"task".to_string()));
+        assert!(profiles["general"].toolset.contains(&"task".to_string()));
+        assert!(profiles["general"]
+            .toolset
+            .contains(&"background_output".to_string()));
+        assert!(!profiles["general"]
+            .toolset
+            .contains(&"todowrite".to_string()));
         assert_eq!(
             profiles[harness_core::session_title::TITLE_AGENT_NAME].system_prompt,
             harness_core::session_title::TITLE_AGENT_SYSTEM_PROMPT

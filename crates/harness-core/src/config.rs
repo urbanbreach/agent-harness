@@ -827,6 +827,9 @@ pub struct ProfilePermissions {
     pub question: Option<PermissionMode>,
     #[serde(default)]
     pub task: Option<PermissionMode>,
+    /// Independent of `task` (OpenCode: general allows task but denies todowrite).
+    #[serde(default)]
+    pub todowrite: Option<PermissionMode>,
     #[serde(default, alias = "webFetch")]
     pub webfetch: Option<PermissionMode>,
     #[serde(default, alias = "webSearch")]

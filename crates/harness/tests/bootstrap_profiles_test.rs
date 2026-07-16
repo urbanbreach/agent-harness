@@ -510,12 +510,35 @@ fn shipped_profile_permission_promises_match_runtime_policy_and_toolsets() {
         &coordinator_config.agent_profiles["general"].system_prompt,
         "Runtime-Enforced Permissions",
     );
-    assert!(general_prompt.contains("cannot redelegate"));
-    assert!(coordinator_denies_tool_for_profile(
-        &coordinator_config,
-        "general",
-        "task"
-    ));
+    assert!(
+        general_prompt.contains("may redelegate") || general_prompt.contains("can redelegate"),
+        "general prompt should allow task redelegation under OpenCode-aligned matrix"
+    );
+    assert!(
+        !coordinator_denies_tool_for_profile(&coordinator_config, "general", "task"),
+        "general must allow task (OpenCode general can redelegate)"
+    );
+    assert!(
+        coordinator_config.agent_profiles["general"]
+            .toolset
+            .iter()
+            .any(|t| t == "task"),
+        "general toolset must include task"
+    );
+    assert!(
+        coordinator_config.agent_profiles["general"]
+            .toolset
+            .iter()
+            .any(|t| t == "background_output"),
+        "general toolset must include background_output"
+    );
+    assert!(
+        is_tool_disabled(
+            "todowrite",
+            &coordinator_config.agent_profiles["general"].permission_ruleset
+        ),
+        "general must catch-all deny todowrite in permission_ruleset while allowing task"
+    );
 
     for category in V1_CATEGORY_PROMPTS {
         let section = prompt_section(

@@ -149,6 +149,7 @@ impl Coordinator {
         } else {
             category.clone()
         };
+
         let raw_permission_kind = permission_kind_for_tool_call(&tool_id, capability);
         let skip_outer_question_permission = raw_permission_kind == Some(PermissionKind::Question);
         let maybe_kind = if skip_outer_question_permission {
@@ -170,6 +171,50 @@ impl Coordinator {
             )
         });
         let hashline_edit = hashline_edit_metadata(&tool_id, &args_json, &tool_call_id);
+
+        let ruleset_denied = if actor.kind == ActorKind::Worker {
+            actor
+                .agent_id
+                .as_deref()
+                .and_then(|id| run_state.agents.get(id))
+                .is_some_and(|profile| {
+                    crate::perm::is_tool_disabled(&tool_id, &profile.permission_ruleset)
+                })
+        } else {
+            effective_category
+                .as_deref()
+                .and_then(|name| self.config.agent_profiles.get(name))
+                .is_some_and(|profile| {
+                    crate::perm::is_tool_disabled(&tool_id, &profile.permission_ruleset)
+                })
+        };
+        if ruleset_denied {
+            let reason =
+                format!("tool `{tool_id}` is catch-all denied by profile permission ruleset");
+            finalize_permission_denied(
+                clock.as_ref(),
+                redactor.as_ref(),
+                self.config.hook_command_executor.as_ref(),
+                &self.config.hook_runtime_config,
+                run_state,
+                PermissionDeniedArgs {
+                    actor: actor.clone(),
+                    category: effective_category.clone(),
+                    tool_id: &tool_id,
+                    args_json: &args_json,
+                    tool_call_id: &tool_call_id,
+                    hashline_edit: hashline_edit.as_ref(),
+                    kind: maybe_kind.unwrap_or(PermissionKind::Task),
+                    reason: &reason,
+                    request_correlation_id: request_correlation_id.as_deref(),
+                },
+            )
+            .await?;
+            if let Some(respond_to) = respond_to {
+                let _ = respond_to.send(Err(format!("tool call denied: {reason}")));
+            }
+            return Err(CoordinatorError::PermissionDenied(tool_call_id));
+        }
 
         if let Some(reason) = plan_mode_edit_boundary_denial(
             effective_category.as_deref(),

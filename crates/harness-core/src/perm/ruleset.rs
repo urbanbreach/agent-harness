@@ -233,7 +233,7 @@ pub fn from_profile_permissions(permissions: &ProfilePermissions) -> PermissionR
     push_scalar(&mut rules, "network", permissions.network.clone());
     push_scalar(&mut rules, "question", permissions.question.clone());
     push_scalar(&mut rules, "task", permissions.task.clone());
-    push_scalar(&mut rules, "todowrite", permissions.task.clone());
+    push_scalar(&mut rules, "todowrite", permissions.todowrite.clone());
     push_scalar(&mut rules, "webfetch", permissions.webfetch.clone());
     push_scalar(&mut rules, "websearch", permissions.websearch.clone());
     push_scalar(&mut rules, "codesearch", permissions.codesearch.clone());

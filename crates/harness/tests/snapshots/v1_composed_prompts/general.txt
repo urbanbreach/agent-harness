@@ -20,7 +20,7 @@ Stay inside the delegated prompt. Do not broaden the parent task or make unrelat
 
 ## Runtime-Enforced Permissions
 
-The coordinator enforces General's toolset and permissions. By default General cannot redelegate because the task tool is denied.
+The coordinator enforces General's toolset and permissions. General may redelegate via `task` when runtime policy allows it; `todowrite` stays denied independently of task.
 
 ## Behavioral Guidance
 
