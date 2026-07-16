@@ -86,13 +86,8 @@ pub(super) fn validate_shell_path_arguments_with_grants(
             ));
         }
 
-        if contains_shell_glob_metachar(candidate)
-            && should_block_glob_path_argument(command, index, candidate, cwd)
-        {
-            return Err(ToolError::CommandBlocked(
-                "shell glob path expansion is not allowed in bash; use the glob tool instead"
-                    .to_string(),
-            ));
+        if is_safe_shell_device_path(candidate) {
+            continue;
         }
 
         let mut extracted_path = candidate;
@@ -136,23 +131,6 @@ pub(super) fn should_validate_bare_path_argument(
         return false;
     }
     cwd.join(path).exists()
-}
-
-pub(super) fn should_block_glob_path_argument(
-    command: &ShellSegmentCommand,
-    index: usize,
-    candidate: &str,
-    cwd: &Path,
-) -> bool {
-    if is_grep_pattern_argument(&command.executable, &command.args, index) {
-        return false;
-    }
-    candidate.starts_with('/')
-        || candidate.starts_with("./")
-        || candidate.starts_with("../")
-        || candidate.contains('/')
-        || tracks_shell_bare_path_arguments(&command.executable)
-        || cwd.join(candidate).exists()
 }
 
 pub(super) fn tracks_shell_bare_path_arguments(executable: &str) -> bool {
@@ -235,15 +213,21 @@ pub(super) fn validate_scanned_path_pattern_with_grants(
         ));
     }
 
-    if contains_shell_glob_metachar(&pattern.path) {
-        return Err(ToolError::CommandBlocked(
-            "shell glob path expansion is not allowed in bash; use the glob tool instead"
-                .to_string(),
-        ));
+    if is_safe_shell_device_path(&pattern.path) {
+        return Ok(());
+    }
+
+    let path_for_check = match pattern.path.find(['*', '?', '[']) {
+        Some(0) => return Ok(()),
+        Some(prefix_end) => &pattern.path[..prefix_end],
+        None => pattern.path.as_str(),
+    };
+    if path_for_check.is_empty() {
+        return Ok(());
     }
 
     let _ = normalize_shell_workspace_path_with_grants(
-        &pattern.path,
+        path_for_check,
         cwd,
         workspace_root,
         allow_prefixes,
@@ -251,8 +235,11 @@ pub(super) fn validate_scanned_path_pattern_with_grants(
     Ok(())
 }
 
-pub(super) fn contains_shell_glob_metachar(path: &str) -> bool {
-    path.contains('*') || path.contains('?') || path.contains('[')
+pub(super) fn is_safe_shell_device_path(path: &str) -> bool {
+    matches!(
+        path,
+        "/dev/null" | "/dev/zero" | "/dev/urandom" | "/dev/random" | "NUL" | "nul"
+    )
 }
 
 pub(super) fn normalize_shell_workspace_path(
@@ -269,6 +256,10 @@ pub(super) fn normalize_shell_workspace_path_with_grants(
     workspace_root: &Path,
     allow_prefixes: &[PathBuf],
 ) -> Result<PathBuf, ToolError> {
+    if is_safe_shell_device_path(token) {
+        return Ok(PathBuf::from(token));
+    }
+
     let workspace = workspace_root
         .canonicalize()
         .unwrap_or_else(|_| workspace_root.to_path_buf());
@@ -325,7 +316,8 @@ pub(super) fn ensure_existing_shell_path_stays_in_workspace_with_grants(
     let canonical = existing
         .canonicalize()
         .tool_err("failed to resolve shell path")?;
-    if canonical.starts_with(workspace) || external_shell_path_authorized(&canonical, allow_prefixes)
+    if canonical.starts_with(workspace)
+        || external_shell_path_authorized(&canonical, allow_prefixes)
     {
         Ok(())
     } else {

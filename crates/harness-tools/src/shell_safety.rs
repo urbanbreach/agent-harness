@@ -125,12 +125,7 @@ impl ShellSafety {
             return self.validate_bash_command_legacy(command, cwd, workspace_root, allow_prefixes);
         }
 
-        self.validate_bash_command_permission_patterns(
-            command,
-            cwd,
-            workspace_root,
-            allow_prefixes,
-        )
+        self.validate_bash_command_permission_patterns(command, cwd, workspace_root, allow_prefixes)
     }
 
     fn validate_bash_command_legacy(
@@ -933,7 +928,7 @@ mod tests {
         let err4 = safety
             .validate_bash_command("ls foo/../../../etc/pas*", tempdir.path(), tempdir.path())
             .expect_err("external relative path with glob should be blocked");
-        assert!(matches!(err4, ToolError::CommandBlocked(_)), "{:?}", err4);
+        assert!(is_external_directory_denial(&err4), "{:?}", err4);
     }
 
     #[test]
