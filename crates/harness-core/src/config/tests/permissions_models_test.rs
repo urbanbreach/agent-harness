@@ -26,6 +26,24 @@ fn oc_parity_permission_omitted_defaults_to_allow_for_bash_edit_webfetch() {
         "expected Allow for webfetch on default config (permission omitted), got {:?}",
         parsed.permissions.defaults.webfetch
     );
+    assert_eq!(
+        parsed.permissions.defaults.external_directory,
+        Some(PermissionMode::Ask),
+        "expected Ask for external_directory when permission omitted, got {:?}",
+        parsed.permissions.defaults.external_directory
+    );
+    assert_eq!(
+        parsed.permissions.defaults.doom_loop,
+        Some(PermissionMode::Ask),
+        "expected Ask for doom_loop when permission omitted, got {:?}",
+        parsed.permissions.defaults.doom_loop
+    );
+    assert_eq!(
+        parsed.permissions.defaults.question,
+        Some(PermissionMode::Deny),
+        "expected Deny for base question when permission omitted, got {:?}",
+        parsed.permissions.defaults.question
+    );
 
     for (kind, label) in [
         (PermissionKind::EditFs, "edit"),
@@ -38,6 +56,27 @@ fn oc_parity_permission_omitted_defaults_to_allow_for_bash_edit_webfetch() {
             "expected Allow for {label} on default config, got {decision:?}"
         );
     }
+    assert!(
+        matches!(
+            policy.evaluate(None, PermissionKind::ExternalDirectory),
+            PolicyDecision::Ask { .. }
+        ),
+        "expected Ask for external_directory when permission omitted"
+    );
+    assert!(
+        matches!(
+            policy.evaluate(None, PermissionKind::DoomLoop),
+            PolicyDecision::Ask { .. }
+        ),
+        "expected Ask for doom_loop when permission omitted"
+    );
+    assert!(
+        matches!(
+            policy.evaluate(None, PermissionKind::Question),
+            PolicyDecision::Deny
+        ),
+        "expected Deny for question when permission omitted"
+    );
 }
 
 #[test]
@@ -64,6 +103,25 @@ fn oc_parity_permission_allow_scalar_expands_without_forcing_ask() {
         "expected Allow for webfetch when permission scalar is allow, got {:?}",
         parsed.permissions.defaults.webfetch
     );
+    // Scalar allow keeps safety exceptions (not YOLO on external/doom/question).
+    assert_eq!(
+        parsed.permissions.defaults.external_directory,
+        Some(PermissionMode::Ask),
+        "expected Ask for external_directory when permission scalar is allow, got {:?}",
+        parsed.permissions.defaults.external_directory
+    );
+    assert_eq!(
+        parsed.permissions.defaults.doom_loop,
+        Some(PermissionMode::Ask),
+        "expected Ask for doom_loop when permission scalar is allow, got {:?}",
+        parsed.permissions.defaults.doom_loop
+    );
+    assert_eq!(
+        parsed.permissions.defaults.question,
+        Some(PermissionMode::Deny),
+        "expected Deny for question when permission scalar is allow, got {:?}",
+        parsed.permissions.defaults.question
+    );
 
     for (kind, label) in [
         (PermissionKind::EditFs, "edit"),
@@ -80,6 +138,27 @@ fn oc_parity_permission_allow_scalar_expands_without_forcing_ask() {
             "expected Allow for {label} (not Ask) when permission scalar is allow, got {decision:?}"
         );
     }
+    assert!(
+        matches!(
+            policy.evaluate(None, PermissionKind::ExternalDirectory),
+            PolicyDecision::Ask { .. }
+        ),
+        "expected Ask for external_directory when permission scalar is allow"
+    );
+    assert!(
+        matches!(
+            policy.evaluate(None, PermissionKind::DoomLoop),
+            PolicyDecision::Ask { .. }
+        ),
+        "expected Ask for doom_loop when permission scalar is allow"
+    );
+    assert!(
+        matches!(
+            policy.evaluate(None, PermissionKind::Question),
+            PolicyDecision::Deny
+        ),
+        "expected Deny for question when permission scalar is allow"
+    );
 }
 
 #[test]
@@ -111,13 +190,31 @@ fn oc_parity_example_config_permission_scalar_is_allow_not_ask_all() {
         !matches!(parsed.permissions.defaults.edit, PermissionMode::Ask),
         "expected example config not to force ask-all for edit"
     );
+    assert_eq!(
+        parsed.permissions.defaults.external_directory,
+        Some(PermissionMode::Ask),
+        "expected example scalar allow to keep external_directory Ask, got {:?}",
+        parsed.permissions.defaults.external_directory
+    );
+    assert_eq!(
+        parsed.permissions.defaults.doom_loop,
+        Some(PermissionMode::Ask),
+        "expected example scalar allow to keep doom_loop Ask, got {:?}",
+        parsed.permissions.defaults.doom_loop
+    );
+    assert_eq!(
+        parsed.permissions.defaults.question,
+        Some(PermissionMode::Deny),
+        "expected example scalar allow to keep base question Deny, got {:?}",
+        parsed.permissions.defaults.question
+    );
 }
 
 #[test]
 fn permission_scalar_expands_to_public_kinds_and_network() {
+    // Scalar ask/deny paint every kind; scalar allow keeps safety exceptions.
     for (raw, mode) in [
         ("\"ask\"", PermissionMode::Ask),
-        ("\"allow\"", PermissionMode::Allow),
         ("\"deny\"", PermissionMode::Deny),
     ] {
         let cfg = public_minimal_config_with_permission(raw);
@@ -130,8 +227,45 @@ fn permission_scalar_expands_to_public_kinds_and_network() {
         assert_eq!(parsed.permissions.defaults.webfetch, Some(mode.clone()));
         assert_eq!(parsed.permissions.defaults.websearch, Some(mode.clone()));
         assert_eq!(parsed.permissions.defaults.codesearch, Some(mode.clone()));
-        assert_eq!(parsed.permissions.defaults.lsp, Some(mode));
+        assert_eq!(parsed.permissions.defaults.lsp, Some(mode.clone()));
+        assert_eq!(
+            parsed.permissions.defaults.external_directory,
+            Some(mode.clone())
+        );
+        assert_eq!(parsed.permissions.defaults.doom_loop, Some(mode));
     }
+
+    let cfg = public_minimal_config_with_permission("\"allow\"");
+    let parsed = load_config_from_str(&cfg).unwrap_or_abort();
+    assert_eq!(parsed.permissions.defaults.edit, PermissionMode::Allow);
+    assert_eq!(parsed.permissions.defaults.shell, PermissionMode::Allow);
+    assert_eq!(parsed.permissions.defaults.network, PermissionMode::Allow);
+    assert_eq!(
+        parsed.permissions.defaults.question,
+        Some(PermissionMode::Deny)
+    );
+    assert_eq!(parsed.permissions.defaults.task, Some(PermissionMode::Allow));
+    assert_eq!(
+        parsed.permissions.defaults.webfetch,
+        Some(PermissionMode::Allow)
+    );
+    assert_eq!(
+        parsed.permissions.defaults.websearch,
+        Some(PermissionMode::Allow)
+    );
+    assert_eq!(
+        parsed.permissions.defaults.codesearch,
+        Some(PermissionMode::Allow)
+    );
+    assert_eq!(parsed.permissions.defaults.lsp, Some(PermissionMode::Allow));
+    assert_eq!(
+        parsed.permissions.defaults.external_directory,
+        Some(PermissionMode::Ask)
+    );
+    assert_eq!(
+        parsed.permissions.defaults.doom_loop,
+        Some(PermissionMode::Ask)
+    );
 }
 
 #[test]

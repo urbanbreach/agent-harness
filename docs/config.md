@@ -759,11 +759,13 @@ The canonical scalar form is OpenCode-aligned allow-by-default:
 { "permission": "allow" }
 ```
 
-`permission` accepts exactly `"ask"`, `"allow"`, or `"deny"`. A scalar applies to
-all canonical public permission kinds: `bash`, `edit`, `question`, `task`,
-`webfetch`, `websearch`, `codesearch`, and `lsp`. When `permission` is omitted,
-ordinary tools default to allow; `external_directory` and `doom_loop` stay ask,
-and `read` stays allow with `.env` pattern asks.
+`permission` accepts exactly `"ask"`, `"allow"`, or `"deny"`. Scalar `ask` and
+`deny` paint every canonical public kind. Scalar `allow` is OpenCode-like
+allow-with-safety-exceptions: ordinary tools (`bash`, `edit`, `task`,
+`webfetch`, `websearch`, `codesearch`, `lsp`, `read`) become allow, while
+`external_directory` and `doom_loop` stay ask, base `question` stays deny
+(build/plan re-allow), and `read` keeps `.env` pattern asks. When `permission`
+is omitted, the same allow-with-safety-exceptions defaults apply.
 
 The V1 native tool catalog is documented in
 [`docs/native-tool-catalog.md`](native-tool-catalog.md). New control-plane tools

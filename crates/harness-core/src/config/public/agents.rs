@@ -457,7 +457,8 @@ pub(super) fn default_shipped_agents(
                     edit: Some(PermissionMode::Allow),
                     shell: Some(PermissionMode::Allow),
                     network: Some(PermissionMode::Allow),
-                    question: Some(PermissionMode::Allow),
+                    // OC general only overlays todowrite deny; question stays base deny.
+                    question: Some(PermissionMode::Deny),
                     task: Some(PermissionMode::Allow),
                     todowrite: Some(PermissionMode::Deny),
                     webfetch: Some(PermissionMode::Allow),

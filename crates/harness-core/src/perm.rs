@@ -328,7 +328,7 @@ impl DefaultPermissionModes {
                 .permissions
                 .question
                 .clone()
-                .unwrap_or(PermissionMode::Ask),
+                .unwrap_or(PermissionMode::Deny),
             task: config
                 .permissions
                 .task
@@ -381,7 +381,7 @@ impl DefaultPermissionModes {
             edit,
             shell,
             network: network.clone(),
-            question: PermissionMode::Ask,
+            question: PermissionMode::Deny,
             task: PermissionMode::Allow,
             webfetch: network.clone(),
             websearch: network.clone(),

@@ -261,13 +261,14 @@ pub(super) fn validate_public_root_config_object(
 
 fn default_internal_permissions_config() -> PermissionsConfig {
     // OpenCode-aligned allow-by-default for ordinary tool kinds. Safety kinds stay
-    // Ask: external_directory, doom_loop. Read stays Allow with .env pattern rules.
+    // Ask: external_directory, doom_loop. Base question is Deny (build/plan re-allow).
+    // Read stays Allow with .env pattern rules.
     PermissionsConfig {
         defaults: PermissionDefaultsConfig {
             edit: PermissionMode::Allow,
             shell: PermissionMode::Allow,
             network: PermissionMode::Allow,
-            question: Some(PermissionMode::Allow),
+            question: Some(PermissionMode::Deny),
             task: Some(PermissionMode::Allow),
             webfetch: Some(PermissionMode::Allow),
             websearch: Some(PermissionMode::Allow),

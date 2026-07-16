@@ -82,11 +82,10 @@ fn permission_policy_supports_native_tool_permission_kinds() {
 
     let policy = PermissionPolicy::from_config(&config).with_ask_timeout_ms(ASK_TIMEOUT_MS);
 
-    // Product default is allow-by-default for ordinary kinds when omitted from
-    // permissions.defaults (only edit/shell/network are set in this fixture).
+    // Ordinary kinds allow when omitted; base question stays deny (build/plan re-allow).
     assert_eq!(
         policy.evaluate(None, PermissionKind::Question),
-        PolicyDecision::Allow
+        PolicyDecision::Deny
     );
     assert_eq!(
         policy.evaluate(None, PermissionKind::Task),

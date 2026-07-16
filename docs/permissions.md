@@ -32,7 +32,7 @@ The canonical scalar form is OpenCode-aligned allow-by-default:
 { "permission": "allow" }
 ```
 
-A scalar applies to all canonical public permission kinds. When `permission` is omitted, ordinary tools default to allow while safety kinds stay guarded: `external_directory` and `doom_loop` default to ask, and `read` defaults to allow with targeted `.env` pattern asks.
+Scalar `ask`/`deny` paint every canonical public kind. Scalar `allow` (and the omitted-permission default) is allow-with-safety-exceptions: ordinary tools default to allow while safety kinds stay guarded — `external_directory` and `doom_loop` stay ask, base `question` stays deny (build/plan re-allow), and `read` defaults to allow with targeted `.env` pattern asks.
 
 This is intentionally not a full OpenCode PermissionNext engine. Harness uses a dual Policy plus ruleset seam: permission resolution returns allow/ask/deny, and the runtime still applies tool-level capability checks and tool-specific safety gates afterward. A permission allow does not bypass workspace path validation, shell safety parsing, or the doom-loop streak counter.
 

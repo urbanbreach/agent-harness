@@ -94,7 +94,7 @@ fn native_permission_kinds_follow_explicit_and_migration_defaults() {
 
     assert_eq!(
         policy.evaluate(None, PermissionKind::Question),
-        ask_decision(77)
+        PolicyDecision::Deny
     );
     assert_eq!(
         policy.evaluate(None, PermissionKind::Task),

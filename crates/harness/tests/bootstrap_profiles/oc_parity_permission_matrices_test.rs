@@ -57,6 +57,7 @@ fn oc_parity_build_bash_and_edit_allow_without_ask() {
     assert_policy_allow(policy, "build", PermissionKind::Shell, "bash");
     assert_policy_allow(policy, "build", PermissionKind::EditFs, "edit");
     assert_policy_allow(policy, "build", PermissionKind::WebFetch, "webfetch");
+    assert_policy_allow(policy, "build", PermissionKind::Question, "question");
 
     let global = PermissionPolicy::from_config(&config);
     for (kind, label) in [
@@ -74,6 +75,39 @@ fn oc_parity_build_bash_and_edit_allow_without_ask() {
             "expected Allow for {label} on default config (not Ask), got {decision:?}"
         );
     }
+    assert!(
+        matches!(
+            global.evaluate(None, PermissionKind::ExternalDirectory),
+            PolicyDecision::Ask { .. }
+        ),
+        "expected Ask for external_directory on example scalar allow defaults"
+    );
+    assert!(
+        matches!(
+            global.evaluate(None, PermissionKind::DoomLoop),
+            PolicyDecision::Ask { .. }
+        ),
+        "expected Ask for doom_loop on example scalar allow defaults"
+    );
+    assert!(
+        matches!(
+            global.evaluate(None, PermissionKind::Question),
+            PolicyDecision::Deny
+        ),
+        "expected Deny for base question on example scalar allow defaults"
+    );
+
+    let build_perms = config
+        .agents
+        .get("build")
+        .and_then(|agent| agent.permissions.as_ref())
+        .expect("build shipped profile must define permissions");
+    assert_eq!(
+        build_perms.question,
+        Some(PermissionMode::Allow),
+        "expected build profile to re-allow question over base deny, got {:?}",
+        build_perms.question
+    );
 }
 
 #[test]
@@ -83,6 +117,7 @@ fn oc_parity_general_task_allow_and_todowrite_deny() {
     let general_profile = &coordinator.agent_profiles["general"];
 
     assert_policy_allow(policy, "general", PermissionKind::Task, "task");
+    assert_policy_deny(policy, "general", PermissionKind::Question, "question");
     assert!(
         general_profile.toolset.iter().any(|t| t == "task"),
         "expected general toolset to include task (OpenCode general can redelegate); toolset={:?}",
@@ -107,6 +142,12 @@ fn oc_parity_general_task_allow_and_todowrite_deny() {
         Some(PermissionMode::Allow),
         "expected general task permission Allow (OpenCode), got {:?}",
         general_perms.task
+    );
+    assert_eq!(
+        general_perms.question,
+        Some(PermissionMode::Deny),
+        "expected general question Deny (OC base deny, not re-allowed), got {:?}",
+        general_perms.question
     );
 
     let ruleset = from_profile_permissions(general_perms);

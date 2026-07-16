@@ -103,8 +103,25 @@ pub(super) fn translate_public_permission_value(
     let parsed = match parsed {
         PublicPermissionValue::Config(parsed) => parsed,
         PublicPermissionValue::Mode(mode) => {
-            return serde_json::to_value(PermissionsConfig {
-                defaults: PermissionDefaultsConfig {
+            // Scalar allow is OC-like allow-with-safety-exceptions, not YOLO on
+            // external_directory / doom_loop / question. Scalar ask/deny still
+            // paints every kind with that mode.
+            let defaults = match mode {
+                PermissionMode::Allow => PermissionDefaultsConfig {
+                    edit: PermissionMode::Allow,
+                    shell: PermissionMode::Allow,
+                    network: PermissionMode::Allow,
+                    question: Some(PermissionMode::Deny),
+                    task: Some(PermissionMode::Allow),
+                    webfetch: Some(PermissionMode::Allow),
+                    websearch: Some(PermissionMode::Allow),
+                    codesearch: Some(PermissionMode::Allow),
+                    lsp: Some(PermissionMode::Allow),
+                    read: Some(PermissionMode::Allow),
+                    external_directory: Some(PermissionMode::Ask),
+                    doom_loop: Some(PermissionMode::Ask),
+                },
+                PermissionMode::Ask | PermissionMode::Deny => PermissionDefaultsConfig {
                     edit: mode.clone(),
                     shell: mode.clone(),
                     network: mode.clone(),
@@ -118,6 +135,9 @@ pub(super) fn translate_public_permission_value(
                     external_directory: Some(mode.clone()),
                     doom_loop: Some(mode),
                 },
+            };
+            return serde_json::to_value(PermissionsConfig {
+                defaults,
                 fallback: None,
                 rules: crate::config::default_permission_rule_set_with_read_env(),
                 shell_allowlist: fallback.shell_allowlist,
