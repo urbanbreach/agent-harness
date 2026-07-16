@@ -1,5 +1,117 @@
 use super::*;
+use crate::perm::{PermissionKind, PermissionPolicy, PolicyDecision};
 use crate::UnwrapOrAbort;
+
+#[test]
+fn oc_parity_permission_omitted_defaults_to_allow_for_bash_edit_webfetch() {
+    let cfg = public_minimal_config_without_permission();
+    let parsed = load_config_from_str(&cfg).unwrap_or_abort();
+    let policy = PermissionPolicy::from_config(&parsed);
+
+    assert_eq!(
+        parsed.permissions.defaults.edit,
+        PermissionMode::Allow,
+        "expected Allow for edit on default config (permission omitted), got {:?}",
+        parsed.permissions.defaults.edit
+    );
+    assert_eq!(
+        parsed.permissions.defaults.shell,
+        PermissionMode::Allow,
+        "expected Allow for bash/shell on default config (permission omitted), got {:?}",
+        parsed.permissions.defaults.shell
+    );
+    assert_eq!(
+        parsed.permissions.defaults.webfetch,
+        Some(PermissionMode::Allow),
+        "expected Allow for webfetch on default config (permission omitted), got {:?}",
+        parsed.permissions.defaults.webfetch
+    );
+
+    for (kind, label) in [
+        (PermissionKind::EditFs, "edit"),
+        (PermissionKind::Shell, "bash"),
+        (PermissionKind::WebFetch, "webfetch"),
+    ] {
+        let decision = policy.evaluate(None, kind);
+        assert!(
+            matches!(decision, PolicyDecision::Allow),
+            "expected Allow for {label} on default config, got {decision:?}"
+        );
+    }
+}
+
+#[test]
+fn oc_parity_permission_allow_scalar_expands_without_forcing_ask() {
+    let cfg = public_minimal_config_with_permission("\"allow\"");
+    let parsed = load_config_from_str(&cfg).unwrap_or_abort();
+    let policy = PermissionPolicy::from_config(&parsed);
+
+    assert_eq!(
+        parsed.permissions.defaults.edit,
+        PermissionMode::Allow,
+        "expected Allow for edit when permission scalar is allow, got {:?}",
+        parsed.permissions.defaults.edit
+    );
+    assert_eq!(
+        parsed.permissions.defaults.shell,
+        PermissionMode::Allow,
+        "expected Allow for bash when permission scalar is allow, got {:?}",
+        parsed.permissions.defaults.shell
+    );
+    assert_eq!(
+        parsed.permissions.defaults.webfetch,
+        Some(PermissionMode::Allow),
+        "expected Allow for webfetch when permission scalar is allow, got {:?}",
+        parsed.permissions.defaults.webfetch
+    );
+
+    for (kind, label) in [
+        (PermissionKind::EditFs, "edit"),
+        (PermissionKind::Shell, "bash"),
+        (PermissionKind::WebFetch, "webfetch"),
+    ] {
+        let decision = policy.evaluate(None, kind);
+        assert!(
+            matches!(decision, PolicyDecision::Allow),
+            "expected Allow for {label} when permission scalar is allow, got {decision:?}"
+        );
+        assert!(
+            !matches!(decision, PolicyDecision::Ask { .. }),
+            "expected Allow for {label} (not Ask) when permission scalar is allow, got {decision:?}"
+        );
+    }
+}
+
+#[test]
+fn oc_parity_example_config_permission_scalar_is_allow_not_ask_all() {
+    let example_path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../configs/harness.example.jsonc");
+    let raw = std::fs::read_to_string(&example_path).unwrap_or_abort();
+    assert!(
+        raw.contains(r#""permission": "allow""#) || raw.contains("permission: \"allow\""),
+        "expected configs/harness.example.jsonc permission scalar to be allow (OpenCode allow-default), not ask-all; found ask or missing allow"
+    );
+
+    let context = ConfigLoadContext::from_env()
+        .with_current_dir(Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."));
+    let parsed = load_config_from_file_with_context(&example_path, &context).unwrap_or_abort();
+    assert_eq!(
+        parsed.permissions.defaults.edit,
+        PermissionMode::Allow,
+        "expected example config edit default Allow after allow scalar, got {:?}",
+        parsed.permissions.defaults.edit
+    );
+    assert_eq!(
+        parsed.permissions.defaults.shell,
+        PermissionMode::Allow,
+        "expected example config bash default Allow after allow scalar, got {:?}",
+        parsed.permissions.defaults.shell
+    );
+    assert!(
+        !matches!(parsed.permissions.defaults.edit, PermissionMode::Ask),
+        "expected example config not to force ask-all for edit"
+    );
+}
 
 #[test]
 fn permission_scalar_expands_to_public_kinds_and_network() {

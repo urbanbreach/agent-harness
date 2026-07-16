@@ -161,6 +161,35 @@ fn public_minimal_config_with_permission(permission: &str) -> String {
     )
 }
 
+fn public_minimal_config_without_permission() -> String {
+    r#"
+        {
+          provider: {
+            default: {
+              type: "openai_compatible",
+              options: {
+                baseURL: "http://127.0.0.1:8317/v1",
+                apiKey: "test-key",
+              },
+              models: {
+                "gpt-4o-mini": {
+                  name: "GPT-4o mini"
+                }
+              }
+            }
+          },
+          model: "default/gpt-4o-mini",
+          agent: {
+            build: {
+              system_prompt: "Build work"
+            }
+          },
+          default_agent: "build"
+        }
+        "#
+    .to_string()
+}
+
 mod agents_profiles_test;
 mod discovery_merge_overlay_test;
 mod discovery_merge_test;

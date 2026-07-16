@@ -1,16 +1,20 @@
+use std::collections::BTreeSet;
+use std::fs;
+use std::path::{Path, PathBuf};
+
 use harness::UnwrapOrAbort;
 use harness_core::agent::{build_provider_tool_defs, AgentProfile};
 use harness_core::config::{
     load_config_from_file_with_context, load_config_from_str, ConfigLoadContext, HarnessConfig,
     ResolvedModelTarget,
 };
+use harness_core::config::PermissionMode;
 use harness_core::perm::{
-    permission_kind_for_tool_call, PermissionKind, PermissionRuleRequest, PolicyDecision,
+    is_tool_disabled, permission_kind_for_tool_call, PermissionKind, PermissionPolicy,
+    PermissionRuleRequest, PolicyDecision,
 };
 use harness_core::tool::ToolRegistry;
 use harness_core::workspace::WorkspaceEnvironment;
-use std::fs;
-use std::path::{Path, PathBuf};
 use tempfile::tempdir;
 
 const V1_PROMPT_PROFILES: &str = "build plan general explore visual-engineering artistry ultrabrain deep quick unspecified-low unspecified-high writing";
@@ -471,9 +475,6 @@ fn shipped_profile_permission_promises_match_runtime_policy_and_toolsets() {
     );
     for (tool_id, prompt_anchor) in [
         ("edit", "denies edit"),
-        ("bash", "bash/shell"),
-        ("webfetch", "webfetch"),
-        ("websearch", "websearch"),
         ("codesearch", "codesearch"),
         ("task", "task redelegation"),
     ] {
@@ -484,6 +485,20 @@ fn shipped_profile_permission_promises_match_runtime_policy_and_toolsets() {
         assert!(
             coordinator_denies_tool_for_profile(&coordinator_config, "explore", tool_id),
             "explore prompt claims `{tool_id}` is restricted but runtime allows it"
+        );
+    }
+    for (tool_id, prompt_anchor) in [
+        ("bash", "bash"),
+        ("webfetch", "webfetch"),
+        ("websearch", "websearch"),
+    ] {
+        assert!(
+            explore_prompt.contains(prompt_anchor),
+            "explore prompt missing allowed-tool anchor `{prompt_anchor}`"
+        );
+        assert!(
+            !coordinator_denies_tool_for_profile(&coordinator_config, "explore", tool_id),
+            "explore should allow `{tool_id}` under ruleset-compatible defaults"
         );
     }
     assert!(
@@ -567,4 +582,14 @@ fn dynamic_prompt_named_sections_are_addressable() {
 mod runtime_bootstrap_test {
     use super::*;
     include!("bootstrap_profiles/runtime_bootstrap_test.rs");
+}
+
+mod permission_ruleset_export_test {
+    use super::*;
+    include!("bootstrap_profiles/permission_ruleset_export_test.rs");
+}
+
+mod oc_parity_permission_matrices_test {
+    use super::*;
+    include!("bootstrap_profiles/oc_parity_permission_matrices_test.rs");
 }
