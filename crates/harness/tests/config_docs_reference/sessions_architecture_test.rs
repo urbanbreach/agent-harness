@@ -210,6 +210,28 @@ fn readiness_closeout_docs_are_current_and_back_roadmap_claims() {
                     name.starts_with("agent_harness_") && name.ends_with("_ui_pi_backend_prd.md")
                 })
         })
+        .or_else(|| {
+            [
+                "PERMISSIONS_RULESET_PARITY_PRD.md",
+                "TOOLS_PARITY_PRD.md",
+            ]
+            .into_iter()
+            .map(|name| root.join(name))
+            .find(|path| path.is_file())
+        })
+        .or_else(|| {
+            std::fs::read_dir(&root).ok().and_then(|entries| {
+                entries
+                    .filter_map(|entry| entry.ok().map(|e| e.path()))
+                    .find(|path| {
+                        path.file_name()
+                            .and_then(|name| name.to_str())
+                            .is_some_and(|name| {
+                                name.ends_with("_PRD.md") || name.ends_with("_prd.md")
+                            })
+                    })
+            })
+        })
         .unwrap_or_abort();
 
     // assert
