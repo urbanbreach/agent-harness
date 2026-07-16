@@ -630,11 +630,12 @@ impl ShellRunTool {
         self.safety.ensure_executable_allowed(&invocation.cmd)?;
 
         let resolved_cwd = self.safety.resolve_cwd(ctx, invocation.cwd.as_deref())?;
-        self.safety.validate_direct_args(
+        self.safety.validate_direct_args_with_grants(
             &invocation.cmd,
             &invocation.args,
             &resolved_cwd,
             &ctx.workspace_root,
+            &ctx.external_directory_allow_prefixes,
         )?;
         let output = self
             .runner
@@ -660,8 +661,12 @@ impl ShellRunTool {
         let cwd = self
             .safety
             .resolve_cwd(ctx, invocation.workdir.as_deref())?;
-        self.safety
-            .validate_bash_command(&invocation.command, &cwd, &ctx.workspace_root)?;
+        self.safety.validate_bash_command_with_grants(
+            &invocation.command,
+            &cwd,
+            &ctx.workspace_root,
+            &ctx.external_directory_allow_prefixes,
+        )?;
         let shell = resolve_bash_executable();
         let output = self
             .runner

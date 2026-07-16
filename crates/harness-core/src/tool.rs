@@ -255,9 +255,23 @@ pub struct ToolContext {
     pub current_model_settings: Option<AgentModelSettings>,
     pub tool_state: ToolRunState,
     pub coordinator: CoordinatorHandle,
+    /// Call-scoped absolute path prefixes authorized for outside-workspace I/O.
+    /// Empty means fail-closed for any path outside the workspace.
+    pub external_directory_allow_prefixes: Vec<PathBuf>,
 }
 
 impl ToolContext {
+    pub fn external_path_authorized(&self, path: &Path) -> bool {
+        if self.external_directory_allow_prefixes.is_empty() {
+            return false;
+        }
+        let candidate = canonicalize_best_effort(path);
+        self.external_directory_allow_prefixes.iter().any(|prefix| {
+            let prefix = canonicalize_best_effort(prefix);
+            candidate == prefix || candidate.starts_with(&prefix)
+        })
+    }
+
     pub fn resolve_workspace_path(&self, relative: &Path) -> Result<PathBuf, ToolError> {
         let canonical_workspace = self.workspace_root.canonicalize().map_err(|source| {
             ToolError::WorkspaceRootUnavailable {
@@ -266,28 +280,47 @@ impl ToolContext {
             }
         })?;
 
-        let candidate = normalize_workspace_target_path(&canonical_workspace, relative)?;
+        match normalize_workspace_target_path(&canonical_workspace, relative) {
+            Ok(candidate) => {
+                if candidate == canonical_workspace {
+                    return Ok(canonical_workspace);
+                }
 
-        if candidate == canonical_workspace {
-            return Ok(canonical_workspace);
+                let canonical_candidate =
+                    candidate
+                        .canonicalize()
+                        .map_err(|source| ToolError::PathResolution {
+                            path: candidate.display().to_string(),
+                            source,
+                        })?;
+
+                if canonical_candidate.starts_with(&canonical_workspace) {
+                    return Ok(canonical_candidate);
+                }
+
+                if self.external_path_authorized(&canonical_candidate) {
+                    return Ok(canonical_candidate);
+                }
+
+                Err(ToolError::PathEscapesWorkspace {
+                    workspace_root: canonical_workspace.display().to_string(),
+                    path: canonical_candidate.display().to_string(),
+                })
+            }
+            Err(ToolError::PathEscapesWorkspace { path, .. }) => {
+                let external = PathBuf::from(&path);
+                let resolved = canonicalize_best_effort(&external);
+                if self.external_path_authorized(&resolved) {
+                    Ok(resolved)
+                } else {
+                    Err(ToolError::PathEscapesWorkspace {
+                        workspace_root: canonical_workspace.display().to_string(),
+                        path,
+                    })
+                }
+            }
+            Err(err) => Err(err),
         }
-
-        let canonical_candidate =
-            candidate
-                .canonicalize()
-                .map_err(|source| ToolError::PathResolution {
-                    path: candidate.display().to_string(),
-                    source,
-                })?;
-
-        if !canonical_candidate.starts_with(&canonical_workspace) {
-            return Err(ToolError::PathEscapesWorkspace {
-                workspace_root: canonical_workspace.display().to_string(),
-                path: canonical_candidate.display().to_string(),
-            });
-        }
-
-        Ok(canonical_candidate)
     }
 
     pub fn artifact_store(&self) -> Result<ArtifactStore, ArtifactStoreError> {
@@ -295,25 +328,42 @@ impl ToolContext {
     }
 }
 
-fn normalize_workspace_target_path(workspace: &Path, input: &Path) -> Result<PathBuf, ToolError> {
+fn canonicalize_best_effort(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| {
+        let mut normalized = PathBuf::new();
+        for component in path.components() {
+            match component {
+                std::path::Component::ParentDir => {
+                    let _ = normalized.pop();
+                }
+                std::path::Component::CurDir => {}
+                other => normalized.push(other.as_os_str()),
+            }
+        }
+        if normalized.as_os_str().is_empty() {
+            path.to_path_buf()
+        } else {
+            normalized
+        }
+    })
+}
+
+pub(crate) fn normalize_workspace_target_path(
+    workspace: &Path,
+    input: &Path,
+) -> Result<PathBuf, ToolError> {
     let relative = if input.is_absolute() {
         match input.strip_prefix(workspace) {
             Ok(relative) => relative,
             Err(_) => {
-                let canonical_input =
-                    input
-                        .canonicalize()
-                        .map_err(|_| ToolError::PathEscapesWorkspace {
-                            workspace_root: workspace.display().to_string(),
-                            path: input.display().to_string(),
-                        })?;
-                if !canonical_input.starts_with(workspace) {
-                    return Err(ToolError::PathEscapesWorkspace {
-                        workspace_root: workspace.display().to_string(),
-                        path: canonical_input.display().to_string(),
-                    });
+                let canonical_input = input.canonicalize().unwrap_or_else(|_| input.to_path_buf());
+                if canonical_input.starts_with(workspace) {
+                    return Ok(canonical_input);
                 }
-                return Ok(canonical_input);
+                return Err(ToolError::PathEscapesWorkspace {
+                    workspace_root: workspace.display().to_string(),
+                    path: canonical_input.display().to_string(),
+                });
             }
         }
     } else {
@@ -745,6 +795,7 @@ mod tests {
             current_model_ref: None,
             current_model_settings: None,
             tool_state: ToolRunState::default(),
+            external_directory_allow_prefixes: Vec::new(),
             coordinator,
         }
     }

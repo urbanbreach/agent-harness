@@ -37,6 +37,7 @@ async fn recursive_tree_renders_direct_children_once_in_sorted_order() {
         current_model_ref: None,
         current_model_settings: None,
         tool_state: ToolRunState::default(),
+        external_directory_allow_prefixes: Vec::new(),
         coordinator,
     };
 

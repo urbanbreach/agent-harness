@@ -2,7 +2,7 @@
 use std::collections::BTreeSet;
 use std::fs;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use serde_json::Value;
@@ -11,11 +11,13 @@ use crate::config::HookLifecycleEvent;
 use crate::digest::digest12;
 use crate::event::PermissionDecision as EventPermissionDecision;
 use crate::path_selector::workspace_relative_path_from_maybe_absolute;
-use crate::perm::shell::{direct_shell_command_request, scan_shell_command, ShellCommandRequest};
+use crate::perm::shell::{
+    direct_shell_command_request, scan_shell_command, ShellCommandRequest, ShellPathPattern,
+};
 use crate::perm::{
-    PermissionDecision, PermissionGrant, PermissionGrantMatcher, PermissionGrantRequest,
-    PermissionGrantScope, PermissionKind, PermissionPolicy, PermissionRuleRequest,
-    PermissionToolSelector, PolicyDecision,
+    always_external_path_prefix, PermissionDecision, PermissionGrant, PermissionGrantMatcher,
+    PermissionGrantRequest, PermissionGrantScope, PermissionKind, PermissionPolicy,
+    PermissionRuleRequest, PermissionToolSelector, PolicyDecision,
 };
 use crate::redact::Redactor;
 use crate::tool::canonical_tool_id_for;
@@ -139,8 +141,19 @@ fn permission_grant_matcher(
                 request_digest_selector(request_digest)
             }
         }
-        PermissionKind::ExternalDirectory
-        | PermissionKind::DoomLoop
+        PermissionKind::ExternalDirectory => {
+            let collection = collect_external_directory_paths(workspace_root, "", args_json);
+            let path_prefix = collection
+                .paths
+                .first()
+                .map(|path| path.display().to_string())
+                .unwrap_or_default();
+            PermissionGrantMatcher::ExternalPath {
+                path_prefix,
+                request_digest: request_digest.to_string(),
+            }
+        }
+        PermissionKind::DoomLoop
         | PermissionKind::Network
         | PermissionKind::Question
         | PermissionKind::Task
@@ -150,6 +163,309 @@ fn permission_grant_matcher(
         | PermissionKind::Lsp => request_digest_selector(request_digest),
     }
 }
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(super) struct ExternalDirectoryPathCollection {
+    pub(super) paths: Vec<PathBuf>,
+    pub(super) hard_deny: Option<String>,
+}
+
+pub(super) fn collect_external_directory_paths(
+    workspace_root: &Path,
+    tool_id: &str,
+    args_json: &Value,
+) -> ExternalDirectoryPathCollection {
+    let canonical_tool = canonical_tool_id_for(tool_id).unwrap_or(tool_id);
+    let workspace = workspace_root
+        .canonicalize()
+        .unwrap_or_else(|_| workspace_root.to_path_buf());
+
+    if matches!(
+        canonical_tool,
+        "bash" | "shell.run" | "shell.exec" | "shell.command"
+    ) || canonical_tool.starts_with("shell.")
+    {
+        return collect_external_paths_from_bash(&workspace, args_json);
+    }
+
+    let paths = collect_external_paths_from_path_args(&workspace, args_json);
+    ExternalDirectoryPathCollection {
+        paths,
+        hard_deny: None,
+    }
+}
+
+fn collect_external_paths_from_path_args(workspace: &Path, args_json: &Value) -> Vec<PathBuf> {
+    let mut raw_paths = BTreeSet::new();
+    for key in WORKSPACE_PATH_SELECTOR_KEYS {
+        collect_raw_path_strings(args_json.get(key), &mut raw_paths);
+    }
+    collect_apply_patch_raw_paths(args_json, &mut raw_paths);
+
+    let mut external = BTreeSet::new();
+    for raw in raw_paths {
+        if let Some(path) = resolve_outside_workspace_path(workspace, &raw) {
+            external.insert(path);
+        }
+    }
+    external.into_iter().collect()
+}
+
+fn collect_raw_path_strings(value: Option<&Value>, paths: &mut BTreeSet<String>) {
+    match value {
+        Some(Value::String(raw_path)) => {
+            if !raw_path.is_empty() {
+                paths.insert(raw_path.clone());
+            }
+        }
+        Some(Value::Array(raw_paths)) => {
+            for raw_path in raw_paths.iter().filter_map(Value::as_str) {
+                if !raw_path.is_empty() {
+                    paths.insert(raw_path.to_string());
+                }
+            }
+        }
+        Some(_) | None => {}
+    }
+}
+
+fn collect_apply_patch_raw_paths(args_json: &Value, paths: &mut BTreeSet<String>) {
+    let Some(patch_text) = args_json
+        .get("patchText")
+        .or_else(|| args_json.get("patch_text"))
+        .and_then(Value::as_str)
+    else {
+        return;
+    };
+    for line in patch_text.lines() {
+        for prefix in APPLY_PATCH_PATH_PREFIXES {
+            if let Some(path) = line.strip_prefix(prefix) {
+                let trimmed = path.trim();
+                if !trimmed.is_empty() {
+                    paths.insert(trimmed.to_string());
+                }
+            }
+        }
+    }
+}
+
+fn collect_external_paths_from_bash(
+    workspace: &Path,
+    args_json: &Value,
+) -> ExternalDirectoryPathCollection {
+    let Some(shell_request) = shell_request_from_args(args_json) else {
+        return ExternalDirectoryPathCollection::default();
+    };
+
+    let mut scanned_tokens = BTreeSet::new();
+    let mut external = BTreeSet::new();
+    for command in &shell_request.commands {
+        for pattern in &command.path_patterns {
+            scanned_tokens.insert(pattern.path.clone());
+            if is_safe_shell_device_path(&pattern.path) {
+                continue;
+            }
+            if let Some(path) = resolve_outside_workspace_path(workspace, &pattern.path) {
+                external.insert(path);
+            }
+        }
+    }
+
+    if let Some(reason) = bash_unscanned_path_hard_deny(&shell_request, &scanned_tokens) {
+        return ExternalDirectoryPathCollection {
+            paths: external.into_iter().collect(),
+            hard_deny: Some(reason),
+        };
+    }
+
+    ExternalDirectoryPathCollection {
+        paths: external.into_iter().collect(),
+        hard_deny: None,
+    }
+}
+
+fn bash_unscanned_path_hard_deny(
+    shell_request: &ShellCommandRequest,
+    scanned_tokens: &BTreeSet<String>,
+) -> Option<String> {
+    for command in &shell_request.commands {
+        for token in command.tokens.iter().skip(1) {
+            if token.starts_with('-') || is_safe_shell_device_path(token) {
+                continue;
+            }
+            if !looks_like_path_token(token) {
+                continue;
+            }
+            if scanned_tokens.contains(token) {
+                continue;
+            }
+            return Some(format!(
+                "external_directory: shell path-like token `{token}` was not scanned; \
+refusing fail-open outside-workspace access"
+            ));
+        }
+    }
+    None
+}
+
+fn looks_like_path_token(token: &str) -> bool {
+    token.starts_with('/')
+        || token.starts_with("./")
+        || token.starts_with("../")
+        || token == ".."
+        || (token.contains('/') && !token.contains('='))
+}
+
+fn is_safe_shell_device_path(path: &str) -> bool {
+    matches!(
+        path,
+        "/dev/null" | "/dev/zero" | "/dev/urandom" | "/dev/random" | "NUL" | "nul"
+    )
+}
+
+fn resolve_outside_workspace_path(workspace: &Path, raw: &str) -> Option<PathBuf> {
+    if is_safe_shell_device_path(raw) {
+        return None;
+    }
+    let candidate = if Path::new(raw).is_absolute() {
+        PathBuf::from(raw)
+    } else {
+        workspace.join(raw)
+    };
+    let normalized = normalize_path_components(&candidate);
+    let workspace_canonical = workspace
+        .canonicalize()
+        .unwrap_or_else(|_| workspace.to_path_buf());
+    let normalized_canonical = normalized
+        .canonicalize()
+        .unwrap_or_else(|_| normalized.clone());
+
+    if normalized_canonical == workspace_canonical
+        || normalized_canonical.starts_with(&workspace_canonical)
+        || normalized.starts_with(workspace)
+    {
+        return None;
+    }
+    Some(normalized_canonical)
+}
+
+fn normalize_path_components(path: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::ParentDir => {
+                let _ = out.pop();
+            }
+            std::path::Component::CurDir => {}
+            other => out.push(other.as_os_str()),
+        }
+    }
+    if out.as_os_str().is_empty() {
+        path.to_path_buf()
+    } else {
+        out
+    }
+}
+
+pub(super) fn call_scoped_external_allow_prefixes(paths: &[PathBuf]) -> Vec<PathBuf> {
+    paths.to_vec()
+}
+
+pub(super) fn external_directory_grants_authorize(
+    run_state: &super::RunState,
+    workspace_root: &Path,
+    tool_id: &str,
+    args_json: &Value,
+    external_paths: &[PathBuf],
+    request_digest: &str,
+) -> bool {
+    if external_paths.is_empty() {
+        return true;
+    }
+    let grant_request = permission_grant_request(
+        workspace_root,
+        PermissionKind::ExternalDirectory,
+        tool_id,
+        args_json,
+        request_digest,
+    );
+    if run_state.permission_grant_authorizes(&grant_request) {
+        return true;
+    }
+    external_paths.iter().all(|path| {
+        let path_request = PermissionGrantRequest {
+            kind: PermissionKind::ExternalDirectory,
+            tool: grant_request.tool.clone(),
+            matcher: PermissionGrantMatcher::ExternalPath {
+                path_prefix: path.display().to_string(),
+                request_digest: request_digest.to_string(),
+            },
+        };
+        run_state.permission_grant_authorizes(&path_request)
+    })
+}
+
+pub(super) fn record_external_directory_always_grants(
+    run_state: &mut super::RunState,
+    permission_id: &str,
+    scope: PermissionGrantScope,
+    grant_request: &PermissionGrantRequest,
+    external_paths: &[PathBuf],
+    request_digest: &str,
+) -> Vec<PermissionGrant> {
+    let mut recorded = Vec::new();
+    for (index, path) in external_paths.iter().enumerate() {
+        let prefix = always_external_path_prefix(path);
+        if prefix == Path::new("/") || prefix.as_os_str().is_empty() {
+            continue;
+        }
+        let grant = PermissionGrant {
+            grant_id: format!("grant_{permission_id}_{index}"),
+            permission_id: permission_id.to_string(),
+            scope,
+            expires_at: None,
+            kind: PermissionKind::ExternalDirectory,
+            tool: grant_request.tool.clone(),
+            matcher: PermissionGrantMatcher::ExternalPath {
+                path_prefix: prefix.display().to_string(),
+                request_digest: request_digest.to_string(),
+            },
+        };
+        run_state.record_permission_grant(grant.clone());
+        recorded.push(grant);
+    }
+    if recorded.is_empty() && !external_paths.is_empty() {
+        for (index, path) in external_paths.iter().enumerate() {
+            let grant = PermissionGrant {
+                grant_id: format!("grant_{permission_id}_exact_{index}"),
+                permission_id: permission_id.to_string(),
+                scope,
+                expires_at: None,
+                kind: PermissionKind::ExternalDirectory,
+                tool: grant_request.tool.clone(),
+                matcher: PermissionGrantMatcher::ExternalPath {
+                    path_prefix: path.display().to_string(),
+                    request_digest: request_digest.to_string(),
+                },
+            };
+            run_state.record_permission_grant(grant.clone());
+            recorded.push(grant);
+        }
+    }
+    recorded
+}
+
+pub(super) fn external_directory_summary(paths: &[PathBuf]) -> String {
+    let joined = paths
+        .iter()
+        .map(|path| path.display().to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("external_directory paths=[{joined}]")
+}
+
+#[allow(dead_code)]
+fn _shell_path_pattern_type_use(_: &ShellPathPattern) {}
 
 pub(super) fn evaluate_permission_rule_requests(
     policy: &PermissionPolicy,
@@ -719,47 +1035,109 @@ impl super::Coordinator {
                     && permission_hook_failure.is_none()
                     && !caller_cancelled
                 {
-                    if let (Some(scope), Some(grant_request)) = (grant_scope, grant_request) {
-                        let grant = PermissionGrant {
-                            grant_id: format!("grant_{permission_id}"),
-                            permission_id: permission_id.clone(),
-                            scope,
-                            expires_at: None,
-                            kind: grant_request.kind,
-                            tool: grant_request.tool,
-                            matcher: grant_request.matcher,
-                        };
-                        append_permission_grant_recorded_event(
-                            clock.as_ref(),
-                            redactor.as_ref(),
-                            run_state,
-                            &permission_id,
-                            request_correlation_id.as_deref(),
-                            grant.clone(),
-                        )?;
-                        run_state.record_permission_grant(grant);
+                    if let (Some(scope), Some(grant_request)) = (grant_scope, grant_request.as_ref())
+                    {
+                        if grant_request.kind == PermissionKind::ExternalDirectory {
+                            let collection = collect_external_directory_paths(
+                                &run_state.info.workspace_root,
+                                &tool_id,
+                                &args_json,
+                            );
+                            let recorded = record_external_directory_always_grants(
+                                run_state,
+                                &permission_id,
+                                scope,
+                                grant_request,
+                                &collection.paths,
+                                grant_request.matcher.request_digest(),
+                            );
+                            for grant in recorded {
+                                append_permission_grant_recorded_event(
+                                    clock.as_ref(),
+                                    redactor.as_ref(),
+                                    run_state,
+                                    &permission_id,
+                                    request_correlation_id.as_deref(),
+                                    grant,
+                                )?;
+                            }
+                        } else {
+                            let grant = PermissionGrant {
+                                grant_id: format!("grant_{permission_id}"),
+                                permission_id: permission_id.clone(),
+                                scope,
+                                expires_at: None,
+                                kind: grant_request.kind,
+                                tool: grant_request.tool.clone(),
+                                matcher: grant_request.matcher.clone(),
+                            };
+                            append_permission_grant_recorded_event(
+                                clock.as_ref(),
+                                redactor.as_ref(),
+                                run_state,
+                                &permission_id,
+                                request_correlation_id.as_deref(),
+                                grant.clone(),
+                            )?;
+                            run_state.record_permission_grant(grant);
+                        }
                     }
 
-                    tool_execution::start_tool_call_execution(
-                        clock.as_ref(),
-                        redactor.as_ref(),
-                        Arc::clone(&self.config.hook_command_executor),
-                        job_tx,
-                        run_state,
-                        self.config.hook_runtime_config.clone(),
-                        ToolCallExecutionArgs {
-                            tool_call_id,
-                            tool_id,
-                            args_json,
-                            actor,
-                            category,
-                            hook_executions: permission_hook_executions,
-                            tool_registry: Arc::clone(&self.config.tool_registry),
-                            request_correlation_id,
-                            respond_to,
-                        },
-                    )
-                    .await?;
+                    let is_external_resolution = grant_request
+                        .as_ref()
+                        .is_some_and(|g| g.kind == PermissionKind::ExternalDirectory);
+                    if is_external_resolution {
+                        let collection = collect_external_directory_paths(
+                            &run_state.info.workspace_root,
+                            &tool_id,
+                            &args_json,
+                        );
+                        tool_execution::start_tool_call_execution(
+                            clock.as_ref(),
+                            redactor.as_ref(),
+                            Arc::clone(&self.config.hook_command_executor),
+                            job_tx,
+                            run_state,
+                            self.config.hook_runtime_config.clone(),
+                            ToolCallExecutionArgs {
+                                tool_call_id,
+                                tool_id,
+                                args_json,
+                                actor,
+                                category,
+                                hook_executions: permission_hook_executions,
+                                tool_registry: Arc::clone(&self.config.tool_registry),
+                                request_correlation_id,
+                                respond_to,
+                                external_directory_allow_prefixes:
+                                    call_scoped_external_allow_prefixes(&collection.paths),
+                            },
+                        )
+                        .await?;
+                    } else {
+                        tool_execution::gate_external_directory_and_start(
+                            clock.as_ref(),
+                            redactor.as_ref(),
+                            Arc::clone(&self.config.hook_command_executor),
+                            job_tx,
+                            run_state,
+                            self.config.hook_runtime_config.clone(),
+                            &self.config.permission_policy,
+                            ToolCallExecutionArgs {
+                                tool_call_id,
+                                tool_id,
+                                args_json,
+                                actor,
+                                category,
+                                hook_executions: permission_hook_executions,
+                                tool_registry: Arc::clone(&self.config.tool_registry),
+                                request_correlation_id,
+                                respond_to,
+                                external_directory_allow_prefixes: Vec::new(),
+                            },
+                        )
+                        .await?;
+                    }
                 } else {
                     let (rejection_reason, response_message) =
                         if let Some(hook_reason) = permission_hook_failure.as_ref() {
@@ -995,6 +1373,59 @@ mod permission_deny_message_contract_tests {
         assert!(
             message.contains("pick an allowed tool or adjust permission rules"),
             "deny message must suggest recovery: {message}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod external_directory_path_collect_tests {
+    use super::collect_external_directory_paths;
+    use serde_json::json;
+    use std::path::Path;
+
+    #[test]
+    fn collect_external_read_path_includes_absolute_outside() {
+        let workspace = Path::new("/workspace/project");
+        let collection = collect_external_directory_paths(
+            workspace,
+            "read",
+            &json!({"filePath": "/tmp/outside.txt"}),
+        );
+        assert!(collection.hard_deny.is_none());
+        assert!(
+            collection
+                .paths
+                .iter()
+                .any(|p| p.ends_with("outside.txt") || p == Path::new("/tmp/outside.txt")),
+            "got {:?}",
+            collection.paths
+        );
+    }
+
+    #[test]
+    fn collect_external_skips_in_workspace_relative() {
+        let workspace = Path::new("/workspace/project");
+        let collection = collect_external_directory_paths(
+            workspace,
+            "read",
+            &json!({"filePath": "src/main.rs"}),
+        );
+        assert!(collection.paths.is_empty(), "got {:?}", collection.paths);
+    }
+
+    #[test]
+    fn collect_external_bash_two_absolute_paths() {
+        let workspace = Path::new("/workspace/project");
+        let collection = collect_external_directory_paths(
+            workspace,
+            "bash",
+            &json!({"command": "cat /tmp/a.txt /tmp/b.txt"}),
+        );
+        assert!(collection.hard_deny.is_none());
+        assert!(
+            collection.paths.len() >= 2,
+            "expected both external paths; got {:?}",
+            collection.paths
         );
     }
 }

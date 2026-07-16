@@ -1,5 +1,4 @@
 // allow: SIZE_OK — shell safety checking (allowlist + command validation)
-use crate::UnwrapOrAbort;
 use std::path::{Path, PathBuf};
 
 use harness_core::config::{ShellAllowlist, ShellAllowlistMode};
@@ -8,6 +7,7 @@ use harness_core::tool::{ToolContext, ToolError};
 use harness_core::ToolResultExt;
 
 use crate::workspace_paths::normalize_workspace_target_path;
+use crate::UnwrapOrAbort;
 mod path_validation;
 use path_validation::*;
 
@@ -47,17 +47,29 @@ impl ShellSafety {
         cwd: &Path,
         workspace_root: &Path,
     ) -> Result<(), ToolError> {
+        self.validate_direct_args_with_grants(executable, args, cwd, workspace_root, &[])
+    }
+
+    pub(crate) fn validate_direct_args_with_grants(
+        &self,
+        executable: &str,
+        args: &[String],
+        cwd: &Path,
+        workspace_root: &Path,
+        allow_prefixes: &[PathBuf],
+    ) -> Result<(), ToolError> {
         validate_shell_executable_position(executable, cwd, workspace_root)?;
         reject_shell_wrapper_builtin(executable)?;
         reject_secret_dump_command(executable)?;
         reject_shell_interpreter_command_mode(executable, args)?;
-        validate_shell_path_arguments(
+        validate_shell_path_arguments_with_grants(
             &ShellSegmentCommand {
                 executable: executable.to_string(),
                 args: args.to_vec(),
             },
             cwd,
             workspace_root,
+            allow_prefixes,
         )
     }
 
@@ -99,11 +111,26 @@ impl ShellSafety {
         cwd: &Path,
         workspace_root: &Path,
     ) -> Result<(), ToolError> {
+        self.validate_bash_command_with_grants(command, cwd, workspace_root, &[])
+    }
+
+    pub(crate) fn validate_bash_command_with_grants(
+        &self,
+        command: &str,
+        cwd: &Path,
+        workspace_root: &Path,
+        allow_prefixes: &[PathBuf],
+    ) -> Result<(), ToolError> {
         if self.allowlist.mode == ShellAllowlistMode::LegacyExecutables {
-            return self.validate_bash_command_legacy(command, cwd, workspace_root);
+            return self.validate_bash_command_legacy(command, cwd, workspace_root, allow_prefixes);
         }
 
-        self.validate_bash_command_permission_patterns(command, cwd, workspace_root)
+        self.validate_bash_command_permission_patterns(
+            command,
+            cwd,
+            workspace_root,
+            allow_prefixes,
+        )
     }
 
     fn validate_bash_command_legacy(
@@ -111,6 +138,7 @@ impl ShellSafety {
         command: &str,
         cwd: &Path,
         workspace_root: &Path,
+        allow_prefixes: &[PathBuf],
     ) -> Result<(), ToolError> {
         reject_unsupported_bash_constructs(command)?;
         let segments = split_shell_segments(command)?;
@@ -146,13 +174,23 @@ impl ShellSafety {
             reject_secret_dump_command(executable)?;
             if is_shell_builtin_allowed(executable) {
                 if is_path_sensitive_shell_builtin(executable) {
-                    validate_shell_path_arguments(&command, &virtual_cwd, workspace_root)?;
+                    validate_shell_path_arguments_with_grants(
+                        &command,
+                        &virtual_cwd,
+                        workspace_root,
+                        allow_prefixes,
+                    )?;
                 }
                 continue;
             }
             reject_shell_interpreter_command_mode(executable, &command.args)?;
             self.ensure_executable_allowed(executable)?;
-            validate_shell_path_arguments(&command, &virtual_cwd, workspace_root)?;
+            validate_shell_path_arguments_with_grants(
+                &command,
+                &virtual_cwd,
+                workspace_root,
+                allow_prefixes,
+            )?;
         }
 
         Ok(())
@@ -163,6 +201,7 @@ impl ShellSafety {
         command: &str,
         cwd: &Path,
         workspace_root: &Path,
+        allow_prefixes: &[PathBuf],
     ) -> Result<(), ToolError> {
         reject_unsupported_bash_constructs(command)?;
         reject_background_execution(command)?;
@@ -201,14 +240,20 @@ impl ShellSafety {
             reject_secret_dump_command(executable)?;
 
             reject_scanned_interpreter_input_redirection(command)?;
-            validate_scanned_command_paths(command, &virtual_cwd, workspace_root)?;
+            validate_scanned_command_paths_with_grants(
+                command,
+                &virtual_cwd,
+                workspace_root,
+                allow_prefixes,
+            )?;
 
             if is_shell_builtin_allowed(executable) {
                 if is_path_sensitive_shell_builtin(executable) {
-                    validate_shell_path_arguments(
+                    validate_shell_path_arguments_with_grants(
                         &scanned_to_segment_command(command),
                         &virtual_cwd,
                         workspace_root,
+                        allow_prefixes,
                     )?;
                 }
                 continue;
@@ -219,7 +264,12 @@ impl ShellSafety {
                 &segment_command.executable,
                 &segment_command.args,
             )?;
-            validate_shell_path_arguments(&segment_command, &virtual_cwd, workspace_root)?;
+            validate_shell_path_arguments_with_grants(
+                &segment_command,
+                &virtual_cwd,
+                workspace_root,
+                allow_prefixes,
+            )?;
         }
 
         Ok(())
@@ -770,13 +820,12 @@ fn parse_shell_segment_tokens(segment: &str) -> Result<Vec<String>, ToolError> {
 
 #[cfg(test)]
 mod tests {
-    use super::ShellSafety;
-    use crate::UnwrapOrAbort;
-
     use harness_core::config::{ShellAllowlist, ShellAllowlistMode};
     use harness_core::tool::ToolError;
 
+    use super::ShellSafety;
     use crate::test_support::tool_context;
+    use crate::UnwrapOrAbort;
 
     #[test]
     fn ensure_executable_allowed_returns_recovery_hints_for_blocked_commands() {
@@ -832,6 +881,14 @@ mod tests {
         ));
     }
 
+    fn is_external_directory_denial(err: &ToolError) -> bool {
+        match err {
+            ToolError::PathEscapesWorkspace { .. } => true,
+            ToolError::CommandBlocked(message) => message.contains("external_directory"),
+            _ => false,
+        }
+    }
+
     #[test]
     fn validate_bash_command_rejects_command_substitution() {
         let tempdir = tempfile::tempdir().unwrap_or_abort();
@@ -857,12 +914,12 @@ mod tests {
         let err = safety
             .validate_bash_command("ls /tmp", tempdir.path(), tempdir.path())
             .expect_err("external path should be blocked");
-        assert!(matches!(err, ToolError::PathEscapesWorkspace { .. }));
+        assert!(is_external_directory_denial(&err), "{:?}", err);
 
         let err2 = safety
             .validate_bash_command("ls foo/../../../etc/passwd", tempdir.path(), tempdir.path())
             .expect_err("external relative path should be blocked");
-        assert!(matches!(err2, ToolError::PathEscapesWorkspace { .. }));
+        assert!(is_external_directory_denial(&err2), "{:?}", err2);
 
         let err3 = safety
             .validate_bash_command(
@@ -871,12 +928,12 @@ mod tests {
                 tempdir.path(),
             )
             .expect_err("external relative path inside option should be blocked");
-        assert!(matches!(err3, ToolError::PathEscapesWorkspace { .. }));
+        assert!(is_external_directory_denial(&err3), "{:?}", err3);
 
         let err4 = safety
             .validate_bash_command("ls foo/../../../etc/pas*", tempdir.path(), tempdir.path())
             .expect_err("external relative path with glob should be blocked");
-        assert!(matches!(err4, ToolError::CommandBlocked(_)));
+        assert!(matches!(err4, ToolError::CommandBlocked(_)), "{:?}", err4);
     }
 
     #[test]
@@ -1299,8 +1356,41 @@ mod tests {
     }
 
     #[test]
-    fn validate_bash_command_legacy_mode_rejects_glob_path_operands() {
+    fn validate_bash_command_allows_shell_globs_and_dev_null_redirect() {
         // arrange
+        // act
+        // assert
+        let tempdir = tempfile::tempdir().unwrap_or_abort();
+        let safety = ShellSafety::new(ShellAllowlist {
+            executables: vec!["git".to_string(), "find".to_string(), "wc".to_string()],
+            cwd_roots: vec![".".to_string()],
+            ..ShellAllowlist::default()
+        });
+
+        safety
+            .validate_bash_command(
+                "git log --oneline -5 2>/dev/null",
+                tempdir.path(),
+                tempdir.path(),
+            )
+            .unwrap_or_abort();
+        safety
+            .validate_bash_command(
+                "find crates -name '*.rs' | wc -l",
+                tempdir.path(),
+                tempdir.path(),
+            )
+            .unwrap_or_abort();
+        safety
+            .validate_bash_command("ls le*", tempdir.path(), tempdir.path())
+            .unwrap_or_abort();
+    }
+
+    #[test]
+    fn validate_bash_command_legacy_mode_allows_workspace_globs() {
+        // arrange
+        // act
+        // assert
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let safety = ShellSafety::new(ShellAllowlist {
             mode: ShellAllowlistMode::LegacyExecutables,
@@ -1308,13 +1398,9 @@ mod tests {
             cwd_roots: vec![".".to_string()],
         });
 
-        // act
-        let err = safety
+        safety
             .validate_bash_command("ls le*", tempdir.path(), tempdir.path())
-            .expect_err("legacy glob path operands should be blocked");
-
-        // assert
-        assert!(matches!(err, ToolError::CommandBlocked(_)));
+            .unwrap_or_abort();
     }
 
     #[test]
@@ -1346,7 +1432,7 @@ mod tests {
         let err = safety
             .validate_bash_command("printf hi > ../outside.txt", tempdir.path(), tempdir.path())
             .expect_err("redirection outside workspace should be blocked");
-        assert!(matches!(err, ToolError::PathEscapesWorkspace { .. }));
+        assert!(is_external_directory_denial(&err), "{:?}", err);
     }
 
     #[test]
@@ -1401,7 +1487,7 @@ mod tests {
             let err = safety
                 .validate_bash_command(command, tempdir.path(), tempdir.path())
                 .expect_err("path-sensitive builtins should not probe outside workspace");
-            assert!(matches!(err, ToolError::PathEscapesWorkspace { .. }));
+            assert!(is_external_directory_denial(&err), "{:?}", err);
         }
     }
 
@@ -1482,15 +1568,15 @@ mod tests {
         let path_arg_err = safety
             .validate_bash_command("ls outside/missing", tempdir.path(), tempdir.path())
             .expect_err("path arguments through symlinks must not escape workspace");
-        assert!(matches!(
-            path_arg_err,
-            ToolError::PathEscapesWorkspace { .. }
-        ));
+        assert!(
+            is_external_directory_denial(&path_arg_err),
+            "{path_arg_err:?}"
+        );
 
         let cd_err = safety
             .validate_bash_command("cd outside && ls .", tempdir.path(), tempdir.path())
             .expect_err("cd through symlink must not escape workspace");
-        assert!(matches!(cd_err, ToolError::PathEscapesWorkspace { .. }));
+        assert!(is_external_directory_denial(&cd_err), "{cd_err:?}");
     }
 
     #[cfg(unix)]
@@ -1513,14 +1599,16 @@ mod tests {
                 .expect_err("bare symlink file operands must not escape workspace");
 
             // assert
-            assert!(matches!(err, ToolError::PathEscapesWorkspace { .. }));
+            assert!(is_external_directory_denial(&err), "{:?}", err);
         }
     }
 
     #[cfg(unix)]
     #[test]
-    fn validate_bash_command_rejects_glob_symlink_path_escapes() {
+    fn validate_bash_command_allows_workspace_globs_even_when_symlink_exists() {
         // arrange
+        // act
+        // assert
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let external = tempfile::tempdir().unwrap_or_abort();
         std::os::unix::fs::symlink(external.path(), tempdir.path().join("leak")).unwrap_or_abort();
@@ -1529,15 +1617,14 @@ mod tests {
             cwd_roots: vec![".".to_string()],
             ..ShellAllowlist::default()
         });
-
-        // act
         for command in ["cat l*", "ls le*", "bash le*"] {
-            let err = safety
+            safety
                 .validate_bash_command(command, tempdir.path(), tempdir.path())
-                .expect_err("glob-expanded symlink operands must not escape workspace");
-
-            // assert
-            assert!(matches!(err, ToolError::CommandBlocked(_)));
+                .unwrap_or_abort();
         }
+        let err = safety
+            .validate_bash_command("cat leak", tempdir.path(), tempdir.path())
+            .expect_err("explicit symlink operand must still escape-check");
+        assert!(is_external_directory_denial(&err), "{:?}", err);
     }
 }

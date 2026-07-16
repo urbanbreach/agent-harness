@@ -23,6 +23,7 @@ pub fn test_context(workspace_root: &Path, run_id: &str, tool_call_id: &str) -> 
         current_model_ref: None,
         current_model_settings: None,
         tool_state: ToolRunState::default(),
+        external_directory_allow_prefixes: Vec::new(),
         coordinator,
     }
 }

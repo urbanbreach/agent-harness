@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::config::{
     default_permission_rule_set_with_read_env, default_read_env_permission_rules,
@@ -84,6 +84,12 @@ pub enum PermissionGrantMatcher {
         path: String,
         request_digest: String,
     },
+    /// Outside-workspace path grant. Once matches `request_digest`; always matches
+    /// when the requested path is under `path_prefix` (parent dir of the approved path).
+    ExternalPath {
+        path_prefix: String,
+        request_digest: String,
+    },
 }
 
 impl PermissionGrantMatcher {
@@ -121,6 +127,19 @@ impl PermissionGrantMatcher {
                 },
             ) => granted == requested || granted_request == request_digest,
             (
+                Self::ExternalPath {
+                    path_prefix: granted_prefix,
+                    request_digest: granted_request,
+                },
+                Self::ExternalPath {
+                    path_prefix: requested_path,
+                    request_digest,
+                },
+            ) => {
+                granted_request == request_digest
+                    || external_path_prefix_covers(granted_prefix, requested_path)
+            }
+            (
                 Self::RequestDigest {
                     request_digest: granted,
                 },
@@ -137,8 +156,31 @@ impl PermissionGrantMatcher {
         match self {
             Self::RequestDigest { request_digest }
             | Self::ShellCommand { request_digest, .. }
-            | Self::WorkspacePath { request_digest, .. } => request_digest,
+            | Self::WorkspacePath { request_digest, .. }
+            | Self::ExternalPath { request_digest, .. } => request_digest,
         }
+    }
+}
+
+/// True when `requested` equals `prefix` or is a proper descendant (path-component boundary).
+pub fn external_path_prefix_covers(prefix: &str, requested: &str) -> bool {
+    let prefix = Path::new(prefix);
+    let requested = Path::new(requested);
+    requested == prefix || requested.starts_with(prefix)
+}
+
+/// Always-allow prefix for an approved absolute path: parent directory, never bare `/`.
+pub fn always_external_path_prefix(approved_path: &Path) -> PathBuf {
+    match approved_path.parent() {
+        Some(parent)
+            if parent.as_os_str().is_empty()
+                || parent == Path::new("/")
+                || parent == Path::new("\\") =>
+        {
+            approved_path.to_path_buf()
+        }
+        Some(parent) => parent.to_path_buf(),
+        None => approved_path.to_path_buf(),
     }
 }
 

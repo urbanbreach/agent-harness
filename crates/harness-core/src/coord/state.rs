@@ -512,6 +512,7 @@ pub(in crate::coord) struct ToolCallExecutionArgs {
     pub(in crate::coord) tool_registry: Arc<ToolRegistry>,
     pub(in crate::coord) request_correlation_id: Option<String>,
     pub(in crate::coord) respond_to: Option<oneshot::Sender<Result<ToolResult, String>>>,
+    pub(in crate::coord) external_directory_allow_prefixes: Vec<PathBuf>,
 }
 
 pub(in crate::coord) struct PermissionRequestedEventArgs<'a> {

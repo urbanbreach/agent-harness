@@ -38,17 +38,7 @@ pub(crate) fn workspace_relative_path_from_file_uri(
 }
 
 pub(crate) fn resolve_existing_path(ctx: &ToolContext, input: &str) -> Result<PathBuf, ToolError> {
-    let workspace = canonical_workspace_root(ctx)?;
-    let candidate = normalize_workspace_target_path(&workspace, Path::new(input))?;
-    let canonical = if candidate == workspace {
-        workspace.clone()
-    } else {
-        candidate
-            .canonicalize()
-            .tool_err("failed to resolve path")?
-    };
-    ensure_within_workspace_path(&workspace, &canonical)?;
-    Ok(canonical)
+    ctx.resolve_workspace_path(Path::new(input))
 }
 
 pub(crate) fn canonical_workspace_root(ctx: &ToolContext) -> Result<PathBuf, ToolError> {
@@ -62,6 +52,21 @@ pub(crate) fn ensure_within_workspace_path(
     candidate: &Path,
 ) -> Result<(), ToolError> {
     if candidate.starts_with(workspace) {
+        Ok(())
+    } else {
+        Err(ToolError::PathEscapesWorkspace {
+            workspace_root: workspace.display().to_string(),
+            path: candidate.display().to_string(),
+        })
+    }
+}
+
+pub(crate) fn ensure_within_workspace_or_granted(
+    ctx: &ToolContext,
+    workspace: &Path,
+    candidate: &Path,
+) -> Result<(), ToolError> {
+    if candidate.starts_with(workspace) || ctx.external_path_authorized(candidate) {
         Ok(())
     } else {
         Err(ToolError::PathEscapesWorkspace {

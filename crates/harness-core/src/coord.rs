@@ -136,10 +136,14 @@ pub use self::handle::CoordinatorHandle;
 pub(in crate::coord) use self::session_compaction::{compact_session, AppliedCompaction};
 
 use self::permission::{
-    evaluate_permission_rule_requests, event_permission_decision, permission_grant_request,
+    call_scoped_external_allow_prefixes, collect_external_directory_paths,
+    evaluate_permission_rule_requests, event_permission_decision,
+    external_directory_grants_authorize, external_directory_summary, permission_grant_request,
     permission_request_digest, permission_rule_request_selectors, permission_summary,
     plan_mode_edit_boundary_denial, plan_mode_shell_boundary_denial,
+    record_external_directory_always_grants,
 };
+use crate::perm::PermissionRuleRequest;
 
 #[cfg(test)]
 use self::hooks::summarize_hook_output;
