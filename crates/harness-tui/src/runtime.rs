@@ -1038,24 +1038,67 @@ mod tests {
 
     #[test]
     fn terminal_capability_state_present_enables_core_features() {
-        // arrange
-        let caps = TerminalCapabilityState::present();
-        // assert
-        assert!(caps.keyboard_enhancement);
-        assert!(caps.truecolor);
-        assert!(caps.bracketed_paste);
-        assert!(caps.mouse_capture);
-        assert!(caps.osc52_clipboard);
-        assert!(caps.alternate_screen);
+        // arrange — present path (kitty keyboard / truecolor / paste / mouse / OSC52)
+        let present = TerminalCapabilityState::present();
+        // assert present detection
+        assert!(present.keyboard_enhancement);
+        assert!(present.truecolor);
+        assert!(present.bracketed_paste);
+        assert!(present.mouse_capture);
+        assert!(present.osc52_clipboard);
+        assert!(present.alternate_screen);
 
-        // act
-        let plan = caps.teardown_plan();
-        // assert
-        assert!(plan.disable_raw_mode);
-        assert!(plan.disable_mouse_capture);
-        assert!(plan.disable_bracketed_paste);
-        assert!(plan.pop_keyboard_enhancement);
-        assert!(plan.leave_alternate_screen);
+        // act — present teardown restores only features that were enabled
+        let present_plan = present.teardown_plan();
+        // assert present teardown
+        assert!(present_plan.disable_raw_mode);
+        assert!(present_plan.disable_mouse_capture);
+        assert!(present_plan.disable_bracketed_paste);
+        assert!(present_plan.pop_keyboard_enhancement);
+        assert!(present_plan.leave_alternate_screen);
+
+        // arrange — absent fallback path (no enhanced capabilities)
+        let absent = TerminalCapabilityState::absent();
+        // assert absent detection (safe degradation)
+        assert!(!absent.keyboard_enhancement);
+        assert!(!absent.truecolor);
+        assert!(!absent.bracketed_paste);
+        assert!(!absent.mouse_capture);
+        assert!(!absent.osc52_clipboard);
+        assert!(!absent.alternate_screen);
+
+        // act — absent teardown must not disable features that were never enabled
+        let absent_plan = absent.teardown_plan();
+        // assert absent fallback teardown
+        assert!(absent_plan.disable_raw_mode);
+        assert!(!absent_plan.disable_mouse_capture);
+        assert!(!absent_plan.disable_bracketed_paste);
+        assert!(!absent_plan.pop_keyboard_enhancement);
+        assert!(absent_plan.leave_alternate_screen);
+
+        // arrange — partial capability path (keyboard+paste+alt ok; mouse failed)
+        let partial = apply_interactive_setup_results(
+            TerminalCapabilityState {
+                truecolor: true,
+                osc52_clipboard: false,
+                ..TerminalCapabilityState::absent()
+            },
+            true,
+            true,
+            false,
+            true,
+        );
+        // assert partial: only successfully applied features are sticky
+        assert!(partial.keyboard_enhancement);
+        assert!(partial.truecolor);
+        assert!(partial.bracketed_paste);
+        assert!(!partial.mouse_capture);
+        assert!(!partial.osc52_clipboard);
+        assert!(partial.alternate_screen);
+        let partial_plan = partial.teardown_plan();
+        assert!(partial_plan.pop_keyboard_enhancement);
+        assert!(!partial_plan.disable_mouse_capture);
+        assert!(partial_plan.disable_bracketed_paste);
     }
 
     #[test]

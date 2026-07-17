@@ -172,13 +172,13 @@ fn startup_submit_emits_submit_prompt_and_leaves_startup_shell() {
     };
     let mut app = AppState::new_startup(Vec::new(), Some(sink));
 
-    // act
+    // act — home compose-first submit
     for ch in "ship the contract".chars() {
         app.handle_key(key(KeyCode::Char(ch)));
     }
     app.handle_key(key(KeyCode::Enter));
 
-    // assert
+    // assert — leave startup / clear composer / one mutating intent
     assert!(
         app.should_quit || !app.startup_shell_visible(),
         "P0-START-03: submit must leave the startup shell"
@@ -188,7 +188,7 @@ fn startup_submit_emits_submit_prompt_and_leaves_startup_shell() {
         "P0-START-03: composer must clear after startup submit"
     );
 
-    let captured = intents.lock().unwrap();
+    let captured = intents.lock().unwrap().clone();
     let mutates_session = captured.iter().any(|intent| {
         matches!(
             intent,
@@ -203,6 +203,54 @@ fn startup_submit_emits_submit_prompt_and_leaves_startup_shell() {
         captured.len(),
         1,
         "P0-START-03: exactly one mutating intent at the commit boundary; got {captured:?}"
+    );
+
+    // act — home-to-live transition: ingest user + streaming assistant events
+    let mut live = AppState::new_live(
+        Some(std::path::PathBuf::from("/tmp/run_p0_start03_live")),
+        false,
+        None,
+    );
+    live.ingest_event(envelope(
+        1,
+        Some("req_start03"),
+        EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+            request_id: "req_start03".into(),
+            text: "ship the contract".to_string(),
+        }),
+    ));
+    live.ingest_event(envelope(
+        2,
+        Some("req_start03"),
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "req_start03".into(),
+            provider_id: "mock".to_string(),
+            model_id: "model-1".to_string(),
+            prompt_summary: "ship the contract".to_string(),
+            request_digest: "digest-start03".to_string(),
+            metadata: None,
+        }),
+    ));
+    live.ingest_event(envelope(
+        3,
+        Some("req_start03"),
+        EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+            request_id: "req_start03".into(),
+            delta: "First assistant block for home-to-live.".to_string(),
+        }),
+    ));
+    let live_render = render_text(&live, 120, 40);
+
+    // assert — first assistant block appears in live session transcript
+    assert!(
+        live_render.contains("First assistant block for home-to-live")
+            || live_render.contains("ship the contract"),
+        "P0-START-03: live transition must present user/assistant content\n{live_render}"
+    );
+    let plan = plan_for(&live, 120, 40);
+    assert!(
+        plan.operator_sidebar.is_none(),
+        "P0-START-03: live shell stays full-width after home-to-live transition"
     );
 }
 

@@ -110,9 +110,9 @@ fn operator_sidebar_chrome_has_no_persistent_primary_variant() {
         && !interaction_src.contains("OperatorSidebarChrome::Persistent")
         && !ui_src.contains("OperatorSidebarChrome::Persistent")
         && !secondary_src.contains("enum OperatorSidebarChrome");
-    let app = live_session_app();
+    let mut app = live_session_app();
 
-    // assert
+    // assert — no persistent primary chrome
     assert!(
         chrome_absent,
         "P0-SHELL-02: OperatorSidebarChrome must be removed (overlay-only secondary surface)"
@@ -129,6 +129,63 @@ fn operator_sidebar_chrome_has_no_persistent_primary_variant() {
         );
         assert_full_width_transcript_above_composer(&plan, width, height);
     }
+
+    // act — secondary operator facts via status dialog (leader+s / Ctrl+x s)
+    app.handle_key(crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Char('x'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    app.handle_key(crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Char('s'),
+        crossterm::event::KeyModifiers::NONE,
+    ));
+    let status_render = {
+        use harness_tui::render_test::render_to_string;
+        use harness_tui::ui;
+        use ratatui::layout::Rect;
+        render_to_string(&app, Rect::new(0, 0, 120, 40), |app, frame, _area| {
+            ui::render_app(frame, app)
+        })
+    };
+    let status_plan = plan_for(&app, 120, 40);
+    let status_overlay = app.overlay_stack().top();
+
+    // assert — status dialog reveals operator facts under full-width shell
+    assert!(
+        matches!(
+            status_overlay,
+            Some(harness_tui::overlay::OverlayKind::StatusDialog)
+        ) || status_render.contains("Status")
+            || status_render.contains("MCP")
+            || status_render.contains("LSP"),
+        "P0-SHELL-02: status dialog must open as secondary surface; overlay={status_overlay:?}\n{status_render}"
+    );
+    assert!(
+        status_plan.operator_sidebar.is_none(),
+        "P0-SHELL-02: status dialog must not allocate a primary operator sidebar"
+    );
+    assert!(
+        status_render.contains("Status")
+            || status_render.contains("MCP")
+            || status_render.contains("LSP")
+            || status_render.to_ascii_lowercase().contains("server"),
+        "P0-SHELL-02: status dialog must present operator facts (status/MCP/LSP)\n{status_render}"
+    );
+
+    // act — palette also remains a secondary operator-facts route
+    app.handle_key(crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Esc,
+        crossterm::event::KeyModifiers::NONE,
+    ));
+    app.handle_key(crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    let palette_plan = plan_for(&app, 120, 40);
+    assert!(
+        palette_plan.operator_sidebar.is_none(),
+        "P0-SHELL-02: palette must not reintroduce primary sidebar chrome"
+    );
 }
 
 fn live_session_app() -> AppState {

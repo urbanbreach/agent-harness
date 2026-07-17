@@ -210,7 +210,7 @@ fn help_and_toggles_surfaces_open_harness_safe() {
         "P0-HELP-01: help must not show reference branding\n{help_render}"
     );
 
-    // act — toggles
+    // act — toggles (settings-like surface)
     let mut toggles_app = AppState::new_live(None, false, None);
     for ch in "/toggles".chars() {
         toggles_app.handle_key(key(KeyCode::Char(ch)));
@@ -228,6 +228,40 @@ fn help_and_toggles_surfaces_open_harness_safe() {
             .to_ascii_lowercase()
             .contains("plugin marketplace"),
         "P0-HELP-01: toggles must not advertise OOS plugin marketplace\n{toggles_render}"
+    );
+
+    // act — theme dialog (Harness-safe theme names)
+    let mut theme_app = AppState::new_live(None, false, None);
+    theme_app.handle_key(key_with_modifiers(KeyCode::Char('x'), KeyModifiers::CONTROL));
+    theme_app.handle_key(key(KeyCode::Char('t')));
+    let theme_render = render_text(&theme_app, 120, 40);
+    // assert — theme surface opens without reference branding
+    assert!(
+        theme_app.theme_dialog_visible
+            || theme_render.to_ascii_lowercase().contains("theme")
+            || theme_app
+                .overlay_stack()
+                .top()
+                .is_some_and(|k| format!("{k:?}").contains("Theme")),
+        "P0-HELP-01: leader+t / OpenThemeDialog must open theme surface; visible={} render=\n{theme_render}",
+        theme_app.theme_dialog_visible
+    );
+    assert!(
+        !theme_render.to_ascii_lowercase().contains("grok")
+            && !theme_render.to_ascii_lowercase().contains("spacex"),
+        "P0-HELP-01: theme surface must be Harness-safe\n{theme_render}"
+    );
+
+    // assert — keybind remapping surface remains reachable via defaults
+    let keymap = harness_tui::keybindings::KeyMap::with_defaults();
+    assert_eq!(
+        keymap.get_binding_str(harness_tui::keybindings::Action::OpenThemeDialog),
+        "Ctrl+x t",
+        "P0-HELP-01: theme keybind rematerialization documented in simple-mode defaults"
+    );
+    assert_eq!(
+        keymap.get_binding_str(harness_tui::keybindings::Action::OpenStatusDialog),
+        "Ctrl+x s"
     );
 }
 

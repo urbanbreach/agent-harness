@@ -574,22 +574,47 @@ fn toggle_operator_sidebar_override_aliases_to_status_dialog_action() {
 
 #[test]
 fn displaced_keybind_remaps_to_open_status_dialog() {
-    // arrange
+    // arrange — simple-mode defaults + displaced rematerialization
     let keymap = KeyMap::with_defaults();
     let example = include_str!("../../../../configs/tui.example.jsonc");
     let mut overrides = BTreeMap::new();
     overrides.insert("open_status_dialog".to_string(), "f9".to_string());
     let mut remapped = KeyMap::with_defaults();
+
     // act
     remapped.apply_overrides(&overrides);
-    // assert
+
+    // assert — simple-mode defaults (Ctrl+P palette, leader+s status, leader+m model)
     assert_eq!(
-        Action::from_str("toggle_operator_sidebar"),
-        Ok(Action::OpenStatusDialog)
+        keymap.get_action(&KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL)),
+        Some(Action::Palette),
+        "simple-mode: Ctrl+P opens command palette"
     );
     assert_eq!(
         keymap.leader_action(&KeyEvent::new(KeyCode::Char('s'), KeyModifiers::NONE)),
-        Some(Action::OpenStatusDialog)
+        Some(Action::OpenStatusDialog),
+        "simple-mode: leader+s opens status dialog"
+    );
+    assert_eq!(
+        keymap.leader_action(&KeyEvent::new(KeyCode::Char('m'), KeyModifiers::NONE)),
+        Some(Action::OpenModelSwitcher),
+        "simple-mode: leader+m opens model switcher"
+    );
+    // assert — Esc is clear/dismiss, Ctrl+C is not a KeyMap interrupt action
+    let esc = keymap.get_action(&KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+    assert!(
+        matches!(esc, Some(Action::ClearPrompt) | Some(Action::DismissModal)),
+        "simple-mode: Esc is clear/dismiss, not cancel: {esc:?}"
+    );
+    assert_eq!(
+        keymap.get_action(&KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)),
+        None,
+        "simple-mode: Ctrl+C is not a KeyMap interrupt/cancel action"
+    );
+    // assert — displaced sidebar toggle rematerializes to status dialog
+    assert_eq!(
+        Action::from_str("toggle_operator_sidebar"),
+        Ok(Action::OpenStatusDialog)
     );
     assert!(
         example.contains("\"open_status_dialog\""),
@@ -599,9 +624,16 @@ fn displaced_keybind_remaps_to_open_status_dialog() {
         !example.contains("toggle_operator_sidebar"),
         "canonical example must omit toggle_operator_sidebar"
     );
+    // assert — remapping preserved for terminal-normalized override (F9)
     assert_eq!(
         remapped.get_action(&KeyEvent::new(KeyCode::F(9), KeyModifiers::NONE)),
         Some(Action::OpenStatusDialog)
+    );
+    assert_eq!(keymap.get_binding_str(Action::Palette), "Ctrl+p");
+    assert_eq!(keymap.get_binding_str(Action::OpenStatusDialog), "Ctrl+x s");
+    assert_eq!(
+        keymap.get_binding_str(Action::OpenModelSwitcher),
+        "Ctrl+x m"
     );
 }
 
