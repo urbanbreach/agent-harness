@@ -1,0 +1,12 @@
+{
+  "name": "harness-tui-parity",
+  "private": true,
+  "type": "module",
+  "description": "Pinned xterm.js + Chromium capture and fail-closed pixel parity for TUI reference signoff",
+  "dependencies": {
+    "@xterm/xterm": "6.0.0",
+    "@xterm/addon-unicode11": "0.9.0",
+    "node-pty": "^1.0.0",
+    "puppeteer-core": "^24.0.0"
+  }
+}
