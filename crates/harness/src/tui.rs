@@ -54,7 +54,8 @@ use crate::logging;
 use crate::recovery::{latest_run_name, select_resume_agent_id};
 use crate::scenarios::{
     create_workspace, default_permission_policy, deterministic_run_id, golden_path_edit_args,
-    golden_path_profiles, golden_path_provider, supervisor_actor, worker_actor, ScenarioName,
+    golden_path_profiles, golden_path_provider, question_interactive_request_json, supervisor_actor,
+    worker_actor, ScenarioName,
 };
 
 #[path = "tui/auth_backend.rs"]
@@ -984,6 +985,50 @@ async fn run_scenario_runner(
         .spawn_agent(supervisor_actor(), "worker", None)
         .await
         .map_err(|err| err.to_string())?;
+
+    if scenario.is_question() {
+        let worker = worker_actor(worker_agent_id);
+        if scenario.interactive_permissions() {
+            let _ = coordinator
+                .request_question(
+                    worker,
+                    "toolcall_question_interactive",
+                    question_interactive_request_json(),
+                )
+                .await;
+        } else {
+            let question_handle = coordinator.clone();
+            let question_task = tokio::spawn(async move {
+                question_handle
+                    .request_question(
+                        worker,
+                        "toolcall_question_interactive",
+                        question_interactive_request_json(),
+                    )
+                    .await
+                    .map_err(|err| err.to_string())
+                    .map(|_| ())
+            });
+            let permission_id = wait_for_permission_id(
+                &run.events_path,
+                "toolcall_question_interactive",
+                DEFAULT_EVENT_WAIT_TIMEOUT,
+            )
+            .await?;
+            coordinator
+                .resolve_permission(
+                    permission_id,
+                    PermissionDecision::Allow,
+                    Some(r#"[["A"]]"#.to_string()),
+                )
+                .await
+                .map_err(|err| err.to_string())?;
+            await_task("question request", question_task).await?;
+        }
+
+        let _ = coordinator.stop_run().await;
+        return Ok(());
+    }
 
     let tool_call_id = coordinator
         .request_tool_call(

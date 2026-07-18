@@ -29,6 +29,8 @@ pub enum ScenarioName {
     GoldenPath,
     #[value(name = "golden_path_interactive")]
     GoldenPathInteractive,
+    #[value(name = "question_interactive")]
+    QuestionInteractive,
 }
 
 impl ScenarioName {
@@ -36,12 +38,31 @@ impl ScenarioName {
         match self {
             Self::GoldenPath => "golden_path",
             Self::GoldenPathInteractive => "golden_path_interactive",
+            Self::QuestionInteractive => "question_interactive",
         }
     }
 
     pub fn interactive_permissions(self) -> bool {
-        matches!(self, Self::GoldenPathInteractive)
+        matches!(
+            self,
+            Self::GoldenPathInteractive | Self::QuestionInteractive
+        )
     }
+
+    pub fn is_question(self) -> bool {
+        matches!(self, Self::QuestionInteractive)
+    }
+}
+
+pub fn question_interactive_request_json() -> Value {
+    json!({
+        "questions": [{
+            "question": "Pick one",
+            "header": "Choice",
+            "options": [{"label": "A", "description": "Option A"}],
+            "multiple": false,
+        }]
+    })
 }
 
 pub fn deterministic_run_id(seed: u64, scenario: ScenarioName) -> String {
@@ -486,5 +507,8 @@ mod tests {
     fn scenario_name_reports_interactive_permission_mode() {
         assert!(!ScenarioName::GoldenPath.interactive_permissions());
         assert!(ScenarioName::GoldenPathInteractive.interactive_permissions());
+        assert!(ScenarioName::QuestionInteractive.interactive_permissions());
+        assert!(ScenarioName::QuestionInteractive.is_question());
+        assert!(!ScenarioName::GoldenPath.is_question());
     }
 }
