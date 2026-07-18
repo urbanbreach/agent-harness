@@ -1,29 +1,25 @@
 ---
 source: crates/harness-tui/tests/deterministic_render_test.rs
-assertion_line: 195
 expression: normalize_volatile_branch(&trim_trailing_snapshot_whitespace(&rendered))
 ---
 
 
 
 
-
-
-                     ██╗  ██╗ █████╗ ██████╗ ███╗   ██╗███████╗███████╗███████╗
-
-                Continue session                                                 esc
-
-                █ Search
-
-                Sun Mar 08 2026
-                   alpha-run                                             continue ready
-
-                pin ctrl+f  delete ctrl+d  rename ctrl+r
-
-            ┃
-            ┃  Worker model-1 mock · Demo
-            ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
-                                           ctrl+t variants  tab agents  ctrl+p commands
-
-
-            ~/Projects/agent-harness/crates/harness-tui:test-branch  Ctrl+p open  q quit
+           ┌─ Resume session ───────────────────────────────────────────────────── [✗] ─┐
+           │                                                                            │
+           │   / to search                                                     All f    │
+           │────────────────────────────────────────────────────────────────────────────│
+           │   Sun Mar 08 2026                                                          │
+           │     alpha-run                                                continue ready│
+           │                                                                            │
+           │                                                                            │
+           │                                                                            │
+           │                                                                            │
+           │                                                                            │
+           │                                                                            │
+           │                                                                            │or this di…
+           │                                                                            │
+           │         ↑↓ nav  |  e expand  |  / search  |  f filter  |  d delete         │
+           └────────────────────────────────────────────────────────────────────────────┘
+            ╰───────────────────────────────────────────────────────────────────────  ─╯

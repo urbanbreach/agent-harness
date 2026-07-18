@@ -1,3 +1,6 @@
+use harness_core::event::{
+    ActorKind, EventActor, EventEnvelopeV1, EventV1, PermissionRequestedEvent, SCHEMA_VERSION,
+};
 use harness_tui::UnwrapOrAbort;
 use harness_tui::{run_tui_with_options, LiveUpdate, TuiMode, TuiOptions, UiIntent};
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
@@ -10,15 +13,22 @@ use std::time::{Duration, Instant};
 use vt100::Parser;
 
 const MARKER_TIMEOUT: Duration = Duration::from_secs(12);
+const EXIT_TIMEOUT: Duration = Duration::from_secs(5);
 const READ_POLL_TIMEOUT: Duration = Duration::from_millis(50);
 const PTY_SIGNOFF_ENV: &str = "HARNESS_TUI_PTY_SIGNOFF";
 const HELPER_SCENARIO_ENV: &str = "HARNESS_TUI_PTY_HELPER_SCENARIO";
 const TYPE_FIRST_STARTUP_SCENARIO: &str = "type_first_startup";
 const CONNECT_AUTH_SCENARIO: &str = "connect_auth";
+const PERMISSION_OVERLAY_SCENARIO: &str = "permission_overlay";
 const TYPE_FIRST_STARTUP_TEST: &str = "pty_helper_type_first_startup";
 const CONNECT_AUTH_TEST: &str = "pty_helper_connect_auth";
-const READY_MARKER: &str = "Ctrl+p commands";
+const PERMISSION_OVERLAY_TEST: &str = "pty_helper_permission_overlay";
+const READY_MARKER: &str = "Shift+Tab:mode";
 const DRAFT_TEXT: &str = "Hello from PTY";
+const PERMISSION_DRAFT: &str = "keep draft under permission";
+const CLEAR_DRAFT_TEXT: &str = "draft to clear via esc";
+const CLEAR_PROMPT_HINT: &str = "press again to clear";
+const PERMISSION_INJECT_DELAY: Duration = Duration::from_millis(900);
 
 const PRIMARY_COLS: u16 = 100;
 const PRIMARY_ROWS: u16 = 30;
@@ -32,6 +42,9 @@ pub(crate) fn pty_smoke_starts_accepts_input_resizes_and_exits() {
 
     let mut helper = spawn_type_first_startup_helper();
     helper.wait_for(READY_MARKER);
+    helper.wait_for("❯");
+    let startup_screen = helper.screen_text();
+    assert_no_multi_row_prompt_rail(&startup_screen, "startup");
 
     helper
         .writer
@@ -49,12 +62,13 @@ pub(crate) fn pty_smoke_starts_accepts_input_resizes_and_exits() {
 
     send_key(helper.writer.as_mut(), 0x10).unwrap_or_abort();
     helper.wait_for("Commands");
+    let palette_screen = helper.screen_text();
+    assert_no_sidebar_copy(&palette_screen, "palette");
     helper.writer.write_all(b"exit the app").unwrap_or_abort();
     helper.writer.flush().unwrap_or_abort();
     helper.wait_for("Exit the app");
     send_key(helper.writer.as_mut(), b'\r').unwrap_or_abort();
-    let status = helper.child.wait().unwrap_or_abort();
-    assert!(status.success(), "helper tui child exited with {status:?}");
+    wait_for_child_exit(&mut helper, "pty_smoke_exit");
 }
 
 pub(crate) fn pty_connect_auth_drives_provider_connection() {
@@ -63,7 +77,7 @@ pub(crate) fn pty_connect_auth_drives_provider_connection() {
     }
 
     let mut helper = spawn_helper(CONNECT_AUTH_TEST, CONNECT_AUTH_SCENARIO);
-    helper.wait_for("ctrl+p commands");
+    helper.wait_for("❯");
 
     send_key(helper.writer.as_mut(), b'/').unwrap_or_abort();
     helper.writer.write_all(b"connect").unwrap_or_abort();
@@ -78,12 +92,135 @@ pub(crate) fn pty_connect_auth_drives_provider_connection() {
     helper.writer.write_all(b"/exit").unwrap_or_abort();
     helper.writer.flush().unwrap_or_abort();
     send_key(helper.writer.as_mut(), b'\r').unwrap_or_abort();
+    wait_for_child_exit(&mut helper, "pty_connect_auth_exit");
+}
 
-    let status = helper.child.wait().unwrap_or_abort();
+pub(crate) fn pty_permission_overlay_resolves_and_preserves_draft() {
+    if !cfg!(target_os = "linux") || std::env::var(PTY_SIGNOFF_ENV).as_deref() != Ok("1") {
+        return;
+    }
+
+    let mut helper = spawn_helper(PERMISSION_OVERLAY_TEST, PERMISSION_OVERLAY_SCENARIO);
+    helper.wait_for(READY_MARKER);
+    helper.wait_for("❯");
+
+    helper
+        .writer
+        .write_all(PERMISSION_DRAFT.as_bytes())
+        .unwrap_or_abort();
+    helper.writer.flush().unwrap_or_abort();
+    helper.wait_for(PERMISSION_DRAFT);
+
+    helper.wait_for("Allow Edit");
+    helper.wait_for("always-approve");
+    let permission_screen = helper.screen_text();
+    assert_no_multi_row_prompt_rail(&permission_screen, "permission overlay");
     assert!(
-        status.success(),
-        "connect helper tui child exited with {status:?}"
+        permission_screen.contains("Apply hashline edit to demo.txt"),
+        "PTY permission dock must show summary\n{permission_screen}"
     );
+    assert!(
+        permission_screen.contains(PERMISSION_DRAFT),
+        "PTY permission dock must preserve composer draft\n{permission_screen}"
+    );
+    assert!(
+        permission_screen.contains('●') || permission_screen.contains("(●)"),
+        "PTY permission dock must show selected radio marker\n{permission_screen}"
+    );
+
+    send_bytes(helper.writer.as_mut(), b"\x1b").unwrap_or_abort();
+    helper.wait_for(READY_MARKER);
+    let after_resolve = helper.screen_text();
+    assert!(
+        !after_resolve.contains("Allow Edit"),
+        "permission dock must clear after Esc deny + resolved event\n{after_resolve}"
+    );
+    assert!(
+        after_resolve.contains(PERMISSION_DRAFT),
+        "draft must remain after permission resolve\n{after_resolve}"
+    );
+    exit_via_palette(&mut helper);
+}
+
+pub(crate) fn pty_status_dialog_opens_without_sidebar_copy() {
+    if !cfg!(target_os = "linux") || std::env::var(PTY_SIGNOFF_ENV).as_deref() != Ok("1") {
+        return;
+    }
+
+    let mut helper = spawn_type_first_startup_helper();
+    helper.wait_for(READY_MARKER);
+    helper.wait_for("❯");
+
+    send_key(helper.writer.as_mut(), 0x18).unwrap_or_abort();
+    send_key(helper.writer.as_mut(), b's').unwrap_or_abort();
+    helper.wait_for("Status");
+    let leader_status = helper.screen_text();
+    assert!(
+        leader_status.contains("Status"),
+        "PTY status dialog must show Status header\n{leader_status}"
+    );
+    assert_no_sidebar_copy(&leader_status, "status dialog via Ctrl+x s");
+    assert!(
+        leader_status.contains("MCP")
+            || leader_status.contains("LSP")
+            || leader_status.contains("No MCP")
+            || leader_status.contains("Plugins"),
+        "PTY status dialog must show operator status content\n{leader_status}"
+    );
+
+    send_bytes(helper.writer.as_mut(), b"\x1b").unwrap_or_abort();
+    helper.wait_for(READY_MARKER);
+
+    send_key(helper.writer.as_mut(), 0x10).unwrap_or_abort();
+    helper.wait_for("Commands");
+    helper.writer.write_all(b"Open status").unwrap_or_abort();
+    helper.writer.flush().unwrap_or_abort();
+    helper.wait_for("Open status");
+    send_key(helper.writer.as_mut(), b'\r').unwrap_or_abort();
+    helper.wait_for("Status");
+    let palette_status = helper.screen_text();
+    assert_no_sidebar_copy(&palette_status, "status dialog via palette");
+
+    send_bytes(helper.writer.as_mut(), b"\x1b").unwrap_or_abort();
+    helper.wait_for(READY_MARKER);
+    exit_via_palette(&mut helper);
+}
+
+pub(crate) fn pty_draft_esc_esc_clears_composer() {
+    if !cfg!(target_os = "linux") || std::env::var(PTY_SIGNOFF_ENV).as_deref() != Ok("1") {
+        return;
+    }
+
+    // Busy-turn Ctrl+C needs a live TaskScheduled stream; helpers do not drive a
+    // provider. Continuous-use cancel-adjacent path: Esc Esc clears draft.
+    let mut helper = spawn_type_first_startup_helper();
+    helper.wait_for(READY_MARKER);
+    helper.wait_for("❯");
+
+    helper
+        .writer
+        .write_all(CLEAR_DRAFT_TEXT.as_bytes())
+        .unwrap_or_abort();
+    helper.writer.flush().unwrap_or_abort();
+    helper.wait_for(CLEAR_DRAFT_TEXT);
+
+    send_bytes(helper.writer.as_mut(), b"\x1b").unwrap_or_abort();
+    helper.wait_for(CLEAR_PROMPT_HINT);
+    send_bytes(helper.writer.as_mut(), b"\x1b").unwrap_or_abort();
+
+    let deadline = Instant::now() + MARKER_TIMEOUT;
+    loop {
+        let screen = helper.screen_text();
+        if !screen.contains(CLEAR_DRAFT_TEXT) {
+            break;
+        }
+        if Instant::now() >= deadline {
+            panic!("Esc Esc must clear composer draft within {MARKER_TIMEOUT:?}\n{screen}");
+        }
+        thread::sleep(READ_POLL_TIMEOUT);
+    }
+
+    exit_via_palette(&mut helper);
 }
 
 pub(crate) fn pty_helper_type_first_startup() {
@@ -104,6 +241,67 @@ pub(crate) fn pty_helper_type_first_startup() {
         },
         exit_on_finish: false,
         on_ui_intent: None,
+        keybindings: None,
+        toggles: None,
+        preserve_terminal_on_exit: false,
+    })
+    .unwrap_or_abort();
+}
+
+pub(crate) fn pty_helper_permission_overlay() {
+    if std::env::var(HELPER_SCENARIO_ENV).as_deref() != Ok(PERMISSION_OVERLAY_SCENARIO) {
+        return;
+    }
+
+    let run_dir = tempfile::tempdir().unwrap_or_abort();
+    let (update_tx, update_rx) = mpsc::channel();
+    let inject_tx = update_tx.clone();
+    thread::spawn(move || {
+        thread::sleep(PERMISSION_INJECT_DELAY);
+        let _ = inject_tx.send(LiveUpdate::Event(Box::new(permission_requested_event(
+            1,
+            "perm_pty_overlay",
+            "tool_call_pty_overlay",
+        ))));
+    });
+
+    let resolve_tx = update_tx.clone();
+    let on_ui_intent: Arc<dyn Fn(UiIntent) + Send + Sync> = Arc::new(move |intent| {
+        if let UiIntent::ResolvePermission {
+            permission_id,
+            decision,
+            reason,
+            ..
+        } = intent
+        {
+            let event_decision = match decision {
+                harness_core::perm::PermissionDecision::Allow => {
+                    harness_core::event::PermissionDecision::Allow
+                }
+                harness_core::perm::PermissionDecision::Deny => {
+                    harness_core::event::PermissionDecision::Deny
+                }
+            };
+            let _ = resolve_tx.send(LiveUpdate::Event(Box::new(permission_resolved_event(
+                2,
+                &permission_id,
+                event_decision,
+                reason,
+            ))));
+        }
+    });
+
+    run_tui_with_options(TuiOptions {
+        mode: TuiMode::Live {
+            run_dir: run_dir.path().to_path_buf(),
+            historical_events: Vec::new(),
+            session_history_entries: Vec::new(),
+            prompt_history_path: None,
+            update_rx,
+            compact_session_supported: false,
+        },
+        exit_on_finish: false,
+        on_ui_intent: Some(on_ui_intent),
         keybindings: None,
         toggles: None,
         preserve_terminal_on_exit: false,
@@ -153,10 +351,132 @@ impl SpawnedHelper {
     fn wait_for(&mut self, needle: &str) {
         wait_for_screen_contains(&mut self.parser, &self.output_rx, needle);
     }
+
+    fn screen_text(&mut self) -> String {
+        drain_output(&mut self.parser, &self.output_rx);
+        self.parser.screen().contents()
+    }
 }
 
 fn spawn_type_first_startup_helper() -> SpawnedHelper {
     spawn_helper(TYPE_FIRST_STARTUP_TEST, TYPE_FIRST_STARTUP_SCENARIO)
+}
+
+fn exit_via_palette(helper: &mut SpawnedHelper) {
+    send_key(helper.writer.as_mut(), 0x10).unwrap_or_abort();
+    helper.wait_for("Commands");
+    helper.writer.write_all(b"exit the app").unwrap_or_abort();
+    helper.writer.flush().unwrap_or_abort();
+    helper.wait_for("Exit the app");
+    send_key(helper.writer.as_mut(), b'\r').unwrap_or_abort();
+    wait_for_child_exit(helper, "exit_via_palette");
+}
+
+fn wait_for_child_exit(helper: &mut SpawnedHelper, context: &str) {
+    let deadline = Instant::now() + EXIT_TIMEOUT;
+    loop {
+        match helper.child.try_wait() {
+            Ok(Some(status)) => {
+                assert!(
+                    status.success(),
+                    "{context}: helper tui child exited with {status:?}"
+                );
+                return;
+            }
+            Ok(None) => {
+                if Instant::now() >= deadline {
+                    break;
+                }
+                thread::sleep(READ_POLL_TIMEOUT);
+            }
+            Err(err) => panic!("{context}: try_wait failed: {err}"),
+        }
+    }
+    let _ = helper.child.kill();
+    let _ = helper.child.wait();
+}
+
+fn assert_no_multi_row_prompt_rail(screen: &str, context: &str) {
+    let prompt_glyph_lines = screen.lines().filter(|line| line.contains('❯')).count();
+    assert!(
+        prompt_glyph_lines <= 1,
+        "PTY {context} must not paint a multi-row ❯ rail (found {prompt_glyph_lines})\n{screen}"
+    );
+    assert!(
+        !screen.contains('┃'),
+        "PTY {context} must not render legacy composer rail ┃\n{screen}"
+    );
+}
+
+fn assert_no_sidebar_copy(screen: &str, context: &str) {
+    let lower = screen.to_ascii_lowercase();
+    assert!(
+        !lower.contains("show sidebar")
+            && !lower.contains("hide sidebar")
+            && !lower.contains("operator sidebar"),
+        "PTY {context} must not advertise sidebar chrome copy\n{screen}"
+    );
+}
+
+fn permission_requested_event(
+    seq: u64,
+    permission_id: &str,
+    tool_call_id: &str,
+) -> EventEnvelopeV1 {
+    EventEnvelopeV1 {
+        schema_version: SCHEMA_VERSION,
+        event_id: format!("evt_pty_perm_{seq:04}"),
+        seq,
+        run_id: "run_pty_permission_overlay".into(),
+        mono_ms: seq,
+        ts: Some("2026-07-17T12:00:00Z".to_string()),
+        actor: EventActor::new(
+            ActorKind::System,
+            Some("pty-permission-overlay".to_string()),
+        ),
+        correlation_id: Some(permission_id.to_string()),
+        causation_id: None,
+        stream_key: None,
+        payload: EventV1::PermissionRequested(PermissionRequestedEvent {
+            permission_id: permission_id.to_string(),
+            kind: "edit_fs".to_string(),
+            tool_call_id: Some(tool_call_id.into()),
+            summary: "Apply hashline edit to demo.txt".to_string(),
+            request_digest: format!("digest-{permission_id}"),
+            timeout_ms: 30_000,
+            default_decision: harness_core::event::PermissionDecision::Deny,
+        }),
+    }
+}
+
+fn permission_resolved_event(
+    seq: u64,
+    permission_id: &str,
+    decision: harness_core::event::PermissionDecision,
+    reason: Option<String>,
+) -> EventEnvelopeV1 {
+    EventEnvelopeV1 {
+        schema_version: SCHEMA_VERSION,
+        event_id: format!("evt_pty_perm_resolved_{seq:04}"),
+        seq,
+        run_id: "run_pty_permission_overlay".into(),
+        mono_ms: seq,
+        ts: Some("2026-07-17T12:00:01Z".to_string()),
+        actor: EventActor::new(
+            ActorKind::System,
+            Some("pty-permission-overlay".to_string()),
+        ),
+        correlation_id: Some(permission_id.to_string()),
+        causation_id: None,
+        stream_key: None,
+        payload: EventV1::PermissionResolved(
+            harness_core::event::PermissionResolvedEvent {
+                permission_id: permission_id.to_string(),
+                decision,
+                reason,
+            },
+        ),
+    }
 }
 
 fn spawn_helper(test_name: &str, scenario: &str) -> SpawnedHelper {
@@ -211,10 +531,9 @@ fn wait_for_screen_contains(parser: &mut Parser, output_rx: &Receiver<Vec<u8>>, 
 
         let now = Instant::now();
         if now >= deadline {
-            let _ = needle;
-            let _ = &current;
-            let _ = MARKER_TIMEOUT;
-            panic!("abort");
+            panic!(
+                "PTY wait_for timed out after {MARKER_TIMEOUT:?} waiting for {needle:?}\n{current}"
+            );
         }
 
         let wait_timeout = cmp::min(READ_POLL_TIMEOUT, deadline.saturating_duration_since(now));

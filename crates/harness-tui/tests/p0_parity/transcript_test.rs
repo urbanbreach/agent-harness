@@ -88,12 +88,16 @@ fn transcript_projection_renders_structured_user_assistant_tool_blocks() {
         "P0-TX-01: assistant stream must project structured text\n{rendered}"
     );
     assert!(
-        rendered.contains("README.md") || rendered.contains("Read"),
-        "P0-TX-01: tool call must project structured title/path\n{rendered}"
+        rendered.contains("README.md"),
+        "P0-TX-01: tool call must project structured path\n{rendered}"
     );
     assert!(
-        rendered.contains("Permission required") || !pending.is_empty(),
-        "P0-TX-01: permission family must project as structured pending state\n{rendered}"
+        rendered.contains('◈') || rendered.contains('◆'),
+        "P0-TX-01: tool call must use ◈/◆ tool identity glyph\n{rendered}"
+    );
+    assert!(
+        !pending.is_empty(),
+        "P0-TX-01: permission family must project as structured pending state"
     );
     assert!(
         !rendered.contains(r#"{"path":"README.md"}"#)
@@ -273,7 +277,7 @@ fn transcript_activity_lifecycle_streaming_done_failed_and_cancelled() {
 
 #[test]
 fn transcript_scroll_selection_and_tool_detail_toggle_under_full_width_shell() {
-    // arrange — multi-activity session for selection
+    // arrange
     let mut app = AppState::new_live(Some(PathBuf::from("/tmp/run_p0_tx03")), false, None);
     for (seq, rid, text) in [
         (1u64, "req_a", "First user turn for selection"),
@@ -319,25 +323,47 @@ fn transcript_scroll_selection_and_tool_detail_toggle_under_full_width_shell() {
             }),
         ));
     }
-    app.focus = Focus::List;
+    app.focus = Focus::Details;
+    let before = app.transcript_interaction_snapshot();
+    assert!(before.follow_mode);
+    assert_eq!(before.scroll, 0);
 
-    // act — scroll
-    app.handle_key(key(KeyCode::PageDown));
+    // act
     app.handle_key(key(KeyCode::PageUp));
-    app.handle_key(key(KeyCode::End));
-    app.handle_key(key(KeyCode::Home));
+    let after_page_up = app.transcript_interaction_snapshot();
+    assert_eq!(
+        after_page_up.scroll, 10,
+        "P0-TX-03: PageUp must increase transcript_scroll by one page"
+    );
+    assert!(
+        !after_page_up.follow_mode,
+        "P0-TX-03: PageUp must leave follow mode"
+    );
 
-    // act — activity selection (Next/Previous message chords)
+    app.handle_key(key(KeyCode::PageDown));
+    let after_page_down = app.transcript_interaction_snapshot();
+    assert_eq!(
+        after_page_down.scroll, 0,
+        "P0-TX-03: PageDown must return to bottom (scroll 0)"
+    );
+    assert!(
+        after_page_down.follow_mode,
+        "P0-TX-03: PageDown to bottom must restore follow mode"
+    );
+
+    app.set_selected_activity_index_for_test(0);
+    let index_before = app.transcript_interaction_snapshot().selected_activity_index;
     app.handle_key(key_with_modifiers(
         KeyCode::Char('n'),
         KeyModifiers::CONTROL | KeyModifiers::ALT,
     ));
-    app.handle_key(key_with_modifiers(
-        KeyCode::Char('p'),
-        KeyModifiers::CONTROL | KeyModifiers::ALT,
-    ));
+    let index_after = app.transcript_interaction_snapshot().selected_activity_index;
+    assert_ne!(
+        index_after, index_before,
+        "P0-TX-03: next-activity chord must change selected_activity_index ({index_before} -> {index_after})"
+    );
 
-    // act — tool detail disclosure toggle via palette command path
+    let details_before = app.transcript_interaction_snapshot().show_tool_details;
     app.handle_key(key_with_modifiers(
         KeyCode::Char('p'),
         KeyModifiers::CONTROL,
@@ -345,9 +371,13 @@ fn transcript_scroll_selection_and_tool_detail_toggle_under_full_width_shell() {
     for ch in "tool details".chars() {
         app.handle_key(key(KeyCode::Char(ch)));
     }
-    // try Enter to activate filtered palette item if present
     app.handle_key(key(KeyCode::Enter));
     app.handle_key(key(KeyCode::Esc));
+    let details_after = app.transcript_interaction_snapshot().show_tool_details;
+    assert_ne!(
+        details_after, details_before,
+        "P0-TX-03: tool-details palette action must toggle show_tool_details ({details_before} -> {details_after})"
+    );
 
     let plan = plan_for(&app, 120, 40);
     let rendered = render_text(&app, 120, 40);
@@ -362,13 +392,19 @@ fn transcript_scroll_selection_and_tool_detail_toggle_under_full_width_shell() {
         "P0-TX-03: transcript surface allocated"
     );
     assert!(
-        rendered.contains("First user turn") || rendered.contains("Second user turn"),
-        "P0-TX-03: multi-activity transcript remains structured and selectable\n{rendered}"
+        rendered.contains("First user turn for selection"),
+        "P0-TX-03: first activity body must remain structured\n{rendered}"
     );
     assert!(
-        rendered.contains("read")
-            || rendered.contains("file.rs")
-            || rendered.contains("Assistant body"),
-        "P0-TX-03: tool/assistant content remains visible for expand/select surface\n{rendered}"
+        rendered.contains("Second user turn for selection"),
+        "P0-TX-03: second activity body must remain structured\n{rendered}"
+    );
+    assert!(
+        rendered.contains("Assistant body for req_a"),
+        "P0-TX-03: assistant stream body must remain structured\n{rendered}"
+    );
+    assert!(
+        rendered.contains("read"),
+        "P0-TX-03: tool identity must remain visible for expand/select surface\n{rendered}"
     );
 }

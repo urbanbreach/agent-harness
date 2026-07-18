@@ -6,39 +6,36 @@ expression: snapshot.as_str()
 
 
 
+                              ┌─ Commands ───────────────────────────────────────── [✗] ─┐
+                              │                                                          │
+                              │   search:                                                │
+                              │──────────────────────────────────────────────────────────│
+                              │   Session ────────────────────────────────────────────  █│
+                              │  ◆ New Session                                 Ctrl+N   █│
+                              │  ◆ New Session in Worktree          Ctrl+P → worktree   █│
+                              │  ◆ Agent Dashboard                         /dashboard   █│
+                              │  ◆ Back to Home                                 /home   █│
+                              │  ◆ Resume Session                             /resume   █│
+                              │  ◆ Rename Session                            /rename    █│
+                              │  ◆ Session Info                         /session-info   █│
+                              │  ◆ Send Feedback                            /feedback   █│
+                              │  ◆ Fork session                                         █│
+                              │  ◆ Open status                               Ctrl+x s   █│
+                              │  ◆ Show timestamps                                      █│
+                              │  ◆ Collapse thinking                                    █│
+                              │  ◆ Hide tool details                                    █│
+                              │  ◆ Toggle session scrollbar                             █│
+                              │  ◆ Show generic tool output                             █│
+                              │  ◆ Copy last assistant message               Ctrl+x y   █│
+                              │  ◆ Copy session transcript                              █│
+                              │          ↑/↓ nav  |  Enter select  |  Esc close          │
+                              └──────────────────────────────────────────────────────────┘
 
 
 
 
 
 
-
-                     Session      Commands                                         esc
-
-                                  █ Search
-
-                                  Suggested
-                                  New session Start a fresh live session
-                                  Switch model Browse available provider/mod… Ctrl+x m
-                           “in    Connect provider Connect a provider                     test
-
-                                  Session
-                                  Switch session Continue a prior session when resuma…
-                                  New session Start a fresh live session
-                                  Rename session Rename the current session
-                                  Fork session Fork the current session
-                                  Compact session Write a manual context checkpoint
-                                  Show sidebar Toggle the operator sidebar    Ctrl+x s
-                                  Show timestamps Toggle user message timestamps
-                                  Collapse thinking Toggle inline thinking rows
-
-
-
-
-
-┃
-┃
-┃
-┃
-╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
-                                                                                         live ctx 0 est  Ctrl+p commands
+  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ ❯                                                                                                                │
+  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────── unknown ─╯

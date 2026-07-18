@@ -1,40 +1,40 @@
 ---
 source: crates/harness-tui/tests/deterministic_render_test.rs
+assertion_line: 104
 expression: trim_trailing_snapshot_whitespace(&rendered)
 ---
 
-  ┃
-  ┃  Inspect tool activity
-  ┃
-
-     → Read src/ui.rs [offset=1, limit=24]
-
-     ┃ ← Patch · ui.rs  ▸
-     ┃ crates/harness-tui/src
-     ┃ Remove diff review surface · Diff preview unavailable (artifacts/tool-lifecycle-inline.diff)
-
-     ✓ Researcher Task — audit tool lifecycle parity
-      Found the whole-tool parity path.
+   ui-ux-experiments ~/Projects/agent-harness/crates/harness-tui
 
 
-     $ cargo test -p harness-tui  ▸
-      exit code: 1
-      stderr: snapshot mismatch
+     ❯ Inspect tool activity
+
+
+     ◈ Read 1 file
+
+     ◈ Patch · ui.rs  ▸
+         crates/harness-tui/src
+         Remove diff review surface · Diff preview unavailable (artifacts/tool-lifecycle-inline.diff)
+
+          · Researcher Task — audit tool lifecycle parity
+         Found the whole-tool parity path.
+
+
+  ❙  ◆ cargo test -p harness-tui  ▸
+         exit code: 1
+         stderr: snapshot mismatch
 
 
      Tool summaries are now easier to scan, and edits stay inline.
 
-     ▪ Assistant · model-1 · 17ms
+     Worked for 0.0s.
 
 
 
 
 
+  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ ❯                                                                                                                                                                            │
+  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── model-1 ─╯
 
-
-┃
-┃
-┃
-┃  model-1 mock
-╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
-                                                                                                                                                     live ctx 0 est  Ctrl+p commands
+  Shift+Tab:mode  │  Ctrl+x:shortcuts

@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use crossterm::event::{KeyCode, KeyModifiers};
@@ -7,9 +6,7 @@ use harness_core::event::{
     RunFailedEvent, ToolCallRequestedEvent, ToolCallStartedEvent, UserMessageSubmittedEvent,
 };
 use harness_core::perm::PermissionDecision;
-use harness_tui::app::{
-    AppState, Focus, LaunchMetadata, ModelOption, ReviewSurface, RuntimeStateKind, UiIntent,
-};
+use harness_tui::app::{AppState, Focus, ReviewSurface, RuntimeStateKind, UiIntent};
 use harness_tui::overlay::OverlayKind;
 
 use crate::helpers::*;
@@ -200,40 +197,38 @@ fn slash_command_filter_and_submit_harness_safe_routes() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn file_mention_at_opens_picker_and_inserts_agent_or_catalog_entry() {
+fn file_mention_at_opens_picker_and_inserts_real_workspace_file() {
     // arrange
+    let workspace = tempfile::tempdir().expect("workspace tempdir");
+    std::fs::create_dir(workspace.path().join("src")).expect("mkdir src");
+    std::fs::write(workspace.path().join("src/main.rs"), "fn main() {}").expect("write main.rs");
+
     let mut app = AppState::new_live(None, false, None);
-    app.set_launch_metadata(
-        LaunchMetadata::from_model_ref("build", "mock:model-1").with_available_models(vec![
-            ModelOption::from_model_ref("build", "mock:model-1"),
-            ModelOption::from_model_ref("plan", "mock:model-1"),
-        ]),
-    );
+    app.set_file_mention_workspace_root_for_test(workspace.path().to_path_buf());
     app.focus = Focus::Prompt;
 
-    // act — open
+    // act
     app.handle_key(key(KeyCode::Char('@')));
-    let open_stack = app.overlay_stack().top();
-
-    // assert — open
     assert_eq!(
-        open_stack,
+        app.overlay_stack().top(),
         Some(OverlayKind::FileMentions),
         "P0-FILE-01: '@' must open file-mention overlay"
     );
     assert_eq!(app.composer.prompt_buffer, "@");
 
-    // act — filter + insert agent mention
-    for ch in "pla".chars() {
+    for ch in "main".chars() {
         app.handle_key(key(KeyCode::Char(ch)));
     }
     app.handle_key(key(KeyCode::Enter));
 
-    // assert — insert closes picker and writes safe display text
+    // assert
     assert_eq!(
-        app.composer.prompt_buffer, "@plan ",
-        "P0-FILE-01: Enter must insert selected agent mention"
+        app.composer.prompt_buffer, "@src/main.rs ",
+        "P0-FILE-01: Enter must insert selected workspace file path"
     );
+    let tags = app.selected_file_tags();
+    assert_eq!(tags.len(), 1, "P0-FILE-01: exactly one file tag");
+    assert_eq!(tags[0].path, "src/main.rs");
     assert_ne!(
         app.overlay_stack().top(),
         Some(OverlayKind::FileMentions),

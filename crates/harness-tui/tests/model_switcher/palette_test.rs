@@ -125,14 +125,13 @@ fn model_switcher_renders_harness_select_dialog_contract() {
     let rendered = format!("{:?}", terminal.backend().buffer());
 
     assert!(rendered.contains("Select model"), "{rendered}");
-    assert!(rendered.contains("esc"), "{rendered}");
-    assert!(rendered.contains("Search"), "{rendered}");
+    assert!(rendered.contains("[✗]"), "{rendered}");
+    assert!(rendered.contains("Filter models, providers"), "{rendered}");
     assert!(rendered.contains("Anthropic"), "{rendered}");
     assert!(rendered.contains("OpenAI"), "{rendered}");
     assert!(rendered.contains("●"), "{rendered}");
     assert!(rendered.contains("GPT-5.4 Mini"), "{rendered}");
     assert!(!rendered.contains("Switch model ·"), "{rendered}");
-    assert!(!rendered.contains("Filter models, providers"), "{rendered}");
 }
 
 #[test]

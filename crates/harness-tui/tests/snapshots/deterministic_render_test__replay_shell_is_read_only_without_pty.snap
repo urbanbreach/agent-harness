@@ -1,11 +1,10 @@
 ---
 source: crates/harness-tui/tests/deterministic_render_test.rs
-assertion_line: 237
 expression: rendered.as_str()
 ---
 Replay · read-only · run run_fixture · 2 ev                                                         
                                                                                                     
-  Waiting for first turn…                                                                           
+     Waiting for first turn…                                                                        
                                                            ▼ MCP                                    
                                                            • No MCP servers configured              
                                                                                                     
@@ -23,6 +22,6 @@ Replay · read-only · run run_fixture · 2 ev
                                                                                                     
                                                                                                     
 ▎ Replay is read-only.                                                                              
-  ? shortcuts  ·  ctrl+tab focus  ·  q quit                                                         
+  h shortcuts  ·  tab focus  ·  ctrl+q quit                                                         
                                                                                                     
                                                            HARNESS 0.1.0

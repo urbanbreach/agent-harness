@@ -34,8 +34,19 @@ fn startup_shell_is_compose_first_without_pty() {
     ));
 
     assert!(rendered.contains("Explain deterministic TUI tests"));
-    assert!(rendered.contains("Worker model-1 mock"));
-    assert!(rendered.contains("ctrl+p commands"));
+    assert!(
+        rendered.contains("model-1")
+            || rendered.contains("Worker")
+            || rendered.contains("mock")
+            || rendered.contains("Demo"),
+        "startup draft must keep model chrome\n{rendered}"
+    );
+    assert!(
+        rendered.contains("Enter:send")
+            || rendered.contains("Shift+Tab")
+            || rendered.contains("Ctrl+x"),
+        "startup draft must use reference footer grammar\n{rendered}"
+    );
     assert!(!rendered.contains("Actions:"));
     assert!(!rendered.contains("Tabs"));
     assert!(!rendered.contains("Current runtime:"));
@@ -94,7 +105,7 @@ fn tool_lifecycle_rows_stay_ordered_without_pty() {
 
     let tool_markers: &[&str] = &[
         "Inspect tool activity",
-        "Read src/ui.rs",
+        "Read 1 file",
         "Remove diff review surface",
         "Researcher Task — audit tool lifecycle parity",
         "cargo test -p harness-tui",
@@ -158,8 +169,8 @@ fn command_palette_renders_without_pty() {
     insta::assert_snapshot!(snapshot.as_str());
 
     assert!(rendered.contains("Commands"));
-    assert!(rendered.contains("New session"));
-    assert!(rendered.contains("Switch session"));
+    assert!(rendered.contains("New Session"));
+    assert!(rendered.contains("Resume Session"));
 }
 
 #[test]
@@ -173,14 +184,21 @@ fn permission_modal_preserves_draft_without_pty() {
 
     insta::assert_snapshot!(rendered.as_str());
 
-    assert!(rendered.contains("Permission required"));
-    assert!(rendered.contains("Apply hashline edit to demo.txt"));
-    assert!(rendered.contains("Allow once"));
-    assert!(rendered.contains("Allow always"));
-    assert!(rendered.contains("Reject"));
-    assert!(rendered.contains("once=one-shot"));
-    assert!(rendered.contains("always=session"));
-    assert!(rendered.contains("countdown"));
+    assert!(rendered.contains("Allow Edit to demo.txt?"));
+    assert!(rendered.contains("always-approve"));
+    assert!(rendered.contains("No, reject"));
+    assert!(rendered.contains("Yes"));
+    assert!(
+        rendered.contains('┃'),
+        "permission dock must paint freeze-matched ┃ rail\n{rendered}"
+    );
+    assert!(
+        !rendered.contains("timeout"),
+        "permission dock must not show timeout chrome on decision stage\n{rendered}"
+    );
+    assert!(rendered.contains("●") || rendered.contains("○"));
+    assert!(rendered.contains("esc") || rendered.contains("cancel") || rendered.contains("confirm"));
+    assert!(rendered.contains("keep this draft"));
     assert_eq!(app.composer.prompt_buffer, "keep this draft");
 }
 
@@ -199,8 +217,14 @@ fn startup_session_history_picker_renders_without_pty() {
         &trim_trailing_snapshot_whitespace(&rendered)
     ));
 
-    assert!(rendered.contains("Continue session"));
-    assert!(rendered.contains("Search"));
+    assert!(
+        rendered.contains("Resume session") || rendered.contains("Continue session"),
+        "session history picker title\n{rendered}"
+    );
+    assert!(
+        rendered.contains("Search") || rendered.contains("/ to search"),
+        "session history search affordance\n{rendered}"
+    );
     assert!(rendered.contains("alpha-run"));
     assert!(rendered.contains("continue ready"));
     assert!(!rendered.contains("beta-blocked"));
@@ -222,10 +246,14 @@ fn question_permission_prompt_renders_without_pty() {
     insta::assert_snapshot!(rendered.as_str());
 
     assert!(rendered.contains("Pick one"));
-    assert!(rendered.contains("Type your own answer"));
-    assert!(rendered.contains("↑↓ select"));
-    assert!(rendered.contains("enter submit"));
-    assert!(rendered.contains("esc dismiss"));
+    assert!(rendered.contains("Type your answer here"));
+    assert!(rendered.contains("↑/↓ navigate"));
+    assert!(rendered.contains("y copy") || rendered.contains("copy"));
+    assert!(rendered.contains("Enter:submit"));
+    // Freeze-aligned outer shell footer (product-honest keys).
+    assert!(rendered.contains("Esc:unselect"));
+    assert!(rendered.contains("Tab:scrollback"));
+    assert!(rendered.contains("Ctrl+c:dismiss"));
 }
 
 #[test]

@@ -155,21 +155,16 @@ fn operator_sidebar_chrome_has_no_persistent_primary_variant() {
         matches!(
             status_overlay,
             Some(harness_tui::overlay::OverlayKind::StatusDialog)
-        ) || status_render.contains("Status")
-            || status_render.contains("MCP")
-            || status_render.contains("LSP"),
-        "P0-SHELL-02: status dialog must open as secondary surface; overlay={status_overlay:?}\n{status_render}"
+        ),
+        "P0-SHELL-02: status dialog must open as OverlayKind::StatusDialog; overlay={status_overlay:?}\n{status_render}"
     );
     assert!(
         status_plan.operator_sidebar.is_none(),
         "P0-SHELL-02: status dialog must not allocate a primary operator sidebar"
     );
     assert!(
-        status_render.contains("Status")
-            || status_render.contains("MCP")
-            || status_render.contains("LSP")
-            || status_render.to_ascii_lowercase().contains("server"),
-        "P0-SHELL-02: status dialog must present operator facts (status/MCP/LSP)\n{status_render}"
+        status_render.contains("Status"),
+        "P0-SHELL-02: status dialog must present Status header\n{status_render}"
     );
 
     // act — palette also remains a secondary operator-facts route
@@ -240,9 +235,20 @@ fn assert_full_width_transcript_above_composer(plan: &FrameLayoutPlan, width: u1
         "transcript must span full shell content width at {width}x{height} (no right-rail reservation); transcript={transcript:?} shell={:?}",
         plan.shell
     );
+    // Freeze-matched composer inset (lead=2). Dense width ≤60 keeps inset 0.
+    let composer_inset = if width <= 60 { 0 } else { 2 };
     assert_eq!(
-        composer.width, plan.shell.width,
-        "composer must span full shell content width at {width}x{height}; composer={composer:?} shell={:?}",
+        composer.x,
+        plan.shell.x.saturating_add(composer_inset),
+        "composer must keep freeze horizontal inset at {width}x{height}; composer={composer:?} shell={:?}",
+        plan.shell
+    );
+    assert_eq!(
+        composer.width,
+        plan.shell
+            .width
+            .saturating_sub(composer_inset.saturating_mul(2)),
+        "composer width must keep freeze horizontal inset at {width}x{height}; composer={composer:?} shell={:?}",
         plan.shell
     );
     assert_eq!(
@@ -261,7 +267,7 @@ fn assert_composer_bottom_anchored(plan: &FrameLayoutPlan, width: u16, height: u
     });
 
     let dock_bottom = match plan.disclosure {
-        Some(disclosure) => disclosure.y + disclosure.height,
+        Some(disclosure) => disclosure.y + disclosure.height + 1,
         None => composer.y + composer.height,
     };
 

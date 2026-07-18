@@ -45,9 +45,19 @@ fn canonical_viewports_allocate_full_width_transcript_and_bottom_composer() {
             transcript.width, plan.shell.width,
             "P0-GEOM-01: transcript must span full shell width at {width}x{height}"
         );
+        // Freeze-matched horizontal inset (lead=2); dense width ≤60 keeps inset 0.
+        let composer_inset = if width <= 60 { 0 } else { 2 };
         assert_eq!(
-            composer.width, plan.shell.width,
-            "P0-GEOM-01: composer must span full shell width at {width}x{height}"
+            composer.x,
+            plan.shell.x.saturating_add(composer_inset),
+            "P0-GEOM-01: composer must keep freeze horizontal inset at {width}x{height}"
+        );
+        assert_eq!(
+            composer.width,
+            plan.shell
+                .width
+                .saturating_sub(composer_inset.saturating_mul(2)),
+            "P0-GEOM-01: composer width must keep freeze horizontal inset at {width}x{height}"
         );
         assert!(
             transcript.y + transcript.height <= composer.y,
@@ -55,7 +65,7 @@ fn canonical_viewports_allocate_full_width_transcript_and_bottom_composer() {
         );
 
         let dock_bottom = match plan.disclosure {
-            Some(disclosure) => disclosure.y + disclosure.height,
+            Some(disclosure) => disclosure.y + disclosure.height + 1,
             None => composer.y + composer.height,
         };
         assert_eq!(
@@ -83,19 +93,27 @@ fn startup_welcome_is_compose_first_with_harness_branding_no_reference_identity(
     let plan = plan_for(&app, 120, 40);
 
     // assert
-    let has_logo = rendered.contains("██╗  ██╗") || rendered.contains("Harness");
     assert!(
-        has_logo,
-        "P0-START-01: startup must show Harness branding (logo or title)\n{rendered}"
+        rendered.contains("Harness") || rendered.contains('╭'),
+        "P0-START-01: startup must show Harness welcome shell\n{rendered}"
+    );
+    assert!(
+        rendered.contains("New worktree")
+            || rendered.contains("New session")
+            || rendered.contains("Resume session"),
+        "P0-START-01: startup welcome panel must expose primary actions\n{rendered}"
     );
     assert!(
         !rendered.to_ascii_lowercase().contains("grok"),
         "P0-START-01: must not render Grok reference identity\n{rendered}"
     );
     assert!(
-        !rendered.to_ascii_lowercase().contains("spacexai")
-            && !rendered.to_ascii_lowercase().contains("spacex"),
-        "P0-START-01: must not render SpaceX/SpaceXAI reference identity\n{rendered}"
+        !rendered.to_ascii_lowercase().contains("spacexai"),
+        "P0-START-01: must not render SpaceXAI reference identity\n{rendered}"
+    );
+    assert!(
+        !rendered.to_ascii_lowercase().contains("spacex"),
+        "P0-START-01: must not render SpaceX reference identity\n{rendered}"
     );
     assert!(
         plan.composer.is_some(),
@@ -106,11 +124,24 @@ fn startup_welcome_is_compose_first_with_harness_branding_no_reference_identity(
         "P0-START-01: startup home must not reserve a persistent operator sidebar"
     );
     assert!(
-        rendered.contains("Ask anything")
-            || rendered.contains("ctrl+p commands")
-            || rendered.contains("Ctrl+p")
-            || rendered.contains("Type to start"),
-        "P0-START-01: composer entry surface must be present\n{rendered}"
+        rendered.contains('❯'),
+        "P0-START-01: composer must use ❯ prompt glyph\n{rendered}"
+    );
+    assert!(
+        rendered.contains("Logged in") || rendered.contains("API key") || rendered.contains("Beta"),
+        "P0-START-01: startup footer must render auth/status chrome\n{rendered}"
+    );
+    assert!(
+        !rendered.contains('┃'),
+        "P0-START-01: must not render legacy composer rail glyph ┃\n{rendered}"
+    );
+    let prompt_glyph_lines = rendered
+        .lines()
+        .filter(|line| line.contains('❯'))
+        .count();
+    assert_eq!(
+        prompt_glyph_lines, 1,
+        "P0-START-01: composer must paint a single ❯ prompt glyph, not a multi-row rail\n{rendered}"
     );
 }
 
@@ -130,14 +161,25 @@ fn startup_first_run_shows_onboarding_hint_returning_user_does_not() {
 
     // assert
     assert!(
-        first_run_render.contains("First run?")
-            || first_run_render.contains("harness doctor")
-            || first_run_render.contains("harness auth login"),
-        "P0-START-02: first-run must show onboarding hint\n{first_run_render}"
+        (first_run_render.contains("New worktree") || first_run_render.contains("New session"))
+            && first_run_render.contains('❯'),
+        "P0-START-02: first-run must show welcome actions and composer\n{first_run_render}"
     );
     assert!(
-        !returning_render.contains("First run?"),
+        first_run_render.contains("Changelog") || first_run_render.contains("Harness"),
+        "P0-START-02: first-run must show welcome identity/changelog\n{first_run_render}"
+    );
+    assert!(
+        !returning_render.contains("harness doctor")
+            && !returning_render.contains("harness auth login")
+            && !returning_render.contains("First run?"),
         "P0-START-02: returning user must not show first-run onboarding hint\n{returning_render}"
+    );
+    assert!(
+        returning_render.contains("Resume session")
+            || returning_render.contains("New worktree")
+            || returning_render.contains("New session"),
+        "P0-START-02: returning user must still show welcome actions\n{returning_render}"
     );
 
     // Returning users keep compose-first home but gain a session-history path.
@@ -151,7 +193,9 @@ fn startup_first_run_shows_onboarding_hint_returning_user_does_not() {
         "P0-START-02: returning user must reach session history path\n{picker_render}"
     );
     assert!(
-        !picker_render.contains("First run?"),
+        !picker_render.contains("First run?")
+            && !picker_render.contains("harness doctor")
+            && !picker_render.contains("harness auth login"),
         "P0-START-02: session history path must not show first-run onboarding\n{picker_render}"
     );
 }
@@ -282,6 +326,7 @@ fn permission_preempts_composer_and_preserves_draft_under_full_width_shell() {
     ));
     let plan = plan_for(&app, 120, 40);
     let rendered = render_text(&app, 120, 40);
+    app.handle_key(key(KeyCode::Right));
     app.handle_key(key(KeyCode::Enter));
 
     // assert
@@ -294,14 +339,33 @@ fn permission_preempts_composer_and_preserves_draft_under_full_width_shell() {
             transcript.width, plan.shell.width,
             "P0-COMP-02: transcript remains full width under permission"
         );
+        // Freeze-matched inset (lead=2) still applies under permission dock.
         assert_eq!(
-            composer.width, plan.shell.width,
-            "P0-COMP-02: composer remains full width under permission"
+            composer.x,
+            plan.shell.x.saturating_add(2),
+            "P0-COMP-02: composer keeps freeze horizontal inset under permission"
+        );
+        assert_eq!(
+            composer.width,
+            plan.shell.width.saturating_sub(4),
+            "P0-COMP-02: composer width keeps freeze horizontal inset under permission"
         );
     }
     assert!(
-        rendered.contains("Permission required"),
+        rendered.contains("Allow Edit"),
         "P0-COMP-02: permission overlay must render\n{rendered}"
+    );
+    assert!(
+        rendered.contains("always-approve"),
+        "P0-COMP-02: permission options must include always-approve\n{rendered}"
+    );
+    assert!(
+        rendered.contains('●') || rendered.contains("(●)"),
+        "P0-COMP-02: selected permission option must use filled radio marker\n{rendered}"
+    );
+    assert!(
+        rendered.contains('┃'),
+        "P0-COMP-02: permission dock must paint freeze-matched ┃ rail\n{rendered}"
     );
     assert_eq!(
         app.composer.prompt_buffer, draft,
@@ -450,7 +514,7 @@ fn permission_overlay_preempts_palette_and_slash() {
         "P0-PERM-01: permission must close/preempt palette"
     );
     assert!(
-        palette_render.contains("Permission required"),
+        palette_render.contains("Allow Edit"),
         "P0-PERM-01: permission overlay must render over palette path\n{palette_render}"
     );
     assert!(
@@ -496,7 +560,7 @@ fn permission_overlay_preempts_palette_and_slash() {
         "P0-PERM-01: slash draft character must remain in composer"
     );
     assert!(
-        slash_render.contains("Permission required"),
+        slash_render.contains("Allow Edit"),
         "P0-PERM-01: permission overlay must render over slash path\n{slash_render}"
     );
     assert!(

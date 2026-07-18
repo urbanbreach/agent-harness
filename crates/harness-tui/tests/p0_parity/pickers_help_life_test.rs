@@ -54,11 +54,14 @@ fn question_overlay_parses_prompts_preserves_draft_and_renders() {
         "P0-PERM-02: draft must be preserved under question overlay"
     );
     assert!(
-        rendered.contains("Pick one") || rendered.contains("Choice") || rendered.contains("1. A"),
+        rendered.contains("Pick one")
+            || rendered.contains("Choice")
+            || rendered.contains('●')
+            || rendered.contains('○'),
         "P0-PERM-02: question overlay must render\n{rendered}"
     );
     assert!(
-        !rendered.contains("Allow once"),
+        !rendered.contains("always-approve"),
         "P0-PERM-02: question must not render edit-permission allow chrome\n{rendered}"
     );
     assert!(
