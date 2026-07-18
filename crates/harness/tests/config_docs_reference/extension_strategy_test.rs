@@ -113,9 +113,7 @@ fn extension_strategy_documents_descriptor_only_manifest_seam() {
     let root = repo_root();
     let extension = read_doc("docs/extension-strategy.md");
     let config = read_doc("docs/config.md");
-    let roadmap = read_doc("docs/roadmap-v1.md");
     let sessions = read_doc("docs/sessions-and-replay.md");
-    let claim_matrix = read_doc("docs/claim-evidence-matrix.md");
     let schema_path = root.join("configs/extension-manifest.v1.schema.json");
 
     // act
@@ -151,19 +149,6 @@ fn extension_strategy_documents_descriptor_only_manifest_seam() {
             .contains("Replay never discovers manifests, loads extension code, registers tools"),
         "sessions/replay docs must forbid manifest code loading during replay"
     );
-    assert!(
-        claim_matrix.contains("Typed extension manifests ship as descriptor-only V1 metadata"),
-        "claim matrix must include typed extension manifest evidence row"
-    );
-    for forbidden_checked_claim in [
-        "- [x] Extension-provided tools go through the same permission checks as native\n  tools.",
-        "- [x] Replay can render old extension events without loading extension code.",
-    ] {
-        assert!(
-            !roadmap.contains(forbidden_checked_claim),
-            "roadmap must not keep checked runtime extension overclaim: {forbidden_checked_claim}"
-        );
-    }
     for descriptor_only_truth_anchor in [
         "Extension tool descriptors declare public permission names, but extension-provided\n  tools are not registered or executed in V1 and no runtime permission path\n  exists yet.",
         "Replay support for extension manifests is limited to static descriptor/config\n  metadata; it does not render extension tool events or load extension code.",

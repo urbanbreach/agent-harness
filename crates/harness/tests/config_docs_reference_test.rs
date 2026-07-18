@@ -83,18 +83,6 @@ fn shipped_builtin_skill_entries() -> Vec<(String, String)> {
     entries
 }
 
-fn maintained_claim_phrases(matrix: &str) -> Vec<String> {
-    matrix
-        .split("## Maintained claim phrase list")
-        .nth(1)
-        .unwrap_or_abort()
-        .lines()
-        .skip_while(|line| !line.trim_start().starts_with("- "))
-        .take_while(|line| line.trim_start().starts_with("- "))
-        .map(|line| line.trim_start().trim_start_matches("- ").to_string())
-        .collect()
-}
-
 #[test]
 fn config_docs_runtime_and_tui_keys_match_generated_schemas() {
     let contract = public_config_contract();
@@ -438,8 +426,6 @@ fn v1_release_docs_cover_permissions_extension_privacy_migration_and_provider_su
         "docs/privacy-and-local-data.md",
         "docs/migration-notes.md",
         "docs/provider-support.md",
-        "docs/claim-evidence-matrix.md",
-        "docs/release-blockers.md",
         "docs/budgets.md",
     ];
 
@@ -533,51 +519,6 @@ fn v1_release_docs_cover_permissions_extension_privacy_migration_and_provider_su
     }
     assert!(provider.contains("OpenAI-compatible `auto` mode"));
     assert!(provider.contains("No automatic model fallback"));
-}
-
-#[test]
-fn readme_release_claim_phrases_have_claim_evidence_rows() {
-    // arrange
-    let readme = read_doc("README.md");
-    let matrix = read_doc("docs/claim-evidence-matrix.md");
-
-    // act
-    let phrases = maintained_claim_phrases(&matrix);
-    let rows = markdown_table_rows(&matrix);
-
-    // assert
-    for phrase in phrases {
-        if !readme.contains(&phrase) {
-            continue;
-        }
-
-        let row = rows
-            .iter()
-            .find(|cols| cols.first().is_some_and(|claim| claim.contains(&phrase)))
-            .unwrap_or_else(|| {
-                panic!("README release claim phrase `{phrase}` has no claim-evidence matrix row")
-            });
-        assert!(
-            row.get(2).is_some_and(|cell| !cell.is_empty()),
-            "`{phrase}` missing evidence pointer"
-        );
-        assert!(
-            row.get(3).is_some_and(|cell| !cell.is_empty()),
-            "`{phrase}` missing verification command"
-        );
-        assert!(
-            row.get(4).is_some_and(|cell| !cell.is_empty()),
-            "`{phrase}` missing observed result"
-        );
-        assert!(
-            row.get(5).is_some_and(|cell| !cell.is_empty()),
-            "`{phrase}` missing timestamp/provenance"
-        );
-        assert!(
-            matches!(row.get(6).map(String::as_str), Some("PASS" | "LIMITATION")),
-            "`{phrase}` status must be PASS or LIMITATION"
-        );
-    }
 }
 
 mod extension_strategy_test {

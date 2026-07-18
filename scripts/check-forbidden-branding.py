@@ -37,8 +37,6 @@ ALLOWED_PARITY_PATHS: Final[set[Path]] = {
     Path("crates/harness-core/tests/fixtures/permission_ruleset_parity/opencode_agent_ts_matrix.json"),
     Path("crates/harness-core/tests/permission_ruleset_parity_inventory_test.rs"),
     Path("crates/harness/tests/bootstrap_profiles/oc_parity_permission_matrices_test.rs"),
-    Path("docs/permissions-ruleset-parity-progress.md"),
-    Path("PERMISSIONS_RULESET_PARITY_PRD.md"),
     Path("crates/harness-core/src/config.rs"),
     Path("crates/harness-core/src/config/public.rs"),
     Path("crates/harness-core/src/config/tests/permissions_models_test.rs"),
@@ -61,7 +59,6 @@ ALLOWED_MATCH_LINES: Final[dict[Path, set[int]]] = {
     Path("crates/harness-core/src/coord/formatter/resolver.rs"): {17},
     Path("crates/harness-tui/src/keybindings.rs"): {595},
     Path("crates/harness/src/models.rs"): {17},
-    Path("crates/harness/tests/config_docs_reference_test.rs"): {95},
     Path(
         "crates/harness/tests/config_schema_cli/"
         "03_config_validate_cli_loads_separate_tui_test.rs"
@@ -71,23 +68,8 @@ ALLOWED_MATCH_LINES: Final[dict[Path, set[int]]] = {
         141, 142, 143, 145, 146, 147, 149, 153, 156, 157,
         158, 160, 162, 163, 164, 165, 262, 282, 413, 414,
     },
-    Path("docs/test-suite-prd.md"): {
-        7, 139, 154, 157, 427, 433, 456, 487,
-        648, 871, 873, 874,
-    },
 }
-ALLOWED_MATCH_TEXT: Final[dict[Path, set[str]]] = {
-    Path("docs/test-suite-prd.md"): {
-        "- `inspirations/"
-        "open"
-        "code"
-        "/packages/http-recorder/README.md` + `src/*` + `test/record-replay.test.ts`,",
-        "`packages/"
-        "open"
-        "code"
-        "/test/cli/cmd/tui/attention.test.ts`,",
-    },
-}
+ALLOWED_MATCH_TEXT: Final[dict[Path, set[str]]] = {}
 SOURCE_PREFIX: Final[str] = "p" + "i"
 FORBIDDEN_PATTERNS: Final[list[re.Pattern[str]]] = [
     re.compile(pattern, re.IGNORECASE)
@@ -147,31 +129,6 @@ def is_allowed(path: Path) -> bool:
         return True
     name = path.name
     oc = "open" + "code"
-    if path.parent.name == "docs":
-        if name.startswith(oc + "-tools-parity"):
-            return True
-        vendor_ui_backend_suffix = "_ui_" + "p" + "i" + "_backend_prd.md"
-        if (
-            name.startswith("agent_harness_")
-            and name.endswith(vendor_ui_backend_suffix)
-        ):
-            return True
-        if name in (
-            "roadmap-v1.md",
-            oc + "-tui-parity.md",
-            oc + "-visual-tool-parity-prd.md",
-            "hyperplan-desktop-app-" + oc + "-feel.md",
-            "agent_harness_" + oc + "_ui_" + "p" + "i"
-            + "_backend_prd_missing_specs.md",
-            "config-restructure-prompt.md",
-            "config-restructure-spec.md",
-            # Intentionally cite inspirations/* look-here paths for implementers.
-            "harness-testing-enhancement-prd.md",
-            "harness-testing-enhancement-progress.md",
-            "harness-live-agent-testing-prd.md",
-            "harness-live-agent-testing-progress.md",
-        ):
-            return True
     return name.startswith(oc + "_tools_parity_inventory") and name.endswith(
         ".v1.json"
     )
