@@ -32,6 +32,7 @@ Modes:
   signoff-pty          Deterministic PTY signoff, single-threaded.
   signoff-live         Live provider signoff. Requires live env and runs live_proxy_preflight_requires_live_env first.
   signoff-native       Native visual signoff. Requires native visual env and runs ignored native visual tests single-threaded.
+  signoff-parity       Strict fail-closed dual-binary TUI reference parity (cells/pixels). Missing manifest/env/binary/owners = FAIL.
   stress-offline       Delegates to scripts/stress-harness.sh --mode offline.
   stress-live          Requires live env/config and delegates to scripts/stress-harness.sh --mode live.
   all-deterministic    Runs quality-gates, simulation, fast, integration, then signoff-pty only when PTY support checks pass.
@@ -61,6 +62,12 @@ Required environment:
   signoff-native requires:
     HARNESS_NATIVE_VISUAL=1
     DISPLAY=<display>
+  signoff-parity requires (fail-closed; no silent skip):
+    docs/tui-reference-parity-manifest.v1.json
+    cargo on PATH
+    harness-tui owner stages: manifest, p0/shell topology, cells, pixels, first-slice,
+      perm/question, tx/shell, responsive, and PTY owners with HARNESS_TUI_PTY_SIGNOFF=1
+    This lane owns dual-binary cells/pixels/PTY acceptance; docs/tui-signoff-manifest.v1.json does not.
   signoff-binary sets HARNESS_BINARY_SMOKE=1 and HARNESS_BINARY_SMOKE_ARTIFACT_DIR for the ignored binary smoke.
   all-deterministic PTY support requires:
     cargo on PATH
@@ -111,7 +118,7 @@ while [[ $# -gt 0 ]]; do
       usage
       exit 0
       ;;
-    fast|integration|quality-gates|perf|coverage|simulation|signoff-binary|signoff-pty|signoff-live|signoff-native|stress-offline|stress-live|all-deterministic|help)
+    fast|integration|quality-gates|perf|coverage|simulation|signoff-binary|signoff-pty|signoff-live|signoff-native|signoff-parity|stress-offline|stress-live|all-deterministic|help)
       if [[ -n "$mode" ]]; then
         printf 'Multiple modes provided: %s and %s\n' "$mode" "$1" >&2
         usage >&2
@@ -559,6 +566,10 @@ run_signoff_pty() {
   tui_happy_path_artifacts_dir="$(stage_dir_for signoff-pty harness_tui_happy_path_pty)/artifacts"
   mkdir -p "$tui_happy_path_artifacts_dir"
   run_stage signoff-pty harness_tui_happy_path_pty "$repo_root" env RUST_TEST_THREADS=1 HARNESS_TUI_HAPPY_PATH_ARTIFACT_DIR="$tui_happy_path_artifacts_dir" cargo nextest run -p harness --test pty_happy_path_recorded --test-threads 1 -- --ignored --exact scripted_tui_happy_path_records_start_prompt_permission_tool_edit_resume_and_quit || true
+  local dual_binary_artifacts_dir
+  dual_binary_artifacts_dir="$(stage_dir_for signoff-pty harness_tui_dual_binary_cli_pty)/artifacts"
+  mkdir -p "$dual_binary_artifacts_dir"
+  run_stage signoff-pty harness_tui_dual_binary_cli_pty "$repo_root" env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 HARNESS_TUI_PARITY_STRICT=1 HARNESS_TUI_HAPPY_PATH_ARTIFACT_DIR="$dual_binary_artifacts_dir" cargo nextest run -p harness --test pty_happy_path_recorded --test-threads 1 -- --ignored dual_binary_cli_pty || true
 }
 
 run_signoff_live() {
@@ -571,6 +582,119 @@ run_signoff_live() {
 run_signoff_native() {
   require_native_env signoff-native || return 0
   run_stage signoff-native native_visual_e2e_ignored "$repo_root" cargo nextest run -p harness-testkit --test native_visual_e2e --test-threads 1 -- --ignored || true
+}
+
+run_signoff_parity() {
+  local mode_name="signoff-parity"
+  local manifest_rel="docs/tui-reference-parity-manifest.v1.json"
+  local manifest_path="${repo_root}/${manifest_rel}"
+  local manifest_test_rel="crates/harness-tui/tests/reference_parity_manifest_test.rs"
+  local manifest_test_path="${repo_root}/${manifest_test_rel}"
+  local cells_test_rel="crates/harness-tui/tests/reference_parity_cells_test.rs"
+  local pixels_test_rel="crates/harness-tui/tests/reference_parity_pixels_test.rs"
+  local pty_test_rel="crates/harness-tui/tests/reference_parity_pty_test.rs"
+  local parity_artifacts_dir
+  parity_artifacts_dir="$(stage_dir_for signoff-parity parity_evidence)/artifacts"
+  mkdir -p "$parity_artifacts_dir"
+
+  if [[ "$dry_run" -eq 0 ]]; then
+    local missing=()
+    if [[ ! -f "$manifest_path" ]]; then
+      missing+=("${manifest_rel} (independent dual-binary cells/pixels/PTY manifest; tui-signoff-manifest.v1.json does not own this lane)")
+    fi
+    if ! command -v cargo >/dev/null 2>&1; then
+      missing+=("cargo is not available on PATH")
+    fi
+    for owner_rel in \
+      "$manifest_test_rel" \
+      "$cells_test_rel" \
+      "$pixels_test_rel" \
+      "$pty_test_rel" \
+      "crates/harness-tui/tests/reference_parity_first_slice_test.rs" \
+      "crates/harness-tui/tests/reference_parity_perm_question_test.rs" \
+      "crates/harness-tui/tests/reference_parity_tx_shell_test.rs" \
+      "crates/harness-tui/tests/reference_parity_responsive_test.rs" \
+      "crates/harness-tui/tests/p0_parity_contract_test.rs" \
+      "crates/harness-tui/tests/shell_topology_contract_test.rs"
+    do
+      if [[ ! -f "${repo_root}/${owner_rel}" ]]; then
+        missing+=("missing owner ${owner_rel} (silent skip is forbidden)")
+      fi
+    done
+    if [[ "${#missing[@]}" -ne 0 ]]; then
+      record_gate_failure "$mode_name" parity_prerequisites "${missing[@]}"
+      write_signoff_parity_verdict "$parity_artifacts_dir" FAIL missing_prerequisites
+      return 1
+    fi
+  fi
+
+  run_stage "$mode_name" reference_parity_manifest_present "$repo_root" test -f "$manifest_path"
+
+  run_stage "$mode_name" reference_parity_manifest_test "$repo_root" \
+    env HARNESS_TUI_PARITY_ARTIFACT_DIR="$parity_artifacts_dir" \
+    cargo nextest run -p harness-tui --test reference_parity_manifest_test
+
+  run_stage "$mode_name" p0_parity_contract_test "$repo_root" \
+    cargo nextest run -p harness-tui --test p0_parity_contract_test
+  run_stage "$mode_name" shell_topology_contract_test "$repo_root" \
+    cargo nextest run -p harness-tui --test shell_topology_contract_test
+
+  run_stage "$mode_name" reference_parity_cells_test "$repo_root" \
+    env HARNESS_TUI_PARITY_ARTIFACT_DIR="$parity_artifacts_dir" HARNESS_TUI_PARITY_STRICT=1 \
+    cargo nextest run -p harness-tui --test reference_parity_cells_test
+  run_stage "$mode_name" reference_parity_pixels_test "$repo_root" \
+    env HARNESS_TUI_PARITY_ARTIFACT_DIR="$parity_artifacts_dir" HARNESS_TUI_PARITY_STRICT=1 \
+    cargo nextest run -p harness-tui --test reference_parity_pixels_test
+  run_stage "$mode_name" reference_parity_first_slice_test "$repo_root" \
+    env HARNESS_TUI_PARITY_STRICT=1 \
+    cargo nextest run -p harness-tui --test reference_parity_first_slice_test
+  run_stage "$mode_name" reference_parity_perm_question_test "$repo_root" \
+    env HARNESS_TUI_PARITY_STRICT=1 \
+    cargo nextest run -p harness-tui --test reference_parity_perm_question_test
+  run_stage "$mode_name" reference_parity_tx_shell_test "$repo_root" \
+    env HARNESS_TUI_PARITY_STRICT=1 \
+    cargo nextest run -p harness-tui --test reference_parity_tx_shell_test
+  run_stage "$mode_name" reference_parity_responsive_test "$repo_root" \
+    env HARNESS_TUI_PARITY_STRICT=1 \
+    cargo nextest run -p harness-tui --test reference_parity_responsive_test
+  run_stage "$mode_name" reference_parity_pty_test "$repo_root" \
+    env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 HARNESS_TUI_PARITY_STRICT=1 \
+    cargo nextest run -p harness-tui --test reference_parity_pty_test --test-threads 1
+
+  local mode_failed=0
+  local stage_status
+  for stage_status in "$(mode_dir_for signoff-parity)"/stages/*/status.txt; do
+    if [[ -f "$stage_status" ]] && grep -q '^result=FAIL$' "$stage_status"; then
+      mode_failed=1
+      break
+    fi
+  done
+
+  if [[ "$dry_run" -eq 1 ]]; then
+    write_signoff_parity_verdict "$parity_artifacts_dir" DRY-RUN command_not_executed
+  elif [[ "$mode_failed" -ne 0 ]]; then
+    write_signoff_parity_verdict "$parity_artifacts_dir" FAIL stage_failure
+  else
+    write_signoff_parity_verdict "$parity_artifacts_dir" PASS all_required_stages_passed
+  fi
+}
+
+write_signoff_parity_verdict() {
+  local artifacts_dir="$1"
+  local verdict="$2"
+  local note="$3"
+  local verdict_path="${artifacts_dir}/parity-lane-verdict.txt"
+  mkdir -p "$artifacts_dir"
+  cat >"$verdict_path" <<EOF
+schema=harness-signoff-parity-verdict-v1
+mode=signoff-parity
+verdict=${verdict}
+note=${note}
+owns=dual_binary_cells_and_pixels
+stages=manifest,p0_contract,shell_topology,cells,pixels,first_slice,perm_question,tx_shell,responsive,pty_with_signoff
+does_not_own=tui-signoff-manifest.v1.json
+manifest=docs/tui-reference-parity-manifest.v1.json
+EOF
 }
 
 run_stress_offline() {
@@ -630,6 +754,9 @@ run_mode() {
       ;;
     signoff-native)
       run_signoff_native
+      ;;
+    signoff-parity)
+      run_signoff_parity
       ;;
     stress-offline)
       run_stress_offline
