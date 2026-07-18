@@ -244,7 +244,7 @@ pub(super) fn tab_cycles_build_and_plan_primary_agents() {
             .with_switchable_profiles(vec!["build".to_string(), "plan".to_string()]),
     );
 
-    app.handle_key(key(KeyCode::Tab));
+    app.handle_key(key_with_modifiers(KeyCode::Tab, KeyModifiers::CONTROL));
 
     assert_eq!(app.active_profile(), "plan");
     assert_eq!(app.current_agent_label().as_deref(), Some("Plan"));
@@ -262,7 +262,7 @@ pub(super) fn tab_cycles_build_and_plan_primary_agents() {
         assert_eq!(launch_metadata.switchable_profiles(), &["build", "plan"]);
     }
 
-    app.handle_key(key(KeyCode::BackTab));
+    app.handle_key(key_with_modifiers(KeyCode::BackTab, KeyModifiers::CONTROL));
 
     assert_eq!(app.active_profile(), "build");
     let intents = intents.lock().unwrap_or_abort();
@@ -314,7 +314,7 @@ pub(super) fn agent_cycle_preserves_user_selected_provider_model_across_profiles
             .with_switchable_profiles(vec!["build".to_string(), "plan".to_string()]),
     );
 
-    app.handle_key(key(KeyCode::Tab));
+    app.handle_key(key_with_modifiers(KeyCode::Tab, KeyModifiers::CONTROL));
 
     assert_eq!(app.active_profile(), "plan");
     assert_eq!(app.active_provider(), "openai-codex");
@@ -395,16 +395,16 @@ pub(super) fn switching_agent_after_submit_keeps_existing_turn_footer_agent() {
         app.handle_key(key(KeyCode::Char(ch)));
     }
     app.handle_key(key(KeyCode::Enter));
-    app.handle_key(key(KeyCode::Tab));
+    app.handle_key(key_with_modifiers(KeyCode::Tab, KeyModifiers::CONTROL));
 
     assert_eq!(app.active_profile(), "plan");
     let rendered = render_debug(&app, 100, 32);
     assert!(
-        rendered.contains("Build · active"),
+        rendered.contains("Build"),
         "submitted turn footer should keep its original agent after switching\n{rendered}"
     );
     assert!(
-        !rendered.contains("Plan · active"),
+        !rendered.contains("Plan"),
         "submitted turn footer must not follow the newly selected agent\n{rendered}"
     );
 }

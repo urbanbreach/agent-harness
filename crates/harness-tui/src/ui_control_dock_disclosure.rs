@@ -405,6 +405,24 @@ pub(super) fn render_control_dock_disclosure(
     let active_live_composer = !app.startup_shell_visible()
         && !app.completed_session_shell_active()
         && !dock.composer_disabled;
+
+    if active_live_composer && !app.interrupt_hint_visible() {
+        let freeze_row = live_freeze_shortcut_disclosure_row(app, theme, surface);
+        if spans_width(&freeze_row) <= usize::from(area.width) {
+            let disclosure_area = Rect {
+                x: area.x,
+                y: area.y,
+                width: area.width.saturating_sub(2).max(1),
+                height: area.height,
+            };
+            frame.render_widget(
+                Paragraph::new(Line::from(freeze_row)).style(base),
+                disclosure_area,
+            );
+            return;
+        }
+    }
+
     let mut hint_candidates = composer_disclosure_hint_candidates(app, dock, theme, surface);
     let summary_candidates = if active_live_composer {
         composer_context_summary_candidates(app, theme, surface)
@@ -607,41 +625,66 @@ fn compose_shortcut_row(
     spans
 }
 
-fn compose_interrupt_shortcut_row(
-    confirmation_pending: bool,
-    theme: &Theme,
-    surface: Color,
-) -> Vec<Span<'static>> {
-    let foreground = if confirmation_pending {
-        theme.text.accent
-    } else {
-        theme.text.primary
-    };
-    let label_tone = if confirmation_pending {
-        DisclosureTone::Accent
-    } else {
-        DisclosureTone::Secondary
-    };
-
+fn compose_interrupt_shortcut_row(theme: &Theme, surface: Color) -> Vec<Span<'static>> {
     vec![
         Span::styled(
-            "esc",
+            "ctrl+c",
             Style::default()
-                .fg(foreground)
+                .fg(theme.text.primary)
                 .bg(surface)
                 .add_modifier(Modifier::BOLD),
         ),
-        disclosure_segment(
-            if confirmation_pending {
-                " again to interrupt"
-            } else {
-                " interrupt"
-            },
-            label_tone,
-            theme,
-            surface,
-        ),
+        disclosure_segment(" interrupt", DisclosureTone::Secondary, theme, surface),
     ]
+}
+
+fn live_freeze_shortcut_disclosure_row(
+    app: &AppState,
+    theme: &Theme,
+    surface: Color,
+) -> Vec<Span<'static>> {
+    let bold = Style::default()
+        .fg(theme.text.primary)
+        .bg(surface)
+        .add_modifier(Modifier::BOLD);
+    let normal = Style::default().fg(theme.text.primary).bg(surface);
+    let dim = Style::default()
+        .fg(theme.text.tertiary)
+        .bg(surface)
+        .add_modifier(Modifier::DIM);
+
+    let mode_key = freeze_preferred_binding(app, Action::VariantCycle, "Shift+Tab");
+    let help_key = freeze_preferred_binding(app, Action::Help, "Ctrl+x");
+
+    let mut spans = Vec::new();
+    if !app.composer.prompt_buffer.is_empty() {
+        let send_key = freeze_preferred_binding(app, Action::SubmitPrompt, "Enter");
+        spans.extend([
+            Span::styled(send_key, bold),
+            Span::styled(":send", normal),
+            Span::styled("  │  ", dim),
+        ]);
+    }
+    spans.extend([
+        Span::styled(mode_key, bold),
+        Span::styled(":mode", normal),
+        Span::styled("  │  ", dim),
+        Span::styled(help_key, bold),
+        Span::styled(":shortcuts", normal),
+    ]);
+    spans
+}
+
+fn freeze_preferred_binding(app: &AppState, action: Action, freeze_label: &str) -> String {
+    let bindings = app.keymap.get_binding_strs(action);
+    if bindings.iter().any(|binding| binding == freeze_label) {
+        return freeze_label.to_string();
+    }
+    bindings
+        .into_iter()
+        .next()
+        .filter(|binding| binding != "-")
+        .unwrap_or_else(|| freeze_label.to_string())
 }
 
 fn composer_disclosure_hint_candidates(
@@ -689,11 +732,7 @@ fn composer_disclosure_hint_candidates(
     }
 
     if app.interrupt_hint_visible() {
-        return vec![compose_interrupt_shortcut_row(
-            app.interrupt_confirmation_pending(),
-            theme,
-            surface,
-        )];
+        return vec![compose_interrupt_shortcut_row(theme, surface)];
     }
 
     let commands = shortcut_binding(app, Action::Palette).unwrap_or_else(|| "Ctrl+p".to_string());

@@ -108,7 +108,7 @@ fn subagent_footer_body_renders_child_user_commit_without_assistant_summary() {
     let rendered = render_footer_rows(&app).join("\n");
     assert!(rendered.contains("Researcher (1 of 1)"), "{rendered}");
     assert!(!rendered.contains("child body line"), "{rendered}");
-    assert!(!rendered.contains("› Inspect footer parity"), "{rendered}");
+    assert!(!rendered.contains("❯ Inspect footer parity"), "{rendered}");
     assert!(
         !rendered.contains("Assistant · model-1"),
         "reference entry body suppresses summary commits; footer body should not spend a row on Harness assistant footer chrome\n{rendered}"

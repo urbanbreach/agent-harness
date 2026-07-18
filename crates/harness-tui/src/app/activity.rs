@@ -11,6 +11,8 @@ pub struct ActivityEntry {
     pub user_timestamp: Option<String>,
     pub request_data: Option<ProviderRequestStartedEvent>,
     pub thinking_text: String,
+    pub thinking_first_mono_ms: Option<u64>,
+    pub thinking_last_mono_ms: Option<u64>,
     pub transcript_text: String,
     pub usage: Option<ActivityUsage>,
     pub cache_usage: Option<ActivityCacheUsage>,
@@ -124,6 +126,8 @@ pub(in crate::app) fn new_streaming_activity_entry(
         user_timestamp,
         request_data,
         thinking_text: String::new(),
+        thinking_first_mono_ms: None,
+        thinking_last_mono_ms: None,
         transcript_text,
         usage: None,
         cache_usage: None,
@@ -142,6 +146,21 @@ impl ActivityEntry {
     pub fn duration_ms(&self) -> Option<u64> {
         (self.last_mono_ms >= self.first_mono_ms)
             .then_some(self.last_mono_ms.saturating_sub(self.first_mono_ms))
+    }
+
+    /// Mono span of reasoning deltas only — Grok "Thought for" duration.
+    pub fn thinking_duration_ms(&self) -> Option<u64> {
+        match (self.thinking_first_mono_ms, self.thinking_last_mono_ms) {
+            (Some(first), Some(last)) if last >= first => Some(last.saturating_sub(first)),
+            _ => None,
+        }
+    }
+
+    pub(in crate::app) fn note_thinking_mono(&mut self, mono_ms: u64) {
+        if self.thinking_first_mono_ms.is_none() {
+            self.thinking_first_mono_ms = Some(mono_ms);
+        }
+        self.thinking_last_mono_ms = Some(mono_ms);
     }
 
     pub(in crate::app) fn bump_revision(&mut self) {

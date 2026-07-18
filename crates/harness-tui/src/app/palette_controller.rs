@@ -124,12 +124,13 @@ pub struct PaletteRow {
 /// Check if a command is available in the current app state.
 pub fn is_available(app: &AppState, entry: &PaletteCommandEntry) -> bool {
     match entry.id {
-        "session.rename" | "session.timeline" | "session.fork" | "session.compact"
+        "session.rename" | "session.compact" => !app.replay_mode,
+        "session.timeline" | "session.fork"
         | "session.undo" | "messages.copy" | "session.copy" | "session.export" | "session.move" => {
             !app.startup_shell_visible() && !app.replay_mode
         }
 
-        "session.sidebar.toggle"
+        "session.status.open"
         | "session.toggle.conceal"
         | "session.toggle.timestamps"
         | "session.toggle.thinking"
@@ -153,8 +154,12 @@ pub fn is_available(app: &AppState, entry: &PaletteCommandEntry) -> bool {
         "console.org.switch" => false,
         "variant.list" => false,
 
-        "model.list" => app.model_switcher_supported(),
-        "variant.cycle" => !app.replay_mode,
+        "model.list" | "agent.list" | "mcp.list" => {
+            !app.startup_shell_visible() && app.model_switcher_supported()
+        }
+        "variant.cycle" => !app.startup_shell_visible() && !app.replay_mode,
+        "provider.connect" => !app.startup_shell_visible(),
+        "app.exit" => !app.startup_shell_visible(),
 
         "harness.toggle_terminal_panel" => !app.startup_shell_visible(),
         "harness.toggle_follow" => !app.startup_shell_visible() && !app.replay_mode,
@@ -177,8 +182,6 @@ pub fn is_available(app: &AppState, entry: &PaletteCommandEntry) -> bool {
         "prompt.stash" => !app.composer.prompt_buffer.is_empty(),
         "prompt.stash.pop" | "prompt.stash.list" => !app.prompt_stash.entries.is_empty(),
 
-        "provider.connect" => true,
-
         _ => true,
     }
 }
@@ -199,7 +202,6 @@ pub fn resolve_title(app: &AppState, entry: &PaletteCommandEntry) -> String {
         DynamicTitle::Static(title) => title.to_string(),
         DynamicTitle::ShowHide { show, hide } => {
             let is_shown = match entry.id {
-                "session.sidebar.toggle" => app.details_drawer_open(),
                 "session.toggle.timestamps" => app.transcript_view.show_transcript_timestamps,
                 "session.toggle.thinking" => app.transcript_view.show_transcript_thinking,
                 "session.toggle.actions" => app.transcript_view.show_tool_details,
@@ -253,9 +255,11 @@ pub fn resolve_title(app: &AppState, entry: &PaletteCommandEntry) -> String {
 /// - Results preserve category grouping.
 pub fn compute_palette_rows(app: &AppState, filter: &str) -> Vec<PaletteRow> {
     use PaletteCategory as C;
-    const CATEGORY_ORDER: [C; 7] = [
-        C::Suggested,
+    const CATEGORY_ORDER: [C; 9] = [
         C::Session,
+        C::Context,
+        C::ModelInput,
+        C::Suggested,
         C::Agent,
         C::Workspace,
         C::Provider,
@@ -278,28 +282,11 @@ pub fn compute_palette_rows(app: &AppState, filter: &str) -> Vec<PaletteRow> {
     });
 
     if needle.is_empty() {
-        let suggested: Vec<&PaletteCommandEntry> = available
-            .iter()
-            .copied()
-            .filter(|entry| is_suggested(app, entry))
-            .collect();
-
-        let mut rows: Vec<PaletteRow> = Vec::new();
-
-        for entry in &suggested {
-            rows.push(PaletteRow {
-                value: format!("suggested:{}", entry.id),
-                command_id: entry.id,
-                title: resolve_title(app, entry),
-                description: entry.description,
-                category: PaletteCategory::Suggested,
-                is_suggested_duplicate: true,
-                harness_only: entry.harness_only,
-            });
-        }
-
-        for entry in &available {
-            rows.push(PaletteRow {
+        const EMPTY_FILTER_CATEGORIES: [C; 3] = [C::Session, C::Context, C::ModelInput];
+        available
+            .into_iter()
+            .filter(|entry| EMPTY_FILTER_CATEGORIES.contains(&entry.category))
+            .map(|entry| PaletteRow {
                 value: entry.id.to_string(),
                 command_id: entry.id,
                 title: resolve_title(app, entry),
@@ -307,10 +294,8 @@ pub fn compute_palette_rows(app: &AppState, filter: &str) -> Vec<PaletteRow> {
                 category: entry.category,
                 is_suggested_duplicate: false,
                 harness_only: entry.harness_only,
-            });
-        }
-
-        rows
+            })
+            .collect()
     } else {
         let mut scored: Vec<(i64, usize, &PaletteCommandEntry)> = Vec::new();
 
@@ -557,9 +542,17 @@ mod tests {
     fn compute_palette_rows_empty_filter_returns_all() {
         let app = AppState::new_live(None, false, None);
         let rows = compute_palette_rows(&app, "");
+        assert!(!rows.is_empty(), "empty filter must return freeze inventory");
         assert!(
-            !rows.is_empty(),
-            "empty filter must return all available commands"
+            rows.iter().all(|r| {
+                matches!(
+                    r.category,
+                    PaletteCategory::Session
+                        | PaletteCategory::Context
+                        | PaletteCategory::ModelInput
+                )
+            }),
+            "empty filter inventory is Session/Context/Model & Input only"
         );
     }
 

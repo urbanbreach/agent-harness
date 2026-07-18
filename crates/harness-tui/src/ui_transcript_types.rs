@@ -31,6 +31,7 @@ pub(in crate::ui) struct TranscriptRenderSurface {
     pub(in crate::ui) interaction_rows: Option<Vec<Option<TranscriptInteractionRow>>>,
     pub(in crate::ui) selection_rows: Option<Vec<TranscriptSelectionRow>>,
     pub(in crate::ui) diff_hunk_offsets: Vec<usize>,
+    pub(in crate::ui) selected_rail: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -92,6 +93,7 @@ pub(super) struct TranscriptTurnSection {
 pub(super) struct TranscriptUserMessageSection {
     pub(super) text: String,
     pub(super) queued: bool,
+    pub(super) wall_clock: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -101,6 +103,9 @@ pub(super) struct TranscriptTurnHeader {
     pub(super) profile_label: String,
     pub(super) model_id: String,
     pub(super) duration_ms: Option<u64>,
+    /// Reasoning-only mono span for "Thought for" (Grok freeze packing).
+    pub(super) thinking_duration_ms: Option<u64>,
+    pub(super) total_tokens: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -160,6 +165,7 @@ pub(in crate::ui) enum TranscriptToolCallDetailBlock {
         diff_content: String,
         fallback_path: Option<String>,
         force_stacked: bool,
+        plain_numbered: bool,
         show_file_header: bool,
     },
     FileSection(TranscriptToolCallFileSection),
@@ -211,8 +217,10 @@ pub(super) enum TranscriptAssistantPart {
     Compaction(TranscriptCompactionSection),
 }
 
-pub(super) const TRANSCRIPT_ASSISTANT_BODY_PREFIX: &str = "   ";
+pub(super) const TRANSCRIPT_ASSISTANT_BODY_PREFIX: &str = "";
 pub(super) const TRANSCRIPT_USER_BODY_PREFIX: &str = "  ";
-pub(super) const TRANSCRIPT_REASONING_BODY_PREFIX: &str = "   ";
+pub(super) const TRANSCRIPT_REASONING_BODY_PREFIX: &str = "";
+pub(super) const TRANSCRIPT_REASONING_HEADER_PREFIX: &str = "";
+pub(super) const TRANSCRIPT_SELECTED_RAIL_GLYPH: &str = "❙";
 pub(super) const TRANSCRIPT_NESTED_INDENT: &str = "  ";
 pub(super) const TRANSCRIPT_OPCODE_EDIT_INDENT: &str = "    ";

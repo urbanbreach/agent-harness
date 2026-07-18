@@ -158,7 +158,7 @@ pub(super) fn tool_call_inline_diff_block(
                 .unwrap_or_default();
             Some((basic_unified_diff(&path, before, after), Some(path)))
         }
-        "fs.write" => {
+        "fs.write" | "write" => {
             let path = object
                 .get("filePath")
                 .or_else(|| object.get("path"))
@@ -170,7 +170,12 @@ pub(super) fn tool_call_inline_diff_block(
                 .get("content")
                 .and_then(serde_json::Value::as_str)
                 .unwrap_or_default();
-            Some((basic_unified_diff(&path, "", after), Some(path)))
+            let before = object
+                .get("oldContent")
+                .or_else(|| object.get("before"))
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("");
+            Some((basic_unified_diff(&path, before, after), Some(path)))
         }
         _ => None,
     }

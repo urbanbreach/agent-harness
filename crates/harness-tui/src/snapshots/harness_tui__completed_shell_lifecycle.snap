@@ -1,9 +1,11 @@
 ---
-source: crates/harness-tui/src/lib_tests.rs
+source: crates/harness-tui/src/lib_tests/startup_lifecycle_surface.rs
 expression: "completed_shell_render.lines().map(str::trim_end).collect::<Vec<_>>().join(\"\\n\")"
 ---
 
-              Waiting for first turn…
+             ui-ux-experiments ~/Projects/agent-harness/crates/harness-tui
+
+               Waiting for first turn…
 
 
 
@@ -18,11 +20,8 @@ expression: "completed_shell_render.lines().map(str::trim_end).collect::<Vec<_>>
 
 
 
+            ╭──────────────────────────────────────────────────────────────────────────╮
+            │ ❯ keep this draft                                                        │
+            ╰──────────────────────────────────────────────────────────────── unknown ─╯
 
-
-            ┃
-            ┃  keep this draft
-            ┃
-            ┃
-            ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
-            ready for first turn           Ctrl+Tab focus  ·  Ctrl+p commands  ·  q quit
+            ready for first turn                Tab focus  ·  ? commands  ·  Ctrl+q quit

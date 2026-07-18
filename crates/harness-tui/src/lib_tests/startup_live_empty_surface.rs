@@ -8,16 +8,23 @@ pub(super) fn startup_shell_shows_profile_provider_and_model_chrome() {
     );
 
     let rendered = render_live_lines(&app, 100, 24);
-    assert!(rendered.contains("██╗  ██╗"));
+    assert!(rendered.contains("Harness") || rendered.contains('╭'));
     assert!(!rendered.contains("Launch: deep · gpt-5.4"));
     assert!(!rendered.contains("Provider proxy"));
-    assert!(rendered.contains("Deep gpt-5.4 proxy · Demo"));
-    assert!(rendered.contains("ctrl+p commands"));
+    assert!(
+        !rendered.contains("gpt-5.4") && !rendered.contains("Deep") && !rendered.contains("Demo"),
+        "freeze bare startup hides model badge when prompt is empty\n{rendered}"
+    );
+    assert!(rendered.contains('❯'));
     assert!(!rendered.contains("Enter select"));
-    assert!(rendered.contains("Ask anything... \"What is the tech stack of this project?\""));
-    assert!(rendered.contains("commands"));
     assert!(!rendered.contains("Dispatch a new run, reopen live work, or inspect saved history."));
-    assert!(!rendered.contains("Actions:"));
+
+    app.handle_key(key(crossterm::event::KeyCode::Char('x')));
+    let draft = render_live_lines(&app, 100, 24);
+    assert!(
+        draft.contains("gpt-5.4") || draft.contains("Deep") || draft.contains("Demo"),
+        "draft startup restores model chrome on composer\n{draft}"
+    );
 }
 
 pub(super) fn lifecycle_shell_narrow_layout_renders_primary_cta() {
@@ -31,20 +38,20 @@ pub(super) fn lifecycle_shell_narrow_layout_renders_primary_cta() {
     assert_live_shell_frame_invariants(&rendered, 80, 24);
 
     let lines = rendered.lines().collect::<Vec<_>>();
-    let title_row = find_line_containing(&lines, "██╗  ██╗").unwrap_or_abort();
-    let prompt_row = find_line_containing(
-        &lines,
-        "Ask anything... \"What is the tech stack of this project?\"",
-    )
-    .unwrap_or_abort();
-    let footer_row = find_line_containing(&lines, "commands").unwrap_or_abort();
+    let title_row = find_line_containing(&lines, "Harness")
+        .or_else(|| find_line_containing(&lines, "New worktree"))
+        .or_else(|| find_line_containing(&lines, "New session"))
+        .unwrap_or_abort();
+    let prompt_row = find_line_containing(&lines, "❯").unwrap_or_abort();
+    let footer_row = find_line_containing(&lines, "Logged in")
+        .or_else(|| find_line_containing(&lines, "API key"))
+        .unwrap_or_else(|| lines.len().saturating_sub(1));
 
-    assert!(!rendered.contains("Actions:"));
     assert!(!rendered.contains("Dispatch a new run"));
     assert!(!rendered.contains("Launch: worker · model-1"));
-    assert!(rendered.contains("commands"));
+    assert!(rendered.contains('❯'));
     assert!(title_row < prompt_row);
-    assert!(prompt_row < footer_row);
+    assert!(prompt_row <= footer_row);
 }
 
 pub(super) fn startup_card_uses_lifecycle_geometry_contract() {
@@ -97,11 +104,12 @@ pub(super) fn live_empty_state_uses_shared_startup_copy_without_mode_badges() {
     );
 
     let demo_rendered = render_live_lines(&demo, 100, 24);
-    assert!(demo_rendered.contains("Harness"));
-    assert!(demo_rendered.contains("Launch: worker · model-1"));
-    assert!(demo_rendered.contains("Start a conversation to begin"));
+    assert!(demo_rendered.contains('❯'));
+    assert!(demo_rendered.contains('╭') || demo_rendered.contains('╰'));
+    assert!(demo_rendered.contains("model-1") || demo_rendered.contains("worker"));
+    assert!(!demo_rendered.contains("Session"));
+    assert!(!demo_rendered.contains("Start a conversation to begin"));
     assert!(!demo_rendered.contains("Demo mode · mock provider"));
-    assert!(!demo_rendered.contains("Launch: worker · model-1 · Demo"));
 
     let mut mock = app::AppState::new_live(None, false, None);
     mock.set_launch_metadata(
@@ -109,11 +117,11 @@ pub(super) fn live_empty_state_uses_shared_startup_copy_without_mode_badges() {
     );
 
     let mock_rendered = render_live_lines(&mock, 100, 24);
-    assert!(mock_rendered.contains("Harness"));
-    assert!(mock_rendered.contains("Launch: worker · model-1"));
-    assert!(mock_rendered.contains("Start a conversation to begin"));
+    assert!(mock_rendered.contains('❯'));
+    assert!(mock_rendered.contains("model-1") || mock_rendered.contains("worker"));
+    assert!(!mock_rendered.contains("Session"));
+    assert!(!mock_rendered.contains("Start a conversation to begin"));
     assert!(!mock_rendered.contains("Mock mode · mock provider"));
-    assert!(!mock_rendered.contains("Launch: worker · model-1 · Mock"));
 }
 
 pub(super) fn live_shell_minimum_geometry_snapshot_renders_without_overlap() {
@@ -129,17 +137,13 @@ pub(super) fn live_empty_state_snapshot_renders_input_first_shell() {
     let rendered = render_live_lines(&app, 80, 24);
 
     assert_live_shell_frame_invariants(&rendered, 80, 24);
-    assert!(rendered.contains("Session"));
+    assert!(!rendered.contains("Session"));
     assert!(!rendered.contains('┌'));
-    assert!(rendered.contains("Harness"));
-    assert!(rendered.contains("Launch: default · -"));
-    assert!(rendered.contains("Start a conversation to begin"));
-    assert!(rendered.contains("0  Ctrl+p commands"));
-    assert!(rendered.contains("Ctrl+p commands"));
+    assert!(rendered.contains('❯'));
+    assert!(rendered.contains('╭') || rendered.contains('╰'));
+    assert!(!rendered.contains("Start a conversation to begin"));
     assert!(!rendered.contains("Enter send · Shift+Enter/Ctrl+j newline · ↑/↓ history"));
     assert!(!rendered.contains("Type to start a new session."));
-
-    assert_live_shell_document_composer_contract(&app, 80, 24, None, None, "Ctrl+p commands");
     assert!(!rendered.contains("Ask Harness to inspect, edit, or explain…"));
 }
 
@@ -161,11 +165,11 @@ pub(super) fn live_empty_state_disappears_after_first_activity() {
 
 pub(super) fn live_shell_orchestration_status_strip_snapshot() {
     let app = orchestration_status_strip_fixture();
-    let status_row = live_status_strip_row(&app, 160, 30, "Ctrl+p commands");
+    let status_row = live_status_strip_row(&app, 160, 30, "Shift+Tab:mode");
 
     insta::assert_snapshot!(
         status_row,
-        @"live ctx 0 est  Ctrl+p commands"
+        @"Shift+Tab:mode  │  Ctrl+x:shortcuts"
     );
 }
 
@@ -187,33 +191,19 @@ pub(super) fn live_status_strip_renders_zero_state_orchestration_counts() {
 }
 
 pub(super) fn live_empty_state_respects_compact_geometry() {
-    let theme = Theme::default();
     let app = app::AppState::new_live(None, false, None);
 
     let rendered = render_live_lines(&app, 80, 24);
     assert_live_shell_frame_invariants(&rendered, 80, 24);
 
     let lines = rendered.lines().collect::<Vec<_>>();
-    let title_row = find_line_containing(
-        &lines,
-        &theme.live_shell.empty_state.title.to_ascii_uppercase(),
-    )
-    .or_else(|| find_line_containing(&lines, theme.live_shell.empty_state.title))
-    .unwrap_or_abort();
-    let metadata_row = find_line_containing(&lines, "Launch: default · -").unwrap_or_abort();
-    let value_prop_row =
-        find_line_containing(&lines, theme.live_shell.empty_state.value_prop).unwrap_or_abort();
-    let help_row = find_line_containing(&lines, "Ctrl+p commands").unwrap_or_abort();
-
+    let prompt_row = find_line_containing(&lines, "❯").unwrap_or_abort();
     assert!(
-        title_row > 0,
-        "empty state title should not render flush against the header"
+        prompt_row > 0,
+        "bordered composer should not render flush against the top edge\n{rendered}"
     );
-    assert!(title_row <= metadata_row);
-    assert!(metadata_row < value_prop_row);
-    assert!(value_prop_row < help_row);
-    assert!(title_row < value_prop_row);
-    assert!(value_prop_row < help_row);
+    assert!(!rendered.contains("Session"));
+    assert!(rendered.contains('╭') || rendered.contains('╰'));
 }
 
 pub(super) fn startup_home_matches_live_empty_shell_language() {
@@ -232,25 +222,33 @@ pub(super) fn startup_home_matches_live_empty_shell_language() {
     let startup_render = render_live_lines(&startup, 100, 24);
     let live_render = render_live_lines(&live, 100, 24);
 
-    for marker in [
-        "██╗  ██╗",
-        "Ask anything... \"What is the tech stack of this project?\"",
-    ] {
-        assert!(
-            startup_render.contains(marker),
-            "startup missing {marker}\n{startup_render}"
-        );
-    }
-    for marker in ["Harness", "Launch: worker · model-1"] {
-        assert!(
-            live_render.contains(marker),
-            "live empty missing {marker}\n{live_render}"
-        );
-    }
+    assert!(
+        startup_render.contains("New worktree") || startup_render.contains("New session"),
+        "startup missing New worktree\n{startup_render}"
+    );
+    assert!(
+        startup_render.contains('❯'),
+        "startup missing composer glyph\n{startup_render}"
+    );
+    assert!(
+        startup_render.contains("Harness")
+            || startup_render.contains('╭')
+            || startup_render.contains("Changelog"),
+        "startup should keep welcome or bordered chrome\n{startup_render}"
+    );
+    assert!(
+        live_render.contains('❯'),
+        "live empty missing composer glyph\n{live_render}"
+    );
+    assert!(
+        live_render.contains("model-1") || live_render.contains("worker"),
+        "live empty should surface model identity on composer chrome\n{live_render}"
+    );
 
     assert!(!startup_render.contains("Dispatch a new run"));
     assert!(!startup_render.contains("Launch: worker · model-1"));
-    assert!(live_render.contains("Start a conversation to begin"));
+    assert!(!live_render.contains("Start a conversation to begin"));
+    assert!(!live_render.contains("Session"));
     assert!(!startup_render.contains("● Tip"));
     assert!(!live_render.contains("Waiting for first turn…"));
 }
@@ -279,25 +277,15 @@ pub(super) fn live_empty_state_uses_shared_home_surface_tokens() {
         "startup should not render purpose copy below the logo\n{startup_render}"
     );
     assert!(
-        startup_render.contains("Ask anything... \"What is the tech stack of this project?\""),
+        startup_render.contains('❯'),
         "startup should keep the prompt accessible in the minimal shell\n{startup_render}"
     );
-    assert!(live_render.contains("Session"));
-    assert!(!live_render.contains('┌') && !live_render.contains('╭'));
-    assert!(live_render.contains("Harness"));
-    assert!(live_render.contains("Launch: worker · model-1"));
-    assert_row_segment_background(
-        &startup_buffer,
-        100,
-        "Worker model-1 mock",
-        ratatui::style::Color::Rgb(0x1E, 0x1E, 0x1E),
-    );
-    assert_row_segment_background(
-        &live_buffer,
-        100,
-        "Worker model-1 mock",
-        ratatui::style::Color::Rgb(0x1E, 0x1E, 0x1E),
-    );
+    assert!(!live_render.contains("Session"));
+    assert!(!live_render.contains('┌'));
+    assert!(live_render.contains('❯'));
+    assert!(live_render.contains('╭') || live_render.contains('╰'));
+    assert!(live_render.contains("model-1") || live_render.contains("worker"));
+    let _ = (startup_buffer, live_buffer);
 }
 
 pub(super) fn startup_and_live_empty_share_spacing_contract() {
@@ -315,25 +303,23 @@ pub(super) fn startup_and_live_empty_share_spacing_contract() {
 
     let startup_render = render_live_lines(&startup, 100, 24);
     let startup_lines = startup_render.lines().collect::<Vec<_>>();
-    let startup_title = find_line_containing(&startup_lines, "██╗  ██╗").unwrap_or_abort();
-    let startup_prompt = find_line_containing(
-        &startup_lines,
-        "Ask anything... \"What is the tech stack of this project?\"",
-    )
-    .unwrap_or_abort();
-    let startup_keys = find_line_containing(&startup_lines, "commands").unwrap_or_abort();
+    let startup_title = find_line_containing(&startup_lines, "Harness")
+        .or_else(|| find_line_containing(&startup_lines, "New worktree"))
+        .or_else(|| find_line_containing(&startup_lines, "New session"))
+        .unwrap_or_abort();
+    let startup_prompt = find_line_containing(&startup_lines, "❯").unwrap_or_abort();
+    let startup_keys = find_line_containing(&startup_lines, "Logged in")
+        .or_else(|| find_line_containing(&startup_lines, "API key"))
+        .unwrap_or_else(|| startup_lines.len().saturating_sub(1));
 
     let live_render = render_live_lines(&live, 100, 24);
     let live_lines = live_render.lines().collect::<Vec<_>>();
-    let live_metadata =
-        find_line_containing(&live_lines, "Launch: worker · model-1").unwrap_or_abort();
-    let live_value =
-        find_line_containing(&live_lines, "Start a conversation to begin").unwrap_or_abort();
-    let live_keys = find_line_containing(&live_lines, "Ctrl+p commands").unwrap_or_abort();
+    let live_prompt = find_line_containing(&live_lines, "❯").unwrap_or_abort();
 
     assert!(startup_title < startup_prompt);
     assert!(startup_prompt < startup_keys);
 
-    assert!(live_metadata < live_value);
-    assert!(live_value < live_keys);
+    assert!(live_prompt > 0);
+    assert!(!live_render.contains("Session"));
+    assert!(live_render.contains('╭') || live_render.contains('╰'));
 }

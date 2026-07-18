@@ -488,8 +488,7 @@ impl AppState {
             .nth(self.composer.prompt_cursor)
     }
 
-    #[cfg(test)]
-    pub(crate) fn set_file_mention_workspace_root_for_test(&mut self, root: PathBuf) {
+    pub fn set_file_mention_workspace_root_for_test(&mut self, root: PathBuf) {
         self.file_mention_workspace_root = Some(root);
         self.file_mention_index = None;
     }
@@ -515,7 +514,7 @@ impl AppState {
             .map(|entry| (entry.frequency, entry.last_used_unix))
     }
 
-    pub(crate) fn selected_file_tags(&self) -> Vec<SelectedFileTag> {
+    pub fn selected_file_tags(&self) -> Vec<SelectedFileTag> {
         self.file_mention_tags
             .iter()
             .filter_map(|tag| match &tag.part {

@@ -46,7 +46,10 @@ pub(crate) fn exact_test_startup_shell_keeps_no_default_tab_chrome_after_runtime
 
     assert!(!debug.contains("Launch: deep · GPT-5.4 Mini · Deterministic"));
     assert!(!debug.contains("Provider default"));
-    assert!(debug.contains("Ask anything... \"What is the tech stack of this project?\""));
+    assert!(
+        debug.contains('❯') || debug.contains("Harness") || debug.contains('╭'),
+        "startup shell must keep compose-first chrome\n{debug}"
+    );
     assert!(!debug.contains("Tabs"));
     assert!(!debug.contains("Actions:"));
     assert!(!debug.contains("Enter select"));

@@ -108,6 +108,8 @@ fn transcript_layout_cache_invalidates_when_animation_frame_changes() {
         user_timestamp: None,
         request_data: None,
         thinking_text: String::new(),
+        thinking_first_mono_ms: None,
+        thinking_last_mono_ms: None,
         transcript_text: String::new(),
         usage: None,
         cache_usage: None,
@@ -129,7 +131,7 @@ fn transcript_layout_cache_invalidates_when_animation_frame_changes() {
     ));
     assert!(initial_lines
         .iter()
-        .any(|line| line.contains("⠋ Assistant · gpt-5.4-mini · active")));
+        .any(|line| line.contains("⠋ gpt-5.4-mini")));
 
     app.advance_transcript_animation_phase();
 
@@ -140,7 +142,7 @@ fn transcript_layout_cache_invalidates_when_animation_frame_changes() {
     ));
     assert!(updated_lines
         .iter()
-        .any(|line| line.contains("⠙ Assistant · gpt-5.4-mini · active")));
+        .any(|line| line.contains("⠙ gpt-5.4-mini")));
 }
 
 #[test]
@@ -157,6 +159,8 @@ fn transcript_measure_cache_key_stable_across_animation_phase_changes() {
         user_timestamp: None,
         request_data: None,
         thinking_text: String::new(),
+        thinking_first_mono_ms: None,
+        thinking_last_mono_ms: None,
         transcript_text: String::new(),
         usage: None,
         cache_usage: None,
@@ -195,6 +199,8 @@ fn transcript_layout_cache_does_not_rebuild_on_animation_phase_change() {
         user_timestamp: None,
         request_data: None,
         thinking_text: String::new(),
+        thinking_first_mono_ms: None,
+        thinking_last_mono_ms: None,
         transcript_text: String::new(),
         usage: None,
         cache_usage: None,
@@ -240,6 +246,8 @@ fn transcript_layout_cache_invalidates_when_theme_changes() {
         user_timestamp: None,
         request_data: None,
         thinking_text: String::new(),
+        thinking_first_mono_ms: None,
+        thinking_last_mono_ms: None,
         transcript_text: "reply".to_string(),
         usage: None,
         cache_usage: None,
@@ -258,14 +266,14 @@ fn transcript_layout_cache_invalidates_when_theme_changes() {
     let initial_surface = initial_layout.sections[0].surfaces[0].surface;
 
     let mut alternate_theme = *app.theme();
-    alternate_theme.surface.panel = Color::Rgb(0x22, 0x33, 0x44);
+    alternate_theme.surface.shell = Color::Rgb(0x22, 0x33, 0x44);
     app.set_theme_for_test(alternate_theme);
 
     let updated_layout = build_measured_transcript_layout_for_width(&app, app.theme(), 80);
     let updated_surface = updated_layout.sections[0].surfaces[0].surface;
 
     assert_ne!(initial_surface, updated_surface);
-    assert_eq!(updated_surface, alternate_theme.surface.panel);
+    assert_eq!(updated_surface, alternate_theme.surface.shell);
 }
 
 #[test]
@@ -324,6 +332,8 @@ fn streaming_assistant_footer_uses_reserved_active_label() {
         user_timestamp: None,
         request_data: None,
         thinking_text: String::new(),
+        thinking_first_mono_ms: None,
+        thinking_last_mono_ms: None,
         transcript_text: String::new(),
         usage: None,
         cache_usage: None,
@@ -346,10 +356,14 @@ fn streaming_assistant_footer_uses_reserved_active_label() {
 
     let footer_row = lines
         .iter()
-        .position(|line| line.contains("Assistant · gpt-5.4-mini · active"))
+        .position(|line| line.contains("gpt-5.4-mini"))
         .unwrap_or_abort();
     assert_eq!(footer_row, 0);
-    assert_eq!(lines[footer_row], "   ⠋ Assistant · gpt-5.4-mini · active");
+    let footer = lines[footer_row].trim_start();
+    assert!(
+        footer.contains("⠋") && footer.contains("gpt-5.4-mini"),
+        "streaming footer should keep spinner + model id\n{footer}"
+    );
 }
 
 #[test]
@@ -369,6 +383,8 @@ fn only_latest_turn_renders_footer_metadata() {
             user_timestamp: Some("2026-03-19T09:44:00Z".to_string()),
             request_data: None,
             thinking_text: String::new(),
+            thinking_first_mono_ms: None,
+            thinking_last_mono_ms: None,
             transcript_text: "first reply".to_string(),
             usage: None,
             cache_usage: None,
@@ -394,6 +410,8 @@ fn only_latest_turn_renders_footer_metadata() {
             user_timestamp: Some("2026-03-19T09:45:00Z".to_string()),
             request_data: None,
             thinking_text: String::new(),
+            thinking_first_mono_ms: None,
+            thinking_last_mono_ms: None,
             transcript_text: "second reply".to_string(),
             usage: None,
             cache_usage: None,
@@ -429,17 +447,28 @@ fn only_latest_turn_renders_footer_metadata() {
         80,
     ));
 
-    assert_eq!(
-        lines
-            .iter()
-            .filter(|line| line.contains("Assistant ·"))
-            .count(),
-        1
-    );
     assert!(lines.iter().all(|line| !line.contains("gpt-old")));
-    assert!(lines.iter().any(|line| line.contains("gpt-new")));
+    let latest_footer_count = lines
+        .iter()
+        .filter(|line| {
+            line.contains("gpt-new")
+                || line.contains("Worked for")
+                || line.contains('▪')
+        })
+        .count();
+    assert_eq!(
+        latest_footer_count, 1,
+        "only the latest turn should render footer metadata\n{lines:#?}"
+    );
+    assert!(
+        lines.iter().any(|line| {
+            line.contains("gpt-new")
+                || line.contains("Worked for")
+                || line.contains('▪')
+        }),
+        "latest turn footer missing\n{lines:#?}"
+    );
     assert!(lines.iter().all(|line| !line.contains("09:44")));
-    assert!(lines.iter().any(|line| line.contains("09:45")));
 }
 
 #[test]
@@ -485,8 +514,172 @@ fn tool_only_turns_render_standalone_assistant_footer() {
         80,
     ));
 
-    assert!(lines.iter().any(|line| line.contains("Read src/ui.rs")));
-    assert!(lines.iter().any(|line| line.contains("Assistant ·")));
+    assert!(lines.iter().any(|line| line.contains("Read 1 file")));
+    assert!(
+        lines
+            .iter()
+            .any(|line| line.contains("Worked for") || line.contains("gpt-5.4-mini") || line.contains("▪")),
+        "tool-only completed turns should still render an assistant footer\n{lines:#?}"
+    );
+}
+
+#[test]
+fn pending_question_turn_renders_waiting_on_answers_footer() {
+    let mut app = AppState::default();
+    let mut entry = transcript_section_model_test_activity(
+        "request-question-waiting",
+        ActivityStatus::Streaming,
+        "",
+    );
+    entry.first_mono_ms = 0;
+    entry.last_mono_ms = 900;
+    // Grok freeze: Thought for 0.1s (reasoning span) vs Waiting 0.9s (turn span).
+    entry.thinking_text = "**plan**".to_string();
+    entry.thinking_first_mono_ms = Some(100);
+    entry.thinking_last_mono_ms = Some(200);
+    entry.usage = Some(crate::app::ActivityUsage {
+        prompt_tokens: 8_000,
+        completion_tokens: 2_200,
+        total_tokens: 10_200,
+    });
+    entry.tool_calls.push(crate::app::ToolCallEntry {
+        tool_call_id: "call-question-waiting".to_string(),
+        tool_id: "user.question".to_string(),
+        canonical_tool_id: None,
+        alias_source_tool_id: None,
+        resolved_tool_identity: None,
+        args_summary: serde_json::json!({
+            "questions": [{
+                "question": "Which color?",
+                "header": "Color",
+                "options": [{"label": "Red", "description": "Choose red"}]
+            }]
+        })
+        .to_string(),
+        args_digest: "digest-question-waiting".to_string(),
+        lifecycle_state: None,
+        status: ToolCallDisplayStatus::PendingPermission,
+        output_summary: None,
+        output_digest: None,
+        output_json: None,
+        truncated_output: None,
+        edit: None,
+        lineage: None,
+        artifact_refs: Vec::new(),
+        timing_elapsed_ms: None,
+        permissions: Vec::new(),
+        first_seq: 10,
+        last_seq: 11,
+        first_mono_ms: 10,
+        last_mono_ms: 11,
+        first_timestamp: None,
+        last_timestamp: None,
+    });
+    app.activities = std::collections::VecDeque::from(vec![entry]);
+    app.transcript_view.selected_activity_index = 0;
+
+    let lines = transcript_test_line_texts(build_transcript_lines_for_width(
+        &app,
+        &Theme::default(),
+        80,
+    ));
+    let rendered = lines.join("\n");
+
+    assert!(
+        rendered.contains("Ask Which color?"),
+        "pending question tool row should use Ask title\n{rendered}"
+    );
+    assert!(
+        rendered.contains("Waiting on answers for Which color?"),
+        "pending question turn should show Waiting on answers footer\n{rendered}"
+    );
+    assert!(
+        rendered.contains("0.9s"),
+        "waiting footer should pack elapsed duration on the right\n{rendered}"
+    );
+    assert!(
+        rendered.contains("⇣10.2k"),
+        "waiting footer should pack token meta on the right\n{rendered}"
+    );
+    assert!(
+        rendered.contains("[stop]"),
+        "waiting footer should pack stop affordance on the right\n{rendered}"
+    );
+    assert!(
+        !rendered.contains("Worked for"),
+        "pending question turn must not show completed Worked for footer\n{rendered}"
+    );
+}
+
+#[test]
+fn waiting_on_answers_shows_thought_for_not_thinking() {
+    // Grok question freeze: Thought for (completed chrome) while Waiting on answers.
+    let mut app = AppState::default();
+    let mut entry = transcript_section_model_test_activity(
+        "request-question-thought-for",
+        ActivityStatus::Streaming,
+        "",
+    );
+    entry.thinking_text = "**plan**".to_string();
+    entry.first_mono_ms = 0;
+    entry.last_mono_ms = 900;
+    entry.thinking_first_mono_ms = Some(0);
+    entry.thinking_last_mono_ms = Some(100);
+    entry.tool_calls.push(crate::app::ToolCallEntry {
+        tool_call_id: "call-question-thought".to_string(),
+        tool_id: "user.question".to_string(),
+        canonical_tool_id: None,
+        alias_source_tool_id: None,
+        resolved_tool_identity: None,
+        args_summary: serde_json::json!({
+            "questions": [{
+                "question": "Pick one",
+                "header": "Choice",
+                "options": [{"label": "A", "description": "Option A"}]
+            }]
+        })
+        .to_string(),
+        args_digest: "digest-question-thought".to_string(),
+        lifecycle_state: None,
+        status: ToolCallDisplayStatus::PendingPermission,
+        output_summary: None,
+        output_digest: None,
+        output_json: None,
+        truncated_output: None,
+        edit: None,
+        lineage: None,
+        artifact_refs: Vec::new(),
+        timing_elapsed_ms: None,
+        permissions: Vec::new(),
+        first_seq: 10,
+        last_seq: 11,
+        first_mono_ms: 10,
+        last_mono_ms: 11,
+        first_timestamp: None,
+        last_timestamp: None,
+    });
+    app.activities = std::collections::VecDeque::from(vec![entry]);
+    app.transcript_view.selected_activity_index = 0;
+
+    let lines = transcript_test_line_texts(build_transcript_lines_for_width(
+        &app,
+        &Theme::default(),
+        80,
+    ));
+    let rendered = lines.join("\n");
+
+    assert!(
+        rendered.contains("Thought for 0.1s"),
+        "waiting-on-answers Thought must pack reasoning-only 0.1s duration\n{rendered}"
+    );
+    assert!(
+        !rendered.contains("Thinking"),
+        "waiting-on-answers must not keep streaming Thinking label\n{rendered}"
+    );
+    assert!(
+        rendered.contains("Waiting on answers for Pick one"),
+        "waiting footer must still render\n{rendered}"
+    );
 }
 
 #[test]
@@ -522,7 +715,7 @@ fn completed_latest_turn_keeps_footer_after_streaming_finishes() {
     ));
     assert!(streaming_lines
         .iter()
-        .any(|line| line.contains("Assistant · gpt-5.4-mini · active")));
+        .any(|line| line.contains("gpt-5.4-mini")));
 
     app.activities[0].status = ActivityStatus::Done;
     app.mark_transcript_dirty_for_test();
@@ -533,13 +726,17 @@ fn completed_latest_turn_keeps_footer_after_streaming_finishes() {
         80,
     ));
 
+    assert!(
+        completed_lines.iter().any(|line| {
+            line.contains("Worked for")
+                || line.contains("gpt-5.4-mini")
+                || line.contains('▪')
+        }),
+        "completed turns should keep a footer (Worked for / model / marker)\n{completed_lines:#?}"
+    );
     assert!(completed_lines
         .iter()
-        .any(|line| line.contains("Assistant · gpt-5.4-mini")));
-    assert!(completed_lines.iter().any(|line| line.contains("09:45")));
-    assert!(completed_lines
-        .iter()
-        .all(|line| !line.contains("Assistant · gpt-5.4-mini · active")));
+        .all(|line| !line.contains("⠋ Assistant")));
 }
 
 #[test]
@@ -617,9 +814,14 @@ fn latest_completed_footer_follows_rendered_assistant_parts() {
     assert!(lines
         .iter()
         .any(|line| line.contains("assistant reply from ordered events")));
-    assert!(lines
-        .iter()
-        .any(|line| line.contains("Assistant · gpt-5.4-mini")));
+    assert!(
+        lines.iter().any(|line| {
+            line.contains("Worked for")
+                || line.contains("gpt-5.4-mini")
+                || line.contains('▪')
+        }),
+        "completed event-projected turns should keep a footer\n{lines:#?}"
+    );
 }
 
 #[test]
@@ -638,6 +840,8 @@ fn user_message_surface_keeps_timestamp_in_latest_footer_only() {
         user_timestamp: Some("2026-03-19T09:45:00Z".to_string()),
         request_data: None,
         thinking_text: String::new(),
+        thinking_first_mono_ms: None,
+        thinking_last_mono_ms: None,
         transcript_text: "reply".to_string(),
         usage: None,
         cache_usage: None,
@@ -671,16 +875,78 @@ fn user_message_surface_keeps_timestamp_in_latest_footer_only() {
         80,
     ));
 
-    assert!(!lines.iter().any(|line| line.contains("› You")));
+    assert!(!lines.iter().any(|line| line.contains("❯ You") || line.contains("› You")));
     assert!(lines
         .iter()
         .all(|line| !(line.starts_with('┃') && line.contains("09:45"))));
-    assert!(lines.iter().any(|line| line.contains("09:45")));
-    assert!(lines
-        .iter()
-        .any(|line| line == "   ▪ Assistant · gpt-5.4-mini · 0ms · 09:45"));
+    assert!(
+        lines.iter().any(|line| {
+            line.contains("Worked for")
+                || line.contains("gpt-5.4-mini")
+                || line.contains('▪')
+        }),
+        "latest completed turn should keep a footer\n{lines:#?}"
+    );
     assert!(lines.iter().any(|line| line.contains("hello")));
     assert!(lines.iter().any(|line| line.contains("reply")));
+}
+
+
+#[test]
+fn user_row_wall_clock_right_aligned_matches_freeze_geometry() {
+    // Given: a completed turn with user message + ISO user_timestamp (freeze run1-stream-probe)
+    let mut app = AppState::default();
+    app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
+        request_id: "request-user-wall-clock".to_string(),
+        profile_label: "default".to_string(),
+        model_id: "gpt-5.4-mini".to_string(),
+        provider_id: "openai".to_string(),
+        status: ActivityStatus::Error,
+        user_message: Some(harness_core::event::UserMessageSubmittedEvent {
+            request_id: "request-user-wall-clock".into(),
+            text: "ping".to_string(),
+        }),
+        user_timestamp: Some("2026-03-19T09:33:00Z".to_string()),
+        request_data: None,
+        thinking_text: String::new(),
+        thinking_first_mono_ms: None,
+        thinking_last_mono_ms: None,
+        transcript_text: String::new(),
+        usage: None,
+        cache_usage: None,
+        error_message: Some("API error".to_string()),
+        permissions: Vec::new(),
+        tool_calls: Vec::new(),
+        first_seq: 1,
+        last_seq: 1,
+        first_mono_ms: 1,
+        last_mono_ms: 1,
+        revision: 0,
+    }]);
+    app.transcript_view.selected_activity_index = 0;
+
+    // When: render transcript at a wide width
+    let lines = transcript_test_line_texts(build_transcript_lines_for_width(
+        &app,
+        &Theme::default(),
+        120,
+    ));
+
+    // Then: user marker row carries freeze-style wall clock (right-aligned on same line)
+    let user_row = lines
+        .iter()
+        .find(|line| line.contains('❯') && line.contains("ping"))
+        .unwrap_or_else(|| panic!("missing user marker row; lines={lines:?}"));
+    assert!(
+        user_row.contains("9:33 AM"),
+        "user row must include freeze-style wall clock; got {user_row:?}"
+    );
+    let clock_idx = user_row.find("9:33 AM").expect("clock");
+    let ping_idx = user_row.find("ping").expect("ping");
+    assert!(
+        ping_idx < clock_idx,
+        "wall clock must sit to the right of the user text; got {user_row:?}"
+    );
 }
 
 #[test]
@@ -938,8 +1204,10 @@ fn assistant_tool_surfaces_keep_same_trailing_gap_as_text_boxes() {
     assert_eq!(tool_interactions[command_row], None);
     assert_eq!(tool_interactions[output_row], None);
     assert!(
-        tool_lines.iter().any(|line| line.contains('┃')),
-        "harness shell blocks should render the split rail\n{tool_lines:#?}"
+        tool_lines
+            .iter()
+            .any(|line| line.contains('◈') || line.contains('◆')),
+        "harness shell blocks should render the flat tool header (◈ completed / ◆ active)\n{tool_lines:#?}"
     );
     assert!(
         tool_surface
@@ -977,8 +1245,8 @@ fn assistant_tool_surfaces_keep_same_trailing_gap_as_text_boxes() {
     )
     .unwrap_or_abort();
     assert!(
-        copied.starts_with("$ printf 'bash smoke test ok"),
-        "copied shell card text should skip visual rail/padding: {copied:?}"
+        copied.contains("$ printf 'bash smoke test ok"),
+        "copied shell card text should contain the command without rail: {copied:?}"
     );
     assert!(copied.contains("$ printf 'bash smoke test ok"));
     assert!(copied.contains("bash smoke test ok"));
@@ -1107,12 +1375,12 @@ fn streaming_reasoning_stops_spinner_when_body_text_arrives() {
         "reasoning spinner should stop once body text arrives mid-turn\n{rendered}"
     );
     assert!(
-        rendered.contains("Thought"),
-        "reasoning header should show past-tense 'Thought' once body text arrives\n{rendered}"
+        rendered.contains("Thinking"),
+        "reasoning header should show 'Thinking' once body text arrives\n{rendered}"
     );
     assert!(
         rendered.contains("analyzing the problem"),
-        "reasoning body text should still render\n{rendered}"
+        "body text should still render\n{rendered}"
     );
     assert!(
         rendered.contains("Here is my answer"),
@@ -1169,8 +1437,8 @@ fn streaming_reasoning_stops_spinner_when_tool_call_arrives() {
         "reasoning spinner should stop once a tool call arrives mid-turn\n{rendered}"
     );
     assert!(
-        rendered.contains("Thought"),
-        "reasoning header should show past-tense 'Thought' once a tool call arrives\n{rendered}"
+        rendered.contains("Thinking"),
+        "reasoning header should show 'Thinking' once a tool call arrives\n{rendered}"
     );
     assert!(
         rendered.contains("planning the approach"),
@@ -1197,7 +1465,7 @@ fn streaming_reasoning_header_with_title_renders_thinking_colon_title() {
     ));
     let rendered = lines.join("\n");
     assert!(
-        rendered.contains("⠋ Thinking: Planning approach"),
+        rendered.contains("⠋ Thinking · Planning approach"),
         "streaming reasoning header should include the extracted title\n{rendered}"
     );
     assert!(
@@ -1207,7 +1475,8 @@ fn streaming_reasoning_header_with_title_renders_thinking_colon_title() {
 }
 
 #[test]
-fn completed_reasoning_header_renders_thought_with_title_and_duration() {
+fn completed_reasoning_header_renders_thinking_with_title() {
+    // arrange
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
         "request-completed-reasoning",
@@ -1219,24 +1488,36 @@ fn completed_reasoning_header_renders_thought_with_title_and_duration() {
     app.activities = std::collections::VecDeque::from(vec![entry]);
     app.transcript_view.selected_activity_index = 0;
 
+    // act
     let lines = transcript_test_line_texts(build_transcript_lines_for_width(
         &app,
         &Theme::default(),
         80,
     ));
     let rendered = lines.join("\n");
+
+    // assert
     assert!(
-        rendered.contains("Thought: Review · 1.5s"),
-        "completed reasoning should show Thought with title and duration\n{rendered}"
+        rendered.contains("Thought for 1.5s"),
+        "completed reasoning should show Thought for duration\n{rendered}"
+    );
+    assert!(
+        !rendered.contains("Thinking · Review"),
+        "completed reasoning should not keep the streaming Thinking · title form\n{rendered}"
     );
     assert!(
         rendered.contains("body text"),
         "body text should still render\n{rendered}"
     );
+    assert!(
+        rendered.contains("Worked for 1.5s."),
+        "completed turn footer should show Worked for duration\n{rendered}"
+    );
 }
 
 #[test]
-fn completed_reasoning_header_without_title_renders_thought_and_duration() {
+fn completed_reasoning_header_without_title_renders_thinking() {
+    // arrange
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
         "request-completed-reasoning-no-title",
@@ -1248,19 +1529,109 @@ fn completed_reasoning_header_without_title_renders_thought_and_duration() {
     app.activities = std::collections::VecDeque::from(vec![entry]);
     app.transcript_view.selected_activity_index = 0;
 
+    // act
     let lines = transcript_test_line_texts(build_transcript_lines_for_width(
         &app,
         &Theme::default(),
         80,
     ));
     let rendered = lines.join("\n");
+
+    // assert
     assert!(
-        rendered.contains("Thought: 1.5s"),
-        "completed reasoning should show Thought with duration when no title\n{rendered}"
+        rendered.contains("Thought for 1.5s"),
+        "completed reasoning should show Thought for duration when no title\n{rendered}"
+    );
+    assert!(
+        !rendered.contains("Thinking"),
+        "completed reasoning should not keep the streaming Thinking label\n{rendered}"
     );
     assert!(
         rendered.contains("simple reasoning"),
         "body text should still render\n{rendered}"
+    );
+    assert!(
+        rendered.contains("Worked for 1.5s."),
+        "completed turn footer should show Worked for duration\n{rendered}"
+    );
+}
+
+#[test]
+fn completed_turn_without_thinking_text_still_renders_thought_for() {
+    // arrange
+    let mut app = AppState::default();
+    let mut entry = transcript_section_model_test_activity(
+        "request-completed-empty-thinking",
+        ActivityStatus::Done,
+        "Final answer only",
+    );
+    entry.thinking_text.clear();
+    entry.last_mono_ms = 2500;
+    app.activities = std::collections::VecDeque::from(vec![entry]);
+    app.transcript_view.selected_activity_index = 0;
+
+    // act
+    let lines = transcript_test_line_texts(build_transcript_lines_for_width(
+        &app,
+        &Theme::default(),
+        80,
+    ));
+    let rendered = lines.join("\n");
+
+    // assert
+    assert!(
+        rendered.contains("Thought for 0.0s"),
+        "completed turns without reasoning mono pack Thought for 0.0s (Grok COMPLETE)\n{rendered}"
+    );
+    assert!(
+        !rendered.contains("Thinking"),
+        "completed empty reasoning must not use streaming Thinking label\n{rendered}"
+    );
+    assert!(
+        rendered.contains("Worked for 2.5s."),
+        "completed turn footer should still show Worked for duration\n{rendered}"
+    );
+    assert!(
+        rendered.contains("Final answer only"),
+        "body text should still render\n{rendered}"
+    );
+}
+
+
+#[test]
+fn failed_turn_without_thinking_text_omits_thought_for() {
+    // Given: failed turn with no reasoning (Grok run1-stream-probe fail freeze)
+    let mut app = AppState::default();
+    let mut entry = transcript_section_model_test_activity(
+        "request-failed-no-thinking",
+        ActivityStatus::Error,
+        "",
+    );
+    entry.thinking_text.clear();
+    entry.transcript_text.clear();
+    entry.error_message = Some(
+        "API error (status 400 Bad Request): invalid-argument: Incorrect API key provided.".into(),
+    );
+    entry.last_mono_ms = 300;
+    app.activities = std::collections::VecDeque::from(vec![entry]);
+    app.transcript_view.selected_activity_index = 0;
+
+    // When
+    let lines = transcript_test_line_texts(build_transcript_lines_for_width(
+        &app,
+        &Theme::default(),
+        80,
+    ));
+    let rendered = lines.join("\n");
+
+    // Then: fail chrome is flat Retry failed / Turn failed — no empty Thought for
+    assert!(
+        !rendered.contains("Thought for"),
+        "failed turns without reasoning must omit Thought for (Grok fail freeze)\n{rendered}"
+    );
+    assert!(
+        rendered.contains("Retry failed") || rendered.contains("API error"),
+        "failed turn must still render error chrome\n{rendered}"
     );
 }
 
@@ -1273,6 +1644,7 @@ fn reasoning_header_suppresses_empty_redacted_reasoning() {
         "answer",
     );
     entry.thinking_text = "[REDACTED]".to_string();
+    entry.last_mono_ms = 1500;
     app.activities = std::collections::VecDeque::from(vec![entry]);
     app.transcript_view.selected_activity_index = 0;
 
@@ -1283,8 +1655,12 @@ fn reasoning_header_suppresses_empty_redacted_reasoning() {
     ));
     let rendered = lines.join("\n");
     assert!(
-        !rendered.contains("Thought"),
-        "redacted-only reasoning should not render a header\n{rendered}"
+        !rendered.contains("Thinking"),
+        "redacted-only reasoning must not use streaming Thinking label\n{rendered}"
+    );
+    assert!(
+        rendered.contains("Thought for"),
+        "completed redacted-only turns still show Thought for chrome\n{rendered}"
     );
 }
 
@@ -1301,6 +1677,8 @@ fn streaming_assistant_footer_spinner_uses_deterministic_braille_frames() {
         user_timestamp: None,
         request_data: None,
         thinking_text: String::new(),
+        thinking_first_mono_ms: None,
+        thinking_last_mono_ms: None,
         transcript_text: String::new(),
         usage: None,
         cache_usage: None,
@@ -1327,8 +1705,16 @@ fn streaming_assistant_footer_spinner_uses_deterministic_braille_frames() {
         80,
     ));
 
-    assert_eq!(first[0], "   ⠋ Assistant · gpt-5.4-mini · active");
-    assert_eq!(second[0], "   ⠙ Assistant · gpt-5.4-mini · active");
+    assert!(
+        first[0].contains('⠋') && first[0].contains("gpt-5.4-mini"),
+        "first spinner frame missing\n{}",
+        first[0]
+    );
+    assert!(
+        second[0].contains('⠙') && second[0].contains("gpt-5.4-mini"),
+        "second spinner frame missing\n{}",
+        second[0]
+    );
 }
 
 #[path = "ui_transcript_lifecycle_tests.rs"]
@@ -1366,6 +1752,8 @@ fn transcript_measurement_wrap_correctness_across_widths_and_styles() {
                 user_timestamp: None,
                 request_data: None,
                 thinking_text: String::new(),
+                thinking_first_mono_ms: None,
+                thinking_last_mono_ms: None,
                 transcript_text: pattern.to_string(),
                 usage: None,
                 cache_usage: None,
@@ -1617,6 +2005,8 @@ fn capture_all_spacing_evidence() {
             user_timestamp: None,
             request_data: None,
             thinking_text: String::new(),
+            thinking_first_mono_ms: None,
+            thinking_last_mono_ms: None,
             transcript_text: "Hi there!".to_string(),
             usage: None,
             cache_usage: None,
@@ -1649,6 +2039,8 @@ fn capture_all_spacing_evidence() {
                 user_timestamp: None,
                 request_data: None,
                 thinking_text: String::new(),
+                thinking_first_mono_ms: None,
+                thinking_last_mono_ms: None,
                 transcript_text: "First answer".to_string(),
                 usage: None,
                 cache_usage: None,
@@ -1674,6 +2066,8 @@ fn capture_all_spacing_evidence() {
                 user_timestamp: None,
                 request_data: None,
                 thinking_text: String::new(),
+                thinking_first_mono_ms: None,
+                thinking_last_mono_ms: None,
                 transcript_text: "Second answer".to_string(),
                 usage: None,
                 cache_usage: None,

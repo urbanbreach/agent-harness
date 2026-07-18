@@ -1,18 +1,16 @@
 ---
-source: crates/harness-tui/src/lib_tests.rs
+source: crates/harness-tui/src/lib_tests/transcript_flow.rs
 expression: "render_live_lines(&app, 80, 24)"
 ---
                                                                                 
-       transcript remains visible                                               
+   ui-ux-experiments ~/Projects/agent-harness/crates/harness-tui               
                                                                                 
-       ▪ Assistant · gpt-5-codex · 2ms                                          
-                                                                                
-                                                                                
+  ❙  ◆ Thought for 0.0s                                                         
                                                                                 
                                                                                 
+     transcript remains visible                                                 
                                                                                 
-                                                                                
-                                                                                
+     Worked for 0.0s.                                                           
                                                                                 
                                                                                 
                                                                                 
@@ -20,9 +18,10 @@ expression: "render_live_lines(&app, 80, 24)"
                                                                                 
                                                                                 
                                                                                 
-  ┃                                                                             
-  ┃                                                                             
-  ┃                                                                             
-  ┃  gpt-5-codex openai                                                         
-  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀  
-  turn 1 · ready for next turn   Ctrl+Tab focus  ·  Ctrl+p commands  ·  q quit
+                                                                                
+                                                                                
+  ╭──────────────────────────────────────────────────────────────────────────╮  
+  │ ❯                                                                        │  
+  ╰──────────────────────────────────────────────────────────── gpt-5-codex ─╯  
+                                                                                
+  turn 1 · ready for next turn        Tab focus  ·  ? commands  ·  Ctrl+q quit

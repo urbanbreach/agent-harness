@@ -70,10 +70,14 @@ pub(super) fn palette_empty_filter_has_suggested_duplicates() {
     let mut app = AppState::new_live(None, false, None);
     open_palette(&mut app);
     assert!(
-        app.palette_filtered
+        !app.palette_filtered
             .iter()
             .any(|c| c.starts_with("suggested:")),
-        "empty filter should produce suggested duplicates"
+        "empty filter matches freeze: Session/Context/Model & Input without Suggested"
+    );
+    assert!(
+        app.palette_filtered.iter().any(|c| c == "session.new"),
+        "empty filter still lists Session commands"
     );
 }
 
@@ -273,16 +277,15 @@ pub(super) fn palette_suggested_duplicate_dispatches_same_command() {
     let mut app = AppState::new_live(None, false, None);
     open_palette(&mut app);
 
-    let suggested = app
-        .palette_filtered
-        .iter()
-        .find(|c| c.starts_with("suggested:"))
-        .unwrap_or_abort();
-
-    let original = suggested.strip_prefix("suggested:").unwrap();
     assert!(
-        app.palette_filtered.contains(&original.to_string()),
-        "suggested duplicate should have matching original command"
+        !app.palette_filtered
+            .iter()
+            .any(|c| c.starts_with("suggested:")),
+        "freeze empty-filter palette has no suggested duplicates"
+    );
+    assert!(
+        app.palette_filtered.contains(&"session.new".to_string()),
+        "session.new remains available under Session"
     );
 }
 
@@ -305,12 +308,16 @@ pub(super) fn palette_startup_shell_restricts_commands() {
         "session.new should be available in startup shell"
     );
     assert!(
-        app.palette_filtered.contains(&"app.exit".to_string()),
-        "app.exit should be available in startup shell"
+        app.palette_filtered.contains(&"session.rename".to_string()),
+        "session.rename is freeze-visible on startup shell"
     );
     assert!(
-        !app.palette_filtered.contains(&"session.rename".to_string()),
-        "session.rename should not be available in startup shell"
+        !app.palette_filtered.contains(&"app.exit".to_string()),
+        "app.exit is hidden on startup empty-filter palette"
+    );
+    assert!(
+        !app.palette_filtered.contains(&"model.list".to_string()),
+        "model.list is hidden on startup empty-filter palette"
     );
 }
 
@@ -546,10 +553,13 @@ pub(super) fn palette_state_home_no_sessions() {
     assert_excluded_absent(&app);
     assert_hidden_non_targets_absent(&app);
     assert!(app.palette_filtered.contains(&"session.new".to_string()));
-    assert!(app.palette_filtered.contains(&"app.exit".to_string()));
     assert!(
-        !app.palette_filtered.contains(&"session.rename".to_string()),
-        "session.rename should not be available in startup shell"
+        app.palette_filtered.contains(&"session.rename".to_string()),
+        "session.rename is freeze-visible on startup empty-filter palette"
+    );
+    assert!(
+        !app.palette_filtered.contains(&"app.exit".to_string()),
+        "app.exit is hidden on startup empty-filter palette"
     );
 }
 
@@ -559,11 +569,15 @@ pub(super) fn palette_state_live_session_idle() {
     assert_excluded_absent(&app);
     assert_hidden_non_targets_absent(&app);
     assert!(app.palette_filtered.contains(&"session.new".to_string()));
-    assert!(app.palette_filtered.contains(&"app.exit".to_string()));
     assert!(
         app.palette_filtered
             .contains(&"session.toggle.thinking".to_string()),
-        "toggle thinking should be available in live session"
+        "toggle thinking should be available in live session empty-filter inventory"
+    );
+    let exit_rows = palette_controller::compute_palette_rows(&app, "exit");
+    assert!(
+        exit_rows.iter().any(|r| r.command_id == "app.exit"),
+        "app.exit should be available via filter in live session"
     );
 }
 
@@ -600,15 +614,22 @@ pub(super) fn palette_state_provider_disconnected() {
     let mut app = AppState::new_live(None, false, None);
     open_palette(&mut app);
     assert!(
-        app.palette_filtered
+        !app.palette_filtered
             .contains(&"provider.connect".to_string()),
-        "provider.connect should always be available"
+        "provider.connect is outside freeze empty-filter inventory"
+    );
+    let connect_rows = palette_controller::compute_palette_rows(&app, "connect");
+    assert!(
+        connect_rows
+            .iter()
+            .any(|r| r.command_id == "provider.connect"),
+        "provider.connect should be available via filter"
     );
     assert!(
-        app.palette_filtered
+        !app.palette_filtered
             .iter()
             .any(|c| c == "suggested:provider.connect"),
-        "provider.connect should be suggested when disconnected"
+        "freeze empty-filter palette has no suggested provider.connect row"
     );
 }
 
@@ -638,10 +659,10 @@ pub(super) fn palette_state_prompt_with_input() {
     let mut app = AppState::new_live(None, false, None);
     app.composer.prompt_buffer = "some text".to_string();
     app.composer.prompt_cursor = app.composer.prompt_buffer.len();
-    open_palette(&mut app);
+    let rows = palette_controller::compute_palette_rows(&app, "stash");
     assert!(
-        app.palette_filtered.contains(&"prompt.stash".to_string()),
-        "prompt.stash should be available when prompt has input"
+        rows.iter().any(|r| r.command_id == "prompt.stash"),
+        "prompt.stash should be available when prompt has input and filter matches"
     );
 }
 
@@ -811,8 +832,10 @@ pub(super) fn palette_footer_derived_from_keymap() {
         "Action::Quit should have a default keybinding"
     );
 
-    // Empty filter: footer should be the keymap binding
     open_palette(&mut app);
+    for ch in "exit".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
     let rows = palette_overlay_rows(&app);
     let exit_row = rows.iter().find_map(|r| match r {
         PaletteOverlayRow::Command { title, .. } if title == "Exit the app" => Some(r),
@@ -820,19 +843,15 @@ pub(super) fn palette_footer_derived_from_keymap() {
     });
     assert!(
         exit_row.is_some(),
-        "palette should contain 'Exit the app' command row"
+        "palette should contain 'Exit the app' command row when filtered by 'exit'"
     );
     if let PaletteOverlayRow::Command { footer, .. } = exit_row.unwrap() {
         assert_eq!(
             footer, &expected_footer,
-            "footer for app.exit should match keymap binding (empty filter)"
+            "footer for app.exit should match keymap binding"
         );
     }
 
-    // Non-empty filter: footer should still be the keymap binding, not category label
-    for ch in "exit".chars() {
-        app.handle_key(key(KeyCode::Char(ch)));
-    }
     let rows = palette_overlay_rows(&app);
     let exit_row = rows.iter().find_map(|r| match r {
         PaletteOverlayRow::Command { title, .. } if title == "Exit the app" => Some(r),
@@ -852,27 +871,30 @@ pub(super) fn palette_footer_derived_from_keymap() {
 
 pub(super) fn palette_dynamic_title_sidebar_reflects_state() {
     let mut app = AppState::new_live(None, false, None);
-    let entry = palette_model::find("session.sidebar.toggle").unwrap();
+    let entry = palette_model::find("session.status.open").unwrap();
 
     assert!(
-        !app.details_drawer_open(),
-        "sidebar should be closed by default in new_live"
+        matches!(entry.title, palette_model::DynamicTitle::Static("Open status")),
+        "status command must use static open-only title, not Show/Hide sidebar"
     );
     assert_eq!(
         palette_controller::resolve_title(&app, entry),
-        "Show sidebar",
-        "title should be 'Show sidebar' when sidebar is closed"
+        "Open status",
+        "default title must be Open status"
     );
 
     app.live_details_drawer_open = true;
-    assert!(
-        app.details_drawer_open(),
-        "sidebar should be open after setting live_details_drawer_open"
-    );
     assert_eq!(
         palette_controller::resolve_title(&app, entry),
-        "Hide sidebar",
-        "title should be 'Hide sidebar' when sidebar is open"
+        "Open status",
+        "details drawer state must not retitle open-only status command"
+    );
+
+    app.secondary_surfaces.open_status_dialog();
+    assert_eq!(
+        palette_controller::resolve_title(&app, entry),
+        "Open status",
+        "status dialog open must not retitle open-only status command"
     );
 }
 
@@ -932,18 +954,18 @@ pub(super) fn palette_suggested_row_dispatches_via_enter() {
 
     open_palette(&mut app);
 
-    let suggested_pos = app
+    let session_new_pos = app
         .palette_filtered
         .iter()
-        .position(|c| c == "suggested:session.new")
+        .position(|c| c == "session.new")
         .unwrap_or_abort();
 
-    app.palette_selected = suggested_pos;
+    app.palette_selected = session_new_pos;
     app.handle_key(key(KeyCode::Enter));
 
     assert!(
         app.events.is_empty(),
-        "dispatching suggested:session.new row should clear events"
+        "dispatching session.new row should clear events"
     );
 }
 
@@ -1103,7 +1125,7 @@ pub(super) fn palette_exact_dispatch_targets() {
     let cases: &[(&str, PaletteDispatch)] = &[
         ("app.exit", PaletteDispatch::Action(Action::Quit)),
         (
-            "session.sidebar.toggle",
+            "session.status.open",
             PaletteDispatch::Action(Action::OpenStatusDialog),
         ),
         (
@@ -1154,6 +1176,32 @@ pub(super) fn palette_exact_dispatch_targets() {
         ("session.rename", PaletteDispatch::OpenSessionRename),
         ("session.fork", PaletteDispatch::OpenForkSelector),
         ("session.copy", PaletteDispatch::CopySessionTranscript),
+        ("session.new.worktree", PaletteDispatch::NewSession),
+        (
+            "session.dashboard",
+            PaletteDispatch::Action(Action::OpenStatusDialog),
+        ),
+        (
+            "session.home",
+            PaletteDispatch::Action(Action::CloseReviewSurface),
+        ),
+        (
+            "session.info",
+            PaletteDispatch::Action(Action::OpenStatusDialog),
+        ),
+        ("session.feedback", PaletteDispatch::Action(Action::Help)),
+        (
+            "context.usage",
+            PaletteDispatch::Action(Action::OpenStatusDialog),
+        ),
+        (
+            "context.view_plan",
+            PaletteDispatch::Action(Action::OpenStatusDialog),
+        ),
+        (
+            "context.memory",
+            PaletteDispatch::Action(Action::OpenLineageBrowser),
+        ),
         (
             "harness.stack_transcript_diffs",
             PaletteDispatch::ToggleStackedDiffs,
@@ -1259,18 +1307,36 @@ pub(super) fn palette_state_matrix_full_inventories() {
     assert!(startup
         .palette_filtered
         .contains(&"session.new".to_string()));
-    assert!(startup.palette_filtered.contains(&"app.exit".to_string()));
+    assert!(
+        startup
+            .palette_filtered
+            .contains(&"session.rename".to_string()),
+        "startup empty-filter palette should contain session.rename"
+    );
+    assert!(
+        !startup.palette_filtered.contains(&"app.exit".to_string()),
+        "startup empty-filter palette should hide app.exit"
+    );
 
     let mut live = AppState::new_live(None, false, None);
     open_palette(&mut live);
     assert_absent(&live, &excluded, "excluded command");
     assert_absent(&live, &hidden, "hidden non-target");
-    for required in &["session.new", "app.exit", "session.rename"] {
+    for required in &["session.new", "session.rename"] {
         assert!(
             live.palette_filtered.contains(&required.to_string()),
-            "live palette should contain '{required}'"
+            "live empty-filter palette should contain '{required}'"
         );
     }
+    assert!(
+        !live.palette_filtered.contains(&"app.exit".to_string()),
+        "app.exit is outside freeze empty-filter inventory"
+    );
+    let live_exit = palette_controller::compute_palette_rows(&live, "exit");
+    assert!(
+        live_exit.iter().any(|r| r.command_id == "app.exit"),
+        "live palette should expose app.exit via filter"
+    );
 
     let mut replay = AppState::new_replay(std::path::PathBuf::from("/tmp/replay-test"), Vec::new());
     open_palette(&mut replay);
@@ -1282,9 +1348,10 @@ pub(super) fn palette_state_matrix_full_inventories() {
             .contains(&"session.rename".to_string()),
         "session.rename should not be available in replay mode"
     );
+    let replay_exit = palette_controller::compute_palette_rows(&replay, "exit");
     assert!(
-        replay.palette_filtered.contains(&"app.exit".to_string()),
-        "app.exit should be available in replay mode"
+        replay_exit.iter().any(|r| r.command_id == "app.exit"),
+        "app.exit should be available via filter in replay mode"
     );
 }
 
@@ -1370,14 +1437,14 @@ pub(super) fn palette_golden_ranking_consecutive_match_bonus() {
     let app = AppState::new_live(None, false, None);
     let rows = crate::app::palette_controller::compute_palette_rows(&app, "swi");
     assert!(!rows.is_empty());
-    let agent_rows: Vec<_> = rows
+    let model_rows: Vec<_> = rows
         .iter()
-        .filter(|r| r.category == palette_model::PaletteCategory::Agent)
+        .filter(|r| r.category == palette_model::PaletteCategory::ModelInput)
         .collect();
-    assert!(!agent_rows.is_empty());
+    assert!(!model_rows.is_empty());
     assert_eq!(
-        agent_rows[0].command_id, "model.list",
-        "consecutive match 'swi' must rank 'Switch model' first in Agent category"
+        model_rows[0].command_id, "model.list",
+        "consecutive match 'swi' must rank 'Switch model' first in Model & Input"
     );
 }
 
@@ -1620,6 +1687,8 @@ pub(super) fn palette_footer_no_category_fallback() {
                 "Provider",
                 "Prompt",
                 "Suggested",
+                "Context",
+                "Model & Input",
             ];
             assert!(
                 !category_labels.contains(&footer.as_str()),
@@ -1628,10 +1697,15 @@ pub(super) fn palette_footer_no_category_fallback() {
         }
     }
 
+    for ch in "exit".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+    let rows = palette_overlay_rows(&app);
     let exit_row = rows
         .iter()
         .find(|r| matches!(r, PaletteOverlayRow::Command { title, .. } if title == "Exit the app"));
-    if let PaletteOverlayRow::Command { footer, .. } = exit_row.unwrap() {
+    let exit_row = exit_row.expect("filtered palette should contain Exit the app");
+    if let PaletteOverlayRow::Command { footer, .. } = exit_row {
         let expected = app.keymap.get_binding_str(Action::Quit);
         assert_eq!(
             *footer, expected,
@@ -1734,15 +1808,15 @@ pub(super) fn palette_golden_ranking_consecutive_beats_scattered() {
     let app = AppState::new_live(None, false, None);
     let rows = crate::app::palette_controller::compute_palette_rows(&app, "swi");
     assert!(!rows.is_empty(), "query 'swi' must produce results");
-    let agent_rows: Vec<_> = rows
+    let model_rows: Vec<_> = rows
         .iter()
-        .filter(|r| r.category == palette_model::PaletteCategory::Agent)
+        .filter(|r| r.category == palette_model::PaletteCategory::ModelInput)
         .collect();
-    assert!(!agent_rows.is_empty());
+    assert!(!model_rows.is_empty());
     assert_eq!(
-        agent_rows[0].command_id, "model.list",
-        "consecutive match 'swi' must rank 'Switch model' first in Agent category, got '{}'",
-        agent_rows[0].title
+        model_rows[0].command_id, "model.list",
+        "consecutive match 'swi' must rank 'Switch model' first in Model & Input, got '{}'",
+        model_rows[0].title
     );
 }
 
@@ -2323,16 +2397,16 @@ pub(super) fn palette_golden_ranking_title_vs_category_weighting() {
         .position(|r| r.command_id == "session.new")
         .unwrap_or_abort();
 
-    // "Show sidebar" does NOT have "session" in its title → category-only match (weighted 1x).
-    let show_sidebar_pos = session_rows
+    // "Open status" does NOT have "session" in its title → category-only match (weighted 1x).
+    let open_status_pos = session_rows
         .iter()
-        .position(|r| r.command_id == "session.sidebar.toggle")
+        .position(|r| r.command_id == "session.status.open")
         .unwrap_or_abort();
 
     assert!(
-        new_session_pos < show_sidebar_pos,
-        "title match ('New session') must rank higher than category-only match ('Show sidebar') \
-         within Session category: got new_session at {new_session_pos}, sidebar at {show_sidebar_pos}"
+        new_session_pos < open_status_pos,
+        "title match ('New session') must rank higher than category-only match ('Open status') \
+         within Session category: got new_session at {new_session_pos}, open_status at {open_status_pos}"
     );
 }
 

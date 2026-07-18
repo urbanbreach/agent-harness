@@ -138,20 +138,19 @@ pub(super) fn legacy_three_row_composer_contract_removed() {
     );
 
     let quiet_shell = [
-        "Assistant · model-1",
-        "┃",
-        "┃",
-        "┃  default · local/-",
-        "Success  ·  run finished · session shell preserved  0  Ctrl+p commands  ·  ? help  ·  q quit",
+        "model-1",
+        "❯  default · local/-",
+        "   ",
+        "Success  ·  run finished · session shell preserved  0  ? commands  ·  ? help  ·  q quit",
     ];
 
-    assert_live_shell_composer_progressive_disclosure(&quiet_shell, None, "Ctrl+p commands");
+    assert_live_shell_composer_progressive_disclosure(&quiet_shell, None, "? commands");
     assert!(find_line_containing(&quiet_shell, "Composer").is_none());
 }
 
 pub(super) fn live_shell_composer_contract_matches_shell_parity() {
     let ready = app::AppState::new_live(None, false, None);
-    assert_live_shell_document_composer_contract(&ready, 100, 30, None, None, "Ctrl+p commands");
+    assert_live_shell_document_composer_contract(&ready, 100, 30, None, None, "Shift+Tab:mode");
 
     let mut multiline = app::AppState::new_live(None, false, None);
     multiline.composer.prompt_buffer = (1..=8)
@@ -169,10 +168,14 @@ pub(super) fn live_shell_composer_contract_matches_shell_parity() {
         lines[first_input_row..=last_shell_row]
             .iter()
             .filter(|line| {
-                let trimmed = line.trim_start();
-                trimmed.starts_with("▎  line ")
-                    || trimmed.starts_with("┃  line ")
-                    || trimmed.starts_with("╹  line ")
+                let trimmed = line
+                    .trim_start()
+                    .trim_start_matches('│')
+                    .trim_start()
+                    .trim_start_matches('▎')
+                    .trim_start_matches('❯')
+                    .trim_start();
+                trimmed.starts_with("line ")
             })
             .count(),
         6,
@@ -187,11 +190,11 @@ pub(super) fn live_shell_composer_contract_matches_shell_parity() {
 
 pub(super) fn live_shell_composer_progressive_disclosure_by_width() {
     let ready = app::AppState::new_live(None, false, None);
-    assert_live_shell_document_composer_contract(&ready, 90, 36, None, None, "Ctrl+p commands");
+    assert_live_shell_document_composer_contract(&ready, 90, 36, None, None, "Shift+Tab:mode");
 
-    assert_live_shell_document_composer_contract(&ready, 80, 24, None, None, "Ctrl+p commands");
+    assert_live_shell_document_composer_contract(&ready, 80, 24, None, None, "Shift+Tab:mode");
 
-    assert_live_shell_document_composer_contract(&ready, 60, 18, None, None, "Ctrl+p commands");
+    assert_live_shell_document_composer_contract(&ready, 60, 18, None, None, "Shift+Tab:mode");
 }
 
 pub(super) fn live_run_shell_places_under_input_controls_above_the_status_strip() {
@@ -202,8 +205,8 @@ pub(super) fn live_run_shell_places_under_input_controls_above_the_status_strip(
         app.ingest_event(event);
     }
 
-    assert_live_shell_document_composer_contract(&app, 100, 30, None, None, "Ctrl+p commands");
-    assert_live_shell_document_composer_contract(&app, 80, 24, None, None, "Ctrl+p commands");
+    assert_live_shell_document_composer_contract(&app, 100, 30, None, None, "Shift+Tab:mode");
+    assert_live_shell_document_composer_contract(&app, 80, 24, None, None, "Shift+Tab:mode");
 
     let dense = render_live_lines(&app, 60, 18);
     assert!(!dense.contains("↑/↓ history"));

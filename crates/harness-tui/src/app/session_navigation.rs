@@ -264,7 +264,7 @@ impl AppState {
         self.submitted_permission_id = None;
         self.permission_prompt.permission_id = None;
         self.permission_prompt.stage = PermissionModalStage::Decision;
-        self.permission_prompt.selection = PermissionModalSelection::AllowOnce;
+        self.permission_prompt.selection = PermissionModalSelection::AllowAlways;
         self.permission_prompt.confirm_selection = PermissionConfirmSelection::Confirm;
         self.question_prompt.tab = 0;
         self.question_prompt.selection = 0;
@@ -792,7 +792,7 @@ impl AppState {
         self.submitted_permission_id = None;
         self.permission_prompt.permission_id = None;
         self.permission_prompt.stage = PermissionModalStage::Decision;
-        self.permission_prompt.selection = PermissionModalSelection::AllowOnce;
+        self.permission_prompt.selection = PermissionModalSelection::AllowAlways;
         self.permission_prompt.confirm_selection = PermissionConfirmSelection::Confirm;
         self.question_prompt.tab = 0;
         self.question_prompt.selection = 0;

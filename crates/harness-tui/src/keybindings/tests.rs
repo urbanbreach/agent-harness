@@ -165,7 +165,11 @@ fn keymap_invalid_override_preserves_default_binding() {
         keymap.get_action(&KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE)),
         Some(Action::Quit)
     );
-    assert_eq!(keymap.get_binding_str(Action::Quit), "q");
+    let quit_bindings = keymap.get_binding_strs(Action::Quit);
+    assert!(
+        quit_bindings.iter().any(|b| b == "q" || b == "Ctrl+q" || b == "Ctrl+d"),
+        "quit bindings include freeze chords: {quit_bindings:?}"
+    );
 }
 
 #[test]
@@ -190,15 +194,21 @@ fn keymap_override_collision_removes_stale_session_label() {
 #[test]
 fn keymap_returns_binding_str() {
     let keymap = KeyMap::with_defaults();
-    let binding = keymap.get_binding_str(Action::Quit);
-    assert_eq!(binding, "q");
+    let bindings = keymap.get_binding_strs(Action::Quit);
+    assert!(
+        bindings.iter().any(|b| b == "q" || b == "Ctrl+q" || b == "Ctrl+d"),
+        "quit bindings present: {bindings:?}"
+    );
 }
 
 #[test]
 fn keymap_returns_ctrl_binding_str() {
     let keymap = KeyMap::with_defaults();
-    let binding = keymap.get_binding_str(Action::Palette);
-    assert_eq!(binding, "Ctrl+p");
+    let bindings = keymap.get_binding_strs(Action::Palette);
+    assert!(
+        bindings.iter().any(|b| b == "Ctrl+p" || b == "?"),
+        "palette bindings present: {bindings:?}"
+    );
 }
 
 #[test]
@@ -251,6 +261,21 @@ fn keymap_uses_ctrl_y_and_ctrl_n_for_permission_decisions() {
     assert_eq!(keymap.get_action(&deny), Some(Action::DenyPermission));
     assert_eq!(keymap.get_binding_str(Action::AllowPermission), "Ctrl+y");
     assert_eq!(keymap.get_binding_str(Action::DenyPermission), "Ctrl+n");
+}
+
+#[test]
+fn keymap_uses_ctrl_o_for_always_approve_permission() {
+    let keymap = KeyMap::with_defaults();
+
+    let always = KeyEvent::new(KeyCode::Char('o'), KeyModifiers::CONTROL);
+    assert_eq!(
+        keymap.get_action(&always),
+        Some(Action::AlwaysApprovePermission)
+    );
+    assert_eq!(
+        keymap.get_binding_str(Action::AlwaysApprovePermission),
+        "Ctrl+o"
+    );
 }
 
 #[test]
@@ -447,47 +472,64 @@ fn keymap_accepts_leader_sequence_overrides() {
 }
 
 #[test]
-fn keymap_binds_tab_to_agent_cycle_by_default() {
+fn keymap_binds_tab_to_focus_and_shift_tab_to_variant_cycle_by_default() {
     let keymap = KeyMap::with_defaults();
 
     assert_eq!(
         keymap.get_action(&KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE)),
-        Some(Action::AgentCycle)
+        Some(Action::FocusNext)
     );
     assert_eq!(
         keymap.get_action(&KeyEvent::new(KeyCode::BackTab, KeyModifiers::NONE)),
+        Some(Action::VariantCycle)
+    );
+    assert_eq!(
+        keymap.get_action(&KeyEvent::new(KeyCode::Tab, KeyModifiers::CONTROL)),
+        Some(Action::AgentCycle)
+    );
+    assert_eq!(
+        keymap.get_action(&KeyEvent::new(KeyCode::BackTab, KeyModifiers::CONTROL)),
         Some(Action::AgentCycleReverse)
     );
-    assert_eq!(keymap.get_binding_str(Action::AgentCycle), "Tab");
+    assert_eq!(keymap.get_binding_str(Action::AgentCycle), "Ctrl+Tab");
     assert_eq!(
         keymap.get_binding_str(Action::AgentCycleReverse),
-        "Shift-Tab"
+        "Ctrl+Shift+Tab"
     );
 }
 
 #[test]
-fn keymap_keeps_focus_cycle_on_control_tab() {
+fn keymap_keeps_focus_prev_on_control_shift_tab() {
     let keymap = KeyMap::with_defaults();
 
     assert_eq!(
-        keymap.get_action(&KeyEvent::new(KeyCode::Tab, KeyModifiers::CONTROL)),
-        Some(Action::FocusNext)
-    );
-    assert_eq!(
-        keymap.get_action(&KeyEvent::new(KeyCode::BackTab, KeyModifiers::CONTROL)),
+        keymap.get_action(&KeyEvent::new(
+            KeyCode::Tab,
+            KeyModifiers::CONTROL | KeyModifiers::SHIFT
+        )),
         Some(Action::FocusPrev)
     );
 }
 
 #[test]
-fn keymap_binds_ctrl_t_to_variant_cycle() {
+fn keymap_binds_shift_tab_and_ctrl_t_to_variant_cycle() {
     let keymap = KeyMap::with_defaults();
 
+    assert_eq!(
+        keymap.get_action(&KeyEvent::new(KeyCode::BackTab, KeyModifiers::NONE)),
+        Some(Action::VariantCycle)
+    );
     assert_eq!(
         keymap.get_action(&KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL)),
         Some(Action::VariantCycle)
     );
-    assert_eq!(keymap.get_binding_str(Action::VariantCycle), "Ctrl+t");
+    let bindings = keymap.get_binding_strs(Action::VariantCycle);
+    assert!(
+        bindings
+            .iter()
+            .any(|b| b == "Shift+Tab" || b == "Ctrl+t"),
+        "variant cycle bindings present: {bindings:?}"
+    );
 }
 
 #[test]
@@ -600,7 +642,6 @@ fn displaced_keybind_remaps_to_open_status_dialog() {
         Some(Action::OpenModelSwitcher),
         "simple-mode: leader+m opens model switcher"
     );
-    // assert — Esc is clear/dismiss, Ctrl+C is not a KeyMap interrupt action
     let esc = keymap.get_action(&KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
     assert!(
         matches!(esc, Some(Action::ClearPrompt) | Some(Action::DismissModal)),
@@ -608,8 +649,8 @@ fn displaced_keybind_remaps_to_open_status_dialog() {
     );
     assert_eq!(
         keymap.get_action(&KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)),
-        None,
-        "simple-mode: Ctrl+C is not a KeyMap interrupt/cancel action"
+        Some(Action::DismissModal),
+        "freeze essentials: Ctrl+C dismisses modal / cancels turn"
     );
     // assert — displaced sidebar toggle rematerializes to status dialog
     assert_eq!(
@@ -629,11 +670,21 @@ fn displaced_keybind_remaps_to_open_status_dialog() {
         remapped.get_action(&KeyEvent::new(KeyCode::F(9), KeyModifiers::NONE)),
         Some(Action::OpenStatusDialog)
     );
-    assert_eq!(keymap.get_binding_str(Action::Palette), "Ctrl+p");
+    let palette_bindings = keymap.get_binding_strs(Action::Palette);
+    assert!(
+        palette_bindings
+            .iter()
+            .any(|b| b == "Ctrl+p" || b == "?"),
+        "palette bindings present: {palette_bindings:?}"
+    );
     assert_eq!(keymap.get_binding_str(Action::OpenStatusDialog), "Ctrl+x s");
     assert_eq!(
         keymap.get_binding_str(Action::OpenModelSwitcher),
         "Ctrl+x m"
+    );
+    assert_eq!(
+        keymap.get_action(&KeyEvent::new(KeyCode::F(2), KeyModifiers::NONE)),
+        Some(Action::OpenStatusDialog)
     );
 }
 
@@ -674,7 +725,11 @@ fn simple_mode_defaults_open_command_palette_on_ctrl_p() {
     let action = keymap.get_action(&KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL));
     // assert
     assert_eq!(action, Some(Action::Palette));
-    assert_eq!(keymap.get_binding_str(Action::Palette), "Ctrl+p");
+    let bindings = keymap.get_binding_strs(Action::Palette);
+    assert!(
+        bindings.iter().any(|b| b == "Ctrl+p" || b == "?"),
+        "palette bindings present: {bindings:?}"
+    );
 }
 
 #[test]
@@ -688,8 +743,8 @@ fn simple_mode_defaults_open_status_dialog_on_leader_s() {
     assert_eq!(keymap.get_binding_str(Action::OpenStatusDialog), "Ctrl+x s");
     assert_eq!(
         keymap.get_action(&KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL)),
-        None,
-        "Ctrl+S is not a direct KeyMap binding; status is leader+s rematerialization"
+        Some(Action::OpenSessionHistory),
+        "Ctrl+S opens session history; status remains leader+s / F2 / Ctrl+,"
     );
 }
 
@@ -713,7 +768,7 @@ fn simple_mode_defaults_open_model_switcher_on_leader_m() {
 }
 
 #[test]
-fn simple_mode_defaults_do_not_map_interrupt_or_cancel_as_keymap_action() {
+fn simple_mode_defaults_map_ctrl_c_to_dismiss_modal_not_interrupt_action() {
     // arrange
     let keymap = KeyMap::with_defaults();
     // act
@@ -721,8 +776,9 @@ fn simple_mode_defaults_do_not_map_interrupt_or_cancel_as_keymap_action() {
     let esc = keymap.get_action(&KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
     // assert
     assert_eq!(
-        ctrl_c, None,
-        "Ctrl+C must not be a KeyMap cancel/interrupt action"
+        ctrl_c,
+        Some(Action::DismissModal),
+        "freeze essentials: Ctrl+C dismisses modal / cancels turn"
     );
     assert!(
         matches!(esc, Some(Action::ClearPrompt) | Some(Action::DismissModal)),
@@ -732,9 +788,8 @@ fn simple_mode_defaults_do_not_map_interrupt_or_cancel_as_keymap_action() {
         !keymap
             .all_bindings()
             .iter()
-            .any(|(_, action)| action.as_str().contains("interrupt")
-                || action.as_str().contains("cancel")),
-        "no interrupt/cancel Action exists in default KeyMap bindings"
+            .any(|(_, action)| action.as_str().contains("interrupt")),
+        "no interrupt Action exists in default KeyMap bindings"
     );
 }
 

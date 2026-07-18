@@ -767,7 +767,7 @@ impl AppState {
 
     fn interrupt_confirmation_pending_for(&self, active_task_ids: &BTreeSet<String>) -> bool {
         self.interrupt_confirm_deadline
-            .is_some_and(|deadline| Instant::now() < deadline)
+            .is_some_and(|deadline| self.now() < deadline)
             && !active_task_ids.is_empty()
             && self.interrupt_confirm_task_ids == *active_task_ids
     }
@@ -775,7 +775,7 @@ impl AppState {
     pub(in crate::app) fn clear_expired_interrupt_confirmation(&mut self) {
         if self
             .interrupt_confirm_deadline
-            .is_some_and(|deadline| Instant::now() >= deadline)
+            .is_some_and(|deadline| self.now() >= deadline)
         {
             self.reset_interrupt_confirmation();
         }
@@ -793,17 +793,47 @@ impl AppState {
             return false;
         }
 
-        if !self.interrupt_confirmation_pending_for(&active_task_ids) {
-            self.interrupt_confirm_deadline = Some(Instant::now() + INTERRUPT_CONFIRM_TIMEOUT);
-            self.interrupt_confirm_task_ids = active_task_ids;
+        self.reset_interrupt_confirmation();
+        true
+    }
+
+    pub(in crate::app) fn handle_ctrl_c_clear_or_cancel(&mut self) -> bool {
+        if !self.composer_disabled() && !self.composer.prompt_buffer.is_empty() {
+            self.composer.push_undo();
+            self.clear_prompt_input();
+            if self.composer.shell_mode {
+                self.composer.shell_mode = false;
+            }
             return true;
         }
 
-        let task_ids = active_task_ids.into_iter().collect();
+        let active_task_ids = self.active_interrupt_task_ids();
+        if !self.interrupt_hint_visible() || active_task_ids.is_empty() {
+            self.reset_interrupt_confirmation();
+            return false;
+        }
 
+        let task_ids = active_task_ids.into_iter().collect();
         self.emit_ui_intent(UiIntent::InterruptSession { task_ids });
         self.reset_interrupt_confirmation();
         true
+    }
+
+    pub(in crate::app) fn now(&self) -> Instant {
+        (self.now_fn)()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_now_fn_for_test(
+        &mut self,
+        now_fn: Arc<dyn Fn() -> Instant + Send + Sync>,
+    ) {
+        self.now_fn = now_fn;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn clear_prompt_hint_for_test() -> &'static str {
+        CLEAR_PROMPT_HINT
     }
 
     fn runtime_state_activity(&self) -> Option<&ActivityEntry> {

@@ -17,6 +17,8 @@ pub(crate) fn transcript_section_model_test_activity(
         user_timestamp: None,
         request_data: None,
         thinking_text: String::new(),
+        thinking_first_mono_ms: None,
+        thinking_last_mono_ms: None,
         transcript_text: transcript_text.to_string(),
         usage: None,
         cache_usage: None,

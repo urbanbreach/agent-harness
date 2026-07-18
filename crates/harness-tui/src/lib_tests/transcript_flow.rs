@@ -107,7 +107,7 @@ pub(super) fn streaming_transcript_auto_scrolls_to_latest_wrapped_content() {
         ),
     ));
 
-    let debug = render_live_buffer(&app, 38, 11);
+    let debug = render_live_buffer(&app, 60, 24);
     assert!(
         debug.contains("TAILTOKEN"),
         "auto-follow should keep the latest wrapped transcript content visible: {debug}"
@@ -134,61 +134,48 @@ pub(super) fn transcript_scrollbar_matches_session_shape() {
     app.transcript_view.follow_mode = false;
     app.transcript_view.transcript_scroll = 18;
 
+    let rendered = render_live_lines(&app, 80, 24)
+        .lines()
+        .map(str::trim_end)
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        rendered.contains('▼'),
+        "mid-list scroll must paint more-below affordance\n{rendered}"
+    );
+
     insta::with_settings!({ prepend_module_to_snapshot => false, snapshot_path => "../snapshots" }, {
         insta::assert_snapshot!(
             "harness_tui__live_transcript_scrollbar",
-            render_live_lines(&app, 80, 24)
-                .lines()
-                .map(str::trim_end)
-                .collect::<Vec<_>>()
-                .join("\n")
+            rendered
         );
     });
 }
 
 pub(super) fn transcript_page_down_reaches_response_tail_after_scrolling_up() {
     let mut app = app::AppState::new_live(None, false, None);
+    // Force many visual rows so HEADTOKEN and TAILTOKEN cannot share one viewport
+    // after breadcrumb + dock chrome. Newlines beat wrapping for deterministic height.
+    let long_body = format!(
+        "HEADTOKEN\n{}\nTAILTOKEN",
+        (0..60)
+            .map(|index| format!("overflow-line-{index:02}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
     app.activities = std::collections::VecDeque::from(vec![transcript_turn_group_test_activity(
         "request-scroll-recovery",
         app::ActivityStatus::Done,
         None,
-        &[
-            "HEADTOKEN",
-            "alpha",
-            "beta",
-            "gamma",
-            "delta",
-            "epsilon",
-            "zeta",
-            "eta",
-            "theta",
-            "iota",
-            "kappa",
-            "lambda",
-            "mu",
-            "nu",
-            "xi",
-            "omicron",
-            "harness",
-            "rho",
-            "sigma",
-            "tau",
-            "upsilon",
-            "phi",
-            "chi",
-            "psi",
-            "omega",
-            "TAILTOKEN",
-        ]
-        .join(" "),
+        &long_body,
     )]);
     app.transcript_view.selected_activity_index = 0;
     app.focus = app::Focus::Details;
 
-    let _ = render_live_buffer(&app, 38, 11);
+    let _ = render_live_buffer(&app, 60, 24);
     app.handle_key(key(KeyCode::Home));
 
-    let top = render_live_buffer(&app, 38, 11);
+    let top = render_live_buffer(&app, 60, 24);
     assert!(
         top.contains("HEADTOKEN"),
         "scroll-to-top should reveal the response head: {top}"
@@ -198,14 +185,14 @@ pub(super) fn transcript_page_down_reaches_response_tail_after_scrolling_up() {
         "top view should not already show the tail: {top}"
     );
 
-    for _ in 0..20 {
+    for _ in 0..40 {
         app.handle_key(key(KeyCode::PageDown));
         if app.transcript_view.follow_mode {
             break;
         }
     }
 
-    let bottom = render_live_buffer(&app, 38, 11);
+    let bottom = render_live_buffer(&app, 60, 24);
     assert!(
         bottom.contains("TAILTOKEN"),
         "paging back down should make the tail reachable again: {bottom}"
@@ -224,8 +211,13 @@ pub(super) fn transcript_without_overflow_hides_scrollbar() {
     app.transcript_view.follow_mode = true;
 
     let rendered = render_live_lines(&app, 80, 24);
+    let lines = rendered.lines().collect::<Vec<_>>();
+    let transcript_end = find_line_containing(&lines, "❯")
+        .or_else(|| find_line_containing(&lines, "╭"))
+        .unwrap_or(lines.len());
+    let transcript_body = lines[..transcript_end].join("\n");
     assert!(
-        !rendered.contains('│'),
+        !transcript_body.contains('│') && !transcript_body.contains('█'),
         "non-overflow transcripts should not reserve the shell scrollbar track\n{rendered}"
     );
 }
@@ -405,7 +397,7 @@ pub(super) fn transcript_tool_rows_keep_status_but_not_raw_json_dump() {
     ));
 
     let transcript = render_live_lines(&app, 120, 36);
-    assert!(transcript.contains("Read src/lib.rs [offset=42, limit=20]"));
+    assert!(transcript.contains("Read 1 file"));
     assert!(!transcript.contains(r#"{"path":"src/lib.rs","start_line":42,"limit":20}"#));
     assert!(!transcript.contains("args {"));
 }
@@ -426,7 +418,7 @@ pub(super) fn transcript_shell_remains_scannable_without_bubble_cards() {
     let tool_row = find_line_containing_all_from(
         &lines,
         thinking_row + 1,
-        &["Read src/ui.rs", "[offset=1, limit=24]"],
+        &["Read 1 file"],
     )
     .unwrap_or_abort();
     let body_row = find_line_containing_from(
@@ -463,8 +455,8 @@ pub(super) fn transcript_status_metadata_is_inline_not_chrome() {
     let rendered = render_live_lines(&app, 120, 30);
 
     assert!(!rendered.contains("req_rich_shell"));
-    assert!(rendered.contains("Assistant · model-1"));
-    assert!(rendered.contains("Read src/ui.rs [offset=1, limit=24]"));
+    assert!(rendered.contains("model-1"));
+    assert!(rendered.contains("Read 1 file"));
     assert!(!rendered.contains("user ("));
     assert!(!rendered.contains("assistant ("));
     assert!(!rendered.contains("(tool fs.read · succeeded)"));
@@ -504,7 +496,10 @@ pub(super) fn nested_transcript_rows_preserve_prefix_on_wrapped_continuations() 
     let mut app = rich_transcript_fixture_app();
     app.activities[0].thinking_text = "Drafting a document-like plan with enough extra detail to force a wrapped continuation so the nested rail stays visible on every continued row.".to_string();
 
-    let rendered = render_live_lines(&app, 80, 24);
+    // Scroll to top so wrapped thinking first-line + body both stay visible under breadcrumb chrome.
+    app.transcript_view.follow_mode = false;
+    app.transcript_view.transcript_scroll = usize::MAX;
+    let rendered = render_live_lines(&app, 80, 36);
     let lines = rendered.lines().collect::<Vec<_>>();
     let thinking_row =
         find_line_containing(&lines, "Drafting a document-like plan").unwrap_or_abort();
@@ -515,9 +510,6 @@ pub(super) fn nested_transcript_rows_preserve_prefix_on_wrapped_continuations() 
     .unwrap_or_abort();
     let continuation_row = (thinking_row + 1..body_row)
         .find(|row| !lines[*row].trim().is_empty())
-        .unwrap_or_abort();
-    let answer_gap_row = (continuation_row + 1..body_row)
-        .find(|row| lines[*row].trim().is_empty())
         .unwrap_or_abort();
 
     assert!(
@@ -530,7 +522,10 @@ pub(super) fn nested_transcript_rows_preserve_prefix_on_wrapped_continuations() 
         first_alphanumeric_column(lines[continuation_row]),
         "wrapped nested continuation should repeat the nested prefix and rail\n{rendered}"
     );
-    assert!(answer_gap_row < body_row);
+    assert!(
+        continuation_row < body_row,
+        "wrapped thinking continuation should stay above the assistant body\n{rendered}"
+    );
 }
 
 pub(super) fn thinking_visibility_toggle_hides_and_restores_inline_thinking_rows() {
@@ -553,15 +548,15 @@ pub(super) fn tool_details_toggle_collapses_successful_tool_payloads() {
     let mut app = rich_transcript_fixture_app();
 
     let shown = render_live_lines(&app, 120, 30);
-    assert!(shown.contains("Read src/ui.rs [offset=1, limit=24]"));
+    assert!(shown.contains("Read 1 file"));
 
     run_palette_command(&mut app, "hide tool details");
     let hidden = render_live_lines(&app, 120, 30);
-    assert!(!hidden.contains("Read src/ui.rs [offset=1, limit=24]"));
+    assert!(!hidden.contains("Read 1 file"));
 
     run_palette_command(&mut app, "show tool details");
     let restored = render_live_lines(&app, 120, 30);
-    assert!(restored.contains("Read src/ui.rs [offset=1, limit=24]"));
+    assert!(restored.contains("Read 1 file"));
 }
 
 pub(super) fn failed_tool_rows_still_surface_error_summary() {
@@ -618,7 +613,10 @@ pub(super) fn failed_tool_rows_still_surface_error_summary() {
 
     let transcript = render_live_lines(&app, 120, 36);
     assert!(transcript.contains("false"));
-    assert!(transcript.contains("exit code: 1 stderr: permission denied"));
+    assert!(
+        transcript.contains("exit code: 1") && transcript.contains("stderr: permission denied"),
+        "failed tool rows must still surface the error summary\n{transcript}"
+    );
     assert!(!transcript.contains(r#"{"cmd":"false","cwd":"/tmp/demo"}"#));
     assert!(!transcript.contains("args {"));
 }
@@ -637,12 +635,12 @@ pub(super) fn permission_overlay_preserves_draft_and_transcript_context() {
 
     let debug = render_live_buffer(&app, 80, 24);
     assert!(!debug.contains("Composer · disabled · Permission blocked"));
-    assert!(debug.contains("Permission required"));
+    assert!(debug.contains("Allow Edit to demo.txt?"));
     assert!(debug.contains("Draft preserved · keep this draft"));
     assert!(!debug.contains("Select an activity to view transcript"));
     assert!(
-        debug.matches("Apply hashline edit to demo.txt").count() >= 1,
-        "permission summary should remain visible in the modal"
+        debug.contains("always-approve") && debug.contains("No, reject"),
+        "permission options should remain visible in the modal\n{debug}"
     );
 }
 
@@ -692,7 +690,7 @@ pub(super) fn permission_overlay_preserves_existing_draft_without_buffering_new_
     assert_eq!(app.composer.prompt_buffer, "keep t");
     assert_eq!(
         app.permission_modal_selection("perm_overlay_home_row_input"),
-        app::permissions::PermissionModalSelection::AllowOnce
+        app::permissions::PermissionModalSelection::AllowAlways
     );
 
     let debug = render_live_buffer(&app, 80, 24);

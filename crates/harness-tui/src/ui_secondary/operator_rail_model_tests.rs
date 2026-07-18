@@ -43,6 +43,8 @@ pub(crate) fn exact_test_compaction_applied_updates_active_context_usage_estimat
         user_timestamp: None,
         request_data: None,
         thinking_text: String::new(),
+        thinking_first_mono_ms: None,
+        thinking_last_mono_ms: None,
         transcript_text: String::new(),
         usage: Some(ActivityUsage {
             prompt_tokens: 400,

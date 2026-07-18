@@ -129,6 +129,7 @@ pub(super) fn build_compaction_render_surface(
         interaction_rows: None,
         selection_rows: None,
         diff_hunk_offsets: Vec::new(),
+        selected_rail: false,
     }
 }
 
@@ -344,6 +345,8 @@ mod tests {
             user_timestamp: None,
             request_data: None,
             thinking_text: String::new(),
+            thinking_first_mono_ms: None,
+            thinking_last_mono_ms: None,
             transcript_text: "assistant reply".to_string(),
             usage: None,
             cache_usage: None,

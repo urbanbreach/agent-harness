@@ -107,7 +107,10 @@ pub(crate) use ui_chrome::{
 };
 pub(crate) use ui_chrome::{subagent_footer_target_at, SubagentFooterTarget};
 pub(super) use ui_lifecycle::render_startup_lifecycle_surface;
-use ui_lifecycle::{live_empty_state_visible, render_live_empty_state, startup_shell_visible};
+use ui_lifecycle::{
+    live_empty_state_visible, live_transcript_area_with_breadcrumb, render_live_breadcrumb,
+    render_live_empty_state, startup_shell_visible,
+};
 use ui_overlays::render_overlays;
 pub(crate) use ui_secondary::{
     operator_sidebar_keyboard_targets, operator_sidebar_section_hit_target,
@@ -226,6 +229,16 @@ pub(crate) use ui_transcript::{
     exact_test_transcript_harness_tool_progress_indicators,
     exact_test_transcript_inline_diff_stays_compact_between_tool_rows,
     exact_test_transcript_native_edit_renders_inline_diff_from_artifact,
+    exact_test_write_tool_hides_redundant_patched_file_header,
+    exact_test_write_tool_renders_plain_numbered_dual_line_body,
+    exact_test_write_tool_title_matches_thought_lead,
+    exact_test_selected_rail_prefers_last_tool_over_thought,
+    exact_test_selected_rail_falls_back_to_thought_without_tools,
+    exact_test_pending_question_has_no_selected_rail,
+    exact_test_done_body_after_tool_packs_wall_clock_on_same_line,
+    exact_test_body_after_thought_keeps_separate_wall_clock_row,
+    exact_test_no_tool_turn_without_thinking_keeps_thought,
+    exact_test_tool_turn_without_thinking_omits_thought,
     exact_test_transcript_pending_permission_stays_after_last_activity,
     exact_test_transcript_proposed_edit_renders_header,
     exact_test_transcript_reasoning_precedes_answer_and_tool_rows,
@@ -257,7 +270,7 @@ pub fn render_app(frame: &mut Frame, app: &AppState) {
     let plan = FrameLayoutPlan::for_app(app, area);
 
     frame.render_widget(
-        Block::default().style(Style::default().bg(theme.surface.canvas)),
+        Block::default().style(Style::default().bg(ratatui::style::Color::Reset)),
         area,
     );
 
@@ -311,13 +324,9 @@ fn render_review_surface(
     plan: &FrameLayoutPlan,
     surface: ReviewSurface,
 ) {
-    let Some(transcript_area) = plan.transcript else {
-        return;
-    };
-
     match surface {
         ReviewSurface::Events | ReviewSurface::Help => {
-            render_help_tab(frame, app, transcript_area, theme);
+            render_help_tab(frame, app, plan.root, plan.content, plan.composer, theme);
         }
     }
 }
@@ -388,6 +397,8 @@ fn render_live_run_shell(frame: &mut Frame, app: &AppState, theme: &Theme, plan:
     };
 
     frame.render_widget(live_transcript_shell_section(theme), plan.shell);
+    render_live_breadcrumb(frame, app, transcript_area, theme);
+    let transcript_area = live_transcript_area_with_breadcrumb(transcript_area);
     render_transcript_pane(frame, app, transcript_area, theme);
     if let Some(terminal_panel) = plan.terminal_panel {
         render_terminal_panel(frame, app, terminal_panel, theme);
@@ -616,15 +627,9 @@ fn runtime_state_surface_copy(
             "Reopen the TUI, then continue from the transcript.",
             app.theme().status.error,
         )),
-        RuntimeStateKind::Failure => Some((
-            "Review required",
-            if state.composer_disabled {
-                "inspect transcript, then use commands to adjust the draft or recover."
-            } else {
-                "Review the failure, then retry or continue."
-            },
-            app.theme().status.error,
-        )),
+        // Freeze run1-stream-probe: fail chrome is flat transcript `Retry failed: …`,
+        // not an elevated Failure / Review required card over the body.
+        RuntimeStateKind::Failure => None,
         _ => None,
     }
 }

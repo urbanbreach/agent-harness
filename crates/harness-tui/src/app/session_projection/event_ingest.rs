@@ -106,6 +106,7 @@ impl SessionProjection {
                         entry.status = status;
                     }
                 }
+                self.ensure_orphan_question_tool_calls();
             }
             EventV1::ProviderRequestStarted(data) => {
                 self.note_child_agent_request(event, data.request_id.as_str());
@@ -158,6 +159,7 @@ impl SessionProjection {
                         },
                     ));
                 }
+                self.ensure_orphan_question_tool_calls();
             }
             EventV1::ProviderStreamDelta(data) => {
                 self.note_child_agent_request(event, data.request_id.as_str());
@@ -200,6 +202,7 @@ impl SessionProjection {
                     if let Some(entry) = self.activities.get_mut(index) {
                         entry.status = ActivityStatus::Streaming;
                         entry.thinking_text.push_str(&data.delta);
+                        entry.note_thinking_mono(event.mono_ms);
                         entry.bump_revision();
                         mark_activity_event(entry, event.seq, event.mono_ms);
                     }
@@ -220,6 +223,7 @@ impl SessionProjection {
                     ));
                     if let Some(entry) = self.activities.back_mut() {
                         entry.thinking_text = data.delta.clone();
+                        entry.note_thinking_mono(event.mono_ms);
                         entry.bump_revision();
                     }
                 }
@@ -263,8 +267,15 @@ impl SessionProjection {
                             }
                         });
                         if let Some(usage) = data.usage.as_ref() {
+                            // Context breadcrumb uses prompt/context fill when reported;
+                            // turn footer (⇣Nk) uses activity.usage.total_tokens separately.
+                            let context_tokens = if usage.prompt_tokens > 0 {
+                                usage.prompt_tokens
+                            } else {
+                                usage.total_tokens
+                            };
                             self.active_context_usage =
-                                Some(ActiveContextUsage::estimate(usage.total_tokens));
+                                Some(ActiveContextUsage::estimate(context_tokens));
                         }
                         entry.last_seq = event.seq;
                         entry.last_mono_ms = event.mono_ms;

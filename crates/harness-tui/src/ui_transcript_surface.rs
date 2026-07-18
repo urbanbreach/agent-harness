@@ -15,7 +15,7 @@ use super::ui_transcript_layout::MeasuredTranscriptSurface;
 
 const TRANSCRIPT_SURFACE_RAIL_WIDTH: u16 = 1;
 pub(super) const TRANSCRIPT_SURFACE_TRAILING_GAP_WIDTH: u16 = 2;
-pub(super) const TRANSCRIPT_RAIL_GLYPH: &str = "┃";
+pub(super) const TRANSCRIPT_RAIL_GLYPH: &str = " ";
 
 pub(super) fn transcript_surface_leading_gap(
     previous: Option<TranscriptRenderSurfaceKind>,

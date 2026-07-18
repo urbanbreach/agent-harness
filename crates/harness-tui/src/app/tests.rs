@@ -325,6 +325,8 @@ fn transcript_selection_test_app_with_text(transcript_text: &str) -> AppState {
         user_timestamp: None,
         request_data: None,
         thinking_text: String::new(),
+        thinking_first_mono_ms: None,
+        thinking_last_mono_ms: None,
         transcript_text: transcript_text.to_string(),
         usage: None,
         cache_usage: None,
@@ -847,6 +849,8 @@ delegate_test!(question_modal_ignores_digits_past_visible_choices => permission_
 delegate_test!(question_modal_multi_custom_selection_toggles_saved_custom_answer => permission_modal_tests::question_modal_multi_custom_selection_toggles_saved_custom_answer);
 delegate_test!(question_modal_submit_allows_unanswered_questions_on_confirm => permission_modal_tests::question_modal_submit_allows_unanswered_questions_on_confirm);
 delegate_test!(permission_modal_allow_always_requests_durable_run_grant => permission_modal_tests::permission_modal_allow_always_requests_durable_run_grant);
+delegate_test!(permission_modal_ctrl_o_opens_always_approve_confirm => permission_modal_tests::permission_modal_ctrl_o_opens_always_approve_confirm);
+delegate_test!(permission_modal_allow_session_requests_session_grant => permission_modal_tests::permission_modal_allow_session_requests_session_grant);
 
 #[cfg(test)]
 #[path = "tests/model_context_tests.rs"]
@@ -881,6 +885,8 @@ delegate_test!(repeated_projection_and_render_leaves_intent_queue_empty_and_proj
 delegate_test!(repeated_replay_projection_and_render_is_side_effect_free => render_purity_tests::repeated_replay_projection_and_render_is_side_effect_free);
 delegate_test!(pure_view_model_adapters_are_deterministic => render_purity_tests::pure_view_model_adapters_are_deterministic);
 
+delegate_test!(space_on_transcript_focus_focuses_prompt_for_typing => interaction_tests::space_on_transcript_focus_focuses_prompt_for_typing);
+delegate_test!(letter_on_transcript_focus_focuses_prompt_and_inserts_char => interaction_tests::letter_on_transcript_focus_focuses_prompt_and_inserts_char);
 delegate_test!(focus_returns_after_palette_close => interaction_tests::focus_returns_after_palette_close);
 
 delegate_test!(details_drawer_toggles_without_stealing_transcript_state => interaction_tests::details_drawer_toggles_without_stealing_transcript_state);
@@ -895,6 +901,12 @@ delegate_test!(mouse_wheel_scrolls_transcript_without_stealing_focus => interact
 
 delegate_test!(transcript_navigation_keys_match_scroll_expectations => interaction_tests::transcript_navigation_keys_match_scroll_expectations);
 
+delegate_test!(shift_right_left_on_details_focus_navigates_user_turns => interaction_tests::shift_right_left_on_details_focus_navigates_user_turns);
+
+delegate_test!(page_up_down_with_prompt_focus_scrolls_transcript_without_clearing_draft => interaction_tests::page_up_down_with_prompt_focus_scrolls_transcript_without_clearing_draft);
+
+delegate_test!(shift_left_on_prompt_focus_still_selects_chars => interaction_tests::shift_left_on_prompt_focus_still_selects_chars);
+	
 delegate_test!(mouse_wheel_scrolls_inspector_when_hovered => interaction_tests::mouse_wheel_scrolls_inspector_when_hovered);
 
 delegate_test!(mouse_wheel_ignores_non_scrollable_areas => interaction_tests::mouse_wheel_ignores_non_scrollable_areas);
@@ -951,6 +963,7 @@ mod activity_lifecycle_tests;
 delegate_test!(provider_reasoning_delta_populates_thinking_stream_without_overwriting_answer_text => activity_lifecycle_tests::provider_reasoning_delta_populates_thinking_stream_without_overwriting_answer_text);
 
 delegate_test!(provider_request_finished_total_tokens_populates_active_context_usage => activity_lifecycle_tests::provider_request_finished_total_tokens_populates_active_context_usage);
+delegate_test!(provider_request_finished_prompt_tokens_prefer_active_context => activity_lifecycle_tests::provider_request_finished_prompt_tokens_prefer_active_context);
 
 delegate_test!(provider_request_finished_without_usage_leaves_active_context_usage_none => activity_lifecycle_tests::provider_request_finished_without_usage_leaves_active_context_usage_none);
 
@@ -992,6 +1005,12 @@ delegate_test!(multiline_history_keys_move_cursor_before_recalling_history => pr
 delegate_test!(prompt_history_persists_and_restores_draft_after_recall => prompt_input_tests::prompt_history_persists_and_restores_draft_after_recall);
 delegate_test!(startup_auto_submit_persists_prompt_history_once => prompt_input_tests::startup_auto_submit_persists_prompt_history_once);
 delegate_test!(live_bootstrap_auto_submit_echoes_and_emits_first_prompt => prompt_input_tests::live_bootstrap_auto_submit_echoes_and_emits_first_prompt);
+delegate_test!(first_esc_on_nonempty_idle_prompt_shows_press_again_hint_without_clearing => prompt_input_tests::first_esc_on_nonempty_idle_prompt_shows_press_again_hint_without_clearing);
+delegate_test!(second_esc_within_800ms_clears_prompt_and_saves_history => prompt_input_tests::second_esc_within_800ms_clears_prompt_and_saves_history);
+delegate_test!(second_esc_after_800ms_restarts_clear_gesture_without_clearing => prompt_input_tests::second_esc_after_800ms_restarts_clear_gesture_without_clearing);
+delegate_test!(esc_while_turn_running_does_not_cancel_on_single_press => prompt_input_tests::esc_while_turn_running_does_not_cancel_on_single_press);
+delegate_test!(double_esc_while_turn_running_does_not_emit_interrupt => prompt_input_tests::double_esc_while_turn_running_does_not_emit_interrupt);
+delegate_test!(ctrl_c_clears_draft_then_cancels_running_turn => prompt_input_tests::ctrl_c_clears_draft_then_cancels_running_turn);
 delegate_test!(submit_prompt_while_turn_streams_echoes_as_queued_and_emits_intent => prompt_input_tests::submit_prompt_while_turn_streams_echoes_as_queued_and_emits_intent);
 
 delegate_test!(prompt_stash_push_clears_composer_and_persists_entry => prompt_stash_tests::prompt_stash_push_clears_composer_and_persists_entry);

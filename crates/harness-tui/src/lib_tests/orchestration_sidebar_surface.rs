@@ -155,11 +155,11 @@ pub(super) fn layout_plan_primary_geometry_docks_live_details_sidebar() {
     assert_eq!(plan.status, None);
     assert_eq!(
         plan.composer,
-        Some(ratatui::layout::Rect::new(0, 24, 100, 5))
+        Some(ratatui::layout::Rect::new(2, 24, 96, 4))
     );
     assert_eq!(
         plan.disclosure,
-        Some(ratatui::layout::Rect::new(0, 29, 100, 1))
+        Some(ratatui::layout::Rect::new(2, 28, 96, 1))
     );
 }
 
@@ -170,23 +170,23 @@ pub(super) fn layout_plan_minimum_geometry_stacks_live_details_drawer() {
 
     let plan = layout::FrameLayoutPlan::for_app(&app, ratatui::layout::Rect::new(0, 0, 80, 24));
 
-    assert_eq!(plan.shell, ratatui::layout::Rect::new(2, 0, 76, 24));
+    assert_eq!(plan.shell, ratatui::layout::Rect::new(0, 0, 80, 24));
     assert_eq!(
         plan.transcript,
-        Some(ratatui::layout::Rect::new(2, 0, 76, 18))
+        Some(ratatui::layout::Rect::new(0, 0, 80, 18))
     );
     assert_eq!(
         plan.details_overlay,
-        Some(ratatui::layout::Rect::new(36, 0, 42, 18))
+        Some(ratatui::layout::Rect::new(38, 0, 42, 18))
     );
     assert_eq!(plan.status, None);
     assert_eq!(
         plan.composer,
-        Some(ratatui::layout::Rect::new(2, 18, 76, 5))
+        Some(ratatui::layout::Rect::new(2, 18, 76, 4))
     );
     assert_eq!(
         plan.disclosure,
-        Some(ratatui::layout::Rect::new(2, 23, 76, 1))
+        Some(ratatui::layout::Rect::new(2, 22, 76, 1))
     );
 }
 
@@ -220,12 +220,14 @@ pub(super) fn wide_shell_hides_header_when_sidebar_is_visible() {
     assert!(plan.live_anchor.is_none());
     assert!(!first_line.contains("run run_fixture"));
     assert!(
-        lines.iter().take(4).any(|line| {
+        lines.iter().take(8).any(|line| {
             line.contains("Explain the refactor")
                 || line.contains("Working through the steps.")
+                || line.contains("Read 1 file")
                 || line.contains("Read src/ui.rs")
+                || line.contains("Read src/app.rs")
         }),
-        "wide shell transcript content should begin immediately at the top of the shell\n{rendered}"
+        "wide shell shows freeze breadcrumb then transcript content near the top\n{rendered}"
     );
 }
 
@@ -251,7 +253,7 @@ pub(super) fn replay_read_only_composer_matches_quiet_contract() {
     let app =
         app::AppState::new_replay(PathBuf::from("/tmp/replay-session"), session_view_events());
 
-    assert_replay_read_only_composer_contract(&app, 100, 24, "Replay · read-only", "? shortcuts");
+    assert_replay_read_only_composer_contract(&app, 100, 24, "Replay · read-only", "h shortcuts");
 
     let rendered = render_live_lines(&app, 100, 24);
     assert!(!rendered.contains("Replay archive · read-only"));
@@ -262,9 +264,9 @@ pub(super) fn replay_read_only_quiet_contract_survives_primary_compact_and_dense
     let app =
         app::AppState::new_replay(PathBuf::from("/tmp/replay-session"), session_view_events());
 
-    assert_replay_read_only_composer_contract(&app, 100, 30, "Replay · read-only", "? shortcuts");
-    assert_replay_read_only_composer_contract(&app, 90, 36, "Replay · read-only", "? shortcuts");
-    assert_replay_read_only_composer_contract(&app, 80, 24, "Replay · read-only", "? shortcuts");
+    assert_replay_read_only_composer_contract(&app, 100, 30, "Replay · read-only", "h shortcuts");
+    assert_replay_read_only_composer_contract(&app, 90, 36, "Replay · read-only", "h shortcuts");
+    assert_replay_read_only_composer_contract(&app, 80, 24, "Replay · read-only", "h shortcuts");
     assert_replay_read_only_composer_contract(&app, 60, 18, "Replay · read-only", "q quit");
 }
 

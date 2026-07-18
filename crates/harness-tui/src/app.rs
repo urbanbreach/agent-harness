@@ -90,6 +90,7 @@ pub use self::activity::{
 pub use self::auth_dialog::{ConnectDialogState, ConnectProviderOption};
 use self::auth_display::auth_status_banner;
 use self::composer::ComposerState;
+pub use self::transcript_state::TranscriptInteractionSnapshot;
 pub use self::lifecycle::{
     default_shell_registry, Focus, LifecycleShellState, MemoryCaps, PostRunHandoffAction,
     ReviewSurface, ShellDescriptor, ShellKind, StartupLauncherAction, Tab, UiIntent,
@@ -149,7 +150,9 @@ pub use toggles::{ToggleEntryConfig, ToggleEntryKind, ToggleMenuRow, TogglesConf
 
 /// Truncation limit for tool output display in the TUI (chars)
 const TOOL_OUTPUT_DISPLAY_MAX_CHARS: usize = 100;
-const INTERRUPT_CONFIRM_TIMEOUT: Duration = Duration::from_secs(5);
+
+const CLEAR_PROMPT_CONFIRM_TIMEOUT: Duration = Duration::from_millis(800);
+const CLEAR_PROMPT_HINT: &str = "press again to clear";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum OperatorSidebarSection {
@@ -294,6 +297,8 @@ pub struct AppState {
     replay_navigation_handoff_enabled: bool,
     interrupt_confirm_deadline: Option<Instant>,
     interrupt_confirm_task_ids: BTreeSet<String>,
+    clear_prompt_confirm_deadline: Option<Instant>,
+    now_fn: Arc<dyn Fn() -> Instant + Send + Sync>,
     on_ui_intent: Option<Arc<dyn Fn(UiIntent) + Send + Sync>>,
 }
 
@@ -398,6 +403,8 @@ impl Default for AppState {
             replay_navigation_handoff_enabled: false,
             interrupt_confirm_deadline: None,
             interrupt_confirm_task_ids: BTreeSet::new(),
+            clear_prompt_confirm_deadline: None,
+            now_fn: Arc::new(Instant::now),
             on_ui_intent: None,
         }
     }
@@ -484,7 +491,7 @@ impl AppState {
         self.submitted_permission_id = None;
         self.permission_prompt.permission_id = None;
         self.permission_prompt.stage = PermissionModalStage::Decision;
-        self.permission_prompt.selection = PermissionModalSelection::AllowOnce;
+        self.permission_prompt.selection = PermissionModalSelection::AllowAlways;
         self.permission_prompt.confirm_selection = PermissionConfirmSelection::Confirm;
         self.question_prompt.tab = 0;
         self.question_prompt.selection = 0;

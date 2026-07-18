@@ -20,7 +20,7 @@ mod toggles_menu;
 
 use auth_dialog::render_auth_dialog_overlay;
 use model_switcher::{
-    model_switcher_overlay_title, paint_model_select_panel, render_model_switcher_overlay,
+    model_switcher_overlay_title, render_model_switcher_overlay,
 };
 pub(super) use permission_modal::{
     permission_modal_actions_text, permission_modal_draft_line, permission_modal_guidance,
@@ -60,10 +60,24 @@ pub(super) fn render_overlays(
                 render_file_mentions_overlay(frame, app, theme, plan.slash_overlay)
             }
             OverlayKind::CommandPalette => {
-                render_command_palette_overlay(frame, app, theme, plan.root, plan.palette_overlay)
+                render_command_palette_overlay(
+                    frame,
+                    app,
+                    theme,
+                    plan.content,
+                    plan.composer,
+                    plan.palette_overlay,
+                )
             }
             OverlayKind::TogglesMenu | OverlayKind::LineageBrowser | OverlayKind::ForkSelector => {
-                render_command_palette_overlay(frame, app, theme, plan.root, plan.palette_overlay)
+                render_command_palette_overlay(
+                    frame,
+                    app,
+                    theme,
+                    plan.content,
+                    plan.composer,
+                    plan.palette_overlay,
+                )
             }
             OverlayKind::StatusDialog => render_status_dialog_overlay(frame, app, theme, plan.root),
             OverlayKind::SubagentActions => {
@@ -157,18 +171,56 @@ fn render_subagent_action_row(frame: &mut Frame, theme: &Theme, area: Rect) {
     );
 }
 
+fn render_session_history_side_hint(
+    frame: &mut Frame,
+    _theme: &Theme,
+    root: Rect,
+    overlay: Rect,
+) {
+    let hint = "or this directory";
+    let hint_width = u16::try_from(hint.chars().count()).unwrap_or(u16::MAX);
+    let x = overlay.x.saturating_add(overlay.width);
+    let available = root
+        .x
+        .saturating_add(root.width)
+        .saturating_sub(x);
+    if available == 0 || hint_width == 0 {
+        return;
+    }
+    let width = available.min(hint_width);
+    let y = overlay
+        .y
+        .saturating_add(overlay.height.saturating_sub(4));
+    if y >= root.y.saturating_add(root.height) {
+        return;
+    }
+    let text = truncate_plain_text(hint, usize::from(width));
+    let style = Style::default().add_modifier(Modifier::BOLD);
+    let buffer = frame.buffer_mut();
+    for (index, ch) in text.chars().enumerate() {
+        let cell_x = x.saturating_add(u16::try_from(index).unwrap_or(u16::MAX));
+        if cell_x >= x.saturating_add(width) {
+            break;
+        }
+        let cell = &mut buffer[(cell_x, y)];
+        cell.set_char(ch);
+        cell.set_style(style);
+    }
+}
+
 fn render_command_palette_overlay(
     frame: &mut Frame,
     app: &AppState,
     theme: &Theme,
     root: Rect,
+    composer: Option<Rect>,
     overlay: Option<Rect>,
 ) {
     let Some(overlay) = overlay else {
         return;
     };
 
-    render_overlay_dim_backdrop(frame, root);
+    render_palette_solid_backdrop(frame, root, composer);
 
     let title = if app.session_history_visible {
         session_history_overlay_title(app)
@@ -185,57 +237,72 @@ fn render_command_palette_overlay(
     };
 
     if app.session_history_visible {
-        if !paint_command_palette_panel(frame, theme, overlay) {
+        if !paint_command_palette_panel_titled(frame, theme, overlay, &title) {
             return;
         }
         render_session_history_overlay(frame, app, theme, overlay, &title);
+        render_session_history_side_hint(frame, theme, root, overlay);
         if app.session_rename_visible {
             render_session_rename_dialog(frame, app, theme, overlay);
         }
     } else if app.model_switcher_visible {
-        if !paint_model_select_panel(frame, theme, overlay) {
+        if !paint_command_palette_panel_titled(frame, theme, overlay, &title) {
             return;
         }
         render_model_switcher_overlay(frame, app, theme, overlay, &title);
     } else if app.toggles_menu_visible {
-        if !paint_command_palette_panel(frame, theme, overlay) {
+        if !paint_command_palette_panel_titled(frame, theme, overlay, &title) {
             return;
         }
-        let Some((header, input, list)) = command_palette_dialog_layout(overlay) else {
+        let Some((_header, input, list)) = command_palette_dialog_layout(overlay) else {
             return;
         };
-        render_command_palette_header(frame, theme, header, &title);
         render_command_palette_input(frame, app, theme, input);
         render_toggles_menu_list(frame, app, theme, list);
         if app.toggles_yolo_confirmation_visible() {
             render_yolo_warning_popup(frame, theme, overlay);
         }
     } else if app.lineage_browser_visible {
-        let Some(inner) = render_command_palette_surface(frame, theme, overlay) else {
+        if !paint_command_palette_panel_titled(frame, theme, overlay, &title) {
+            return;
+        }
+        let Some(inner) = command_palette_bordered_inner(overlay) else {
             return;
         };
         render_lineage_browser_overlay(frame, app, theme, inner, &title);
     } else if app.fork_selector_visible {
-        if !paint_command_palette_panel(frame, theme, overlay) {
+        if !paint_command_palette_panel_titled(frame, theme, overlay, &title) {
             return;
         }
-        let Some((header, input, list)) = command_palette_dialog_layout(overlay) else {
+        let Some((_header, input, list)) = command_palette_dialog_layout(overlay) else {
             return;
         };
-        render_command_palette_header(frame, theme, header, &title);
         render_fork_selector_input(frame, app, theme, input);
         render_fork_selector_list(frame, app, theme, list);
+    } else if !paint_command_palette_panel_titled(frame, theme, overlay, &title) {
+        return;
     } else {
-        if !paint_command_palette_panel(frame, theme, overlay) {
-            return;
-        }
-        let Some((header, input, list)) = command_palette_dialog_layout(overlay) else {
+        let Some((_header, input, list)) = command_palette_dialog_layout(overlay) else {
             return;
         };
-        render_command_palette_header(frame, theme, header, &title);
         render_command_palette_input(frame, app, theme, input);
         render_command_palette_list(frame, app, theme, list);
+        if let Some(footer) = command_palette_footer_area(overlay) {
+            render_command_palette_footer(frame, theme, footer);
+        }
     }
+}
+
+fn command_palette_bordered_inner(overlay: Rect) -> Option<Rect> {
+    if overlay.width <= 2 || overlay.height <= 2 {
+        return None;
+    }
+    Some(Rect::new(
+        overlay.x.saturating_add(1),
+        overlay.y.saturating_add(1),
+        overlay.width.saturating_sub(2),
+        overlay.height.saturating_sub(2),
+    ))
 }
 
 fn render_slash_commands_overlay(
@@ -496,16 +563,45 @@ fn render_command_palette_surface(frame: &mut Frame, theme: &Theme, overlay: Rec
 }
 
 fn paint_command_palette_panel(frame: &mut Frame, theme: &Theme, overlay: Rect) -> bool {
+    paint_command_palette_panel_titled(frame, theme, overlay, "Commands")
+}
+
+fn paint_command_palette_panel_titled(
+    frame: &mut Frame,
+    theme: &Theme,
+    overlay: Rect,
+    title: &str,
+) -> bool {
     if overlay.width == 0 || overlay.height == 0 {
         return false;
     }
 
     let surface = ui_chrome::command_palette_surface(theme);
+    let border_style = Style::default().bg(surface);
+    let title_style = Style::default()
+        .bg(surface)
+        .add_modifier(Modifier::BOLD);
+    let close_style = border_style;
     frame.render_widget(Clear, overlay);
-    frame.render_widget(
-        Block::default().style(Style::default().bg(surface)),
-        overlay,
-    );
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(ratatui::widgets::BorderType::Plain)
+        .border_style(border_style)
+        .style(Style::default().bg(surface))
+        .title(Line::from(vec![
+            Span::styled("─ ", border_style),
+            Span::styled(title.to_string(), title_style),
+            Span::styled(" ", border_style),
+        ]))
+        .title(
+            Line::from(vec![
+                Span::styled(" [", close_style),
+                Span::styled("✗", close_style),
+                Span::styled("] ─", close_style),
+            ])
+            .right_aligned(),
+        );
+    frame.render_widget(block, overlay);
     true
 }
 
@@ -514,70 +610,84 @@ fn command_palette_dialog_layout(overlay: Rect) -> Option<(Rect, Rect, Rect)> {
         return None;
     }
 
-    let content_x = overlay.x.saturating_add(4);
-    let content_width = overlay.width.saturating_sub(8);
-    let header = Rect::new(content_x, overlay.y.saturating_add(1), content_width, 1);
-    let input = Rect::new(content_x, overlay.y.saturating_add(3), content_width, 1);
+    let inner = Rect::new(
+        overlay.x.saturating_add(1),
+        overlay.y.saturating_add(1),
+        overlay.width.saturating_sub(2),
+        overlay.height.saturating_sub(2),
+    );
+    if inner.width <= 4 || inner.height <= 4 {
+        return None;
+    }
+
+    let content_x = inner.x.saturating_add(2);
+    let content_width = inner.width.saturating_sub(4);
+    let header = Rect::new(content_x, inner.y, content_width, 0);
+    let input = Rect::new(content_x, inner.y.saturating_add(1), content_width, 1);
     let list = Rect::new(
-        overlay.x,
-        overlay.y.saturating_add(5),
-        overlay.width,
-        overlay.height.saturating_sub(6),
+        inner.x,
+        inner.y.saturating_add(3),
+        inner.width,
+        inner.height.saturating_sub(4),
     );
     Some((header, input, list))
 }
 
-fn render_command_palette_header(frame: &mut Frame, theme: &Theme, area: Rect, title: &str) {
+fn command_palette_footer_area(overlay: Rect) -> Option<Rect> {
+    if overlay.width <= 4 || overlay.height <= 4 {
+        return None;
+    }
+    let content_x = overlay.x.saturating_add(3);
+    let content_width = overlay.width.saturating_sub(6);
+    Some(Rect::new(
+        content_x,
+        overlay.y.saturating_add(overlay.height.saturating_sub(2)),
+        content_width,
+        1,
+    ))
+}
+
+fn render_command_palette_footer(frame: &mut Frame, theme: &Theme, area: Rect) {
     if area.width == 0 || area.height == 0 {
         return;
     }
-
     let surface = ui_chrome::command_palette_surface(theme);
-    let esc = "esc";
-    let columns = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Min(0),
-            Constraint::Length(u16::try_from(esc.chars().count()).unwrap_or(u16::MAX)),
-        ])
-        .split(area);
+    let muted = Style::default();
+    let key = Style::default().add_modifier(Modifier::BOLD);
+    let spans = vec![
+        Span::styled("↑/↓".to_string(), key),
+        Span::styled(" nav  |  ".to_string(), muted),
+        Span::styled("Enter".to_string(), key),
+        Span::styled(" select  |  ".to_string(), muted),
+        Span::styled("Esc".to_string(), key),
+        Span::styled(" close".to_string(), muted),
+    ];
+    frame.render_widget(
+        Paragraph::new(Line::from(spans))
+            .alignment(Alignment::Center)
+            .style(Style::default().bg(surface)),
+        area,
+    );
+}
 
-    frame.render_widget(
-        Paragraph::new(title.to_string()).style(
-            Style::default()
-                .fg(ui_chrome::command_palette_title(theme))
-                .bg(surface)
-                .add_modifier(Modifier::BOLD),
-        ),
-        columns[0],
-    );
-    frame.render_widget(
-        Paragraph::new(esc).alignment(Alignment::Right).style(
-            Style::default()
-                .fg(ui_chrome::command_palette_muted(theme))
-                .bg(surface),
-        ),
-        columns[1],
-    );
+fn render_command_palette_header(frame: &mut Frame, theme: &Theme, area: Rect, title: &str) {
+    let _ = (frame, theme, area, title);
 }
 
 fn render_palette_empty_message(frame: &mut Frame, theme: &Theme, area: Rect, message: &str) {
     if area.width == 0 || area.height == 0 {
         return;
     }
-    let top_padding = if area.height > 1 { 1 } else { 0 };
     let empty_area = Rect::new(
-        area.x.saturating_add(3),
-        area.y.saturating_add(top_padding),
-        area.width.saturating_sub(3),
+        area.x.saturating_add(4),
+        area.y,
+        area.width.saturating_sub(4),
         1,
     );
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
             truncate_plain_text(message, usize::from(empty_area.width)),
-            Style::default()
-                .fg(ui_chrome::command_palette_muted(theme))
-                .bg(ui_chrome::command_palette_surface(theme)),
+            Style::default().bg(ui_chrome::command_palette_surface(theme)),
         ))),
         empty_area,
     );
@@ -591,9 +701,13 @@ fn render_command_palette_input(frame: &mut Frame, app: &AppState, theme: &Theme
     let surface = ui_chrome::command_palette_surface(theme);
     frame.render_widget(Block::default().style(Style::default().bg(surface)), area);
 
+    let chrome = Style::default().bg(surface);
+    let cursor = Style::default()
+        .fg(command_palette_input_cursor(theme, app))
+        .bg(surface);
     let line = if app.palette_input.is_empty() {
         let placeholder = if app.session_history_visible {
-            "Search"
+            "/ to search"
         } else if app.model_switcher_visible {
             "Filter models, providers"
         } else if app.toggles_menu_visible {
@@ -601,22 +715,32 @@ fn render_command_palette_input(frame: &mut Frame, app: &AppState, theme: &Theme
         } else if app.lineage_browser_visible {
             "Filter Harness session tree"
         } else {
-            "Search"
+            "search:"
         };
-        Line::from(vec![
-            Span::styled(
-                "█",
-                Style::default()
-                    .fg(command_palette_input_cursor(theme, app))
-                    .bg(surface),
-            ),
-            Span::styled(
-                format!(" {placeholder}"),
-                Style::default()
-                    .fg(ui_chrome::command_palette_muted(theme))
-                    .bg(surface),
-            ),
-        ])
+        if app.session_history_visible {
+            let prefix = format!(" {placeholder}");
+            let prefix_len = prefix.chars().count();
+            let chip_len = 5usize;
+            let trailing = 2usize;
+            let chip_start = usize::from(area.width)
+                .saturating_sub(trailing)
+                .saturating_sub(chip_len);
+            let gap = chip_start.saturating_sub(prefix_len);
+            let plain = Style::default();
+            let chip_key = Style::default().add_modifier(Modifier::BOLD);
+            Line::from(vec![
+                Span::styled(prefix, plain),
+                Span::styled(" ".repeat(gap), plain),
+                Span::styled("All ".to_string(), plain),
+                Span::styled("f".to_string(), chip_key),
+                Span::styled(" ".repeat(trailing), plain),
+            ])
+        } else {
+            Line::from(vec![
+                Span::styled(format!(" {placeholder}"), chrome),
+                Span::styled(" ", cursor),
+            ])
+        }
     } else {
         let cursor_byte = app
             .palette_input
@@ -627,27 +751,28 @@ fn render_command_palette_input(frame: &mut Frame, app: &AppState, theme: &Theme
         let before = &app.palette_input[..cursor_byte];
         let after = &app.palette_input[cursor_byte..];
         Line::from(vec![
-            Span::styled(
-                before.to_string(),
-                Style::default()
-                    .fg(ui_chrome::command_palette_muted(theme))
-                    .bg(surface),
-            ),
-            Span::styled(
-                "█",
-                Style::default()
-                    .fg(command_palette_input_cursor(theme, app))
-                    .bg(surface),
-            ),
-            Span::styled(
-                after.to_string(),
-                Style::default()
-                    .fg(ui_chrome::command_palette_muted(theme))
-                    .bg(surface),
-            ),
+            Span::styled(" search: ", chrome),
+            Span::styled(before.to_string(), chrome),
+            Span::styled("█", cursor),
+            Span::styled(after.to_string(), chrome),
         ])
     };
     frame.render_widget(Paragraph::new(line), area);
+
+    let rule_y = area.y.saturating_add(1);
+    let rule_area = Rect::new(
+        area.x.saturating_sub(2),
+        rule_y,
+        area.width.saturating_add(4),
+        1,
+    );
+    if rule_area.width > 0 {
+        let rule = "─".repeat(usize::from(rule_area.width));
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(rule, chrome))),
+            rule_area,
+        );
+    }
 }
 
 fn command_palette_input_cursor(theme: &Theme, app: &AppState) -> Color {
@@ -663,7 +788,16 @@ fn render_command_palette_list(frame: &mut Frame, app: &AppState, theme: &Theme,
         return;
     }
 
-    let list_area = inset_rect(area, 1.min(area.width.saturating_sub(1)), 0);
+    let list_area = if area.width <= 1 {
+        area
+    } else {
+        Rect::new(
+            area.x.saturating_add(1),
+            area.y,
+            area.width.saturating_sub(1),
+            area.height,
+        )
+    };
     if list_area.width == 0 || list_area.height == 0 {
         return;
     }
@@ -689,11 +823,32 @@ fn render_command_palette_list(frame: &mut Frame, app: &AppState, theme: &Theme,
         .unwrap_or(0);
     let scroll = selected_row.saturating_sub(visible_rows.saturating_sub(1));
 
+    let mut selected_category = None;
+    let mut current_category = None;
+    let mut row_categories: Vec<Option<crate::keybindings::palette_model::PaletteCategory>> =
+        Vec::with_capacity(rows.len());
+    for row in &rows {
+        match row {
+            PaletteOverlayRow::Section(category) => {
+                current_category = Some(*category);
+                row_categories.push(current_category);
+            }
+            PaletteOverlayRow::Command { is_selected, .. } => {
+                row_categories.push(current_category);
+                if *is_selected == selected {
+                    selected_category = current_category;
+                }
+            }
+            PaletteOverlayRow::Spacer => row_categories.push(None),
+        }
+    }
+
     for (row, palette_row) in rows.iter().enumerate().skip(scroll).take(visible_rows) {
         let row_y = list_area
             .y
             .saturating_add(u16::try_from(row - scroll).unwrap_or(u16::MAX));
         let row_area = Rect::new(list_area.x, row_y, list_area.width, 1);
+        let show_thumb = selected_category.is_some() && row_categories.get(row) == Some(&selected_category);
         match palette_row {
             PaletteOverlayRow::Spacer => {
                 frame.render_widget(
@@ -708,6 +863,7 @@ fn render_command_palette_list(frame: &mut Frame, app: &AppState, theme: &Theme,
                         category.label(),
                         theme,
                         row_area.width,
+                        show_thumb,
                     )),
                     row_area,
                 );
@@ -719,13 +875,6 @@ fn render_command_palette_list(frame: &mut Frame, app: &AppState, theme: &Theme,
                 is_selected,
             } => {
                 let is_selected = *is_selected == selected;
-                if is_selected {
-                    frame.render_widget(
-                        Block::default().style(ui_chrome::overlay_focus_row_style(theme)),
-                        row_area,
-                    );
-                }
-
                 frame.render_widget(
                     Paragraph::new(command_palette_row(
                         title,
@@ -734,6 +883,7 @@ fn render_command_palette_list(frame: &mut Frame, app: &AppState, theme: &Theme,
                         is_selected,
                         theme,
                         row_area.width,
+                        show_thumb,
                     )),
                     row_area,
                 );
@@ -773,14 +923,23 @@ pub(crate) fn palette_overlay_rows(app: &AppState) -> Vec<PaletteOverlayRow> {
         let footer = {
             let entry = find(row.command_id);
             entry
-                .and_then(|e| match e.dispatch {
-                    PaletteDispatch::Action(action) => Some(app.keymap.get_binding_str(action)),
-                    PaletteDispatch::OpenModelSwitcher => {
-                        Some(app.keymap.get_binding_str(Action::OpenModelSwitcher))
+                .map(|e| {
+                    let freeze = e.freeze_shortcut();
+                    if !freeze.is_empty() {
+                        freeze.to_string()
+                    } else {
+                        match e.dispatch {
+                            PaletteDispatch::Action(action) => {
+                                app.keymap.get_binding_str(action)
+                            }
+                            PaletteDispatch::OpenModelSwitcher => {
+                                app.keymap.get_binding_str(Action::OpenModelSwitcher)
+                            }
+                            _ => String::new(),
+                        }
                     }
-                    _ => None,
                 })
-                .filter(|s| s != "-")
+                .filter(|s| s != "-" && !s.is_empty())
                 .unwrap_or_default()
         };
 
@@ -790,6 +949,16 @@ pub(crate) fn palette_overlay_rows(app: &AppState) -> Vec<PaletteOverlayRow> {
             footer,
             is_selected: selected_index,
         });
+    }
+
+    if app.palette_input.is_empty()
+        && last_category.is_some()
+        && last_category != Some(crate::keybindings::palette_model::PaletteCategory::ModelInput)
+    {
+        overlay_rows.push(PaletteOverlayRow::Spacer);
+        overlay_rows.push(PaletteOverlayRow::Section(
+            crate::keybindings::palette_model::PaletteCategory::ModelInput,
+        ));
     }
 
     overlay_rows
@@ -802,38 +971,28 @@ fn command_palette_row(
     is_selected: bool,
     theme: &Theme,
     width: u16,
+    show_thumb: bool,
 ) -> Line<'static> {
+    let _ = description;
     let row_width = usize::from(width);
+    let gutter = 4usize;
+    let body_row_width = row_width.saturating_sub(gutter);
     let surface = ui_chrome::command_palette_surface(theme);
-    let row_style = if is_selected {
-        ui_chrome::overlay_focus_row_style(theme)
-    } else {
-        Style::default().bg(surface)
-    };
+    let row_style = Style::default().bg(surface);
     let label_style = if is_selected {
-        row_style.add_modifier(Modifier::BOLD)
+        Style::default().bg(surface).add_modifier(Modifier::BOLD)
     } else {
-        row_style.fg(ui_chrome::command_palette_title(theme))
-    };
-    let description_style = if is_selected {
         row_style
-    } else {
-        row_style.fg(ui_chrome::command_palette_muted(theme))
     };
-    let shortcut_style = if is_selected {
-        row_style.add_modifier(Modifier::BOLD)
-    } else {
-        row_style.fg(ui_chrome::command_palette_muted(theme))
-    };
+    let shortcut_style = row_style;
 
-    let content_width = row_width.saturating_sub(3);
-    let reserved_shortcut = if shortcut.is_empty() {
+    let shortcut_len = if shortcut.is_empty() {
         0
     } else {
-        shortcut.chars().count().saturating_add(1)
+        shortcut.chars().count()
     };
-    let body_width = content_width.saturating_sub(reserved_shortcut);
-    let prefix = "   ";
+    let body_width = body_row_width.saturating_sub(shortcut_len);
+    let prefix = " ◆ ";
     let mut spans = vec![Span::styled(prefix.to_string(), row_style)];
     let mut used_width = prefix.chars().count();
 
@@ -841,57 +1000,83 @@ fn command_palette_row(
     used_width = used_width.saturating_add(label.chars().count());
     spans.push(Span::styled(label, label_style));
 
-    let gap_width = 1;
-    let available_description = body_width.saturating_sub(used_width.saturating_add(gap_width));
-    let description = truncate_plain_text(description, available_description);
-    if !description.is_empty() {
-        spans.push(Span::styled(" ", row_style));
-        used_width = used_width.saturating_add(gap_width);
-        used_width = used_width.saturating_add(description.chars().count());
-        spans.push(Span::styled(description, description_style));
-    }
-
     if used_width < body_width {
         spans.push(Span::styled(" ".repeat(body_width - used_width), row_style));
     }
 
     if !shortcut.is_empty() {
-        spans.push(Span::styled(" ", row_style));
         spans.push(Span::styled(shortcut.to_string(), shortcut_style));
     }
 
-    if content_width < row_width {
-        spans.push(Span::styled(
-            " ".repeat(row_width - content_width),
-            row_style,
-        ));
-    }
+    spans.push(Span::styled("   ", row_style));
+    spans.push(Span::styled(
+        if show_thumb { "█" } else { " " }.to_string(),
+        row_style,
+    ));
 
     Line::from(spans)
 }
 
-fn command_palette_section_row(label: &str, theme: &Theme, width: u16) -> Line<'static> {
+fn command_palette_section_row(
+    label: &str,
+    theme: &Theme,
+    width: u16,
+    show_thumb: bool,
+) -> Line<'static> {
+    let _ = theme;
     let row_width = usize::from(width);
-    let surface = ui_chrome::command_palette_surface(theme);
-    let prefix = "   ";
-    let mut spans = vec![Span::styled(prefix, Style::default().bg(surface))];
-    let label = truncate_plain_text(label, row_width.saturating_sub(prefix.chars().count()));
-    let label_width = label.chars().count();
-    spans.push(Span::styled(
+    let gutter = 3usize;
+    let body_row_width = row_width.saturating_sub(gutter);
+    let label_style = Style::default().add_modifier(Modifier::BOLD);
+    let rule_style = Style::default();
+    let prefix = " ";
+    let mut spans = vec![Span::raw(prefix.to_string())];
+    let label = truncate_plain_text(
         label,
-        Style::default()
-            .fg(ui_chrome::command_palette_section())
-            .bg(surface)
-            .add_modifier(Modifier::BOLD),
-    ));
+        body_row_width
+            .saturating_sub(prefix.chars().count())
+            .saturating_sub(4),
+    );
+    let padded_label = format!(" {label} ");
+    let label_width = padded_label.chars().count();
+    spans.push(Span::styled(padded_label, label_style));
     let used_width = prefix.chars().count().saturating_add(label_width);
-    if used_width < row_width {
-        spans.push(Span::styled(
-            " ".repeat(row_width - used_width),
-            Style::default().bg(surface),
-        ));
+    if used_width < body_row_width {
+        let rule = "─".repeat(body_row_width.saturating_sub(used_width));
+        spans.push(Span::styled(rule, rule_style));
     }
+    spans.push(Span::raw("  ".to_string()));
+    spans.push(Span::raw(
+        if show_thumb { "█" } else { " " }.to_string(),
+    ));
     Line::from(spans)
+}
+
+fn render_palette_solid_backdrop(frame: &mut Frame, area: Rect, preserve: Option<Rect>) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+
+    let buffer = frame.buffer_mut();
+    let max_x = area.x.saturating_add(area.width);
+    let max_y = area.y.saturating_add(area.height);
+    let preserve = preserve.filter(|rect| rect.width > 0 && rect.height > 0);
+    for y in area.y..max_y {
+        for x in area.x..max_x {
+            if preserve.is_some_and(|rect| {
+                x >= rect.x
+                    && y >= rect.y
+                    && x < rect.x.saturating_add(rect.width)
+                    && y < rect.y.saturating_add(rect.height)
+            }) {
+                continue;
+            }
+            let cell = &mut buffer[(x, y)];
+            cell.set_symbol(" ");
+            cell.set_fg(Color::Reset);
+            cell.set_bg(Color::Reset);
+        }
+    }
 }
 
 fn render_overlay_dim_backdrop(frame: &mut Frame, area: Rect) {

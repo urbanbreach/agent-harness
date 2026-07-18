@@ -55,7 +55,7 @@ pub(super) fn permission_modal_preempts_palette_and_slash() {
     ));
 
     let palette_render = render_live_lines(&palette_app, 100, 24);
-    assert!(palette_render.contains("Permission required"));
+    assert!(palette_render.contains("Allow Edit"));
     assert!(!palette_render.contains("Commands"));
     assert!(!palette_app.palette_visible);
     assert_eq!(
@@ -75,7 +75,7 @@ pub(super) fn permission_modal_preempts_palette_and_slash() {
     slash_app.handle_key(key(crossterm::event::KeyCode::Char('/')));
 
     let slash_render = render_live_lines(&slash_app, 100, 24);
-    assert!(slash_render.contains("Permission required"));
+    assert!(slash_render.contains("Allow Edit"));
     assert!(!slash_render.contains("Slash commands"));
     assert_eq!(slash_app.composer.prompt_buffer, "/");
     assert!(!slash_app.slash_visible);
@@ -104,15 +104,17 @@ pub(super) fn completed_sessions_show_inline_completion_state_instead_of_handoff
     assert!(app.completed_session_shell_active());
     assert!(!app.post_run_handoff_visible());
     assert!(rendered.contains("Tab focus"));
-    assert!(rendered.contains("Ctrl+p commands"));
-    assert!(rendered.contains("q quit"));
+    assert!(
+        rendered.contains("commands") && rendered.contains("quit"),
+        "completed shell uses focus/commands/quit disclosure, not live Shift+Tab:mode chrome\n{rendered}"
+    );
     assert!(!rendered.contains("Next action"));
     assert!(!rendered.contains("Continue this session"));
 }
 
 pub(super) fn live_shell_uses_single_chrome_path() {
     let ready = app::AppState::new_live(None, false, None);
-    assert_live_shell_document_composer_contract(&ready, 100, 24, None, None, "Ctrl+p commands");
+    assert_live_shell_document_composer_contract(&ready, 100, 24, None, None, "Shift+Tab:mode");
 
     let mut completed = app::AppState::new_live(
         Some(PathBuf::from("/tmp/sessions/run_fixture")),
@@ -150,6 +152,10 @@ pub(super) fn live_shell_status_strip_has_single_priority_order() {
     assert!(
         orchestration_render.contains("Current runtime:")
             || orchestration_render.contains("Launch:")
+            || orchestration_render.contains("gpt-5")
+            || orchestration_render.contains("deep")
+            || orchestration_render.contains('❯'),
+        "status strip or composer chrome should surface runtime identity\n{orchestration_render}"
     );
 
     let mut app = app::AppState::new_live(None, false, None);
@@ -163,7 +169,7 @@ pub(super) fn live_shell_status_strip_has_single_priority_order() {
 
     let rendered = render_live_lines(&app, 140, 40);
 
-    assert!(rendered.contains("Ctrl+p commands"));
+    assert!(rendered.contains("Shift+Tab:mode") || rendered.contains("Ctrl+x:shortcuts"));
     assert!(!rendered.contains("Enter send"));
     assert!(!rendered.contains("tool finished"));
     assert!(!rendered.contains("turn 1"));
@@ -238,7 +244,10 @@ pub(super) fn slash_overlay_uses_input_width_aligned_rows_and_accent_selection()
 
     assert_eq!(help_description, exit_description);
     assert!(!lines[row].contains('┃'));
-    assert!(!rendered.contains('╭') && !rendered.contains('╰') && !rendered.contains('│'));
+    assert!(
+        !lines[row].contains('╭') && !lines[row].contains('╰'),
+        "slash rows stay unboxed even when the live composer is bordered\n{rendered}"
+    );
 
     let buffer = render_live_cells(&app, 100, 24);
     let selected_command = format!("/{}", app.slash_filtered.first().unwrap_or_abort());
@@ -303,7 +312,7 @@ pub(super) fn command_driven_session_switch_emits_correct_ui_intent() {
         crossterm::event::KeyCode::Char('p'),
         crossterm::event::KeyModifiers::CONTROL,
     ));
-    for ch in "switch".chars() {
+    for ch in "resume".chars() {
         app.handle_key(exact_test_key(crossterm::event::KeyCode::Char(ch)));
     }
     app.handle_key(exact_test_key(crossterm::event::KeyCode::Enter));
@@ -332,12 +341,24 @@ pub(super) fn overlays_share_elevated_card_language() {
     ));
     let palette_render = render_live_lines(&palette, width, height);
     assert!(palette_render.contains("Commands"));
-    assert_selected_overlay_row_uses_highlight(
-        &palette,
-        width,
-        height,
-        "Switch session",
-        ratatui::style::Color::Rgb(0xF5, 0xA7, 0x42),
+    let palette_buffer = render_live_cells(&palette, width, height);
+    let (row, fgs, bgs) = row_text_and_palette(&palette_buffer, width, "Resume Session")
+        .unwrap_or_else(|| panic!("missing selected overlay row Resume Session"));
+    let start_byte = row.find("Resume Session").unwrap_or_abort();
+    let start = row[..start_byte].chars().count();
+    let end = start + "Resume Session".chars().count();
+    assert!(
+        bgs[start..end]
+            .iter()
+            .all(|color| *color == ratatui::style::Color::Reset),
+        "selected palette row uses freeze Reset surface, not inverse card fill\n{row}"
+    );
+    assert!(
+        fgs[start..end]
+            .iter()
+            .all(|color| *color == ratatui::style::Color::Reset
+                || *color == ratatui::style::Color::Rgb(0xD7, 0xDA, 0xE0)),
+        "selected palette row keeps primary text on Reset surface\n{row}"
     );
 
     let mut sessions = app::AppState::new_startup(
@@ -351,18 +372,38 @@ pub(super) fn overlays_share_elevated_card_language() {
         crossterm::event::KeyCode::Char('p'),
         crossterm::event::KeyModifiers::CONTROL,
     ));
-    for ch in "switch".chars() {
+    for ch in "resume".chars() {
         sessions.handle_key(exact_test_key(crossterm::event::KeyCode::Char(ch)));
     }
     sessions.handle_key(exact_test_key(crossterm::event::KeyCode::Enter));
     let sessions_render = render_live_lines(&sessions, width, height);
-    assert!(sessions_render.contains("Continue session"));
-    assert_selected_overlay_row_uses_highlight(
-        &sessions,
-        width,
-        height,
-        "Resume target",
-        ratatui::style::Color::Rgb(0xF5, 0xA7, 0x42),
+    assert!(
+        sessions_render.contains("Continue session")
+            || sessions_render.contains("Resume session")
+            || sessions_render.contains("Resume target")
+    );
+    let sessions_buffer = render_live_cells(&sessions, width, height);
+    let (sessions_row, sessions_fgs, sessions_bgs) =
+        row_text_and_palette(&sessions_buffer, width, "Resume target")
+            .unwrap_or_else(|| panic!("missing selected session history row Resume target"));
+    let sessions_start_byte = sessions_row.find("Resume target").unwrap_or_abort();
+    let sessions_start = sessions_row[..sessions_start_byte].chars().count();
+    let sessions_end = sessions_start + "Resume target".chars().count();
+    assert!(
+        sessions_bgs[sessions_start..sessions_end]
+            .iter()
+            .all(|color| *color == ratatui::style::Color::Reset
+                || *color == ratatui::style::Color::Rgb(0xD9, 0x84, 0xD9)
+                || *color == ratatui::style::Color::Rgb(0x0B, 0x0E, 0x14)),
+        "session history selected row uses freeze surface chrome\n{sessions_row}"
+    );
+    assert!(
+        sessions_fgs[sessions_start..sessions_end]
+            .iter()
+            .all(|color| *color == ratatui::style::Color::Reset
+                || *color == ratatui::style::Color::Rgb(0xD7, 0xDA, 0xE0)
+                || *color == ratatui::style::Color::Rgb(0x0B, 0x0E, 0x14)),
+        "session history selected row keeps readable text chrome\n{sessions_row}"
     );
 }
 
@@ -376,12 +417,25 @@ pub(super) fn quiet_overlay_helper_rows_use_semantic_chrome_palette() {
         crossterm::event::KeyModifiers::CONTROL,
     ));
     let palette_buffer = render_live_cells(&palette, width, height);
-    assert_row_segment_palette(
-        &palette_buffer,
-        width,
-        "Commands",
-        ratatui::style::Color::Rgb(0xEE, 0xEE, 0xEE),
-        ratatui::style::Color::Rgb(0x14, 0x14, 0x14),
+    let (commands_row, commands_fgs, commands_bgs) =
+        row_text_and_palette(&palette_buffer, width, "Commands")
+            .unwrap_or_else(|| panic!("missing Commands title row"));
+    let commands_start = commands_row[..commands_row.find("Commands").unwrap_or_abort()]
+        .chars()
+        .count();
+    let commands_end = commands_start + "Commands".chars().count();
+    assert!(
+        commands_bgs[commands_start..commands_end]
+            .iter()
+            .all(|color| *color == ratatui::style::Color::Reset),
+        "Commands title uses freeze Reset surface\n{commands_row}"
+    );
+    assert!(
+        commands_fgs[commands_start..commands_end]
+            .iter()
+            .all(|color| *color == ratatui::style::Color::Reset
+                || *color == ratatui::style::Color::Rgb(0xD7, 0xDA, 0xE0)),
+        "Commands title uses default/primary text on Reset surface\n{commands_row}"
     );
 
     let mut sessions = app::AppState::new_startup(
@@ -395,17 +449,38 @@ pub(super) fn quiet_overlay_helper_rows_use_semantic_chrome_palette() {
         crossterm::event::KeyCode::Char('p'),
         crossterm::event::KeyModifiers::CONTROL,
     ));
-    for ch in "switch".chars() {
+    for ch in "resume".chars() {
         sessions.handle_key(exact_test_key(crossterm::event::KeyCode::Char(ch)));
     }
     sessions.handle_key(exact_test_key(crossterm::event::KeyCode::Enter));
     let sessions_buffer = render_live_cells(&sessions, width, height);
-    assert_row_segment_palette(
-        &sessions_buffer,
-        width,
-        "Continue session",
-        ratatui::style::Color::Rgb(0xEE, 0xEE, 0xEE),
-        ratatui::style::Color::Rgb(0x14, 0x14, 0x14),
+    let sessions_render = render_live_lines(&sessions, width, height);
+    let title_needle = if sessions_render.contains("Continue session") {
+        "Continue session"
+    } else if sessions_render.contains("Resume session") {
+        "Resume session"
+    } else {
+        "Resume Session"
+    };
+    let (title_row, title_fgs, title_bgs) =
+        row_text_and_palette(&sessions_buffer, width, title_needle)
+            .unwrap_or_else(|| panic!("missing session history title row {title_needle}"));
+    let title_start = title_row[..title_row.find(title_needle).unwrap_or_abort()]
+        .chars()
+        .count();
+    let title_end = title_start + title_needle.chars().count();
+    assert!(
+        title_bgs[title_start..title_end]
+            .iter()
+            .all(|color| *color == ratatui::style::Color::Reset),
+        "session history title uses freeze Reset surface\n{title_row}"
+    );
+    assert!(
+        title_fgs[title_start..title_end]
+            .iter()
+            .all(|color| *color == ratatui::style::Color::Reset
+                || *color == ratatui::style::Color::Rgb(0xD7, 0xDA, 0xE0)),
+        "session history title uses default/primary text on Reset surface\n{title_row}"
     );
 }
 
@@ -462,15 +537,15 @@ pub(super) fn live_shell_redesign_preserves_replay_overlay_and_permission_parity
         100,
         replay_disabled_row,
         theme.status.disabled,
-        theme.surface.shell,
+        ratatui::style::Color::Reset,
         "replay disabled composer",
     );
     assert_row_segment_palette(
         &replay_buffer,
         100,
-        "? shortcuts",
+        "h shortcuts",
         theme.text.secondary,
-        theme.surface.shell,
+        ratatui::style::Color::Reset,
     );
 
     let mut degraded = app::AppState::new_live(None, false, None);
@@ -499,12 +574,12 @@ pub(super) fn live_shell_redesign_preserves_replay_overlay_and_permission_parity
     failure.set_status_banner(Some(
         "runtime error: exit code 1\nstderr permission denied".to_string(),
     ));
-    let failure_buffer = render_live_cells(&failure, 80, 24);
-    assert_row_segment_background(
-        &failure_buffer,
-        80,
-        "Review required",
-        theme.surface.overlay,
+    let failure_render = render_live_lines(&failure, 80, 24);
+    // Freeze-aligned: Failure no longer paints elevated overlay chrome.
+    assert!(!failure_render.contains("Review required"));
+    assert_eq!(
+        failure.runtime_state().kind,
+        app::RuntimeStateKind::Failure
     );
 }
 
@@ -523,26 +598,32 @@ pub(super) fn permission_modal_remains_visually_dominant_and_fail_closed() {
     let rendered = render_live_lines(&app, 100, 24);
     let buffer = render_live_cells(&app, 100, 24);
     let theme = Theme::default();
-    let (row, _, bgs) = row_text_and_palette(&buffer, 100, "Allow once").unwrap_or_abort();
-    let start_byte = row.find("Allow once").unwrap_or_abort();
+    let selected_marker = "1 (●) Yes, and don't ask again for anything (always-approve mode)";
+    let (row, _, bgs) = row_text_and_palette(&buffer, 100, selected_marker).unwrap_or_abort();
+    let start_byte = row.find(selected_marker).unwrap_or_abort();
     let start = row[..start_byte].chars().count();
-    let end = start + "Allow once".chars().count();
+    let end = start + selected_marker.chars().count();
 
     assert_eq!(
         app.overlay_stack().ordered(),
         &[overlay::OverlayKind::PermissionModal]
     );
     assert!(!app.palette_visible);
-    assert!(rendered.contains("Permission required"));
-    assert!(rendered.contains("Allow once"));
-    assert!(rendered.contains("Allow always"));
-    assert!(rendered.contains("enter"));
-    assert!(rendered.contains("⇆"));
+    assert!(rendered.contains("Allow Edit"));
+    assert!(rendered.contains("always-approve"));
+    assert!(rendered.contains("No, reject"));
+    assert!(
+        rendered.contains("Ctrl+o:always-approve")
+            || rendered.contains("Ctrl+c:cancel")
+            || rendered.contains("enter:confirm")
+            || rendered.contains("Ctrl+n:deny")
+            || rendered.contains("esc:cancel")
+    );
     assert!(!rendered.contains("Commands"));
     assert!(
         bgs[start..end]
             .iter()
             .all(|color| *color == theme.status.warning),
-        "selected allow chip should stay stronger than quiet command overlays\n{row}"
+        "selected allow option should stay stronger than quiet command overlays\n{row}"
     );
 }

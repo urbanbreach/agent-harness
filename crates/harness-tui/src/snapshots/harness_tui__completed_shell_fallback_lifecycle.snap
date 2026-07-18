@@ -1,28 +1,27 @@
 ---
-source: crates/harness-tui/src/lib_tests.rs
+source: crates/harness-tui/src/lib_tests/startup_lifecycle_surface.rs
 expression: "fallback_render.lines().map(str::trim_end).collect::<Vec<_>>().join(\"\\n\")"
 ---
 
-
-
-                Session
-
-
-
-                                               Harness
-                                         Launch: default · -
-                                    Start a conversation to begin
-                    “inspect src/ui.rs” · “trace the failing test” · “review the
-                                            latest edit”
-                                         0  Ctrl+p commands
+             ui-ux-experiments ~/Projects/agent-harness/crates/harness-tui
 
 
 
 
 
-            ┃
-            ┃
-            ┃
-            ┃
-            ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
-            ready for first turn           Ctrl+Tab focus  ·  Ctrl+p commands  ·  q quit
+
+
+
+
+
+
+
+
+
+
+
+            ╭──────────────────────────────────────────────────────────────────────────╮
+            │ ❯                                                                        │
+            ╰──────────────────────────────────────────────────────────────── unknown ─╯
+
+            ready for first turn                Tab focus  ·  ? commands  ·  Ctrl+q quit

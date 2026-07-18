@@ -1,5 +1,6 @@
 use super::*;
 use crate::UnwrapOrAbort;
+use std::time::{Duration, Instant};
 
 pub(super) fn ctrl_j_inserts_newline_without_submitting() {
     let mut app = AppState::new_live(None, false, None);
@@ -183,6 +184,192 @@ pub(super) fn live_bootstrap_auto_submit_echoes_and_emits_first_prompt() {
             selected_agent_tags: Vec::new(),
             selected_resource_tags: Vec::new(),
             launch_metadata: LaunchMetadata::default(),
+        }]
+    );
+}
+
+pub(super) fn first_esc_on_nonempty_idle_prompt_shows_press_again_hint_without_clearing() {
+    let mut app = AppState::new_live(None, false, None);
+    app.focus = Focus::Prompt;
+    app.composer.prompt_buffer = "draft text".to_string();
+    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
+
+    app.handle_key(key(KeyCode::Esc));
+
+    assert_eq!(app.composer.prompt_buffer, "draft text");
+    assert!(app.clear_prompt_confirmation_pending());
+    assert_eq!(
+        app.toast().map(|toast| toast.message.as_str()),
+        Some(AppState::clear_prompt_hint_for_test())
+    );
+    assert!(app.composer.prompt_history.is_empty());
+}
+
+pub(super) fn second_esc_within_800ms_clears_prompt_and_saves_history() {
+    let mut app = AppState::new_live(None, false, None);
+    app.focus = Focus::Prompt;
+    app.composer.prompt_buffer = "keep me".to_string();
+    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
+
+    app.handle_key(key(KeyCode::Esc));
+    assert_eq!(app.composer.prompt_buffer, "keep me");
+    assert!(app.clear_prompt_confirmation_pending());
+
+    app.handle_key(key(KeyCode::Esc));
+
+    assert!(app.composer.prompt_buffer.is_empty());
+    assert!(!app.clear_prompt_confirmation_pending());
+    assert_eq!(app.composer.prompt_history, vec!["keep me".to_string()]);
+    assert!(app.toast().is_none());
+}
+
+pub(super) fn second_esc_after_800ms_restarts_clear_gesture_without_clearing() {
+    let base = Instant::now();
+    let offset = Arc::new(Mutex::new(Duration::ZERO));
+    let clock_offset = Arc::clone(&offset);
+    let mut app = AppState::new_live(None, false, None);
+    app.set_now_fn_for_test(Arc::new(move || base + *clock_offset.lock().unwrap_or_abort()));
+    app.focus = Focus::Prompt;
+    app.composer.prompt_buffer = "still here".to_string();
+    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
+
+    app.handle_key(key(KeyCode::Esc));
+    assert!(app.clear_prompt_confirmation_pending());
+    assert_eq!(app.composer.prompt_buffer, "still here");
+
+    *offset.lock().unwrap_or_abort() = Duration::from_millis(801);
+    app.handle_key(key(KeyCode::Esc));
+
+    assert_eq!(app.composer.prompt_buffer, "still here");
+    assert!(app.clear_prompt_confirmation_pending());
+    assert!(app.composer.prompt_history.is_empty());
+    assert_eq!(
+        app.toast().map(|toast| toast.message.as_str()),
+        Some(AppState::clear_prompt_hint_for_test())
+    );
+}
+
+pub(super) fn esc_while_turn_running_does_not_cancel_on_single_press() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().unwrap_or_abort().push(intent);
+        })
+    };
+    let mut app = AppState::new_live(None, false, Some(sink));
+    app.focus = Focus::Prompt;
+    app.composer.prompt_buffer = "queued draft".to_string();
+    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
+    app.ingest_event(envelope(
+        1,
+        "req_active",
+        EventV1::TaskScheduled(TaskScheduledEvent {
+            task_id: "task_active".to_string().into(),
+            state: TaskScheduleState::Started,
+            queue_key: Some("provider_model:default:model-1".to_string()),
+        }),
+    ));
+
+    app.handle_key(key(KeyCode::Esc));
+
+    assert!(
+        intents.lock().unwrap_or_abort().is_empty(),
+        "single Esc must not emit cancel/interrupt while a turn is running"
+    );
+    assert!(
+        !intents
+            .lock()
+            .unwrap_or_abort()
+            .iter()
+            .any(|intent| matches!(intent, UiIntent::InterruptSession { .. })),
+        "Esc must not cancel the running turn on first press"
+    );
+}
+
+pub(super) fn double_esc_while_turn_running_does_not_emit_interrupt() {
+    // Given: busy streaming turn with a non-empty draft
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().unwrap_or_abort().push(intent);
+        })
+    };
+    let mut app = AppState::new_live(None, false, Some(sink));
+    app.focus = Focus::Prompt;
+    app.composer.prompt_buffer = "queued draft".to_string();
+    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
+    app.ingest_event(envelope(
+        1,
+        "req_active",
+        EventV1::TaskScheduled(TaskScheduledEvent {
+            task_id: "task_active".to_string().into(),
+            state: TaskScheduleState::Started,
+            queue_key: Some("provider_model:default:model-1".to_string()),
+        }),
+    ));
+
+    // When: Esc twice while the turn is still running
+    app.handle_key(key(KeyCode::Esc));
+    app.handle_key(key(KeyCode::Esc));
+
+    // Then: no cancel/interrupt intent; draft remains (Esc is mid-turn no-op)
+    assert!(
+        intents.lock().unwrap_or_abort().is_empty(),
+        "double Esc must not emit any UiIntent while a turn is running"
+    );
+    assert!(
+        !intents
+            .lock()
+            .unwrap_or_abort()
+            .iter()
+            .any(|intent| matches!(intent, UiIntent::InterruptSession { .. })),
+        "double Esc must not emit InterruptSession while a turn is running"
+    );
+    assert!(!app.interrupt_confirmation_pending());
+    assert_eq!(app.composer.prompt_buffer, "queued draft");
+}
+
+pub(super) fn ctrl_c_clears_draft_then_cancels_running_turn() {
+    // Given: busy turn with a non-empty draft
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().unwrap_or_abort().push(intent);
+        })
+    };
+    let mut app = AppState::new_live(None, false, Some(sink));
+    app.focus = Focus::Prompt;
+    app.composer.prompt_buffer = "queued draft".to_string();
+    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
+    app.ingest_event(envelope(
+        1,
+        "req_active",
+        EventV1::TaskScheduled(TaskScheduledEvent {
+            task_id: "task_active".to_string().into(),
+            state: TaskScheduleState::Started,
+            queue_key: Some("provider_model:default:model-1".to_string()),
+        }),
+    ));
+
+    // When: first Ctrl+C clears draft without canceling
+    app.handle_key(key_with_modifiers(KeyCode::Char('c'), KeyModifiers::CONTROL));
+    assert_eq!(app.composer.prompt_buffer, "");
+    assert!(
+        intents.lock().unwrap_or_abort().is_empty(),
+        "first Ctrl+C with non-empty draft must clear only"
+    );
+
+    // When: second Ctrl+C cancels the running turn
+    app.handle_key(key_with_modifiers(KeyCode::Char('c'), KeyModifiers::CONTROL));
+
+    // Then: InterruptSession for the active task
+    assert_eq!(
+        intents.lock().unwrap_or_abort().as_slice(),
+        &[UiIntent::InterruptSession {
+            task_ids: vec!["task_active".to_string()],
         }]
     );
 }

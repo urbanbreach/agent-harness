@@ -3,38 +3,38 @@ use super::*;
 #[test]
 fn harness_dark_theme_matches_palette_contract() {
     let theme = Theme::harness_dark();
-    assert_eq!(theme.surface.canvas, rgb(0x0A, 0x0A, 0x0A));
-    assert_eq!(theme.surface.shell, rgb(0x0A, 0x0A, 0x0A));
-    assert_eq!(theme.surface.panel, rgb(0x14, 0x14, 0x14));
-    assert_eq!(theme.surface.panel_elevated, rgb(0x1E, 0x1E, 0x1E));
-    assert_eq!(theme.surface.overlay, rgb(0x14, 0x14, 0x14));
-    assert_eq!(theme.border.subtle, rgb(0x3C, 0x3C, 0x3C));
-    assert_eq!(theme.border.strong, rgb(0x48, 0x48, 0x48));
-    assert_eq!(theme.border.focus, rgb(0x60, 0x60, 0x60));
-    assert_eq!(theme.text.primary, rgb(0xEE, 0xEE, 0xEE));
-    assert_eq!(theme.text.secondary, rgb(0x80, 0x80, 0x80));
-    assert_eq!(theme.text.tertiary, rgb(0x80, 0x80, 0x80));
-    assert_eq!(theme.text.accent, rgb(0xF5, 0xA7, 0x42));
-    assert_eq!(theme.text.inverse, rgb(0x0A, 0x0A, 0x0A));
-    assert_eq!(theme.question_prompt.accent, rgb(0x9D, 0x7C, 0xD8));
+    assert_eq!(theme.surface.canvas, rgb(0x0B, 0x0E, 0x14));
+    assert_eq!(theme.surface.shell, rgb(0x0B, 0x0E, 0x14));
+    assert_eq!(theme.surface.panel, rgb(0x0B, 0x0E, 0x14));
+    assert_eq!(theme.surface.panel_elevated, rgb(0x12, 0x16, 0x1E));
+    assert_eq!(theme.surface.overlay, rgb(0x0B, 0x0E, 0x14));
+    assert_eq!(theme.border.subtle, rgb(0x3A, 0x3D, 0x43));
+    assert_eq!(theme.border.strong, rgb(0x48, 0x4B, 0x52));
+    assert_eq!(theme.border.focus, rgb(0x60, 0x63, 0x6A));
+    assert_eq!(theme.text.primary, rgb(0xD7, 0xDA, 0xE0));
+    assert_eq!(theme.text.secondary, rgb(0x88, 0x8B, 0x91));
+    assert_eq!(theme.text.tertiary, rgb(0x88, 0x8B, 0x91));
+    assert_eq!(theme.text.accent, rgb(0xD9, 0x84, 0xD9));
+    assert_eq!(theme.text.inverse, rgb(0x0B, 0x0E, 0x14));
+    assert_eq!(theme.question_prompt.accent, rgb(0xD9, 0x84, 0xD9));
     assert_eq!(theme.question_prompt.secondary, rgb(0x5C, 0x9C, 0xF5));
     assert_eq!(theme.status.success, rgb(0x7F, 0xD8, 0x8F));
-    assert_eq!(theme.status.warning, rgb(0xF5, 0xA7, 0x42));
+    assert_eq!(theme.status.warning, rgb(0xE5, 0xC0, 0x7B));
     assert_eq!(theme.status.error, rgb(0xE0, 0x6C, 0x75));
     assert_eq!(theme.status.info, rgb(0x56, 0xB6, 0xC2));
     assert_eq!(theme.status.disabled, rgb(0x80, 0x80, 0x80));
     assert_eq!(theme.agents.build, rgb(0x5C, 0x9C, 0xF5));
-    assert_eq!(theme.agents.plan, rgb(0x9D, 0x7C, 0xD8));
-    assert_eq!(theme.agents.docs, rgb(0xF5, 0xA7, 0x42));
-    assert_eq!(theme.agents.ask, rgb(0xFA, 0xB2, 0x83));
+    assert_eq!(theme.agents.plan, rgb(0xD9, 0x84, 0xD9));
+    assert_eq!(theme.agents.docs, rgb(0xE5, 0xC0, 0x7B));
+    assert_eq!(theme.agents.ask, rgb(0xE8, 0xA0, 0xE8));
     assert_eq!(
         theme.agents.palette,
         [
             rgb(0x5C, 0x9C, 0xF5),
-            rgb(0x9D, 0x7C, 0xD8),
+            rgb(0xD9, 0x84, 0xD9),
             rgb(0x7F, 0xD8, 0x8F),
-            rgb(0xF5, 0xA7, 0x42),
-            rgb(0xFA, 0xB2, 0x83),
+            rgb(0xE5, 0xC0, 0x7B),
+            rgb(0xE8, 0xA0, 0xE8),
             rgb(0xE0, 0x6C, 0x75),
             rgb(0x56, 0xB6, 0xC2),
         ]
@@ -42,14 +42,14 @@ fn harness_dark_theme_matches_palette_contract() {
     assert_eq!(theme.agent_accent("build"), rgb(0x5C, 0x9C, 0xF5));
     assert_eq!(theme.agent_accent("Build"), rgb(0x5C, 0x9C, 0xF5));
     assert_eq!(theme.agent_accent("default"), rgb(0x5C, 0x9C, 0xF5));
-    assert_eq!(theme.agent_accent("plan"), rgb(0x9D, 0x7C, 0xD8));
-    assert_eq!(theme.agent_accent("docs"), rgb(0xF5, 0xA7, 0x42));
-    assert_eq!(theme.agent_accent("ask"), rgb(0xFA, 0xB2, 0x83));
+    assert_eq!(theme.agent_accent("plan"), rgb(0xD9, 0x84, 0xD9));
+    assert_eq!(theme.agent_accent("docs"), rgb(0xE5, 0xC0, 0x7B));
+    assert_eq!(theme.agent_accent("ask"), rgb(0xE8, 0xA0, 0xE8));
     assert_eq!(theme.agent_accent("Plan"), theme.agent_accent(" plan "));
     assert_eq!(theme.agent_accent("worker"), theme.agent_accent("Worker"));
-    assert_eq!(theme.scrollbar.track, rgb(0x14, 0x14, 0x14));
-    assert_eq!(theme.scrollbar.thumb, rgb(0x32, 0x32, 0x32));
-    assert_eq!(theme.scrollbar.thumb_active, rgb(0x60, 0x60, 0x60));
+    assert_eq!(theme.scrollbar.track, rgb(0x0B, 0x0E, 0x14));
+    assert_eq!(theme.scrollbar.thumb, rgb(0x32, 0x36, 0x3C));
+    assert_eq!(theme.scrollbar.thumb_active, rgb(0x60, 0x63, 0x6A));
 }
 
 #[test]
@@ -63,7 +63,7 @@ fn semantic_theme_families_preserve_default_contracts() {
     );
     assert_eq!(tokens.semantic.chrome.divided.surface, theme.surface.panel);
     assert_eq!(tokens.semantic.chrome.card.surface, theme.surface.overlay);
-    assert_ne!(theme.surface.shell, theme.surface.panel);
+    assert_eq!(theme.surface.shell, theme.surface.panel);
     assert_ne!(theme.surface.panel, theme.surface.panel_elevated);
     assert_ne!(theme.surface.shell, theme.surface.panel_elevated);
     assert_eq!(
@@ -124,6 +124,7 @@ fn semantic_theme_families_preserve_default_contracts() {
         "?"
     );
     assert_eq!(tokens.live_shell.glyphs.ascii.transcript.user_marker, ">");
+    assert_eq!(tokens.live_shell.glyphs.ascii.transcript.tool_marker, "*");
 }
 
 #[test]
@@ -300,8 +301,8 @@ fn live_shell_tokens_choose_primary_geometry_at_signoff_size() {
     assert_eq!(primary_lifecycle.target, ShellGeometryTarget::Primary);
     assert_eq!(split_lifecycle.target, ShellGeometryTarget::Split);
     assert_eq!(minimum_lifecycle.target, ShellGeometryTarget::Minimum);
-    assert_eq!(minimum.centered_content_width, 76);
-    assert_eq!(minimum.content_margin_x, 1);
+    assert_eq!(minimum.centered_content_width, 80);
+    assert_eq!(minimum.content_margin_x, 0);
     assert_eq!(minimum.details_sidebar_width, 42);
     assert_eq!(minimum_lifecycle.startup_card.width, 70);
     assert_eq!(minimum_lifecycle.startup_card.height, 12);
@@ -330,14 +331,15 @@ fn live_shell_tokens_choose_primary_geometry_at_signoff_size() {
     assert_eq!(primary_lifecycle.overlay.width, 90);
     assert_eq!(theme.live_shell.rhythm.status_separator, 2);
     assert_eq!(theme.live_shell.heights.status, 1);
-    assert_eq!(theme.live_shell.transcript_glyphs.user_marker, "›");
-    assert_eq!(theme.live_shell.transcript_glyphs.card_top, "╭─");
+    assert_eq!(theme.live_shell.transcript_glyphs.user_marker, "❯");
+    assert_eq!(theme.live_shell.transcript_glyphs.tool_marker, "◆");
+    assert_eq!(theme.live_shell.transcript_glyphs.card_top, "  ");
     assert_eq!(
         tokens.live_shell.geometry.target(100, 30),
         ShellGeometryTarget::Primary
     );
     assert_eq!(tokens.live_shell.glyphs.ascii.status.failed, "x");
-    assert_eq!(tokens.live_shell.glyphs.ascii.transcript.card_top, "+-");
+    assert_eq!(tokens.live_shell.glyphs.ascii.transcript.card_top, "  ");
 
     assert!(minimum.centered_content_width + minimum.content_margin_x.saturating_mul(2) <= 80);
     assert!(split.centered_content_width + split.content_margin_x.saturating_mul(2) <= 96);
@@ -358,7 +360,7 @@ fn layout_plan_shell_width_tracks_theme_contracts() {
             ShellGeometry::MINIMUM.height,
         ),
     );
-    assert_eq!(minimum.shell.width, 76);
+    assert_eq!(minimum.shell.width, 80);
 
     let primary = crate::layout::FrameLayoutPlan::for_app(
         &app,

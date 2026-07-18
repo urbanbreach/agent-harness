@@ -32,10 +32,45 @@ pub(super) fn question_tool_title(
     question_answers: &[TranscriptQuestionAnswerItem],
 ) -> String {
     let count = question_count_from_args(&tool_call.args_summary).unwrap_or(question_answers.len());
-    format!(
-        "Asked {count} question{}",
-        if count == 1 { "" } else { "s" }
-    )
+    match tool_call.status {
+        crate::app::ToolCallDisplayStatus::Succeeded => format!(
+            "Asked {count} question{}",
+            if count == 1 { "" } else { "s" }
+        ),
+        crate::app::ToolCallDisplayStatus::Failed
+        | crate::app::ToolCallDisplayStatus::PendingPermission
+        | crate::app::ToolCallDisplayStatus::Queued
+        | crate::app::ToolCallDisplayStatus::Running => first_question_subject(tool_call, question_answers)
+            .map(|question| format!("Ask {question}"))
+            .unwrap_or_else(|| "Ask".to_string()),
+    }
+}
+
+fn first_question_subject(
+    tool_call: &ToolCallEntry,
+    question_answers: &[TranscriptQuestionAnswerItem],
+) -> Option<String> {
+    let from_args = question_prompt_texts(&tool_call.args_summary);
+    if let Some(question) = from_args
+        .into_iter()
+        .map(|question| collapse_inline_whitespace(&question))
+        .find(|question| !question.is_empty())
+    {
+        return Some(question);
+    }
+    if let Some(question) = question_answers
+        .iter()
+        .map(|item| collapse_inline_whitespace(&item.question))
+        .find(|question| !question.is_empty())
+    {
+        return Some(question);
+    }
+    tool_call.permissions.iter().find_map(|permission| {
+        question_prompt_texts(&permission.summary)
+            .into_iter()
+            .map(|question| collapse_inline_whitespace(&question))
+            .find(|question| !question.is_empty())
+    })
 }
 
 pub(super) fn todo_items_from_tool_call(

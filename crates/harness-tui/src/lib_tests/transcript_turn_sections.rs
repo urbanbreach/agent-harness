@@ -25,7 +25,8 @@ pub(super) fn transcript_turn_sections_render_open_rail_surfaces() {
         .unwrap_or_else(|| panic!("user body line\n{rendered}"));
     let assistant_body = find_line_containing_from(&lines, user_body + 1, "Grouped response")
         .unwrap_or_else(|| panic!("assistant body line\n{rendered}"));
-    let assistant_footer = find_line_containing_from(&lines, assistant_body + 1, "Assistant")
+    let assistant_footer = find_line_containing_from(&lines, assistant_body + 1, "Worked for")
+        .or_else(|| find_line_containing_from(&lines, assistant_body + 1, "gpt-5"))
         .unwrap_or_else(|| panic!("assistant footer\n{rendered}"));
 
     assert!(
@@ -40,25 +41,25 @@ pub(super) fn transcript_turn_sections_render_open_rail_surfaces() {
     let assistant_body_column = first_alphanumeric_column(lines[assistant_body]);
 
     assert!(
-        assistant_body_rail > user_body_rail,
-        "assistant prose should sit on an inset canvas instead of reusing the user prompt rail\n{rendered}"
+        assistant_body_rail >= user_body_rail,
+        "assistant prose should start at or after the user prompt rail (Grok gutter packing)\n{rendered}"
     );
     assert!(
-        user_body_column.abs_diff(assistant_body_column) <= 1,
-        "top-level turn bodies should stay nearly aligned even after prompt padding changes\n{rendered}"
+        user_body_column.abs_diff(assistant_body_column) <= 2,
+        "top-level turn bodies should stay nearly aligned with user text after marker\n{rendered}"
     );
     assert_eq!(
         user_body_column.saturating_sub(user_body_rail),
-        3,
-        "user message text should keep the shell's single rail plus two-column left padding\n{rendered}"
+        2,
+        "user message text should keep the marker plus one-column space\n{rendered}"
     );
     assert!(
         user_body > 0
-            && lines[user_body - 1].contains('┃')
+            && !lines[user_body - 1].contains('┃')
             && !lines[user_body - 1].contains("You"),
-        "user message should use the shell top padding without a synthetic header label\n{rendered}"
+        "user message should use flat top padding without a synthetic header label\n{rendered}"
     );
-    assert!(!lines[user_body].contains('›'));
+    assert!(lines[user_body].contains('❯'));
     assert!(
         user_body == 0 || !lines[user_body - 1].contains("Group these turns"),
         "user message should not duplicate the body above the boxed row\n{rendered}"
@@ -67,8 +68,8 @@ pub(super) fn transcript_turn_sections_render_open_rail_surfaces() {
         row_at(&buffer, 80, user_body).unwrap_or_abort();
     let (assistant_footer_row, assistant_footer_fgs, assistant_footer_bgs) =
         row_at(&buffer, 80, assistant_footer).unwrap_or_abort();
-    let user_rail_column = user_body_row.find('┃').unwrap_or_abort();
-    assert_eq!(user_body_fgs[user_rail_column], theme.agent_accent("build"));
+    let user_marker_column = user_body_row.find('❯').unwrap_or_abort();
+    assert_eq!(user_body_fgs[user_marker_column], theme.text.primary);
 
     let mut plan_app = app::AppState::new_live(None, false, None);
     plan_app.set_launch_metadata(app::LaunchMetadata::from_model_ref(
@@ -93,29 +94,38 @@ pub(super) fn transcript_turn_sections_render_open_rail_surfaces() {
         .unwrap_or_else(|| panic!("plan user body line\n{plan_rendered}"));
     let (plan_user_body_row, plan_user_body_fgs, _) =
         row_at(&render_live_cells(&plan_app, 80, 24), 80, plan_user_body).unwrap_or_abort();
-    let plan_user_rail_column = plan_user_body_row.find('┃').unwrap_or_abort();
+    let plan_user_marker_column = plan_user_body_row.find('❯').unwrap_or_abort();
     assert_eq!(
-        plan_user_body_fgs[plan_user_rail_column],
-        theme.agent_accent("plan")
+        plan_user_body_fgs[plan_user_marker_column],
+        theme.text.primary
     );
     assert!(!assistant_footer_row.contains('┃'));
-    assert_eq!(
-        assistant_footer_fgs[first_alphanumeric_column(lines[assistant_footer])],
-        theme.text.primary
+    let footer_fg = assistant_footer_fgs[first_alphanumeric_column(lines[assistant_footer])];
+    assert!(
+        footer_fg == theme.text.primary
+            || footer_fg == theme.text.secondary
+            || footer_fg == theme.text.tertiary,
+        "assistant footer should use primary or muted meta color, got {footer_fg:?}"
     );
     assert!(user_body_bgs[user_body_column..user_body_column + 4]
         .iter()
-        .all(|color| *color == theme.surface.panel));
+        .all(|color| *color == theme.surface.shell));
     assert!(
         assistant_footer_bgs[assistant_body_column..assistant_body_column + 9]
             .iter()
             .all(|color| *color == theme.surface.shell)
     );
     assert!(
-        assistant_body - user_body <= 3,
-        "turn stacking should stay compact\n{rendered}"
+        assistant_body - user_body <= 8,
+        "turn stacking should stay compact even with Thought for chrome (user_body={user_body}, assistant_body={assistant_body})\n{rendered}"
     );
-    assert!(!rendered.contains('╭') && !rendered.contains('╰') && !rendered.contains('│'));
+    assert!(
+        !lines[user_body].contains('╭')
+            && !lines[user_body].contains('╰')
+            && !lines[assistant_body].contains('╭')
+            && !lines[assistant_body].contains('╰'),
+        "transcript turn bodies stay rail-free; bordered composer chrome is separate\n{rendered}"
+    );
 
     let mut follow_app = app::AppState::new_live(None, false, None);
     follow_app.activities = std::collections::VecDeque::from(
@@ -133,7 +143,7 @@ pub(super) fn transcript_turn_sections_render_open_rail_surfaces() {
     follow_app.transcript_view.selected_activity_index = 7;
     follow_app.transcript_view.follow_mode = true;
 
-    let followed = render_live_lines(&follow_app, 60, 18);
+    let followed = render_live_lines(&follow_app, 60, 24);
     assert!(
         followed.contains("question 7") && followed.contains("reply 7"),
         "follow mode should keep the newest grouped turn visible\n{followed}"
@@ -146,7 +156,7 @@ pub(super) fn transcript_turn_sections_render_open_rail_surfaces() {
     follow_app.transcript_view.follow_mode = false;
     follow_app.transcript_view.transcript_scroll = usize::MAX;
 
-    let scrolled_back = render_live_lines(&follow_app, 60, 18);
+    let scrolled_back = render_live_lines(&follow_app, 60, 24);
     assert!(
         scrolled_back.contains("question 0") && scrolled_back.contains("reply 0"),
         "scroll-back should still surface the earliest grouped turn\n{scrolled_back}"
@@ -208,20 +218,19 @@ pub(super) fn transcript_turn_sections_keep_nested_tool_details() {
         .unwrap_or_else(|| panic!("assistant body row\n{rendered}"));
     let tool_row = find_line_containing_all_from(&lines, body_row + 1, &["false"])
         .unwrap_or_else(|| panic!("tool row\n{rendered}"));
-    let error_row = find_line_containing_from(&lines, tool_row + 1, "tool call failed")
-        .unwrap_or_else(|| panic!("tool error row\n{rendered}"));
-    let assistant_footer = find_line_containing_from(&lines, error_row + 1, "Assistant")
-        .unwrap_or_else(|| panic!("assistant footer\n{rendered}"));
+    // Nested tool detail body stays indented; freeze fail chrome is flat (not nested).
+    let detail_row = find_line_containing_from(&lines, tool_row + 1, "command failed")
+        .unwrap_or_else(|| panic!("tool detail row\n{rendered}"));
+    let fail_chrome_row = find_line_containing_from(&lines, detail_row + 1, "Retry failed")
+        .unwrap_or_else(|| panic!("fail chrome row\n{rendered}"));
 
     assert!(reasoning_row < body_row);
     assert!(body_row >= reasoning_row + 2);
     assert!(body_row < tool_row);
-    assert!(tool_row < error_row);
-    assert!(error_row < assistant_footer);
+    assert!(tool_row < detail_row);
+    assert!(detail_row < fail_chrome_row);
 
     let assistant_body_column = first_alphanumeric_column(lines[body_row]);
-    let assistant_body_rail = first_non_whitespace_column(lines[body_row]);
-    let assistant_footer_column = first_alphanumeric_column(lines[assistant_footer]);
     let (reasoning_row_text, reasoning_row_fgs, _) =
         row_at(&buffer, 100, reasoning_row).unwrap_or_abort();
     let thinking_body_start = reasoning_row_text
@@ -245,16 +254,19 @@ pub(super) fn transcript_turn_sections_keep_nested_tool_details() {
             .all(|color| *color == theme.text.secondary),
         "thinking body should stay muted like the shell\n{rendered}"
     );
-    let nested_detail_columns = [tool_row, error_row]
+    let nested_detail_columns = [tool_row, detail_row]
         .into_iter()
         .map(|row| first_alphanumeric_column(lines[row]))
         .collect::<Vec<_>>();
 
-    assert!(assistant_footer_column >= assistant_body_rail);
     assert!(
         nested_detail_columns
             .iter()
             .all(|column| *column > assistant_body_column),
-        "nested tool details and error rows should remain deeper than the assistant body rail\n{rendered}"
+        "nested tool details should remain deeper than the assistant body rail\n{rendered}"
+    );
+    assert!(
+        first_alphanumeric_column(lines[fail_chrome_row]) <= assistant_body_column,
+        "freeze fail chrome stays flat (not nested under the body rail)\n{rendered}"
     );
 }

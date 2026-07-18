@@ -65,7 +65,7 @@ pub(crate) struct PermissionDockLayout {
 }
 
 const PERMISSION_DOCK_RAIL_WIDTH: u16 = 1;
-const PERMISSION_DOCK_TRAY_HEIGHT: u16 = 3;
+const PERMISSION_DOCK_TRAY_HEIGHT: u16 = 5;
 const QUESTION_PERMISSION_DOCK_TRAY_HEIGHT: u16 = 2;
 const PERMISSION_DOCK_STACKED_HINT_MIN_WIDTH: u16 = 80;
 const PERMISSION_DOCK_STACKED_HINT_MIN_ACTION_WIDTH: u16 = 20;
@@ -94,9 +94,9 @@ pub(crate) fn permission_dock_layout(area: Rect, is_question: bool) -> Permissio
         PermissionDockLayout {
             rail_width: PERMISSION_DOCK_RAIL_WIDTH,
             tray_height,
-            shell_padding: EdgeInsets::new(1, 3, 1, 1),
-            body_padding: EdgeInsets::new(1, 0, 0, 0),
-            tray_padding: EdgeInsets::new(2, 3, 1, 1),
+            shell_padding: EdgeInsets::new(2, 1, 0, 0),
+            body_padding: EdgeInsets::ZERO,
+            tray_padding: EdgeInsets::new(2, 1, 0, 0),
             header_gap: 1,
             stacked_hint_min_width: PERMISSION_DOCK_STACKED_HINT_MIN_WIDTH,
             stacked_hint_min_action_width: PERMISSION_DOCK_STACKED_HINT_MIN_ACTION_WIDTH,

@@ -76,6 +76,10 @@ fn question_permission_modal_renders_questions_and_answer_input() {
 }
 
 #[test]
+fn question_permission_modal_aligns_option_description_column() {
+    permission_modal_tests::question_permission_modal_aligns_option_description_column();
+}
+
 fn question_permission_modal_matches_reference_palette_contract() {
     permission_modal_tests::question_permission_modal_matches_reference_palette_contract();
 }

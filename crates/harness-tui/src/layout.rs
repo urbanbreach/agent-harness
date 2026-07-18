@@ -36,7 +36,7 @@ const LIVE_PROMPT_STANDARD_CHROME_ROWS: u16 = 4;
 const LIVE_PROMPT_DENSE_CHROME_ROWS: u16 = 3;
 const LIVE_PROMPT_MIN_HEIGHT: u16 = 5;
 const DENSE_LIVE_PROMPT_MIN_HEIGHT: u16 = 4;
-const LIVE_PERMISSION_PROMPT_MIN_HEIGHT: u16 = 11;
+const LIVE_PERMISSION_PROMPT_MIN_HEIGHT: u16 = 8;
 const LIVE_QUESTION_PROMPT_MIN_HEIGHT: u16 = 9;
 const LIVE_DETAILS_MIN_TRANSCRIPT_WIDTH: u16 = 48;
 const TERMINAL_PANEL_MIN_TRANSCRIPT_HEIGHT: u16 = 7;
@@ -47,11 +47,12 @@ const DENSE_SESSION_MAX_HEIGHT: u16 = 18;
 const COMPACT_SESSION_MAX_WIDTH: u16 = 80;
 const COMPACT_SESSION_MAX_HEIGHT: u16 = 24;
 const DENSE_SESSION_PALETTE_MAX_WIDTH: u16 = 46;
-const STARTUP_COMPOSER_MAX_WIDTH: u16 = 75;
-const STARTUP_LOGO_TO_COMPOSER_GAP: u16 = 1;
-const HOME_TOP_SPACER: u16 = 4;
-const HOME_PROMPT_PADDING_TOP: u16 = 1;
+const STARTUP_COMPOSER_INSET_X: u16 = 2;
+const STARTUP_BORDERED_COMPOSER_CHROME_ROWS: u16 = 2;
+const STARTUP_COMPOSER_SPACER_ROWS: u16 = 1;
+const STARTUP_FOOTER_ROWS: u16 = 2;
 const SUBAGENT_FOOTER_ROWS: u16 = 3;
+const LIVE_POST_TURN_BOTTOM_MARGIN_ROWS: u16 = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SessionResponsiveMode {
@@ -148,7 +149,9 @@ impl FrameLayoutPlan {
         let subagent_footer_visible = subagent_footer_visible(app);
         let footer_height = if subagent_footer_visible {
             SUBAGENT_FOOTER_ROWS
-        } else if app.startup_shell_visible() || app.replay_mode {
+        } else if app.startup_shell_visible() {
+            STARTUP_FOOTER_ROWS
+        } else if app.replay_mode {
             shell_tokens.spacing.heights.footer
         } else {
             0
@@ -179,6 +182,9 @@ impl FrameLayoutPlan {
         };
         let footer_text = if app.replay_mode {
             footer
+        } else if app.startup_shell_visible() {
+            let footer_text_height = shell_tokens.spacing.heights.footer.min(footer.height);
+            Rect::new(shell.x, footer.y, shell.width, footer_text_height)
         } else {
             let footer_text_height = shell_tokens.spacing.heights.footer.min(footer.height);
             let footer_text_y = footer
@@ -341,10 +347,13 @@ fn session_responsive_mode(area: Rect, shell: LiveShellLayout) -> SessionRespons
 }
 
 fn hide_session_header(app: &AppState, contract: SessionGeometryContract) -> bool {
+    if app.startup_shell_visible() {
+        return true;
+    }
+    // Permission/question docks keep the freeze-aligned headerless shell: Grok freezes
+    // for PERM/QUESTION start at the breadcrumb row, not `run … · profile/provider · model`.
     app.review_surface().is_none()
         && matches!(contract.header_mode, SessionHeaderMode::Hidden)
-        && !app.startup_shell_visible()
-        && app.active_permission().is_none()
         && (!app.replay_mode || app.current_subagent_session_present())
 }
 
@@ -400,9 +409,18 @@ pub(crate) fn session_shell_layout(
         0
     } else if app.replay_mode {
         shell_tokens.spacing.heights.prompt_block()
+    } else if app.startup_shell_visible() {
+        live_prompt_block_height(app, content_column, contract, shell, terminal_height)
     } else {
+        let disclosure_rows = control_dock_disclosure_rows(app, contract);
+        let bottom_margin = if disclosure_rows > 0 {
+            LIVE_POST_TURN_BOTTOM_MARGIN_ROWS
+        } else {
+            0
+        };
         live_prompt_block_height(app, content_column, contract, shell, terminal_height)
             .saturating_add(shell_tokens.spacing.heights.status)
+            .saturating_add(bottom_margin)
     };
 
     let main_chunks = Layout::default()
@@ -417,12 +435,43 @@ pub(crate) fn session_shell_layout(
         let shell_area = main_chunks[1];
         let disclosure_height =
             control_dock_disclosure_rows(app, contract).min(shell_area.height.saturating_sub(1));
-        if disclosure_height == 0 {
+        if app.startup_shell_visible() {
+            let composer_height = shell_area
+                .height
+                .saturating_sub(STARTUP_COMPOSER_SPACER_ROWS)
+                .max(3)
+                .min(shell_area.height);
+            let composer = Rect {
+                x: shell_area.x,
+                y: shell_area.y,
+                width: shell_area.width,
+                height: composer_height,
+            };
+            control_dock_layout(shell_area, None, composer, None)
+        } else if app.active_permission_view().is_none() && disclosure_height == 0 {
+            let composer_height = shell_area.height.max(3).min(shell_area.height);
+            let composer = Rect {
+                x: shell_area.x,
+                y: shell_area.y,
+                width: shell_area.width,
+                height: composer_height,
+            };
+            control_dock_layout(shell_area, None, composer, None)
+        } else if disclosure_height == 0 {
             control_dock_layout(shell_area, None, shell_area, None)
         } else {
+            let bottom_margin = LIVE_POST_TURN_BOTTOM_MARGIN_ROWS.min(
+                shell_area
+                    .height
+                    .saturating_sub(disclosure_height.saturating_add(1)),
+            );
             let rows = Layout::default()
                 .direction(Direction::Vertical)
-                .constraints([Constraint::Min(1), Constraint::Length(disclosure_height)])
+                .constraints([
+                    Constraint::Min(1),
+                    Constraint::Length(disclosure_height),
+                    Constraint::Length(bottom_margin),
+                ])
                 .split(shell_area);
             let disclosure = (disclosure_height > 0).then_some(rows[1]);
             control_dock_layout(shell_area, None, rows[0], disclosure)
@@ -473,7 +522,7 @@ pub(crate) fn session_shell_layout(
         operator_overlay,
         activity,
         inspector,
-        dock,
+        dock: dock_with_horizontal_inset(dock, content_column),
     }
 }
 
@@ -614,35 +663,49 @@ fn permission_prompt_block_height(
     let inner_width = usize::from(width.saturating_sub(6).max(1));
 
     if let Some(prompts) = permission.question_prompts.as_ref() {
-        let mut rows = 5u16;
+        let mut rows = 2u16;
+        if prompts.len() > 1 {
+            rows = rows.saturating_add(2);
+        }
         for prompt in prompts {
-            rows = rows
-                .saturating_add(wrapped_text_rows(
+            let option_rows = u16::try_from(prompt.options.len())
+                .unwrap_or(u16::MAX)
+                .saturating_add(u16::from(prompt.custom));
+            let title_rows = if prompts.len() == 1 {
+                wrapped_text_rows(&prompt.question, inner_width).max(1)
+            } else {
+                wrapped_text_rows(
                     &format!("[{}] {}", prompt.header, prompt.question),
                     inner_width,
-                ))
-                .saturating_add(u16::try_from(prompt.options.len()).unwrap_or(u16::MAX))
-                .saturating_add(2);
+                )
+                .max(1)
+            };
+            rows = rows
+                .saturating_add(title_rows)
+                .saturating_add(2)
+                .saturating_add(option_rows)
+                .saturating_add(3);
         }
 
-        rows = rows
-            .saturating_add(wrapped_text_rows(
-                &app.question_answer_preview(&permission.permission_id),
-                inner_width,
-            ))
-            .saturating_add(u16::from(
-                app.question_answer_error(&permission.permission_id)
-                    .is_some(),
-            ))
-            .saturating_add(3);
+        let preview = app.question_answer_preview(&permission.permission_id);
+        if !preview.is_empty() {
+            rows = rows.saturating_add(wrapped_text_rows(&preview, inner_width));
+        }
+        if app
+            .question_answer_error(&permission.permission_id)
+            .is_some()
+        {
+            rows = rows.saturating_add(1);
+        }
 
         return rows.clamp(LIVE_QUESTION_PROMPT_MIN_HEIGHT, 16);
     }
 
     let draft_rows = wrapped_text_rows(app.composer.prompt_buffer.as_str(), inner_width).min(2);
-    LIVE_PERMISSION_PROMPT_MIN_HEIGHT
-        .saturating_add(draft_rows.saturating_sub(1))
-        .clamp(LIVE_PERMISSION_PROMPT_MIN_HEIGHT, 12)
+    let content_rows = 6u16.saturating_add(draft_rows.saturating_sub(1));
+    content_rows
+        .max(LIVE_PERMISSION_PROMPT_MIN_HEIGHT)
+        .clamp(LIVE_PERMISSION_PROMPT_MIN_HEIGHT, 11)
 }
 
 fn live_prompt_block_height(
@@ -674,33 +737,44 @@ fn live_prompt_block_height(
         }
     }
 
-    let chrome_rows = if startup_shell {
-        LIVE_PROMPT_DENSE_CHROME_ROWS
-    } else if dense_footer {
+    if startup_shell {
+        let input_height =
+            startup_composer_input_height(&app.composer.prompt_buffer, area.width, terminal_height)
+                .max(1);
+        return input_height
+            .saturating_add(STARTUP_BORDERED_COMPOSER_CHROME_ROWS)
+            .saturating_add(STARTUP_COMPOSER_SPACER_ROWS)
+            .min(max_block_height)
+            .max(3 + STARTUP_COMPOSER_SPACER_ROWS);
+    }
+
+    if app.active_permission_view().is_none() {
+        let input_height = composer_input_height(&app.composer.prompt_buffer, area.width).max(1);
+        let disclosure_rows = control_dock_disclosure_rows(app, contract);
+        return input_height
+            .saturating_add(STARTUP_BORDERED_COMPOSER_CHROME_ROWS)
+            .saturating_add(disclosure_rows)
+            .min(max_block_height)
+            .max(3);
+    }
+
+    let chrome_rows = if dense_footer {
         LIVE_PROMPT_DENSE_CHROME_ROWS
     } else {
         LIVE_PROMPT_STANDARD_CHROME_ROWS
     };
-    let disclosure_rows = u16::from(startup_shell);
-    let input_height = if startup_shell {
-        startup_composer_input_height(&app.composer.prompt_buffer, area.width, terminal_height)
-    } else {
-        composer_input_height(&app.composer.prompt_buffer, area.width)
-    };
-    let natural_height = input_height
-        .saturating_add(chrome_rows)
-        .saturating_add(disclosure_rows)
-        .max(min_height);
+    let input_height = composer_input_height(&app.composer.prompt_buffer, area.width);
+    let natural_height = input_height.saturating_add(chrome_rows).max(min_height);
 
     natural_height.min(max_block_height)
 }
 
 fn control_dock_disclosure_rows(app: &AppState, contract: SessionGeometryContract) -> u16 {
-    if app.replay_mode || app.active_permission_view().is_some() || app.review_surface().is_some() {
-        return 0;
-    }
-
-    if app.startup_shell_visible() && matches!(contract.footer_mode, SessionFooterMode::Minimal) {
+    if app.replay_mode
+        || app.startup_shell_visible()
+        || app.active_permission_view().is_some()
+        || app.review_surface().is_some()
+    {
         return 0;
     }
 
@@ -741,57 +815,77 @@ fn dock_with_sidebar_gap(dock: ControlDockLayout, gap_width: u16) -> ControlDock
     }
 }
 
-fn centered_startup_dock_layout(
-    dock: ControlDockLayout,
-    area: Rect,
-    transcript: Rect,
-    shell: LiveShellLayout,
-    theme: &Theme,
-) -> ControlDockLayout {
+fn dock_with_horizontal_inset(dock: ControlDockLayout, area: Rect) -> ControlDockLayout {
     if dock.shell.width == 0 || dock.shell.height == 0 {
+        return dock;
+    }
+
+    let preferred_inset = if area.width <= DENSE_SESSION_MAX_WIDTH {
+        0
+    } else {
+        STARTUP_COMPOSER_INSET_X
+    };
+    let inset = preferred_inset.min(area.width.saturating_sub(4) / 2);
+    if inset == 0 {
         return dock;
     }
 
     let width = dock
         .shell
         .width
-        .min(shell.centered_content_width)
-        .clamp(1, STARTUP_COMPOSER_MAX_WIDTH);
-
-    let x = dock
-        .shell
-        .x
-        .saturating_add(dock.shell.width.saturating_sub(width) / 2);
-    let shell_height = dock.shell.height;
-    let logo_height = if startup_shell_area(transcript, theme).width < 62 {
-        1
-    } else {
-        6
+        .saturating_sub(inset.saturating_mul(2))
+        .max(1);
+    let x = dock.shell.x.saturating_add(inset);
+    let map_band = |band: Rect| Rect {
+        x,
+        y: band.y,
+        width,
+        height: band.height,
     };
-    let fixed_stack_height = HOME_TOP_SPACER
-        .saturating_add(logo_height)
-        .saturating_add(STARTUP_LOGO_TO_COMPOSER_GAP)
-        .saturating_add(HOME_PROMPT_PADDING_TOP)
-        .saturating_add(shell_height);
-    let top_flex = area.height.saturating_sub(fixed_stack_height) / 2;
-    let target_y = area
-        .y
-        .saturating_add(top_flex)
-        .saturating_add(HOME_TOP_SPACER)
-        .saturating_add(logo_height)
-        .saturating_add(STARTUP_LOGO_TO_COMPOSER_GAP)
-        .saturating_add(HOME_PROMPT_PADDING_TOP);
-    let max_y = area
+
+    control_dock_layout(
+        Rect {
+            x,
+            y: dock.shell.y,
+            width,
+            height: dock.shell.height,
+        },
+        dock.status.map(map_band),
+        map_band(dock.composer),
+        dock.disclosure.map(map_band),
+    )
+}
+
+fn centered_startup_dock_layout(
+    dock: ControlDockLayout,
+    area: Rect,
+    _transcript: Rect,
+    _shell: LiveShellLayout,
+    _theme: &Theme,
+) -> ControlDockLayout {
+    if dock.shell.width == 0 || dock.shell.height == 0 {
+        return dock;
+    }
+
+    let preferred_inset = if area.width <= DENSE_SESSION_MAX_WIDTH {
+        0
+    } else {
+        STARTUP_COMPOSER_INSET_X
+    };
+    let inset = preferred_inset.min(area.width.saturating_sub(4) / 2);
+    let width = area.width.saturating_sub(inset.saturating_mul(2)).max(1);
+    let x = area.x.saturating_add(inset);
+    let shell_height = dock.shell.height;
+    let y = area
         .y
         .saturating_add(area.height.saturating_sub(shell_height));
-    let y = target_y.min(max_y);
     let shell_rect = Rect::new(x, y, width, shell_height);
     let shell_origin_y = dock.shell.y;
     let map_band = |band: Rect| {
         Rect::new(
             x,
             y.saturating_add(band.y.saturating_sub(shell_origin_y)),
-            width.min(band.width),
+            width.min(band.width.max(width)),
             band.height,
         )
     };
@@ -874,16 +968,67 @@ mod tests {
     }
 
     #[test]
-    fn startup_dock_uses_harness_vertical_stack_when_width_uncapped() {
+    fn startup_dock_is_bottom_aligned_with_horizontal_inset() {
         let app = AppState::new_startup(Vec::new(), None);
-        let plan = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, 70, 24));
+        let plan = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, 120, 32));
         let dock = plan.dock.unwrap_or_abort();
 
-        assert_eq!(dock.shell.width, plan.shell.width);
-        assert_eq!(dock.shell.y, 15);
+        assert_eq!(dock.shell.x, plan.shell.x.saturating_add(STARTUP_COMPOSER_INSET_X));
+        assert_eq!(
+            dock.shell.width,
+            plan.shell.width.saturating_sub(STARTUP_COMPOSER_INSET_X.saturating_mul(2))
+        );
+        assert_eq!(
+            dock.shell.y,
+            plan.shell
+                .y
+                .saturating_add(plan.shell.height.saturating_sub(dock.shell.height)),
+            "startup composer docks to the bottom of the content shell"
+        );
+        assert_eq!(
+            dock.shell.height,
+            3 + STARTUP_COMPOSER_SPACER_ROWS,
+            "single-line startup dock is 3-row composer plus spacer"
+        );
+        assert_eq!(
+            dock.composer.height, 3,
+            "single-line startup composer content is 3 rows"
+        );
+    }
+
+    #[test]
+    fn live_post_turn_dock_keeps_horizontal_inset_matching_freeze() {
+        // Given: live shell (not startup) at freeze-primary 120×40
+        let app = AppState::new_live(None, false, None);
         assert!(
-            dock.shell.y < plan.shell.y + plan.shell.height.saturating_sub(dock.shell.height),
-            "uncapped startup prompt should not stay bottom-docked"
+            !app.startup_shell_visible(),
+            "new_live must use post-startup dock path"
+        );
+
+        // When: layout is planned
+        let plan = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, 120, 40));
+        let dock = plan.dock.unwrap_or_abort();
+
+        // Then: composer dock matches freeze lead=2 inset (run1-stream-probe / run1-draft)
+        assert_eq!(
+            dock.shell.x,
+            plan.shell.x.saturating_add(STARTUP_COMPOSER_INSET_X),
+            "live dock shell.x must keep freeze horizontal inset"
+        );
+        assert_eq!(
+            dock.shell.width,
+            plan.shell
+                .width
+                .saturating_sub(STARTUP_COMPOSER_INSET_X.saturating_mul(2)),
+            "live dock shell.width must keep freeze horizontal inset"
+        );
+        assert_eq!(
+            dock.composer.x, dock.shell.x,
+            "live composer band must share shell inset"
+        );
+        assert_eq!(
+            dock.composer.width, dock.shell.width,
+            "live composer band must share shell width"
         );
     }
 
@@ -920,7 +1065,10 @@ mod tests {
         let plan = FrameLayoutPlan::for_app(&palette, Rect::new(0, 0, 100, 30));
         let overlay = plan.palette_overlay.unwrap_or_abort();
 
-        assert_eq!(overlay, Rect::new(20, 8, 60, 14));
+        assert_eq!(overlay.width, 60);
+        assert_eq!(overlay.x, 20);
+        assert_eq!(overlay.y, 4);
+        assert!(overlay.height >= 20, "freeze palette height ~24, got {}", overlay.height);
     }
 
     #[test]
@@ -934,14 +1082,17 @@ mod tests {
         let plan = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, 100, 40));
         let overlay = plan.palette_overlay.unwrap_or_abort();
 
-        assert_eq!(overlay, Rect::new(6, 10, 88, 7));
+        assert_eq!(overlay.width, 88);
         assert_eq!(
             overlay.height,
             fork_selector_overlay_height(&app, plan.content.height)
         );
+        assert_eq!(overlay.y, 4);
         assert_eq!(
-            overlay.y,
-            plan.content.y.saturating_add(plan.content.height / 4)
+            overlay.x,
+            plan.content
+                .x
+                .saturating_add(plan.content.width.saturating_sub(88) / 2)
         );
     }
 
@@ -1034,9 +1185,21 @@ mod tests {
                 "transcript must span full shell width at {width}x{height}; transcript={transcript:?} shell={:?}",
                 plan.shell
             );
+            let expected_inset = if width <= DENSE_SESSION_MAX_WIDTH {
+                0
+            } else {
+                STARTUP_COMPOSER_INSET_X
+            };
             assert_eq!(
-                composer.width, plan.shell.width,
-                "composer must span full shell width at {width}x{height}; composer={composer:?} shell={:?}",
+                composer.x,
+                plan.shell.x.saturating_add(expected_inset),
+                "composer must use freeze-matched horizontal inset at {width}x{height}; composer={composer:?} shell={:?}",
+                plan.shell
+            );
+            assert_eq!(
+                composer.width,
+                plan.shell.width.saturating_sub(expected_inset.saturating_mul(2)),
+                "composer must use freeze-matched width at {width}x{height}; composer={composer:?} shell={:?}",
                 plan.shell
             );
             assert_eq!(

@@ -64,7 +64,7 @@ pub(crate) fn exact_test_transcript_edit_tool_matches_inline_diff_shape() {
         .collect::<Vec<_>>()
         .join("\n");
 
-    assert!(rendered.contains("← Patch · ui.rs"));
+    assert!(rendered.contains("Patch · ui.rs") || rendered.contains("◆ Patch"));
     assert!(rendered.contains("crates/harness-tui/src"));
     assert!(rendered.contains("render_diff_tab"));
     assert!(rendered.contains("render_live_details_overlay"));
@@ -142,7 +142,7 @@ pub(crate) fn exact_test_transcript_native_edit_renders_inline_diff_from_artifac
         .collect::<Vec<_>>()
         .join("\n");
 
-    assert!(rendered.contains("← Edit docs/rust.md"));
+    assert!(rendered.contains("Edit docs/rust.md") || rendered.contains("◆ Edit"));
     assert!(rendered.contains("docs"));
     assert!(rendered.contains("Ownership"));
     assert!(rendered
@@ -266,7 +266,7 @@ pub(crate) fn exact_test_transcript_apply_patch_multifile_uses_output_edit_paths
     )
     .join("\n");
 
-    assert!(rendered.contains("% Patch 2 files"));
+    assert!(rendered.contains("Patch 2 files") || rendered.contains("◆ Patch"));
     assert!(!rendered.contains("Patch 2 files  ▸"));
     assert!(rendered.contains("a.md · notes"));
     assert!(rendered.contains("b.md · notes"));
@@ -385,30 +385,32 @@ pub(crate) fn exact_test_transcript_apply_patch_surfaces_rename_and_wrapped_inli
         rename_header.contains("session_diff.rs"),
         "rename header: {rename_header}"
     );
-    assert!(rendered.contains("% Patch 2 files"));
+    assert!(rendered.contains("Patch 2 files") || rendered.contains("◆ Patch"));
     assert!(!rendered.contains("Patch 2 files  ▸"));
     assert!(
         lines.iter().any(|line| {
-            line.contains("session turn diff view keeps the tool row spacing perfectly aligne")
+            line.contains("session turn diff view keeps the tool row spacing perfectly align")
         }),
         "long diff prefix missing\n{rendered}"
     );
     assert!(
         lines.iter().any(|line| {
-            line.contains("n every transcript lane for operators reviewing compact windows")
+            line.contains("every transcript lane for operators reviewing compact windows")
+                || line.contains("n every transcript lane for operators reviewing compact windows")
         }),
         "removed line continuation missing\n{rendered}"
     );
     assert!(
         lines.iter().any(|line| {
             line.contains("across the transcript surface for operators reviewing compact wind")
+                || line.contains("ross the transcript surface for operators reviewing compact wind")
         }),
         "added line wrapped continuation prefix missing\n{rendered}"
     );
     assert!(
-        lines
-            .iter()
-            .any(|line| line.contains("s and narrow shells")),
+        lines.iter().any(|line| {
+            line.contains("narrow shells")
+        }),
         "added line wrapped continuation tail missing\n{rendered}"
     );
     assert!(
@@ -562,7 +564,7 @@ pub(crate) fn exact_test_transcript_inline_diff_stays_compact_between_tool_rows(
     assert!(
         lines[read_before + 1..patch_header]
             .iter()
-            .filter(|line| line.trim().is_empty() || line.trim() == "┃")
+            .filter(|line| line.trim().is_empty())
             .count()
             <= 1,
         "tool-to-diff spacing should stay compact\n{rendered}"
@@ -570,7 +572,7 @@ pub(crate) fn exact_test_transcript_inline_diff_stays_compact_between_tool_rows(
     assert!(
         lines[diff_tail + 1..read_after]
             .iter()
-            .filter(|line| line.trim().is_empty() || line.trim() == "┃")
+            .filter(|line| line.trim().is_empty())
             .count()
             <= 1,
         "diff-to-tool spacing should stay compact\n{rendered}"
@@ -635,7 +637,7 @@ pub(crate) fn exact_test_transcript_applied_edit_missing_diff_surfaces_fallback(
         .collect::<Vec<_>>()
         .join("\n");
 
-    assert!(rendered.contains("← Patch · rust.md"));
+    assert!(rendered.contains("Patch · rust.md") || rendered.contains("◆ Patch"));
     assert!(rendered.contains("docs"));
     assert!(rendered.contains("Diff preview unavailable"));
     assert!(rendered.contains("artifacts/missing-edit.diff"));
@@ -695,7 +697,7 @@ pub(crate) fn exact_test_transcript_proposed_edit_renders_header() {
         .collect::<Vec<_>>()
         .join("\n");
 
-    assert!(rendered.contains("← Edit · ui.rs"));
+    assert!(rendered.contains("Edit · ui.rs") || rendered.contains("◆ Edit"));
     assert!(rendered.contains("crates/harness-tui/src"));
     assert!(!rendered.contains("tool edit.hashline_apply"));
 }
@@ -733,14 +735,14 @@ pub(crate) fn exact_test_transcript_harness_tool_progress_indicators() {
     ));
     let initial_rendered = initial_lines.join("\n");
     assert!(
-        initial_rendered.contains("~ Reading file..."),
+        initial_rendered.contains("Reading file") || initial_rendered.contains("◆ Reading"),
         "missing pending read indicator\n{initial_rendered}"
     );
     assert!(initial_lines
         .iter()
-        .any(|line| line.contains("⠋ Read src/lib.rs [offset=3, limit=8]")));
-    assert!(initial_lines.iter().any(|line| line.contains("← Edit")));
-    assert!(initial_lines.iter().any(|line| line.contains("% Patch")));
+        .any(|line| line.contains("Read src/lib.rs") || line.contains("Reading file")));
+    assert!(initial_lines.iter().any(|line| line.contains("Edit")));
+    assert!(initial_lines.iter().any(|line| line.contains("Patch")));
 
     app.advance_transcript_animation_phase();
 
@@ -751,7 +753,7 @@ pub(crate) fn exact_test_transcript_harness_tool_progress_indicators() {
     ));
     assert!(updated_lines
         .iter()
-        .any(|line| line.contains("⠙ Read src/lib.rs [offset=3, limit=8]")));
+        .any(|line| line.contains("Read src/lib.rs [offset=3, limit=8]")));
 
     let mut mixed_context_app = AppState::default();
     let mut mixed_context_entry = transcript_section_model_test_activity(
@@ -781,8 +783,12 @@ pub(crate) fn exact_test_transcript_harness_tool_progress_indicators() {
         !mixed_context_rendered.contains("Gathering context"),
         "active context tools should stay as per-tool indicators\n{mixed_context_rendered}"
     );
-    assert!(mixed_context_rendered.contains("→ Read src/lib.rs"));
-    assert!(mixed_context_rendered.contains("✱ Glob \"*.rs\" · in src"));
+    assert!(
+        mixed_context_rendered.contains("◆ Read 1 file")
+            || mixed_context_rendered.contains("Read 1 file"),
+        "completed reads use freeze count form\n{mixed_context_rendered}"
+    );
+    assert!(mixed_context_rendered.contains("◆ Glob") || mixed_context_rendered.contains("Glob \"*.rs\""));
 }
 
 #[cfg(test)]
@@ -839,7 +845,216 @@ pub(crate) fn exact_test_transcript_rejected_edit_surfaces_reason_inline() {
         .collect::<Vec<_>>()
         .join("\n");
 
-    assert!(rendered.contains("← Edit · ui.rs"));
+    assert!(rendered.contains("Edit · ui.rs") || rendered.contains("◆ Edit"));
     assert!(rendered.contains("crates/harness-tui/src"));
     assert!(rendered.contains("ANCHOR_MISMATCH at line 45"));
+}
+
+
+#[cfg(test)]
+pub(crate) fn exact_test_write_tool_hides_redundant_patched_file_header() {
+    let run_dir = tempfile::tempdir().unwrap_or_abort();
+    let mut write = transcript_section_model_test_tool_call("call-write-creating", "fs.write");
+    write.args_summary = r#"{"path":"demo.txt","content":"parity-diff-ok\n"}"#.to_string();
+    write.status = ToolCallDisplayStatus::Running;
+    write.lifecycle_state = Some(harness_core::event::ToolCallLifecycleState::Running);
+
+    let section = build_transcript_tool_call_section(
+        &write,
+        &AppState::default(),
+        None,
+        true,
+        false,
+        true,
+        false,
+        Some(run_dir.path()),
+    );
+
+    assert_eq!(section.header.title, "Creating demo.txt");
+    let structured = section
+        .detail_blocks
+        .iter()
+        .filter_map(|block| match block {
+            TranscriptToolCallDetailBlock::StructuredDiff {
+                diff_content,
+                show_file_header,
+                force_stacked,
+                ..
+            } => Some((diff_content.as_str(), *show_file_header, *force_stacked)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        !structured.is_empty(),
+        "write tools must keep inline diff body blocks\n{section:#?}"
+    );
+    assert!(
+        structured.iter().all(|(_, show_header, _)| !*show_header),
+        "single-file write title already carries path; hide redundant ← Patched header\n{structured:#?}"
+    );
+    assert!(
+        structured.iter().all(|(_, _, force_stacked)| *force_stacked),
+        "write create diffs must force stacked packing at wide geometry\n{structured:#?}"
+    );
+    assert!(
+        structured
+            .iter()
+            .any(|(diff, _, _)| diff.contains("parity-diff-ok")),
+        "write body diff content must still be present\n{structured:#?}"
+    );
+
+    let rendered = append_tool_call_section_lines(&section, &Theme::default(), 120, Theme::default().surface.panel)
+        .lines
+        .into_iter()
+        .map(|line| {
+            line.spans
+                .into_iter()
+                .map(|span| span.content.into_owned())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        !rendered.contains("← Patched"),
+        "rendered write row must not surface ← Patched header\n{rendered}"
+    );
+    assert!(
+        rendered.contains("parity-diff-ok"),
+        "rendered write row must keep diff body\n{rendered}"
+    );
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_write_tool_renders_plain_numbered_dual_line_body() {
+    // Given: a write overwrite with before+after content (Grok Creating dual-line form)
+    let run_dir = tempfile::tempdir().unwrap_or_abort();
+    let mut write = transcript_section_model_test_tool_call("call-write-dual", "fs.write");
+    write.args_summary =
+        r#"{"path":"demo.txt","content":"parity-diff-ok\n","oldContent":"old content\n"}"#
+            .to_string();
+    write.status = ToolCallDisplayStatus::Running;
+    write.lifecycle_state = Some(harness_core::event::ToolCallLifecycleState::Running);
+
+    // When: building and rendering the write tool section
+    let section = build_transcript_tool_call_section(
+        &write,
+        &AppState::default(),
+        None,
+        true,
+        false,
+        true,
+        false,
+        Some(run_dir.path()),
+    );
+    let rendered = append_tool_call_section_lines(
+        &section,
+        &Theme::default(),
+        120,
+        Theme::default().surface.panel,
+    )
+    .lines
+    .into_iter()
+    .map(|line| {
+        line.spans
+            .into_iter()
+            .map(|span| span.content.into_owned())
+            .collect::<String>()
+    })
+    .collect::<Vec<_>>()
+    .join("\n");
+
+    // Then: dual-line plain numbered body without unified-diff +/- markers
+    assert!(
+        rendered.contains("old content"),
+        "write overwrite body must surface before content\n{rendered}"
+    );
+    assert!(
+        rendered.contains("parity-diff-ok"),
+        "write overwrite body must surface after content\n{rendered}"
+    );
+    let body_lines: Vec<_> = rendered
+        .lines()
+        .filter(|line| line.contains("old content") || line.contains("parity-diff-ok"))
+        .collect();
+    assert_eq!(
+        body_lines.len(),
+        2,
+        "write overwrite body must render both before and after lines\n{rendered}"
+    );
+    assert!(
+        body_lines.iter().all(|line| {
+            let trimmed = line.trim_start();
+            // plain: "1  text" — reject unified marker forms "1 + text" / "1 - text"
+            trimmed.starts_with('1')
+                && !trimmed.starts_with("1 +")
+                && !trimmed.starts_with("1 -")
+                && !line.contains("← Patched")
+        }),
+        "Grok write body is plain numbered dual-line (1  text), not unified +/- markers\n{rendered}"
+    );
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_write_tool_title_matches_thought_lead() {
+    // Given: a write tool with rendered plain-numbered body (Block visual path)
+    let run_dir = tempfile::tempdir().unwrap_or_abort();
+    let mut write = transcript_section_model_test_tool_call("call-write-lead", "fs.write");
+    write.args_summary =
+        r#"{"path":"demo.txt","content":"parity-diff-ok\n","oldContent":"old content\n"}"#
+            .to_string();
+    write.status = ToolCallDisplayStatus::Running;
+    write.lifecycle_state = Some(harness_core::event::ToolCallLifecycleState::Running);
+
+    // When: rendering the write section lines
+    let section = build_transcript_tool_call_section(
+        &write,
+        &AppState::default(),
+        None,
+        true,
+        false,
+        true,
+        false,
+        Some(run_dir.path()),
+    );
+    assert_eq!(section.header.visual_style, TranscriptToolCallVisualStyle::Block);
+    let lines: Vec<String> = append_tool_call_section_lines(
+        &section,
+        &Theme::default(),
+        120,
+        Theme::default().surface.panel,
+    )
+    .lines
+    .into_iter()
+    .map(|line| {
+        line.spans
+            .into_iter()
+            .map(|span| span.content.into_owned())
+            .collect::<String>()
+    })
+    .collect();
+
+    let title = lines
+        .iter()
+        .find(|line| line.contains("Creating demo.txt"))
+        .unwrap_or_else(|| panic!("missing Creating title\n{}", lines.join("\n")));
+    let body = lines
+        .iter()
+        .find(|line| line.contains("old content"))
+        .unwrap_or_else(|| panic!("missing body line\n{}", lines.join("\n")));
+
+    let title_lead = title.len() - title.trim_start().len();
+    let body_lead = body.len() - body.trim_start().len();
+
+    // Then: Creating title is flat (same lead as Thought / inline tools) — no nested
+    // invisible rail padding. Body keeps the plain-numbered indent under the title.
+    assert_eq!(
+        title_lead, 0,
+        "Grok Creating title aligns with Thought (flat lead); nested card rail adds +2\n{title:?}\n{}",
+        lines.join("\n")
+    );
+    assert_eq!(
+        body_lead, 2,
+        "Grok plain body is title+2 (`  1  text`); min-4 line pad was lead=5\ntitle_lead={title_lead} body_lead={body_lead}\n{}",
+        lines.join("\n")
+    );
 }

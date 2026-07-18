@@ -224,6 +224,11 @@ const COMMAND_METADATA: &[CommandMetadata] = &[
         description: "Allow permission",
     },
     CommandMetadata {
+        id: "always_approve_permission",
+        label: "Always approve permission",
+        description: "Open always-approve confirm for the active permission",
+    },
+    CommandMetadata {
         id: "deny_permission",
         label: "Deny permission",
         description: "Deny permission",

@@ -145,6 +145,7 @@ impl AppState {
     }
 
     pub(in crate::app) fn clear_prompt_input(&mut self) {
+        self.reset_clear_prompt_confirmation();
         self.composer.prompt_buffer.clear();
         self.composer.prompt_cursor = 0;
         self.composer.selection_anchor = None;
@@ -155,6 +156,43 @@ impl AppState {
         self.slash_draft_snapshot = None;
         self.sync_slash_overlay();
         self.sync_file_mention_overlay();
+    }
+
+    pub(in crate::app) fn clear_prompt_confirmation_pending(&self) -> bool {
+        self.clear_prompt_confirm_deadline
+            .is_some_and(|deadline| self.now() < deadline)
+    }
+
+    pub(in crate::app) fn reset_clear_prompt_confirmation(&mut self) {
+        self.clear_prompt_confirm_deadline = None;
+    }
+
+    pub(in crate::app) fn handle_clear_prompt_escape(&mut self) -> bool {
+        if self.focus != Focus::Prompt
+            || self.composer_disabled()
+            || self.composer.shell_mode
+            || self.composer.prompt_buffer.is_empty()
+        {
+            self.reset_clear_prompt_confirmation();
+            return false;
+        }
+
+        if self.clear_prompt_confirmation_pending() {
+            let text = self.composer.prompt_buffer.clone();
+            self.composer.push_undo();
+            if self.composer.prompt_history.last() != Some(&text) {
+                self.composer.prompt_history.push(text);
+                self.save_prompt_history();
+            }
+            self.reset_clear_prompt_confirmation();
+            self.toast = None;
+            self.clear_prompt_input();
+            return true;
+        }
+
+        self.clear_prompt_confirm_deadline = Some(self.now() + CLEAR_PROMPT_CONFIRM_TIMEOUT);
+        self.show_toast(CLEAR_PROMPT_HINT, ToastVariant::Info);
+        true
     }
 
     pub(in crate::app) fn replace_prompt_input(&mut self, prompt: String) {
@@ -177,6 +215,7 @@ impl AppState {
     }
 
     pub(in crate::app) fn insert_prompt_char(&mut self, c: char) {
+        self.reset_clear_prompt_confirmation();
         self.continued_live_reopen_surface_active = false;
         if c == '/'
             && self.composer.prompt_cursor == 0
@@ -297,6 +336,8 @@ impl AppState {
             user_timestamp: None,
             request_data: None,
             thinking_text: String::new(),
+            thinking_first_mono_ms: None,
+            thinking_last_mono_ms: None,
             transcript_text: String::new(),
             usage: None,
             cache_usage: None,

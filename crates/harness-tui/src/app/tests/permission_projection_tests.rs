@@ -167,3 +167,51 @@ fn activity_permission_resolution_updates_activity_level_entry() {
     assert_eq!(permission.last_seq, 4);
     assert_eq!(app.activities[0].last_seq, 4);
 }
+
+#[test]
+fn orphan_question_permission_becomes_pending_ask_tool_row() {
+    let mut app = AppState::new_live(None, false, None);
+
+    app.ingest_event(envelope(
+        1,
+        "req_orphan_pre",
+        EventV1::PermissionRequested(PermissionRequestedEvent {
+            permission_id: "perm_orphan_question".to_string(),
+            kind: "question".to_string(),
+            tool_call_id: Some("toolcall_question_orphan".into()),
+            summary: serde_json::json!({
+                "questions": [{
+                    "question": "Pick one",
+                    "header": "Choice",
+                    "options": [{"label": "A", "description": "Option A"}],
+                }]
+            })
+            .to_string(),
+            request_digest: "digest-orphan-question".to_string(),
+            timeout_ms: 30_000,
+            default_decision: harness_core::event::PermissionDecision::Deny,
+        }),
+    ));
+
+    assert!(app.activities.is_empty());
+
+    app.ingest_event(provider_started(2, "req_orphan_question", "worker", "model-1"));
+
+    assert_eq!(app.activities.len(), 1);
+    assert_eq!(app.activities[0].tool_calls.len(), 1);
+    let tool_call = &app.activities[0].tool_calls[0];
+    assert_eq!(tool_call.tool_id, "user.question");
+    assert_eq!(tool_call.tool_call_id, "toolcall_question_orphan");
+    assert_eq!(tool_call.status, ToolCallDisplayStatus::PendingPermission);
+    assert_eq!(tool_call.permissions.len(), 1);
+
+    let rendered = render_debug(&app, 100, 28);
+    assert!(
+        rendered.contains("Ask Pick one"),
+        "orphan question should project as Ask tool row\n{rendered}"
+    );
+    assert!(
+        rendered.contains("Waiting on answers for Pick one"),
+        "orphan question should project Waiting on answers footer\n{rendered}"
+    );
+}

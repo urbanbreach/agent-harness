@@ -7,6 +7,9 @@ impl AppState {
         if self.keymap.leader_pending() {
             self.keymap.set_leader_pending(false);
             if let Some(action) = self.keymap.leader_action(&key) {
+                if self.active_review_surface == Some(ReviewSurface::Help) {
+                    self.close_review_surface();
+                }
                 self.execute_action(action);
                 self.maybe_auto_exit();
                 return;
@@ -15,6 +18,8 @@ impl AppState {
 
         if key.code == KeyCode::Char('x') && key.modifiers == KeyModifiers::CONTROL {
             self.keymap.set_leader_pending(true);
+            self.execute_action(Action::Help);
+            self.maybe_auto_exit();
             return;
         }
 
@@ -109,12 +114,30 @@ impl AppState {
             return;
         }
 
+        if key.modifiers == KeyModifiers::CONTROL
+            && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('C'))
+            && self.handle_ctrl_c_clear_or_cancel()
+        {
+            self.maybe_auto_exit();
+            return;
+        }
+
         if key.code == KeyCode::Esc && self.handle_interrupt_escape() {
             self.maybe_auto_exit();
             return;
         }
 
+        if key.code == KeyCode::Esc && self.handle_clear_prompt_escape() {
+            self.maybe_auto_exit();
+            return;
+        }
+
         if self.handle_prompt_reachable_session_key(key) {
+            self.maybe_auto_exit();
+            return;
+        }
+
+        if self.focus == Focus::Prompt && self.handle_prompt_transcript_scroll_key(key) {
             self.maybe_auto_exit();
             return;
         }
@@ -139,6 +162,21 @@ impl AppState {
                 return;
             }
 
+            if let KeyCode::Char(c) = key.code {
+                self.focus = Focus::Prompt;
+                self.execute_action(Action::Char(c));
+                self.maybe_auto_exit();
+                return;
+            }
+        }
+
+        if self.focus == Focus::Details
+            && !self.composer_disabled()
+            && !self.replay_mode
+            && !key.modifiers.contains(KeyModifiers::CONTROL)
+            && !key.modifiers.contains(KeyModifiers::ALT)
+            && matches!(key.code, KeyCode::Char(_))
+        {
             if let KeyCode::Char(c) = key.code {
                 self.focus = Focus::Prompt;
                 self.execute_action(Action::Char(c));
@@ -719,6 +757,9 @@ impl AppState {
             Action::Palette => {
                 self.open_palette();
             }
+            Action::OpenSessionHistory => {
+                self.begin_session_history_picker(StartupLauncherAction::ContinueSession);
+            }
             Action::Help => {
                 if self.active_review_surface == Some(ReviewSurface::Help) {
                     self.close_review_surface();
@@ -1059,6 +1100,24 @@ impl AppState {
         }
     }
 
+    fn handle_prompt_transcript_scroll_key(&mut self, key: KeyEvent) -> bool {
+        if key.modifiers != KeyModifiers::NONE {
+            return false;
+        }
+
+        match key.code {
+            KeyCode::PageUp => {
+                self.scroll_transcript_up(10);
+                true
+            }
+            KeyCode::PageDown => {
+                self.scroll_transcript_down(10);
+                true
+            }
+            _ => false,
+        }
+    }
+
     fn handle_transcript_navigation_key(&mut self, key: KeyEvent) -> bool {
         if self.terminal_panel_surface_active() && key.modifiers == KeyModifiers::NONE {
             return match key.code {
@@ -1091,6 +1150,22 @@ impl AppState {
         if let Some(action) = self.keymap.get_session_action(&key) {
             self.execute_action(action);
             return true;
+        }
+
+        // Shift+Left/Right: turn nav on transcript focus only (composer uses same
+        // keys for selection while Focus::Prompt).
+        if key.modifiers == KeyModifiers::SHIFT {
+            return match key.code {
+                KeyCode::Left => {
+                    self.previous_activity();
+                    true
+                }
+                KeyCode::Right => {
+                    self.next_activity();
+                    true
+                }
+                _ => false,
+            };
         }
 
         if key.modifiers != KeyModifiers::NONE {

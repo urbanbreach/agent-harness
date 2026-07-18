@@ -321,10 +321,7 @@ pub(super) fn key(code: crossterm::event::KeyCode) -> crossterm::event::KeyEvent
 
 #[cfg(test)]
 pub(super) fn focus_cycle_key() -> crossterm::event::KeyEvent {
-    key_with_modifiers(
-        crossterm::event::KeyCode::Tab,
-        crossterm::event::KeyModifiers::CONTROL,
-    )
+    key(crossterm::event::KeyCode::Tab)
 }
 
 #[cfg(test)]

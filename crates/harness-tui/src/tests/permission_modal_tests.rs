@@ -42,14 +42,70 @@ pub(super) fn question_permission_modal_renders_questions_and_answer_input() {
 
     let debug = render_live_buffer(&app, 100, 28);
     assert!(debug.contains("Pick one"));
-    assert!(debug.contains("1. A"));
-    assert!(debug.contains("Type your own answer"));
-    assert!(debug.contains("↑↓ select"));
-    assert!(debug.contains("enter submit"));
-    assert!(debug.contains("esc dismiss"));
+    // Grok freeze: all options (○) until answered; cursor focus uses styles only.
+    assert!(debug.contains("(○)"), "unanswered options must paint ○\n{debug}");
+    assert!(
+        !debug.contains("(●)"),
+        "unanswered options must not paint ●\n{debug}"
+    );
+    assert!(debug.contains("A"));
+    assert!(debug.contains("Type your answer here"));
+    assert!(debug.contains("↑/↓ navigate"));
+    assert!(debug.contains("y copy"));
+    assert!(debug.contains("Enter:submit"));
+    assert!(debug.contains("Esc:unselect"));
+    assert!(debug.contains("Tab:scrollback"));
+    assert!(debug.contains("Ctrl+c:dismiss"));
     assert!(!debug.contains("Question required"));
     assert!(!debug.contains("default deny"));
-    assert!(!debug.contains("Allow once"));
+    assert!(!debug.contains("always-approve"));
+    assert!(!debug.contains("1. A"));
+}
+
+pub(super) fn question_permission_modal_aligns_option_description_column() {
+    let mut app = AppState::new_live(None, false, None);
+    app.ingest_event(envelope(
+        1,
+        Some("req_question_align"),
+        EventV1::PermissionRequested(PermissionRequestedEvent {
+            permission_id: "perm_question_align".to_string(),
+            kind: "question".to_string(),
+            tool_call_id: Some("tool_call_question_align".into()),
+            summary: serde_json::json!({
+                "questions": [{
+                    "question": "Which color?",
+                    "header": "Color",
+                    "options": [
+                        {"label": "Red", "description": "Choose red"},
+                        {"label": "Green", "description": "Choose green"},
+                        {"label": "Blue", "description": "Choose blue"}
+                    ],
+                    "multiple": false,
+                    "custom": true,
+                }]
+            })
+            .to_string(),
+            request_digest: "digest-question-align".to_string(),
+            timeout_ms: 30_000,
+            default_decision: harness_core::event::PermissionDecision::Deny,
+        }),
+    ));
+
+    let debug = render_live_buffer(&app, 100, 28);
+    assert!(debug.contains("Which color?"), "{debug}");
+    // Descriptions share a column after padded labels (Green is widest).
+    assert!(
+        debug.contains("Red  ") && debug.contains("Choose red"),
+        "Red label must pad to Green width\n{debug}"
+    );
+    assert!(
+        debug.contains("Green  Choose green") || debug.contains("Green\tChoose green"),
+        "Green description follows label with two-space gap\n{debug}"
+    );
+    assert!(
+        debug.contains("Blue ") && debug.contains("Choose blue"),
+        "Blue label must pad to Green width\n{debug}"
+    );
 }
 
 pub(super) fn question_permission_modal_matches_reference_palette_contract() {
@@ -91,21 +147,23 @@ pub(super) fn question_permission_modal_matches_reference_palette_contract() {
     let tab_end = tab_start + "Choice".chars().count();
     assert!(tab_bgs[tab_start..tab_end]
         .iter()
-        .all(|color| *color == Color::Rgb(0x9D, 0x7C, 0xD8)));
+        .all(|color| *color == Color::Rgb(0xD9, 0x84, 0xD9)));
     assert!(tab_fgs[tab_start..tab_end]
         .iter()
-        .all(|color| *color == Color::Rgb(0x0A, 0x0A, 0x0A)));
+        .all(|color| *color == Color::Rgb(0x0B, 0x0E, 0x14)));
 
     let (option_row, option_fgs, option_bgs) =
-        row_text_and_palette(&buffer, 100, "1. A").unwrap_or_abort();
-    let number_start = option_row[..option_row.find("1.").unwrap_or_abort()]
-        .chars()
-        .count();
+        row_text_and_palette(&buffer, 100, "A").unwrap_or_abort();
+    let marker_start = option_row
+        .find('●')
+        .or_else(|| option_row.find('○'))
+        .unwrap_or_abort();
+    let marker_col = option_row[..marker_start].chars().count();
     let label_start = option_row[..option_row.find("A").unwrap_or_abort()]
         .chars()
         .count();
-    assert_eq!(option_bgs[number_start], Color::Rgb(0x1E, 0x1E, 0x1E));
-    assert_eq!(option_bgs[label_start], Color::Rgb(0x1E, 0x1E, 0x1E));
+    assert_eq!(option_bgs[marker_col], Color::Rgb(0x12, 0x16, 0x1E));
+    assert_eq!(option_bgs[label_start], Color::Rgb(0x12, 0x16, 0x1E));
     assert_eq!(option_fgs[label_start], Color::Rgb(0x5C, 0x9C, 0xF5));
 }
 

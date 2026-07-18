@@ -782,6 +782,8 @@ fn runtime_tool_identity_fixture(status: ToolCallDisplayStatus) -> ActivityEntry
         user_timestamp: None,
         request_data: None,
         thinking_text: String::new(),
+        thinking_first_mono_ms: None,
+        thinking_last_mono_ms: None,
         transcript_text: String::new(),
         usage: None,
         cache_usage: None,

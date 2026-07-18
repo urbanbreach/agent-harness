@@ -21,7 +21,7 @@ use super::ui_markdown::{
 use super::ui_markdown_table::try_render_markdown_table_block;
 use super::ui_transcript_surface::wrap_surface_spans;
 
-const TRANSCRIPT_SELECTION_RAIL_GLYPH: &str = "┃";
+const TRANSCRIPT_SELECTION_RAIL_GLYPH: &str = " ";
 
 thread_local! {
     static TRANSCRIPT_SELECTION_CACHE: RefCell<Vec<TranscriptSelectionCacheEntry>> = const { RefCell::new(Vec::new()) };

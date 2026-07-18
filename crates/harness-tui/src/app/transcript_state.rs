@@ -611,4 +611,38 @@ impl AppState {
             self.transcript_view.follow_mode = true;
         }
     }
+
+    pub fn transcript_interaction_snapshot(&self) -> TranscriptInteractionSnapshot {
+        TranscriptInteractionSnapshot {
+            scroll: self.transcript_view.transcript_scroll,
+            follow_mode: self.transcript_view.follow_mode,
+            selected_activity_index: self.transcript_view.selected_activity_index,
+            show_tool_details: self.transcript_view.show_tool_details,
+            expanded_tool_call_ids: self
+                .transcript_view
+                .expanded_tool_outputs
+                .iter()
+                .cloned()
+                .collect(),
+        }
+    }
+
+    pub fn set_transcript_scroll_for_test(&mut self, scroll: usize) {
+        self.transcript_view.transcript_scroll = scroll;
+        self.transcript_view.follow_mode = scroll == 0;
+    }
+
+    pub fn set_selected_activity_index_for_test(&mut self, index: usize) {
+        self.transcript_view.selected_activity_index = index;
+        self.transcript_view.follow_mode = false;
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TranscriptInteractionSnapshot {
+    pub scroll: usize,
+    pub follow_mode: bool,
+    pub selected_activity_index: usize,
+    pub show_tool_details: bool,
+    pub expanded_tool_call_ids: Vec<String>,
 }

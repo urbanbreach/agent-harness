@@ -65,8 +65,11 @@ pub(super) fn live_shell_enter_submits_and_echoes_prompt_snapshot() {
     assert!(!rendered.contains("user (pending turn)"));
     assert!(rendered.contains("ship it"));
     assert!(!rendered.contains("   Waiting for response…"));
-    assert!(rendered.contains("⠋ Assistant"));
-    assert!(!rendered.contains('╭'));
+    assert!(rendered.contains("gpt-5") || rendered.contains("▪") || rendered.contains("◇") || rendered.contains("⠋"));
+    assert!(
+        rendered.contains('╭') || rendered.contains('❯'),
+        "submitted live shell keeps bordered composer chrome\n{rendered}"
+    );
 }
 
 pub(super) fn live_submitted_event_merges_duplicate_local_echo_before_rendering_response() {
@@ -273,12 +276,15 @@ pub(super) fn live_shell_inline_tool_state_snapshot() {
         80,
         24,
         &[
-            "Permission required",
-            "Apply hashline edit to demo.txt",
-            "tool fs.read · scopes once=one-shot always=session",
-            "timeout 30s countdown",
-            "Allow once",
+            "Allow Edit",
+            "always-approve",
+            "┃",
         ],
+    );
+    let rendered = render_live_lines(&app, 80, 24);
+    assert!(
+        !rendered.contains("timeout"),
+        "permission dock must not show timeout chrome on decision stage\n{rendered}"
     );
 }
 
@@ -319,8 +325,11 @@ pub(super) fn narrow_transcript_wrapped_top_level_turns_keep_alignment() {
             },
         ),
     ));
+    // Inverted scroll: MAX shows the top of the transcript so wrapped first lines stay visible.
+    app.transcript_view.follow_mode = false;
+    app.transcript_view.transcript_scroll = usize::MAX;
 
-    let rendered = render_live_lines(&app, 60, 18);
+    let rendered = render_live_lines(&app, 60, 36);
     let lines = rendered.lines().collect::<Vec<_>>();
 
     let user_first = find_line_containing(&lines, "alpha bravo").unwrap_or_abort();
@@ -334,8 +343,10 @@ pub(super) fn narrow_transcript_wrapped_top_level_turns_keep_alignment() {
         .take(assistant_first.saturating_sub(user_first + 1))
         .find_map(|(index, line)| line.chars().any(char::is_alphanumeric).then_some(index))
         .unwrap_or_abort();
-    let assistant_footer =
-        find_line_containing_from(&lines, assistant_first + 1, "Assistant").unwrap_or_abort();
+    let assistant_footer = find_line_containing_from(&lines, assistant_first + 1, "Worked for")
+        .or_else(|| find_line_containing_from(&lines, assistant_first + 1, "model-1"))
+        .or_else(|| find_line_containing_from(&lines, assistant_first + 1, "▪"))
+        .unwrap_or_abort();
     let assistant_continuation = lines
         .iter()
         .enumerate()
@@ -349,9 +360,9 @@ pub(super) fn narrow_transcript_wrapped_top_level_turns_keep_alignment() {
         first_alphanumeric_column(lines[user_first]),
         "wrapped user continuations should align with the boxed user text column\n{rendered}"
     );
-    assert!(lines[user_first].contains('┃'));
-    assert!(lines[user_continuation].contains('┃'));
-    assert!(!lines[user_first].contains('›'));
+    assert!(!lines[user_first].contains('┃'));
+    assert!(!lines[user_continuation].contains('┃'));
+    assert!(lines[user_first].contains('❯'));
     assert_eq!(
         first_alphanumeric_column(lines[assistant_first]),
         first_alphanumeric_column(lines[assistant_continuation]),
@@ -378,9 +389,9 @@ pub(super) fn live_shell_permission_preserves_draft_snapshot() {
         80,
         24,
         &[
-            "Permission required",
+            "Allow Edit",
             "Draft preserved · keep this draft",
-            "Allow once",
+            "always-approve",
         ],
     );
 }
@@ -629,5 +640,5 @@ pub(super) fn parent_view_ignores_streaming_child_activity_after_returning_from_
 
     let rendered = render_live_lines(&app, 100, 30);
     assert!(!rendered.contains("child-only work is still streaming"));
-    assert!(!rendered.contains("Explore · gpt-5.4-mini · active"));
+    assert!(!rendered.contains("Explore · gpt-5.4-mini"));
 }

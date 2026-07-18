@@ -243,7 +243,7 @@ fn status_dialog_plain_line(text: impl Into<String>, theme: &Theme) -> Line<'sta
     Line::from(Span::styled(
         text.into(),
         Style::default()
-            .fg(theme.text.primary)
+            .fg(theme.text.secondary)
             .bg(ui_chrome::command_palette_surface(theme)),
     ))
 }
@@ -255,8 +255,12 @@ fn status_dialog_row_line(row: StatusDialogRow, theme: &Theme) -> Line<'static> 
         StatusDialogTone::Error => theme.status.error,
         StatusDialogTone::Muted => theme.text.secondary,
     };
+    let dot = if row.enabled { "●" } else { "○" };
     let mut spans = vec![
-        Span::styled("• ", Style::default().fg(dot_color).bg(surface)),
+        Span::styled(
+            format!("{dot} "),
+            Style::default().fg(dot_color).bg(surface),
+        ),
         Span::styled(
             row.name,
             Style::default()

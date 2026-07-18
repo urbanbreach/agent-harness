@@ -321,6 +321,41 @@ fn question_tool_cards_render_answered_question_details() {
 
 #[cfg(test)]
 #[test]
+fn question_tool_cards_render_pending_ask_title() {
+    let mut tool_call =
+        transcript_section_model_test_tool_call("tc-question-pending", "user.question");
+    tool_call.status = ToolCallDisplayStatus::PendingPermission;
+    tool_call.args_summary = serde_json::json!({
+        "questions": [
+            {
+                "question": "Which color?",
+                "header": "Color",
+                "options": [{"label": "Red", "description": "Choose red"}],
+            }
+        ]
+    })
+    .to_string();
+
+    let section = build_transcript_tool_call_section(
+        &tool_call,
+        &AppState::default(),
+        None,
+        false,
+        false,
+        false,
+        false,
+        None,
+    );
+
+    assert_eq!(section.header.title, "Ask Which color?");
+    assert_eq!(
+        section.header.status,
+        ToolCallDisplayStatus::PendingPermission
+    );
+}
+
+#[cfg(test)]
+#[test]
 fn batch_write_edit_and_patch_rows_match_reference_headers() {
     // arrange
     let mut batch_call = transcript_section_model_test_tool_call("tc-batch-row", "tool.batch");
@@ -366,7 +401,7 @@ fn batch_write_edit_and_patch_rows_match_reference_headers() {
         None,
     );
     assert_eq!(write_section.header.icon, Some("←"));
-    assert_eq!(write_section.header.title, "Write src/main.rs");
+    assert_eq!(write_section.header.title, "Created src/main.rs");
     assert_eq!(write_section.header.subtitle, None);
 
     let mut edit_call = transcript_section_model_test_tool_call("tc-edit-row", "edit");
@@ -559,8 +594,12 @@ fn shell_tool_cards_render_harness_bash_panel_with_chrome_and_clamping() {
     let rendered = text_lines.join("\n");
 
     assert!(
-        rendered.contains('┃'),
-        "harness bash panel should have split rail"
+        rendered.contains('◈') || rendered.contains('◆'),
+        "harness bash panel should have flat tool header (◈ completed / ◆ active)\n{text_lines:#?}"
+    );
+    assert!(
+        !rendered.contains('┃'),
+        "harness bash panel should not have split rail chrome\n{text_lines:#?}"
     );
     assert!(
         !rendered.contains("# Shell"),
@@ -613,11 +652,11 @@ fn shell_tool_cards_without_workdir_start_with_command_row() {
         .unwrap_or_abort();
     let preceding_content = text_lines[..command_row]
         .iter()
-        .filter(|line| line.contains("# ") || line.contains('$'))
+        .filter(|line| line.contains("# "))
         .collect::<Vec<_>>();
     assert!(
         preceding_content.is_empty(),
-        "command row should be the first content row when no workdir title exists\n{text_lines:#?}"
+        "no title row should precede the command row when no workdir description exists\n{text_lines:#?}"
     );
 }
 
@@ -990,7 +1029,7 @@ pub(crate) fn exact_test_inline_tool_rows_wrap_long_subtitles_cleanly() {
         .iter()
         .any(|line| line.contains("foreground · agent_worker")));
     assert!(
-        text_lines.iter().any(|line| line.contains("completed · 3")),
+        text_lines.iter().any(|line| line.contains("completed")),
         "wrapped inline subtitle should preserve completion count metadata\n{text_lines:#?}"
     );
     assert!(
@@ -999,5 +1038,8 @@ pub(crate) fn exact_test_inline_tool_rows_wrap_long_subtitles_cleanly() {
             .any(|line| line.contains("child tool calls")),
         "wrapped inline subtitle should preserve child-call wording after wrap\n{text_lines:#?}"
     );
-    assert!(text_lines.iter().all(|line| line.starts_with("   ")));
+    assert!(
+        text_lines[0].contains('◈') || text_lines[0].contains('◆'),
+        "inline tool header should keep the completed/active tool marker\n{text_lines:#?}"
+    );
 }

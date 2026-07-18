@@ -33,7 +33,7 @@ pub(super) fn tool_call_should_remain_visible_without_tool_details(
 
     matches!(
         tool_call.effective_tool_id(),
-        "edit.hashline_apply" | "fs.write" | "edit" | "apply_patch"
+        "edit.hashline_apply" | "fs.write" | "write" | "edit" | "apply_patch"
     ) && tool_call_has_preview_content(tool_call)
 }
 

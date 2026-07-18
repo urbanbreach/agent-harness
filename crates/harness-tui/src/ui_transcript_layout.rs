@@ -2,6 +2,7 @@ use ratatui::{
     layout::Rect,
     style::{Color, Style},
     text::{Line, Span},
+    widgets::Paragraph,
     Frame,
 };
 
@@ -14,6 +15,8 @@ use super::ui_transcript_surface::{
     render_transcript_surface, render_transcript_surface_lines, transcript_surface_content_width,
     transcript_surface_leading_gap, transcript_surface_render_width,
 };
+
+const SELECTED_RAIL_GLYPH: &str = "❙";
 
 const TRANSCRIPT_SECTION_GAP_HEIGHT: usize = 2;
 
@@ -64,6 +67,7 @@ pub(super) struct MeasuredTranscriptSurface {
     pub(super) interaction_rows: Option<Vec<Option<TranscriptInteractionRow>>>,
     pub(super) selection_rows: Option<Vec<TranscriptSelectionRow>>,
     pub(super) diff_hunk_offsets: Vec<usize>,
+    pub(super) selected_rail: bool,
 }
 
 pub(super) fn measure_transcript_layout<Section>(
@@ -104,6 +108,7 @@ pub(super) fn measure_transcript_layout<Section>(
                 interaction_rows: surface.interaction_rows,
                 selection_rows: surface.selection_rows,
                 diff_hunk_offsets: surface.diff_hunk_offsets,
+                selected_rail: surface.selected_rail,
             });
             previous_surface_kind = Some(surface.kind);
         }
@@ -177,8 +182,26 @@ pub(super) fn render_transcript_layout_surfaces(
                 u16::try_from(visible_height).unwrap_or(u16::MAX),
             );
             render_transcript_surface(frame, surface, surface_rect, local_scroll, theme);
+            if surface.selected_rail && local_scroll == 0 && surface_rect.height > 0 {
+                paint_selected_rail_glyph(frame, surface_rect, theme);
+            }
         }
     }
+}
+
+fn paint_selected_rail_glyph(frame: &mut Frame, surface_rect: Rect, theme: &Theme) {
+    let rail_x = surface_rect.x.saturating_sub(3);
+    if rail_x >= surface_rect.x {
+        return;
+    }
+    let rail_rect = Rect::new(rail_x, surface_rect.y, 1, 1);
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            SELECTED_RAIL_GLYPH,
+            Style::default().fg(theme.text.secondary),
+        ))),
+        rail_rect,
+    );
 }
 
 pub(super) fn transcript_diff_hunk_rows_for_layout(

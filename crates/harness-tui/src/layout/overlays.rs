@@ -8,6 +8,7 @@ use crate::theme::{LiveShellLayout, Theme};
 use crate::theme::LifecycleSurfaceLayout;
 
 const COMMAND_PALETTE_WIDTH: u16 = 60;
+const SESSION_HISTORY_WIDTH: u16 = 78;
 const FORK_SELECTOR_WIDTH: u16 = 88;
 const SLASH_COMMAND_OVERLAY_GAP_Y: u16 = 0;
 
@@ -46,14 +47,14 @@ pub(super) fn command_palette_overlay_area(
         let popup_x = area
             .x
             .saturating_add((area.width.saturating_sub(popup_width)) / 2);
-        let popup_y = area.y.saturating_add(area.height / 4);
+        let popup_y = absolute_modal_top(area, popup_height);
         return Some(Rect::new(popup_x, popup_y, popup_width, popup_height));
     }
 
     if !app.session_history_visible && !app.model_switcher_visible {
         let popup_width = COMMAND_PALETTE_WIDTH.min(area.width.saturating_sub(2));
         let popup_height = command_palette_overlay_height(app, area.height)
-            .min(area.height.saturating_sub(area.height / 4));
+            .min(area.height.saturating_sub(4));
         if popup_width == 0 || popup_height == 0 {
             return None;
         }
@@ -61,18 +62,17 @@ pub(super) fn command_palette_overlay_area(
         let popup_x = area
             .x
             .saturating_add((area.width.saturating_sub(popup_width)) / 2);
-        let popup_y = area.y.saturating_add(area.height / 4);
+        let popup_y = absolute_modal_top(area, popup_height);
         return Some(Rect::new(popup_x, popup_y, popup_width, popup_height));
     }
 
     let shell_tokens = theme.token_families().live_shell;
     let horizontal_margin = shell_tokens.spacing.rhythm.modal_margin.saturating_mul(2);
-    let vertical_margin = shell_tokens.spacing.rhythm.modal_margin.saturating_mul(2);
     let popup_width = command_palette_overlay_width(shell, app)
         .min(contract.palette_overlay_max_width.unwrap_or(u16::MAX))
         .min(area.width.saturating_sub(horizontal_margin));
     let popup_height = command_palette_overlay_height(app, area.height)
-        .min(area.height.saturating_sub(vertical_margin));
+        .min(area.height.saturating_sub(4));
 
     if popup_width == 0 || popup_height == 0 {
         return None;
@@ -81,14 +81,23 @@ pub(super) fn command_palette_overlay_area(
     let popup_x = area
         .x
         .saturating_add((area.width.saturating_sub(popup_width)) / 2);
-    let popup_y = area
-        .y
-        .saturating_add((area.height.saturating_sub(popup_height)) / 2);
+    let popup_y = absolute_modal_top(area, popup_height);
     Some(Rect::new(popup_x, popup_y, popup_width, popup_height))
 }
 
+const FREEZE_MODAL_TOP_ROW: u16 = 4;
+
+fn absolute_modal_top(area: Rect, popup_height: u16) -> u16 {
+    let max_y = area
+        .y
+        .saturating_add(area.height.saturating_sub(popup_height.max(1)));
+    FREEZE_MODAL_TOP_ROW.clamp(area.y, max_y.max(area.y))
+}
+
 fn command_palette_overlay_width(shell: LiveShellLayout, app: &AppState) -> u16 {
-    if app.session_history_visible || app.model_switcher_visible {
+    if app.session_history_visible {
+        SESSION_HISTORY_WIDTH.min(shell.centered_content_width.max(SESSION_HISTORY_WIDTH))
+    } else if app.model_switcher_visible {
         shell.centered_content_width
     } else {
         COMMAND_PALETTE_WIDTH
@@ -100,20 +109,22 @@ fn command_palette_overlay_height(app: &AppState, terminal_height: u16) -> u16 {
     const SESSION_HISTORY_OVERLAY_ROWS: u16 = 8;
     const MODEL_SWITCHER_OVERLAY_ROWS: u16 = 6;
     const MAX_LIST_ROWS: usize = 7;
+    const FREEZE_MODAL_HEIGHT: u16 = 24;
+
+    let freeze_height = FREEZE_MODAL_HEIGHT
+        .min(terminal_height.saturating_sub(FREEZE_MODAL_TOP_ROW.saturating_add(2)))
+        .max(12);
 
     if app.session_history_visible {
-        let max_height_rows = usize::from(terminal_height.saturating_div(2).saturating_sub(6));
-        let history_rows = app
-            .session_history_visual_row_count()
-            .clamp(1, max_height_rows.max(1));
-        let history_rows = u16::try_from(history_rows).unwrap_or(u16::MAX);
-        SESSION_HISTORY_OVERLAY_ROWS.saturating_add(history_rows)
+        freeze_height.max(SESSION_HISTORY_OVERLAY_ROWS)
     } else if app.model_switcher_visible {
         let model_rows = app
             .model_switcher_visual_row_count()
             .clamp(1, MAX_LIST_ROWS + 2);
         let model_rows = u16::try_from(model_rows).unwrap_or(u16::MAX);
-        MODEL_SWITCHER_OVERLAY_ROWS.saturating_add(model_rows)
+        MODEL_SWITCHER_OVERLAY_ROWS
+            .saturating_add(model_rows)
+            .max(freeze_height.min(20))
     } else if app.toggles_menu_visible {
         let max_height_rows = usize::from(terminal_height.saturating_div(2).saturating_sub(6));
         let toggle_rows = toggles_menu_visible_rows(app)
@@ -139,12 +150,7 @@ fn command_palette_overlay_height(app: &AppState, terminal_height: u16) -> u16 {
             .saturating_add(lineage_rows)
             .saturating_add(dialog_rows)
     } else {
-        let max_height_rows = usize::from(terminal_height.saturating_div(2).saturating_sub(6));
-        let command_rows = command_palette_visible_rows(app)
-            .max(1)
-            .min(max_height_rows.max(1));
-        let command_rows = u16::try_from(command_rows).unwrap_or(u16::MAX);
-        COMMAND_OVERLAY_ROWS.saturating_add(command_rows)
+        freeze_height
     }
 }
 

@@ -78,12 +78,18 @@ pub(super) fn build_transcript_tool_call_section(
     let animation_phase = app.transcript_animation_phase();
 
     let (title, icon, visual_style, uses_generic_output_visibility) = match display_tool_id {
-        "fs.read" => {
+        "fs.read" | "read" => {
             let path = tool_path_display(tool_call);
-            let title = path.as_ref().map_or_else(
-                || "Reading file...".to_string(),
-                |path| format!("Read {path}{}", read_tool_input_suffix(tool_call)),
-            );
+            let title = match tool_call.status {
+                ToolCallDisplayStatus::Succeeded => completed_read_tool_title(tool_call, path.as_deref()),
+                ToolCallDisplayStatus::Running
+                | ToolCallDisplayStatus::PendingPermission
+                | ToolCallDisplayStatus::Queued
+                | ToolCallDisplayStatus::Failed => path.as_ref().map_or_else(
+                    || "Reading file...".to_string(),
+                    |path| format!("Read {path}{}", read_tool_input_suffix(tool_call)),
+                ),
+            };
             let icon = match tool_call.status {
                 ToolCallDisplayStatus::Running => {
                     Some(transcript_streaming_spinner_frame(animation_phase))
@@ -100,7 +106,7 @@ pub(super) fn build_transcript_tool_call_section(
             };
             (title, icon, TranscriptToolCallVisualStyle::Inline, false)
         }
-        "fs.glob" => (
+        "fs.glob" | "glob" => (
             format!(
                 "Glob \"{}\"",
                 tool_summary_string(&tool_call.args_summary, &["pattern"])
@@ -110,7 +116,7 @@ pub(super) fn build_transcript_tool_call_section(
             TranscriptToolCallVisualStyle::Inline,
             false,
         ),
-        "fs.grep" => (
+        "fs.grep" | "grep" => (
             format!(
                 "Grep \"{}\"",
                 tool_summary_string(&tool_call.args_summary, &["pattern"])
@@ -121,10 +127,7 @@ pub(super) fn build_transcript_tool_call_section(
             false,
         ),
         "fs.ls" | "list" => (
-            tool_summary_string(&tool_call.args_summary, &["path"])
-                .filter(|path| !path.is_empty())
-                .map(|path| format!("List {path}"))
-                .unwrap_or_else(|| "List".to_string()),
+            completed_list_tool_title(tool_call),
             Some("→"),
             TranscriptToolCallVisualStyle::Inline,
             false,
@@ -359,7 +362,7 @@ pub(super) fn build_transcript_tool_call_section(
                 )
             }
         }
-        "fs.write" => {
+        "fs.write" | "write" => {
             let rendered_diff = push_tool_call_diff_blocks(
                 &mut detail_blocks,
                 tool_call,
@@ -550,7 +553,7 @@ pub(super) fn build_transcript_tool_call_section(
     };
     let default_subtitle = match display_tool_id {
         "shell.run" | "bash" => None,
-        "fs.glob" | "fs.grep" => join_tool_subtitles(
+        "fs.glob" | "glob" | "fs.grep" | "grep" => join_tool_subtitles(
             tool_in_path_description(tool_call),
             tool_match_count_description(tool_call),
         ),
@@ -559,7 +562,7 @@ pub(super) fn build_transcript_tool_call_section(
                 header_path_metadata = metadata.parent.clone();
                 metadata.leaf
             }),
-        "fs.write" | "edit" => None,
+        "fs.write" | "write" | "edit" => None,
         "background_output" => background_output_tool_subtitle(tool_call),
         "agent.spawn" | "task" => agent_spawn_subtitle(tool_call),
         "apply_patch" => None,
@@ -666,7 +669,15 @@ fn push_tool_call_diff_blocks(
     }
 
     let diff_artifacts = tool_call_diff_artifacts(tool_call);
-    let show_file_header = tool_call.edit.is_none() || diff_artifacts.len() > 1;
+    let path_already_in_title = tool_call.edit.is_some()
+        || matches!(
+            tool_call.effective_tool_id(),
+            "edit" | "write" | "fs.write"
+        );
+    let show_file_header = !path_already_in_title || diff_artifacts.len() > 1;
+    let force_stacked = stacked_diffs
+        || matches!(tool_call.effective_tool_id(), "write" | "fs.write");
+    let plain_numbered = matches!(tool_call.effective_tool_id(), "write" | "fs.write");
     let mut rendered = false;
     for (diff_rel_path, fallback_path) in diff_artifacts {
         rendered |= push_structured_diff_artifact_block(
@@ -674,7 +685,8 @@ fn push_tool_call_diff_blocks(
             session_path,
             &diff_rel_path,
             fallback_path.as_deref(),
-            stacked_diffs,
+            force_stacked,
+            plain_numbered,
             show_file_header,
         );
     }
@@ -684,8 +696,12 @@ fn push_tool_call_diff_blocks(
             detail_blocks.push(TranscriptToolCallDetailBlock::StructuredDiff {
                 diff_content,
                 fallback_path,
-                force_stacked: stacked_diffs,
-                show_file_header: tool_call.effective_tool_id() != "edit",
+                force_stacked,
+                plain_numbered,
+                show_file_header: !matches!(
+                    tool_call.effective_tool_id(),
+                    "edit" | "write" | "fs.write"
+                ),
             });
             return true;
         }
@@ -753,6 +769,7 @@ fn push_apply_patch_file_sections(
                 Some(&entry.file_path),
                 stacked_diffs,
                 false,
+                false,
             );
         }
         let metadata =
@@ -786,7 +803,8 @@ fn push_structured_diff_artifact_block(
     session_path: &Path,
     diff_rel_path: &str,
     fallback_path: Option<&str>,
-    stacked_diffs: bool,
+    force_stacked: bool,
+    plain_numbered: bool,
     show_file_header: bool,
 ) -> bool {
     let Ok(diff_content) = std::fs::read_to_string(session_path.join(diff_rel_path)) else {
@@ -795,7 +813,8 @@ fn push_structured_diff_artifact_block(
     detail_blocks.push(TranscriptToolCallDetailBlock::StructuredDiff {
         diff_content,
         fallback_path: fallback_path.map(str::to_string),
-        force_stacked: stacked_diffs,
+        force_stacked,
+        plain_numbered,
         show_file_header,
     });
     true
@@ -1006,4 +1025,73 @@ fn push_collapsible_bash_panel_block(
         expand_hint: preview.expand_hint.map(str::to_string),
         tone,
     });
+}
+
+fn completed_list_tool_title(tool_call: &crate::app::ToolCallEntry) -> String {
+    if tool_call.status != ToolCallDisplayStatus::Succeeded {
+        return tool_summary_string(&tool_call.args_summary, &["path"])
+            .filter(|path| !path.is_empty())
+            .map(|path| format!("List {path}"))
+            .unwrap_or_else(|| "List".to_string());
+    }
+    let count = tool_entry_count(tool_call).unwrap_or(1);
+    let noun = if count == 1 { "dir" } else { "dirs" };
+    format!("Listed {count} {noun}")
+}
+
+fn completed_read_tool_title(
+    tool_call: &crate::app::ToolCallEntry,
+    _path: Option<&str>,
+) -> String {
+    // Grok freeze packing: completed reads use count form ("Read 1 file"),
+    // not path form. Running/failed keep path via the caller match arm.
+    let count = tool_file_count(tool_call).unwrap_or(1);
+    let noun = if count == 1 { "file" } else { "files" };
+    format!("Read {count} {noun}")
+}
+
+fn tool_entry_count(tool_call: &crate::app::ToolCallEntry) -> Option<u64> {
+    if let Some(value) = tool_call.output_json.as_ref() {
+        if let Some(count) = value
+            .get("entry_count")
+            .or_else(|| value.get("count"))
+            .or_else(|| value.get("total_count"))
+            .and_then(serde_json::Value::as_u64)
+        {
+            return Some(count);
+        }
+        if let Some(entries) = value.get("entries").and_then(serde_json::Value::as_array) {
+            return Some(entries.len() as u64);
+        }
+    }
+    tool_call.output_summary.as_deref().and_then(|summary| {
+        let lines = summary
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .count();
+        (lines > 0).then_some(lines as u64)
+    })
+}
+
+fn tool_file_count(tool_call: &crate::app::ToolCallEntry) -> Option<u64> {
+    tool_call
+        .output_json
+        .as_ref()
+        .and_then(|value| {
+            value
+                .get("file_count")
+                .or_else(|| value.get("files_read"))
+                .or_else(|| value.get("count"))
+        })
+        .and_then(serde_json::Value::as_u64)
+        .or_else(|| {
+            tool_call.output_summary.as_deref().and_then(|summary| {
+                let lower = summary.to_ascii_lowercase();
+                if lower.contains("file") {
+                    Some(1)
+                } else {
+                    None
+                }
+            })
+        })
 }

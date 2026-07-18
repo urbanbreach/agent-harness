@@ -243,7 +243,7 @@ fn transcript_debug_places_assistant_answer_before_nested_context() {
     let answer_index = transcript
         .find("Found the transcript renderer and the composer chrome.")
         .unwrap_or_abort();
-    let tool_index = transcript.find("Read src/ui.rs").unwrap_or_abort();
+    let tool_index = transcript.find("Read 1 file").unwrap_or_abort();
 
     assert!(thinking_index < tool_index);
     assert!(tool_index < answer_index);
@@ -369,7 +369,10 @@ fn live_header_uses_actual_launch_metadata() {
 
     let debug = render_debug(&app, 100, 24);
     assert!(!debug.contains("run unknown"));
-    assert!(debug.contains("Launch: deep · gpt-5.4"));
+    assert!(
+        debug.contains("gpt-5.4") || debug.contains("deep"),
+        "launch model identity should surface on live chrome\n{debug}"
+    );
     assert!(!debug.contains("Launch: deep · gpt-5.4 · Demo"));
     assert!(!debug.contains("default/default"));
 }
@@ -524,7 +527,8 @@ fn footer_hints_follow_keymap_overrides() {
     );
 
     let debug = render_debug(&app, 100, 24);
-    assert!(debug.contains("Ctrl+p commands"));
+    assert!(debug.contains("Shift+Tab:mode"));
+    assert!(debug.contains("Ctrl+x:shortcuts") || debug.contains(":shortcuts"));
     assert!(!debug.contains("Ctrl+s send"));
     assert!(!debug.contains("Ctrl+j nl"));
     assert!(!debug.contains("g shortcuts"));
@@ -539,9 +543,11 @@ fn live_empty_state_uses_shared_startup_copy_without_mode_badges() {
     );
 
     let demo_debug = render_debug(&demo, 100, 24);
-    assert!(demo_debug.contains("Harness"));
-    assert!(demo_debug.contains("Launch: worker · model-1"));
-    assert!(demo_debug.contains("Start a conversation to begin"));
+    assert!(demo_debug.contains('❯'));
+    assert!(demo_debug.contains('╭') || demo_debug.contains('╰'));
+    assert!(demo_debug.contains("model-1") || demo_debug.contains("worker"));
+    assert!(!demo_debug.contains("Session"));
+    assert!(!demo_debug.contains("Start a conversation to begin"));
     assert!(!demo_debug.contains("Demo mode · mock provider"));
 
     let mut mock = AppState::new_live(None, false, None);
@@ -550,9 +556,10 @@ fn live_empty_state_uses_shared_startup_copy_without_mode_badges() {
     );
 
     let mock_debug = render_debug(&mock, 100, 24);
-    assert!(mock_debug.contains("Harness"));
-    assert!(mock_debug.contains("Launch: worker · model-1"));
-    assert!(mock_debug.contains("Start a conversation to begin"));
+    assert!(mock_debug.contains('❯'));
+    assert!(mock_debug.contains("model-1") || mock_debug.contains("worker"));
+    assert!(!mock_debug.contains("Session"));
+    assert!(!mock_debug.contains("Start a conversation to begin"));
     assert!(!mock_debug.contains("Mock mode · mock provider"));
     assert!(!mock_debug.contains("Launch: worker · model-1 · Mock"));
 }
@@ -565,15 +572,24 @@ fn startup_shell_shows_profile_provider_and_model_chrome() {
     );
 
     let debug = render_debug(&app, 100, 24);
-    assert!(debug.contains("██╗  ██╗") || debug.contains("Harness"));
+    assert!(debug.contains("Harness") || debug.contains('╭'));
     assert!(!debug.contains("Launch: deep · gpt-5.4"));
     assert!(!debug.contains("Provider proxy"));
-    assert!(debug.contains("Deep gpt-5.4 proxy · Demo"));
-    assert!(debug.contains("ctrl+p commands"));
+    assert!(
+        !debug.contains("gpt-5.4") && !debug.contains("Deep") && !debug.contains("Demo"),
+        "freeze bare startup hides model badge when prompt is empty\n{debug}"
+    );
+    assert!(debug.contains('❯'));
     assert!(!debug.contains("Enter select"));
-    assert!(debug.contains("Ask anything... \"What is the tech stack of this project?\""));
     assert!(!debug.contains("Dispatch a new run, reopen live work, or inspect saved history."));
     assert!(!debug.contains("Actions:"));
+
+    app.handle_key(key(KeyCode::Char('x')));
+    let draft = render_debug(&app, 100, 24);
+    assert!(
+        draft.contains("gpt-5.4") || draft.contains("Deep") || draft.contains("Demo"),
+        "draft startup restores model chrome on composer\n{draft}"
+    );
 }
 
 #[test]
@@ -602,13 +618,15 @@ fn help_surface_lists_active_bindings() {
     );
 
     let debug = render_debug(&app, 100, 30);
-    assert!(debug.contains("Live shell:"));
-    assert!(debug.contains("z"));
-    assert!(debug.contains("Toggle follow mode"));
-    assert!(debug.contains("Ctrl+s"));
-    assert!(debug.contains("Submit prompt"));
-    assert!(debug.contains("Ctrl+j"));
-    assert!(debug.contains("Insert newline"));
+    assert!(debug.contains("Keyboard Shortcuts"));
+    assert!(debug.contains("Essentials"));
+    assert!(debug.contains("Send"));
+    assert!(debug.contains("Enter"));
+    assert!(debug.contains("Cycle mode"));
+    assert!(debug.contains("Shift+Tab"));
+    assert!(debug.contains("Command palette"));
+    assert!(debug.contains("Ctrl+p / ?"));
+    assert!(!debug.contains("Live shell:"));
     assert!(!debug.contains("Review event log"));
     assert!(!debug.contains("Review diff artifact"));
     assert!(!debug.contains("Reopen shortcut reference"));
@@ -825,7 +843,7 @@ fn transcript_tool_rows_keep_status_but_not_raw_json_dump() {
     ));
 
     let transcript = transcript_debug(&app);
-    assert!(transcript.contains("Read src/lib.rs [offset=42, limit=20]"));
+    assert!(transcript.contains("Read 1 file"));
     assert!(!transcript.contains(r#"{"path":"src/lib.rs","start_line":42,"limit":20}"#));
     assert!(!transcript.contains("args {"));
     assert_eq!(

@@ -87,6 +87,53 @@ pub(super) fn provider_request_finished_total_tokens_populates_active_context_us
     );
 }
 
+pub(super) fn provider_request_finished_prompt_tokens_prefer_active_context() {
+    // Given: finish reports prompt/context fill + higher turn total
+    // When: ProviderRequestFinished is ingested
+    // Then: breadcrumb context uses prompt_tokens; activity keeps total_tokens for ⇣ footer
+    let mut app = AppState::new_live(None, false, None);
+
+    app.ingest_event(envelope(
+        1,
+        "req_prompt_context",
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "provider_req_prompt_context".into(),
+            provider_id: "default".to_string(),
+            model_id: "gpt-5.4-mini".to_string(),
+            prompt_summary: "Hello".to_string(),
+            request_digest: "digest-prompt-context-start".to_string(),
+            metadata: None,
+        }),
+    ));
+    app.ingest_event(envelope(
+        2,
+        "req_prompt_context",
+        EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+            request_id: "provider_req_prompt_context".into(),
+            finish_reason: "done".to_string(),
+            output_digest: Some("digest-prompt-context-finish".to_string()),
+            usage: Some(CompletionUsage {
+                prompt_tokens: 10_000,
+                completion_tokens: 200,
+                total_tokens: 10_200,
+            }),
+            metadata: None,
+        }),
+    ));
+
+    assert_eq!(
+        app.active_context_usage(),
+        Some(ActiveContextUsage::estimate(10_000)),
+        "active context should prefer prompt_tokens for breadcrumb context fill"
+    );
+    let activity = app.activities.back().unwrap_or_abort();
+    assert_eq!(
+        activity.usage.map(|usage| usage.total_tokens),
+        Some(10_200),
+        "activity total_tokens remains the turn total for waiting ⇣ footer"
+    );
+}
+
 pub(super) fn provider_request_finished_without_usage_leaves_active_context_usage_none() {
     // arrange: a live session with a provider request that finishes without usage
     let mut app = AppState::new_live(None, false, None);

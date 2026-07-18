@@ -194,7 +194,7 @@ pub(crate) fn exact_test_subagent_replay_suppresses_parent_replay_dock() {
     );
     assert_eq!(
         terminal.backend().buffer()[(sample_x, sample_y)].bg,
-        theme.surface.shell,
+        Color::Reset,
         "subagent replay should use the same transcript surface as the main chat"
     );
 }
@@ -208,7 +208,6 @@ pub(crate) fn exact_test_live_control_dock_renders_shared_surface() {
     for event in events {
         app.ingest_event(event);
     }
-    let theme = Theme::default();
     let width = 100;
     let height = 30;
     let area = Rect::new(0, 0, width, height);
@@ -217,9 +216,9 @@ pub(crate) fn exact_test_live_control_dock_renders_shared_surface() {
     let composer = dock.composer;
 
     assert_eq!(dock.status, None);
-    assert_eq!(dock.shell.height, composer.height.saturating_add(1));
+    assert_eq!(dock.shell.height, composer.height.saturating_add(2));
     assert_eq!(dock.shell.y, composer.y);
-    assert_eq!(dock.disclosure, Some(Rect::new(0, 29, 100, 1)));
+    assert_eq!(dock.disclosure, Some(Rect::new(2, 28, 96, 1)));
 
     let backend = TestBackend::new(width, height);
     let mut terminal = Terminal::new(backend).unwrap_or_abort();
@@ -233,26 +232,16 @@ pub(crate) fn exact_test_live_control_dock_renders_shared_surface() {
         .x
         .saturating_add(dock.shell.width.saturating_sub(1));
 
-    assert_eq!(
-        buffer[(right_edge, composer.y)].bg,
-        composer_input_surface(&Theme::default())
-    );
-    assert_eq!(
-        buffer[(
-            right_edge,
-            composer.y.saturating_add(composer.height.saturating_sub(1))
-        )]
-            .fg,
-        composer_input_surface(&Theme::default())
-    );
-    assert_eq!(
-        buffer[(right_edge, dock.shell.y)].bg,
-        composer_input_surface(&Theme::default())
-    );
-    assert_ne!(
-        buffer[(right_edge, dock.shell.y)].symbol(),
-        "─",
-        "quiet dock chrome should rely on surface spacing instead of a hard divider"
+    let expected_surface = ratatui::style::Color::Reset;
+    assert_eq!(buffer[(right_edge, composer.y)].bg, expected_surface);
+    assert_eq!(buffer[(right_edge, dock.shell.y)].bg, expected_surface);
+    assert!(
+        matches!(
+            buffer[(right_edge, dock.shell.y)].symbol(),
+            "╮" | "│" | "╯" | " "
+        ),
+        "bordered live composer uses rounded chrome, got {:?}",
+        buffer[(right_edge, dock.shell.y)].symbol()
     );
     assert_eq!(
         buffer[(
@@ -260,7 +249,7 @@ pub(crate) fn exact_test_live_control_dock_renders_shared_surface() {
             composer.y.saturating_add(composer.height.saturating_sub(1)),
         )]
             .bg,
-        theme.surface.shell
+        expected_surface
     );
 }
 
@@ -308,6 +297,8 @@ pub(crate) fn exact_test_tool_status_summary_uses_effective_tool_identity() {
         user_timestamp: None,
         request_data: None,
         thinking_text: String::new(),
+        thinking_first_mono_ms: None,
+        thinking_last_mono_ms: None,
         transcript_text: String::new(),
         usage: None,
         cache_usage: None,
@@ -392,6 +383,8 @@ pub(crate) fn exact_test_retry_summary_segment_prioritizes_retry_indicator() {
             }),
         }),
         thinking_text: String::new(),
+        thinking_first_mono_ms: None,
+        thinking_last_mono_ms: None,
         transcript_text: String::new(),
         usage: None,
         cache_usage: None,

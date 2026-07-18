@@ -13,6 +13,8 @@ use crate::keybindings::Action;
 pub enum PaletteCategory {
     Suggested,
     Session,
+    Context,
+    ModelInput,
     Agent,
     System,
     Workspace,
@@ -25,6 +27,8 @@ impl PaletteCategory {
         match self {
             Self::Suggested => "Suggested",
             Self::Session => "Session",
+            Self::Context => "Context",
+            Self::ModelInput => "Model & Input",
             Self::Agent => "Agent",
             Self::System => "System",
             Self::Workspace => "Workspace",
@@ -92,6 +96,26 @@ pub enum PaletteDispatch {
     Placeholder,
 }
 
+impl PaletteCommandEntry {
+    pub fn freeze_shortcut(&self) -> &'static str {
+        match self.id {
+            "session.new" => "Ctrl+N",
+            "session.new.worktree" => "Ctrl+P → worktree",
+            "session.dashboard" => "/dashboard",
+            "session.home" => "/home",
+            "session.list" => "/resume",
+            "session.rename" => "/rename ",
+            "session.info" => "/session-info",
+            "session.feedback" => "/feedback",
+            "session.compact" => "/compact",
+            "context.usage" => "/context",
+            "context.view_plan" => "/view-plan",
+            "context.memory" => "/memory",
+            _ => "",
+        }
+    }
+}
+
 /// A single ruleset-compatible palette command entry.
 #[derive(Debug, Clone, Copy)]
 pub struct PaletteCommandEntry {
@@ -117,33 +141,77 @@ pub struct PaletteCommandEntry {
 /// Only `Included` commands appear here; excluded and hidden non-target
 /// commands are absent by construction.
 pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
-    // === Session ===
-    PaletteCommandEntry {
-        id: "session.list",
-        category: PaletteCategory::Session,
-        title: DynamicTitle::Static("Switch session"),
-        description: "Continue a prior session when resumable",
-        suggested: SuggestedRule::WhenSessionsExist,
-        harness_only: false,
-        dispatch: PaletteDispatch::OpenSessionHistory,
-    },
     PaletteCommandEntry {
         id: "session.new",
         category: PaletteCategory::Session,
-        title: DynamicTitle::Static("New session"),
+        title: DynamicTitle::Static("New Session"),
         description: "Start a fresh live session",
-        suggested: SuggestedRule::WhenSessionRoute,
+        suggested: SuggestedRule::Never,
         harness_only: false,
         dispatch: PaletteDispatch::NewSession,
     },
     PaletteCommandEntry {
+        id: "session.new.worktree",
+        category: PaletteCategory::Session,
+        title: DynamicTitle::Static("New Session in Worktree"),
+        description: "Start a fresh session in a worktree",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::NewSession,
+    },
+    PaletteCommandEntry {
+        id: "session.dashboard",
+        category: PaletteCategory::Session,
+        title: DynamicTitle::Static("Agent Dashboard"),
+        description: "Open the agent dashboard",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Action(Action::OpenStatusDialog),
+    },
+    PaletteCommandEntry {
+        id: "session.home",
+        category: PaletteCategory::Session,
+        title: DynamicTitle::Static("Back to Home"),
+        description: "Return to the home shell",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Action(Action::CloseReviewSurface),
+    },
+    PaletteCommandEntry {
+        id: "session.list",
+        category: PaletteCategory::Session,
+        title: DynamicTitle::Static("Resume Session"),
+        description: "Continue a prior session when resumable",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::OpenSessionHistory,
+    },
+    PaletteCommandEntry {
         id: "session.rename",
         category: PaletteCategory::Session,
-        title: DynamicTitle::Static("Rename session"),
+        title: DynamicTitle::Static("Rename Session"),
         description: "Rename the current session",
         suggested: SuggestedRule::Never,
         harness_only: false,
         dispatch: PaletteDispatch::OpenSessionRename,
+    },
+    PaletteCommandEntry {
+        id: "session.info",
+        category: PaletteCategory::Session,
+        title: DynamicTitle::Static("Session Info"),
+        description: "Open status and session details",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Action(Action::OpenStatusDialog),
+    },
+    PaletteCommandEntry {
+        id: "session.feedback",
+        category: PaletteCategory::Session,
+        title: DynamicTitle::Static("Send Feedback"),
+        description: "Send product feedback",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Action(Action::Help),
     },
     PaletteCommandEntry {
         id: "session.fork",
@@ -156,21 +224,45 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
     },
     PaletteCommandEntry {
         id: "session.compact",
-        category: PaletteCategory::Session,
-        title: DynamicTitle::Static("Compact session"),
+        category: PaletteCategory::Context,
+        title: DynamicTitle::Static("Compact History"),
         description: "Write a manual context checkpoint",
         suggested: SuggestedRule::Never,
         harness_only: false,
         dispatch: PaletteDispatch::CompactSession,
     },
     PaletteCommandEntry {
-        id: "session.sidebar.toggle",
+        id: "context.usage",
+        category: PaletteCategory::Context,
+        title: DynamicTitle::Static("Context Usage"),
+        description: "Show context usage",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Action(Action::OpenStatusDialog),
+    },
+    PaletteCommandEntry {
+        id: "context.view_plan",
+        category: PaletteCategory::Context,
+        title: DynamicTitle::Static("View Plan"),
+        description: "View the current plan",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Action(Action::OpenStatusDialog),
+    },
+    PaletteCommandEntry {
+        id: "context.memory",
+        category: PaletteCategory::Context,
+        title: DynamicTitle::Static("Memory"),
+        description: "Open memory",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Action(Action::OpenLineageBrowser),
+    },
+    PaletteCommandEntry {
+        id: "session.status.open",
         category: PaletteCategory::Session,
-        title: DynamicTitle::ShowHide {
-            show: "Show sidebar",
-            hide: "Hide sidebar",
-        },
-        description: "Toggle the operator sidebar",
+        title: DynamicTitle::Static("Open status"),
+        description: "Open status and session details",
         suggested: SuggestedRule::Never,
         harness_only: false,
         dispatch: PaletteDispatch::Action(Action::OpenStatusDialog),
@@ -262,16 +354,16 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
     // === Agent ===
     PaletteCommandEntry {
         id: "model.list",
-        category: PaletteCategory::Agent,
+        category: PaletteCategory::ModelInput,
         title: DynamicTitle::Static("Switch model"),
         description: "Browse available provider/model options",
-        suggested: SuggestedRule::Always,
+        suggested: SuggestedRule::Never,
         harness_only: false,
         dispatch: PaletteDispatch::OpenModelSwitcher,
     },
     PaletteCommandEntry {
         id: "agent.list",
-        category: PaletteCategory::Agent,
+        category: PaletteCategory::ModelInput,
         title: DynamicTitle::Static("Switch agent"),
         description: "Switch the active agent profile",
         suggested: SuggestedRule::Never,
@@ -280,7 +372,7 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
     },
     PaletteCommandEntry {
         id: "mcp.list",
-        category: PaletteCategory::Agent,
+        category: PaletteCategory::ModelInput,
         title: DynamicTitle::Static("Toggle MCPs"),
         description: "Toggle MCP server registrations",
         suggested: SuggestedRule::Never,
@@ -289,7 +381,7 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
     },
     PaletteCommandEntry {
         id: "variant.cycle",
-        category: PaletteCategory::Agent,
+        category: PaletteCategory::ModelInput,
         title: DynamicTitle::Static("Variant cycle"),
         description: "Cycle the configured model variant/reasoning preset",
         suggested: SuggestedRule::Never,
