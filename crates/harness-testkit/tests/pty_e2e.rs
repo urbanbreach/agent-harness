@@ -54,13 +54,14 @@ fn pty_signoff_manifest_declares_required_flow_artifacts() {
 
     let flows = manifest["flows"].as_array().unwrap_or_abort();
     for flow_id in [
+        "shell_topology",
         "startup",
-        "onboarding_auth",
         "command_palette",
         "session_picker_resume",
         "permission_question",
         "provider_tool_failure",
         "diff_review",
+        "file_mention",
     ] {
         let flow = flows
             .iter()
