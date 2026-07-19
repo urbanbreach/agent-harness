@@ -29,6 +29,9 @@ const MODEL_REF: &str = "default:gpt-5.4-mini";
 
 #[tokio::test]
 async fn recorded_runtime_context_meta_roundtrips() {
+    // arrange
+    // act
+    // assert
     refresh_profile_model_metadata_registry(&profile_metadata_config()).unwrap_or_abort();
 
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
@@ -114,6 +117,9 @@ async fn recorded_runtime_context_meta_roundtrips() {
 
 #[test]
 fn session_catalog_entry_tolerates_legacy_meta_without_runtime_context() {
+    // arrange
+    // act
+    // assert
     let metadata: SessionCatalogMetadata = serde_json::from_str(
         r#"
         {

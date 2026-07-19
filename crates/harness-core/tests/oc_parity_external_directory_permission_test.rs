@@ -17,6 +17,9 @@ use oc_parity::{
 
 #[tokio::test]
 async fn read_outside_workspace_emits_external_directory_ask() {
+    // arrange
+    // act
+    // assert
     // Given: path outside workspace root
     // When: `read` is requested for that path
     // Then: PermissionRequested kind `external_directory` (not silent allow / CommandBlocked-only)
@@ -47,6 +50,9 @@ async fn read_outside_workspace_emits_external_directory_ask() {
 
 #[tokio::test]
 async fn bash_outside_workspace_emits_external_directory_ask() {
+    // arrange
+    // act
+    // assert
     // Given: bash args that reference a path outside the workspace
     // When: `bash` is requested
     // Then: PermissionRequested kind `external_directory`
@@ -75,6 +81,9 @@ async fn bash_outside_workspace_emits_external_directory_ask() {
 
 #[tokio::test]
 async fn edit_outside_workspace_emits_external_directory_ask() {
+    // arrange
+    // act
+    // assert
     // Given: edit target outside workspace
     // When: `edit` is requested
     // Then: PermissionRequested kind `external_directory`

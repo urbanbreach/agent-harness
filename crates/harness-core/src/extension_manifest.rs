@@ -1,5 +1,7 @@
 // allow: SIZE_OK — extension manifest V1 parser (schema version + descriptor fields + validation)
 use std::collections::BTreeSet;
+use std::fs;
+use std::path::{Path, PathBuf};
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -39,6 +41,10 @@ pub enum ExtensionManifestError {
     },
     #[error("{field} must be static replay text and cannot contain interpolation or shell metacharacter tokens")]
     DynamicReplayText { field: &'static str },
+    #[error("failed to read extension manifest at {path}: {message}")]
+    ManifestRead { path: String, message: String },
+    #[error("extension manifest path is not a file: {path}")]
+    ManifestNotAFile { path: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -219,6 +225,73 @@ impl ExtensionManifestV1 {
             provider_decorator_descriptor_count: self.provider_decorators.len(),
             replay_label: self.replay.as_ref().map(|replay| replay.label.clone()),
         }
+    }
+
+    /// Operator-facing descriptor counts (diagnostics only; not a plugin runtime).
+    pub fn summary(&self) -> ExtensionManifestSummary {
+        let enabled_capabilities = self
+            .capabilities
+            .iter()
+            .filter(|capability| capability.default_enabled)
+            .count();
+        ExtensionManifestSummary {
+            extension_id: self.id.clone(),
+            display_name: self.display_name.clone(),
+            version: self.version.clone(),
+            capabilities: self.capabilities.len(),
+            enabled_capabilities,
+            tools: self.tools.len(),
+            hooks: self.hooks.len(),
+            commands: self.commands.len(),
+            prompts: self.prompts.len(),
+            mcp_bundles: self.mcp_bundles.len(),
+            diagnostics: self.diagnostics.len(),
+            provider_decorators: self.provider_decorators.len(),
+            loads_external_code: self.runtime_effects().loads_external_code,
+        }
+    }
+}
+
+/// Operator-facing counts for a parsed extension descriptor (diagnostics only).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionManifestSummary {
+    pub extension_id: String,
+    pub display_name: Option<String>,
+    pub version: Option<String>,
+    pub capabilities: usize,
+    pub enabled_capabilities: usize,
+    pub tools: usize,
+    pub hooks: usize,
+    pub commands: usize,
+    pub prompts: usize,
+    pub mcp_bundles: usize,
+    pub diagnostics: usize,
+    pub provider_decorators: usize,
+    /// Always false for V1 descriptor-only manifests.
+    pub loads_external_code: bool,
+}
+
+impl ExtensionManifestSummary {
+    pub fn one_line(&self) -> String {
+        format!(
+            "extension descriptor: id=`{}` caps={}/{} tools={} hooks={} commands={} prompts={} mcp={} diag={} decorators={} loads_code={}",
+            self.extension_id,
+            self.enabled_capabilities,
+            self.capabilities,
+            self.tools,
+            self.hooks,
+            self.commands,
+            self.prompts,
+            self.mcp_bundles,
+            self.diagnostics,
+            self.provider_decorators,
+            self.loads_external_code
+        )
+    }
+
+    pub const fn is_descriptor_only(&self) -> bool {
+        !self.loads_external_code
     }
 }
 
@@ -493,4 +566,133 @@ fn known_lifecycle_event(value: &str) -> bool {
         HookLifecycleEvent::PermissionResolved,
     ];
     EVENTS.iter().any(|event| event.as_str() == value)
+}
+
+/// Canonical on-disk filename for V1 extension descriptors (shared with plugin lifecycle).
+pub const EXTENSION_MANIFEST_FILE_NAME: &str = "extension.manifest.json";
+
+/// Load + validate a single extension.manifest.json path (descriptor-only product surface).
+pub fn load_extension_manifest_from_path(
+    path: &Path,
+) -> Result<ExtensionManifestV1, ExtensionManifestError> {
+    if !path.is_file() {
+        return Err(ExtensionManifestError::ManifestNotAFile {
+            path: path.display().to_string(),
+        });
+    }
+    let raw = fs::read_to_string(path).map_err(|err| ExtensionManifestError::ManifestRead {
+        path: path.display().to_string(),
+        message: err.to_string(),
+    })?;
+    ExtensionManifestV1::parse_json(&raw)
+}
+
+/// Discover extension descriptors under `scan_root`.
+///
+/// Looks for `extension.manifest.json` as:
+/// - an immediate child file of `scan_root`
+/// - an immediate child directory containing the file
+///
+/// Read-only: never writes. Returns summaries only (no code load / activation).
+pub fn discover_extension_manifests(scan_root: &Path) -> Vec<ExtensionManifestSummary> {
+    let mut out = Vec::new();
+    if !scan_root.is_dir() {
+        return out;
+    }
+
+    let direct = scan_root.join(EXTENSION_MANIFEST_FILE_NAME);
+    if direct.is_file() {
+        if let Ok(manifest) = load_extension_manifest_from_path(&direct) {
+            out.push(manifest.summary());
+        }
+    }
+
+    let Ok(entries) = fs::read_dir(scan_root) else {
+        return out;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let candidate = path.join(EXTENSION_MANIFEST_FILE_NAME);
+        if !candidate.is_file() {
+            continue;
+        }
+        if let Ok(manifest) = load_extension_manifest_from_path(&candidate) {
+            out.push(manifest.summary());
+        }
+    }
+
+    out.sort_by(|left, right| left.extension_id.cmp(&right.extension_id));
+    out
+}
+
+/// Operator-facing counts for extension descriptor discovery (diagnostics only).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct ExtensionDiscoverSummary {
+    pub discovered: usize,
+    pub loads_external_code: bool,
+}
+
+impl ExtensionDiscoverSummary {
+    pub fn one_line(&self) -> String {
+        format!(
+            "extension discover: {} descriptor(s) (loads_code={})",
+            self.discovered, self.loads_external_code
+        )
+    }
+}
+
+/// Summarize [`discover_extension_manifests`] results for operator surfaces.
+pub fn summarize_extension_discover(
+    summaries: &[ExtensionManifestSummary],
+) -> ExtensionDiscoverSummary {
+    let loads_external_code = summaries.iter().any(|summary| summary.loads_external_code);
+    ExtensionDiscoverSummary {
+        discovered: summaries.len(),
+        loads_external_code,
+    }
+}
+
+/// Result of a single extension.manifest.json load attempt (diagnostics only).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "outcome", rename_all = "snake_case")]
+pub enum ExtensionLoadOutcome {
+    Loaded { path: String, extension_id: String },
+    Failed { path: String, reason: String },
+}
+
+impl ExtensionLoadOutcome {
+    pub fn one_line(&self) -> String {
+        match self {
+            Self::Loaded { path, extension_id } => {
+                format!("extension load: ok id=`{extension_id}` path=`{path}` (loads_code=false)")
+            }
+            Self::Failed { path, reason } => {
+                format!("extension load: failed path=`{path}` ({reason})")
+            }
+        }
+    }
+}
+
+/// Load a single extension descriptor and return a structured operator-facing outcome.
+pub fn load_extension_manifest_outcome(path: impl AsRef<Path>) -> ExtensionLoadOutcome {
+    let path_ref = path.as_ref();
+    let path_display = path_ref.display().to_string();
+    match load_extension_manifest_from_path(path_ref) {
+        Ok(manifest) => ExtensionLoadOutcome::Loaded {
+            path: path_display,
+            extension_id: manifest.id,
+        },
+        Err(err) => ExtensionLoadOutcome::Failed {
+            path: path_display,
+            reason: err.to_string(),
+        },
+    }
+}
+
+/// Prefer the first discovered descriptor summary for operator surfaces.
+pub fn first_extension_manifest_summary(scan_root: &Path) -> Option<ExtensionManifestSummary> {
+    discover_extension_manifests(scan_root).into_iter().next()
 }

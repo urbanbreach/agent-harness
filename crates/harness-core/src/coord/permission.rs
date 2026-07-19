@@ -1415,6 +1415,9 @@ mod external_directory_path_collect_tests {
 
     #[test]
     fn collect_external_read_path_includes_absolute_outside() {
+        // arrange
+        // act
+        // assert
         let workspace = Path::new("/workspace/project");
         let collection = collect_external_directory_paths(
             workspace,
@@ -1434,6 +1437,9 @@ mod external_directory_path_collect_tests {
 
     #[test]
     fn collect_external_skips_in_workspace_relative() {
+        // arrange
+        // act
+        // assert
         let workspace = Path::new("/workspace/project");
         let collection = collect_external_directory_paths(
             workspace,
@@ -1445,6 +1451,9 @@ mod external_directory_path_collect_tests {
 
     #[test]
     fn collect_external_bash_two_absolute_paths() {
+        // arrange
+        // act
+        // assert
         let workspace = Path::new("/workspace/project");
         let collection = collect_external_directory_paths(
             workspace,

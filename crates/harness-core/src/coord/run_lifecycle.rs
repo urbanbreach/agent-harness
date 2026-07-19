@@ -127,6 +127,17 @@ impl Coordinator {
             last_identical_tool_key: None,
             identical_tool_call_streak: 0,
             doom_loop_always_granted: false,
+            edit_attribution: crate::edit_attribution::EditAttributionJournal::open(
+                workspace_root.clone(),
+            )
+            .unwrap_or_else(|_| {
+                crate::edit_attribution::EditAttributionJournal::empty(workspace_root.clone())
+            }),
+            team_registry: crate::team_registry::TeamRegistry::new(),
+            cron_schedules: crate::cron_schedule::CronScheduleRegistry::new(),
+            plugin_lifecycle: crate::integrations::PluginLifecycleRegistry::new(
+                workspace_root.clone(),
+            ),
         };
 
         append_payload_event(
@@ -350,6 +361,17 @@ impl Coordinator {
             last_identical_tool_key: None,
             identical_tool_call_streak: 0,
             doom_loop_always_granted: false,
+            edit_attribution: crate::edit_attribution::EditAttributionJournal::open(
+                workspace_root.clone(),
+            )
+            .unwrap_or_else(|_| {
+                crate::edit_attribution::EditAttributionJournal::empty(workspace_root.clone())
+            }),
+            team_registry: crate::team_registry::TeamRegistry::new(),
+            cron_schedules: crate::cron_schedule::CronScheduleRegistry::new(),
+            plugin_lifecycle: crate::integrations::PluginLifecycleRegistry::new(
+                workspace_root.clone(),
+            ),
         };
 
         restore_child_session_mirrors(
@@ -724,6 +746,12 @@ impl Coordinator {
                 model_settings: default_model_settings_for_profile(&profile_cfg.name),
             };
 
+            let model_fallback_chain = self
+                .config
+                .agent_model_fallbacks
+                .get(&profile_cfg.name)
+                .cloned()
+                .unwrap_or_default();
             schedule_agent_turn(
                 self.clock.as_ref(),
                 self.redactor.as_ref(),
@@ -740,6 +768,7 @@ impl Coordinator {
                     request,
                     request_id,
                     child_task: None,
+                    model_fallback_chain,
                 },
             )
             .await?;

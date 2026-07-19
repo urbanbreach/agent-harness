@@ -21,6 +21,7 @@ Read root `AGENTS.md` first for search scope, cross-crate invariants, and comman
 | Workspaces/paths | `src/workspace.rs`, `src/path_selector.rs`, `src/path_display.rs` | Workspace roots, display paths, path selection helpers. |
 | Hashline edits | `src/edit/hashline.rs` | Anchor hashing, overlap rejection, atomic apply. |
 | Extension descriptors | `src/extension_manifest.rs` | Descriptor-only V1 manifest parser, schema, replay metadata. |
+| Integration lifecycle | `src/integrations/` | Plugin install/activate (package-entry load + receipt; no .so/wasm) /deactivate/remove + ACP connection state machine. |
 
 ## INVARIANTS
 - Coordinator owns all event appends, task scheduling, permission resolution, hooks, compaction, and run/agent lifecycle transitions.
@@ -48,6 +49,7 @@ cargo nextest run -p harness-core --test coord_test
 cargo nextest run -p harness-core --test coord_auth_test
 cargo nextest run -p harness-core --test coord_ast_grep_auth_test
 cargo nextest run -p harness-core --test extension_manifest_test
+cargo nextest run -p harness-core --test integrations_lifecycle_test
 cargo nextest run -p harness-core --test conversation_projection_test
 cargo nextest run -p harness-core --test mcp_config_test
 cargo nextest run -p harness-core --test model_variant_resolution_test

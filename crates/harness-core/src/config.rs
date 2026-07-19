@@ -21,6 +21,8 @@ mod model_types;
 mod provider;
 mod public;
 mod registries;
+mod settings_registry;
+mod settings_write;
 mod validation;
 
 use self::defaults::{
@@ -91,6 +93,26 @@ pub use self::registries::{
     registered_skills_config, set_registered_formatter_config, set_registered_hook_runtime_config,
     set_registered_integrations_config, set_registered_lsp_config,
     set_registered_mcp_server_connection_states, set_registered_mcp_server_first_class_tool_ids,
+};
+pub use self::settings_registry::{
+    explain_setting, is_metadata_only_setting, resolve_setting_id, setting_definition,
+    settings_compat_migrations, settings_registry, settings_registry_json,
+    summarize_settings_registry, SchemaId, SettingCompatMigration, SettingDefinition, SettingId,
+    SettingMergeStrategy, SettingMutability, SettingScope, SettingSensitivity,
+    SettingSourceExplanation, SettingSurface, SettingsRegistrySummary,
+};
+pub use self::settings_write::{
+    read_effective_compaction_auto_retry_overflow, read_effective_compaction_enabled,
+    read_effective_compaction_estimated_token_triggers,
+    read_effective_compaction_structured_summary_contract, read_effective_deterministic_enabled,
+    read_effective_hashline_edit, reset_project_compaction_auto_retry_overflow,
+    reset_project_compaction_enabled, reset_project_compaction_estimated_token_triggers,
+    reset_project_compaction_structured_summary_contract, reset_project_deterministic_enabled,
+    reset_project_hashline_edit, reset_project_setting_to_default,
+    write_project_compaction_auto_retry_overflow, write_project_compaction_enabled,
+    write_project_compaction_estimated_token_triggers,
+    write_project_compaction_structured_summary_contract, write_project_deterministic_enabled,
+    write_project_hashline_edit, write_project_setting_bool, SettingWriteError,
 };
 use self::validation::{
     is_blank_config_value, validate_hook_definitions, validate_lsp_overrides, validate_mcp_servers,

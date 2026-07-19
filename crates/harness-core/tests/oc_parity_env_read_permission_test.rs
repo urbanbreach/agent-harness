@@ -16,6 +16,9 @@ use oc_parity::{
 
 #[tokio::test]
 async fn read_foo_env_emits_permission_requested_kind_read() {
+    // arrange
+    // act
+    // assert
     // Given: allow-default policy and workspace-relative `foo.env`
     // When: native `read` is requested
     // Then: PermissionRequested kind `read` (Ask)
@@ -42,6 +45,9 @@ async fn read_foo_env_emits_permission_requested_kind_read() {
 
 #[tokio::test]
 async fn read_env_local_emits_permission_requested_kind_read() {
+    // arrange
+    // act
+    // assert
     // Given: `.env.local` (*.env.* ask pattern)
     // When: native `read` is requested
     // Then: PermissionRequested kind `read`
@@ -67,6 +73,9 @@ async fn read_env_local_emits_permission_requested_kind_read() {
 
 #[tokio::test]
 async fn read_env_example_allows_without_permission_requested() {
+    // arrange
+    // act
+    // assert
     // Given: `.env.example` allow-listed after `*.env.*` ask (last-match wins)
     // When: native `read` is requested
     // Then: no PermissionRequested kind `read`; tool succeeds
@@ -101,6 +110,9 @@ async fn read_env_example_allows_without_permission_requested() {
 
 #[tokio::test]
 async fn read_normal_source_allows_without_permission_requested() {
+    // arrange
+    // act
+    // assert
     // Given: ordinary workspace source path
     // When: native `read` is requested
     // Then: Allow (no read ask)

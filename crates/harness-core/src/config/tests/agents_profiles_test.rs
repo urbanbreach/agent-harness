@@ -4,6 +4,9 @@ use crate::UnwrapOrAbort;
 
 #[test]
 fn top_level_default_agent_camel_case_alias_is_accepted() {
+    // arrange
+    // act
+    // assert
     let cfg = r#"
         {
           providers: {
@@ -58,6 +61,9 @@ fn top_level_default_agent_camel_case_alias_is_accepted() {
 
 #[test]
 fn unknown_nested_key_is_rejected_strictly() {
+    // arrange
+    // act
+    // assert
     let cfg = config_fixture(
         &deep_profile(
             r#"
@@ -78,6 +84,9 @@ fn unknown_nested_key_is_rejected_strictly() {
 
 #[test]
 fn profile_model_ref_provider_must_exist() {
+    // arrange
+    // act
+    // assert
     let cfg = config_fixture(
         r#"
             deep: {
@@ -100,6 +109,9 @@ fn profile_model_ref_provider_must_exist() {
 
 #[test]
 fn profile_rejects_legacy_plan_mode_field() {
+    // arrange
+    // act
+    // assert
     let cfg = config_fixture(
         &deep_profile(
             r#"
@@ -118,6 +130,9 @@ fn profile_rejects_legacy_plan_mode_field() {
 
 #[test]
 fn profile_rejects_legacy_exit_target_profile_field() {
+    // arrange
+    // act
+    // assert
     let cfg = config_fixture(
         &deep_profile(
             r#"
@@ -138,6 +153,9 @@ fn profile_rejects_legacy_exit_target_profile_field() {
 
 #[test]
 fn ui_default_profile_must_exist() {
+    // arrange
+    // act
+    // assert
     let cfg = config_fixture(
         &deep_profile(r#"tools: ["fs.read"],"#),
         "test-key",
@@ -160,6 +178,9 @@ fn ui_default_profile_must_exist() {
 
 #[test]
 fn default_agent_normalizes_to_runtime_shape() {
+    // arrange
+    // act
+    // assert
     let cfg = r#"
         {
           providers: {
@@ -233,6 +254,9 @@ fn default_agent_normalizes_to_runtime_shape() {
 
 #[test]
 fn public_default_agents_continue_after_tool_failures() {
+    // arrange
+    // act
+    // assert
     let cfg = r#"
         {
           provider: {
@@ -318,6 +342,9 @@ fn public_default_agents_continue_after_tool_failures() {
 
 #[test]
 fn public_agent_schema_accepts_prompt_model_tool_map_and_metadata() {
+    // arrange
+    // act
+    // assert
     let cfg = r#"
         {
           provider: {
@@ -390,6 +417,9 @@ fn public_agent_schema_accepts_prompt_model_tool_map_and_metadata() {
 
 #[test]
 fn openai_compatible_cache_retention_normalizes_from_options_and_rejects_conflicts() {
+    // arrange
+    // act
+    // assert
     let cfg = r#"
         {
           provider: {
@@ -447,6 +477,9 @@ fn openai_compatible_cache_retention_normalizes_from_options_and_rejects_conflic
 
 #[test]
 fn openai_compatible_auth_provider_normalizes_from_options_and_rejects_conflicts() {
+    // arrange
+    // act
+    // assert
     let cfg = r#"
         {
           provider: {
@@ -501,6 +534,9 @@ fn openai_compatible_auth_provider_normalizes_from_options_and_rejects_conflicts
 
 #[test]
 fn default_agent_rejects_subagent_only_and_hidden_profiles() {
+    // arrange
+    // act
+    // assert
     for (field, value, expected) in [
         (
             "mode",
@@ -543,6 +579,9 @@ fn default_agent_rejects_subagent_only_and_hidden_profiles() {
 
 #[test]
 fn default_agent_rejects_disabled_profile() {
+    // arrange
+    // act
+    // assert
     let cfg = r#"
         {
           provider: {

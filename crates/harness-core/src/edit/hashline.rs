@@ -516,11 +516,17 @@ mod tests {
 
     #[test]
     fn hashline_compute_line_hash_normalizes_crlf_lf() {
+        // arrange
+        // act
+        // assert
         assert_eq!(compute_line_hash("line"), compute_line_hash("line\r"));
     }
 
     #[test]
     fn hashline_compute_line_hash_handles_unicode_tabs_and_empty_lines() {
+        // arrange
+        // act
+        // assert
         let unicode_hash = compute_line_hash("snow☃\t東京");
         assert_eq!(unicode_hash.len(), 12);
         assert!(unicode_hash.chars().all(|c| c.is_ascii_hexdigit()));
@@ -531,6 +537,9 @@ mod tests {
 
     #[test]
     fn hashline_golden_small_file_edits() {
+        // arrange
+        // act
+        // assert
         let original = "alpha\nbeta\ngamma\ndelta\n";
         let lines = split_content(original).lines;
 
@@ -579,6 +588,9 @@ mod tests {
 
     #[test]
     fn hashline_empty_patch_rejected() {
+        // arrange
+        // act
+        // assert
         let patch = HashlinePatch {
             edit_id: "empty".to_string(),
             path: "demo.txt".to_string(),
@@ -592,6 +604,9 @@ mod tests {
 
     #[test]
     fn hashline_rewrite_op_replaces_entire_file() {
+        // arrange
+        // act
+        // assert
         let patch = HashlinePatch {
             edit_id: "rewrite".to_string(),
             path: "demo.txt".to_string(),
@@ -614,6 +629,9 @@ mod tests {
 
     #[test]
     fn hashline_rewrite_conflicts_with_other_ops() {
+        // arrange
+        // act
+        // assert
         let patch = HashlinePatch {
             edit_id: "rewrite-overlap".to_string(),
             path: "demo.txt".to_string(),
@@ -637,6 +655,9 @@ mod tests {
 
     #[test]
     fn hashline_out_of_range_anchor_rejected() {
+        // arrange
+        // act
+        // assert
         let patch = HashlinePatch {
             edit_id: "out-of-range".to_string(),
             path: "demo.txt".to_string(),
@@ -656,6 +677,9 @@ mod tests {
 
     #[test]
     fn hashline_overlapping_ops_rejected() {
+        // arrange
+        // act
+        // assert
         let original = "alpha\nbeta\ngamma\ndelta\n";
         let lines = split_content(original).lines;
 
@@ -680,6 +704,9 @@ mod tests {
 
     #[test]
     fn hashline_anchor_mismatch_rejected() {
+        // arrange
+        // act
+        // assert
         let original = "alpha\nbeta\ngamma\n";
         let lines = split_content(original).lines;
 
@@ -709,6 +736,9 @@ mod tests {
             picks in prop::collection::vec(0usize..80, 1..20),
             trailing_newline in any::<bool>(),
         ) {
+            // arrange
+            // act
+            // assert
             let original = join_content(&base_lines, trailing_newline);
             let split = split_content(&original);
             let source_lines = split.lines;

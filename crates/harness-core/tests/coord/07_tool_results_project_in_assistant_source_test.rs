@@ -1,6 +1,9 @@
 use harness_core::UnwrapOrAbort;
 #[tokio::test]
 async fn tool_results_project_in_assistant_source_order_after_out_of_order_completion() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let slow_started = Arc::new(Notify::new());
     let slow_release = Arc::new(Notify::new());
@@ -157,6 +160,9 @@ async fn tool_results_project_in_assistant_source_order_after_out_of_order_compl
 }
 #[tokio::test]
 async fn duplicate_provider_tool_call_ids_fail_before_tool_start() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![vec![
         ProviderStreamEvent::Start,
@@ -233,6 +239,9 @@ async fn duplicate_provider_tool_call_ids_fail_before_tool_start() {
 }
 #[tokio::test]
 async fn empty_provider_tool_call_id_fails_before_tool_start() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![vec![
         ProviderStreamEvent::Start,
@@ -304,6 +313,9 @@ async fn empty_provider_tool_call_id_fails_before_tool_start() {
 }
 #[tokio::test]
 async fn denied_or_pending_tool_never_starts_before_permission_resolution() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let coordinator = test_agent_tool_coordinator(
         temp_dir.path(),
@@ -424,6 +436,9 @@ async fn denied_or_pending_tool_never_starts_before_permission_resolution() {
 }
 #[tokio::test]
 async fn ask_pending_tool_call_never_emits_started_before_approval() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let coordinator = test_agent_tool_coordinator(
         temp_dir.path(),

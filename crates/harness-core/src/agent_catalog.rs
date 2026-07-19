@@ -474,6 +474,9 @@ mod tests {
 
     #[test]
     fn catalog_resolves_shipped_roles_and_hidden_profiles() {
+        // arrange
+        // act
+        // assert
         let catalog = resolve_agent_catalog(&config());
 
         for id in SHIPPED_PRIMARY_PROFILES {
@@ -509,6 +512,9 @@ mod tests {
 
     #[test]
     fn catalog_reports_prompt_model_tools_permissions_and_fallback_policy() {
+        // arrange
+        // act
+        // assert
         let catalog = resolve_agent_catalog(&config());
         let build = catalog.get("build").unwrap_or_abort();
 
@@ -525,6 +531,9 @@ mod tests {
 
     #[test]
     fn catalog_keeps_custom_all_profile_visible() {
+        // arrange
+        // act
+        // assert
         let mut fixture = config();
         let mut custom = fixture.agents.get("build").unwrap_or_abort().clone();
         custom.mode = AgentMode::All;

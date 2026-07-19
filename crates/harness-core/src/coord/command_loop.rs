@@ -287,6 +287,20 @@ impl Coordinator {
                     "background_foreground_child_tasks",
                 );
             }
+            Command::DemoteForegroundChildTask {
+                handle_id,
+                respond_to,
+            } => {
+                let result = self.demote_foreground_child_task_internal(handle_id).await;
+                warn_oneshot_send_failure(respond_to.send(result), "demote_foreground_child_task");
+            }
+            Command::DemoteAllForegroundChildTasks { respond_to } => {
+                let result = self.demote_all_foreground_child_tasks_internal().await;
+                warn_oneshot_send_failure(
+                    respond_to.send(result),
+                    "demote_all_foreground_child_tasks",
+                );
+            }
             Command::JobFinished { task_id, outcome } => {
                 let _ = self.job_finished_internal_async(task_id, outcome).await;
             }

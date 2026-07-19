@@ -38,6 +38,9 @@ mod tests {
 
     #[test]
     fn workspace_selector_paths_normalize_relative_components() {
+        // arrange
+        // act
+        // assert
         assert_eq!(
             normalize_workspace_relative_path(Path::new("./src/./lib.rs")),
             Some("src/lib.rs".to_string())
@@ -48,6 +51,9 @@ mod tests {
 
     #[test]
     fn workspace_selector_paths_accept_absolute_inside_workspace_only_when_requested() {
+        // arrange
+        // act
+        // assert
         let workspace = Path::new("/workspace/project");
 
         assert_eq!(

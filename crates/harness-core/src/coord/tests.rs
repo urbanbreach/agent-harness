@@ -134,6 +134,9 @@ fn success_exit_status() -> ExitStatus {
 
 #[tokio::test]
 async fn lifecycle_hooks_use_injected_executor_without_spawning() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let executor = FakeLifecycleHookCommandExecutor::new();
     let runtime = HookRuntimeConfig {
@@ -215,6 +218,9 @@ async fn lifecycle_hooks_use_injected_executor_without_spawning() {
 
 #[test]
 fn summarize_hook_output_preserves_existing_summary_contract() {
+    // arrange
+    // act
+    // assert
     assert_eq!(summarize_hook_output("  stdout only  ", ""), "stdout only");
     assert_eq!(summarize_hook_output("", "\nstderr only\n"), "stderr only");
     assert_eq!(
@@ -226,6 +232,9 @@ fn summarize_hook_output_preserves_existing_summary_contract() {
 
 #[test]
 fn summarize_hook_output_truncates_long_single_stream_output() {
+    // arrange
+    // act
+    // assert
     let summary = summarize_hook_output(&"x".repeat(161), "");
 
     assert_eq!(summary.chars().count(), 161);
@@ -235,6 +244,9 @@ fn summarize_hook_output_truncates_long_single_stream_output() {
 
 #[test]
 fn plan_mode_shell_boundary_allows_only_read_only_inspection_commands() {
+    // arrange
+    // act
+    // assert
     assert_eq!(
         plan_mode_shell_boundary_denial(
             Some(crate::plan::PLAN_AGENT_NAME),
@@ -488,6 +500,9 @@ fn test_agent_profile(name: &str) -> AgentProfile {
 
 #[tokio::test]
 async fn fresh_run_agent_ids_skip_existing_child_session_directories() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     fs::create_dir_all(temp_dir.path().join("agent_000001")).unwrap_or_abort();
     let stale_child_dir = temp_dir.path().join("agent_000002");
@@ -568,6 +583,9 @@ delegate_test!(mcp_effective_identity_uses_registered_first_class_ids_for_reserv
 
 #[test]
 fn stale_tool_task_late_result_preserves_owner_actor() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let mut config = test_config(temp_dir.path());
     config.stale_timeout_ms = 20;
@@ -658,6 +676,9 @@ fn stale_tool_task_late_result_preserves_owner_actor() {
 
 #[tokio::test]
 async fn background_foreground_child_tasks_releases_parent_task_and_keeps_child_running() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let config = test_config(temp_dir.path());
     let clock = Arc::new(FakeClock::new());
@@ -797,6 +818,322 @@ async fn background_foreground_child_tasks_releases_parent_task_and_keeps_child_
                     && data.status == ToolCallStatus::Succeeded
         )
     }));
+}
+
+#[tokio::test]
+async fn demote_foreground_child_task_releases_parent_for_single_handle() {
+    // arrange
+    // act
+    // assert
+    // Given: one foreground-blocking child and a waiting parent task
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
+    let config = test_config(temp_dir.path());
+    let clock = Arc::new(FakeClock::new());
+    let redactor = Arc::new(DefaultRedactor::default());
+    let (_command_tx, command_rx) = mpsc::channel(1);
+    let (job_tx, job_rx) = mpsc::channel(1);
+    let mut coordinator = Coordinator::new(config, clock, redactor, command_rx, job_tx, job_rx);
+
+    let run = coordinator
+        .start_run_internal_async(
+            "foreground_demote_one".to_string(),
+            temp_dir.path().to_path_buf(),
+        )
+        .await
+        .unwrap_or_abort();
+    let parent_task_id = "task_parent_demote".to_string();
+    let parent_tool_call_id = "toolcall_parent_demote".to_string();
+    let parent_request_id = "req_parent_demote".to_string();
+    let child_task_id = "task_child_demote".to_string();
+    let child_request_id = "req_child_demote".to_string();
+    let child_session_id = "agent_child_demote".to_string();
+    let queue_key = ConcurrencyKey::Tool {
+        tool_id: "task".to_string(),
+    };
+    let (respond_to, response_rx) = oneshot::channel();
+
+    {
+        let run_state = coordinator.run_state.as_mut().unwrap_or_abort();
+        assert!(matches!(
+            run_state
+                .scheduler
+                .schedule(parent_task_id.clone(), queue_key.clone()),
+            ScheduleDecision::Started(_)
+        ));
+        run_state.tasks.insert(
+            parent_task_id.clone(),
+            TaskState {
+                tool_call_id: parent_tool_call_id.clone(),
+                tool_metadata: None,
+                owner_actor: EventActor::new(ActorKind::Worker, Some("agent_parent".to_string())),
+                request_correlation_id: Some(parent_request_id.clone()),
+                queue_key: queue_key.clone(),
+                state: TaskExecutionState::Running,
+                cancellation_token: CancellationToken::new(),
+                started_mono_ms: 0,
+                last_progress_mono_ms: 0,
+                last_progress_kind: JobProgressKind::Heartbeat,
+                hashline_edit: None,
+                respond_to: Some(respond_to),
+            },
+        );
+        run_state.running_agent_turns.insert(
+            child_task_id.clone(),
+            RunningAgentTurn {
+                agent_id: child_session_id.clone(),
+                request_id: child_request_id.clone(),
+                request_prompt: "work in child".to_string(),
+                profile_name: "alpha".to_string(),
+                model_ref: "mock:model-1".to_string(),
+                model_settings: AgentModelSettings {
+                    variant: None,
+                    reasoning_effort: None,
+                    text_verbosity: None,
+                    reasoning_summary: None,
+                    thinking: None,
+                },
+                category: Some("alpha".to_string()),
+                queue_key: ConcurrencyKey::ProviderModel {
+                    provider_id: "mock".to_string(),
+                    model_id: "model-1".to_string(),
+                },
+                cancellation_token: CancellationToken::new(),
+                started_mono_ms: 0,
+                hook_executions: Vec::new(),
+                latest_provider_usage: None,
+                latest_provider_request_id: None,
+                latest_assistant_output: None,
+                latest_provider_id: None,
+                latest_model_id: None,
+                child_task: Some(ChildTaskTurnState {
+                    parent_tool_call_id: parent_tool_call_id.clone(),
+                    parent_session_id: run.run_id.as_str().into(),
+                    parent_agent_id: Some("agent_parent".to_string()),
+                    child_session_id: child_session_id.into(),
+                    child_request_id: child_request_id.clone(),
+                    task_id: child_task_id.clone(),
+                    description: "Long child work".to_string(),
+                    run_in_background: false,
+                }),
+            },
+        );
+    }
+
+    // When: demote the single child handle
+    let result = coordinator
+        .demote_foreground_child_task_internal(child_request_id.clone())
+        .await
+        .unwrap_or_abort();
+
+    // Then: demoted under same request id; parent released; child stays running as background
+    match result {
+        crate::foreground_demote::DemoteToBackgroundResult::Demoted {
+            handle_id,
+            background_id,
+            kind,
+        } => {
+            assert_eq!(handle_id, child_request_id);
+            assert_eq!(background_id, child_request_id);
+            assert_eq!(kind, crate::foreground_demote::ForegroundKind::Task);
+        }
+        other => panic!("expected Demoted, got {other:?}"),
+    }
+
+    let response = response_rx.await.unwrap_or_abort().unwrap_or_abort();
+    assert!(response
+        .display_text
+        .contains("Foreground subagent moved to background"));
+    assert_eq!(
+        response
+            .structured_json
+            .as_ref()
+            .and_then(|json| json.get("background"))
+            .and_then(serde_json::Value::as_bool),
+        Some(true)
+    );
+
+    let run_state = coordinator.run_state.as_ref().unwrap_or_abort();
+    assert!(!run_state.tasks.contains_key(&parent_task_id));
+    let child = run_state
+        .running_agent_turns
+        .get(&child_task_id)
+        .and_then(|running| running.child_task.as_ref())
+        .unwrap_or_abort();
+    assert!(child.run_in_background);
+    assert_eq!(child.child_request_id, child_request_id);
+
+    // When: unknown handle is rejected without side effects
+    let rejected = coordinator
+        .demote_foreground_child_task_internal("missing-handle".to_string())
+        .await
+        .unwrap_or_abort();
+    assert!(matches!(
+        rejected,
+        crate::foreground_demote::DemoteToBackgroundResult::Rejected { .. }
+    ));
+}
+
+#[tokio::test]
+async fn demote_all_foreground_child_tasks_releases_multiple_parents() {
+    // arrange
+    // act
+    // assert
+    // Given: two foreground-blocking children with distinct parents
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
+    let config = test_config(temp_dir.path());
+    let clock = Arc::new(FakeClock::new());
+    let redactor = Arc::new(DefaultRedactor::default());
+    let (_command_tx, command_rx) = mpsc::channel(1);
+    let (job_tx, job_rx) = mpsc::channel(1);
+    let mut coordinator = Coordinator::new(config, clock, redactor, command_rx, job_tx, job_rx);
+
+    let run = coordinator
+        .start_run_internal_async(
+            "foreground_demote_all".to_string(),
+            temp_dir.path().to_path_buf(),
+        )
+        .await
+        .unwrap_or_abort();
+    let (respond_a, response_a) = oneshot::channel();
+    let (respond_b, response_b) = oneshot::channel();
+
+    {
+        let run_state = coordinator.run_state.as_mut().unwrap_or_abort();
+        for (parent_task_id, parent_tool_call_id, parent_request_id, respond_to, tool_id) in [
+            (
+                "task_parent_a",
+                "toolcall_parent_a",
+                "req_parent_a",
+                respond_a,
+                "task-a",
+            ),
+            (
+                "task_parent_b",
+                "toolcall_parent_b",
+                "req_parent_b",
+                respond_b,
+                "task-b",
+            ),
+        ] {
+            let queue_key = ConcurrencyKey::Tool {
+                tool_id: tool_id.to_string(),
+            };
+            assert!(matches!(
+                run_state
+                    .scheduler
+                    .schedule(parent_task_id.to_string(), queue_key.clone()),
+                ScheduleDecision::Started(_)
+            ));
+            run_state.tasks.insert(
+                parent_task_id.to_string(),
+                TaskState {
+                    tool_call_id: parent_tool_call_id.to_string(),
+                    tool_metadata: None,
+                    owner_actor: EventActor::new(
+                        ActorKind::Worker,
+                        Some("agent_parent".to_string()),
+                    ),
+                    request_correlation_id: Some(parent_request_id.to_string()),
+                    queue_key,
+                    state: TaskExecutionState::Running,
+                    cancellation_token: CancellationToken::new(),
+                    started_mono_ms: 0,
+                    last_progress_mono_ms: 0,
+                    last_progress_kind: JobProgressKind::Heartbeat,
+                    hashline_edit: None,
+                    respond_to: Some(respond_to),
+                },
+            );
+        }
+
+        for (child_task_id, child_request_id, child_session_id, parent_tool_call_id) in [
+            (
+                "task_child_a",
+                "req_child_a",
+                "agent_child_a",
+                "toolcall_parent_a",
+            ),
+            (
+                "task_child_b",
+                "req_child_b",
+                "agent_child_b",
+                "toolcall_parent_b",
+            ),
+        ] {
+            run_state.running_agent_turns.insert(
+                child_task_id.to_string(),
+                RunningAgentTurn {
+                    agent_id: child_session_id.to_string(),
+                    request_id: child_request_id.to_string(),
+                    request_prompt: "work in child".to_string(),
+                    profile_name: "alpha".to_string(),
+                    model_ref: "mock:model-1".to_string(),
+                    model_settings: AgentModelSettings {
+                        variant: None,
+                        reasoning_effort: None,
+                        text_verbosity: None,
+                        reasoning_summary: None,
+                        thinking: None,
+                    },
+                    category: Some("alpha".to_string()),
+                    queue_key: ConcurrencyKey::ProviderModel {
+                        provider_id: "mock".to_string(),
+                        model_id: "model-1".to_string(),
+                    },
+                    cancellation_token: CancellationToken::new(),
+                    started_mono_ms: 0,
+                    hook_executions: Vec::new(),
+                    latest_provider_usage: None,
+                    latest_provider_request_id: None,
+                    latest_assistant_output: None,
+                    latest_provider_id: None,
+                    latest_model_id: None,
+                    child_task: Some(ChildTaskTurnState {
+                        parent_tool_call_id: parent_tool_call_id.to_string(),
+                        parent_session_id: run.run_id.as_str().into(),
+                        parent_agent_id: Some("agent_parent".to_string()),
+                        child_session_id: child_session_id.into(),
+                        child_request_id: child_request_id.to_string(),
+                        task_id: child_task_id.to_string(),
+                        description: "Long child work".to_string(),
+                        run_in_background: false,
+                    }),
+                },
+            );
+        }
+    }
+
+    // When
+    let results = coordinator
+        .demote_all_foreground_child_tasks_internal()
+        .await
+        .unwrap_or_abort();
+    let summary = crate::foreground_demote::summarize_demote_outcomes(&results);
+
+    // Then: both demoted; parents released; children stay running as background
+    assert_eq!(summary.demoted, 2);
+    assert_eq!(summary.total, 2);
+    assert!(results.iter().all(|r| r.is_demoted()));
+    let _ = response_a.await.unwrap_or_abort().unwrap_or_abort();
+    let _ = response_b.await.unwrap_or_abort().unwrap_or_abort();
+    let run_state = coordinator.run_state.as_ref().unwrap_or_abort();
+    assert!(!run_state.tasks.contains_key("task_parent_a"));
+    assert!(!run_state.tasks.contains_key("task_parent_b"));
+    for child_task_id in ["task_child_a", "task_child_b"] {
+        let child = run_state
+            .running_agent_turns
+            .get(child_task_id)
+            .and_then(|running| running.child_task.as_ref())
+            .unwrap_or_abort();
+        assert!(child.run_in_background);
+    }
+
+    // When: second bulk demote finds nothing demotable
+    let empty = coordinator
+        .demote_all_foreground_child_tasks_internal()
+        .await
+        .unwrap_or_abort();
+    assert!(empty.is_empty());
 }
 
 fn compaction_profile_config() -> crate::config::HarnessConfig {
@@ -991,6 +1328,14 @@ fn test_run_state(session_dir: &Path, run_id: &str) -> RunState {
         last_identical_tool_key: None,
         identical_tool_call_streak: 0,
         doom_loop_always_granted: false,
+        edit_attribution: crate::edit_attribution::EditAttributionJournal::empty(Path::new(
+            "/workspace/project",
+        )),
+        team_registry: crate::team_registry::TeamRegistry::new(),
+        cron_schedules: crate::cron_schedule::CronScheduleRegistry::new(),
+        plugin_lifecycle: crate::integrations::PluginLifecycleRegistry::new(Path::new(
+            "/workspace/project",
+        )),
     }
 }
 

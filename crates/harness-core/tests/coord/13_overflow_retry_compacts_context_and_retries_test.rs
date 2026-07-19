@@ -2,6 +2,9 @@ use harness_core::UnwrapOrAbort;
 use std::time::Duration;
 #[tokio::test]
 async fn overflow_retry_compacts_context_and_retries_with_summary() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![
         vec![
@@ -154,6 +157,9 @@ async fn overflow_retry_compacts_context_and_retries_with_summary() {
 }
 #[tokio::test]
 async fn overflow_retry_can_compact_a_single_large_preserved_turn() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![
         vec![
@@ -270,6 +276,9 @@ async fn overflow_retry_can_compact_a_single_large_preserved_turn() {
 }
 #[tokio::test]
 async fn overflow_retry_does_not_resend_same_context_when_compaction_is_noop() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![
         vec![
@@ -342,6 +351,9 @@ async fn overflow_retry_does_not_resend_same_context_when_compaction_is_noop() {
 }
 #[tokio::test]
 async fn compaction_trigger_pre_prompt_occurs_before_provider_request_started() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let current_prompt = "C".repeat(12_000);
     let provider = SequentialScriptedProvider::new(vec![
@@ -415,6 +427,9 @@ async fn compaction_trigger_pre_prompt_occurs_before_provider_request_started() 
 }
 #[tokio::test]
 async fn compaction_trigger_pre_prompt_attempts_once_per_turn() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let current_prompt = "C".repeat(12_000);
     let provider = SequentialScriptedProvider::new(vec![

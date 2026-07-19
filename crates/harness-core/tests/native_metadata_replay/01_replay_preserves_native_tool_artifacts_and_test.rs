@@ -1,6 +1,9 @@
 use harness_core::UnwrapOrAbort;
 #[tokio::test]
 async fn replay_preserves_native_tool_artifacts_and_task_lineage() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let workspace_root = temp_dir.path().join("workspace");
     fs::create_dir_all(&workspace_root).unwrap_or_abort();
@@ -216,6 +219,9 @@ async fn replay_preserves_native_tool_artifacts_and_task_lineage() {
 }
 #[tokio::test]
 async fn legacy_sessions_remain_loadable_after_native_metadata_extension() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_legacy_native_metadata";
     let run_dir = temp_dir.path().join(run_id);
@@ -347,6 +353,9 @@ async fn legacy_sessions_remain_loadable_after_native_metadata_extension() {
 }
 #[tokio::test]
 async fn resume_projection_handles_checkpoint_between_turn_and_provider_restart() {
+    // arrange
+    // act
+    // assert
     REPLAY_GUARD_TOOL_CALLS.store(0, Ordering::SeqCst);
 
     let temp_dir = tempfile::tempdir().unwrap_or_abort();

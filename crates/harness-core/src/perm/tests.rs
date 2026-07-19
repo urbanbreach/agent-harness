@@ -20,6 +20,9 @@ fn ask_decision(timeout_ms: u64) -> PolicyDecision {
 
 #[test]
 fn evaluate_uses_global_defaults() {
+    // arrange
+    // act
+    // assert
     let policy = PermissionPolicy::new(
         PermissionMode::Ask,
         PermissionMode::Allow,
@@ -43,6 +46,9 @@ fn evaluate_uses_global_defaults() {
 
 #[test]
 fn evaluate_uses_category_override_when_present() {
+    // arrange
+    // act
+    // assert
     let policy = PermissionPolicy::new(
         PermissionMode::Deny,
         PermissionMode::Deny,
@@ -75,6 +81,9 @@ fn evaluate_uses_category_override_when_present() {
 
 #[test]
 fn native_permission_kinds_follow_explicit_and_migration_defaults() {
+    // arrange
+    // act
+    // assert
     let policy = PermissionPolicy::new(
         PermissionMode::Ask,
         PermissionMode::Deny,
@@ -132,6 +141,9 @@ fn native_permission_kinds_follow_explicit_and_migration_defaults() {
 
 #[test]
 fn permission_rule_precedence_for_bash_exact_prefix_and_catch_all() {
+    // arrange
+    // act
+    // assert
     let policy = PermissionPolicy::new(
         PermissionMode::Allow,
         PermissionMode::Allow,
@@ -200,6 +212,9 @@ fn permission_rule_precedence_for_bash_exact_prefix_and_catch_all() {
 
 #[test]
 fn permission_rule_precedence_for_task_exact_glob_and_catch_all() {
+    // arrange
+    // act
+    // assert
     let policy = PermissionPolicy::new(
         PermissionMode::Allow,
         PermissionMode::Allow,
@@ -260,6 +275,9 @@ fn permission_rule_precedence_for_task_exact_glob_and_catch_all() {
 
 #[test]
 fn config_permission_rule_precedence_for_bash_and_edit_exact_prefix_and_catch_all() {
+    // arrange
+    // act
+    // assert
     let policy = PermissionPolicy::new(
         PermissionMode::Allow,
         PermissionMode::Allow,
@@ -371,6 +389,9 @@ fn config_permission_rule_precedence_for_bash_and_edit_exact_prefix_and_catch_al
 
 #[test]
 fn permission_grant_matcher_authorizes_shell_always_pattern() {
+    // arrange
+    // act
+    // assert
     let granted = PermissionGrantMatcher::ShellCommand {
         command_digest: "grant-command".to_string(),
         request_digest: "grant-request".to_string(),
@@ -389,6 +410,9 @@ fn permission_grant_matcher_authorizes_shell_always_pattern() {
 
 #[test]
 fn permission_grant_matcher_requires_all_shell_patterns() {
+    // arrange
+    // act
+    // assert
     let granted = PermissionGrantMatcher::ShellCommand {
         command_digest: "grant-command".to_string(),
         request_digest: "grant-request".to_string(),
@@ -410,6 +434,9 @@ fn permission_grant_matcher_requires_all_shell_patterns() {
 
 #[test]
 fn permission_grant_matcher_preserves_legacy_command_digest_match() {
+    // arrange
+    // act
+    // assert
     let grants = PermissionGrantSet::from_grants([super::PermissionGrant {
         grant_id: "grant-1".to_string(),
         permission_id: "perm-1".to_string(),
@@ -446,6 +473,9 @@ fn permission_grant_matcher_preserves_legacy_command_digest_match() {
 
 #[test]
 fn permission_rule_profile_override_beats_top_level_edit_rule() {
+    // arrange
+    // act
+    // assert
     let parsed = crate::config::load_config_from_str(
         r#"
             {
@@ -508,6 +538,9 @@ fn permission_rule_profile_override_beats_top_level_edit_rule() {
 
 #[test]
 fn shipped_plan_agent_allows_only_plan_file_edits() {
+    // arrange
+    // act
+    // assert
     let parsed = crate::config::load_config_from_str(
         r#"
             {
@@ -559,6 +592,9 @@ fn shipped_plan_agent_allows_only_plan_file_edits() {
 
 #[test]
 fn native_tool_ids_resolve_to_permission_kinds_without_aliases() {
+    // arrange
+    // act
+    // assert
     assert_eq!(
         permission_kind_for_tool("question"),
         Some(PermissionKind::Question)
@@ -627,6 +663,9 @@ fn native_tool_ids_resolve_to_permission_kinds_without_aliases() {
 
 #[test]
 fn read_fs_capability_must_map_to_permission_kind_for_env_ask() {
+    // arrange
+    // act
+    // assert
     // Given: native `read` uses ToolCapability::ReadFs
     // When: the coordinator maps capability → PermissionKind
     // Then: ReadFs maps to Read (None would skip the permission gate)
@@ -639,6 +678,9 @@ fn read_fs_capability_must_map_to_permission_kind_for_env_ask() {
 
 #[test]
 fn native_read_tool_id_must_map_to_permission_kind_for_env_patterns() {
+    // arrange
+    // act
+    // assert
     // Given: OpenCode applies .env ask rules only on the `read` permission name
     // When: permission_kind_for_tool("read") is consulted
     // Then: native tool id `read` maps to Read; glob/grep/list stay unmapped for .env

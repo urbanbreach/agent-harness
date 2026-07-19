@@ -1,6 +1,9 @@
 use harness_core::UnwrapOrAbort;
 #[tokio::test]
 async fn lifecycle_hooks_cover_provider_subagent_and_permission_events() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let hook_output_path = temp_dir.path().join("hook-lifecycle-events.txt");
     let hook_command = "printf '%s|agent=%s|parent=%s|request=%s|permission=%s|tool_call=%s|provider=%s|outcome=%s\\n' \"$HARNESS_HOOK_EVENT\" \"${HARNESS_HOOK_AGENT_ID:-}\" \"${HARNESS_HOOK_PARENT_AGENT_ID:-}\" \"${HARNESS_HOOK_REQUEST_ID:-}\" \"${HARNESS_HOOK_PERMISSION_ID:-}\" \"${HARNESS_HOOK_TOOL_CALL_ID:-}\" \"${HARNESS_HOOK_PROVIDER_ID:-}\" \"${HARNESS_HOOK_OUTCOME:-}\" >> \"$HOOK_OUTPUT_PATH\"";
@@ -234,6 +237,9 @@ async fn lifecycle_hooks_cover_provider_subagent_and_permission_events() {
 }
 #[test]
 fn replay_reconstructs_parallel_child_sessions_and_timings() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_replay_parallel_child_sessions";
 

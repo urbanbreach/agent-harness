@@ -179,6 +179,9 @@ fn t0_opencode_agent_ts_matrix_loads_without_panic() {
 #[test]
 fn t0_opencode_matrix_lists_every_shipped_agent() {
     // arrange
+    // act
+    // assert
+    // arrange
     let fixture = load_opencode_agent_ts_matrix();
     let required: BTreeSet<&str> = REQUIRED_SHIPPED_AGENTS.iter().copied().collect();
     let listed: BTreeSet<&str> = fixture
@@ -207,6 +210,9 @@ fn t0_opencode_matrix_lists_every_shipped_agent() {
 
 #[test]
 fn t0_opencode_matrix_entries_cite_oc_or_harness_divergence() {
+    // arrange
+    // act
+    // assert
     // arrange
     let fixture = load_opencode_agent_ts_matrix();
 
@@ -277,6 +283,9 @@ fn t0_opencode_matrix_entries_cite_oc_or_harness_divergence() {
 #[test]
 fn t0_opencode_matrix_base_defaults_include_safety_exceptions() {
     // arrange
+    // act
+    // assert
+    // arrange
     let fixture = load_opencode_agent_ts_matrix();
     let by_perm: BTreeMap<(&str, &str), &str> = fixture
         .base_defaults
@@ -309,6 +318,9 @@ fn t0_opencode_matrix_base_defaults_include_safety_exceptions() {
 
 #[test]
 fn t0_opencode_matrix_documents_plan_shell_and_category_task_divergences() {
+    // arrange
+    // act
+    // assert
     // arrange
     let fixture = load_opencode_agent_ts_matrix();
     let plan = fixture.agents.get("plan").expect("plan agent matrix entry");

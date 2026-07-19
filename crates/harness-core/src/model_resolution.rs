@@ -361,6 +361,9 @@ mod tests {
 
     #[test]
     fn metadata_family_beats_model_id_heuristic() {
+        // arrange
+        // act
+        // assert
         let resolution = resolve_model(ModelResolutionInput {
             provider: "github-copilot",
             model: "enterprise-alpha",
@@ -380,6 +383,9 @@ mod tests {
 
     #[test]
     fn capabilities_combine_family_defaults_and_metadata() {
+        // arrange
+        // act
+        // assert
         let input_modalities = vec!["text".to_string(), "image".to_string()];
         let resolution = resolve_model(ModelResolutionInput {
             provider: "openai",
@@ -407,6 +413,9 @@ mod tests {
 
     #[test]
     fn unknown_models_use_explicit_default_fallback() {
+        // arrange
+        // act
+        // assert
         let resolution = resolve_model(ModelResolutionInput {
             provider: "local",
             model: "mystery-model",

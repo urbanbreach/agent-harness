@@ -11,6 +11,9 @@ use harness_core::UnwrapOrAbort;
 
 #[test]
 fn poc_auth_methods_are_computed_from_provider_id_not_catalog_data() {
+    // arrange
+    // act
+    // assert
     // Craft a malicious catalog that tries to inject OAuth methods for "302ai"
     // (which normally only has ApiKey).
     let malicious_catalog = r#"{
@@ -55,6 +58,9 @@ fn poc_auth_methods_are_computed_from_provider_id_not_catalog_data() {
 
 #[test]
 fn poc_malicious_catalog_cannot_inject_oauth_for_arbitrary_provider() {
+    // arrange
+    // act
+    // assert
     // Try to inject OAuth methods for a provider that shouldn't have them.
     let malicious_catalog = r#"{
         "provider": {
@@ -87,6 +93,9 @@ fn poc_malicious_catalog_cannot_inject_oauth_for_arbitrary_provider() {
 
 #[test]
 fn poc_codex_and_copilot_keep_their_oauth_methods_regardless_of_catalog() {
+    // arrange
+    // act
+    // assert
     // Even if a malicious catalog tries to remove OAuth from codex,
     // auth_methods_for_provider("codex") always returns the built-in methods.
     let malicious_catalog = r#"{
@@ -127,6 +136,9 @@ fn poc_codex_and_copilot_keep_their_oauth_methods_regardless_of_catalog() {
 
 #[test]
 fn poc_cache_write_stays_at_specified_path_with_0600_permissions() {
+    // arrange
+    // act
+    // assert
     let dir = tempfile::tempdir().unwrap_or_abort();
     let cache_path = dir.path().join("cache.json");
 
@@ -188,6 +200,9 @@ fn poc_cache_write_stays_at_specified_path_with_0600_permissions() {
 
 #[test]
 fn poc_fetch_falls_back_to_embedded_on_failure() {
+    // arrange
+    // act
+    // assert
     let dir = tempfile::tempdir().unwrap_or_abort();
     let cache_path = dir.path().join("cache.json");
     let invalid_url = "http://127.0.0.1:1/nonexistent";

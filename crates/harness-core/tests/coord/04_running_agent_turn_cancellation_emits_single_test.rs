@@ -1,6 +1,9 @@
 use harness_core::UnwrapOrAbort;
 #[tokio::test]
 async fn running_agent_turn_cancellation_emits_single_owner_aware_terminal_event() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let coordinator = test_agent_coordinator(temp_dir.path(), Duration::from_millis(100));
 
@@ -84,6 +87,9 @@ async fn running_agent_turn_cancellation_emits_single_owner_aware_terminal_event
 }
 #[tokio::test]
 async fn coord_agent_turn_provider_events_have_isolated_correlation_ids() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let coordinator = test_agent_coordinator(temp_dir.path(), Duration::from_millis(5));
 
@@ -337,6 +343,9 @@ async fn provider_single_call_returns_tool_intents_without_executing_tools() {
 }
 #[tokio::test]
 async fn provider_calls_in_one_turn_have_unique_request_ids() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![
         vec![

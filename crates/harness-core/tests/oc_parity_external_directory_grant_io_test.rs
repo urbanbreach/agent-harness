@@ -169,6 +169,9 @@ async fn wait_for_tool_finished(
 
 #[tokio::test]
 async fn external_directory_allow_grants_successful_outside_read_bytes() {
+    // arrange
+    // act
+    // assert
     // Given: outside file with known bytes; primary tools Allow; external_directory Ask
     // When: read outside → PermissionRequested → resolve Allow
     // Then: tool succeeds and returns file bytes
@@ -227,6 +230,9 @@ async fn external_directory_allow_grants_successful_outside_read_bytes() {
 
 #[tokio::test]
 async fn external_directory_deny_leaves_outside_file_unchanged() {
+    // arrange
+    // act
+    // assert
     // Given: outside file with original content
     // When: edit outside → PermissionRequested → resolve Deny
     // Then: file content unchanged; tool not succeeded
@@ -278,6 +284,9 @@ async fn external_directory_deny_leaves_outside_file_unchanged() {
 
 #[tokio::test]
 async fn bash_multi_path_external_checks_both_paths() {
+    // arrange
+    // act
+    // assert
     // Given: bash command with two absolute external paths
     // When: requested
     // Then: external_directory ask (both paths collected; no silent partial skip)
@@ -317,6 +326,9 @@ async fn bash_multi_path_external_checks_both_paths() {
 
 #[tokio::test]
 async fn always_grant_is_prefix_scoped_not_whole_fs() {
+    // arrange
+    // act
+    // assert
     // Given: always grant after approving /tmp-like parent path
     // When: second read under same parent, third under unrelated parent
     // Then: sibling under prefix authorized without re-ask; unrelated still asks
@@ -401,6 +413,9 @@ async fn always_grant_is_prefix_scoped_not_whole_fs() {
 
 #[test]
 fn always_external_path_prefix_never_promotes_root() {
+    // arrange
+    // act
+    // assert
     use harness_core::perm::always_external_path_prefix;
     let exact = always_external_path_prefix(std::path::Path::new("/alone"));
     assert_eq!(exact, PathBuf::from("/alone"));
@@ -410,6 +425,9 @@ fn always_external_path_prefix_never_promotes_root() {
 
 #[test]
 fn external_path_prefix_covers_descendants_only() {
+    // arrange
+    // act
+    // assert
     use harness_core::perm::external_path_prefix_covers;
     assert!(external_path_prefix_covers("/tmp/foo", "/tmp/foo/a.txt"));
     assert!(external_path_prefix_covers("/tmp/foo", "/tmp/foo"));

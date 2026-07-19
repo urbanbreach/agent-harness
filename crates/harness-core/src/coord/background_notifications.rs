@@ -59,6 +59,155 @@ pub(in crate::coord) fn background_terminal_event_matches_task(
     }
 }
 
+/// Multi-background wait mode for coordinator-owned wait-any / wait-all.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BackgroundWaitMode {
+    /// Return when the first watched background request becomes terminal.
+    Any,
+    /// Return when every watched background request is terminal.
+    All,
+}
+
+impl BackgroundWaitMode {
+    /// Parse `any` / `all` (case-insensitive).
+    #[must_use]
+    pub fn parse(raw: &str) -> Option<Self> {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "any" => Some(Self::Any),
+            "all" => Some(Self::All),
+            _ => None,
+        }
+    }
+
+    /// Stable wire / schema token for this mode.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Any => "any",
+            Self::All => "all",
+        }
+    }
+}
+
+/// Outcome of a multi-request background wait.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BackgroundWaitOutcome {
+    /// Whether the wait condition was satisfied before timeout.
+    pub satisfied: bool,
+    /// First request_id observed (or known) terminal when the condition became true.
+    pub first_terminal_request_id: Option<String>,
+}
+
+/// Pure wait-condition predicate for multi-background synchronization.
+///
+/// Empty sets never satisfy either mode. Cancelled and completed both count as
+/// terminal; late results do not change terminal membership.
+#[must_use]
+pub fn background_wait_condition_satisfied<S: AsRef<str>>(
+    mode: BackgroundWaitMode,
+    terminal_by_request: &[(S, bool)],
+) -> bool {
+    if terminal_by_request.is_empty() {
+        return false;
+    }
+    match mode {
+        BackgroundWaitMode::Any => terminal_by_request.iter().any(|(_, terminal)| *terminal),
+        BackgroundWaitMode::All => terminal_by_request.iter().all(|(_, terminal)| *terminal),
+    }
+}
+
+/// First terminal request id in caller order (stable for already-satisfied waits).
+#[must_use]
+pub fn first_terminal_request_id<S: AsRef<str>>(
+    terminal_by_request: &[(S, bool)],
+) -> Option<String> {
+    terminal_by_request
+        .iter()
+        .find_map(|(request_id, terminal)| (*terminal).then(|| request_id.as_ref().to_string()))
+}
+
+#[cfg(test)]
+mod wait_mode_tests {
+    use super::{
+        background_wait_condition_satisfied, first_terminal_request_id, BackgroundWaitMode,
+    };
+
+    #[test]
+    fn wait_any_is_true_when_first_of_n_is_terminal() {
+        // arrange
+        // act
+        // assert
+        let flags = [("req_a", false), ("req_b", true), ("req_c", false)];
+        assert!(background_wait_condition_satisfied(
+            BackgroundWaitMode::Any,
+            &flags
+        ));
+        assert_eq!(first_terminal_request_id(&flags).as_deref(), Some("req_b"));
+    }
+
+    #[test]
+    fn wait_any_is_false_when_none_terminal() {
+        // arrange
+        // act
+        // assert
+        let flags = [("req_a", false), ("req_b", false)];
+        assert!(!background_wait_condition_satisfied(
+            BackgroundWaitMode::Any,
+            &flags
+        ));
+        assert_eq!(first_terminal_request_id(&flags), None);
+    }
+
+    #[test]
+    fn wait_all_is_true_only_when_every_request_is_terminal() {
+        // arrange
+        // act
+        // assert
+        let partial = [("req_a", true), ("req_b", false)];
+        let complete = [("req_a", true), ("req_b", true)];
+        assert!(!background_wait_condition_satisfied(
+            BackgroundWaitMode::All,
+            &partial
+        ));
+        assert!(background_wait_condition_satisfied(
+            BackgroundWaitMode::All,
+            &complete
+        ));
+    }
+
+    #[test]
+    fn wait_condition_rejects_empty_request_set() {
+        // arrange
+        // act
+        // assert
+        let empty: [(&str, bool); 0] = [];
+        assert!(!background_wait_condition_satisfied(
+            BackgroundWaitMode::Any,
+            &empty
+        ));
+        assert!(!background_wait_condition_satisfied(
+            BackgroundWaitMode::All,
+            &empty
+        ));
+    }
+
+    #[test]
+    fn wait_mode_parse_accepts_any_and_all_case_insensitively() {
+        // arrange
+        // act
+        // assert
+        assert_eq!(
+            BackgroundWaitMode::parse("any"),
+            Some(BackgroundWaitMode::Any)
+        );
+        assert_eq!(
+            BackgroundWaitMode::parse("ALL"),
+            Some(BackgroundWaitMode::All)
+        );
+        assert_eq!(BackgroundWaitMode::parse("maybe"), None);
+    }
+}
+
 fn background_task_notification_text(notification: &BackgroundTaskNotificationEvent) -> String {
     format!(
         "[BACKGROUND TASK {}]\nID: {}\nRequest ID: {}\nDescription: {}\nStatus: {}\n\n{}\n\nUse background_output(request_id=\"{}\") for full details or task(session_id=\"{}\") to continue analysis from the child session.",
@@ -241,6 +390,7 @@ where
             },
             request_id: delivered_turn_request_id,
             child_task: None,
+            model_fallback_chain: Vec::new(),
         },
     )
     .await
@@ -304,6 +454,7 @@ where
                 },
                 request_id: wakeup.request_id,
                 child_task: None,
+                model_fallback_chain: Vec::new(),
             },
         )
         .await?;

@@ -71,6 +71,9 @@ impl Tool for TestEditTool {
 
 #[tokio::test]
 async fn tool_auth_uses_derived_worker_category_not_caller_category() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let policy = allow_all_permission_policy()
         .with_category_override(
@@ -140,6 +143,9 @@ async fn tool_auth_uses_derived_worker_category_not_caller_category() {
 
 #[tokio::test]
 async fn unknown_worker_agent_id_is_denied_closed() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
 
     let coordinator = test_coordinator(
@@ -178,6 +184,9 @@ async fn unknown_worker_agent_id_is_denied_closed() {
 
 #[tokio::test]
 async fn worker_toolset_enforcement_blocks_non_allowlisted_tool() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
 
     let coordinator = test_coordinator(
@@ -296,6 +305,9 @@ async fn shell_permission_summary_redacts_command_secrets() {
 
 #[tokio::test]
 async fn edit_rename_requires_permission_for_destination_path() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let policy = allow_all_permission_policy().with_category_override(
         "plan",
@@ -375,6 +387,9 @@ async fn edit_rename_requires_permission_for_destination_path() {
 
 #[tokio::test]
 async fn plan_mode_edit_requires_active_plan_file_not_sibling_plan() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let policy = allow_all_permission_policy().with_category_override(
         "plan",
@@ -466,6 +481,9 @@ async fn plan_mode_edit_requires_active_plan_file_not_sibling_plan() {
 #[cfg(unix)]
 #[tokio::test]
 async fn plan_mode_edit_rejects_symlinked_active_plan_directory() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp_dir.path().join("workspace");
     let redirected_agent_harness = temp_dir.path().join("redirected-agent-harness");

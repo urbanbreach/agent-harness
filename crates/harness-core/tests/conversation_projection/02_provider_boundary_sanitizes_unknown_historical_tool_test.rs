@@ -1,6 +1,9 @@
 use harness_core::UnwrapOrAbort;
 #[test]
 fn provider_boundary_sanitizes_unknown_historical_tool_ids() {
+    // arrange
+    // act
+    // assert
     let mut profile = boundary_profile();
     profile.toolset.clear();
     let prior_context = ProviderContext {

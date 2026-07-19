@@ -119,6 +119,10 @@ use self::background_notifications::{
     background_projection_error_to_coordinator_error, background_terminal_event_matches_task,
     schedule_pending_agent_wakeups_for_idle_agent, terminal_event_summary,
 };
+pub use self::background_notifications::{
+    background_wait_condition_satisfied, first_terminal_request_id, BackgroundWaitMode,
+    BackgroundWaitOutcome,
+};
 use self::child_session::{
     create_child_session_mirror, finish_child_session_mirrors, mirror_event_to_child_session,
     restore_child_session_mirrors, ChildSessionMirror,
@@ -231,6 +235,11 @@ pub struct CoordinatorConfig {
     pub tool_registry: Arc<ToolRegistry>,
     pub provider: Arc<dyn Provider>,
     pub agent_profiles: BTreeMap<String, AgentProfile>,
+    /// Remaining model-ref fallback chain keyed by agent profile name.
+    ///
+    /// Populated at bootstrap from `model_profile.fallback` after the primary is
+    /// resolved onto the agent. Empty means no model auto-fallback for that agent.
+    pub agent_model_fallbacks: BTreeMap<String, Vec<String>>,
     pub hook_runtime_config: HookRuntimeConfig,
     pub hook_command_executor: Arc<dyn LifecycleHookCommandExecutor + Send + Sync>,
     pub compaction: CompactionSettings,
@@ -257,6 +266,7 @@ impl CoordinatorConfig {
             tool_registry: Arc::new(ToolRegistry::new()),
             provider: default_provider(),
             agent_profiles: BTreeMap::new(),
+            agent_model_fallbacks: BTreeMap::new(),
             hook_runtime_config: registered_hook_runtime_config(),
             hook_command_executor: Arc::new(TokioLifecycleHookCommandExecutor),
             compaction: CompactionSettings::default(),
@@ -437,6 +447,17 @@ pub enum Command {
     },
     BackgroundForegroundChildTasks {
         respond_to: oneshot::Sender<Result<usize, CoordinatorError>>,
+    },
+    DemoteForegroundChildTask {
+        handle_id: String,
+        respond_to: oneshot::Sender<
+            Result<crate::foreground_demote::DemoteToBackgroundResult, CoordinatorError>,
+        >,
+    },
+    DemoteAllForegroundChildTasks {
+        respond_to: oneshot::Sender<
+            Result<Vec<crate::foreground_demote::DemoteToBackgroundResult>, CoordinatorError>,
+        >,
     },
     JobFinished {
         task_id: String,

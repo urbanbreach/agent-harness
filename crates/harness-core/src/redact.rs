@@ -257,6 +257,9 @@ mod tests {
 
     #[test]
     fn redacts_known_secret_patterns() {
+        // arrange
+        // act
+        // assert
         let redactor = DefaultRedactor::default();
         let input = "key=sk-AbCdEf0123456789 and Authorization: Bearer abc.def-ghi_123";
 
@@ -270,6 +273,9 @@ mod tests {
 
     #[test]
     fn leaves_non_secret_text_unchanged() {
+        // arrange
+        // act
+        // assert
         let redactor = DefaultRedactor::default();
         let input = "normal output with status=ok and no credentials";
 
@@ -278,6 +284,9 @@ mod tests {
 
     #[test]
     fn redacts_structured_values_for_event_payloads() {
+        // arrange
+        // act
+        // assert
         let redactor = DefaultRedactor::default();
         let value = json!({
             "message": "token sk-ABCDE12345ABCDE and Bearer token.abc",
@@ -482,6 +491,9 @@ mod tests {
 
     #[test]
     fn secret_scan_helper_fails_when_jsonl_contains_sk_prefix() {
+        // arrange
+        // act
+        // assert
         let dir = tempfile::tempdir().unwrap_or_abort();
         let file = dir.path().join("events.jsonl");
         fs::write(&file, "{\"line\":\"sk-should-not-be-here\"}").unwrap_or_abort();
@@ -492,6 +504,9 @@ mod tests {
 
     #[test]
     fn secret_scan_helper_allows_redacted_jsonl() {
+        // arrange
+        // act
+        // assert
         let dir = tempfile::tempdir().unwrap_or_abort();
         let file = dir.path().join("events.jsonl");
         fs::write(&file, "{\"line\":\"[REDACTED_API_KEY]\"}").unwrap_or_abort();
@@ -501,6 +516,9 @@ mod tests {
 
     #[test]
     fn secret_scan_helper_fails_when_artifact_contains_sk_prefix() {
+        // arrange
+        // act
+        // assert
         let dir = tempfile::tempdir().unwrap_or_abort();
         let file = dir
             .path()
@@ -520,6 +538,9 @@ mod tests {
 
     #[test]
     fn secret_scan_helper_allows_redacted_artifact_files() {
+        // arrange
+        // act
+        // assert
         let dir = tempfile::tempdir().unwrap_or_abort();
         let result = dir
             .path()
@@ -543,6 +564,9 @@ mod tests {
 
     #[test]
     fn secret_scan_helper_fails_when_snap_file_contains_sk_prefix() {
+        // arrange
+        // act
+        // assert
         let dir = tempfile::tempdir().unwrap_or_abort();
         let file = dir
             .path()
@@ -563,6 +587,9 @@ mod tests {
 
     #[test]
     fn secret_scan_helper_allows_redacted_snap_file() {
+        // arrange
+        // act
+        // assert
         let dir = tempfile::tempdir().unwrap_or_abort();
         let file = dir
             .path()

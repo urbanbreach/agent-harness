@@ -191,6 +191,9 @@ mod tests {
 
     #[test]
     fn extract_file_ops_from_tool_call_read_path() {
+        // arrange
+        // act
+        // assert
         let args = json_args(&[("path", "src/main.rs")]);
         let op = extract_file_ops_from_tool_call("read", &args);
         assert_eq!(
@@ -206,6 +209,9 @@ mod tests {
 
     #[test]
     fn extract_file_ops_from_tool_call_read_file_alias() {
+        // arrange
+        // act
+        // assert
         let args = json_args(&[("file", "README.md")]);
         let op = extract_file_ops_from_tool_call("read", &args);
         assert_eq!(
@@ -221,6 +227,9 @@ mod tests {
 
     #[test]
     fn extract_file_ops_from_tool_call_read_pattern() {
+        // arrange
+        // act
+        // assert
         let args = json_args(&[("pattern", "*.rs")]);
         let op = extract_file_ops_from_tool_call("grep", &args);
         assert_eq!(
@@ -236,6 +245,9 @@ mod tests {
 
     #[test]
     fn extract_file_ops_from_tool_call_list() {
+        // arrange
+        // act
+        // assert
         let args = json_args(&[("path", "/tmp/workspace")]);
         let op = extract_file_ops_from_tool_call("list", &args);
         assert_eq!(
@@ -251,6 +263,9 @@ mod tests {
 
     #[test]
     fn extract_file_ops_from_tool_call_glob() {
+        // arrange
+        // act
+        // assert
         let args = json_args(&[("path", "**/*.json")]);
         let op = extract_file_ops_from_tool_call("glob", &args);
         assert_eq!(
@@ -266,6 +281,9 @@ mod tests {
 
     #[test]
     fn extract_file_ops_from_tool_call_edit() {
+        // arrange
+        // act
+        // assert
         let args = json_args(&[("path", "Cargo.toml")]);
         let op = extract_file_ops_from_tool_call("edit", &args);
         assert_eq!(
@@ -281,6 +299,9 @@ mod tests {
 
     #[test]
     fn extract_file_ops_from_tool_call_write() {
+        // arrange
+        // act
+        // assert
         let args = json_args(&[("path", "new_file.txt")]);
         let op = extract_file_ops_from_tool_call("write", &args);
         assert_eq!(
@@ -296,6 +317,9 @@ mod tests {
 
     #[test]
     fn extract_file_ops_from_tool_call_bash_extracts_file_paths() {
+        // arrange
+        // act
+        // assert
         let args = json_args(&[("command", "cat src/main.rs && echo done")]);
         let op = extract_file_ops_from_tool_call("bash", &args);
         assert_eq!(
@@ -311,6 +335,9 @@ mod tests {
 
     #[test]
     fn extract_file_ops_from_tool_call_bash_extracts_multiple_extensions() {
+        // arrange
+        // act
+        // assert
         // `cargo build` reads Cargo.toml
         let args = json_args(&[("command", "cargo build --manifest-path Cargo.toml")]);
         let op = extract_file_ops_from_tool_call("bash", &args);
@@ -353,6 +380,9 @@ mod tests {
 
     #[test]
     fn extract_file_ops_from_tool_call_bash_no_path_returns_none() {
+        // arrange
+        // act
+        // assert
         // Command with no detectable file path
         let args = json_args(&[("command", "echo hello world")]);
         let op = extract_file_ops_from_tool_call("bash", &args);
@@ -361,6 +391,9 @@ mod tests {
 
     #[test]
     fn extract_file_ops_from_tool_call_unknown_tool_returns_none() {
+        // arrange
+        // act
+        // assert
         let args = json_args(&[("path", "something.txt")]);
         let op = extract_file_ops_from_tool_call("webfetch", &args);
         assert_eq!(op, None);
@@ -368,6 +401,9 @@ mod tests {
 
     #[test]
     fn extract_file_ops_from_tool_call_missing_path_returns_none() {
+        // arrange
+        // act
+        // assert
         // read with no path field
         let args = json_args(&[]);
         let op = extract_file_ops_from_tool_call("read", &args);
@@ -376,6 +412,9 @@ mod tests {
 
     #[test]
     fn extract_file_ops_from_tool_call_empty_path_returns_none() {
+        // arrange
+        // act
+        // assert
         let args = json_args(&[("path", "   ")]);
         let op = extract_file_ops_from_tool_call("read", &args);
         assert_eq!(op, None);
@@ -387,6 +426,9 @@ mod tests {
 
     #[test]
     fn merge_file_operations_read_only() {
+        // arrange
+        // act
+        // assert
         let mut ops = FileOperations::new();
         merge_file_operations(
             &mut ops,
@@ -404,6 +446,9 @@ mod tests {
 
     #[test]
     fn merge_file_operations_edit() {
+        // arrange
+        // act
+        // assert
         let mut ops = FileOperations::new();
         merge_file_operations(
             &mut ops,
@@ -425,6 +470,9 @@ mod tests {
 
     #[test]
     fn compute_file_lists_read_only_file() {
+        // arrange
+        // act
+        // assert
         let mut ops = FileOperations::new();
         ops.read.insert("src/lib.rs".into());
         ops.read.insert("README.md".into());
@@ -436,6 +484,9 @@ mod tests {
 
     #[test]
     fn compute_file_lists_modified_file() {
+        // arrange
+        // act
+        // assert
         let mut ops = FileOperations::new();
         ops.edited.insert("Cargo.toml".into());
         ops.written.insert("new_file.txt".into());
@@ -447,6 +498,9 @@ mod tests {
 
     #[test]
     fn compute_file_lists_read_then_edit_goes_to_modified() {
+        // arrange
+        // act
+        // assert
         // File was read AND edited — it belongs in modified_files, not read_files
         let mut ops = FileOperations::new();
         ops.read.insert("src/main.rs".into());
@@ -459,6 +513,9 @@ mod tests {
 
     #[test]
     fn compute_file_lists_read_then_write_goes_to_modified() {
+        // arrange
+        // act
+        // assert
         // File was read AND written — it belongs in modified_files
         let mut ops = FileOperations::new();
         ops.read.insert("config.json".into());
@@ -471,6 +528,9 @@ mod tests {
 
     #[test]
     fn compute_file_lists_deduplicates() {
+        // arrange
+        // act
+        // assert
         // Same path in edited and written should appear once in modified_files
         let mut ops = FileOperations::new();
         ops.edited.insert("Cargo.toml".into());
@@ -482,6 +542,9 @@ mod tests {
 
     #[test]
     fn compute_file_lists_sorted_output() {
+        // arrange
+        // act
+        // assert
         let mut ops = FileOperations::new();
         ops.edited.insert("z.rs".into());
         ops.edited.insert("a.rs".into());
@@ -493,6 +556,9 @@ mod tests {
 
     #[test]
     fn compute_file_lists_mixed_operations() {
+        // arrange
+        // act
+        // assert
         let mut ops = FileOperations::new();
         // Read-only
         ops.read.insert("README.md".into());
@@ -508,6 +574,9 @@ mod tests {
 
     #[test]
     fn compute_file_lists_all_modified_none_read() {
+        // arrange
+        // act
+        // assert
         let mut ops = FileOperations::new();
         ops.edited.insert("a.rs".into());
         ops.edited.insert("b.rs".into());

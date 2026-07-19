@@ -633,6 +633,9 @@ mod tests {
 
     #[test]
     fn collect_entries_filters_by_agent_id() {
+        // arrange
+        // act
+        // assert
         let events = vec![
             user_msg(1, "agent-1", "req-1", "hello"),
             assistant_finished(2, "agent-1", "req-1"),
@@ -649,6 +652,9 @@ mod tests {
 
     #[test]
     fn collect_entries_stops_at_target_seq() {
+        // arrange
+        // act
+        // assert
         let events = vec![
             user_msg(1, "agent-1", "req-1", "first"),
             assistant_finished(2, "agent-1", "req-1"),
@@ -670,6 +676,9 @@ mod tests {
 
     #[test]
     fn collect_entries_empty_events_returns_empty() {
+        // arrange
+        // act
+        // assert
         let result = collect_entries_for_branch_summary(&[], "agent-1", None);
         assert!(result.entries.is_empty());
         assert_eq!(result.common_ancestor_seq, None);
@@ -677,6 +686,9 @@ mod tests {
 
     #[test]
     fn collect_entries_no_matching_agent_returns_empty() {
+        // arrange
+        // act
+        // assert
         let events = vec![
             user_msg(1, "agent-1", "req-1", "hello"),
             assistant_finished(2, "agent-1", "req-1"),
@@ -688,6 +700,9 @@ mod tests {
 
     #[test]
     fn collect_entries_returns_chronological_order() {
+        // arrange
+        // act
+        // assert
         let events = vec![
             user_msg(1, "agent-1", "req-1", "first"),
             stream_delta(2, "agent-1", "req-1", "response"),
@@ -714,6 +729,9 @@ mod tests {
 
     #[test]
     fn prepare_branch_entries_converts_events_to_messages() {
+        // arrange
+        // act
+        // assert
         let events = vec![
             user_msg(1, "agent-1", "req-1", "Read README.md"),
             provider_started(2, "agent-1", "req-1"),
@@ -736,6 +754,9 @@ mod tests {
 
     #[test]
     fn prepare_branch_entries_respects_token_budget() {
+        // arrange
+        // act
+        // assert
         let events = vec![
             user_msg(1, "agent-1", "req-1", &"x".repeat(200)),
             stream_delta(2, "agent-1", "req-1", &"y".repeat(200)),
@@ -752,6 +773,9 @@ mod tests {
 
     #[test]
     fn prepare_branch_entries_zero_budget_includes_all() {
+        // arrange
+        // act
+        // assert
         let events = vec![
             user_msg(1, "agent-1", "req-1", "hello"),
             stream_delta(2, "agent-1", "req-1", "world"),
@@ -765,6 +789,9 @@ mod tests {
 
     #[test]
     fn prepare_branch_entries_empty_entries_returns_empty() {
+        // arrange
+        // act
+        // assert
         let prep = prepare_branch_entries(&[], 1000);
         assert!(prep.messages.is_empty());
         assert_eq!(prep.total_tokens, 0);
@@ -778,6 +805,9 @@ mod tests {
 
     #[test]
     fn prepare_branch_entries_extracts_file_ops_from_branch_summary() {
+        // arrange
+        // act
+        // assert
         let events = vec![
             user_msg(1, "agent-1", "req-1", "do work"),
             stream_delta(2, "agent-1", "req-1", "working"),
@@ -798,6 +828,9 @@ mod tests {
 
     #[test]
     fn prepare_branch_entries_extracts_file_ops_from_session_compaction() {
+        // arrange
+        // act
+        // assert
         let events = vec![
             user_msg(1, "agent-1", "req-1", "do work"),
             stream_delta(2, "agent-1", "req-1", "working"),
@@ -818,6 +851,9 @@ mod tests {
 
     #[test]
     fn prepare_branch_entries_extracts_file_ops_from_tool_calls() {
+        // arrange
+        // act
+        // assert
         let events = vec![
             user_msg(1, "agent-1", "req-1", "read and edit files"),
             provider_started(2, "agent-1", "req-1"),
@@ -835,6 +871,9 @@ mod tests {
 
     #[test]
     fn prepare_branch_entries_skips_file_ops_from_hook_summaries() {
+        // arrange
+        // act
+        // assert
         let mut event = branch_summary_event(
             4,
             "agent-1",
@@ -861,6 +900,9 @@ mod tests {
 
     #[test]
     fn prepare_branch_entries_includes_checkpoint_messages() {
+        // arrange
+        // act
+        // assert
         let events = vec![
             user_msg(1, "agent-1", "req-1", "do work"),
             stream_delta(2, "agent-1", "req-1", "working"),
@@ -883,6 +925,9 @@ mod tests {
 
     #[test]
     fn branch_summary_prompt_contains_required_sections() {
+        // arrange
+        // act
+        // assert
         for heading in [
             "## Goal",
             "## Constraints & Preferences",
@@ -902,12 +947,18 @@ mod tests {
 
     #[test]
     fn branch_summary_preamble_contains_context() {
+        // arrange
+        // act
+        // assert
         assert!(BRANCH_SUMMARY_PREAMBLE.contains("different conversation branch"));
         assert!(BRANCH_SUMMARY_PREAMBLE.ends_with("\n\n"));
     }
 
     #[test]
     fn branch_summary_prefix_suffix_form_summary_tags() {
+        // arrange
+        // act
+        // assert
         assert!(BRANCH_SUMMARY_PREFIX.contains("<summary>"));
         assert_eq!(BRANCH_SUMMARY_SUFFIX, "</summary>");
     }

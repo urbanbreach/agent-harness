@@ -17,6 +17,9 @@ fn write_fixture(root: &Path, relative: &str, contents: impl AsRef<[u8]>) {
 
 #[test]
 fn files_matches_harness_markdown_file_regex_examples() {
+    // arrange
+    // act
+    // assert
     let template = r#"This is a @valid/path/to/a/file and it should also match at
   the beginning of a line:
 
@@ -64,6 +67,9 @@ fn files_matches_harness_markdown_file_regex_examples() {
 
 #[test]
 fn materialize_file_tag_context_reads_files_and_directories_once() {
+    // arrange
+    // act
+    // assert
     let tempdir = tempfile::tempdir().unwrap_or_abort();
     let root = tempdir.path();
     write_fixture(root, "alpha.txt", "first\nsecond\n");
@@ -82,6 +88,9 @@ fn materialize_file_tag_context_reads_files_and_directories_once() {
 
 #[test]
 fn materialize_file_tag_context_sorts_directory_entries_and_marks_directories() {
+    // arrange
+    // act
+    // assert
     let tempdir = tempfile::tempdir().unwrap_or_abort();
     let root = tempdir.path();
     create_fixture_dir(root, "src");
@@ -96,6 +105,9 @@ fn materialize_file_tag_context_sorts_directory_entries_and_marks_directories() 
 
 #[test]
 fn materialize_file_tag_context_ignores_missing_paths() {
+    // arrange
+    // act
+    // assert
     let tempdir = tempfile::tempdir().unwrap_or_abort();
 
     assert_eq!(
@@ -106,6 +118,9 @@ fn materialize_file_tag_context_ignores_missing_paths() {
 
 #[test]
 fn materialize_file_tag_context_reports_paths_outside_workspace() {
+    // arrange
+    // act
+    // assert
     let workspace = tempfile::tempdir().unwrap_or_abort();
     let external = tempfile::NamedTempFile::new().unwrap_or_abort();
 
@@ -121,6 +136,9 @@ fn materialize_file_tag_context_reports_paths_outside_workspace() {
 
 #[test]
 fn materialize_file_tag_context_honors_line_ranges() {
+    // arrange
+    // act
+    // assert
     let tempdir = tempfile::tempdir().unwrap_or_abort();
     let root = tempdir.path();
     write_fixture(root, "alpha.txt", "one\ntwo\nthree\nfour\n");
@@ -134,6 +152,9 @@ fn materialize_file_tag_context_honors_line_ranges() {
 
 #[test]
 fn materialize_file_tag_context_clamps_reversed_line_ranges_to_start() {
+    // arrange
+    // act
+    // assert
     let tempdir = tempfile::tempdir().unwrap_or_abort();
     let root = tempdir.path();
     write_fixture(root, "alpha.txt", "one\ntwo\nthree\nfour\n");
@@ -147,6 +168,9 @@ fn materialize_file_tag_context_clamps_reversed_line_ranges_to_start() {
 
 #[test]
 fn split_line_range_parses_optional_end_line_suffixes() {
+    // arrange
+    // act
+    // assert
     assert_eq!(
         split_line_range("alpha.txt#2"),
         (
@@ -181,6 +205,9 @@ fn split_line_range_parses_optional_end_line_suffixes() {
 
 #[test]
 fn split_line_range_strips_invalid_hash_suffixes_without_selecting_lines() {
+    // arrange
+    // act
+    // assert
     assert_eq!(
         split_line_range("alpha.txt#not-a-line"),
         ("alpha.txt", None)
@@ -189,6 +216,9 @@ fn split_line_range_strips_invalid_hash_suffixes_without_selecting_lines() {
 
 #[test]
 fn materialize_file_tag_context_omits_binary_files_by_mime() {
+    // arrange
+    // act
+    // assert
     let tempdir = tempfile::tempdir().unwrap_or_abort();
     let root = tempdir.path();
     write_fixture(root, "image.png", b"\x89PNG\0binary");
@@ -200,6 +230,9 @@ fn materialize_file_tag_context_omits_binary_files_by_mime() {
 
 #[test]
 fn materialize_file_tag_context_reports_non_utf8_files() {
+    // arrange
+    // act
+    // assert
     let tempdir = tempfile::tempdir().unwrap_or_abort();
     let root = tempdir.path();
     write_fixture(root, "bad.txt", b"\xff\xfe");
@@ -212,6 +245,9 @@ fn materialize_file_tag_context_reports_non_utf8_files() {
 
 #[test]
 fn selected_file_tags_are_materialized_once_with_structured_metadata() {
+    // arrange
+    // act
+    // assert
     let tempdir = tempfile::tempdir().unwrap_or_abort();
     let root = tempdir.path();
     write_fixture(root, "alpha.txt", "one\ntwo\nthree\n");
@@ -244,6 +280,9 @@ fn selected_file_tags_are_materialized_once_with_structured_metadata() {
 
 #[test]
 fn selected_agent_and_resource_tags_materialize_prompt_context() {
+    // arrange
+    // act
+    // assert
     let tempdir = tempfile::tempdir().unwrap_or_abort();
     let context = materialize_prompt_part_context(
         tempdir.path(),

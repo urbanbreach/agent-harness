@@ -29,6 +29,9 @@ impl ChildRunIdSource for StaticChildRunIdSource {
 
 #[test]
 fn session_lineage_projects_tree_root_child_sibling_deep_ordering() {
+    // arrange
+    // act
+    // assert
     let tree = project_lineage_tree(vec![
         entry("child-old", Some("root"), "2026-05-03T00:01:00Z"),
         entry("grandchild", Some("child-new"), "2026-05-03T00:03:00Z"),
@@ -56,6 +59,9 @@ fn session_lineage_projects_tree_root_child_sibling_deep_ordering() {
 
 #[test]
 fn session_lineage_handles_empty_sessions() {
+    // arrange
+    // act
+    // assert
     let selected = validate_stable_prefix(&[], 0).unwrap_or_abort();
     let latest = latest_clone_stable_prefix(&[]).unwrap_or_abort();
     let tree = project_lineage_tree(Vec::new());
@@ -68,6 +74,9 @@ fn session_lineage_handles_empty_sessions() {
 
 #[test]
 fn session_lineage_accepts_stable_prefix() {
+    // arrange
+    // act
+    // assert
     let events = vec![
         envelope(
             1,
@@ -132,6 +141,9 @@ fn session_lineage_accepts_stable_prefix() {
 
 #[test]
 fn session_lineage_clears_user_prompt_by_provider_turn_metadata() {
+    // arrange
+    // act
+    // assert
     let events = vec![
         envelope(
             1,
@@ -186,6 +198,9 @@ fn session_lineage_clears_user_prompt_by_provider_turn_metadata() {
 
 #[test]
 fn session_lineage_treats_background_wakeup_message_as_delivered() {
+    // arrange
+    // act
+    // assert
     let events = vec![
         envelope(
             1,
@@ -216,6 +231,9 @@ fn session_lineage_treats_background_wakeup_message_as_delivered() {
 
 #[test]
 fn session_lineage_rejects_in_flight_prefix() {
+    // arrange
+    // act
+    // assert
     let events = vec![
         envelope(
             1,
@@ -254,6 +272,9 @@ fn session_lineage_rejects_in_flight_prefix() {
 
 #[test]
 fn session_lineage_tui_accepts_live_message_snapshot_with_unanswered_prompt() {
+    // arrange
+    // act
+    // assert
     let events = vec![
         envelope(
             1,
@@ -290,6 +311,9 @@ fn session_lineage_tui_accepts_live_message_snapshot_with_unanswered_prompt() {
 
 #[test]
 fn session_lineage_tui_closes_historical_native_edit_id_mismatch_by_path() {
+    // arrange
+    // act
+    // assert
     let events = vec![
         envelope(
             1,
@@ -335,6 +359,9 @@ fn session_lineage_tui_closes_historical_native_edit_id_mismatch_by_path() {
 
 #[test]
 fn session_lineage_tui_accepts_live_snapshot_with_unfinished_native_edit() {
+    // arrange
+    // act
+    // assert
     let events = vec![
         envelope(
             1,
@@ -362,6 +389,9 @@ fn session_lineage_tui_accepts_live_snapshot_with_unfinished_native_edit() {
 
 #[test]
 fn session_lineage_rejects_corrupt_non_contiguous_logs() {
+    // arrange
+    // act
+    // assert
     let non_contiguous = vec![
         envelope(
             1,
@@ -421,6 +451,9 @@ fn session_lineage_rejects_corrupt_non_contiguous_logs() {
 
 #[test]
 fn session_lineage_rejects_unstable_prefixes() {
+    // arrange
+    // act
+    // assert
     let active = vec![envelope(
         1,
         EventV1::RunStarted(RunStartedEvent {
@@ -470,6 +503,9 @@ fn session_lineage_rejects_unstable_prefixes() {
 
 #[test]
 fn session_lineage_clone_rejects_running_source_without_stable_prefix() {
+    // arrange
+    // act
+    // assert
     let events = vec![envelope(
         1,
         EventV1::RunStarted(RunStartedEvent {
@@ -487,6 +523,9 @@ fn session_lineage_clone_rejects_running_source_without_stable_prefix() {
 
 #[test]
 fn session_lineage_handles_first_last_and_out_of_range_cutoffs() {
+    // arrange
+    // act
+    // assert
     let events = vec![
         envelope(
             1,
@@ -544,6 +583,9 @@ fn session_lineage_handles_first_last_and_out_of_range_cutoffs() {
 
 #[test]
 fn session_lineage_treats_legacy_entries_without_parent_metadata_as_roots() {
+    // arrange
+    // act
+    // assert
     let tree = project_lineage_tree(vec![
         entry("legacy-b", None, "2026-05-03T00:02:00Z"),
         entry("legacy-a", None, "2026-05-03T00:01:00Z"),
@@ -564,6 +606,9 @@ fn session_lineage_treats_legacy_entries_without_parent_metadata_as_roots() {
 
 #[test]
 fn session_lineage_tracks_tool_call_in_flight_cutoffs() {
+    // arrange
+    // act
+    // assert
     let events = vec![
         envelope(
             1,
@@ -616,6 +661,9 @@ fn session_lineage_tracks_tool_call_in_flight_cutoffs() {
 
 #[test]
 fn session_lineage_rejects_source_event_log_changed_while_materializing() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let source_run_dir = temp_dir.path().join("run_session_lineage");
     fs::create_dir_all(&source_run_dir).unwrap_or_abort();
@@ -659,6 +707,9 @@ fn session_lineage_rejects_source_event_log_changed_while_materializing() {
 
 #[test]
 fn session_lineage_destination_collision_cleans_temp_without_overwriting_existing_run() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let source_run_dir = temp_dir.path().join("run_session_lineage");
     fs::create_dir_all(&source_run_dir).unwrap_or_abort();
@@ -699,6 +750,9 @@ fn session_lineage_destination_collision_cleans_temp_without_overwriting_existin
 
 #[test]
 fn session_lineage_cross_device_publish_error_cleans_temp_without_fallback() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let source_run_dir = temp_dir.path().join("run_session_lineage");
     fs::create_dir_all(&source_run_dir).unwrap_or_abort();
@@ -736,6 +790,9 @@ fn session_lineage_cross_device_publish_error_cleans_temp_without_fallback() {
 
 #[test]
 fn session_lineage_materialization_uses_injected_child_run_id_source() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let source_run_dir = temp_dir.path().join("run_session_lineage");
     fs::create_dir_all(&source_run_dir).unwrap_or_abort();

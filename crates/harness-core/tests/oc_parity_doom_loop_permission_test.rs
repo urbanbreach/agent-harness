@@ -57,6 +57,9 @@ async fn request_bash_identical(
 
 #[tokio::test]
 async fn third_identical_tool_call_emits_doom_loop_ask() {
+    // arrange
+    // act
+    // assert
     // Given: allow-default shell and three identical bash calls (same tool id + args)
     // When: the third call is requested
     // Then: PermissionRequested kind `doom_loop` on the third only
@@ -114,6 +117,9 @@ async fn third_identical_tool_call_emits_doom_loop_ask() {
 
 #[tokio::test]
 async fn different_args_reset_doom_loop_streak() {
+    // arrange
+    // act
+    // assert
     // Given: two identical calls then a different-args call then two more of the first shape
     // When: five admissions with a mid-stream args change
     // Then: no doom_loop (streak never reaches 3 consecutive identical)
@@ -153,6 +159,9 @@ async fn different_args_reset_doom_loop_streak() {
 
 #[tokio::test]
 async fn doom_loop_grant_once_allows_third_and_resets_streak() {
+    // arrange
+    // act
+    // assert
     // Given: three identical calls → doom_loop ask
     // When: resolve Allow once (no grant_scope)
     // Then: third executes; next two identical do not re-ask yet; sixth would ask again
@@ -214,6 +223,9 @@ async fn doom_loop_grant_once_allows_third_and_resets_streak() {
 
 #[tokio::test]
 async fn doom_loop_always_grant_skips_subsequent_asks() {
+    // arrange
+    // act
+    // assert
     // Given: third identical asks doom_loop
     // When: resolve Allow with Run grant_scope (always)
     // Then: further identical calls do not re-ask
@@ -269,6 +281,9 @@ async fn doom_loop_always_grant_skips_subsequent_asks() {
 
 #[tokio::test]
 async fn doom_loop_timeout_denies_third_without_execute() {
+    // arrange
+    // act
+    // assert
     // Given: short ask timeout and three identical calls
     // When: third call times out (PermissionTimedOut → deny)
     // Then: no ToolCallStarted/Succeeded for the third call

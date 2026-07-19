@@ -1,6 +1,9 @@
 use harness_core::UnwrapOrAbort;
 #[tokio::test]
 async fn same_agent_turn_queues_even_when_provider_model_has_free_slots() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let coordinator = test_agent_coordinator_with_provider(
         temp_dir.path(),
@@ -99,6 +102,9 @@ async fn same_agent_turn_queues_even_when_provider_model_has_free_slots() {
 }
 #[tokio::test]
 async fn background_task_completion_after_tool_result_wakes_parent_in_followup_turn() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let tool_release = Arc::new(Notify::new());
     let provider = SequentialScriptedProvider::new(vec![
@@ -266,6 +272,9 @@ async fn background_task_completion_after_tool_result_wakes_parent_in_followup_t
 }
 #[tokio::test]
 async fn same_agent_blocked_turns_start_fifo() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let coordinator = test_agent_coordinator_with_provider(
         temp_dir.path(),
@@ -311,6 +320,9 @@ async fn same_agent_blocked_turns_start_fifo() {
 }
 #[tokio::test]
 async fn cancelling_promoted_same_agent_queued_turn_promotes_next_blocked_turn() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let coordinator = test_agent_coordinator_with_provider(
         temp_dir.path(),
@@ -408,6 +420,9 @@ async fn cancelling_promoted_same_agent_queued_turn_promotes_next_blocked_turn()
 }
 #[tokio::test]
 async fn queued_agent_turn_cancellation_preserves_owner_context() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let coordinator = test_agent_coordinator(temp_dir.path(), Duration::from_millis(25));
 

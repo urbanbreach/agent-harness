@@ -3,6 +3,9 @@ use crate::UnwrapOrAbort;
 
 #[test]
 fn compaction_settings_default_and_serialize_alias() {
+    // arrange
+    // act
+    // assert
     let default_compaction: CompactionRuntimeConfig =
         serde_json::from_value(serde_json::json!({})).unwrap_or_abort();
     assert!(default_compaction.enabled);
@@ -30,6 +33,9 @@ fn compaction_settings_default_and_serialize_alias() {
 
 #[test]
 fn structured_summary_contract_defaults_on_and_serializes_alias() {
+    // arrange
+    // act
+    // assert
     let default_compaction: CompactionRuntimeConfig =
         serde_json::from_value(serde_json::json!({})).unwrap_or_abort();
     assert!(default_compaction.structured_summary_contract);
@@ -49,6 +55,9 @@ fn structured_summary_contract_defaults_on_and_serializes_alias() {
 
 #[test]
 fn example_config_parses_public_agents_and_compaction() {
+    // arrange
+    // act
+    // assert
     let agents = r#"
             deep: {
               description: "Default deep execution profile",
@@ -119,6 +128,9 @@ fn example_config_parses_public_agents_and_compaction() {
 
 #[test]
 fn built_in_lsp_presets_accept_override_only_entries() {
+    // arrange
+    // act
+    // assert
     let cfg = r#"
             {
               providers: {
@@ -201,6 +213,9 @@ fn built_in_lsp_presets_accept_override_only_entries() {
 
 #[test]
 fn model_variant_metadata_accepts_max_reasoning_effort() {
+    // arrange
+    // act
+    // assert
     let parsed = load_config_from_str(
         r#"
             {
@@ -251,12 +266,18 @@ fn model_variant_metadata_accepts_max_reasoning_effort() {
 
 #[test]
 fn missing_required_sections_are_deterministic() {
+    // arrange
+    // act
+    // assert
     let err = load_config_from_str("{}").expect_err("config without agents must fail");
     assert_eq!(err.to_string(), "missing required config sections: agents");
 }
 
 #[test]
 fn provider_keys_reject_terminal_control_characters_without_echoing_them() {
+    // arrange
+    // act
+    // assert
     let err = load_config_from_str(
         r#"
             {
@@ -295,6 +316,9 @@ fn provider_keys_reject_terminal_control_characters_without_echoing_them() {
 
 #[test]
 fn retired_top_level_keys_fail_with_migration_guidance() {
+    // arrange
+    // act
+    // assert
     let parsed = load_config_from_str(
         r#"
             {
@@ -347,6 +371,9 @@ fn retired_top_level_keys_fail_with_migration_guidance() {
 
 #[test]
 fn runtime_background_tasks_camel_case_aliases_parse_without_duplicate_fields() {
+    // arrange
+    // act
+    // assert
     let parsed = load_config_from_str(
         r#"
             {
@@ -408,6 +435,9 @@ fn runtime_background_tasks_camel_case_aliases_parse_without_duplicate_fields() 
 
 #[test]
 fn unknown_top_level_key_is_rejected_strictly() {
+    // arrange
+    // act
+    // assert
     let cfg = r#"
             {
               extraTopLevel: true,
@@ -468,6 +498,9 @@ fn unknown_top_level_key_is_rejected_strictly() {
 
 #[test]
 fn top_level_hashline_edit_alias_and_default_are_accepted() {
+    // arrange
+    // act
+    // assert
     let cfg = r#"
         {
           providers: {

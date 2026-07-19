@@ -1,6 +1,9 @@
 use harness_core::UnwrapOrAbort;
 #[tokio::test]
 async fn no_tool_turn_appends_explicit_phase_barriers_in_order() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let coordinator = test_agent_coordinator_with_provider(
         temp_dir.path(),
@@ -120,6 +123,9 @@ async fn no_tool_turn_appends_explicit_phase_barriers_in_order() {
 }
 #[tokio::test]
 async fn tool_turn_does_not_preflight_until_assistant_message_end_is_durable() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![
         vec![
@@ -277,6 +283,9 @@ async fn tool_turn_does_not_preflight_until_assistant_message_end_is_durable() {
 }
 #[tokio::test]
 async fn queued_turn_recomputes_context_at_provider_start() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = DelayedCapturingProvider::new(
         vec!["first answer", "beta answer", "second answer"],

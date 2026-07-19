@@ -9,6 +9,9 @@ use serde_json::json;
 
 #[test]
 fn run_started_snapshot_is_stable_in_deterministic_mode() {
+    // arrange
+    // act
+    // assert
     let clock = FakeClock::new();
     clock.advance(42);
     let redactor = DefaultRedactor::default();
@@ -31,6 +34,9 @@ fn run_started_snapshot_is_stable_in_deterministic_mode() {
 
 #[test]
 fn permission_requested_snapshot_is_stable_in_deterministic_mode() {
+    // arrange
+    // act
+    // assert
     let clock = FakeClock::new();
     clock.advance(128);
     let redactor = DefaultRedactor::default();
@@ -65,6 +71,9 @@ fn permission_requested_snapshot_is_stable_in_deterministic_mode() {
 
 #[test]
 fn tool_call_requested_uses_redacted_summary_and_digest() {
+    // arrange
+    // act
+    // assert
     let clock = FakeClock::new();
     let redactor = DefaultRedactor::default();
     let builder = EventBuilder::new(&clock, &redactor, "run_123");
@@ -106,6 +115,9 @@ fn tool_call_requested_uses_redacted_summary_and_digest() {
 
 #[test]
 fn session_compaction_event_round_trips_through_serde_json() {
+    // arrange
+    // act
+    // assert
     let event = SessionCompactionEvent {
         agent_id: "agent-build".to_string(),
         summary: "Compacted 12 turns of work on the auth module.".to_string(),
@@ -127,6 +139,9 @@ fn session_compaction_event_round_trips_through_serde_json() {
 
 #[test]
 fn session_compaction_event_serializes_with_snake_case_tag_and_skips_empty_fields() {
+    // arrange
+    // act
+    // assert
     let event = SessionCompactionEvent {
         agent_id: "agent-build".to_string(),
         summary: "Empty files and no request id.".to_string(),
@@ -150,6 +165,9 @@ fn session_compaction_event_serializes_with_snake_case_tag_and_skips_empty_field
 
 #[test]
 fn branch_summary_event_round_trips_through_serde_json() {
+    // arrange
+    // act
+    // assert
     let event = BranchSummaryEvent {
         agent_id: "agent-explore".to_string(),
         summary: "Branch explored the crate structure and found 3 entry points.".to_string(),
@@ -168,6 +186,9 @@ fn branch_summary_event_round_trips_through_serde_json() {
 
 #[test]
 fn branch_summary_event_serializes_with_snake_case_tag_and_skips_empty_fields() {
+    // arrange
+    // act
+    // assert
     let event = BranchSummaryEvent {
         agent_id: "agent-explore".to_string(),
         summary: "No files touched.".to_string(),

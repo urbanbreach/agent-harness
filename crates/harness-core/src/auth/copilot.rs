@@ -490,6 +490,9 @@ mod tests {
 
     #[tokio::test]
     async fn copilot_device_flow_uses_direct_github_token_and_stores_public_credential() {
+        // arrange
+        // act
+        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let store = CredentialStore::new(temp.path());
         let http = MockCopilotHttpClient::new([
@@ -549,6 +552,9 @@ mod tests {
 
     #[tokio::test]
     async fn copilot_device_poll_honors_pending_and_slow_down_safety_margin() {
+        // arrange
+        // act
+        // assert
         let http = MockCopilotHttpClient::new([
             response(200, r#"{"error":"authorization_pending"}"#),
             response(200, r#"{"error":"slow_down"}"#),
@@ -595,6 +601,9 @@ mod tests {
 
     #[tokio::test]
     async fn copilot_device_errors_fail_cleanly_without_storing_credentials() {
+        // arrange
+        // act
+        // assert
         let cases = [
             ("access_denied", r#"{"error":"access_denied"}"#),
             ("expired_token", r#"{"error":"expired_token"}"#),
@@ -639,6 +648,9 @@ mod tests {
 
     #[tokio::test]
     async fn copilot_device_timeout_stores_no_credentials() {
+        // arrange
+        // act
+        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let store = CredentialStore::new(temp.path());
         let http = MockCopilotHttpClient::new([
@@ -667,6 +679,9 @@ mod tests {
 
     #[tokio::test]
     async fn copilot_enterprise_normalizes_and_stores_domain() {
+        // arrange
+        // act
+        // assert
         assert_eq!(
             normalize_enterprise_domain("https://GHE.Example.COM/").unwrap_or_abort(),
             "ghe.example.com"
@@ -708,6 +723,9 @@ mod tests {
 
     #[test]
     fn copilot_offline_fallback_models_cover_gpt_and_claude_families() {
+        // arrange
+        // act
+        // assert
         let fallback = copilot_offline_fallback_models();
         assert!(fallback
             .iter()

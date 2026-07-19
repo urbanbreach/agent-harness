@@ -1,6 +1,9 @@
 use harness_core::UnwrapOrAbort;
 #[tokio::test]
 async fn provider_prompt_cache_context_uses_run_id_not_reused_agent_id() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = CapturingProvider::new(vec!["first answer", "second answer"]);
     let coordinator =

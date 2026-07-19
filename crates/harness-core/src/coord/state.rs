@@ -118,6 +118,14 @@ pub(in crate::coord) struct RunState {
     pub(in crate::coord) last_identical_tool_key: Option<(String, String)>,
     pub(in crate::coord) identical_tool_call_streak: u32,
     pub(in crate::coord) doom_loop_always_granted: bool,
+    /// Workspace-durable agent vs external edit attribution journal.
+    pub(in crate::coord) edit_attribution: crate::edit_attribution::EditAttributionJournal,
+    /// Session-local multi-agent team registry + in-memory mailbox (not Team Mode product).
+    pub(in crate::coord) team_registry: crate::team_registry::TeamRegistry,
+    /// Session-local cron schedule definitions only (`executes_schedules() == false`).
+    pub(in crate::coord) cron_schedules: crate::cron_schedule::CronScheduleRegistry,
+    /// Session-local plugin descriptor lifecycle (install/activate/deactivate/remove; no code host).
+    pub(in crate::coord) plugin_lifecycle: crate::integrations::PluginLifecycleRegistry,
 }
 
 impl RunState {
@@ -291,6 +299,8 @@ pub(in crate::coord) struct QueuedAgentTurn {
     pub(in crate::coord) queue_key: ConcurrencyKey,
     pub(in crate::coord) scheduler_queued: bool,
     pub(in crate::coord) child_task: Option<ChildTaskTurnState>,
+    /// Remaining model refs to try after the current `request.model_ref` fails.
+    pub(in crate::coord) model_fallback_chain: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

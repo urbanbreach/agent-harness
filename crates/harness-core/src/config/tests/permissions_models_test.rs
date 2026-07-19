@@ -4,6 +4,9 @@ use crate::UnwrapOrAbort;
 
 #[test]
 fn oc_parity_permission_omitted_defaults_to_allow_for_bash_edit_webfetch() {
+    // arrange
+    // act
+    // assert
     let cfg = public_minimal_config_without_permission();
     let parsed = load_config_from_str(&cfg).unwrap_or_abort();
     let policy = PermissionPolicy::from_config(&parsed);
@@ -81,6 +84,9 @@ fn oc_parity_permission_omitted_defaults_to_allow_for_bash_edit_webfetch() {
 
 #[test]
 fn oc_parity_permission_allow_scalar_expands_without_forcing_ask() {
+    // arrange
+    // act
+    // assert
     let cfg = public_minimal_config_with_permission("\"allow\"");
     let parsed = load_config_from_str(&cfg).unwrap_or_abort();
     let policy = PermissionPolicy::from_config(&parsed);
@@ -163,6 +169,9 @@ fn oc_parity_permission_allow_scalar_expands_without_forcing_ask() {
 
 #[test]
 fn oc_parity_example_config_permission_scalar_is_allow_not_ask_all() {
+    // arrange
+    // act
+    // assert
     let example_path =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../configs/harness.example.jsonc");
     let raw = std::fs::read_to_string(&example_path).unwrap_or_abort();
@@ -212,6 +221,9 @@ fn oc_parity_example_config_permission_scalar_is_allow_not_ask_all() {
 
 #[test]
 fn permission_scalar_expands_to_public_kinds_and_network() {
+    // arrange
+    // act
+    // assert
     // Scalar ask/deny paint every kind; scalar allow keeps safety exceptions.
     for (raw, mode) in [
         ("\"ask\"", PermissionMode::Ask),
@@ -273,12 +285,18 @@ fn permission_scalar_expands_to_public_kinds_and_network() {
 
 #[test]
 fn permission_scalar_rejects_invalid_mode() {
+    // arrange
+    // act
+    // assert
     let cfg = public_minimal_config_with_permission("\"maybe\"");
     load_config_from_str(&cfg).expect_err("invalid permission scalar must fail");
 }
 
 #[test]
 fn permission_object_accepts_per_tool_scalar_modes() {
+    // arrange
+    // act
+    // assert
     let cfg = public_minimal_config_with_permission(
         r#"{
                 bash: "ask",
@@ -320,6 +338,9 @@ fn permission_object_accepts_per_tool_scalar_modes() {
 
 #[test]
 fn permission_object_accepts_read_external_directory_and_doom_loop_keys() {
+    // arrange
+    // act
+    // assert
     let cfg = public_minimal_config_with_permission(
         r#"{
                 read: {
@@ -368,6 +389,9 @@ fn permission_object_accepts_read_external_directory_and_doom_loop_keys() {
 
 #[test]
 fn permission_rule_object_preserves_shell_allowlist_and_rules() {
+    // arrange
+    // act
+    // assert
     let cfg = public_minimal_config_with_permission(
         r#"{
                 "*": "deny",
@@ -407,6 +431,9 @@ fn permission_rule_object_preserves_shell_allowlist_and_rules() {
 
 #[test]
 fn shell_allowlist_loads_legacy_flat_shape_with_default_mode() {
+    // arrange
+    // act
+    // assert
     let cfg = public_minimal_config_with_permission(
         r#"{
                 bash: "allow",
@@ -429,6 +456,9 @@ fn shell_allowlist_loads_legacy_flat_shape_with_default_mode() {
 
 #[test]
 fn shell_allowlist_accepts_camel_case_cwd_roots_and_policy_mode() {
+    // arrange
+    // act
+    // assert
     let cfg = public_minimal_config_with_permission(
         r#"{
                 bash: "allow",
@@ -455,6 +485,9 @@ fn shell_allowlist_accepts_camel_case_cwd_roots_and_policy_mode() {
 
 #[test]
 fn shell_allowlist_mode_round_trips_through_json() {
+    // arrange
+    // act
+    // assert
     let allowlist = ShellAllowlist {
         mode: ShellAllowlistMode::LegacyExecutables,
         executables: vec!["git".to_string()],
@@ -481,6 +514,9 @@ fn shell_allowlist_mode_round_trips_through_json() {
 
 #[test]
 fn permission_rule_rejects_invalid_selector_forms() {
+    // arrange
+    // act
+    // assert
     for permission in [
         r#"{ bash: { "/^git/": "allow" } }"#,
         r#"{ bash: { "cargo * test": "allow" } }"#,
@@ -500,6 +536,9 @@ fn permission_rule_rejects_invalid_selector_forms() {
 
 #[test]
 fn model_limit_modalities_and_options_normalize_to_catalog_metadata() {
+    // arrange
+    // act
+    // assert
     let cfg = r#"
         {
           provider: {
@@ -557,6 +596,9 @@ fn model_limit_modalities_and_options_normalize_to_catalog_metadata() {
 
 #[test]
 fn model_limit_rejects_unknown_metadata_fields() {
+    // arrange
+    // act
+    // assert
     let cfg = r#"
         {
           provider: {
@@ -586,6 +628,9 @@ fn model_limit_rejects_unknown_metadata_fields() {
 
 #[test]
 fn legacy_provider_name_and_options_normalize_to_runtime_shape() {
+    // arrange
+    // act
+    // assert
     let cfg = r#"
         {
           providers: {
@@ -648,6 +693,9 @@ fn legacy_provider_name_and_options_normalize_to_runtime_shape() {
 
 #[test]
 fn top_level_legacy_agent_key_is_translated() {
+    // arrange
+    // act
+    // assert
     let cfg = r#"
         {
           providers: {
@@ -700,6 +748,9 @@ fn top_level_legacy_agent_key_is_translated() {
 
 #[test]
 fn invalid_explicit_default_profile_falls_back_to_build_when_available() {
+    // arrange
+    // act
+    // assert
     let cfg = r#"
         {
           providers: {

@@ -312,6 +312,9 @@ mod tests {
 
     #[test]
     fn summarization_prompt_contains_required_sections() {
+        // arrange
+        // act
+        // assert
         for heading in [
             "## Goal",
             "## Constraints & Preferences",
@@ -332,6 +335,9 @@ mod tests {
 
     #[test]
     fn update_summarization_prompt_contains_required_sections() {
+        // arrange
+        // act
+        // assert
         for heading in [
             "## Goal",
             "## Constraints & Preferences",
@@ -352,6 +358,9 @@ mod tests {
 
     #[test]
     fn turn_prefix_prompt_contains_required_sections() {
+        // arrange
+        // act
+        // assert
         for heading in [
             "## Original Request",
             "## Early Progress",
@@ -366,6 +375,9 @@ mod tests {
 
     #[test]
     fn system_prompt_instructs_not_to_continue_conversation() {
+        // arrange
+        // act
+        // assert
         assert!(SUMMARIZATION_SYSTEM_PROMPT.contains("Do NOT continue the conversation"));
         assert!(SUMMARIZATION_SYSTEM_PROMPT.contains("ONLY output the structured summary"));
     }
@@ -376,11 +388,17 @@ mod tests {
 
     #[test]
     fn format_file_operations_empty_returns_empty_string() {
+        // arrange
+        // act
+        // assert
         assert_eq!(format_file_operations(&[], &[]), "");
     }
 
     #[test]
     fn format_file_operations_read_only() {
+        // arrange
+        // act
+        // assert
         let read = vec!["src/lib.rs".to_string(), "README.md".to_string()];
         let result = format_file_operations(&read, &[]);
         assert!(result.starts_with("\n\n"));
@@ -393,6 +411,9 @@ mod tests {
 
     #[test]
     fn format_file_operations_modified_only() {
+        // arrange
+        // act
+        // assert
         let modified = vec!["Cargo.toml".to_string()];
         let result = format_file_operations(&[], &modified);
         assert!(result.starts_with("\n\n"));
@@ -404,6 +425,9 @@ mod tests {
 
     #[test]
     fn format_file_operations_both() {
+        // arrange
+        // act
+        // assert
         let read = vec!["src/lib.rs".to_string()];
         let modified = vec!["Cargo.toml".to_string()];
         let result = format_file_operations(&read, &modified);
@@ -421,6 +445,9 @@ mod tests {
 
     #[test]
     fn serialize_conversation_user_message() {
+        // arrange
+        // act
+        // assert
         let messages = vec![user_msg("Hello, world")];
         let result = serialize_conversation(&messages);
         assert_eq!(result, "[User]: Hello, world");
@@ -428,6 +455,9 @@ mod tests {
 
     #[test]
     fn serialize_conversation_assistant_message() {
+        // arrange
+        // act
+        // assert
         let messages = vec![assistant_msg("I can help with that.")];
         let result = serialize_conversation(&messages);
         assert_eq!(result, "[Assistant]: I can help with that.");
@@ -435,6 +465,9 @@ mod tests {
 
     #[test]
     fn serialize_conversation_tool_result() {
+        // arrange
+        // act
+        // assert
         let messages = vec![tool_result_msg("File contents here")];
         let result = serialize_conversation(&messages);
         assert_eq!(result, "[Tool result]: File contents here");
@@ -442,6 +475,9 @@ mod tests {
 
     #[test]
     fn serialize_conversation_assistant_with_tool_calls() {
+        // arrange
+        // act
+        // assert
         let messages = vec![assistant_with_tool_calls(
             "Let me read that file.",
             &[("read", "path=src/main.rs")],
@@ -453,6 +489,9 @@ mod tests {
 
     #[test]
     fn serialize_conversation_multiple_tool_calls() {
+        // arrange
+        // act
+        // assert
         let messages = vec![assistant_with_tool_calls(
             "",
             &[("read", "path=a.rs"), ("edit", "path=b.rs")],
@@ -463,6 +502,9 @@ mod tests {
 
     #[test]
     fn serialize_conversation_full_dialogue() {
+        // arrange
+        // act
+        // assert
         let messages = vec![
             user_msg("Read README.md"),
             assistant_with_tool_calls("", &[("read", "path=README.md")]),
@@ -482,6 +524,9 @@ mod tests {
 
     #[test]
     fn serialize_conversation_truncates_long_tool_results() {
+        // arrange
+        // act
+        // assert
         let long_text = "x".repeat(TOOL_RESULT_MAX_CHARS + 500);
         let messages = vec![tool_result_msg(&long_text)];
         let result = serialize_conversation(&messages);
@@ -491,6 +536,9 @@ mod tests {
 
     #[test]
     fn serialize_conversation_skips_empty_user_text() {
+        // arrange
+        // act
+        // assert
         let messages = vec![user_msg("")];
         let result = serialize_conversation(&messages);
         assert_eq!(result, "");
@@ -498,6 +546,9 @@ mod tests {
 
     #[test]
     fn serialize_conversation_skips_empty_tool_result() {
+        // arrange
+        // act
+        // assert
         let messages = vec![ConversationMessage::ToolResult(Box::new(
             ConversationToolResultMessage {
                 request_id: RequestId::new("req-1"),
@@ -521,6 +572,9 @@ mod tests {
 
     #[test]
     fn build_summarization_prompt_no_previous_summary() {
+        // arrange
+        // act
+        // assert
         let messages = vec![user_msg("Build a feature"), assistant_msg("Working on it.")];
         let file_ops = FileOperations::new();
         let prompt = build_summarization_prompt(&messages, None, None, &file_ops);
@@ -536,6 +590,9 @@ mod tests {
 
     #[test]
     fn build_summarization_prompt_with_previous_summary() {
+        // arrange
+        // act
+        // assert
         let messages = vec![user_msg("Continue the work")];
         let file_ops = FileOperations::new();
         let prompt =
@@ -550,6 +607,9 @@ mod tests {
 
     #[test]
     fn build_summarization_prompt_with_custom_instructions() {
+        // arrange
+        // act
+        // assert
         let messages = vec![user_msg("Do something")];
         let file_ops = FileOperations::new();
         let prompt = build_summarization_prompt(
@@ -564,6 +624,9 @@ mod tests {
 
     #[test]
     fn build_summarization_prompt_includes_file_operations() {
+        // arrange
+        // act
+        // assert
         let messages = vec![user_msg("Read and edit files")];
         let mut file_ops = FileOperations::new();
         file_ops.read.insert("src/lib.rs".to_string());
@@ -579,6 +642,9 @@ mod tests {
 
     #[test]
     fn build_summarization_prompt_no_file_ops_omits_tags() {
+        // arrange
+        // act
+        // assert
         let messages = vec![user_msg("Hello")];
         let file_ops = FileOperations::new();
         let prompt = build_summarization_prompt(&messages, None, None, &file_ops);
@@ -593,6 +659,9 @@ mod tests {
 
     #[test]
     fn build_turn_prefix_prompt_structure() {
+        // arrange
+        // act
+        // assert
         let messages = vec![
             user_msg("Fix the bug in auth.rs"),
             assistant_msg("I'll start by reading the file."),
@@ -612,6 +681,9 @@ mod tests {
 
     #[test]
     fn split_turn_prompts_combined_with_separator() {
+        // arrange
+        // act
+        // assert
         // When is_split_turn is true, the caller builds both prompts and
         // combines the LLM results with a --- separator.
         let history_messages = vec![user_msg("Build feature X"), assistant_msg("Done.")];
@@ -642,12 +714,18 @@ mod tests {
 
     #[test]
     fn truncate_for_summary_short_text_unchanged() {
+        // arrange
+        // act
+        // assert
         let text = "short text";
         assert_eq!(truncate_for_summary(text, 100), text);
     }
 
     #[test]
     fn truncate_for_summary_long_text_truncated() {
+        // arrange
+        // act
+        // assert
         let text = "x".repeat(150);
         let result = truncate_for_summary(&text, 100);
         assert!(result.starts_with(&"x".repeat(100)));

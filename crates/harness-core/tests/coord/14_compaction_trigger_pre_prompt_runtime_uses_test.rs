@@ -1,6 +1,9 @@
 use harness_core::UnwrapOrAbort;
 #[tokio::test]
 async fn compaction_trigger_pre_prompt_runtime_uses_checkpointed_prior_context() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let current_prompt = "C".repeat(12_000);
     let provider = SequentialScriptedProvider::new(vec![
@@ -83,6 +86,9 @@ async fn compaction_trigger_pre_prompt_runtime_uses_checkpointed_prior_context()
 }
 #[tokio::test]
 async fn compaction_no_loop_guards_cover_pre_prompt_overflow_and_failed_response() {
+    // arrange
+    // act
+    // assert
     let pre_prompt_dir = tempfile::tempdir().unwrap_or_abort();
     let pre_prompt_current_prompt = "C".repeat(12_000);
     let pre_prompt_provider = SequentialScriptedProvider::new(vec![
@@ -320,6 +326,9 @@ async fn compaction_no_loop_guards_cover_pre_prompt_overflow_and_failed_response
 }
 #[tokio::test]
 async fn manual_compaction_writes_checkpoint_and_manual_events() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![
         vec![
