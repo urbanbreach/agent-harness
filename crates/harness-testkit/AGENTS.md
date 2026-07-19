@@ -12,6 +12,8 @@ src/
 ├── workspace.rs             # isolated temp workspaces, manual clocks, fixture dirs
 ├── simulation.rs            # public simulation API and required artifact list
 ├── simulation/              # evidence, fingerprint, validation helpers
+├── parity.rs                # TUI reference-parity L2 semantic cells + exact compare
+├── parity/                  # cells, compare, frame_io, vt100 adapter
 ├── secret_scanner.rs        # artifact/cassette secret-pattern checks
 └── bin/
     ├── simulation_evidence.rs
@@ -27,6 +29,7 @@ target/                      # generated local artifacts; not source
 | Workspaces | `src/workspace.rs` | Temp root/session/artifact helpers and manual test clock. |
 | Simulation evidence | `src/simulation.rs`, `src/simulation/`, `src/bin/simulation_evidence.rs` | Matrix validation, replay/report checks, artifact writers. |
 | Secret hygiene | `src/secret_scanner.rs`, `tests/secretscan_test.rs` | Shared scanner plus env-gated artifact scans. |
+| Semantic cell parity (L2/A-CELLS) | `src/parity.rs`, `src/parity/`, `tests/parity_cells_test.rs` | Exact SemanticFrame capture/compare; identity grapheme masks only; no SSIM. |
 | Native visual helper | `src/bin/native_visual_helper.rs` | Local screenshot metadata helper used by native signoff. |
 | E2E lanes | `tests/AGENTS.md`, `tests/*.rs` | PTY, live proxy, native visual, and simulation validator contracts. |
 | Simulation contract | `../../docs/simulation-matrix.json`, `tests/simulation_validator_test.rs` | Keep matrix, validator, and evidence outputs aligned. |

@@ -1,6 +1,9 @@
 use harness_tools::UnwrapOrAbort;
 #[tokio::test]
 async fn native_question_tool_rejects_or_times_out_cleanly() {
+    // arrange
+    // act
+    // assert
     let reject_workspace = setup_workspace_fixture();
     let reject_workspace_root = reject_workspace.workspace();
     let reject_coordinator =

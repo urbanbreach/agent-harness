@@ -3,6 +3,9 @@ use std::fs;
 
 #[tokio::test]
 async fn native_code_lsp_install_decision_records_allowed() {
+    // arrange
+    // act
+    // assert
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
 
@@ -37,6 +40,9 @@ async fn native_code_lsp_install_decision_records_allowed() {
 
 #[tokio::test]
 async fn native_code_lsp_install_decision_records_declined_and_merges() {
+    // arrange
+    // act
+    // assert
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let artifacts_dir = workspace.join("artifacts");

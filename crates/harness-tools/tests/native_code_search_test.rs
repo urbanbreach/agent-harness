@@ -68,6 +68,9 @@ fn search_registry(
 
 #[tokio::test]
 async fn native_code_search_uses_shared_client_and_respects_tokens_contract() {
+    // arrange
+    // act
+    // assert
     let workspace = setup_workspace_fixture();
     let response_body = "data: {\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"Tokio JoinSet examples\\nspawn multiple tasks\"}]}}\n\n";
     let transport = ScriptedRemoteSearchTransport::ok(vec![
@@ -156,6 +159,9 @@ async fn native_code_search_uses_shared_client_and_respects_tokens_contract() {
 
 #[tokio::test]
 async fn native_code_search_handles_timeout_and_empty_context_cleanly() {
+    // arrange
+    // act
+    // assert
     let workspace = setup_workspace_fixture();
 
     let timeout_registry = search_registry(

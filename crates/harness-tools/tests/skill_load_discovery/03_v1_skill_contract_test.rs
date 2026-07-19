@@ -58,6 +58,9 @@ resources: bundled-reference-not-loaded"#,
     reason = "the global registry lock intentionally serializes skills registry mutation across awaits"
 )]
 async fn v1_skill_activation_reports_metadata_then_loads_body() {
+    // arrange
+    // act
+    // assert
     let _guard = skills_registry_test_lock();
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let repo = temp_dir.path().join("repo");
@@ -103,6 +106,9 @@ async fn v1_skill_activation_reports_metadata_then_loads_body() {
     reason = "the global registry lock intentionally serializes skills registry mutation across awaits"
 )]
 async fn v1_skill_activation_loads_bundled_resources_with_caps_and_redaction() {
+    // arrange
+    // act
+    // assert
     let _guard = skills_registry_test_lock();
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let repo = temp_dir.path().join("repo");
@@ -159,6 +165,9 @@ async fn v1_skill_activation_loads_bundled_resources_with_caps_and_redaction() {
     reason = "the global registry lock intentionally serializes skills registry mutation across awaits"
 )]
 async fn v1_skill_resources_reject_escape_paths_for_project_and_global_roots() {
+    // arrange
+    // act
+    // assert
     let _guard = skills_registry_test_lock();
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let repo = temp_dir.path().join("repo");
@@ -223,6 +232,9 @@ async fn v1_skill_resources_reject_escape_paths_for_project_and_global_roots() {
     reason = "the global registry lock intentionally serializes skills registry mutation across awaits"
 )]
 async fn v1_skill_resources_reject_symlink_escape() {
+    // arrange
+    // act
+    // assert
     let _guard = skills_registry_test_lock();
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let repo = temp_dir.path().join("repo");
@@ -266,6 +278,9 @@ async fn v1_skill_resources_reject_symlink_escape() {
     reason = "the global registry lock intentionally serializes skills registry mutation across awaits"
 )]
 async fn v1_skill_catalog_reports_shadowed_disabled_denied_and_malformed_states() {
+    // arrange
+    // act
+    // assert
     let _guard = skills_registry_test_lock();
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let home = temp_dir.path().join("home");

@@ -16,6 +16,9 @@ struct DocumentedToolRow {
 
 #[test]
 fn coordinator_registry_exposes_single_native_tool_surface() {
+    // arrange
+    // act
+    // assert
     let registry = coordinator_registry(ShellAllowlist::default());
 
     for tool_id in [
@@ -304,6 +307,8 @@ fn changed_tool_schemas_and_docs_reflect_parity_params() {
         "include_tool_results",
         "thinking_max_chars",
         "from_end",
+        "request_ids",
+        "wait_mode",
     ] {
         assert!(
             bg_output_props.get(field).is_some(),
@@ -313,6 +318,10 @@ fn changed_tool_schemas_and_docs_reflect_parity_params() {
     assert!(
         doc.contains("full_session") && doc.contains("include_thinking"),
         "docs missing background_output rich retrieval params"
+    );
+    assert!(
+        doc.contains("wait_mode") && doc.contains("request_ids"),
+        "docs missing background_output wait-any/wait-all params"
     );
 
     let sr_schema = registry

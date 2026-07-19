@@ -17,6 +17,9 @@ use harness_testkit::parity::{
 
 #[test]
 fn blank_frame_validates_and_roundtrips_json() {
+    // arrange
+    // act
+    // assert
     let frame = SemanticFrame::new(4, 2, CursorState::visible_block(1, 0));
     frame.validate().expect("valid");
     let json = frame.to_json_value().expect("json");
@@ -28,6 +31,9 @@ fn blank_frame_validates_and_roundtrips_json() {
 
 #[test]
 fn compare_identical_and_mismatches() {
+    // arrange
+    // act
+    // assert
     let mut a = SemanticFrame::new(3, 1, CursorState::visible_block(0, 0));
     let mut b = a.clone();
     a.set_cell(SemanticCell::blank(0, 0).with_grapheme("x", 1))
@@ -44,6 +50,9 @@ fn compare_identical_and_mismatches() {
 
 #[test]
 fn settle_helper_needs_three_identical_frames() {
+    // arrange
+    // act
+    // assert
     let f = SemanticFrame::new(2, 1, CursorState::hidden(0, 0));
     let other = {
         let mut frame = f.clone();
@@ -64,6 +73,9 @@ fn settle_helper_needs_three_identical_frames() {
 
 #[test]
 fn wide_glyph_continuation_and_identity_mask() {
+    // arrange
+    // act
+    // assert
     let mut expected = SemanticFrame::new(3, 1, CursorState::hidden(0, 0));
     expected
         .set_cell(SemanticCell::blank(0, 0).with_grapheme("宽", 2))
@@ -96,13 +108,16 @@ fn wide_glyph_continuation_and_identity_mask() {
             )
             .expect("set");
     }
-    let masks =
-        IdentityMaskRegistry::new().with_field("product_title_text", [(0, 0), (0, 1), (0, 2), (0, 3)]);
+    let masks = IdentityMaskRegistry::new()
+        .with_field("product_title_text", [(0, 0), (0, 1), (0, 2), (0, 3)]);
     assert!(compare_frames(&titled, &other, &masks).is_ok());
 }
 
 #[test]
 fn vt100_adapter_and_modifier_diff() {
+    // arrange
+    // act
+    // assert
     let mut parser = vt100::Parser::new(2, 6, 0);
     parser.process(b"\x1b[1;1HHi");
     let frame = semantic_frame_from_vt100_screen(parser.screen());

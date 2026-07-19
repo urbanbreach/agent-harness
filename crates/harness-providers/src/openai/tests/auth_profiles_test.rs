@@ -3,6 +3,9 @@ use crate::UnwrapOrAbort;
 
 #[tokio::test]
 async fn openai_compatible_offline_transport_parses_sse_deltas() {
+    // arrange
+    // act
+    // assert
     let transport =
         ScriptedOpenAiTransport::new([ScriptedOpenAiResponse::sse(deterministic_sse_transcript())]);
     let provider = provider_for_transport(Arc::clone(&transport), "test-secret-key");
@@ -47,6 +50,9 @@ async fn openai_compatible_offline_transport_parses_sse_deltas() {
 
 #[tokio::test]
 async fn openai_compatible_uses_credential_source_before_static_api_key() {
+    // arrange
+    // act
+    // assert
     let transport =
         ScriptedOpenAiTransport::new([ScriptedOpenAiResponse::sse(deterministic_sse_transcript())]);
     let provider = provider_for_transport(Arc::clone(&transport), "static-key")
@@ -69,6 +75,9 @@ async fn openai_compatible_uses_credential_source_before_static_api_key() {
 
 #[tokio::test]
 async fn codex_auth_profile_rewrites_endpoint_and_adds_context_headers() {
+    // arrange
+    // act
+    // assert
     let mut config_headers = BTreeMap::new();
     config_headers.insert(
         "Authorization".to_string(),
@@ -196,6 +205,9 @@ async fn codex_auth_profile_rewrites_endpoint_and_adds_context_headers() {
 
 #[tokio::test]
 async fn codex_gpt_request_defaults_match_reference_matrix() {
+    // arrange
+    // act
+    // assert
     let transport = ScriptedOpenAiTransport::new([
         ScriptedOpenAiResponse::sse(responses_done_sse_transcript()),
         ScriptedOpenAiResponse::sse(responses_done_sse_transcript()),
@@ -280,6 +292,9 @@ async fn codex_gpt_request_defaults_match_reference_matrix() {
 
 #[tokio::test]
 async fn github_copilot_auth_profile_rewrites_public_and_enterprise_headers() {
+    // arrange
+    // act
+    // assert
     let mut config_headers = BTreeMap::new();
     config_headers.insert(
         "Authorization".to_string(),

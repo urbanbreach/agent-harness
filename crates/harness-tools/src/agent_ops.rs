@@ -476,6 +476,9 @@ mod tests {
 
     #[test]
     fn select_agent_selection_accepts_matching_category_and_subagent_type() {
+        // arrange
+        // act
+        // assert
         assert_eq!(
             select_agent_selection(Some("child"), Some("child"))
                 .unwrap_or_abort()
@@ -486,6 +489,9 @@ mod tests {
 
     #[test]
     fn select_agent_selection_prefers_subagent_type_over_category_hint() {
+        // arrange
+        // act
+        // assert
         assert_eq!(
             select_agent_selection(Some("quick"), Some("child")).unwrap_or_abort(),
             AgentSelection {
@@ -497,6 +503,9 @@ mod tests {
 
     #[test]
     fn select_agent_selection_uses_category_as_fallback_hint_for_category_only_request() {
+        // arrange
+        // act
+        // assert
         assert_eq!(
             select_agent_selection(Some("quick"), None).unwrap_or_abort(),
             AgentSelection {
@@ -508,6 +517,9 @@ mod tests {
 
     #[test]
     fn select_agent_selection_ignores_blank_selectors() {
+        // arrange
+        // act
+        // assert
         assert_eq!(
             select_agent_selection(Some("  "), Some("child"))
                 .unwrap_or_abort()
@@ -518,6 +530,9 @@ mod tests {
 
     #[test]
     fn select_agent_selection_preserves_category_fallback_only_for_category_requests() {
+        // arrange
+        // act
+        // assert
         let category_only = select_agent_selection(Some("quick"), None).unwrap_or_abort();
         assert_eq!(category_only.profile_name, "quick");
         assert_eq!(category_only.category_selector.as_deref(), Some("quick"));
@@ -597,6 +612,9 @@ mod tests {
 
     #[test]
     fn unknown_existing_session_returns_guidance() {
+        // arrange
+        // act
+        // assert
         let err = map_request_agent_turn_error(
             CoordinatorError::UnknownAgent("missing-session".to_string()),
             &AgentSpawnRequest {
@@ -618,6 +636,9 @@ mod tests {
 
     #[test]
     fn unknown_child_profile_returns_guidance() {
+        // arrange
+        // act
+        // assert
         let err = map_spawn_agent_error(
             CoordinatorError::UnknownAgent("missing_profile".to_string()),
             &AgentSpawnRequest {

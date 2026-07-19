@@ -14,6 +14,9 @@ use serde_json::{json, Value};
 
 #[tokio::test]
 async fn recursive_tree_renders_direct_children_once_in_sorted_order() {
+    // arrange
+    // act
+    // assert
     let tempdir = tempfile::tempdir().unwrap_or_abort();
     let root = tempdir.path();
     std::fs::create_dir_all(root.join("src/zeta")).unwrap_or_abort();
@@ -56,6 +59,9 @@ async fn recursive_tree_renders_direct_children_once_in_sorted_order() {
 
 #[test]
 fn question_args_accept_top_level_array_and_prompt_aliases() {
+    // arrange
+    // act
+    // assert
     let args: QuestionArgs = serde_json::from_value(json!([
         {
             "prompt": "Choose a mode",
@@ -75,6 +81,9 @@ fn question_args_accept_top_level_array_and_prompt_aliases() {
 
 #[test]
 fn question_args_accept_allow_freeform_legacy_field() {
+    // arrange
+    // act
+    // assert
     let args: QuestionArgs = serde_json::from_value(json!({
         "questions": [
             {
@@ -93,6 +102,9 @@ fn question_args_accept_allow_freeform_legacy_field() {
 
 #[test]
 fn skill_args_match_harness_name_only_schema() {
+    // arrange
+    // act
+    // assert
     let args: SkillArgs = serde_json::from_value(json!({
         "name": "git-master"
     }))
@@ -117,6 +129,9 @@ fn skill_args_match_harness_name_only_schema() {
 
 #[test]
 fn task_args_accept_agent_alias_fields() {
+    // arrange
+    // act
+    // assert
     let args: TaskArgs = serde_json::from_value(json!({
         "description": "Explore codebase",
         "prompt": "Find auth flow",
@@ -132,6 +147,9 @@ fn task_args_accept_agent_alias_fields() {
 
 #[test]
 fn task_args_accept_skills_alias_for_load_skills() {
+    // arrange
+    // act
+    // assert
     let args: TaskArgs = serde_json::from_value(json!({
         "description": "Explore codebase",
         "prompt": "Find auth flow",
@@ -146,6 +164,9 @@ fn task_args_accept_skills_alias_for_load_skills() {
 
 #[test]
 fn task_args_default_background_and_skills_when_omitted() {
+    // arrange
+    // act
+    // assert
     let args: TaskArgs = serde_json::from_value(json!({
         "description": "Explore codebase",
         "prompt": "Find auth flow",
@@ -159,6 +180,9 @@ fn task_args_default_background_and_skills_when_omitted() {
 
 #[test]
 fn task_args_default_all_optional_fields_when_omitted() {
+    // arrange
+    // act
+    // assert
     let args: TaskArgs = serde_json::from_value(json!({
         "prompt": "Find auth flow",
         "category": "explore"
@@ -172,6 +196,9 @@ fn task_args_default_all_optional_fields_when_omitted() {
 
 #[test]
 fn generate_task_description_produces_first_five_words_truncated() {
+    // arrange
+    // act
+    // assert
     assert_eq!(
         super::generate_task_description("Find the auth flow in the codebase"),
         "Find the auth flow in"
@@ -192,6 +219,9 @@ fn generate_task_description_produces_first_five_words_truncated() {
 
 #[test]
 fn task_and_background_output_descriptions_prefer_completion_notification() {
+    // arrange
+    // act
+    // assert
     let executor = Arc::new(AgentOpsExecutor::new());
     let task = TaskTool::new(Arc::clone(&executor));
     let background_output = BackgroundOutputTool::new(executor);
@@ -293,6 +323,9 @@ fn task_and_background_output_descriptions_prefer_completion_notification() {
 
 #[test]
 fn batch_args_accept_parallel_wrapper_shape() {
+    // arrange
+    // act
+    // assert
     let args: BatchArgs = serde_json::from_value(json!({
         "tool_uses": [
             {
@@ -315,6 +348,9 @@ fn batch_args_accept_parallel_wrapper_shape() {
 
 #[test]
 fn batch_args_accept_wrapper_shape_inside_tool_calls() {
+    // arrange
+    // act
+    // assert
     let args: BatchArgs = serde_json::from_value(json!({
         "tool_calls": [
             {
@@ -335,6 +371,9 @@ fn batch_args_accept_wrapper_shape_inside_tool_calls() {
 
 #[test]
 fn batch_args_accept_args_alias_inside_tool_calls() {
+    // arrange
+    // act
+    // assert
     let args: BatchArgs = serde_json::from_value(json!({
         "tool_calls": [
             {
@@ -355,6 +394,9 @@ fn batch_args_accept_args_alias_inside_tool_calls() {
 
 #[test]
 fn background_cancel_args_all_true_no_request_id() {
+    // arrange
+    // act
+    // assert
     let args: BackgroundCancelArgs = serde_json::from_value(json!({
         "all": true
     }))
@@ -367,6 +409,9 @@ fn background_cancel_args_all_true_no_request_id() {
 
 #[test]
 fn background_cancel_args_all_false_requires_request_id() {
+    // arrange
+    // act
+    // assert
     let err = serde_json::from_value::<BackgroundCancelArgs>(json!({
         "all": false
     }))
@@ -379,6 +424,9 @@ fn background_cancel_args_all_false_requires_request_id() {
 
 #[test]
 fn background_cancel_args_default_requires_request_id() {
+    // arrange
+    // act
+    // assert
     let err = serde_json::from_value::<BackgroundCancelArgs>(json!({
         "reason": "some reason"
     }))
@@ -391,6 +439,9 @@ fn background_cancel_args_default_requires_request_id() {
 
 #[test]
 fn background_cancel_args_single_cancel_with_request_id() {
+    // arrange
+    // act
+    // assert
     let args: BackgroundCancelArgs = serde_json::from_value(json!({
         "request_id": "req_123",
         "reason": "explicit cancellation"
@@ -404,6 +455,9 @@ fn background_cancel_args_single_cancel_with_request_id() {
 
 #[test]
 fn background_cancel_args_all_true_with_reason() {
+    // arrange
+    // act
+    // assert
     let args: BackgroundCancelArgs = serde_json::from_value(json!({
         "all": true,
         "reason": "bulk cancel reason"

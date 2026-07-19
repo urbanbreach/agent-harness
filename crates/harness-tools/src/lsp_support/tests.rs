@@ -73,6 +73,9 @@ fn lsp_startup_responses() -> Vec<u8> {
 
 #[test]
 fn file_uri_from_path_percent_encodes_spaces() {
+    // arrange
+    // act
+    // assert
     let tempdir = tempfile::tempdir().unwrap_or_abort();
     let path = tempdir.path().join("space file.rs");
     fs::write(&path, "fn demo() {}\n").unwrap_or_abort();
@@ -83,6 +86,9 @@ fn file_uri_from_path_percent_encodes_spaces() {
 
 #[test]
 fn lsp_position_translates_one_based_to_zero_based() {
+    // arrange
+    // act
+    // assert
     let position = LspPosition::from_one_based(3, 9).unwrap_or_abort();
     assert_eq!(position.line(), 2);
     assert_eq!(position.character(), 8);
@@ -90,6 +96,9 @@ fn lsp_position_translates_one_based_to_zero_based() {
 
 #[test]
 fn lsp_position_rejects_non_positive_coordinates() {
+    // arrange
+    // act
+    // assert
     let err = LspPosition::from_one_based(0, 1).expect_err("line must be >= 1");
     assert!(
         matches!(err, ToolError::InvalidArguments(message) if message == "line and character must be >= 1")
@@ -98,6 +107,9 @@ fn lsp_position_rejects_non_positive_coordinates() {
 
 #[test]
 fn lsp_operation_parse_rejects_unsupported_values_with_stable_message() {
+    // arrange
+    // act
+    // assert
     let err = LspOperation::parse("renameSymbol").expect_err("operation should fail");
     assert!(
         matches!(err, ToolError::InvalidArguments(message) if message == format!(
@@ -109,6 +121,9 @@ fn lsp_operation_parse_rejects_unsupported_values_with_stable_message() {
 
 #[test]
 fn server_for_path_rejects_unsupported_extension_with_stable_message() {
+    // arrange
+    // act
+    // assert
     let tempdir = tempfile::tempdir().unwrap_or_abort();
     let path = tempdir.path().join("fixture.lua");
     fs::write(&path, "print('hello')\n").unwrap_or_abort();
@@ -123,6 +138,9 @@ fn server_for_path_rejects_unsupported_extension_with_stable_message() {
 
 #[test]
 fn lsp_session_start_can_use_injected_process_starter_without_spawning() {
+    // arrange
+    // act
+    // assert
     let tempdir = tempfile::tempdir().unwrap_or_abort();
     let starter = FakeLspStarter::new();
     let spec = LspServerSpec::builtin("rust", &["fake-lsp", "--stdio"], &[".rs"], &[]);
@@ -137,6 +155,9 @@ fn lsp_session_start_can_use_injected_process_starter_without_spawning() {
 
 #[test]
 fn lsp_operation_supported_names_match_roundtrip_strings() {
+    // arrange
+    // act
+    // assert
     for operation in SUPPORTED_LSP_OPERATION_NAMES {
         let parsed = LspOperation::parse(operation).unwrap_or_abort();
         assert_eq!(parsed.as_str(), *operation);

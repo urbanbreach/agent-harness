@@ -148,6 +148,9 @@ mod tests {
 
     #[test]
     fn workspace_creates_standard_isolated_paths_and_config() {
+        // arrange
+        // act
+        // assert
         let workspace = TestWorkspace::with_seed(7).unwrap_or_abort();
 
         assert!(workspace.root().exists());
@@ -169,12 +172,18 @@ mod tests {
 
     #[test]
     fn with_workspace_cleans_up_after_scope() {
+        // arrange
+        // act
+        // assert
         let root = with_workspace(|workspace| workspace.root().to_path_buf()).unwrap_or_abort();
         assert!(!root.exists(), "temp workspace should be removed on drop");
     }
 
     #[test]
     fn fake_clock_is_manual_and_deterministic() {
+        // arrange
+        // act
+        // assert
         let workspace = TestWorkspace::new().unwrap_or_abort();
         assert_eq!(workspace.clock().mono_ms(), 0);
         workspace.clock().advance(25);
@@ -184,6 +193,9 @@ mod tests {
 
     #[test]
     fn workspaces_are_safe_to_construct_concurrently() {
+        // arrange
+        // act
+        // assert
         let workers = 4;
         let barrier = Arc::new(Barrier::new(workers));
         let handles: Vec<_> = (0..workers)

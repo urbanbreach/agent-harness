@@ -376,6 +376,9 @@ mod tests {
 
     #[test]
     fn parse_code_lsp_request_accepts_operation_specific_shapes() {
+        // arrange
+        // act
+        // assert
         let position = parse_code_lsp_request(json!({
             "operation": "hover",
             "filePath": "src/lib.rs",
@@ -433,6 +436,9 @@ mod tests {
 
     #[test]
     fn parse_code_lsp_request_rejects_mismatched_shapes() {
+        // arrange
+        // act
+        // assert
         let missing_position = parse_code_lsp_request(json!({
             "operation": "hover",
             "filePath": "src/lib.rs",
@@ -456,6 +462,9 @@ mod tests {
 
     #[test]
     fn parse_code_lsp_request_accepts_install_decision_without_file_path() {
+        // arrange
+        // act
+        // assert
         let request = parse_code_lsp_request(json!({
             "operation": "installDecision",
             "serverId": "rust",
@@ -473,6 +482,9 @@ mod tests {
 
     #[test]
     fn parse_code_lsp_request_rejects_install_decision_missing_fields() {
+        // arrange
+        // act
+        // assert
         let missing_server_id = parse_code_lsp_request(json!({
             "operation": "installDecision",
             "decision": "allowed",
@@ -496,6 +508,9 @@ mod tests {
 
     #[test]
     fn parse_code_lsp_request_rejects_install_decision_invalid_decision_value() {
+        // arrange
+        // act
+        // assert
         let invalid = parse_code_lsp_request(json!({
             "operation": "installDecision",
             "serverId": "rust",
@@ -510,6 +525,9 @@ mod tests {
 
     #[test]
     fn code_lsp_schema_is_cliproxy_compatible() {
+        // arrange
+        // act
+        // assert
         let schema = code_lsp_parameters_json_schema();
         assert_eq!(schema["type"], json!("object"));
         assert!(schema["properties"].is_object());

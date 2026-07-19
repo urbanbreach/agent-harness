@@ -8,17 +8,26 @@ const TUI_SIGNOFF_MANIFEST: &str = include_str!("../../../docs/tui-signoff-manif
 
 #[test]
 fn pty_signoff_lane_is_explicit_single_threaded_smoke() {
+    // arrange
+    // act
+    // assert
     assert_eq!(std::env::var("RUST_TEST_THREADS").as_deref(), Ok("1"));
 }
 
 #[test]
 fn pty_visual_artifact_root_is_env_overridable() {
+    // arrange
+    // act
+    // assert
     let root = visual_artifact_root();
     assert!(root.ends_with("pty-visual-artifacts"));
 }
 
 #[test]
 fn pty_snapshot_manifest_paths_drop_checkout_root() {
+    // arrange
+    // act
+    // assert
     assert_eq!(
         stable_manifest_snapshot_path(Path::new(
             "/tmp/repo/target/pty-visual-artifacts/pty-manifests/live_shell/manifest.json",
@@ -29,6 +38,9 @@ fn pty_snapshot_manifest_paths_drop_checkout_root() {
 
 #[test]
 fn pty_signoff_fails_closed_when_not_on_linux() {
+    // arrange
+    // act
+    // assert
     if cfg!(target_os = "linux") {
         return;
     }
@@ -37,6 +49,9 @@ fn pty_signoff_fails_closed_when_not_on_linux() {
 
 #[test]
 fn pty_artifact_directory_can_be_created() {
+    // arrange
+    // act
+    // assert
     let dir =
         std::env::temp_dir().join(format!("harness-testkit-pty-smoke-{}", std::process::id()));
     fs::create_dir_all(&dir).unwrap_or_abort();
@@ -46,6 +61,9 @@ fn pty_artifact_directory_can_be_created() {
 
 #[test]
 fn pty_signoff_manifest_declares_required_flow_artifacts() {
+    // arrange
+    // act
+    // assert
     let manifest: Value = serde_json::from_str(TUI_SIGNOFF_MANIFEST).unwrap_or_abort();
     assert_eq!(
         manifest["schema_version"],

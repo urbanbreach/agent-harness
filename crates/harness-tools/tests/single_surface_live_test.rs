@@ -103,6 +103,9 @@ fn example_profiles(
 
 #[tokio::test]
 async fn example_config_exposes_single_surface_tools_through_live_registry() {
+    // arrange
+    // act
+    // assert
     let config = load_config_from_file(&example_config_path()).unwrap_or_abort();
     let registry = coordinator_registry_with_mcp_and_editing(
         config.permissions.shell_allowlist.clone(),
@@ -144,6 +147,9 @@ async fn example_config_exposes_single_surface_tools_through_live_registry() {
 
 #[tokio::test]
 async fn single_surface_tools_execute_under_example_config() {
+    // arrange
+    // act
+    // assert
     let config = load_config_from_file(&example_config_path()).unwrap_or_abort();
     let workspace = setup_workspace_fixture();
     let session_dir = workspace.temp_dir().join("sessions");

@@ -3,6 +3,9 @@ use crate::UnwrapOrAbort;
 
 #[tokio::test]
 async fn openai_responses_offline_transport_streams_tool_call_complete() {
+    // arrange
+    // act
+    // assert
     let transport = ScriptedOpenAiTransport::new([ScriptedOpenAiResponse::sse(
         responses_tool_call_sse_transcript(),
     )]);
@@ -81,6 +84,9 @@ async fn openai_responses_offline_transport_streams_tool_call_complete() {
 
 #[tokio::test]
 async fn openai_responses_sse_parser_handles_multibyte_utf8_split_across_chunks() {
+    // arrange
+    // act
+    // assert
     let transcript = concat!(
         "data: {\"type\":\"response.output_text.delta\",\"delta\":\"hi €\"}\n\n",
         "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"total_tokens\":2}}}\n\n",
@@ -108,6 +114,9 @@ async fn openai_responses_sse_parser_handles_multibyte_utf8_split_across_chunks(
 
 #[tokio::test]
 async fn openai_compatible_request_uses_stable_clamped_prompt_cache_key() {
+    // arrange
+    // act
+    // assert
     let session_a = "session-abcdefghijklmnopqrstuvwxyz-ABCDEFGHIJKLMNOPQRSTUVWXYZ-0123456789";
     let expected_clamped = session_a.chars().take(64).collect::<String>();
     assert_eq!(expected_clamped.chars().count(), 64);
@@ -167,6 +176,9 @@ async fn openai_compatible_request_uses_stable_clamped_prompt_cache_key() {
 
 #[tokio::test]
 async fn openai_compatible_long_cache_retention_is_direct_openai_only() {
+    // arrange
+    // act
+    // assert
     let transport =
         ScriptedOpenAiTransport::new([
             ScriptedOpenAiResponse::sse(responses_done_sse_transcript()),
@@ -219,6 +231,9 @@ async fn openai_compatible_long_cache_retention_is_direct_openai_only() {
 
 #[tokio::test]
 async fn openai_auto_loopback_falls_back_to_chat_completions_on_400() {
+    // arrange
+    // act
+    // assert
     let transport = ScriptedOpenAiTransport::new([
         ScriptedOpenAiResponse::text(400, "unsupported responses"),
         ScriptedOpenAiResponse::sse(deterministic_sse_transcript()),
@@ -259,6 +274,9 @@ async fn openai_auto_loopback_falls_back_to_chat_completions_on_400() {
 
 #[tokio::test]
 async fn openai_transport_failure_keeps_sanitized_context() {
+    // arrange
+    // act
+    // assert
     let provider = OpenAiCompatibleProvider::new(OpenAiCompatibleProviderConfig {
         base_url: "http://127.0.0.1:9/v1?api_key=should-not-leak".to_string(),
         api_key: "test-secret-key".to_string(),

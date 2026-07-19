@@ -1,5 +1,8 @@
 // allow: SIZE_OK — agent operations (task delegation + control plane)
-use harness_core::coord::CoordinatorError;
+use harness_core::coord::{
+    background_wait_condition_satisfied, BackgroundWaitMode, BackgroundWaitOutcome,
+    CoordinatorError,
+};
 use harness_core::event::{EventEnvelopeV1, EventV1};
 use harness_core::proj::{
     resolve_all_background_request_refs, BackgroundRequestProjection, BackgroundToolCallCounts,
@@ -26,6 +29,8 @@ pub(crate) struct BackgroundOutputRequest {
     pub(crate) task_id: Option<String>,
     pub(crate) session_id: Option<String>,
     pub(crate) request_id: Option<String>,
+    pub(crate) request_ids: Vec<String>,
+    pub(crate) wait_mode: Option<String>,
     pub(crate) block: bool,
     pub(crate) timeout_ms: u64,
     pub(crate) cancel: bool,
@@ -105,7 +110,14 @@ pub(super) async fn background_output(
             "background_output timeout must be <= {MAX_BACKGROUND_OUTPUT_TIMEOUT_MS} ms"
         )));
     }
-    let request_id = trimmed_selector(request.request_id.as_deref()).map(str::to_string);
+    let multi_request_ids = normalize_multi_request_ids(&request);
+    if multi_request_ids.len() > 1 {
+        return background_output_multi_wait(ctx, &request, multi_request_ids).await;
+    }
+    let request_id = multi_request_ids
+        .into_iter()
+        .next()
+        .or_else(|| trimmed_selector(request.request_id.as_deref()).map(str::to_string));
     let selector_hint = trimmed_selector(request.session_id.as_deref())
         .or_else(|| trimmed_selector(request.task_id.as_deref()))
         .map(str::to_string);
@@ -437,6 +449,217 @@ fn map_background_request_error(err: CoordinatorError) -> ToolError {
         | CoordinatorError::PermissionDenied(message)
         | CoordinatorError::PolicyViolation(message) => ToolError::InvalidArguments(message),
         other => ToolError::Execution(format!("failed to inspect background request: {other}")),
+    }
+}
+
+fn normalize_multi_request_ids(request: &BackgroundOutputRequest) -> Vec<String> {
+    let mut ids = Vec::new();
+    for raw in &request.request_ids {
+        let Some(id) = trimmed_selector(Some(raw.as_str())) else {
+            continue;
+        };
+        if !ids.iter().any(|existing| existing == id) {
+            ids.push(id.to_string());
+        }
+    }
+    if ids.is_empty() {
+        if let Some(id) = trimmed_selector(request.request_id.as_deref()) {
+            ids.push(id.to_string());
+        }
+    }
+    ids
+}
+
+fn parse_wait_mode(raw: Option<&str>) -> Result<BackgroundWaitMode, ToolError> {
+    let Some(raw) = trimmed_selector(raw) else {
+        return Err(ToolError::InvalidArguments(
+            "wait_mode is required when request_ids has more than one entry (any|all)".to_string(),
+        ));
+    };
+    BackgroundWaitMode::parse(raw).ok_or_else(|| {
+        ToolError::InvalidArguments(format!("wait_mode must be `any` or `all`, got `{raw}`"))
+    })
+}
+
+async fn background_output_multi_wait(
+    ctx: &ToolContext,
+    request: &BackgroundOutputRequest,
+    request_ids: Vec<String>,
+) -> Result<ToolResult, ToolError> {
+    if request.cancel {
+        return Err(ToolError::InvalidArguments(
+            "background_output cancel is not supported with multi request_ids; use background_cancel"
+                .to_string(),
+        ));
+    }
+    if request.full_session || request.include_thinking {
+        return Err(ToolError::InvalidArguments(
+            "full_session and include_thinking require a single request_id".to_string(),
+        ));
+    }
+    let wait_mode = parse_wait_mode(request.wait_mode.as_deref())?;
+
+    let mut summaries = Vec::with_capacity(request_ids.len());
+    for request_id in &request_ids {
+        let summary = background_summary_from_projection(
+            ctx.coordinator
+                .background_request_projection(ctx.actor.clone(), Some(request_id.clone()), None)
+                .await
+                .map_err(map_background_request_error)?,
+        );
+        summaries.push(summary);
+    }
+
+    let terminal_flags: Vec<(String, bool)> = summaries
+        .iter()
+        .map(|summary| (summary.request_id.clone(), summary.terminal))
+        .collect();
+    let mut wait_outcome = BackgroundWaitOutcome {
+        satisfied: background_wait_condition_satisfied(wait_mode, &terminal_flags),
+        first_terminal_request_id: harness_core::coord::first_terminal_request_id(&terminal_flags),
+    };
+    let mut timed_out = false;
+
+    if request.block && !wait_outcome.satisfied {
+        let mut targets = Vec::with_capacity(summaries.len());
+        let mut already_terminal = Vec::new();
+        for summary in &summaries {
+            if summary.terminal {
+                already_terminal.push(summary.request_id.clone());
+                continue;
+            }
+            let scheduler_task_id = summary.scheduler_task_id.clone().ok_or_else(|| {
+                ToolError::InvalidArguments(format!(
+                    "cannot wait for background request `{}` because no scheduler task id was observed yet",
+                    summary.request_id
+                ))
+            })?;
+            targets.push((summary.request_id.clone(), scheduler_task_id));
+        }
+        wait_outcome = ctx
+            .coordinator
+            .wait_background_requests_terminal(
+                &targets,
+                wait_mode,
+                &already_terminal,
+                request.timeout_ms,
+            )
+            .await
+            .map_err(map_background_request_error)?;
+
+        summaries.clear();
+        for request_id in &request_ids {
+            let summary = background_summary_from_projection(
+                ctx.coordinator
+                    .background_request_projection(
+                        ctx.actor.clone(),
+                        Some(request_id.clone()),
+                        None,
+                    )
+                    .await
+                    .map_err(map_background_request_error)?,
+            );
+            summaries.push(summary);
+        }
+        let terminal_flags: Vec<(String, bool)> = summaries
+            .iter()
+            .map(|summary| (summary.request_id.clone(), summary.terminal))
+            .collect();
+        let satisfied = background_wait_condition_satisfied(wait_mode, &terminal_flags);
+        timed_out = !satisfied;
+        wait_outcome.satisfied = satisfied;
+        if matches!(wait_mode, BackgroundWaitMode::All)
+            || wait_outcome.first_terminal_request_id.is_none()
+        {
+            wait_outcome.first_terminal_request_id =
+                harness_core::coord::first_terminal_request_id(&terminal_flags);
+        }
+    }
+
+    let mut results = Vec::with_capacity(summaries.len());
+    for summary in &summaries {
+        results.push(json!({
+            "request_id": summary.request_id,
+            "task_id": summary.session_id,
+            "session_id": summary.session_id,
+            "scheduler_task_id": summary.scheduler_task_id,
+            "status": summary.status,
+            "terminal": summary.terminal,
+            "duration_ms": summary.duration_ms,
+            "result_summary": summary.result_summary,
+            "failure_summary": summary.failure_summary,
+            "late_result": summary.late_result,
+            "cancel_reason": summary.cancel_reason,
+        }));
+    }
+
+    let primary = wait_outcome
+        .first_terminal_request_id
+        .as_ref()
+        .and_then(|request_id| {
+            summaries
+                .iter()
+                .find(|summary| summary.request_id == *request_id)
+        })
+        .or_else(|| summaries.first());
+
+    let text = format_multi_wait_output(wait_mode, &wait_outcome, timed_out, &summaries);
+    let payload = json!({
+        "wait_mode": wait_mode.as_str(),
+        "request_ids": request_ids,
+        "results": results,
+        "first_terminal_request_id": wait_outcome.first_terminal_request_id,
+        "satisfied": wait_outcome.satisfied,
+        "request_id": primary.map(|summary| summary.request_id.clone()),
+        "task_id": primary.and_then(|summary| summary.session_id.clone()),
+        "session_id": primary.and_then(|summary| summary.session_id.clone()),
+        "scheduler_task_id": primary.and_then(|summary| summary.scheduler_task_id.clone()),
+        "status": primary.map(|summary| summary.status.clone()),
+        "mode": "background",
+        "terminal": wait_outcome.satisfied,
+        "block": request.block,
+        "timed_out": timed_out,
+        "timeout_ms": request.timeout_ms,
+        "result_summary": primary.and_then(|summary| summary.result_summary.clone()),
+        "failure_summary": primary.and_then(|summary| summary.failure_summary.clone()),
+        "late_result": primary.map(|summary| summary.late_result).unwrap_or(false),
+        "source": "event_replay",
+    });
+
+    Ok(text_json_tool_result(text, payload))
+}
+
+fn format_multi_wait_output(
+    wait_mode: BackgroundWaitMode,
+    outcome: &BackgroundWaitOutcome,
+    timed_out: bool,
+    summaries: &[BackgroundRequestSummary],
+) -> String {
+    let terminal_count = summaries.iter().filter(|summary| summary.terminal).count();
+    if timed_out {
+        format!(
+            "background_output wait_{} timed out with {}/{} terminal",
+            wait_mode.as_str(),
+            terminal_count,
+            summaries.len()
+        )
+    } else if outcome.satisfied {
+        match (wait_mode, outcome.first_terminal_request_id.as_deref()) {
+            (BackgroundWaitMode::Any, Some(request_id)) => {
+                format!("background_output wait_any satisfied by `{request_id}` ({terminal_count}/{} terminal)", summaries.len())
+            }
+            _ => format!(
+                "background_output wait_{} satisfied ({terminal_count}/{} terminal)",
+                wait_mode.as_str(),
+                summaries.len()
+            ),
+        }
+    } else {
+        format!(
+            "background_output wait_{} not satisfied ({terminal_count}/{} terminal)",
+            wait_mode.as_str(),
+            summaries.len()
+        )
     }
 }
 

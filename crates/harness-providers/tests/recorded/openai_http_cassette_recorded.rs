@@ -22,6 +22,9 @@ use tokio_stream::StreamExt;
 
 #[tokio::test]
 async fn replayed_http_cassette_drives_openai_parser_without_inner_transport() {
+    // arrange
+    // act
+    // assert
     let temp = tempdir().unwrap_or_abort();
     let path = temp.path().join("openai-http.json");
     OpenAiHttpCassette::new(vec![OpenAiHttpInteraction {
@@ -121,6 +124,9 @@ async fn replayed_http_cassette_reads_usage_from_choice_when_top_level_usage_is_
 
 #[tokio::test]
 async fn ci_forces_http_replay_and_missing_cassette_fails_closed() {
+    // arrange
+    // act
+    // assert
     let temp = tempdir().unwrap_or_abort();
     let missing = temp.path().join("missing.json");
 
@@ -140,6 +146,9 @@ async fn ci_forces_http_replay_and_missing_cassette_fails_closed() {
 
 #[tokio::test]
 async fn record_mode_writes_redacted_path_headers_body_and_replays() {
+    // arrange
+    // act
+    // assert
     let temp = tempdir().unwrap_or_abort();
     let path = temp.path().join("recorded-http.json");
     let inner = Arc::new(ScriptedTransport::new([ScriptedResponse::sse(
@@ -187,6 +196,9 @@ async fn record_mode_writes_redacted_path_headers_body_and_replays() {
 
 #[tokio::test]
 async fn unsafe_http_recording_refuses_to_write_secret_body() {
+    // arrange
+    // act
+    // assert
     let temp = tempdir().unwrap_or_abort();
     let path = temp.path().join("unsafe-http.json");
     let inner = Arc::new(ScriptedTransport::new([ScriptedResponse::sse(

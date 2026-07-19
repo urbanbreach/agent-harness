@@ -3,6 +3,9 @@ use crate::UnwrapOrAbort;
 
 #[test]
 fn openai_responses_request_sends_system_prompt_as_instructions() {
+    // arrange
+    // act
+    // assert
     let request = CompletionRequest {
         provider_id: None,
         model_id: "gpt-5.5".to_string(),
@@ -56,6 +59,9 @@ fn openai_responses_request_sends_system_prompt_as_instructions() {
 
 #[test]
 fn openai_responses_request_replays_assistant_tool_call_before_function_call_output() {
+    // arrange
+    // act
+    // assert
     let request = CompletionRequest {
         provider_id: None,
         model_id: "gpt-4o-mini".to_string(),
@@ -188,6 +194,9 @@ fn openai_responses_request_replays_assistant_tool_call_before_function_call_out
 
 #[test]
 fn openai_responses_request_omits_empty_assistant_output_text_for_tool_only_turns() {
+    // arrange
+    // act
+    // assert
     let request = CompletionRequest {
         provider_id: None,
         model_id: "gpt-4o-mini".to_string(),
@@ -276,6 +285,9 @@ fn openai_responses_request_omits_empty_assistant_output_text_for_tool_only_turn
 
 #[test]
 fn openai_chat_request_replays_assistant_tool_call_in_tool_calls_field() {
+    // arrange
+    // act
+    // assert
     let request = CompletionRequest {
         provider_id: None,
         model_id: "gpt-4o-mini".to_string(),

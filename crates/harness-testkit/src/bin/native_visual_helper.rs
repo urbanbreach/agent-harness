@@ -291,6 +291,9 @@ mod tests {
 
     #[test]
     fn args_parse_rejects_empty_required_text_values() {
+        // arrange
+        // act
+        // assert
         let err = parse_args(&[
             "--output",
             "capture.png",
@@ -320,6 +323,9 @@ mod tests {
 
     #[test]
     fn args_parse_preserves_non_empty_required_text_values() {
+        // arrange
+        // act
+        // assert
         let args = parse_args(&[
             "--output",
             "capture.png",

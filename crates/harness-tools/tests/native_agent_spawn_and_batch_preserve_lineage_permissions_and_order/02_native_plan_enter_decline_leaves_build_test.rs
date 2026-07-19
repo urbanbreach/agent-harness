@@ -1,6 +1,9 @@
 use harness_tools::UnwrapOrAbort;
 #[tokio::test]
 async fn native_plan_enter_decline_leaves_build_agent_active_without_spawning_plan() {
+    // arrange
+    // act
+    // assert
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let session_dir = workspace.join("sessions");
@@ -67,6 +70,9 @@ async fn native_plan_enter_decline_leaves_build_agent_active_without_spawning_pl
 }
 #[tokio::test]
 async fn plan_profile_can_spawn_explore_but_bash_is_permission_denied() {
+    // arrange
+    // act
+    // assert
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let session_dir = workspace.join("sessions");
@@ -206,6 +212,9 @@ async fn plan_profile_can_spawn_explore_but_bash_is_permission_denied() {
 }
 #[tokio::test]
 async fn task_subagent_type_selects_explore_and_general_profiles() {
+    // arrange
+    // act
+    // assert
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
 
@@ -264,6 +273,9 @@ async fn task_subagent_type_selects_explore_and_general_profiles() {
 }
 #[tokio::test]
 async fn task_subagent_type_wins_when_category_hint_is_also_present() {
+    // arrange
+    // act
+    // assert
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
 
@@ -303,6 +315,9 @@ async fn task_subagent_type_wins_when_category_hint_is_also_present() {
 }
 #[tokio::test]
 async fn worker_without_task_tool_cannot_redelegate() {
+    // arrange
+    // act
+    // assert
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
 
@@ -491,6 +506,9 @@ async fn restricted_profiles_reject_edit_bash_task_and_mcp_calls() {
 }
 #[tokio::test]
 async fn task_category_without_matching_profile_falls_back_to_general() {
+    // arrange
+    // act
+    // assert
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
 

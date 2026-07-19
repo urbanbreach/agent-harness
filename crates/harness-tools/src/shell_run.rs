@@ -218,6 +218,8 @@ pub struct ShellCommandInvocation {
     pub program: String,
     pub args: Vec<String>,
     pub cwd: PathBuf,
+    /// When set, child `pre_exec` applies this Landlock FS plan before exec.
+    pub sandbox_plan: Option<harness_core::sandbox::SandboxFsPlan>,
 }
 
 impl ShellCommandInvocation {
@@ -226,11 +228,17 @@ impl ShellCommandInvocation {
             program: program.into(),
             args: Vec::new(),
             cwd,
+            sandbox_plan: None,
         }
     }
 
     fn args(mut self, args: impl IntoIterator<Item = impl Into<String>>) -> Self {
         self.args = args.into_iter().map(Into::into).collect();
+        self
+    }
+
+    fn with_sandbox_plan(mut self, plan: Option<harness_core::sandbox::SandboxFsPlan>) -> Self {
+        self.sandbox_plan = plan;
         self
     }
 }
@@ -257,9 +265,120 @@ impl ShellCommandRunner for TokioShellCommandRunner {
     ) -> Result<ShellProcessOutput, ToolError> {
         #[cfg(target_os = "linux")]
         prevent_parent_process_environment_disclosure()?;
+        let sandbox_plan = invocation.sandbox_plan.clone();
         let mut command = shell_process_command(invocation);
         apply_sanitized_shell_environment(&mut command);
+        attach_landlock_pre_exec(&mut command, sandbox_plan)?;
         run_shell_process(command, timeout_ms).await
+    }
+}
+
+fn attach_landlock_pre_exec(
+    command: &mut tokio::process::Command,
+    sandbox_plan: Option<harness_core::sandbox::SandboxFsPlan>,
+) -> Result<(), ToolError> {
+    let Some(plan) = sandbox_plan else {
+        return Ok(());
+    };
+    #[cfg(target_os = "linux")]
+    {
+        landlock_child_pre_exec::attach(command, plan);
+        Ok(())
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (command, plan);
+        Err(ToolError::Execution(
+            "OS sandbox plan set on non-Linux host; refusing to spawn without confinement".into(),
+        ))
+    }
+}
+
+/// Child-only Landlock apply via `Command::pre_exec`.
+///
+/// `std::os::unix::process::CommandExt::pre_exec` is an unsafe API; this module
+/// is the single audited call site. The closure runs only after fork, before
+/// exec, so `restrict_self` confines the child shell process, never the parent.
+#[cfg(target_os = "linux")]
+#[allow(unsafe_code)]
+mod landlock_child_pre_exec {
+    use std::os::unix::process::CommandExt;
+
+    pub(super) fn attach(
+        command: &mut tokio::process::Command,
+        plan: harness_core::sandbox::SandboxFsPlan,
+    ) {
+        // SAFETY: pre_exec runs only in the forked child before exec. Landlock
+        // restrict_self is applied to that child only; the harness parent is
+        // never restricted. Failure aborts the child spawn (fail closed).
+        unsafe {
+            command.pre_exec(move || {
+                harness_core::sandbox::apply_landlock_fs_plan(&plan)
+                    .map_err(std::io::Error::other)?;
+                Ok(())
+            });
+        }
+    }
+}
+
+/// Resolve OS sandbox policy for bash spawn (fail closed when non-Off is unenforceable).
+///
+/// Default: `Off` (no confinement). Override with `HARNESS_OS_SANDBOX_POLICY`
+/// (`off` | `workspace_write` | `read_only` | `strict`).
+fn resolve_os_sandbox_policy() -> harness_core::sandbox::SandboxPolicy {
+    match std::env::var("HARNESS_OS_SANDBOX_POLICY") {
+        Ok(raw) => harness_core::sandbox::SandboxPolicy::parse(raw.trim())
+            .unwrap_or(harness_core::sandbox::SandboxPolicy::Off),
+        Err(_) => harness_core::sandbox::SandboxPolicy::Off,
+    }
+}
+
+fn prepare_shell_sandbox_plan(
+    ctx: &ToolContext,
+    cwd: &std::path::Path,
+) -> Result<Option<harness_core::sandbox::SandboxFsPlan>, ToolError> {
+    use harness_core::sandbox::{
+        build_fs_plan, current_platform, detect_landlock, prepare_sandbox_for_spawn,
+        SandboxPathRoots, SandboxPrepareResult,
+    };
+
+    let policy = resolve_os_sandbox_policy();
+    if !policy.requires_enforcement() {
+        return Ok(None);
+    }
+
+    let roots = SandboxPathRoots {
+        workspace_root: ctx.workspace_root.clone(),
+        harness_state_dir: ctx
+            .artifacts_dir
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| ctx.workspace_root.join(".agent-harness")),
+        temp_dir: cwd.to_path_buf(),
+    };
+    let landlock = detect_landlock();
+    // Parent prepare uses a dry-run hook so the harness process is never restricted.
+    // Real apply happens only in child pre_exec via `sandbox_plan`.
+    let prepared = prepare_sandbox_for_spawn(
+        policy,
+        current_platform(),
+        &landlock,
+        Some(&roots),
+        Some(&|_| Ok(())),
+    );
+    match prepared {
+        SandboxPrepareResult::NotRequired { .. } => Ok(None),
+        SandboxPrepareResult::Prepared { .. } => {
+            let plan = build_fs_plan(policy, &roots).ok_or_else(|| {
+                ToolError::Execution(format!(
+                    "OS sandbox policy `{policy}` prepared but FS plan was empty; refusing spawn"
+                ))
+            })?;
+            Ok(Some(plan))
+        }
+        SandboxPrepareResult::Unavailable { reason, .. } => Err(ToolError::Execution(format!(
+            "OS sandbox policy `{policy}` unavailable: {reason}"
+        ))),
     }
 }
 
@@ -637,10 +756,13 @@ impl ShellRunTool {
             &ctx.workspace_root,
             &ctx.external_directory_allow_prefixes,
         )?;
+        let sandbox_plan = prepare_shell_sandbox_plan(ctx, &resolved_cwd)?;
         let output = self
             .runner
             .run(
-                ShellCommandInvocation::new(&invocation.cmd, resolved_cwd).args(&invocation.args),
+                ShellCommandInvocation::new(&invocation.cmd, resolved_cwd)
+                    .args(&invocation.args)
+                    .with_sandbox_plan(sandbox_plan),
                 timeout_ms,
             )
             .await?;
@@ -667,12 +789,14 @@ impl ShellRunTool {
             &ctx.workspace_root,
             &ctx.external_directory_allow_prefixes,
         )?;
+        let sandbox_plan = prepare_shell_sandbox_plan(ctx, &cwd)?;
         let shell = resolve_bash_executable();
         let output = self
             .runner
             .run(
                 ShellCommandInvocation::new(shell, cwd)
-                    .args(["-c".to_string(), invocation.command.clone()]),
+                    .args(["-c".to_string(), invocation.command.clone()])
+                    .with_sandbox_plan(sandbox_plan),
                 timeout_ms,
             )
             .await?;
@@ -763,6 +887,9 @@ mod tests {
 
     #[test]
     fn shell_output_preview_enforces_line_limit_without_trailing_newline() {
+        // arrange
+        // act
+        // assert
         let output = (1..=2_001)
             .map(|idx| format!("line {idx}"))
             .collect::<Vec<_>>()
@@ -786,6 +913,9 @@ mod tests {
 
     #[test]
     fn shell_output_preview_allows_exact_line_limit_without_trailing_newline() {
+        // arrange
+        // act
+        // assert
         let output = (1..=SHELL_OUTPUT_INLINE_LINE_LIMIT)
             .map(|idx| format!("line {idx}"))
             .collect::<Vec<_>>()
@@ -805,6 +935,9 @@ mod tests {
 
     #[test]
     fn shell_output_preview_byte_limit_keeps_utf8_boundaries() {
+        // arrange
+        // act
+        // assert
         let preview = ShellOutputPreviewLimits {
             max_lines: usize::MAX,
             max_bytes: 3,
@@ -819,6 +952,9 @@ mod tests {
 
     #[test]
     fn shell_env_bash_candidate_rejects_relative_and_missing_paths() {
+        // arrange
+        // act
+        // assert
         assert_eq!(super::shell_env_bash_candidate(Some("bash")), None);
         assert_eq!(
             super::shell_env_bash_candidate(Some("/tmp/definitely-not-a-real-bash")),
@@ -828,6 +964,9 @@ mod tests {
 
     #[test]
     fn shell_env_bash_candidate_accepts_existing_absolute_bash_path() {
+        // arrange
+        // act
+        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let bash_path = temp.path().join("bash");
         std::fs::write(&bash_path, "#!/usr/bin/env bash\n").unwrap_or_abort();
@@ -837,6 +976,9 @@ mod tests {
     }
     #[tokio::test]
     async fn bash_spills_large_output_to_artifact_for_event_stability() {
+        // arrange
+        // act
+        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let registry = coordinator_registry(ShellAllowlist::default());
         let bash = registry.get("bash").unwrap_or_abort();
@@ -868,6 +1010,9 @@ mod tests {
     }
     #[tokio::test]
     async fn bash_direct_exec_allows_find_in_permission_patterns() {
+        // arrange
+        // act
+        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         std::fs::create_dir(temp.path().join("docs")).unwrap_or_abort();
         std::fs::write(temp.path().join("docs/example.txt"), "hello\n").unwrap_or_abort();
@@ -892,6 +1037,9 @@ mod tests {
 
     #[tokio::test]
     async fn shell_run_accepts_duplicate_wrapper_command_when_it_matches_cmd() {
+        // arrange
+        // act
+        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let shell = ShellRunTool::with_runner(
             ShellAllowlist {
@@ -925,6 +1073,9 @@ mod tests {
 
     #[tokio::test]
     async fn shell_run_direct_invocation_uses_injected_runner_without_spawning() {
+        // arrange
+        // act
+        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let runner = FakeShellCommandRunner::success("direct-ok");
         let shell = ShellRunTool::with_runner(
@@ -960,6 +1111,9 @@ mod tests {
 
     #[tokio::test]
     async fn shell_run_wrapper_invocation_uses_injected_runner_without_spawning_bash() {
+        // arrange
+        // act
+        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let runner = FakeShellCommandRunner::success("wrapper-ok");
         let shell = ShellRunTool::with_runner(
@@ -993,6 +1147,9 @@ mod tests {
 
     #[tokio::test]
     async fn shell_run_wrapper_records_permission_patterns_in_metadata() {
+        // arrange
+        // act
+        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let runner = FakeShellCommandRunner::success("hello");
         let shell = ShellRunTool::with_runner(ShellAllowlist::default(), runner);
@@ -1017,6 +1174,9 @@ mod tests {
 
     #[tokio::test]
     async fn shell_run_rejects_direct_bash_command_mode_bypass() {
+        // arrange
+        // act
+        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let shell = ShellRunTool::with_runner(
             ShellAllowlist {
@@ -1347,6 +1507,9 @@ mod tests {
 
     #[tokio::test]
     async fn shell_run_rejects_conflicting_cmd_and_command() {
+        // arrange
+        // act
+        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let shell =
             ShellRunTool::with_runner(ShellAllowlist::default(), ShellRunTool::default_runner());

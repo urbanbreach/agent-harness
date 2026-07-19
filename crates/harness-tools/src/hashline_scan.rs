@@ -187,6 +187,9 @@ mod tests {
 
     #[tokio::test]
     async fn hashline_scan_anchor_hashes_match_compute_line_hash() {
+        // arrange
+        // act
+        // assert
         let workspace = tempfile::tempdir().unwrap_or_abort();
         let artifacts = tempfile::tempdir().unwrap_or_abort();
         let file_path = workspace.path().join("demo.txt");
@@ -230,6 +233,9 @@ mod tests {
 
     #[tokio::test]
     async fn hashline_scan_out_of_range_start_line_returns_empty_anchors() {
+        // arrange
+        // act
+        // assert
         let workspace = tempfile::tempdir().unwrap_or_abort();
         let artifacts = tempfile::tempdir().unwrap_or_abort();
         let file_path = workspace.path().join("demo.txt");

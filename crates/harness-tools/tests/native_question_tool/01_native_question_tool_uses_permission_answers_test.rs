@@ -1,6 +1,9 @@
 use harness_tools::UnwrapOrAbort;
 #[tokio::test]
 async fn native_question_tool_uses_permission_answers() {
+    // arrange
+    // act
+    // assert
     let workspace = setup_workspace_fixture();
     let session_dir = workspace.temp_dir().join("sessions");
     let workspace_root = workspace.workspace();
@@ -104,6 +107,9 @@ async fn native_question_tool_uses_permission_answers() {
 }
 #[tokio::test]
 async fn native_question_tool_accepts_string_option_shorthand() {
+    // arrange
+    // act
+    // assert
     let workspace = setup_workspace_fixture();
     let session_dir = workspace.temp_dir().join("sessions");
     let workspace_root = workspace.workspace();
@@ -179,6 +185,9 @@ async fn native_question_tool_accepts_string_option_shorthand() {
 }
 #[tokio::test]
 async fn native_question_tool_accepts_single_question_shape_and_legacy_fields() {
+    // arrange
+    // act
+    // assert
     let workspace = setup_workspace_fixture();
     let session_dir = workspace.temp_dir().join("sessions");
     let workspace_root = workspace.workspace();
@@ -252,6 +261,9 @@ async fn native_question_tool_accepts_single_question_shape_and_legacy_fields() 
 }
 #[tokio::test]
 async fn native_question_tool_accepts_allow_freeform_legacy_field() {
+    // arrange
+    // act
+    // assert
     let workspace = setup_workspace_fixture();
     let session_dir = workspace.temp_dir().join("sessions");
     let workspace_root = workspace.workspace();
@@ -299,6 +311,9 @@ async fn native_question_tool_accepts_allow_freeform_legacy_field() {
 }
 #[tokio::test]
 async fn native_question_tool_accepts_text_prompt_compat_shape_and_schema_advertises_it() {
+    // arrange
+    // act
+    // assert
     let workspace = setup_workspace_fixture();
     let session_dir = workspace.temp_dir().join("sessions");
     let workspace_root = workspace.workspace();
@@ -368,6 +383,9 @@ async fn native_question_tool_accepts_text_prompt_compat_shape_and_schema_advert
 }
 #[tokio::test]
 async fn native_question_tool_waits_indefinitely_when_timeout_disabled() {
+    // arrange
+    // act
+    // assert
     let workspace = setup_workspace_fixture();
     let session_dir = workspace.temp_dir().join("sessions");
     let workspace_root = workspace.workspace();

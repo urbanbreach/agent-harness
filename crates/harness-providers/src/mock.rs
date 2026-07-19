@@ -345,6 +345,9 @@ mod tests {
 
     #[tokio::test]
     async fn deterministic_streaming_order_from_fixtures() {
+        // arrange
+        // act
+        // assert
         let provider = load_fixture_provider();
         let request = fixture_known_request();
 
@@ -374,6 +377,9 @@ mod tests {
 
     #[tokio::test]
     async fn unknown_digest_returns_deterministic_error() {
+        // arrange
+        // act
+        // assert
         let provider = load_fixture_provider();
         let request = CompletionRequest {
             provider_id: None,
@@ -432,6 +438,9 @@ mod tests {
 
     #[test]
     fn request_digest_ignores_volatile_provider_context_ids() {
+        // arrange
+        // act
+        // assert
         let base = fixture_known_request();
         let mut contextual = base.clone();
         contextual.context = ProviderRequestContext {
@@ -445,6 +454,9 @@ mod tests {
 
     #[tokio::test]
     async fn tool_call_fixture_emits_structured_tool_call_events() {
+        // arrange
+        // act
+        // assert
         let provider = load_fixture_provider();
         let request = fixture_tool_call_request();
 

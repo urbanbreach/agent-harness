@@ -1,6 +1,9 @@
 use harness_tools::UnwrapOrAbort;
 #[tokio::test]
 async fn native_public_edit_accepts_unique_hash_only_anchor() {
+    // arrange
+    // act
+    // assert
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
@@ -33,6 +36,9 @@ async fn native_public_edit_accepts_unique_hash_only_anchor() {
 }
 #[tokio::test]
 async fn native_public_edit_uses_recent_hashline_read_to_disambiguate_hash_only_anchor() {
+    // arrange
+    // act
+    // assert
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
@@ -82,6 +88,9 @@ async fn native_public_edit_uses_recent_hashline_read_to_disambiguate_hash_only_
 }
 #[tokio::test]
 async fn native_public_edit_scopes_recent_hashline_reads_to_shared_tool_run_state_not_run_id() {
+    // arrange
+    // act
+    // assert
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
@@ -137,6 +146,9 @@ async fn native_public_edit_scopes_recent_hashline_reads_to_shared_tool_run_stat
 }
 #[tokio::test]
 async fn native_internal_hashline_scan_disambiguates_hash_only_anchor_for_edit() {
+    // arrange
+    // act
+    // assert
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry_with_internal_hashline_tools(ShellAllowlist::default());
@@ -188,6 +200,9 @@ async fn native_internal_hashline_scan_disambiguates_hash_only_anchor_for_edit()
 }
 #[tokio::test]
 async fn native_public_edit_ignores_stale_recent_hashline_read_for_hash_only_anchor() {
+    // arrange
+    // act
+    // assert
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
@@ -246,6 +261,9 @@ async fn native_public_edit_ignores_stale_recent_hashline_read_for_hash_only_anc
 }
 #[tokio::test]
 async fn native_public_edit_does_not_share_recent_hashline_reads_across_tool_state() {
+    // arrange
+    // act
+    // assert
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
@@ -300,6 +318,9 @@ async fn native_public_edit_does_not_share_recent_hashline_reads_across_tool_sta
 }
 #[tokio::test]
 async fn native_public_edit_rejects_ambiguous_hash_only_anchor() {
+    // arrange
+    // act
+    // assert
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
@@ -332,6 +353,9 @@ async fn native_public_edit_rejects_ambiguous_hash_only_anchor() {
 }
 #[tokio::test]
 async fn native_public_edit_rejects_unknown_hash_only_anchor() {
+    // arrange
+    // act
+    // assert
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
@@ -362,6 +386,9 @@ async fn native_public_edit_rejects_unknown_hash_only_anchor() {
 }
 #[tokio::test]
 async fn native_public_edit_stale_anchor_error_includes_refresh_snippet() {
+    // arrange
+    // act
+    // assert
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
