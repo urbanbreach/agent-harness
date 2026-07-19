@@ -99,12 +99,24 @@ runtime config's direct model or named `model_profile` settings:
 - `general` — shipped focused implementation/research subagent profile via `task(subagent_type: "general")`
 - category subagents — `visual-engineering`, `artistry`, `ultrabrain`, `deep`, `quick`, `unspecified-low`, `unspecified-high`, and `writing` route category-based `task(category: "...")` calls through ordinary toggleable profiles with category-specific model profiles and fallback metadata
 
-Validate the shipped example config:
+Validate the shipped example config and inspect the merged effective result:
 
 ```bash
 cargo run -p harness -- --config configs/harness.example.jsonc config validate
+cargo run -p harness -- --config configs/harness.example.jsonc config show --effective
+cargo run -p harness -- --config configs/harness.example.jsonc config sources
+cargo run -p harness -- --config configs/harness.example.jsonc config explain model
+cargo run -p harness -- config settings
 cargo run -p harness -- --config configs/harness.example.jsonc doctor
 ```
+
+`config show --effective` prints redacted merged JSON with discovery layer paths
+and the primary path. `config sources` lists those layers in merge order.
+`config explain <path>` attributes one dotted key to the winning source layer.
+`config settings` lists typed settings-registry metadata (ids/surface/sensitivity;
+no secret values).
+Secret-bearing fields such as `apiKey` are replaced with redaction markers; use
+these commands for support/debug inspection without leaking credentials.
 
 `doctor` proves local readiness only: config shape, provider/model metadata,
 credential presence, resolved agent catalog metadata, native tool catalog

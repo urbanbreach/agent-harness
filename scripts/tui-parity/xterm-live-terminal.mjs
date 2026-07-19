@@ -91,10 +91,11 @@ async function driveInput(page, inputs, keyDelayMs) {
     const match = /^\{(.+)\}$/.exec(raw);
     if (match && NAMED_KEYS.has(match[1])) {
       await page.keyboard.press(match[1] === "Space" ? " " : match[1], { delay: 15 });
-    } else if (match && /^Ctrl\+(.)$/i.test(match[1])) {
-      const key = /^Ctrl\+(.)$/i.exec(match[1])[1];
+    } else if (match && /^Ctrl\+(.+)$/i.test(match[1])) {
+      const key = /^Ctrl\+(.+)$/i.exec(match[1])[1];
+      const pressKey = key === "Space" ? " " : key;
       await page.keyboard.down("Control");
-      await page.keyboard.press(key);
+      await page.keyboard.press(pressKey);
       await page.keyboard.up("Control");
     } else {
       await page.keyboard.type(raw, { delay: 10 });

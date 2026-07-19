@@ -28,3 +28,7 @@ junit = { path = "target/nextest/perf/junit.xml" }
 
 [test-groups.process-global-state]
 max-threads = 1
+
+[[profile.default.overrides]]
+filter = 'test(dual_binary_cli_pty_ctrl_s_resumes_seeded_session)'
+slow-timeout = { period = "10s", terminate-after = 12 }

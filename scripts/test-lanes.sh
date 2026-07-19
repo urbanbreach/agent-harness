@@ -29,10 +29,11 @@ Modes:
   coverage             Coverage ratchet lane via scripts/coverage-ratchet.sh.
   simulation           Offline deterministic simulation lane with matrix validation, artifacts, same-seed comparison, and secret scan.
   signoff-binary       Real-process CLI shim smoke, env-gated and ignored by default.
-  signoff-pty          Deterministic PTY signoff, single-threaded.
+  signoff-pty          Strict fail-closed deterministic PTY signoff (dual-binary CLI journeys), single-threaded.
   signoff-live         Live provider signoff. Requires live env and runs live_proxy_preflight_requires_live_env first.
   signoff-native       Native visual signoff. Requires native visual env and runs ignored native visual tests single-threaded.
   signoff-parity       Strict fail-closed dual-binary TUI reference parity (cells/pixels). Missing manifest/env/binary/owners = FAIL.
+  signoff-journeys     Strict fail-closed A-JOURNEYS scaffolding: offline config CLI journeys + worktree owner doc. Missing binary/owners = FAIL.
   stress-offline       Delegates to scripts/stress-harness.sh --mode offline.
   stress-live          Requires live env/config and delegates to scripts/stress-harness.sh --mode live.
   all-deterministic    Runs quality-gates, simulation, fast, integration, then signoff-pty only when PTY support checks pass.
@@ -69,6 +70,12 @@ Required environment:
       perm/question, tx/shell, responsive, and PTY owners with HARNESS_TUI_PTY_SIGNOFF=1
     This lane owns dual-binary cells/pixels/PTY acceptance; docs/tui-signoff-manifest.v1.json does not.
   signoff-binary sets HARNESS_BINARY_SMOKE=1 and HARNESS_BINARY_SMOKE_ARTIFACT_DIR for the ignored binary smoke.
+  signoff-journeys requires (fail-closed; no silent skip):
+    crates/harness/tests/journey_signoff_test.rs
+    cargo on PATH
+    compiled harness binary via cargo nextest (CARGO_BIN_EXE_harness)
+    Offline owners: config show --effective, config sources, config explain
+    Worktree owner is documented only; full PTY remains HARNESS_TUI_PTY_SIGNOFF=1
   all-deterministic PTY support requires:
     cargo on PATH
     crates/harness-testkit/tests/pty_e2e.rs
@@ -118,7 +125,7 @@ while [[ $# -gt 0 ]]; do
       usage
       exit 0
       ;;
-    fast|integration|quality-gates|perf|coverage|simulation|signoff-binary|signoff-pty|signoff-live|signoff-native|signoff-parity|stress-offline|stress-live|all-deterministic|help)
+    fast|integration|quality-gates|perf|coverage|simulation|signoff-binary|signoff-pty|signoff-live|signoff-native|signoff-parity|signoff-journeys|stress-offline|stress-live|all-deterministic|help)
       if [[ -n "$mode" ]]; then
         printf 'Multiple modes provided: %s and %s\n' "$mode" "$1" >&2
         usage >&2
@@ -560,16 +567,78 @@ run_signoff_binary() {
 }
 
 run_signoff_pty() {
-  run_stage signoff-pty harness_testkit_pty_e2e "$repo_root" env RUST_TEST_THREADS=1 cargo nextest run -p harness-testkit --test pty_e2e --test-threads 1 --ignore-default-filter || true
-  run_stage signoff-pty harness_tui_pty_e2e "$repo_root" env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 cargo nextest run -p harness-tui --test pty_e2e --test-threads 1 --ignore-default-filter || true
-  local tui_happy_path_artifacts_dir
-  tui_happy_path_artifacts_dir="$(stage_dir_for signoff-pty harness_tui_happy_path_pty)/artifacts"
-  mkdir -p "$tui_happy_path_artifacts_dir"
-  run_stage signoff-pty harness_tui_happy_path_pty "$repo_root" env RUST_TEST_THREADS=1 HARNESS_TUI_HAPPY_PATH_ARTIFACT_DIR="$tui_happy_path_artifacts_dir" cargo nextest run -p harness --test pty_happy_path_recorded --test-threads 1 -- --ignored --exact scripted_tui_happy_path_records_start_prompt_permission_tool_edit_resume_and_quit || true
+  local mode_name="signoff-pty"
   local dual_binary_artifacts_dir
   dual_binary_artifacts_dir="$(stage_dir_for signoff-pty harness_tui_dual_binary_cli_pty)/artifacts"
   mkdir -p "$dual_binary_artifacts_dir"
-  run_stage signoff-pty harness_tui_dual_binary_cli_pty "$repo_root" env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 HARNESS_TUI_PARITY_STRICT=1 HARNESS_TUI_HAPPY_PATH_ARTIFACT_DIR="$dual_binary_artifacts_dir" cargo nextest run -p harness --test pty_happy_path_recorded --test-threads 1 -- --ignored dual_binary_cli_pty || true
+  local tui_happy_path_artifacts_dir
+  tui_happy_path_artifacts_dir="$(stage_dir_for signoff-pty harness_tui_happy_path_pty)/artifacts"
+  mkdir -p "$tui_happy_path_artifacts_dir"
+
+  if [[ "$dry_run" -eq 0 ]]; then
+    local missing=()
+    if [[ ! -f "${repo_root}/crates/harness-testkit/tests/pty_e2e.rs" ]]; then
+      missing+=("missing owner crates/harness-testkit/tests/pty_e2e.rs (silent skip is forbidden)")
+    fi
+    if [[ ! -f "${repo_root}/crates/harness-tui/tests/pty_e2e.rs" ]]; then
+      missing+=("missing owner crates/harness-tui/tests/pty_e2e.rs (silent skip is forbidden)")
+    fi
+    if [[ ! -f "${repo_root}/crates/harness/tests/pty_happy_path_recorded.rs" ]]; then
+      missing+=("missing owner crates/harness/tests/pty_happy_path_recorded.rs (silent skip is forbidden)")
+    fi
+    if ! command -v cargo >/dev/null 2>&1; then
+      missing+=("cargo is not available on PATH")
+    fi
+    if [[ "${#missing[@]}" -ne 0 ]]; then
+      record_gate_failure "$mode_name" pty_prerequisites "${missing[@]}"
+      {
+        printf 'lane=signoff-pty\n'
+        printf 'result=FAIL\n'
+        printf 'reason=missing_prerequisites\n'
+        printf 'stages=prerequisites,testkit_pty,tui_pty,happy_path,dual_binary\n'
+        printf 'owns=deterministic_pty_and_dual_binary_cli_journeys\n'
+      } >"${dual_binary_artifacts_dir}/pty-lane-verdict.txt"
+      return 1
+    fi
+  fi
+
+  run_stage "$mode_name" harness_testkit_pty_e2e "$repo_root" \
+    env RUST_TEST_THREADS=1 cargo nextest run -p harness-testkit --test pty_e2e --test-threads 1 --ignore-default-filter
+  run_stage "$mode_name" harness_tui_pty_e2e "$repo_root" \
+    env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 cargo nextest run -p harness-tui --test pty_e2e --test-threads 1 --ignore-default-filter
+  run_stage "$mode_name" harness_tui_happy_path_pty "$repo_root" \
+    env RUST_TEST_THREADS=1 HARNESS_TUI_HAPPY_PATH_ARTIFACT_DIR="$tui_happy_path_artifacts_dir" \
+    cargo nextest run -p harness --test pty_happy_path_recorded --test-threads 1 -- --ignored --exact scripted_tui_happy_path_records_start_prompt_permission_tool_edit_resume_and_quit
+  run_stage "$mode_name" harness_tui_dual_binary_cli_pty "$repo_root" \
+    env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 HARNESS_TUI_PARITY_STRICT=1 HARNESS_TUI_HAPPY_PATH_ARTIFACT_DIR="$dual_binary_artifacts_dir" \
+    cargo nextest run -p harness --test pty_happy_path_recorded --test-threads 1 -- --ignored dual_binary_cli_pty
+
+  local mode_failed=0
+  local stage_status
+  for stage_status in "$(mode_dir_for signoff-pty)"/stages/*/status.txt; do
+    if [[ -f "$stage_status" ]] && grep -q '^result=FAIL$' "$stage_status"; then
+      mode_failed=1
+      break
+    fi
+  done
+  if [[ "$mode_failed" -eq 0 ]]; then
+    {
+      printf 'lane=signoff-pty\n'
+      printf 'result=PASS\n'
+      printf 'reason=owners_green\n'
+      printf 'stages=testkit_pty,tui_pty,happy_path,dual_binary\n'
+      printf 'owns=deterministic_pty_and_dual_binary_cli_journeys\n'
+    } >"${dual_binary_artifacts_dir}/pty-lane-verdict.txt"
+  else
+    {
+      printf 'lane=signoff-pty\n'
+      printf 'result=FAIL\n'
+      printf 'reason=stage_failure\n'
+      printf 'stages=testkit_pty,tui_pty,happy_path,dual_binary\n'
+      printf 'owns=deterministic_pty_and_dual_binary_cli_journeys\n'
+    } >"${dual_binary_artifacts_dir}/pty-lane-verdict.txt"
+    return 1
+  fi
 }
 
 run_signoff_live() {
@@ -582,6 +651,71 @@ run_signoff_live() {
 run_signoff_native() {
   require_native_env signoff-native || return 0
   run_stage signoff-native native_visual_e2e_ignored "$repo_root" cargo nextest run -p harness-testkit --test native_visual_e2e --test-threads 1 -- --ignored || true
+}
+
+run_signoff_journeys() {
+  local mode_name="signoff-journeys"
+  local journey_test_rel="crates/harness/tests/journey_signoff_test.rs"
+  local journey_test_path="${repo_root}/${journey_test_rel}"
+  local journey_artifacts_dir
+  journey_artifacts_dir="$(stage_dir_for signoff-journeys journey_evidence)/artifacts"
+  mkdir -p "$journey_artifacts_dir"
+
+  if [[ "$dry_run" -eq 0 ]]; then
+    local missing=()
+    if [[ ! -f "$journey_test_path" ]]; then
+      missing+=("missing owner ${journey_test_rel} (silent skip is forbidden)")
+    fi
+    if ! command -v cargo >/dev/null 2>&1; then
+      missing+=("cargo is not available on PATH")
+    fi
+    if [[ "${#missing[@]}" -ne 0 ]]; then
+      record_gate_failure "$mode_name" journey_prerequisites "${missing[@]}"
+      {
+        printf 'lane=signoff-journeys\n'
+        printf 'result=FAIL\n'
+        printf 'reason=missing_prerequisites\n'
+        printf 'stages=prerequisites,journey_signoff_test\n'
+        printf 'owns=a_journeys_config_cli_and_worktree_owner_doc\n'
+        printf 'note=worktree_pty_remains_env_gated_HARNESS_TUI_PTY_SIGNOFF\n'
+      } >"${journey_artifacts_dir}/journey-lane-verdict.txt"
+      return 1
+    fi
+  fi
+
+  run_stage "$mode_name" journey_signoff_owner_present "$repo_root" test -f "$journey_test_path"
+  run_stage "$mode_name" journey_signoff_test "$repo_root" \
+    env HARNESS_JOURNEY_ARTIFACT_DIR="$journey_artifacts_dir" \
+    cargo nextest run -p harness --test journey_signoff_test
+
+  local mode_failed=0
+  local stage_status
+  for stage_status in "$(mode_dir_for signoff-journeys)"/stages/*/status.txt; do
+    if [[ -f "$stage_status" ]] && grep -q '^result=FAIL$' "$stage_status"; then
+      mode_failed=1
+      break
+    fi
+  done
+  if [[ "$mode_failed" -eq 0 ]]; then
+    {
+      printf 'lane=signoff-journeys\n'
+      printf 'result=PASS\n'
+      printf 'reason=owners_green\n'
+      printf 'stages=prerequisites,journey_signoff_test\n'
+      printf 'owns=a_journeys_config_cli_and_worktree_owner_doc\n'
+      printf 'note=rows_remain_incomplete_until_full_L1_L6;worktree_pty_env_gated\n'
+    } >"${journey_artifacts_dir}/journey-lane-verdict.txt"
+  else
+    {
+      printf 'lane=signoff-journeys\n'
+      printf 'result=FAIL\n'
+      printf 'reason=stage_failure\n'
+      printf 'stages=prerequisites,journey_signoff_test\n'
+      printf 'owns=a_journeys_config_cli_and_worktree_owner_doc\n'
+      printf 'note=rows_remain_incomplete_until_full_L1_L6;worktree_pty_env_gated\n'
+    } >"${journey_artifacts_dir}/journey-lane-verdict.txt"
+    return 1
+  fi
 }
 
 run_signoff_parity() {
@@ -757,6 +891,9 @@ run_mode() {
       ;;
     signoff-parity)
       run_signoff_parity
+      ;;
+    signoff-journeys)
+      run_signoff_journeys
       ;;
     stress-offline)
       run_stress_offline

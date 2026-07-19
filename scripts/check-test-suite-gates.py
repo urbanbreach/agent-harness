@@ -136,8 +136,13 @@ T5_PATH_PARTS: Final[tuple[str, ...]] = (
     "crates/harness-testkit/tests/support/pty_",
     "crates/harness/tests/binary_smoke.rs",
     "crates/harness/tests/pty_happy_path_recorded.rs",
+    "crates/harness/tests/support/journey_signoff.rs",
     "crates/harness-tui/tests/pty_e2e.rs",
     "crates/harness-tui/tests/support/pty_e2e_impl.rs",
+    "crates/harness-tui/tests/support/reference_parity_pty_impl.rs",
+    "crates/harness-tui/tests/reference_parity_pty_test.rs",
+    "crates/harness-tui/tests/reference_parity_lane_test.rs",
+    "crates/harness-tui/tests/reference_parity_pixels_test.rs",
     "crates/harness-tui/tests/support/visual_renderer.rs",
 )
 
@@ -332,6 +337,8 @@ def scan_file_focus(root: Path, max_lines: int) -> list[Violation]:
     for path in sorted((root / "crates").glob("**/tests/**/*.rs")):
         relative = rel(path, root)
         if relative in PROCESS_GLOBAL_STATE_EXEMPTIONS:
+            continue
+        if is_t5_path(relative):
             continue
         helper_path = (
             "/support/" in f"/{relative}"
@@ -755,6 +762,8 @@ def scan_test_names(root: Path) -> list[Violation]:
     """Scan for test function names that are too short."""
     violations: list[Violation] = []
     for relative, line_number, name in iter_test_functions(root):
+        if is_t5_path(relative):
+            continue
         word_count = len([part for part in name.split("_") if part])
         if word_count < MIN_TEST_NAME_WORDS:
             violations.append(

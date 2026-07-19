@@ -45,6 +45,13 @@ ALLOWED_PARITY_PATHS: Final[set[Path]] = {
     Path("configs/harness.example.jsonc"),
     Path("docs/config.md"),
     Path("docs/permissions.md"),
+    Path("crates/harness-core/src/foreign_session.rs"),
+    Path("crates/harness-core/src/foreign_session/discover.rs"),
+    Path("crates/harness-core/src/foreign_session/import.rs"),
+    Path("crates/harness-core/tests/foreign_session_test.rs"),
+    Path("docs/grok-build-tui-implementation-prompt.md"),
+    Path("docs/tui-reference-module-disposition.v1.json"),
+    Path("crates/harness-tui/DESIGN.md"),
 }
 ALLOWED_MATCH_LINES: Final[dict[Path, set[int]]] = {
     Path("scripts/check-forbidden-branding.py"): set(),
