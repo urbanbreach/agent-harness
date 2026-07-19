@@ -565,6 +565,9 @@ mod tests {
 
     #[tokio::test]
     async fn deterministic_golden_path_twice_produces_identical_sha256_digest() {
+        // arrange
+        // act
+        // assert
         let temp_dir = tempfile::tempdir().unwrap_or_abort();
         let settings = RunSettings {
             config: None,
@@ -594,6 +597,9 @@ mod tests {
 
     #[test]
     fn deterministic_run_id_is_stable_for_seed_and_scenario() {
+        // arrange
+        // act
+        // assert
         let a = deterministic_run_id(7, ScenarioName::GoldenPath);
         let b = deterministic_run_id(7, ScenarioName::GoldenPath);
         let c = deterministic_run_id(8, ScenarioName::GoldenPath);
@@ -606,6 +612,9 @@ mod tests {
 
     #[tokio::test]
     async fn deterministic_run_writes_stable_meta_json_with_null_created_at() {
+        // arrange
+        // act
+        // assert
         let temp_dir = tempfile::tempdir().unwrap_or_abort();
         let settings = RunSettings {
             config: None,
@@ -638,6 +647,9 @@ mod tests {
 
     #[tokio::test]
     async fn replay_summary_matches_expected_values_for_golden_path() {
+        // arrange
+        // act
+        // assert
         let temp_dir = tempfile::tempdir().unwrap_or_abort();
         let settings = RunSettings {
             config: None,
@@ -666,6 +678,9 @@ mod tests {
 
     #[tokio::test]
     async fn edit_applied_diff_refs_match_artifact_written() {
+        // arrange
+        // act
+        // assert
         let temp_dir = tempfile::tempdir().unwrap_or_abort();
         let settings = RunSettings {
             config: None,

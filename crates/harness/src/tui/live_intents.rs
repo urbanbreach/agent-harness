@@ -163,13 +163,66 @@ pub(super) async fn handle_ui_intents(
                 let _ = live_update_tx.send(LiveUpdate::OperatorNotice { message, level });
             }
             UiIntent::BackgroundForegroundSubagents => {
-                let (message, level) = match coordinator.background_foreground_child_tasks().await {
-                    Ok(count) => (
-                        foreground_background_success_message(count),
-                        OperatorNoticeLevel::Info,
-                    ),
+                let (message, level) = match coordinator.demote_all_foreground_child_tasks().await {
+                    Ok(results) => {
+                        let summary =
+                            harness_core::foreground_demote::summarize_demote_outcomes(&results);
+                        if summary.demoted == 0 {
+                            (
+                                "no foreground subagent is currently blocking this session"
+                                    .to_string(),
+                                OperatorNoticeLevel::Error,
+                            )
+                        } else {
+                            (
+                                format!(
+                                    "{}; {}",
+                                    foreground_background_success_message(summary.demoted),
+                                    summary.one_line()
+                                ),
+                                OperatorNoticeLevel::Info,
+                            )
+                        }
+                    }
                     Err(err) => (
                         format!("foreground subagent backgrounding failed: {err}"),
+                        OperatorNoticeLevel::Error,
+                    ),
+                };
+                let _ = live_update_tx.send(LiveUpdate::OperatorNotice { message, level });
+            }
+            UiIntent::DemoteForegroundChildTask { handle_id } => {
+                let (message, level) = match coordinator
+                    .demote_foreground_child_task(handle_id.clone())
+                    .await
+                {
+                    Ok(result) => match result {
+                        harness_core::foreground_demote::DemoteToBackgroundResult::Demoted {
+                            background_id,
+                            ..
+                        } => (
+                            format!(
+                                "foreground subagent demoted to background ({background_id})"
+                            ),
+                            OperatorNoticeLevel::Info,
+                        ),
+                        harness_core::foreground_demote::DemoteToBackgroundResult::Rejected {
+                            reason,
+                            ..
+                        } => (
+                            format!("foreground subagent demote rejected: {reason}"),
+                            OperatorNoticeLevel::Error,
+                        ),
+                        harness_core::foreground_demote::DemoteToBackgroundResult::Unavailable {
+                            reason,
+                            ..
+                        } => (
+                            format!("foreground subagent demote unavailable: {reason}"),
+                            OperatorNoticeLevel::Error,
+                        ),
+                    },
+                    Err(err) => (
+                        format!("foreground subagent demote failed: {err}"),
                         OperatorNoticeLevel::Error,
                     ),
                 };
@@ -240,6 +293,7 @@ pub(super) async fn handle_ui_intents(
                 target.last_request_id = None;
             }
             UiIntent::NewSession
+            | UiIntent::NewWorktreeSession
             | UiIntent::ReplaySession { .. }
             | UiIntent::ContinueSession { .. } => {}
             UiIntent::QuitRequested => {

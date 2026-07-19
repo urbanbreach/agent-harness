@@ -26,6 +26,9 @@ const ROWS: u16 = 32;
     reason = "test code must panic gracefully"
 )]
 fn scripted_tui_happy_path_records_start_prompt_permission_tool_edit_resume_and_quit() {
+    // arrange
+    // act
+    // assert
     #[cfg(not(target_os = "linux"))]
     panic!("abort");
     let artifact_dir = std::env::var_os(ARTIFACT_DIR_ENV)
@@ -121,6 +124,263 @@ fn scripted_tui_happy_path_records_start_prompt_permission_tool_edit_resume_and_
 }
 
 #[test]
+#[ignore = "signoff dual-binary CLI PTY worktree journey; run with HARNESS_TUI_PTY_SIGNOFF=1"]
+#[allow(
+    clippy::panic,
+    clippy::match_wild_err_arm,
+    reason = "test code must panic gracefully"
+)]
+fn dual_binary_cli_pty_worktree_ctrl_w_creates_git_worktree() {
+    // arrange
+    // act
+    // assert
+    #[cfg(not(target_os = "linux"))]
+    panic!("abort");
+    if std::env::var_os("HARNESS_TUI_PTY_SIGNOFF").is_none() {
+        if std::env::var("HARNESS_TUI_PARITY_STRICT").as_deref() == Ok("1") {
+            panic!("HARNESS_TUI_PARITY_STRICT=1 requires HARNESS_TUI_PTY_SIGNOFF=1");
+        }
+        return;
+    }
+
+    let temp = tempdir().unwrap_or_abort();
+    let repo = temp.path().join("repo");
+    let session_dir = temp.path().join("worktree-sessions");
+    fs::create_dir_all(&session_dir).unwrap_or_abort();
+    init_git_repo_for_worktree(&repo);
+
+    let worktree_parent = repo.join(".agent-harness").join("worktrees");
+    assert!(
+        !worktree_parent.exists(),
+        "worktree parent must not exist before Ctrl+W"
+    );
+
+    let mut helper = spawn_harness_pty_in(
+        &repo,
+        &[
+            "tui".to_string(),
+            "--mock".to_string(),
+            "--deterministic".to_string(),
+            "--session-dir".to_string(),
+            session_dir.display().to_string(),
+        ],
+    );
+
+    let start = helper.wait_for("New worktree", "cli welcome worktree row");
+    assert!(
+        start["screen"]
+            .as_str()
+            .unwrap_or("")
+            .contains("Resume session"),
+        "startup welcome must still show resume row before worktree handoff"
+    );
+
+    helper.send_ctrl(b'w');
+
+    let live = wait_for_worktree_created_and_live_shell(
+        &mut helper,
+        &worktree_parent,
+        "worktree created + live shell",
+    );
+
+    let worktrees = list_worktree_dirs(&worktree_parent);
+    assert_eq!(
+        worktrees.len(),
+        1,
+        "exactly one worktree directory expected under {}",
+        worktree_parent.display()
+    );
+    let worktree_path = &worktrees[0];
+    assert!(
+        worktree_path.join("README.md").is_file(),
+        "worktree checkout must contain seeded README.md at {}",
+        worktree_path.display()
+    );
+    let branch = git_text(worktree_path, &["rev-parse", "--abbrev-ref", "HEAD"]);
+    assert!(
+        branch.starts_with("harness/wt-"),
+        "worktree branch must use harness/wt- prefix, got {branch:?}"
+    );
+    let live_screen = helper.screen_text();
+    assert!(
+        live_shell_markers_present(&live_screen),
+        "live shell after Ctrl+W must show mock live chrome (not only startup)\n{live_screen}"
+    );
+    let live = json!({
+        "label": live["label"].clone(),
+        "marker": live["marker"].clone(),
+        "screen": truncate_for_artifact(&live_screen),
+        "worktree_count": live["worktree_count"].clone(),
+    });
+
+    if let Some(artifact_dir) = std::env::var_os(ARTIFACT_DIR_ENV).map(PathBuf::from) {
+        fs::create_dir_all(&artifact_dir).unwrap_or_abort();
+        let receipt = json!({
+            "schema_version": "harness-tui-dual-binary-cli-pty-worktree-v1",
+            "binary": env!("CARGO_BIN_EXE_harness"),
+            "command": format!(
+                "harness tui --mock --deterministic --session-dir {} (cwd={})",
+                session_dir.display(),
+                repo.display()
+            ),
+            "worktree_path": worktree_path.display().to_string(),
+            "worktree_branch": branch,
+            "markers": {
+                "startup": "New worktree",
+                "action": "Ctrl+w",
+                "postconditions": [
+                    "git worktree directory on disk",
+                    "harness/wt-* branch",
+                    "welcome action rows absent"
+                ]
+            },
+            "start_screen": start,
+            "live_screen": live,
+        });
+        fs::write(
+            artifact_dir.join("dual-binary-cli-pty-worktree.json"),
+            serde_json::to_vec_pretty(&receipt).unwrap_or_abort(),
+        )
+        .unwrap_or_abort();
+    }
+
+    let _ = helper.child.kill();
+}
+
+#[test]
+#[ignore = "signoff dual-binary CLI PTY resume journey; run with HARNESS_TUI_PTY_SIGNOFF=1"]
+#[allow(
+    clippy::panic,
+    clippy::match_wild_err_arm,
+    reason = "test code must panic gracefully"
+)]
+fn dual_binary_cli_pty_ctrl_s_resumes_seeded_session() {
+    // arrange
+    // act
+    // assert
+    #[cfg(not(target_os = "linux"))]
+    panic!("abort");
+    if std::env::var_os("HARNESS_TUI_PTY_SIGNOFF").is_none() {
+        if std::env::var("HARNESS_TUI_PARITY_STRICT").as_deref() == Ok("1") {
+            panic!("HARNESS_TUI_PARITY_STRICT=1 requires HARNESS_TUI_PTY_SIGNOFF=1");
+        }
+        return;
+    }
+
+    let temp = tempdir().unwrap_or_abort();
+    let session_dir = temp.path().join("resume-sessions");
+    fs::create_dir_all(&session_dir).unwrap_or_abort();
+
+    seed_mock_prompt_session(&session_dir);
+    let seeded_run_dir = newest_run_dir(&session_dir).unwrap_or_abort();
+    let seeded_run_id = run_id_from_events(&seeded_run_dir);
+    assert!(
+        !seeded_run_id.is_empty(),
+        "seeded session must expose a run_id from events.jsonl under {}",
+        seeded_run_dir.display()
+    );
+    let seeded_events = fs::read_to_string(seeded_run_dir.join("events.jsonl")).unwrap_or_abort();
+    assert!(
+        seeded_events.contains("\"event_type\":\"user_message_submitted\"")
+            && seeded_events.contains("Hello from PTY"),
+        "seeded session must contain the real prompt turn events"
+    );
+
+    let mut helper = spawn_harness_pty(&[
+        "tui".to_string(),
+        "--mock".to_string(),
+        "--deterministic".to_string(),
+        "--session-dir".to_string(),
+        session_dir.display().to_string(),
+    ]);
+
+    let start = helper.wait_for("Resume session", "cli welcome resume row");
+    assert!(
+        start["screen"]
+            .as_str()
+            .unwrap_or("")
+            .contains("New worktree"),
+        "startup welcome must still show worktree row before resume handoff"
+    );
+
+    helper.send_ctrl(b's');
+    let picker = helper.wait_for("continue ready", "cli resume picker lists seeded session");
+    let picker_screen = picker["screen"].as_str().unwrap_or("");
+    assert!(
+        picker_screen.contains(&seeded_run_id)
+            || picker_screen.contains("continue ready")
+            || helper.screen_text().contains(&seeded_run_id),
+        "resume picker must list the seeded session ({seeded_run_id})\n{picker_screen}"
+    );
+    helper.send_key(b'\r');
+
+    let live = wait_for_resumed_live_shell(&mut helper, &seeded_run_id, "resume live shell");
+    let live_screen = helper.screen_text();
+    assert!(
+        live_shell_markers_present(&live_screen),
+        "live shell after Ctrl+S resume must show mock live chrome\n{live_screen}"
+    );
+    assert!(
+        live_screen.contains("Continued")
+            || live_screen.contains(&seeded_run_id)
+            || live_screen.contains(&format!("run {seeded_run_id}")),
+        "live shell after resume must show continued identity or seeded session id {seeded_run_id}\n{live_screen}"
+    );
+    assert!(
+        live_screen.contains("Hello from PTY") || live_screen.contains("Hello world"),
+        "resumed live shell should surface prior turn content\n{live_screen}"
+    );
+    assert!(
+        live_screen.contains("Shift+Tab:mode") || live_screen.contains("Ctrl+x:shortcuts"),
+        "startup launcher chrome must yield to live shell footer after resume\n{live_screen}"
+    );
+    assert!(
+        !live_screen.contains("New worktree"),
+        "startup New worktree welcome must clear after resume into live shell\n{live_screen}"
+    );
+    assert!(
+        seeded_run_dir.join("events.jsonl").is_file(),
+        "seeded session event store must remain on disk at {}",
+        seeded_run_dir.display()
+    );
+
+    if let Some(artifact_dir) = std::env::var_os(ARTIFACT_DIR_ENV).map(PathBuf::from) {
+        fs::create_dir_all(&artifact_dir).unwrap_or_abort();
+        let receipt = json!({
+            "schema_version": "harness-tui-dual-binary-cli-pty-resume-v1",
+            "scenario": "SCN-P0-RESUME",
+            "binary": env!("CARGO_BIN_EXE_harness"),
+            "command": format!(
+                "harness tui --mock --deterministic --session-dir {}",
+                session_dir.display()
+            ),
+            "seeded_run_dir": seeded_run_dir.display().to_string(),
+            "seeded_run_id": seeded_run_id,
+            "markers": {
+                "startup": "Resume session",
+                "action": "Ctrl+s",
+                "picker": "continue ready",
+                "postconditions": [
+                    "live shell markers",
+                    "session id on screen",
+                    "New worktree welcome absent"
+                ]
+            },
+            "start_screen": start,
+            "picker_screen": picker,
+            "live_screen": live,
+        });
+        fs::write(
+            artifact_dir.join("dual-binary-cli-pty-resume.json"),
+            serde_json::to_vec_pretty(&receipt).unwrap_or_abort(),
+        )
+        .unwrap_or_abort();
+    }
+
+    let _ = helper.child.kill();
+}
+
+#[test]
 #[ignore = "signoff dual-binary CLI PTY smoke; run with HARNESS_TUI_PTY_SIGNOFF=1"]
 #[allow(
     clippy::panic,
@@ -128,6 +388,9 @@ fn scripted_tui_happy_path_records_start_prompt_permission_tool_edit_resume_and_
     reason = "test code must panic gracefully"
 )]
 fn dual_binary_cli_pty_startup_structural_markers() {
+    // arrange
+    // act
+    // assert
     #[cfg(not(target_os = "linux"))]
     panic!("abort");
     if std::env::var_os("HARNESS_TUI_PTY_SIGNOFF").is_none() {
@@ -193,6 +456,9 @@ fn dual_binary_cli_pty_startup_structural_markers() {
     reason = "test code must panic gracefully"
 )]
 fn dual_binary_cli_pty_overlay_keybind_markers() {
+    // arrange
+    // act
+    // assert
     #[cfg(not(target_os = "linux"))]
     panic!("abort");
     if std::env::var_os("HARNESS_TUI_PTY_SIGNOFF").is_none() {
@@ -266,6 +532,9 @@ fn dual_binary_cli_pty_overlay_keybind_markers() {
     reason = "test code must panic gracefully"
 )]
 fn dual_binary_cli_pty_scenario_permission_markers() {
+    // arrange
+    // act
+    // assert
     #[cfg(not(target_os = "linux"))]
     panic!("abort");
     if std::env::var_os("HARNESS_TUI_PTY_SIGNOFF").is_none() {
@@ -326,6 +595,9 @@ fn dual_binary_cli_pty_scenario_permission_markers() {
     reason = "test code must panic gracefully"
 )]
 fn dual_binary_cli_pty_scenario_auto_complete_markers() {
+    // arrange
+    // act
+    // assert
     #[cfg(not(target_os = "linux"))]
     panic!("abort");
     if std::env::var_os("HARNESS_TUI_PTY_SIGNOFF").is_none() {
@@ -380,6 +652,9 @@ fn dual_binary_cli_pty_scenario_auto_complete_markers() {
     reason = "test code must panic gracefully"
 )]
 fn dual_binary_cli_pty_mock_fail_markers() {
+    // arrange
+    // act
+    // assert
     #[cfg(not(target_os = "linux"))]
     panic!("abort");
     if std::env::var_os("HARNESS_TUI_PTY_SIGNOFF").is_none() {
@@ -439,6 +714,9 @@ fn dual_binary_cli_pty_mock_fail_markers() {
     reason = "test code must panic gracefully"
 )]
 fn dual_binary_cli_pty_scenario_question_markers() {
+    // arrange
+    // act
+    // assert
     #[cfg(not(target_os = "linux"))]
     panic!("abort");
     if std::env::var_os("HARNESS_TUI_PTY_SIGNOFF").is_none() {
@@ -506,6 +784,9 @@ fn dual_binary_cli_pty_scenario_question_markers() {
     reason = "test code must panic gracefully"
 )]
 fn dual_binary_cli_pty_secondary_surface_markers() {
+    // arrange
+    // act
+    // assert
     #[cfg(not(target_os = "linux"))]
     panic!("abort");
     if std::env::var_os("HARNESS_TUI_PTY_SIGNOFF").is_none() {
@@ -549,8 +830,10 @@ fn dual_binary_cli_pty_secondary_surface_markers() {
     helper.send_key(0x1b);
     helper.wait_until_absent("Select model", "model switcher dismissed");
 
+    // Slash rows are alpha-sorted; "Switch session" is below the fold until filtered.
+    // Use an always-visible first-page marker, then filter to /toggles.
     helper.write_text("/");
-    helper.wait_for("Switch session", "cli slash menu");
+    helper.wait_for("/dashboard", "cli slash menu");
     helper.write_text("toggles");
     helper.send_key(b'\r');
     let toggles = helper.wait_for("Toggles", "cli toggles menu");
@@ -592,6 +875,9 @@ fn dual_binary_cli_pty_secondary_surface_markers() {
     reason = "test code must panic gracefully"
 )]
 fn dual_binary_cli_pty_mock_success_markers() {
+    // arrange
+    // act
+    // assert
     #[cfg(not(target_os = "linux"))]
     panic!("abort");
     if std::env::var_os("HARNESS_TUI_PTY_SIGNOFF").is_none() {
@@ -655,6 +941,9 @@ fn dual_binary_cli_pty_mock_success_markers() {
     reason = "test code must panic gracefully"
 )]
 fn dual_binary_cli_pty_scenario_permission_deny_markers() {
+    // arrange
+    // act
+    // assert
     #[cfg(not(target_os = "linux"))]
     panic!("abort");
     if std::env::var_os("HARNESS_TUI_PTY_SIGNOFF").is_none() {
@@ -681,7 +970,8 @@ fn dual_binary_cli_pty_scenario_permission_deny_markers() {
     helper.wait_for("always-approve", "cli permission deny choices");
     helper.send_ctrl(b'n');
     let decision = helper.wait_for("decision sent", "cli permission deny decision sent");
-    let choices_gone = helper.wait_until_absent("always-approve", "cli permission deny choices gone");
+    let choices_gone =
+        helper.wait_until_absent("always-approve", "cli permission deny choices gone");
     let settled = helper.wait_until_absent("Allow Edit", "cli permission deny dock dismissed");
     let screen = helper.screen_text();
     assert!(
@@ -733,6 +1023,9 @@ fn dual_binary_cli_pty_scenario_permission_deny_markers() {
     reason = "test code must panic gracefully"
 )]
 fn dual_binary_cli_pty_scenario_question_resolve_markers() {
+    // arrange
+    // act
+    // assert
     #[cfg(not(target_os = "linux"))]
     panic!("abort");
     if std::env::var_os("HARNESS_TUI_PTY_SIGNOFF").is_none() {
@@ -757,13 +1050,26 @@ fn dual_binary_cli_pty_scenario_question_resolve_markers() {
     ]);
 
     let open = helper.wait_for("Pick one", "cli question resolve open");
-    helper.wait_for("1 (●) A", "cli question default selection");
+    // Freeze uses (○) until an answer is committed; focus is style-only, not ●.
+    helper.wait_for("1 (○) A", "cli question choice row");
+    helper.wait_for("Type your answer here", "cli question choice chrome");
+    helper.write_text("1");
+    helper.wait_for("1 (●) A", "cli question choice committed");
     helper.send_key(b'\r');
-    let dismissed = helper.wait_until_absent("Pick one", "cli question resolve dismissed");
+    // Question text can remain in transcript history; assert modal chrome dismisses.
+    let dismissed = helper.wait_until_absent(
+        "Type your answer here",
+        "cli question resolve chrome dismissed",
+    );
+    helper.wait_until_absent("Enter:submit", "cli question resolve footer dismissed");
     let screen = helper.screen_text();
     assert!(
-        !screen.contains("Type your answer here"),
+        !screen.contains("Type your answer here") && !screen.contains("Enter:submit"),
         "resolved question dual-binary must dismiss choice chrome\n{screen}"
+    );
+    assert!(
+        !screen.contains("1 (○) A") && !screen.contains("1 (●) A"),
+        "resolved question dual-binary must dismiss numbered choice chrome\n{screen}"
     );
 
     if let Some(artifact_dir) = std::env::var_os(ARTIFACT_DIR_ENV).map(PathBuf::from) {
@@ -775,7 +1081,16 @@ fn dual_binary_cli_pty_scenario_question_resolve_markers() {
                 "harness tui --scenario question_interactive --deterministic --exit-on-finish --session-dir {}",
                 session_dir.display()
             ),
-            "markers": ["Pick one", "1 (●) A", "absent:Pick one"],
+            "markers": [
+                "Pick one",
+                "1 (○) A",
+                "Type your answer here",
+                "1 (●) A",
+                "absent:Type your answer here",
+                "absent:Enter:submit",
+                "absent:1 (○) A",
+                "absent:1 (●) A"
+            ],
             "open_screen": open,
             "dismissed_screen": dismissed,
         });
@@ -813,6 +1128,30 @@ fn record_prompt_and_quit(session_dir: &Path) -> serde_json::Value {
     })
 }
 
+fn seed_mock_prompt_session(session_dir: &Path) {
+    let _ = record_prompt_and_quit(session_dir);
+}
+
+fn run_id_from_events(run_dir: &Path) -> String {
+    let events_path = run_dir.join("events.jsonl");
+    let events = fs::read_to_string(&events_path).unwrap_or_abort();
+    for line in events.lines() {
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if let Some(run_id) = value.get("run_id").and_then(|v| v.as_str()) {
+            if !run_id.is_empty() {
+                return run_id.to_string();
+            }
+        }
+    }
+    run_dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default()
+        .to_string()
+}
+
 fn record_permission_tool_edit_and_auto_exit(session_dir: &Path) -> serde_json::Value {
     let mut helper = spawn_harness_pty(&[
         "tui".to_string(),
@@ -847,9 +1186,10 @@ fn record_resume_picker_and_quit(session_dir: &Path) -> serde_json::Value {
     ]);
     let mut screens = Vec::new();
     screens.push(helper.wait_for("❯", "resume startup"));
+    // Filter first: unfiltered slash list is alpha-sorted and hides /sessions off-screen.
     helper.write_text("/");
-    screens.push(helper.wait_for("Switch session", "slash commands"));
     helper.write_text("sessions");
+    screens.push(helper.wait_for("Switch session", "slash commands"));
     helper.send_key(b'\r');
     screens.push(helper.wait_for("Resume session", "resume picker"));
     helper.send_key(0x1b);
@@ -949,6 +1289,10 @@ impl SpawnedHarness {
 }
 
 fn spawn_harness_pty(args: &[String]) -> SpawnedHarness {
+    spawn_harness_pty_in(Path::new("."), args)
+}
+
+fn spawn_harness_pty_in(cwd: &Path, args: &[String]) -> SpawnedHarness {
     let pty_system = native_pty_system();
     let pair = pty_system
         .openpty(PtySize {
@@ -960,6 +1304,7 @@ fn spawn_harness_pty(args: &[String]) -> SpawnedHarness {
         .unwrap_or_abort();
 
     let mut command = CommandBuilder::new(env!("CARGO_BIN_EXE_harness"));
+    command.cwd(cwd);
     for arg in args {
         command.arg(arg);
     }
@@ -978,6 +1323,145 @@ fn spawn_harness_pty(args: &[String]) -> SpawnedHarness {
         writer,
         output_rx,
         parser: Parser::new(ROWS, COLS, 0),
+    }
+}
+
+fn init_git_repo_for_worktree(path: &Path) {
+    fs::create_dir_all(path).unwrap_or_abort();
+    run_git(path, &["init", "-b", "main"]);
+    run_git(path, &["config", "user.email", "worktree-pty@example.com"]);
+    run_git(path, &["config", "user.name", "Worktree PTY"]);
+    fs::write(path.join("README.md"), "seed\n").unwrap_or_abort();
+    run_git(path, &["add", "README.md"]);
+    run_git(path, &["commit", "-m", "seed"]);
+}
+
+fn run_git(cwd: &Path, args: &[&str]) {
+    let output = std::process::Command::new("git")
+        .args(args)
+        .current_dir(cwd)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .output()
+        .unwrap_or_abort();
+    assert!(
+        output.status.success(),
+        "git {:?} failed in {}: {}",
+        args,
+        cwd.display(),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+fn git_text(cwd: &Path, args: &[&str]) -> String {
+    let output = std::process::Command::new("git")
+        .args(args)
+        .current_dir(cwd)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .output()
+        .unwrap_or_abort();
+    assert!(
+        output.status.success(),
+        "git {:?} failed in {}: {}",
+        args,
+        cwd.display(),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8_lossy(&output.stdout).trim().to_string()
+}
+
+fn list_worktree_dirs(parent: &Path) -> Vec<PathBuf> {
+    if !parent.is_dir() {
+        return Vec::new();
+    }
+    let mut dirs = fs::read_dir(parent)
+        .unwrap_or_abort()
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path.is_dir())
+        .collect::<Vec<_>>();
+    dirs.sort();
+    dirs
+}
+
+fn live_shell_markers_present(screen: &str) -> bool {
+    (screen.contains("Shift+Tab:mode") || screen.contains("Ctrl+x:shortcuts"))
+        && (screen.contains("Demo") || screen.contains("model-1") || screen.contains('❯'))
+}
+
+#[allow(
+    clippy::panic,
+    clippy::match_wild_err_arm,
+    reason = "test code must panic gracefully"
+)]
+fn wait_for_worktree_created_and_live_shell(
+    helper: &mut SpawnedHarness,
+    worktree_parent: &Path,
+    label: &str,
+) -> serde_json::Value {
+    let deadline = Instant::now() + MARKER_TIMEOUT;
+    loop {
+        drain_output(&mut helper.parser, &helper.output_rx);
+        let screen = helper.parser.screen().contents();
+        let worktrees = list_worktree_dirs(worktree_parent);
+        if !worktrees.is_empty() && live_shell_markers_present(&screen) {
+            return json!({
+                "label": label,
+                "marker": "worktree_on_disk_and_live_shell",
+                "screen": truncate_for_artifact(&screen),
+                "worktree_count": worktrees.len(),
+            });
+        }
+
+        if Instant::now() >= deadline {
+            panic!(
+                "PTY worktree journey timeout ({label})\nworktree_parent={}\nworktrees={worktrees:?}\n--- screen ---\n{screen}\n--- end ---",
+                worktree_parent.display()
+            );
+        }
+
+        if let Ok(chunk) = helper.output_rx.recv_timeout(READ_POLL_TIMEOUT) {
+            helper.parser.process(&chunk);
+        }
+    }
+}
+
+#[allow(
+    clippy::panic,
+    clippy::match_wild_err_arm,
+    reason = "test code must panic gracefully"
+)]
+fn wait_for_resumed_live_shell(
+    helper: &mut SpawnedHarness,
+    seeded_run_id: &str,
+    label: &str,
+) -> serde_json::Value {
+    let deadline = Instant::now() + MARKER_TIMEOUT.saturating_mul(2);
+    loop {
+        drain_output(&mut helper.parser, &helper.output_rx);
+        let screen = helper.parser.screen().contents();
+        let continued_identity = screen.contains("Continued")
+            || screen.contains(seeded_run_id)
+            || screen.contains(&format!("run {seeded_run_id}"));
+        let prior_turn = screen.contains("Hello from PTY") || screen.contains("Hello world");
+        let live_footer = screen.contains("Shift+Tab:mode") || screen.contains("Ctrl+x:shortcuts");
+        if live_shell_markers_present(&screen) && continued_identity && prior_turn && live_footer {
+            return json!({
+                "label": label,
+                "marker": "resumed_live_shell",
+                "seeded_run_id": seeded_run_id,
+                "screen": truncate_for_artifact(&screen),
+            });
+        }
+
+        if Instant::now() >= deadline {
+            panic!(
+                "PTY resume journey timeout ({label})\nseeded_run_id={seeded_run_id}\n--- screen ---\n{screen}\n--- end ---"
+            );
+        }
+
+        if let Ok(chunk) = helper.output_rx.recv_timeout(READ_POLL_TIMEOUT) {
+            helper.parser.process(&chunk);
+        }
     }
 }
 

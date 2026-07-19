@@ -1,6 +1,9 @@
 use harness::UnwrapOrAbort;
 #[test]
 fn replay_cli_prints_json_summary() {
+    // arrange
+    // act
+    // assert
     let run_dir = tempdir().unwrap_or_abort();
     write_events_jsonl(
         run_dir.path(),
@@ -99,6 +102,9 @@ fn replay_cli_uses_meta_mode_source_for_resumability() {
 
 #[test]
 fn replay_cli_prints_human_summary() {
+    // arrange
+    // act
+    // assert
     let run_dir = tempdir().unwrap_or_abort();
     write_events_jsonl(
         run_dir.path(),
@@ -144,6 +150,9 @@ fn replay_cli_prints_human_summary() {
 }
 #[test]
 fn replay_cli_surfaces_recovery_story_details_from_resume_metadata() {
+    // arrange
+    // act
+    // assert
     let run_dir = tempdir().unwrap_or_abort();
     write_events_jsonl(
         run_dir.path(),
@@ -267,6 +276,9 @@ fn replay_cli_surfaces_recovery_story_details_from_resume_metadata() {
 }
 #[test]
 fn replay_cli_sanitizes_control_char_metadata_in_human_output() {
+    // arrange
+    // act
+    // assert
     let run_dir = tempdir().unwrap_or_abort();
     write_events_jsonl(
         run_dir.path(),
@@ -339,6 +351,9 @@ fn replay_cli_sanitizes_control_char_metadata_in_human_output() {
 }
 #[test]
 fn replay_cli_surfaces_recovery_context_in_json_summary() {
+    // arrange
+    // act
+    // assert
     let run_dir = tempdir().unwrap_or_abort();
     write_events_jsonl(
         run_dir.path(),

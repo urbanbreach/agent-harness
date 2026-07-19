@@ -3,6 +3,9 @@ use harness::UnwrapOrAbort;
 
 #[test]
 fn tui_lineage_clone_materializes_child_from_memory_snapshot() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let source_run_dir = temp_dir.path().join("run_tui_lineage_source");
     std::fs::create_dir(&source_run_dir).unwrap_or_abort();
@@ -38,6 +41,9 @@ fn tui_lineage_clone_materializes_child_from_memory_snapshot() {
 
 #[test]
 fn tui_lineage_fork_continues_child_with_prompt_draft() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let source_run_dir = temp_dir.path().join("run_tui_lineage_source");
     std::fs::create_dir(&source_run_dir).unwrap_or_abort();
@@ -81,6 +87,9 @@ fn tui_lineage_fork_continues_child_with_prompt_draft() {
 
 #[test]
 fn tui_lineage_fork_first_prompt_uses_recorded_runtime_context_for_resume() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let source_run_dir = temp_dir.path().join("run_tui_lineage_source");
     std::fs::create_dir(&source_run_dir).unwrap_or_abort();

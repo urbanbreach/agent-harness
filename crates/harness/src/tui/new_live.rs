@@ -10,7 +10,8 @@ use harness_core::proj::SessionModeSource;
 use harness_core::redact::DefaultRedactor;
 use harness_core::session_title::create_default_title;
 use harness_tui::app::{
-    prompt_history_path_for_session_dir, set_pending_live_launch_metadata, LaunchMetadata,
+    prompt_history_path_for_session_dir, set_pending_live_launch_metadata,
+    set_pending_settings_project_config, LaunchMetadata,
 };
 use harness_tui::{run_tui_with_options, LiveUpdate, OperatorNoticeLevel, UiIntent};
 use tokio::sync::{mpsc, oneshot};
@@ -32,6 +33,74 @@ use super::workflow::{
     build_live_ui_intent_router, take_selected_workflow, InteractiveWorkflow, LaunchSelection,
 };
 use super::{await_task, stop_live_source_run, unique_interactive_run_id, user_actor, TuiCommand};
+
+pub(super) async fn run_new_worktree_live_session(
+    cmd: &TuiCommand,
+    settings: &LiveSettings,
+    demo_mode: bool,
+    launch_selection: LaunchSelection,
+    coordinator_config_warmup: LiveCoordinatorConfigWarmup,
+) -> Result<InteractiveWorkflow, String> {
+    profile_handoff("new_worktree_live.begin");
+    let worktree_settings = prepare_worktree_live_settings(settings)?;
+    profile_handoff(&format!(
+        "new_worktree_live.created {}",
+        worktree_settings.workspace_root.display()
+    ));
+    run_new_live_session(
+        cmd,
+        &worktree_settings,
+        demo_mode,
+        launch_selection,
+        coordinator_config_warmup,
+    )
+    .await
+}
+
+fn prepare_worktree_live_settings(settings: &LiveSettings) -> Result<LiveSettings, String> {
+    use harness_core::cow_worktree::apply_cow_worktree_fastpath;
+    use harness_core::workspace::WorkspaceEnvironment;
+    use harness_core::worktree::{create_session_worktree, CreateWorktreeOptions};
+
+    let environment = WorkspaceEnvironment::discover(settings.workspace_root.clone());
+    if !environment.is_git_repository {
+        return Err(format!(
+            "New worktree requires a git repository (workspace: {})",
+            settings.workspace_root.display()
+        ));
+    }
+
+    let created = create_session_worktree(CreateWorktreeOptions {
+        repository_root: &environment.workspace_root,
+        worktree_parent: None,
+        slug: None,
+        start_point: None,
+    })
+    .map_err(|err| format!("failed to create worktree: {err}"))?;
+
+    let overlay_candidates = [
+        "harness.jsonc",
+        "harness.json",
+        "tui.jsonc",
+        "tui.json",
+        ".harness-cow-overlay",
+    ];
+    let relative_paths: Vec<&str> = overlay_candidates
+        .iter()
+        .copied()
+        .filter(|rel| {
+            let src = environment.workspace_root.join(rel);
+            let dst = created.path.join(rel);
+            src.is_file() && !dst.exists()
+        })
+        .collect();
+    let _cow_report =
+        apply_cow_worktree_fastpath(&environment.workspace_root, &created.path, &relative_paths);
+
+    let mut worktree_settings = settings.clone();
+    worktree_settings.workspace_root = created.path;
+    Ok(worktree_settings)
+}
 
 pub(super) async fn run_new_live_session(
     cmd: &TuiCommand,
@@ -86,6 +155,47 @@ pub(super) async fn run_new_live_session(
     let toggles = Some(settings.toggles.clone());
     let prompt_history_path = Some(prompt_history_path_for_session_dir(&settings.session_dir));
     set_pending_live_launch_metadata(launch_metadata);
+    if let Some(config_path) = settings.config_path.clone() {
+        let hashline_edit = settings
+            .config
+            .as_ref()
+            .map(|config| config.hashline_edit)
+            .unwrap_or(true);
+        let compaction_enabled = settings
+            .config
+            .as_ref()
+            .map(|config| config.runtime.compaction.enabled)
+            .unwrap_or(true);
+        let compaction_auto_retry_overflow = settings
+            .config
+            .as_ref()
+            .map(|config| config.runtime.compaction.auto_retry_overflow)
+            .unwrap_or(true);
+        let compaction_structured_summary_contract = settings
+            .config
+            .as_ref()
+            .map(|config| config.runtime.compaction.structured_summary_contract)
+            .unwrap_or(true);
+        let compaction_estimated_token_triggers = settings
+            .config
+            .as_ref()
+            .map(|config| config.runtime.compaction.estimated_token_triggers)
+            .unwrap_or(true);
+        let deterministic_enabled = settings
+            .config
+            .as_ref()
+            .map(|config| config.runtime.deterministic.enabled)
+            .unwrap_or(false);
+        set_pending_settings_project_config(
+            config_path,
+            hashline_edit,
+            compaction_enabled,
+            compaction_auto_retry_overflow,
+            compaction_structured_summary_contract,
+            compaction_estimated_token_triggers,
+            deterministic_enabled,
+        );
+    }
 
     let tui_result = tokio::task::spawn_blocking(move || {
         profile_handoff("new_live.live_tui_begin");

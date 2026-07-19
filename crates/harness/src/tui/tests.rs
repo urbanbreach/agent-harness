@@ -250,6 +250,9 @@ fn write_catalog_run(run_dir: &Path, events: &[EventEnvelopeV1]) {
 
 #[test]
 fn connect_provider_options_seed_from_models_dev_catalog() {
+    // arrange
+    // act
+    // assert
     let catalog =
         harness_core::provider_catalog::ProviderCatalog::from_embedded().unwrap_or_abort();
     let registry = AuthPluginRegistry::with_builtins();

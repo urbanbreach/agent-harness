@@ -1,6 +1,9 @@
 use harness::UnwrapOrAbort;
 #[test]
 fn models_probe_generates_harness_catalog_fragment_from_models_dev_json() {
+    // arrange
+    // act
+    // assert
     let temp = tempdir().unwrap_or_abort();
     let source_path = temp.path().join("models-dev.json");
     write_json(
@@ -130,6 +133,9 @@ fn models_probe_generates_harness_catalog_fragment_from_models_dev_json() {
 }
 #[test]
 fn models_generate_updates_static_catalog_artifact_from_models_dev_json() {
+    // arrange
+    // act
+    // assert
     let temp = tempdir().unwrap_or_abort();
     let source_path = temp.path().join("models-dev.json");
     let output_path = temp.path().join("provider-catalog.generated.json");
@@ -201,6 +207,9 @@ fn models_generate_updates_static_catalog_artifact_from_models_dev_json() {
 }
 #[test]
 fn models_generated_prints_embedded_static_catalog() {
+    // arrange
+    // act
+    // assert
     let output = harness_command()
         .args(["models", "generated"])
         .output()
@@ -223,6 +232,9 @@ fn models_generated_prints_embedded_static_catalog() {
 }
 #[test]
 fn schema_cli_prints_runtime_json_schema() {
+    // arrange
+    // act
+    // assert
     let output = harness_command()
         .arg("schema")
         .output()
@@ -379,6 +391,9 @@ fn schema_cli_prints_runtime_json_schema() {
 }
 #[test]
 fn schema_cli_prints_tui_json_schema() {
+    // arrange
+    // act
+    // assert
     let output = harness_command()
         .args(["schema", "--tui"])
         .output()
@@ -401,6 +416,9 @@ fn schema_cli_prints_tui_json_schema() {
 }
 #[test]
 fn config_validate_cli_reports_missing_config() {
+    // arrange
+    // act
+    // assert
     let temp = tempdir().unwrap_or_abort();
     let output = harness_command()
         .current_dir(temp.path())
@@ -418,6 +436,9 @@ fn config_validate_cli_reports_missing_config() {
 }
 #[test]
 fn config_validate_cli_accepts_shipped_example_config() {
+    // arrange
+    // act
+    // assert
     let repo_root = repo_root();
     let config_path = repo_root.join("configs").join("harness.example.jsonc");
 

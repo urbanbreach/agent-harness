@@ -505,6 +505,9 @@ mod tests {
 
     #[test]
     fn scenario_name_reports_interactive_permission_mode() {
+        // arrange
+        // act
+        // assert
         assert!(!ScenarioName::GoldenPath.interactive_permissions());
         assert!(ScenarioName::GoldenPathInteractive.interactive_permissions());
         assert!(ScenarioName::QuestionInteractive.interactive_permissions());

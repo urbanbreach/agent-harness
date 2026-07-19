@@ -40,6 +40,9 @@ fn default_prompt_command() -> PromptCommand {
 
 #[test]
 fn no_config_prompt_without_provider_returns_connect_guidance() {
+    // arrange
+    // act
+    // assert
     let temp = tempfile::tempdir().unwrap_or_abort();
     let deps = crate::CliDeps::real()
         .with_current_dir(temp.path().to_path_buf())
@@ -66,6 +69,9 @@ fn no_config_prompt_without_provider_returns_connect_guidance() {
 
 #[test]
 fn no_config_prompt_with_stored_codex_uses_runtime_catalog() {
+    // arrange
+    // act
+    // assert
     let temp = tempfile::tempdir().unwrap_or_abort();
     let data_home = temp.path().join("data");
     let store = CredentialStore::new(data_home.join("harness"));
@@ -99,11 +105,17 @@ fn no_config_prompt_with_stored_codex_uses_runtime_catalog() {
 
 #[test]
 fn parse_wait_timeout_ms_uses_default_when_unset() {
+    // arrange
+    // act
+    // assert
     assert_eq!(parse_wait_timeout_ms(None), DEFAULT_WAIT_TIMEOUT);
 }
 
 #[test]
 fn parse_wait_timeout_ms_uses_default_when_invalid() {
+    // arrange
+    // act
+    // assert
     assert_eq!(
         parse_wait_timeout_ms(Some("not-a-number")),
         DEFAULT_WAIT_TIMEOUT
@@ -114,6 +126,9 @@ fn parse_wait_timeout_ms_uses_default_when_invalid() {
 
 #[test]
 fn parse_wait_timeout_ms_parses_positive_milliseconds() {
+    // arrange
+    // act
+    // assert
     assert_eq!(
         parse_wait_timeout_ms(Some("1500")),
         Duration::from_millis(1500)
@@ -126,6 +141,9 @@ fn parse_wait_timeout_ms_parses_positive_milliseconds() {
 
 #[test]
 fn evaluate_prompt_completion_reports_cancelled_task_as_error() {
+    // arrange
+    // act
+    // assert
     let events = vec![event_with_correlation(
         EventV1::TaskCancelled(TaskCancelledEvent {
             task_id: "task_000001".to_string().into(),
@@ -146,6 +164,9 @@ fn evaluate_prompt_completion_reports_cancelled_task_as_error() {
 
 #[test]
 fn evaluate_prompt_completion_waits_for_cancellation_after_provider_finish_error() {
+    // arrange
+    // act
+    // assert
     let events = vec![event(EventV1::ProviderRequestFinished(
         ProviderRequestFinishedEvent {
             request_id: "req_000001".into(),
@@ -162,6 +183,9 @@ fn evaluate_prompt_completion_waits_for_cancellation_after_provider_finish_error
 
 #[test]
 fn evaluate_prompt_completion_waits_for_prompt_task_completion_after_provider_finish() {
+    // arrange
+    // act
+    // assert
     let events = vec![
         provider_task_scheduled_event("task_000001", "req_000001"),
         event(EventV1::ProviderRequestFinished(
@@ -181,6 +205,9 @@ fn evaluate_prompt_completion_waits_for_prompt_task_completion_after_provider_fi
 
 #[tokio::test]
 async fn prompt_tracker_waits_for_agent_turn_end_not_provider_finish() {
+    // arrange
+    // act
+    // assert
     let store = Arc::new(CountingEventStore::new());
     let store_clone = Arc::clone(&store);
     let wait_store: Arc<dyn EventStore> = store_clone;
@@ -230,6 +257,9 @@ async fn prompt_tracker_waits_for_agent_turn_end_not_provider_finish() {
 
 #[test]
 fn evaluate_prompt_completion_waits_for_tool_task_completion() {
+    // arrange
+    // act
+    // assert
     let events = vec![
         provider_task_scheduled_event("task_000001", "req_000001"),
         event_with_correlation(
@@ -257,6 +287,9 @@ fn evaluate_prompt_completion_waits_for_tool_task_completion() {
 
 #[test]
 fn evaluate_prompt_completion_ignores_tool_task_without_agent_turn_schedule() {
+    // arrange
+    // act
+    // assert
     let events = vec![event_with_correlation(
         EventV1::TaskCompleted(TaskCompletedEvent {
             task_id: "task_000002".to_string().into(),
@@ -281,6 +314,9 @@ fn evaluate_prompt_completion_ignores_tool_task_without_agent_turn_schedule() {
 
 #[test]
 fn evaluate_prompt_completion_ignores_cancelled_child_tool_task() {
+    // arrange
+    // act
+    // assert
     let events = vec![
         provider_task_scheduled_event("task_000001", "req_000001"),
         event_with_correlation(
@@ -313,6 +349,9 @@ fn evaluate_prompt_completion_ignores_cancelled_child_tool_task() {
 
 #[test]
 fn evaluate_prompt_completion_reports_success_for_prompt_task_completed() {
+    // arrange
+    // act
+    // assert
     let events = vec![
         provider_task_scheduled_event("task_000001", "req_000001"),
         event_with_correlation(
@@ -332,6 +371,9 @@ fn evaluate_prompt_completion_reports_success_for_prompt_task_completed() {
 
 #[test]
 fn evaluate_prompt_completion_reports_success_for_terminal_only_agent_turn_completion() {
+    // arrange
+    // act
+    // assert
     let events = vec![event_with_correlation(
         EventV1::TaskCompleted(TaskCompletedEvent {
             task_id: "task_000001".to_string().into(),
@@ -353,6 +395,9 @@ fn evaluate_prompt_completion_reports_success_for_terminal_only_agent_turn_compl
 
 #[test]
 fn evaluate_prompt_completion_prioritizes_run_failed() {
+    // arrange
+    // act
+    // assert
     let events = vec![event(EventV1::RunFailed(RunFailedEvent {
         error: "fatal".to_string(),
     }))];
@@ -368,6 +413,9 @@ fn evaluate_prompt_completion_prioritizes_run_failed() {
 
 #[test]
 fn has_provider_error_finish_detects_error_finish_reason() {
+    // arrange
+    // act
+    // assert
     let events = vec![event_with_correlation(
         EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
             request_id: "provider_call_000007".into(),
@@ -385,6 +433,9 @@ fn has_provider_error_finish_detects_error_finish_reason() {
 
 #[test]
 fn evaluate_prompt_completion_supports_correlated_task_id_equals_request_id_fallback() {
+    // arrange
+    // act
+    // assert
     let events = vec![event_with_correlation(
         EventV1::TaskCompleted(TaskCompletedEvent {
             task_id: "req_000123".to_string().into(),
@@ -401,6 +452,9 @@ fn evaluate_prompt_completion_supports_correlated_task_id_equals_request_id_fall
 
 #[test]
 fn evaluate_prompt_completion_ignores_uncorrelated_agent_turn_completion() {
+    // arrange
+    // act
+    // assert
     let events = vec![event_with_correlation(
         EventV1::TaskCompleted(TaskCompletedEvent {
             task_id: "task_000999".to_string().into(),
@@ -422,6 +476,9 @@ fn evaluate_prompt_completion_ignores_uncorrelated_agent_turn_completion() {
 
 #[tokio::test]
 async fn wait_for_prompt_completion_subscribes_once_and_streams_new_events() {
+    // arrange
+    // act
+    // assert
     let store = Arc::new(CountingEventStore::new());
     for index in 0..256 {
         store

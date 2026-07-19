@@ -29,7 +29,8 @@ use harness_tui::app::LaunchMetadata;
 #[cfg(test)]
 use harness_tui::app::TogglesConfig;
 use harness_tui::app::{
-    prompt_history_path_for_session_dir, set_pending_live_launch_metadata, SessionHistoryEntry,
+    prompt_history_path_for_session_dir, set_pending_live_launch_metadata,
+    set_pending_settings_project_config, SessionHistoryEntry,
 };
 #[cfg(test)]
 use harness_tui::OperatorNoticeLevel;
@@ -54,8 +55,8 @@ use crate::logging;
 use crate::recovery::{latest_run_name, select_resume_agent_id};
 use crate::scenarios::{
     create_workspace, default_permission_policy, deterministic_run_id, golden_path_edit_args,
-    golden_path_profiles, golden_path_provider, question_interactive_request_json, supervisor_actor,
-    worker_actor, ScenarioName,
+    golden_path_profiles, golden_path_provider, question_interactive_request_json,
+    supervisor_actor, worker_actor, ScenarioName,
 };
 
 #[path = "tui/auth_backend.rs"]
@@ -118,9 +119,9 @@ use self::live_settings::{
 use self::live_settings::{
     resolve_live_settings, resolve_live_settings_for_test, LiveSettingsDeps,
 };
-use self::new_live::run_new_live_session;
 #[cfg(test)]
 use self::new_live::spawn_session_history_refresh;
+use self::new_live::{run_new_live_session, run_new_worktree_live_session};
 use self::profile_log::profile_handoff;
 #[cfg(test)]
 use self::replay::is_terminal_event;
@@ -420,6 +421,19 @@ async fn run_interactive_mode(
         {
             let launch_selection = Arc::clone(&launch_selection);
             let coordinator_config_warmup = coordinator_config_warmup.clone();
+            move || {
+                run_new_worktree_live_session(
+                    cmd,
+                    settings,
+                    demo_mode,
+                    Arc::clone(&launch_selection),
+                    coordinator_config_warmup.clone(),
+                )
+            }
+        },
+        {
+            let launch_selection = Arc::clone(&launch_selection);
+            let coordinator_config_warmup = coordinator_config_warmup.clone();
             move |run_id, run_dir| {
                 run_continue_session_bootstrap(
                     cmd,
@@ -518,6 +532,19 @@ async fn run_direct_continue_mode(
         {
             let launch_selection = Arc::clone(&launch_selection);
             let coordinator_config_warmup = coordinator_config_warmup.clone();
+            move || {
+                run_new_worktree_live_session(
+                    cmd,
+                    settings,
+                    demo_mode,
+                    Arc::clone(&launch_selection),
+                    coordinator_config_warmup.clone(),
+                )
+            }
+        },
+        {
+            let launch_selection = Arc::clone(&launch_selection);
+            let coordinator_config_warmup = coordinator_config_warmup.clone();
             move |run_id, run_dir| {
                 run_continue_session_bootstrap(
                     cmd,
@@ -583,6 +610,7 @@ async fn run_startup_launcher(
         if !matches!(
             intent,
             UiIntent::NewSession
+                | UiIntent::NewWorktreeSession
                 | UiIntent::ReplaySession { .. }
                 | UiIntent::ContinueSession { .. }
                 | UiIntent::SubmitPrompt { .. }
@@ -752,6 +780,47 @@ async fn run_continue_session_bootstrap(
     let exit_on_finish = cmd.exit_on_finish;
     let toggles = Some(settings.toggles.clone());
     set_pending_live_launch_metadata(continue_metadata);
+    if let Some(config_path) = settings.config_path.clone() {
+        let hashline_edit = settings
+            .config
+            .as_ref()
+            .map(|config| config.hashline_edit)
+            .unwrap_or(true);
+        let compaction_enabled = settings
+            .config
+            .as_ref()
+            .map(|config| config.runtime.compaction.enabled)
+            .unwrap_or(true);
+        let compaction_auto_retry_overflow = settings
+            .config
+            .as_ref()
+            .map(|config| config.runtime.compaction.auto_retry_overflow)
+            .unwrap_or(true);
+        let compaction_structured_summary_contract = settings
+            .config
+            .as_ref()
+            .map(|config| config.runtime.compaction.structured_summary_contract)
+            .unwrap_or(true);
+        let compaction_estimated_token_triggers = settings
+            .config
+            .as_ref()
+            .map(|config| config.runtime.compaction.estimated_token_triggers)
+            .unwrap_or(true);
+        let deterministic_enabled = settings
+            .config
+            .as_ref()
+            .map(|config| config.runtime.deterministic.enabled)
+            .unwrap_or(false);
+        set_pending_settings_project_config(
+            config_path,
+            hashline_edit,
+            compaction_enabled,
+            compaction_auto_retry_overflow,
+            compaction_structured_summary_contract,
+            compaction_estimated_token_triggers,
+            deterministic_enabled,
+        );
+    }
     let prompt_history_path = Some(prompt_history_path_for_session_dir(&settings.session_dir));
     let session_history_entries =
         load_live_session_history_entries(&run.run_dir, &settings.session_dir)?;

@@ -49,3 +49,8 @@ mod part_09_sessions_export_support_scan_test {
     use super::*;
     include!("replay_sessions_cli/09_sessions_export_support_scan_test.rs");
 }
+
+mod part_10_sessions_crash_and_foreign_import_test {
+    use super::*;
+    include!("replay_sessions_cli/10_sessions_crash_and_foreign_import_test.rs");
+}

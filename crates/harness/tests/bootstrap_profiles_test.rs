@@ -273,6 +273,9 @@ fn family_prompt_model_target(
 
 #[test]
 fn shipped_v1_family_prompt_assets_match_golden_snapshots() {
+    // arrange
+    // act
+    // assert
     let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let snapshot_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests")

@@ -18,6 +18,7 @@ use harness_core::clock::{Clock, FakeClock, RealClock};
 use harness_core::config::{
     harness_schema_pretty_json, harness_tui_schema_pretty_json, load_resolved_config_with_context,
 };
+use harness_core::redact::{redact_value, DefaultRedactor};
 
 extern crate self as harness;
 
@@ -31,6 +32,7 @@ mod doctor;
 mod dynamic_prompt;
 mod generated_model_catalog;
 mod logging;
+mod memory_cmd;
 mod model_probe;
 mod models;
 mod prompt;
@@ -47,6 +49,7 @@ use crate::prompt::PromptCommand;
 use crate::tui::TuiCommand;
 use auth_cmd::AuthCommand;
 use doctor::DoctorCommand;
+use memory_cmd::MemoryCommand;
 use models::ModelsCommand;
 use replay::ReplayCommand;
 use run::RunCommand;
@@ -176,6 +179,8 @@ enum Commands {
         #[command(subcommand)]
         command: ConfigCommands,
     },
+    /// Durable workspace memory put/get/search/list product surface.
+    Memory(MemoryCommand),
 }
 
 #[derive(Debug, Args, Clone, Default)]
@@ -188,6 +193,27 @@ struct SchemaCommand {
 enum ConfigCommands {
     /// Validate discovered or explicit runtime/TUI config files.
     Validate,
+    /// Show resolved configuration (use --effective for redacted merged output).
+    Show(ConfigShowCommand),
+    /// List discovered config source layers in merge order.
+    Sources,
+    /// Explain one dotted config path (effective value + winning source layer).
+    Explain(ConfigExplainCommand),
+    /// List typed settings-registry metadata (ids only; no secret values).
+    Settings,
+}
+
+#[derive(Debug, Args, Clone, Default)]
+struct ConfigShowCommand {
+    /// Print the merged effective config as redacted JSON with source layers.
+    #[arg(long, default_value_t = false)]
+    effective: bool,
+}
+
+#[derive(Debug, Args, Clone)]
+struct ConfigExplainCommand {
+    /// Dotted public config path (for example `model` or `provider.default.options.apiKey`).
+    path: String,
 }
 
 /// Explicit standard I/O for in-process CLI tests.
@@ -651,7 +677,14 @@ fn execute_cli(cli: Cli, io: &mut CliIo<'_>, deps: CliDeps) -> i32 {
         },
         Commands::Config { command } => match command {
             ConfigCommands::Validate => execute_config_validate(config, session_dir, io, &deps),
+            ConfigCommands::Show(show) => execute_config_show(show, config, session_dir, io, &deps),
+            ConfigCommands::Sources => execute_config_sources(config, session_dir, io, &deps),
+            ConfigCommands::Explain(explain) => {
+                execute_config_explain(explain, config, session_dir, io, &deps)
+            }
+            ConfigCommands::Settings => execute_config_settings(io),
         },
+        Commands::Memory(command) => memory_cmd::execute_with_io(command, io, &deps),
     }
 }
 
@@ -661,36 +694,335 @@ fn execute_config_validate(
     io: &mut CliIo<'_>,
     deps: &CliDeps,
 ) -> i32 {
+    match load_config_for_cli(config, session_dir, io, deps, "config validation failed") {
+        Ok(loaded) => {
+            let _ = writeln!(io.stdout, "config valid: {}", loaded.path_display());
+            0
+        }
+        Err(code) => code,
+    }
+}
+
+fn execute_config_show(
+    show: ConfigShowCommand,
+    config: Option<PathBuf>,
+    session_dir: Option<PathBuf>,
+    io: &mut CliIo<'_>,
+    deps: &CliDeps,
+) -> i32 {
+    if !show.effective {
+        let _ = writeln!(
+            io.stderr,
+            "config show requires --effective (prints redacted merged config with source layers)"
+        );
+        return 2;
+    }
+
+    let loaded = match load_config_for_cli(config, session_dir, io, deps, "config show failed") {
+        Ok(loaded) => loaded,
+        Err(code) => return code,
+    };
+
+    match effective_config_json(&loaded) {
+        Ok(json) => {
+            let _ = writeln!(io.stdout, "{json}");
+            0
+        }
+        Err(err) => {
+            let _ = writeln!(io.stderr, "config show failed: {err}");
+            1
+        }
+    }
+}
+
+fn execute_config_sources(
+    config: Option<PathBuf>,
+    session_dir: Option<PathBuf>,
+    io: &mut CliIo<'_>,
+    deps: &CliDeps,
+) -> i32 {
+    let loaded = match load_config_for_cli(config, session_dir, io, deps, "config sources failed") {
+        Ok(loaded) => loaded,
+        Err(code) => return code,
+    };
+
+    match config_sources_json(&loaded) {
+        Ok(json) => {
+            let _ = writeln!(io.stdout, "{json}");
+            0
+        }
+        Err(err) => {
+            let _ = writeln!(io.stderr, "config sources failed: {err}");
+            1
+        }
+    }
+}
+
+fn execute_config_explain(
+    explain: ConfigExplainCommand,
+    config: Option<PathBuf>,
+    session_dir: Option<PathBuf>,
+    io: &mut CliIo<'_>,
+    deps: &CliDeps,
+) -> i32 {
+    let path = explain.path.trim();
+    if path.is_empty() {
+        let _ = writeln!(
+            io.stderr,
+            "config explain requires a dotted path (for example: model)"
+        );
+        return 2;
+    }
+
+    let loaded = match load_config_for_cli(config, session_dir, io, deps, "config explain failed") {
+        Ok(loaded) => loaded,
+        Err(code) => return code,
+    };
+
+    match config_explain_json(&loaded, path) {
+        Ok(json) => {
+            let _ = writeln!(io.stdout, "{json}");
+            0
+        }
+        Err(err) => {
+            let _ = writeln!(io.stderr, "config explain failed: {err}");
+            1
+        }
+    }
+}
+
+fn execute_config_settings(io: &mut CliIo<'_>) -> i32 {
+    match harness_core::config::settings_registry_json() {
+        Ok(json) => {
+            let _ = writeln!(io.stdout, "{json}");
+            0
+        }
+        Err(err) => {
+            let _ = writeln!(io.stderr, "config settings failed: {err}");
+            1
+        }
+    }
+}
+
+fn load_config_for_cli(
+    config: Option<PathBuf>,
+    session_dir: Option<PathBuf>,
+    io: &mut CliIo<'_>,
+    deps: &CliDeps,
+    error_prefix: &str,
+) -> Result<harness_core::config::LoadedConfig, i32> {
     let config_context = match deps.config_load_context() {
         Ok(context) => context,
         Err(err) => {
             let _ = writeln!(
                 io.stderr,
-                "config validation failed: failed to resolve config context: {err}"
+                "{error_prefix}: failed to resolve config context: {err}"
             );
-            return 2;
+            return Err(2);
         }
     };
-    let Some(loaded) = (match load_resolved_config_with_context(config.as_deref(), &config_context)
-    {
-        Ok(loaded) => loaded,
-        Err(err) => {
-            let _ = writeln!(io.stderr, "config validation failed: {err}");
-            return 1;
-        }
-    }) else {
+    let Some(mut loaded) =
+        (match load_resolved_config_with_context(config.as_deref(), &config_context) {
+            Ok(loaded) => loaded,
+            Err(err) => {
+                let _ = writeln!(io.stderr, "{error_prefix}: {err}");
+                return Err(1);
+            }
+        })
+    else {
         let _ = writeln!(
             io.stderr,
             "no config file found; pass --config <path>, create ./harness.jsonc or ./harness.json, or create $XDG_CONFIG_HOME/harness/harness.jsonc or $XDG_CONFIG_HOME/harness/harness.json for shared defaults. A starting point lives at configs/harness.example.jsonc"
         );
-        return 2;
+        return Err(2);
     };
 
-    let path_display = loaded.path_display();
-    let mut config = loaded.config;
-    config.apply_session_dir_override(session_dir);
-    let _ = writeln!(io.stdout, "config valid: {path_display}");
-    0
+    loaded.config.apply_session_dir_override(session_dir);
+    Ok(loaded)
+}
+
+fn effective_config_json(loaded: &harness_core::config::LoadedConfig) -> Result<String, String> {
+    let raw = serde_json::to_value(&loaded.config)
+        .map_err(|err| format!("serialize effective config: {err}"))?;
+    let redacted = redact_value(&DefaultRedactor::default(), &raw);
+    let layers: Vec<String> = loaded
+        .paths
+        .iter()
+        .map(|path| path.display().to_string())
+        .collect();
+    let primary_path = effective_primary_path(loaded).map(|path| path.display().to_string());
+    let envelope = serde_json::json!({
+        "schema_version": "harness-config-effective-v1",
+        "redacted": true,
+        "layers": layers,
+        "primary_path": primary_path,
+        "effective": redacted,
+    });
+    serde_json::to_string_pretty(&envelope)
+        .map_err(|err| format!("serialize effective config envelope: {err}"))
+}
+
+fn effective_primary_path(loaded: &harness_core::config::LoadedConfig) -> Option<&std::path::Path> {
+    loaded
+        .paths
+        .iter()
+        .rev()
+        .find(|path| {
+            let name = path
+                .file_name()
+                .and_then(|value| value.to_str())
+                .unwrap_or_default();
+            name.starts_with("harness.")
+                || name == "config.jsonc"
+                || name == "config.json"
+                || name.starts_with("config.")
+        })
+        .map(PathBuf::as_path)
+        .or_else(|| loaded.primary_path())
+}
+
+fn config_sources_json(loaded: &harness_core::config::LoadedConfig) -> Result<String, String> {
+    let primary = effective_primary_path(loaded).map(|path| path.display().to_string());
+    let layers: Vec<serde_json::Value> = loaded
+        .paths
+        .iter()
+        .enumerate()
+        .map(|(index, path)| {
+            let name = path
+                .file_name()
+                .and_then(|value| value.to_str())
+                .unwrap_or_default();
+            let kind = if name.starts_with("tui.") {
+                "tui"
+            } else {
+                "runtime"
+            };
+            serde_json::json!({
+                "order": index + 1,
+                "path": path.display().to_string(),
+                "exists": path.is_file(),
+                "kind": kind,
+                "primary": primary.as_deref() == Some(&path.display().to_string()),
+            })
+        })
+        .collect();
+    let envelope = serde_json::json!({
+        "schema_version": "harness-config-sources-v1",
+        "layer_count": layers.len(),
+        "primary_path": primary,
+        "layers": layers,
+        "merge_order": "later layers override earlier layers",
+    });
+    serde_json::to_string_pretty(&envelope)
+        .map_err(|err| format!("serialize config sources envelope: {err}"))
+}
+
+fn config_explain_json(
+    loaded: &harness_core::config::LoadedConfig,
+    path: &str,
+) -> Result<String, String> {
+    let segments = split_config_path(path);
+    if segments.is_empty() {
+        return Err("path is empty".to_string());
+    }
+
+    let redactor = DefaultRedactor::default();
+    let effective_raw = serde_json::to_value(&loaded.config)
+        .map_err(|err| format!("serialize effective config: {err}"))?;
+    let effective_redacted = redact_value(&redactor, &effective_raw);
+    let effective_at_path = value_at_path(&effective_redacted, &segments);
+
+    let mut layer_rows = Vec::new();
+    let mut source_path = None;
+    let mut source_value = None;
+    for layer_path in &loaded.paths {
+        let (defines_path, layer_value) = match layer_value_at_path(layer_path, &segments) {
+            Ok(Some(value)) => (true, Some(redact_value(&redactor, &value))),
+            Ok(None) => (false, None),
+            Err(err) => {
+                layer_rows.push(serde_json::json!({
+                    "path": layer_path.display().to_string(),
+                    "defines_path": false,
+                    "error": err,
+                }));
+                continue;
+            }
+        };
+        if defines_path {
+            source_path = Some(layer_path.display().to_string());
+            source_value = layer_value.clone();
+        }
+        layer_rows.push(serde_json::json!({
+            "path": layer_path.display().to_string(),
+            "defines_path": defines_path,
+            "value": layer_value,
+        }));
+    }
+
+    let found = effective_at_path.is_some() || source_value.is_some();
+    let effective = effective_at_path.cloned().or_else(|| source_value.clone());
+    let envelope = serde_json::json!({
+        "schema_version": "harness-config-explain-v1",
+        "path": path,
+        "found": found,
+        "redacted": true,
+        "effective": effective,
+        "source_path": source_path,
+        "source_value": source_value,
+        "layers": layer_rows,
+        "note": "source_path is the last discovered layer that defines the path; later layers override earlier ones",
+    });
+    serde_json::to_string_pretty(&envelope)
+        .map_err(|err| format!("serialize config explain envelope: {err}"))
+}
+
+fn split_config_path(path: &str) -> Vec<String> {
+    path.split(['.', '/'])
+        .map(str::trim)
+        .filter(|segment| !segment.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+fn value_at_path<'a>(
+    value: &'a serde_json::Value,
+    segments: &[String],
+) -> Option<&'a serde_json::Value> {
+    let mut current = value;
+    for segment in segments {
+        current = match current {
+            serde_json::Value::Object(map) => map.get(segment).or_else(|| {
+                map.iter().find_map(|(key, nested)| {
+                    if key.eq_ignore_ascii_case(segment)
+                        || key
+                            .replace('_', "")
+                            .eq_ignore_ascii_case(&segment.replace('_', "").replace('-', ""))
+                    {
+                        Some(nested)
+                    } else {
+                        None
+                    }
+                })
+            })?,
+            serde_json::Value::Array(items) => {
+                let index: usize = segment.parse().ok()?;
+                items.get(index)?
+            }
+            _ => return None,
+        };
+    }
+    Some(current)
+}
+
+fn layer_value_at_path(
+    path: &std::path::Path,
+    segments: &[String],
+) -> Result<Option<serde_json::Value>, String> {
+    let raw =
+        std::fs::read_to_string(path).map_err(|err| format!("read {}: {err}", path.display()))?;
+    let root: serde_json::Value =
+        json5::from_str(&raw).map_err(|err| format!("parse {}: {err}", path.display()))?;
+    Ok(value_at_path(&root, segments).cloned())
 }
 
 #[cfg(test)]
@@ -704,6 +1036,9 @@ mod tests {
 
     #[test]
     fn schema_command_runs_in_process_with_captured_stdout() {
+        // arrange
+        // act
+        // assert
         let mut stdin = Cursor::new(Vec::<u8>::new());
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
@@ -721,6 +1056,9 @@ mod tests {
 
     #[test]
     fn prompt_setup_error_preserves_usage_exit_code() {
+        // arrange
+        // act
+        // assert
         let mut stdin = Cursor::new(Vec::<u8>::new());
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
@@ -735,6 +1073,9 @@ mod tests {
 
     #[test]
     fn config_validate_uses_injected_filesystem_root() {
+        // arrange
+        // act
+        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         std::fs::write(
             temp.path().join("harness.jsonc"),
@@ -778,7 +1119,281 @@ mod tests {
     }
 
     #[test]
+    fn config_show_effective_emits_redacted_merged_json_with_layers() {
+        // arrange
+        // act
+        // assert
+        let temp = tempfile::tempdir().unwrap_or_abort();
+        std::fs::write(
+            temp.path().join("harness.jsonc"),
+            r#"{
+  "provider": {
+    "default": {
+      "type": "openai_compatible",
+      "name": "Local Test Provider",
+      "options": {
+        "baseURL": "http://127.0.0.1:9999/v1",
+        "apiKey": "sk-proj-super-secret-key-0123456789abcdef"
+      },
+      "models": {"mock-model": {"name": "Mock Model"}}
+    }
+  },
+  "model": "default/mock-model",
+  "agent": {"build": {"enable": true, "model": "default/mock-model"}},
+  "default_agent": "build"
+}
+"#,
+        )
+        .unwrap_or_abort();
+
+        let mut stdin = Cursor::new(Vec::<u8>::new());
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let mut io = CliIo::new(&mut stdin, &mut stdout, &mut stderr);
+
+        let outcome = run(
+            ["harness", "config", "show", "--effective"],
+            &mut io,
+            CliDeps::real().with_filesystem_root(temp.path().to_path_buf()),
+        );
+
+        assert!(
+            outcome.success(),
+            "stderr: {}",
+            String::from_utf8_lossy(&stderr)
+        );
+        let stdout_text = String::from_utf8_lossy(&stdout);
+        assert!(
+            stdout_text.contains("\"schema_version\": \"harness-config-effective-v1\""),
+            "stdout: {stdout_text}"
+        );
+        assert!(
+            stdout_text.contains("\"redacted\": true"),
+            "stdout: {stdout_text}"
+        );
+        assert!(stdout_text.contains("\"layers\""), "stdout: {stdout_text}");
+        assert!(
+            stdout_text.contains("harness.jsonc"),
+            "stdout: {stdout_text}"
+        );
+        assert!(
+            stdout_text.contains("[REDACTED_API_KEY]") || stdout_text.contains("[REDACTED"),
+            "expected api key redaction markers in stdout: {stdout_text}"
+        );
+        assert!(
+            !stdout_text.contains("sk-proj-super-secret-key-0123456789abcdef"),
+            "secret leaked in stdout: {stdout_text}"
+        );
+    }
+
+    #[test]
+    fn config_show_without_effective_flag_exits_usage() {
+        // arrange
+        // act
+        // assert
+        let mut stdin = Cursor::new(Vec::<u8>::new());
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let mut io = CliIo::new(&mut stdin, &mut stdout, &mut stderr);
+
+        let outcome = run(["harness", "config", "show"], &mut io, CliDeps::real());
+
+        assert_eq!(outcome.code, 2);
+        assert!(stdout.is_empty());
+        assert!(String::from_utf8_lossy(&stderr).contains("config show requires --effective"));
+    }
+
+    #[test]
+    fn config_settings_lists_registry_metadata_without_secret_values() {
+        // arrange
+        // act
+        // assert
+        let mut stdin = Cursor::new(Vec::<u8>::new());
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let mut io = CliIo::new(&mut stdin, &mut stdout, &mut stderr);
+
+        let outcome = run(["harness", "config", "settings"], &mut io, CliDeps::real());
+
+        assert!(
+            outcome.success(),
+            "stderr: {}",
+            String::from_utf8_lossy(&stderr)
+        );
+        let stdout_text = String::from_utf8_lossy(&stdout);
+        assert!(
+            stdout_text.contains("\"schema_version\": \"harness-settings-registry-v1\""),
+            "stdout: {stdout_text}"
+        );
+        assert!(
+            stdout_text.contains("\"setting_id\": \"model\""),
+            "stdout: {stdout_text}"
+        );
+        assert!(
+            stdout_text.contains("\"sensitivity\": \"secret\""),
+            "stdout: {stdout_text}"
+        );
+        assert!(
+            stdout_text.contains("\"metadata_only\": true"),
+            "stdout: {stdout_text}"
+        );
+        assert!(
+            !stdout_text.contains("default_value"),
+            "settings CLI must not emit default values: {stdout_text}"
+        );
+        assert!(
+            !stdout_text.contains("sk-"),
+            "settings CLI must not emit secret-looking values: {stdout_text}"
+        );
+    }
+
+    #[test]
+    fn config_sources_lists_discovered_layers() {
+        // arrange
+        // act
+        // assert
+        let temp = tempfile::tempdir().unwrap_or_abort();
+        std::fs::write(
+            temp.path().join("harness.jsonc"),
+            r#"{
+  "provider": {
+    "default": {
+      "type": "openai_compatible",
+      "name": "Local Test Provider",
+      "options": {
+        "baseURL": "http://127.0.0.1:9999/v1",
+        "apiKey": "DUMMY"
+      },
+      "models": {"mock-model": {"name": "Mock Model"}}
+    }
+  },
+  "model": "default/mock-model",
+  "agent": {"build": {"enable": true, "model": "default/mock-model"}},
+  "default_agent": "build"
+}
+"#,
+        )
+        .unwrap_or_abort();
+
+        let mut stdin = Cursor::new(Vec::<u8>::new());
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let mut io = CliIo::new(&mut stdin, &mut stdout, &mut stderr);
+
+        let outcome = run(
+            ["harness", "config", "sources"],
+            &mut io,
+            CliDeps::real().with_filesystem_root(temp.path().to_path_buf()),
+        );
+
+        assert!(
+            outcome.success(),
+            "stderr: {}",
+            String::from_utf8_lossy(&stderr)
+        );
+        let stdout_text = String::from_utf8_lossy(&stdout);
+        assert!(
+            stdout_text.contains("\"schema_version\": \"harness-config-sources-v1\""),
+            "stdout: {stdout_text}"
+        );
+        assert!(
+            stdout_text.contains("harness.jsonc"),
+            "stdout: {stdout_text}"
+        );
+        assert!(
+            stdout_text.contains("\"kind\": \"runtime\""),
+            "stdout: {stdout_text}"
+        );
+    }
+
+    #[test]
+    fn config_explain_attributes_overridden_path_to_project_layer() {
+        // arrange
+        // act
+        // assert
+        let temp = tempfile::tempdir().unwrap_or_abort();
+        let xdg = temp.path().join("xdg");
+        let project = temp.path().join("project");
+        std::fs::create_dir_all(xdg.join("harness")).unwrap_or_abort();
+        std::fs::create_dir_all(&project).unwrap_or_abort();
+
+        std::fs::write(
+            xdg.join("harness/harness.jsonc"),
+            r#"{
+  "provider": {
+    "default": {
+      "type": "openai_compatible",
+      "name": "Global Provider",
+      "options": {
+        "baseURL": "http://127.0.0.1:9999/v1",
+        "apiKey": "sk-proj-global-secret-0123456789abcdef"
+      },
+      "models": {"mock-model": {"name": "Mock Model"}}
+    }
+  },
+  "model": "default/mock-model",
+  "agent": {"build": {"enable": true, "model": "default/mock-model"}},
+  "default_agent": "build"
+}
+"#,
+        )
+        .unwrap_or_abort();
+        std::fs::write(
+            project.join("harness.jsonc"),
+            r#"{
+  "model": "default/mock-model",
+  "default_agent": "build"
+}
+"#,
+        )
+        .unwrap_or_abort();
+
+        let mut stdin = Cursor::new(Vec::<u8>::new());
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let mut io = CliIo::new(&mut stdin, &mut stdout, &mut stderr);
+
+        let outcome = run(
+            ["harness", "config", "explain", "model"],
+            &mut io,
+            CliDeps::real()
+                .with_filesystem_root(project)
+                .with_env("XDG_CONFIG_HOME", xdg.display().to_string()),
+        );
+
+        assert!(
+            outcome.success(),
+            "stderr: {}",
+            String::from_utf8_lossy(&stderr)
+        );
+        let stdout_text = String::from_utf8_lossy(&stdout);
+        assert!(
+            stdout_text.contains("\"schema_version\": \"harness-config-explain-v1\""),
+            "stdout: {stdout_text}"
+        );
+        assert!(
+            stdout_text.contains("\"found\": true"),
+            "stdout: {stdout_text}"
+        );
+        assert!(
+            stdout_text.contains("\"path\": \"model\""),
+            "stdout: {stdout_text}"
+        );
+        assert!(
+            stdout_text.contains("project") && stdout_text.contains("harness.jsonc"),
+            "expected project layer attribution in stdout: {stdout_text}"
+        );
+        assert!(
+            !stdout_text.contains("sk-proj-global-secret-0123456789abcdef"),
+            "secret leaked in stdout: {stdout_text}"
+        );
+    }
+
+    #[test]
     fn cli_deps_runs_injected_command_runner() {
+        // arrange
+        // act
+        // assert
         let runner = Arc::new(RecordingRunner::new(CliCommandOutput {
             exit_code: 0,
             stdout: b"ok".to_vec(),
@@ -806,6 +1421,9 @@ mod tests {
 
     #[test]
     fn cli_deps_uses_injected_clock_factory() {
+        // arrange
+        // act
+        // assert
         let calls = Arc::new(AtomicU64::new(0));
         let observed = Arc::clone(&calls);
         let deps = CliDeps::real().with_clock_factory(move |deterministic| {
@@ -821,6 +1439,9 @@ mod tests {
 
     #[test]
     fn cli_deps_exposes_injected_provider() {
+        // arrange
+        // act
+        // assert
         let provider: Arc<dyn harness_providers::Provider> =
             Arc::new(crate::scenarios::golden_path_provider());
         let provider_clone = Arc::clone(&provider);

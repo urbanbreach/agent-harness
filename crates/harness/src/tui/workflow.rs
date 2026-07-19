@@ -14,6 +14,7 @@ use super::recover_mutex_lock;
 pub(super) enum InteractiveWorkflow {
     Startup,
     NewSession,
+    NewWorktreeSession,
     Continue { run_id: String, run_dir: PathBuf },
     Replay { run_dir: PathBuf },
     Quit,
@@ -61,10 +62,12 @@ pub(super) async fn run_interactive_workflow_loop<
     LoadStartupEntries,
     StartupRunner,
     NewSessionRunner,
+    NewWorktreeSessionRunner,
     ContinueRunner,
     ReplayRunner,
     StartupFuture,
     NewSessionFuture,
+    NewWorktreeSessionFuture,
     ContinueFuture,
     ReplayFuture,
 >(
@@ -72,6 +75,7 @@ pub(super) async fn run_interactive_workflow_loop<
     mut load_startup_entries: LoadStartupEntries,
     mut run_startup: StartupRunner,
     mut run_new_session: NewSessionRunner,
+    mut run_new_worktree_session: NewWorktreeSessionRunner,
     mut run_continue: ContinueRunner,
     mut run_replay: ReplayRunner,
 ) -> Result<(), String>
@@ -81,6 +85,8 @@ where
     StartupFuture: Future<Output = Result<InteractiveWorkflow, String>>,
     NewSessionRunner: FnMut() -> NewSessionFuture,
     NewSessionFuture: Future<Output = Result<InteractiveWorkflow, String>>,
+    NewWorktreeSessionRunner: FnMut() -> NewWorktreeSessionFuture,
+    NewWorktreeSessionFuture: Future<Output = Result<InteractiveWorkflow, String>>,
     ContinueRunner: FnMut(String, PathBuf) -> ContinueFuture,
     ContinueFuture: Future<Output = Result<InteractiveWorkflow, String>>,
     ReplayRunner: FnMut(PathBuf) -> ReplayFuture,
@@ -91,6 +97,7 @@ where
         workflow = match workflow {
             InteractiveWorkflow::Startup => run_startup(load_startup_entries()?).await?,
             InteractiveWorkflow::NewSession => run_new_session().await?,
+            InteractiveWorkflow::NewWorktreeSession => run_new_worktree_session().await?,
             InteractiveWorkflow::Continue { run_id, run_dir } => {
                 run_continue(run_id, run_dir).await?
             }
@@ -103,6 +110,7 @@ where
 pub(super) fn map_startup_intent_to_workflow(intent: Option<UiIntent>) -> InteractiveWorkflow {
     match intent {
         Some(UiIntent::NewSession) => InteractiveWorkflow::NewSession,
+        Some(UiIntent::NewWorktreeSession) => InteractiveWorkflow::NewWorktreeSession,
         Some(UiIntent::ReplaySession { run_dir, .. }) => InteractiveWorkflow::Replay { run_dir },
         Some(UiIntent::ContinueSession { run_id, run_dir }) => {
             InteractiveWorkflow::Continue { run_id, run_dir }
@@ -117,6 +125,7 @@ pub(super) fn map_startup_intent_to_workflow(intent: Option<UiIntent>) -> Intera
         | Some(UiIntent::OpenAuthManager { .. })
         | Some(UiIntent::CompactSession)
         | Some(UiIntent::BackgroundForegroundSubagents)
+        | Some(UiIntent::DemoteForegroundChildTask { .. })
         | Some(UiIntent::InterruptSession { .. })
         | Some(UiIntent::ForkSession { .. })
         | Some(UiIntent::CloneSession { .. })
@@ -158,6 +167,7 @@ pub(super) fn build_live_ui_intent_router(
 pub(super) fn live_workflow_from_intent(intent: &UiIntent) -> Option<InteractiveWorkflow> {
     match intent {
         UiIntent::NewSession => Some(InteractiveWorkflow::NewSession),
+        UiIntent::NewWorktreeSession => Some(InteractiveWorkflow::NewWorktreeSession),
         UiIntent::ReplaySession { run_dir, .. } => Some(InteractiveWorkflow::Replay {
             run_dir: run_dir.clone(),
         }),
@@ -171,6 +181,7 @@ pub(super) fn live_workflow_from_intent(intent: &UiIntent) -> Option<Interactive
         | UiIntent::OpenAuthManager { .. }
         | UiIntent::CompactSession
         | UiIntent::BackgroundForegroundSubagents
+        | UiIntent::DemoteForegroundChildTask { .. }
         | UiIntent::InterruptSession { .. }
         | UiIntent::ForkSession { .. }
         | UiIntent::CloneSession { .. }
@@ -191,6 +202,7 @@ fn forward_intent_to_live_run(intent: &UiIntent) -> bool {
             | UiIntent::OpenAuthManager { .. }
             | UiIntent::CompactSession
             | UiIntent::BackgroundForegroundSubagents
+            | UiIntent::DemoteForegroundChildTask { .. }
             | UiIntent::InterruptSession { .. }
             | UiIntent::ForkSession { .. }
             | UiIntent::CloneSession { .. }

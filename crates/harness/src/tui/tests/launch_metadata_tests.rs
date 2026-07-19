@@ -2,6 +2,9 @@ use super::*;
 
 #[test]
 fn continue_launch_metadata_preserves_cross_profile_switch_options() {
+    // arrange
+    // act
+    // assert
     let continue_metadata = LaunchMetadata::from_model_ref("build", "default:gpt-5.4-mini")
         .with_available_models(vec![ModelOption::from_model_ref(
             "build",
@@ -19,6 +22,9 @@ fn continue_launch_metadata_preserves_cross_profile_switch_options() {
 
 #[test]
 fn continue_metadata_prefers_recorded_runtime_context_before_event_inference() {
+    // arrange
+    // act
+    // assert
     let historical_events = vec![EventEnvelopeV1 {
         schema_version: 1,
         event_id: "evt-0001".to_string(),
@@ -79,6 +85,9 @@ fn continue_metadata_prefers_recorded_runtime_context_before_event_inference() {
 
 #[test]
 fn replay_launch_metadata_prefers_recorded_runtime_context_before_event_inference() {
+    // arrange
+    // act
+    // assert
     let historical_events = vec![EventEnvelopeV1 {
         schema_version: 1,
         event_id: "evt-0001".to_string(),
@@ -132,6 +141,9 @@ fn replay_launch_metadata_prefers_recorded_runtime_context_before_event_inferenc
 
 #[test]
 fn replay_bootstrap_falls_back_when_recorded_runtime_context_missing() {
+    // arrange
+    // act
+    // assert
     let historical_events = vec![
         EventEnvelopeV1 {
             schema_version: 1,

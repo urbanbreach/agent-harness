@@ -72,6 +72,10 @@ fn extract_harness_command_paths(readme: &str) -> std::collections::BTreeSet<Vec
         "fork",
         "clone",
         "validate",
+        "show",
+        "sources",
+        "explain",
+        "settings",
     ];
     let global_options_with_values = ["--config", "--session-dir", "-p"];
     let mut paths = std::collections::BTreeSet::new();
@@ -174,6 +178,10 @@ fn readme_command_audit_resolves_to_real_subcommands() {
     // assert
     let required = [
         vec!["config", "validate"],
+        vec!["config", "show"],
+        vec!["config", "sources"],
+        vec!["config", "explain"],
+        vec!["config", "settings"],
         vec!["doctor"],
         vec!["prompt"],
         vec!["sessions", "export"],

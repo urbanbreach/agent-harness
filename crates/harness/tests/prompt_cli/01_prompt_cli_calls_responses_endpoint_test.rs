@@ -2,6 +2,9 @@ use harness::UnwrapOrAbort;
 #[allow(clippy::clone_on_ref_ptr, reason = "trait object coercion requires .clone() not Arc::clone")]
 #[tokio::test]
 async fn prompt_cli_calls_responses_endpoint() {
+    // arrange
+    // act
+    // assert
     let provider = ScriptedPromptProvider::fixed(text_events("Hello"));
 
     let temp = tempdir().unwrap_or_abort();
@@ -39,6 +42,9 @@ async fn prompt_cli_calls_responses_endpoint() {
 #[allow(clippy::clone_on_ref_ptr, reason = "trait object coercion requires .clone() not Arc::clone")]
 #[tokio::test]
 async fn prompt_cli_expands_at_file_and_directory_tags_for_provider() {
+    // arrange
+    // act
+    // assert
     let provider = ScriptedPromptProvider::fixed(text_events("Hello"));
 
     let temp = tempdir().unwrap_or_abort();
@@ -85,6 +91,9 @@ async fn prompt_cli_expands_at_file_and_directory_tags_for_provider() {
 #[allow(clippy::clone_on_ref_ptr, reason = "trait object coercion requires .clone() not Arc::clone")]
 #[tokio::test]
 async fn prompt_cli_generates_harness_session_title() {
+    // arrange
+    // act
+    // assert
     let provider = ScriptedPromptProvider::fixed(text_events("Debugging production 500 errors"));
 
     let temp = tempdir().unwrap_or_abort();
@@ -163,6 +172,9 @@ async fn prompt_cli_generates_harness_session_title() {
 }
 #[tokio::test]
 async fn prompt_tracker_waits_for_agent_turn_end_not_provider_finish() {
+    // arrange
+    // act
+    // assert
     let provider = ScriptedPromptProvider::fixed(text_events("Hello"));
 
     let temp = tempdir().unwrap_or_abort();
@@ -257,6 +269,9 @@ async fn prompt_tracker_waits_for_agent_turn_end_not_provider_finish() {
 #[allow(clippy::clone_on_ref_ptr, reason = "trait object coercion requires .clone() not Arc::clone")]
 #[tokio::test]
 async fn prompt_cli_accepts_public_slash_style_model_refs() {
+    // arrange
+    // act
+    // assert
     let provider = ScriptedPromptProvider::fixed(text_events("Hello"));
 
     let temp = tempdir().unwrap_or_abort();
@@ -300,6 +315,9 @@ async fn prompt_cli_accepts_public_slash_style_model_refs() {
 }
 #[tokio::test]
 async fn prompt_cli_creates_durable_run_logs_under_run_dir() {
+    // arrange
+    // act
+    // assert
     let provider = ScriptedPromptProvider::fixed(text_events("Hello"));
 
     let temp = tempdir().unwrap_or_abort();

@@ -39,6 +39,7 @@ fn test_lanes_declares_core_evidence_modes() {
         "signoff-live",
         "signoff-native",
         "signoff-parity",
+        "signoff-journeys",
     ] {
         assert!(
             modes.contains(mode),
@@ -143,6 +144,34 @@ fn signoff_binary_exports_smoke_artifact_dir() {
 }
 
 #[test]
+fn signoff_journeys_mode_is_fail_closed() {
+    // arrange
+    let script = fs::read_to_string(repo_root().join("scripts/test-lanes.sh")).unwrap_or_abort();
+
+    // act
+    let body = function_body(&script, "run_signoff_journeys");
+    let help_declares = script.contains("signoff-journeys")
+        && script.contains("Strict fail-closed A-JOURNEYS scaffolding");
+    let owns_owner = body.contains("crates/harness/tests/journey_signoff_test.rs")
+        && body.contains("journey_signoff_test")
+        && body.contains("HARNESS_JOURNEY_ARTIFACT_DIR");
+    let fail_closed = !body.contains("|| true")
+        && body.contains("silent skip is forbidden")
+        && body.contains("journey-lane-verdict.txt");
+
+    // assert
+    assert!(help_declares, "help/usage must document signoff-journeys");
+    assert!(
+        owns_owner,
+        "signoff-journeys must gate journey_signoff_test and export HARNESS_JOURNEY_ARTIFACT_DIR"
+    );
+    assert!(
+        fail_closed,
+        "signoff-journeys must be fail-closed (no || true; missing owner fails)"
+    );
+}
+
+#[test]
 fn signoff_pty_records_happy_path_artifact_dir() {
     // arrange
     let script = fs::read_to_string(repo_root().join("scripts/test-lanes.sh")).unwrap_or_abort();
@@ -163,6 +192,44 @@ fn signoff_pty_records_happy_path_artifact_dir() {
     // assert
     assert!(happy_path_stage);
     assert!(dual_binary_stage);
+}
+
+#[test]
+fn signoff_pty_mode_is_fail_closed() {
+    // arrange
+    let script = fs::read_to_string(repo_root().join("scripts/test-lanes.sh")).unwrap_or_abort();
+
+    // act
+    let body = function_body(&script, "run_signoff_pty");
+    let help_declares = script.contains("signoff-pty")
+        && script.contains("Strict fail-closed deterministic PTY signoff");
+    let owns_owners = body.contains("crates/harness-testkit/tests/pty_e2e.rs")
+        && body.contains("crates/harness-tui/tests/pty_e2e.rs")
+        && body.contains("crates/harness/tests/pty_happy_path_recorded.rs")
+        && body.contains("HARNESS_TUI_PTY_SIGNOFF=1")
+        && body.contains("dual_binary_cli_pty");
+    let fail_closed = !body.contains("|| true")
+        && body.contains("silent skip is forbidden")
+        && body.contains("pty-lane-verdict.txt");
+    let lists_stages = body.contains("stages=testkit_pty,tui_pty,happy_path,dual_binary");
+
+    // assert
+    assert!(
+        help_declares,
+        "help/usage must document fail-closed signoff-pty"
+    );
+    assert!(
+        owns_owners,
+        "signoff-pty must gate PTY owners and dual-binary journeys"
+    );
+    assert!(
+        fail_closed,
+        "signoff-pty must be fail-closed (no || true; missing owner fails)"
+    );
+    assert!(
+        lists_stages,
+        "signoff-pty verdict must list the stages it actually executed"
+    );
 }
 
 fn lane_modes_from_script(script: &str) -> BTreeSet<String> {

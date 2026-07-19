@@ -54,6 +54,9 @@ fn redact_tui_auth_arg_value(arg: &str) -> Option<String> {
 
 #[test]
 fn poc_display_tui_auth_args_redacts_space_separated_secrets() {
+    // arrange
+    // act
+    // assert
     let secret_token = "sk-super-secret-token-12345";
     let secret_refresh = "refresh-secret-value-67890";
     let secret_url = "https://ghe.example.com";
@@ -88,6 +91,9 @@ fn poc_display_tui_auth_args_redacts_space_separated_secrets() {
 
 #[test]
 fn poc_display_tui_auth_args_redacts_equals_separated_secrets() {
+    // arrange
+    // act
+    // assert
     let secret_token = "sk-equals-secret-token";
     let secret_refresh = "refresh-equals-secret";
     let secret_url = "https://ghe.equals.com";
@@ -118,6 +124,9 @@ fn poc_display_tui_auth_args_redacts_equals_separated_secrets() {
 
 #[test]
 fn poc_default_redactor_catches_auth_secret_patterns() {
+    // arrange
+    // act
+    // assert
     let redactor = DefaultRedactor::default();
 
     // Test various secret patterns that could appear in auth output
@@ -149,6 +158,9 @@ fn poc_default_redactor_catches_auth_secret_patterns() {
 
 #[test]
 fn poc_default_redactor_catches_url_embedded_secrets() {
+    // arrange
+    // act
+    // assert
     let redactor = DefaultRedactor::default();
 
     // URL with userinfo
@@ -170,6 +182,9 @@ fn poc_default_redactor_catches_url_embedded_secrets() {
 
 #[test]
 fn poc_default_redactor_catches_pem_private_keys() {
+    // arrange
+    // act
+    // assert
     let redactor = DefaultRedactor::default();
 
     let pem = "-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEA...\n-----END RSA PRIVATE KEY-----";

@@ -166,6 +166,9 @@ mod tests {
 
     #[test]
     fn test_copy_events_file_success() {
+        // arrange
+        // act
+        // assert
         let dir = TempDir::new().unwrap();
         let from = dir.path().join("from.jsonl");
         let to = dir.path().join("to.jsonl");
@@ -178,6 +181,9 @@ mod tests {
 
     #[test]
     fn test_copy_events_file_create_parents() {
+        // arrange
+        // act
+        // assert
         let dir = TempDir::new().unwrap();
         let from = dir.path().join("from.jsonl");
         let to = dir.path().join("nested/dir/to.jsonl");
@@ -190,6 +196,9 @@ mod tests {
 
     #[test]
     fn test_copy_events_file_source_missing_does_not_create_destination() {
+        // arrange
+        // act
+        // assert
         let dir = TempDir::new().unwrap();
         let from = dir.path().join("from.jsonl");
         let to = dir.path().join("to.jsonl");
@@ -202,6 +211,9 @@ mod tests {
 
     #[test]
     fn test_load_events_file_success() {
+        // arrange
+        // act
+        // assert
         let dir = TempDir::new().unwrap();
         let events_path = dir.path().join(EVENTS_FILE_NAME);
         write_events(&events_path, &[event("evt1", 1), event("evt2", 2)]);
@@ -215,6 +227,9 @@ mod tests {
 
     #[test]
     fn test_load_events_file_not_found() {
+        // arrange
+        // act
+        // assert
         let dir = TempDir::new().unwrap();
         let events_path = dir.path().join("non_existent.jsonl");
 
@@ -225,6 +240,9 @@ mod tests {
 
     #[test]
     fn test_load_events_file_invalid_json() {
+        // arrange
+        // act
+        // assert
         let dir = TempDir::new().unwrap();
         let events_path = dir.path().join(EVENTS_FILE_NAME);
         fs::write(&events_path, "invalid json\n").unwrap();
@@ -236,6 +254,9 @@ mod tests {
 
     #[test]
     fn test_load_events_from_run_dir_success() {
+        // arrange
+        // act
+        // assert
         let dir = TempDir::new().unwrap();
         let events_path = dir.path().join(EVENTS_FILE_NAME);
         write_events(&events_path, &[event("evt1", 1), event("evt2", 2)]);
@@ -249,6 +270,9 @@ mod tests {
 
     #[test]
     fn test_load_events_from_run_dir_not_found() {
+        // arrange
+        // act
+        // assert
         let dir = TempDir::new().unwrap();
 
         let err = load_events_from_run_dir(dir.path()).unwrap_err();
@@ -258,6 +282,9 @@ mod tests {
 
     #[test]
     fn test_load_events_from_run_dir_invalid_json() {
+        // arrange
+        // act
+        // assert
         let dir = TempDir::new().unwrap();
         fs::write(dir.path().join(EVENTS_FILE_NAME), "invalid json\n").unwrap();
 

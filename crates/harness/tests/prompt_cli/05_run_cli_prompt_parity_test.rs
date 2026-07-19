@@ -1,6 +1,9 @@
 use harness::UnwrapOrAbort;
 #[test]
 fn run_cli_mock_positional_message_prints_assistant_text() {
+    // arrange
+    // act
+    // assert
     let temp = tempdir().unwrap_or_abort();
 
     let output = run_harness_in(temp.path(), ["run", "--mock", "hello"]);
@@ -16,6 +19,9 @@ fn run_cli_mock_positional_message_prints_assistant_text() {
 
 #[test]
 fn run_cli_reads_piped_stdin_without_stdin_flag() {
+    // arrange
+    // act
+    // assert
     let temp = tempdir().unwrap_or_abort();
     let out_path = temp.path().join("events-pipe.jsonl");
 
@@ -42,6 +48,9 @@ fn run_cli_reads_piped_stdin_without_stdin_flag() {
 
 #[test]
 fn run_cli_combines_positional_message_and_piped_stdin() {
+    // arrange
+    // act
+    // assert
     let temp = tempdir().unwrap_or_abort();
     let out_path = temp.path().join("events-arg-pipe.jsonl");
 
@@ -69,6 +78,9 @@ fn run_cli_combines_positional_message_and_piped_stdin() {
 
 #[test]
 fn run_cli_no_input_on_tty_exits_quickly_with_clear_error() {
+    // arrange
+    // act
+    // assert
     let temp = tempdir().unwrap_or_abort();
 
     let output = run_harness_in(temp.path(), ["run", "--mock"]);
@@ -80,6 +92,9 @@ fn run_cli_no_input_on_tty_exits_quickly_with_clear_error() {
 #[allow(clippy::clone_on_ref_ptr, reason = "trait object coercion requires .clone() not Arc::clone")]
 #[test]
 fn run_cli_mock_model_and_agent_selector_fails_clearly_when_agent_is_unknown() {
+    // arrange
+    // act
+    // assert
     let temp = tempdir().unwrap_or_abort();
 
     let output = run_harness_in(
@@ -103,6 +118,9 @@ fn run_cli_mock_model_and_agent_selector_fails_clearly_when_agent_is_unknown() {
 #[allow(clippy::clone_on_ref_ptr, reason = "trait object coercion requires .clone() not Arc::clone")]
 #[tokio::test]
 async fn run_cli_explicit_session_resumes_prompt_session() {
+    // arrange
+    // act
+    // assert
     let provider = ScriptedPromptProvider::fixed(text_events("Hello"));
     let temp = tempdir().unwrap_or_abort();
     let config_path = temp.path().join("harness.resume.jsonc");
@@ -142,6 +160,9 @@ async fn run_cli_explicit_session_resumes_prompt_session() {
 
 #[tokio::test]
 async fn run_cli_continue_resumes_latest_resumable_session() {
+    // arrange
+    // act
+    // assert
     let provider = ScriptedPromptProvider::fixed(text_events("Hello"));
     let temp = tempdir().unwrap_or_abort();
     let config_path = temp.path().join("harness.continue.jsonc");
@@ -181,6 +202,9 @@ async fn run_cli_continue_resumes_latest_resumable_session() {
 #[allow(clippy::clone_on_ref_ptr, reason = "trait object coercion requires .clone() not Arc::clone")]
 #[test]
 fn run_cli_json_format_emits_jsonl_only() {
+    // arrange
+    // act
+    // assert
     let temp = tempdir().unwrap_or_abort();
 
     let output = run_harness_in(temp.path(), ["run", "--format", "json", "--mock", "hi"]);
@@ -200,6 +224,9 @@ fn run_cli_json_format_emits_jsonl_only() {
 #[allow(clippy::clone_on_ref_ptr, reason = "trait object coercion requires .clone() not Arc::clone")]
 #[tokio::test]
 async fn run_cli_file_flag_expands_text_file_context() {
+    // arrange
+    // act
+    // assert
     let provider = ScriptedPromptProvider::fixed(text_events("Hello"));
     let temp = tempdir().unwrap_or_abort();
     let config_path = temp.path().join("harness.file.jsonc");
@@ -238,6 +265,9 @@ async fn run_cli_file_flag_expands_text_file_context() {
 
 #[test]
 fn run_cli_missing_file_fails_before_provider_call() {
+    // arrange
+    // act
+    // assert
     let temp = tempdir().unwrap_or_abort();
 
     let output = run_harness_in(temp.path(), ["run", "--mock", "-f", "missing.txt", "hi"]);
@@ -248,6 +278,9 @@ fn run_cli_missing_file_fails_before_provider_call() {
 
 #[test]
 fn run_cli_first_slice_unsupported_flags_fail_clearly() {
+    // arrange
+    // act
+    // assert
     let temp = tempdir().unwrap_or_abort();
 
     let interactive = run_harness_in(temp.path(), ["run", "--interactive", "hi"]);

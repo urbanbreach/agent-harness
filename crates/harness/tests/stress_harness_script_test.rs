@@ -11,6 +11,9 @@ fn stress_script_body() -> String {
 
 #[test]
 fn stress_harness_script_offline_mode_records_expected_stage_contract() {
+    // arrange
+    // act
+    // assert
     let script = stress_script_body();
 
     assert!(script.contains("stage_config_validate"));
@@ -30,6 +33,9 @@ fn stress_harness_script_offline_mode_records_expected_stage_contract() {
 
 #[test]
 fn stress_harness_script_reports_missing_option_values_cleanly() {
+    // arrange
+    // act
+    // assert
     let script = stress_script_body();
 
     assert!(script.contains("require_option_value()"));
@@ -45,6 +51,9 @@ fn stress_harness_script_reports_missing_option_values_cleanly() {
 
 #[test]
 fn stress_harness_script_accepts_relative_artifact_dir_with_missing_parent() {
+    // arrange
+    // act
+    // assert
     let script = stress_script_body();
 
     assert!(script.contains("artifact_root=\"$(abspath \"$artifact_root\")\""));

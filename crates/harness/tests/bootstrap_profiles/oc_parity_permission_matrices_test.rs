@@ -51,6 +51,9 @@ fn assert_policy_ask(policy: &PermissionPolicy, profile: &str, kind: PermissionK
 
 #[test]
 fn oc_parity_build_bash_and_edit_allow_without_ask() {
+    // arrange
+    // act
+    // assert
     let (config, coordinator) = load_example_coordinator();
     let policy = &coordinator.permission_policy;
 
@@ -112,6 +115,9 @@ fn oc_parity_build_bash_and_edit_allow_without_ask() {
 
 #[test]
 fn oc_parity_general_task_allow_and_todowrite_deny() {
+    // arrange
+    // act
+    // assert
     let (config, coordinator) = load_example_coordinator();
     let policy = &coordinator.permission_policy;
     let general_profile = &coordinator.agent_profiles["general"];
@@ -178,6 +184,9 @@ fn oc_parity_general_task_allow_and_todowrite_deny() {
 
 #[test]
 fn oc_parity_plan_shell_ask_and_plan_file_edit_matrix() {
+    // arrange
+    // act
+    // assert
     let (_config, coordinator) = load_example_coordinator();
     let policy = &coordinator.permission_policy;
 
@@ -210,6 +219,9 @@ fn oc_parity_plan_shell_ask_and_plan_file_edit_matrix() {
 
 #[test]
 fn oc_parity_explore_read_search_allow_and_edit_task_deny() {
+    // arrange
+    // act
+    // assert
     let (_config, coordinator) = load_example_coordinator();
     let policy = &coordinator.permission_policy;
     let explore = &coordinator.agent_profiles["explore"];
@@ -252,6 +264,9 @@ fn oc_parity_explore_read_search_allow_and_edit_task_deny() {
 
 #[test]
 fn oc_parity_example_config_does_not_force_ask_all_scalar() {
+    // arrange
+    // act
+    // assert
     let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let example_path = repo_root.join("configs/harness.example.jsonc");
     let raw = fs::read_to_string(&example_path).unwrap_or_abort();

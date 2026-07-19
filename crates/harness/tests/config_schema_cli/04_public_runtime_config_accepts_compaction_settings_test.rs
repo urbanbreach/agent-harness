@@ -1,6 +1,9 @@
 use harness::UnwrapOrAbort;
 #[test]
 fn public_runtime_config_accepts_compaction_settings() {
+    // arrange
+    // act
+    // assert
     let parsed: PublicRuntimeConfig = json5::from_str(
         r#"
         {
@@ -32,6 +35,9 @@ fn public_runtime_config_accepts_compaction_settings() {
 }
 #[test]
 fn public_runtime_config_accepts_new_compaction_settings() {
+    // arrange
+    // act
+    // assert
     let parsed: PublicRuntimeConfig = json5::from_str(
         r#"
         {
@@ -54,6 +60,9 @@ fn public_runtime_config_accepts_new_compaction_settings() {
 
 #[test]
 fn public_runtime_config_accepts_provider_retry_settings() {
+    // arrange
+    // act
+    // assert
     let parsed: PublicRuntimeConfig = json5::from_str(
         r#"
         {
@@ -75,6 +84,9 @@ fn public_runtime_config_accepts_provider_retry_settings() {
 }
 #[test]
 fn root_runtime_example_uses_canonical_public_keys() {
+    // arrange
+    // act
+    // assert
     let root_example =
         fs::read_to_string(repo_root().join("harness.jsonc")).unwrap_or_abort();
 

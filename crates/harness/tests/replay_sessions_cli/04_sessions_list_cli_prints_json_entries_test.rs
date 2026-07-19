@@ -1,6 +1,9 @@
 use harness::UnwrapOrAbort;
 #[test]
 fn sessions_list_cli_prints_json_entries() {
+    // arrange
+    // act
+    // assert
     let session_dir = tempdir().unwrap_or_abort();
     let run_dir = session_dir.path().join("run_json");
     std::fs::create_dir_all(&run_dir).unwrap_or_abort();
@@ -39,6 +42,9 @@ fn sessions_list_cli_prints_json_entries() {
 }
 #[test]
 fn sessions_reopen_json_surfaces_prompt_context_child_sessions_and_artifacts() {
+    // arrange
+    // act
+    // assert
     let session_dir = tempdir().unwrap_or_abort();
     let run_dir = session_dir.path().join("resume_fixture_dir");
     std::fs::create_dir_all(&run_dir).unwrap_or_abort();
@@ -270,6 +276,9 @@ fn sessions_reopen_json_surfaces_prompt_context_child_sessions_and_artifacts() {
 }
 #[test]
 fn sessions_surfaces_checkpoint_artifacts_in_catalog_and_recovery_views() {
+    // arrange
+    // act
+    // assert
     let session_dir = tempdir().unwrap_or_abort();
     let run_dir = session_dir.path().join("run_checkpoint_artifacts");
     std::fs::create_dir_all(&run_dir).unwrap_or_abort();

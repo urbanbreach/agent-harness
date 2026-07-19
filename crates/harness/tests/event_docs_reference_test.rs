@@ -47,6 +47,9 @@ fn documented_event_variants(doc: &str) -> BTreeSet<String> {
 
 #[test]
 fn architecture_event_docs_match_event_v1_variants() {
+    // arrange
+    // act
+    // assert
     let root = repo_root();
     let event_source =
         std::fs::read_to_string(root.join("crates/harness-core/src/event.rs")).unwrap_or_abort();

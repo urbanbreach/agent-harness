@@ -98,6 +98,9 @@ mod tests {
 
     #[test]
     fn test_default_log_path() {
+        // arrange
+        // act
+        // assert
         let run_dir = Path::new("harness_run");
         let expected = Path::new("harness_run/logs/harness.log");
         assert_eq!(default_log_path(run_dir), expected);

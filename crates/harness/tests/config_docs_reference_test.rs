@@ -85,6 +85,9 @@ fn shipped_builtin_skill_entries() -> Vec<(String, String)> {
 
 #[test]
 fn config_docs_runtime_and_tui_keys_match_generated_schemas() {
+    // arrange
+    // act
+    // assert
     let contract = public_config_contract();
     let runtime_schema = harness_schema_pretty_json().unwrap_or_abort();
     let runtime_schema: serde_json::Value = serde_json::from_str(&runtime_schema).unwrap_or_abort();

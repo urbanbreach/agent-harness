@@ -67,8 +67,10 @@ pub fn build_interactive_coordinator_config(
     coordinator_config.compaction = cfg.runtime.compaction.clone();
     coordinator_config.provider_retry = cfg.runtime.provider_retry;
     coordinator_config.provider = Arc::new(build_provider_router(cfg)?);
-    coordinator_config.agent_profiles =
+    let (agent_profiles, agent_model_fallbacks) =
         interactive_agent_profiles_with_extra_tools(cfg, &auto_tool_ids)?;
+    coordinator_config.agent_profiles = agent_profiles;
+    coordinator_config.agent_model_fallbacks = agent_model_fallbacks;
     coordinator_config.formatter = cfg.formatter.clone();
     Ok(coordinator_config)
 }
@@ -413,16 +415,23 @@ fn markdown_prompt_body(markdown: &str) -> String {
 pub fn interactive_agent_profiles(
     cfg: &HarnessConfig,
 ) -> Result<BTreeMap<String, AgentProfile>, String> {
-    interactive_agent_profiles_with_extra_tools(cfg, &[])
+    Ok(interactive_agent_profiles_with_extra_tools(cfg, &[])?.0)
 }
 
 fn interactive_agent_profiles_with_extra_tools(
     cfg: &HarnessConfig,
     extra_tool_ids: &[String],
-) -> Result<BTreeMap<String, AgentProfile>, String> {
+) -> Result<
+    (
+        BTreeMap<String, AgentProfile>,
+        BTreeMap<String, Vec<String>>,
+    ),
+    String,
+> {
     refresh_profile_model_metadata_registry(cfg).map_err(|err| err.to_string())?;
 
     let mut profiles = BTreeMap::new();
+    let mut model_fallbacks = BTreeMap::new();
 
     let editing_surface = EditingToolSurfaceConfig {
         hashline_edit: cfg.hashline_edit,
@@ -457,6 +466,15 @@ fn interactive_agent_profiles_with_extra_tools(
             .map(provider_cache_retention)
             .unwrap_or_default();
 
+        let fallback_refs: Vec<String> = model_selection
+            .fallback
+            .iter()
+            .map(|target| target.model_ref.clone())
+            .collect();
+        if !fallback_refs.is_empty() {
+            model_fallbacks.insert(profile_name.clone(), fallback_refs);
+        }
+
         profiles.insert(
             profile_name.clone(),
             AgentProfile {
@@ -479,7 +497,7 @@ fn interactive_agent_profiles_with_extra_tools(
         );
     }
 
-    Ok(profiles)
+    Ok((profiles, model_fallbacks))
 }
 
 fn provider_cache_retention(provider: &ProviderConfig) -> harness_providers::CacheRetention {
@@ -633,6 +651,9 @@ mod tests {
 
     #[test]
     fn interactive_agent_profiles_preserve_optional_max_iters_and_temperature() {
+        // arrange
+        // act
+        // assert
         let cfg = config_fixture(
             r#"
             deep: {
@@ -661,6 +682,9 @@ mod tests {
 
     #[test]
     fn interactive_agents_preserve_configured_system_prompt_in_runtime_config() {
+        // arrange
+        // act
+        // assert
         let configured_prompt =
             "Audit the configured tool flow exactly.\nCollect hooks evidence before signoff.";
         let configured_prompt_json = configured_prompt.replace('\n', "\\n");
@@ -694,6 +718,9 @@ mod tests {
 
     #[test]
     fn interactive_agent_profiles_apply_model_profile_selection_to_runtime_model_ref() {
+        // arrange
+        // act
+        // assert
         let cfg = config_fixture(
             r#"
             build: {
@@ -711,6 +738,9 @@ mod tests {
 
     #[test]
     fn interactive_agents_require_explicit_or_discovered_system_prompt() {
+        // arrange
+        // act
+        // assert
         let cfg = config_fixture(
             r#"
             custom: {
@@ -728,6 +758,9 @@ mod tests {
 
     #[test]
     fn interactive_agent_profiles_append_auto_mcp_tools() {
+        // arrange
+        // act
+        // assert
         let cfg = config_fixture(
             r#"
             build: {
@@ -739,7 +772,7 @@ mod tests {
             "#,
         );
 
-        let profiles = interactive_agent_profiles_with_extra_tools(
+        let (profiles, _fallbacks) = interactive_agent_profiles_with_extra_tools(
             &cfg,
             &[
                 "mcp.docs-rs.search_in_crate".to_string(),
@@ -762,6 +795,9 @@ mod tests {
 
     #[test]
     fn interactive_profile_name_defaults_to_build_when_present() {
+        // arrange
+        // act
+        // assert
         let cfg = config_fixture(
             r#"
             build: {
@@ -777,6 +813,9 @@ mod tests {
 
     #[test]
     fn interactive_profile_name_uses_first_available_profile_without_build() {
+        // arrange
+        // act
+        // assert
         let cfg = config_fixture(
             r#"
             deep: {
@@ -792,6 +831,9 @@ mod tests {
 
     #[test]
     fn shipped_example_config_seeds_build_plan_and_subagents() {
+        // arrange
+        // act
+        // assert
         let config_path = crate::cli_config::shipped_example_config_path();
         let cfg = load_config_from_file(&config_path).unwrap_or_abort();
 
@@ -870,6 +912,9 @@ mod tests {
 
     #[test]
     fn task_tool_description_lists_available_subagents_for_build() {
+        // arrange
+        // act
+        // assert
         let config_path = crate::cli_config::shipped_example_config_path();
         let cfg = load_config_from_file(&config_path).unwrap_or_abort();
         let coordinator_config = build_interactive_coordinator_config(&cfg).unwrap_or_abort();
@@ -886,6 +931,9 @@ mod tests {
 
     #[test]
     fn skill_tool_description_lists_available_skills_for_build() {
+        // arrange
+        // act
+        // assert
         let config_path = crate::cli_config::shipped_example_config_path();
         let cfg = load_config_from_file(&config_path).unwrap_or_abort();
         let coordinator_config = build_interactive_coordinator_config(&cfg).unwrap_or_abort();
@@ -902,6 +950,9 @@ mod tests {
 
     #[test]
     fn task_tool_description_respects_plan_delegation_boundary() {
+        // arrange
+        // act
+        // assert
         let config_path = crate::cli_config::shipped_example_config_path();
         let cfg = load_config_from_file(&config_path).unwrap_or_abort();
         let coordinator_config = build_interactive_coordinator_config(&cfg).unwrap_or_abort();
@@ -914,6 +965,9 @@ mod tests {
 
     #[test]
     fn task_tool_description_filters_denied_subagents() {
+        // arrange
+        // act
+        // assert
         let cfg = config_fixture(
             r#"
             build: {
