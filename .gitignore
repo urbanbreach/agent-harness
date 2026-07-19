@@ -32,3 +32,13 @@ inspirations/
 # Local environment secrets / credentials
 .env
 *.env
+
+# Test probe directories (created by integration/e2e tests)
+.harness-*-probe*/
+.harness-foreign-probe*/
+
+# Local scratch / probe artifacts
+/check_home.sh
+/harness.json
+/src/
+crates/harness/harness.json
