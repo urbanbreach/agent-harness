@@ -52,19 +52,93 @@ fn build_user_render_surface(
     let content_width = transcript_surface_content_width(render_width, false);
     let agent_accent = theme.agent_accent(&turn.header.profile_label);
     let body_style = Style::default().fg(theme.text.primary);
+    let lines = build_user_surface_lines(
+        user_msg,
+        theme,
+        content_width,
+        surface,
+        agent_accent,
+        body_style,
+    );
+
+    TranscriptRenderSurface {
+        kind: TranscriptRenderSurfaceKind::User,
+        show_outer_rail: false,
+        rail_glyph: TRANSCRIPT_RAIL_GLYPH,
+        rail_color: agent_accent,
+        surface,
+        lines,
+        interaction_rows: None,
+        selection_rows: None,
+        diff_hunk_offsets: Vec::new(),
+        selected_rail: false,
+    }
+}
+
+/// Grok SCROLL freeze packs max text on the first user row, then right-aligns the
+/// wall clock into remaining space. Prefer full-width wrap + pack; only re-wrap
+/// with a first-line reserve when the clock cannot fit on the first content row.
+fn build_user_surface_lines(
+    user_msg: &TranscriptUserMessageSection,
+    theme: &Theme,
+    content_width: u16,
+    surface: Color,
+    agent_accent: Color,
+    body_style: Style,
+) -> Vec<Line<'static>> {
+    let clock = user_msg.wall_clock.as_deref();
+    let reserve = clock
+        .map(|value| display_width(value).saturating_add(1))
+        .unwrap_or(0);
+    let mut lines = assemble_user_surface_lines(
+        user_msg,
+        theme,
+        content_width,
+        surface,
+        agent_accent,
+        body_style,
+        0,
+    );
+    if let Some(clock) = clock {
+        if user_row_has_wall_clock(&lines, clock) {
+            return lines;
+        }
+        lines = assemble_user_surface_lines(
+            user_msg,
+            theme,
+            content_width,
+            surface,
+            agent_accent,
+            body_style,
+            reserve,
+        );
+    }
+    lines
+}
+
+fn assemble_user_surface_lines(
+    user_msg: &TranscriptUserMessageSection,
+    theme: &Theme,
+    content_width: u16,
+    surface: Color,
+    agent_accent: Color,
+    body_style: Style,
+    first_line_reserve: usize,
+) -> Vec<Line<'static>> {
     let mut lines = vec![user_surface_line(
         TRANSCRIPT_USER_BODY_PREFIX,
         Vec::new(),
         body_style,
         surface,
     )];
-    append_user_surface_text_block(
+    append_user_surface_text_block_with_first_line_reserve(
         &mut lines,
         &user_msg.text,
         theme.text.primary,
         TRANSCRIPT_USER_BODY_PREFIX,
         content_width,
         surface,
+        first_line_reserve,
     );
     if user_msg.queued {
         lines.push(user_surface_line(
@@ -88,27 +162,23 @@ fn build_user_render_surface(
     ));
 
     if lines.len() > 1 {
-        let marker_prefix =
-            format!("{} ", theme.live_shell.transcript_glyphs.user_marker);
-        lines[1].spans[0] =
-            surface_span(marker_prefix, Style::default().fg(theme.text.primary), surface);
+        let marker_prefix = format!("{} ", theme.live_shell.transcript_glyphs.user_marker);
+        lines[1].spans[0] = surface_span(
+            marker_prefix,
+            Style::default().fg(theme.text.primary),
+            surface,
+        );
         if let Some(clock) = user_msg.wall_clock.as_deref() {
             append_user_row_wall_clock(&mut lines[1], clock, content_width, theme, surface);
         }
     }
+    lines
+}
 
-    TranscriptRenderSurface {
-        kind: TranscriptRenderSurfaceKind::User,
-        show_outer_rail: false,
-        rail_glyph: TRANSCRIPT_RAIL_GLYPH,
-        rail_color: agent_accent,
-        surface,
-        lines,
-        interaction_rows: None,
-        selection_rows: None,
-        diff_hunk_offsets: Vec::new(),
-        selected_rail: false,
-    }
+fn user_row_has_wall_clock(lines: &[Line<'static>], clock: &str) -> bool {
+    lines
+        .get(1)
+        .is_some_and(|line| line.spans.iter().any(|span| span.content.as_ref() == clock))
 }
 
 fn append_user_row_wall_clock(
@@ -150,8 +220,7 @@ fn right_aligned_wall_clock_line(clock: &str, content_width: u16, theme: &Theme)
     }
     let pad = target.saturating_sub(clock_width);
     if pad > 0 {
-        line.spans
-            .push(Span::raw(" ".repeat(pad)));
+        line.spans.push(Span::raw(" ".repeat(pad)));
     }
     line.spans.push(Span::styled(
         clock.to_string(),
@@ -248,9 +317,9 @@ fn build_assistant_render_surfaces(
             assistant_status,
         ));
     }
-    // Grok question freeze paints no ❙ while the dock is open (Waiting on answers).
-    let paint_selected =
-        turn.header.is_selected && waiting_on_answers_label(turn).is_none();
+    let paint_selected = turn.header.is_selected
+        && waiting_on_answers_label(turn).is_none()
+        && pending_permission_tool_waiting(turn).is_none();
     apply_preferred_selected_rail(&mut surfaces, paint_selected);
     surfaces
 }
@@ -272,9 +341,9 @@ fn apply_preferred_selected_rail(surfaces: &mut [TranscriptRenderSurface], is_se
             )
         })
         .or_else(|| {
-            surfaces.iter().position(|surface| {
-                surface.kind == TranscriptRenderSurfaceKind::AssistantReasoning
-            })
+            surfaces
+                .iter()
+                .position(|surface| surface.kind == TranscriptRenderSurfaceKind::AssistantReasoning)
         });
     if let Some(idx) = preferred {
         surfaces[idx].selected_rail = true;
@@ -289,6 +358,12 @@ fn assistant_footer_target_index(turn: &TranscriptTurnSection) -> Option<usize> 
         return (turn.user_message.is_some()
             || activity_status_supports_footer_only(turn.header.status))
         .then_some(0);
+    }
+
+    // Grok PERM/QUESTION freeze: Run Write / Waiting on answers is a separate footer surface
+    // (not glued to the tool body) so layout can pin it just above the dock.
+    if pending_permission_tool_waiting(turn).is_some() || waiting_on_answers_label(turn).is_some() {
+        return Some(turn.assistant_parts.len());
     }
 
     Some(turn.assistant_parts.len() - 1)
@@ -310,9 +385,10 @@ fn assistant_part_needs_leading_gap(
 }
 
 fn turn_has_tool_parts(turn: &TranscriptTurnSection) -> bool {
-    turn.assistant_parts.iter().any(|part| {
-        matches!(part, TranscriptAssistantPart::ToolCall(_))
-    }) || !turn.tool_calls.is_empty()
+    turn.assistant_parts
+        .iter()
+        .any(|part| matches!(part, TranscriptAssistantPart::ToolCall(_)))
+        || !turn.tool_calls.is_empty()
 }
 
 fn body_is_single_line_plain(text: &str) -> bool {
@@ -385,6 +461,9 @@ fn build_assistant_part_render_surface(
     assistant_status: &str,
 ) -> TranscriptRenderSurface {
     let mut lines = Vec::new();
+    // Rows prepended before part content (selection/interaction pad must match).
+    // Body after Thought with a separate wall clock uses 2 (clock + blank).
+    let mut leading_pad_rows = usize::from(prepend_gap);
     let (
         kind,
         show_outer_rail,
@@ -441,15 +520,21 @@ fn build_assistant_part_render_surface(
                     let clock_width = display_width(clock);
                     text_width.saturating_add(clock_width) < usize::from(content_width)
                 });
+            // Grok COMPLETE: Thought → blank → wall-clock row → blank → body.
+            // DIFF DONE packs the clock on the body line instead of a dedicated row.
             if prepend_gap {
                 if let Some(clock) = turn.footer_timestamp.as_deref() {
                     if pack_clock_on_body {
                         lines.push(Line::default());
+                        leading_pad_rows = 1;
                     } else {
                         lines.push(right_aligned_wall_clock_line(clock, content_width, theme));
+                        lines.push(Line::default());
+                        leading_pad_rows = 2;
                     }
                 } else {
                     lines.push(Line::default());
+                    leading_pad_rows = 1;
                 }
             }
             let selection_rows = if !text.contains("```") {
@@ -551,13 +636,13 @@ fn build_assistant_part_render_surface(
     let mut selection_rows = selection_rows;
 
     if let Some(rows) = interaction_rows.as_mut() {
-        if prepend_gap {
+        for _ in 0..leading_pad_rows {
             rows.insert(0, None);
         }
     }
 
     if let Some(rows) = selection_rows.as_mut() {
-        if prepend_gap {
+        for _ in 0..leading_pad_rows {
             rows.insert(0, blank_selection_row(width));
         }
     }
@@ -655,8 +740,8 @@ pub(super) fn append_reasoning_block(
 
     let (title, body) = reasoning_summary(&thinking.text);
     // Grok question freeze shows Thought for while Waiting on answers (thinking phase done).
-    let completed = force_completed
-        || !matches!(status, ActivityStatus::Streaming | ActivityStatus::Queued);
+    let completed =
+        force_completed || !matches!(status, ActivityStatus::Streaming | ActivityStatus::Queued);
     if title.is_none() && body.trim().is_empty() && !completed {
         return;
     }
@@ -908,7 +993,10 @@ fn build_assistant_footer_line(
         ));
     }
 
-    if matches!(turn.header.status, ActivityStatus::Done | ActivityStatus::Error) {
+    if matches!(
+        turn.header.status,
+        ActivityStatus::Done | ActivityStatus::Error
+    ) {
         if let Some(duration_ms) = turn.header.duration_ms {
             spans.push(Span::styled(
                 format!("Worked for {}.", format_thought_duration_ms(duration_ms)),
@@ -939,7 +1027,17 @@ fn pack_waiting_on_answers_footer_line(
     content_width: u16,
 ) -> Line<'static> {
     let marker = theme.live_shell.transcript_glyphs.tool_marker;
-    let left = format!("{marker} {waiting}");
+    let left = if waiting.starts_with("Run ") {
+        match turn.header.duration_ms {
+            Some(duration_ms) => format!(
+                "{marker} {waiting} {}",
+                format_thought_duration_ms(duration_ms)
+            ),
+            None => format!("{marker} {waiting}"),
+        }
+    } else {
+        format!("{marker} {waiting}")
+    };
     let right = waiting_status_right_meta(turn);
     let target = usize::from(content_width);
     let left_width = display_width(&left);
@@ -1072,6 +1170,9 @@ mod tests {
 
     #[test]
     fn reasoning_summary_extracts_title_and_body() {
+        // arrange
+        // act
+        // assert
         let (title, body) = reasoning_summary(
             "**Continuing Quality Review**\n\nDetails.\n\n**Next section**\n\nMore.",
         );
@@ -1081,6 +1182,9 @@ mod tests {
 
     #[test]
     fn reasoning_summary_extracts_title_without_body() {
+        // arrange
+        // act
+        // assert
         let (title, body) = reasoning_summary("**Continuing Quality Review**");
         assert_eq!(title.as_deref(), Some("Continuing Quality Review"));
         assert!(body.is_empty());
@@ -1088,6 +1192,9 @@ mod tests {
 
     #[test]
     fn reasoning_summary_preserves_indented_body() {
+        // arrange
+        // act
+        // assert
         let (title, body) =
             reasoning_summary("**Continuing Quality Review**\n\n    const value = true\n");
         assert_eq!(title.as_deref(), Some("Continuing Quality Review"));
@@ -1096,6 +1203,9 @@ mod tests {
 
     #[test]
     fn reasoning_summary_rejects_inline_bold_title() {
+        // arrange
+        // act
+        // assert
         let (title, body) = reasoning_summary("**Important:** keep this in the body.");
         assert!(title.is_none());
         assert_eq!(body, "**Important:** keep this in the body.");
@@ -1103,6 +1213,9 @@ mod tests {
 
     #[test]
     fn reasoning_summary_passes_through_plain_text() {
+        // arrange
+        // act
+        // assert
         let (title, body) = reasoning_summary("Details only.");
         assert!(title.is_none());
         assert_eq!(body, "Details only.");
@@ -1110,6 +1223,9 @@ mod tests {
 
     #[test]
     fn reasoning_summary_strips_redacted_placeholder() {
+        // arrange
+        // act
+        // assert
         let (title, body) = reasoning_summary("[REDACTED]");
         assert!(title.is_none());
         assert!(body.is_empty());
@@ -1117,6 +1233,9 @@ mod tests {
 
     #[test]
     fn reasoning_summary_strips_redacted_and_extracts_title() {
+        // arrange
+        // act
+        // assert
         let (title, body) = reasoning_summary("[REDACTED]**Title**\n\nbody");
         assert_eq!(title.as_deref(), Some("Title"));
         assert_eq!(body, "body");

@@ -12,13 +12,13 @@ expression: snapshot.as_str()
                               │──────────────────────────────────────────────────────────│
                               │   Session ────────────────────────────────────────────  █│
                               │  ◆ New Session                                 Ctrl+N   █│
-                              │  ◆ New Session in Worktree          Ctrl+P → worktree   █│
+                              │  ◆ New Session in Worktree                     Ctrl+W   █│
                               │  ◆ Agent Dashboard                         /dashboard   █│
                               │  ◆ Back to Home                                 /home   █│
                               │  ◆ Resume Session                             /resume   █│
                               │  ◆ Rename Session                            /rename    █│
                               │  ◆ Session Info                         /session-info   █│
-                              │  ◆ Send Feedback                            /feedback   █│
+                              │  ◆ Help                                     /feedback   █│
                               │  ◆ Fork session                                         █│
                               │  ◆ Open status                               Ctrl+x s   █│
                               │  ◆ Show timestamps                                      █│

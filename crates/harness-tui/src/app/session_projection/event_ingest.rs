@@ -138,6 +138,12 @@ impl SessionProjection {
                         if entry.profile_label.is_empty() {
                             entry.profile_label = profile_label;
                         }
+                        if !entry.model_id.is_empty() && entry.model_id != data.model_id {
+                            self.pending_status_notice = Some(format!(
+                                "provider fallback: {} → {}",
+                                entry.model_id, data.model_id
+                            ));
+                        }
                         entry.model_id = data.model_id.clone();
                         entry.provider_id = data.provider_id.clone();
                         entry.request_data = Some(data.clone());

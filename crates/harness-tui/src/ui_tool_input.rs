@@ -212,6 +212,9 @@ mod tests {
 
     #[test]
     fn tool_input_label_prefers_descriptive_string_fields() {
+        // arrange
+        // act
+        // assert
         assert_eq!(
             tool_input_label(
                 r#"{"command":"ignored","query":"  find\n matches ","limit":5}"#,
@@ -223,6 +226,9 @@ mod tests {
 
     #[test]
     fn tool_input_args_preserve_json_order_and_skip_label_fields() {
+        // arrange
+        // act
+        // assert
         assert_eq!(
             tool_input_args(
                 r#"{"query":"find","offset":2,"limit":5,"include_hidden":false,"nested":{}}"#,
@@ -239,6 +245,9 @@ mod tests {
 
     #[test]
     fn tool_input_args_can_unwrap_nested_arguments_and_omit_keys() {
+        // arrange
+        // act
+        // assert
         assert_eq!(
             tool_input_args(
                 r#"{"server":"ignored","arguments":{"name":"search","tool":"grep","limit":3,"exact":true}}"#,
@@ -251,6 +260,9 @@ mod tests {
 
     #[test]
     fn compact_tool_trigger_subtitle_combines_label_and_args() {
+        // arrange
+        // act
+        // assert
         assert_eq!(
             compact_tool_trigger_subtitle(
                 Some("needle".to_string()),

@@ -441,10 +441,17 @@ impl AppState {
     }
 
     fn file_mention_workspace_root(&self) -> PathBuf {
+        self.file_mention_workspace_root_opt()
+            .unwrap_or_else(|| PathBuf::from("."))
+    }
+
+    /// Workspace root when known (session/bootstrap), without defaulting to `.`.
+    ///
+    /// Used by status-dialog edit attribution to compare on-disk digests safely.
+    pub(crate) fn file_mention_workspace_root_opt(&self) -> Option<PathBuf> {
         self.file_mention_workspace_root
             .clone()
             .or_else(|| (self.file_mention_workspace_root_provider)())
-            .unwrap_or_else(|| PathBuf::from("."))
     }
 
     fn file_mention_index_entries(&mut self, workspace_root: &Path) -> &[FileMentionEntry] {
@@ -573,6 +580,9 @@ mod tests {
 
     #[test]
     fn line_range_parser_matches_harness_suffix_behavior() {
+        // arrange
+        // act
+        // assert
         let parsed = extract_line_range("src/main.rs#12-20");
         assert_eq!(parsed.base_query, "src/main.rs");
         assert_eq!(parsed.suffix, Some("#12-20"));
@@ -584,6 +594,9 @@ mod tests {
 
     #[test]
     fn search_file_mentions_returns_directories_for_empty_query() {
+        // arrange
+        // act
+        // assert
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         std::fs::create_dir(tempdir.path().join("src")).unwrap_or_abort();
         std::fs::write(tempdir.path().join("src/lib.rs"), "lib").unwrap_or_abort();
@@ -602,6 +615,9 @@ mod tests {
 
     #[test]
     fn search_file_mentions_preserves_valid_line_range_on_file_value() {
+        // arrange
+        // act
+        // assert
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         std::fs::create_dir(tempdir.path().join("src")).unwrap_or_abort();
         std::fs::write(tempdir.path().join("src/main.rs"), "fn main() {}").unwrap_or_abort();
@@ -618,6 +634,9 @@ mod tests {
 
     #[test]
     fn search_file_mentions_prefers_shallow_workspace_directory_over_hidden_nested_match() {
+        // arrange
+        // act
+        // assert
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         std::fs::create_dir_all(tempdir.path().join(".harness/skills/.system/openai-docs"))
             .unwrap_or_abort();
@@ -642,6 +661,9 @@ mod tests {
 
     #[test]
     fn search_file_mentions_uses_frecency_before_depth_and_path() {
+        // arrange
+        // act
+        // assert
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         std::fs::create_dir_all(tempdir.path().join("src/deep")).unwrap_or_abort();
         std::fs::write(tempdir.path().join("alpha.rs"), "root").unwrap_or_abort();

@@ -64,6 +64,43 @@ impl AppState {
             .is_some_and(|parent_session_id| parent_session_id != current_session_id)
     }
 
+    pub(crate) fn focused_demote_handle_id(&self) -> Option<String> {
+        if self.replay_mode {
+            return None;
+        }
+
+        if let Some(activity) = self
+            .activities
+            .get(self.transcript_view.selected_activity_index)
+        {
+            for tool_call in &activity.tool_calls {
+                if let Some(handle_id) = Self::task_tool_child_request_id(tool_call) {
+                    return Some(handle_id);
+                }
+            }
+        }
+
+        if !self.current_subagent_session_present() {
+            return None;
+        }
+        let current_session_id = self.current_session_id()?;
+        let parent_snapshot = self.session_navigation_stack.last();
+        let task = parent_snapshot
+            .and_then(|snapshot| child_task_info_from_events(&snapshot.events, current_session_id))
+            .or_else(|| {
+                let parent_session_id = self.current_parent_session_id()?;
+                self.session_path_for_id(&parent_session_id)
+                    .and_then(|path| {
+                        session_navigation_snapshot_from_path(&path, &self.launch_metadata).ok()
+                    })
+                    .and_then(|snapshot| {
+                        child_task_info_from_events(&snapshot.events, current_session_id)
+                    })
+            })?;
+        task.request_id
+            .and_then(|id| non_empty_trimmed(&id).map(str::to_string))
+    }
+
     pub(crate) fn current_subagent_session_info(&self) -> Option<SubagentSessionInfo> {
         let current_session_id = self.current_session_id()?;
         let parent_snapshot = self.session_navigation_stack.last();
@@ -637,6 +674,9 @@ mod tests {
 
     #[test]
     fn subagent_session_info_matches_reference_footer_contract() {
+        // arrange
+        // act
+        // assert
         let mut app = AppState::new_live(None, false, None);
         app.session_path = Some(PathBuf::from("/tmp/harness-subagent-parent/parent_run"));
         app.ingest_event(event(
@@ -724,6 +764,9 @@ mod tests {
 
     #[test]
     fn parent_session_with_child_lineage_is_not_its_own_subagent() {
+        // arrange
+        // act
+        // assert
         let mut app = AppState::new_replay(
             PathBuf::from("/tmp/harness-subagent-parent/parent_run"),
             vec![event(
@@ -759,6 +802,9 @@ mod tests {
 
     #[test]
     fn subagent_session_info_uses_spawned_profile_when_task_args_omit_label() {
+        // arrange
+        // act
+        // assert
         let mut app = AppState::new_live(None, false, None);
         app.session_path = Some(PathBuf::from("/tmp/harness-subagent-parent/parent_run"));
         app.ingest_event(event(
@@ -803,6 +849,9 @@ mod tests {
 
     #[test]
     fn session_path_for_id_rejects_unsafe_event_derived_ids() {
+        // arrange
+        // act
+        // assert
         let mut app = AppState::new_live(None, false, None);
         app.session_path = Some(PathBuf::from("/tmp/harness-sessions/parent_run"));
 

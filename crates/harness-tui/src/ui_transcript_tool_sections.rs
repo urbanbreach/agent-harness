@@ -81,12 +81,14 @@ pub(super) fn build_transcript_tool_call_section(
         "fs.read" | "read" => {
             let path = tool_path_display(tool_call);
             let title = match tool_call.status {
-                ToolCallDisplayStatus::Succeeded => completed_read_tool_title(tool_call, path.as_deref()),
+                ToolCallDisplayStatus::Succeeded => {
+                    completed_read_tool_title(tool_call, path.as_deref())
+                }
                 ToolCallDisplayStatus::Running
                 | ToolCallDisplayStatus::PendingPermission
                 | ToolCallDisplayStatus::Queued
                 | ToolCallDisplayStatus::Failed => path.as_ref().map_or_else(
-                    || "Reading file...".to_string(),
+                    || format!("{display_tool_id} · Reading file..."),
                     |path| format!("Read {path}{}", read_tool_input_suffix(tool_call)),
                 ),
             };
@@ -670,13 +672,10 @@ fn push_tool_call_diff_blocks(
 
     let diff_artifacts = tool_call_diff_artifacts(tool_call);
     let path_already_in_title = tool_call.edit.is_some()
-        || matches!(
-            tool_call.effective_tool_id(),
-            "edit" | "write" | "fs.write"
-        );
+        || matches!(tool_call.effective_tool_id(), "edit" | "write" | "fs.write");
     let show_file_header = !path_already_in_title || diff_artifacts.len() > 1;
-    let force_stacked = stacked_diffs
-        || matches!(tool_call.effective_tool_id(), "write" | "fs.write");
+    let force_stacked =
+        stacked_diffs || matches!(tool_call.effective_tool_id(), "write" | "fs.write");
     let plain_numbered = matches!(tool_call.effective_tool_id(), "write" | "fs.write");
     let mut rendered = false;
     for (diff_rel_path, fallback_path) in diff_artifacts {
@@ -1039,10 +1038,7 @@ fn completed_list_tool_title(tool_call: &crate::app::ToolCallEntry) -> String {
     format!("Listed {count} {noun}")
 }
 
-fn completed_read_tool_title(
-    tool_call: &crate::app::ToolCallEntry,
-    _path: Option<&str>,
-) -> String {
+fn completed_read_tool_title(tool_call: &crate::app::ToolCallEntry, _path: Option<&str>) -> String {
     // Grok freeze packing: completed reads use count form ("Read 1 file"),
     // not path form. Running/failed keep path via the caller match arm.
     let count = tool_file_count(tool_call).unwrap_or(1);

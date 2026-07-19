@@ -874,7 +874,10 @@ pub(super) fn palette_dynamic_title_sidebar_reflects_state() {
     let entry = palette_model::find("session.status.open").unwrap();
 
     assert!(
-        matches!(entry.title, palette_model::DynamicTitle::Static("Open status")),
+        matches!(
+            entry.title,
+            palette_model::DynamicTitle::Static("Open status")
+        ),
         "status command must use static open-only title, not Show/Hide sidebar"
     );
     assert_eq!(
@@ -1068,6 +1071,10 @@ pub(super) fn palette_matrix_and_registry_dispatch_consistent() {
             (parity_matrix::DispatchPath::Intent, palette_model::PaletteDispatch::NewSession)
             | (
                 parity_matrix::DispatchPath::Intent,
+                palette_model::PaletteDispatch::NewWorktreeSession,
+            )
+            | (
+                parity_matrix::DispatchPath::Intent,
                 palette_model::PaletteDispatch::CompactSession,
             ) => true,
             (parity_matrix::DispatchPath::Action, palette_model::PaletteDispatch::Action(_))
@@ -1125,6 +1132,10 @@ pub(super) fn palette_exact_dispatch_targets() {
     let cases: &[(&str, PaletteDispatch)] = &[
         ("app.exit", PaletteDispatch::Action(Action::Quit)),
         (
+            "settings.list",
+            PaletteDispatch::Action(Action::OpenSettings),
+        ),
+        (
             "session.status.open",
             PaletteDispatch::Action(Action::OpenStatusDialog),
         ),
@@ -1176,7 +1187,7 @@ pub(super) fn palette_exact_dispatch_targets() {
         ("session.rename", PaletteDispatch::OpenSessionRename),
         ("session.fork", PaletteDispatch::OpenForkSelector),
         ("session.copy", PaletteDispatch::CopySessionTranscript),
-        ("session.new.worktree", PaletteDispatch::NewSession),
+        ("session.new.worktree", PaletteDispatch::NewWorktreeSession),
         (
             "session.dashboard",
             PaletteDispatch::Action(Action::OpenStatusDialog),
@@ -1196,7 +1207,7 @@ pub(super) fn palette_exact_dispatch_targets() {
         ),
         (
             "context.view_plan",
-            PaletteDispatch::Action(Action::OpenStatusDialog),
+            PaletteDispatch::Action(Action::OpenViewPlan),
         ),
         (
             "context.memory",
@@ -2252,11 +2263,21 @@ pub(super) fn palette_slash_alias_global_inventory() {
     .cloned()
     .collect();
 
-    let harness_only_ids: std::collections::HashSet<&str> =
-        ["auth", "clone", "follow", "shell", "toggles", "tree"]
-            .iter()
-            .cloned()
-            .collect();
+    let harness_only_ids: std::collections::HashSet<&str> = [
+        "auth",
+        "clone",
+        "dashboard",
+        "feedback",
+        "follow",
+        "settings",
+        "shell",
+        "toggles",
+        "tree",
+        "view-plan",
+    ]
+    .iter()
+    .cloned()
+    .collect();
 
     let mut expected_ids = harness_parity_ids.clone();
     expected_ids.extend(harness_only_ids.iter().cloned());

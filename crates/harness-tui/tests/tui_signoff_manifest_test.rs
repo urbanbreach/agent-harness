@@ -54,11 +54,7 @@ fn tui_signoff_manifest_covers_required_release_flows() {
         assert_non_empty_array(flow, "required_markers");
     }
 
-    assert_flow_names_test(
-        flows,
-        "shell_topology",
-        "shell_topology_contract_test",
-    );
+    assert_flow_names_test(flows, "shell_topology", "shell_topology_contract_test");
     assert_flow_names_test(
         flows,
         "startup",

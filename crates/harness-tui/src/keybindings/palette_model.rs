@@ -89,6 +89,7 @@ pub enum PaletteDispatch {
     OpenConnectDialog,
     /// Emit a UiIntent.
     NewSession,
+    NewWorktreeSession,
     CompactSession,
     /// Copy the full session transcript to clipboard.
     CopySessionTranscript,
@@ -100,7 +101,7 @@ impl PaletteCommandEntry {
     pub fn freeze_shortcut(&self) -> &'static str {
         match self.id {
             "session.new" => "Ctrl+N",
-            "session.new.worktree" => "Ctrl+P → worktree",
+            "session.new.worktree" => "Ctrl+W",
             "session.dashboard" => "/dashboard",
             "session.home" => "/home",
             "session.list" => "/resume",
@@ -154,10 +155,10 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         id: "session.new.worktree",
         category: PaletteCategory::Session,
         title: DynamicTitle::Static("New Session in Worktree"),
-        description: "Start a fresh session in a worktree",
+        description: "Create a git worktree and start a fresh session rooted in it",
         suggested: SuggestedRule::Never,
         harness_only: false,
-        dispatch: PaletteDispatch::NewSession,
+        dispatch: PaletteDispatch::NewWorktreeSession,
     },
     PaletteCommandEntry {
         id: "session.dashboard",
@@ -207,8 +208,8 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
     PaletteCommandEntry {
         id: "session.feedback",
         category: PaletteCategory::Session,
-        title: DynamicTitle::Static("Send Feedback"),
-        description: "Send product feedback",
+        title: DynamicTitle::Static("Help"),
+        description: "Open help (feedback action maps to help surface)",
         suggested: SuggestedRule::Never,
         harness_only: false,
         dispatch: PaletteDispatch::Action(Action::Help),
@@ -244,10 +245,10 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         id: "context.view_plan",
         category: PaletteCategory::Context,
         title: DynamicTitle::Static("View Plan"),
-        description: "View the current plan",
+        description: "View plan files for this workspace/session",
         suggested: SuggestedRule::Never,
         harness_only: false,
-        dispatch: PaletteDispatch::Action(Action::OpenStatusDialog),
+        dispatch: PaletteDispatch::Action(Action::OpenViewPlan),
     },
     PaletteCommandEntry {
         id: "context.memory",
@@ -429,6 +430,15 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
     },
     // === System ===
     PaletteCommandEntry {
+        id: "settings.list",
+        category: PaletteCategory::System,
+        title: DynamicTitle::Static("Settings"),
+        description: "Browse typed settings registry entries (read-only)",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Action(Action::OpenSettings),
+    },
+    PaletteCommandEntry {
         id: "app.exit",
         category: PaletteCategory::System,
         title: DynamicTitle::Static("Exit the app"),
@@ -606,6 +616,9 @@ mod tests {
 
     #[test]
     fn entries_have_no_duplicate_ids() {
+        // arrange
+        // act
+        // assert
         let ids: HashSet<&str> = PALETTE_COMMAND_ENTRIES.iter().map(|e| e.id).collect();
         assert_eq!(
             ids.len(),
@@ -615,7 +628,26 @@ mod tests {
     }
 
     #[test]
+    fn production_palette_entries_have_no_placeholder_dispatch() {
+        // arrange
+        // act
+        // assert
+        let placeholders: Vec<&str> = PALETTE_COMMAND_ENTRIES
+            .iter()
+            .filter(|entry| matches!(entry.dispatch, PaletteDispatch::Placeholder))
+            .map(|entry| entry.id)
+            .collect();
+        assert!(
+            placeholders.is_empty(),
+            "production palette must not advertise Placeholder dispatches: {placeholders:?}"
+        );
+    }
+
+    #[test]
     fn all_parity_matrix_included_ids_have_entries() {
+        // arrange
+        // act
+        // assert
         let entry_ids: HashSet<&str> = all_ids().into_iter().collect();
         for id in crate::keybindings::parity_matrix::included_ids() {
             assert!(
@@ -627,6 +659,9 @@ mod tests {
 
     #[test]
     fn no_excluded_ids_in_registry() {
+        // arrange
+        // act
+        // assert
         let entry_ids: HashSet<&str> = all_ids().into_iter().collect();
         for id in crate::keybindings::parity_matrix::excluded_ids() {
             assert!(
@@ -638,6 +673,9 @@ mod tests {
 
     #[test]
     fn no_hidden_non_target_ids_in_registry() {
+        // arrange
+        // act
+        // assert
         let entry_ids: HashSet<&str> = all_ids().into_iter().collect();
         for id in crate::keybindings::parity_matrix::hidden_non_target_ids() {
             assert!(
@@ -649,6 +687,9 @@ mod tests {
 
     #[test]
     fn harness_only_ids_are_prefixed() {
+        // arrange
+        // act
+        // assert
         for id in harness_only_ids() {
             assert!(
                 id.starts_with("harness."),

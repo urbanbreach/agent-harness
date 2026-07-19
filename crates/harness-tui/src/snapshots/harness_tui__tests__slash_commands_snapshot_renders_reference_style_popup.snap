@@ -1,5 +1,6 @@
 ---
 source: crates/harness-tui/src/tests.rs
+assertion_line: 717
 expression: normalized
 ---
 Buffer {
@@ -20,9 +21,9 @@ Buffer {
         "                /copy        Copy the session transcript to clipboard                               ",
         "                /exit        Quit the application                                                   ",
         "                /export      Export the session transcript to a file                                ",
+        "                /feedback    Show shortcuts and TUI controls                                        ",
         "                /follow      Toggle follow mode                                                     ",
         "                /fork        Fork session                                                           ",
-        "                /help        Show shortcuts and TUI controls                                        ",
         "            â­âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ®            ",
         "            â â¯ /                                                                      â            ",
         "            â°ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ unknown ââ¯            ",
@@ -85,21 +86,21 @@ Buffer {
         x: 86, y: 14, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
         x: 15, y: 15, fg: Reset, bg: Rgb(18, 22, 30), underline: Reset, modifier: NONE,
         x: 16, y: 15, fg: Rgb(215, 218, 224), bg: Rgb(18, 22, 30), underline: Reset, modifier: NONE,
-        x: 23, y: 15, fg: Reset, bg: Rgb(18, 22, 30), underline: Reset, modifier: NONE,
+        x: 25, y: 15, fg: Reset, bg: Rgb(18, 22, 30), underline: Reset, modifier: NONE,
         x: 29, y: 15, fg: Rgb(215, 218, 224), bg: Rgb(18, 22, 30), underline: Reset, modifier: NONE,
-        x: 47, y: 15, fg: Reset, bg: Rgb(18, 22, 30), underline: Reset, modifier: NONE,
+        x: 60, y: 15, fg: Reset, bg: Rgb(18, 22, 30), underline: Reset, modifier: NONE,
         x: 86, y: 15, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
         x: 15, y: 16, fg: Reset, bg: Rgb(18, 22, 30), underline: Reset, modifier: NONE,
         x: 16, y: 16, fg: Rgb(215, 218, 224), bg: Rgb(18, 22, 30), underline: Reset, modifier: NONE,
-        x: 21, y: 16, fg: Reset, bg: Rgb(18, 22, 30), underline: Reset, modifier: NONE,
+        x: 23, y: 16, fg: Reset, bg: Rgb(18, 22, 30), underline: Reset, modifier: NONE,
         x: 29, y: 16, fg: Rgb(215, 218, 224), bg: Rgb(18, 22, 30), underline: Reset, modifier: NONE,
-        x: 41, y: 16, fg: Reset, bg: Rgb(18, 22, 30), underline: Reset, modifier: NONE,
+        x: 47, y: 16, fg: Reset, bg: Rgb(18, 22, 30), underline: Reset, modifier: NONE,
         x: 86, y: 16, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
         x: 15, y: 17, fg: Reset, bg: Rgb(18, 22, 30), underline: Reset, modifier: NONE,
         x: 16, y: 17, fg: Rgb(215, 218, 224), bg: Rgb(18, 22, 30), underline: Reset, modifier: NONE,
         x: 21, y: 17, fg: Reset, bg: Rgb(18, 22, 30), underline: Reset, modifier: NONE,
         x: 29, y: 17, fg: Rgb(215, 218, 224), bg: Rgb(18, 22, 30), underline: Reset, modifier: NONE,
-        x: 60, y: 17, fg: Reset, bg: Rgb(18, 22, 30), underline: Reset, modifier: NONE,
+        x: 41, y: 17, fg: Reset, bg: Rgb(18, 22, 30), underline: Reset, modifier: NONE,
         x: 86, y: 17, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
         x: 77, y: 20, fg: Reset, bg: Reset, underline: Reset, modifier: DIM,
         x: 87, y: 20, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,

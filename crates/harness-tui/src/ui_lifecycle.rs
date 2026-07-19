@@ -128,10 +128,7 @@ pub(crate) fn render_startup_lifecycle_flow(
     }
 
     let surface = Color::Reset;
-    frame.render_widget(
-        Block::default().style(Style::default().bg(surface)),
-        area,
-    );
+    frame.render_widget(Block::default().style(Style::default().bg(surface)), area);
     render_startup_breadcrumb(frame, app, area, theme);
 
     if app.composer.prompt_buffer.is_empty() {
@@ -186,7 +183,12 @@ fn render_startup_breadcrumb(frame: &mut Frame, app: &AppState, area: Rect, _the
     );
 }
 
-pub(super) fn render_live_breadcrumb(frame: &mut Frame, app: &AppState, area: Rect, _theme: &Theme) {
+pub(super) fn render_live_breadcrumb(
+    frame: &mut Frame,
+    app: &AppState,
+    area: Rect,
+    _theme: &Theme,
+) {
     if area.height < LIVE_BREADCRUMB_RESERVE_ROWS {
         return;
     }
@@ -213,8 +215,13 @@ pub(super) fn render_live_breadcrumb(frame: &mut Frame, app: &AppState, area: Re
 
 /// Freeze breadcrumb right meta: `12K / 262K` (uppercase K, space slash).
 fn breadcrumb_context_meta(app: &AppState) -> Option<String> {
-    let used = app.active_context_usage()?.tokens.filter(|tokens| *tokens > 0)?;
-    let limit = app.current_context_window_tokens().filter(|limit| *limit > 0)?;
+    let used = app
+        .active_context_usage()?
+        .tokens
+        .filter(|tokens| *tokens > 0)?;
+    let limit = app
+        .current_context_window_tokens()
+        .filter(|limit| *limit > 0)?;
     Some(format!(
         "{} / {}",
         format_breadcrumb_token_count(used),
@@ -320,7 +327,9 @@ fn render_startup_clipboard_warning(frame: &mut Frame, area: Rect, theme: &Theme
     for (offset, line) in STARTUP_CLIPBOARD_WARNING_LINES.iter().enumerate() {
         let row = Rect {
             x: area.x,
-            y: area.y.saturating_add(base_y + u16::try_from(offset).unwrap_or(0)),
+            y: area
+                .y
+                .saturating_add(base_y + u16::try_from(offset).unwrap_or(0)),
             width: area.width,
             height: 1,
         };
@@ -359,9 +368,7 @@ fn welcome_panel_area(area: Rect) -> Option<Rect> {
         .clamp(20, WELCOME_PANEL_MAX_WIDTH);
     let top_pad = welcome_panel_top_pad(area);
     let height = WELCOME_PANEL_HEIGHT.min(area.height.saturating_sub(top_pad).max(8));
-    let x = area
-        .x
-        .saturating_add(area.width.saturating_sub(width) / 2);
+    let x = area.x.saturating_add(area.width.saturating_sub(width) / 2);
     let y = area.y.saturating_add(top_pad);
     Some(Rect::new(x, y, width, height))
 }
@@ -390,9 +397,7 @@ fn welcome_text_after_logo(text: &str, inner_width: usize) -> String {
 
 fn welcome_inner_lines(theme: &Theme, inner_width: usize) -> Vec<Line<'static>> {
     let surface = Color::Reset;
-    let title_style = Style::default()
-        .bg(surface)
-        .add_modifier(Modifier::BOLD);
+    let title_style = Style::default().bg(surface).add_modifier(Modifier::BOLD);
     let muted = Style::default().bg(surface);
     let body = Style::default().bg(surface);
     let logo_style = Style::default().bg(surface);
@@ -495,13 +500,9 @@ fn compact_welcome_lines(
     max_lines: usize,
 ) -> Vec<Line<'static>> {
     let surface = Color::Reset;
-    let body = Style::default()
-        .bg(surface)
-        .add_modifier(Modifier::BOLD);
+    let body = Style::default().bg(surface).add_modifier(Modifier::BOLD);
     let muted = Style::default().bg(surface);
-    let title_style = Style::default()
-        .bg(surface)
-        .add_modifier(Modifier::BOLD);
+    let title_style = Style::default().bg(surface).add_modifier(Modifier::BOLD);
     let shortcut_width = 8usize;
     let label_width = inner_width
         .saturating_sub(shortcut_width)
@@ -699,13 +700,15 @@ pub(super) fn live_empty_state_selection_surface(
     None
 }
 
-
 #[cfg(test)]
 mod breadcrumb_token_meta_tests {
     use super::{format_breadcrumb_token_count, pack_breadcrumb_line};
 
     #[test]
     fn format_breadcrumb_token_count_matches_freeze_style() {
+        // arrange
+        // act
+        // assert
         assert_eq!(format_breadcrumb_token_count(42), "42");
         assert_eq!(format_breadcrumb_token_count(1_500), "1.5K");
         assert_eq!(format_breadcrumb_token_count(10_000), "10K");
@@ -715,14 +718,23 @@ mod breadcrumb_token_meta_tests {
 
     #[test]
     fn pack_breadcrumb_line_right_aligns_token_meta() {
+        // arrange
+        // act
+        // assert
         let packed = pack_breadcrumb_line("   main ~/proj", Some("12K / 262K"), 40);
         assert!(packed.ends_with("12K / 262K"), "packed={packed:?}");
         assert_eq!(super::super::display_width(&packed), 40);
-        assert!(packed.contains("main") || packed.contains("proj"), "packed={packed:?}");
+        assert!(
+            packed.contains("main") || packed.contains("proj"),
+            "packed={packed:?}"
+        );
     }
 
     #[test]
     fn pack_breadcrumb_line_without_meta_truncates_left_only() {
+        // arrange
+        // act
+        // assert
         let packed = pack_breadcrumb_line("   main ~/very/long/path/here", None, 20);
         assert_eq!(super::super::display_width(&packed), 20);
         assert!(

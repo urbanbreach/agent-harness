@@ -267,6 +267,9 @@ pub(crate) fn failed_tool_cards_fallback_when_error_details_are_missing() {
 #[cfg(test)]
 #[test]
 fn question_tool_cards_render_answered_question_details() {
+    // arrange
+    // act
+    // assert
     let mut tool_call =
         transcript_section_model_test_tool_call("tc-question-answered", "user.question");
     tool_call.status = ToolCallDisplayStatus::Succeeded;
@@ -322,6 +325,9 @@ fn question_tool_cards_render_answered_question_details() {
 #[cfg(test)]
 #[test]
 fn question_tool_cards_render_pending_ask_title() {
+    // arrange
+    // act
+    // assert
     let mut tool_call =
         transcript_section_model_test_tool_call("tc-question-pending", "user.question");
     tool_call.status = ToolCallDisplayStatus::PendingPermission;
@@ -444,6 +450,9 @@ fn batch_write_edit_and_patch_rows_match_reference_headers() {
 
 #[test]
 fn consecutive_tool_rows_insert_single_blank_row() {
+    // arrange
+    // act
+    // assert
     let mut app = AppState::default();
     let mut activity =
         transcript_section_model_test_activity("request-tool-stacking", ActivityStatus::Done, "");
@@ -498,6 +507,9 @@ fn consecutive_tool_rows_insert_single_blank_row() {
 
 #[test]
 fn block_tool_cards_render_subtitle_inline_with_title() {
+    // arrange
+    // act
+    // assert
     let theme = Theme::default();
     let section = TranscriptToolCallSection {
         tool_call_id: "tool-agent-spawn".to_string(),
@@ -617,6 +629,9 @@ fn shell_tool_cards_render_harness_bash_panel_with_chrome_and_clamping() {
 
 #[test]
 fn shell_tool_cards_without_workdir_start_with_command_row() {
+    // arrange
+    // act
+    // assert
     let mut tool_call = transcript_section_model_test_tool_call("tc-shell-no-workdir", "bash");
     tool_call.args_summary = r#"{"command":"cargo test -p harness-tui"}"#.to_string();
     tool_call.status = ToolCallDisplayStatus::Succeeded;
@@ -662,6 +677,9 @@ fn shell_tool_cards_without_workdir_start_with_command_row() {
 
 #[test]
 fn todo_write_cards_parse_metadata_and_output_todos() {
+    // arrange
+    // act
+    // assert
     let mut metadata_call =
         transcript_section_model_test_tool_call("tc-todo-metadata", "todowrite");
     metadata_call.status = ToolCallDisplayStatus::Succeeded;
@@ -763,6 +781,9 @@ fn shell_tool_cards_render_workdir_as_reference_running_prefix() {
 
 #[test]
 fn shell_tool_cards_render_cmd_with_args_and_structured_output() {
+    // arrange
+    // act
+    // assert
     let mut tool_call = transcript_section_model_test_tool_call("tc-shell-cmd-args", "shell.run");
     tool_call.args_summary =
         r#"{"cmd":"bash","args":["-lc","printf shell-run"],"cwd":"."}"#.to_string();
@@ -800,6 +821,9 @@ fn shell_tool_cards_render_cmd_with_args_and_structured_output() {
 
 #[test]
 fn failed_structured_shell_output_does_not_duplicate_matching_error_summary() {
+    // arrange
+    // act
+    // assert
     let mut tool_call = transcript_section_model_test_tool_call("tc-shell-structured-fail", "bash");
     tool_call.args_summary = r#"{"command":"false"}"#.to_string();
     tool_call.status = ToolCallDisplayStatus::Failed;
@@ -833,6 +857,9 @@ fn failed_structured_shell_output_does_not_duplicate_matching_error_summary() {
 
 #[test]
 fn shell_tool_cards_strip_ansi_from_output() {
+    // arrange
+    // act
+    // assert
     let mut tool_call = transcript_section_model_test_tool_call("tc-shell-ansi", "bash");
     tool_call.args_summary = r#"{"command":"printf color"}"#.to_string();
     tool_call.status = ToolCallDisplayStatus::Succeeded;
@@ -858,6 +885,9 @@ fn shell_tool_cards_strip_ansi_from_output() {
 
 #[test]
 fn shell_tool_aliases_use_canonical_bash_card_path() {
+    // arrange
+    // act
+    // assert
     let mut tool_call =
         transcript_section_model_test_tool_call("tc-shell-alias", "shell.run.wrapper");
     tool_call.resolved_tool_identity = Some(harness_core::event::ResolvedToolIdentity {
@@ -893,6 +923,9 @@ fn shell_tool_aliases_use_canonical_bash_card_path() {
 
 #[test]
 fn completed_empty_shell_output_keeps_block_card() {
+    // arrange
+    // act
+    // assert
     let mut tool_call = transcript_section_model_test_tool_call("tc-shell-empty", "bash");
     tool_call.args_summary = r#"{"command":"true"}"#.to_string();
     tool_call.status = ToolCallDisplayStatus::Succeeded;
@@ -928,6 +961,9 @@ fn completed_empty_shell_output_keeps_block_card() {
 
 #[test]
 fn running_shell_without_output_metadata_uses_inline_fallback_until_output_event() {
+    // arrange
+    // act
+    // assert
     let mut tool_call = transcript_section_model_test_tool_call("tc-shell-running-empty", "bash");
     tool_call.args_summary = r#"{"command":"sleep 1"}"#.to_string();
     tool_call.status = ToolCallDisplayStatus::Running;

@@ -45,6 +45,9 @@ fn identical_frames_pass_exact_compare() {
 
 #[test]
 fn differing_grapheme_fails_closed() {
+    // arrange
+    // act
+    // assert
     let expected = sample_frame("hello");
     let actual = sample_frame("hallo");
     let err = compare_frames(&expected, &actual, &IdentityMaskRegistry::new())
@@ -57,6 +60,9 @@ fn differing_grapheme_fails_closed() {
 
 #[test]
 fn differing_color_fails_closed() {
+    // arrange
+    // act
+    // assert
     let mut expected = sample_frame("A");
     let mut actual = sample_frame("A");
     expected
@@ -80,6 +86,9 @@ fn differing_color_fails_closed() {
 
 #[test]
 fn differing_modifier_fails_closed() {
+    // arrange
+    // act
+    // assert
     let mut expected = sample_frame("B");
     let actual = sample_frame("B");
     expected
@@ -99,6 +108,9 @@ fn differing_modifier_fails_closed() {
 
 #[test]
 fn differing_cursor_fails_closed() {
+    // arrange
+    // act
+    // assert
     let expected = SemanticFrame::new(4, 2, CursorState::visible_block(0, 0));
     let actual = SemanticFrame::new(4, 2, CursorState::visible_block(1, 3));
     let err = compare_frames(&expected, &actual, &IdentityMaskRegistry::new())
@@ -108,6 +120,9 @@ fn differing_cursor_fails_closed() {
 
 #[test]
 fn wide_glyph_and_continuation_handling() {
+    // arrange
+    // act
+    // assert
     let mut expected = SemanticFrame::new(4, 1, CursorState::hidden(0, 0));
     expected
         .set_cell(SemanticCell::blank(0, 0).with_grapheme("あ", 2))
@@ -132,19 +147,28 @@ fn wide_glyph_and_continuation_handling() {
 
 #[test]
 fn identity_mask_is_field_level_grapheme_only() {
+    // arrange
+    // act
+    // assert
     let mut expected = sample_frame("Grok");
     let mut actual = sample_frame("Harn");
     for col in 0..4 {
-        let exp = expected.cell(0, col).expect("exp").clone().with_fg(ResolvedRgb::new(1, 1, 1));
-        let act = actual.cell(0, col).expect("act").clone().with_fg(ResolvedRgb::new(1, 1, 1));
+        let exp = expected
+            .cell(0, col)
+            .expect("exp")
+            .clone()
+            .with_fg(ResolvedRgb::new(1, 1, 1));
+        let act = actual
+            .cell(0, col)
+            .expect("act")
+            .clone()
+            .with_fg(ResolvedRgb::new(1, 1, 1));
         expected.set_cell(exp).expect("set");
         actual.set_cell(act).expect("set");
     }
 
-    let masks = IdentityMaskRegistry::new().with_field(
-        "product_title_text",
-        [(0, 0), (0, 1), (0, 2), (0, 3)],
-    );
+    let masks = IdentityMaskRegistry::new()
+        .with_field("product_title_text", [(0, 0), (0, 1), (0, 2), (0, 3)]);
     assert!(
         compare_frames(&expected, &actual, &masks).is_ok(),
         "identity grapheme mask must allow title text substitution"
@@ -164,6 +188,9 @@ fn identity_mask_is_field_level_grapheme_only() {
 
 #[test]
 fn stable_frame_helper_requires_three_identical() {
+    // arrange
+    // act
+    // assert
     assert_eq!(SETTLE_IDENTICAL_FRAMES, 3);
 
     let a = sample_frame("ok");
@@ -190,6 +217,9 @@ fn stable_frame_helper_requires_three_identical() {
 
 #[test]
 fn serialize_cells_json_and_cells_txt() {
+    // arrange
+    // act
+    // assert
     let dir = tempfile::tempdir().expect("tempdir");
     let json_path = dir.path().join("cells.json");
     let txt_path = dir.path().join("cells.txt");
@@ -224,6 +254,9 @@ fn serialize_cells_json_and_cells_txt() {
 
 #[test]
 fn vt100_adapter_matches_parser_screen_cells() {
+    // arrange
+    // act
+    // assert
     let mut parser = vt100::Parser::new(3, 10, 0);
     parser.process(b"\x1b[1;1Hxy\x1b[1;3H\x1b[31mZ\x1b[0m");
     let frame = semantic_frame_from_vt100_screen(parser.screen());
@@ -234,7 +267,10 @@ fn vt100_adapter_matches_parser_screen_cells() {
     assert_eq!(frame.cell(0, 1).expect("y").grapheme, "y");
     assert_eq!(frame.cell(0, 2).expect("Z").grapheme, "Z");
     // ANSI red index 1 resolves through the same palette path as visual_renderer.
-    assert_eq!(frame.cell(0, 2).expect("Z").fg, ResolvedRgb::new(205, 49, 49));
+    assert_eq!(
+        frame.cell(0, 2).expect("Z").fg,
+        ResolvedRgb::new(205, 49, 49)
+    );
 
     // Round-trip self-compare.
     assert!(compare_frames(&frame, &frame, &IdentityMaskRegistry::new()).is_ok());
@@ -242,6 +278,9 @@ fn vt100_adapter_matches_parser_screen_cells() {
 
 #[test]
 fn artifact_paths_use_cells_json_shape() {
+    // arrange
+    // act
+    // assert
     // Sanity: path naming for L2 evidence trees (not production wiring).
     let path = PathBuf::from("artifacts/qa-evidence/example/cells/cells.json");
     assert_eq!(
@@ -302,9 +341,11 @@ fn require_evidence(path: &Path) -> bool {
 
 #[test]
 fn freeze_draft_matches_harness_draft_v23_graphemes_exact() {
+    // arrange
+    // act
+    // assert
     let root = evidence_root();
-    let freeze = root
-        .join("reference/freeze/run1-draft/terminal.txt");
+    let freeze = root.join("reference/freeze/run1-draft/terminal.txt");
     let actual = root.join("actual/harness-draft-v23/terminal.txt");
     if !require_evidence(&freeze) || !require_evidence(&actual) {
         return;
@@ -321,9 +362,11 @@ fn freeze_draft_matches_harness_draft_v23_graphemes_exact() {
 
 #[test]
 fn freeze_startup_matches_harness_startup_v24_with_identity_logo_mask() {
+    // arrange
+    // act
+    // assert
     let root = evidence_root();
-    let freeze = root
-        .join("reference/freeze/run1-startup/terminal.txt");
+    let freeze = root.join("reference/freeze/run1-startup/terminal.txt");
     let actual = root.join("actual/harness-startup-v24/terminal.txt");
     if !require_evidence(&freeze) || !require_evidence(&actual) {
         return;
@@ -341,7 +384,8 @@ fn freeze_startup_matches_harness_startup_v24_with_identity_logo_mask() {
     for col in 0u16..120 {
         identity_cells.push((1, col));
     }
-    let masks = IdentityMaskRegistry::new().with_field("startup_identity_logo_changelog", identity_cells);
+    let masks =
+        IdentityMaskRegistry::new().with_field("startup_identity_logo_changelog", identity_cells);
 
     let result = compare_frames(&expected, &observed, &masks);
     assert!(
@@ -387,6 +431,9 @@ fn assert_freeze_grapheme_match(
 
 #[test]
 fn freeze_session_matches_harness_session_v63_with_identity_path_badge() {
+    // arrange
+    // act
+    // assert
     let masks = identity_rows_mask("overlay_identity_path_badge", &[1, 28], 120);
     assert_freeze_grapheme_match(
         "reference/freeze/run1-session/terminal.txt",
@@ -400,6 +447,9 @@ fn freeze_session_matches_harness_session_v63_with_identity_path_badge() {
 
 #[test]
 fn freeze_help_matches_harness_help_v1_with_identity_path_badge() {
+    // arrange
+    // act
+    // assert
     let masks = identity_rows_mask("overlay_identity_path_badge", &[1, 28], 120);
     assert_freeze_grapheme_match(
         "reference/freeze/run1-shortcuts-ctrlx/terminal.txt",
@@ -413,6 +463,9 @@ fn freeze_help_matches_harness_help_v1_with_identity_path_badge() {
 
 #[test]
 fn freeze_palette_matches_harness_palette_v63_with_identity_path_badge() {
+    // arrange
+    // act
+    // assert
     let masks = identity_rows_mask("overlay_identity_path_badge", &[1, 28], 120);
     assert_freeze_grapheme_match(
         "reference/freeze/run1-palette/terminal.txt",
@@ -426,6 +479,9 @@ fn freeze_palette_matches_harness_palette_v63_with_identity_path_badge() {
 
 #[test]
 fn freeze_fail_matches_harness_fail_v20_with_identity_path_clock_badge() {
+    // arrange
+    // act
+    // assert
     let masks = identity_rows_mask("shell_fail_identity_path_clock_badge", &[1, 4, 36], 120);
     assert_freeze_grapheme_match(
         "reference/freeze/run1-stream-probe/terminal.txt",
@@ -439,6 +495,9 @@ fn freeze_fail_matches_harness_fail_v20_with_identity_path_clock_badge() {
 
 #[test]
 fn freeze_startup_100x30_matches_harness_v9_with_identity_rows() {
+    // arrange
+    // act
+    // assert
     let mut rows = vec![1u16, 26, 28];
     rows.extend(8u16..=14);
     let masks = identity_rows_mask("resp_100x30_identity", &rows, 100);
@@ -454,6 +513,9 @@ fn freeze_startup_100x30_matches_harness_v9_with_identity_rows() {
 
 #[test]
 fn freeze_startup_120x40_matches_harness_v8_with_identity_rows() {
+    // arrange
+    // act
+    // assert
     let mut rows = vec![1u16, 36, 38];
     rows.extend(12u16..=18);
     let masks = identity_rows_mask("resp_120x40_identity", &rows, 120);
@@ -469,6 +531,9 @@ fn freeze_startup_120x40_matches_harness_v8_with_identity_rows() {
 
 #[test]
 fn freeze_startup_120x50_matches_harness_v8_with_identity_rows() {
+    // arrange
+    // act
+    // assert
     let mut rows = vec![1u16, 46];
     rows.extend(15u16..=21);
     let masks = identity_rows_mask("resp_120x50_identity", &rows, 120);
@@ -484,6 +549,9 @@ fn freeze_startup_120x50_matches_harness_v8_with_identity_rows() {
 
 #[test]
 fn freeze_startup_80x24_matches_harness_v8_with_identity_rows() {
+    // arrange
+    // act
+    // assert
     let masks = identity_rows_mask("resp_80x24_identity", &[1, 14, 15, 16, 20, 22], 80);
     assert_freeze_grapheme_match(
         "reference/freeze/run1-startup-80x24/terminal.txt",
@@ -497,6 +565,9 @@ fn freeze_startup_80x24_matches_harness_v8_with_identity_rows() {
 
 #[test]
 fn freeze_startup_79x24_matches_harness_v8_with_identity_rows() {
+    // arrange
+    // act
+    // assert
     let masks = identity_rows_mask("resp_79x24_identity", &[1, 14, 15, 16, 20, 22], 79);
     assert_freeze_grapheme_match(
         "reference/freeze/run1-startup-79x24/terminal.txt",
@@ -510,6 +581,9 @@ fn freeze_startup_79x24_matches_harness_v8_with_identity_rows() {
 
 #[test]
 fn freeze_startup_60x20_matches_harness_v8_with_identity_rows() {
+    // arrange
+    // act
+    // assert
     let masks = identity_rows_mask("resp_60x20_identity", &[1, 16, 18], 60);
     assert_freeze_grapheme_match(
         "reference/freeze/run1-startup-60x20/terminal.txt",
@@ -523,6 +597,9 @@ fn freeze_startup_60x20_matches_harness_v8_with_identity_rows() {
 
 #[test]
 fn freeze_startup_wide_matches_harness_v8_with_identity_rows() {
+    // arrange
+    // act
+    // assert
     let mut rows = vec![1u16, 36];
     rows.extend(12u16..=18);
     let masks = identity_rows_mask("resp_wide_identity", &rows, 140);
@@ -533,5 +610,116 @@ fn freeze_startup_wide_matches_harness_v8_with_identity_rows() {
         40,
         &masks,
         "RESP-WIDE",
+    );
+}
+
+fn first_inventory_line_number(path: &Path) -> Option<u32> {
+    let text = std::fs::read_to_string(path).ok()?;
+    for line in text.lines() {
+        let trimmed = line.trim();
+        let Some((num, rest)) = trimmed.split_once(". f") else {
+            continue;
+        };
+        if !rest.ends_with(".txt") {
+            continue;
+        }
+        if let Ok(n) = num.parse::<u32>() {
+            return Some(n);
+        }
+    }
+    None
+}
+
+#[test]
+fn freeze_scroll_inventory_first_line_matches_harness_v7_packing() {
+    // arrange
+    // act
+    // assert
+    let root = evidence_root();
+    let freeze = root.join("reference/freeze/run1-scroll-proxy-v3/terminal.txt");
+    let actual = root.join("actual/harness-pty-scroll-120x32-v10/terminal.txt");
+    if !require_evidence(&freeze) || !require_evidence(&actual) {
+        return;
+    }
+    let freeze_first = first_inventory_line_number(&freeze);
+    let actual_first = first_inventory_line_number(&actual);
+    assert_eq!(
+        freeze_first,
+        Some(39),
+        "freeze SCROLL first inventory must be f39; got {freeze_first:?}"
+    );
+    assert_eq!(
+        actual_first,
+        Some(39),
+        "loop15 scroll packing: harness L3 first inventory must match freeze f39; got {actual_first:?}"
+    );
+}
+
+#[test]
+fn freeze_complete_matches_harness_complete_v5_with_identity_path_clock_badge() {
+    // arrange
+    // act
+    // assert
+    // Identity: breadcrumb path (L2), user/thought clocks (L5, L10), model badge (L29).
+    // L3 v5 adds PNG+ANSI via web-terminal-visual-qa; grapheme residual class unchanged.
+    let masks = identity_rows_mask(
+        "shell_complete_identity_path_clock_badge",
+        &[1, 4, 9, 28],
+        120,
+    );
+    assert_freeze_grapheme_match(
+        "reference/freeze/run1-complete-proxy-v2/terminal.txt",
+        "actual/harness-pty-complete-120x32-v5/terminal.txt",
+        120,
+        32,
+        &masks,
+        "SHELL-COMPLETE",
+    );
+}
+
+#[test]
+fn freeze_perm_matches_harness_perm_v14_with_path_draft_identity_mask() {
+    // arrange
+    // act
+    // assert
+    // Geometry (pin/height/lead) matches freeze. Residual rows only:
+    // L2 breadcrumb spacing, L5 user clock, L20/L23 path length packing,
+    // L24 draft line (product feature vs freeze empty draft gap).
+    let masks = identity_rows_mask(
+        "shell_perm_path_draft_identity",
+        &[1, 4, 19, 22, 23],
+        120,
+    );
+    assert_freeze_grapheme_match(
+        "reference/freeze/run1-perm-proxy-v2/terminal.txt",
+        "actual/harness-pty-perm-120x32-v14/terminal.txt",
+        120,
+        32,
+        &masks,
+        "SHELL-PERM",
+    );
+}
+
+#[test]
+fn freeze_question_matches_harness_question_v16_with_identity_scroll_dismiss_mask() {
+    // arrange
+    // act
+    // assert
+    // Geometry (Thought→Ask adjacent, Waiting pin L17 lead=4, dock 11-row packing,
+    // left pad 2, y copy) matches freeze. Residual rows only:
+    // L2 breadcrumb spacing, L5–6 user clock/wrap, L17 right-meta gap,
+    // L23–25 scrollbar █, L28 Enter:submit gap, L31 product-honest Ctrl+c vs Shift+x.
+    let masks = identity_rows_mask(
+        "shell_question_identity_scroll_dismiss",
+        &[1, 4, 5, 16, 22, 23, 24, 27, 30],
+        120,
+    );
+    assert_freeze_grapheme_match(
+        "reference/freeze/run1-question-proxy-v2/terminal.txt",
+        "actual/harness-pty-question-120x32-v16/terminal.txt",
+        120,
+        32,
+        &masks,
+        "SHELL-QUESTION",
     );
 }

@@ -119,6 +119,8 @@ pub enum Action {
     OpenLineageBrowser,
     SessionBackground,
     OpenSessionHistory,
+    OpenSettings,
+    OpenViewPlan,
 }
 
 impl Action {
@@ -198,6 +200,8 @@ impl Action {
             Action::OpenLineageBrowser => Some("open_lineage_browser"),
             Action::SessionBackground => Some("session_background"),
             Action::OpenSessionHistory => Some("open_session_history"),
+            Action::OpenSettings => Some("open_settings"),
+            Action::OpenViewPlan => Some("open_view_plan"),
         }
     }
 
@@ -296,6 +300,8 @@ impl Action {
             Action::OpenLineageBrowser => "open_lineage_browser",
             Action::SessionBackground => "session_background",
             Action::OpenSessionHistory => "open_session_history",
+            Action::OpenSettings => "open_settings",
+            Action::OpenViewPlan => "open_view_plan",
         }
     }
 
@@ -417,6 +423,8 @@ impl FromStr for Action {
             "open_lineage_browser" => Ok(Action::OpenLineageBrowser),
             "session_background" => Ok(Action::SessionBackground),
             "open_session_history" | "resume_session" => Ok(Action::OpenSessionHistory),
+            "open_settings" | "settings" => Ok(Action::OpenSettings),
+            "open_view_plan" | "view_plan" | "view-plan" => Ok(Action::OpenViewPlan),
             _ => Err(format!("unknown action: {s}")),
         }
     }

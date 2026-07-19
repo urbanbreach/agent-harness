@@ -144,8 +144,15 @@ fn fails_on_dimension_mismatch_without_cropping() {
 #[test]
 fn fails_closed_when_png_missing() {
     // arrange
+    // act
+    // assert
+    // arrange
     let dir = tempfile::tempdir().expect("temp dir");
-    let present = write_temp_png(dir.path(), "present.png", &solid_image(2, 2, [1, 2, 3, 255]));
+    let present = write_temp_png(
+        dir.path(),
+        "present.png",
+        &solid_image(2, 2, [1, 2, 3, 255]),
+    );
     let missing = dir.path().join("missing.png");
 
     // act / assert
@@ -158,6 +165,9 @@ fn fails_closed_when_png_missing() {
 
 #[test]
 fn freeze_run1_startup_matches_run2_startup_when_present() {
+    // arrange
+    // act
+    // assert
     let run1 = freeze_png("run1-startup");
     let run2 = freeze_png("run2-startup");
     if !require_evidence(&run1) || !require_evidence(&run2) {
@@ -204,6 +214,9 @@ fn freeze_run1_startup_differs_from_run1_draft_when_present() {
 
 #[test]
 fn unit_path_does_not_require_browser_or_chrome() {
+    // arrange
+    // act
+    // assert
     // arrange / act
     let dir = tempfile::tempdir().expect("temp dir");
     let image = solid_image(3, 3, [200, 100, 50, 255]);
@@ -220,7 +233,10 @@ fn node_compare_pixels_self_test_passes_when_node_available() {
     // arrange
     let script = repo_root().join("scripts/tui-parity/compare-pixels.mjs");
     if !script.is_file() {
-        panic!("first-party compare entrypoint missing: {}", script.display());
+        panic!(
+            "first-party compare entrypoint missing: {}",
+            script.display()
+        );
     }
     let Some(node) = which_node() else {
         return;

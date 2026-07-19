@@ -40,9 +40,11 @@ pub(super) fn question_tool_title(
         crate::app::ToolCallDisplayStatus::Failed
         | crate::app::ToolCallDisplayStatus::PendingPermission
         | crate::app::ToolCallDisplayStatus::Queued
-        | crate::app::ToolCallDisplayStatus::Running => first_question_subject(tool_call, question_answers)
-            .map(|question| format!("Ask {question}"))
-            .unwrap_or_else(|| "Ask".to_string()),
+        | crate::app::ToolCallDisplayStatus::Running => {
+            first_question_subject(tool_call, question_answers)
+                .map(|question| format!("Ask {question}"))
+                .unwrap_or_else(|| "Ask".to_string())
+        }
     }
 }
 

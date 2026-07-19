@@ -241,10 +241,25 @@ impl AppState {
         }
     }
 
+    /// Public fixed-tick advance for A-ANIMATION evidence capture (no wall clock).
+    pub fn advance_animation_tick_for_evidence(&mut self) {
+        self.advance_transcript_animation_phase();
+    }
+
+    /// Current transcript animation phase for evidence metadata.
+    pub fn animation_phase_for_evidence(&self) -> usize {
+        self.transcript_animation_phase()
+    }
+
     pub(crate) fn has_active_animations(&self) -> bool {
         self.active_turn_in_progress()
             || self.toast.is_some()
             || self.interrupt_confirmation_pending()
+    }
+
+    /// Whether the shell currently requests animation ticks (evidence / tests).
+    pub fn has_active_animations_for_evidence(&self) -> bool {
+        self.has_active_animations()
     }
 
     pub(in crate::app) fn bump_transcript_render_epoch(&mut self) {

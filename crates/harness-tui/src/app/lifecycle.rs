@@ -106,6 +106,7 @@ pub enum UiIntent {
         launch_metadata: LaunchMetadata,
     },
     NewSession,
+    NewWorktreeSession,
     ReplaySession {
         run_id: String,
         run_dir: PathBuf,
@@ -123,6 +124,9 @@ pub enum UiIntent {
     },
     CompactSession,
     BackgroundForegroundSubagents,
+    DemoteForegroundChildTask {
+        handle_id: String,
+    },
     OpenAuthManager {
         args: Vec<String>,
         stdin: Option<String>,
@@ -332,6 +336,17 @@ impl AppState {
         }
         if let Some(pending_prompt) = take_pending_live_prompt() {
             state.apply_pending_live_prompt(pending_prompt);
+        }
+        if let Some(settings_config) = take_pending_settings_project_config() {
+            state.bind_settings_project_config(
+                settings_config.path,
+                settings_config.hashline_edit,
+                settings_config.compaction_enabled,
+                settings_config.compaction_auto_retry_overflow,
+                settings_config.compaction_structured_summary_contract,
+                settings_config.compaction_estimated_token_triggers,
+                settings_config.deterministic_enabled,
+            );
         }
         state
     }
@@ -689,6 +704,8 @@ impl AppState {
             error_details_visible: self.error_details_visible,
             prompt_stash_list_visible: self.prompt_stash.list_visible,
             auth_dialog_visible: self.connect_dialog.visible,
+            settings_editor_visible: self.settings_editor_visible,
+            plan_view_visible: self.plan_view_visible,
         }
     }
 
@@ -824,10 +841,7 @@ impl AppState {
     }
 
     #[cfg(test)]
-    pub(crate) fn set_now_fn_for_test(
-        &mut self,
-        now_fn: Arc<dyn Fn() -> Instant + Send + Sync>,
-    ) {
+    pub(crate) fn set_now_fn_for_test(&mut self, now_fn: Arc<dyn Fn() -> Instant + Send + Sync>) {
         self.now_fn = now_fn;
     }
 

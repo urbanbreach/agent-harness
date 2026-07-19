@@ -4,6 +4,9 @@ use harness_core::event::UserMessageSubmittedEvent;
 
 #[test]
 fn transcript_test_activity_helper_has_required_defaults() {
+    // arrange
+    // act
+    // assert
     let entry = transcript_section_model_test_activity(
         "request-helper",
         ActivityStatus::Done,
@@ -20,6 +23,9 @@ fn transcript_test_activity_helper_has_required_defaults() {
 
 #[test]
 fn transcript_test_tool_call_helper_has_queued_defaults() {
+    // arrange
+    // act
+    // assert
     let tool_call = transcript_section_model_test_tool_call("tool-helper", "fs.read");
 
     assert_eq!(tool_call.tool_call_id, "tool-helper");
@@ -31,6 +37,9 @@ fn transcript_test_tool_call_helper_has_queued_defaults() {
 
 #[test]
 fn transcript_test_line_texts_joins_spans() {
+    // arrange
+    // act
+    // assert
     let texts = transcript_test_line_texts(vec![
         Line::from(vec![Span::raw("hello"), Span::raw(" world")]),
         Line::from(vec![Span::raw("again")]),
@@ -41,62 +50,98 @@ fn transcript_test_line_texts_joins_spans() {
 
 #[test]
 fn transcript_section_model_preserves_activity_order() {
+    // arrange
+    // act
+    // assert
     exact_test_transcript_section_model_preserves_activity_order();
 }
 
 #[test]
 fn transcript_section_model_keeps_nested_tool_and_error_blocks() {
+    // arrange
+    // act
+    // assert
     exact_test_transcript_section_model_keeps_nested_tool_and_error_blocks();
 }
 
 #[cfg(test)]
 #[test]
 fn transcript_reasoning_precedes_answer_and_tool_rows() {
+    // arrange
+    // act
+    // assert
     exact_test_transcript_reasoning_precedes_answer_and_tool_rows();
 }
 
 #[test]
 fn transcript_follow_mode_uses_measured_surface_heights() {
+    // arrange
+    // act
+    // assert
     exact_test_transcript_follow_mode_uses_measured_surface_heights();
 }
 
 #[test]
 fn failed_tool_cards_parse_legacy_error_copy() {
+    // arrange
+    // act
+    // assert
     super::failed_tool_cards_parse_legacy_error_copy();
 }
 
 #[test]
 fn failed_tool_cards_normalize_lowercase_error_prefixes_and_tool_separators() {
+    // arrange
+    // act
+    // assert
     super::failed_tool_cards_normalize_lowercase_error_prefixes_and_tool_separators();
 }
 
 #[test]
 fn denied_tool_cards_use_denied_subtitle() {
+    // arrange
+    // act
+    // assert
     super::denied_tool_cards_use_denied_subtitle();
 }
 
 #[test]
 fn denied_tool_cards_keep_denied_subtitle_when_reason_contains_colon() {
+    // arrange
+    // act
+    // assert
     super::denied_tool_cards_keep_denied_subtitle_when_reason_contains_colon();
 }
 
 #[test]
 fn generic_failed_tool_messages_do_not_split_arbitrary_prefixes() {
+    // arrange
+    // act
+    // assert
     super::generic_failed_tool_messages_do_not_split_arbitrary_prefixes();
 }
 
 #[test]
 fn failed_tool_cards_fallback_when_error_details_are_missing() {
+    // arrange
+    // act
+    // assert
     super::failed_tool_cards_fallback_when_error_details_are_missing();
 }
 
 #[test]
 fn transcript_pending_permission_stays_after_last_activity() {
+    // arrange
+    // act
+    // assert
     exact_test_transcript_pending_permission_stays_after_last_activity();
 }
 
 #[test]
 fn transcript_layout_cache_invalidates_when_animation_frame_changes() {
+    // arrange
+    // act
+    // assert
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
         request_id: "request-streaming-cache".to_string(),
@@ -232,6 +277,9 @@ fn transcript_layout_cache_does_not_rebuild_on_animation_phase_change() {
 
 #[test]
 fn transcript_layout_cache_invalidates_when_theme_changes() {
+    // arrange
+    // act
+    // assert
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
         request_id: "request-theme-cache".to_string(),
@@ -278,6 +326,9 @@ fn transcript_layout_cache_invalidates_when_theme_changes() {
 
 #[test]
 fn pending_permission_sections_render_warning_turn_container() {
+    // arrange
+    // act
+    // assert
     let mut app = AppState::default();
     app.ingest_event(harness_core::event::EventEnvelopeV1 {
         schema_version: harness_core::event::SCHEMA_VERSION,
@@ -321,6 +372,9 @@ fn pending_permission_sections_render_warning_turn_container() {
 
 #[test]
 fn streaming_assistant_footer_uses_reserved_active_label() {
+    // arrange
+    // act
+    // assert
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
         request_id: "request-streaming-header".to_string(),
@@ -368,6 +422,9 @@ fn streaming_assistant_footer_uses_reserved_active_label() {
 
 #[test]
 fn only_latest_turn_renders_footer_metadata() {
+    // arrange
+    // act
+    // assert
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![
         ActivityEntry {
@@ -451,9 +508,7 @@ fn only_latest_turn_renders_footer_metadata() {
     let latest_footer_count = lines
         .iter()
         .filter(|line| {
-            line.contains("gpt-new")
-                || line.contains("Worked for")
-                || line.contains('▪')
+            line.contains("gpt-new") || line.contains("Worked for") || line.contains('▪')
         })
         .count();
     assert_eq!(
@@ -462,9 +517,7 @@ fn only_latest_turn_renders_footer_metadata() {
     );
     assert!(
         lines.iter().any(|line| {
-            line.contains("gpt-new")
-                || line.contains("Worked for")
-                || line.contains('▪')
+            line.contains("gpt-new") || line.contains("Worked for") || line.contains('▪')
         }),
         "latest turn footer missing\n{lines:#?}"
     );
@@ -473,6 +526,9 @@ fn only_latest_turn_renders_footer_metadata() {
 
 #[test]
 fn tool_only_turns_render_standalone_assistant_footer() {
+    // arrange
+    // act
+    // assert
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
         "request-tool-only-footer",
@@ -516,15 +572,18 @@ fn tool_only_turns_render_standalone_assistant_footer() {
 
     assert!(lines.iter().any(|line| line.contains("Read 1 file")));
     assert!(
-        lines
-            .iter()
-            .any(|line| line.contains("Worked for") || line.contains("gpt-5.4-mini") || line.contains("▪")),
+        lines.iter().any(|line| line.contains("Worked for")
+            || line.contains("gpt-5.4-mini")
+            || line.contains("▪")),
         "tool-only completed turns should still render an assistant footer\n{lines:#?}"
     );
 }
 
 #[test]
 fn pending_question_turn_renders_waiting_on_answers_footer() {
+    // arrange
+    // act
+    // assert
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
         "request-question-waiting",
@@ -613,6 +672,9 @@ fn pending_question_turn_renders_waiting_on_answers_footer() {
 
 #[test]
 fn waiting_on_answers_shows_thought_for_not_thinking() {
+    // arrange
+    // act
+    // assert
     // Grok question freeze: Thought for (completed chrome) while Waiting on answers.
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
@@ -684,6 +746,9 @@ fn waiting_on_answers_shows_thought_for_not_thinking() {
 
 #[test]
 fn completed_latest_turn_keeps_footer_after_streaming_finishes() {
+    // arrange
+    // act
+    // assert
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
         "request-footer-finish",
@@ -728,9 +793,7 @@ fn completed_latest_turn_keeps_footer_after_streaming_finishes() {
 
     assert!(
         completed_lines.iter().any(|line| {
-            line.contains("Worked for")
-                || line.contains("gpt-5.4-mini")
-                || line.contains('▪')
+            line.contains("Worked for") || line.contains("gpt-5.4-mini") || line.contains('▪')
         }),
         "completed turns should keep a footer (Worked for / model / marker)\n{completed_lines:#?}"
     );
@@ -741,6 +804,9 @@ fn completed_latest_turn_keeps_footer_after_streaming_finishes() {
 
 #[test]
 fn latest_completed_footer_follows_rendered_assistant_parts() {
+    // arrange
+    // act
+    // assert
     fn event(
         seq: u64,
         correlation_id: &str,
@@ -816,9 +882,7 @@ fn latest_completed_footer_follows_rendered_assistant_parts() {
         .any(|line| line.contains("assistant reply from ordered events")));
     assert!(
         lines.iter().any(|line| {
-            line.contains("Worked for")
-                || line.contains("gpt-5.4-mini")
-                || line.contains('▪')
+            line.contains("Worked for") || line.contains("gpt-5.4-mini") || line.contains('▪')
         }),
         "completed event-projected turns should keep a footer\n{lines:#?}"
     );
@@ -826,6 +890,9 @@ fn latest_completed_footer_follows_rendered_assistant_parts() {
 
 #[test]
 fn user_message_surface_keeps_timestamp_in_latest_footer_only() {
+    // arrange
+    // act
+    // assert
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
         request_id: "request-user-padding".to_string(),
@@ -875,15 +942,15 @@ fn user_message_surface_keeps_timestamp_in_latest_footer_only() {
         80,
     ));
 
-    assert!(!lines.iter().any(|line| line.contains("❯ You") || line.contains("› You")));
+    assert!(!lines
+        .iter()
+        .any(|line| line.contains("❯ You") || line.contains("› You")));
     assert!(lines
         .iter()
         .all(|line| !(line.starts_with('┃') && line.contains("09:45"))));
     assert!(
         lines.iter().any(|line| {
-            line.contains("Worked for")
-                || line.contains("gpt-5.4-mini")
-                || line.contains('▪')
+            line.contains("Worked for") || line.contains("gpt-5.4-mini") || line.contains('▪')
         }),
         "latest completed turn should keep a footer\n{lines:#?}"
     );
@@ -891,9 +958,11 @@ fn user_message_surface_keeps_timestamp_in_latest_footer_only() {
     assert!(lines.iter().any(|line| line.contains("reply")));
 }
 
-
 #[test]
 fn user_row_wall_clock_right_aligned_matches_freeze_geometry() {
+    // arrange
+    // act
+    // assert
     // Given: a completed turn with user message + ISO user_timestamp (freeze run1-stream-probe)
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
@@ -950,7 +1019,73 @@ fn user_row_wall_clock_right_aligned_matches_freeze_geometry() {
 }
 
 #[test]
+fn user_row_packs_all_names_with_wall_clock_at_scroll_geometry() {
+    // Given: SCROLL freeze user prompt + wall clock (run1-scroll-proxy-v3)
+    let prompt = "List every file in the current directory using a tool, then write a numbered inventory of all names one per line.";
+    let mut app = AppState::default();
+    app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
+        request_id: "request-scroll-user-pack".to_string(),
+        profile_label: "default".to_string(),
+        model_id: "gpt-5.4-mini".to_string(),
+        provider_id: "openai".to_string(),
+        status: ActivityStatus::Done,
+        user_message: Some(harness_core::event::UserMessageSubmittedEvent {
+            request_id: "request-scroll-user-pack".into(),
+            text: prompt.to_string(),
+        }),
+        user_timestamp: Some("2026-03-19T05:54:00Z".to_string()),
+        request_data: None,
+        thinking_text: String::new(),
+        thinking_first_mono_ms: None,
+        thinking_last_mono_ms: None,
+        transcript_text: String::new(),
+        usage: None,
+        cache_usage: None,
+        error_message: None,
+        permissions: Vec::new(),
+        tool_calls: Vec::new(),
+        first_seq: 1,
+        last_seq: 1,
+        first_mono_ms: 1,
+        last_mono_ms: 1,
+        revision: 0,
+    }]);
+    app.transcript_view.selected_activity_index = 0;
+
+    // When: measure at scrollbar-reduced scroll width (120 shell − dual gutter 10 − track 1)
+    let layout = build_measured_transcript_layout_for_width(&app, &Theme::default(), 109);
+    let user_surface = layout
+        .sections
+        .iter()
+        .flat_map(|section| section.surfaces.iter())
+        .find(|surface| {
+            transcript_test_line_texts(surface.lines.clone())
+                .iter()
+                .any(|line| line.contains('❯') && line.contains("List every"))
+        })
+        .expect("user surface");
+    let lines = transcript_test_line_texts(user_surface.lines.clone());
+    let first_content = lines
+        .iter()
+        .find(|line| line.contains('❯'))
+        .expect("user marker row");
+
+    // Then: freeze packs "all names" on the first user row beside the wall clock
+    assert!(
+        first_content.contains("all names") && first_content.contains("5:54 AM"),
+        "SCROLL freeze packs 'all names' + wall clock on first user row; got {first_content:?}\nlines={lines:?}"
+    );
+    assert!(
+        !first_content.contains("one per"),
+        "overflow after 'all names' must wrap to the next row; got {first_content:?}"
+    );
+}
+
+#[test]
 fn reasoning_summary_renders_as_nested_inset_block() {
+    // arrange
+    // act
+    // assert
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
         "request-reasoning-inset",
@@ -976,6 +1111,9 @@ fn reasoning_summary_renders_as_nested_inset_block() {
 
 #[test]
 fn fenced_code_blocks_render_frameless_with_highlighting() {
+    // arrange
+    // act
+    // assert
     let mut app = AppState::default();
     app.activities =
         std::collections::VecDeque::from(vec![transcript_section_model_test_activity(
@@ -1010,6 +1148,9 @@ fn fenced_code_blocks_render_frameless_with_highlighting() {
 
 #[test]
 fn transcript_turn_sections_keep_two_blank_rows_between_sections() {
+    // arrange
+    // act
+    // assert
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![
         transcript_section_model_test_activity("request-a", ActivityStatus::Done, "first"),
@@ -1029,6 +1170,9 @@ fn transcript_turn_sections_keep_two_blank_rows_between_sections() {
 
 #[test]
 fn markdown_headings_get_blank_row_before_when_preceded_by_text() {
+    // arrange
+    // act
+    // assert
     let mut app = AppState::default();
     app.activities =
         std::collections::VecDeque::from(vec![transcript_section_model_test_activity(
@@ -1066,6 +1210,9 @@ fn markdown_headings_get_blank_row_before_when_preceded_by_text() {
 
 #[test]
 fn markdown_paragraphs_get_trailing_blank_row_for_margin_bottom() {
+    // arrange
+    // act
+    // assert
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![
         transcript_section_model_test_activity(
@@ -1101,6 +1248,9 @@ fn markdown_paragraphs_get_trailing_blank_row_for_margin_bottom() {
 
 #[test]
 fn code_block_bottom_margin_is_two_blank_rows() {
+    // arrange
+    // act
+    // assert
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![
         transcript_section_model_test_activity(
@@ -1149,6 +1299,9 @@ fn code_block_bottom_margin_is_two_blank_rows() {
 
 #[test]
 fn assistant_tool_surfaces_keep_same_trailing_gap_as_text_boxes() {
+    // arrange
+    // act
+    // assert
     let mut activity = transcript_section_model_test_activity(
         "request-shell-alignment",
         ActivityStatus::Done,
@@ -1255,6 +1408,9 @@ fn assistant_tool_surfaces_keep_same_trailing_gap_as_text_boxes() {
 
 #[test]
 fn assistant_tool_surface_spacing_matches_shell_rhythm() {
+    // arrange
+    // act
+    // assert
     assert_eq!(
         transcript_surface_leading_gap(
             Some(TranscriptRenderSurfaceKind::AssistantBody),
@@ -1287,10 +1443,21 @@ fn assistant_tool_surface_spacing_matches_shell_rhythm() {
         0,
         "tool-to-reasoning spacing is carried by the reasoning block itself so the rendered gap stays single-row"
     );
+    assert_eq!(
+        transcript_surface_leading_gap(
+            Some(TranscriptRenderSurfaceKind::AssistantReasoning),
+            TranscriptRenderSurfaceKind::AssistantTool,
+        ),
+        0,
+        "Grok QUESTION freeze: Thought then Ask are adjacent with no blank between"
+    );
 }
 
 #[test]
 fn reasoning_to_answer_transition_uses_two_blank_rows() {
+    // arrange
+    // act
+    // assert
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
         "request-reasoning-gap",
@@ -1326,6 +1493,9 @@ fn reasoning_to_answer_transition_uses_two_blank_rows() {
 
 #[test]
 fn streaming_reasoning_header_renders_spinner_and_thinking_label() {
+    // arrange
+    // act
+    // assert
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
         "request-streaming-reasoning",
@@ -1354,6 +1524,9 @@ fn streaming_reasoning_header_renders_spinner_and_thinking_label() {
 
 #[test]
 fn streaming_reasoning_stops_spinner_when_body_text_arrives() {
+    // arrange
+    // act
+    // assert
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
         "request-streaming-reasoning-then-body",
@@ -1390,6 +1563,9 @@ fn streaming_reasoning_stops_spinner_when_body_text_arrives() {
 
 #[test]
 fn streaming_reasoning_stops_spinner_when_tool_call_arrives() {
+    // arrange
+    // act
+    // assert
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
         "request-streaming-reasoning-then-tool",
@@ -1448,6 +1624,9 @@ fn streaming_reasoning_stops_spinner_when_tool_call_arrives() {
 
 #[test]
 fn streaming_reasoning_header_with_title_renders_thinking_colon_title() {
+    // arrange
+    // act
+    // assert
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
         "request-streaming-reasoning-title",
@@ -1485,6 +1664,9 @@ fn completed_reasoning_header_renders_thinking_with_title() {
     );
     entry.thinking_text = "**Review**\n\nbody text".to_string();
     entry.last_mono_ms = 1501;
+    // Grok packing: Thought for uses reasoning mono span, not full turn duration.
+    entry.thinking_first_mono_ms = Some(0);
+    entry.thinking_last_mono_ms = Some(1500);
     app.activities = std::collections::VecDeque::from(vec![entry]);
     app.transcript_view.selected_activity_index = 0;
 
@@ -1526,6 +1708,9 @@ fn completed_reasoning_header_without_title_renders_thinking() {
     );
     entry.thinking_text = "simple reasoning".to_string();
     entry.last_mono_ms = 1501;
+    // Grok packing: Thought for uses reasoning mono span, not full turn duration.
+    entry.thinking_first_mono_ms = Some(0);
+    entry.thinking_last_mono_ms = Some(1500);
     app.activities = std::collections::VecDeque::from(vec![entry]);
     app.transcript_view.selected_activity_index = 0;
 
@@ -1597,9 +1782,11 @@ fn completed_turn_without_thinking_text_still_renders_thought_for() {
     );
 }
 
-
 #[test]
 fn failed_turn_without_thinking_text_omits_thought_for() {
+    // arrange
+    // act
+    // assert
     // Given: failed turn with no reasoning (Grok run1-stream-probe fail freeze)
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
@@ -1637,6 +1824,9 @@ fn failed_turn_without_thinking_text_omits_thought_for() {
 
 #[test]
 fn reasoning_header_suppresses_empty_redacted_reasoning() {
+    // arrange
+    // act
+    // assert
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
         "request-redacted-only",
@@ -1666,6 +1856,9 @@ fn reasoning_header_suppresses_empty_redacted_reasoning() {
 
 #[test]
 fn streaming_assistant_footer_spinner_uses_deterministic_braille_frames() {
+    // arrange
+    // act
+    // assert
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
         request_id: "request-streaming-spinner".to_string(),
@@ -1978,6 +2171,9 @@ fn perf_500_event_streaming_transcript_cache_and_layout_budget() {
 
 #[test]
 fn capture_all_spacing_evidence() {
+    // arrange
+    // act
+    // assert
     let dir = std::path::Path::new(".omo/evidence/chat-spacing-parity");
     std::fs::create_dir_all(dir).unwrap_or_abort();
 
@@ -2220,6 +2416,9 @@ fn capture_all_spacing_evidence() {
 
 #[test]
 fn reasoning_body_plain_text_has_no_dim_modifier() {
+    // arrange
+    // act
+    // assert
     let mut app = AppState::default();
     let mut entry =
         transcript_section_model_test_activity("req-no-dim", ActivityStatus::Done, "answer");
@@ -2251,6 +2450,9 @@ fn reasoning_body_plain_text_has_no_dim_modifier() {
 
 #[test]
 fn reasoning_body_screenshot_text_no_false_positives() {
+    // arrange
+    // act
+    // assert
     let screenshot_text =
         "18. sessionlist, sessionread, sessionsearch, sessioninfo - session tools\n\
                            19. backgroundoutput, backgroundcancel - background task tools\n\
@@ -2303,6 +2505,9 @@ fn reasoning_body_screenshot_text_no_false_positives() {
 
 #[test]
 fn reasoning_body_markdown_constructs_use_blended_colors() {
+    // arrange
+    // act
+    // assert
     let mut app = AppState::default();
     let mut entry =
         transcript_section_model_test_activity("req-md-blend", ActivityStatus::Done, "answer");

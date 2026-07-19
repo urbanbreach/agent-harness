@@ -49,7 +49,10 @@ pub(super) fn render_toggles_menu_list(
             TogglesOverlayRow::Section(section) => {
                 frame.render_widget(
                     Paragraph::new(command_palette_section_row(
-                        section, theme, row_area.width, false,
+                        section,
+                        theme,
+                        row_area.width,
+                        false,
                     )),
                     row_area,
                 );

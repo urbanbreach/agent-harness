@@ -20,6 +20,9 @@ use harness_tui::{ui, FrameLayoutPlan};
 use ratatui::layout::Rect;
 #[test]
 fn startup_shell_is_compose_first_without_pty() {
+    // arrange
+    // act
+    // assert
     let mut app = AppState::new_startup(Vec::new(), None);
     app.set_launch_metadata(
         LaunchMetadata::from_model_ref("worker", "mock:model-1").with_mode_label("Demo"),
@@ -94,6 +97,9 @@ fn live_transcript_and_composer_shell_render_without_pty() {
 
 #[test]
 fn tool_lifecycle_rows_stay_ordered_without_pty() {
+    // arrange
+    // act
+    // assert
     let mut app = AppState::new_live(Some(PathBuf::from("/tmp/run_tool_lifecycle")), false, None);
     for event in deterministic_render_fixtures::tool_lifecycle_events() {
         app.ingest_event(event);
@@ -175,6 +181,9 @@ fn command_palette_renders_without_pty() {
 
 #[test]
 fn permission_modal_preserves_draft_without_pty() {
+    // arrange
+    // act
+    // assert
     let mut app = AppState::new_live(None, false, None);
     app.composer.prompt_buffer = "keep this draft".to_string();
     app.composer.prompt_cursor = app.composer.prompt_buffer.len();
@@ -197,13 +206,18 @@ fn permission_modal_preserves_draft_without_pty() {
         "permission dock must not show timeout chrome on decision stage\n{rendered}"
     );
     assert!(rendered.contains("●") || rendered.contains("○"));
-    assert!(rendered.contains("esc") || rendered.contains("cancel") || rendered.contains("confirm"));
+    assert!(
+        rendered.contains("esc") || rendered.contains("cancel") || rendered.contains("confirm")
+    );
     assert!(rendered.contains("keep this draft"));
     assert_eq!(app.composer.prompt_buffer, "keep this draft");
 }
 
 #[test]
 fn startup_session_history_picker_renders_without_pty() {
+    // arrange
+    // act
+    // assert
     let mut app = AppState::new_startup(startup_session_history_entries(), None);
     app.set_launch_metadata(
         LaunchMetadata::from_model_ref("worker", "mock:model-1").with_mode_label("Demo"),
@@ -234,6 +248,9 @@ fn startup_session_history_picker_renders_without_pty() {
 
 #[test]
 fn question_permission_prompt_renders_without_pty() {
+    // arrange
+    // act
+    // assert
     let mut app = AppState::new_live(None, false, None);
     app.ingest_event(question_permission_requested_event(
         1,
@@ -258,6 +275,9 @@ fn question_permission_prompt_renders_without_pty() {
 
 #[test]
 fn replay_shell_is_read_only_without_pty() {
+    // arrange
+    // act
+    // assert
     let mut app = AppState::new_replay(PathBuf::from("/tmp/replay_run"), replay_events());
 
     let rendered = render_text(&app, 100, 24);

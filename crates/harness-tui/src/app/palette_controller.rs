@@ -17,7 +17,8 @@ use fuzzy_matcher::FuzzyMatcher;
 
 use crate::app::AppState;
 use crate::keybindings::palette_model::{
-    entries, find, DynamicTitle, PaletteCategory, PaletteCommandEntry, SuggestedRule,
+    entries, find, DynamicTitle, PaletteCategory, PaletteCommandEntry, PaletteDispatch,
+    SuggestedRule,
 };
 
 static FUZZY_MATCHER: LazyLock<SkimMatcherV2> = LazyLock::new(SkimMatcherV2::default);
@@ -74,7 +75,9 @@ fn dispatch_target_label(entry: &PaletteCommandEntry) -> &'static str {
         | PaletteDispatch::OpenAuth
         | PaletteDispatch::OpenEventLog
         | PaletteDispatch::OpenConnectDialog => "dialog",
-        PaletteDispatch::NewSession | PaletteDispatch::CompactSession => "intent",
+        PaletteDispatch::NewSession
+        | PaletteDispatch::NewWorktreeSession
+        | PaletteDispatch::CompactSession => "intent",
         PaletteDispatch::CopySessionTranscript => "action",
         PaletteDispatch::Placeholder => "failure",
     }
@@ -125,10 +128,8 @@ pub struct PaletteRow {
 pub fn is_available(app: &AppState, entry: &PaletteCommandEntry) -> bool {
     match entry.id {
         "session.rename" | "session.compact" => !app.replay_mode,
-        "session.timeline" | "session.fork"
-        | "session.undo" | "messages.copy" | "session.copy" | "session.export" | "session.move" => {
-            !app.startup_shell_visible() && !app.replay_mode
-        }
+        "session.timeline" | "session.fork" | "session.undo" | "messages.copy" | "session.copy"
+        | "session.export" | "session.move" => !app.startup_shell_visible() && !app.replay_mode,
 
         "session.status.open"
         | "session.toggle.conceal"
@@ -271,6 +272,7 @@ pub fn compute_palette_rows(app: &AppState, filter: &str) -> Vec<PaletteRow> {
     let mut available: Vec<&PaletteCommandEntry> = entries()
         .iter()
         .filter(|entry| !entry.harness_only)
+        .filter(|entry| !matches!(entry.dispatch, PaletteDispatch::Placeholder))
         .filter(|entry| is_available(app, entry))
         .collect();
 
@@ -466,6 +468,9 @@ pub fn dispatch_palette_command(app: &mut AppState, value: &str) {
             app.startup_launcher_action = crate::app::StartupLauncherAction::NewSession;
             app.apply_new_session_launcher_selection();
         }
+        PaletteDispatch::NewWorktreeSession => {
+            app.request_new_worktree_session();
+        }
         PaletteDispatch::CompactSession => {
             app.emit_ui_intent(crate::app::UiIntent::CompactSession);
         }
@@ -523,6 +528,9 @@ mod tests {
 
     #[test]
     fn compute_palette_rows_matches_title() {
+        // arrange
+        // act
+        // assert
         let app = AppState::new_live(None, false, None);
         let rows = compute_palette_rows(&app, "swi");
         assert!(
@@ -533,6 +541,9 @@ mod tests {
 
     #[test]
     fn compute_palette_rows_returns_empty_for_no_match() {
+        // arrange
+        // act
+        // assert
         let app = AppState::new_live(None, false, None);
         let rows = compute_palette_rows(&app, "xyz");
         assert!(rows.is_empty(), "query 'xyz' must produce no results");
@@ -540,9 +551,15 @@ mod tests {
 
     #[test]
     fn compute_palette_rows_empty_filter_returns_all() {
+        // arrange
+        // act
+        // assert
         let app = AppState::new_live(None, false, None);
         let rows = compute_palette_rows(&app, "");
-        assert!(!rows.is_empty(), "empty filter must return freeze inventory");
+        assert!(
+            !rows.is_empty(),
+            "empty filter must return freeze inventory"
+        );
         assert!(
             rows.iter().all(|r| {
                 matches!(
@@ -558,6 +575,9 @@ mod tests {
 
     #[test]
     fn compute_palette_rows_title_weighted_higher_than_category() {
+        // arrange
+        // act
+        // assert
         let app = AppState::new_live(None, false, None);
         let rows = compute_palette_rows(&app, "session");
         assert!(!rows.is_empty());

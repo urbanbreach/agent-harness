@@ -65,7 +65,12 @@ pub(super) fn live_shell_enter_submits_and_echoes_prompt_snapshot() {
     assert!(!rendered.contains("user (pending turn)"));
     assert!(rendered.contains("ship it"));
     assert!(!rendered.contains("   Waiting for response…"));
-    assert!(rendered.contains("gpt-5") || rendered.contains("▪") || rendered.contains("◇") || rendered.contains("⠋"));
+    assert!(
+        rendered.contains("gpt-5")
+            || rendered.contains("▪")
+            || rendered.contains("◇")
+            || rendered.contains("⠋")
+    );
     assert!(
         rendered.contains('╭') || rendered.contains('❯'),
         "submitted live shell keeps bordered composer chrome\n{rendered}"
@@ -271,16 +276,7 @@ pub(super) fn live_shell_inline_tool_state_snapshot() {
     let rendered = render_live_lines(&app, 80, 24);
     println!("{rendered}");
 
-    assert_live_shell_contains(
-        &app,
-        80,
-        24,
-        &[
-            "Allow Edit",
-            "always-approve",
-            "┃",
-        ],
-    );
+    assert_live_shell_contains(&app, 80, 24, &["Allow Edit", "always-approve", "┃"]);
     let rendered = render_live_lines(&app, 80, 24);
     assert!(
         !rendered.contains("timeout"),

@@ -1,6 +1,6 @@
 use super::*;
 
-use ratatui::widgets::{Block, Borders, BorderType, Clear};
+use ratatui::widgets::{Block, BorderType, Borders, Clear};
 
 pub(super) fn render_help_tab(
     frame: &mut Frame,
@@ -31,16 +31,16 @@ pub(super) fn render_help_tab(
 fn help_modal_area(root: Rect) -> Option<Rect> {
     const WIDTH: u16 = 80;
     const HEIGHT: u16 = 24;
-    let width = WIDTH.min(root.width.saturating_sub(4)).max(40.min(root.width));
+    let width = WIDTH
+        .min(root.width.saturating_sub(4))
+        .max(40.min(root.width));
     let height = HEIGHT
         .min(root.height.saturating_sub(4))
         .max(12.min(root.height));
     if width < 32 || height < 10 {
         return None;
     }
-    let x = root
-        .x
-        .saturating_add(root.width.saturating_sub(width) / 2);
+    let x = root.x.saturating_add(root.width.saturating_sub(width) / 2);
     let max_y = root
         .y
         .saturating_add(root.height.saturating_sub(height.max(1)));
@@ -81,9 +81,7 @@ fn paint_help_modal_panel(frame: &mut Frame, theme: &Theme, overlay: Rect) -> bo
 
     let surface = ui_chrome::command_palette_surface(theme);
     let border_style = Style::default().bg(surface);
-    let title_style = Style::default()
-        .bg(surface)
-        .add_modifier(Modifier::BOLD);
+    let title_style = Style::default().bg(surface).add_modifier(Modifier::BOLD);
     let close_style = border_style;
     frame.render_widget(Clear, overlay);
     let block = Block::default()
@@ -200,12 +198,7 @@ fn render_help_list(frame: &mut Frame, app: &AppState, theme: &Theme, area: Rect
     }
 }
 
-fn render_help_footer(
-    frame: &mut Frame,
-    _theme: &Theme,
-    primary: Rect,
-    secondary: Rect,
-) {
+fn render_help_footer(frame: &mut Frame, _theme: &Theme, primary: Rect, secondary: Rect) {
     let muted = Style::default();
     let key = Style::default().add_modifier(Modifier::BOLD);
     if primary.width > 0 && primary.height > 0 {
@@ -244,8 +237,22 @@ fn help_shortcut_rows(app: &AppState, width: usize) -> Vec<Line<'static>> {
     let mut rows = vec![
         section_row("Essentials"),
         labeled_shortcut_row(app, Action::SubmitPrompt, "Send", "Enter", width, true),
-        labeled_shortcut_row(app, Action::FocusNext, "Focus scrollback", "Tab", width, false),
-        labeled_shortcut_row(app, Action::DismissModal, "Cancel turn", "Ctrl+c", width, false),
+        labeled_shortcut_row(
+            app,
+            Action::FocusNext,
+            "Focus scrollback",
+            "Tab",
+            width,
+            false,
+        ),
+        labeled_shortcut_row(
+            app,
+            Action::DismissModal,
+            "Cancel turn",
+            "Ctrl+c",
+            width,
+            false,
+        ),
         labeled_shortcut_row(
             app,
             Action::VariantCycle,
@@ -255,7 +262,14 @@ fn help_shortcut_rows(app: &AppState, width: usize) -> Vec<Line<'static>> {
             false,
         ),
         labeled_shortcut_row(app, Action::Quit, "Quit", "Ctrl+q / Ctrl+d", width, false),
-        labeled_shortcut_row(app, Action::Palette, "Command palette", "Ctrl+p / ?", width, false),
+        labeled_shortcut_row(
+            app,
+            Action::Palette,
+            "Command palette",
+            "Ctrl+p / ?",
+            width,
+            false,
+        ),
         labeled_shortcut_row(
             app,
             Action::Help,

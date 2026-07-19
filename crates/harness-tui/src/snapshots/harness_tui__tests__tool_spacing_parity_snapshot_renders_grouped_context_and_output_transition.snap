@@ -1,5 +1,6 @@
 ---
 source: crates/harness-tui/src/tests.rs
+assertion_line: 722
 expression: normalized
 ---
 Buffer {
@@ -14,10 +15,10 @@ Buffer {
         "                                                                                                                        ",
         "     Gathered context Â· 1 read Â· 2 searches Â· 1 list  â¸                                                                 ",
         "                                                                                                                        ",
-        "     â cargo test -p harness-tui ui::ui_transcript::  â¸                                                                 ",
+        "  â  â cargo test -p harness-tui ui::ui_transcript::  â¸                                                                 ",
         "         exit code: 1                                                                                                   ",
         "         stderr: snapshot mismatch                                                                                      ",
-        "  â                                                                                                                     ",
+        "                                                                                                                        ",
         "     â Thought for 0.0s                                                                                                 ",
         "                                                                                                                        ",
         "     The grouped context rows need to stay compact before the visible shell block.                                      ",
@@ -50,6 +51,8 @@ Buffer {
         x: 21, y: 7, fg: Rgb(136, 139, 145), bg: Rgb(11, 14, 20), underline: Reset, modifier: NONE,
         x: 55, y: 7, fg: Rgb(215, 218, 224), bg: Rgb(11, 14, 20), underline: Reset, modifier: NONE,
         x: 115, y: 7, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 2, y: 9, fg: Rgb(136, 139, 145), bg: Reset, underline: Reset, modifier: NONE,
+        x: 3, y: 9, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
         x: 5, y: 9, fg: Rgb(136, 139, 145), bg: Rgb(11, 14, 20), underline: Reset, modifier: NONE,
         x: 55, y: 9, fg: Rgb(215, 218, 224), bg: Rgb(11, 14, 20), underline: Reset, modifier: NONE,
         x: 115, y: 9, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
@@ -61,8 +64,6 @@ Buffer {
         x: 9, y: 11, fg: Rgb(224, 108, 117), bg: Rgb(11, 14, 20), underline: Reset, modifier: NONE,
         x: 34, y: 11, fg: Rgb(215, 218, 224), bg: Rgb(11, 14, 20), underline: Reset, modifier: NONE,
         x: 115, y: 11, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
-        x: 2, y: 12, fg: Rgb(136, 139, 145), bg: Reset, underline: Reset, modifier: NONE,
-        x: 3, y: 12, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
         x: 5, y: 12, fg: Rgb(215, 218, 224), bg: Rgb(11, 14, 20), underline: Reset, modifier: NONE,
         x: 115, y: 12, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
         x: 5, y: 13, fg: Rgb(142, 121, 82), bg: Rgb(11, 14, 20), underline: Reset, modifier: NONE,

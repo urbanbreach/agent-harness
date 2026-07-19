@@ -457,6 +457,9 @@ mod tests {
 
     #[test]
     fn bold_uses_markdown_strong_color() {
+        // arrange
+        // act
+        // assert
         let theme = Theme::default();
         let base = Style::default().fg(theme.text.primary);
         let spans = parse_inline_markdown_spans("**bold**", base, theme.text.primary, &theme);
@@ -467,6 +470,9 @@ mod tests {
 
     #[test]
     fn italic_asterisk_uses_markdown_emph_color() {
+        // arrange
+        // act
+        // assert
         let theme = Theme::default();
         let base = Style::default().fg(theme.text.primary);
         let spans = parse_inline_markdown_spans("*italic*", base, theme.text.primary, &theme);
@@ -477,6 +483,9 @@ mod tests {
 
     #[test]
     fn italic_underscore_uses_markdown_emph_color() {
+        // arrange
+        // act
+        // assert
         let theme = Theme::default();
         let base = Style::default().fg(theme.text.primary);
         let spans = parse_inline_markdown_spans("_italic_", base, theme.text.primary, &theme);
@@ -487,6 +496,9 @@ mod tests {
 
     #[test]
     fn inline_code_uses_markdown_code_color() {
+        // arrange
+        // act
+        // assert
         let theme = Theme::default();
         let base = Style::default().fg(theme.text.primary);
         let spans = parse_inline_markdown_spans("`code`", base, theme.text.primary, &theme);
@@ -496,6 +508,9 @@ mod tests {
 
     #[test]
     fn link_label_uses_markdown_link_text_color() {
+        // arrange
+        // act
+        // assert
         let theme = Theme::default();
         let base = Style::default().fg(theme.text.primary);
         let spans = parse_inline_markdown_spans(
@@ -512,6 +527,9 @@ mod tests {
 
     #[test]
     fn raw_url_uses_markdown_link_color() {
+        // arrange
+        // act
+        // assert
         let theme = Theme::default();
         let base = Style::default().fg(theme.text.primary);
         let spans = parse_inline_markdown_spans(
@@ -528,6 +546,9 @@ mod tests {
 
     #[test]
     fn strikethrough_uses_text_secondary_color() {
+        // arrange
+        // act
+        // assert
         let theme = Theme::default();
         let base = Style::default().fg(theme.text.primary);
         let spans = parse_inline_markdown_spans("~~deleted~~", base, theme.text.primary, &theme);
@@ -538,6 +559,9 @@ mod tests {
 
     #[test]
     fn intraword_asterisks_not_emphasized() {
+        // arrange
+        // act
+        // assert
         let theme = Theme::default();
         let base = Style::default().fg(theme.text.primary);
         let spans = parse_inline_markdown_spans("foo*bar*baz", base, theme.text.primary, &theme);
@@ -549,6 +573,9 @@ mod tests {
 
     #[test]
     fn intraword_underscores_not_emphasized() {
+        // arrange
+        // act
+        // assert
         let theme = Theme::default();
         let base = Style::default().fg(theme.text.primary);
         let spans = parse_inline_markdown_spans("foo_bar_baz", base, theme.text.primary, &theme);
@@ -560,6 +587,9 @@ mod tests {
 
     #[test]
     fn intraword_underscores_in_identifiers_not_emphasized() {
+        // arrange
+        // act
+        // assert
         let theme = Theme::default();
         let base = Style::default().fg(theme.text.primary);
         let spans = parse_inline_markdown_spans(
@@ -576,6 +606,9 @@ mod tests {
 
     #[test]
     fn heading_uses_markdown_heading_color() {
+        // arrange
+        // act
+        // assert
         let theme = Theme::default();
         let mut lines = Vec::new();
         append_rich_text_block(&mut lines, "# Heading", theme.text.primary, "", &theme, 80);
@@ -591,6 +624,9 @@ mod tests {
 
     #[test]
     fn blockquote_uses_markdown_block_quote_color() {
+        // arrange
+        // act
+        // assert
         let theme = Theme::default();
         let mut lines = Vec::new();
         append_rich_text_block(&mut lines, "> Quote", theme.text.primary, "", &theme, 80);
@@ -606,6 +642,9 @@ mod tests {
 
     #[test]
     fn rule_uses_markdown_rule_color() {
+        // arrange
+        // act
+        // assert
         let theme = Theme::default();
         let mut lines = Vec::new();
         append_rich_text_block(&mut lines, "---", theme.text.primary, "", &theme, 80);
@@ -620,6 +659,9 @@ mod tests {
 
     #[test]
     fn bullet_marker_uses_markdown_list_item_color() {
+        // arrange
+        // act
+        // assert
         let theme = Theme::default();
         let (prefix, _, marker_style, _) = markdown_list_prefix("- item", &theme).unwrap();
         assert_eq!(prefix, "• ");
@@ -629,6 +671,9 @@ mod tests {
 
     #[test]
     fn enum_marker_uses_markdown_list_enum_color() {
+        // arrange
+        // act
+        // assert
         let theme = Theme::default();
         let (prefix, _, marker_style, _) = markdown_list_prefix("1. item", &theme).unwrap();
         assert_eq!(prefix, "1. ");
@@ -638,6 +683,9 @@ mod tests {
 
     #[test]
     fn table_header_uses_markdown_heading_color() {
+        // arrange
+        // act
+        // assert
         let theme = Theme::default();
         let rows = ["Name | Value", "--- | ---", "foo | bar"];
         let (lines, _) =

@@ -53,8 +53,8 @@ pub(super) fn command_palette_overlay_area(
 
     if !app.session_history_visible && !app.model_switcher_visible {
         let popup_width = COMMAND_PALETTE_WIDTH.min(area.width.saturating_sub(2));
-        let popup_height = command_palette_overlay_height(app, area.height)
-            .min(area.height.saturating_sub(4));
+        let popup_height =
+            command_palette_overlay_height(app, area.height).min(area.height.saturating_sub(4));
         if popup_width == 0 || popup_height == 0 {
             return None;
         }
@@ -71,8 +71,8 @@ pub(super) fn command_palette_overlay_area(
     let popup_width = command_palette_overlay_width(shell, app)
         .min(contract.palette_overlay_max_width.unwrap_or(u16::MAX))
         .min(area.width.saturating_sub(horizontal_margin));
-    let popup_height = command_palette_overlay_height(app, area.height)
-        .min(area.height.saturating_sub(4));
+    let popup_height =
+        command_palette_overlay_height(app, area.height).min(area.height.saturating_sub(4));
 
     if popup_width == 0 || popup_height == 0 {
         return None;

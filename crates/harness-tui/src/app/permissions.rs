@@ -373,6 +373,7 @@ impl AppState {
                         if self.permission_modal_confirm_selection(&permission.permission_id)
                             == PermissionConfirmSelection::Confirm
                         {
+                            self.enable_always_approve_mode();
                             self.clear_permission_modal_selection(&permission.permission_id);
                             self.send_permission_intent(
                                 permission.permission_id.clone(),
@@ -980,5 +981,27 @@ impl AppState {
             grant_scope,
         });
         self.submitted_permission_id = Some(permission_id);
+    }
+
+    pub(super) fn maybe_auto_allow_active_permission(&mut self) {
+        if !self.always_approve_mode() {
+            return;
+        }
+        let Some(permission) = self.active_permission_view() else {
+            return;
+        };
+        if permission.question_prompts.is_some() {
+            return;
+        }
+        if self.submitted_permission_is_active(&permission.permission_id) {
+            return;
+        }
+        self.clear_permission_modal_selection(&permission.permission_id);
+        self.send_permission_intent(
+            permission.permission_id,
+            PermissionDecision::Allow,
+            None,
+            Some(PermissionGrantScope::Run),
+        );
     }
 }

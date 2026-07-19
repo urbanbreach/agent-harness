@@ -52,7 +52,10 @@ fn render_theme_dialog_body(frame: &mut Frame, app: &AppState, theme: &Theme, ar
         ])
         .split(area);
 
-    frame.render_widget(Block::default().style(Style::default().bg(surface)), chunks[0]);
+    frame.render_widget(
+        Block::default().style(Style::default().bg(surface)),
+        chunks[0],
+    );
 
     for (index, name) in names.iter().enumerate() {
         let row_area = Rect::new(
@@ -95,7 +98,10 @@ fn render_theme_dialog_body(frame: &mut Frame, app: &AppState, theme: &Theme, ar
         );
     }
 
-    frame.render_widget(Block::default().style(Style::default().bg(surface)), chunks[2]);
+    frame.render_widget(
+        Block::default().style(Style::default().bg(surface)),
+        chunks[2],
+    );
 
     let muted_style = Style::default().fg(theme.text.secondary).bg(surface);
     frame.render_widget(

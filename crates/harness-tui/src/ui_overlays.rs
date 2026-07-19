@@ -7,10 +7,14 @@ mod auth_dialog;
 mod model_switcher;
 #[path = "ui_overlays/permission_modal.rs"]
 mod permission_modal;
+#[path = "ui_overlays/plan_view.rs"]
+mod plan_view;
 #[path = "ui_overlays/prompt_stash_dialog.rs"]
 mod prompt_stash_dialog;
 #[path = "ui_overlays/session_history.rs"]
 mod session_history;
+#[path = "ui_overlays/settings_editor.rs"]
+mod settings_editor;
 #[path = "ui_overlays/status_dialog.rs"]
 mod status_dialog;
 #[path = "ui_overlays/theme_dialog.rs"]
@@ -19,26 +23,95 @@ mod theme_dialog;
 mod toggles_menu;
 
 use auth_dialog::render_auth_dialog_overlay;
-use model_switcher::{
-    model_switcher_overlay_title, render_model_switcher_overlay,
-};
+use model_switcher::{model_switcher_overlay_title, render_model_switcher_overlay};
 pub(super) use permission_modal::{
     permission_modal_actions_text, permission_modal_draft_line, permission_modal_guidance,
     permission_modal_icon, permission_modal_metadata_line, permission_modal_subject_line,
     permission_modal_summary_line, permission_modal_title, question_permission_actions_text,
     question_permission_body_text,
 };
+use plan_view::render_plan_view_overlay;
 use prompt_stash_dialog::render_prompt_stash_list_overlay;
 use session_history::{
     render_fork_selector_input, render_fork_selector_list, render_lineage_browser_overlay,
     render_session_history_overlay, render_session_rename_dialog, session_history_overlay_title,
 };
+use settings_editor::render_settings_editor_overlay;
 use status_dialog::render_status_dialog_overlay;
 #[cfg(test)]
 pub(crate) use status_dialog::{
+    exact_test_status_dialog_edit_attribution_counts_external_on_disk_drift,
+    exact_test_status_dialog_edit_attribution_event_only_without_workspace,
+    exact_test_status_dialog_edit_attribution_keeps_matching_agent_tool,
     exact_test_status_dialog_formatters_section_disabled_when_none,
     exact_test_status_dialog_formatters_section_lists_enabled_language,
     exact_test_status_dialog_mcp_rows_match_harness_states,
+    exact_test_status_dialog_operator_summary_surfaces_acp_connect_bind,
+    exact_test_status_dialog_operator_summary_surfaces_acp_connection,
+    exact_test_status_dialog_operator_summary_surfaces_acp_session,
+    exact_test_status_dialog_operator_summary_surfaces_auto_fallback_chain,
+    exact_test_status_dialog_operator_summary_surfaces_binary_update_counts,
+    exact_test_status_dialog_operator_summary_surfaces_binary_update_policy,
+    exact_test_status_dialog_operator_summary_surfaces_binary_version,
+    exact_test_status_dialog_operator_summary_surfaces_bound_settings_counts,
+    exact_test_status_dialog_operator_summary_surfaces_browser_oidc_availability,
+    exact_test_status_dialog_operator_summary_surfaces_browser_oidc_complete,
+    exact_test_status_dialog_operator_summary_surfaces_browser_oidc_outcomes,
+    exact_test_status_dialog_operator_summary_surfaces_cow_clone_last,
+    exact_test_status_dialog_operator_summary_surfaces_cow_clone_outcomes,
+    exact_test_status_dialog_operator_summary_surfaces_cow_fastpath,
+    exact_test_status_dialog_operator_summary_surfaces_crash_recovery_action,
+    exact_test_status_dialog_operator_summary_surfaces_crash_recovery_banner,
+    exact_test_status_dialog_operator_summary_surfaces_crash_recovery_next,
+    exact_test_status_dialog_operator_summary_surfaces_crash_scan_counts,
+    exact_test_status_dialog_operator_summary_surfaces_cron_register,
+    exact_test_status_dialog_operator_summary_surfaces_cron_remove,
+    exact_test_status_dialog_operator_summary_surfaces_cron_schedule_counts,
+    exact_test_status_dialog_operator_summary_surfaces_dashboard,
+    exact_test_status_dialog_operator_summary_surfaces_demote_last,
+    exact_test_status_dialog_operator_summary_surfaces_demote_last_task,
+    exact_test_status_dialog_operator_summary_surfaces_demote_outcome_counts,
+    exact_test_status_dialog_operator_summary_surfaces_edit_attribution,
+    exact_test_status_dialog_operator_summary_surfaces_edit_attribution_first_last,
+    exact_test_status_dialog_operator_summary_surfaces_fallback_and_none_demote,
+    exact_test_status_dialog_operator_summary_surfaces_fallback_banner,
+    exact_test_status_dialog_operator_summary_surfaces_fallback_models,
+    exact_test_status_dialog_operator_summary_surfaces_fallback_outcome,
+    exact_test_status_dialog_operator_summary_surfaces_foreign_discover_counts,
+    exact_test_status_dialog_operator_summary_surfaces_foreign_import_last,
+    exact_test_status_dialog_operator_summary_surfaces_foreign_import_next,
+    exact_test_status_dialog_operator_summary_surfaces_graph_batch_first,
+    exact_test_status_dialog_operator_summary_surfaces_graph_query_batch,
+    exact_test_status_dialog_operator_summary_surfaces_graph_query_last,
+    exact_test_status_dialog_operator_summary_surfaces_jujutsu_components,
+    exact_test_status_dialog_operator_summary_surfaces_jujutsu_last_command,
+    exact_test_status_dialog_operator_summary_surfaces_jujutsu_probe,
+    exact_test_status_dialog_operator_summary_surfaces_landlock_support,
+    exact_test_status_dialog_operator_summary_surfaces_mcp_oauth_exchange_open,
+    exact_test_status_dialog_operator_summary_surfaces_mcp_oauth_outcomes,
+    exact_test_status_dialog_operator_summary_surfaces_mcp_oauth_remote_availability,
+    exact_test_status_dialog_operator_summary_surfaces_os_sandbox_first_prepare,
+    exact_test_status_dialog_operator_summary_surfaces_os_sandbox_profiles,
+    exact_test_status_dialog_operator_summary_surfaces_persistent_graph,
+    exact_test_status_dialog_operator_summary_surfaces_plan_view,
+    exact_test_status_dialog_operator_summary_surfaces_sandbox_fs_plan,
+    exact_test_status_dialog_operator_summary_surfaces_sleep_wake_availability,
+    exact_test_status_dialog_operator_summary_surfaces_sleep_wake_observations,
+    exact_test_status_dialog_operator_summary_surfaces_sleep_wake_policy,
+    exact_test_status_dialog_operator_summary_surfaces_team_add_cancel,
+    exact_test_status_dialog_operator_summary_surfaces_team_create,
+    exact_test_status_dialog_operator_summary_surfaces_team_registry_counts,
+    exact_test_status_dialog_operator_summary_surfaces_team_send,
+    exact_test_status_dialog_operator_summary_surfaces_workspace_hub_availability,
+    exact_test_status_dialog_operator_summary_surfaces_workspace_hub_bind_upload_recover,
+    exact_test_status_dialog_operator_summary_surfaces_workspace_hub_outcomes,
+    exact_test_status_dialog_plugins_section_surfaces_extension_descriptor,
+    exact_test_status_dialog_plugins_section_surfaces_extension_discover,
+    exact_test_status_dialog_plugins_section_surfaces_lifecycle_summary,
+    exact_test_status_dialog_plugins_section_surfaces_plugin_activate,
+    exact_test_status_dialog_plugins_section_surfaces_plugin_deactivate,
+    exact_test_status_dialog_plugins_section_surfaces_plugin_install,
+    exact_test_status_dialog_plugins_section_surfaces_plugin_remove,
     exact_test_status_dialog_render_snapshot_covers_harness_sections,
 };
 use theme_dialog::render_theme_dialog_overlay;
@@ -59,16 +132,14 @@ pub(super) fn render_overlays(
             OverlayKind::FileMentions => {
                 render_file_mentions_overlay(frame, app, theme, plan.slash_overlay)
             }
-            OverlayKind::CommandPalette => {
-                render_command_palette_overlay(
-                    frame,
-                    app,
-                    theme,
-                    plan.content,
-                    plan.composer,
-                    plan.palette_overlay,
-                )
-            }
+            OverlayKind::CommandPalette => render_command_palette_overlay(
+                frame,
+                app,
+                theme,
+                plan.content,
+                plan.composer,
+                plan.palette_overlay,
+            ),
             OverlayKind::TogglesMenu | OverlayKind::LineageBrowser | OverlayKind::ForkSelector => {
                 render_command_palette_overlay(
                     frame,
@@ -90,6 +161,10 @@ pub(super) fn render_overlays(
                 render_prompt_stash_list_overlay(frame, app, theme, plan.root)
             }
             OverlayKind::AuthDialog => render_auth_dialog_overlay(frame, app, theme, plan.root),
+            OverlayKind::SettingsEditor => {
+                render_settings_editor_overlay(frame, app, theme, plan.root)
+            }
+            OverlayKind::PlanView => render_plan_view_overlay(frame, app, theme, plan.root),
         }
     }
 }
@@ -171,26 +246,16 @@ fn render_subagent_action_row(frame: &mut Frame, theme: &Theme, area: Rect) {
     );
 }
 
-fn render_session_history_side_hint(
-    frame: &mut Frame,
-    _theme: &Theme,
-    root: Rect,
-    overlay: Rect,
-) {
+fn render_session_history_side_hint(frame: &mut Frame, _theme: &Theme, root: Rect, overlay: Rect) {
     let hint = "or this directory";
     let hint_width = u16::try_from(hint.chars().count()).unwrap_or(u16::MAX);
     let x = overlay.x.saturating_add(overlay.width);
-    let available = root
-        .x
-        .saturating_add(root.width)
-        .saturating_sub(x);
+    let available = root.x.saturating_add(root.width).saturating_sub(x);
     if available == 0 || hint_width == 0 {
         return;
     }
     let width = available.min(hint_width);
-    let y = overlay
-        .y
-        .saturating_add(overlay.height.saturating_sub(4));
+    let y = overlay.y.saturating_add(overlay.height.saturating_sub(4));
     if y >= root.y.saturating_add(root.height) {
         return;
     }
@@ -578,9 +643,7 @@ fn paint_command_palette_panel_titled(
 
     let surface = ui_chrome::command_palette_surface(theme);
     let border_style = Style::default().bg(surface);
-    let title_style = Style::default()
-        .bg(surface)
-        .add_modifier(Modifier::BOLD);
+    let title_style = Style::default().bg(surface).add_modifier(Modifier::BOLD);
     let close_style = border_style;
     frame.render_widget(Clear, overlay);
     let block = Block::default()
@@ -848,7 +911,8 @@ fn render_command_palette_list(frame: &mut Frame, app: &AppState, theme: &Theme,
             .y
             .saturating_add(u16::try_from(row - scroll).unwrap_or(u16::MAX));
         let row_area = Rect::new(list_area.x, row_y, list_area.width, 1);
-        let show_thumb = selected_category.is_some() && row_categories.get(row) == Some(&selected_category);
+        let show_thumb =
+            selected_category.is_some() && row_categories.get(row) == Some(&selected_category);
         match palette_row {
             PaletteOverlayRow::Spacer => {
                 frame.render_widget(
@@ -929,9 +993,7 @@ pub(crate) fn palette_overlay_rows(app: &AppState) -> Vec<PaletteOverlayRow> {
                         freeze.to_string()
                     } else {
                         match e.dispatch {
-                            PaletteDispatch::Action(action) => {
-                                app.keymap.get_binding_str(action)
-                            }
+                            PaletteDispatch::Action(action) => app.keymap.get_binding_str(action),
                             PaletteDispatch::OpenModelSwitcher => {
                                 app.keymap.get_binding_str(Action::OpenModelSwitcher)
                             }
@@ -1046,9 +1108,7 @@ fn command_palette_section_row(
         spans.push(Span::styled(rule, rule_style));
     }
     spans.push(Span::raw("  ".to_string()));
-    spans.push(Span::raw(
-        if show_thumb { "█" } else { " " }.to_string(),
-    ));
+    spans.push(Span::raw(if show_thumb { "█" } else { " " }.to_string()));
     Line::from(spans)
 }
 

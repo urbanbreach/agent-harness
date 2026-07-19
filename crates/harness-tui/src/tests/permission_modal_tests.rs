@@ -17,6 +17,62 @@ pub(super) fn permission_modal_snapshot_renders_request() {
     );
 }
 
+pub(super) fn permission_dock_packs_freeze_vertical_blanks() {
+    // Given: decision-stage permission dock with empty draft (freeze PERM packing)
+    let mut app = AppState::new_live(None, false, None);
+    app.ingest_event(permission_requested_event(
+        1,
+        "perm_pack_v2",
+        "tool_call_pack_v2",
+    ));
+
+    // When: rendering live shell at freeze-like geometry
+    let rendered = render_live_lines(&app, 120, 32);
+    let lines: Vec<&str> = rendered.lines().collect();
+    let dock_start = lines
+        .iter()
+        .position(|line| line.contains("Allow Edit"))
+        .expect("Allow Edit title must render");
+    let option_start = lines
+        .iter()
+        .position(|line| line.contains("1 (●)") || line.contains("1 (○)"))
+        .expect("option 1 must render");
+    let option_end = lines
+        .iter()
+        .rposition(|line| line.contains("4 (○)") || line.contains("4 (●)"))
+        .expect("option 4 must render");
+    let footer = lines
+        .iter()
+        .position(|line| line.contains("1/4:select"))
+        .expect("1/4:select footer must render");
+
+    // Then: freeze vertical blanks — leading `┃` above title, gap before options, blank before footer
+    assert!(
+        dock_start > 0 && lines[dock_start - 1].contains('┃'),
+        "freeze packs a blank `┃` row above the Allow Edit title\n{rendered}"
+    );
+    assert!(
+        option_start > dock_start + 1
+            && lines[dock_start + 1].contains('┃')
+            && !lines[dock_start + 1].contains("1 ("),
+        "freeze packs a blank `┃` gap between title and options\n{rendered}"
+    );
+    assert!(
+        footer > option_end + 1
+            && lines[option_end + 1].contains('┃')
+            && !lines[option_end + 1].contains("1/4:select"),
+        "freeze packs a blank `┃` row after options before the footer\n{rendered}"
+    );
+    assert!(
+        rendered.contains("Ctrl+o:always-approve") && rendered.contains("Ctrl+c:cancel"),
+        "4-option product keybind packing must stay closed\n{rendered}"
+    );
+    assert!(
+        rendered.contains("Yes, allow all edits during this session"),
+        "session option 2 must remain present\n{rendered}"
+    );
+}
+
 pub(super) fn question_permission_modal_renders_questions_and_answer_input() {
     let mut app = AppState::new_live(None, false, None);
     app.ingest_event(envelope(
@@ -43,7 +99,10 @@ pub(super) fn question_permission_modal_renders_questions_and_answer_input() {
     let debug = render_live_buffer(&app, 100, 28);
     assert!(debug.contains("Pick one"));
     // Grok freeze: all options (○) until answered; cursor focus uses styles only.
-    assert!(debug.contains("(○)"), "unanswered options must paint ○\n{debug}");
+    assert!(
+        debug.contains("(○)"),
+        "unanswered options must paint ○\n{debug}"
+    );
     assert!(
         !debug.contains("(●)"),
         "unanswered options must not paint ●\n{debug}"

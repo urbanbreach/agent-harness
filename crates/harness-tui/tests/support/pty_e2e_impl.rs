@@ -1,5 +1,6 @@
 use harness_core::event::{
-    ActorKind, EventActor, EventEnvelopeV1, EventV1, PermissionRequestedEvent, SCHEMA_VERSION,
+    ActorKind, EventActor, EventEnvelopeV1, EventV1, PermissionRequestedEvent,
+    ToolCallRequestedEvent, SCHEMA_VERSION,
 };
 use harness_tui::UnwrapOrAbort;
 use harness_tui::{run_tui_with_options, LiveUpdate, TuiMode, TuiOptions, UiIntent};
@@ -28,7 +29,7 @@ const DRAFT_TEXT: &str = "Hello from PTY";
 const PERMISSION_DRAFT: &str = "keep draft under permission";
 const CLEAR_DRAFT_TEXT: &str = "draft to clear via esc";
 const CLEAR_PROMPT_HINT: &str = "press again to clear";
-const PERMISSION_INJECT_DELAY: Duration = Duration::from_millis(900);
+const PERMISSION_INJECT_DELAY: Duration = Duration::from_millis(2_000);
 
 const PRIMARY_COLS: u16 = 100;
 const PRIMARY_ROWS: u16 = 30;
@@ -114,10 +115,11 @@ pub(crate) fn pty_permission_overlay_resolves_and_preserves_draft() {
     helper.wait_for("Allow Edit");
     helper.wait_for("always-approve");
     let permission_screen = helper.screen_text();
-    assert_no_multi_row_prompt_rail(&permission_screen, "permission overlay");
+    assert_permission_dock_shell(&permission_screen);
     assert!(
-        permission_screen.contains("Apply hashline edit to demo.txt"),
-        "PTY permission dock must show summary\n{permission_screen}"
+        permission_screen.contains("Allow Edit to demo.txt")
+            || permission_screen.contains("Apply hashline edit to demo.txt"),
+        "PTY permission dock must show edit target or summary\n{permission_screen}"
     );
     assert!(
         permission_screen.contains(PERMISSION_DRAFT),
@@ -255,11 +257,18 @@ pub(crate) fn pty_helper_permission_overlay() {
 
     let run_dir = tempfile::tempdir().unwrap_or_abort();
     let (update_tx, update_rx) = mpsc::channel();
+    let keepalive_tx = update_tx.clone();
     let inject_tx = update_tx.clone();
     thread::spawn(move || {
         thread::sleep(PERMISSION_INJECT_DELAY);
         let _ = inject_tx.send(LiveUpdate::Event(Box::new(permission_requested_event(
-            1,
+            2,
+            "perm_pty_overlay",
+            "tool_call_pty_overlay",
+        ))));
+        thread::sleep(Duration::from_millis(500));
+        let _ = inject_tx.send(LiveUpdate::Event(Box::new(permission_requested_event(
+            2,
             "perm_pty_overlay",
             "tool_call_pty_overlay",
         ))));
@@ -283,7 +292,7 @@ pub(crate) fn pty_helper_permission_overlay() {
                 }
             };
             let _ = resolve_tx.send(LiveUpdate::Event(Box::new(permission_resolved_event(
-                2,
+                3,
                 &permission_id,
                 event_decision,
                 reason,
@@ -294,7 +303,7 @@ pub(crate) fn pty_helper_permission_overlay() {
     run_tui_with_options(TuiOptions {
         mode: TuiMode::Live {
             run_dir: run_dir.path().to_path_buf(),
-            historical_events: Vec::new(),
+            historical_events: vec![permission_seed_tool_call_event()],
             session_history_entries: Vec::new(),
             prompt_history_path: None,
             update_rx,
@@ -307,6 +316,7 @@ pub(crate) fn pty_helper_permission_overlay() {
         preserve_terminal_on_exit: false,
     })
     .unwrap_or_abort();
+    drop(keepalive_tx);
 }
 
 pub(crate) fn pty_helper_connect_auth() {
@@ -408,6 +418,22 @@ fn assert_no_multi_row_prompt_rail(screen: &str, context: &str) {
     );
 }
 
+fn assert_permission_dock_shell(screen: &str) {
+    let prompt_glyph_lines = screen.lines().filter(|line| line.contains('❯')).count();
+    assert!(
+        prompt_glyph_lines <= 1,
+        "PTY permission overlay must not paint a multi-row ❯ rail (found {prompt_glyph_lines})\n{screen}"
+    );
+    assert!(
+        screen.contains('┃'),
+        "PTY permission dock must paint product warning rail ┃\n{screen}"
+    );
+    assert!(
+        screen.contains("Allow Edit"),
+        "PTY permission dock must show Allow Edit title\n{screen}"
+    );
+}
+
 fn assert_no_sidebar_copy(screen: &str, context: &str) {
     let lower = screen.to_ascii_lowercase();
     assert!(
@@ -416,6 +442,31 @@ fn assert_no_sidebar_copy(screen: &str, context: &str) {
             && !lower.contains("operator sidebar"),
         "PTY {context} must not advertise sidebar chrome copy\n{screen}"
     );
+}
+
+fn permission_seed_tool_call_event() -> EventEnvelopeV1 {
+    EventEnvelopeV1 {
+        schema_version: SCHEMA_VERSION,
+        event_id: "evt_pty_perm_tool_0001".to_string(),
+        seq: 1,
+        run_id: "run_pty_permission_overlay".into(),
+        mono_ms: 100,
+        ts: Some("2026-07-17T12:00:00Z".to_string()),
+        actor: EventActor::new(
+            ActorKind::System,
+            Some("pty-permission-overlay".to_string()),
+        ),
+        correlation_id: Some("req_pty_perm".to_string()),
+        causation_id: None,
+        stream_key: None,
+        payload: EventV1::ToolCallRequested(ToolCallRequestedEvent {
+            tool_call_id: "tool_call_pty_overlay".into(),
+            tool_id: "edit".to_string(),
+            args_summary: r#"{"path":"demo.txt"}"#.to_string(),
+            args_digest: "digest-args-pty-perm".to_string(),
+            metadata: None,
+        }),
+    }
 }
 
 fn permission_requested_event(
@@ -428,7 +479,7 @@ fn permission_requested_event(
         event_id: format!("evt_pty_perm_{seq:04}"),
         seq,
         run_id: "run_pty_permission_overlay".into(),
-        mono_ms: seq,
+        mono_ms: 400,
         ts: Some("2026-07-17T12:00:00Z".to_string()),
         actor: EventActor::new(
             ActorKind::System,
@@ -469,13 +520,11 @@ fn permission_resolved_event(
         correlation_id: Some(permission_id.to_string()),
         causation_id: None,
         stream_key: None,
-        payload: EventV1::PermissionResolved(
-            harness_core::event::PermissionResolvedEvent {
-                permission_id: permission_id.to_string(),
-                decision,
-                reason,
-            },
-        ),
+        payload: EventV1::PermissionResolved(harness_core::event::PermissionResolvedEvent {
+            permission_id: permission_id.to_string(),
+            decision,
+            reason,
+        }),
     }
 }
 

@@ -415,12 +415,8 @@ pub(super) fn transcript_shell_remains_scannable_without_bubble_cards() {
     let thinking_row =
         find_line_containing_all_from(&lines, prompt_row + 1, &["Drafting a document-like plan"])
             .unwrap_or_abort();
-    let tool_row = find_line_containing_all_from(
-        &lines,
-        thinking_row + 1,
-        &["Read 1 file"],
-    )
-    .unwrap_or_abort();
+    let tool_row =
+        find_line_containing_all_from(&lines, thinking_row + 1, &["Read 1 file"]).unwrap_or_abort();
     let body_row = find_line_containing_from(
         &lines,
         tool_row + 1,

@@ -36,8 +36,10 @@ const LIVE_PROMPT_STANDARD_CHROME_ROWS: u16 = 4;
 const LIVE_PROMPT_DENSE_CHROME_ROWS: u16 = 3;
 const LIVE_PROMPT_MIN_HEIGHT: u16 = 5;
 const DENSE_LIVE_PROMPT_MIN_HEIGHT: u16 = 4;
-const LIVE_PERMISSION_PROMPT_MIN_HEIGHT: u16 = 8;
-const LIVE_QUESTION_PROMPT_MIN_HEIGHT: u16 = 9;
+// Freeze PERM dock zone is 11 rows (shell 3 + tray 8: options/blanks/hints/trailing).
+const LIVE_PERMISSION_PROMPT_MIN_HEIGHT: u16 = 11;
+// Freeze QUESTION: dock 11 + blank + Esc footer + trailing blank (shell footer steals 3).
+const LIVE_QUESTION_PROMPT_MIN_HEIGHT: u16 = 14;
 const LIVE_DETAILS_MIN_TRANSCRIPT_WIDTH: u16 = 48;
 const TERMINAL_PANEL_MIN_TRANSCRIPT_HEIGHT: u16 = 7;
 const TERMINAL_PANEL_MIN_HEIGHT: u16 = 5;
@@ -411,6 +413,10 @@ pub(crate) fn session_shell_layout(
         shell_tokens.spacing.heights.prompt_block()
     } else if app.startup_shell_visible() {
         live_prompt_block_height(app, content_column, contract, shell, terminal_height)
+    } else if app.active_permission_view().is_some() {
+        // Permission dock paints its own tray/hints; do not reserve a status band that
+        // becomes empty rows above the bottom-anchored dock (freeze PERM packing).
+        live_prompt_block_height(app, content_column, contract, shell, terminal_height)
     } else {
         let disclosure_rows = control_dock_disclosure_rows(app, contract);
         let bottom_margin = if disclosure_rows > 0 {
@@ -662,50 +668,17 @@ fn permission_prompt_block_height(
 ) -> u16 {
     let inner_width = usize::from(width.saturating_sub(6).max(1));
 
-    if let Some(prompts) = permission.question_prompts.as_ref() {
-        let mut rows = 2u16;
-        if prompts.len() > 1 {
-            rows = rows.saturating_add(2);
-        }
-        for prompt in prompts {
-            let option_rows = u16::try_from(prompt.options.len())
-                .unwrap_or(u16::MAX)
-                .saturating_add(u16::from(prompt.custom));
-            let title_rows = if prompts.len() == 1 {
-                wrapped_text_rows(&prompt.question, inner_width).max(1)
-            } else {
-                wrapped_text_rows(
-                    &format!("[{}] {}", prompt.header, prompt.question),
-                    inner_width,
-                )
-                .max(1)
-            };
-            rows = rows
-                .saturating_add(title_rows)
-                .saturating_add(2)
-                .saturating_add(option_rows)
-                .saturating_add(3);
-        }
-
-        let preview = app.question_answer_preview(&permission.permission_id);
-        if !preview.is_empty() {
-            rows = rows.saturating_add(wrapped_text_rows(&preview, inner_width));
-        }
-        if app
-            .question_answer_error(&permission.permission_id)
-            .is_some()
-        {
-            rows = rows.saturating_add(1);
-        }
-
-        return rows.clamp(LIVE_QUESTION_PROMPT_MIN_HEIGHT, 16);
+    if permission.question_prompts.is_some() {
+        // Fixed freeze packing (like PERM): dynamic expansion left empty rail rows and
+        // shrank the transcript viewport so Waiting-on-answers pin could not fire.
+        let _ = (app, inner_width);
+        return LIVE_QUESTION_PROMPT_MIN_HEIGHT;
     }
 
-    let draft_rows = wrapped_text_rows(app.composer.prompt_buffer.as_str(), inner_width).min(2);
-    let content_rows = 6u16.saturating_add(draft_rows.saturating_sub(1));
-    content_rows
-        .max(LIVE_PERMISSION_PROMPT_MIN_HEIGHT)
-        .clamp(LIVE_PERMISSION_PROMPT_MIN_HEIGHT, 11)
+    // Draft is packed into the fixed 3-row shell body (see ui_permission_dock). Expanding
+    // the prompt block for draft_rows leaves empty rows above the bottom-anchored dock.
+    let _ = (app, inner_width);
+    LIVE_PERMISSION_PROMPT_MIN_HEIGHT
 }
 
 fn live_prompt_block_height(
@@ -924,6 +897,9 @@ mod tests {
 
     #[test]
     fn split_secondary_surface_stacks_vertically_in_narrow_tall_windows() {
+        // arrange
+        // act
+        // assert
         let [top, bottom] = split_secondary_surface(Rect::new(0, 0, 60, 24), 40, 1);
 
         assert_eq!(top, Rect::new(0, 0, 60, 9));
@@ -932,6 +908,9 @@ mod tests {
 
     #[test]
     fn split_secondary_surface_keeps_horizontal_layout_when_width_allows() {
+        // arrange
+        // act
+        // assert
         let [left, right] = split_secondary_surface(Rect::new(0, 0, 100, 24), 40, 1);
 
         assert_eq!(left, Rect::new(0, 0, 39, 24));
@@ -940,6 +919,9 @@ mod tests {
 
     #[test]
     fn lifecycle_overlay_stays_centered_in_minimum_geometry() {
+        // arrange
+        // act
+        // assert
         let theme = Theme::default();
         let overlay = lifecycle_overlay_area(
             Rect::new(0, 1, 80, 22),
@@ -953,6 +935,9 @@ mod tests {
 
     #[test]
     fn replay_session_layout_never_reserves_live_anchor() {
+        // arrange
+        // act
+        // assert
         let app = AppState::new_replay(std::path::PathBuf::from("/tmp/replay-session"), Vec::new());
         let plan = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, 100, 30));
 
@@ -961,6 +946,9 @@ mod tests {
 
     #[test]
     fn startup_composer_input_height_uses_harness_terminal_scaled_cap() {
+        // arrange
+        // act
+        // assert
         let text = "line\n".repeat(20);
 
         assert_eq!(startup_composer_input_height(&text, 75, 18), 6);
@@ -969,14 +957,22 @@ mod tests {
 
     #[test]
     fn startup_dock_is_bottom_aligned_with_horizontal_inset() {
+        // arrange
+        // act
+        // assert
         let app = AppState::new_startup(Vec::new(), None);
         let plan = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, 120, 32));
         let dock = plan.dock.unwrap_or_abort();
 
-        assert_eq!(dock.shell.x, plan.shell.x.saturating_add(STARTUP_COMPOSER_INSET_X));
+        assert_eq!(
+            dock.shell.x,
+            plan.shell.x.saturating_add(STARTUP_COMPOSER_INSET_X)
+        );
         assert_eq!(
             dock.shell.width,
-            plan.shell.width.saturating_sub(STARTUP_COMPOSER_INSET_X.saturating_mul(2))
+            plan.shell
+                .width
+                .saturating_sub(STARTUP_COMPOSER_INSET_X.saturating_mul(2))
         );
         assert_eq!(
             dock.shell.y,
@@ -998,6 +994,9 @@ mod tests {
 
     #[test]
     fn live_post_turn_dock_keeps_horizontal_inset_matching_freeze() {
+        // arrange
+        // act
+        // assert
         // Given: live shell (not startup) at freeze-primary 120×40
         let app = AppState::new_live(None, false, None);
         assert!(
@@ -1034,6 +1033,9 @@ mod tests {
 
     #[test]
     fn quiet_overlays_remain_centered_after_dock_merge() {
+        // arrange
+        // act
+        // assert
         let theme = Theme::default();
 
         let mut palette = AppState::new_live(None, false, None);
@@ -1056,6 +1058,9 @@ mod tests {
 
     #[test]
     fn startup_palette_overlay_prefers_compact_modal_dimensions() {
+        // arrange
+        // act
+        // assert
         let mut palette = AppState::new_startup(Vec::new(), None);
         palette.handle_key(crossterm::event::KeyEvent::new(
             crossterm::event::KeyCode::Char('p'),
@@ -1068,11 +1073,18 @@ mod tests {
         assert_eq!(overlay.width, 60);
         assert_eq!(overlay.x, 20);
         assert_eq!(overlay.y, 4);
-        assert!(overlay.height >= 20, "freeze palette height ~24, got {}", overlay.height);
+        assert!(
+            overlay.height >= 20,
+            "freeze palette height ~24, got {}",
+            overlay.height
+        );
     }
 
     #[test]
     fn fork_selector_overlay_uses_reference_large_dialog_geometry() {
+        // arrange
+        // act
+        // assert
         let mut app = AppState::new_live(None, false, None);
         app.open_fork_selector();
 

@@ -2,6 +2,9 @@ use super::*;
 
 #[test]
 fn action_from_str_roundtrip() {
+    // arrange
+    // act
+    // assert
     let action = Action::Quit;
     let s = action.as_str();
     let parsed = Action::from_str(s).unwrap();
@@ -118,6 +121,9 @@ fn help_actions_use_shared_command_metadata() {
 
 #[test]
 fn key_binding_parses_ctrl_p() {
+    // arrange
+    // act
+    // assert
     let binding = KeyBinding::from_str("ctrl+p").unwrap();
     assert_eq!(binding.code, KeyCode::Char('p'));
     assert!(binding.modifiers.contains(KeyModifiers::CONTROL));
@@ -125,6 +131,9 @@ fn key_binding_parses_ctrl_p() {
 
 #[test]
 fn key_binding_parses_single_char() {
+    // arrange
+    // act
+    // assert
     let binding = KeyBinding::from_str("q").unwrap();
     assert_eq!(binding.code, KeyCode::Char('q'));
     assert_eq!(binding.modifiers, KeyModifiers::NONE);
@@ -132,6 +141,9 @@ fn key_binding_parses_single_char() {
 
 #[test]
 fn keymap_finds_default_binding() {
+    // arrange
+    // act
+    // assert
     let keymap = KeyMap::with_defaults();
     let event = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE);
     assert_eq!(keymap.get_action(&event), Some(Action::Quit));
@@ -139,6 +151,9 @@ fn keymap_finds_default_binding() {
 
 #[test]
 fn keymap_override_replaces_default_binding() {
+    // arrange
+    // act
+    // assert
     let mut overrides = BTreeMap::new();
     overrides.insert("quit".to_string(), "x".to_string());
 
@@ -155,6 +170,9 @@ fn keymap_override_replaces_default_binding() {
 
 #[test]
 fn keymap_invalid_override_preserves_default_binding() {
+    // arrange
+    // act
+    // assert
     let mut overrides = BTreeMap::new();
     overrides.insert("quit".to_string(), "not-a-key".to_string());
 
@@ -167,13 +185,18 @@ fn keymap_invalid_override_preserves_default_binding() {
     );
     let quit_bindings = keymap.get_binding_strs(Action::Quit);
     assert!(
-        quit_bindings.iter().any(|b| b == "q" || b == "Ctrl+q" || b == "Ctrl+d"),
+        quit_bindings
+            .iter()
+            .any(|b| b == "q" || b == "Ctrl+q" || b == "Ctrl+d"),
         "quit bindings include freeze chords: {quit_bindings:?}"
     );
 }
 
 #[test]
 fn keymap_override_collision_removes_stale_session_label() {
+    // arrange
+    // act
+    // assert
     let mut overrides = BTreeMap::new();
     overrides.insert("session_child_cycle".to_string(), "left".to_string());
 
@@ -193,16 +216,24 @@ fn keymap_override_collision_removes_stale_session_label() {
 
 #[test]
 fn keymap_returns_binding_str() {
+    // arrange
+    // act
+    // assert
     let keymap = KeyMap::with_defaults();
     let bindings = keymap.get_binding_strs(Action::Quit);
     assert!(
-        bindings.iter().any(|b| b == "q" || b == "Ctrl+q" || b == "Ctrl+d"),
+        bindings
+            .iter()
+            .any(|b| b == "q" || b == "Ctrl+q" || b == "Ctrl+d"),
         "quit bindings present: {bindings:?}"
     );
 }
 
 #[test]
 fn keymap_returns_ctrl_binding_str() {
+    // arrange
+    // act
+    // assert
     let keymap = KeyMap::with_defaults();
     let bindings = keymap.get_binding_strs(Action::Palette);
     assert!(
@@ -213,6 +244,9 @@ fn keymap_returns_ctrl_binding_str() {
 
 #[test]
 fn keymap_formats_binding_labels_from_overrides() {
+    // arrange
+    // act
+    // assert
     let mut overrides = BTreeMap::new();
     overrides.insert("quit".to_string(), "x".to_string());
 
@@ -224,6 +258,9 @@ fn keymap_formats_binding_labels_from_overrides() {
 
 #[test]
 fn keymap_binds_shift_enter_to_insert_newline() {
+    // arrange
+    // act
+    // assert
     let keymap = KeyMap::with_defaults();
     let event = KeyEvent::new(KeyCode::Enter, KeyModifiers::SHIFT);
     assert_eq!(keymap.get_action(&event), Some(Action::InsertNewline));
@@ -231,6 +268,9 @@ fn keymap_binds_shift_enter_to_insert_newline() {
 
 #[test]
 fn keymap_binds_ctrl_j_to_insert_newline() {
+    // arrange
+    // act
+    // assert
     let keymap = KeyMap::with_defaults();
     let event = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::CONTROL);
     assert_eq!(keymap.get_action(&event), Some(Action::InsertNewline));
@@ -238,6 +278,9 @@ fn keymap_binds_ctrl_j_to_insert_newline() {
 
 #[test]
 fn keymap_binds_ctrl_enter_to_insert_newline() {
+    // arrange
+    // act
+    // assert
     let keymap = KeyMap::with_defaults();
     let event = KeyEvent::new(KeyCode::Enter, KeyModifiers::CONTROL);
     assert_eq!(keymap.get_action(&event), Some(Action::InsertNewline));
@@ -245,6 +288,9 @@ fn keymap_binds_ctrl_enter_to_insert_newline() {
 
 #[test]
 fn keymap_binds_alt_enter_to_insert_newline() {
+    // arrange
+    // act
+    // assert
     let keymap = KeyMap::with_defaults();
     let event = KeyEvent::new(KeyCode::Enter, KeyModifiers::ALT);
     assert_eq!(keymap.get_action(&event), Some(Action::InsertNewline));
@@ -252,6 +298,9 @@ fn keymap_binds_alt_enter_to_insert_newline() {
 
 #[test]
 fn keymap_uses_ctrl_y_and_ctrl_n_for_permission_decisions() {
+    // arrange
+    // act
+    // assert
     let keymap = KeyMap::with_defaults();
 
     let allow = KeyEvent::new(KeyCode::Char('y'), KeyModifiers::CONTROL);
@@ -265,6 +314,9 @@ fn keymap_uses_ctrl_y_and_ctrl_n_for_permission_decisions() {
 
 #[test]
 fn keymap_uses_ctrl_o_for_always_approve_permission() {
+    // arrange
+    // act
+    // assert
     let keymap = KeyMap::with_defaults();
 
     let always = KeyEvent::new(KeyCode::Char('o'), KeyModifiers::CONTROL);
@@ -280,6 +332,9 @@ fn keymap_uses_ctrl_o_for_always_approve_permission() {
 
 #[test]
 fn keymap_binds_child_session_navigation_to_default_bindings() {
+    // arrange
+    // act
+    // assert
     let keymap = KeyMap::with_defaults();
 
     assert_eq!(
@@ -442,6 +497,9 @@ fn assert_no_key_checks(surface: &str, source: &str) {
 
 #[test]
 fn keymap_accepts_variant_cycle_overrides() {
+    // arrange
+    // act
+    // assert
     let mut overrides = BTreeMap::new();
     overrides.insert("variant_cycle".to_string(), "tab".to_string());
 
@@ -456,6 +514,9 @@ fn keymap_accepts_variant_cycle_overrides() {
 
 #[test]
 fn keymap_accepts_leader_sequence_overrides() {
+    // arrange
+    // act
+    // assert
     let mut overrides = BTreeMap::new();
     overrides.insert(
         "session_child_first".to_string(),
@@ -473,6 +534,9 @@ fn keymap_accepts_leader_sequence_overrides() {
 
 #[test]
 fn keymap_binds_tab_to_focus_and_shift_tab_to_variant_cycle_by_default() {
+    // arrange
+    // act
+    // assert
     let keymap = KeyMap::with_defaults();
 
     assert_eq!(
@@ -500,6 +564,9 @@ fn keymap_binds_tab_to_focus_and_shift_tab_to_variant_cycle_by_default() {
 
 #[test]
 fn keymap_keeps_focus_prev_on_control_shift_tab() {
+    // arrange
+    // act
+    // assert
     let keymap = KeyMap::with_defaults();
 
     assert_eq!(
@@ -513,6 +580,9 @@ fn keymap_keeps_focus_prev_on_control_shift_tab() {
 
 #[test]
 fn keymap_binds_shift_tab_and_ctrl_t_to_variant_cycle() {
+    // arrange
+    // act
+    // assert
     let keymap = KeyMap::with_defaults();
 
     assert_eq!(
@@ -525,9 +595,7 @@ fn keymap_binds_shift_tab_and_ctrl_t_to_variant_cycle() {
     );
     let bindings = keymap.get_binding_strs(Action::VariantCycle);
     assert!(
-        bindings
-            .iter()
-            .any(|b| b == "Shift+Tab" || b == "Ctrl+t"),
+        bindings.iter().any(|b| b == "Shift+Tab" || b == "Ctrl+t"),
         "variant cycle bindings present: {bindings:?}"
     );
 }
@@ -672,9 +740,7 @@ fn displaced_keybind_remaps_to_open_status_dialog() {
     );
     let palette_bindings = keymap.get_binding_strs(Action::Palette);
     assert!(
-        palette_bindings
-            .iter()
-            .any(|b| b == "Ctrl+p" || b == "?"),
+        palette_bindings.iter().any(|b| b == "Ctrl+p" || b == "?"),
         "palette bindings present: {palette_bindings:?}"
     );
     assert_eq!(keymap.get_binding_str(Action::OpenStatusDialog), "Ctrl+x s");

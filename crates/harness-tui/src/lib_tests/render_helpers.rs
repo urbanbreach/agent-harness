@@ -618,10 +618,7 @@ fn composer_prompt_glyph_line(line: &str) -> bool {
 }
 
 fn composer_body_continuation_line(line: &str) -> bool {
-    let trimmed = line
-        .trim_start()
-        .trim_start_matches('│')
-        .trim_start();
+    let trimmed = line.trim_start().trim_start_matches('│').trim_start();
     if trimmed.is_empty() {
         return true;
     }

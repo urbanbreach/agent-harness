@@ -16,20 +16,30 @@ pub const FREEZE_PNG_SHA256: &str =
     "0830427651ae47645ea3ea49b532ef7ea29a69c3140f140d7df201f5093d6016";
 
 pub const STATUS_VALUES: &[&str] = &["incomplete", "blocked", "pass", "diverged"];
+/// Expanded §4.1 acceptance gates. Top-level `acceptance_gate_ids` must list every gate.
 pub const ACCEPTANCE_GATES: &[&str] = &[
     "A-MANIFEST",
     "A-REFERENCE",
+    "A-CAPABILITIES",
+    "A-CORE-AUDIT",
+    "A-CONFIG-SCHEMA",
+    "A-FUNCTIONAL",
+    "A-JOURNEYS",
     "A-STATE",
     "A-CELLS",
     "A-PIXELS",
     "A-TRACE",
     "A-TIMING",
+    "A-ANIMATION",
     "A-PTY",
     "A-INVARIANTS",
     "A-COVERAGE",
     "A-REVIEW",
     "A-NO-RESKIN",
 ];
+
+pub const ROW_KIND_VALUES: &[&str] = &["visual", "journey"];
+pub const JOURNEY_REQUIRED_JOIN_FIELDS: &[&str] = &["capability_id", "journey_id", "backend_owner"];
 
 pub const FIRST_SLICE_IDS: &[&str] = &[
     "P0-START-01",
@@ -128,6 +138,47 @@ impl ManifestFailure {
 
 pub type ValidateResult = Result<(), Vec<ManifestFailure>>;
 
+/// Status counts for §4.2 rollup (required / pass / blocked / diverged / incomplete).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct StatusRollup {
+    pub required: usize,
+    pub incomplete: usize,
+    pub blocked: usize,
+    pub pass: usize,
+    pub diverged: usize,
+    pub unknown: usize,
+}
+
+impl StatusRollup {
+    /// A-MANIFEST is complete when every required row is `pass` or user-approved `diverged`.
+    pub fn a_manifest_complete(&self) -> bool {
+        self.required > 0
+            && self.pass + self.diverged == self.required
+            && self.unknown == 0
+            && self.incomplete == 0
+            && self.blocked == 0
+    }
+}
+
+/// Count row statuses for fail-closed A-MANIFEST rollup reporting.
+pub fn rollup_status(manifest: &Value) -> StatusRollup {
+    let mut rollup = StatusRollup::default();
+    let Some(rows) = manifest["rows"].as_array() else {
+        return rollup;
+    };
+    rollup.required = rows.len();
+    for row in rows {
+        match row["status"].as_str() {
+            Some("incomplete") => rollup.incomplete += 1,
+            Some("blocked") => rollup.blocked += 1,
+            Some("pass") => rollup.pass += 1,
+            Some("diverged") => rollup.diverged += 1,
+            _ => rollup.unknown += 1,
+        }
+    }
+    rollup
+}
+
 pub fn validate_manifest(manifest: &Value) -> ValidateResult {
     let mut failures = Vec::new();
 
@@ -191,6 +242,7 @@ pub fn validate_manifest(manifest: &Value) -> ValidateResult {
 
     let status_allow = STATUS_VALUES.iter().copied().collect::<BTreeSet<_>>();
     let gate_allow = ACCEPTANCE_GATES.iter().copied().collect::<BTreeSet<_>>();
+    validate_top_level_acceptance_gates(manifest, &gate_allow, &mut failures);
 
     let Some(rows) = manifest["rows"].as_array() else {
         failures.push(ManifestFailure::new(
@@ -224,10 +276,7 @@ pub fn validate_manifest(manifest: &Value) -> ValidateResult {
         }
     }
 
-    for required_id in FIRST_SLICE_IDS
-        .iter()
-        .chain(REQUIRED_SCAFFOLD_IDS.iter())
-    {
+    for required_id in FIRST_SLICE_IDS.iter().chain(REQUIRED_SCAFFOLD_IDS.iter()) {
         if !seen_ids.contains_key(*required_id) {
             failures.push(ManifestFailure::new(
                 "missing-required-row",
@@ -250,6 +299,56 @@ pub fn validate_manifest(manifest: &Value) -> ValidateResult {
         Ok(())
     } else {
         Err(failures)
+    }
+}
+
+fn validate_top_level_acceptance_gates(
+    manifest: &Value,
+    gate_allow: &BTreeSet<&str>,
+    failures: &mut Vec<ManifestFailure>,
+) {
+    let Some(gates) = manifest["acceptance_gate_ids"].as_array() else {
+        failures.push(ManifestFailure::new(
+            "missing-acceptance-gates",
+            "$.acceptance_gate_ids",
+            "top-level acceptance_gate_ids must be a non-empty array listing every §4.1 gate",
+        ));
+        return;
+    };
+
+    let mut listed = BTreeSet::<&str>::new();
+    for (index, gate) in gates.iter().enumerate() {
+        match gate.as_str() {
+            Some(gate_id) if gate_allow.contains(gate_id) => {
+                if !listed.insert(gate_id) {
+                    failures.push(ManifestFailure::new(
+                        "duplicate-acceptance-gates",
+                        format!("$.acceptance_gate_ids[{index}]"),
+                        format!("duplicate top-level acceptance_gate_id {gate_id:?}"),
+                    ));
+                }
+            }
+            Some(gate_id) => failures.push(ManifestFailure::new(
+                "invalid-gates",
+                format!("$.acceptance_gate_ids[{index}]"),
+                format!("invalid top-level acceptance_gate_id {gate_id:?}"),
+            )),
+            None => failures.push(ManifestFailure::new(
+                "invalid-gates",
+                format!("$.acceptance_gate_ids[{index}]"),
+                "top-level acceptance_gate_id must be a string",
+            )),
+        }
+    }
+
+    for required in ACCEPTANCE_GATES {
+        if !listed.contains(*required) {
+            failures.push(ManifestFailure::new(
+                "missing-acceptance-gates",
+                "$.acceptance_gate_ids",
+                format!("top-level acceptance_gate_ids missing required gate {required}"),
+            ));
+        }
     }
 }
 
@@ -409,6 +508,52 @@ fn validate_row(
                 format!("{path}.identity_substitution.fields"),
                 "identity_substitution.fields must be a non-empty array",
             ));
+        }
+    }
+
+    validate_optional_join_fields(row, path, failures);
+}
+
+fn validate_optional_join_fields(row: &Value, path: &str, failures: &mut Vec<ManifestFailure>) {
+    let row_kind = row.get("row_kind").and_then(Value::as_str);
+    if let Some(kind) = row_kind {
+        if !ROW_KIND_VALUES.contains(&kind) {
+            failures.push(ManifestFailure::new(
+                "invalid-row-kind",
+                format!("{path}.row_kind"),
+                format!("invalid row_kind {kind:?}; allowed {ROW_KIND_VALUES:?}"),
+            ));
+        }
+    }
+
+    for field in [
+        "capability_id",
+        "subsystem_id",
+        "journey_id",
+        "backend_owner",
+        "visible_action_id",
+    ] {
+        if let Some(value) = row.get(field) {
+            if !value.is_null() && value.as_str().is_none() {
+                failures.push(ManifestFailure::new(
+                    "invalid-field-type",
+                    format!("{path}.{field}"),
+                    format!("{field} must be a string or null when present"),
+                ));
+            }
+        }
+    }
+
+    if row_kind == Some("journey") {
+        for field in JOURNEY_REQUIRED_JOIN_FIELDS {
+            match row.get(*field).and_then(Value::as_str) {
+                Some(value) if !value.is_empty() => {}
+                _ => failures.push(ManifestFailure::new(
+                    "missing-journey-join",
+                    format!("{path}.{field}"),
+                    format!("journey row_kind requires non-empty {field}"),
+                )),
+            }
         }
     }
 }

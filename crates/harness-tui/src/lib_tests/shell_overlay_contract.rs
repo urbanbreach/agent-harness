@@ -231,9 +231,9 @@ pub(super) fn slash_overlay_uses_input_width_aligned_rows_and_accent_selection()
     let rendered = render_live_lines(&app, 100, 24);
     let lines = rendered.lines().collect::<Vec<_>>();
     assert!(!rendered.contains("/events"));
-    let row = find_line_containing_all(&lines, &["/help", "Show shortcuts and TUI controls"])
-        .unwrap_or_else(|| panic!("slash /help row\n{rendered}"));
-    let help_description = lines[row]
+    let row = find_line_containing_all(&lines, &["/feedback", "Show shortcuts and TUI controls"])
+        .unwrap_or_else(|| panic!("slash /feedback row\n{rendered}"));
+    let feedback_description = lines[row]
         .find("Show shortcuts and TUI controls")
         .unwrap_or_abort();
     let exit_row = find_line_containing_all(&lines, &["/exit", "Quit the application"])
@@ -242,7 +242,7 @@ pub(super) fn slash_overlay_uses_input_width_aligned_rows_and_accent_selection()
         .find("Quit the application")
         .unwrap_or_abort();
 
-    assert_eq!(help_description, exit_description);
+    assert_eq!(feedback_description, exit_description);
     assert!(!lines[row].contains('┃'));
     assert!(
         !lines[row].contains('╭') && !lines[row].contains('╰'),
@@ -577,10 +577,7 @@ pub(super) fn live_shell_redesign_preserves_replay_overlay_and_permission_parity
     let failure_render = render_live_lines(&failure, 80, 24);
     // Freeze-aligned: Failure no longer paints elevated overlay chrome.
     assert!(!failure_render.contains("Review required"));
-    assert_eq!(
-        failure.runtime_state().kind,
-        app::RuntimeStateKind::Failure
-    );
+    assert_eq!(failure.runtime_state().kind, app::RuntimeStateKind::Failure);
 }
 
 pub(super) fn permission_modal_remains_visually_dominant_and_fail_closed() {

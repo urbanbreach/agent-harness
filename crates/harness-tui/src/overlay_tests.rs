@@ -2,6 +2,9 @@ use super::*;
 
 #[test]
 fn test_from_state_empty() {
+    // arrange
+    // act
+    // assert
     let state = OverlayState::default();
     let stack = OverlayStack::from_state(state);
     assert_eq!(stack.ordered(), &[]);
@@ -9,6 +12,9 @@ fn test_from_state_empty() {
 
 #[test]
 fn test_command_palette_channel_visible_fields() {
+    // arrange
+    // act
+    // assert
     let visible_states = [
         OverlayState {
             palette_visible: true,
@@ -53,6 +59,9 @@ fn test_command_palette_channel_visible_fields() {
 
 #[test]
 fn test_from_state_all_independent() {
+    // arrange
+    // act
+    // assert
     let state = OverlayState {
         details_drawer_open: true,
         slash_visible: true,
@@ -74,6 +83,9 @@ fn test_from_state_all_independent() {
 
 #[test]
 fn test_from_state_permission_pending_overrides() {
+    // arrange
+    // act
+    // assert
     let state = OverlayState {
         details_drawer_open: true,
         slash_visible: true,
@@ -92,6 +104,9 @@ fn test_from_state_permission_pending_overrides() {
 
 #[test]
 fn test_from_state_command_palette_hierarchy() {
+    // arrange
+    // act
+    // assert
     let mut state = OverlayState {
         palette_visible: true,
         toggles_menu_visible: true,
@@ -139,6 +154,9 @@ fn test_from_state_command_palette_hierarchy() {
 
 #[test]
 fn test_command_palette_channel_emits_single_entry_when_all_set() {
+    // arrange
+    // act
+    // assert
     let state = OverlayState {
         palette_visible: true,
         session_history_visible: true,
@@ -170,6 +188,9 @@ fn test_command_palette_channel_emits_single_entry_when_all_set() {
 
 #[test]
 fn test_theme_dialog_and_error_details_are_independent_channels() {
+    // arrange
+    // act
+    // assert
     let state = OverlayState {
         theme_dialog_visible: true,
         error_details_visible: true,
@@ -184,6 +205,9 @@ fn test_theme_dialog_and_error_details_are_independent_channels() {
 
 #[test]
 fn test_theme_dialog_and_error_details_coexist_with_status_dialog() {
+    // arrange
+    // act
+    // assert
     let state = OverlayState {
         status_dialog_visible: true,
         theme_dialog_visible: true,
@@ -203,6 +227,9 @@ fn test_theme_dialog_and_error_details_coexist_with_status_dialog() {
 
 #[test]
 fn test_permission_pending_preempts_all_other_overlays() {
+    // arrange
+    // act
+    // assert
     let state = OverlayState {
         details_drawer_open: true,
         slash_visible: true,
@@ -219,6 +246,8 @@ fn test_permission_pending_preempts_all_other_overlays() {
         error_details_visible: true,
         prompt_stash_list_visible: true,
         auth_dialog_visible: false,
+        settings_editor_visible: false,
+        plan_view_visible: false,
         permission_pending: true,
     };
     let stack = OverlayStack::from_state(state);
@@ -231,6 +260,9 @@ fn test_permission_pending_preempts_all_other_overlays() {
 
 #[test]
 fn test_top_returns_single_focus_owner() {
+    // arrange
+    // act
+    // assert
     let state = OverlayState {
         status_dialog_visible: true,
         theme_dialog_visible: true,

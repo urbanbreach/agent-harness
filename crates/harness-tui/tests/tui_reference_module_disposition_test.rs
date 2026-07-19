@@ -5,8 +5,7 @@ use harness_tui::UnwrapOrAbort;
 use serde_json::Value;
 use std::collections::BTreeSet;
 
-const DISPOSITION: &str =
-    include_str!("../../../docs/tui-reference-module-disposition.v1.json");
+const DISPOSITION: &str = include_str!("../../../docs/tui-reference-module-disposition.v1.json");
 
 const ALLOWED: &[&str] = &[
     "replace",
@@ -19,15 +18,15 @@ const ALLOWED: &[&str] = &[
 #[allow(clippy::panic, reason = "test code must panic gracefully")]
 fn module_disposition_enums_and_contract_section_6_coverage() {
     // arrange
+    // act
+    // assert
+    // arrange
     let doc: Value = serde_json::from_str(DISPOSITION).unwrap_or_abort();
     assert_eq!(
         doc["schema_version"],
         "harness-tui-reference-module-disposition-v1"
     );
-    assert_eq!(
-        doc["policy"]["div_004_compose_first_as_parity"],
-        "invalid"
-    );
+    assert_eq!(doc["policy"]["div_004_compose_first_as_parity"], "invalid");
 
     let enum_list = doc["disposition_enum"]
         .as_array()
@@ -63,10 +62,7 @@ fn module_disposition_enums_and_contract_section_6_coverage() {
     // act + assert
     for module in modules {
         let path = module["path"].as_str().unwrap_or_abort();
-        assert!(
-            seen.insert(path.to_owned()),
-            "duplicate module path {path}"
-        );
+        assert!(seen.insert(path.to_owned()), "duplicate module path {path}");
 
         let disposition = module["disposition"].as_str().unwrap_or_abort();
         assert!(

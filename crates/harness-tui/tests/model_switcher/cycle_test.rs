@@ -11,6 +11,9 @@ use crate::model_switcher_fixtures::*;
 
 #[test]
 fn ctrl_t_cycles_reasoning_variants_in_semantic_order() {
+    // arrange
+    // act
+    // assert
     let variants = reasoning_order_variant_options();
     let mut live = AppState::new_live(None, false, None);
     live.set_launch_metadata(
@@ -33,6 +36,9 @@ fn ctrl_t_cycles_reasoning_variants_in_semantic_order() {
 
 #[test]
 fn launch_mode_label_is_not_used_as_model_reasoning_fallback() {
+    // arrange
+    // act
+    // assert
     let mut live = AppState::new_live(None, false, None);
     live.set_launch_metadata(
         LaunchMetadata::from_model_option(&multi_provider_models()[1]).with_mode_label("Live"),
@@ -45,6 +51,9 @@ fn launch_mode_label_is_not_used_as_model_reasoning_fallback() {
 
 #[test]
 fn model_switcher_deduplicates_agent_rows_and_preserves_current_agent() {
+    // arrange
+    // act
+    // assert
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let sink = {
         let intents = Arc::clone(&intents);
@@ -89,6 +98,9 @@ fn model_switcher_deduplicates_agent_rows_and_preserves_current_agent() {
 
 #[test]
 fn variant_cycle_updates_selected_model_without_losing_launch_metadata() {
+    // arrange
+    // act
+    // assert
     let _config = load_config_from_str(rich_model_config()).unwrap_or_abort();
 
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
@@ -147,6 +159,9 @@ fn variant_cycle_updates_selected_model_without_losing_launch_metadata() {
 
 #[test]
 fn ctrl_t_cycles_thinking_variant_within_current_profile() {
+    // arrange
+    // act
+    // assert
     let _config = load_config_from_str(rich_model_config()).unwrap_or_abort();
 
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
@@ -185,6 +200,9 @@ fn ctrl_t_cycles_thinking_variant_within_current_profile() {
 
 #[test]
 fn ctrl_t_includes_base_model_entries_in_config_backed_variant_cycle() {
+    // arrange
+    // act
+    // assert
     let _config = load_config_from_str(rich_model_config()).unwrap_or_abort();
 
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
@@ -231,6 +249,9 @@ fn ctrl_t_includes_base_model_entries_in_config_backed_variant_cycle() {
 
 #[test]
 fn ctrl_t_cycles_from_last_variant_to_none() {
+    // arrange
+    // act
+    // assert
     let _config = load_config_from_str(rich_model_config()).unwrap_or_abort();
 
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));

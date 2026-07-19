@@ -44,7 +44,10 @@ pub(crate) fn load_rgba_png(path: &Path) -> RgbaImage {
         .to_rgba8()
 }
 
-pub(crate) fn compare_rgba_images(reference: &RgbaImage, actual: &RgbaImage) -> PixelCompareOutcome {
+pub(crate) fn compare_rgba_images(
+    reference: &RgbaImage,
+    actual: &RgbaImage,
+) -> PixelCompareOutcome {
     let (rw, rh) = reference.dimensions();
     let (aw, ah) = actual.dimensions();
     if rw != aw || rh != ah {

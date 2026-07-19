@@ -6,11 +6,13 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
+use crossterm::cursor::MoveTo;
 use crossterm::event::{
     DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
     KeyboardEnhancementFlags, MouseButton, MouseEventKind, PopKeyboardEnhancementFlags,
     PushKeyboardEnhancementFlags,
 };
+use crossterm::terminal::{Clear, ClearType};
 use harness_core::event::EventEnvelopeV1;
 use ratatui::buffer::Buffer;
 use ratatui::{backend::CrosstermBackend, Terminal};
@@ -311,8 +313,9 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
             update_rx,
             compact_session_supported,
         } => {
+            let crash_report = harness_core::crash_recovery::inspect_previous_crash(&run_dir);
             let mut app = AppState::new_live_with_session_history_and_prompt_history_path(
-                Some(run_dir),
+                Some(run_dir.clone()),
                 exit_on_finish,
                 on_ui_intent,
                 session_history_entries,
@@ -330,6 +333,19 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
             for event in historical_events {
                 app.ingest_historical_event(event);
             }
+            if let Some(message) = crash_report.recovery_message {
+                let banner = match crash_report.recovery_action {
+                    Some(action) => {
+                        let run_id = run_dir
+                            .file_name()
+                            .and_then(|name| name.to_str())
+                            .unwrap_or("session");
+                        format!("{message} Action: {}", action.operator_hint(run_id))
+                    }
+                    None => message,
+                };
+                app.set_status_banner(Some(banner));
+            }
             (app, Some(update_rx))
         }
     };
@@ -338,6 +354,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         app.set_toggles_config(toggles);
     }
 
+    app.seed_operator_host_probes(None);
     app.maybe_set_no_provider_banner();
 
     let preserved_terminal = recover_mutex_lock(preserved_terminal_session()).clone();
@@ -400,10 +417,17 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
 
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
-    if let Some(buffer) = preserved_terminal.buffer.as_ref() {
-        if terminal.current_buffer_mut().area == buffer.area {
-            *terminal.current_buffer_mut() = buffer.clone();
-        }
+    if reusing_terminal {
+        // Physical alternate-screen cells from the previous shell survive across
+        // handoff. Best-effort clear: some PTY backends reject Clear(All) while
+        // still accepting normal draws. Always reset ratatui buffers so undrawn
+        // regions cannot ghost startup welcome text into the next shell.
+        let _ = crossterm::execute!(terminal.backend_mut(), Clear(ClearType::All), MoveTo(0, 0));
+        let size = terminal
+            .size()
+            .context("failed to read terminal size for handoff clear")?;
+        let area = ratatui::layout::Rect::new(0, 0, size.width, size.height);
+        *terminal.current_buffer_mut() = Buffer::empty(area);
     }
 
     let mut restore_guard = TerminalRestoreGuard::new(capabilities);
@@ -541,7 +565,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         *recover_mutex_lock(preserved_terminal_session()) = PreservedTerminalSession {
             active: true,
             capabilities,
-            buffer: Some(terminal.current_buffer_mut().clone()),
+            buffer: None,
         };
         restore_guard.mark_restored();
         return run_result;
@@ -752,6 +776,9 @@ mod tests {
 
     #[test]
     fn poll_timeout_blocks_when_idle_and_live_updates_are_gone() {
+        // arrange
+        // act
+        // assert
         let now = Instant::now();
         assert_eq!(
             poll_timeout(false, false, now, now + ACTIVE_POLL_INTERVAL),
@@ -765,6 +792,9 @@ mod tests {
 
     #[test]
     fn poll_timeout_tracks_next_animation_tick() {
+        // arrange
+        // act
+        // assert
         let now = Instant::now();
         let next_tick = now + Duration::from_millis(42);
 
@@ -780,6 +810,9 @@ mod tests {
 
     #[test]
     fn next_animation_tick_after_slow_frame_remains_throttled() {
+        // arrange
+        // act
+        // assert
         let started_at = Instant::now();
         let slow_frame_completed_at = started_at + ACTIVE_POLL_INTERVAL * 3;
         let next_tick = next_animation_tick_after_frame(slow_frame_completed_at);
@@ -792,6 +825,9 @@ mod tests {
 
     #[test]
     fn plain_mouse_movement_reaches_hover_handling() {
+        // arrange
+        // act
+        // assert
         assert!(mouse_event_requires_handling(MouseEventKind::Moved, false));
         assert!(mouse_event_requires_handling(MouseEventKind::Moved, true));
         assert!(mouse_event_requires_handling(
@@ -802,6 +838,9 @@ mod tests {
 
     #[test]
     fn drain_live_updates_marks_disconnect_once() {
+        // arrange
+        // act
+        // assert
         let (tx, rx) = mpsc::channel();
         drop(tx);
         let mut app = AppState::default();
@@ -833,6 +872,9 @@ mod tests {
 
     #[test]
     fn app_toast_counts_as_active_animation() {
+        // arrange
+        // act
+        // assert
         let mut app = AppState::default();
         assert!(!app.has_active_animations());
 
@@ -843,6 +885,9 @@ mod tests {
 
     #[test]
     fn drain_live_updates_routes_operator_notice_to_toast() {
+        // arrange
+        // act
+        // assert
         let (tx, rx) = mpsc::channel();
         tx.send(LiveUpdate::OperatorNotice {
             message: "manual compaction skipped: need at least two completed turns".to_string(),
@@ -874,6 +919,9 @@ mod tests {
 
     #[test]
     fn drain_live_updates_keeps_error_operator_notice_persistent() {
+        // arrange
+        // act
+        // assert
         let (tx, rx) = mpsc::channel();
         tx.send(LiveUpdate::OperatorNotice {
             message: "manual compaction failed: boom".to_string(),
@@ -905,6 +953,9 @@ mod tests {
 
     #[test]
     fn drain_live_updates_applies_session_history_refresh() {
+        // arrange
+        // act
+        // assert
         let entry = SessionHistoryEntry {
             run_dir: PathBuf::from("/tmp/session-history-refresh"),
             catalog: SessionCatalogEntry {
@@ -943,6 +994,9 @@ mod tests {
 
     #[test]
     fn drain_live_updates_applies_auth_backend_result_to_status_banner() {
+        // arrange
+        // act
+        // assert
         let (tx, rx) = mpsc::channel();
         let mut app = AppState::new_startup(Vec::new(), None);
         app.set_status_banner(Some(
@@ -967,6 +1021,9 @@ mod tests {
 
     #[test]
     fn drain_live_updates_yields_after_frame_budget() {
+        // arrange
+        // act
+        // assert
         let (tx, rx) = mpsc::channel();
         for index in 0..=LIVE_UPDATE_DRAIN_MAX_PER_FRAME {
             tx.send(LiveUpdate::Status(format!("status {index}")))

@@ -130,7 +130,10 @@ fn render_model_switcher_list(frame: &mut Frame, app: &AppState, theme: &Theme, 
             ModelSwitcherRow::Category(category) => {
                 frame.render_widget(
                     Paragraph::new(command_palette_section_row(
-                        category, theme, row_area.width, false,
+                        category,
+                        theme,
+                        row_area.width,
+                        false,
                     )),
                     row_area,
                 );

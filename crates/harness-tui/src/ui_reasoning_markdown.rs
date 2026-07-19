@@ -325,6 +325,9 @@ mod tests {
 
     #[test]
     fn plain_text_uses_base_color_without_dim() {
+        // arrange
+        // act
+        // assert
         let colors = test_colors();
         let spans = parse_reasoning_inline_spans("hello world", &colors);
         assert_eq!(spans.len(), 1);
@@ -334,6 +337,9 @@ mod tests {
 
     #[test]
     fn intraword_underscores_are_not_emphasis() {
+        // arrange
+        // act
+        // assert
         let colors = test_colors();
         let spans =
             parse_reasoning_inline_spans("background_output session_search gh_grep", &colors);
@@ -350,6 +356,9 @@ mod tests {
 
     #[test]
     fn screenshot_text_has_no_false_positives() {
+        // arrange
+        // act
+        // assert
         let colors = test_colors();
         let text = "18. sessionlist, sessionread, sessionsearch, sessioninfo - session tools\n\
                     19. backgroundoutput, backgroundcancel - background task tools\n\
@@ -371,6 +380,9 @@ mod tests {
 
     #[test]
     fn bold_delimiters_render_with_strong_color() {
+        // arrange
+        // act
+        // assert
         let colors = test_colors();
         let spans = parse_reasoning_inline_spans("**important**", &colors);
         assert_eq!(spans.len(), 1);
@@ -380,6 +392,9 @@ mod tests {
 
     #[test]
     fn emphasis_asterisks_render_with_emph_color() {
+        // arrange
+        // act
+        // assert
         let colors = test_colors();
         let spans = parse_reasoning_inline_spans("*italic*", &colors);
         assert_eq!(spans.len(), 1);
@@ -389,6 +404,9 @@ mod tests {
 
     #[test]
     fn emphasis_underscores_render_with_emph_color() {
+        // arrange
+        // act
+        // assert
         let colors = test_colors();
         let spans = parse_reasoning_inline_spans("_italic_", &colors);
         assert_eq!(spans.len(), 1);
@@ -398,6 +416,9 @@ mod tests {
 
     #[test]
     fn inline_code_renders_with_code_color() {
+        // arrange
+        // act
+        // assert
         let colors = test_colors();
         let spans = parse_reasoning_inline_spans("`code`", &colors);
         assert_eq!(spans.len(), 1);
@@ -406,6 +427,9 @@ mod tests {
 
     #[test]
     fn strikethrough_renders_with_crossed_out() {
+        // arrange
+        // act
+        // assert
         let colors = test_colors();
         let spans = parse_reasoning_inline_spans("~~deleted~~", &colors);
         assert_eq!(spans.len(), 1);
@@ -415,6 +439,9 @@ mod tests {
 
     #[test]
     fn intraword_asterisks_are_not_emphasis() {
+        // arrange
+        // act
+        // assert
         let colors = test_colors();
         let spans = parse_reasoning_inline_spans("foo*bar*baz", &colors);
         for span in &spans {
@@ -430,6 +457,9 @@ mod tests {
 
     #[test]
     fn link_renders_with_link_text_color() {
+        // arrange
+        // act
+        // assert
         let colors = test_colors();
         let spans = parse_reasoning_inline_spans("[label](https://example.com)", &colors);
         assert_eq!(spans.len(), 1);
@@ -440,6 +470,9 @@ mod tests {
 
     #[test]
     fn raw_url_renders_with_link_color() {
+        // arrange
+        // act
+        // assert
         let colors = test_colors();
         let spans = parse_reasoning_inline_spans("see https://example.com for details", &colors);
         assert!(spans.iter().any(|s| {
@@ -449,6 +482,9 @@ mod tests {
 
     #[test]
     fn blended_colors_differ_from_raw_theme_colors() {
+        // arrange
+        // act
+        // assert
         let theme = Theme::default();
         let colors = reasoning_markdown_colors(&theme, theme.surface.shell);
         assert_ne!(colors.heading, theme.markdown.heading);

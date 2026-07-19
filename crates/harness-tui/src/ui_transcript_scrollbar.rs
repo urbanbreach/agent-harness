@@ -234,6 +234,9 @@ mod tests {
 
     #[test]
     fn transcript_scrollbar_layout_matches_shell_lane_width() {
+        // arrange
+        // act
+        // assert
         let viewport = transcript_viewport_layout(Rect::new(4, 2, 20, 12), true);
 
         assert_eq!(viewport.content, Rect::new(4, 2, 19, 12));
@@ -243,6 +246,9 @@ mod tests {
 
     #[test]
     fn more_below_affordance_paints_centered_glyph_when_not_at_bottom() {
+        // arrange
+        // act
+        // assert
         let backend = TestBackend::new(20, 6);
         let mut terminal = Terminal::new(backend).expect("terminal");
         let theme = Theme::default();
@@ -252,7 +258,14 @@ mod tests {
 
         terminal
             .draw(|frame| {
-                render_transcript_more_below_affordance(frame, content, 0, 10, &theme, Color::Black);
+                render_transcript_more_below_affordance(
+                    frame,
+                    content,
+                    0,
+                    10,
+                    &theme,
+                    Color::Black,
+                );
             })
             .expect("draw");
 
@@ -267,6 +280,9 @@ mod tests {
 
     #[test]
     fn more_below_affordance_hidden_when_pinned_to_bottom() {
+        // arrange
+        // act
+        // assert
         let backend = TestBackend::new(20, 6);
         let mut terminal = Terminal::new(backend).expect("terminal");
         let theme = Theme::default();

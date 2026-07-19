@@ -192,9 +192,10 @@ pub(crate) fn exact_test_subagent_replay_suppresses_parent_replay_dock() {
             .transcript_gutter_y
             .min(transcript.height.saturating_sub(1)),
     );
+    // Grok black theme: transcript base surface is #0b0e14 (shell/panel), not terminal Reset.
     assert_eq!(
         terminal.backend().buffer()[(sample_x, sample_y)].bg,
-        Color::Reset,
+        theme.surface.shell,
         "subagent replay should use the same transcript surface as the main chat"
     );
 }
@@ -626,6 +627,9 @@ pub(crate) fn exact_test_composer_viewport_wraps_at_word_boundaries() {
 #[cfg(test)]
 #[test]
 fn composer_file_tag_line_uses_warning_bold_style() {
+    // arrange
+    // act
+    // assert
     let app = AppState::new_startup(Vec::new(), None);
     let theme = app.theme();
     let base = Style::default()

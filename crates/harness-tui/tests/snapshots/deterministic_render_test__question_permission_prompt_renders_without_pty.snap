@@ -1,11 +1,13 @@
 ---
 source: crates/harness-tui/tests/deterministic_render_test.rs
-assertion_line: 246
 expression: rendered.as_str()
 ---
-          run run_fixture · default/local · -                                                       
                                                                                                     
              ui-ux-experiments ~/Projects/agent-harness/crates/harness-tui                         
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
                                                                                                     
                                                                                                     
                                                                                                     
@@ -23,11 +25,8 @@ expression: rendered.as_str()
             ┃ 1 (○) A  Option A                                                                     
             ┃ z (○) Type your answer here                                                           
             ┃                                                                                       
-            ┃                                                                                       
-            ┃                                                                                       
-            ┃                                                                                       
-            ┃                                                                                       
-            ┃                                                                                       
             ┃ ↑/↓ navigate · Ctrl+x y copy                                 Enter:submit             
+            ┃                                                                                       
+            ┃                                                                                       
                                                                                                     
             Esc:unselect  │  Tab:scrollback  │  Ctrl+c:dismiss

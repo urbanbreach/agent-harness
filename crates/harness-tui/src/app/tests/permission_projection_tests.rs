@@ -2,6 +2,9 @@ use super::*;
 
 #[test]
 fn tool_call_entries_prefer_resolved_identity_and_lifecycle_contract() {
+    // arrange
+    // act
+    // assert
     let mut app = AppState::new_live(None, false, None);
 
     app.ingest_event(envelope(
@@ -112,6 +115,9 @@ fn tool_call_entries_prefer_resolved_identity_and_lifecycle_contract() {
 
 #[test]
 fn activity_permission_resolution_updates_activity_level_entry() {
+    // arrange
+    // act
+    // assert
     let mut app = AppState::new_live(None, false, None);
 
     app.ingest_event(envelope(
@@ -170,6 +176,9 @@ fn activity_permission_resolution_updates_activity_level_entry() {
 
 #[test]
 fn orphan_question_permission_becomes_pending_ask_tool_row() {
+    // arrange
+    // act
+    // assert
     let mut app = AppState::new_live(None, false, None);
 
     app.ingest_event(envelope(
@@ -195,7 +204,12 @@ fn orphan_question_permission_becomes_pending_ask_tool_row() {
 
     assert!(app.activities.is_empty());
 
-    app.ingest_event(provider_started(2, "req_orphan_question", "worker", "model-1"));
+    app.ingest_event(provider_started(
+        2,
+        "req_orphan_question",
+        "worker",
+        "model-1",
+    ));
 
     assert_eq!(app.activities.len(), 1);
     assert_eq!(app.activities[0].tool_calls.len(), 1);

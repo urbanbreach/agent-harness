@@ -165,15 +165,10 @@ pub(super) fn render_document_composer_content(
         let height = usize::from(rail_area.height);
         let mut rail_lines = Vec::with_capacity(height.max(1));
         if height > 0 {
-            rail_lines.push(Line::from(Span::styled(
-                COMPOSER_PROMPT_GLYPH,
-                glyph_style,
-            )));
+            rail_lines.push(Line::from(Span::styled(COMPOSER_PROMPT_GLYPH, glyph_style)));
             rail_lines.extend(
-                std::iter::repeat_with(|| {
-                    Line::from(Span::styled(" ", glyph_style))
-                })
-                .take(height.saturating_sub(1)),
+                std::iter::repeat_with(|| Line::from(Span::styled(" ", glyph_style)))
+                    .take(height.saturating_sub(1)),
             );
         }
         frame.render_widget(
@@ -271,6 +266,9 @@ fn composer_model_badge(app: &AppState) -> String {
             badge = format!("{badge} · {reasoning}");
         }
     }
+    if app.always_approve_mode() {
+        badge = format!("{badge} · always-approve");
+    }
     if app.queued_prompt_count > 0 {
         let queue = format!("queued {}", app.queued_prompt_count);
         badge = format!("{badge} · {queue}");
@@ -317,9 +315,7 @@ fn render_bordered_composer(
             Style::default().bg(surface).add_modifier(Modifier::DIM),
         )
     };
-    block = block.title_bottom(
-        Line::from(Span::styled(badge_title, badge_style)).right_aligned(),
-    );
+    block = block.title_bottom(Line::from(Span::styled(badge_title, badge_style)).right_aligned());
 
     let inner = block.inner(strip);
     frame.render_widget(block, strip);
@@ -374,10 +370,7 @@ fn render_bordered_composer(
         viewport.cursor = None;
     }
 
-    let base_style = if matches!(
-        body_color,
-        Color::Reset | Color::Rgb(215, 218, 224)
-    ) {
+    let base_style = if matches!(body_color, Color::Reset | Color::Rgb(215, 218, 224)) {
         Style::default().bg(composer_surface)
     } else {
         Style::default().fg(body_color).bg(composer_surface)
@@ -408,7 +401,9 @@ fn render_bordered_composer(
     if let Some((cursor_row, cursor_col)) = viewport.cursor {
         let cursor_x = inner
             .x
-            .saturating_add(u16::try_from(glyph_cols.saturating_add(cursor_col)).unwrap_or(u16::MAX))
+            .saturating_add(
+                u16::try_from(glyph_cols.saturating_add(cursor_col)).unwrap_or(u16::MAX),
+            )
             .min(inner.x.saturating_add(inner.width.saturating_sub(1)));
         let cursor_y = inner
             .y

@@ -235,7 +235,10 @@ fn help_and_toggles_surfaces_open_harness_safe() {
 
     // act — theme dialog (Harness-safe theme names)
     let mut theme_app = AppState::new_live(None, false, None);
-    theme_app.handle_key(key_with_modifiers(KeyCode::Char('x'), KeyModifiers::CONTROL));
+    theme_app.handle_key(key_with_modifiers(
+        KeyCode::Char('x'),
+        KeyModifiers::CONTROL,
+    ));
     theme_app.handle_key(key(KeyCode::Char('t')));
     let theme_render = render_text(&theme_app, 120, 40);
     // assert — theme surface opens without reference branding

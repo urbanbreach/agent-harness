@@ -182,9 +182,13 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
         .iter()
         .map(|tool_call| tool_call.section.clone())
         .collect::<Vec<_>>();
-    let error = activity.error_message.as_ref().map(|text| TranscriptErrorSection {
-        text: cancel_error_display_text(text, activity.duration_ms()).unwrap_or_else(|| text.clone()),
-    });
+    let error = activity
+        .error_message
+        .as_ref()
+        .map(|text| TranscriptErrorSection {
+            text: cancel_error_display_text(text, activity.duration_ms())
+                .unwrap_or_else(|| text.clone()),
+        });
     let assistant_parts = build_ordered_assistant_parts(
         activity,
         app,

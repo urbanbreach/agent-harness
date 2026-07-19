@@ -14,6 +14,8 @@ pub enum OverlayKind {
     ErrorDetails,
     PromptStashList,
     AuthDialog,
+    SettingsEditor,
+    PlanView,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -34,6 +36,8 @@ pub struct OverlayState {
     pub error_details_visible: bool,
     pub prompt_stash_list_visible: bool,
     pub auth_dialog_visible: bool,
+    pub settings_editor_visible: bool,
+    pub plan_view_visible: bool,
 }
 
 impl OverlayState {
@@ -96,6 +100,12 @@ impl OverlayStack {
         if state.auth_dialog_visible {
             overlays.push(OverlayKind::AuthDialog);
         }
+        if state.settings_editor_visible && !state.permission_pending {
+            overlays.push(OverlayKind::SettingsEditor);
+        }
+        if state.plan_view_visible && !state.permission_pending {
+            overlays.push(OverlayKind::PlanView);
+        }
         Self { overlays }
     }
 
@@ -123,7 +133,9 @@ impl OverlayStack {
                     | OverlayKind::ThemeDialog
                     | OverlayKind::ErrorDetails
                     | OverlayKind::PromptStashList
-                    | OverlayKind::AuthDialog,
+                    | OverlayKind::AuthDialog
+                    | OverlayKind::SettingsEditor
+                    | OverlayKind::PlanView,
             )
         )
     }

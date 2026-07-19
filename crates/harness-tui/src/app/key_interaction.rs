@@ -65,6 +65,18 @@ impl AppState {
             return;
         }
 
+        if self.overlay_stack().top() == Some(OverlayKind::SettingsEditor) {
+            self.handle_settings_editor_key(key);
+            self.maybe_auto_exit();
+            return;
+        }
+
+        if self.overlay_stack().top() == Some(OverlayKind::PlanView) {
+            self.handle_plan_view_key(key);
+            self.maybe_auto_exit();
+            return;
+        }
+
         if clipboard::copy_on_select_disabled()
             && (self.transcript_view.transcript_selection.is_some()
                 || self.secondary_surfaces.selection.is_some())
@@ -497,6 +509,14 @@ impl AppState {
             return;
         }
 
+        if matches!(action, Action::DeleteWordBackward)
+            && self.startup_mode
+            && self.composer.prompt_buffer.is_empty()
+        {
+            self.request_new_worktree_session();
+            return;
+        }
+
         if self.post_run_handoff_visible() && self.focus == Focus::List {
             match action {
                 Action::SubmitPrompt => {
@@ -720,6 +740,10 @@ impl AppState {
                     return;
                 }
                 Action::DeleteWordBackward => {
+                    if self.startup_mode && self.composer.prompt_buffer.is_empty() {
+                        self.request_new_worktree_session();
+                        return;
+                    }
                     self.composer_delete_word_backward();
                     return;
                 }
@@ -803,6 +827,11 @@ impl AppState {
                         "foreground subagent backgrounding unavailable: replay mode is read-only"
                             .to_string(),
                     );
+                } else if let Some(handle_id) = self.focused_demote_handle_id() {
+                    self.status_banner = Some(format!(
+                        "foreground subagent demote requested ({handle_id})"
+                    ));
+                    self.emit_ui_intent(UiIntent::DemoteForegroundChildTask { handle_id });
                 } else {
                     self.status_banner =
                         Some("foreground subagent backgrounding requested".to_string());
@@ -946,8 +975,66 @@ impl AppState {
             Action::PromptStashList => {
                 self.open_prompt_stash_list();
             }
+            Action::OpenSettings => {
+                self.open_settings_editor();
+            }
+            Action::OpenViewPlan => {
+                self.open_plan_view();
+            }
             Action::OpenLineageBrowser => {
                 self.open_lineage_browser();
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_settings_editor_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc => {
+                self.close_settings_editor();
+            }
+            KeyCode::Up => {
+                self.settings_editor_move(-1);
+            }
+            KeyCode::Down => {
+                self.settings_editor_move(1);
+            }
+            KeyCode::Enter | KeyCode::Char(' ') => {
+                self.settings_editor_activate_selected();
+            }
+            KeyCode::Char('r') | KeyCode::Char('R') => {
+                self.settings_editor_reset_selected();
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_plan_view_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc => {
+                if self.plan_view_preview.is_some() {
+                    self.plan_view_preview = None;
+                } else {
+                    self.close_plan_view();
+                }
+            }
+            KeyCode::Up => {
+                self.plan_view_move(-1);
+            }
+            KeyCode::Down => {
+                self.plan_view_move(1);
+            }
+            KeyCode::Enter => {
+                self.plan_view_open_selected();
+            }
+            KeyCode::Char('y') | KeyCode::Char('Y') => {
+                self.plan_view_copy_selected_path();
+            }
+            KeyCode::Char('c') | KeyCode::Char('C') => {
+                self.plan_view_copy_selected_body();
+            }
+            KeyCode::Char('d') | KeyCode::Char('D') | KeyCode::Delete => {
+                self.plan_view_delete_selected();
             }
             _ => {}
         }
@@ -1101,17 +1188,21 @@ impl AppState {
     }
 
     fn handle_prompt_transcript_scroll_key(&mut self, key: KeyEvent) -> bool {
-        if key.modifiers != KeyModifiers::NONE {
-            return false;
-        }
-
-        match key.code {
-            KeyCode::PageUp => {
+        match (key.modifiers, key.code) {
+            (KeyModifiers::NONE, KeyCode::PageUp) => {
                 self.scroll_transcript_up(10);
                 true
             }
-            KeyCode::PageDown => {
+            (KeyModifiers::NONE, KeyCode::PageDown) => {
                 self.scroll_transcript_down(10);
+                true
+            }
+            (KeyModifiers::CONTROL, KeyCode::Up) => {
+                self.scroll_transcript_up(1);
+                true
+            }
+            (KeyModifiers::CONTROL, KeyCode::Down) => {
+                self.scroll_transcript_down(1);
                 true
             }
             _ => false,

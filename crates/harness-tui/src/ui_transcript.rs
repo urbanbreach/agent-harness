@@ -38,8 +38,8 @@ use super::ui_tool_question_todo::{
     todo_items_from_tool_call, TranscriptTodoItem,
 };
 use super::ui_tool_style::{
-    block_tool_color, generic_tool_visual_style, inline_tool_color,
-    task_inline_tool_color, tool_call_header_style, TranscriptToolCallVisualStyle,
+    block_tool_color, generic_tool_visual_style, inline_tool_color, task_inline_tool_color,
+    tool_call_header_style, TranscriptToolCallVisualStyle,
 };
 use super::ui_tool_titles::{
     background_output_tool_subtitle, background_output_tool_title, batch_tool_title,
@@ -76,9 +76,8 @@ use super::ui_transcript_layout::{
 };
 use super::ui_transcript_scrollbar::{
     current_transcript_scroll_top, render_transcript_more_below_affordance,
-    render_transcript_scrollbar, transcript_scroll_offset,
-    transcript_scrollbar_geometry, transcript_scrollbar_needed, transcript_viewport_layout,
-    TranscriptScrollbarHit,
+    render_transcript_scrollbar, transcript_scroll_offset, transcript_scrollbar_geometry,
+    transcript_scrollbar_needed, transcript_viewport_layout, TranscriptScrollbarHit,
 };
 use super::ui_transcript_selection::{
     blank_selection_row, compact_selection_row, lifecycle_selection_snapshot,
@@ -97,7 +96,8 @@ use super::ui_transcript_style::{
 use super::ui_transcript_surface::{
     append_nested_surface_row, append_prebuilt_nested_surface_lines, append_prebuilt_surface_lines,
     append_prefixed_wrapped_spans_line, append_surface_row, append_user_surface_text_block,
-    nested_surface_prefix_width, surface_prefix_width, surface_span, transcript_surface_content_width,
+    append_user_surface_text_block_with_first_line_reserve, nested_surface_prefix_width,
+    surface_prefix_width, surface_span, transcript_surface_content_width,
     transcript_surface_render_width, user_surface_line, wrap_surface_spans, TRANSCRIPT_RAIL_GLYPH,
 };
 #[path = "ui_transcript_types.rs"]
@@ -244,8 +244,7 @@ fn transcript_pane_context<'a>(
     theme: &'a Theme,
 ) -> TranscriptPaneContext<'a> {
     if !app.replay_mode {
-        let startup_or_empty =
-            app.startup_shell_visible() || live_empty_state_visible(app);
+        let startup_or_empty = app.startup_shell_visible() || live_empty_state_visible(app);
         let horizontal_gutter = if startup_or_empty {
             0
         } else {
@@ -740,11 +739,7 @@ pub(crate) fn transcript_scrollbar_hit(
     column: u16,
     row: u16,
 ) -> Option<TranscriptScrollbarHit> {
-    let context = transcript_pane_context(
-        app,
-        resolved_transcript_area(app, area)?,
-        app.theme(),
-    );
+    let context = transcript_pane_context(app, resolved_transcript_area(app, area)?, app.theme());
     let max_scroll = app.transcript_view.last_transcript_max_scroll.get();
     if max_scroll == 0 {
         return None;
@@ -799,7 +794,6 @@ pub(crate) fn transcript_diff_hunk_rows(app: &AppState, area: Rect) -> Vec<usize
         transcript_diff_hunk_rows_for_layout,
     )
 }
-
 
 /// Resolve the transcript pane area used for paint and hit-testing.
 /// Live run shell paints breadcrumb inside `plan.transcript` and shrinks the

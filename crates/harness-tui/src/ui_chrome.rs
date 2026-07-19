@@ -299,12 +299,7 @@ pub(super) fn footer_suppressed_by_overlay(app: &AppState) -> bool {
         || app.overlay_state().permission_pending
 }
 
-fn render_startup_reference_footer(
-    frame: &mut Frame,
-    app: &AppState,
-    area: Rect,
-    theme: &Theme,
-) {
+fn render_startup_reference_footer(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
     if area.width == 0 || area.height == 0 {
         return;
     }
@@ -708,7 +703,8 @@ fn render_question_permission_with_shell_footer(
         return;
     }
 
-    const FOOTER_ROWS: u16 = 2;
+    // Grok QUESTION freeze: dock (11) + blank + Esc footer + trailing blank.
+    const FOOTER_ROWS: u16 = 3;
     if area.height <= FOOTER_ROWS {
         render_inline_permission_dock(frame, app, area, theme, permission);
         return;

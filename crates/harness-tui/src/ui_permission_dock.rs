@@ -47,13 +47,16 @@ pub(super) fn render_inline_permission_dock(
     let shell_surface = dock_surface;
     let tray_surface = dock_surface;
     let tray_height = dock_layout.tray_height;
-    let shell_content_height = 2u16
-        .saturating_add(u16::from(!app.composer.prompt_buffer.trim().is_empty()))
-        .min(area.height.saturating_sub(tray_height).max(1));
+    // Freeze PERM packs shell as title + gap + body (3 rows). A non-empty draft
+    // replaces the freeze blank (gap→0) so draft stays visible without +1 dock height.
+    let has_draft = !app.composer.prompt_buffer.trim().is_empty();
+    let shell_content_height = 3u16.min(area.height.saturating_sub(tray_height).max(1));
     let used_height = shell_content_height
         .saturating_add(tray_height)
         .min(area.height);
-    let dock_top = area.y.saturating_add(area.height.saturating_sub(used_height));
+    let dock_top = area
+        .y
+        .saturating_add(area.height.saturating_sub(used_height));
     let dock_area = Rect {
         x: area.x,
         y: dock_top,
@@ -74,7 +77,9 @@ pub(super) fn render_inline_permission_dock(
         Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(shell_content_height.min(body_area.height.saturating_sub(tray_height))),
+                Constraint::Length(
+                    shell_content_height.min(body_area.height.saturating_sub(tray_height)),
+                ),
                 Constraint::Length(tray_height),
             ])
             .split(body_area)
@@ -93,13 +98,13 @@ pub(super) fn render_inline_permission_dock(
     );
 
     if rail_area.width > 0 && rail_area.height > 0 {
-        let rail_style = Style::default()
-            .fg(theme.status.warning)
-            .bg(dock_surface);
+        let rail_style = Style::default().fg(theme.status.warning).bg(dock_surface);
         let option_rows: u16 = if always_confirm { 2 } else { 4 };
+        let post_option_blank: u16 = 1;
         let rail_paint_height = shell_body_area
             .height
             .saturating_add(option_rows)
+            .saturating_add(post_option_blank)
             .min(rail_area.height.saturating_sub(1).max(1));
         let rail_paint = Rect {
             x: rail_area.x,
@@ -138,8 +143,9 @@ pub(super) fn render_inline_permission_dock(
     let header_height = u16::try_from(header.lines.len())
         .unwrap_or(u16::MAX)
         .min(shell_inner.height);
-    let body_gap = dock_layout
-        .header_gap
+    // Empty draft: freeze blank gap between title and options. Non-empty draft: gap
+    // collapses so the body slot holds "Draft preserved · …" inside height 3.
+    let body_gap = if has_draft { 0 } else { dock_layout.header_gap }
         .min(shell_inner.height.saturating_sub(header_height));
     let shell_rows = Layout::default()
         .direction(Direction::Vertical)
@@ -265,8 +271,7 @@ pub(super) fn render_inline_permission_dock(
             PermissionConfirmSelection::Confirm => 1usize,
             PermissionConfirmSelection::Cancel => 2usize,
         };
-        let hint_line =
-            permission_prompt_hint_line(app, theme, tray_surface, confirm_index, 2);
+        let hint_line = permission_prompt_hint_line(app, theme, tray_surface, confirm_index, 2);
         if tray_inner.height > 1 {
             let rows = Layout::default()
                 .direction(Direction::Vertical)
@@ -315,6 +320,63 @@ pub(super) fn render_inline_permission_dock(
     let hint_line =
         permission_prompt_hint_line(app, theme, tray_surface, selected_index, options.len());
     let option_rows = u16::try_from(options.len()).unwrap_or(u16::MAX);
+    // Freeze tray: options, post blank, empty, hints, trailing blank (height 8).
+    if tray_inner.height >= option_rows.saturating_add(4) {
+        let rows = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(option_rows),
+                Constraint::Length(1),
+                Constraint::Length(1),
+                Constraint::Length(1),
+                Constraint::Length(1),
+            ])
+            .split(tray_inner);
+        frame.render_widget(
+            Paragraph::new(action_text).style(Style::default().bg(tray_surface)),
+            rows[0],
+        );
+        let hint_area = Rect {
+            x: dock_area.x,
+            y: rows[3].y,
+            width: dock_area.width,
+            height: 1,
+        };
+        if hint_area.width > 0 && hint_area.height > 0 {
+            frame.render_widget(
+                Paragraph::new(hint_line).style(Style::default().bg(tray_surface)),
+                hint_area,
+            );
+        }
+        return;
+    }
+    if tray_inner.height >= option_rows.saturating_add(2) {
+        let rows = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(option_rows),
+                Constraint::Length(1),
+                Constraint::Length(1),
+            ])
+            .split(tray_inner);
+        frame.render_widget(
+            Paragraph::new(action_text).style(Style::default().bg(tray_surface)),
+            rows[0],
+        );
+        let hint_area = Rect {
+            x: dock_area.x,
+            y: rows[2].y,
+            width: dock_area.width,
+            height: 1,
+        };
+        if hint_area.width > 0 && hint_area.height > 0 {
+            frame.render_widget(
+                Paragraph::new(hint_line).style(Style::default().bg(tray_surface)),
+                hint_area,
+            );
+        }
+        return;
+    }
     if tray_inner.height > option_rows {
         let rows = Layout::default()
             .direction(Direction::Vertical)
@@ -386,7 +448,8 @@ fn render_question_permission_dock(
         );
     }
 
-    let inner = pad_rect(body_area, crate::layout::EdgeInsets::new(1, 1, 1, 0));
+    // Grok QUESTION freeze: two spaces after ┃ ("┃  Which color?") + bottom blank rail.
+    let inner = pad_rect(body_area, crate::layout::EdgeInsets::new(2, 1, 1, 1));
     if inner.width == 0 || inner.height == 0 {
         return;
     }

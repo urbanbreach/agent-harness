@@ -79,7 +79,8 @@ fn signoff_parity_dry_run_records_fail_closed_stages() {
         "signoff-parity dry-run must not silent-skip required stages: {summary}"
     );
     assert!(
-        verdict.contains("verdict=DRY-RUN") && verdict.contains("owns=dual_binary_cells_and_pixels"),
+        verdict.contains("verdict=DRY-RUN")
+            && verdict.contains("owns=dual_binary_cells_and_pixels"),
         "verdict must mark dry-run dual-binary ownership: {verdict}"
     );
 }
@@ -92,8 +93,8 @@ fn signoff_parity_fails_closed_when_independent_manifest_missing() {
         // Given: independent manifest already present (T02 landed).
         // When: this contract still requires fail-closed wiring in the script.
         // Then: static gate strings remain present so missing-path cannot soft-pass.
-        let script =
-            fs::read_to_string(test_lanes_script()).expect("scripts/test-lanes.sh must be readable");
+        let script = fs::read_to_string(test_lanes_script())
+            .expect("scripts/test-lanes.sh must be readable");
         assert!(
             script.contains("docs/tui-reference-parity-manifest.v1.json")
                 && script.contains("parity_prerequisites")
@@ -140,8 +141,7 @@ fn signoff_parity_fails_closed_when_independent_manifest_missing() {
         "signoff-parity must fail closed when the independent manifest is missing\nstdout={stdout}\nstderr={stderr}"
     );
     assert!(
-        summary.contains("signoff-parity parity_prerequisites FAIL")
-            || summary.contains(" FAIL "),
+        summary.contains("signoff-parity parity_prerequisites FAIL") || summary.contains(" FAIL "),
         "missing manifest must record FAIL, not SKIP/PASS: {summary}"
     );
     assert!(

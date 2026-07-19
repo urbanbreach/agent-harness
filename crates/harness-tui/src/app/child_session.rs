@@ -10,6 +10,7 @@ use crate::text::non_empty_trimmed;
 pub(super) struct ChildTaskInfo {
     pub(super) label: Option<String>,
     pub(super) description: Option<String>,
+    pub(super) request_id: Option<String>,
 }
 
 pub(super) fn session_id_from_path(path: &Path) -> Option<String> {
@@ -61,6 +62,19 @@ pub(super) fn child_task_info_from_events(
             return None;
         }
 
+        let request_id = tool_call
+            .metadata
+            .as_ref()
+            .and_then(|metadata| metadata.lineage.as_ref())
+            .and_then(|lineage| lineage.child_request_id.as_deref())
+            .and_then(non_empty_trimmed)
+            .map(str::to_string)
+            .or_else(|| {
+                args.as_ref().and_then(|value| {
+                    json_string_field(Some(value), &["child_request_id", "request_id"])
+                })
+            });
+
         Some(ChildTaskInfo {
             label: args.as_ref().and_then(|value| {
                 json_string_field(Some(value), &["subagent_type", "profile", "profile_name"])
@@ -68,6 +82,7 @@ pub(super) fn child_task_info_from_events(
             description: args
                 .as_ref()
                 .and_then(|value| json_string_field(Some(value), &["description", "task"])),
+            request_id,
         })
     })
 }
@@ -83,6 +98,7 @@ pub(super) fn child_agent_info_from_events(
         (agent.agent_id == current_session_id).then(|| ChildTaskInfo {
             label: Some(agent.profile.clone()),
             description: None,
+            request_id: None,
         })
     })
 }

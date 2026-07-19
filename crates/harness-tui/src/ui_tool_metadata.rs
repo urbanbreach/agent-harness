@@ -188,6 +188,9 @@ mod tests {
 
     #[test]
     fn tool_json_string_prefers_first_non_empty_string_and_collapses_whitespace() {
+        // arrange
+        // act
+        // assert
         let value = json!({"primary": "  alpha\nbeta  ", "fallback": "ignored"});
 
         assert_eq!(
@@ -198,6 +201,9 @@ mod tests {
 
     #[test]
     fn tool_json_string_ref_preserves_inner_whitespace_but_trims_edges() {
+        // arrange
+        // act
+        // assert
         let value = json!({"request_id": "  req  42  "});
 
         assert_eq!(
@@ -208,6 +214,9 @@ mod tests {
 
     #[test]
     fn task_child_ids_accept_top_level_and_nested_compat_shapes() {
+        // arrange
+        // act
+        // assert
         let top_level = json!({"child_request_id": " req-1 ", "sessionId": " ses-1 "});
         let nested = json!({
             "_harness": {
@@ -238,6 +247,9 @@ mod tests {
 
     #[test]
     fn tool_json_nested_string_collapses_nested_string_values() {
+        // arrange
+        // act
+        // assert
         let value = json!({"error": {"message": " failed\n hard "}});
 
         assert_eq!(
@@ -260,6 +272,9 @@ mod tests {
 
     #[test]
     fn tool_summary_number_reads_unsigned_json_numbers() {
+        // arrange
+        // act
+        // assert
         assert_eq!(
             tool_summary_number(r#"{"offset":2,"limit":5}"#, &["start", "limit"]),
             Some(5)

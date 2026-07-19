@@ -258,6 +258,25 @@ pub(super) fn page_up_down_with_prompt_focus_scrolls_transcript_without_clearing
     assert_eq!(app.composer.prompt_cursor, 10);
 }
 
+pub(super) fn ctrl_up_down_with_prompt_focus_scrolls_transcript_by_one_row() {
+    let mut app = AppState::new_live(None, false, None);
+    app.focus = Focus::Prompt;
+    app.composer.prompt_buffer = "draft text".to_string();
+    app.composer.prompt_cursor = 10;
+
+    app.handle_key(key_with_modifiers(KeyCode::Up, KeyModifiers::CONTROL));
+    assert_eq!(app.transcript_view.transcript_scroll, 1);
+    assert!(!app.transcript_view.follow_mode);
+    assert_eq!(app.composer.prompt_buffer, "draft text");
+
+    app.handle_key(key_with_modifiers(KeyCode::Up, KeyModifiers::CONTROL));
+    assert_eq!(app.transcript_view.transcript_scroll, 2);
+
+    app.handle_key(key_with_modifiers(KeyCode::Down, KeyModifiers::CONTROL));
+    assert_eq!(app.transcript_view.transcript_scroll, 1);
+    assert_eq!(app.focus, Focus::Prompt);
+}
+
 pub(super) fn shift_left_on_prompt_focus_still_selects_chars() {
     let mut app = AppState::new_live(None, false, None);
     app.focus = Focus::Prompt;

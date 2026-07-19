@@ -26,5 +26,8 @@ pub(super) use subagent_task_metadata_navigation_tests::mouse_click_on_task_row_
 
 #[test]
 fn subagent_navigation_task_row_click_opens_child_directly() {
+    // arrange
+    // act
+    // assert
     subagent_task_inline_navigation_tests::mouse_click_on_task_inline_row_uses_task_row_child_session();
 }

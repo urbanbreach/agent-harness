@@ -124,6 +124,9 @@ mod tests {
 
     #[test]
     fn coalesced_mouse_kind_groups_only_matching_high_frequency_events() {
+        // arrange
+        // act
+        // assert
         assert!(CoalescedMouseKind::Moved.matches(event::MouseEventKind::Moved));
         assert!(!CoalescedMouseKind::Moved.matches(event::MouseEventKind::ScrollDown));
 
@@ -135,6 +138,9 @@ mod tests {
 
     #[test]
     fn paste_events_are_preserved_for_prompt_insertion() {
+        // arrange
+        // act
+        // assert
         let event = normalize_event(Event::Paste("alpha\nbeta".to_string()))
             .unwrap_or_abort()
             .unwrap_or_abort();

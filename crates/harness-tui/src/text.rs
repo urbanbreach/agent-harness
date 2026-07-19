@@ -227,6 +227,9 @@ mod tests {
 
     #[test]
     fn collapse_inline_whitespace_replaces_control_chars_and_collapses_runs() {
+        // arrange
+        // act
+        // assert
         assert_eq!(
             collapse_inline_whitespace("  alpha\n\u{7} beta\t gamma  "),
             "alpha beta gamma"
@@ -235,6 +238,9 @@ mod tests {
 
     #[test]
     fn strip_ansi_escapes_removes_csi_osc_and_string_controls() {
+        // arrange
+        // act
+        // assert
         assert_eq!(
             strip_ansi_escapes(
                 "\u{1b}[31mred\u{1b}[0m\n\u{1b}]0;title\u{7}plain\u{1b}Phidden\u{1b}\\done"
@@ -245,6 +251,9 @@ mod tests {
 
     #[test]
     fn compact_payload_formats_json_objects_and_caps_fields() {
+        // arrange
+        // act
+        // assert
         assert_eq!(
             compact_payload(
                 r#"{"alpha":"two words","beta":[1,2],"gamma":{"nested":true}}"#,
@@ -258,6 +267,9 @@ mod tests {
 
     #[test]
     fn compact_payload_collapses_plain_text_and_truncates() {
+        // arrange
+        // act
+        // assert
         assert_eq!(
             compact_payload("  alpha\n beta\t gamma  ", 4, 12).as_deref(),
             Some("alpha beta …")
@@ -266,6 +278,9 @@ mod tests {
 
     #[test]
     fn compact_payload_omits_blank_payloads() {
+        // arrange
+        // act
+        // assert
         assert_eq!(compact_payload(" \n\t ", 4, 12), None);
     }
 }

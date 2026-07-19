@@ -60,6 +60,9 @@ mod tests {
 
     #[test]
     fn workspace_context_labels_include_full_and_short_when_distinct() {
+        // arrange
+        // act
+        // assert
         let labels =
             workspace_context_labels(&environment("/workspace/agent-harness", Some("dev")));
 
@@ -74,6 +77,9 @@ mod tests {
 
     #[test]
     fn workspace_context_labels_deduplicate_equal_full_and_short_labels() {
+        // arrange
+        // act
+        // assert
         let labels = workspace_context_labels(&environment("/", None));
 
         assert_eq!(labels, vec!["/".to_string()]);
@@ -81,6 +87,9 @@ mod tests {
 
     #[test]
     fn directory_branch_label_ignores_blank_branch() {
+        // arrange
+        // act
+        // assert
         let label =
             directory_branch_label(&environment("/workspace/agent-harness", Some("   ")), false);
 

@@ -29,10 +29,7 @@ fn build_tool_header_spans(
     spans
 }
 
-fn completed_tool_marker(
-    status: crate::app::ToolCallDisplayStatus,
-    theme: &Theme,
-) -> &'static str {
+fn completed_tool_marker(status: crate::app::ToolCallDisplayStatus, theme: &Theme) -> &'static str {
     match status {
         crate::app::ToolCallDisplayStatus::Succeeded => "◈",
         crate::app::ToolCallDisplayStatus::PendingPermission
@@ -742,8 +739,7 @@ pub(super) fn append_assistant_error_box(
         let first_w = usize::from(width)
             .saturating_sub(surface_prefix_width(&indent))
             .max(1);
-        let wrapped =
-            wrap_surface_spans(vec![Span::styled(content.to_string(), style)], first_w);
+        let wrapped = wrap_surface_spans(vec![Span::styled(content.to_string(), style)], first_w);
         match wrapped.as_slice() {
             [] => append_surface_row(lines, &indent, surface, Vec::new(), width),
             [first] => {
@@ -868,6 +864,12 @@ fn append_tool_call_diff_block(
         },
         theme,
     ) {
+        // Grok PERM freeze: blank packing row between Creating title and plain numbered body.
+        // interaction_rows are padded by the caller via append_noninteractive_rows.
+        let blank_before = plain_numbered && !diff_lines.is_empty();
+        if blank_before {
+            render.lines.push(Line::default());
+        }
         let start = render.lines.len();
         append_card_prebuilt_surface_lines(
             &mut render.lines,

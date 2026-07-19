@@ -213,29 +213,44 @@ mod tests {
 
     #[test]
     fn format_token_count_small() {
+        // arrange
+        // act
+        // assert
         assert_eq!(format_token_count(42), "42");
         assert_eq!(format_token_count(999), "999");
     }
 
     #[test]
     fn format_token_count_thousands() {
+        // arrange
+        // act
+        // assert
         assert_eq!(format_token_count(1500), "1.5k");
         assert_eq!(format_token_count(9999), "10.0k");
     }
 
     #[test]
     fn format_token_count_large() {
+        // arrange
+        // act
+        // assert
         assert_eq!(format_token_count(50000), "50k");
         assert_eq!(format_token_count(2500000), "2.5M");
     }
 
     #[test]
     fn truncate_to_width_short_text_unchanged() {
+        // arrange
+        // act
+        // assert
         assert_eq!(truncate_to_width("hello", 10), "hello");
     }
 
     #[test]
     fn truncate_to_width_long_text_truncated() {
+        // arrange
+        // act
+        // assert
         let result = truncate_to_width("hello world this is long", 10);
         assert!(result.ends_with('\u{2026}'));
         assert!(display_width(&result) <= 10);
@@ -243,6 +258,9 @@ mod tests {
 
     #[test]
     fn truncate_to_width_cjk_text() {
+        // arrange
+        // act
+        // assert
         // CJK characters are double-width
         let result = truncate_to_width("\u{4f60}\u{597d}\u{4e16}\u{754c}", 5);
         assert!(display_width(&result) <= 5);
@@ -250,6 +268,9 @@ mod tests {
 
     #[test]
     fn compaction_surface_contains_badge() {
+        // arrange
+        // act
+        // assert
         let theme = Theme::default();
         let compaction = TranscriptCompactionSection {
             kind: TranscriptCompactionKind::SessionCompaction,
@@ -271,6 +292,9 @@ mod tests {
 
     #[test]
     fn compaction_surface_shows_token_count() {
+        // arrange
+        // act
+        // assert
         let theme = Theme::default();
         let compaction = TranscriptCompactionSection {
             kind: TranscriptCompactionKind::SessionCompaction,
@@ -292,6 +316,9 @@ mod tests {
 
     #[test]
     fn branch_summary_surface_uses_branch_badge() {
+        // arrange
+        // act
+        // assert
         let theme = Theme::default();
         let compaction = TranscriptCompactionSection {
             kind: TranscriptCompactionKind::BranchSummary,
@@ -312,6 +339,9 @@ mod tests {
 
     #[test]
     fn compaction_surface_shows_file_lists() {
+        // arrange
+        // act
+        // assert
         let theme = Theme::default();
         let compaction = TranscriptCompactionSection {
             kind: TranscriptCompactionKind::SessionCompaction,
@@ -391,6 +421,9 @@ mod tests {
 
     #[test]
     fn compaction_event_injected_into_transcript_sections() {
+        // arrange
+        // act
+        // assert
         let mut app = AppState::default();
         app.activities = std::collections::VecDeque::from(vec![make_test_activity("request-1", 1)]);
         app.events = vec![make_session_compaction_event(2)];
@@ -409,6 +442,9 @@ mod tests {
 
     #[test]
     fn compaction_event_renders_badge_and_summary() {
+        // arrange
+        // act
+        // assert
         let mut app = AppState::default();
         app.activities = std::collections::VecDeque::from(vec![make_test_activity("request-1", 1)]);
         app.events = vec![make_session_compaction_event(2)];

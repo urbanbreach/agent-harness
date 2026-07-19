@@ -96,7 +96,9 @@ pub(super) fn live_post_turn_disclosure_matches_freeze_shortcut_chrome() {
         .iter()
         .rposition(|line| line.contains("Shift+Tab") || line.contains("Enter:send"))
         .map(|idx| draft_lines[idx].trim_end().to_string())
-        .unwrap_or_else(|| panic!("draft freeze shortcut disclosure row missing\n{draft_rendered}"));
+        .unwrap_or_else(|| {
+            panic!("draft freeze shortcut disclosure row missing\n{draft_rendered}")
+        });
     assert!(
         draft_disclosure.contains("Enter:send"),
         "draft disclosure must lead with Enter:send\n{draft_disclosure}\n{draft_rendered}"
@@ -239,14 +241,7 @@ pub(super) fn live_state_matrix_preserves_shell_structure() {
             },
         ),
     ));
-    assert_live_shell_document_composer_contract(
-        &streaming,
-        100,
-        24,
-        None,
-        None,
-        "Shift+Tab:mode",
-    );
+    assert_live_shell_document_composer_contract(&streaming, 100, 24, None, None, "Shift+Tab:mode");
 
     let mut degraded = app::AppState::new_live(None, false, None);
     degraded.set_status_banner(Some(

@@ -228,7 +228,9 @@ pub(super) fn second_esc_after_800ms_restarts_clear_gesture_without_clearing() {
     let offset = Arc::new(Mutex::new(Duration::ZERO));
     let clock_offset = Arc::clone(&offset);
     let mut app = AppState::new_live(None, false, None);
-    app.set_now_fn_for_test(Arc::new(move || base + *clock_offset.lock().unwrap_or_abort()));
+    app.set_now_fn_for_test(Arc::new(move || {
+        base + *clock_offset.lock().unwrap_or_abort()
+    }));
     app.focus = Focus::Prompt;
     app.composer.prompt_buffer = "still here".to_string();
     app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
@@ -355,7 +357,10 @@ pub(super) fn ctrl_c_clears_draft_then_cancels_running_turn() {
     ));
 
     // When: first Ctrl+C clears draft without canceling
-    app.handle_key(key_with_modifiers(KeyCode::Char('c'), KeyModifiers::CONTROL));
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char('c'),
+        KeyModifiers::CONTROL,
+    ));
     assert_eq!(app.composer.prompt_buffer, "");
     assert!(
         intents.lock().unwrap_or_abort().is_empty(),
@@ -363,7 +368,10 @@ pub(super) fn ctrl_c_clears_draft_then_cancels_running_turn() {
     );
 
     // When: second Ctrl+C cancels the running turn
-    app.handle_key(key_with_modifiers(KeyCode::Char('c'), KeyModifiers::CONTROL));
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char('c'),
+        KeyModifiers::CONTROL,
+    ));
 
     // Then: InterruptSession for the active task
     assert_eq!(

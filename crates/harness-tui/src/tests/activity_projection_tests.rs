@@ -435,8 +435,9 @@ pub(super) fn tool_call_finished_renders_truncated_output() {
         .unwrap_or_abort();
 
     let debug = format!("{:?}", terminal.backend().buffer());
+    // Grok freeze packing: completed reads use count form ("Read 1 file"), not path form.
     assert!(
-        debug.contains("Read test.txt"),
+        debug.contains("Read 1 file"),
         "transcript must show tool title"
     );
     assert!(

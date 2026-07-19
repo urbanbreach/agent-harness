@@ -135,10 +135,7 @@ fn startup_welcome_is_compose_first_with_harness_branding_no_reference_identity(
         !rendered.contains('┃'),
         "P0-START-01: must not render legacy composer rail glyph ┃\n{rendered}"
     );
-    let prompt_glyph_lines = rendered
-        .lines()
-        .filter(|line| line.contains('❯'))
-        .count();
+    let prompt_glyph_lines = rendered.lines().filter(|line| line.contains('❯')).count();
     assert_eq!(
         prompt_glyph_lines, 1,
         "P0-START-01: composer must paint a single ❯ prompt glyph, not a multi-row rail\n{rendered}"

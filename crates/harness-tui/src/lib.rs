@@ -4,6 +4,7 @@
 //! layout/theme contracts centralized in their dedicated modules rather than in
 //! ad hoc render helpers.
 
+pub mod animation_evidence;
 pub mod app;
 mod clipboard;
 pub mod event;

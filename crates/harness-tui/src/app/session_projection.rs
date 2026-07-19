@@ -49,6 +49,7 @@ pub struct SessionProjection {
     seen_seqs: BTreeSet<u64>,
     pub(crate) pending_permissions: BTreeMap<String, PendingPermission>,
     pub(crate) run_terminal_seen: bool,
+    pub(crate) pending_status_notice: Option<String>,
 }
 
 impl SessionProjection {
@@ -67,6 +68,7 @@ impl SessionProjection {
         self.run_terminal_seen = false;
         self.events_trimmed_count = 0;
         self.transcript_trimmed_count = 0;
+        self.pending_status_notice = None;
     }
 
     pub(crate) fn set_fallback_profile_label(&mut self, profile: impl Into<String>) {
@@ -418,16 +420,12 @@ impl SessionProjection {
             .collect();
 
         for (tool_call_id, permission_entry) in pending {
-            if self
-                .activities
-                .get(latest_index)
-                .is_some_and(|activity| {
-                    activity
-                        .tool_calls
-                        .iter()
-                        .any(|tool_call| tool_call.tool_call_id == tool_call_id)
-                })
-            {
+            if self.activities.get(latest_index).is_some_and(|activity| {
+                activity
+                    .tool_calls
+                    .iter()
+                    .any(|tool_call| tool_call.tool_call_id == tool_call_id)
+            }) {
                 continue;
             }
 

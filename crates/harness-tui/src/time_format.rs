@@ -43,6 +43,9 @@ mod tests {
 
     #[test]
     fn iso_timestamp_minute_extracts_trimmed_prefix() {
+        // arrange
+        // act
+        // assert
         assert_eq!(
             iso_timestamp_minute(" 2026-03-08T12:34:56Z "),
             Some("2026-03-08T12:34")
@@ -51,18 +54,27 @@ mod tests {
 
     #[test]
     fn iso_timestamp_minute_rejects_non_iso_text() {
+        // arrange
+        // act
+        // assert
         assert_eq!(iso_timestamp_minute("2026-03-08 12:34:56"), None);
         assert_eq!(iso_timestamp_minute(""), None);
     }
 
     #[test]
     fn short_time_or_trimmed_formats_iso_and_fallbacks() {
+        // arrange
+        // act
+        // assert
         assert_eq!(short_time_or_trimmed(" 2026-03-08T12:34:56Z "), "12:34");
         assert_eq!(short_time_or_trimmed(" not iso "), "not iso");
     }
 
     #[test]
     fn wall_clock_12h_formats_freeze_style() {
+        // arrange
+        // act
+        // assert
         assert_eq!(wall_clock_12h("2026-03-19T09:33:00Z"), "9:33 AM");
         assert_eq!(wall_clock_12h("2026-03-19T00:05:00Z"), "12:05 AM");
         assert_eq!(wall_clock_12h("2026-03-19T12:00:00Z"), "12:00 PM");

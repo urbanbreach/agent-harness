@@ -21,8 +21,8 @@ use serde_json::{json, Value};
 mod support;
 
 use support::{
-    validate_manifest, ValidateResult, FIRST_SLICE_IDS, REFERENCE_BINARY_SHA256,
-    REQUIRED_SCAFFOLD_IDS, SCHEMA_VERSION,
+    rollup_status, validate_manifest, ValidateResult, ACCEPTANCE_GATES, FIRST_SLICE_IDS,
+    REFERENCE_BINARY_SHA256, REQUIRED_SCAFFOLD_IDS, SCHEMA_VERSION,
 };
 
 const MANIFEST_SRC: &str = include_str!("../../../docs/tui-reference-parity-manifest.v1.json");
@@ -56,6 +56,9 @@ fn checked_in_reference_parity_manifest_is_valid() {
 #[test]
 fn checked_in_manifest_covers_first_slice_and_scaffolds() {
     // arrange
+    // act
+    // assert
+    // arrange
     let manifest = checked_in_manifest();
     let rows = manifest["rows"].as_array().unwrap_or_abort();
     let ids = rows
@@ -71,25 +74,50 @@ fn checked_in_manifest_covers_first_slice_and_scaffolds() {
             .find(|row| row["behavior_id"].as_str() == Some(*id))
             .unwrap_or_abort();
         assert_eq!(row["slice"].as_str(), Some("first"));
-        assert!(
-            !row["expected_semantic_cell_artifact"]
-                .as_str()
-                .unwrap_or("")
-                .is_empty()
-        );
+        assert!(!row["expected_semantic_cell_artifact"]
+            .as_str()
+            .unwrap_or("")
+            .is_empty());
         assert!(row["evidence_paths"]["L4"]
             .as_str()
             .unwrap_or("")
             .contains("artifacts/qa-evidence/20260717-tui-reference-parity"));
     }
+    let user_approved_scaffold_diverged = ["OVL-PALETTE", "SHELL-FAIL"];
     for id in REQUIRED_SCAFFOLD_IDS {
         assert!(ids.contains(*id), "missing scaffold id {id}");
         let row = rows
             .iter()
             .find(|row| row["behavior_id"].as_str() == Some(*id))
             .unwrap_or_abort();
-        assert_eq!(row["status"].as_str(), Some("incomplete"));
         assert_eq!(row["slice"].as_str(), Some("scaffold"));
+        let status = row["status"].as_str().unwrap_or("");
+        let l5 = row["evidence_paths"]["L5"].as_str().unwrap_or("");
+        if user_approved_scaffold_diverged.contains(id) {
+            assert_eq!(
+                status, "diverged",
+                "scaffold {id} has user-approved AA divergence"
+            );
+            assert!(
+                row["deliberate_divergence_id"]
+                    .as_str()
+                    .unwrap_or("")
+                    .starts_with("DIV-AA-"),
+                "scaffold {id} missing DIV-AA-* id"
+            );
+        } else if status == "pass" {
+            assert!(
+                !l5.is_empty(),
+                "scaffold {id} pass requires L5 evidence path"
+            );
+        } else if l5.contains("blocked") || *id == "SHELL-STREAM" {
+            assert_eq!(
+                status, "blocked",
+                "scaffold {id} freeze blocked/invalid pair"
+            );
+        } else {
+            assert_eq!(status, "incomplete", "scaffold {id} still incomplete");
+        }
     }
 
     assert_eq!(
@@ -105,6 +133,9 @@ fn checked_in_manifest_covers_first_slice_and_scaffolds() {
 #[test]
 fn validator_rejects_missing_required_field() {
     // arrange
+    // act
+    // assert
+    // arrange
     let mut manifest = checked_in_manifest();
     manifest["rows"][0]
         .as_object_mut()
@@ -117,6 +148,9 @@ fn validator_rejects_missing_required_field() {
 
 #[test]
 fn validator_rejects_duplicate_behavior_ids() {
+    // arrange
+    // act
+    // assert
     // arrange
     let mut manifest = checked_in_manifest();
     let duplicate = manifest["rows"][0].clone();
@@ -132,6 +166,9 @@ fn validator_rejects_duplicate_behavior_ids() {
 #[test]
 fn validator_rejects_missing_owners() {
     // arrange
+    // act
+    // assert
+    // arrange
     let mut manifest = checked_in_manifest();
     manifest["rows"][0]["owners"]
         .as_object_mut()
@@ -145,6 +182,9 @@ fn validator_rejects_missing_owners() {
 #[test]
 fn validator_rejects_empty_owner_string() {
     // arrange
+    // act
+    // assert
+    // arrange
     let mut manifest = checked_in_manifest();
     manifest["rows"][0]["owners"]["pty_test"] = json!("");
 
@@ -154,6 +194,9 @@ fn validator_rejects_empty_owner_string() {
 
 #[test]
 fn validator_rejects_invalid_status() {
+    // arrange
+    // act
+    // assert
     // arrange
     let mut manifest = checked_in_manifest();
     manifest["rows"][0]["status"] = json!("accepted");
@@ -165,6 +208,9 @@ fn validator_rejects_invalid_status() {
 #[test]
 fn validator_rejects_invalid_acceptance_gate() {
     // arrange
+    // act
+    // assert
+    // arrange
     let mut manifest = checked_in_manifest();
     manifest["rows"][0]["acceptance_gate_ids"] = json!(["A-MANIFEST", "A-NOT-A-GATE"]);
 
@@ -174,6 +220,9 @@ fn validator_rejects_invalid_acceptance_gate() {
 
 #[test]
 fn validator_rejects_div_004_as_deliberate_divergence() {
+    // arrange
+    // act
+    // assert
     // arrange
     let mut manifest = checked_in_manifest();
     manifest["rows"][0]["deliberate_divergence_id"] = json!("DIV-004");
@@ -185,6 +234,9 @@ fn validator_rejects_div_004_as_deliberate_divergence() {
 #[test]
 fn validator_rejects_missing_div_004_rejection_policy() {
     // arrange
+    // act
+    // assert
+    // arrange
     let mut manifest = checked_in_manifest();
     manifest["identity_policy"]["rejected_divergences"] = json!([]);
 
@@ -194,11 +246,13 @@ fn validator_rejects_missing_div_004_rejection_policy() {
 
 #[test]
 fn coexists_with_signoff_manifest_without_requiring_reference_images() {
+    // arrange
+    // act
+    // assert
     // arrange / act
-    let signoff: Value = serde_json::from_str(include_str!(
-        "../../../docs/tui-signoff-manifest.v1.json"
-    ))
-    .unwrap_or_abort();
+    let signoff: Value =
+        serde_json::from_str(include_str!("../../../docs/tui-signoff-manifest.v1.json"))
+            .unwrap_or_abort();
     let parity = checked_in_manifest();
 
     // assert — leave signoff policy alone; parity is a separate contract
@@ -208,4 +262,148 @@ fn coexists_with_signoff_manifest_without_requiring_reference_images() {
         parity["schema_version"].as_str(),
         signoff["schema_version"].as_str()
     );
+}
+
+#[test]
+fn checked_in_manifest_lists_expanded_acceptance_gates() {
+    // arrange
+    // act
+    // assert
+    // arrange
+    let manifest = checked_in_manifest();
+    let listed = manifest["acceptance_gate_ids"]
+        .as_array()
+        .unwrap_or_abort()
+        .iter()
+        .filter_map(Value::as_str)
+        .collect::<BTreeSet<_>>();
+    let required = ACCEPTANCE_GATES.iter().copied().collect::<BTreeSet<_>>();
+
+    // assert — top-level must include every §4.1 gate (fail-closed allowlist)
+    assert_eq!(listed, required);
+    for gate in [
+        "A-CAPABILITIES",
+        "A-CORE-AUDIT",
+        "A-CONFIG-SCHEMA",
+        "A-FUNCTIONAL",
+        "A-JOURNEYS",
+        "A-ANIMATION",
+    ] {
+        assert!(listed.contains(gate), "missing expanded gate {gate}");
+    }
+}
+
+#[test]
+fn validator_rejects_missing_expanded_top_level_gate() {
+    // arrange
+    // act
+    // assert
+    // arrange
+    let mut manifest = checked_in_manifest();
+    let gates = manifest["acceptance_gate_ids"]
+        .as_array_mut()
+        .unwrap_or_abort();
+    gates.retain(|gate| gate.as_str() != Some("A-CAPABILITIES"));
+
+    // act / assert
+    assert_control(validate_manifest(&manifest), "missing-acceptance-gates");
+}
+
+#[test]
+fn checked_in_manifest_status_rollup_tracks_evidence_backed_passes() {
+    // arrange
+    let manifest = checked_in_manifest();
+
+    // act
+    let rollup = rollup_status(&manifest);
+
+    // assert — A-MANIFEST allows only evidence-backed pass rows (not self-certify-all).
+    // 2026-07-19: first-slice startup/composer + OVL-SESSION/HELP have L1–L6 + L5 masked exact_match.
+    assert!(rollup.required >= 30, "expected at least prior 30 rows");
+    assert!(
+        rollup.pass >= 15,
+        "expected at least 15 evidence-backed pass rows (incl. SHELL-IDLE draft pair), got {}",
+        rollup.pass
+    );
+    assert!(
+        rollup.diverged >= 2,
+        "expected at least 2 user-approved AA divergences, got {}",
+        rollup.diverged
+    );
+    assert!(
+        rollup.blocked >= 13,
+        "expected remaining freeze-blocked / invalid-pair rows, got {}",
+        rollup.blocked
+    );
+    assert_eq!(rollup.unknown, 0);
+    assert_eq!(
+        rollup.pass + rollup.incomplete + rollup.blocked + rollup.diverged,
+        rollup.required
+    );
+    // Not complete until every required row is pass or user-approved diverged.
+    assert!(!rollup.a_manifest_complete());
+}
+
+#[test]
+fn checked_in_journey_templates_join_inventory_without_fake_l1() {
+    // arrange
+    // act
+    // assert
+    // arrange
+    let manifest = checked_in_manifest();
+    let rows = manifest["rows"].as_array().unwrap_or_abort();
+    let journey_ids = [
+        "JOURNEY-WORKTREE-CTRL-W",
+        "JOURNEY-CONFIG-SHOW-EFFECTIVE",
+        "JOURNEY-CONFIG-SOURCES-EXPLAIN",
+        "JOURNEY-WAIT-ANY-ALL",
+        "JOURNEY-FOLDER-TRUST-DENY",
+        "JOURNEY-MEMORY-CLI",
+        "JOURNEY-ALWAYS-APPROVE-MODE",
+        "JOURNEY-SETTINGS-EDITOR",
+    ];
+
+    // assert
+    for journey_id in journey_ids {
+        let row = rows
+            .iter()
+            .find(|row| row["behavior_id"].as_str() == Some(journey_id))
+            .unwrap_or_else(|| panic!("missing journey template {journey_id}"));
+        assert_eq!(row["row_kind"].as_str(), Some("journey"));
+        assert_eq!(row["status"].as_str(), Some("incomplete"));
+        assert_eq!(row["journey_id"].as_str(), Some(journey_id));
+        assert!(!row["capability_id"].as_str().unwrap_or("").is_empty());
+        assert!(!row["backend_owner"].as_str().unwrap_or("").is_empty());
+        // No invented freeze digests: L1 evidence stays empty until real capture
+        let l1 = row["evidence_paths"]["L1"].as_str().unwrap_or("");
+        assert!(
+            l1.is_empty(),
+            "{journey_id} must not invent L1 freeze paths, got {l1}"
+        );
+        assert!(row["expected_semantic_cell_artifact"]
+            .as_str()
+            .unwrap_or("")
+            .is_empty());
+    }
+}
+
+#[test]
+fn validator_rejects_journey_row_missing_capability_join() {
+    // arrange
+    // act
+    // assert
+    // arrange
+    let mut manifest = checked_in_manifest();
+    let rows = manifest["rows"].as_array_mut().unwrap_or_abort();
+    let journey = rows
+        .iter_mut()
+        .find(|row| row["behavior_id"].as_str() == Some("JOURNEY-WORKTREE-CTRL-W"))
+        .unwrap_or_abort();
+    journey
+        .as_object_mut()
+        .unwrap_or_abort()
+        .remove("capability_id");
+
+    // act / assert
+    assert_control(validate_manifest(&manifest), "missing-journey-join");
 }

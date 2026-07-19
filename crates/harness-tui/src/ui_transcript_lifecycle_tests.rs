@@ -4,6 +4,9 @@ use harness_core::event::UserMessageSubmittedEvent;
 
 #[test]
 fn queued_runtime_status_without_pending_assistant_does_not_render_user_badge_or_footer() {
+    // arrange
+    // act
+    // assert
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![
         ActivityEntry {
@@ -83,6 +86,9 @@ fn queued_runtime_status_without_pending_assistant_does_not_render_user_badge_or
 
 #[test]
 fn streaming_turn_with_own_user_message_does_not_render_queued_badge() {
+    // arrange
+    // act
+    // assert
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
         request_id: "request-started-followup".to_string(),
@@ -124,15 +130,16 @@ fn streaming_turn_with_own_user_message_does_not_render_queued_badge() {
         "a turn should not mark its own user message as queued once it is the active assistant turn: {lines:#?}"
     );
     assert!(
-        lines
-            .iter()
-            .any(|line| line.contains("gpt-5.4-mini")),
+        lines.iter().any(|line| line.contains("gpt-5.4-mini")),
         "streaming follow-up should keep the active assistant footer: {lines:#?}"
     );
 }
 
 #[test]
 fn queued_user_followup_keeps_active_footer_on_streaming_turn() {
+    // arrange
+    // act
+    // assert
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![
         ActivityEntry {
@@ -199,9 +206,7 @@ fn queued_user_followup_keeps_active_footer_on_streaming_turn() {
     ));
 
     assert!(
-        lines
-            .iter()
-            .any(|line| line.contains("gpt-5.4-mini")),
+        lines.iter().any(|line| line.contains("gpt-5.4-mini")),
         "active assistant footer should stay on the in-flight turn: {lines:#?}"
     );
     assert!(
@@ -218,6 +223,9 @@ fn queued_user_followup_keeps_active_footer_on_streaming_turn() {
 
 #[test]
 fn transcript_wrapping_respects_display_width_for_wide_glyphs() {
+    // arrange
+    // act
+    // assert
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
         request_id: "request-wide-wrap".to_string(),
@@ -265,6 +273,9 @@ fn transcript_wrapping_respects_display_width_for_wide_glyphs() {
 
 #[test]
 fn transcript_selection_snapshot_cache_reuses_repeated_hit_tests() {
+    // arrange
+    // act
+    // assert
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
         request_id: "req_selection_cache".to_string(),
@@ -321,6 +332,9 @@ fn transcript_selection_snapshot_cache_reuses_repeated_hit_tests() {
 
 #[test]
 fn startup_lifecycle_text_participates_in_selection_copy() {
+    // arrange
+    // act
+    // assert
     let mut app = AppState::new_startup(Vec::new(), None);
     app.set_launch_metadata(
         crate::app::LaunchMetadata::from_model_ref("deep", "proxy:gpt-5.4").with_mode_label("Demo"),
@@ -377,6 +391,9 @@ fn startup_lifecycle_text_participates_in_selection_copy() {
 
 #[test]
 fn live_empty_state_has_no_selectable_body_copy() {
+    // arrange
+    // act
+    // assert
     let mut app = AppState::new_live(None, false, None);
     app.set_launch_metadata(
         crate::app::LaunchMetadata::from_model_ref("worker", "mock:model-1")
@@ -402,6 +419,9 @@ fn live_empty_state_has_no_selectable_body_copy() {
 
 #[test]
 fn live_empty_state_wrapped_examples_are_absent_from_selection_copy() {
+    // arrange
+    // act
+    // assert
     let mut app = AppState::new_live(None, false, None);
     app.set_launch_metadata(
         crate::app::LaunchMetadata::from_model_ref("worker", "mock:model-1")

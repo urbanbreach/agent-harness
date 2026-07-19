@@ -167,6 +167,7 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_reference_timestamps_a
             leading_gap_height: 0,
             content_height: task_render.lines.len(),
             surfaces: vec![MeasuredTranscriptSurface {
+                kind: TranscriptRenderSurfaceKind::AssistantTool,
                 top_offset: 0,
                 height: task_render.lines.len(),
                 width: 120,
@@ -290,7 +291,10 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_reference_timestamps_a
         fetch_lines.extend(render.lines);
     }
     let fetch_text = transcript_test_line_texts(fetch_lines).join("\n");
-    assert!(fetch_text.contains("WebFetch https://example.test/report.pdf") || fetch_text.contains("◆ WebFetch"));
+    assert!(
+        fetch_text.contains("WebFetch https://example.test/report.pdf")
+            || fetch_text.contains("◆ WebFetch")
+    );
     assert!(!fetch_text.contains("report ready"));
     assert!(!fetch_text.contains("stored inline artifact"));
     assert!(!fetch_text.contains("Click to expand"));
@@ -320,7 +324,10 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_reference_timestamps_a
     let web_search_render =
         append_tool_call_section_lines(&web_search_section, &theme, 120, theme.surface.panel);
     let web_search_text = transcript_test_line_texts(web_search_render.lines).join("\n");
-    assert!(web_search_text.contains("◆ Parallel Web Search \"rust tui parity\"") || web_search_text.contains("Parallel Web Search \"rust tui parity\""));
+    assert!(
+        web_search_text.contains("◆ Parallel Web Search \"rust tui parity\"")
+            || web_search_text.contains("Parallel Web Search \"rust tui parity\"")
+    );
     assert!(!web_search_text.contains("Exa Web Search \"rust tui parity\""));
 
     let mut code_search_call =
@@ -344,7 +351,10 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_reference_timestamps_a
     let code_search_render =
         append_tool_call_section_lines(&code_search_section, &theme, 120, theme.surface.panel);
     let code_search_text = transcript_test_line_texts(code_search_render.lines).join("\n");
-    assert!(code_search_text.contains("Exa Code Search \"append_reasoning_block\"") || code_search_text.contains("◆ Exa Code Search"));
+    assert!(
+        code_search_text.contains("Exa Code Search \"append_reasoning_block\"")
+            || code_search_text.contains("◆ Exa Code Search")
+    );
 
     let mut generic_call = transcript_section_model_test_tool_call("tc-generic", "vendor.magic");
     generic_call.resolved_tool_identity = Some(harness_core::event::ResolvedToolIdentity {
@@ -671,7 +681,10 @@ pub(crate) fn exact_test_lsp_tool_successful_output_stays_hidden_until_generic_o
         lines
     })
     .join("\n");
-    assert!(hidden_text.contains("◆ LSP goto_definition") || hidden_text.contains("LSP goto_definition"));
+    assert!(
+        hidden_text.contains("◆ LSP goto_definition")
+            || hidden_text.contains("LSP goto_definition")
+    );
     assert!(!hidden_text.contains("⌘"));
     assert!(!hidden_text.contains("[operation=goto_definition]"));
     assert!(!hidden_text.contains("result 1"));
@@ -739,7 +752,10 @@ pub(crate) fn exact_test_skill_tool_rows_match_reference_title_and_icon() {
         render.lines
     })
     .join("\n");
-    assert!(rendered.contains("◆ Skill \"rust-best-practices\"") || rendered.contains("Skill \"rust-best-practices\""));
+    assert!(
+        rendered.contains("◆ Skill \"rust-best-practices\"")
+            || rendered.contains("Skill \"rust-best-practices\"")
+    );
     assert!(!rendered.contains("Load skill"));
     assert!(!rendered.contains('✦'));
     assert!(!rendered.contains("skill loaded"));
@@ -837,8 +853,7 @@ pub(crate) fn exact_test_file_search_rows_match_reference_title_description_shap
             || rendered.contains("Glob \"**/*.rs\"")
     );
     assert!(rendered.contains("3 matches") || rendered.contains("crates/harness-tui"));
-    assert!(rendered
-        .contains("Grep \"HARNESS_SPLIT_RAIL_GLYPH\""));
+    assert!(rendered.contains("Grep \"HARNESS_SPLIT_RAIL_GLYPH\""));
     assert!(
         rendered.contains("◈ Listed 1 dir")
             || rendered.contains("Listed 1 dir")

@@ -39,9 +39,7 @@ pub(super) fn command_palette_groups_commands_for_shell() {
 
     let rendered = render_live_lines(&app, 120, 30);
     assert!(rendered.contains("Commands"));
-    assert!(
-        rendered.contains("Resume Session") || rendered.contains("Switch session")
-    );
+    assert!(rendered.contains("Resume Session") || rendered.contains("Switch session"));
 
     let mut live_app = app::AppState::new_live(None, false, None);
     live_app.handle_key(key_with_modifiers(

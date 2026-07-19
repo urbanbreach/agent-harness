@@ -277,9 +277,7 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
         .lines,
     )
     .join("\n");
-    assert!(
-        detached_active_text.contains("Researcher Task (background) — audit transcript parity")
-    );
+    assert!(detached_active_text.contains("Researcher Task (background) — audit transcript parity"));
     assert!(detached_active_text.contains("↳ Retrying (attempt 1) · rate_limited"));
     assert!(!detached_active_text.contains("↳ 1 toolcall ·"));
 
@@ -444,7 +442,8 @@ pub(crate) fn exact_test_transcript_task_rows_match_reference_inline_title_and_n
     let rendered = lines.join("\n");
 
     assert!(
-        rendered.contains("◆ Researcher Task — audit transcript parity") || rendered.contains("Researcher Task — audit transcript parity"),
+        rendered.contains("◆ Researcher Task — audit transcript parity")
+            || rendered.contains("Researcher Task — audit transcript parity"),
         "task row should use Harness task title shape\n{rendered}"
     );
     assert!(

@@ -204,9 +204,7 @@ fn resp_100x30_startup_matches_freeze_vertical_ladder() {
         .expect("clipboard warning required");
     let welcome_top = lines
         .iter()
-        .position(|l| {
-            l.contains('╭') && (l.len() - l.trim_start_matches(' ').len()) >= 3
-        })
+        .position(|l| l.contains('╭') && (l.len() - l.trim_start_matches(' ').len()) >= 3)
         .map(|i| i + 1)
         .expect("bordered welcome top required");
 
@@ -228,9 +226,7 @@ fn resp_100x30_startup_matches_freeze_vertical_ladder() {
         .expect("120x32 clipboard");
     let welcome_32 = lines_32
         .iter()
-        .position(|l| {
-            l.contains('╭') && (l.len() - l.trim_start_matches(' ').len()) >= 3
-        })
+        .position(|l| l.contains('╭') && (l.len() - l.trim_start_matches(' ').len()) >= 3)
         .map(|i| i + 1)
         .expect("120x32 welcome");
     assert_eq!(

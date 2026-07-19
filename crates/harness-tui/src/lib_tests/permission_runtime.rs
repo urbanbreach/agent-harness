@@ -9,12 +9,7 @@ pub(super) fn permission_modal_snapshot_renders_request() {
         &app,
         80,
         24,
-        &[
-            "Allow Edit",
-            "always-approve",
-            "No, reject",
-            "Yes",
-        ],
+        &["Allow Edit", "always-approve", "No, reject", "Yes"],
     );
 }
 
@@ -258,7 +253,8 @@ pub(super) fn live_status_strip_distinguishes_terminal_states() {
     ));
     let permission_pending_debug = render_live_buffer(&permission_blocked, 80, 24);
     assert!(permission_pending_debug.contains("decision sent"));
-    assert!(permission_pending_debug.contains("awaiting confirmation"));
+    // Pending dock actions copy uses "waiting for confirmation" (summary string uses awaiting).
+    assert!(permission_pending_debug.contains("waiting for confirmation"));
 
     let mut degraded = app::AppState::new_live(None, false, None);
     degraded.set_status_banner(Some(

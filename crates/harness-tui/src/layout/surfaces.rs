@@ -65,7 +65,8 @@ pub(crate) struct PermissionDockLayout {
 }
 
 const PERMISSION_DOCK_RAIL_WIDTH: u16 = 1;
-const PERMISSION_DOCK_TRAY_HEIGHT: u16 = 5;
+// Freeze PERM: options(4) + post blank(1) + empty(1) + hints(1) + trailing blank(1).
+const PERMISSION_DOCK_TRAY_HEIGHT: u16 = 8;
 const QUESTION_PERMISSION_DOCK_TRAY_HEIGHT: u16 = 2;
 const PERMISSION_DOCK_STACKED_HINT_MIN_WIDTH: u16 = 80;
 const PERMISSION_DOCK_STACKED_HINT_MIN_ACTION_WIDTH: u16 = 20;
@@ -94,7 +95,7 @@ pub(crate) fn permission_dock_layout(area: Rect, is_question: bool) -> Permissio
         PermissionDockLayout {
             rail_width: PERMISSION_DOCK_RAIL_WIDTH,
             tray_height,
-            shell_padding: EdgeInsets::new(2, 1, 0, 0),
+            shell_padding: EdgeInsets::new(2, 1, 1, 0),
             body_padding: EdgeInsets::ZERO,
             tray_padding: EdgeInsets::new(2, 1, 0, 0),
             header_gap: 1,

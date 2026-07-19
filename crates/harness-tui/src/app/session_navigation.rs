@@ -204,8 +204,8 @@ impl AppState {
 
     fn slash_command_available(&self, command: &str) -> bool {
         match command {
-            "new" | "status" | "toggles" | "auth" | "connect" | "help" | "exit" | "mcps"
-            | "timestamps" | "thinking" => true,
+            "new" | "status" | "dashboard" | "toggles" | "auth" | "connect" | "help" | "exit"
+            | "mcps" | "timestamps" | "thinking" | "settings" | "view-plan" | "feedback" => true,
             "sessions" | "replay" => !self.replay_mode,
             "fork" => !self.startup_mode && !self.replay_mode,
             "clone" => !self.startup_mode && self.lineage_write_blocked_reason().is_none(),
@@ -318,7 +318,7 @@ impl AppState {
                 self.restore_slash_draft(preserved_draft);
                 self.open_connect_dialog();
             }
-            "status" => {
+            "status" | "dashboard" => {
                 self.restore_slash_draft(preserved_draft);
                 self.secondary_surfaces.open_status_dialog();
             }
@@ -386,6 +386,18 @@ impl AppState {
                 self.restore_slash_draft(preserved_draft);
                 self.transcript_view.show_transcript_thinking =
                     !self.transcript_view.show_transcript_thinking;
+            }
+            "settings" => {
+                self.restore_slash_draft(preserved_draft);
+                self.open_settings_editor();
+            }
+            "view-plan" => {
+                self.restore_slash_draft(preserved_draft);
+                self.open_plan_view();
+            }
+            "feedback" => {
+                self.restore_slash_draft(preserved_draft);
+                self.execute_action(Action::Help);
             }
             "exit" => self.execute_action(Action::Quit),
             _ => {}
@@ -773,6 +785,14 @@ impl AppState {
     }
 
     pub(in crate::app) fn apply_new_session_launcher_selection(&mut self) {
+        self.apply_fresh_session_launcher_selection(UiIntent::NewSession);
+    }
+
+    pub(in crate::app) fn request_new_worktree_session(&mut self) {
+        self.apply_fresh_session_launcher_selection(UiIntent::NewWorktreeSession);
+    }
+
+    fn apply_fresh_session_launcher_selection(&mut self, intent: UiIntent) {
         let lifecycle_exit = self.startup_mode
             || self.post_run_handoff_visible()
             || self.completed_session_shell_active();
@@ -814,7 +834,7 @@ impl AppState {
             prompt_cursor.min(self.composer.prompt_buffer.chars().count());
 
         self.close_session_history();
-        self.emit_ui_intent(UiIntent::NewSession);
+        self.emit_ui_intent(intent);
         if lifecycle_exit {
             self.should_quit = true;
         }

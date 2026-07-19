@@ -5,32 +5,19 @@
 //! test binary as a helper child with scenario env vars (same pattern as e2e).
 
 use harness_core::event::{
-    ActorKind,
-    EventActor,
-    EventEnvelopeV1,
-    EventV1,
-    PermissionRequestedEvent,
-    ProviderRequestFinishedEvent,
-    ProviderRequestStartedEvent,
-    ProviderStreamDeltaEvent,
-    RunFailedEvent,
-    TaskCancelledEvent,
-    TaskTerminalScope,
-    ToolCallFinishedEvent,
-    ToolCallRequestedEvent,
-    ToolCallStartedEvent,
-    ToolCallStatus,
-    UserMessageSubmittedEvent,
-    SCHEMA_VERSION,
-    ProviderReasoningDeltaEvent,
+    ActorKind, EventActor, EventEnvelopeV1, EventV1, PermissionRequestedEvent,
+    ProviderReasoningDeltaEvent, ProviderRequestFinishedEvent, ProviderRequestStartedEvent,
+    ProviderStreamDeltaEvent, RunFailedEvent, TaskCancelledEvent, TaskTerminalScope,
+    ToolCallFinishedEvent, ToolCallRequestedEvent, ToolCallStartedEvent, ToolCallStatus,
+    UserMessageSubmittedEvent, SCHEMA_VERSION,
 };
 use harness_providers::CompletionUsage;
+use harness_tui::app::{set_pending_live_prompt_draft, LaunchMetadata, ModelOption};
 use harness_tui::UnwrapOrAbort;
 use harness_tui::{
     run_tui_with_options, set_pending_replay_launch_metadata, LiveUpdate, TuiMode, TuiOptions,
     UiIntent,
 };
-use harness_tui::app::{LaunchMetadata, ModelOption};
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use std::cmp;
 use std::io::{Read, Write};
@@ -169,6 +156,9 @@ const PERMISSION_REQUEST_ID: &str = "req_perm_pty";
 const PERMISSION_INJECT_DELAY: Duration = Duration::from_millis(900);
 const PRIMARY_COLS: u16 = 100;
 const PRIMARY_ROWS: u16 = 30;
+/// Freeze-backed live shell captures (COMPLETE/PERM/SCROLL) use 120×32.
+const FREEZE_SHELL_COLS: u16 = 120;
+const FREEZE_SHELL_ROWS: u16 = 32;
 
 pub(crate) fn startup_welcome_panel_renders_and_focuses_composer() {
     if !require_pty_signoff() {
@@ -342,7 +332,12 @@ pub(crate) fn ovl_help_pty() {
     send_key(helper.writer.as_mut(), 0x18).unwrap_or_abort();
     let screen = wait_for_any(
         &mut helper,
-        &["Keyboard Shortcuts", "Shortcuts", "Essentials", "/ to search"],
+        &[
+            "Keyboard Shortcuts",
+            "Shortcuts",
+            "Essentials",
+            "/ to search",
+        ],
     );
     assert_no_sidebar_copy(&screen, "help/shortcuts");
     send_bytes(helper.writer.as_mut(), b"\x1b").unwrap_or_abort();
@@ -354,16 +349,15 @@ pub(crate) fn ovl_perm_pty() {
     if !require_pty_signoff() {
         return;
     }
-    let mut helper = spawn_helper(PERMISSION_OVERLAY_HELPER, PERMISSION_OVERLAY_SCENARIO);
-    helper.wait_for(READY_MARKER);
-    helper.wait_for("❯");
-    helper
-        .writer
-        .write_all(PERMISSION_DRAFT.as_bytes())
-        .unwrap_or_abort();
-    helper.writer.flush().unwrap_or_abort();
-    helper.wait_for(PERMISSION_DRAFT);
+    let mut helper = spawn_helper_at(
+        PERMISSION_OVERLAY_HELPER,
+        PERMISSION_OVERLAY_SCENARIO,
+        120,
+        32,
+    );
+    helper.wait_for("Creating demo.txt");
     helper.wait_for("Allow Edit");
+    helper.wait_for("Draft preserved");
     let screen = helper.screen_text();
     assert!(
         screen.contains("always-approve") || screen.contains("Allow Edit"),
@@ -398,8 +392,8 @@ pub(crate) fn ovl_perm_pty() {
         "permission overlay must pack freeze Run Write right-meta duration 19s\n{screen}"
     );
     assert!(
-        screen.contains(PERMISSION_DRAFT),
-        "permission overlay must preserve draft\n{screen}"
+        screen.contains(PERMISSION_DRAFT) && screen.contains("Draft preserved"),
+        "permission overlay must preserve seeded draft under permission dock\n{screen}"
     );
     send_bytes(helper.writer.as_mut(), b"\x1b").unwrap_or_abort();
     helper.wait_for(READY_MARKER);
@@ -430,16 +424,17 @@ pub(crate) fn shell_perm_pty() {
     if !require_pty_signoff() {
         return;
     }
-    let mut helper = spawn_helper(PERMISSION_OVERLAY_HELPER, PERMISSION_OVERLAY_SCENARIO);
-    helper.wait_for(READY_MARKER);
-    helper
-        .writer
-        .write_all(PERMISSION_DRAFT.as_bytes())
-        .unwrap_or_abort();
-    helper.writer.flush().unwrap_or_abort();
-    helper.wait_for(PERMISSION_DRAFT);
+    let mut helper = spawn_helper_at(
+        PERMISSION_OVERLAY_HELPER,
+        PERMISSION_OVERLAY_SCENARIO,
+        120,
+        32,
+    );
+    helper.wait_for("Creating demo.txt");
     helper.wait_for("Allow Edit");
+    helper.wait_for("Draft preserved");
     let screen = helper.screen_text();
+    maybe_dump_l3("HARNESS_PERM_L3_DUMP", &screen);
     assert!(
         screen.contains("always-approve") || screen.contains("Allow Edit"),
         "SHELL-PERM PTY: permission chrome required\n{screen}"
@@ -481,8 +476,8 @@ pub(crate) fn shell_perm_pty() {
         "SHELL-PERM PTY: mid-stream token meta required (freeze ⇣10.1k)\n{screen}"
     );
     assert!(
-        screen.contains(PERMISSION_DRAFT),
-        "SHELL-PERM PTY: draft must survive permission preemption\n{screen}"
+        screen.contains(PERMISSION_DRAFT) && screen.contains("Draft preserved"),
+        "SHELL-PERM PTY: seeded draft must survive permission preemption\n{screen}"
     );
     assert_no_multi_row_prompt_rail(&screen, "SHELL-PERM");
     assert_no_sidebar_copy(&screen, "SHELL-PERM");
@@ -543,10 +538,16 @@ pub(crate) fn shell_complete_pty() {
     if !require_pty_signoff() {
         return;
     }
-    let mut helper = spawn_helper(LIVE_COMPLETE_HELPER, LIVE_COMPLETE_SCENARIO);
+    let mut helper = spawn_helper_at(
+        LIVE_COMPLETE_HELPER,
+        LIVE_COMPLETE_SCENARIO,
+        FREEZE_SHELL_COLS,
+        FREEZE_SHELL_ROWS,
+    );
     helper.wait_for(COMPLETE_USER_TEXT);
     helper.wait_for(COMPLETE_ASSISTANT_TEXT);
     let screen = helper.screen_text();
+    maybe_dump_l3("HARNESS_COMPLETE_L3_DUMP", &screen);
     assert!(
         screen.contains(COMPLETE_USER_TEXT) && screen.contains(COMPLETE_ASSISTANT_TEXT),
         "SHELL-COMPLETE PTY: completed turn must project\n{screen}"
@@ -568,7 +569,12 @@ pub(crate) fn tx_user_pty() {
     if !require_pty_signoff() {
         return;
     }
-    let mut helper = spawn_helper(LIVE_COMPLETE_HELPER, LIVE_COMPLETE_SCENARIO);
+    let mut helper = spawn_helper_at(
+        LIVE_COMPLETE_HELPER,
+        LIVE_COMPLETE_SCENARIO,
+        FREEZE_SHELL_COLS,
+        FREEZE_SHELL_ROWS,
+    );
     helper.wait_for(COMPLETE_USER_TEXT);
     let screen = helper.screen_text();
     assert!(
@@ -587,7 +593,12 @@ pub(crate) fn tx_assistant_pty() {
     if !require_pty_signoff() {
         return;
     }
-    let mut helper = spawn_helper(LIVE_COMPLETE_HELPER, LIVE_COMPLETE_SCENARIO);
+    let mut helper = spawn_helper_at(
+        LIVE_COMPLETE_HELPER,
+        LIVE_COMPLETE_SCENARIO,
+        FREEZE_SHELL_COLS,
+        FREEZE_SHELL_ROWS,
+    );
     helper.wait_for(COMPLETE_ASSISTANT_TEXT);
     let screen = helper.screen_text();
     assert!(
@@ -691,21 +702,38 @@ pub(crate) fn shell_scroll_pty() {
     if !require_pty_signoff() {
         return;
     }
-    let mut helper = spawn_helper(LIVE_SCROLL_HELPER, LIVE_SCROLL_SCENARIO);
+    let mut helper = spawn_helper_at(LIVE_SCROLL_HELPER, LIVE_SCROLL_SCENARIO, 120, 32);
     // Historical feed pins to bottom — late inventory lines are visible first.
     helper.wait_for(SCROLL_INVENTORY_BOTTOM);
-    // Grok SCROLL freeze shows inventory ~f39–f55 with more-below ▼ (user prompt still visible).
-    // PageUp scrolls by 10 rows; two steps from bottom lands near freeze window (3 overshoots to f31).
+    // 2×PageUp lands ~f41; Ctrl+Up fine-tunes line-by-line to freeze first inventory f39.
     for _ in 0..2 {
         send_bytes(helper.writer.as_mut(), b"\x1b[5~").unwrap_or_abort();
         thread::sleep(Duration::from_millis(40));
     }
+    for _ in 0..8 {
+        let screen = helper.screen_text();
+        if screen.contains("39. f39.txt") {
+            break;
+        }
+        send_bytes(helper.writer.as_mut(), b"\x1b[1;5A").unwrap_or_abort();
+        thread::sleep(Duration::from_millis(30));
+    }
     let screen = helper.screen_text();
     assert!(
-        screen.contains("39. f39.txt")
-            || screen.contains("45. f45.txt")
-            || screen.contains(SCROLL_INVENTORY_MID),
-        "SHELL-SCROLL PTY: freeze viewport ~f39–f55 inventory required\n{screen}"
+        screen.contains("39. f39.txt"),
+        "SHELL-SCROLL PTY: freeze viewport first inventory f39 required\n{screen}"
+    );
+    assert!(
+        screen.contains(SCROLL_INVENTORY_MID),
+        "SHELL-SCROLL PTY: freeze viewport mid inventory f55 required\n{screen}"
+    );
+    assert!(
+        !screen.contains("61. f61.txt"),
+        "SHELL-SCROLL PTY: f61 must leave window after f39 settle (loop15 residual)\n{screen}"
+    );
+    assert!(
+        screen.contains("List every file") || screen.contains("numbered inventory"),
+        "SHELL-SCROLL PTY: sticky user prompt must remain visible with f39 band\n{screen}"
     );
     assert!(
         screen.contains('▼'),
@@ -721,6 +749,7 @@ pub(crate) fn shell_scroll_pty() {
     );
     assert_no_multi_row_prompt_rail(&screen, "SHELL-SCROLL");
     assert_no_sidebar_copy(&screen, "SHELL-SCROLL");
+    maybe_dump_l3("HARNESS_SCROLL_L3_DUMP", &screen);
     exit_via_palette(&mut helper);
 }
 
@@ -795,7 +824,13 @@ fn assert_question_overlay_pty(label: &str) {
     if !require_pty_signoff() {
         return;
     }
-    let mut helper = spawn_helper(QUESTION_OVERLAY_HELPER, QUESTION_OVERLAY_SCENARIO);
+    // Freeze QUESTION is 120×32 (run1-question-proxy-v2); match COMPLETE/PERM shell size.
+    let mut helper = spawn_helper_at(
+        QUESTION_OVERLAY_HELPER,
+        QUESTION_OVERLAY_SCENARIO,
+        FREEZE_SHELL_COLS,
+        FREEZE_SHELL_ROWS,
+    );
     // Historical turn projects user chrome with ❯ — do not use bare READY_MARKER.
     // Full QUESTION_USER_TEXT wraps across rows; wait on a contiguous freeze marker.
     helper.wait_for("Which color? Options: Red, Green, Blue");
@@ -870,6 +905,7 @@ fn assert_question_overlay_pty(label: &str) {
     );
     assert_no_multi_row_prompt_rail(&open, label);
     assert_no_sidebar_copy(&open, label);
+    maybe_dump_l3("HARNESS_QUESTION_L3_DUMP", &open);
     force_kill_helper(helper);
 }
 
@@ -1091,11 +1127,13 @@ pub(crate) fn pty_helper_question_overlay() {
         thread::sleep(PERMISSION_INJECT_DELAY);
         // Historical ends at seq 4; inject Ask at 5, then finish-with-usage at 6 so
         // orphan Ask exists first (Thought stays) and breadcrumb packs 10K / 262K.
-        let _ = inject_tx.send(LiveUpdate::Event(Box::new(question_permission_requested_event(
-            5,
-            "perm_question_parity",
-            "tool_call_question_parity",
-        ))));
+        let _ = inject_tx.send(LiveUpdate::Event(Box::new(
+            question_permission_requested_event(
+                5,
+                "perm_question_parity",
+                "tool_call_question_parity",
+            ),
+        )));
         let mut finish = parity_envelope(
             6,
             Some("req_question_pty"),
@@ -1197,6 +1235,7 @@ pub(crate) fn pty_helper_permission_overlay() {
         }
     });
 
+    set_pending_live_prompt_draft(Some(PERMISSION_DRAFT.to_string()));
     install_parity_context_window();
     run_tui_with_options(TuiOptions {
         mode: TuiMode::Live {
@@ -1235,6 +1274,17 @@ fn require_pty_signoff() -> bool {
         );
     }
     false
+}
+
+fn maybe_dump_l3(env_key: &str, screen: &str) {
+    let Ok(path) = std::env::var(env_key) else {
+        return;
+    };
+    let path = std::path::PathBuf::from(path);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).unwrap_or_abort();
+    }
+    std::fs::write(&path, screen).unwrap_or_abort();
 }
 
 fn wait_for_any(helper: &mut SpawnedHelper, needles: &[&str]) -> String {
@@ -1340,9 +1390,7 @@ fn assert_no_sidebar_copy(screen: &str, context: &str) {
 
 fn spawn_helper_at(test_name: &str, scenario: &str, cols: u16, rows: u16) -> SpawnedHelper {
     let pty_system = native_pty_system();
-    let pair = pty_system
-        .openpty(pty_size(cols, rows))
-        .unwrap_or_abort();
+    let pair = pty_system.openpty(pty_size(cols, rows)).unwrap_or_abort();
 
     let current_test_bin = std::env::current_exe().unwrap_or_abort();
     let mut command = CommandBuilder::new(current_test_bin.to_string_lossy().as_ref());
@@ -2142,10 +2190,7 @@ fn permission_turn_events() -> Vec<EventEnvelopeV1> {
     // first mono non-zero; reasoning 100→200 = 0.1s Thought; write at 400;
     // finish at 19100 so turn duration packs freeze Run Write right-meta 19s
     // (last_mono - first_mono = 19000).
-    for (event, mono) in events
-        .iter_mut()
-        .zip([100_u64, 100, 100, 200, 400, 19_100])
-    {
+    for (event, mono) in events.iter_mut().zip([100_u64, 100, 100, 200, 400, 19_100]) {
         event.mono_ms = mono;
     }
     events

@@ -445,6 +445,9 @@ pub(crate) fn exact_test_transcript_tool_rows_follow_chronological_turn_order() 
 
 #[test]
 fn reasoning_after_tool_renders_in_new_block_below_tool() {
+    // arrange
+    // act
+    // assert
     fn event(
         seq: u64,
         correlation_id: &str,
@@ -616,6 +619,9 @@ fn reasoning_after_tool_renders_in_new_block_below_tool() {
 
 #[test]
 fn task_completion_summary_does_not_duplicate_streamed_assistant_text() {
+    // arrange
+    // act
+    // assert
     fn event(
         seq: u64,
         correlation_id: &str,
@@ -718,6 +724,9 @@ fn task_completion_summary_does_not_duplicate_streamed_assistant_text() {
 
 #[test]
 fn tool_task_completion_summary_does_not_render_as_assistant_body() {
+    // arrange
+    // act
+    // assert
     fn event(
         seq: u64,
         correlation_id: &str,
@@ -966,6 +975,9 @@ fn task_row_title_uses_partial_args_or_child_prompt_before_terminal_output() {
 
 #[test]
 fn background_output_tool_row_confirms_checked_child_result() {
+    // arrange
+    // act
+    // assert
     let mut tool_call =
         transcript_section_model_test_tool_call("tc-background-output", "background_output");
     tool_call.status = ToolCallDisplayStatus::Succeeded;
@@ -1015,6 +1027,9 @@ fn background_output_tool_row_confirms_checked_child_result() {
 
 #[test]
 fn inline_metadata_collapse_removes_terminal_controls() {
+    // arrange
+    // act
+    // assert
     assert_eq!(
         collapse_inline_whitespace("researcher\u{1b}]0;owned\u{7} task\nsummary"),
         "researcher ]0;owned task summary"
@@ -1023,6 +1038,9 @@ fn inline_metadata_collapse_removes_terminal_controls() {
 
 #[test]
 fn task_row_profile_label_matches_harness_titlecase() {
+    // arrange
+    // act
+    // assert
     assert_eq!(subagent_profile_label(""), "General");
     assert_eq!(subagent_profile_label("general"), "General");
     assert_eq!(subagent_profile_label("foo-bar"), "Foo-Bar");
@@ -1073,9 +1091,9 @@ pub(crate) fn exact_test_selected_rail_prefers_last_tool_over_thought() {
         .filter(|surface| surface.selected_rail)
         .map(surface_line_text)
         .collect();
-    let thought_selected = surfaces.iter().any(|surface| {
-        surface.selected_rail && surface_line_text(surface).contains("Thought for")
-    });
+    let thought_selected = surfaces
+        .iter()
+        .any(|surface| surface.selected_rail && surface_line_text(surface).contains("Thought for"));
     let tool_selected = surfaces.iter().any(|surface| {
         surface.selected_rail
             && (surface_line_text(surface).contains("Listed")
@@ -1093,7 +1111,10 @@ pub(crate) fn exact_test_selected_rail_prefers_last_tool_over_thought() {
         "Thought must not keep selected rail when a tool surface exists\nselected={selected:#?}"
     );
     assert_eq!(
-        surfaces.iter().filter(|surface| surface.selected_rail).count(),
+        surfaces
+            .iter()
+            .filter(|surface| surface.selected_rail)
+            .count(),
         1,
         "exactly one surface should carry selected rail\nselected={selected:#?}"
     );
@@ -1121,9 +1142,9 @@ pub(crate) fn exact_test_selected_rail_falls_back_to_thought_without_tools() {
         .filter(|surface| surface.selected_rail)
         .map(surface_line_text)
         .collect();
-    let thought_selected = surfaces.iter().any(|surface| {
-        surface.selected_rail && surface_line_text(surface).contains("Thought for")
-    });
+    let thought_selected = surfaces
+        .iter()
+        .any(|surface| surface.selected_rail && surface_line_text(surface).contains("Thought for"));
 
     // Then: selected rail falls back to Thought when no tool surfaces exist
     assert!(
@@ -1131,7 +1152,10 @@ pub(crate) fn exact_test_selected_rail_falls_back_to_thought_without_tools() {
         "selected completed turns without tools must paint ❙ on Thought\nselected={selected:#?}"
     );
     assert_eq!(
-        surfaces.iter().filter(|surface| surface.selected_rail).count(),
+        surfaces
+            .iter()
+            .filter(|surface| surface.selected_rail)
+            .count(),
         1,
         "exactly one surface should carry selected rail\nselected={selected:#?}"
     );
@@ -1143,11 +1167,8 @@ pub(crate) fn exact_test_done_body_after_tool_packs_wall_clock_on_same_line() {
     // Tool seq must precede body (last_seq) so assistant_parts order is Tool → Body
     // (matches Grok DIFF / live_diff event order).
     let mut app = AppState::default();
-    let mut entry = transcript_section_model_test_activity(
-        "request-done-clock",
-        ActivityStatus::Done,
-        "DONE",
-    );
+    let mut entry =
+        transcript_section_model_test_activity("request-done-clock", ActivityStatus::Done, "DONE");
     entry.thinking_text = "planning".to_string();
     entry.user_timestamp = Some("2026-03-19T12:00:00Z".to_string());
     entry.first_seq = 1;
@@ -1220,24 +1241,34 @@ pub(crate) fn exact_test_body_after_thought_keeps_separate_wall_clock_row() {
         })
         .collect();
 
-    // Then: Grok complete keeps wall clock on its own row between Thought and body
-    let hello_line = lines
+    // Then: Grok complete keeps wall clock on its own row between Thought and body,
+    // with a blank packing row after the clock (freeze run1-complete-proxy-v2).
+    let hello_idx = lines
         .iter()
-        .find(|line| line.contains("HELLO_PARITY_OK"))
+        .position(|line| line.contains("HELLO_PARITY_OK"))
         .unwrap_or_else(|| panic!("missing HELLO body line\n{lines:#?}"));
+    let hello_line = &lines[hello_idx];
     assert!(
         !hello_line.contains("12:00 PM"),
         "Thought→Body must not pack wall clock onto the body line\n{hello_line:?}\nall={lines:#?}"
     );
+    let clock_idx = lines.iter().position(|line| {
+        let trimmed = line.trim();
+        trimmed == "12:00 PM" || (trimmed.ends_with("12:00 PM") && !trimmed.contains("HELLO"))
+    });
+    let clock_idx = clock_idx.unwrap_or_else(|| {
+        panic!("Thought→Body must keep a separate wall-clock row before the body\nall={lines:#?}")
+    });
     assert!(
-        lines.iter().any(|line| {
-            let trimmed = line.trim();
-            trimmed == "12:00 PM" || (trimmed.ends_with("12:00 PM") && !trimmed.contains("HELLO"))
-        }),
-        "Thought→Body must keep a separate wall-clock row before the body\nall={lines:#?}"
+        clock_idx < hello_idx,
+        "wall clock must precede body\nclock_idx={clock_idx} hello_idx={hello_idx}\nall={lines:#?}"
+    );
+    assert!(
+        hello_idx >= clock_idx + 2
+            && lines[clock_idx + 1].trim().is_empty(),
+        "Grok COMPLETE packs a blank row between wall clock and body\nclock_idx={clock_idx} hello_idx={hello_idx}\nall={lines:#?}"
     );
 }
-
 
 #[cfg(test)]
 pub(crate) fn exact_test_tool_turn_without_thinking_omits_thought() {
@@ -1314,7 +1345,6 @@ pub(crate) fn exact_test_no_tool_turn_without_thinking_keeps_thought() {
     );
 }
 
-
 #[cfg(test)]
 pub(crate) fn exact_test_pending_question_has_no_selected_rail() {
     // Given: a selected streaming turn with pending question tool (Waiting on answers)
@@ -1325,7 +1355,8 @@ pub(crate) fn exact_test_pending_question_has_no_selected_rail() {
         "",
     );
     entry.thinking_text = "**plan**".to_string();
-    let mut tool = transcript_section_model_test_tool_call("call-question-no-rail", "user.question");
+    let mut tool =
+        transcript_section_model_test_tool_call("call-question-no-rail", "user.question");
     tool.status = ToolCallDisplayStatus::PendingPermission;
     tool.args_summary = serde_json::json!({
         "questions": [{
@@ -1347,7 +1378,11 @@ pub(crate) fn exact_test_pending_question_has_no_selected_rail() {
         .filter(|surface| surface.selected_rail)
         .map(surface_line_text)
         .collect();
-    let rendered = surfaces.iter().map(surface_line_text).collect::<Vec<_>>().join("\n");
+    let rendered = surfaces
+        .iter()
+        .map(surface_line_text)
+        .collect::<Vec<_>>()
+        .join("\n");
 
     // Then: Grok question freeze paints no ❙ while Waiting on answers
     assert!(
@@ -1361,5 +1396,106 @@ pub(crate) fn exact_test_pending_question_has_no_selected_rail() {
     assert!(
         rendered.contains("Waiting on answers"),
         "Waiting chrome must still render\n{rendered}"
+    );
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_pending_edit_permission_has_no_selected_rail() {
+    // Given: selected streaming turn with pending write under permission (Creating demo.txt)
+    let mut app = AppState::default();
+    let mut entry = transcript_section_model_test_activity(
+        "request-perm-no-rail",
+        ActivityStatus::Streaming,
+        "",
+    );
+    entry.thinking_text = "**plan**".to_string();
+    entry.first_mono_ms = 0;
+    entry.last_mono_ms = 19_000;
+    let mut tool = transcript_section_model_test_tool_call("call-write-perm-no-rail", "fs.write");
+    tool.status = ToolCallDisplayStatus::PendingPermission;
+    tool.args_summary = r#"{"path":"demo.txt","content":"parity-ok\n"}"#.to_string();
+    entry.tool_calls.push(tool);
+    app.activities = std::collections::VecDeque::from(vec![entry]);
+    app.transcript_view.selected_activity_index = 0;
+
+    // When: measuring transcript surfaces
+    let layout = build_measured_transcript_layout_for_width(&app, &Theme::default(), 120);
+    let surfaces = &layout.sections[0].surfaces;
+    let selected: Vec<_> = surfaces
+        .iter()
+        .filter(|surface| surface.selected_rail)
+        .map(surface_line_text)
+        .collect();
+    let rendered = surfaces
+        .iter()
+        .map(surface_line_text)
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // Then: freeze PERM paints no ❙ on Creating while Allow Edit dock is open
+    assert!(
+        selected.is_empty(),
+        "pending edit permission turns must not paint selected rail\nselected={selected:#?}\n{rendered}"
+    );
+    assert!(
+        rendered.contains("Creating demo.txt"),
+        "Creating chrome must still render\n{rendered}"
+    );
+    assert!(
+        rendered.contains("Run Write `demo.txt`"),
+        "Run Write chrome must still render\n{rendered}"
+    );
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_pending_edit_permission_packs_dual_run_write_duration() {
+    // Given: pending write permission turn with 19s elapsed
+    let mut app = AppState::default();
+    let mut entry = transcript_section_model_test_activity(
+        "request-perm-dual-19s",
+        ActivityStatus::Streaming,
+        "",
+    );
+    entry.thinking_text = "**plan**".to_string();
+    entry.first_mono_ms = 0;
+    entry.last_mono_ms = 19_000;
+    entry.usage = Some(crate::app::ActivityUsage {
+        prompt_tokens: 8_000,
+        completion_tokens: 2_100,
+        total_tokens: 10_100,
+    });
+    let mut tool = transcript_section_model_test_tool_call("call-write-dual-19s", "fs.write");
+    tool.status = ToolCallDisplayStatus::PendingPermission;
+    tool.args_summary = r#"{"path":"demo.txt","content":"parity-ok\n"}"#.to_string();
+    entry.tool_calls.push(tool);
+    app.activities = std::collections::VecDeque::from(vec![entry]);
+    app.transcript_view.selected_activity_index = 0;
+
+    // When: rendering transcript lines
+    let lines = transcript_test_line_texts(build_transcript_lines_for_width(
+        &app,
+        &Theme::default(),
+        120,
+    ));
+    let rendered = lines.join("\n");
+    let run_line = lines
+        .iter()
+        .find(|line| line.contains("Run Write"))
+        .cloned()
+        .unwrap_or_default();
+
+    // Then: freeze packs inline 19s after path and right-meta 19s
+    assert!(
+        run_line.contains("Run Write `demo.txt` 19s"),
+        "Run Write left must pack inline duration 19s\n{run_line}\n{rendered}"
+    );
+    assert!(
+        run_line.contains("19s") && run_line.contains("⇣10.1k") && run_line.contains("[stop]"),
+        "Run Write right meta must keep 19s ⇣10.1k [stop]\n{run_line}\n{rendered}"
+    );
+    let nineteen_count = run_line.matches("19s").count();
+    assert!(
+        nineteen_count >= 2,
+        "freeze dual-duration packing needs 19s on both left and right\n{run_line}"
     );
 }

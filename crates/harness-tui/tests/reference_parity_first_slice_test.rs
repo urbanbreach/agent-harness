@@ -167,7 +167,12 @@ fn p0_start_03_draft_clears_welcome_and_keeps_composer() {
     );
 
     // Footer shortcut grammar (reference measured)
-    let footerish = rendered.lines().rev().take(3).collect::<Vec<_>>().join("\n");
+    let footerish = rendered
+        .lines()
+        .rev()
+        .take(3)
+        .collect::<Vec<_>>()
+        .join("\n");
     assert!(
         footerish.contains("Enter:send")
             || footerish.contains("Enter: send")
@@ -207,6 +212,9 @@ fn p0_comp_01_composer_is_three_row_bordered_strip() {
 /// Breadcrumb + clipboard warning band (P0-START-02).
 #[test]
 fn p0_start_02_top_chrome_not_only_bottom_path_bar() {
+    // arrange
+    // act
+    // assert
     let app = startup_app();
     let rendered = render(&app);
     let top: String = rendered.lines().take(8).collect::<Vec<_>>().join("\n");

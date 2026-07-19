@@ -408,9 +408,7 @@ pub(crate) fn exact_test_transcript_apply_patch_surfaces_rename_and_wrapped_inli
         "added line wrapped continuation prefix missing\n{rendered}"
     );
     assert!(
-        lines.iter().any(|line| {
-            line.contains("narrow shells")
-        }),
+        lines.iter().any(|line| { line.contains("narrow shells") }),
         "added line wrapped continuation tail missing\n{rendered}"
     );
     assert!(
@@ -543,9 +541,10 @@ pub(crate) fn exact_test_transcript_inline_diff_stays_compact_between_tool_rows(
         96,
     ));
     let rendered = lines.join("\n");
+    // Grok freeze packing: completed reads use count form ("Read 1 file"), not path form.
     let read_before = lines
         .iter()
-        .position(|line| line.contains("Read docs/spacing.md"))
+        .position(|line| line.contains("Read 1 file"))
         .unwrap_or_abort();
     let patch_header = lines
         .iter()
@@ -557,7 +556,7 @@ pub(crate) fn exact_test_transcript_inline_diff_stays_compact_between_tool_rows(
         .unwrap_or_abort();
     let read_after = lines
         .iter()
-        .rposition(|line| line.contains("Read docs/spacing.md"))
+        .rposition(|line| line.contains("Read 1 file"))
         .unwrap_or_abort();
 
     assert!(read_before < patch_header && patch_header < diff_tail && diff_tail < read_after);
@@ -788,7 +787,10 @@ pub(crate) fn exact_test_transcript_harness_tool_progress_indicators() {
             || mixed_context_rendered.contains("Read 1 file"),
         "completed reads use freeze count form\n{mixed_context_rendered}"
     );
-    assert!(mixed_context_rendered.contains("◆ Glob") || mixed_context_rendered.contains("Glob \"*.rs\""));
+    assert!(
+        mixed_context_rendered.contains("◆ Glob")
+            || mixed_context_rendered.contains("Glob \"*.rs\"")
+    );
 }
 
 #[cfg(test)]
@@ -850,7 +852,6 @@ pub(crate) fn exact_test_transcript_rejected_edit_surfaces_reason_inline() {
     assert!(rendered.contains("ANCHOR_MISMATCH at line 45"));
 }
 
-
 #[cfg(test)]
 pub(crate) fn exact_test_write_tool_hides_redundant_patched_file_header() {
     let run_dir = tempfile::tempdir().unwrap_or_abort();
@@ -893,7 +894,9 @@ pub(crate) fn exact_test_write_tool_hides_redundant_patched_file_header() {
         "single-file write title already carries path; hide redundant ← Patched header\n{structured:#?}"
     );
     assert!(
-        structured.iter().all(|(_, _, force_stacked)| *force_stacked),
+        structured
+            .iter()
+            .all(|(_, _, force_stacked)| *force_stacked),
         "write create diffs must force stacked packing at wide geometry\n{structured:#?}"
     );
     assert!(
@@ -903,17 +906,22 @@ pub(crate) fn exact_test_write_tool_hides_redundant_patched_file_header() {
         "write body diff content must still be present\n{structured:#?}"
     );
 
-    let rendered = append_tool_call_section_lines(&section, &Theme::default(), 120, Theme::default().surface.panel)
-        .lines
-        .into_iter()
-        .map(|line| {
-            line.spans
-                .into_iter()
-                .map(|span| span.content.into_owned())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = append_tool_call_section_lines(
+        &section,
+        &Theme::default(),
+        120,
+        Theme::default().surface.panel,
+    )
+    .lines
+    .into_iter()
+    .map(|line| {
+        line.spans
+            .into_iter()
+            .map(|span| span.content.into_owned())
+            .collect::<String>()
+    })
+    .collect::<Vec<_>>()
+    .join("\n");
     assert!(
         !rendered.contains("← Patched"),
         "rendered write row must not surface ← Patched header\n{rendered}"
@@ -1016,7 +1024,10 @@ pub(crate) fn exact_test_write_tool_title_matches_thought_lead() {
         false,
         Some(run_dir.path()),
     );
-    assert_eq!(section.header.visual_style, TranscriptToolCallVisualStyle::Block);
+    assert_eq!(
+        section.header.visual_style,
+        TranscriptToolCallVisualStyle::Block
+    );
     let lines: Vec<String> = append_tool_call_section_lines(
         &section,
         &Theme::default(),
@@ -1033,14 +1044,16 @@ pub(crate) fn exact_test_write_tool_title_matches_thought_lead() {
     })
     .collect();
 
-    let title = lines
+    let title_idx = lines
         .iter()
-        .find(|line| line.contains("Creating demo.txt"))
+        .position(|line| line.contains("Creating demo.txt"))
         .unwrap_or_else(|| panic!("missing Creating title\n{}", lines.join("\n")));
-    let body = lines
+    let body_idx = lines
         .iter()
-        .find(|line| line.contains("old content"))
+        .position(|line| line.contains("old content"))
         .unwrap_or_else(|| panic!("missing body line\n{}", lines.join("\n")));
+    let title = &lines[title_idx];
+    let body = &lines[body_idx];
 
     let title_lead = title.len() - title.trim_start().len();
     let body_lead = body.len() - body.trim_start().len();
@@ -1055,6 +1068,12 @@ pub(crate) fn exact_test_write_tool_title_matches_thought_lead() {
     assert_eq!(
         body_lead, 2,
         "Grok plain body is title+2 (`  1  text`); min-4 line pad was lead=5\ntitle_lead={title_lead} body_lead={body_lead}\n{}",
+        lines.join("\n")
+    );
+    // Grok PERM freeze: blank packing row between Creating title and plain numbered body
+    assert!(
+        body_idx >= title_idx + 2 && lines[title_idx + 1].trim().is_empty(),
+        "freeze packs blank between Creating title and numbered body\ntitle={title_idx} body={body_idx}\n{}",
         lines.join("\n")
     );
 }

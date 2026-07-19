@@ -4,6 +4,9 @@ use super::ui_subagent_footer_exact_tests::{footer_event, render_footer_rows};
 
 #[test]
 fn subagent_footer_body_sticks_to_latest_activity() {
+    // arrange
+    // act
+    // assert
     let worker = harness_core::event::EventActor::new(
         harness_core::event::ActorKind::Worker,
         Some("agent_child".to_string()),
@@ -58,6 +61,9 @@ fn subagent_footer_body_sticks_to_latest_activity() {
 
 #[test]
 fn subagent_footer_body_renders_child_user_commit_without_assistant_summary() {
+    // arrange
+    // act
+    // assert
     let worker = harness_core::event::EventActor::new(
         harness_core::event::ActorKind::Worker,
         Some("agent_child".to_string()),
@@ -117,6 +123,9 @@ fn subagent_footer_body_renders_child_user_commit_without_assistant_summary() {
 
 #[test]
 fn subagent_footer_body_preserves_child_text_matching_parent_label() {
+    // arrange
+    // act
+    // assert
     let worker = harness_core::event::EventActor::new(
         harness_core::event::ActorKind::Worker,
         Some("agent_child".to_string()),

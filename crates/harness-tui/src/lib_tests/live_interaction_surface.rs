@@ -21,6 +21,7 @@ pub(super) fn permission_modal_preempts_prompt_submission() {
     ));
 
     app.handle_key(key(crossterm::event::KeyCode::Right));
+    app.handle_key(key(crossterm::event::KeyCode::Right));
     app.handle_key(key(crossterm::event::KeyCode::Enter));
 
     let intents = intents.lock().unwrap_or_abort();

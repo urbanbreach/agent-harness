@@ -22,6 +22,12 @@ pub(super) fn transcript_surface_leading_gap(
     current: TranscriptRenderSurfaceKind,
 ) -> usize {
     match previous {
+        // Grok QUESTION freeze: Thought then Ask are adjacent (no blank between).
+        Some(TranscriptRenderSurfaceKind::AssistantReasoning)
+            if transcript_surface_is_assistant_tool_like(current) =>
+        {
+            0
+        }
         Some(previous)
             if transcript_surface_is_assistant_tool_like(previous)
                 && current == TranscriptRenderSurfaceKind::AssistantReasoning =>
@@ -150,8 +156,11 @@ pub(super) fn transcript_surface_render_width(
     kind: TranscriptRenderSurfaceKind,
 ) -> u16 {
     match kind {
-        TranscriptRenderSurfaceKind::User
-        | TranscriptRenderSurfaceKind::AssistantCommandTool
+        // User surfaces pack wall-clock on the first content row. A trailing gap of 2
+        // drops content_width below freeze packing (e.g. "all names" + clock at 120x32
+        // with dual gutter + scrollbar needs content_width >= 108).
+        TranscriptRenderSurfaceKind::User => width.max(1),
+        TranscriptRenderSurfaceKind::AssistantCommandTool
         | TranscriptRenderSurfaceKind::Compaction => width
             .saturating_sub(TRANSCRIPT_SURFACE_TRAILING_GAP_WIDTH)
             .max(1),
@@ -242,8 +251,25 @@ pub(super) fn append_user_surface_text_block(
     width: u16,
     surface: Color,
 ) {
+    append_user_surface_text_block_with_first_line_reserve(
+        lines, text, color, prefix, width, surface, 0,
+    );
+}
+
+pub(super) fn append_user_surface_text_block_with_first_line_reserve(
+    lines: &mut Vec<Line<'static>>,
+    text: &str,
+    color: Color,
+    prefix: &str,
+    width: u16,
+    surface: Color,
+    first_line_reserve: usize,
+) {
     let base_style = Style::default().fg(color);
+    let mut first_line = true;
     for line in text.lines() {
+        let reserve = if first_line { first_line_reserve } else { 0 };
+        first_line = false;
         append_user_surface_wrapped_line(
             lines,
             if line.is_empty() {
@@ -255,11 +281,20 @@ pub(super) fn append_user_surface_text_block(
             base_style,
             width,
             surface,
+            reserve,
         );
     }
 
     if text.is_empty() {
-        append_user_surface_wrapped_line(lines, Vec::new(), prefix, base_style, width, surface);
+        append_user_surface_wrapped_line(
+            lines,
+            Vec::new(),
+            prefix,
+            base_style,
+            width,
+            surface,
+            first_line_reserve,
+        );
     }
 }
 
@@ -270,15 +305,37 @@ fn append_user_surface_wrapped_line(
     prefix_style: Style,
     width: u16,
     surface: Color,
+    first_row_reserve: usize,
 ) {
     let prefix_width = display_width(prefix);
-    let content_width = usize::from(width).saturating_sub(prefix_width).max(1);
+    let full_content_width = usize::from(width).saturating_sub(prefix_width).max(1);
+    let first_content_width = full_content_width.saturating_sub(first_row_reserve).max(1);
     if content_spans.is_empty() {
         lines.push(user_surface_line(prefix, Vec::new(), prefix_style, surface));
         return;
     }
 
-    for row in wrap_surface_spans(content_spans, content_width) {
+    if first_row_reserve == 0 || first_content_width == full_content_width {
+        for row in wrap_surface_spans(content_spans, full_content_width) {
+            lines.push(user_surface_line(prefix, row, prefix_style, surface));
+        }
+        return;
+    }
+
+    let mut narrow_rows = wrap_surface_spans(content_spans, first_content_width);
+    let Some(first) = narrow_rows.first().cloned() else {
+        return;
+    };
+    lines.push(user_surface_line(prefix, first, prefix_style, surface));
+    if narrow_rows.len() <= 1 {
+        return;
+    }
+    narrow_rows.remove(0);
+    let remainder_spans: Vec<Span<'static>> = narrow_rows.into_iter().flatten().collect();
+    if remainder_spans.is_empty() {
+        return;
+    }
+    for row in wrap_surface_spans(remainder_spans, full_content_width) {
         lines.push(user_surface_line(prefix, row, prefix_style, surface));
     }
 }

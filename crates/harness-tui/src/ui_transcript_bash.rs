@@ -267,9 +267,7 @@ fn append_harness_bash_rows(
     panel_width: usize,
     padding_left: usize,
 ) {
-    let content_width = panel_width
-        .saturating_sub(padding_left)
-        .max(1);
+    let content_width = panel_width.saturating_sub(padding_left).max(1);
     let rows = if text.is_empty() {
         vec![String::new()]
     } else {

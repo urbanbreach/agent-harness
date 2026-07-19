@@ -505,9 +505,7 @@ fn render_session_history_list(frame: &mut Frame, app: &AppState, theme: &Theme,
                 frame.render_widget(
                     Paragraph::new(Line::from(Span::styled(
                         truncate_plain_text(label, usize::from(row_area.width.saturating_sub(3))),
-                        Style::default()
-                            .bg(surface)
-                            .add_modifier(Modifier::BOLD),
+                        Style::default().bg(surface).add_modifier(Modifier::BOLD),
                     )))
                     .style(Style::default().bg(surface)),
                     Rect::new(
@@ -609,7 +607,9 @@ fn session_history_row(
         row_style
     };
     let footer_style = if is_armed {
-        Style::default().fg(theme.status.warning).bg(row_style.bg.unwrap_or(Color::Reset))
+        Style::default()
+            .fg(theme.status.warning)
+            .bg(row_style.bg.unwrap_or(Color::Reset))
     } else {
         row_style
     };
@@ -721,7 +721,10 @@ pub(super) fn render_session_rename_dialog(
 
     let surface = ui_chrome::slash_command_surface(theme);
     frame.render_widget(Clear, dialog_area);
-    frame.render_widget(Block::default().style(Style::default().bg(surface)), dialog_area);
+    frame.render_widget(
+        Block::default().style(Style::default().bg(surface)),
+        dialog_area,
+    );
 
     let content = inset_rect(dialog_area, 2.min(dialog_area.width.saturating_sub(1)), 1);
     if content.width == 0 || content.height == 0 {
@@ -801,6 +804,9 @@ mod tests {
 
     #[test]
     fn fork_selector_row_matches_reference_dialog_select_padding_and_colors() {
+        // arrange
+        // act
+        // assert
         let theme = Theme::default();
         let row = ForkSelectorRowViewModel {
             cutoff_seq: 2,

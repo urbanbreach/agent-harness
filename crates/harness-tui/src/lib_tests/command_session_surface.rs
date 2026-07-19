@@ -197,10 +197,7 @@ pub(super) fn command_palette_dims_background_instead_of_repainting_it() {
         let palette_cell = &palette_buffer[(x, y)];
         if matches!(
             (palette_cell.fg, palette_cell.bg),
-            (
-                ratatui::style::Color::Reset,
-                ratatui::style::Color::Reset
-            )
+            (ratatui::style::Color::Reset, ratatui::style::Color::Reset)
         ) {
             saw_outside_reset = true;
             break;
@@ -211,20 +208,24 @@ pub(super) fn command_palette_dims_background_instead_of_repainting_it() {
         "palette backdrop should reset colors outside the overlay under freeze Color::Reset surfaces"
     );
 
-    let shared = base_buffer.content.iter().enumerate().find_map(|(index, base_cell)| {
-        let x = u16::try_from(index % usize::from(width)).ok()?;
-        let y = u16::try_from(index / usize::from(width)).ok()?;
-        let inside_overlay = x >= overlay.x
-            && x < overlay.x.saturating_add(overlay.width)
-            && y >= overlay.y
-            && y < overlay.y.saturating_add(overlay.height);
-        if inside_overlay || base_cell.symbol().trim().is_empty() {
-            return None;
-        }
-        let palette_cell = &palette_buffer[(x, y)];
-        (palette_cell.symbol() == base_cell.symbol())
-            .then(|| (x, y, base_cell.clone(), palette_cell.clone()))
-    });
+    let shared = base_buffer
+        .content
+        .iter()
+        .enumerate()
+        .find_map(|(index, base_cell)| {
+            let x = u16::try_from(index % usize::from(width)).ok()?;
+            let y = u16::try_from(index / usize::from(width)).ok()?;
+            let inside_overlay = x >= overlay.x
+                && x < overlay.x.saturating_add(overlay.width)
+                && y >= overlay.y
+                && y < overlay.y.saturating_add(overlay.height);
+            if inside_overlay || base_cell.symbol().trim().is_empty() {
+                return None;
+            }
+            let palette_cell = &palette_buffer[(x, y)];
+            (palette_cell.symbol() == base_cell.symbol())
+                .then(|| (x, y, base_cell.clone(), palette_cell.clone()))
+        });
     if let Some((x, y, base_cell, palette_cell)) = shared {
         assert_eq!(
             palette_cell.symbol(),

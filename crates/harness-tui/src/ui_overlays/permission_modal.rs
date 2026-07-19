@@ -141,7 +141,9 @@ fn permission_target_path(permission: &crate::app::ActivePermissionView) -> Opti
                 .trim();
             if !path.is_empty()
                 && !path.contains('=')
-                && path.chars().all(|c| !c.is_whitespace() || c == '/' || c == '\\')
+                && path
+                    .chars()
+                    .all(|c| !c.is_whitespace() || c == '/' || c == '\\')
                 && path.len() < 240
             {
                 return Some(path.to_string());
@@ -309,7 +311,13 @@ pub(in crate::ui) fn question_permission_actions_text(
     } else {
         "confirm"
     };
-    let copy_key = app.keymap.get_binding_str(Action::CopyMessage);
+    // Grok QUESTION freeze packs "y copy"; prefer bare `y` when bound.
+    let bindings = app.keymap.get_binding_strs(Action::CopyMessage);
+    let copy_key = if bindings.iter().any(|binding| binding == "y") {
+        "y".to_string()
+    } else {
+        app.keymap.get_binding_str(Action::CopyMessage)
+    };
     let copy_hint = if copy_key == "-" {
         "y copy".to_string()
     } else {
@@ -452,6 +460,8 @@ pub(in crate::ui) fn question_permission_body_text(
         },
         primary_style,
     )]));
+    // Grok QUESTION freeze: two blank rows between title and options.
+    lines.push(Line::default());
     lines.push(Line::default());
 
     // Grok freeze packing: pad option labels so descriptions share a column
@@ -467,7 +477,11 @@ pub(in crate::ui) fn question_permission_body_text(
         let picked = current_answers.iter().any(|value| value == &option.label);
         let active = index == selected;
         let marker = if prompt.multiple {
-            if picked { "[✓]" } else { "[ ]" }
+            if picked {
+                "[✓]"
+            } else {
+                "[ ]"
+            }
         } else if picked {
             // Grok freeze: (○) until answered; cursor focus uses active styles only.
             "●"
@@ -516,7 +530,11 @@ pub(in crate::ui) fn question_permission_body_text(
             !custom_value.is_empty() && current_answers.iter().any(|value| value == custom_value);
         let active = selected == prompt.options.len();
         let marker = if prompt.multiple {
-            if picked { "[✓]" } else { "[ ]" }
+            if picked {
+                "[✓]"
+            } else {
+                "[ ]"
+            }
         } else if picked {
             // Grok freeze: (○) until answered; cursor focus uses active styles only.
             "●"

@@ -352,12 +352,16 @@ fn transcript_scroll_selection_and_tool_detail_toggle_under_full_width_shell() {
     );
 
     app.set_selected_activity_index_for_test(0);
-    let index_before = app.transcript_interaction_snapshot().selected_activity_index;
+    let index_before = app
+        .transcript_interaction_snapshot()
+        .selected_activity_index;
     app.handle_key(key_with_modifiers(
         KeyCode::Char('n'),
         KeyModifiers::CONTROL | KeyModifiers::ALT,
     ));
-    let index_after = app.transcript_interaction_snapshot().selected_activity_index;
+    let index_after = app
+        .transcript_interaction_snapshot()
+        .selected_activity_index;
     assert_ne!(
         index_after, index_before,
         "P0-TX-03: next-activity chord must change selected_activity_index ({index_before} -> {index_after})"

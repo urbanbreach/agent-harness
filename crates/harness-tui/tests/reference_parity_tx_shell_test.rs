@@ -22,6 +22,7 @@ use harness_core::event::{
     TaskTerminalScope, ToolCallFinishedEvent, ToolCallRequestedEvent, ToolCallStartedEvent,
     ToolCallStatus, UserMessageSubmittedEvent, SCHEMA_VERSION,
 };
+use harness_providers::CompletionUsage;
 use harness_tui::app::{AppState, Focus, LaunchMetadata, RuntimeStateKind};
 use harness_tui::layout::FrameLayoutPlan;
 use harness_tui::render_test::render_to_string;
@@ -30,6 +31,7 @@ use ratatui::layout::Rect;
 
 const W: u16 = 120;
 const H: u16 = 40;
+const SCROLL_FREEZE_H: u16 = 32;
 
 fn envelope(seq: u64, correlation_id: Option<&str>, payload: EventV1) -> EventEnvelopeV1 {
     EventEnvelopeV1 {
@@ -38,7 +40,7 @@ fn envelope(seq: u64, correlation_id: Option<&str>, payload: EventV1) -> EventEn
         seq,
         run_id: "run_tx_shell_parity".into(),
         mono_ms: seq,
-        ts: None,
+        ts: Some("2026-03-19T05:54:00Z".to_string()),
         actor: EventActor::new(ActorKind::System, Some("tx-shell-parity".to_string())),
         correlation_id: correlation_id.map(str::to_string),
         causation_id: None,
@@ -59,6 +61,28 @@ fn render(app: &AppState) -> String {
     render_to_string(app, Rect::new(0, 0, W, H), |app, frame, _area| {
         ui::render_app(frame, app)
     })
+}
+
+fn render_at(app: &AppState, width: u16, height: u16) -> String {
+    render_to_string(app, Rect::new(0, 0, width, height), |app, frame, _area| {
+        ui::render_app(frame, app)
+    })
+}
+
+fn first_inventory_line(screen: &str) -> Option<u32> {
+    for line in screen.lines() {
+        let trimmed = line.trim();
+        let Some((num, rest)) = trimmed.split_once(". f") else {
+            continue;
+        };
+        if !rest.ends_with(".txt") {
+            continue;
+        }
+        if let Ok(n) = num.parse::<u32>() {
+            return Some(n);
+        }
+    }
+    None
 }
 
 fn first_non_whitespace_column(line: &str) -> usize {
@@ -321,8 +345,10 @@ fn tx_assistant_message_chrome_is_rail_free_with_footer() {
         "TX-ASSISTANT: no outer rail on footer\n{rendered}"
     );
 
+    // Grok COMPLETE freeze packs Thought + dedicated wall-clock row between user and body
+    // (user → Thought → clock → body ⇒ gap 7 at 100x30 unit geometry).
     assert!(
-        asst_idx - user_idx <= 6,
+        asst_idx - user_idx <= 7,
         "TX-ASSISTANT: turn stacking should stay compact (gap={})\n{rendered}",
         asst_idx - user_idx
     );
@@ -352,6 +378,9 @@ fn tx_assistant_message_chrome_is_rail_free_with_footer() {
 /// TX-TOOL: tool rows use ◆ identity, structured path summary, no outer rail / opaque-only dump.
 #[test]
 fn tx_tool_row_is_structured_diamond_without_legacy_rail() {
+    // arrange
+    // act
+    // assert
     // arrange
     let mut app = live_app();
     let request_id = "req_tool";
@@ -445,6 +474,9 @@ fn tx_tool_row_is_structured_diamond_without_legacy_rail() {
 /// TX-DIFF: inline edit/diff body stays rail-free and non-card under full-width shell.
 #[test]
 fn tx_diff_inline_is_rail_free_without_message_card() {
+    // arrange
+    // act
+    // assert
     // arrange
     let mut app = live_app();
     let request_id = "req_diff";
@@ -731,6 +763,9 @@ fn shell_fail_keeps_error_in_full_width_transcript_with_composer() {
 /// SHELL-FAIL freeze ladder (run1-stream-probe @120x40): composer L35, disclosure L39, empty L40.
 #[test]
 fn shell_fail_dock_matches_freeze_vertical_ladder() {
+    // arrange
+    // act
+    // assert
     let mut app = live_app();
     let request_id = "req_fail_ladder";
     app.ingest_event(envelope(
@@ -801,6 +836,9 @@ fn shell_fail_dock_matches_freeze_vertical_ladder() {
 #[test]
 fn shell_complete_keeps_full_width_body_and_bordered_composer() {
     // arrange
+    // act
+    // assert
+    // arrange
     let mut app = live_app();
     ingest_completed_turn(
         &mut app,
@@ -838,6 +876,9 @@ fn shell_complete_keeps_full_width_body_and_bordered_composer() {
 /// SHELL-CANCEL: AgentTurn cancel projects Cancelled (not Failure) under full-width shell.
 #[test]
 fn shell_cancel_projects_cancelled_distinct_from_failure() {
+    // arrange
+    // act
+    // assert
     // arrange
     let mut app = live_app();
     let request_id = "req_cancel";
@@ -911,6 +952,9 @@ fn shell_cancel_projects_cancelled_distinct_from_failure() {
 /// SHELL-RECOVER: after Failure, full-width shell keeps bordered composer + draft for retry.
 #[test]
 fn shell_recover_after_failure_keeps_composer_and_accepts_draft() {
+    // arrange
+    // act
+    // assert
     // arrange
     let mut app = live_app();
     let request_id = "req_recover";
@@ -989,27 +1033,137 @@ fn shell_recover_after_failure_keeps_composer_and_accepts_draft() {
         "SHELL-RECOVER: no legacy left rail\n{rendered}"
     );
     assert!(
-        runtime
-            .composer_hint
-            .to_lowercase()
-            .contains("retry")
-            || runtime
-                .composer_hint
-                .to_lowercase()
-                .contains("continue")
-            || runtime
-                .composer_hint
-                .to_lowercase()
-                .contains("draft")
+        runtime.composer_hint.to_lowercase().contains("retry")
+            || runtime.composer_hint.to_lowercase().contains("continue")
+            || runtime.composer_hint.to_lowercase().contains("draft")
             || !runtime.composer_hint.is_empty()
             || matches!(runtime.kind, RuntimeStateKind::Failure),
         "SHELL-RECOVER: recovery choreography keeps Failure review path\nstate={runtime:?}"
     );
 }
 
+/// SHELL-SCROLL: settle inventory window to freeze band f39–f55 (loop15 packing).
+#[test]
+fn shell_scroll_freeze_viewport_packs_f39_to_f55_at_120x32() {
+    // arrange
+    // act
+    // assert
+    let mut app = live_app();
+    let request_id = "req_scroll_freeze_pack";
+    let user = "List every file in the current directory using a tool, then write a numbered inventory of all names one per line.";
+    let inventory = (1..=80)
+        .map(|n| format!("{n}. f{n}.txt"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    app.ingest_event(envelope(
+        1,
+        Some(request_id),
+        EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+            request_id: request_id.into(),
+            text: user.into(),
+        }),
+    ));
+    app.ingest_event(envelope(
+        2,
+        Some(request_id),
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: request_id.into(),
+            provider_id: "mock".into(),
+            model_id: "model-tx".into(),
+            prompt_summary: user.into(),
+            request_digest: "digest-scroll-freeze".into(),
+            metadata: None,
+        }),
+    ));
+    app.ingest_event(envelope(
+        3,
+        Some(request_id),
+        EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+            request_id: request_id.into(),
+            delta: inventory,
+        }),
+    ));
+    app.ingest_event(envelope(
+        4,
+        Some(request_id),
+        EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+            request_id: request_id.into(),
+            finish_reason: "stop".to_string(),
+            output_digest: Some("out-scroll-freeze".into()),
+            usage: Some(CompletionUsage {
+                prompt_tokens: 19_000,
+                completion_tokens: 0,
+                total_tokens: 19_000,
+            }),
+            metadata: None,
+        }),
+    ));
+
+    let _bottom = render_at(&app, W, SCROLL_FREEZE_H);
+    for _ in 0..2 {
+        app.handle_key(KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE));
+    }
+    let after_pages = render_at(&app, W, SCROLL_FREEZE_H);
+    let first_after_pages = first_inventory_line(&after_pages);
+    assert!(
+        first_after_pages.is_some_and(|n| n >= 39 && n <= 45),
+        "2×PageUp should land near freeze mid-band; first inventory={first_after_pages:?}\n{after_pages}"
+    );
+
+    let mut first = first_after_pages;
+    for _ in 0..8 {
+        if first == Some(39) {
+            break;
+        }
+        app.handle_key(KeyEvent::new(KeyCode::Up, KeyModifiers::CONTROL));
+        let screen = render_at(&app, W, SCROLL_FREEZE_H);
+        first = first_inventory_line(&screen);
+    }
+
+    let packed = render_at(&app, W, SCROLL_FREEZE_H);
+    let first_packed = first_inventory_line(&packed);
+    assert_eq!(
+        first_packed,
+        Some(39),
+        "freeze viewport packing requires first inventory line f39; got {first_packed:?}\n{packed}"
+    );
+    assert!(
+        packed.contains("List every file in the current directory"),
+        "SCROLL freeze sticky user: user prompt must remain visible at top while f39 band shows\n{packed}"
+    );
+    assert!(
+        packed.lines().any(|line| line.contains('❯')
+            && line.contains("all names")
+            && line.contains("5:54 AM")),
+        "SCROLL freeze sticky user: first user row packs 'all names' + wall clock\n{packed}"
+    );
+    assert!(
+        packed.contains("55. f55.txt"),
+        "freeze viewport packing requires f55 still visible\n{packed}"
+    );
+    assert!(
+        packed.contains('▼'),
+        "freeze viewport packing requires more-below ▼\n{packed}"
+    );
+    assert!(
+        !packed.contains("61. f61.txt"),
+        "loop15 residual: f61 must leave the window once settled to f39 band\n{packed}"
+    );
+    if let Ok(path) = std::env::var("HARNESS_SCROLL_L3_DUMP") {
+        let path = std::path::PathBuf::from(path);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).expect("create HARNESS_SCROLL_L3_DUMP parent");
+        }
+        std::fs::write(&path, &packed).expect("write HARNESS_SCROLL_L3_DUMP");
+    }
+}
+
 /// SHELL-SCROLL: PageUp/PageDown adjust transcript scroll under full-width shell.
 #[test]
 fn shell_scroll_page_keys_adjust_transcript_under_full_width() {
+    // arrange
+    // act
+    // assert
     // arrange
     let mut app = live_app();
     for (seq, rid, text) in [
