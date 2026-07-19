@@ -101,7 +101,8 @@ Permission policy improves operator UX by deciding whether a tool call runs, ask
 - A `bash` command that contains a path-like token the shell safety scanner does not recognize is denied, not allowed.
 - `external_directory` grants are call-scoped prefixes on the run; they are not persisted session grants or a global whitelist.
 - Harness does not implement an OpenCode temporary-directory whitelist.
+- **Folder trust** (workspace allow/deny for repository-local executables) and **OS sandbox policy** (process confinement intent + availability) are separate runtime layers from permission allow/ask/deny. Approving `bash` does not grant folder trust or claim OS sandbox success when enforcement is unavailable.
 
 ## Fixture cross-link
 
-WS6 couples these promises to runtime behavior through the permission-promise fixture: prompt-claimed restrictions for plan, explore, general, and category routes must match coordinator-denied tools. Harness permission parity inventory lives under `crates/harness-core/tests/fixtures/permission_ruleset_parity/` with progress in `docs/permissions-ruleset-parity-progress.md`.
+WS6 couples these promises to runtime behavior through the permission-promise fixture: prompt-claimed restrictions for plan, explore, general, and category routes must match coordinator-denied tools. Harness permission parity inventory lives under `crates/harness-core/tests/fixtures/permission_ruleset_parity/`.

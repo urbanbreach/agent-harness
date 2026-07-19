@@ -1,0 +1,735 @@
+{
+  "schema_version": "harness-core-subsystem-disposition-v1",
+  "document_id": "core-subsystem-disposition",
+  "wave": "T2",
+  "created_from": {
+    "contract": "docs/grok-build-tui-implementation-prompt.md",
+    "contract_sections": [
+      "\u00a74.5 Required backend and product capability inventory",
+      "\u00a712 Implementation Freedom and Required Replacement",
+      "gate A-CORE-AUDIT"
+    ],
+    "invariants": [
+      "crates/harness-core/AGENTS.md",
+      "root AGENTS.md"
+    ],
+    "tui_disposition_mirror": "docs/tui-reference-module-disposition.v1.json"
+  },
+  "disposition_enum": [
+    "replace",
+    "rework",
+    "retain-seam-only",
+    "retain-with-reference-proof"
+  ],
+  "disposition_meanings": {
+    "replace": "Subsystem must be deleted/rebuilt clean-room against measured reference product behavior; residual partial surfaces alone are not parity.",
+    "rework": "Keep module boundary if useful, but rewrite observable product behavior, lifecycle, and journeys to match the better reference contract while preserving hard Harness invariants.",
+    "retain-seam-only": "Keep Harness authority/safety/data seams (event append, replay purity, permission-before-execution, redaction, runtime/TUI config separation); do not treat current full product behavior as reference-correct.",
+    "retain-with-reference-proof": "Only when L2\u2013L5 (or equivalent measured product) evidence proves the subsystem already matches the frozen reference (none claimed for core inventory)."
+  },
+  "policy": {
+    "default_when_reference_better": [
+      "replace",
+      "rework"
+    ],
+    "hard_seams_only": [
+      "coordinator event append authority",
+      "append-only event truth",
+      "replay purity (no side effects)",
+      "permission-before-execution",
+      "redaction before persistence/export",
+      "runtime/TUI config separation",
+      "cancellation precedence"
+    ],
+    "no_retain_with_reference_proof_without_L2_L5": true,
+    "tests_alone_are_not_retention_reason": true,
+    "a_core_audit_overall": "incomplete",
+    "a_core_audit_note": "Inventory + deliberate classification + 26/26 comparison receipts under artifacts/qa-evidence/20260717-tui-reference-parity/receipts/core-audit/. First-party product landed for former empty-surface rows (plugins/acp/sandbox) and auth sleep-wake / MCP OAuth / demote / worktree lifecycle; those rows are now rework+partial. A-CORE-AUDIT remains incomplete until measured black-box reference captures, residual rework owner evidence, and Phase 9 same-revision gates close. `complete` on a row means comparison receipt authored (Harness capture + black-box method + disposition + residuals), not product parity or L2\u2013L5 visual proof."
+  },
+  "subsystems": [
+    {
+      "subsystem_id": "coordinator",
+      "path_globs": [
+        "crates/harness-core/src/coord.rs",
+        "crates/harness-core/src/coord/**",
+        "crates/harness-core/src/sched.rs"
+      ],
+      "disposition": "retain-seam-only",
+      "rationale": "Coordinator remains the sole event-append, task-scheduling, permission-resolution, hook, compaction-trigger, and lifecycle authority. Product turn choreography, background orchestration polish, and recovery UX may be reworked around this seam; authority must not move into TUI/CLI/tools.",
+      "invariant_owners": [
+        "crates/harness-core/AGENTS.md",
+        "crates/harness-core/src/coord/AGENTS.md",
+        "cargo nextest run -p harness-core --test coord_test"
+      ],
+      "comparison_status": "complete",
+      "evidence_owners": [
+        "crates/harness-core/tests (coord_*)",
+        "docs/architecture.md",
+        "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/core-audit/coordinator.md"
+      ],
+      "hard_invariants_preserved": [
+        "coordinator owns all event appends",
+        "permission resolution precedes tool execution",
+        "cancellation precedence over late task results",
+        "hooks and lifecycle transitions stay coordinator-owned"
+      ]
+    },
+    {
+      "subsystem_id": "event_schema",
+      "path_globs": [
+        "crates/harness-core/src/event.rs",
+        "crates/harness-core/src/event/**"
+      ],
+      "disposition": "retain-seam-only",
+      "rationale": "EventEnvelopeV1 / EventV1 append-only schema is the source of truth. New variants may be added for reference capabilities, but events stay immutable, contiguous-seq JSONL, never rewritten in place.",
+      "invariant_owners": [
+        "crates/harness-core/AGENTS.md",
+        "cargo nextest run -p harness --test event_docs_reference_test"
+      ],
+      "comparison_status": "complete",
+      "evidence_owners": [
+        "docs/architecture.md",
+        "docs/sessions-and-replay.md",
+        "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/core-audit/event_schema.md"
+      ],
+      "hard_invariants_preserved": [
+        "events are append-only and immutable",
+        "contiguous seq ordering",
+        "no in-place event log rewrite"
+      ]
+    },
+    {
+      "subsystem_id": "replay_projection",
+      "path_globs": [
+        "crates/harness-core/src/proj.rs",
+        "crates/harness-core/src/proj/**",
+        "crates/harness-core/src/transcript_projection.rs",
+        "crates/harness-core/src/transcript_projection/**",
+        "crates/harness-core/src/conversation.rs"
+      ],
+      "disposition": "retain-seam-only",
+      "rationale": "Replay and projections must remain pure rebuilds from events for UI/resume/export/debug. Presentation of projected state is free to rework; replay must not execute providers, tools, hooks, MCP, network, or CLI.",
+      "invariant_owners": [
+        "crates/harness-core/AGENTS.md",
+        "cargo nextest run -p harness-core --test transcript_projection_test",
+        "cargo nextest run -p harness-core --test conversation_projection_test"
+      ],
+      "comparison_status": "complete",
+      "evidence_owners": [
+        "docs/sessions-and-replay.md",
+        "crates/harness/tests/session_inspect_side_effect_free_test.rs",
+        "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/core-audit/replay_projection.md"
+      ],
+      "hard_invariants_preserved": [
+        "replay purity (no side effects)",
+        "projections are event-derived only",
+        "session inspection tools read replay-derived data only"
+      ]
+    },
+    {
+      "subsystem_id": "config_loader",
+      "path_globs": [
+        "crates/harness-core/src/config.rs",
+        "crates/harness-core/src/config/**",
+        "configs/**",
+        "docs/config.md"
+      ],
+      "disposition": "rework",
+      "rationale": "Public config ergonomics, settings registry, schema generation, migrations, and effective-value inspection need reference-level polish (\u00a74.8) while keeping runtime vs TUI contracts separate and credentials out of config.",
+      "invariant_owners": [
+        "crates/harness-core/src/config/AGENTS.md",
+        "cargo nextest run -p harness --test config_schema_cli_test",
+        "cargo nextest run -p harness --test config_docs_reference_test"
+      ],
+      "comparison_status": "complete",
+      "evidence_owners": [
+        "docs/config.md",
+        "crates/harness-core/src/config/settings_registry.rs",
+        "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/core-audit/config_loader.md"
+      ],
+      "hard_invariants_preserved": [
+        "runtime and TUI config remain separate public contracts",
+        "secrets never persist in config files or effective-config output",
+        "config validation is side-effect free"
+      ]
+    },
+    {
+      "subsystem_id": "permissions",
+      "path_globs": [
+        "crates/harness-core/src/perm.rs",
+        "crates/harness-core/src/perm/**",
+        "crates/harness-core/src/coord/permission.rs",
+        "docs/permissions.md"
+      ],
+      "disposition": "retain-seam-only",
+      "rationale": "Permission-before-execution, ask/deny/allow resolution, and durable grant policy are hard safety seams owned by core/coordinator. UI dock choreography is separate (TUI disposition); do not bypass checks from agents, UI, providers, or tests.",
+      "invariant_owners": [
+        "crates/harness-core/AGENTS.md",
+        "cargo nextest run -p harness-core --test permission_policy_supports_native_tool_permission_kinds_test"
+      ],
+      "comparison_status": "complete",
+      "evidence_owners": [
+        "docs/permissions.md",
+        "crates/harness-tui/src/app/permissions.rs",
+        "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/core-audit/permissions.md"
+      ],
+      "hard_invariants_preserved": [
+        "permission checks precede tool execution",
+        "headless ask denies unless scenario resolves",
+        "worker redelegation bypasses remain blocked"
+      ]
+    },
+    {
+      "subsystem_id": "sessions_lineage",
+      "path_globs": [
+        "crates/harness-core/src/session_lineage.rs",
+        "crates/harness-core/src/session_lineage/**",
+        "crates/harness-core/src/session_title.rs",
+        "crates/harness-core/src/session_paths.rs",
+        "crates/harness/src/sessions.rs",
+        "crates/harness/src/sessions/**"
+      ],
+      "disposition": "rework",
+      "rationale": "Tree/fork/clone/title/resume surfaces exist but must be compared against reference session lifecycle, crash recovery, rewind, and worktree-aware lineage polish. Keep event-derived lineage; rework incomplete journeys.",
+      "invariant_owners": [
+        "crates/harness-core/AGENTS.md",
+        "cargo nextest run -p harness-core --test session_lineage_materialization_test",
+        "cargo nextest run -p harness --test replay_sessions_cli_test"
+      ],
+      "comparison_status": "partial",
+      "evidence_owners": [
+        "docs/sessions-and-replay.md",
+        "crates/harness/tests/replay_sessions_cli/**",
+        "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/core-audit/sessions_lineage.md"
+      ],
+      "hard_invariants_preserved": [
+        "lineage materialization from stable event prefixes",
+        "fork/clone reject active or writer-locked sources",
+        "session inspection remains side-effect free"
+      ]
+    },
+    {
+      "subsystem_id": "session_store",
+      "path_globs": [
+        "crates/harness-core/src/store.rs",
+        "crates/harness-core/src/store/**",
+        "crates/harness-core/src/session_paths.rs"
+      ],
+      "disposition": "retain-seam-only",
+      "rationale": "JSONL event store, append sequencing, and writer-lock recovery are persistence authority seams. Directory layout and recovery UX may rework; do not mutate stored events or non-contiguous sequences.",
+      "invariant_owners": [
+        "crates/harness-core/AGENTS.md",
+        "crates/harness-core/src/store.rs"
+      ],
+      "comparison_status": "complete",
+      "evidence_owners": [
+        "docs/sessions-and-replay.md",
+        "docs/privacy-and-local-data.md",
+        "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/core-audit/session_store.md"
+      ],
+      "hard_invariants_preserved": [
+        "append-only JSONL persistence",
+        "writer-lock recovery without event rewrite",
+        "contiguous seq enforcement"
+      ]
+    },
+    {
+      "subsystem_id": "worktree",
+      "path_globs": [
+        "crates/harness-core/src/worktree.rs",
+        "crates/harness/src/tui/**",
+        "crates/harness-tui/src/app/lifecycle.rs"
+      ],
+      "disposition": "rework",
+      "rationale": "Session worktree create/list/select/cleanup and CoW fastpath product paths exist (inventory pass for worktree.* and workspace.cow_worktree_fastpath). Concurrent isolation polish, resume/fork ownership, and full PTY end-to-end proof vs reference remain open (\u00a74.6) \u2192 rework + partial.",
+      "invariant_owners": [
+        "crates/harness-core/src/worktree.rs",
+        "docs/grok-build-tui-implementation-prompt.md \u00a74.6"
+      ],
+      "comparison_status": "partial",
+      "evidence_owners": [
+        "crates/harness-core/src/worktree.rs",
+        "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/",
+        "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/core-audit/worktree.md"
+      ],
+      "hard_invariants_preserved": [
+        "path safety and permissions resolve against active worktree root when selected",
+        "partial creation attempts rollback",
+        "no accidental sharing of mutable session state across concurrent worktrees"
+      ]
+    },
+    {
+      "subsystem_id": "workspace",
+      "path_globs": [
+        "crates/harness-core/src/workspace.rs",
+        "crates/harness-core/src/path_selector.rs",
+        "crates/harness-core/src/path_display.rs"
+      ],
+      "disposition": "rework",
+      "rationale": "Workspace roots and path helpers exist; reference folder trust, remote/workspace binding, and worktree-aware root resolution need product comparison and completion without weakening external-directory safety.",
+      "invariant_owners": [
+        "crates/harness-core/AGENTS.md",
+        "crates/harness-tools (path safety)"
+      ],
+      "comparison_status": "partial",
+      "evidence_owners": [
+        "docs/permissions.md",
+        "crates/harness-core/src/workspace.rs",
+        "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/core-audit/workspace.md"
+      ],
+      "hard_invariants_preserved": [
+        "external-directory permission safety",
+        "workspace roots resolve via helpers not hardcoded paths"
+      ]
+    },
+    {
+      "subsystem_id": "providers",
+      "path_globs": [
+        "crates/harness-providers/src/**",
+        "crates/harness-core/src/provider_args.rs",
+        "crates/harness-core/src/provider_catalog.rs",
+        "crates/harness-core/src/model_resolution.rs",
+        "crates/harness-core/src/agent/**"
+      ],
+      "disposition": "rework",
+      "rationale": "OpenAI-compatible transport, mock/cassette, and catalog metadata exist. Reference-visible protocols, fallback/retry polish, and error presentation need clean-room extension while redacting provider metadata before persistence.",
+      "invariant_owners": [
+        "crates/harness-providers/AGENTS.md",
+        "cargo nextest run -p harness-providers"
+      ],
+      "comparison_status": "complete",
+      "evidence_owners": [
+        "docs/provider-support.md",
+        "configs/provider-catalog.generated.json",
+        "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/core-audit/providers.md"
+      ],
+      "hard_invariants_preserved": [
+        "provider metadata redacted before events/artifacts",
+        "no raw requests/responses/auth headers in persistence",
+        "cassette/mock paths stay deterministic for offline proof"
+      ]
+    },
+    {
+      "subsystem_id": "native_tools",
+      "path_globs": [
+        "crates/harness-tools/src/**",
+        "crates/harness-core/src/tool.rs",
+        "docs/native-tool-catalog.md"
+      ],
+      "disposition": "rework",
+      "rationale": "Native tool surface is substantial but must be audited capability-by-capability against reference tool journeys; schema/id parity tests do not prove reference product completeness. Permission-gated execution stays mandatory.",
+      "invariant_owners": [
+        "crates/harness-tools/AGENTS.md",
+        "cargo nextest run -p harness-tools --test native_tool_parity_matrix_test"
+      ],
+      "comparison_status": "complete",
+      "evidence_owners": [
+        "docs/native-tool-catalog.md",
+        "crates/harness-tools/tests/**",
+        "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/core-audit/native_tools.md"
+      ],
+      "hard_invariants_preserved": [
+        "permission-before-execution for gated tools",
+        "path safety for filesystem tools",
+        "canonical tool ids remain stable public contract"
+      ]
+    },
+    {
+      "subsystem_id": "mcp",
+      "path_globs": [
+        "crates/harness-tools/src/mcp.rs",
+        "crates/harness-tools/src/mcp_*.rs",
+        "crates/harness-core/src/config/**"
+      ],
+      "disposition": "rework",
+      "rationale": "Config-backed MCP registration, tool wrappers, and OAuth/remote transport product paths exist (inventory pass for mcp.oauth_remote_transports). Lifecycle polish and reference-visible MCP operator journeys remain open \u2192 rework + partial until measured comparison closes. Doctor/config validation must not silently execute MCP network.",
+      "invariant_owners": [
+        "crates/harness-tools/AGENTS.md",
+        "cargo nextest run -p harness-core --test mcp_config_test"
+      ],
+      "comparison_status": "partial",
+      "evidence_owners": [
+        "docs/config.md",
+        "crates/harness-core/src/mcp_oauth.rs",
+        "crates/harness/tests/config_schema_cli/**",
+        "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/core-audit/mcp.md"
+      ],
+      "hard_invariants_preserved": [
+        "doctor/config validation do not silently execute MCP network",
+        "MCP secrets redacted in support/doctor output"
+      ]
+    },
+    {
+      "subsystem_id": "lsp",
+      "path_globs": [
+        "crates/harness-tools/src/code_lsp.rs",
+        "crates/harness-tools/src/code_lsp_rename/**",
+        "crates/harness-tools/src/lsp_support/**",
+        "crates/harness-tools/src/lsp_support.rs"
+      ],
+      "disposition": "rework",
+      "rationale": "LSP probe/diagnostics tools exist with fail-open unsupported paths; persistent incremental graph and reference code-intelligence surfaces are not product-complete and need rework/extension.",
+      "invariant_owners": [
+        "crates/harness-tools/AGENTS.md",
+        "docs/native-tool-catalog.md"
+      ],
+      "comparison_status": "partial",
+      "evidence_owners": [
+        "crates/harness-tools/src/lsp_support.rs",
+        "scripts/stress-harness.sh offline/live stages",
+        "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/core-audit/lsp.md"
+      ],
+      "hard_invariants_preserved": [
+        "unsupported LSP probes remain recoverable in prompt path",
+        "permission kind lsp stays policy-gated"
+      ]
+    },
+    {
+      "subsystem_id": "background_tasks",
+      "path_globs": [
+        "crates/harness-core/src/coord/task_lifecycle.rs",
+        "crates/harness-core/src/coord/background_notifications.rs",
+        "crates/harness-core/src/coord/child_session.rs",
+        "crates/harness-tools/src/agent_ops*"
+      ],
+      "disposition": "rework",
+      "rationale": "task/background_output/background_cancel, coordinator-owned wait-any/wait-all, foreground demote-to-background, and multi-agent team registry product paths exist (inventory pass). Reference multi-agent lifecycle polish still needs deliberate rework without moving scheduling authority out of the coordinator \u2192 partial.",
+      "invariant_owners": [
+        "crates/harness-core/src/coord/AGENTS.md",
+        "cargo nextest run -p harness-core --test coord_test"
+      ],
+      "comparison_status": "partial",
+      "evidence_owners": [
+        "docs/agents-and-subagents.md",
+        "docs/native-tool-catalog.md",
+        "crates/harness-core/src/foreground_demote.rs",
+        "crates/harness-core/src/team_registry.rs",
+        "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/core-audit/background_tasks.md"
+      ],
+      "hard_invariants_preserved": [
+        "coordinator owns task scheduling and cancellation",
+        "late results after cancel become TaskResultLate",
+        "workers cannot spawn agents directly"
+      ]
+    },
+    {
+      "subsystem_id": "compaction",
+      "path_globs": [
+        "crates/harness-core/src/coord/compaction.rs",
+        "crates/harness-core/src/coord/compaction/**",
+        "crates/harness-core/src/coord/compaction_support.rs",
+        "crates/harness-core/src/coord/session_compaction.rs",
+        "crates/harness-core/src/coord/provider_context/**"
+      ],
+      "disposition": "rework",
+      "rationale": "Compaction is explicitly redesignable: compare triggers, token accounting, summarization, checkpoints, interruption/retry/recovery, transcript markers, and user control against the better reference behavior. Preserve append-only event truth and replay purity \u2014 compaction writes checkpoint artifacts/events and must not rewrite events.jsonl.",
+      "invariant_owners": [
+        "crates/harness-core/AGENTS.md",
+        "crates/harness-core/src/coord/compaction.rs"
+      ],
+      "comparison_status": "complete",
+      "evidence_owners": [
+        "docs/architecture.md",
+        "crates/harness/tests/config_schema_cli/04_public_runtime_config_accepts_compaction_settings_test.rs",
+        "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/core-audit/compaction.md"
+      ],
+      "hard_invariants_preserved": [
+        "append-only event log (no rewrite of events.jsonl)",
+        "replay purity after compaction checkpoints",
+        "redaction of secrets in summaries/checkpoints"
+      ]
+    },
+    {
+      "subsystem_id": "auth",
+      "path_globs": [
+        "crates/harness-core/src/auth.rs",
+        "crates/harness-core/src/auth/**",
+        "crates/harness-core/src/sleep_wake_auth.rs",
+        "crates/harness/src/auth_cmd.rs",
+        "crates/harness/src/auth_cmd/**"
+      ],
+      "disposition": "rework",
+      "rationale": "Stored auth providers, CLI login/logout, browser OIDC/SSO product path, and sleep/wake credential refresh (hook event source + near-expiry refresh via ProviderCredentialManager) now exist as first-party surfaces (inventory pass). Reference-measured polish for enterprise SSO journeys and platform-native sleep hooks remains open; keep rework + partial until black-box comparison closes. Never print secrets.",
+      "invariant_owners": [
+        "crates/harness-core/AGENTS.md",
+        "crates/harness/AGENTS.md",
+        "cargo nextest run -p harness --test poc_candidate2_auth_secret_leakage_test"
+      ],
+      "comparison_status": "partial",
+      "evidence_owners": [
+        "crates/harness/tests/config_schema_cli/02d_auth_credentials_cli_test.rs",
+        "crates/harness-core/src/sleep_wake_auth.rs",
+        "docs/privacy-and-local-data.md",
+        "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/core-audit/auth.md"
+      ],
+      "hard_invariants_preserved": [
+        "credentials never printed by doctor/auth CLI",
+        "auth material kept out of config files",
+        "redaction of secret-bearing fields in exports"
+      ]
+    },
+    {
+      "subsystem_id": "redaction",
+      "path_globs": [
+        "crates/harness-core/src/redact.rs",
+        "crates/harness/src/sessions/export/**"
+      ],
+      "disposition": "retain-seam-only",
+      "rationale": "Redaction before persistence, summaries, support exports, and artifact indexes is a hard privacy/safety seam. Expand coverage as new surfaces appear; do not weaken scanners to obtain polish.",
+      "invariant_owners": [
+        "crates/harness-core/AGENTS.md",
+        "docs/privacy-and-local-data.md"
+      ],
+      "comparison_status": "complete",
+      "evidence_owners": [
+        "crates/harness/tests/replay_sessions_cli/08b_sessions_export_redaction_artifacts_test.rs",
+        "crates/harness/tests/replay_sessions_cli/09_sessions_export_support_scan_test.rs",
+        "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/core-audit/redaction.md"
+      ],
+      "hard_invariants_preserved": [
+        "redact secrets before persistence and export",
+        "no raw API keys, bearer tokens, cookies, or PEM blocks in support bundles",
+        "provider metadata redaction before event/artifact write"
+      ]
+    },
+    {
+      "subsystem_id": "tui_app_state",
+      "path_globs": [
+        "crates/harness-tui/src/app.rs",
+        "crates/harness-tui/src/app/**",
+        "crates/harness-tui/src/overlay.rs",
+        "crates/harness-tui/src/view_model.rs"
+      ],
+      "disposition": "retain-seam-only",
+      "rationale": "AppState/projection/intent/overlay-stack seams are Harness-owned interaction state machines. Keep data seams; do not treat current shell choreography as reference-correct (see TUI module disposition for painters).",
+      "invariant_owners": [
+        "crates/harness-tui/src/app/AGENTS.md",
+        "docs/tui-reference-module-disposition.v1.json"
+      ],
+      "comparison_status": "partial",
+      "evidence_owners": [
+        "crates/harness-tui/tests/**",
+        "docs/tui-reference-module-disposition.v1.json",
+        "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/core-audit/tui_app_state.md"
+      ],
+      "hard_invariants_preserved": [
+        "TUI remains presentation-only for runtime authority",
+        "replay mode must not emit live submission intents",
+        "permission modal lifecycle stays coordinator-facing"
+      ]
+    },
+    {
+      "subsystem_id": "tui_render",
+      "path_globs": [
+        "crates/harness-tui/src/ui.rs",
+        "crates/harness-tui/src/ui_*.rs",
+        "crates/harness-tui/src/layout.rs",
+        "crates/harness-tui/src/theme.rs",
+        "crates/harness-tui/src/ui_overlays/**"
+      ],
+      "disposition": "replace",
+      "rationale": "Presentation layer is disposable per \u00a712. Painters/layout/theme must be rebuilt against measured reference anatomy; residual glyphs or compose-first topology alone are not parity. Detailed file-level disposition lives in docs/tui-reference-module-disposition.v1.json.",
+      "invariant_owners": [
+        "crates/harness-tui/AGENTS.md",
+        "docs/tui-reference-module-disposition.v1.json",
+        "crates/harness-tui/tests/tui_reference_module_disposition_test.rs"
+      ],
+      "comparison_status": "complete",
+      "evidence_owners": [
+        "artifacts/qa-evidence/20260717-tui-reference-parity/",
+        "docs/tui-reference-parity-manifest.v1.json",
+        "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/core-audit/tui_render.md"
+      ],
+      "hard_invariants_preserved": [
+        "no production code reads reference captures or golden hashes",
+        "identity substitutions only where contract allows",
+        "runtime authority stays out of painters"
+      ]
+    },
+    {
+      "subsystem_id": "cli_handoff",
+      "path_globs": [
+        "crates/harness/src/lib.rs",
+        "crates/harness/src/tui.rs",
+        "crates/harness/src/tui/**",
+        "crates/harness/src/run.rs",
+        "crates/harness/src/prompt.rs",
+        "crates/harness/src/prompt/**",
+        "crates/harness/src/replay.rs",
+        "crates/harness/src/replay/**"
+      ],
+      "disposition": "rework",
+      "rationale": "CLI\u2192TUI handoff and run/prompt/replay commands are real product surfaces. Rework incomplete journeys and wiring while keeping CLI a thin shell: no coordinator/permission/event-append authority in CLI modules.",
+      "invariant_owners": [
+        "crates/harness/AGENTS.md",
+        "cargo nextest run -p harness --test tui_cli_test",
+        "cargo nextest run -p harness --test run_cli_test"
+      ],
+      "comparison_status": "partial",
+      "evidence_owners": [
+        "crates/harness/tests/tui_cli/**",
+        "crates/harness/tests/prompt_cli/**",
+        "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/core-audit/cli_handoff.md"
+      ],
+      "hard_invariants_preserved": [
+        "CLI does not own event append or permission authority",
+        "replay/session commands stay inspection/export surfaces",
+        "runtime/TUI config loading via shared discovery helpers"
+      ]
+    },
+    {
+      "subsystem_id": "extensions_descriptor",
+      "path_globs": [
+        "crates/harness-core/src/extension_manifest.rs",
+        "docs/extension-strategy.md"
+      ],
+      "disposition": "retain-seam-only",
+      "rationale": "V1 extension manifests are deliberately descriptor-only: no runtime tool registration, MCP launch, provider decorators, or session mutation. Retain the descriptor seam; full plugin host is a separate replace surface (plugins).",
+      "invariant_owners": [
+        "crates/harness-core/AGENTS.md",
+        "cargo nextest run -p harness-core --test extension_manifest_test"
+      ],
+      "comparison_status": "complete",
+      "evidence_owners": [
+        "docs/extension-strategy.md",
+        "crates/harness-core/src/extension_manifest.rs",
+        "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/core-audit/extensions_descriptor.md"
+      ],
+      "hard_invariants_preserved": [
+        "descriptor-only V1 (no plugin host)",
+        "no external code loading via extension manifests",
+        "no session mutation through descriptors"
+      ]
+    },
+    {
+      "subsystem_id": "doctor",
+      "path_globs": [
+        "crates/harness/src/doctor.rs",
+        "crates/harness/src/doctor/**",
+        "crates/harness/src/doctor_metadata.rs",
+        "crates/harness/src/readiness.rs"
+      ],
+      "disposition": "rework",
+      "rationale": "Doctor reports local readiness without network side effects. Expand capability/auth diagnostics and schema-aware reporting for parity polish without turning doctor into a live provider/MCP executor.",
+      "invariant_owners": [
+        "crates/harness/AGENTS.md",
+        "cargo nextest run -p harness --test config_schema_cli_test"
+      ],
+      "comparison_status": "partial",
+      "evidence_owners": [
+        "crates/harness/tests/config_schema_cli/02_doctor_cli_reports_shipped_orchestration_health_test.rs",
+        "crates/harness/tests/config_schema_cli/02b_doctor_cli_reports_native_tool_catalog_readiness_test.rs",
+        "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/core-audit/doctor.md"
+      ],
+      "hard_invariants_preserved": [
+        "doctor does not make provider or MCP network calls",
+        "secrets redacted in doctor output",
+        "config validation remains side-effect free"
+      ]
+    },
+    {
+      "subsystem_id": "support_export",
+      "path_globs": [
+        "crates/harness/src/sessions/export/**",
+        "crates/harness/src/sessions.rs",
+        "crates/harness/src/recovery.rs"
+      ],
+      "disposition": "rework",
+      "rationale": "Support export bundles exist with redaction/scan stages. Rework completeness and recovery packaging against reference support workflows while keeping redaction fail-closed.",
+      "invariant_owners": [
+        "crates/harness/AGENTS.md",
+        "docs/privacy-and-local-data.md"
+      ],
+      "comparison_status": "partial",
+      "evidence_owners": [
+        "crates/harness/tests/replay_sessions_cli/08_sessions_export_test.rs",
+        "crates/harness/tests/replay_sessions_cli/08b_sessions_export_redaction_artifacts_test.rs",
+        "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/core-audit/support_export.md"
+      ],
+      "hard_invariants_preserved": [
+        "export is redacted and secret-scanned",
+        "export derives from replay/session data not live execution",
+        "no credential material in support bundles"
+      ]
+    },
+    {
+      "subsystem_id": "plugins",
+      "path_globs": [
+        "crates/harness-core/src/integrations/**",
+        "docs/extension-strategy.md"
+      ],
+      "disposition": "rework",
+      "rationale": "First-party plugin lifecycle registry + multi-plugin install/activate/deactivate product path: activate loads package entries (hooks.json/skills/plugin_entry.json), writes load receipt, loads_code=true when loaded; fail-closed on invalid entry. Residual: no dynamic .so/wasm host, no marketplace. Descriptor discovery remains separate. Inventory plugins.runtime_lifecycle stays incomplete until residual closed.",
+      "invariant_owners": [
+        "crates/harness-core/AGENTS.md",
+        "docs/extension-strategy.md"
+      ],
+      "comparison_status": "partial",
+      "evidence_owners": [
+        "crates/harness-core/src/integrations/",
+        "docs/extension-strategy.md",
+        "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/core-audit/plugins.md"
+      ],
+      "hard_invariants_preserved": [
+        "plugin execution must not bypass permission-before-execution",
+        "descriptor-only manifests are not a full marketplace host",
+        "secrets remain redacted"
+      ]
+    },
+    {
+      "subsystem_id": "acp",
+      "path_globs": [
+        "crates/harness-core/src/integrations/acp.rs",
+        "crates/harness-core/src/integrations/product.rs",
+        "docs/architecture.md"
+      ],
+      "disposition": "rework",
+      "rationale": "First-party mock ACP agent-mode product path exists (inventory pass for acp.agent_mode). Full IDE/editor transport parity vs reference-supported ACP remains open \u2192 rework + honest partial until measured comparison closes.",
+      "invariant_owners": [
+        "root AGENTS.md",
+        "docs/architecture.md"
+      ],
+      "comparison_status": "partial",
+      "evidence_owners": [
+        "crates/harness-core/src/integrations/acp.rs",
+        "crates/harness-core/src/integrations/product.rs",
+        "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/core-audit/acp.md"
+      ],
+      "hard_invariants_preserved": [
+        "coordinator remains authority for side effects",
+        "replay purity for any recorded ACP sessions",
+        "permission-before-execution for tool calls from ACP"
+      ]
+    },
+    {
+      "subsystem_id": "sandbox",
+      "path_globs": [
+        "crates/harness-core/src/sandbox.rs",
+        "crates/harness-core/src/folder_trust/**",
+        "crates/harness-tools/src/shell_safety.rs",
+        "crates/harness-tools/src/shell_safety/**",
+        "crates/harness-tools/src/shell_run.rs"
+      ],
+      "disposition": "rework",
+      "rationale": "Coordinator-owned sandbox policy/availability, OS profile probing (Landlock/Seatbelt/seccomp structured paths), folder-trust deny-before-spawn, and inventory-pass sandbox.os_profiles product surface now exist. Real confinement enforcement (pre_exec wiring) and reference trust UX remain open \u2192 rework (no longer empty replace) + honest partial until enforcement evidence closes.",
+      "invariant_owners": [
+        "crates/harness-core/AGENTS.md",
+        "crates/harness-tools/AGENTS.md",
+        "docs/permissions.md"
+      ],
+      "comparison_status": "partial",
+      "evidence_owners": [
+        "crates/harness-core/src/sandbox.rs",
+        "crates/harness-core/src/folder_trust.rs",
+        "crates/harness-tools/src/shell_safety.rs",
+        "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/core-audit/sandbox.md"
+      ],
+      "hard_invariants_preserved": [
+        "permission-before-execution for bash",
+        "external-directory safety",
+        "no silent elevation of sandbox policy",
+        "folder trust distinct from operator permission approval"
+      ]
+    }
+  ]
+}

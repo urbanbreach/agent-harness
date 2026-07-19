@@ -12,12 +12,10 @@ Read root `AGENTS.md` first. Config-specific schema guidance lives in `../config
 | Config contract | `config.md`, `provider-support.md`, `starter-skills.md` | Public config keys, provider catalogs, skill discovery. |
 | Tool contract | `native-tool-catalog.md`, `ast-grep-replace-safety-gate.md` | Native ids, permissions, mutation/replay/artifact behavior. |
 | Permissions/privacy | `permissions.md`, `privacy-and-local-data.md` | Approval limits, local data, redaction, support bundles. |
-| Testing/evidence | `testing.md`, `budgets.md`, `claim-evidence-matrix.md`, `release-blockers.md` | Lane semantics, perf/coverage, evidence status. |
+| Testing/evidence | `testing.md`, `budgets.md` | Lane semantics, perf/coverage, evidence policy. |
 | Simulation/TUI manifests | `simulation-matrix.json`, `tui-signoff-manifest.v1.json` | Machine-read validation inputs. |
-| PRDs/progress | `*-prd.md`, `*-progress.md`, `roadmap-v1.md` | Historical claims; keep evidence rows honest and dated. **Active residual testing loop:** `harness-live-agent-testing-prd.md` + `harness-live-agent-testing-progress.md` (live smoke pack, live dogfood channel, skill-activation, cassette/chaos residual). **Closed predecessor:** `harness-testing-enhancement-prd.md` + `harness-testing-enhancement-progress.md` (offline dogfood + theme owners). |
 | Agents/troubleshooting | `agents-and-subagents.md`, `troubleshooting.md` | Agent routing, local troubleshooting. |
-| Extensions/migration | `extension-strategy.md`, `migration-notes.md`, `desktop-distribution-surface-map.md` | Extension strategy, migration history, desktop surfaces. |
-| Config restructure | `config-restructure-prompt.md`, `config-restructure-spec.md` | Historical config restructure specs. |
+| Extensions/migration | `extension-strategy.md`, `migration-notes.md` | Extension strategy and migration history. |
 | Static gate baseline | `test-suite-conventions-baseline.json` | Machine-read debt baseline for test-suite gates. |
 
 ## CONVENTIONS
@@ -26,7 +24,7 @@ Read root `AGENTS.md` first. Config-specific schema guidance lives in `../config
 - Keep docs branding-safe and source-term-safe; `scripts/check-forbidden-branding.py` is part of quality gates.
 - Do not use docs to advertise behavior that runtime/config/tool catalog tests do not prove.
 - JSON manifests in this directory are source inputs for validators; update validators and tests with schema/shape changes.
-- Historical progress docs should not be rewritten to hide old limitations; add dated superseding notes instead.
+- Do not reintroduce PRD, progress, plan, roadmap, or claim-ledger markdown into this tree.
 
 ## UPDATE TOGETHER
 | Change | Also update |
@@ -49,7 +47,7 @@ scripts/test-lanes.sh quality-gates
 ```
 
 ## ANTI-PATTERNS
-- Do not check roadmap/progress boxes without a matching evidence row.
+- Do not reintroduce PRD/progress/plan/roadmap/claim-ledger docs.
 - Do not claim PTY/live/native visual evidence without artifact provenance.
 - Do not broaden descriptor-only extension seams into runtime plugin claims.
 - Do not edit baseline debt files to bypass static gates without explaining the debt change.

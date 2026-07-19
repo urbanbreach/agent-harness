@@ -1,0 +1,3354 @@
+{
+  "schema_version": "harness-tui-reference-parity-manifest-v1",
+  "description": "Harness-owned independent TUI reference-parity traceability manifest. Rows join reference freeze receipts to Harness owners, L1-L6 evidence paths, and A-* acceptance gates. Does not replace docs/tui-signoff-manifest.v1.json. Reference source/tests/fixtures are not implementation material.",
+  "contract_doc": "docs/grok-build-tui-implementation-prompt.md",
+  "evidence_root": "artifacts/qa-evidence/20260717-tui-reference-parity",
+  "reference": {
+    "binary_sha256": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
+    "receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+    "receipt_id": "reference-freeze",
+    "freeze_scenario": "startup_welcome_120x32",
+    "freeze_txt_sha256": "1a5f24dc9be953df160e8d2bcb661f6f2d8dc7845021c3153cd415ab3889ca58",
+    "freeze_png_sha256": "0830427651ae47645ea3ea49b532ef7ea29a69c3140f140d7df201f5093d6016"
+  },
+  "identity_policy": {
+    "substitution": "Harness logo/text only; geometry, style, animation, and interaction of the identity region are preserved",
+    "rejected_divergences": [
+      "DIV-004"
+    ],
+    "rejected_divergence_notes": {
+      "DIV-004": "Prior compose-first divergence is REJECTED. Reference welcome panel (bordered primary panel with logo, title/version, changelog, and action rows) is required; type-to-dismiss transitions into the active composer shell."
+    },
+    "approved_divergences": [
+      "DIV-AA-PALETTE",
+      "DIV-AA-SHELL-FAIL"
+    ],
+    "approved_divergence_notes": {
+      "DIV-AA-PALETTE": "User-approved pure AA residual for OVL-PALETTE (mm=112). No mask expansion. Receipt: receipts/div-aa-palette-20260719.md",
+      "DIV-AA-SHELL-FAIL": "User-approved pure AA residual for SHELL-FAIL (mm=25441). No mask expansion. Receipt: receipts/div-aa-shell-fail-20260719.md"
+    }
+  },
+  "status_values": [
+    "incomplete",
+    "blocked",
+    "pass",
+    "diverged"
+  ],
+  "acceptance_gate_ids": [
+    "A-MANIFEST",
+    "A-REFERENCE",
+    "A-CAPABILITIES",
+    "A-CORE-AUDIT",
+    "A-CONFIG-SCHEMA",
+    "A-FUNCTIONAL",
+    "A-JOURNEYS",
+    "A-STATE",
+    "A-CELLS",
+    "A-PIXELS",
+    "A-TRACE",
+    "A-TIMING",
+    "A-ANIMATION",
+    "A-PTY",
+    "A-INVARIANTS",
+    "A-COVERAGE",
+    "A-REVIEW",
+    "A-NO-RESKIN"
+  ],
+  "rows": [
+    {
+      "behavior_id": "P0-START-01",
+      "requirement_id": "P0-START-01",
+      "priority": "P0",
+      "surface": "startup",
+      "state": "welcome_panel",
+      "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
+      "reference_receipt_id": "reference-freeze",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "preconditions": "Fresh isolated HOME; dummy CHANGELOG.md; ui.screen_mode=fullscreen; dummy auth; telemetry disabled; no prior session.",
+      "seeded_inputs": {
+        "workspace": "isolated HOME with dummy CHANGELOG.md",
+        "auth": "XAI_API_KEY=test-key-for-ci (dummy)",
+        "provider_responses": "none (startup only)",
+        "clock_policy": "wall-clock settle dwell_ms=3500",
+        "random_seed_policy": "none (startup only)"
+      },
+      "viewport": {
+        "cols": 120,
+        "rows": 32
+      },
+      "terminal_environment": {
+        "term": "xterm-256color",
+        "colorterm": "truecolor",
+        "locale": "en_US.UTF-8",
+        "font_family": "Menlo, DejaVu Sans Mono, Noto Sans Mono CJK KR, monospace",
+        "font_size": 14,
+        "renderer": "xterm.js canvas via puppeteer-core + Chromium"
+      },
+      "input_sequence": [
+        {
+          "step": 1,
+          "action": "launch",
+          "detail": "start pinned reference binary in isolated sandbox at 120x32"
+        },
+        {
+          "step": 2,
+          "action": "settle",
+          "detail": "wait dwell_ms=3500 for welcome panel to settle"
+        },
+        {
+          "step": 3,
+          "action": "capture",
+          "checkpoint": "welcome_settled"
+        }
+      ],
+      "capture_checkpoints": [
+        "welcome_settled"
+      ],
+      "expected_focus_owner": "composer",
+      "expected_cursor_state": {
+        "visible": true,
+        "owner": "composer_prompt",
+        "shape": "block_or_bar"
+      },
+      "expected_scroll_and_selection_state": {
+        "scroll_offset": 0,
+        "follow_mode": true,
+        "selection": null
+      },
+      "expected_overlays_and_z_order": [],
+      "expected_semantic_cell_artifact": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup/terminal.txt",
+      "expected_png_artifact": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup/terminal.png",
+      "expected_frame_sequence": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup/",
+      "timing_contract": {
+        "settle_dwell_ms": 3500,
+        "notes": "startup settle only; no interaction timing"
+      },
+      "owners": {
+        "fixture": "crates/harness-tui/tests/reference_parity_first_slice_test.rs::startup_app",
+        "state_interaction_test": "crates/harness-tui/tests/reference_parity_first_slice_test.rs::p0_start_01_startup_has_bordered_welcome_and_composer",
+        "render_test": "crates/harness-tui/tests/reference_parity_first_slice_test.rs::p0_start_01_startup_has_bordered_welcome_and_composer",
+        "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::startup_welcome_panel_renders_and_focuses_composer",
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/startup-pixel-diff-v24-masked.json"
+      },
+      "evidence_paths": {
+        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup/",
+        "L2": "artifacts/qa-evidence/20260717-tui-reference-parity/harness/P0-START-01/cells/",
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-startup-v24/",
+        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/startup-pixel-diff-v24-precise-identity.json",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/startup-pixel-diff-v24-masked.json",
+        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/startup-identity-field-mask.precise-v3.json"
+      },
+      "identity_substitution": {
+        "fields": [
+          "logo_glyphs",
+          "product_title_text",
+          "version_text"
+        ],
+        "policy": "Harness logo/text only; geometry preserved"
+      },
+      "deliberate_divergence_id": null,
+      "acceptance_gate_ids": [
+        "A-MANIFEST",
+        "A-REFERENCE",
+        "A-STATE",
+        "A-CELLS",
+        "A-PIXELS",
+        "A-TRACE",
+        "A-PTY",
+        "A-INVARIANTS",
+        "A-COVERAGE",
+        "A-REVIEW",
+        "A-NO-RESKIN"
+      ],
+      "status": "pass",
+      "notes": "Welcome uses a bordered primary panel with logo, title/version, changelog, and action rows with right-aligned shortcuts. DIV-004 compose-first-only claim is rejected; welcome panel is required. Reference freeze digests: txt 1a5f24dc\u2026 png 08304276\u2026 Evidence paths wired from existing captures. Primary 120x32 evidence wired (masked A-PIXELS PASS). Evidence honesty loop3: L1=freeze, L3=act, L4=pixel report, L6=identity mask (paths verified on disk). | status=pass: L1 freeze + L2 cells + L3 harness + L5 masked exact_match + L6 mask present (2026-07-19).",
+      "slice": "first",
+      "reference_freeze_txt_sha256": "1a5f24dc9be953df160e8d2bcb661f6f2d8dc7845021c3153cd415ab3889ca58",
+      "reference_freeze_png_sha256": "0830427651ae47645ea3ea49b532ef7ea29a69c3140f140d7df201f5093d6016",
+      "reference_capture_path": "reference/freeze/run1-startup",
+      "reference_txt_sha256": "1a5f24dc9be953df160e8d2bcb661f6f2d8dc7845021c3153cd415ab3889ca58",
+      "reference_png_sha256": "0830427651ae47645ea3ea49b532ef7ea29a69c3140f140d7df201f5093d6016",
+      "evidence": {
+        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup/",
+        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-startup-v22/",
+        "L4_pixel_diff": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/startup-pixel-diff-v22-masked.json",
+        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/compact-viewport-v8-residual.md",
+        "L6_mask": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/startup-identity-field-mask.v1.json"
+      }
+    },
+    {
+      "behavior_id": "P0-START-02",
+      "requirement_id": "P0-START-02",
+      "priority": "P0",
+      "surface": "startup",
+      "state": "breadcrumb_and_warning",
+      "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
+      "reference_receipt_id": "reference-freeze",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "preconditions": "Same freeze environment as P0-START-01; clipboard may be unreachable so contextual warning is visible.",
+      "seeded_inputs": {
+        "workspace": "isolated HOME with dummy CHANGELOG.md",
+        "auth": "XAI_API_KEY=test-key-for-ci (dummy)",
+        "clipboard": "unreachable or limited in capture lab",
+        "provider_responses": "none (startup only)"
+      },
+      "viewport": {
+        "cols": 120,
+        "rows": 32
+      },
+      "terminal_environment": {
+        "term": "xterm-256color",
+        "colorterm": "truecolor",
+        "locale": "en_US.UTF-8",
+        "font_family": "Menlo, DejaVu Sans Mono, Noto Sans Mono CJK KR, monospace",
+        "font_size": 14,
+        "renderer": "xterm.js canvas via puppeteer-core + Chromium"
+      },
+      "input_sequence": [
+        {
+          "step": 1,
+          "action": "launch",
+          "detail": "start pinned reference binary at 120x32"
+        },
+        {
+          "step": 2,
+          "action": "settle",
+          "detail": "wait dwell_ms=3500"
+        },
+        {
+          "step": 3,
+          "action": "capture",
+          "checkpoint": "breadcrumb_warning_settled"
+        }
+      ],
+      "capture_checkpoints": [
+        "breadcrumb_warning_settled"
+      ],
+      "expected_focus_owner": "composer",
+      "expected_cursor_state": {
+        "visible": true,
+        "owner": "composer_prompt",
+        "shape": "block_or_bar"
+      },
+      "expected_scroll_and_selection_state": {
+        "scroll_offset": 0,
+        "follow_mode": true,
+        "selection": null
+      },
+      "expected_overlays_and_z_order": [],
+      "expected_semantic_cell_artifact": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup/terminal.txt",
+      "expected_png_artifact": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup/terminal.png",
+      "expected_frame_sequence": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup/",
+      "timing_contract": {
+        "settle_dwell_ms": 3500,
+        "notes": "startup settle only"
+      },
+      "owners": {
+        "fixture": "crates/harness-tui/tests/reference_parity_first_slice_test.rs::startup_app",
+        "state_interaction_test": "crates/harness-tui/tests/reference_parity_first_slice_test.rs::p0_start_02_top_chrome_not_only_bottom_path_bar",
+        "render_test": "crates/harness-tui/tests/reference_parity_first_slice_test.rs::p0_start_02_top_chrome_not_only_bottom_path_bar",
+        "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::startup_breadcrumb_warning_visible",
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/startup-pixel-diff-v24-masked.json"
+      },
+      "evidence_paths": {
+        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup/",
+        "L2": "artifacts/qa-evidence/20260717-tui-reference-parity/harness/P0-START-02/cells/",
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-startup-v24/",
+        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/startup-pixel-diff-v24-precise-identity.json",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/startup-pixel-diff-v24-masked.json",
+        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/startup-identity-field-mask.precise-v3.json"
+      },
+      "identity_substitution": {
+        "fields": [
+          "breadcrumb_path_or_project_label",
+          "logo_glyphs",
+          "product_title_text"
+        ],
+        "policy": "Harness logo/text only; geometry preserved; path/identity fields declared explicitly for masking"
+      },
+      "deliberate_divergence_id": null,
+      "acceptance_gate_ids": [
+        "A-MANIFEST",
+        "A-REFERENCE",
+        "A-STATE",
+        "A-CELLS",
+        "A-PIXELS",
+        "A-TRACE",
+        "A-PTY",
+        "A-INVARIANTS",
+        "A-COVERAGE",
+        "A-REVIEW",
+        "A-NO-RESKIN"
+      ],
+      "status": "pass",
+      "notes": "Top breadcrumb and contextual warning occupy stable shell regions. Identity/path fields must be declared for comparison masks. DIV-004 rejected. Evidence paths wired from existing captures. Primary 120x32 evidence wired (masked A-PIXELS PASS). Evidence honesty loop3: L1=freeze, L3=act, L4=pixel report, L6=identity mask (paths verified on disk). | status=pass: L1 freeze + L2 cells + L3 harness + L5 masked exact_match + L6 mask present (2026-07-19).",
+      "slice": "first",
+      "reference_freeze_txt_sha256": "1a5f24dc9be953df160e8d2bcb661f6f2d8dc7845021c3153cd415ab3889ca58",
+      "reference_freeze_png_sha256": "0830427651ae47645ea3ea49b532ef7ea29a69c3140f140d7df201f5093d6016",
+      "reference_capture_path": "reference/freeze/run1-startup",
+      "reference_txt_sha256": "1a5f24dc9be953df160e8d2bcb661f6f2d8dc7845021c3153cd415ab3889ca58",
+      "reference_png_sha256": "0830427651ae47645ea3ea49b532ef7ea29a69c3140f140d7df201f5093d6016",
+      "evidence": {
+        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup/",
+        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-startup-v22/",
+        "L4_pixel_diff": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/startup-pixel-diff-v22-masked.json",
+        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/compact-viewport-v8-residual.md",
+        "L6_mask": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/startup-identity-field-mask.v1.json"
+      }
+    },
+    {
+      "behavior_id": "P0-START-03",
+      "requirement_id": "P0-START-03",
+      "priority": "P0",
+      "surface": "startup",
+      "state": "welcome_to_composer_transition",
+      "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
+      "reference_receipt_id": "reference-freeze",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "preconditions": "Same freeze environment; capture starts on welcome, then types draft text.",
+      "seeded_inputs": {
+        "workspace": "isolated HOME with dummy CHANGELOG.md",
+        "auth": "XAI_API_KEY=test-key-for-ci (dummy)",
+        "typed_draft": "Browser QA draft",
+        "provider_responses": "none (draft-only, no submit)"
+      },
+      "viewport": {
+        "cols": 120,
+        "rows": 32
+      },
+      "terminal_environment": {
+        "term": "xterm-256color",
+        "colorterm": "truecolor",
+        "locale": "en_US.UTF-8",
+        "font_family": "Menlo, DejaVu Sans Mono, Noto Sans Mono CJK KR, monospace",
+        "font_size": 14,
+        "renderer": "xterm.js canvas via puppeteer-core + Chromium"
+      },
+      "input_sequence": [
+        {
+          "step": 1,
+          "action": "launch",
+          "detail": "start pinned reference binary at 120x32"
+        },
+        {
+          "step": 2,
+          "action": "settle",
+          "detail": "welcome_settled"
+        },
+        {
+          "step": 3,
+          "action": "type",
+          "detail": "Browser QA draft"
+        },
+        {
+          "step": 4,
+          "action": "settle",
+          "detail": "draft_settled"
+        },
+        {
+          "step": 5,
+          "action": "capture",
+          "checkpoint": "draft_active_composer"
+        }
+      ],
+      "capture_checkpoints": [
+        "welcome_settled",
+        "draft_active_composer"
+      ],
+      "expected_focus_owner": "composer",
+      "expected_cursor_state": {
+        "visible": true,
+        "owner": "composer_prompt",
+        "shape": "block_or_bar"
+      },
+      "expected_scroll_and_selection_state": {
+        "scroll_offset": 0,
+        "follow_mode": true,
+        "selection": null
+      },
+      "expected_overlays_and_z_order": [],
+      "expected_semantic_cell_artifact": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-draft/terminal.txt",
+      "expected_png_artifact": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-draft/terminal.png",
+      "expected_frame_sequence": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-draft/",
+      "timing_contract": {
+        "settle_dwell_ms": 3500,
+        "notes": "compare welcome then draft frame sequence; typing dismisses welcome panel"
+      },
+      "owners": {
+        "fixture": "crates/harness-tui/tests/reference_parity_first_slice_test.rs::startup_app",
+        "state_interaction_test": "crates/harness-tui/tests/reference_parity_first_slice_test.rs::p0_start_03_draft_clears_welcome_and_keeps_composer",
+        "render_test": "crates/harness-tui/tests/reference_parity_first_slice_test.rs::p0_start_03_draft_clears_welcome_and_keeps_composer",
+        "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::startup_type_dismisses_welcome",
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/draft-pixel-diff-v23-masked.json"
+      },
+      "evidence_paths": {
+        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-draft/",
+        "L2": "artifacts/qa-evidence/20260717-tui-reference-parity/harness/P0-START-03/cells/",
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-draft-v23/",
+        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/draft-pixel-diff-v23-masked.json",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/draft-pixel-diff-v23-masked.json",
+        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/draft-identity-field-mask.v1.json"
+      },
+      "identity_substitution": {
+        "fields": [
+          "logo_glyphs",
+          "product_title_text"
+        ],
+        "policy": "Harness logo/text only; geometry preserved"
+      },
+      "deliberate_divergence_id": null,
+      "acceptance_gate_ids": [
+        "A-MANIFEST",
+        "A-REFERENCE",
+        "A-STATE",
+        "A-CELLS",
+        "A-PIXELS",
+        "A-TRACE",
+        "A-TIMING",
+        "A-PTY",
+        "A-INVARIANTS",
+        "A-COVERAGE",
+        "A-REVIEW",
+        "A-NO-RESKIN"
+      ],
+      "status": "pass",
+      "notes": "typed draft clears welcome; input=Browser QA draft Evidence paths wired from existing captures. Primary 120x32 evidence wired (masked A-PIXELS PASS). Evidence honesty loop3: L1=freeze, L3=act, L4=pixel report, L6=identity mask (paths verified on disk). | status=pass: L1 freeze + L2 cells + L3 harness + L5 masked exact_match + L6 mask present (2026-07-19).",
+      "slice": "first",
+      "reference_capture_path": "reference/freeze/run1-draft",
+      "reference_txt_sha256": "dc0f35299150bd89b3acf6dbb4b6e26477e4a41e009dc585dd4e986f2147df4e",
+      "reference_png_sha256": "82301962685fa5acd543b07089d0739756b780bed2635918d2e1b6d4db07bff5",
+      "evidence": {
+        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-draft/",
+        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-draft-v22/",
+        "L4_pixel_diff": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/draft-pixel-diff-v22-masked.json",
+        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-ovl-evidence-v1.md",
+        "L6_mask": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/draft-identity-field-mask.v1.json"
+      }
+    },
+    {
+      "behavior_id": "P0-COMP-01",
+      "requirement_id": "P0-COMP-01",
+      "priority": "P0",
+      "surface": "composer",
+      "state": "bordered_strip_with_model_badge",
+      "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
+      "reference_receipt_id": "reference-freeze",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "preconditions": "Welcome or draft freeze environment; composer visible as bordered strip.",
+      "seeded_inputs": {
+        "workspace": "isolated HOME with dummy CHANGELOG.md",
+        "auth": "XAI_API_KEY=test-key-for-ci (dummy)",
+        "model_badge": "reference default model label (identity-substitutable)"
+      },
+      "viewport": {
+        "cols": 120,
+        "rows": 32
+      },
+      "terminal_environment": {
+        "term": "xterm-256color",
+        "colorterm": "truecolor",
+        "locale": "en_US.UTF-8",
+        "font_family": "Menlo, DejaVu Sans Mono, Noto Sans Mono CJK KR, monospace",
+        "font_size": 14,
+        "renderer": "xterm.js canvas via puppeteer-core + Chromium"
+      },
+      "input_sequence": [
+        {
+          "step": 1,
+          "action": "launch",
+          "detail": "start pinned reference binary at 120x32"
+        },
+        {
+          "step": 2,
+          "action": "settle",
+          "detail": "welcome_settled with bordered composer visible"
+        },
+        {
+          "step": 3,
+          "action": "capture",
+          "checkpoint": "composer_bordered_strip"
+        }
+      ],
+      "capture_checkpoints": [
+        "composer_bordered_strip"
+      ],
+      "expected_focus_owner": "composer",
+      "expected_cursor_state": {
+        "visible": true,
+        "owner": "composer_prompt",
+        "shape": "block_or_bar"
+      },
+      "expected_scroll_and_selection_state": {
+        "scroll_offset": 0,
+        "follow_mode": true,
+        "selection": null
+      },
+      "expected_overlays_and_z_order": [],
+      "expected_semantic_cell_artifact": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup/terminal.txt",
+      "expected_png_artifact": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup/terminal.png",
+      "expected_frame_sequence": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup/",
+      "timing_contract": {
+        "settle_dwell_ms": 3500,
+        "notes": "static composer geometry; draft variant also under run1-draft"
+      },
+      "owners": {
+        "fixture": "crates/harness-tui/tests/reference_parity_first_slice_test.rs::startup_app",
+        "state_interaction_test": "crates/harness-tui/tests/reference_parity_first_slice_test.rs::p0_comp_01_composer_is_three_row_bordered_strip",
+        "render_test": "crates/harness-tui/tests/reference_parity_first_slice_test.rs::p0_comp_01_composer_is_three_row_bordered_strip",
+        "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::composer_bordered_strip_visible",
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/draft-pixel-diff-v23-masked.json"
+      },
+      "evidence_paths": {
+        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-draft/",
+        "L2": "artifacts/qa-evidence/20260717-tui-reference-parity/harness/P0-COMP-01/cells/",
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-draft-v23/",
+        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/draft-pixel-diff-v23-masked.json",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/draft-pixel-diff-v23-masked.json",
+        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/draft-identity-field-mask.v1.json"
+      },
+      "identity_substitution": {
+        "fields": [
+          "model_badge_text",
+          "product_title_text"
+        ],
+        "policy": "Harness logo/text only; geometry preserved"
+      },
+      "deliberate_divergence_id": null,
+      "acceptance_gate_ids": [
+        "A-MANIFEST",
+        "A-REFERENCE",
+        "A-STATE",
+        "A-CELLS",
+        "A-PIXELS",
+        "A-TRACE",
+        "A-PTY",
+        "A-INVARIANTS",
+        "A-COVERAGE",
+        "A-REVIEW",
+        "A-NO-RESKIN"
+      ],
+      "status": "pass",
+      "notes": "Composer is a bordered strip with prompt, cursor, and right-aligned model badge. Unboxed Harness arrangement is a fail until replaced. Evidence paths wired from existing captures. Primary 120x32 evidence wired (masked A-PIXELS PASS). Evidence honesty loop3: L1=freeze, L3=act, L4=pixel report, L6=identity mask (paths verified on disk). | status=pass: L1 freeze + L2 cells + L3 harness + L5 masked exact_match + L6 mask present (2026-07-19).",
+      "slice": "first",
+      "reference_freeze_txt_sha256": "1a5f24dc9be953df160e8d2bcb661f6f2d8dc7845021c3153cd415ab3889ca58",
+      "reference_freeze_png_sha256": "0830427651ae47645ea3ea49b532ef7ea29a69c3140f140d7df201f5093d6016",
+      "reference_capture_path": "reference/freeze/run1-startup",
+      "reference_txt_sha256": "1a5f24dc9be953df160e8d2bcb661f6f2d8dc7845021c3153cd415ab3889ca58",
+      "reference_png_sha256": "0830427651ae47645ea3ea49b532ef7ea29a69c3140f140d7df201f5093d6016",
+      "evidence": {
+        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-draft/",
+        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-draft-v22/",
+        "L4_pixel_diff": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/draft-pixel-diff-v22-masked.json",
+        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-ovl-evidence-v1.md",
+        "L6_mask": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/draft-identity-field-mask.v1.json"
+      }
+    },
+    {
+      "behavior_id": "P0-KEY-01",
+      "requirement_id": "P0-KEY-01",
+      "priority": "P0",
+      "surface": "chrome",
+      "state": "contextual_shortcut_footer",
+      "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
+      "reference_receipt_id": "reference-freeze",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "preconditions": "Draft freeze after typing; footer reflects active composer shortcuts.",
+      "seeded_inputs": {
+        "workspace": "isolated HOME with dummy CHANGELOG.md",
+        "auth": "XAI_API_KEY=test-key-for-ci (dummy)",
+        "typed_draft": "Browser QA draft"
+      },
+      "viewport": {
+        "cols": 120,
+        "rows": 32
+      },
+      "terminal_environment": {
+        "term": "xterm-256color",
+        "colorterm": "truecolor",
+        "locale": "en_US.UTF-8",
+        "font_family": "Menlo, DejaVu Sans Mono, Noto Sans Mono CJK KR, monospace",
+        "font_size": 14,
+        "renderer": "xterm.js canvas via puppeteer-core + Chromium"
+      },
+      "input_sequence": [
+        {
+          "step": 1,
+          "action": "launch",
+          "detail": "start pinned reference binary at 120x32"
+        },
+        {
+          "step": 2,
+          "action": "type",
+          "detail": "Browser QA draft"
+        },
+        {
+          "step": 3,
+          "action": "settle",
+          "detail": "draft_settled"
+        },
+        {
+          "step": 4,
+          "action": "capture",
+          "checkpoint": "footer_draft_shortcuts"
+        }
+      ],
+      "capture_checkpoints": [
+        "welcome_footer",
+        "footer_draft_shortcuts"
+      ],
+      "expected_focus_owner": "composer",
+      "expected_cursor_state": {
+        "visible": true,
+        "owner": "composer_prompt",
+        "shape": "block_or_bar"
+      },
+      "expected_scroll_and_selection_state": {
+        "scroll_offset": 0,
+        "follow_mode": true,
+        "selection": null
+      },
+      "expected_overlays_and_z_order": [],
+      "expected_semantic_cell_artifact": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-draft/terminal.txt",
+      "expected_png_artifact": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-draft/terminal.png",
+      "expected_frame_sequence": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-draft/",
+      "timing_contract": {
+        "settle_dwell_ms": 3500,
+        "notes": "footer vocabulary changes with composer state; compare welcome vs draft footers"
+      },
+      "owners": {
+        "fixture": "crates/harness-tui/tests/reference_parity_first_slice_test.rs::startup_app",
+        "state_interaction_test": "crates/harness-tui/src/app/tests/palette_parity_tests.rs + keybindings suite",
+        "render_test": "crates/harness-tui/tests/reference_parity_first_slice_test.rs + reference_parity_responsive_test.rs footer grammar",
+        "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::shortcut_footer_updates_on_draft",
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/draft-pixel-diff-v23-masked.json"
+      },
+      "evidence_paths": {
+        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-draft/",
+        "L2": "artifacts/qa-evidence/20260717-tui-reference-parity/harness/P0-KEY-01/cells/",
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-draft-v23/",
+        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/draft-pixel-diff-v23-masked.json",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/draft-pixel-diff-v23-masked.json",
+        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/draft-identity-field-mask.v1.json"
+      },
+      "identity_substitution": {
+        "fields": [
+          "product_title_text"
+        ],
+        "policy": "Harness logo/text only; geometry preserved; only identity fields masked"
+      },
+      "deliberate_divergence_id": null,
+      "acceptance_gate_ids": [
+        "A-MANIFEST",
+        "A-REFERENCE",
+        "A-STATE",
+        "A-CELLS",
+        "A-PIXELS",
+        "A-TRACE",
+        "A-TIMING",
+        "A-PTY",
+        "A-INVARIANTS",
+        "A-COVERAGE",
+        "A-REVIEW",
+        "A-NO-RESKIN"
+      ],
+      "status": "pass",
+      "notes": "draft footer Enter:send | Shift+Tab:mode | Ctrl+x:shortcuts. Evidence honesty fix 2026-07-17: prior L1 run1-shortcuts was empty-composer/Logged-in surface, while L4 draft-pixel-diff-v22-masked compared draft-vs-draft (false PASS for KEY). L1 rewired to run1-draft to match notes + valid L4 (masked A-PIXELS PASS 0). run1-shortcuts vs harness-startup-v22 idle-footer residual 13126 documented separately. Evidence honesty loop3: L1=freeze, L3=act, L4=pixel report, L6=identity mask (paths verified on disk). | status=pass: L1-L6 + L4/L5 masked exact_match (draft v23) 2026-07-19",
+      "slice": "first",
+      "reference_capture_path": "reference/freeze/run1-draft",
+      "reference_txt_sha256": "dc0f35299150bd89b3acf6dbb4b6e26477e4a41e009dc585dd4e986f2147df4e",
+      "reference_png_sha256": "82301962685fa5acd543b07089d0739756b780bed2635918d2e1b6d4db07bff5",
+      "evidence": {
+        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-draft/",
+        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/p0-key-01-evidence-honesty-v1.md",
+        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-draft-v22/",
+        "L4_pixel_diff": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/draft-pixel-diff-v22-masked.json",
+        "L6_mask": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/draft-identity-field-mask.v1.json"
+      }
+    },
+    {
+      "behavior_id": "SHELL-IDLE",
+      "requirement_id": "SHELL-IDLE",
+      "priority": "P1",
+      "surface": "shell",
+      "state": "idle",
+      "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
+      "reference_receipt_id": "reference-freeze",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "preconditions": "Live session idle; no pending stream/permission/question.",
+      "seeded_inputs": {
+        "session": "live idle after completed turn or empty live shell"
+      },
+      "viewport": {
+        "cols": 120,
+        "rows": 40
+      },
+      "terminal_environment": {
+        "term": "xterm-256color",
+        "colorterm": "truecolor"
+      },
+      "input_sequence": [],
+      "capture_checkpoints": [],
+      "expected_focus_owner": "composer",
+      "expected_cursor_state": {
+        "visible": true,
+        "owner": "composer_prompt"
+      },
+      "expected_scroll_and_selection_state": {
+        "scroll_offset": 0,
+        "follow_mode": true,
+        "selection": null
+      },
+      "expected_overlays_and_z_order": [],
+      "expected_semantic_cell_artifact": "",
+      "expected_png_artifact": "",
+      "expected_frame_sequence": "",
+      "timing_contract": null,
+      "owners": {
+        "fixture": "crates/harness-tui/tests/reference_parity_tx_shell_test.rs::live_app",
+        "state_interaction_test": "crates/harness-tui/tests/reference_parity_tx_shell_test.rs::shell_idle_keeps_full_width_transcript_and_bordered_composer",
+        "render_test": "crates/harness-tui/tests/reference_parity_tx_shell_test.rs::shell_idle_empty_body_is_card_free_with_bordered_composer",
+        "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::shell_idle_pty",
+        "differential_evaluator": "pending:reference_parity::shell_idle_diff"
+      },
+      "evidence_paths": {
+        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-draft/",
+        "L2": "artifacts/qa-evidence/20260717-tui-reference-parity/harness/P0-KEY-01/cells/",
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-draft-v23/",
+        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/draft-pixel-diff-v23-masked.json",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/draft-pixel-diff-v23-masked.json",
+        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/draft-identity-field-mask.v1.json"
+      },
+      "identity_substitution": {
+        "fields": [
+          "logo_glyphs",
+          "product_title_text"
+        ],
+        "policy": "Harness logo/text only; geometry preserved"
+      },
+      "deliberate_divergence_id": null,
+      "acceptance_gate_ids": [
+        "A-MANIFEST",
+        "A-REFERENCE",
+        "A-STATE",
+        "A-CELLS",
+        "A-PIXELS",
+        "A-PTY",
+        "A-INVARIANTS",
+        "A-NO-RESKIN"
+      ],
+      "status": "pass",
+      "notes": "Scaffold \u00a710 primary session shell idle. A-PTY + structural GREEN. L3 harness-pty-idle-120x32-v1 = true empty idle (bordered composer, no transcript body) at freeze geometry 120\u00d732. L1 run1-draft = composer geometry base (draft freeze used for idle composer geometry; not post-turn complete). Status incomplete pending full A-* suite (AA residuals / A-REVIEW). | status=blocked: invalid L1/L3 pair (draft vs post-turn idle); residual shell-idle-residual-v1.md 2026-07-19 | L3 honesty loop8: L1 is run1-draft; L3 pointed at harness-draft-v23 exact grapheme match (was empty-idle pair) 2026-07-19 | status=pass loop8: L1 run1-draft + L3 harness-draft-v23 exact grapheme + L4/L5 draft-pixel-diff-v23-masked exact_match + L6 draft identity mask (same honest pair as P0-KEY-01) 2026-07-19",
+      "slice": "scaffold",
+      "evidence": {
+        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-draft/",
+        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-draft-v23/",
+        "L4_pixel_diff": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/draft-pixel-diff-v23-masked.json",
+        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/draft-pixel-diff-v23-masked.json",
+        "L6_mask": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/draft-identity-field-mask.v1.json",
+        "L2_cells": "artifacts/qa-evidence/20260717-tui-reference-parity/harness/P0-KEY-01/cells/"
+      }
+    },
+    {
+      "behavior_id": "SHELL-STREAM",
+      "requirement_id": "SHELL-STREAM",
+      "priority": "P1",
+      "surface": "shell",
+      "state": "streaming",
+      "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
+      "reference_receipt_id": "reference-freeze",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "preconditions": "Live session with active assistant/tool stream.",
+      "seeded_inputs": {
+        "session": "streaming provider deltas"
+      },
+      "viewport": {
+        "cols": 120,
+        "rows": 40
+      },
+      "terminal_environment": {
+        "term": "xterm-256color",
+        "colorterm": "truecolor"
+      },
+      "input_sequence": [],
+      "capture_checkpoints": [],
+      "expected_focus_owner": "composer",
+      "expected_cursor_state": {
+        "visible": true,
+        "owner": "composer_or_stream_indicator"
+      },
+      "expected_scroll_and_selection_state": {
+        "scroll_offset": 0,
+        "follow_mode": true,
+        "selection": null
+      },
+      "expected_overlays_and_z_order": [],
+      "expected_semantic_cell_artifact": "",
+      "expected_png_artifact": "",
+      "expected_frame_sequence": "",
+      "timing_contract": null,
+      "owners": {
+        "fixture": "crates/harness-tui/tests/reference_parity_tx_shell_test.rs::live_app",
+        "state_interaction_test": "crates/harness-tui/tests/reference_parity_tx_shell_test.rs::shell_stream_keeps_full_width_body_and_bordered_composer",
+        "render_test": "crates/harness-tui/tests/reference_parity_tx_shell_test.rs::shell_stream_keeps_full_width_body_and_bordered_composer",
+        "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::shell_stream_pty",
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-stream-pixel-diff-invalid-pair-v1.json"
+      },
+      "evidence_paths": {
+        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-stream-probe/",
+        "L2": "",
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-pty-stream-120x32-v1/",
+        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-stream-pixel-diff-invalid-pair-v1.json",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-stream-residual-v1.md",
+        "L6": ""
+      },
+      "identity_substitution": {
+        "fields": [
+          "logo_glyphs",
+          "product_title_text"
+        ],
+        "policy": "Harness logo/text only; geometry preserved"
+      },
+      "deliberate_divergence_id": null,
+      "acceptance_gate_ids": [
+        "A-MANIFEST",
+        "A-REFERENCE",
+        "A-STATE",
+        "A-CELLS",
+        "A-PIXELS",
+        "A-TRACE",
+        "A-TIMING",
+        "A-PTY",
+        "A-INVARIANTS",
+        "A-NO-RESKIN"
+      ],
+      "status": "blocked",
+      "notes": "Scaffold \u00a710 primary session shell streaming. A-PTY owner wired (event-injection/live PTY). Structural owners GREEN. Status incomplete pending full A-* suite. L3 harness-pty-stream-120x40-v1: streaming partial tokens + breadcrumb+\u276f. L1 run1-stream-probe is NOT a stream freeze \u2014 content is fail chrome (Retry failed / Request URL); same invalid-pair class as SHELL-IDLE. A-PIXELS blocked until a real mid-stream Grok freeze exists. Receipt: shell-stream-residual-v1.md. Evidence honesty loop3: L1=freeze, L3=act, L4=pixel report, L6=identity mask (paths verified on disk). L3 refresh loop3: freeze-matched inset+disclosure capture (stale pre-inset L3 superseded). | status=blocked: invalid L1 pair (fail freeze mislabeled as stream); residual shell-stream-residual-v1.md 2026-07-19",
+      "slice": "scaffold",
+      "evidence": {
+        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-stream-probe/",
+        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-stream-residual-v1.md",
+        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-pty-stream-120x32-v1/",
+        "L4_pixel_diff": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-stream-pixel-diff-invalid-pair-v1.json"
+      }
+    },
+    {
+      "behavior_id": "SHELL-PERM",
+      "requirement_id": "SHELL-PERM",
+      "priority": "P1",
+      "surface": "shell",
+      "state": "waiting_permission",
+      "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
+      "reference_receipt_id": "reference-freeze",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "preconditions": "Pending permission prompt from coordinator.",
+      "seeded_inputs": {
+        "permission": "pending bash/edit or equivalent"
+      },
+      "viewport": {
+        "cols": 120,
+        "rows": 40
+      },
+      "terminal_environment": {
+        "term": "xterm-256color",
+        "colorterm": "truecolor"
+      },
+      "input_sequence": [],
+      "capture_checkpoints": [],
+      "expected_focus_owner": "permission_overlay",
+      "expected_cursor_state": {
+        "visible": true,
+        "owner": "permission_overlay"
+      },
+      "expected_scroll_and_selection_state": {
+        "scroll_offset": 0,
+        "follow_mode": true,
+        "selection": null
+      },
+      "expected_overlays_and_z_order": [
+        "permission"
+      ],
+      "expected_semantic_cell_artifact": "",
+      "expected_png_artifact": "",
+      "expected_frame_sequence": "",
+      "timing_contract": null,
+      "owners": {
+        "fixture": "crates/harness-tui/tests/reference_parity_perm_question_test.rs::live_app",
+        "state_interaction_test": "crates/harness-tui/tests/reference_parity_perm_question_test.rs::shell_perm_preempts_composer_preserves_draft_full_width",
+        "render_test": "crates/harness-tui/tests/reference_parity_perm_question_test.rs::shell_perm_preempts_composer_preserves_draft_full_width",
+        "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::shell_perm_pty",
+        "differential_evaluator": "pending:reference_parity::shell_perm_diff"
+      },
+      "evidence_paths": {
+        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-perm-proxy-v2/",
+        "L2": "",
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-pty-perm-120x32-v14/",
+        "L4": "",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/freeze-shell-perm.blocked.json",
+        "L6": ""
+      },
+      "identity_substitution": {
+        "fields": [
+          "logo_glyphs",
+          "product_title_text"
+        ],
+        "policy": "Harness logo/text only; geometry preserved"
+      },
+      "deliberate_divergence_id": null,
+      "acceptance_gate_ids": [
+        "A-MANIFEST",
+        "A-REFERENCE",
+        "A-STATE",
+        "A-CELLS",
+        "A-PIXELS",
+        "A-PTY",
+        "A-INVARIANTS",
+        "A-NO-RESKIN"
+      ],
+      "status": "blocked",
+      "notes": "Scaffold \u00a710 shell waiting on permission. A-PTY owner wired. Structural render owners GREEN. Status incomplete pending full A-* suite. L3 golden_path_interactive permission dock (tool=edit Allow once/always/Reject). No matching Grok freeze for A-PIXELS. A-PTY GREEN. Status incomplete. Grok L1 freeze blocked (dummy API / no stable black-box path); see blocked freeze receipt. L3 harness-pty-perm-120x40-v1: Permission required dock. A-PIXELS blocked (no Grok freeze). Evidence honesty loop3: L5=blocked freeze receipt (no capturable Grok L1). L3 refresh loop3: freeze-matched overlay capture. | status=blocked: reference freeze capture blocked (L5 *.blocked.json); not incomplete product theater 2026-07-19 | L3 refresh loop7: harness-pty-perm-120x32-v8 freeze-matched 120x32 (2026-07-19) | L3 refresh loop7: harness-pty-perm-120x32-v9 draft packs without +1 dock height (2026-07-19) | L3 refresh loop8: harness-pty-perm-120x32-v14 pin/height/lead match freeze; residual path+draft+identity (2026-07-19)",
+      "slice": "scaffold",
+      "evidence": {
+        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-pty-perm-120x32-v14/",
+        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/freeze-shell-perm.blocked.json",
+        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-perm-proxy-v2/"
+      }
+    },
+    {
+      "behavior_id": "SHELL-QUESTION",
+      "requirement_id": "SHELL-QUESTION",
+      "priority": "P1",
+      "surface": "shell",
+      "state": "waiting_question",
+      "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
+      "reference_receipt_id": "reference-freeze",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "preconditions": "Pending question prompt from coordinator.",
+      "seeded_inputs": {
+        "question": "pending question overlay"
+      },
+      "viewport": {
+        "cols": 120,
+        "rows": 40
+      },
+      "terminal_environment": {
+        "term": "xterm-256color",
+        "colorterm": "truecolor"
+      },
+      "input_sequence": [],
+      "capture_checkpoints": [],
+      "expected_focus_owner": "question_overlay",
+      "expected_cursor_state": {
+        "visible": true,
+        "owner": "question_overlay"
+      },
+      "expected_scroll_and_selection_state": {
+        "scroll_offset": 0,
+        "follow_mode": true,
+        "selection": null
+      },
+      "expected_overlays_and_z_order": [
+        "question"
+      ],
+      "expected_semantic_cell_artifact": "",
+      "expected_png_artifact": "",
+      "expected_frame_sequence": "",
+      "timing_contract": null,
+      "owners": {
+        "fixture": "crates/harness-tui/tests/reference_parity_perm_question_test.rs::live_app",
+        "state_interaction_test": "crates/harness-tui/tests/reference_parity_perm_question_test.rs::shell_question_parses_prompts_preserves_draft_no_allow_chrome",
+        "render_test": "crates/harness-tui/tests/reference_parity_perm_question_test.rs::shell_question_parses_prompts_preserves_draft_no_allow_chrome",
+        "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::shell_question_pty",
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-palette-question/"
+      },
+      "evidence_paths": {
+        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-question-proxy-v2/",
+        "L2": "",
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-pty-question-120x32-v16/",
+        "L4": "",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/freeze-shell-question.blocked.json",
+        "L6": ""
+      },
+      "identity_substitution": {
+        "fields": [
+          "logo_glyphs",
+          "product_title_text"
+        ],
+        "policy": "Harness logo/text only; geometry preserved"
+      },
+      "deliberate_divergence_id": null,
+      "acceptance_gate_ids": [
+        "A-MANIFEST",
+        "A-REFERENCE",
+        "A-STATE",
+        "A-CELLS",
+        "A-PIXELS",
+        "A-PTY",
+        "A-INVARIANTS",
+        "A-NO-RESKIN"
+      ],
+      "status": "blocked",
+      "notes": "Scaffold \u00a710 shell waiting on question. A-PTY owner wired (event-injection/live PTY). Structural owners GREEN. Status incomplete pending full A-* suite. L3 PTY-helper question_overlay (Which color? / Red\u00b7Green\u00b7Blue all \u25cb until answered (Grok freeze packing)). A-PTY GREEN. No matching Grok freeze for A-PIXELS. Status incomplete. Grok L1 freeze blocked (dummy API / no stable black-box path); see blocked freeze receipt. L3 harness-pty-question-120x40-v1: question dock (Pick one / options). A-PIXELS blocked (no Grok freeze). Evidence honesty loop3: L5=blocked freeze receipt (no capturable Grok L1). L3 refresh loop3: freeze-matched overlay capture. | status=blocked: reference freeze capture blocked (L5 *.blocked.json); not incomplete product theater 2026-07-19 L3 harness-pty-question-120x32-v16: geometry matches freeze (Waiting L17, Thought\u2192Ask adjacent, dock packing, y copy, left pad 2). Residual: identity/clock, scrollbar, right-meta gap, product-honest Ctrl+c dismiss. A-CELLS masked GREEN.",
+      "slice": "scaffold",
+      "evidence": {
+        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-pty-question-120x32-v16/",
+        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/freeze-shell-question.blocked.json"
+      }
+    },
+    {
+      "behavior_id": "SHELL-CANCEL",
+      "requirement_id": "SHELL-CANCEL",
+      "priority": "P1",
+      "surface": "shell",
+      "state": "cancelled",
+      "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
+      "reference_receipt_id": "reference-freeze",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "preconditions": "Turn cancelled; cancellation presentation visible.",
+      "seeded_inputs": {
+        "session": "cancelled turn"
+      },
+      "viewport": {
+        "cols": 120,
+        "rows": 40
+      },
+      "terminal_environment": {
+        "term": "xterm-256color",
+        "colorterm": "truecolor"
+      },
+      "input_sequence": [],
+      "capture_checkpoints": [],
+      "expected_focus_owner": "composer",
+      "expected_cursor_state": {
+        "visible": true,
+        "owner": "composer_prompt"
+      },
+      "expected_scroll_and_selection_state": {
+        "scroll_offset": 0,
+        "follow_mode": true,
+        "selection": null
+      },
+      "expected_overlays_and_z_order": [],
+      "expected_semantic_cell_artifact": "",
+      "expected_png_artifact": "",
+      "expected_frame_sequence": "",
+      "timing_contract": null,
+      "owners": {
+        "fixture": "crates/harness-tui/tests/reference_parity_tx_shell_test.rs::live_app",
+        "state_interaction_test": "crates/harness-tui/tests/reference_parity_tx_shell_test.rs::shell_cancel_projects_cancelled_distinct_from_failure",
+        "render_test": "crates/harness-tui/tests/reference_parity_tx_shell_test.rs::shell_cancel_projects_cancelled_distinct_from_failure",
+        "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::shell_cancel_pty",
+        "differential_evaluator": "pending:reference_parity::shell_cancel_diff"
+      },
+      "evidence_paths": {
+        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-cancel-proxy-v2/",
+        "L2": "",
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-pty-cancel-120x32-v6/",
+        "L4": "",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/freeze-shell-cancel.blocked.json",
+        "L6": ""
+      },
+      "identity_substitution": {
+        "fields": [
+          "logo_glyphs",
+          "product_title_text"
+        ],
+        "policy": "Harness logo/text only; geometry preserved"
+      },
+      "deliberate_divergence_id": null,
+      "acceptance_gate_ids": [
+        "A-MANIFEST",
+        "A-REFERENCE",
+        "A-STATE",
+        "A-CELLS",
+        "A-PIXELS",
+        "A-PTY",
+        "A-INVARIANTS",
+        "A-NO-RESKIN"
+      ],
+      "status": "blocked",
+      "notes": "Scaffold \u00a710 shell cancelled. A-PTY owner wired (event-injection/live PTY). Structural owners GREEN. Status incomplete pending full A-* suite. L3 PTY-helper live_cancel capture (user interrupted streaming turn). A-PTY GREEN. No matching Grok freeze for A-PIXELS. Status incomplete. Grok L1 freeze blocked (dummy API / no stable black-box path); see blocked freeze receipt. L3 harness-pty-cancel-120x40-v2: cancel reason without Retry-failed fail chrome; breadcrumb+\u276f. A-PIXELS blocked (no Grok freeze). Evidence honesty loop3: L5=blocked freeze receipt (no capturable Grok L1). L3 refresh loop3: freeze-matched inset+disclosure capture (stale pre-inset L3 superseded). | status=blocked: reference freeze capture blocked (L5 *.blocked.json); not incomplete product theater 2026-07-19",
+      "slice": "scaffold",
+      "evidence": {
+        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-pty-cancel-120x32-v6",
+        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/freeze-shell-cancel.blocked.json"
+      }
+    },
+    {
+      "behavior_id": "SHELL-FAIL",
+      "requirement_id": "SHELL-FAIL",
+      "priority": "P1",
+      "surface": "shell",
+      "state": "failed",
+      "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
+      "reference_receipt_id": "reference-freeze",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "preconditions": "Run or tool failure visible in shell.",
+      "seeded_inputs": {
+        "session": "failed run/tool"
+      },
+      "viewport": {
+        "cols": 120,
+        "rows": 40
+      },
+      "terminal_environment": {
+        "term": "xterm-256color",
+        "colorterm": "truecolor"
+      },
+      "input_sequence": [],
+      "capture_checkpoints": [],
+      "expected_focus_owner": "composer",
+      "expected_cursor_state": {
+        "visible": true,
+        "owner": "composer_prompt"
+      },
+      "expected_scroll_and_selection_state": {
+        "scroll_offset": 0,
+        "follow_mode": true,
+        "selection": null
+      },
+      "expected_overlays_and_z_order": [],
+      "expected_semantic_cell_artifact": "",
+      "expected_png_artifact": "",
+      "expected_frame_sequence": "",
+      "timing_contract": null,
+      "owners": {
+        "fixture": "crates/harness-tui/tests/reference_parity_tx_shell_test.rs::live_app",
+        "state_interaction_test": "crates/harness-tui/tests/reference_parity_tx_shell_test.rs::shell_fail_keeps_error_in_full_width_transcript_with_composer",
+        "render_test": "crates/harness-tui/tests/reference_parity_tx_shell_test.rs::shell_fail_keeps_error_in_full_width_transcript_with_composer",
+        "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::shell_fail_pty",
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-fail-v20-compare/report-masked.json"
+      },
+      "evidence_paths": {
+        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-stream-probe/",
+        "L2": "",
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-pty-fail-120x40-v21/",
+        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-fail-v20-compare/report-masked.json",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-fail-residual-v1.md",
+        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-fail-identity-field-mask.120x40.v1.json"
+      },
+      "identity_substitution": {
+        "fields": [
+          "logo_glyphs",
+          "product_title_text"
+        ],
+        "policy": "Harness logo/text only; geometry preserved"
+      },
+      "deliberate_divergence_id": "DIV-AA-SHELL-FAIL",
+      "acceptance_gate_ids": [
+        "A-MANIFEST",
+        "A-REFERENCE",
+        "A-STATE",
+        "A-CELLS",
+        "A-PIXELS",
+        "A-PTY",
+        "A-INVARIANTS",
+        "A-NO-RESKIN"
+      ],
+      "status": "diverged",
+      "notes": "Scaffold \u00a710 shell failed. A-PTY + structural GREEN (freeze-aligned). Product: live breadcrumb; multi-line Retry failed body (byte-equal L07\u2013L15); user marker \u276f text.primary; fail body fg Rgb(113,116,122) freeze-matched solid; no elevated Failure/Review card; no Error-status \u2717 footer; gutter_x=5; wall-clock on user row; live composer horizontal inset lead=2; live idle disclosure freeze-matched `Shift+Tab:mode \u2502 Ctrl+x:shortcuts` (no live-ctx/? commands cluster). L1 stream-probe. L3 harness-pty-fail-120x40-v18. L4 masked A-PIXELS FAIL-CLOSED (25441) \u2014 residual is error-body glyph AA after solid-color match (stable v13\u2192v18; disclosure rewrite did not change AA residual). Status incomplete pending AA pipeline/policy. See shell-fail-residual-v1.md. L3 refresh loop3: freeze-matched inset+disclosure capture (stale pre-inset L3 superseded). | diverged=DIV-AA-SHELL-FAIL pure AA residual user-approved 2026-07-19; receipt div-aa-shell-fail-20260719.md",
+      "slice": "scaffold",
+      "evidence": {
+        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-stream-probe/",
+        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-pty-fail-120x40-v21/",
+        "L4_pixel_diff": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-fail-v18-compare/report-masked.json",
+        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-fail-residual-v1.md",
+        "L6_identity_mask": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-fail-identity-field-mask.120x40.v1.json"
+      }
+    },
+    {
+      "behavior_id": "SHELL-RECOVER",
+      "requirement_id": "SHELL-RECOVER",
+      "priority": "P1",
+      "surface": "shell",
+      "state": "recovered",
+      "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
+      "reference_receipt_id": "reference-freeze",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "preconditions": "Recovered from failure/cancel into editable composer.",
+      "seeded_inputs": {
+        "session": "recovered live shell"
+      },
+      "viewport": {
+        "cols": 120,
+        "rows": 40
+      },
+      "terminal_environment": {
+        "term": "xterm-256color",
+        "colorterm": "truecolor"
+      },
+      "input_sequence": [],
+      "capture_checkpoints": [],
+      "expected_focus_owner": "composer",
+      "expected_cursor_state": {
+        "visible": true,
+        "owner": "composer_prompt"
+      },
+      "expected_scroll_and_selection_state": {
+        "scroll_offset": 0,
+        "follow_mode": true,
+        "selection": null
+      },
+      "expected_overlays_and_z_order": [],
+      "expected_semantic_cell_artifact": "",
+      "expected_png_artifact": "",
+      "expected_frame_sequence": "",
+      "timing_contract": null,
+      "owners": {
+        "fixture": "crates/harness-tui/tests/reference_parity_tx_shell_test.rs::live_app",
+        "state_interaction_test": "crates/harness-tui/tests/reference_parity_tx_shell_test.rs::shell_recover_after_failure_keeps_composer_and_accepts_draft",
+        "render_test": "crates/harness-tui/tests/reference_parity_tx_shell_test.rs::shell_recover_after_failure_keeps_composer_and_accepts_draft",
+        "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::shell_recover_pty",
+        "differential_evaluator": "pending:reference_parity::shell_recover_diff"
+      },
+      "evidence_paths": {
+        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-recover-proxy-v2/",
+        "L2": "",
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-pty-recover-120x32-v3/",
+        "L4": "",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/freeze-shell-recover.blocked.json",
+        "L6": ""
+      },
+      "identity_substitution": {
+        "fields": [
+          "logo_glyphs",
+          "product_title_text"
+        ],
+        "policy": "Harness logo/text only; geometry preserved"
+      },
+      "deliberate_divergence_id": null,
+      "acceptance_gate_ids": [
+        "A-MANIFEST",
+        "A-REFERENCE",
+        "A-STATE",
+        "A-CELLS",
+        "A-PIXELS",
+        "A-PTY",
+        "A-INVARIANTS",
+        "A-NO-RESKIN"
+      ],
+      "status": "blocked",
+      "notes": "Scaffold \u00a710 shell recover after failure. A-PTY owner wired (event-injection/live PTY). Structural owners GREEN. Status incomplete pending full A-* suite. L3 harness-pty-recover-120x32-v1: fail chrome retained + composer draft `retry after failure` (choreography matches shell_recover_pty). A-PIXELS blocked (no dedicated Grok recover freeze). Receipt: shell-recover-l3-v1.md. Evidence honesty loop3: L5=blocked freeze receipt (no capturable Grok L1). L3 refresh loop3: freeze-matched inset+disclosure capture (stale pre-inset L3 superseded). | status=blocked: reference freeze capture blocked (L5 *.blocked.json); not incomplete product theater 2026-07-19",
+      "slice": "scaffold",
+      "evidence": {
+        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-pty-recover-120x32-v3/",
+        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/freeze-shell-recover.blocked.json"
+      }
+    },
+    {
+      "behavior_id": "SHELL-COMPLETE",
+      "requirement_id": "SHELL-COMPLETE",
+      "priority": "P1",
+      "surface": "shell",
+      "state": "completed",
+      "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
+      "reference_receipt_id": "reference-freeze",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "preconditions": "Turn completed successfully.",
+      "seeded_inputs": {
+        "session": "completed turn"
+      },
+      "viewport": {
+        "cols": 120,
+        "rows": 40
+      },
+      "terminal_environment": {
+        "term": "xterm-256color",
+        "colorterm": "truecolor"
+      },
+      "input_sequence": [],
+      "capture_checkpoints": [],
+      "expected_focus_owner": "composer",
+      "expected_cursor_state": {
+        "visible": true,
+        "owner": "composer_prompt"
+      },
+      "expected_scroll_and_selection_state": {
+        "scroll_offset": 0,
+        "follow_mode": true,
+        "selection": null
+      },
+      "expected_overlays_and_z_order": [],
+      "expected_semantic_cell_artifact": "",
+      "expected_png_artifact": "",
+      "expected_frame_sequence": "",
+      "timing_contract": null,
+      "owners": {
+        "fixture": "crates/harness-tui/tests/reference_parity_tx_shell_test.rs::live_app",
+        "state_interaction_test": "crates/harness-tui/tests/reference_parity_tx_shell_test.rs::shell_complete_keeps_full_width_body_and_bordered_composer",
+        "render_test": "crates/harness-tui/tests/reference_parity_tx_shell_test.rs::shell_complete_keeps_full_width_body_and_bordered_composer",
+        "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::shell_complete_pty",
+        "differential_evaluator": "pending:reference_parity::shell_complete_diff"
+      },
+      "evidence_paths": {
+        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-complete-proxy-v2/",
+        "L2": "",
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-pty-complete-120x32-v5/",
+        "L4": "",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/freeze-shell-complete.blocked.json",
+        "L6": ""
+      },
+      "identity_substitution": {
+        "fields": [
+          "logo_glyphs",
+          "product_title_text"
+        ],
+        "policy": "Harness logo/text only; geometry preserved"
+      },
+      "deliberate_divergence_id": null,
+      "acceptance_gate_ids": [
+        "A-MANIFEST",
+        "A-REFERENCE",
+        "A-STATE",
+        "A-CELLS",
+        "A-PIXELS",
+        "A-PTY",
+        "A-INVARIANTS",
+        "A-NO-RESKIN"
+      ],
+      "status": "blocked",
+      "notes": "Scaffold \u00a710 shell completed. A-PTY owner wired (event-injection/live PTY). Structural owners GREEN. Status incomplete pending full A-* suite. L3 golden_path completed-turn capture (planner/worker deltas + ready footer). No matching Grok freeze for true A-PIXELS. A-PTY GREEN. Status incomplete. Grok L1 freeze blocked (dummy API / no stable black-box path); see blocked freeze receipt. L3 updated to harness-pty-complete-120x40-v1 (live breadcrumb + \u276f marker + gutter=5; structural only). Evidence honesty loop3: L5=blocked freeze receipt (no capturable Grok L1). L3 refresh loop3: freeze-matched inset+disclosure capture (stale pre-inset L3 superseded). | status=blocked: reference freeze capture blocked (L5 *.blocked.json); not incomplete product theater 2026-07-19 | L3 refresh loop7: harness-pty-complete-120x32-v4 freeze-matched 120x32 (2026-07-19) L3 harness-pty-complete-120x32-v5: PNG+ANSI via web-terminal-visual-qa. A-CELLS identity residual (L2/L5/L10/L29). A-PIXELS FAIL 161k rgba (theme surface color vs freeze; no mask expansion).",
+      "slice": "scaffold",
+      "evidence": {
+        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-pty-complete-120x32-v5/",
+        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/freeze-shell-complete.blocked.json",
+        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-complete-proxy-v2/"
+      }
+    },
+    {
+      "behavior_id": "SHELL-SCROLL",
+      "requirement_id": "SHELL-SCROLL",
+      "priority": "P1",
+      "surface": "shell",
+      "state": "scrolled_away_from_follow",
+      "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
+      "reference_receipt_id": "reference-freeze",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "preconditions": "Transcript scrolled away from follow mode.",
+      "seeded_inputs": {
+        "session": "long transcript with scroll"
+      },
+      "viewport": {
+        "cols": 120,
+        "rows": 40
+      },
+      "terminal_environment": {
+        "term": "xterm-256color",
+        "colorterm": "truecolor"
+      },
+      "input_sequence": [],
+      "capture_checkpoints": [],
+      "expected_focus_owner": "transcript",
+      "expected_cursor_state": {
+        "visible": false,
+        "owner": "none"
+      },
+      "expected_scroll_and_selection_state": {
+        "scroll_offset": "nonzero",
+        "follow_mode": false,
+        "selection": null
+      },
+      "expected_overlays_and_z_order": [],
+      "expected_semantic_cell_artifact": "",
+      "expected_png_artifact": "",
+      "expected_frame_sequence": "",
+      "timing_contract": null,
+      "owners": {
+        "fixture": "crates/harness-tui/tests/reference_parity_tx_shell_test.rs::live_app",
+        "state_interaction_test": "crates/harness-tui/tests/reference_parity_tx_shell_test.rs::shell_scroll_page_keys_adjust_transcript_under_full_width",
+        "render_test": "crates/harness-tui/tests/reference_parity_tx_shell_test.rs::shell_scroll_page_keys_adjust_transcript_under_full_width",
+        "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::shell_scroll_pty",
+        "differential_evaluator": "pending:reference_parity::shell_scroll_diff"
+      },
+      "evidence_paths": {
+        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-scroll-proxy-v3/",
+        "L2": "",
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-pty-scroll-120x32-v10/",
+        "L4": "",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/freeze-shell-scroll.blocked.json",
+        "L6": ""
+      },
+      "identity_substitution": {
+        "fields": [
+          "logo_glyphs",
+          "product_title_text"
+        ],
+        "policy": "Harness logo/text only; geometry preserved"
+      },
+      "deliberate_divergence_id": null,
+      "acceptance_gate_ids": [
+        "A-MANIFEST",
+        "A-REFERENCE",
+        "A-STATE",
+        "A-CELLS",
+        "A-PIXELS",
+        "A-PTY",
+        "A-INVARIANTS",
+        "A-NO-RESKIN"
+      ],
+      "status": "blocked",
+      "notes": "Scaffold \u00a710 shell scrolled away from follow mode. A-PTY owner wired (event-injection/live PTY). Structural owners GREEN. Status incomplete pending full A-* suite. L3 PTY-helper live_scroll multi-turn transcript. A-PTY GREEN. No matching Grok freeze for A-PIXELS. Status incomplete. Grok L1 freeze blocked (dummy API / no stable black-box path); see blocked freeze receipt. L3 harness-pty-scroll-120x40-v1: multi-turn scroll transcript + breadcrumb+\u276f. A-PIXELS blocked (no Grok freeze). Evidence honesty loop3: L5=blocked freeze receipt (no capturable Grok L1). L3 refresh loop3: freeze-matched inset+disclosure capture (stale pre-inset L3 superseded). | status=blocked: reference freeze capture blocked (L5 *.blocked.json); not incomplete product theater 2026-07-19 | L3 refresh loop6d: harness-pty-scroll-120x32-v10 packs all names + wall clock sticky user + wall-clock 5:54 AM + f39\u2013f55 packing (2026-07-19). | L3 refresh loop7: harness-pty-scroll-120x32-v10 freeze-matched 120x32 (2026-07-19)",
+      "slice": "scaffold",
+      "evidence": {
+        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-pty-scroll-120x32-v10/",
+        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/freeze-shell-scroll.blocked.json",
+        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-scroll-proxy-v3/"
+      }
+    },
+    {
+      "behavior_id": "TX-USER",
+      "requirement_id": "TX-USER",
+      "priority": "P1",
+      "surface": "transcript",
+      "state": "user_message",
+      "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
+      "reference_receipt_id": "reference-freeze",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "preconditions": "Transcript contains at least one user message block.",
+      "seeded_inputs": {
+        "transcript": "user message fixture"
+      },
+      "viewport": {
+        "cols": 120,
+        "rows": 40
+      },
+      "terminal_environment": {
+        "term": "xterm-256color",
+        "colorterm": "truecolor"
+      },
+      "input_sequence": [],
+      "capture_checkpoints": [],
+      "expected_focus_owner": "composer",
+      "expected_cursor_state": {
+        "visible": true,
+        "owner": "composer_prompt"
+      },
+      "expected_scroll_and_selection_state": {
+        "scroll_offset": 0,
+        "follow_mode": true,
+        "selection": null
+      },
+      "expected_overlays_and_z_order": [],
+      "expected_semantic_cell_artifact": "",
+      "expected_png_artifact": "",
+      "expected_frame_sequence": "",
+      "timing_contract": null,
+      "owners": {
+        "fixture": "crates/harness-tui/tests/reference_parity_tx_shell_test.rs::live_app",
+        "state_interaction_test": "crates/harness-tui/tests/reference_parity_tx_shell_test.rs::tx_user_message_chrome_is_flat_marker_without_legacy_rail",
+        "render_test": "crates/harness-tui/tests/reference_parity_tx_shell_test.rs::tx_user_message_chrome_is_flat_marker_without_legacy_rail",
+        "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::tx_user_pty",
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-stream-probe/"
+      },
+      "evidence_paths": {
+        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-complete-proxy-v2/",
+        "L2": "",
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-pty-complete-120x32-v5/",
+        "L4": "",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/freeze-tx-user.blocked.json",
+        "L6": ""
+      },
+      "identity_substitution": {
+        "fields": [
+          "logo_glyphs",
+          "product_title_text"
+        ],
+        "policy": "Harness logo/text only; geometry preserved"
+      },
+      "deliberate_divergence_id": null,
+      "acceptance_gate_ids": [
+        "A-MANIFEST",
+        "A-REFERENCE",
+        "A-STATE",
+        "A-CELLS",
+        "A-PIXELS",
+        "A-PTY",
+        "A-INVARIANTS",
+        "A-NO-RESKIN"
+      ],
+      "status": "blocked",
+      "notes": "Scaffold \u00a710 transcript user messages. A-PTY owner wired (event-injection/live PTY). Structural owners GREEN. Status incomplete pending full A-* suite. L3 golden_path transcript capture (user prompts embedded in scenario). No dedicated Grok freeze. A-PTY GREEN. Status incomplete. Grok L1 freeze blocked (dummy API / no stable black-box path); see blocked freeze receipt. User marker freeze-aligned to \u276f (theme + structural/PTY). See tx-user-marker-v1.md. L3 updated to harness-pty-complete-120x40-v1 (live breadcrumb + \u276f marker + gutter=5; structural only). Evidence honesty loop3: L5=blocked freeze receipt (no capturable Grok L1). L3 refresh loop3: freeze-matched inset+disclosure capture (stale pre-inset L3 superseded). | status=blocked: reference freeze capture blocked (L5 *.blocked.json); not incomplete product theater 2026-07-19 | L3 refresh loop7: harness-pty-complete-120x32-v4 freeze-matched 120x32 (2026-07-19) L3 harness-pty-complete-120x32-v5: PNG+ANSI via web-terminal-visual-qa. A-CELLS identity residual (L2/L5/L10/L29). A-PIXELS FAIL 161k rgba (theme surface color vs freeze; no mask expansion).",
+      "slice": "scaffold",
+      "evidence": {
+        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-pty-complete-120x32-v5/",
+        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/freeze-tx-user.blocked.json",
+        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-complete-proxy-v2/"
+      }
+    },
+    {
+      "behavior_id": "TX-ASSISTANT",
+      "requirement_id": "TX-ASSISTANT",
+      "priority": "P1",
+      "surface": "transcript",
+      "state": "assistant_message",
+      "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
+      "reference_receipt_id": "reference-freeze",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "preconditions": "Transcript contains assistant message content.",
+      "seeded_inputs": {
+        "transcript": "assistant message fixture"
+      },
+      "viewport": {
+        "cols": 120,
+        "rows": 40
+      },
+      "terminal_environment": {
+        "term": "xterm-256color",
+        "colorterm": "truecolor"
+      },
+      "input_sequence": [],
+      "capture_checkpoints": [],
+      "expected_focus_owner": "composer",
+      "expected_cursor_state": {
+        "visible": true,
+        "owner": "composer_prompt"
+      },
+      "expected_scroll_and_selection_state": {
+        "scroll_offset": 0,
+        "follow_mode": true,
+        "selection": null
+      },
+      "expected_overlays_and_z_order": [],
+      "expected_semantic_cell_artifact": "",
+      "expected_png_artifact": "",
+      "expected_frame_sequence": "",
+      "timing_contract": null,
+      "owners": {
+        "fixture": "crates/harness-tui/tests/reference_parity_tx_shell_test.rs::live_app",
+        "state_interaction_test": "crates/harness-tui/tests/reference_parity_tx_shell_test.rs::tx_assistant_message_chrome_is_rail_free_with_footer",
+        "render_test": "crates/harness-tui/tests/reference_parity_tx_shell_test.rs::tx_assistant_message_chrome_is_rail_free_with_footer",
+        "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::tx_assistant_pty",
+        "differential_evaluator": "pending:reference_parity::tx_assistant_diff"
+      },
+      "evidence_paths": {
+        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-complete-proxy-v2/",
+        "L2": "",
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-pty-complete-120x32-v5/",
+        "L4": "",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/freeze-tx-assistant.blocked.json",
+        "L6": ""
+      },
+      "identity_substitution": {
+        "fields": [
+          "logo_glyphs",
+          "product_title_text"
+        ],
+        "policy": "Harness logo/text only; geometry preserved"
+      },
+      "deliberate_divergence_id": null,
+      "acceptance_gate_ids": [
+        "A-MANIFEST",
+        "A-REFERENCE",
+        "A-STATE",
+        "A-CELLS",
+        "A-PIXELS",
+        "A-PTY",
+        "A-INVARIANTS",
+        "A-NO-RESKIN"
+      ],
+      "status": "blocked",
+      "notes": "Scaffold \u00a710 transcript assistant messages. A-PTY owner wired (event-injection/live PTY). Structural owners GREEN. Status incomplete pending full A-* suite. L3 golden_path transcript shows assistant text deltas (planner-prompt-delta / worker-prompt-delta). No matching Grok freeze for A-PIXELS. A-PTY GREEN. Status incomplete. Grok L1 freeze blocked (dummy API / no stable black-box path); see blocked freeze receipt. L3 updated to harness-pty-complete-120x40-v1 (live breadcrumb + \u276f marker + gutter=5; structural only). Evidence honesty loop3: L5=blocked freeze receipt (no capturable Grok L1). L3 refresh loop3: freeze-matched inset+disclosure capture (stale pre-inset L3 superseded). | status=blocked: reference freeze capture blocked (L5 *.blocked.json); not incomplete product theater 2026-07-19 | L3 refresh loop7: harness-pty-complete-120x32-v4 freeze-matched 120x32 (2026-07-19) L3 harness-pty-complete-120x32-v5: PNG+ANSI via web-terminal-visual-qa. A-CELLS identity residual (L2/L5/L10/L29). A-PIXELS FAIL 161k rgba (theme surface color vs freeze; no mask expansion).",
+      "slice": "scaffold",
+      "evidence": {
+        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-pty-complete-120x32-v5/",
+        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/freeze-tx-assistant.blocked.json",
+        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-complete-proxy-v2/"
+      }
+    },
+    {
+      "behavior_id": "TX-TOOL",
+      "requirement_id": "TX-TOOL",
+      "priority": "P1",
+      "surface": "transcript",
+      "state": "tool_block",
+      "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
+      "reference_receipt_id": "reference-freeze",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "preconditions": "Transcript contains tool activity block.",
+      "seeded_inputs": {
+        "transcript": "tool lifecycle fixture"
+      },
+      "viewport": {
+        "cols": 120,
+        "rows": 40
+      },
+      "terminal_environment": {
+        "term": "xterm-256color",
+        "colorterm": "truecolor"
+      },
+      "input_sequence": [],
+      "capture_checkpoints": [],
+      "expected_focus_owner": "composer",
+      "expected_cursor_state": {
+        "visible": true,
+        "owner": "composer_prompt"
+      },
+      "expected_scroll_and_selection_state": {
+        "scroll_offset": 0,
+        "follow_mode": true,
+        "selection": null
+      },
+      "expected_overlays_and_z_order": [],
+      "expected_semantic_cell_artifact": "",
+      "expected_png_artifact": "",
+      "expected_frame_sequence": "",
+      "timing_contract": null,
+      "owners": {
+        "fixture": "crates/harness-tui/tests/reference_parity_tx_shell_test.rs::live_app",
+        "state_interaction_test": "crates/harness-tui/tests/reference_parity_tx_shell_test.rs::tx_tool_row_is_structured_diamond_without_legacy_rail",
+        "render_test": "crates/harness-tui/tests/reference_parity_tx_shell_test.rs::tx_tool_row_is_structured_diamond_without_legacy_rail",
+        "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::tx_tool_pty",
+        "differential_evaluator": "pending:reference_parity::tx_tool_diff"
+      },
+      "evidence_paths": {
+        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-tool-proxy-v2/",
+        "L2": "",
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-pty-tool-120x32-v7/",
+        "L4": "",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/freeze-tx-tool.blocked.json",
+        "L6": ""
+      },
+      "identity_substitution": {
+        "fields": [
+          "logo_glyphs",
+          "product_title_text"
+        ],
+        "policy": "Harness logo/text only; geometry preserved"
+      },
+      "deliberate_divergence_id": null,
+      "acceptance_gate_ids": [
+        "A-MANIFEST",
+        "A-REFERENCE",
+        "A-STATE",
+        "A-CELLS",
+        "A-PIXELS",
+        "A-PTY",
+        "A-INVARIANTS",
+        "A-NO-RESKIN"
+      ],
+      "status": "blocked",
+      "notes": "Scaffold \u00a710 transcript tool blocks. A-PTY owner wired (event-injection/live PTY). Structural owners GREEN. Status incomplete pending full A-* suite. L3 golden_path_interactive shows tool=edit args in permission dock. No dedicated Grok tool-row freeze. A-PTY GREEN. Status incomplete. L3 PTY-helper live_tool (\u25c6 Read README.md) supersedes permission-dock tool surface. A-PTY GREEN. Status incomplete. Grok L1 freeze blocked (dummy API / no stable black-box path); see blocked freeze receipt. L3 harness-pty-tool-120x40-v1: diamond tool row + breadcrumb+\u276f. A-PIXELS blocked (no Grok freeze). Evidence honesty loop3: L5=blocked freeze receipt (no capturable Grok L1). L3 refresh loop3: freeze-matched inset+disclosure capture (stale pre-inset L3 superseded). | status=blocked: reference freeze capture blocked (L5 *.blocked.json); not incomplete product theater 2026-07-19",
+      "slice": "scaffold",
+      "evidence": {
+        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-pty-tool-120x32-v7",
+        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/freeze-tx-tool.blocked.json"
+      }
+    },
+    {
+      "behavior_id": "TX-DIFF",
+      "requirement_id": "TX-DIFF",
+      "priority": "P1",
+      "surface": "transcript",
+      "state": "diff_block",
+      "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
+      "reference_receipt_id": "reference-freeze",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "preconditions": "Transcript contains edit/diff presentation.",
+      "seeded_inputs": {
+        "transcript": "diff/edit fixture"
+      },
+      "viewport": {
+        "cols": 120,
+        "rows": 40
+      },
+      "terminal_environment": {
+        "term": "xterm-256color",
+        "colorterm": "truecolor"
+      },
+      "input_sequence": [],
+      "capture_checkpoints": [],
+      "expected_focus_owner": "composer",
+      "expected_cursor_state": {
+        "visible": true,
+        "owner": "composer_prompt"
+      },
+      "expected_scroll_and_selection_state": {
+        "scroll_offset": 0,
+        "follow_mode": true,
+        "selection": null
+      },
+      "expected_overlays_and_z_order": [],
+      "expected_semantic_cell_artifact": "",
+      "expected_png_artifact": "",
+      "expected_frame_sequence": "",
+      "timing_contract": null,
+      "owners": {
+        "fixture": "crates/harness-tui/tests/reference_parity_tx_shell_test.rs::live_app",
+        "state_interaction_test": "crates/harness-tui/tests/reference_parity_tx_shell_test.rs::tx_diff_inline_is_rail_free_without_message_card",
+        "render_test": "crates/harness-tui/tests/reference_parity_tx_shell_test.rs::tx_diff_inline_is_rail_free_without_message_card",
+        "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::tx_diff_pty",
+        "differential_evaluator": "pending:reference_parity::tx_diff_diff"
+      },
+      "evidence_paths": {
+        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-diff-proxy-v2/",
+        "L2": "",
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-pty-diff-120x32-v12/",
+        "L4": "",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/freeze-tx-diff.blocked.json",
+        "L6": ""
+      },
+      "identity_substitution": {
+        "fields": [
+          "logo_glyphs",
+          "product_title_text"
+        ],
+        "policy": "Harness logo/text only; geometry preserved"
+      },
+      "deliberate_divergence_id": null,
+      "acceptance_gate_ids": [
+        "A-MANIFEST",
+        "A-REFERENCE",
+        "A-STATE",
+        "A-CELLS",
+        "A-PIXELS",
+        "A-PTY",
+        "A-INVARIANTS",
+        "A-NO-RESKIN"
+      ],
+      "status": "blocked",
+      "notes": "Scaffold \u00a710 transcript diffs. A-PTY owner wired (event-injection/live PTY). Structural owners GREEN. Status incomplete pending full A-* suite. L3 PTY-helper live_diff (\u25c6 Edit src/main.rs). A-PTY GREEN. No matching Grok freeze for A-PIXELS. Status incomplete. Grok L1 freeze blocked (dummy API / no stable black-box path); see blocked freeze receipt. L3 harness-pty-diff-120x40-v1: edit/diff projection + breadcrumb+\u276f. A-PIXELS blocked (no Grok freeze). Evidence honesty loop3: L5=blocked freeze receipt (no capturable Grok L1). L3 refresh loop3: freeze-matched inset+disclosure capture (stale pre-inset L3 superseded). | status=blocked: reference freeze capture blocked (L5 *.blocked.json); not incomplete product theater 2026-07-19",
+      "slice": "scaffold",
+      "evidence": {
+        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-pty-diff-120x32-v12",
+        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/freeze-tx-diff.blocked.json"
+      }
+    },
+    {
+      "behavior_id": "OVL-PALETTE",
+      "requirement_id": "OVL-PALETTE",
+      "priority": "P1",
+      "surface": "overlay",
+      "state": "command_palette",
+      "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
+      "reference_receipt_id": "reference-freeze",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "preconditions": "Command palette open.",
+      "seeded_inputs": {
+        "overlay": "palette open"
+      },
+      "viewport": {
+        "cols": 120,
+        "rows": 40
+      },
+      "terminal_environment": {
+        "term": "xterm-256color",
+        "colorterm": "truecolor"
+      },
+      "input_sequence": [],
+      "capture_checkpoints": [],
+      "expected_focus_owner": "command_palette",
+      "expected_cursor_state": {
+        "visible": true,
+        "owner": "palette_query"
+      },
+      "expected_scroll_and_selection_state": {
+        "scroll_offset": 0,
+        "follow_mode": true,
+        "selection": null
+      },
+      "expected_overlays_and_z_order": [
+        "command_palette"
+      ],
+      "expected_semantic_cell_artifact": "",
+      "expected_png_artifact": "",
+      "expected_frame_sequence": "",
+      "timing_contract": null,
+      "owners": {
+        "fixture": "crates/harness-tui/src/app/tests/palette_parity_tests.rs",
+        "state_interaction_test": "crates/harness-tui/src/app/tests/palette_parity_tests.rs + p0 command_palette_opens_filters_and_dismisses_without_sidebar",
+        "render_test": "crates/harness-tui/src/ui_overlays.rs::render_command_palette_overlay",
+        "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::ovl_palette_pty",
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/palette-pixel-diff-v63-masked.json"
+      },
+      "evidence_paths": {
+        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-palette/",
+        "L2": "artifacts/qa-evidence/20260717-tui-reference-parity/harness/OVL-PALETTE/L2/",
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-palette-v63/",
+        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/ovl-palette-pixel-diff-precise-v1.json",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/overlay-residual-v62.md",
+        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/overlay-identity-field-mask.precise-v1.json"
+      },
+      "identity_substitution": {
+        "fields": [
+          "logo_glyphs",
+          "product_title_text"
+        ],
+        "policy": "Harness logo/text only; geometry preserved"
+      },
+      "deliberate_divergence_id": "DIV-AA-PALETTE",
+      "acceptance_gate_ids": [
+        "A-MANIFEST",
+        "A-REFERENCE",
+        "A-STATE",
+        "A-CELLS",
+        "A-PIXELS",
+        "A-PTY",
+        "A-INVARIANTS",
+        "A-NO-RESKIN"
+      ],
+      "status": "diverged",
+      "notes": "Scaffold \u00a710 command palette overlay. L1 freeze + L3 harness-palette-v63 + L4 masked compare (112 residual unapproved RGBA). A-PTY owner GREEN. Session overlay sibling PASS masked. Status incomplete pending palette residual close + A-REVIEW. Palette residual 112 RGBA confirmed pure subpixel AA: terminal.txt differs only on identity breadcrumb (line1) + model badge (line28); residual at x\u2248779\u2013792,y\u2248875\u2013880 is identical-glyph AA at palette\u00d7composer junction. Fail-closed until product AA match. A-NO-RESKIN disposition: REWRITE* with 112 AA residual fail-closed (see a-no-reskin-disposition-v1.md). Residual analysis: receipts/palette-aa-residual-v1.md (112 AA fail-closed; v63=v64). Evidence honesty (loop3): L1=run1-palette freeze; L3=harness-palette-v63; L4=v63 masked mm=112; L6=overlay identity mask. AA unlock #1 fontSize14 NEGATIVE (see aa-font-size-unlock-v1/RECEIPT.md). | diverged=DIV-AA-PALETTE pure AA residual user-approved 2026-07-19; receipt div-aa-palette-20260719.md",
+      "slice": "scaffold",
+      "evidence": {
+        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-palette/",
+        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-palette-v63/",
+        "L4_pixel_diff": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/palette-pixel-diff-v63-masked.json",
+        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/palette-aa-residual-v1.md",
+        "L6_mask": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/overlay-identity-field-mask.v1.json"
+      }
+    },
+    {
+      "behavior_id": "OVL-SESSION",
+      "requirement_id": "OVL-SESSION",
+      "priority": "P1",
+      "surface": "overlay",
+      "state": "session_picker",
+      "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
+      "reference_receipt_id": "reference-freeze",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "preconditions": "Session picker/resume overlay open.",
+      "seeded_inputs": {
+        "overlay": "session picker"
+      },
+      "viewport": {
+        "cols": 120,
+        "rows": 40
+      },
+      "terminal_environment": {
+        "term": "xterm-256color",
+        "colorterm": "truecolor"
+      },
+      "input_sequence": [],
+      "capture_checkpoints": [],
+      "expected_focus_owner": "session_picker",
+      "expected_cursor_state": {
+        "visible": true,
+        "owner": "session_picker_query"
+      },
+      "expected_scroll_and_selection_state": {
+        "scroll_offset": 0,
+        "follow_mode": true,
+        "selection": null
+      },
+      "expected_overlays_and_z_order": [
+        "session_picker"
+      ],
+      "expected_semantic_cell_artifact": "",
+      "expected_png_artifact": "",
+      "expected_frame_sequence": "",
+      "timing_contract": null,
+      "owners": {
+        "fixture": "crates/harness-tui/tests/p0_parity/pickers_help_life_test.rs::session_picker_opens_with_searchable_history",
+        "state_interaction_test": "crates/harness-tui/tests/p0_parity/pickers_help_life_test.rs::session_picker_opens_with_searchable_history",
+        "render_test": "crates/harness-tui/src/ui_overlays.rs session history overlay",
+        "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::ovl_session_pty",
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/session-pixel-diff-v63-masked.json"
+      },
+      "evidence_paths": {
+        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-session/",
+        "L2": "artifacts/qa-evidence/20260717-tui-reference-parity/harness/OVL-SESSION/L2/",
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-session-v63/",
+        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/ovl-session-pixel-diff-precise-v1.json",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/session-holdout-v1-masked.json",
+        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/overlay-identity-field-mask.precise-v1.json"
+      },
+      "identity_substitution": {
+        "fields": [
+          "logo_glyphs",
+          "product_title_text",
+          "session_path_labels"
+        ],
+        "policy": "Harness logo/text only; geometry preserved"
+      },
+      "deliberate_divergence_id": null,
+      "acceptance_gate_ids": [
+        "A-MANIFEST",
+        "A-REFERENCE",
+        "A-STATE",
+        "A-CELLS",
+        "A-PIXELS",
+        "A-PTY",
+        "A-INVARIANTS",
+        "A-NO-RESKIN"
+      ],
+      "status": "pass",
+      "notes": "Scaffold \u00a710 session picker overlay. L1 freeze + L3 harness-session-v63 + L4 masked A-PIXELS PASS (0 unapproved). A-PTY owner GREEN. Status incomplete pending A-REVIEW/A-NO-RESKIN. Holdout re-capture PASS: harness-session-holdout-v1 + session-holdout-v1-masked.json. Evidence honesty loop3: L1=freeze, L3=act, L4=pixel report, L6=identity mask (paths verified on disk). | status=pass: L1 freeze + L2 cells + L3 harness + L5 masked exact_match + L6 mask present (2026-07-19).",
+      "slice": "scaffold",
+      "evidence": {
+        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-session/",
+        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-session-v63/",
+        "L4_pixel_diff": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/session-pixel-diff-v63-masked.json",
+        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/a-review-holdout-package-v1.md",
+        "L6_mask": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/overlay-identity-field-mask.v1.json"
+      }
+    },
+    {
+      "behavior_id": "OVL-HELP",
+      "requirement_id": "OVL-HELP",
+      "priority": "P1",
+      "surface": "overlay",
+      "state": "help",
+      "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
+      "reference_receipt_id": "reference-freeze",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "preconditions": "Help/shortcuts overlay open.",
+      "seeded_inputs": {
+        "overlay": "help"
+      },
+      "viewport": {
+        "cols": 120,
+        "rows": 40
+      },
+      "terminal_environment": {
+        "term": "xterm-256color",
+        "colorterm": "truecolor"
+      },
+      "input_sequence": [],
+      "capture_checkpoints": [],
+      "expected_focus_owner": "help_overlay",
+      "expected_cursor_state": {
+        "visible": false,
+        "owner": "none"
+      },
+      "expected_scroll_and_selection_state": {
+        "scroll_offset": 0,
+        "follow_mode": true,
+        "selection": null
+      },
+      "expected_overlays_and_z_order": [
+        "help"
+      ],
+      "expected_semantic_cell_artifact": "",
+      "expected_png_artifact": "",
+      "expected_frame_sequence": "",
+      "timing_contract": null,
+      "owners": {
+        "fixture": "crates/harness-tui/tests/p0_parity/pickers_help_life_test.rs::help_and_toggles_surfaces_open_harness_safe",
+        "state_interaction_test": "crates/harness-tui/tests/p0_parity/pickers_help_life_test.rs::help_and_toggles_surfaces_open_harness_safe",
+        "render_test": "crates/harness-tui/src/ui_secondary_events_tab.rs::render_help_tab",
+        "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::ovl_help_pty",
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/help-pixel-diff-v1-masked.json"
+      },
+      "evidence_paths": {
+        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-shortcuts-ctrlx/",
+        "L2": "artifacts/qa-evidence/20260717-tui-reference-parity/harness/OVL-HELP/L2/",
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-help-v1/",
+        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/ovl-help-pixel-diff-precise-v1.json",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/help-holdout-v1-masked.json",
+        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/overlay-identity-field-mask.precise-v1.json"
+      },
+      "identity_substitution": {
+        "fields": [
+          "logo_glyphs",
+          "product_title_text"
+        ],
+        "policy": "Harness logo/text only; geometry preserved"
+      },
+      "deliberate_divergence_id": null,
+      "acceptance_gate_ids": [
+        "A-MANIFEST",
+        "A-REFERENCE",
+        "A-STATE",
+        "A-CELLS",
+        "A-PIXELS",
+        "A-PTY",
+        "A-INVARIANTS",
+        "A-NO-RESKIN"
+      ],
+      "status": "pass",
+      "notes": "Scaffold \u00a710 help overlay. L1 freeze + L3 harness-help-v1 + L4 masked A-PIXELS PASS (0 unapproved). A-PTY owner GREEN. Status incomplete pending A-REVIEW/A-NO-RESKIN. Holdout re-capture PASS: harness-help-holdout-v1 + help-holdout-v1-masked.json. Evidence honesty loop3: L1=freeze, L3=act, L4=pixel report, L6=identity mask (paths verified on disk). | status=pass: L1 freeze + L2 cells + L3 harness + L5 masked exact_match + L6 mask present (2026-07-19).",
+      "slice": "scaffold",
+      "evidence": {
+        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-shortcuts-ctrlx/",
+        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-help-v1/",
+        "L4_pixel_diff": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/help-pixel-diff-v1-masked.json",
+        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/a-review-holdout-package-v1.md",
+        "L6_mask": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/overlay-identity-field-mask.v1.json"
+      }
+    },
+    {
+      "behavior_id": "OVL-PERM",
+      "requirement_id": "OVL-PERM",
+      "priority": "P1",
+      "surface": "overlay",
+      "state": "permission_prompt",
+      "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
+      "reference_receipt_id": "reference-freeze",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "preconditions": "Permission overlay open and focused.",
+      "seeded_inputs": {
+        "overlay": "permission"
+      },
+      "viewport": {
+        "cols": 120,
+        "rows": 40
+      },
+      "terminal_environment": {
+        "term": "xterm-256color",
+        "colorterm": "truecolor"
+      },
+      "input_sequence": [],
+      "capture_checkpoints": [],
+      "expected_focus_owner": "permission_overlay",
+      "expected_cursor_state": {
+        "visible": true,
+        "owner": "permission_overlay"
+      },
+      "expected_scroll_and_selection_state": {
+        "scroll_offset": 0,
+        "follow_mode": true,
+        "selection": null
+      },
+      "expected_overlays_and_z_order": [
+        "permission"
+      ],
+      "expected_semantic_cell_artifact": "",
+      "expected_png_artifact": "",
+      "expected_frame_sequence": "",
+      "timing_contract": null,
+      "owners": {
+        "fixture": "crates/harness-tui/tests/reference_parity_perm_question_test.rs::live_app",
+        "state_interaction_test": "crates/harness-tui/tests/reference_parity_perm_question_test.rs::shell_perm_preempts_composer_preserves_draft_full_width",
+        "render_test": "crates/harness-tui/src/ui_permission_dock.rs::render_inline_permission_dock",
+        "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::ovl_perm_pty",
+        "differential_evaluator": "pending:reference_parity::ovl_perm_diff"
+      },
+      "evidence_paths": {
+        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-perm-proxy-v2/",
+        "L2": "",
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-pty-perm-120x32-v14/",
+        "L4": "",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/freeze-ovl-perm.blocked.json",
+        "L6": ""
+      },
+      "identity_substitution": {
+        "fields": [
+          "logo_glyphs",
+          "product_title_text"
+        ],
+        "policy": "Harness logo/text only; geometry preserved"
+      },
+      "deliberate_divergence_id": null,
+      "acceptance_gate_ids": [
+        "A-MANIFEST",
+        "A-REFERENCE",
+        "A-STATE",
+        "A-CELLS",
+        "A-PIXELS",
+        "A-PTY",
+        "A-INVARIANTS",
+        "A-NO-RESKIN"
+      ],
+      "status": "blocked",
+      "notes": "Scaffold \u00a710 permission overlay. L3 golden_path_interactive permission dock capture. No matching Grok freeze for A-PIXELS. A-PTY GREEN. Status incomplete. Grok L1 freeze blocked (dummy API / no stable black-box path); see blocked freeze receipt. L3 harness-pty-perm-120x40-v1: permission overlay dock. A-PIXELS blocked (no Grok freeze). Evidence honesty loop3: L5=blocked freeze receipt (no capturable Grok L1). L3 refresh loop3: freeze-matched overlay capture. | status=blocked: reference freeze capture blocked (L5 *.blocked.json); not incomplete product theater 2026-07-19 | L3 refresh loop7: harness-pty-perm-120x32-v8 freeze-matched 120x32 (2026-07-19) | L3 refresh loop7: harness-pty-perm-120x32-v9 draft packs without +1 dock height (2026-07-19) | L3 refresh loop8: harness-pty-perm-120x32-v14 pin/height/lead match freeze; residual path+draft+identity (2026-07-19)",
+      "slice": "scaffold",
+      "evidence": {
+        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-pty-perm-120x32-v14/",
+        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/freeze-ovl-perm.blocked.json",
+        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-perm-proxy-v2/"
+      }
+    },
+    {
+      "behavior_id": "OVL-QUESTION",
+      "requirement_id": "OVL-QUESTION",
+      "priority": "P1",
+      "surface": "overlay",
+      "state": "question_prompt",
+      "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
+      "reference_receipt_id": "reference-freeze",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "preconditions": "Question overlay open and focused.",
+      "seeded_inputs": {
+        "overlay": "question"
+      },
+      "viewport": {
+        "cols": 120,
+        "rows": 40
+      },
+      "terminal_environment": {
+        "term": "xterm-256color",
+        "colorterm": "truecolor"
+      },
+      "input_sequence": [],
+      "capture_checkpoints": [],
+      "expected_focus_owner": "question_overlay",
+      "expected_cursor_state": {
+        "visible": true,
+        "owner": "question_overlay"
+      },
+      "expected_scroll_and_selection_state": {
+        "scroll_offset": 0,
+        "follow_mode": true,
+        "selection": null
+      },
+      "expected_overlays_and_z_order": [
+        "question"
+      ],
+      "expected_semantic_cell_artifact": "",
+      "expected_png_artifact": "",
+      "expected_frame_sequence": "",
+      "timing_contract": null,
+      "owners": {
+        "fixture": "crates/harness-tui/tests/reference_parity_perm_question_test.rs::live_app",
+        "state_interaction_test": "crates/harness-tui/tests/reference_parity_perm_question_test.rs::shell_question_parses_prompts_preserves_draft_no_allow_chrome",
+        "render_test": "crates/harness-tui/src/ui_permission_dock.rs question dock",
+        "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::ovl_question_pty",
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-palette-question/"
+      },
+      "evidence_paths": {
+        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-question-proxy-v2/",
+        "L2": "",
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-pty-question-120x32-v16/",
+        "L4": "",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/freeze-ovl-question.blocked.json",
+        "L6": ""
+      },
+      "identity_substitution": {
+        "fields": [
+          "logo_glyphs",
+          "product_title_text"
+        ],
+        "policy": "Harness logo/text only; geometry preserved"
+      },
+      "deliberate_divergence_id": null,
+      "acceptance_gate_ids": [
+        "A-MANIFEST",
+        "A-REFERENCE",
+        "A-STATE",
+        "A-CELLS",
+        "A-PIXELS",
+        "A-PTY",
+        "A-INVARIANTS",
+        "A-NO-RESKIN"
+      ],
+      "status": "blocked",
+      "notes": "Scaffold \u00a710 question overlay. A-PTY owner wired (event-injection/live PTY). Structural owners GREEN. Status incomplete pending full A-* suite. L3 PTY-helper question_overlay dock. A-PTY GREEN. No matching Grok freeze for A-PIXELS. Status incomplete. Grok L1 freeze blocked (dummy API / no stable black-box path); see blocked freeze receipt. L3 harness-pty-question-120x40-v1: question overlay dock. A-PIXELS blocked (no Grok freeze). Evidence honesty loop3: L5=blocked freeze receipt (no capturable Grok L1). L3 refresh loop3: freeze-matched overlay capture. | status=blocked: reference freeze capture blocked (L5 *.blocked.json); not incomplete product theater 2026-07-19 L3 harness-pty-question-120x32-v16: geometry matches freeze (Waiting L17, Thought\u2192Ask adjacent, dock packing, y copy, left pad 2). Residual: identity/clock, scrollbar, right-meta gap, product-honest Ctrl+c dismiss. A-CELLS masked GREEN.",
+      "slice": "scaffold",
+      "evidence": {
+        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-pty-question-120x32-v16/",
+        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/freeze-ovl-question.blocked.json"
+      }
+    },
+    {
+      "behavior_id": "RESP-120x50",
+      "requirement_id": "RESP-120x50",
+      "priority": "P1",
+      "surface": "responsive",
+      "state": "viewport_120x50",
+      "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
+      "reference_receipt_id": "reference-freeze",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "preconditions": "Reference-primary viewport 120x50.",
+      "seeded_inputs": {
+        "viewport": "120x50"
+      },
+      "viewport": {
+        "cols": 120,
+        "rows": 50
+      },
+      "terminal_environment": {
+        "term": "xterm-256color",
+        "colorterm": "truecolor"
+      },
+      "input_sequence": [],
+      "capture_checkpoints": [],
+      "expected_focus_owner": "composer",
+      "expected_cursor_state": {
+        "visible": true,
+        "owner": "composer_prompt"
+      },
+      "expected_scroll_and_selection_state": {
+        "scroll_offset": 0,
+        "follow_mode": true,
+        "selection": null
+      },
+      "expected_overlays_and_z_order": [],
+      "expected_semantic_cell_artifact": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-startup-120x50-v8/terminal.txt",
+      "expected_png_artifact": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-startup-120x50-v8/terminal.png",
+      "expected_frame_sequence": "",
+      "timing_contract": null,
+      "owners": {
+        "fixture": "crates/harness-tui/tests/reference_parity_responsive_test.rs::startup_app",
+        "state_interaction_test": "crates/harness-tui/tests/reference_parity_responsive_test.rs::resp_120x50_startup_keeps_bordered_welcome",
+        "render_test": "crates/harness-tui/tests/reference_parity_responsive_test.rs::resp_120x50_startup_keeps_bordered_welcome",
+        "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::resp_120x50_pty",
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/compare-120x50-v8/masked.json"
+      },
+      "evidence_paths": {
+        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup-120x50/",
+        "L2": "artifacts/qa-evidence/20260717-tui-reference-parity/harness/RESP-120x50/cells/",
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-startup-120x50-v8/",
+        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/compare-120x50-precise-identity.json",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/compare-120x50-v8/masked.json",
+        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/startup-identity-field-mask.120x50.v1.json"
+      },
+      "identity_substitution": {
+        "fields": [
+          "logo_glyphs",
+          "product_title_text"
+        ],
+        "policy": "Harness logo/text only; geometry preserved",
+        "mask_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/startup-identity-field-mask.120x50.v1.json"
+      },
+      "deliberate_divergence_id": null,
+      "acceptance_gate_ids": [
+        "A-MANIFEST",
+        "A-REFERENCE",
+        "A-STATE",
+        "A-CELLS",
+        "A-PIXELS",
+        "A-PTY",
+        "A-INVARIANTS",
+        "A-NO-RESKIN"
+      ],
+      "status": "pass",
+      "notes": "Scaffold \u00a710 responsive 120x50. v8 capture + masked A-PIXELS PASS (identity mask startup-identity-field-mask.120x50.v1.json); structural cell match OK except RESP-100x30 +1 vertical residual. A-PTY still pending \u2014 status remains incomplete. A-PTY owner wired (Startup-mode PTY at viewport). Masked A-PIXELS PASS (v8). Structural render owners GREEN. Status remains incomplete pending A-REVIEW/A-NO-RESKIN and full gate suite. Evidence L1-L6 wired (v8). Evidence honesty loop3: L1=freeze, L3=act, L4=pixel report, L6=identity mask (paths verified on disk). | status=pass: L5 masked exact_match (receipts/compare-120x50-v8/masked.json) 2026-07-19",
+      "slice": "scaffold",
+      "evidence": {
+        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup-120x50/",
+        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-startup-120x50-v8/",
+        "L4_pixel_diff": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/compare-120x50-v8/masked.json",
+        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/compact-viewport-v8-residual.md",
+        "L6_mask": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/startup-identity-field-mask.120x50.v1.json"
+      }
+    },
+    {
+      "behavior_id": "RESP-120x40",
+      "requirement_id": "RESP-120x40",
+      "priority": "P1",
+      "surface": "responsive",
+      "state": "viewport_120x40",
+      "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
+      "reference_receipt_id": "reference-freeze",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "preconditions": "Harness signoff viewport 120x40.",
+      "seeded_inputs": {
+        "viewport": "120x40"
+      },
+      "viewport": {
+        "cols": 120,
+        "rows": 40
+      },
+      "terminal_environment": {
+        "term": "xterm-256color",
+        "colorterm": "truecolor"
+      },
+      "input_sequence": [],
+      "capture_checkpoints": [],
+      "expected_focus_owner": "composer",
+      "expected_cursor_state": {
+        "visible": true,
+        "owner": "composer_prompt"
+      },
+      "expected_scroll_and_selection_state": {
+        "scroll_offset": 0,
+        "follow_mode": true,
+        "selection": null
+      },
+      "expected_overlays_and_z_order": [],
+      "expected_semantic_cell_artifact": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-startup-120x40-v8/terminal.txt",
+      "expected_png_artifact": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-startup-120x40-v8/terminal.png",
+      "expected_frame_sequence": "",
+      "timing_contract": null,
+      "owners": {
+        "fixture": "crates/harness-tui/tests/reference_parity_responsive_test.rs::startup_app",
+        "state_interaction_test": "crates/harness-tui/tests/reference_parity_responsive_test.rs::resp_120x40_startup_keeps_bordered_welcome",
+        "render_test": "crates/harness-tui/tests/reference_parity_responsive_test.rs::resp_120x40_startup_keeps_bordered_welcome",
+        "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::resp_120x40_pty",
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/compare-120x40-v8/masked.json"
+      },
+      "evidence_paths": {
+        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup-120x40/",
+        "L2": "artifacts/qa-evidence/20260717-tui-reference-parity/harness/RESP-120x40/cells/",
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-startup-120x40-v8/",
+        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/compare-120x40-precise-identity.json",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/compare-120x40-v8/masked.json",
+        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/startup-identity-field-mask.120x40.v1.json"
+      },
+      "identity_substitution": {
+        "fields": [
+          "logo_glyphs",
+          "product_title_text"
+        ],
+        "policy": "Harness logo/text only; geometry preserved",
+        "mask_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/startup-identity-field-mask.120x40.v1.json"
+      },
+      "deliberate_divergence_id": null,
+      "acceptance_gate_ids": [
+        "A-MANIFEST",
+        "A-REFERENCE",
+        "A-STATE",
+        "A-CELLS",
+        "A-PIXELS",
+        "A-PTY",
+        "A-INVARIANTS",
+        "A-NO-RESKIN"
+      ],
+      "status": "pass",
+      "notes": "Scaffold \u00a710 responsive 120x40. v8 capture + masked A-PIXELS PASS (identity mask startup-identity-field-mask.120x40.v1.json); structural cell match OK except RESP-100x30 +1 vertical residual. A-PTY still pending \u2014 status remains incomplete. A-PTY owner wired (Startup-mode PTY at viewport). Masked A-PIXELS PASS (v8). Structural render owners GREEN. Status remains incomplete pending A-REVIEW/A-NO-RESKIN and full gate suite. Evidence L1-L6 wired (v8). Holdout re-capture PASS: harness-startup-120x40-holdout-v1 + startup-120x40-holdout-v1-masked.json. Evidence honesty loop3: L1=freeze, L3=act, L4=pixel report, L6=identity mask (paths verified on disk). | status=pass: L5 masked exact_match (receipts/compare-120x40-v8/masked.json) 2026-07-19",
+      "slice": "scaffold",
+      "evidence": {
+        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup-120x40/",
+        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-startup-120x40-v8/",
+        "L4_pixel_diff": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/compare-120x40-v8/masked.json",
+        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/a-review-holdout-package-v1.md",
+        "L6_mask": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/startup-identity-field-mask.120x40.v1.json"
+      }
+    },
+    {
+      "behavior_id": "RESP-100x30",
+      "requirement_id": "RESP-100x30",
+      "priority": "P1",
+      "surface": "responsive",
+      "state": "viewport_100x30",
+      "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
+      "reference_receipt_id": "reference-freeze",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "preconditions": "Viewport 100x30.",
+      "seeded_inputs": {
+        "viewport": "100x30"
+      },
+      "viewport": {
+        "cols": 100,
+        "rows": 30
+      },
+      "terminal_environment": {
+        "term": "xterm-256color",
+        "colorterm": "truecolor"
+      },
+      "input_sequence": [],
+      "capture_checkpoints": [],
+      "expected_focus_owner": "composer",
+      "expected_cursor_state": {
+        "visible": true,
+        "owner": "composer_prompt"
+      },
+      "expected_scroll_and_selection_state": {
+        "scroll_offset": 0,
+        "follow_mode": true,
+        "selection": null
+      },
+      "expected_overlays_and_z_order": [],
+      "expected_semantic_cell_artifact": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-startup-100x30-v8/terminal.txt",
+      "expected_png_artifact": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-startup-100x30-v8/terminal.png",
+      "expected_frame_sequence": "",
+      "timing_contract": null,
+      "owners": {
+        "fixture": "crates/harness-tui/tests/reference_parity_responsive_test.rs::startup_app",
+        "state_interaction_test": "crates/harness-tui/tests/reference_parity_responsive_test.rs::resp_100x30_startup_keeps_bordered_welcome",
+        "render_test": "crates/harness-tui/tests/reference_parity_responsive_test.rs::resp_100x30_startup_keeps_bordered_welcome",
+        "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::resp_100x30_pty",
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/compare-100x30-v8/masked.json"
+      },
+      "evidence_paths": {
+        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup-100x30/",
+        "L2": "artifacts/qa-evidence/20260717-tui-reference-parity/harness/RESP-100x30/cells/",
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-startup-100x30-v8/",
+        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/compare-100x30-v9-precise-identity-v2.json",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/compare-100x30-v9/masked.json",
+        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/startup-identity-field-mask.100x30.v1.json"
+      },
+      "identity_substitution": {
+        "fields": [
+          "logo_glyphs",
+          "product_title_text"
+        ],
+        "policy": "Harness logo/text only; geometry preserved",
+        "mask_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/startup-identity-field-mask.100x30.v1.json"
+      },
+      "deliberate_divergence_id": null,
+      "acceptance_gate_ids": [
+        "A-MANIFEST",
+        "A-REFERENCE",
+        "A-STATE",
+        "A-CELLS",
+        "A-PIXELS",
+        "A-PTY",
+        "A-INVARIANTS",
+        "A-NO-RESKIN"
+      ],
+      "status": "pass",
+      "notes": "Structural owner GREEN; masked A-PIXELS PASS (v5) with per-geometry identity mask. A-PTY still pending. v8 capture + masked A-PIXELS PASS (identity mask startup-identity-field-mask.100x30.v1.json); structural cell match OK except RESP-100x30 +1 vertical residual. A-PTY still pending \u2014 status remains incomplete. A-PTY owner wired (Startup-mode PTY at viewport). Masked A-PIXELS PASS (v8). Structural render owners GREEN. Status remains incomplete pending A-REVIEW/A-NO-RESKIN and full gate suite. Evidence L1-L6 wired (v8). Evidence honesty loop3: L1=freeze, L3=act, L4=pixel report, L6=identity mask (paths verified on disk). v9 vertical ladder fix: clipboard L4/welcome L7 freeze-aligned; unmasked mm 136834\u219278997. | status=pass: L5 masked exact_match (receipts/compare-100x30-v9/masked.json) 2026-07-19",
+      "slice": "scaffold",
+      "evidence": {
+        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup-100x30/",
+        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-startup-100x30-v8/",
+        "L4_pixel_diff": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/compare-100x30-v8/masked.json",
+        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/compact-viewport-v8-residual.md",
+        "L6_mask": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/startup-identity-field-mask.100x30.v1.json"
+      }
+    },
+    {
+      "behavior_id": "RESP-80x24",
+      "requirement_id": "RESP-80x24",
+      "priority": "P1",
+      "surface": "responsive",
+      "state": "viewport_80x24",
+      "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
+      "reference_receipt_id": "reference-freeze",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "preconditions": "Viewport 80x24.",
+      "seeded_inputs": {
+        "viewport": "80x24"
+      },
+      "viewport": {
+        "cols": 80,
+        "rows": 24
+      },
+      "terminal_environment": {
+        "term": "xterm-256color",
+        "colorterm": "truecolor"
+      },
+      "input_sequence": [],
+      "capture_checkpoints": [],
+      "expected_focus_owner": "composer",
+      "expected_cursor_state": {
+        "visible": true,
+        "owner": "composer_prompt"
+      },
+      "expected_scroll_and_selection_state": {
+        "scroll_offset": 0,
+        "follow_mode": true,
+        "selection": null
+      },
+      "expected_overlays_and_z_order": [],
+      "expected_semantic_cell_artifact": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-startup-80x24-v8/terminal.txt",
+      "expected_png_artifact": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-startup-80x24-v8/terminal.png",
+      "expected_frame_sequence": "",
+      "timing_contract": null,
+      "owners": {
+        "fixture": "crates/harness-tui/tests/reference_parity_responsive_test.rs::startup_app",
+        "state_interaction_test": "crates/harness-tui/tests/reference_parity_responsive_test.rs::resp_80x24_startup_unboxed_welcome_keeps_composer_border",
+        "render_test": "crates/harness-tui/tests/reference_parity_responsive_test.rs::resp_80x24_startup_unboxed_welcome_keeps_composer_border",
+        "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::resp_80x24_pty",
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/compare-80x24-v9/masked.json"
+      },
+      "evidence_paths": {
+        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup-80x24/",
+        "L2": "artifacts/qa-evidence/20260717-tui-reference-parity/harness/RESP-80x24/cells/",
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-startup-80x24-v8/",
+        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/compare-80x24-precise-identity.json",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/compare-80x24-v8/masked.json",
+        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/startup-identity-field-mask.80x24.v1.json"
+      },
+      "identity_substitution": {
+        "fields": [
+          "logo_glyphs",
+          "product_title_text"
+        ],
+        "policy": "Harness logo/text only; geometry preserved",
+        "mask_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/startup-identity-field-mask.80x24.v1.json"
+      },
+      "deliberate_divergence_id": null,
+      "acceptance_gate_ids": [
+        "A-MANIFEST",
+        "A-REFERENCE",
+        "A-STATE",
+        "A-CELLS",
+        "A-PIXELS",
+        "A-PTY",
+        "A-INVARIANTS",
+        "A-NO-RESKIN"
+      ],
+      "status": "pass",
+      "notes": "Structural owner GREEN; masked A-PIXELS PASS (v6) with per-geometry identity mask. A-PTY still pending. v8 capture + masked A-PIXELS PASS (identity mask startup-identity-field-mask.80x24.v1.json); structural cell match OK except RESP-100x30 +1 vertical residual. A-PTY still pending \u2014 status remains incomplete. A-PTY owner wired (Startup-mode PTY at viewport). Masked A-PIXELS PASS (v8). Structural render owners GREEN. Status remains incomplete pending A-REVIEW/A-NO-RESKIN and full gate suite. Evidence L1-L6 wired (v8). Evidence honesty loop3: L1=freeze, L3=act, L4=pixel report, L6=identity mask (paths verified on disk). | status=pass: L5 masked exact_match (receipts/compare-80x24-v8/masked.json) 2026-07-19",
+      "slice": "scaffold",
+      "evidence": {
+        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup-80x24/",
+        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-startup-80x24-v8/",
+        "L4_pixel_diff": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/compare-80x24-v8/masked.json",
+        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/compact-viewport-v8-residual.md",
+        "L6_mask": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/startup-identity-field-mask.80x24.v1.json"
+      }
+    },
+    {
+      "behavior_id": "RESP-79x24",
+      "requirement_id": "RESP-79x24",
+      "priority": "P1",
+      "surface": "responsive",
+      "state": "viewport_79x24",
+      "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
+      "reference_receipt_id": "reference-freeze",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "preconditions": "Narrow boundary viewport 79x24.",
+      "seeded_inputs": {
+        "viewport": "79x24"
+      },
+      "viewport": {
+        "cols": 79,
+        "rows": 24
+      },
+      "terminal_environment": {
+        "term": "xterm-256color",
+        "colorterm": "truecolor"
+      },
+      "input_sequence": [],
+      "capture_checkpoints": [],
+      "expected_focus_owner": "composer",
+      "expected_cursor_state": {
+        "visible": true,
+        "owner": "composer_prompt"
+      },
+      "expected_scroll_and_selection_state": {
+        "scroll_offset": 0,
+        "follow_mode": true,
+        "selection": null
+      },
+      "expected_overlays_and_z_order": [],
+      "expected_semantic_cell_artifact": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-startup-79x24-v8/terminal.txt",
+      "expected_png_artifact": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-startup-79x24-v8/terminal.png",
+      "expected_frame_sequence": "",
+      "timing_contract": null,
+      "owners": {
+        "fixture": "crates/harness-tui/tests/reference_parity_responsive_test.rs::startup_app",
+        "state_interaction_test": "crates/harness-tui/tests/reference_parity_responsive_test.rs::resp_79x24_startup_unboxed_welcome_keeps_composer_border",
+        "render_test": "crates/harness-tui/tests/reference_parity_responsive_test.rs::resp_79x24_startup_unboxed_welcome_keeps_composer_border",
+        "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::resp_79x24_pty",
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/compare-79x24-v8/masked.json"
+      },
+      "evidence_paths": {
+        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup-79x24/",
+        "L2": "artifacts/qa-evidence/20260717-tui-reference-parity/harness/RESP-79x24/cells/",
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-startup-79x24-v8/",
+        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/compare-79x24-precise-identity.json",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/compare-79x24-v8/masked.json",
+        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/startup-identity-field-mask.79x24.v1.json"
+      },
+      "identity_substitution": {
+        "fields": [
+          "logo_glyphs",
+          "product_title_text"
+        ],
+        "policy": "Harness logo/text only; geometry preserved",
+        "mask_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/startup-identity-field-mask.79x24.v1.json"
+      },
+      "deliberate_divergence_id": null,
+      "acceptance_gate_ids": [
+        "A-MANIFEST",
+        "A-REFERENCE",
+        "A-STATE",
+        "A-CELLS",
+        "A-PIXELS",
+        "A-PTY",
+        "A-INVARIANTS",
+        "A-NO-RESKIN"
+      ],
+      "status": "pass",
+      "notes": "Scaffold \u00a710 responsive 79x24. v8 capture + masked A-PIXELS PASS (identity mask startup-identity-field-mask.79x24.v1.json); structural cell match OK except RESP-100x30 +1 vertical residual. A-PTY still pending \u2014 status remains incomplete. A-PTY owner wired (Startup-mode PTY at viewport). Masked A-PIXELS PASS (v8). Structural render owners GREEN. Status remains incomplete pending A-REVIEW/A-NO-RESKIN and full gate suite. Evidence L1-L6 wired (v8). Evidence honesty loop3: L1=freeze, L3=act, L4=pixel report, L6=identity mask (paths verified on disk). | status=pass: L5 masked exact_match (receipts/compare-79x24-v8/masked.json) 2026-07-19",
+      "slice": "scaffold",
+      "evidence": {
+        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup-79x24/",
+        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-startup-79x24-v8/",
+        "L4_pixel_diff": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/compare-79x24-v8/masked.json",
+        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/compact-viewport-v8-residual.md",
+        "L6_mask": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/startup-identity-field-mask.79x24.v1.json"
+      }
+    },
+    {
+      "behavior_id": "RESP-60x20",
+      "requirement_id": "RESP-60x20",
+      "priority": "P1",
+      "surface": "responsive",
+      "state": "viewport_60x20",
+      "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
+      "reference_receipt_id": "reference-freeze",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "preconditions": "Compact viewport 60x20.",
+      "seeded_inputs": {
+        "viewport": "60x20"
+      },
+      "viewport": {
+        "cols": 60,
+        "rows": 20
+      },
+      "terminal_environment": {
+        "term": "xterm-256color",
+        "colorterm": "truecolor"
+      },
+      "input_sequence": [],
+      "capture_checkpoints": [],
+      "expected_focus_owner": "composer",
+      "expected_cursor_state": {
+        "visible": true,
+        "owner": "composer_prompt"
+      },
+      "expected_scroll_and_selection_state": {
+        "scroll_offset": 0,
+        "follow_mode": true,
+        "selection": null
+      },
+      "expected_overlays_and_z_order": [],
+      "expected_semantic_cell_artifact": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-startup-60x20-v8/terminal.txt",
+      "expected_png_artifact": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-startup-60x20-v8/terminal.png",
+      "expected_frame_sequence": "",
+      "timing_contract": null,
+      "owners": {
+        "fixture": "crates/harness-tui/tests/reference_parity_responsive_test.rs::startup_app",
+        "state_interaction_test": "crates/harness-tui/tests/reference_parity_responsive_test.rs::resp_60x20_startup_unboxed_welcome_keeps_composer_border",
+        "render_test": "crates/harness-tui/tests/reference_parity_responsive_test.rs::resp_60x20_startup_unboxed_welcome_keeps_composer_border",
+        "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::resp_60x20_pty",
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/compare-60x20-v8/masked.json"
+      },
+      "evidence_paths": {
+        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup-60x20/",
+        "L2": "artifacts/qa-evidence/20260717-tui-reference-parity/harness/RESP-60x20/cells/",
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-startup-60x20-v8/",
+        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/compare-60x20-precise-identity.json",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/compare-60x20-v8/masked.json",
+        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/startup-identity-field-mask.60x20.v1.json"
+      },
+      "identity_substitution": {
+        "fields": [
+          "logo_glyphs",
+          "product_title_text"
+        ],
+        "policy": "Harness logo/text only; geometry preserved",
+        "mask_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/startup-identity-field-mask.60x20.v1.json"
+      },
+      "deliberate_divergence_id": null,
+      "acceptance_gate_ids": [
+        "A-MANIFEST",
+        "A-REFERENCE",
+        "A-STATE",
+        "A-CELLS",
+        "A-PIXELS",
+        "A-PTY",
+        "A-INVARIANTS",
+        "A-NO-RESKIN"
+      ],
+      "status": "pass",
+      "notes": "Structural owner GREEN; masked A-PIXELS PASS (v6) with per-geometry identity mask. A-PTY still pending. v8 capture + masked A-PIXELS PASS (identity mask startup-identity-field-mask.60x20.v1.json); structural cell match OK except RESP-100x30 +1 vertical residual. A-PTY still pending \u2014 status remains incomplete. A-PTY owner wired (Startup-mode PTY at viewport). Masked A-PIXELS PASS (v8). Structural render owners GREEN. Status remains incomplete pending A-REVIEW/A-NO-RESKIN and full gate suite. Evidence L1-L6 wired (v8). Evidence honesty loop3: L1=freeze, L3=act, L4=pixel report, L6=identity mask (paths verified on disk). | status=pass: L5 masked exact_match (receipts/compare-60x20-v8/masked.json) 2026-07-19",
+      "slice": "scaffold",
+      "evidence": {
+        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup-60x20/",
+        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-startup-60x20-v8/",
+        "L4_pixel_diff": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/compare-60x20-v8/masked.json",
+        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/compact-viewport-v8-residual.md",
+        "L6_mask": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/startup-identity-field-mask.60x20.v1.json"
+      }
+    },
+    {
+      "behavior_id": "RESP-WIDE",
+      "requirement_id": "RESP-WIDE",
+      "priority": "P1",
+      "surface": "responsive",
+      "state": "viewport_wide_gt_120",
+      "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
+      "reference_receipt_id": "reference-freeze",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "preconditions": "Wide viewport greater than 120 columns (e.g. 140x40).",
+      "seeded_inputs": {
+        "viewport": "140x40"
+      },
+      "viewport": {
+        "cols": 140,
+        "rows": 40
+      },
+      "terminal_environment": {
+        "term": "xterm-256color",
+        "colorterm": "truecolor"
+      },
+      "input_sequence": [],
+      "capture_checkpoints": [],
+      "expected_focus_owner": "composer",
+      "expected_cursor_state": {
+        "visible": true,
+        "owner": "composer_prompt"
+      },
+      "expected_scroll_and_selection_state": {
+        "scroll_offset": 0,
+        "follow_mode": true,
+        "selection": null
+      },
+      "expected_overlays_and_z_order": [],
+      "expected_semantic_cell_artifact": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-startup-140x40-v8/terminal.txt",
+      "expected_png_artifact": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-startup-140x40-v8/terminal.png",
+      "expected_frame_sequence": "",
+      "timing_contract": null,
+      "owners": {
+        "fixture": "crates/harness-tui/tests/reference_parity_responsive_test.rs::startup_app",
+        "state_interaction_test": "crates/harness-tui/tests/reference_parity_responsive_test.rs::resp_wide_140x40_startup_keeps_bordered_welcome",
+        "render_test": "crates/harness-tui/tests/reference_parity_responsive_test.rs::resp_wide_140x40_startup_keeps_bordered_welcome",
+        "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::resp_wide_pty",
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/compare-140x40-v8/masked.json"
+      },
+      "evidence_paths": {
+        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup-140x40/",
+        "L2": "artifacts/qa-evidence/20260717-tui-reference-parity/harness/RESP-WIDE/cells/",
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-startup-140x40-v8/",
+        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/compare-140x40-precise-identity.json",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/compare-140x40-v8/masked.json",
+        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/startup-identity-field-mask.140x40.v1.json"
+      },
+      "identity_substitution": {
+        "fields": [
+          "logo_glyphs",
+          "product_title_text"
+        ],
+        "policy": "Harness logo/text only; geometry preserved",
+        "mask_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/startup-identity-field-mask.140x40.v1.json"
+      },
+      "deliberate_divergence_id": null,
+      "acceptance_gate_ids": [
+        "A-MANIFEST",
+        "A-REFERENCE",
+        "A-STATE",
+        "A-CELLS",
+        "A-PIXELS",
+        "A-PTY",
+        "A-INVARIANTS",
+        "A-NO-RESKIN"
+      ],
+      "status": "pass",
+      "notes": "Scaffold \u00a710 responsive wide (>120 cols). v8 capture + masked A-PIXELS PASS (identity mask startup-identity-field-mask.140x40.v1.json); structural cell match OK except RESP-100x30 +1 vertical residual. A-PTY still pending \u2014 status remains incomplete. A-PTY owner wired (Startup-mode PTY at viewport). Masked A-PIXELS PASS (v8). Structural render owners GREEN. Status remains incomplete pending A-REVIEW/A-NO-RESKIN and full gate suite. Evidence L1-L6 wired (v8). Evidence honesty loop3: L1=freeze, L3=act, L4=pixel report, L6=identity mask (paths verified on disk). | status=pass: L5 masked exact_match (receipts/compare-140x40-v8/masked.json) 2026-07-19",
+      "slice": "scaffold",
+      "evidence": {
+        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup-140x40/",
+        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-startup-140x40-v8/",
+        "L4_pixel_diff": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/compare-140x40-v8/masked.json",
+        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/compact-viewport-v8-residual.md",
+        "L6_mask": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/startup-identity-field-mask.140x40.v1.json"
+      }
+    },
+    {
+      "behavior_id": "JOURNEY-WORKTREE-CTRL-W",
+      "requirement_id": "JOURNEY-WORKTREE-CTRL-W",
+      "priority": "P1",
+      "surface": "journey.worktree",
+      "state": "ctrl_w_create_worktree_session",
+      "row_kind": "journey",
+      "journey_id": "JOURNEY-WORKTREE-CTRL-W",
+      "capability_id": "worktree.create",
+      "subsystem_id": "worktree",
+      "backend_owner": "crates/harness-core/src/worktree.rs",
+      "visible_action_id": "session.new.worktree",
+      "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
+      "reference_receipt_id": "reference-freeze",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "preconditions": "Git workspace with writable checkout; Ctrl+W / palette session.new.worktree path available.",
+      "seeded_inputs": {
+        "notes": "Journey inventory template; no seeded L1 freeze yet"
+      },
+      "viewport": {
+        "cols": 120,
+        "rows": 32
+      },
+      "terminal_environment": {
+        "term": "xterm-256color",
+        "colorterm": "truecolor"
+      },
+      "input_sequence": [],
+      "capture_checkpoints": [],
+      "expected_focus_owner": "composer",
+      "expected_cursor_state": {
+        "visible": true,
+        "owner": "composer_prompt"
+      },
+      "expected_scroll_and_selection_state": {
+        "scroll_offset": 0,
+        "follow_mode": true,
+        "selection": null
+      },
+      "expected_overlays_and_z_order": [],
+      "expected_semantic_cell_artifact": "",
+      "expected_png_artifact": "",
+      "expected_frame_sequence": "",
+      "timing_contract": null,
+      "owners": {
+        "fixture": "pending",
+        "state_interaction_test": "crates/harness/tests/journey_signoff_test.rs::journey_worktree_ctrl_w_owner_is_env_gated_dual_binary_pty",
+        "render_test": "pending",
+        "pty_test": "crates/harness/tests/pty_happy_path_recorded.rs::dual_binary_cli_pty_worktree_ctrl_w_creates_git_worktree",
+        "differential_evaluator": "pending"
+      },
+      "evidence_paths": {
+        "L1": "",
+        "L2": "crates/harness-tui/src/app/tests/lifecycle_shell_tests.rs",
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/journey-worktree-owner-v1",
+        "L4": "",
+        "L5": "crates/harness/tests/journey_signoff_test.rs",
+        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/loop15-worktree-pty-journey-v1.md"
+      },
+      "identity_substitution": {
+        "fields": [
+          "logo_glyphs",
+          "product_title_text"
+        ],
+        "policy": "Harness logo/text only; geometry preserved"
+      },
+      "deliberate_divergence_id": null,
+      "acceptance_gate_ids": [
+        "A-MANIFEST",
+        "A-CAPABILITIES",
+        "A-FUNCTIONAL",
+        "A-JOURNEYS",
+        "A-STATE",
+        "A-INVARIANTS",
+        "A-CORE-AUDIT",
+        "A-PTY"
+      ],
+      "status": "incomplete",
+      "notes": "Journey inventory template joining worktree.create + subsystem worktree. L1 empty (no freeze). L2=Ctrl+W/UiIntent state tests; L3=stable owner text artifact (not PNG); L4 empty; L5=journey_signoff_test owner; L6=worktree PTY receipt. Status incomplete; PTY owner env-gated HARNESS_TUI_PTY_SIGNOFF=1.",
+      "slice": "journey-template"
+    },
+    {
+      "behavior_id": "JOURNEY-CONFIG-SHOW-EFFECTIVE",
+      "requirement_id": "JOURNEY-CONFIG-SHOW-EFFECTIVE",
+      "priority": "P1",
+      "surface": "journey.config",
+      "state": "config_show_effective",
+      "row_kind": "journey",
+      "journey_id": "JOURNEY-CONFIG-SHOW-EFFECTIVE",
+      "capability_id": "config.show.effective",
+      "subsystem_id": "config_loader",
+      "backend_owner": "crates/harness/src/lib.rs",
+      "visible_action_id": "cli.config.show.effective",
+      "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
+      "reference_receipt_id": "reference-freeze",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "preconditions": "Valid harness.jsonc layered config; redacted effective output path.",
+      "seeded_inputs": {
+        "notes": "Journey inventory template; no seeded L1 freeze yet"
+      },
+      "viewport": {
+        "cols": 120,
+        "rows": 32
+      },
+      "terminal_environment": {
+        "term": "xterm-256color",
+        "colorterm": "truecolor"
+      },
+      "input_sequence": [],
+      "capture_checkpoints": [],
+      "expected_focus_owner": "composer",
+      "expected_cursor_state": {
+        "visible": true,
+        "owner": "composer_prompt"
+      },
+      "expected_scroll_and_selection_state": {
+        "scroll_offset": 0,
+        "follow_mode": true,
+        "selection": null
+      },
+      "expected_overlays_and_z_order": [],
+      "expected_semantic_cell_artifact": "",
+      "expected_png_artifact": "",
+      "expected_frame_sequence": "",
+      "timing_contract": null,
+      "owners": {
+        "fixture": "pending",
+        "state_interaction_test": "crates/harness/tests/journey_signoff_test.rs::journey_config_show_effective_cli_writes_artifact",
+        "render_test": "pending",
+        "pty_test": "pending",
+        "differential_evaluator": "pending"
+      },
+      "evidence_paths": {
+        "L1": "",
+        "L2": "crates/harness/src/lib.rs",
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/journey-config-show-effective-v1",
+        "L4": "",
+        "L5": "crates/harness/tests/journey_signoff_test.rs",
+        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/loop15-config-show-effective-v1.md"
+      },
+      "identity_substitution": {
+        "fields": [
+          "logo_glyphs",
+          "product_title_text"
+        ],
+        "policy": "Harness logo/text only; geometry preserved"
+      },
+      "deliberate_divergence_id": null,
+      "acceptance_gate_ids": [
+        "A-MANIFEST",
+        "A-CAPABILITIES",
+        "A-FUNCTIONAL",
+        "A-JOURNEYS",
+        "A-STATE",
+        "A-INVARIANTS",
+        "A-CONFIG-SCHEMA"
+      ],
+      "status": "incomplete",
+      "notes": "Journey inventory template for config.show.effective / config_loader. L1 empty (no freeze). L2=lib config_show unit state tests; L3=stable CLI stdout/stderr text capture from journey_signoff_test; L4 empty; L5=owner test; L6=config-show receipt. Status incomplete until full L1-L6 chain.",
+      "slice": "journey-template"
+    },
+    {
+      "behavior_id": "JOURNEY-CONFIG-SOURCES-EXPLAIN",
+      "requirement_id": "JOURNEY-CONFIG-SOURCES-EXPLAIN",
+      "priority": "P1",
+      "surface": "journey.config",
+      "state": "config_sources_and_explain",
+      "row_kind": "journey",
+      "journey_id": "JOURNEY-CONFIG-SOURCES-EXPLAIN",
+      "capability_id": "config.sources",
+      "subsystem_id": "config_loader",
+      "backend_owner": "crates/harness/src/lib.rs",
+      "visible_action_id": "cli.config.sources_and_explain",
+      "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
+      "reference_receipt_id": "reference-freeze",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "preconditions": "Layered config discovery; config sources + explain <path> path.",
+      "seeded_inputs": {
+        "notes": "Journey inventory template; no seeded L1 freeze yet"
+      },
+      "viewport": {
+        "cols": 120,
+        "rows": 32
+      },
+      "terminal_environment": {
+        "term": "xterm-256color",
+        "colorterm": "truecolor"
+      },
+      "input_sequence": [],
+      "capture_checkpoints": [],
+      "expected_focus_owner": "composer",
+      "expected_cursor_state": {
+        "visible": true,
+        "owner": "composer_prompt"
+      },
+      "expected_scroll_and_selection_state": {
+        "scroll_offset": 0,
+        "follow_mode": true,
+        "selection": null
+      },
+      "expected_overlays_and_z_order": [],
+      "expected_semantic_cell_artifact": "",
+      "expected_png_artifact": "",
+      "expected_frame_sequence": "",
+      "timing_contract": null,
+      "owners": {
+        "fixture": "pending",
+        "state_interaction_test": "crates/harness/tests/journey_signoff_test.rs::journey_config_sources_cli_writes_artifact;journey_config_explain_cli_writes_artifact",
+        "render_test": "pending",
+        "pty_test": "pending",
+        "differential_evaluator": "pending"
+      },
+      "evidence_paths": {
+        "L1": "",
+        "L2": "crates/harness/src/lib.rs",
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/journey-config-sources-explain-v1",
+        "L4": "",
+        "L5": "crates/harness/tests/journey_signoff_test.rs",
+        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/loop15-config-sources-explain-v1.md"
+      },
+      "identity_substitution": {
+        "fields": [
+          "logo_glyphs",
+          "product_title_text"
+        ],
+        "policy": "Harness logo/text only; geometry preserved"
+      },
+      "deliberate_divergence_id": null,
+      "acceptance_gate_ids": [
+        "A-MANIFEST",
+        "A-CAPABILITIES",
+        "A-FUNCTIONAL",
+        "A-JOURNEYS",
+        "A-STATE",
+        "A-INVARIANTS",
+        "A-CONFIG-SCHEMA"
+      ],
+      "status": "incomplete",
+      "notes": "Journey inventory template covering config.sources / config.explain. L1 empty (no freeze). L2=lib config_sources/explain unit state tests; L3=stable CLI text captures (sources+explain); L4 empty; L5=owner test; L6=sources-explain receipt. Status incomplete.",
+      "slice": "journey-template"
+    },
+    {
+      "behavior_id": "JOURNEY-WAIT-ANY-ALL",
+      "requirement_id": "JOURNEY-WAIT-ANY-ALL",
+      "priority": "P1",
+      "surface": "journey.orchestration",
+      "state": "background_output_wait_any_all",
+      "row_kind": "journey",
+      "journey_id": "JOURNEY-WAIT-ANY-ALL",
+      "capability_id": "orchestration.wait_any",
+      "subsystem_id": "orchestration",
+      "backend_owner": "crates/harness-tools/src/agent_ops/background.rs",
+      "visible_action_id": "background_output",
+      "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
+      "reference_receipt_id": "reference-freeze",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "preconditions": "Authorized background children; background_output multi-id wait_mode any/all path.",
+      "seeded_inputs": {
+        "notes": "Journey inventory template; no seeded L1 freeze yet"
+      },
+      "viewport": {
+        "cols": 120,
+        "rows": 32
+      },
+      "terminal_environment": {
+        "term": "xterm-256color",
+        "colorterm": "truecolor"
+      },
+      "input_sequence": [],
+      "capture_checkpoints": [],
+      "expected_focus_owner": "composer",
+      "expected_cursor_state": {
+        "visible": true,
+        "owner": "composer_prompt"
+      },
+      "expected_scroll_and_selection_state": {
+        "scroll_offset": 0,
+        "follow_mode": true,
+        "selection": null
+      },
+      "expected_overlays_and_z_order": [],
+      "expected_semantic_cell_artifact": "",
+      "expected_png_artifact": "",
+      "expected_frame_sequence": "",
+      "timing_contract": null,
+      "owners": {
+        "fixture": "pending",
+        "state_interaction_test": "crates/harness-core/src/coord/background_notifications.rs::wait_mode_tests",
+        "render_test": "pending",
+        "pty_test": "pending",
+        "differential_evaluator": "pending"
+      },
+      "evidence_paths": {
+        "L1": "",
+        "L2": "crates/harness-core/src/coord/background_notifications.rs",
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/journey-wait-any-all-v1",
+        "L4": "",
+        "L5": "crates/harness-tools/tests/native_agent_spawn_and_batch_preserve_lineage_permissions_and_order/10_background_output_wait_any_all_test.rs",
+        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/loop15-journey-surface-evidence-v1.md"
+      },
+      "identity_substitution": {
+        "fields": [
+          "logo_glyphs",
+          "product_title_text"
+        ],
+        "policy": "Harness logo/text only; geometry preserved"
+      },
+      "deliberate_divergence_id": null,
+      "acceptance_gate_ids": [
+        "A-MANIFEST",
+        "A-CAPABILITIES",
+        "A-FUNCTIONAL",
+        "A-JOURNEYS",
+        "A-STATE",
+        "A-INVARIANTS",
+        "A-CORE-AUDIT"
+      ],
+      "status": "incomplete",
+      "notes": "Real offline surface: journey_signoff runs harness-tools wait-any/all integration owner and writes L3 under actual/journey-wait-any-all-v1. L1 empty (no freeze). L2=coord wait_mode unit predicates; L4 empty; L5=tools multi-wait integration; L6=surface evidence receipt. Status incomplete. No A-PIXELS.",
+      "slice": "journey-template"
+    },
+    {
+      "behavior_id": "JOURNEY-FOLDER-TRUST-DENY",
+      "requirement_id": "JOURNEY-FOLDER-TRUST-DENY",
+      "priority": "P1",
+      "surface": "journey.workspace",
+      "state": "folder_trust_deny_before_spawn",
+      "row_kind": "journey",
+      "journey_id": "JOURNEY-FOLDER-TRUST-DENY",
+      "capability_id": "workspace.folder_trust",
+      "subsystem_id": "folder_trust",
+      "backend_owner": "crates/harness-core/src/folder_trust/mod.rs",
+      "visible_action_id": null,
+      "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
+      "reference_receipt_id": "reference-freeze",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "preconditions": "Workspace with .agent-harness folder-trust store; repo-local executable spawn path.",
+      "seeded_inputs": {
+        "notes": "Journey inventory template; no seeded L1 freeze yet"
+      },
+      "viewport": {
+        "cols": 120,
+        "rows": 32
+      },
+      "terminal_environment": {
+        "term": "xterm-256color",
+        "colorterm": "truecolor"
+      },
+      "input_sequence": [],
+      "capture_checkpoints": [],
+      "expected_focus_owner": "composer",
+      "expected_cursor_state": {
+        "visible": true,
+        "owner": "composer_prompt"
+      },
+      "expected_scroll_and_selection_state": {
+        "scroll_offset": 0,
+        "follow_mode": true,
+        "selection": null
+      },
+      "expected_overlays_and_z_order": [],
+      "expected_semantic_cell_artifact": "",
+      "expected_png_artifact": "",
+      "expected_frame_sequence": "",
+      "timing_contract": null,
+      "owners": {
+        "fixture": "pending",
+        "state_interaction_test": "crates/harness-core/src/folder_trust/mod.rs::folder_trust_persists_allow_and_deny",
+        "render_test": "pending",
+        "pty_test": "pending",
+        "differential_evaluator": "pending"
+      },
+      "evidence_paths": {
+        "L1": "",
+        "L2": "crates/harness-core/src/folder_trust/mod.rs",
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/journey-folder-trust-deny-v1",
+        "L4": "",
+        "L5": "crates/harness-tools/src/shell_safety.rs",
+        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/loop15-journey-surface-evidence-v1.md"
+      },
+      "identity_substitution": {
+        "fields": [
+          "logo_glyphs",
+          "product_title_text"
+        ],
+        "policy": "Harness logo/text only; geometry preserved"
+      },
+      "deliberate_divergence_id": null,
+      "acceptance_gate_ids": [
+        "A-MANIFEST",
+        "A-CAPABILITIES",
+        "A-FUNCTIONAL",
+        "A-JOURNEYS",
+        "A-STATE",
+        "A-INVARIANTS",
+        "A-CORE-AUDIT"
+      ],
+      "status": "incomplete",
+      "notes": "Real offline surface: journey_signoff documents deny-before-spawn via core gate + shell_safety owner path; L3 under actual/journey-folder-trust-deny-v1. L1 empty (no freeze). L2=core allow/deny persistence tests; L4 empty; L5=shell_safety bash deny when trust missing; L6=surface evidence receipt. Status incomplete. No A-PIXELS.",
+      "slice": "journey-template"
+    },
+    {
+      "behavior_id": "JOURNEY-MEMORY-CLI",
+      "requirement_id": "JOURNEY-MEMORY-CLI",
+      "priority": "P1",
+      "surface": "journey.memory",
+      "state": "memory_cli_put_get_list_search",
+      "row_kind": "journey",
+      "journey_id": "JOURNEY-MEMORY-CLI",
+      "capability_id": "memory.durable_product_surface",
+      "subsystem_id": "memory",
+      "backend_owner": "crates/harness/src/memory_cmd.rs",
+      "visible_action_id": "context.memory",
+      "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
+      "reference_receipt_id": "reference-freeze",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "preconditions": "Writable workspace; harness memory put/get/list/search CLI product surface.",
+      "seeded_inputs": {
+        "notes": "Journey inventory template; no seeded L1 freeze yet"
+      },
+      "viewport": {
+        "cols": 120,
+        "rows": 32
+      },
+      "terminal_environment": {
+        "term": "xterm-256color",
+        "colorterm": "truecolor"
+      },
+      "input_sequence": [],
+      "capture_checkpoints": [],
+      "expected_focus_owner": "composer",
+      "expected_cursor_state": {
+        "visible": true,
+        "owner": "composer_prompt"
+      },
+      "expected_scroll_and_selection_state": {
+        "scroll_offset": 0,
+        "follow_mode": true,
+        "selection": null
+      },
+      "expected_overlays_and_z_order": [],
+      "expected_semantic_cell_artifact": "",
+      "expected_png_artifact": "",
+      "expected_frame_sequence": "",
+      "timing_contract": null,
+      "owners": {
+        "fixture": "pending",
+        "state_interaction_test": "crates/harness/src/memory_cmd.rs::put_get_list_roundtrip_via_cli_handlers",
+        "render_test": "pending",
+        "pty_test": "pending",
+        "differential_evaluator": "pending"
+      },
+      "evidence_paths": {
+        "L1": "",
+        "L2": "crates/harness-core/src/memory.rs",
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/journey-memory-cli-v1",
+        "L4": "",
+        "L5": "crates/harness/src/memory_cmd.rs",
+        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/loop15-journey-surface-evidence-v1.md"
+      },
+      "identity_substitution": {
+        "fields": [
+          "logo_glyphs",
+          "product_title_text"
+        ],
+        "policy": "Harness logo/text only; geometry preserved"
+      },
+      "deliberate_divergence_id": null,
+      "acceptance_gate_ids": [
+        "A-MANIFEST",
+        "A-CAPABILITIES",
+        "A-FUNCTIONAL",
+        "A-JOURNEYS",
+        "A-STATE",
+        "A-INVARIANTS",
+        "A-CORE-AUDIT"
+      ],
+      "status": "incomplete",
+      "notes": "Real offline surface: journey_signoff runs harness binary memory put/get/list (fail-closed if binary missing) into actual/journey-memory-cli-v1. L1 empty (no freeze). L2=core DurableMemoryStore; L4 empty; L5=memory_cmd CLI handlers; L6=surface evidence receipt. Status incomplete. No A-PIXELS.",
+      "slice": "journey-template"
+    },
+    {
+      "behavior_id": "JOURNEY-ALWAYS-APPROVE-MODE",
+      "requirement_id": "JOURNEY-ALWAYS-APPROVE-MODE",
+      "priority": "P1",
+      "surface": "journey.permissions",
+      "state": "always_approve_mode_session_flag",
+      "row_kind": "journey",
+      "journey_id": "JOURNEY-ALWAYS-APPROVE-MODE",
+      "capability_id": "permission.always_approve_mode",
+      "subsystem_id": "permissions",
+      "backend_owner": "crates/harness-tui/src/app.rs",
+      "visible_action_id": null,
+      "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
+      "reference_receipt_id": "reference-freeze",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "preconditions": "Live shell with pending non-question permission; Ctrl+O AlwaysApprovePermission path.",
+      "seeded_inputs": {
+        "notes": "Journey inventory template; no seeded L1 freeze yet"
+      },
+      "viewport": {
+        "cols": 120,
+        "rows": 32
+      },
+      "terminal_environment": {
+        "term": "xterm-256color",
+        "colorterm": "truecolor"
+      },
+      "input_sequence": [],
+      "capture_checkpoints": [],
+      "expected_focus_owner": "composer",
+      "expected_cursor_state": {
+        "visible": true,
+        "owner": "composer_prompt"
+      },
+      "expected_scroll_and_selection_state": {
+        "scroll_offset": 0,
+        "follow_mode": true,
+        "selection": null
+      },
+      "expected_overlays_and_z_order": [],
+      "expected_semantic_cell_artifact": "",
+      "expected_png_artifact": "",
+      "expected_frame_sequence": "",
+      "timing_contract": null,
+      "owners": {
+        "fixture": "pending",
+        "state_interaction_test": "crates/harness-tui/src/app/tests/permission_modal_tests.rs::always_approve_mode_auto_allows_subsequent_non_question_permission",
+        "render_test": "pending",
+        "pty_test": "pending",
+        "differential_evaluator": "pending"
+      },
+      "evidence_paths": {
+        "L1": "",
+        "L2": "crates/harness-tui/src/app/tests/permission_modal_tests.rs",
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/journey-always-approve-mode-v1",
+        "L4": "",
+        "L5": "crates/harness-tui/src/keybindings/tests.rs",
+        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/loop15-journey-always-settings-l3-v1.md"
+      },
+      "identity_substitution": {
+        "fields": [
+          "logo_glyphs",
+          "product_title_text"
+        ],
+        "policy": "Harness logo/text only; geometry preserved"
+      },
+      "deliberate_divergence_id": null,
+      "acceptance_gate_ids": [
+        "A-MANIFEST",
+        "A-CAPABILITIES",
+        "A-FUNCTIONAL",
+        "A-JOURNEYS",
+        "A-STATE",
+        "A-INVARIANTS",
+        "A-CORE-AUDIT"
+      ],
+      "status": "incomplete",
+      "notes": "Journey inventory for permission.always_approve_mode. L1 empty (no freeze). L2=permission modal state tests; L3=AppState AlwaysConfirm + badge render dump; L4 empty; L5=keybinding AlwaysApprovePermission binding tests; L6=always-settings L3 receipt. Status incomplete.",
+      "slice": "journey-template"
+    },
+    {
+      "behavior_id": "JOURNEY-SETTINGS-EDITOR",
+      "requirement_id": "JOURNEY-SETTINGS-EDITOR",
+      "priority": "P1",
+      "surface": "journey.tui",
+      "state": "settings_editor_open_list_close",
+      "row_kind": "journey",
+      "journey_id": "JOURNEY-SETTINGS-EDITOR",
+      "capability_id": "tui.settings_editor",
+      "subsystem_id": "tui_settings",
+      "backend_owner": "crates/harness-tui/src/app/settings_editor.rs",
+      "visible_action_id": "open_settings",
+      "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
+      "reference_receipt_id": "reference-freeze",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "preconditions": "TUI shell with settings_registry rows; /settings or Action::OpenSettings path.",
+      "seeded_inputs": {
+        "notes": "Journey inventory template; no seeded L1 freeze yet"
+      },
+      "viewport": {
+        "cols": 120,
+        "rows": 32
+      },
+      "terminal_environment": {
+        "term": "xterm-256color",
+        "colorterm": "truecolor"
+      },
+      "input_sequence": [],
+      "capture_checkpoints": [],
+      "expected_focus_owner": "composer",
+      "expected_cursor_state": {
+        "visible": true,
+        "owner": "composer_prompt"
+      },
+      "expected_scroll_and_selection_state": {
+        "scroll_offset": 0,
+        "follow_mode": true,
+        "selection": null
+      },
+      "expected_overlays_and_z_order": [],
+      "expected_semantic_cell_artifact": "",
+      "expected_png_artifact": "",
+      "expected_frame_sequence": "",
+      "timing_contract": null,
+      "owners": {
+        "fixture": "pending",
+        "state_interaction_test": "crates/harness-tui/src/app/tests/settings_editor_tests.rs::settings_editor_opens_and_lists_registry_rows",
+        "render_test": "pending",
+        "pty_test": "pending",
+        "differential_evaluator": "pending"
+      },
+      "evidence_paths": {
+        "L1": "",
+        "L2": "crates/harness-tui/src/app/tests/settings_editor_tests.rs",
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/journey-settings-editor-v1",
+        "L4": "",
+        "L5": "crates/harness-tui/src/app/tests/settings_editor_tests.rs",
+        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/loop15-journey-always-settings-l3-v1.md"
+      },
+      "identity_substitution": {
+        "fields": [
+          "logo_glyphs",
+          "product_title_text"
+        ],
+        "policy": "Harness logo/text only; geometry preserved"
+      },
+      "deliberate_divergence_id": null,
+      "acceptance_gate_ids": [
+        "A-MANIFEST",
+        "A-CAPABILITIES",
+        "A-FUNCTIONAL",
+        "A-JOURNEYS",
+        "A-STATE",
+        "A-INVARIANTS",
+        "A-CONFIG-SCHEMA"
+      ],
+      "status": "incomplete",
+      "notes": "Journey inventory for tui.settings_editor. L1 empty (no freeze). L2/L5=settings_editor_tests; L3=AppState /settings overlay + registry rows text dump; L4 empty; L6=always-settings L3 receipt. Status incomplete.",
+      "slice": "journey-template"
+    }
+  ]
+}

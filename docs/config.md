@@ -364,6 +364,70 @@ substitution is performed.
 Note: `apiKeyEnv` in provider config is a separate mechanism (multi-env
 fallback chain with credential redaction) — it is NOT the same as `{env:VAR}`.
 
+## Effective config inspection
+
+Print the merged runtime config after discovery, layer merge, and session-dir
+overrides:
+
+```bash
+cargo run -p harness -- --config configs/harness.example.jsonc config show --effective
+cargo run -p harness -- --config configs/harness.example.jsonc config sources
+cargo run -p harness -- --config configs/harness.example.jsonc config explain model
+```
+
+### `config show --effective`
+
+Output is a JSON envelope:
+
+- `schema_version`: `harness-config-effective-v1`
+- `redacted`: always `true` for this command
+- `layers`: discovered config file paths in merge order
+- `primary_path`: highest-precedence runtime config path when present (TUI-only
+  paths remain listed under `layers`)
+- `effective`: the merged config value after secret redaction
+
+Secret-bearing fields (for example `apiKey`) are replaced with redaction
+markers. `config show` without `--effective` exits with usage status `2`.
+
+### `config sources`
+
+Lists discovered layers in merge order (`harness-config-sources-v1`):
+
+- `order`, `path`, `exists`, `kind` (`runtime` or `tui`), `primary`
+- `merge_order` documents that later layers override earlier ones
+
+### `config explain <path>`
+
+Explains one dotted public path (for example `model` or
+`provider.default.options.apiKey`) as `harness-config-explain-v1`:
+
+- `found`, `effective` (redacted), `source_path` (last layer that defines the path)
+- per-layer `defines_path` / redacted `value` rows for attribution
+- empty path exits with usage status `2`
+
+### Settings registry
+
+Typed per-setting metadata lives in
+`harness_core::config::settings_registry` and complements the public runtime/TUI
+contracts (it does not merge them). List the registry without loading a config
+file or printing secret values:
+
+```bash
+cargo run -p harness -- config settings
+```
+
+Output is `harness-settings-registry-v1`:
+
+- `setting_count` plus `settings[]` entries with `setting_id`, `schema_id`,
+  `surface` (`runtime`|`tui`), `sensitivity` (`public`|`redacted`|`secret`),
+  and `metadata_only`
+- No default values or secret material are emitted
+- `metadata_only: true` marks product stubs (for example worktree parent path
+  defaults) that are not yet public `harness.json` / `tui.json` keys
+
+Library entry points: `settings_registry()`, `setting_definition()`,
+`settings_registry_json()`, `is_metadata_only_setting()`.
+
 ## Config layering
 
 The harness discovers and merges config from multiple sources. Later layers

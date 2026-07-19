@@ -10,10 +10,9 @@ Provider requests flow through configured provider/model ids, the coordinator, a
 
 The runtime does not implement new provider protocols in this slice. Doctor validates local configuration and credential presence but does not prove authentication because it makes no provider call.
 
-Optional local free live targets (for example Ollama) are **deferred** as a non-CI residual path
-(WS-L4). They are not a CI default, not part of `signoff-live`, and not required for quality
-gates. Document or script them only as maintainer-opt-in dogfood. See
-`docs/harness-live-agent-testing-prd.md` workstream WS-L4.
+Optional local free live targets (for example Ollama) are **deferred** as a non-CI residual path.
+They are not a CI default, not part of `signoff-live`, and not required for quality gates.
+Document or script them only as maintainer-opt-in dogfood.
 
 ## Fallback policy
 

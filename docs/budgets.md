@@ -34,12 +34,8 @@ Binary size is recorded as a documented limitation in this slice. A final-slice 
 
 ## Evidence policy
 
-Every performance claim in README or release docs must point to a fresh artifact or be softened to a limitation in `docs/claim-evidence-matrix.md`.
+Every performance claim in README or release docs must point to a fresh lane artifact under the perf stage directory (or be removed/softened). Do not reintroduce claim ledgers or PRD checkboxes.
 
 ## Anti-gaming policy
 
 Budgets are checked against current commands and artifacts. Do not add JSON baselines or allowlists that grandfather old measurements. A failing budget means the code or the claim changes, not the gate.
-
-## Progress-log requirement
-
-When a budget command passes, record the command, elapsed or measured value, artifact path, timestamp, and environment in `docs/claim-evidence-matrix.md` before checking any PRD or roadmap box.

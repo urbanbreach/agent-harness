@@ -15,6 +15,8 @@ scripts/test-lanes.sh signoff-binary
 scripts/test-lanes.sh signoff-pty
 scripts/test-lanes.sh signoff-live
 scripts/test-lanes.sh signoff-native
+scripts/test-lanes.sh signoff-parity
+scripts/test-lanes.sh signoff-journeys
 scripts/test-lanes.sh stress-offline
 scripts/test-lanes.sh stress-live
 scripts/test-lanes.sh all-deterministic
@@ -234,17 +236,35 @@ anything that needs the deterministic headless UI oracle:
 scripts/test-lanes.sh signoff-pty
 ```
 
+`signoff-pty` is a **strict fail-closed** lane (no soft `|| true` stages). Missing owners,
+missing `cargo`, stage failures, or dual-binary journey failures fail the run and write
+`pty-lane-verdict.txt`. Silent skip is forbidden.
+
 This lane runs the PTY E2E tests single-threaded and writes manifest-backed visual evidence under
 the configured artifact root. Legacy committed harness-testkit PTY snapshots were removed during
 T5 slimming; current PTY evidence is generated under `target/pty-visual-artifacts/`, while retained
 committed snapshots are owned by harness-tui deterministic snapshot tests. The harness-tui PTY test
 target is fail-closed behind `HARNESS_TUI_PTY_SIGNOFF=1`, so ordinary
 `cargo nextest run -p harness-tui --test pty_e2e` remains a fast non-terminal helper check while the
-signoff lane opts into the real PTY captures. Do not parallelize PTY signoff. For a combined
-deterministic closeout, use:
+signoff lane opts into the real PTY captures. Do not parallelize PTY signoff.
+
+Fail-closed stages (no `|| true`):
+
+| Stage | What it proves |
+|-------|----------------|
+| `pty_prerequisites` | owner files exist; `cargo` on `PATH` (missing owner = FAIL) |
+| `harness_testkit_pty_e2e` | testkit PTY E2E + visual artifact provenance |
+| `harness_tui_pty_e2e` | harness-tui PTY E2E under `HARNESS_TUI_PTY_SIGNOFF=1` |
+| `harness_tui_happy_path_pty` | compiled `harness` CLI mock happy path (`pty_happy_path_recorded`) |
+| `harness_tui_dual_binary_cli_pty` | compiled CLI dual-binary structural smokes (`dual_binary_cli_pty_*`, 12): startup, overlay keybinds, secondary surfaces (status/model/toggles), scenario permission allow+deny, scenario question open+resolve, scenario auto-complete, mock success+fail chrome, Ctrl+W worktree create, Ctrl+S resume seeded session — under `HARNESS_TUI_PTY_SIGNOFF=1` + strict |
+| Aggregate `pty-lane-verdict.txt` | machine-readable PASS/FAIL under dual-binary stage artifacts |
+
+For a combined deterministic closeout, use:
 
 - `env RUST_TEST_THREADS=1 cargo nextest run -p harness-testkit --test pty_e2e --test-threads 1`
 - `env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 cargo nextest run -p harness-tui --test pty_e2e --test-threads 1`
+- `env RUST_TEST_THREADS=1 HARNESS_TUI_HAPPY_PATH_ARTIFACT_DIR=<dir> cargo nextest run -p harness --test pty_happy_path_recorded --test-threads 1 -- --ignored --exact scripted_tui_happy_path_records_start_prompt_permission_tool_edit_resume_and_quit`
+- `env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 HARNESS_TUI_PARITY_STRICT=1 HARNESS_TUI_HAPPY_PATH_ARTIFACT_DIR=<dir> cargo nextest run -p harness --test pty_happy_path_recorded --test-threads 1 -- --ignored dual_binary_cli_pty`
 
 The strict-V1 TUI signoff manifest is checked in at
 [`docs/tui-signoff-manifest.v1.json`](tui-signoff-manifest.v1.json). Its schema version is
@@ -357,6 +377,89 @@ Open-ended live freestyle eval missions (for example benchmark sweeps or open-en
 missions) are **rejected as CI or release proof** for V1. Local human experimentation is fine, but
 it is not evidence for release readiness.
 
+## Strict A-JOURNEYS scaffolding lane
+
+`signoff-journeys` is a **strict fail-closed** lane for journey-template rows in
+[`docs/tui-reference-parity-manifest.v1.json`](tui-reference-parity-manifest.v1.json):
+
+- `JOURNEY-CONFIG-SHOW-EFFECTIVE` — real-process `harness config show --effective`
+- `JOURNEY-CONFIG-SOURCES-EXPLAIN` — real-process `harness config sources` + `config explain`
+- `JOURNEY-WORKTREE-CTRL-W` — owner documented only; dual-binary PTY remains
+  `HARNESS_TUI_PTY_SIGNOFF=1` via `pty_happy_path_recorded::dual_binary_cli_pty_worktree_ctrl_w_creates_git_worktree`
+- `JOURNEY-WAIT-ANY-ALL` — owner-doc only (`orchestration.wait_any` / wait-all L2/L5/L6)
+- `JOURNEY-FOLDER-TRUST-DENY` — owner-doc only (`workspace.folder_trust`)
+- `JOURNEY-MEMORY-CLI` — owner-doc only (`memory.durable_product_surface`)
+- `JOURNEY-ALWAYS-APPROVE-MODE` — owner-doc only (`permission.always_approve_mode`)
+- `JOURNEY-SETTINGS-EDITOR` — owner-doc only (`tui.settings_editor`)
+
+```bash
+scripts/test-lanes.sh signoff-journeys
+scripts/test-lanes.sh signoff-journeys --dry-run
+```
+
+Ownership:
+
+- **Owns:** offline deterministic CLI journey evidence + worktree owner documentation for A-JOURNEYS
+  scaffolding (`crates/harness/tests/journey_signoff_test.rs`).
+- **Does not own:** full L1–L6 freeze/pixel/PTY chains, `signoff-parity` cells/pixels, or flipping
+  journey rows to `pass` without the complete evidence chain.
+
+Fail-closed stages (no `|| true`):
+
+- Prerequisites: `journey_signoff_test.rs` must exist; `cargo` on `PATH` (missing owner = FAIL)
+- `cargo nextest run -p harness --test journey_signoff_test` with
+  `HARNESS_JOURNEY_ARTIFACT_DIR` pointing at the lane artifact tree
+- Aggregate `journey-lane-verdict.txt` under the lane artifact tree
+
+Missing compiled harness binary fails the owner tests (no skip). Journey rows stay `incomplete`
+until L1–L6 are complete; this lane only scaffolds L5/L6 owners.
+
+## Strict dual-binary reference parity lane
+
+`signoff-parity` is the **strict fail-closed** lane for dual-binary TUI reference parity (semantic
+cells and rendered pixels). It does **not** use the soft `|| true` stage pattern of other lanes:
+missing prerequisites, missing owners, timeouts, or stage failures fail the run. Silent skip is
+forbidden.
+
+```bash
+scripts/test-lanes.sh signoff-parity
+scripts/test-lanes.sh signoff-parity --dry-run
+```
+
+Ownership:
+
+- **Owns:** dual-binary cells/pixels acceptance against
+  [`docs/tui-reference-parity-manifest.v1.json`](tui-reference-parity-manifest.v1.json) (independent
+  of the older signoff manifest).
+- **Does not own:** [`docs/tui-signoff-manifest.v1.json`](tui-signoff-manifest.v1.json) flow
+  coverage — that remains with `signoff-pty` / `tui_signoff_manifest_test` and is not a dual-binary
+  cells/pixels gate.
+
+Current fail-closed stages (no `|| true`):
+
+- Prerequisites gate: independent reference-parity manifest path must exist; `cargo` must be on
+  `PATH`; all owner test files listed below must exist (missing owner = FAIL, not skip).
+- `test -f docs/tui-reference-parity-manifest.v1.json`
+- `cargo nextest run -p harness-tui --test reference_parity_manifest_test`
+- `cargo nextest run -p harness-tui --test p0_parity_contract_test`
+- `cargo nextest run -p harness-tui --test shell_topology_contract_test`
+- `HARNESS_TUI_PARITY_STRICT=1 cargo nextest run -p harness-tui --test reference_parity_cells_test`
+  (missing freeze/actual cell evidence fails closed; soft-skip forbidden)
+- `HARNESS_TUI_PARITY_STRICT=1 cargo nextest run -p harness-tui --test reference_parity_pixels_test`
+  (missing freeze PNG evidence fails closed)
+- `HARNESS_TUI_PARITY_STRICT=1 cargo nextest run -p harness-tui --test reference_parity_first_slice_test`
+- `HARNESS_TUI_PARITY_STRICT=1 cargo nextest run -p harness-tui --test reference_parity_perm_question_test`
+- `HARNESS_TUI_PARITY_STRICT=1 cargo nextest run -p harness-tui --test reference_parity_tx_shell_test`
+- `HARNESS_TUI_PARITY_STRICT=1 cargo nextest run -p harness-tui --test reference_parity_responsive_test`
+- `HARNESS_TUI_PTY_SIGNOFF=1 HARNESS_TUI_PARITY_STRICT=1 cargo nextest run -p harness-tui --test reference_parity_pty_test`
+  (forces PTY owners on; silent no-op without the env is forbidden in this lane)
+- Aggregate `parity-lane-verdict.txt` under the lane artifact tree, including an explicit
+  `stages=` list of the owners that ran
+
+`--dry-run` still records the same stage command shape without executing. Optional live/native
+lanes (`signoff-live`, `signoff-native`) and developer lanes (`fast`, …) keep soft-stage semantics.
+`signoff-pty` is fail-closed (see Deterministic signoff PTY lane).
+
 ## Binary shim smoke
 
 The single real-process CLI shim smoke is ignored by default and excluded from the deterministic
@@ -453,6 +556,8 @@ Current invariant owners:
 | Deterministic UI content rendering, transcript layout, and navigation | `cargo nextest run -p harness-tui --test deterministic_render_test`; `cargo nextest run -p harness-tui --test lineage_view_model_test`; `cargo nextest run -p harness-tui --test model_switcher_metadata_test`; `cargo nextest run -p harness-tui --test session_navigation_keybindings_test`; `cargo nextest run -p harness-tui --test pty_e2e` as the fail-closed helper lane |
 | TUI signoff manifest and visual/provenance flow coverage | `cargo nextest run -p harness-tui --test deterministic_render_test tui_signoff_manifest_covers_required_release_flows`; `env RUST_TEST_THREADS=1 cargo nextest run -p harness-testkit --test pty_e2e --test-threads 1 pty_signoff_manifest_declares_required_flow_artifacts`; `scripts/test-lanes.sh signoff-pty` |
 | Live, PTY, native visual provenance contracts | `scripts/test-lanes.sh signoff-pty`; `scripts/test-lanes.sh signoff-live`; `scripts/test-lanes.sh signoff-native` as opt-in T5 lanes only |
+| Dual-binary TUI reference parity (cells/pixels) | `scripts/test-lanes.sh signoff-parity` (strict fail-closed; owns `docs/tui-reference-parity-manifest.v1.json`). Does **not** use `tui-signoff-manifest.v1.json`. |
+| A-JOURNEYS scaffolding (config CLI + worktree owner doc) | `scripts/test-lanes.sh signoff-journeys` (strict fail-closed; owns `crates/harness/tests/journey_signoff_test.rs`). Rows stay `incomplete` until full L1–L6. |
 
 Retired harness-tui PTY helper scenario owners:
 
