@@ -182,6 +182,11 @@ impl<T: AcpTransport> AcpConnection<T> {
     /// Bind a local session while Connected.
     ///
     /// This is coordinator-owned bookkeeping only — not full ACP initialize protocol.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `session` is `None` after being set (invariant: session is set
+    /// immediately before this call returns).
     pub fn bind_session(
         &mut self,
         agent_name: impl Into<String>,
@@ -206,7 +211,11 @@ impl<T: AcpTransport> AcpConnection<T> {
             session_id,
             agent_name,
         });
-        Ok(self.session.as_ref().expect("session just bound"))
+        #[allow(
+            clippy::unwrap_used,
+            reason = "session is set immediately above; None is a logical invariant violation"
+        )]
+        Ok(self.session.as_ref().unwrap())
     }
 
     /// Transition Disconnected|Failed → Connecting → Connected|Failed.

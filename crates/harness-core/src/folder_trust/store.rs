@@ -206,7 +206,7 @@ fn workspace_key(workspace_root: &Path) -> String {
 fn now_unix_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_millis() as u64)
+        .map(|duration| u64::try_from(duration.as_millis()).unwrap_or(0))
         .unwrap_or(0)
 }
 

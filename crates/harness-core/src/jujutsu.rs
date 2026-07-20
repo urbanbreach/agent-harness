@@ -434,7 +434,7 @@ pub fn write_jujutsu_diagnostic_receipt(
         last_command: walk.last_command.clone(),
         receipt_path: receipt_path.display().to_string(),
     };
-    let body = serde_json::to_string_pretty(&receipt).map_err(|err| std::io::Error::other(err))?;
+    let body = serde_json::to_string_pretty(&receipt).map_err(std::io::Error::other)?;
     std::fs::write(receipt_path, format!("{body}\n"))?;
     Ok(receipt)
 }

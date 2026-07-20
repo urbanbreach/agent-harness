@@ -14,6 +14,10 @@ mod landlock;
 mod prepare;
 mod product;
 
+#[cfg(test)]
+#[path = "sandbox/sandbox_tests.rs"]
+mod sandbox_tests;
+
 pub use landlock::{
     apply_landlock_fs_plan, apply_landlock_fs_plan_not_implemented, build_fs_plan,
     describe_fs_plan_for_policy, detect_landlock, detect_landlock_with, lsm_list_contains_landlock,
@@ -326,5 +330,5 @@ pub fn summarize_os_profiles(profiles: &[OsSandboxProfile]) -> OsSandboxProfiles
 }
 
 #[cfg(test)]
-#[path = "sandbox_tests.rs"]
+#[path = "sandbox_sandbox_tests.rs"]
 mod tests;

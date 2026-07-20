@@ -27,6 +27,15 @@ impl ScheduleId {
         Ok(Self(trimmed.to_string()))
     }
 
+    /// Build a schedule id from a static literal without re-running runtime validation.
+    ///
+    /// This is intended for compile-time-known ids (probes, tests, and internal constants)
+    /// where the caller has already verified the id is non-empty and contains no control
+    /// characters. For operator-facing input, use [`ScheduleId::parse`].
+    pub fn from_static_literal(value: &'static str) -> Self {
+        Self(value.to_string())
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -54,7 +63,7 @@ impl CronSchedule {
             .filter(|s| !s.is_empty())
             .unwrap_or("(none)");
         format!(
-            "cron schedule `{}` expr=`{}` label=`{}` (executes=true)",
+            "cron schedule `{}` expr=`{}` label=`{}` (executes=false)",
             self.id.as_str(),
             self.expression,
             label
@@ -193,9 +202,8 @@ impl CronScheduleRegistry {
         self.schedules.is_empty()
     }
 
-    /// Product executes due schedules via [`crate::cron_execute::CronExecutor`].
     pub const fn executes_schedules(&self) -> bool {
-        true
+        false
     }
 
     /// Operator-facing counts for registered schedules (diagnostics only).
@@ -342,7 +350,7 @@ mod tests {
 
         // Then
         assert_eq!(registry.len(), 1);
-        assert!(registry.executes_schedules());
+        assert!(!registry.executes_schedules());
         let listed = registry.list();
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].id.as_str(), "weekday-doctor");
@@ -503,7 +511,7 @@ mod tests {
             CronScheduleError::InvalidFieldCount { field_count: 2, .. }
         ));
         assert!(registry.is_empty());
-        assert!(registry.executes_schedules());
+        assert!(!registry.executes_schedules());
     }
 
     #[test]
@@ -532,13 +540,13 @@ mod tests {
             CronScheduleSummary {
                 registered: 2,
                 with_label: 1,
-                executes_schedules: true,
+                executes_schedules: false,
             }
         );
         assert!(summary.has_schedules());
         assert!(summary.one_line().contains("2 registered"));
         assert!(summary.one_line().contains("1 labeled"));
-        assert!(summary.one_line().contains("executes=true"));
+        assert!(summary.one_line().contains("executes=false"));
         assert_eq!(CronScheduleRegistry::new().summary().registered, 0);
     }
 
@@ -574,7 +582,7 @@ mod tests {
             },
         );
 
-        // Then: register outcomes succeed; multi-list preserves labels; executes=true honesty
+        // Then: register outcomes succeed; multi-list preserves labels; executes=false honesty
         assert!(matches!(first, CronRegisterOutcome::Registered { .. }));
         assert!(matches!(second, CronRegisterOutcome::Registered { .. }));
         assert!(matches!(
@@ -589,9 +597,9 @@ mod tests {
         assert!(registry.list().iter().any(|s| {
             s.id.as_str() == "(probe-2)"
                 && s.label.as_deref() == Some("probe-2")
-                && s.one_line().contains("executes=true")
+                && s.one_line().contains("executes=false")
         }));
-        assert!(registry.executes_schedules());
+        assert!(!registry.executes_schedules());
 
         // When: remove first probe
         let probe_id = ScheduleId::parse("(probe)").unwrap();
@@ -607,7 +615,7 @@ mod tests {
             summary.registered >= 2 && summary.with_label >= 2,
             "expected multi-schedule after remove: {summary:?}"
         );
-        assert!(summary.executes_schedules);
+        assert!(!summary.executes_schedules);
         assert_eq!(
             registry.list().first().map(|s| s.id.as_str()),
             Some("(probe-2)")

@@ -1,6 +1,8 @@
 use super::*;
 use std::collections::BTreeSet;
 
+use crate::UnwrapOrAbort;
+
 #[test]
 fn settings_registry_is_non_empty() {
     // arrange
@@ -261,7 +263,7 @@ fn settings_registry_json_lists_metadata_without_secret_values() {
 
     assert_eq!(value["schema_version"], "harness-settings-registry-v1");
     assert_eq!(
-        value["setting_count"].as_u64().expect("setting_count") as usize,
+        usize::try_from(value["setting_count"].as_u64().expect("setting_count")).unwrap_or_abort(),
         settings_registry().len()
     );
 

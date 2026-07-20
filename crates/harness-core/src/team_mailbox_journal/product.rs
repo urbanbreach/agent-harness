@@ -21,6 +21,7 @@ pub struct MultiAgentTeamProduct {
     pub delivered_count: usize,
     pub journal_path: String,
     pub first_line: Option<String>,
+    pub last_message_line: Option<String>,
 }
 
 impl MultiAgentTeamProduct {
@@ -82,6 +83,12 @@ pub fn run_durable_multi_agent_team_product(
     );
     durable.persist()?;
 
+    let last_message_line = durable
+        .peek_inbox(&probe_id, "probe-agent")
+        .ok()
+        .and_then(|msgs| msgs.into_iter().last())
+        .map(|msg| msg.one_line());
+
     let delivered = durable.deliver_messages(&probe_id, "probe-worker")?;
     let delivered_count = delivered.len();
 
@@ -114,6 +121,7 @@ pub fn run_durable_multi_agent_team_product(
         delivered_count,
         journal_path: durable.journal_path().display().to_string(),
         first_line,
+        last_message_line,
     })
 }
 
@@ -140,6 +148,7 @@ fn failed_product(
         delivered_count: 0,
         journal_path: durable.journal_path().display().to_string(),
         first_line: None,
+        last_message_line: None,
     }
 }
 

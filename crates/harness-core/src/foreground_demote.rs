@@ -228,7 +228,7 @@ pub fn demote_task_handle_against_registry(
 ) -> Result<DemoteToBackgroundResult, DemoteError> {
     let request = DemoteToBackgroundRequest::new(handle_id.trim(), ForegroundKind::Task);
     apply_demote_to_background(&request, true, |id, kind| {
-        kind == ForegroundKind::Task && demotable_task_ids.iter().any(|candidate| *candidate == id)
+        kind == ForegroundKind::Task && demotable_task_ids.contains(&id)
     })
     .map(|result| match result {
         DemoteToBackgroundResult::Demoted {

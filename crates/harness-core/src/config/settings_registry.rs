@@ -496,7 +496,7 @@ pub fn setting_definition(setting_id: &str) -> Option<&'static SettingDefinition
 /// True when the setting documents product metadata without a public config key.
 pub fn is_metadata_only_setting(setting_id: &str) -> bool {
     let canonical = resolve_setting_id(setting_id).unwrap_or(setting_id);
-    METADATA_ONLY_SETTING_IDS.iter().any(|id| *id == canonical)
+    METADATA_ONLY_SETTING_IDS.contains(&canonical)
 }
 
 /// One legacy → canonical settings-id rename for load/write migration.

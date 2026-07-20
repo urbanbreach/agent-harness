@@ -495,7 +495,7 @@ fn extract_definition_symbol(line: &str) -> Option<String> {
     }
     let name_tok = tokens.get(i + 1)?;
     let name = name_tok
-        .split(|c: char| c == '(' || c == '<' || c == '{' || c == ':' || c == '=' || c == ',')
+        .split(['(', '<', '{', ':', '=', ','])
         .next()
         .unwrap_or("")
         .trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '_');

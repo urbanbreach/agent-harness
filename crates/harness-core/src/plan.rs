@@ -169,6 +169,6 @@ mod tests {
             .expect("active placeholder");
         assert!(active.is_active);
         assert!(!active.exists);
-        assert_eq!(list[0].is_active, true);
+        assert!(list[0].is_active);
     }
 }

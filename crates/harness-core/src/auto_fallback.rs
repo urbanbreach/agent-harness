@@ -13,7 +13,7 @@ pub enum AutoFallbackOutcome {
     /// Switch to this model target next.
     Next {
         failed_model_ref: String,
-        next: ResolvedModelTarget,
+        next: Box<ResolvedModelTarget>,
         remaining_after: usize,
     },
     /// Fallback chain exhausted (no further targets).
@@ -63,7 +63,7 @@ pub fn resolve_next_fallback(
     match chain.get(next_index) {
         Some(next) => AutoFallbackOutcome::Next {
             failed_model_ref: chain[failed_index].model_ref.clone(),
-            next: (*next).clone(),
+            next: Box::new((*next).clone()),
             remaining_after: chain.len().saturating_sub(next_index.saturating_add(1)),
         },
         None => AutoFallbackOutcome::Exhausted {

@@ -313,7 +313,7 @@ mod tests {
     }
 
     #[test]
-    fn path_escape_rejected() {
+    fn path_escape_attempts_are_rejected() {
         // Given
         let temp = tempfile::tempdir().expect("temp");
         let outside = tempfile::tempdir().expect("outside");

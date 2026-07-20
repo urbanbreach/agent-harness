@@ -353,9 +353,8 @@ pub fn try_cow_clone_tree(src: &Path, dst: &Path) -> CowTreeCloneResult {
     }
 }
 
-/// After a git worktree checkout exists, COW-clone selected relative paths from
-/// the repository root into the worktree (real filesystem). Missing sources are
-/// recorded as structured unavailable results; destination collisions skip.
+/// COW-clone selected paths from the repo root into the worktree after
+/// a git worktree checkout exists. Missing sources are unavailable; skip collisions.
 pub fn apply_cow_worktree_fastpath(
     repository_root: &Path,
     worktree_path: &Path,

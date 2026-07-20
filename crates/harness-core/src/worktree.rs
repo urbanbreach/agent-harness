@@ -279,10 +279,8 @@ pub fn sanitize_slug(raw: &str) -> String {
     for ch in raw.chars() {
         if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
             out.push(ch.to_ascii_lowercase());
-        } else if ch == '/' || ch == '.' || ch == ' ' {
-            if !out.is_empty() && !out.ends_with('-') {
-                out.push('-');
-            }
+        } else if (ch == '/' || ch == '.' || ch == ' ') && !out.is_empty() && !out.ends_with('-') {
+            out.push('-');
         }
     }
     while out.starts_with('-') {

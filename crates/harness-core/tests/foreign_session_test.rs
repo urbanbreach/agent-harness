@@ -11,6 +11,7 @@ use harness_core::foreign_session::{
     summarize_discover_candidates, ForeignAgentKind, ForeignSessionCandidate, ForeignSessionError,
 };
 use harness_core::proj::SessionModeSource;
+use harness_core::UnwrapOrAbort;
 use tempfile::tempdir;
 
 fn sample_envelope(seq: u64, run_id: &str, payload: EventV1) -> EventEnvelopeV1 {
@@ -32,10 +33,10 @@ fn sample_envelope(seq: u64, run_id: &str, payload: EventV1) -> EventEnvelopeV1 
 fn write_events_jsonl(path: &std::path::Path, events: &[EventEnvelopeV1]) {
     let mut body = String::new();
     for event in events {
-        body.push_str(&serde_json::to_string(event).unwrap());
+        body.push_str(&serde_json::to_string(event).unwrap_or_abort());
         body.push('\n');
     }
-    fs::write(path, body).unwrap();
+    fs::write(path, body).unwrap_or_abort();
 }
 
 #[test]
