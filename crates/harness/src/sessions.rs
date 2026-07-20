@@ -273,15 +273,32 @@ fn reopen_session(
     };
 
     if command.json {
-        return write_json_output(
-            &json!({
-                "summary": summary,
-                "crash_recovery": crash_recovery,
-            }),
-            None,
-            stdout,
-            stderr,
-        );
+        let summary_value = match serde_json::to_value(&summary) {
+            Ok(value) => value,
+            Err(err) => {
+                let _ = writeln!(
+                    stderr,
+                    "failed to serialize session recovery summary: {err}"
+                );
+                return 1;
+            }
+        };
+        let mut output = summary_value.clone();
+        if let Some(obj) = output.as_object_mut() {
+            obj.insert("summary".to_string(), summary_value);
+            if let Some(crash_recovery) = &crash_recovery {
+                match serde_json::to_value(crash_recovery) {
+                    Ok(value) => {
+                        obj.insert("crash_recovery".to_string(), value);
+                    }
+                    Err(err) => {
+                        let _ = writeln!(stderr, "failed to serialize crash recovery: {err}");
+                        return 1;
+                    }
+                }
+            }
+        }
+        return write_json_output(&output, None, stdout, stderr);
     }
 
     if let Some(recovery) = &crash_recovery {

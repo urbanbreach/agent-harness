@@ -116,6 +116,7 @@ fn load_inventory(root: &Path) -> Value {
     serde_json::from_str(&raw).unwrap_or_abort()
 }
 
+#[allow(clippy::panic, reason = "fail-closed inventory validation helper")]
 fn require_str(value: &Value, field: &str, capability_id: &str) -> String {
     value[field]
         .as_str()

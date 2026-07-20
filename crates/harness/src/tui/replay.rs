@@ -48,6 +48,7 @@ pub(super) fn execute_replay_mode(
         keybindings: None,
         toggles: None,
         preserve_terminal_on_exit: false,
+        workspace_root: None,
     }) {
         let _ = writeln!(stderr, "TUI error: {err}");
         return ExitCode::from(1);
@@ -78,6 +79,7 @@ pub(super) async fn run_replay_tui(
             keybindings: None,
             toggles: None,
             preserve_terminal_on_exit: true,
+            workspace_root: None,
         })
     })
     .await

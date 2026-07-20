@@ -7,10 +7,12 @@
 //! Env-gated owner (documented here; executed only with `HARNESS_TUI_PTY_SIGNOFF=1`):
 //! - `JOURNEY-WORKTREE-CTRL-W` → `pty_happy_path_recorded::dual_binary_cli_pty_worktree_ctrl_w_creates_git_worktree`
 //!
-//! Real offline surface evidence (L3 capture dirs; status incomplete):
+//! Real offline surface evidence (L3 capture dirs; nonvisual journey passes):
 //! - `JOURNEY-WAIT-ANY-ALL` — runs harness-tools wait-any integration owner
 //! - `JOURNEY-MEMORY-CLI` — binary `harness memory put/get/list`
 //! - `JOURNEY-FOLDER-TRUST-DENY` — deny-before-spawn gate receipt
+//!
+//! AppState-only evidence (status incomplete pending product-shell journeys):
 //! - `JOURNEY-ALWAYS-APPROVE-MODE` — AppState AlwaysConfirm + badge render dump
 //! - `JOURNEY-SETTINGS-EDITOR` — AppState /settings overlay + registry rows dump
 

@@ -1498,6 +1498,10 @@ fn wait_for_screen_contains(
     }
 }
 
+#[allow(
+    clippy::panic,
+    reason = "fail-closed PTY test timeout waiting for absence"
+)]
 fn wait_for_screen_absent(
     parser: &mut Parser,
     output_rx: &Receiver<Vec<u8>>,

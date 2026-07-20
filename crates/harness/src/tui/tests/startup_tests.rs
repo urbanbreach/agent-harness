@@ -34,6 +34,7 @@ fn workflow_managed_live_tuis_preserve_terminal_between_handoffs() {
         true,
         None,
         None,
+        PathBuf::from("/tmp/workspace"),
     );
     assert!(fresh.preserve_terminal_on_exit);
     assert!(matches!(
@@ -55,6 +56,7 @@ fn workflow_managed_live_tuis_preserve_terminal_between_handoffs() {
         true,
         None,
         None,
+        PathBuf::from("/tmp/workspace"),
     );
     assert!(resumed.preserve_terminal_on_exit);
     assert!(matches!(
@@ -85,6 +87,7 @@ fn new_live_tui_options_allow_pre_bootstrap_run_directory() {
         true,
         None,
         None,
+        temp_dir.path().to_path_buf(),
     );
 
     let TuiMode::Live {
@@ -164,6 +167,7 @@ fn resumed_live_tui_options_carry_normalized_lineage_history() {
         true,
         None,
         None,
+        temp_dir.path().to_path_buf(),
     );
 
     let TuiMode::Live {

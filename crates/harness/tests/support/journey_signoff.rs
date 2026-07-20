@@ -24,7 +24,7 @@ pub(crate) const WAIT_ANY_ALL_L5_REL: &str =
     "crates/harness-tools/tests/native_agent_spawn_and_batch_preserve_lineage_permissions_and_order/10_background_output_wait_any_all_test.rs";
 pub(crate) const WAIT_ANY_ALL_L6_REL: &str =
     "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/loop15-journey-surface-evidence-v1.md";
-pub(crate) const FOLDER_TRUST_L2_REL: &str = "crates/harness-core/src/folder_trust/mod.rs";
+pub(crate) const FOLDER_TRUST_L2_REL: &str = "crates/harness-core/src/folder_trust.rs";
 pub(crate) const FOLDER_TRUST_L5_REL: &str = "crates/harness-tools/src/shell_safety.rs";
 pub(crate) const FOLDER_TRUST_L6_REL: &str =
     "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/loop15-journey-surface-evidence-v1.md";
@@ -102,6 +102,10 @@ pub(crate) fn journey_artifact_root(slug: &str) -> PathBuf {
     dir
 }
 
+#[allow(
+    clippy::panic,
+    reason = "fail-closed test helper with custom error message"
+)]
 pub(crate) fn stable_l3_artifact_root(rel: &str) -> PathBuf {
     let dir = repo_root().join(rel);
     fs::create_dir_all(&dir).unwrap_or_else(|err| {
@@ -113,6 +117,10 @@ pub(crate) fn stable_l3_artifact_root(rel: &str) -> PathBuf {
     dir
 }
 
+#[allow(
+    clippy::panic,
+    reason = "fail-closed test helper with custom error message"
+)]
 pub(crate) fn run_harness_cli(args: &[&str]) -> std::process::Output {
     let harness_bin = require_harness_binary();
     Command::new(&harness_bin)
@@ -166,6 +174,10 @@ pub(crate) fn assert_cli_success(label: &str, output: &std::process::Output) {
     );
 }
 
+#[allow(
+    clippy::panic,
+    reason = "fail-closed test helper with custom error message"
+)]
 pub(crate) fn parse_stdout_json(output: &std::process::Output) -> Value {
     let stdout = String::from_utf8_lossy(&output.stdout);
     serde_json::from_str(stdout.trim()).unwrap_or_else(|err| {
@@ -173,6 +185,10 @@ pub(crate) fn parse_stdout_json(output: &std::process::Output) -> Value {
     })
 }
 
+#[allow(
+    clippy::panic,
+    reason = "fail-closed test helper with custom error message"
+)]
 pub(crate) fn find_journey<'a>(rows: &'a [Value], journey_id: &str) -> &'a Value {
     rows.iter()
         .find(|row| row["behavior_id"].as_str() == Some(journey_id))
@@ -223,7 +239,7 @@ fn assert_owner_names_journey_signoff(journey_id: &str, row: &Value) {
 }
 
 fn assert_config_journey_evidence(row: &Value, journey_id: &str, l3: &str, l6: &str) {
-    assert_eq!(row["status"].as_str(), Some("incomplete"));
+    assert_eq!(row["status"].as_str(), Some("pass"));
     assert_empty_layer(journey_id, row, "L1");
     assert_eq!(
         row["evidence_paths"]["L2"].as_str(),
@@ -253,7 +269,7 @@ pub(crate) fn assert_all_journey_manifest_evidence(rows: &[Value]) {
 
     let journey_id = "JOURNEY-WORKTREE-CTRL-W";
     let worktree = find_journey(rows, journey_id);
-    assert_eq!(worktree["status"].as_str(), Some("incomplete"));
+    assert_eq!(worktree["status"].as_str(), Some("pass"));
     assert_empty_layer(journey_id, worktree, "L1");
     let l2 = worktree["evidence_paths"]["L2"].as_str().unwrap_or("");
     assert!(
@@ -300,6 +316,7 @@ pub(crate) fn assert_all_journey_manifest_evidence(rows: &[Value]) {
         STABLE_L3_WAIT_ANY_REL,
         WAIT_ANY_ALL_L5_REL,
         WAIT_ANY_ALL_L6_REL,
+        "pass",
     );
     assert_surface_journey_evidence(
         rows,
@@ -309,6 +326,7 @@ pub(crate) fn assert_all_journey_manifest_evidence(rows: &[Value]) {
         STABLE_L3_FOLDER_TRUST_REL,
         FOLDER_TRUST_L5_REL,
         FOLDER_TRUST_L6_REL,
+        "pass",
     );
     assert_surface_journey_evidence(
         rows,
@@ -318,6 +336,7 @@ pub(crate) fn assert_all_journey_manifest_evidence(rows: &[Value]) {
         STABLE_L3_MEMORY_CLI_REL,
         MEMORY_CLI_L5_REL,
         MEMORY_CLI_L6_REL,
+        "pass",
     );
     assert_surface_journey_evidence(
         rows,
@@ -327,6 +346,7 @@ pub(crate) fn assert_all_journey_manifest_evidence(rows: &[Value]) {
         STABLE_L3_ALWAYS_APPROVE_REL,
         ALWAYS_APPROVE_L5_REL,
         ALWAYS_APPROVE_L6_REL,
+        "pass",
     );
     assert_surface_journey_evidence(
         rows,
@@ -336,6 +356,7 @@ pub(crate) fn assert_all_journey_manifest_evidence(rows: &[Value]) {
         STABLE_L3_SETTINGS_EDITOR_REL,
         SETTINGS_EDITOR_L5_REL,
         SETTINGS_EDITOR_L6_REL,
+        "pass",
     );
     assert_evidence_path_exists("JOURNEY-ROWS-EXPAND", "L6", JOURNEY_ROWS_EXPAND_RECEIPT_REL);
 }
@@ -348,9 +369,10 @@ fn assert_surface_journey_evidence(
     l3: &str,
     l5: &str,
     l6: &str,
+    expected_status: &str,
 ) {
     let row = find_journey(rows, journey_id);
-    assert_eq!(row["status"].as_str(), Some("incomplete"));
+    assert_eq!(row["status"].as_str(), Some(expected_status));
     assert_eq!(row["row_kind"].as_str(), Some("journey"));
     assert_eq!(row["capability_id"].as_str(), Some(capability_id));
     assert!(!row["backend_owner"].as_str().unwrap_or("").is_empty());

@@ -6,14 +6,14 @@ use std::sync::Arc;
 
 use clap::Args;
 use harness_core::clock::Determinism;
-use harness_core::config::{HarnessConfig, ShellAllowlist};
+use harness_core::config::{ConfigLoadContext, HarnessConfig, ShellAllowlist};
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig};
 use harness_core::event::ToolCallStatus;
 use harness_core::perm::PermissionDecision;
 use harness_core::redact::DefaultRedactor;
 use harness_tools::coordinator_registry;
 
-use crate::cli_config::{apply_runtime_metadata, load_optional_config_with_digest};
+use crate::cli_config::{apply_runtime_metadata, load_optional_config_with_digest_context};
 use crate::logging;
 use crate::scenarios::{
     create_workspace, default_permission_policy, deterministic_run_id, golden_path_edit_args,
@@ -113,7 +113,14 @@ pub fn execute_with_io(
         return execute_prompt_run(cmd, config_path, global_session_dir, io, deps);
     }
 
-    let settings = match resolve_settings(&cmd, config_path, global_session_dir) {
+    let config_context = match deps.config_load_context() {
+        Ok(context) => context,
+        Err(err) => {
+            let _ = writeln!(io.stderr, "run setup failed: {err}");
+            return 2;
+        }
+    };
+    let settings = match resolve_settings(&cmd, config_path, global_session_dir, &config_context) {
         Ok(settings) => settings,
         Err(err) => {
             let _ = writeln!(io.stderr, "run setup failed: {err}");
@@ -191,8 +198,21 @@ fn execute_prompt_run(
         }
     };
 
+    let config_context = match deps.config_load_context() {
+        Ok(context) => context,
+        Err(err) => {
+            let _ = writeln!(io.stderr, "run setup failed: {err}");
+            return 2;
+        }
+    };
+
     let resume = if cmd.continue_session {
-        match latest_resumable_session(&cmd, config_path.as_deref(), global_session_dir.clone()) {
+        match latest_resumable_session(
+            &cmd,
+            config_path.as_deref(),
+            global_session_dir.clone(),
+            &config_context,
+        ) {
             Ok(session) => Some(session),
             Err(err) => {
                 let _ = writeln!(io.stderr, "run setup failed: {err}");
@@ -280,13 +300,14 @@ fn latest_resumable_session(
     cmd: &RunCommand,
     config_path: Option<&Path>,
     global_session_dir: Option<PathBuf>,
+    config_context: &ConfigLoadContext,
 ) -> Result<String, String> {
     let session_dir = cmd
         .session_dir
         .clone()
         .or(global_session_dir)
         .or_else(|| {
-            load_optional_config_with_digest(config_path)
+            load_optional_config_with_digest_context(config_path, config_context)
                 .ok()
                 .flatten()
                 .map(|loaded| loaded.config.paths.session_dir)
@@ -333,6 +354,7 @@ fn resolve_settings(
     cmd: &RunCommand,
     config_path: Option<PathBuf>,
     global_session_dir: Option<PathBuf>,
+    config_context: &ConfigLoadContext,
 ) -> Result<RunSettings, String> {
     let mut shell_allowlist = ShellAllowlist::default();
     let mut config_session_dir = PathBuf::from(DEFAULT_SESSION_DIR);
@@ -341,7 +363,9 @@ fn resolve_settings(
     let mut config_digest = "none".to_string();
     let mut loaded_config = None;
 
-    if let Some(loaded) = load_optional_config_with_digest(config_path.as_deref())? {
+    if let Some(loaded) =
+        load_optional_config_with_digest_context(config_path.as_deref(), config_context)?
+    {
         let config = loaded.config;
         config_digest = loaded.digest;
         shell_allowlist = config.permissions.shell_allowlist.clone();

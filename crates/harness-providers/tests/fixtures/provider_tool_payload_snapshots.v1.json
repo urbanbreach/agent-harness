@@ -162,13 +162,13 @@
     {
       "profile": "category",
       "category": "quick",
-      "completion_request_digest": "d80ef14fc945974ab981f5a8aed251d2f71742938b468849eb507b8e5fed9387",
+      "completion_request_digest": "c4f3769dfbf646db83db07259c45d5d855f4c6f62d8efca84bf199d78f36906c",
       "tools": [
         {
           "canonical_id": "background_output",
           "provider_function_name": "background_output",
-          "description_digest": "d4d9b01f6dcaf018c8e0119c3b5eb4c18cb61215cc2f33a18510e34f9363aaf1",
-          "parameters_digest": "7a4afabdaf076d9abfc4d2da1663dacd8814beef032b31bc2d478dcc21017ff8",
+          "description_digest": "98445038fc82b605fcc23ec67ed6931dc1ded4b1fc1a8d065fea4cb53f26798a",
+          "parameters_digest": "fd482877f39e402df4543482b2088853b29bec4e2a3fc2129851dbfc32cebede",
           "parameters_type": "object"
         },
         {
@@ -198,7 +198,7 @@
           "api_mode": "chat_completions",
           "endpoint_path": "/v1/chat/completions",
           "bearer_token": "<redacted>",
-          "request_body_digest": "de95471605446fe83d0e8f50d0c746627e8d3c94b84d120032cf93c3c26ec809",
+          "request_body_digest": "3f06cd56076b2b6a469d6ba72b305cb59043796e44acd4936b4fa0c4d8e54014",
           "tool_function_names": [
             "background_output",
             "skill",
@@ -210,7 +210,7 @@
           "api_mode": "responses",
           "endpoint_path": "/v1/responses",
           "bearer_token": "<redacted>",
-          "request_body_digest": "e54759e03e4bda8aa27c4700cf651f1dd5ca9dd2f66abffc1b1d742ca50a3060",
+          "request_body_digest": "fa7fedc0e8d4c7c587e3eeff6bf7b55fa67978cdf19646072cb7835f42d2ab37",
           "tool_function_names": [
             "background_output",
             "skill",

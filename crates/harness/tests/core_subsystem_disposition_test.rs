@@ -101,12 +101,20 @@ fn load_matrix() -> Value {
     serde_json::from_str(&raw).unwrap_or_abort()
 }
 
+#[allow(
+    clippy::panic,
+    reason = "fail-closed subsystem matrix validation helper"
+)]
 fn string_field<'a>(row: &'a Value, key: &str, subsystem_id: &str) -> &'a str {
     row[key]
         .as_str()
         .unwrap_or_else(|| panic!("subsystem {subsystem_id}: missing or non-string field `{key}`"))
 }
 
+#[allow(
+    clippy::panic,
+    reason = "fail-closed subsystem matrix validation helper"
+)]
 fn string_array_field(row: &Value, key: &str, subsystem_id: &str) -> Vec<String> {
     let arr = row[key]
         .as_array()

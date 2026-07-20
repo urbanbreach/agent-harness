@@ -402,6 +402,7 @@ async fn run_interactive_mode(
                     persist_model_selection,
                     Some(prompt_history_path_for_session_dir(&settings.session_dir)),
                     TuiAuthBackendContext::from_settings(settings),
+                    settings.workspace_root.clone(),
                 )
             }
         },
@@ -513,6 +514,7 @@ async fn run_direct_continue_mode(
                     persist_model_selection,
                     Some(prompt_history_path_for_session_dir(&settings.session_dir)),
                     TuiAuthBackendContext::from_settings(settings),
+                    settings.workspace_root.clone(),
                 )
             }
         },
@@ -578,6 +580,7 @@ async fn run_startup_launcher(
     persist_model_selection: bool,
     prompt_history_path: Option<PathBuf>,
     auth_backend: TuiAuthBackendContext,
+    workspace_root: PathBuf,
 ) -> Result<InteractiveWorkflow, String> {
     profile_handoff("startup_launcher.begin");
     let selected_intent = Arc::new(Mutex::new(None::<UiIntent>));
@@ -639,6 +642,7 @@ async fn run_startup_launcher(
             keybindings: None,
             toggles: None,
             preserve_terminal_on_exit: true,
+            workspace_root: Some(workspace_root),
         })
     })
     .await
@@ -825,6 +829,7 @@ async fn run_continue_session_bootstrap(
     let session_history_entries =
         load_live_session_history_entries(&run.run_dir, &settings.session_dir)?;
 
+    let workspace_root = settings.workspace_root.clone();
     let tui_result = tokio::task::spawn_blocking(move || {
         run_tui_with_options(continue_live_tui_options(
             run.run_dir,
@@ -836,6 +841,7 @@ async fn run_continue_session_bootstrap(
             true,
             prompt_history_path,
             toggles,
+            workspace_root,
         ))
     })
     .await
@@ -979,6 +985,7 @@ async fn run_live_mode(
     let session_history_entries =
         load_live_session_history_entries(&run_dir, &settings.session_dir)?;
 
+    let workspace_root = settings.workspace_root.clone();
     let tui_result = tokio::task::spawn_blocking(move || {
         profile_handoff("new_live.live_tui_begin");
         run_tui_with_options(new_live_tui_options(
@@ -990,6 +997,7 @@ async fn run_live_mode(
             false,
             prompt_history_path,
             toggles,
+            workspace_root,
         ))
     })
     .await

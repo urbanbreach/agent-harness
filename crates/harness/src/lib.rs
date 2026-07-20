@@ -996,7 +996,7 @@ fn value_at_path<'a>(
                     if key.eq_ignore_ascii_case(segment)
                         || key
                             .replace('_', "")
-                            .eq_ignore_ascii_case(&segment.replace('_', "").replace('-', ""))
+                            .eq_ignore_ascii_case(&segment.replace(['_', '-'], ""))
                     {
                         Some(nested)
                     } else {

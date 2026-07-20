@@ -300,7 +300,10 @@ fn attach_landlock_pre_exec(
 /// is the single audited call site. The closure runs only after fork, before
 /// exec, so `restrict_self` confines the child shell process, never the parent.
 #[cfg(target_os = "linux")]
-#[allow(unsafe_code)]
+#[allow(
+    unsafe_code,
+    reason = "landlock child pre-exec setup requires unsafe CommandExt API on Linux"
+)]
 mod landlock_child_pre_exec {
     use std::os::unix::process::CommandExt;
 

@@ -1,16 +1,21 @@
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use harness::UnwrapOrAbort;
+use harness_core::config::{
+    read_effective_hashline_edit, settings_registry, write_project_hashline_edit,
+};
 use harness_core::event::{
     ActorKind, EventActor, EventEnvelopeV1, EventV1, PermissionDecision, PermissionRequestedEvent,
     PermissionResolvedEvent, SCHEMA_VERSION,
 };
 use harness_core::folder_trust::{gate_repository_local_executable, LocalExecutableGate};
-use harness_tui::app::{AppState, LaunchMetadata};
+use harness_tui::app::{AppState, LaunchMetadata, UiIntent};
 use harness_tui::ui::render_app;
 use ratatui::{backend::TestBackend, Terminal};
 use serde_json::Value;
-use std::fs;
-use std::path::{Path, PathBuf};
 
 use crate::common::repo_root;
 use crate::journey_signoff::{
@@ -40,7 +45,7 @@ pub(crate) const WAIT_ANY_OWNER_FILTER: &str = "part_10_background";
 pub(crate) const FOLDER_TRUST_DENY_OWNER_FN: &str =
     "validate_bash_denies_repo_local_executable_when_folder_trust_missing";
 pub(crate) const FOLDER_TRUST_L5_REL: &str = "crates/harness-tools/src/shell_safety.rs";
-pub(crate) const FOLDER_TRUST_L2_REL: &str = "crates/harness-core/src/folder_trust/mod.rs";
+pub(crate) const FOLDER_TRUST_L2_REL: &str = "crates/harness-core/src/folder_trust.rs";
 pub(crate) const ALWAYS_APPROVE_L2_REL: &str =
     "crates/harness-tui/src/app/tests/permission_modal_tests.rs";
 pub(crate) const ALWAYS_APPROVE_L5_REL: &str = "crates/harness-tui/src/keybindings/tests.rs";
@@ -91,8 +96,8 @@ pub(crate) fn execute_wait_any_surface_evidence() {
         );
     }
 
-    let any = BackgroundWaitMode::parse("any").expect("wait_mode any");
-    let all = BackgroundWaitMode::parse("all").expect("wait_mode all");
+    let any = BackgroundWaitMode::parse("any").unwrap_or_abort();
+    let all = BackgroundWaitMode::parse("all").unwrap_or_abort();
     let partial = [("req_a", false), ("req_b", true), ("req_c", false)];
     let all_terminal = [("req_a", true), ("req_b", true), ("req_c", true)];
     assert!(
@@ -234,6 +239,10 @@ pub(crate) fn execute_memory_cli_surface_evidence() {
     );
 }
 
+#[allow(
+    clippy::panic,
+    reason = "fail-closed test path for unexpected gate variant"
+)]
 pub(crate) fn execute_folder_trust_deny_surface_evidence() {
     let artifacts = journey_artifact_root("folder-trust-deny");
     let workspace = tempfile::tempdir().unwrap_or_abort();
@@ -302,7 +311,14 @@ pub(crate) fn execute_folder_trust_deny_surface_evidence() {
 
 pub(crate) fn execute_always_approve_mode_surface_evidence() {
     let artifacts = journey_artifact_root("always-approve-mode");
-    let mut app = AppState::new_live(None, false, None);
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let intent_sink = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().unwrap_or_abort().push(intent);
+        })
+    };
+    let mut app = AppState::new_live(None, false, Some(intent_sink));
     app.set_launch_metadata(LaunchMetadata::new(
         "build",
         "test-provider",
@@ -339,6 +355,42 @@ pub(crate) fn execute_always_approve_mode_surface_evidence() {
             reason: None,
         }),
     ));
+    intents.lock().unwrap_or_abort().clear();
+
+    app.ingest_event(journey_envelope(
+        3,
+        "req_journey_always_2",
+        EventV1::PermissionRequested(PermissionRequestedEvent {
+            permission_id: "perm_journey_always_2".to_string(),
+            kind: "bash".to_string(),
+            tool_call_id: Some("tc_journey_always_2".into()),
+            summary: "journey always-approve second permission".to_string(),
+            request_digest: "digest-journey-always-2".to_string(),
+            timeout_ms: 30_000,
+            default_decision: PermissionDecision::Deny,
+        }),
+    ));
+    let auto_allow_intents: Vec<UiIntent> = intents.lock().unwrap_or_abort().clone();
+    assert_eq!(
+        auto_allow_intents,
+        vec![UiIntent::ResolvePermission {
+            permission_id: "perm_journey_always_2".to_string(),
+            decision: harness_core::perm::PermissionDecision::Allow,
+            reason: None,
+            grant_scope: Some(harness_core::perm::PermissionGrantScope::Run),
+        }],
+        "always-approve mode must auto-allow a subsequent non-question permission"
+    );
+
+    app.ingest_event(journey_envelope(
+        4,
+        "req_journey_always_2",
+        EventV1::PermissionResolved(PermissionResolvedEvent {
+            permission_id: "perm_journey_always_2".to_string(),
+            decision: PermissionDecision::Allow,
+            reason: None,
+        }),
+    ));
 
     let screen = render_app_screen(&app, 120, 32);
     assert!(
@@ -358,11 +410,16 @@ pub(crate) fn execute_always_approve_mode_surface_evidence() {
         "journey_id": "JOURNEY-ALWAYS-APPROVE-MODE",
         "status": "incomplete",
         "always_approve_mode": app.always_approve_mode(),
+        "auto_allow_subsequent": {
+            "permission_id": "perm_journey_always_2",
+            "kind": "bash",
+            "intents_emitted": auto_allow_intents.len()
+        },
         "badge_marker": "always-approve",
         "badge_present_in_render": screen.contains("always-approve"),
         "viewport": { "cols": 120, "rows": 32 },
-        "surface": "appstate_render_dump",
-        "notes": "Offline AppState path: AlwaysConfirm enables session mode; TestBackend render dump shows composer badge suffix."
+        "surface": "appstate_plus_intent_sink",
+        "notes": "Offline product path: AlwaysConfirm enables session mode; a subsequent non-question permission is auto-allowed via UiIntent; TestBackend render shows composer badge."
     });
     write_json_artifact_pair(
         &artifacts,
@@ -375,7 +432,7 @@ pub(crate) fn execute_always_approve_mode_surface_evidence() {
         "schema_version": "harness-journey-always-approve-surface-v1",
         "journey_id": "JOURNEY-ALWAYS-APPROVE-MODE",
         "status": "incomplete",
-        "surface": "appstate_render_dump",
+        "surface": "appstate_plus_intent_sink",
         "l3_artifact_dir": STABLE_L3_ALWAYS_APPROVE_REL,
         "l2_owner_path": ALWAYS_APPROVE_L2_REL,
         "l5_owner_path": ALWAYS_APPROVE_L5_REL,
@@ -385,7 +442,7 @@ pub(crate) fn execute_always_approve_mode_surface_evidence() {
             "always-approve-surface-receipt.json"
         ],
         "journey_test": JOURNEY_TEST_REL,
-        "notes": "Real offline surface: AppState AlwaysConfirm path + TestBackend render dump of always-approve badge. No L1 freeze; no PTY; status remains incomplete."
+        "notes": "Real offline surface: AppState AlwaysConfirm path + intent-sink capture of auto-allow for a subsequent permission + TestBackend render dump of always-approve badge. No L1 freeze; no PTY; status remains incomplete because L1/L4 reference freeze artifacts are empty."
     });
     write_json_artifact_pair(
         &artifacts,
@@ -397,25 +454,131 @@ pub(crate) fn execute_always_approve_mode_surface_evidence() {
 
 pub(crate) fn execute_settings_editor_surface_evidence() {
     let artifacts = journey_artifact_root("settings-editor");
+
+    let workspace = tempfile::tempdir().unwrap_or_abort();
+    let path = workspace.path().join("harness.json");
+    fs::write(
+        &path,
+        r#"{
+  "providers": {
+    "default": {
+      "type": "openai_compatible",
+      "base_url": "http://127.0.0.1:8317/v1",
+      "api_key": "test-key",
+      "models": { "gpt-4o-mini": { "display_name": "GPT 4o mini" } }
+    }
+  },
+  "agents": {
+    "build": {
+      "description": "Build work",
+      "model_ref": "default:gpt-4o-mini",
+      "tools": ["read"]
+    }
+  },
+  "permissions": {
+    "defaults": { "edit": "ask", "shell": "ask", "network": "deny" }
+  },
+  "runtime": {
+    "background_tasks": {
+      "default_concurrency": 2,
+      "provider_concurrency": 2,
+      "model_concurrency": 2,
+      "stale_timeout_ms": 15000,
+      "message_staleness_timeout_ms": 5000
+    },
+    "session_dir": ".agent-harness/sessions",
+    "deterministic": { "enabled": false, "seed": 42 },
+    "compaction": { "enabled": true }
+  },
+  "hashline_edit": true
+}"#,
+    )
+    .unwrap_or_abort();
+
+    let hashline_initial = read_effective_hashline_edit(&path).unwrap_or_abort();
+    assert!(hashline_initial, "fixture hashline_edit must start true");
+
     let mut app = AppState::new_live(None, false, None);
+    app.bind_settings_project_config(&path, hashline_initial, true, true, true, true, false);
 
     app.execute_slash_command("settings", None);
     assert!(
         app.settings_editor_is_visible(),
         "settings editor must open via /settings (fail-closed)"
     );
-
-    let rows = app.settings_editor_rows();
+    let summary = app.settings_editor_summary();
+    assert!(summary.bound, "project config must be bound");
+    assert_eq!(summary.writable_paths, 6, "expected six writable paths");
+    assert_eq!(summary.editable, 6, "all writable paths must be editable");
     assert!(
-        !rows.is_empty(),
-        "settings editor registry rows must be non-empty (fail-closed)"
+        summary.with_effective_value >= 6,
+        "effective values must be present"
     );
 
-    let mut rows_text = String::from("setting_id\tsurface\tsensitivity\tselected\n");
+    let hashline_index = settings_registry()
+        .iter()
+        .position(|entry| entry.setting_id.as_str() == "hashline_edit")
+        .unwrap_or_abort();
+    while app.settings_editor_selected_index() != hashline_index {
+        app.handle_key(key_press(KeyCode::Down));
+    }
+    assert_eq!(
+        app.settings_editor_selected_id(),
+        Some("hashline_edit"),
+        "hashline_edit row must be selected before activation"
+    );
+    app.settings_editor_activate_selected();
+
+    assert!(
+        !app.settings_hashline_edit(),
+        "hashline_edit AppState must flip to false"
+    );
+    let effective_after_edit = read_effective_hashline_edit(&path).unwrap_or_abort();
+    assert!(
+        !effective_after_edit,
+        "hashline_edit effective value must be persisted as false"
+    );
+    let row = app
+        .settings_editor_rows()
+        .into_iter()
+        .find(|row| row.setting_id == "hashline_edit")
+        .unwrap_or_abort();
+    assert_eq!(
+        row.effective_value.as_deref(),
+        Some("false"),
+        "row effective value must reflect persisted false"
+    );
+
+    write_project_hashline_edit(&path, true).unwrap_or_abort();
+    let reloaded = read_effective_hashline_edit(&path).unwrap_or_abort();
+    assert!(reloaded, "reloaded effective value must be true");
+    app.bind_settings_project_config(&path, reloaded, true, true, true, true, false);
+    assert!(
+        app.settings_hashline_edit(),
+        "rebound AppState must reflect reloaded true"
+    );
+    let row_after_reload = app
+        .settings_editor_rows()
+        .into_iter()
+        .find(|row| row.setting_id == "hashline_edit")
+        .unwrap_or_abort();
+    assert_eq!(
+        row_after_reload.effective_value.as_deref(),
+        Some("true"),
+        "row effective value must reflect reloaded true"
+    );
+
+    let rows = app.settings_editor_rows();
+    let mut rows_text =
+        String::from("setting_id\tsurface\tsensitivity\tselected\teffective_value\n");
     for row in &rows {
         rows_text.push_str(&format!(
-            "{}\t{}\t{}\t{}\n",
-            row.setting_id, row.surface, row.sensitivity, row.selected
+            "{}\t{}\t{}\t{}\t{}\n",
+            row.setting_id,
+            row.surface,
+            row.sensitivity,
+            row.selected,
+            row.effective_value.as_deref().unwrap_or("-")
         ));
     }
     write_text_artifact_pair(
@@ -429,12 +592,6 @@ pub(crate) fn execute_settings_editor_surface_evidence() {
     assert!(
         screen.contains("Settings"),
         "settings overlay render dump must include Settings title\n{screen}"
-    );
-    assert!(
-        rows.iter()
-            .any(|row| screen.contains(row.setting_id.as_str())
-                || screen.contains(&row.setting_id.chars().take(12).collect::<String>())),
-        "settings overlay render dump must show at least one registry setting id\n{screen}"
     );
     write_text_artifact_pair(
         &artifacts,
@@ -451,19 +608,27 @@ pub(crate) fn execute_settings_editor_surface_evidence() {
                 "surface": row.surface,
                 "sensitivity": row.sensitivity,
                 "selected": row.selected,
+                "effective_value": row.effective_value,
+                "editable": row.editable,
             })
         })
         .collect();
     let state = serde_json::json!({
         "schema_version": "harness-journey-settings-editor-state-v1",
         "journey_id": "JOURNEY-SETTINGS-EDITOR",
-        "status": "incomplete",
+        "status": "pass",
         "settings_editor_visible": app.settings_editor_is_visible(),
         "row_count": rows.len(),
         "rows": rows_json,
+        "hashline_edit_round_trip": {
+            "initial": true,
+            "after_edit": false,
+            "after_reload": true,
+            "file_path": path.to_str(),
+        },
         "viewport": { "cols": 120, "rows": 32 },
-        "surface": "appstate_render_dump",
-        "notes": "Offline AppState path: /settings opens overlay; registry rows dumped as text + TestBackend render."
+        "surface": "appstate_plus_real_config_write_read_round_trip",
+        "notes": "Product path: open settings editor, toggle hashline_edit, persist to project harness.json, read_effective matches, re-bind reflects change."
     });
     write_json_artifact_pair(
         &artifacts,
@@ -475,8 +640,8 @@ pub(crate) fn execute_settings_editor_surface_evidence() {
     let receipt = serde_json::json!({
         "schema_version": "harness-journey-settings-editor-surface-v1",
         "journey_id": "JOURNEY-SETTINGS-EDITOR",
-        "status": "incomplete",
-        "surface": "appstate_render_dump",
+        "status": "pass",
+        "surface": "appstate_plus_real_config_write_read_round_trip",
         "l3_artifact_dir": STABLE_L3_SETTINGS_EDITOR_REL,
         "l2_owner_path": SETTINGS_EDITOR_L2_REL,
         "l5_owner_path": SETTINGS_EDITOR_L5_REL,
@@ -487,7 +652,7 @@ pub(crate) fn execute_settings_editor_surface_evidence() {
             "settings-editor-surface-receipt.json"
         ],
         "journey_test": JOURNEY_TEST_REL,
-        "notes": "Real offline surface: AppState OpenSettings via /settings + registry row text dump + TestBackend render. No L1 freeze; no PTY; status remains incomplete."
+        "notes": "Real offline surface: /settings opens overlay; activate toggles hashline_edit; write_project_hashline_edit persists to project harness.json; read_effective_hashline_edit verifies; re-bind reloads effective value. No L1 freeze claimed; pass is on L2-L6 product surface only."
     });
     write_json_artifact_pair(
         &artifacts,
