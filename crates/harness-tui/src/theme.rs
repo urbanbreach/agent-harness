@@ -427,6 +427,7 @@ pub struct SurfaceColors {
     pub panel: Color,
     pub panel_elevated: Color,
     pub overlay: Color,
+    pub card: Color,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -614,7 +615,7 @@ impl Theme {
             sidebar_padding_x: 2,
             sidebar_padding_y: 1,
             footer_prefix_gap: 2,
-            transcript_gutter_x: 5,
+            transcript_gutter_x: 2,
             transcript_gutter_y: 1,
             status_separator: 2,
             modal_margin: 2,
@@ -833,6 +834,7 @@ impl Theme {
                 panel: rgb(0x0B, 0x0E, 0x14),
                 panel_elevated: rgb(0x12, 0x16, 0x1E),
                 overlay: rgb(0x0B, 0x0E, 0x14),
+                card: rgb(0x55, 0x57, 0x53),
             },
             border: BorderColors {
                 subtle: rgb(0x3A, 0x3D, 0x43),
@@ -840,7 +842,7 @@ impl Theme {
                 focus: rgb(0x60, 0x63, 0x6A),
             },
             text: TextColors {
-                primary: rgb(0xD7, 0xDA, 0xE0),
+                primary: rgb(0xEE, 0xEE, 0xEC),
                 secondary: rgb(0x88, 0x8B, 0x91),
                 tertiary: rgb(0x88, 0x8B, 0x91),
                 accent: rgb(0xD9, 0x84, 0xD9),
@@ -901,6 +903,7 @@ impl Theme {
                 panel: Color::Black,
                 panel_elevated: Color::Black,
                 overlay: Color::Black,
+                card: Color::DarkGray,
             },
             border: BorderColors {
                 subtle: Color::DarkGray,

@@ -206,8 +206,8 @@ use ui_transcript::build_transcript_lines;
 #[cfg(test)]
 pub(crate) use ui_transcript::{
     exact_test_block_tool_cards_skip_empty_subtitle_rows,
-    exact_test_body_after_thought_keeps_separate_wall_clock_row,
-    exact_test_done_body_after_tool_packs_wall_clock_on_same_line,
+    exact_test_body_after_thought_packs_wall_clock_on_same_line,
+    exact_test_done_body_after_tool_keeps_separate_wall_clock_row,
     exact_test_file_search_rows_match_reference_title_description_shape,
     exact_test_generic_tool_successful_output_prefers_inline_background_rows,
     exact_test_inline_tool_rows_wrap_long_subtitles_cleanly,
@@ -346,7 +346,7 @@ fn render_replay_session_surface(
         return;
     };
 
-    frame.render_widget(live_transcript_shell_section(theme), plan.shell);
+    frame.render_widget(live_transcript_shell_section(Color::Reset), plan.shell);
     render_transcript_pane(frame, app, transcript_area, theme);
     if let Some(terminal_panel) = plan.terminal_panel {
         render_terminal_panel(frame, app, terminal_panel, theme);
@@ -385,7 +385,7 @@ fn render_startup_session_surface(
         return;
     };
 
-    frame.render_widget(live_transcript_shell_section(theme), plan.shell);
+    frame.render_widget(live_transcript_shell_section(Color::Reset), plan.shell);
     render_transcript_pane(frame, app, transcript_area, theme);
     render_unified_bottom_dock(frame, app, dock, theme);
 }
@@ -398,7 +398,7 @@ fn render_live_run_shell(frame: &mut Frame, app: &AppState, theme: &Theme, plan:
         return;
     };
 
-    frame.render_widget(live_transcript_shell_section(theme), plan.shell);
+    frame.render_widget(live_transcript_shell_section(Color::Reset), plan.shell);
     render_live_breadcrumb(frame, app, transcript_area, theme);
     let transcript_area = live_transcript_area_with_breadcrumb(transcript_area);
     render_transcript_pane(frame, app, transcript_area, theme);

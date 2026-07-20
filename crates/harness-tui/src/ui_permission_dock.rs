@@ -43,7 +43,7 @@ pub(super) fn render_inline_permission_dock(
     let always_confirm = !is_question
         && app.permission_modal_stage(&permission.permission_id)
             == PermissionModalStage::AlwaysConfirm;
-    let dock_surface = theme.surface.panel_elevated;
+    let dock_surface = theme.surface.card;
     let shell_surface = dock_surface;
     let tray_surface = dock_surface;
     let tray_height = dock_layout.tray_height;
@@ -144,7 +144,7 @@ pub(super) fn render_inline_permission_dock(
         .unwrap_or(u16::MAX)
         .min(shell_inner.height);
     // Empty draft: freeze blank gap between title and options. Non-empty draft: gap
-    // collapses so the body slot holds "Draft preserved · …" inside height 3.
+    // collapses so the body slot holds the draft line inside height 3.
     let body_gap = if has_draft { 0 } else { dock_layout.header_gap }
         .min(shell_inner.height.saturating_sub(header_height));
     let shell_rows = Layout::default()
@@ -415,7 +415,7 @@ fn render_question_permission_dock(
     permission: &ActivePermissionView,
     submission_pending: bool,
 ) {
-    let surface = theme.surface.panel_elevated;
+    let surface = theme.surface.card;
     let rail_color = question_prompt_accent(theme);
     let dock_layout = permission_dock_layout(area, true);
     let columns = Layout::default()
@@ -521,10 +521,8 @@ fn permission_prompt_action_line(
     surface: Color,
     options: &[(&str, bool)],
 ) -> Line<'static> {
-    let selected_style = Style::default()
-        .fg(theme.text.inverse)
-        .bg(theme.status.warning);
-    let unselected_style = Style::default().fg(theme.text.secondary).bg(surface);
+    let selected_style = Style::default().fg(theme.text.primary).bg(surface);
+    let unselected_style = Style::default().fg(theme.text.primary).bg(surface);
     let mut spans = Vec::new();
     for (index, (label, selected)) in options.iter().enumerate() {
         if index > 0 {
@@ -548,10 +546,8 @@ fn permission_prompt_numbered_options(
     surface: Color,
     options: &[(&str, bool)],
 ) -> Text<'static> {
-    let selected_style = Style::default()
-        .fg(theme.text.inverse)
-        .bg(theme.status.warning);
-    let unselected_style = Style::default().fg(theme.text.secondary).bg(surface);
+    let selected_style = Style::default().fg(theme.text.primary).bg(surface);
+    let unselected_style = Style::default().fg(theme.text.primary).bg(surface);
     let lines = options
         .iter()
         .enumerate()

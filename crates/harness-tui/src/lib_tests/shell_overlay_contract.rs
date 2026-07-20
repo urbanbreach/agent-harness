@@ -596,7 +596,7 @@ pub(super) fn permission_modal_remains_visually_dominant_and_fail_closed() {
     let buffer = render_live_cells(&app, 100, 24);
     let theme = Theme::default();
     let selected_marker = "1 (●) Yes, and don't ask again for anything (always-approve mode)";
-    let (row, _, bgs) = row_text_and_palette(&buffer, 100, selected_marker).unwrap_or_abort();
+    let (row, fgs, bgs) = row_text_and_palette(&buffer, 100, selected_marker).unwrap_or_abort();
     let start_byte = row.find(selected_marker).unwrap_or_abort();
     let start = row[..start_byte].chars().count();
     let end = start + selected_marker.chars().count();
@@ -617,10 +617,18 @@ pub(super) fn permission_modal_remains_visually_dominant_and_fail_closed() {
             || rendered.contains("esc:cancel")
     );
     assert!(!rendered.contains("Commands"));
+    // Grok freeze: selected option is distinguished by the filled marker only, with the same
+    // card-surface background and primary text as unselected options.
     assert!(
         bgs[start..end]
             .iter()
-            .all(|color| *color == theme.status.warning),
-        "selected allow option should stay stronger than quiet command overlays\n{row}"
+            .all(|color| *color == theme.surface.card),
+        "selected allow option should use the card surface background\n{row}"
+    );
+    assert!(
+        fgs[start..end]
+            .iter()
+            .all(|color| *color == theme.text.primary),
+        "selected allow option should use primary text color\n{row}"
     );
 }

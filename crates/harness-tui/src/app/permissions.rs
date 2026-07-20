@@ -431,6 +431,11 @@ impl AppState {
                     self.maybe_auto_exit();
                     return;
                 }
+                KeyCode::Esc => {
+                    self.execute_action(Action::DismissModal);
+                    self.maybe_auto_exit();
+                    return;
+                }
                 _ => {}
             }
         }

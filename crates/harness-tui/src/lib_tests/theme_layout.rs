@@ -38,7 +38,7 @@ pub(super) fn theme_tokens_cover_live_shell_states() {
     assert_eq!(default.live_shell.heights.status, 1);
     assert_eq!(default.live_shell.heights.footer, 1);
     assert_eq!(default.live_shell.heights.prompt_block(), 5);
-    assert_eq!(default.live_shell.rhythm.transcript_gutter_x, 5);
+    assert_eq!(default.live_shell.rhythm.transcript_gutter_x, 2);
     assert_eq!(default.live_shell.rhythm.status_separator, 2);
     assert_eq!(default.live_shell.minimum.centered_content_width, 80);
     assert_eq!(default.live_shell.minimum.content_margin_x, 0);
@@ -111,7 +111,7 @@ pub(super) fn harness_dark_theme_has_exact_palette() {
     );
     assert_eq!(
         theme.text.primary,
-        ratatui::style::Color::Rgb(0xD7, 0xDA, 0xE0)
+        ratatui::style::Color::Rgb(0xEE, 0xEE, 0xEC)
     );
     assert_eq!(
         theme.text.secondary,
@@ -232,14 +232,14 @@ pub(super) fn layout_plan_minimum_geometry_matches_shell_contract() {
     assert_eq!(plan.footer, ratatui::layout::Rect::new(0, 24, 80, 0));
     assert_eq!(
         plan.transcript,
-        Some(ratatui::layout::Rect::new(0, 0, 80, 18))
+        Some(ratatui::layout::Rect::new(0, 0, 80, 19))
     );
     assert_eq!(plan.status, None);
     assert_eq!(
         plan.composer,
-        Some(ratatui::layout::Rect::new(2, 18, 76, 4))
+        Some(ratatui::layout::Rect::new(2, 19, 76, 3))
     );
-    assert_eq!(dock.shell, ratatui::layout::Rect::new(2, 18, 76, 6));
+    assert_eq!(dock.shell, ratatui::layout::Rect::new(2, 19, 76, 5));
     assert_eq!(dock.status, plan.status);
     assert_eq!(dock.composer, plan.composer.unwrap_or_abort());
     assert_eq!(
@@ -265,15 +265,15 @@ pub(super) fn layout_plan_primary_geometry_matches_shell_contract() {
     assert_eq!(plan.footer, ratatui::layout::Rect::new(0, 30, 100, 0));
     assert_eq!(
         plan.transcript,
-        Some(ratatui::layout::Rect::new(0, 0, 100, 24))
+        Some(ratatui::layout::Rect::new(0, 0, 100, 25))
     );
     assert_eq!(plan.operator_sidebar, None);
     assert_eq!(plan.status, None);
     assert_eq!(
         plan.composer,
-        Some(ratatui::layout::Rect::new(2, 24, 96, 4))
+        Some(ratatui::layout::Rect::new(2, 25, 96, 3))
     );
-    assert_eq!(dock.shell, ratatui::layout::Rect::new(2, 24, 96, 6));
+    assert_eq!(dock.shell, ratatui::layout::Rect::new(2, 25, 96, 5));
     assert_eq!(dock.status, plan.status);
     assert_eq!(dock.composer, plan.composer.unwrap_or_abort());
     assert_eq!(
@@ -290,7 +290,7 @@ pub(super) fn layout_plan_primary_empty_operator_rail_keeps_fixed_width() {
 
     assert_eq!(
         plan.transcript,
-        Some(ratatui::layout::Rect::new(0, 0, 100, 24))
+        Some(ratatui::layout::Rect::new(0, 0, 100, 25))
     );
     assert_eq!(plan.operator_sidebar, None);
     assert_eq!(plan.details_overlay, None);
@@ -446,7 +446,7 @@ pub(super) fn layout_breakpoints_match_shell_parity_contract() {
     assert!(compact_plan.operator_sidebar.is_none());
     assert_eq!(
         compact_plan.details_overlay,
-        Some(ratatui::layout::Rect::new(38, 0, 42, 18))
+        Some(ratatui::layout::Rect::new(38, 0, 42, 19))
     );
 
     let mut dense = app::AppState::new_live(None, false, None);

@@ -834,8 +834,7 @@ fn divided_surface_block<'a>(
         .title_style(panel_style(surface, title_color))
 }
 
-pub(super) fn live_transcript_shell_surface(theme: &Theme) -> Color {
-    let _ = theme;
+pub(super) fn live_transcript_shell_surface(_theme: &Theme) -> Color {
     Color::Reset
 }
 
@@ -885,8 +884,8 @@ pub(super) fn slash_command_row_style(theme: &Theme, is_selected: bool) -> Style
     }
 }
 
-pub(super) fn open_canvas(theme: &Theme) -> Block<'static> {
-    Block::default().style(Style::default().bg(live_transcript_shell_surface(theme)))
+pub(super) fn open_canvas(surface: Color) -> Block<'static> {
+    Block::default().style(Style::default().bg(surface))
 }
 
 pub(super) fn quiet_rail<'a>(
@@ -952,8 +951,8 @@ pub(super) fn modal_card<'a>(
     )
 }
 
-pub(super) fn live_transcript_shell_section(theme: &Theme) -> Block<'static> {
-    open_canvas(theme)
+pub(super) fn live_transcript_shell_section(surface: Color) -> Block<'static> {
+    open_canvas(surface)
 }
 
 pub(super) fn control_dock_section(

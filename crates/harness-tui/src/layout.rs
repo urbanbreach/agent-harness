@@ -36,6 +36,7 @@ const LIVE_PROMPT_STANDARD_CHROME_ROWS: u16 = 4;
 const LIVE_PROMPT_DENSE_CHROME_ROWS: u16 = 3;
 const LIVE_PROMPT_MIN_HEIGHT: u16 = 5;
 const DENSE_LIVE_PROMPT_MIN_HEIGHT: u16 = 4;
+const LIVE_STATUS_ROW_MIN_TERMINAL_HEIGHT: u16 = 33;
 // Freeze PERM dock zone is 11 rows (shell 3 + tray 8: options/blanks/hints/trailing).
 const LIVE_PERMISSION_PROMPT_MIN_HEIGHT: u16 = 11;
 // Freeze QUESTION: dock 11 + blank + Esc footer + trailing blank (shell footer steals 3).
@@ -419,13 +420,19 @@ pub(crate) fn session_shell_layout(
         live_prompt_block_height(app, content_column, contract, shell, terminal_height)
     } else {
         let disclosure_rows = control_dock_disclosure_rows(app, contract);
+        let status_rows =
+            if disclosure_rows > 0 && terminal_height >= LIVE_STATUS_ROW_MIN_TERMINAL_HEIGHT {
+                shell_tokens.spacing.heights.status
+            } else {
+                0
+            };
         let bottom_margin = if disclosure_rows > 0 {
             LIVE_POST_TURN_BOTTOM_MARGIN_ROWS
         } else {
             0
         };
         live_prompt_block_height(app, content_column, contract, shell, terminal_height)
-            .saturating_add(shell_tokens.spacing.heights.status)
+            .saturating_add(status_rows)
             .saturating_add(bottom_margin)
     };
 

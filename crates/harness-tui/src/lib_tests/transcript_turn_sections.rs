@@ -109,7 +109,7 @@ pub(super) fn transcript_turn_sections_render_open_rail_surfaces() {
     );
     assert!(user_body_bgs[user_body_column..user_body_column + 4]
         .iter()
-        .all(|color| *color == theme.surface.shell));
+        .all(|color| *color == theme.surface.card));
     assert!(
         assistant_footer_bgs[assistant_body_column..assistant_body_column + 9]
             .iter()

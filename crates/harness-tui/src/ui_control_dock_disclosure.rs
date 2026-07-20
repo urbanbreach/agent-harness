@@ -669,6 +669,15 @@ fn live_freeze_shortcut_disclosure_row(
         Span::styled(mode_key, bold),
         Span::styled(":mode", normal),
         Span::styled("  │  ", dim),
+    ]);
+    if app.active_turn_in_progress() {
+        spans.extend([
+            Span::styled("Ctrl+c", bold),
+            Span::styled(":cancel", normal),
+            Span::styled("  │  ", dim),
+        ]);
+    }
+    spans.extend([
         Span::styled(help_key, bold),
         Span::styled(":shortcuts", normal),
     ]);

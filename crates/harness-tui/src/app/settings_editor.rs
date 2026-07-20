@@ -7,6 +7,7 @@
 //! - `runtime.compaction.structured_summary_contract`
 //! - `runtime.compaction.estimated_token_triggers`
 //! - `runtime.deterministic.enabled`
+//!
 //! Secrets fail closed. Runtime/TUI surfaces stay separate.
 
 use std::path::{Path, PathBuf};
@@ -458,9 +459,7 @@ impl AppState {
     }
 
     fn effective_value_for(&self, setting_id: &str) -> Option<String> {
-        if self.settings_project_config_path.is_none() {
-            return None;
-        }
+        self.settings_project_config_path.as_ref()?;
         match setting_id {
             HASHLINE_EDIT_ID => Some(bool_label(self.settings_hashline_edit)),
             COMPACTION_ENABLED_ID => Some(bool_label(self.settings_compaction_enabled)),

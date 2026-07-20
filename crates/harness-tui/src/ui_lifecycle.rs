@@ -491,7 +491,7 @@ fn compact_welcome_inset_x(area_width: u16) -> u16 {
         return COMPACT_WELCOME_NARROW_INSET_X.min(area_width.saturating_sub(8) / 2);
     }
     let spare = area_width.saturating_sub(COMPACT_WELCOME_CONTENT_WIDTH);
-    ((spare + 1) / 2).min(area_width.saturating_sub(8) / 2)
+    spare.div_ceil(2).min(area_width.saturating_sub(8) / 2)
 }
 
 fn compact_welcome_lines(

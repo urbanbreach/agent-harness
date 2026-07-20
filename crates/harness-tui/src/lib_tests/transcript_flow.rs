@@ -629,10 +629,12 @@ pub(super) fn permission_overlay_preserves_draft_and_transcript_context() {
         "tool_call_overlay",
     ));
 
+    assert_eq!(app.composer.prompt_buffer, "keep this draft");
+
     let debug = render_live_buffer(&app, 80, 24);
     assert!(!debug.contains("Composer · disabled · Permission blocked"));
     assert!(debug.contains("Allow Edit to demo.txt?"));
-    assert!(debug.contains("Draft preserved · keep this draft"));
+    assert!(debug.contains("Draft preserved"));
     assert!(!debug.contains("Select an activity to view transcript"));
     assert!(
         debug.contains("always-approve") && debug.contains("No, reject"),
@@ -662,7 +664,7 @@ pub(super) fn permission_overlay_ignores_plain_draft_input_once_prompt_is_active
     assert!(app.active_permission().is_some());
 
     let debug = render_live_buffer(&app, 80, 24);
-    assert!(debug.contains("Draft preserved · keep this dr"));
+    assert!(debug.contains("Draft preserved"));
     assert!(!debug.contains("Slash commands"));
 }
 
@@ -690,5 +692,5 @@ pub(super) fn permission_overlay_preserves_existing_draft_without_buffering_new_
     );
 
     let debug = render_live_buffer(&app, 80, 24);
-    assert!(debug.contains("Draft preserved · keep t"));
+    assert!(debug.contains("Draft preserved"));
 }

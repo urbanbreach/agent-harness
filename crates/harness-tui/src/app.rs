@@ -1769,6 +1769,11 @@ impl AppState {
     }
 
     /// Seed host/session probes with explicit optional roots (tests + runtime).
+    #[allow(
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        reason = "hardcoded probe IDs always parse successfully; panic indicates programmer error"
+    )]
     pub fn seed_operator_host_probes_with_roots(
         &mut self,
         workspace_root: Option<&std::path::Path>,
@@ -1891,6 +1896,9 @@ impl AppState {
                     if let Some(line) = product.first_line {
                         self.set_team_first_line(Some(line));
                     }
+                    if let Some(line) = product.last_message_line {
+                        self.set_team_last_message_line(Some(line));
+                    }
                     true
                 })
                 .unwrap_or(false);
@@ -1946,8 +1954,7 @@ impl AppState {
         {
             let mut cron_registry = harness_core::cron_schedule::CronScheduleRegistry::new();
             let probe = harness_core::cron_schedule::CronSchedule {
-                id: harness_core::cron_schedule::ScheduleId::parse("(probe)")
-                    .expect("probe schedule id"),
+                id: harness_core::cron_schedule::ScheduleId::from_static_literal("(probe)"),
                 expression: "0 * * * *".to_string(),
                 label: Some("probe".to_string()),
                 payload_hint: "(probe)".to_string(),
@@ -1955,32 +1962,28 @@ impl AppState {
             let probe_id = probe.id.clone();
             let _ = harness_core::cron_schedule::register_cron_schedule(&mut cron_registry, probe);
             let probe2 = harness_core::cron_schedule::CronSchedule {
-                id: harness_core::cron_schedule::ScheduleId::parse("(probe-2)")
-                    .expect("probe-2 schedule id"),
+                id: harness_core::cron_schedule::ScheduleId::from_static_literal("(probe-2)"),
                 expression: "30 * * * *".to_string(),
                 label: Some("probe-2".to_string()),
                 payload_hint: "(probe-2)".to_string(),
             };
             let _ = harness_core::cron_schedule::register_cron_schedule(&mut cron_registry, probe2);
             let probe3 = harness_core::cron_schedule::CronSchedule {
-                id: harness_core::cron_schedule::ScheduleId::parse("(probe-3)")
-                    .expect("probe-3 schedule id"),
+                id: harness_core::cron_schedule::ScheduleId::from_static_literal("(probe-3)"),
                 expression: "15 */2 * * *".to_string(),
                 label: Some("probe-3".to_string()),
                 payload_hint: "(probe-3)".to_string(),
             };
             let _ = harness_core::cron_schedule::register_cron_schedule(&mut cron_registry, probe3);
             let probe4 = harness_core::cron_schedule::CronSchedule {
-                id: harness_core::cron_schedule::ScheduleId::parse("(probe-4)")
-                    .expect("probe-4 schedule id"),
+                id: harness_core::cron_schedule::ScheduleId::from_static_literal("(probe-4)"),
                 expression: "45 1 * * *".to_string(),
                 label: Some("probe-4".to_string()),
                 payload_hint: "(probe-4)".to_string(),
             };
             let _ = harness_core::cron_schedule::register_cron_schedule(&mut cron_registry, probe4);
             let probe5 = harness_core::cron_schedule::CronSchedule {
-                id: harness_core::cron_schedule::ScheduleId::parse("(probe-5)")
-                    .expect("probe-5 schedule id"),
+                id: harness_core::cron_schedule::ScheduleId::from_static_literal("(probe-5)"),
                 expression: "5 3 * * 1".to_string(),
                 label: None,
                 payload_hint: "(probe-5-unlabeled)".to_string(),

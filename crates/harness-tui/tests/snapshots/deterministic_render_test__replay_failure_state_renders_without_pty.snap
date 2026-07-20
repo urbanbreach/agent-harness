@@ -4,7 +4,7 @@ expression: rendered.as_str()
 ---
 Replay · read-only · run run_fixture · 2 ev                                                                                                                                         
                                                                                                                                                                                     
-     Waiting for first turn…                                                                                                                                                        
+  Waiting for first turn…                                                                                                                                                           
                                                                                                                                            ▼ MCP                                    
                                                                                                                                            • No MCP servers configured              
                                                                                                                                                                                     

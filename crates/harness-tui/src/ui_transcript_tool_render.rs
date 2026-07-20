@@ -5,7 +5,7 @@ use super::*;
 // message box rail). One leading content space offsets the nested rail glyph
 // and its trailing gap so todo text starts at column 3, matching user-message
 // and assistant-body text.
-const TRANSCRIPT_TODO_BLOCK_INDENT: &str = "";
+const TRANSCRIPT_TODO_BLOCK_INDENT: &str = "   ";
 const TRANSCRIPT_TODO_BLOCK_CONTENT_LEADING: &str = " ";
 
 fn build_tool_header_spans(
@@ -833,7 +833,7 @@ fn append_tool_call_diff_block(
 ) {
     let nested_width = transcript_surface_content_width(width, false);
     let body_indent = if plain_numbered {
-        "  "
+        "     "
     } else {
         TRANSCRIPT_OPCODE_EDIT_INDENT
     };

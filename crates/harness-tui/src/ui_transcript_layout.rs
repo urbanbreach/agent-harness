@@ -331,6 +331,63 @@ fn pending_permission_footer_pin_delta(
     Some((section_idx, surface_idx, delta))
 }
 
+fn run_write_footer_outdent(surface: &MeasuredTranscriptSurface) -> u16 {
+    if surface.kind != TranscriptRenderSurfaceKind::AssistantFooter {
+        return 0;
+    }
+    let is_run_write_footer = surface.lines.iter().any(|line| {
+        line.spans
+            .iter()
+            .any(|span| span.content.contains("Run Write") || span.content.contains("Waiting on"))
+    });
+    u16::from(is_run_write_footer)
+}
+
+fn paint_selected_rail_glyph(frame: &mut Frame, surface_rect: Rect, theme: &Theme) {
+    let rail_x = surface_rect.x;
+    let rail_rect = Rect::new(rail_x, surface_rect.y, 1, 1);
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            SELECTED_RAIL_GLYPH,
+            Style::default().fg(theme.text.secondary),
+        ))),
+        rail_rect,
+    );
+}
+
+pub(super) fn transcript_diff_hunk_rows_for_layout(
+    layout: &MeasuredTranscriptLayout,
+) -> Vec<usize> {
+    let mut rows = Vec::new();
+    for section in &layout.sections {
+        let section_content_top = section.top_row.saturating_add(section.leading_gap_height);
+        for surface in &section.surfaces {
+            let surface_top = section_content_top.saturating_add(surface.top_offset);
+            rows.extend(
+                surface
+                    .diff_hunk_offsets
+                    .iter()
+                    .map(|offset| surface_top.saturating_add(*offset)),
+            );
+        }
+    }
+    rows
+}
+
+fn transcript_visual_rows(lines: &[Line<'static>], viewport_width: usize) -> usize {
+    lines
+        .iter()
+        .map(|line| {
+            let width = line.width();
+            if width == 0 {
+                1
+            } else {
+                width.div_ceil(viewport_width)
+            }
+        })
+        .sum()
+}
+
 #[cfg(test)]
 mod pin_tests {
     use super::*;
@@ -495,64 +552,4 @@ mod pin_tests {
         let layout = scroll_turn_layout(4, 40);
         assert!(sticky_user_surface(&layout, 24, 20).is_none());
     }
-}
-
-fn run_write_footer_outdent(surface: &MeasuredTranscriptSurface) -> u16 {
-    if surface.kind != TranscriptRenderSurfaceKind::AssistantFooter {
-        return 0;
-    }
-    let is_run_write_footer = surface.lines.iter().any(|line| {
-        line.spans
-            .iter()
-            .any(|span| span.content.contains("Run Write") || span.content.contains("Waiting on"))
-    });
-    u16::from(is_run_write_footer)
-}
-
-fn paint_selected_rail_glyph(frame: &mut Frame, surface_rect: Rect, theme: &Theme) {
-    let rail_x = surface_rect.x.saturating_sub(3);
-    if rail_x >= surface_rect.x {
-        return;
-    }
-    let rail_rect = Rect::new(rail_x, surface_rect.y, 1, 1);
-    frame.render_widget(
-        Paragraph::new(Line::from(Span::styled(
-            SELECTED_RAIL_GLYPH,
-            Style::default().fg(theme.text.secondary),
-        ))),
-        rail_rect,
-    );
-}
-
-pub(super) fn transcript_diff_hunk_rows_for_layout(
-    layout: &MeasuredTranscriptLayout,
-) -> Vec<usize> {
-    let mut rows = Vec::new();
-    for section in &layout.sections {
-        let section_content_top = section.top_row.saturating_add(section.leading_gap_height);
-        for surface in &section.surfaces {
-            let surface_top = section_content_top.saturating_add(surface.top_offset);
-            rows.extend(
-                surface
-                    .diff_hunk_offsets
-                    .iter()
-                    .map(|offset| surface_top.saturating_add(*offset)),
-            );
-        }
-    }
-    rows
-}
-
-fn transcript_visual_rows(lines: &[Line<'static>], viewport_width: usize) -> usize {
-    lines
-        .iter()
-        .map(|line| {
-            let width = line.width();
-            if width == 0 {
-                1
-            } else {
-                width.div_ceil(viewport_width)
-            }
-        })
-        .sum()
 }

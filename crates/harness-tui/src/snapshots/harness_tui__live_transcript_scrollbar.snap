@@ -1,28 +1,27 @@
 ---
 source: crates/harness-tui/src/lib_tests/transcript_flow.rs
-assertion_line: 148
 expression: rendered
 ---
 
    ui-ux-experiments ~/Projects/agent-harness/crates/harness-tui
 
 
+
      ◆ Thought for 0.0s
 
 
-     reply 11 keeps wrapping through the transcript viewport so the
-     scrollbar thumb has real room to move
+     reply 11 keeps wrapping through the transcript viewport so the scrollbar
+     thumb has real room to move
 
 
 
 
-     ❯ question 12                                                        █
-                                                                          █
-                                                                          █
+     ❯ question 12                                                           █
+                                                                             █
+                                                                             █
                                        ▼
 
   ╭──────────────────────────────────────────────────────────────────────────╮
   │ ❯                                                                        │
   ╰─────────────────────────────────────────────────────────── gpt-5.4-mini ─╯
-
   Shift+Tab:mode  │  Ctrl+x:shortcuts

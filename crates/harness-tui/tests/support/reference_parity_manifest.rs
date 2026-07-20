@@ -146,14 +146,18 @@ pub struct StatusRollup {
     pub blocked: usize,
     pub pass: usize,
     pub diverged: usize,
+    pub diverged_user_approved: usize,
+    pub diverged_evidence_backed: usize,
     pub unknown: usize,
 }
 
 impl StatusRollup {
     /// A-MANIFEST is complete when every required row is `pass` or user-approved `diverged`.
+    /// Evidence-backed divergences (no `deliberate_divergence_id`) do not count as complete.
     pub fn a_manifest_complete(&self) -> bool {
         self.required > 0
-            && self.pass + self.diverged == self.required
+            && self.pass + self.diverged_user_approved == self.required
+            && self.diverged_evidence_backed == 0
             && self.unknown == 0
             && self.incomplete == 0
             && self.blocked == 0
@@ -161,6 +165,8 @@ impl StatusRollup {
 }
 
 /// Count row statuses for fail-closed A-MANIFEST rollup reporting.
+/// Divergences are split into user-approved (carry a `deliberate_divergence_id`) and
+/// evidence-backed (valid L1/L3 pair but residual differences, no approved divergence).
 pub fn rollup_status(manifest: &Value) -> StatusRollup {
     let mut rollup = StatusRollup::default();
     let Some(rows) = manifest["rows"].as_array() else {
@@ -172,7 +178,17 @@ pub fn rollup_status(manifest: &Value) -> StatusRollup {
             Some("incomplete") => rollup.incomplete += 1,
             Some("blocked") => rollup.blocked += 1,
             Some("pass") => rollup.pass += 1,
-            Some("diverged") => rollup.diverged += 1,
+            Some("diverged") => {
+                rollup.diverged += 1;
+                let has_approved_div = row["deliberate_divergence_id"]
+                    .as_str()
+                    .is_some_and(|id| !id.is_empty());
+                if has_approved_div {
+                    rollup.diverged_user_approved += 1;
+                } else {
+                    rollup.diverged_evidence_backed += 1;
+                }
+            }
             _ => rollup.unknown += 1,
         }
     }

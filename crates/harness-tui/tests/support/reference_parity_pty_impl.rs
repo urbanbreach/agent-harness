@@ -617,7 +617,12 @@ pub(crate) fn shell_cancel_pty() {
     if !require_pty_signoff() {
         return;
     }
-    let mut helper = spawn_helper(LIVE_CANCEL_HELPER, LIVE_CANCEL_SCENARIO);
+    let mut helper = spawn_helper_at(
+        LIVE_CANCEL_HELPER,
+        LIVE_CANCEL_SCENARIO,
+        FREEZE_SHELL_COLS,
+        FREEZE_SHELL_ROWS,
+    );
     // Expanded essay body scrolls the user prompt off-screen; wait on visible freeze markers.
     helper.wait_for("Turn cancelled by user in 1.3s");
     helper.wait_for("intersection of art");
@@ -1028,6 +1033,7 @@ pub(crate) fn pty_helper_type_first_startup() {
         keybindings: None,
         toggles: None,
         preserve_terminal_on_exit: false,
+        workspace_root: None,
     })
     .unwrap_or_abort();
 }
@@ -1053,6 +1059,7 @@ pub(crate) fn pty_helper_live_draft() {
         keybindings: None,
         toggles: None,
         preserve_terminal_on_exit: false,
+        workspace_root: Some(run_dir.path().to_path_buf()),
     })
     .unwrap_or_abort();
 }
@@ -1165,6 +1172,7 @@ pub(crate) fn pty_helper_question_overlay() {
         keybindings: None,
         toggles: None,
         preserve_terminal_on_exit: false,
+        workspace_root: Some(run_dir.path().to_path_buf()),
     })
     .unwrap_or_abort();
 }
@@ -1187,6 +1195,7 @@ fn run_live_with_historical_events(historical_events: Vec<EventEnvelopeV1>) {
         keybindings: None,
         toggles: None,
         preserve_terminal_on_exit: false,
+        workspace_root: Some(run_dir.path().to_path_buf()),
     })
     .unwrap_or_abort();
 }
@@ -1252,6 +1261,7 @@ pub(crate) fn pty_helper_permission_overlay() {
         keybindings: None,
         toggles: None,
         preserve_terminal_on_exit: false,
+        workspace_root: Some(run_dir.path().to_path_buf()),
     })
     .unwrap_or_abort();
 }

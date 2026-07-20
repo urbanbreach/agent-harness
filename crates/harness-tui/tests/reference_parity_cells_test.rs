@@ -685,11 +685,7 @@ fn freeze_perm_matches_harness_perm_v14_with_path_draft_identity_mask() {
     // Geometry (pin/height/lead) matches freeze. Residual rows only:
     // L2 breadcrumb spacing, L5 user clock, L20/L23 path length packing,
     // L24 draft line (product feature vs freeze empty draft gap).
-    let masks = identity_rows_mask(
-        "shell_perm_path_draft_identity",
-        &[1, 4, 19, 22, 23],
-        120,
-    );
+    let masks = identity_rows_mask("shell_perm_path_draft_identity", &[1, 4, 19, 22, 23], 120);
     assert_freeze_grapheme_match(
         "reference/freeze/run1-perm-proxy-v2/terminal.txt",
         "actual/harness-pty-perm-120x32-v14/terminal.txt",

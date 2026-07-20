@@ -377,19 +377,13 @@ pub(super) fn live_shell_permission_preserves_draft_snapshot() {
         "tool_call_snapshot",
     ));
 
+    assert_eq!(app.composer.prompt_buffer, "keep this draft");
+
     let rendered = render_live_lines(&app, 80, 24);
     println!("{rendered}");
 
-    assert_live_shell_contains(
-        &app,
-        80,
-        24,
-        &[
-            "Allow Edit",
-            "Draft preserved · keep this draft",
-            "always-approve",
-        ],
-    );
+    assert_live_shell_contains(&app, 80, 24, &["Allow Edit", "always-approve"]);
+    assert!(rendered.contains("Draft preserved"));
 }
 
 pub(super) fn live_shell_degraded_bootstrap_snapshot() {

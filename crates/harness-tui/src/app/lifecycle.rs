@@ -749,7 +749,7 @@ impl AppState {
         self.delegated_child_request_ids_for_parent_view(self.current_session_id())
     }
 
-    pub(in crate::app) fn active_turn_in_progress(&self) -> bool {
+    pub(crate) fn active_turn_in_progress(&self) -> bool {
         let hidden_child_request_ids = self.hidden_delegated_child_request_ids_in_current_view();
         self.activities
             .iter()

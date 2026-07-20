@@ -11,10 +11,11 @@ fn harness_dark_theme_matches_palette_contract() {
     assert_eq!(theme.surface.panel, rgb(0x0B, 0x0E, 0x14));
     assert_eq!(theme.surface.panel_elevated, rgb(0x12, 0x16, 0x1E));
     assert_eq!(theme.surface.overlay, rgb(0x0B, 0x0E, 0x14));
+    assert_eq!(theme.surface.card, rgb(0x55, 0x57, 0x53));
     assert_eq!(theme.border.subtle, rgb(0x3A, 0x3D, 0x43));
     assert_eq!(theme.border.strong, rgb(0x48, 0x4B, 0x52));
     assert_eq!(theme.border.focus, rgb(0x60, 0x63, 0x6A));
-    assert_eq!(theme.text.primary, rgb(0xD7, 0xDA, 0xE0));
+    assert_eq!(theme.text.primary, rgb(0xEE, 0xEE, 0xEC));
     assert_eq!(theme.text.secondary, rgb(0x88, 0x8B, 0x91));
     assert_eq!(theme.text.tertiary, rgb(0x88, 0x8B, 0x91));
     assert_eq!(theme.text.accent, rgb(0xD9, 0x84, 0xD9));

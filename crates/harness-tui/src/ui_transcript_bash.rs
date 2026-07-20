@@ -20,7 +20,7 @@ use super::ui_transcript_surface::{
     transcript_surface_content_width,
 };
 
-pub(super) const TRANSCRIPT_COMMAND_TOOL_INDENT: &str = "";
+pub(super) const TRANSCRIPT_COMMAND_TOOL_INDENT: &str = "   ";
 pub(super) const HARNESS_BASH_OUTPUT_LINE_CLAMP: usize = 15;
 const HARNESS_BLOCK_TOOL_PADDING_LEFT: usize = 2;
 const HARNESS_BLOCK_TOOL_GAP: usize = 1;

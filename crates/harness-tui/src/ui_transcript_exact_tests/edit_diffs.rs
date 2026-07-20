@@ -395,15 +395,15 @@ pub(crate) fn exact_test_transcript_apply_patch_surfaces_rename_and_wrapped_inli
     );
     assert!(
         lines.iter().any(|line| {
-            line.contains("every transcript lane for operators reviewing compact windows")
-                || line.contains("n every transcript lane for operators reviewing compact windows")
+            line.contains("every transcript lane for operators reviewing compact wind")
+                || line.contains("n every transcript lane for operators reviewing compact wind")
         }),
         "removed line continuation missing\n{rendered}"
     );
     assert!(
         lines.iter().any(|line| {
-            line.contains("across the transcript surface for operators reviewing compact wind")
-                || line.contains("ross the transcript surface for operators reviewing compact wind")
+            line.contains("across the transcript surface for operators reviewing compact")
+                || line.contains("ross the transcript surface for operators reviewing compact")
         }),
         "added line wrapped continuation prefix missing\n{rendered}"
     );
@@ -1060,13 +1060,15 @@ pub(crate) fn exact_test_write_tool_title_matches_thought_lead() {
 
     // Then: Creating title is flat (same lead as Thought / inline tools) — no nested
     // invisible rail padding. Body keeps the plain-numbered indent under the title.
+    // Absolute lead values now include the global 3-char transcript content indent
+    // (matching reference), so title lead is 3 and body lead is title + 2 = 5.
     assert_eq!(
-        title_lead, 0,
+        title_lead, 3,
         "Grok Creating title aligns with Thought (flat lead); nested card rail adds +2\n{title:?}\n{}",
         lines.join("\n")
     );
     assert_eq!(
-        body_lead, 2,
+        body_lead, 5,
         "Grok plain body is title+2 (`  1  text`); min-4 line pad was lead=5\ntitle_lead={title_lead} body_lead={body_lead}\n{}",
         lines.join("\n")
     );

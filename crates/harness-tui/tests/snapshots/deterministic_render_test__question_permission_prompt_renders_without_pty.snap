@@ -16,16 +16,15 @@ expression: rendered.as_str()
                                                                                                     
                                                                                                     
                                                                                                     
-                                                                                                    
-                                                                                                    
-                                                                                                    
             ┃                                                                                       
-            ┃ Pick one                                                                              
+            ┃  Pick one                                                                             
             ┃                                                                                       
-            ┃ 1 (○) A  Option A                                                                     
-            ┃ z (○) Type your answer here                                                           
             ┃                                                                                       
-            ┃ ↑/↓ navigate · Ctrl+x y copy                                 Enter:submit             
+            ┃  1 (○) A  Option A                                                                    
+            ┃  z (○) Type your answer here                                                          
+            ┃                                                                                       
+            ┃  ↑/↓ navigate · y copy                                       Enter:submit             
+            ┃                                                                                       
             ┃                                                                                       
             ┃                                                                                       
                                                                                                     

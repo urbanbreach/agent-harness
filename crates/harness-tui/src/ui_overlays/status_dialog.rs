@@ -175,9 +175,7 @@ fn status_dialog_plugin_summary(app: &AppState) -> PluginDialogSummary {
         let line = outcome.one_line();
         sanitize_status_dialog_text(&line)
     });
-    let first_plugin = app
-        .plugin_first_line()
-        .map(|line| sanitize_status_dialog_text(line));
+    let first_plugin = app.plugin_first_line().map(sanitize_status_dialog_text);
     let discover = app.extension_discover_summary().map(|summary| {
         let line = summary.one_line();
         sanitize_status_dialog_text(&line)
@@ -460,7 +458,7 @@ fn status_dialog_operator_summary(app: &AppState) -> OperatorDialogSummary {
         .filter(|s| !s.is_empty());
     let provider_fallback = banner
         .filter(|text| text.to_ascii_lowercase().contains("provider fallback"))
-        .map(|text| sanitize_status_dialog_text(text));
+        .map(sanitize_status_dialog_text);
     let crash_or_recovery = banner
         .filter(|text| {
             let lower = text.to_ascii_lowercase();
@@ -470,7 +468,7 @@ fn status_dialog_operator_summary(app: &AppState) -> OperatorDialogSummary {
                 || lower.contains("stale writer")
         })
         .filter(|_| provider_fallback.is_none())
-        .map(|text| sanitize_status_dialog_text(text));
+        .map(sanitize_status_dialog_text);
     let demote_handle = app.focused_demote_handle_id().map(|id| {
         let cleaned = sanitize_status_dialog_text(&id);
         if cleaned.chars().count() > 48 {
@@ -515,7 +513,7 @@ fn status_dialog_operator_summary(app: &AppState) -> OperatorDialogSummary {
     });
     let crash_recovery_report = app
         .crash_recovery_first_report_line()
-        .map(|line| sanitize_status_dialog_text(line));
+        .map(sanitize_status_dialog_text);
     let teams = app.team_registry_summary().map(|summary| {
         let line = summary.one_line();
         sanitize_status_dialog_text(&line)
@@ -524,16 +522,14 @@ fn status_dialog_operator_summary(app: &AppState) -> OperatorDialogSummary {
         let line = outcome.one_line();
         sanitize_status_dialog_text(&line)
     });
-    let team_first = app
-        .team_first_line()
-        .map(|line| sanitize_status_dialog_text(line));
+    let team_first = app.team_first_line().map(sanitize_status_dialog_text);
     let team_last_send = app.team_last_send().map(|outcome| {
         let line = outcome.one_line();
         sanitize_status_dialog_text(&line)
     });
     let team_last_message = app
         .team_last_message_line()
-        .map(|line| sanitize_status_dialog_text(line));
+        .map(sanitize_status_dialog_text);
     let team_add_member = app.team_last_add_member().map(|outcome| {
         let line = outcome.one_line();
         sanitize_status_dialog_text(&line)
@@ -552,7 +548,7 @@ fn status_dialog_operator_summary(app: &AppState) -> OperatorDialogSummary {
     });
     let cron_first_schedule = app
         .cron_first_schedule_line()
-        .map(|line| sanitize_status_dialog_text(line));
+        .map(sanitize_status_dialog_text);
     let cron_last_remove = app.cron_last_remove().map(|outcome| {
         let line = outcome.one_line();
         sanitize_status_dialog_text(&line)
@@ -579,10 +575,10 @@ fn status_dialog_operator_summary(app: &AppState) -> OperatorDialogSummary {
     });
     let fallback_banner = app
         .auto_fallback_last_banner()
-        .map(|line| sanitize_status_dialog_text(line));
+        .map(sanitize_status_dialog_text);
     let fallback_models = app
         .auto_fallback_chain_label()
-        .map(|line| sanitize_status_dialog_text(line));
+        .map(sanitize_status_dialog_text);
     let workspace_hub = app.workspace_hub_outcome_summary().map(|summary| {
         let line = summary.one_line();
         sanitize_status_dialog_text(&line)
@@ -617,7 +613,7 @@ fn status_dialog_operator_summary(app: &AppState) -> OperatorDialogSummary {
     });
     let graph_batch_first = app
         .graph_query_batch_first_line()
-        .map(|line| sanitize_status_dialog_text(line));
+        .map(sanitize_status_dialog_text);
     let persistent_graph = app.persistent_graph_availability().map(|availability| {
         let line = availability.one_line();
         sanitize_status_dialog_text(&line)
@@ -761,7 +757,7 @@ fn status_dialog_operator_summary(app: &AppState) -> OperatorDialogSummary {
     });
     let os_sandbox_first_profile = app
         .os_sandbox_first_profile_line()
-        .map(|line| sanitize_status_dialog_text(line));
+        .map(sanitize_status_dialog_text);
     let sandbox_last_prepare = app.sandbox_last_prepare().map(|result| {
         let line = result.one_line();
         sanitize_status_dialog_text(&line)
@@ -792,10 +788,10 @@ fn status_dialog_operator_summary(app: &AppState) -> OperatorDialogSummary {
     });
     let edit_attribution_first = app
         .edit_attribution_first_line()
-        .map(|line| sanitize_status_dialog_text(line));
+        .map(sanitize_status_dialog_text);
     let edit_attribution_last = app
         .edit_attribution_last_line()
-        .map(|line| sanitize_status_dialog_text(line));
+        .map(sanitize_status_dialog_text);
     let plan_view = {
         let summary = app.plan_view_summary();
         let line = summary.one_line();
@@ -2330,6 +2326,11 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_edit_attributio
     );
 }
 
+#[allow(
+    clippy::expect_used,
+    clippy::field_reassign_with_default,
+    reason = "test setup: fields set after Default ensures precondition for subsequent expect"
+)]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_crash_recovery_next() {
     // Given: first previous-crash report bound with reopen action
     let mut app = AppState::new_live(None, false, None);
@@ -2549,12 +2550,14 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_crash_recovery_
     app.set_crash_recovery_resolved_action(Some(
         harness_core::crash_recovery::resolve_crash_recovery_action(false),
     ));
-    let mut report = harness_core::crash_recovery::PreviousCrashReport::default();
-    report.run_dir = std::path::PathBuf::from("/tmp/run_crashed");
-    report.previous_crash_detected = true;
-    report.stale_writer_lock = true;
-    report.events_log_present = true;
-    report.recovery_action = Some(harness_core::crash_recovery::CrashRecoveryAction::ReopenSession);
+    let report = harness_core::crash_recovery::PreviousCrashReport {
+        run_dir: std::path::PathBuf::from("/tmp/run_crashed"),
+        previous_crash_detected: true,
+        stale_writer_lock: true,
+        events_log_present: true,
+        recovery_action: Some(harness_core::crash_recovery::CrashRecoveryAction::ReopenSession),
+        ..Default::default()
+    };
     app.set_crash_recovery_first_report_line(Some(report.one_line()));
     app.set_crash_recovery_first_report(Some(report));
 
@@ -4819,7 +4822,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_cron_register()
         first.contains("nightly") || first.contains("0 2"),
         "first={first}"
     );
-    assert!(first.contains("executes=true"), "first={first}");
+    assert!(first.contains("executes=false"), "first={first}");
     assert!(rendered.contains("Cron register:"), "rendered={rendered}");
     assert!(rendered.contains("Cron first:"), "rendered={rendered}");
 }

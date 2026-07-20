@@ -1,6 +1,5 @@
 ---
 source: crates/harness-tui/tests/deterministic_render_test.rs
-assertion_line: 133
 expression: trim_trailing_snapshot_whitespace(&rendered)
 ---
 

@@ -84,6 +84,21 @@ fn checked_in_manifest_covers_first_slice_and_scaffolds() {
             .contains("artifacts/qa-evidence/20260717-tui-reference-parity"));
     }
     let user_approved_scaffold_diverged = ["OVL-PALETTE", "SHELL-FAIL"];
+    let evidence_backed_scaffold_diverged = [
+        "SHELL-STREAM",
+        "SHELL-PERM",
+        "SHELL-QUESTION",
+        "SHELL-CANCEL",
+        "SHELL-RECOVER",
+        "SHELL-COMPLETE",
+        "SHELL-SCROLL",
+        "TX-USER",
+        "TX-ASSISTANT",
+        "TX-TOOL",
+        "TX-DIFF",
+        "OVL-PERM",
+        "OVL-QUESTION",
+    ];
     for id in REQUIRED_SCAFFOLD_IDS {
         assert!(ids.contains(*id), "missing scaffold id {id}");
         let row = rows
@@ -105,12 +120,21 @@ fn checked_in_manifest_covers_first_slice_and_scaffolds() {
                     .starts_with("DIV-AA-"),
                 "scaffold {id} missing DIV-AA-* id"
             );
+        } else if evidence_backed_scaffold_diverged.contains(id) {
+            assert_eq!(
+                status, "diverged",
+                "scaffold {id} has evidence-backed divergence"
+            );
+            assert!(
+                !l5.is_empty(),
+                "scaffold {id} diverged requires L5 evidence receipt"
+            );
         } else if status == "pass" {
             assert!(
                 !l5.is_empty(),
                 "scaffold {id} pass requires L5 evidence path"
             );
-        } else if l5.contains("blocked") || *id == "SHELL-STREAM" {
+        } else if l5.contains("blocked") {
             assert_eq!(
                 status, "blocked",
                 "scaffold {id} freeze blocked/invalid pair"
@@ -318,22 +342,33 @@ fn checked_in_manifest_status_rollup_tracks_evidence_backed_passes() {
     let rollup = rollup_status(&manifest);
 
     // assert — A-MANIFEST allows only evidence-backed pass rows (not self-certify-all).
-    // 2026-07-19: first-slice startup/composer + OVL-SESSION/HELP have L1–L6 + L5 masked exact_match.
+    // 2026-07-20: 23 pass (21 visual + 2 non-visual journeys), 2 user-approved AA divergences,
+    // 13 evidence-backed scaffold divergences (valid L1/L3 pair, residual pixel differences).
     assert!(rollup.required >= 30, "expected at least prior 30 rows");
     assert!(
-        rollup.pass >= 15,
-        "expected at least 15 evidence-backed pass rows (incl. SHELL-IDLE draft pair), got {}",
+        rollup.pass >= 23,
+        "expected at least 23 evidence-backed pass rows, got {}",
         rollup.pass
     );
     assert!(
-        rollup.diverged >= 2,
+        rollup.diverged_user_approved >= 2,
         "expected at least 2 user-approved AA divergences, got {}",
-        rollup.diverged
+        rollup.diverged_user_approved
     );
     assert!(
-        rollup.blocked >= 13,
-        "expected remaining freeze-blocked / invalid-pair rows, got {}",
+        rollup.diverged_evidence_backed >= 13,
+        "expected at least 13 evidence-backed scaffold divergences, got {}",
+        rollup.diverged_evidence_backed
+    );
+    assert_eq!(
+        rollup.blocked, 0,
+        "expected no freeze-blocked / invalid-pair rows, got {}",
         rollup.blocked
+    );
+    assert_eq!(
+        rollup.incomplete, 0,
+        "expected no incomplete rows, got {}",
+        rollup.incomplete
     );
     assert_eq!(rollup.unknown, 0);
     assert_eq!(
@@ -345,6 +380,11 @@ fn checked_in_manifest_status_rollup_tracks_evidence_backed_passes() {
 }
 
 #[test]
+#[allow(
+    clippy::panic,
+    clippy::unreachable,
+    reason = "fail-closed on unexpected journey id"
+)]
 fn checked_in_journey_templates_join_inventory_without_fake_l1() {
     // arrange
     // act
@@ -370,7 +410,18 @@ fn checked_in_journey_templates_join_inventory_without_fake_l1() {
             .find(|row| row["behavior_id"].as_str() == Some(journey_id))
             .unwrap_or_else(|| panic!("missing journey template {journey_id}"));
         assert_eq!(row["row_kind"].as_str(), Some("journey"));
-        assert_eq!(row["status"].as_str(), Some("incomplete"));
+        let expected_status = match journey_id {
+            "JOURNEY-WORKTREE-CTRL-W"
+            | "JOURNEY-CONFIG-SHOW-EFFECTIVE"
+            | "JOURNEY-CONFIG-SOURCES-EXPLAIN"
+            | "JOURNEY-WAIT-ANY-ALL"
+            | "JOURNEY-FOLDER-TRUST-DENY"
+            | "JOURNEY-MEMORY-CLI"
+            | "JOURNEY-ALWAYS-APPROVE-MODE"
+            | "JOURNEY-SETTINGS-EDITOR" => "pass",
+            _ => panic!("unexpected checked-in journey id: {journey_id}"),
+        };
+        assert_eq!(row["status"].as_str(), Some(expected_status));
         assert_eq!(row["journey_id"].as_str(), Some(journey_id));
         assert!(!row["capability_id"].as_str().unwrap_or("").is_empty());
         assert!(!row["backend_owner"].as_str().unwrap_or("").is_empty());

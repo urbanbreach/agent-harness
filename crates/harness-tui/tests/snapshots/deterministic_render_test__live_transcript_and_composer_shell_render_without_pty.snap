@@ -1,6 +1,5 @@
 ---
 source: crates/harness-tui/tests/deterministic_render_test.rs
-assertion_line: 88
 expression: trim_trailing_snapshot_whitespace(&rendered)
 ---
 
@@ -13,7 +12,6 @@ expression: trim_trailing_snapshot_whitespace(&rendered)
      ◆ Thought for 0.0s
 
      Assistant verified the rendered shell.
-
      ◈ Web Search "harness sidebar"
 
   ❙  ◈ LSP goto_definition src/ui_secondary.rs
@@ -27,8 +25,9 @@ expression: trim_trailing_snapshot_whitespace(&rendered)
 
 
 
+
+
   ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
   │ ❯                                                                                                                                                        │
   ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── gpt-5.4-mini ─╯
-
   Shift+Tab:mode  │  Ctrl+x:shortcuts

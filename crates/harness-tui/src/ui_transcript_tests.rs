@@ -314,14 +314,14 @@ fn transcript_layout_cache_invalidates_when_theme_changes() {
     let initial_surface = initial_layout.sections[0].surfaces[0].surface;
 
     let mut alternate_theme = *app.theme();
-    alternate_theme.surface.shell = Color::Rgb(0x22, 0x33, 0x44);
+    alternate_theme.surface.card = Color::Rgb(0x22, 0x33, 0x44);
     app.set_theme_for_test(alternate_theme);
 
     let updated_layout = build_measured_transcript_layout_for_width(&app, app.theme(), 80);
     let updated_surface = updated_layout.sections[0].surfaces[0].surface;
 
     assert_ne!(initial_surface, updated_surface);
-    assert_eq!(updated_surface, alternate_theme.surface.shell);
+    assert_eq!(updated_surface, alternate_theme.surface.card);
 }
 
 #[test]
@@ -1070,14 +1070,16 @@ fn user_row_packs_all_names_with_wall_clock_at_scroll_geometry() {
         .find(|line| line.contains('❯'))
         .expect("user marker row");
 
-    // Then: freeze packs "all names" on the first user row beside the wall clock
+    // Then: freeze packs the wall clock on the first user row and wraps overflow
+    // to the next row. With the 3-char transcript content indent, "all names" no
+    // longer fits on the first row, so the clock stays on row 1 and "names" wraps.
     assert!(
-        first_content.contains("all names") && first_content.contains("5:54 AM"),
-        "SCROLL freeze packs 'all names' + wall clock on first user row; got {first_content:?}\nlines={lines:?}"
+        first_content.contains("all") && first_content.contains("5:54 AM"),
+        "SCROLL freeze packs 'all' + wall clock on first user row; got {first_content:?}\nlines={lines:?}"
     );
     assert!(
-        !first_content.contains("one per"),
-        "overflow after 'all names' must wrap to the next row; got {first_content:?}"
+        lines.iter().any(|line| line.contains("names one per")),
+        "overflow after 'all' must wrap to the next row; got {first_content:?}\nlines={lines:?}"
     );
 }
 

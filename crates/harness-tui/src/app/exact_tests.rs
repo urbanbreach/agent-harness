@@ -15,13 +15,13 @@ pub(crate) fn exact_test_startup_slash_commands_execute_without_menu() {
             "agents".to_string(),
             "auth".to_string(),
             "connect".to_string(),
+            "dashboard".to_string(),
             "exit".to_string(),
             "feedback".to_string(),
             "help".to_string(),
             "mcps".to_string(),
             "models".to_string(),
             "new".to_string(),
-            "sessions".to_string(),
         ]
     );
 }

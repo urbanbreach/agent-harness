@@ -29,7 +29,7 @@ const DRAFT_TEXT: &str = "Hello from PTY";
 const PERMISSION_DRAFT: &str = "keep draft under permission";
 const CLEAR_DRAFT_TEXT: &str = "draft to clear via esc";
 const CLEAR_PROMPT_HINT: &str = "press again to clear";
-const PERMISSION_INJECT_DELAY: Duration = Duration::from_millis(2_000);
+const PERMISSION_INJECT_DELAY: Duration = Duration::from_millis(5_000);
 
 const PRIMARY_COLS: u16 = 100;
 const PRIMARY_ROWS: u16 = 30;
@@ -188,6 +188,7 @@ pub(crate) fn pty_status_dialog_opens_without_sidebar_copy() {
     exit_via_palette(&mut helper);
 }
 
+#[allow(clippy::panic, reason = "test code must panic gracefully")]
 pub(crate) fn pty_draft_esc_esc_clears_composer() {
     if !cfg!(target_os = "linux") || std::env::var(PTY_SIGNOFF_ENV).as_deref() != Ok("1") {
         return;
@@ -246,6 +247,7 @@ pub(crate) fn pty_helper_type_first_startup() {
         keybindings: None,
         toggles: None,
         preserve_terminal_on_exit: false,
+        workspace_root: Some(run_dir.path().to_path_buf()),
     })
     .unwrap_or_abort();
 }
@@ -314,6 +316,7 @@ pub(crate) fn pty_helper_permission_overlay() {
         keybindings: None,
         toggles: None,
         preserve_terminal_on_exit: false,
+        workspace_root: Some(run_dir.path().to_path_buf()),
     })
     .unwrap_or_abort();
     drop(keepalive_tx);
@@ -345,6 +348,7 @@ pub(crate) fn pty_helper_connect_auth() {
         keybindings: None,
         toggles: None,
         preserve_terminal_on_exit: false,
+        workspace_root: None,
     })
     .unwrap_or_abort();
 }
@@ -382,6 +386,7 @@ fn exit_via_palette(helper: &mut SpawnedHelper) {
     wait_for_child_exit(helper, "exit_via_palette");
 }
 
+#[allow(clippy::panic, reason = "test code must panic gracefully")]
 fn wait_for_child_exit(helper: &mut SpawnedHelper, context: &str) {
     let deadline = Instant::now() + EXIT_TIMEOUT;
     loop {

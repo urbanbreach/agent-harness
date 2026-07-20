@@ -254,6 +254,9 @@ pub struct TuiOptions {
     pub keybindings: Option<std::collections::BTreeMap<String, String>>,
     pub toggles: Option<TogglesConfig>,
     pub preserve_terminal_on_exit: bool,
+    /// Workspace root used to anchor operator probes and project config discovery.
+    /// When `None`, probes fall back to the process current directory.
+    pub workspace_root: Option<PathBuf>,
 }
 
 impl TuiOptions {
@@ -273,6 +276,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         keybindings: _,
         toggles,
         preserve_terminal_on_exit,
+        workspace_root,
     } = options;
 
     let (mut app, mut live_updates) = match mode {
@@ -354,7 +358,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         app.set_toggles_config(toggles);
     }
 
-    app.seed_operator_host_probes(None);
+    app.seed_operator_host_probes(workspace_root.as_deref());
     app.maybe_set_no_provider_banner();
 
     let preserved_terminal = recover_mutex_lock(preserved_terminal_session()).clone();
@@ -637,6 +641,7 @@ pub fn run_tui() -> Result<()> {
         keybindings: None,
         toggles: None,
         preserve_terminal_on_exit: false,
+        workspace_root: None,
     })
 }
 

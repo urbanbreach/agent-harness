@@ -1,6 +1,5 @@
 ---
 source: crates/harness-tui/tests/deterministic_render_test.rs
-assertion_line: 104
 expression: trim_trailing_snapshot_whitespace(&rendered)
 ---
 
@@ -16,7 +15,7 @@ expression: trim_trailing_snapshot_whitespace(&rendered)
          crates/harness-tui/src
          Remove diff review surface · Diff preview unavailable (artifacts/tool-lifecycle-inline.diff)
 
-          · Researcher Task — audit tool lifecycle parity
+       · Researcher Task — audit tool lifecycle parity
          Found the whole-tool parity path.
 
 

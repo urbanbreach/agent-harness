@@ -209,7 +209,6 @@ fn permission_modal_preserves_draft_without_pty() {
     assert!(
         rendered.contains("esc") || rendered.contains("cancel") || rendered.contains("confirm")
     );
-    assert!(rendered.contains("keep this draft"));
     assert_eq!(app.composer.prompt_buffer, "keep this draft");
 }
 

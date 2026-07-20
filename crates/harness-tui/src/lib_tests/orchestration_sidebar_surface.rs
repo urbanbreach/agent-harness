@@ -145,17 +145,17 @@ pub(super) fn layout_plan_primary_geometry_docks_live_details_sidebar() {
     assert_eq!(plan.shell, ratatui::layout::Rect::new(0, 0, 100, 30));
     assert_eq!(
         plan.transcript,
-        Some(ratatui::layout::Rect::new(0, 0, 100, 24))
+        Some(ratatui::layout::Rect::new(0, 0, 100, 25))
     );
     assert_eq!(plan.operator_sidebar, None);
     assert_eq!(
         plan.details_overlay,
-        Some(ratatui::layout::Rect::new(58, 0, 42, 24))
+        Some(ratatui::layout::Rect::new(58, 0, 42, 25))
     );
     assert_eq!(plan.status, None);
     assert_eq!(
         plan.composer,
-        Some(ratatui::layout::Rect::new(2, 24, 96, 4))
+        Some(ratatui::layout::Rect::new(2, 25, 96, 3))
     );
     assert_eq!(
         plan.disclosure,
@@ -173,16 +173,16 @@ pub(super) fn layout_plan_minimum_geometry_stacks_live_details_drawer() {
     assert_eq!(plan.shell, ratatui::layout::Rect::new(0, 0, 80, 24));
     assert_eq!(
         plan.transcript,
-        Some(ratatui::layout::Rect::new(0, 0, 80, 18))
+        Some(ratatui::layout::Rect::new(0, 0, 80, 19))
     );
     assert_eq!(
         plan.details_overlay,
-        Some(ratatui::layout::Rect::new(38, 0, 42, 18))
+        Some(ratatui::layout::Rect::new(38, 0, 42, 19))
     );
     assert_eq!(plan.status, None);
     assert_eq!(
         plan.composer,
-        Some(ratatui::layout::Rect::new(2, 18, 76, 4))
+        Some(ratatui::layout::Rect::new(2, 19, 76, 3))
     );
     assert_eq!(
         plan.disclosure,

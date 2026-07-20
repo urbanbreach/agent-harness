@@ -45,9 +45,9 @@ fn build_user_render_surface(
     user_msg: &TranscriptUserMessageSection,
     theme: &Theme,
     width: u16,
-    base_surface: Color,
+    _base_surface: Color,
 ) -> TranscriptRenderSurface {
-    let surface = base_surface;
+    let surface = theme.surface.card;
     let render_width = transcript_surface_render_width(width, TranscriptRenderSurfaceKind::User);
     let content_width = transcript_surface_content_width(render_width, false);
     let agent_accent = theme.agent_accent(&turn.header.profile_label);
@@ -162,7 +162,7 @@ fn assemble_user_surface_lines(
     ));
 
     if lines.len() > 1 {
-        let marker_prefix = format!("{} ", theme.live_shell.transcript_glyphs.user_marker);
+        let marker_prefix = format!("   {} ", theme.live_shell.transcript_glyphs.user_marker);
         lines[1].spans[0] = surface_span(
             marker_prefix,
             Style::default().fg(theme.text.primary),
@@ -319,7 +319,8 @@ fn build_assistant_render_surfaces(
     }
     let paint_selected = turn.header.is_selected
         && waiting_on_answers_label(turn).is_none()
-        && pending_permission_tool_waiting(turn).is_none();
+        && pending_permission_tool_waiting(turn).is_none()
+        && !matches!(turn.header.status, ActivityStatus::Error);
     apply_preferred_selected_rail(&mut surfaces, paint_selected);
     surfaces
 }
@@ -509,24 +510,22 @@ fn build_assistant_part_render_surface(
         TranscriptAssistantPart::Body(block) => {
             let content_width = transcript_surface_content_width(width, false);
             let TranscriptBodyBlock::RichText(text) = block;
-            // Grok DIFF packs wall clock on the DONE line after tools.
-            // Grok TOOL (COUNT=N) and complete (HELLO…) keep a separate clock row.
-            // Use turn-has-tools because the no-event fallback path orders Body before tools.
-            let pack_clock_on_body = turn_has_tool_parts(turn)
+            // Grok COMPLETE/CANCEL: pack wall clock on a single-line plain body row.
+            // Grok DIFF/TOOL: keep wall clock on its own row when tools are present.
+            let pack_clock_on_body = !turn_has_tool_parts(turn)
                 && body_is_single_line_plain(text)
-                && text.trim() == "DONE"
                 && turn.footer_timestamp.as_ref().is_some_and(|clock| {
                     let text_width = display_width(text.trim());
                     let clock_width = display_width(clock);
                     text_width.saturating_add(clock_width) < usize::from(content_width)
                 });
-            // Grok COMPLETE: Thought → blank → wall-clock row → blank → body.
-            // DIFF DONE packs the clock on the body line instead of a dedicated row.
+            // Grok COMPLETE: Thought → blank (inter-surface gap) → body+clock.
+            // Grok DIFF: Thought → blank → wall-clock row → blank → body.
             if prepend_gap {
                 if let Some(clock) = turn.footer_timestamp.as_deref() {
                     if pack_clock_on_body {
-                        lines.push(Line::default());
-                        leading_pad_rows = 1;
+                        // The inter-surface gap already provides the blank separator.
+                        leading_pad_rows = 0;
                     } else {
                         lines.push(right_aligned_wall_clock_line(clock, content_width, theme));
                         lines.push(Line::default());

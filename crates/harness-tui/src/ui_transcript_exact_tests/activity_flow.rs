@@ -1162,7 +1162,7 @@ pub(crate) fn exact_test_selected_rail_falls_back_to_thought_without_tools() {
 }
 
 #[cfg(test)]
-pub(crate) fn exact_test_done_body_after_tool_packs_wall_clock_on_same_line() {
+pub(crate) fn exact_test_done_body_after_tool_keeps_separate_wall_clock_row() {
     // Given: a completed tool turn with single-line DONE body + footer wall clock
     // Tool seq must precede body (last_seq) so assistant_parts order is Tool → Body
     // (matches Grok DIFF / live_diff event order).
@@ -1196,27 +1196,27 @@ pub(crate) fn exact_test_done_body_after_tool_packs_wall_clock_on_same_line() {
         })
         .collect();
 
-    // Then: Grok DIFF packs wall clock on the DONE line (not a separate clock-only row)
+    // Then: Grok DIFF keeps wall clock on its own row between the tool and DONE body
     let done_line = lines
         .iter()
         .find(|line| line.contains("DONE"))
         .unwrap_or_else(|| panic!("missing DONE body line\n{lines:#?}"));
     assert!(
-        done_line.contains("12:00 PM"),
-        "DONE after tools must pack wall clock on the same line\n{done_line:?}\nall={lines:#?}"
+        !done_line.contains("12:00 PM"),
+        "DONE after tools must keep wall clock on a separate row\n{done_line:?}\nall={lines:#?}"
     );
     let clock_only = lines.iter().any(|line| {
         let trimmed = line.trim();
         trimmed == "12:00 PM" || (trimmed.ends_with("12:00 PM") && !trimmed.contains("DONE"))
     });
     assert!(
-        !clock_only,
-        "Tool→Body single-line must not keep a dedicated clock-only row\nall={lines:#?}"
+        clock_only,
+        "Tool→Body single-line must keep a dedicated clock-only row\nall={lines:#?}"
     );
 }
 
 #[cfg(test)]
-pub(crate) fn exact_test_body_after_thought_keeps_separate_wall_clock_row() {
+pub(crate) fn exact_test_body_after_thought_packs_wall_clock_on_same_line() {
     // Given: a completed no-tool turn (Thought → body) with footer wall clock
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
@@ -1241,32 +1241,23 @@ pub(crate) fn exact_test_body_after_thought_keeps_separate_wall_clock_row() {
         })
         .collect();
 
-    // Then: Grok complete keeps wall clock on its own row between Thought and body,
-    // with a blank packing row after the clock (freeze run1-complete-proxy-v2).
+    // Then: Grok COMPLETE packs wall clock on the single-line body row.
     let hello_idx = lines
         .iter()
         .position(|line| line.contains("HELLO_PARITY_OK"))
         .unwrap_or_else(|| panic!("missing HELLO body line\n{lines:#?}"));
     let hello_line = &lines[hello_idx];
     assert!(
-        !hello_line.contains("12:00 PM"),
-        "Thought→Body must not pack wall clock onto the body line\n{hello_line:?}\nall={lines:#?}"
+        hello_line.contains("12:00 PM"),
+        "Thought→Body must pack wall clock onto the body line\n{hello_line:?}\nall={lines:#?}"
     );
-    let clock_idx = lines.iter().position(|line| {
+    let clock_only = lines.iter().any(|line| {
         let trimmed = line.trim();
-        trimmed == "12:00 PM" || (trimmed.ends_with("12:00 PM") && !trimmed.contains("HELLO"))
-    });
-    let clock_idx = clock_idx.unwrap_or_else(|| {
-        panic!("Thought→Body must keep a separate wall-clock row before the body\nall={lines:#?}")
+        (trimmed == "12:00 PM" || trimmed.ends_with("12:00 PM")) && !trimmed.contains("HELLO")
     });
     assert!(
-        clock_idx < hello_idx,
-        "wall clock must precede body\nclock_idx={clock_idx} hello_idx={hello_idx}\nall={lines:#?}"
-    );
-    assert!(
-        hello_idx >= clock_idx + 2
-            && lines[clock_idx + 1].trim().is_empty(),
-        "Grok COMPLETE packs a blank row between wall clock and body\nclock_idx={clock_idx} hello_idx={hello_idx}\nall={lines:#?}"
+        !clock_only,
+        "No-tool single-line body must not keep a dedicated clock-only row\nall={lines:#?}"
     );
 }
 

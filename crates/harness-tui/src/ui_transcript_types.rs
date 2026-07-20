@@ -217,10 +217,10 @@ pub(super) enum TranscriptAssistantPart {
     Compaction(TranscriptCompactionSection),
 }
 
-pub(super) const TRANSCRIPT_ASSISTANT_BODY_PREFIX: &str = "";
-pub(super) const TRANSCRIPT_USER_BODY_PREFIX: &str = "  ";
-pub(super) const TRANSCRIPT_REASONING_BODY_PREFIX: &str = "";
-pub(super) const TRANSCRIPT_REASONING_HEADER_PREFIX: &str = "";
+pub(super) const TRANSCRIPT_ASSISTANT_BODY_PREFIX: &str = "   ";
+pub(super) const TRANSCRIPT_USER_BODY_PREFIX: &str = "     ";
+pub(super) const TRANSCRIPT_REASONING_BODY_PREFIX: &str = "   ";
+pub(super) const TRANSCRIPT_REASONING_HEADER_PREFIX: &str = "   ";
 pub(super) const TRANSCRIPT_SELECTED_RAIL_GLYPH: &str = "❙";
-pub(super) const TRANSCRIPT_NESTED_INDENT: &str = "  ";
-pub(super) const TRANSCRIPT_OPCODE_EDIT_INDENT: &str = "    ";
+pub(super) const TRANSCRIPT_NESTED_INDENT: &str = "     ";
+pub(super) const TRANSCRIPT_OPCODE_EDIT_INDENT: &str = "       ";
