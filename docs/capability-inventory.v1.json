@@ -109,7 +109,7 @@
       "family": "workspace-worktree-isolation-vcs",
       "surface": "runtime",
       "status": "pass",
-      "backend_owner": "crates/harness-core/src/folder_trust/mod.rs",
+      "backend_owner": "crates/harness-core/src/folder_trust.rs",
       "visible_action_id": null,
       "side_effect_kind": "config",
       "disposition": "retain",
@@ -399,8 +399,8 @@
       "visible_action_id": null,
       "side_effect_kind": "process",
       "disposition": "implement",
-      "notes": "Product: CronScheduleRegistry register/list/remove + CronExecutor fire_due/fire_one_if_due with five-field match (*, lists, ranges, steps), fire journal side effects (cron-fires.jsonl), executes_schedules=true. Owner tests: 15 cron unit tests including journal write. Residual: no wall-clock daemon/coordinator timer wheel; civil time injected.",
-      "note": "Product: register/list/remove + CronExecutor fire_due with journal (executes=true). Residual: no wall-clock daemon/timer wheel.",
+      "notes": "Product: CronScheduleRegistry register/list/remove (bookkeeping only; executes_schedules=false) + CronExecutor fire_due/fire_one_if_due with five-field match (*, lists, ranges, steps), fire journal side effects (cron-fires.jsonl), executes_schedules=true. Owner tests: 15 cron unit tests including journal write. Residual: no wall-clock daemon/coordinator timer wheel; civil time injected.",
+      "note": "Product: register/list/remove + CronExecutor fire_due with journal (registry executes=false; executor executes=true). Residual: no wall-clock daemon/timer wheel.",
       "honesty_demotion": false
     },
     {
