@@ -78,7 +78,6 @@ const REQUIRED_PASS_IDS: &[&str] = &[
     "terminal.capability_presentation",
     "sessions.foreign_import",
     "vcs.edit_attribution",
-    "plugins.descriptor_manifest",
     "orchestration.foreground_demote_background",
     "sandbox.os_profiles",
 ];
@@ -102,6 +101,8 @@ const REQUIRED_NON_PASS_IDS: &[&str] = &[
     "provider.non_openai_protocols",
     "platform.binary_update",
     "code.persistent_graph",
+    "sessions.prompt_rewind_projection",
+    "plugins.descriptor_manifest",
 ];
 const MAX_ROWS: usize = 200;
 

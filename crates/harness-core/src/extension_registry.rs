@@ -313,6 +313,29 @@ mod tests {
     }
 
     #[test]
+    fn register_manifest_path_fail_closed_on_invalid_json() {
+        // arrange — a manifest file that is not a valid descriptor
+        let temp = tempfile::tempdir().expect("temp");
+        let ext_dir = temp.path().join("ext-broken");
+        fs::create_dir_all(&ext_dir).expect("mkdir");
+        fs::write(
+            ext_dir.join(EXTENSION_MANIFEST_FILE_NAME),
+            "{ not a valid descriptor",
+        )
+        .expect("write");
+        let mut registry = ExtensionDescriptorRegistry::open(temp.path()).expect("open");
+
+        // act
+        let err = registry
+            .register_manifest_path(ext_dir.join(EXTENSION_MANIFEST_FILE_NAME))
+            .expect_err("invalid manifest");
+
+        // assert — fails closed with no registry side effect
+        assert!(matches!(err, ExtensionRegistryError::ManifestLoad { .. }));
+        assert_eq!(registry.summary().registered, 0);
+    }
+
+    #[test]
     fn path_escape_attempts_are_rejected() {
         // Given
         let temp = tempfile::tempdir().expect("temp");

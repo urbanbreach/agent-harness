@@ -389,6 +389,32 @@ mod tests {
     }
 
     #[test]
+    fn event_log_digest_is_content_addressed() {
+        // arrange — one body under two paths, then an append on one
+        let dir = tempfile::tempdir().expect("tempdir");
+        let events = vec![user_message(1, "first"), user_message(2, "second")];
+        let mut body = String::new();
+        for event in &events {
+            body.push_str(&serde_json::to_string(event).expect("serialize"));
+            body.push('\n');
+        }
+        let path_a = dir.path().join("a.jsonl");
+        let path_b = dir.path().join("b.jsonl");
+        fs::write(&path_a, &body).expect("write a");
+        fs::write(&path_b, &body).expect("write b");
+
+        // act
+        let digest_a = event_log_digest(&path_a).expect("digest a");
+        let digest_b = event_log_digest(&path_b).expect("digest b");
+        fs::write(&path_a, format!("{body}{{\"seq\":3}}\n")).expect("append");
+        let digest_after_append = event_log_digest(&path_a).expect("digest after");
+
+        // assert — identical bytes share a digest; any append changes it
+        assert_eq!(digest_a, digest_b);
+        assert_ne!(digest_a, digest_after_append);
+    }
+
+    #[test]
     fn atomic_prompt_rewind_restores_conversation_and_files() {
         // arrange
         // act

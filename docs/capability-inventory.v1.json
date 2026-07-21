@@ -236,12 +236,18 @@
       "capability_id": "sessions.prompt_rewind_projection",
       "family": "sessions-memory-persistence-rewind-crash-recovery",
       "surface": "core",
-      "status": "pass",
+      "status": "incomplete",
       "backend_owner": "crates/harness-core/src/prompt_rewind.rs",
       "visible_action_id": null,
       "side_effect_kind": "none",
       "disposition": "retain",
-      "notes": "plan_prompt_rewind + event_log_digest prove append-only conversation projection rewind and recoverable bad cutoffs."
+      "notes": "Wave 2 Packet 2.7 audit: plan_prompt_rewind + event_log_digest are real, unit-tested projection logic (append-only conversation projection through cutoff, recoverable bad cutoffs, content-addressed event-log digest). But there are zero production callers: plan_prompt_rewind is consumed only by atomic_prompt_rewind, which itself has no production caller (demoted as sessions.prompt_rewind_atomic in Packet 2.2). Neither the coordinator (which owns the separate snapshot/revert mechanism) nor any CLI/TUI surface ever performs a prompt-rewind projection. Demoted: projection logic with no product or runtime consumer.",
+      "honesty_demotion": {
+        "from": "pass",
+        "reason": "only_consumer_is_the_demoted_atomic_rewind_path_no_product_surface",
+        "demoted_at": "2026-07-21Twave2-packet-2.7",
+        "restored": false
+      }
     },
     {
       "capability_id": "memory.durable_product_surface",
@@ -529,14 +535,19 @@
       "capability_id": "plugins.descriptor_manifest",
       "family": "integrations-plugins-acp-remote-mcp",
       "surface": "product",
-      "status": "pass",
+      "status": "incomplete",
       "backend_owner": "crates/harness-core/src/extension_registry",
       "visible_action_id": null,
       "side_effect_kind": "filesystem",
       "disposition": "retain",
-      "notes": "Product: multi-descriptor discover + durable ExtensionDescriptorRegistry under .agent-harness/extension-registry.json (atomic write); register/reload/fail-closed on missing/escape paths; loads_external_code=false (descriptor-only V1). Owner tests: extension_registry unit + multi_descriptor_discover_product_meets_contract. Residual: no marketplace/remote install, no dynamic .so/wasm host.",
+      "notes": "Wave 2 Packet 2.7 audit: the durable descriptor registry is real and unit-tested \u2014 ExtensionDescriptorRegistry discover/register/reload under .agent-harness/extension-registry.json (atomic write, workspace-relative persistence, fail-closed on missing/escape/invalid manifests, loads_external_code=false per the V1 descriptor-only contract). But its only consumers are a lib.rs re-export, the seed-time run_multi_descriptor_discover_product probe, and status-dialog display (PluginLifecycleSummary + descriptor outcomes) \u2014 no CLI command, coordinator design, or operator surface registers or consumes extension descriptors. Demoted: registry without a product surface; descriptors stay descriptor-only per the crate invariant (no runtime tool registration, command execution, or code loading).",
       "note": "Durable multi-descriptor registry under workspace; residual no marketplace/host code load.",
-      "honesty_demotion": false
+      "honesty_demotion": {
+        "from": "pass",
+        "reason": "registry_built_but_only_seed_probe_and_status_display_consumers",
+        "demoted_at": "2026-07-21Twave2-packet-2.7",
+        "restored": false
+      }
     },
     {
       "capability_id": "acp.agent_mode",
@@ -649,7 +660,7 @@
       "visible_action_id": null,
       "side_effect_kind": "provider",
       "disposition": "retain",
-      "notes": "Product: orchestrate_fallback_chain walks primary\u2192fb1..\u2192Exhausted with per-step remaining counts; orchestrate_provider_failure_fallback drains turn-queue under provider_error eligibility (same primitives as agent_turn_runtime model switch). Owner tests: multi-step remaining=[3,2,1,0,0] chain_len=5 exhausted; queue drain switches+remaining; seed binds terminal summary/banner/chain_label. Residual: mid-turn model switch UX chrome / dual-review packing only \u2014 not the backend product claim.",
+      "notes": "Real and wired: on provider failure the coordinator turn runtime (crates/harness-core/src/coord/agent_turn_runtime.rs) consults auto_fallback::is_provider_failure_fallback_eligible and advances the per-profile model_fallback_chain (settings.agent_model_fallbacks), so failed turns fall through primary->fallback models in the live loop. orchestrate_fallback_chain / orchestrate_provider_failure_fallback are the same primitives composed into unit-tested multi-step chains (remaining-count walks, queue drain) bound to status/seed probes. Residual: mid-turn model-switch UX chrome and dual-review packing \u2014 not the fallback backend claim.",
       "note": "Product: orchestrate_fallback_chain walks primary\u2192fb1..\u2192Exhausted with per-step remaining counts; orchestrate_provider_failure_fallback drains turn-queue under provider_error eligibility (same primitives as agent_turn_runtime model switch). Owner tests: multi-step remaining=[3,2,1,0,0] chain_len=5 exhausted; queue drain switches+remaining; seed binds terminal summary/banner/chain_label. Residual: mid-turn model switch UX chrome / dual-review packing only \u2014 not the backend product claim."
     },
     {
