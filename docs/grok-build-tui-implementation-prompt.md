@@ -9,6 +9,47 @@
 > **Never:** Copy reference source/tests/harnesses; let production diagnostics write fixtures; let replay mutate state; or allow evidence to self-certify.
 > **Stop:** Only under the Stop Rule at the end of this contract.
 
+## Reference artifact — exact authority and access rules
+
+Do not discover, install, download, update, or substitute another Grok Build executable. Do not search `PATH`, the user's home directory, package managers, system application directories, or shell history for a separate `grok` installation.
+
+The only authorized Grok Build product reference is the already-built local black-box executable:
+
+```text
+Repository-relative path: inspirations/grok-build/target/debug/xai-grok-pager
+Absolute path: /home/urbanbreach/Projects/agent-harness/inspirations/grok-build/target/debug/xai-grok-pager
+SHA-256: 883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5
+Version: grok 0.1.220-alpha.4 (c1b5909) [stable]
+Reference repository revision: c1b5909ec707c069f1d21a93917af044e71da0d7
+```
+
+Before a reference capture, verify only:
+
+```bash
+REFERENCE_BIN="$PWD/inspirations/grok-build/target/debug/xai-grok-pager"
+test -x "$REFERENCE_BIN"
+test "$(sha256sum "$REFERENCE_BIN" | cut -d' ' -f1)" = "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5"
+"$REFERENCE_BIN" --version
+```
+
+Allowed reference operations:
+
+- Execute that exact binary as an external black-box process in an isolated temporary workspace, PTY, or capture sandbox.
+- Use public CLI flags, keyboard/mouse input, terminal resizing, public configuration, and controlled external responses.
+- Capture user-visible terminal output, semantic cells, screenshots, timing, public side effects, `--help`, and `--version`.
+- Read project-authored manifests, receipts, and previously frozen captures outside the reference source tree.
+- Read only the reference Git revision through `git -C inspirations/grok-build rev-parse HEAD`; do not inspect its history or diffs for implementation guidance.
+
+Forbidden reference operations:
+
+- Do not read, search, summarize, or delegate inspection of `inspirations/grok-build/crates/`, `prod/`, `third_party/`, reference tests, fixtures, snapshots, themes, docs, manifests, Cargo metadata, or source files to learn implementation or behavior.
+- Do not import, link, copy, translate, mechanically transform, decompile, disassemble, run `strings` on, or derive Harness code/tests from the reference tree or binary.
+- Do not run `cargo build`, `cargo run`, or tests inside `inspirations/grok-build`; rebuilding would create a different reference artifact.
+- Do not modify any file under `inspirations/grok-build`.
+- Do not add first-party Harness production or ordinary test dependencies on the reference path. Only isolated capture/evaluator tooling may launch the executable via an explicit path or environment variable.
+
+If the executable is absent, non-executable, or has the wrong digest/version, mark reference-dependent work `BLOCKED` and report the exact mismatch. Do not use a global install or rebuild as a fallback. Continue only with packets genuinely independent of new reference observation.
+
 ## Audited checkpoint — 2026-07-20
 
 The facts below were independently audited from the committed tree and by executing tests in a detached review worktree. They are the starting state for the next loop.
@@ -1015,7 +1056,7 @@ Do not copy or directly run Grok Build tests against Harness.
 
 The reference tests are tightly bound to the reference binary, its app state, ACP/effect architecture, mock inference server, product strings, settings registry, OAuth setup, leader flows, and PTY harness. Adapting them until they compile against Harness would be a port of their test architecture, not an independent parity proof.
 
-Use the reference tests only as a catalog of observable scenarios that should be independently rediscovered and re-authored.
+Do not inspect the reference tests as an implementation or scenario catalog. Required scenarios must come from black-box public behavior, project-authored manifests, and already frozen receipts/captures, then be independently specified and re-authored for Harness.
 
 #### Required Strategy
 
@@ -1453,7 +1494,7 @@ Do not use an event-injection helper, test binary, preconstructed `AppState`, or
 
 #### L4: Differential Black-Box Capture
 
-Launch the pinned reference binary and Harness in isolated but equivalent sandboxes.
+Launch the exact reference executable pinned in **Reference artifact — exact authority and access rules** and Harness in isolated but equivalent sandboxes. Never resolve the reference through `PATH` or a machine-wide installation.
 
 Use equivalent:
 
