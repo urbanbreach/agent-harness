@@ -250,8 +250,8 @@ fn assert_owner_names_journey_signoff(journey_id: &str, row: &Value) {
 fn assert_config_journey_evidence(row: &Value, journey_id: &str, l3: &str, l6: &str, strict: bool) {
     assert_eq!(
         row["status"].as_str(),
-        Some("incomplete"),
-        "{journey_id} demoted: missing L1 reference freeze evidence"
+        Some("blocked"),
+        "{journey_id} blocked in Wave 4.8: pending reference-CLI journey pairing (reference CLI exposes paired commands; paired captures pending)"
     );
     assert_empty_layer(journey_id, row, "L1");
     assert_eq!(
@@ -290,8 +290,8 @@ pub(crate) fn assert_all_journey_manifest_evidence_with(rows: &[Value], strict: 
     let worktree = find_journey(rows, journey_id);
     assert_eq!(
         worktree["status"].as_str(),
-        Some("incomplete"),
-        "worktree demoted: missing L1 reference freeze evidence"
+        Some("blocked"),
+        "worktree journey blocked in Wave 4.8: pending reference-CLI journey pairing (paired captures pending)"
     );
     assert_empty_layer(journey_id, worktree, "L1");
     let l2 = worktree["evidence_paths"]["L2"].as_str().unwrap_or("");
@@ -339,7 +339,7 @@ pub(crate) fn assert_all_journey_manifest_evidence_with(rows: &[Value], strict: 
         STABLE_L3_WAIT_ANY_REL,
         WAIT_ANY_ALL_L5_REL,
         WAIT_ANY_ALL_L6_REL,
-        "incomplete",
+        "blocked",
         strict,
     );
     assert_surface_journey_evidence(
@@ -350,7 +350,7 @@ pub(crate) fn assert_all_journey_manifest_evidence_with(rows: &[Value], strict: 
         STABLE_L3_FOLDER_TRUST_REL,
         FOLDER_TRUST_L5_REL,
         FOLDER_TRUST_L6_REL,
-        "incomplete",
+        "blocked",
         strict,
     );
     assert_surface_journey_evidence(
@@ -361,7 +361,7 @@ pub(crate) fn assert_all_journey_manifest_evidence_with(rows: &[Value], strict: 
         STABLE_L3_MEMORY_CLI_REL,
         MEMORY_CLI_L5_REL,
         MEMORY_CLI_L6_REL,
-        "incomplete",
+        "blocked",
         strict,
     );
     assert_surface_journey_evidence(
@@ -372,7 +372,7 @@ pub(crate) fn assert_all_journey_manifest_evidence_with(rows: &[Value], strict: 
         STABLE_L3_ALWAYS_APPROVE_REL,
         ALWAYS_APPROVE_L5_REL,
         ALWAYS_APPROVE_L6_REL,
-        "incomplete",
+        "blocked",
         strict,
     );
     assert_surface_journey_evidence(
@@ -383,7 +383,7 @@ pub(crate) fn assert_all_journey_manifest_evidence_with(rows: &[Value], strict: 
         STABLE_L3_SETTINGS_EDITOR_REL,
         SETTINGS_EDITOR_L5_REL,
         SETTINGS_EDITOR_L6_REL,
-        "incomplete",
+        "blocked",
         strict,
     );
     assert_evidence_path_exists(

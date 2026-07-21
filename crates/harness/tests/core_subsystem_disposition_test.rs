@@ -66,22 +66,9 @@ const REQUIRED_SEAM_ONLY: &[&str] = &[
 ];
 
 /// Subsystems that keep honest `partial` comparison_status even with a receipt.
-const PARTIAL_COMPARISON_SUBSYSTEMS: &[&str] = &[
-    "worktree",
-    "sessions_lineage",
-    "workspace",
-    "mcp",
-    "lsp",
-    "background_tasks",
-    "auth",
-    "tui_app_state",
-    "cli_handoff",
-    "doctor",
-    "support_export",
-    "plugins",
-    "acp",
-    "sandbox",
-];
+// Wave 3 closed all core-subsystem comparisons except plugins/acp (no product
+// surface: descriptor-only plugins, mock-only ACP).
+const PARTIAL_COMPARISON_SUBSYSTEMS: &[&str] = &["plugins", "acp"];
 
 const CORE_AUDIT_RECEIPTS_REL: &str =
     "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/core-audit";
@@ -284,8 +271,8 @@ fn core_subsystem_disposition_matrix_is_fail_closed() {
     );
     assert_eq!(
         worktree["comparison_status"].as_str(),
-        Some("partial"),
-        "worktree comparison_status must be partial"
+        Some("complete"),
+        "worktree comparison closed in Wave 3 (create/cow wired; lifecycle blocked on reference evidence, documented)"
     );
 
     // All 26 A-CORE-AUDIT comparison receipts: no longer not-started.
@@ -311,12 +298,27 @@ fn core_subsystem_disposition_matrix_is_fail_closed() {
             Some("rework"),
             "{rework_partial} has first-party product → rework (not empty replace)"
         );
+    }
+    for must_be_partial in ["plugins", "acp"] {
+        let row = subsystems
+            .iter()
+            .find(|r| r["subsystem_id"].as_str() == Some(must_be_partial))
+            .unwrap_or_abort();
         assert_eq!(
             row["comparison_status"].as_str(),
             Some("partial"),
-            "{rework_partial} must keep honest partial comparison_status"
+            "{must_be_partial} must keep honest partial comparison_status (no product surface)"
         );
     }
+    let sandbox = subsystems
+        .iter()
+        .find(|r| r["subsystem_id"].as_str() == Some("sandbox"))
+        .unwrap_or_abort();
+    assert_eq!(
+        sandbox["comparison_status"].as_str(),
+        Some("complete"),
+        "sandbox comparison closed in Wave 3 (Landlock enforcement + folder trust wired; Seatbelt/Windows documented as blocked capabilities)"
+    );
 
     // Config separation is a hard seam; config_loader must preserve it in hard_invariants.
     let config_loader = subsystems
