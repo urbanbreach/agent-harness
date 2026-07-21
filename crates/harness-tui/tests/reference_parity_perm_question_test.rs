@@ -111,6 +111,84 @@ fn question_permission_requested_event(
     )
 }
 
+/// Question dock with three selectable options (digit keys 1-3).
+fn three_option_question_event(
+    seq: u64,
+    permission_id: &str,
+    tool_call_id: &str,
+) -> EventEnvelopeV1 {
+    envelope(
+        seq,
+        Some(tool_call_id),
+        EventV1::PermissionRequested(PermissionRequestedEvent {
+            permission_id: permission_id.to_string(),
+            kind: "question".to_string(),
+            tool_call_id: Some(tool_call_id.into()),
+            summary: serde_json::json!({
+                "questions": [{
+                    "question": "Which color?",
+                    "header": "Color",
+                    "options": [
+                        {"label": "A", "description": "Option A"},
+                        {"label": "B", "description": "Option B"},
+                        {"label": "C", "description": "Option C"},
+                    ],
+                    "multiple": false,
+                }]
+            })
+            .to_string(),
+            request_digest: format!("digest-question-{permission_id}"),
+            timeout_ms: 30_000,
+            default_decision: harness_core::event::PermissionDecision::Deny,
+        }),
+    )
+}
+
+/// Question dock with two prompts (multi-tab: Tab/left/right switch prompts).
+fn multi_question_event(seq: u64, permission_id: &str, tool_call_id: &str) -> EventEnvelopeV1 {
+    envelope(
+        seq,
+        Some(tool_call_id),
+        EventV1::PermissionRequested(PermissionRequestedEvent {
+            permission_id: permission_id.to_string(),
+            kind: "question".to_string(),
+            tool_call_id: Some(tool_call_id.into()),
+            summary: serde_json::json!({
+                "questions": [
+                    {
+                        "question": "First parity question",
+                        "header": "Q1",
+                        "options": [{"label": "A1", "description": "First option"}],
+                        "multiple": false,
+                    },
+                    {
+                        "question": "Second parity question",
+                        "header": "Q2",
+                        "options": [{"label": "B1", "description": "Second option"}],
+                        "multiple": false,
+                    },
+                ]
+            })
+            .to_string(),
+            request_digest: format!("digest-question-{permission_id}"),
+            timeout_ms: 30_000,
+            default_decision: harness_core::event::PermissionDecision::Deny,
+        }),
+    )
+}
+
+fn question_live_app_with_sink() -> (AppState, Arc<Mutex<Vec<UiIntent>>>) {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink_intents = Arc::clone(&intents);
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> =
+        Arc::new(move |intent| sink_intents.lock().unwrap_or_abort().push(intent));
+    let mut app = AppState::new_live(None, false, Some(sink));
+    app.set_launch_metadata(
+        LaunchMetadata::from_model_ref("build", "mock:model-tx").with_mode_label("Demo"),
+    );
+    (app, intents)
+}
+
 /// SHELL-PERM / OVL-PERM: permission dock preempts composer, preserves draft, full-width shell.
 #[test]
 fn shell_perm_preempts_composer_preserves_draft_full_width() {
@@ -359,5 +437,117 @@ fn shell_perm_esc_sends_fail_closed_deny_intent_and_keeps_draft() {
     assert_eq!(
         app.composer.prompt_buffer, draft,
         "SHELL-PERM: draft preserved across Esc reject"
+    );
+}
+
+/// SHELL-QUESTION / OVL-QUESTION answer submission: digit keys select an
+/// option and Enter submits the answer as an Allow intent whose JSON reason
+/// carries the selected option label.
+#[test]
+fn shell_question_digit_select_then_enter_submits_answer_intent() {
+    // arrange — live app with intent sink; three-option question dock
+    let (mut app, intents) = question_live_app_with_sink();
+    app.ingest_event(three_option_question_event(
+        1,
+        "question_answer_parity",
+        "tool_call_question_answer",
+    ));
+    assert!(
+        app.active_permission().is_some(),
+        "precondition: question dock active"
+    );
+
+    // act — digit '2' selects option B, Enter activates/submits the answer
+    app.handle_key(KeyEvent::new(KeyCode::Char('2'), KeyModifiers::NONE));
+    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+    // assert — Allow intent submitted with the selected option in the reason
+    let emitted = intents.lock().unwrap_or_abort();
+    let answer = emitted.iter().find_map(|intent| match intent {
+        UiIntent::ResolvePermission {
+            permission_id,
+            decision,
+            reason,
+            ..
+        } if permission_id == "question_answer_parity"
+            && *decision == PermissionDecision::Allow =>
+        {
+            reason.clone()
+        }
+        _ => None,
+    });
+    let answer = answer.expect("SHELL-QUESTION: Enter must submit an Allow answer intent");
+    assert!(
+        answer.contains("\"B\""),
+        "SHELL-QUESTION: answer reason must carry option B: {answer}"
+    );
+}
+
+/// SHELL-QUESTION / OVL-QUESTION fail-closed cancel: Esc dismisses the
+/// question dock as Deny (ResolvePermission{Deny} intent emitted).
+#[test]
+fn shell_question_esc_cancels_with_fail_closed_deny_intent() {
+    // arrange — live app with intent sink; question dock with draft
+    let (mut app, intents) = question_live_app_with_sink();
+    let draft = "draft under question cancel";
+    app.composer.prompt_buffer = draft.to_string();
+    app.composer.prompt_cursor = draft.chars().count();
+    app.focus = Focus::Prompt;
+    app.ingest_event(three_option_question_event(
+        1,
+        "question_cancel_parity",
+        "tool_call_question_cancel",
+    ));
+
+    // act — Esc = fail-closed cancel
+    app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+
+    // assert — Deny intent emitted; draft preserved
+    let emitted = intents.lock().unwrap_or_abort();
+    let deny = emitted.iter().find_map(|intent| match intent {
+        UiIntent::ResolvePermission {
+            permission_id,
+            decision,
+            ..
+        } if permission_id == "question_cancel_parity" => Some(*decision),
+        _ => None,
+    });
+    assert_eq!(
+        deny,
+        Some(PermissionDecision::Deny),
+        "SHELL-QUESTION: Esc must resolve as Deny (fail-closed)"
+    );
+    assert_eq!(app.composer.prompt_buffer, draft);
+}
+
+/// SHELL-QUESTION / OVL-QUESTION state machine: Tab switches the active prompt
+/// in a multi-question dock (question 1 -> question 2 visible in the dock).
+#[test]
+fn shell_question_tab_navigation_switches_active_prompt() {
+    // arrange — two-question dock (multi-tab)
+    let (mut app, _intents) = question_live_app_with_sink();
+    app.ingest_event(multi_question_event(
+        1,
+        "question_tabs_parity",
+        "tool_call_question_tabs",
+    ));
+    let initial = render(&app);
+
+    // act — Tab moves to the second question prompt
+    app.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    let after_tab = render(&app);
+
+    // assert — dock switches from question 1 to question 2
+    assert!(
+        initial.contains("First parity question"),
+        "SHELL-QUESTION: first prompt visible on tab 0\n{initial}"
+    );
+    assert!(
+        after_tab.contains("Second parity question"),
+        "SHELL-QUESTION: second prompt visible after Tab\n{after_tab}"
+    );
+    assert!(
+        !after_tab.contains("First parity question"),
+        "SHELL-QUESTION: first prompt hidden after Tab switches to tab 1\n{after_tab}"
     );
 }

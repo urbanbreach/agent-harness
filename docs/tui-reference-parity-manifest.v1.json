@@ -925,8 +925,8 @@
       "surface": "shell",
       "state": "waiting_question",
       "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
-      "reference_receipt_id": "reference-freeze",
-      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "reference_receipt_id": "shell-question-reference-freeze-v1",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-question-reference-freeze.v1.json",
       "preconditions": "Pending question prompt from coordinator.",
       "seeded_inputs": {
         "question": "pending question overlay"
@@ -963,15 +963,15 @@
         "state_interaction_test": "crates/harness-tui/tests/reference_parity_perm_question_test.rs::shell_question_parses_prompts_preserves_draft_no_allow_chrome",
         "render_test": "crates/harness-tui/tests/reference_parity_perm_question_test.rs::shell_question_parses_prompts_preserves_draft_no_allow_chrome",
         "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::shell_question_pty",
-        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-palette-question/"
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-question-blocked-v2.json"
       },
       "evidence_paths": {
-        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-shell-question-v9/",
+        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-shell-question-pinned-v1/",
         "L2": "",
-        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-shell-question-v11/",
-        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-question-pixel-diff-v11-masked.json",
-        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-question-divergence-receipt-v11.json",
-        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-question-identity-field-mask-v11.json"
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-shell-question-pinned-v1/",
+        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-question-pixel-diff-blocked-v2-masked.json",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-question-blocked-v2.json",
+        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-question-identity-field-mask-v17.json"
       },
       "identity_substitution": {
         "fields": [
@@ -990,16 +990,16 @@
         "A-INVARIANTS",
         "A-NO-RESKIN"
       ],
-      "status": "incomplete",
-      "notes": "Scaffold §10 shell waiting on question. A-PTY owner wired (event-injection/live PTY). Structural owners GREEN. Status incomplete pending full A-* suite. L3 PTY-helper question_overlay (Which color? / Red·Green·Blue all ○ until answered (Grok freeze packing)). A-PTY GREEN. No matching Grok freeze for A-PIXELS. Status incomplete. Grok L1 freeze blocked (dummy API / no stable black-box path); see blocked freeze receipt. L3 harness-pty-question-120x40-v1: question dock (Pick one / options). A-PIXELS blocked (no Grok freeze). Evidence honesty loop3: L5=blocked freeze receipt (no capturable Grok L1). L3 refresh loop3: freeze-matched overlay capture. | status=blocked: reference freeze capture blocked (L5 *.blocked.json); not incomplete product theater 2026-07-19 L3 harness-pty-question-120x32-v16: geometry matches freeze (Waiting L17, Thought→Ask adjacent, dock packing, y copy, left pad 2). Residual: identity/clock, scrollbar, right-meta gap, product-honest Ctrl+c dismiss. A-CELLS masked GREEN. | L3 refresh wave4: browser-captured 120x40 xterm.js evidence; L1 reference freeze remains blocked; A-PIXELS blocked. (2026-07-19) | L3 refresh wave4: browser-captured 120x40 xterm.js evidence with PNG/ANSI/metadata; L1 reference freeze remains blocked; row stays blocked (2026-07-19). | v9 integration (2026-07-20): L1 reference freeze updated to run1-shell-question-v9; L3 harness capture updated to harness-shell-question-v9; masked mismatch count=87732/3525120 (2.49%). Residual: No change from v8 (overlay, no pack_clock_on_body). Unmasked and masked identical to v8. Residual: progress timing; scrollbar chrome; help line keybinding (ref: Shift+x:dismiss, L3: Ctrl+c:dismiss); footer border trailing whitespace; line count (v9=39, ref=40)..  | v11 refresh (2026-07-20): text-color improvement (white rgb(0xEE,0xEE,0xEC)) reduced masked mismatch from 87732 to 72127; residual divergence remains (structural differences: help line keybindings, footer border trailing whitespace, line count, content differences). L3/L4/L5/L6 updated to v11; L1 reference freeze unchanged; v9 evidence retained.",
+      "status": "blocked",
+      "notes": "Scaffold §10 shell waiting on question. A-PTY owner wired (event-injection/live PTY). Structural owners GREEN. Status incomplete pending full A-* suite. L3 PTY-helper question_overlay (Which color? / Red·Green·Blue all ○ until answered (Grok freeze packing)). A-PTY GREEN. No matching Grok freeze for A-PIXELS. Status incomplete. Grok L1 freeze blocked (dummy API / no stable black-box path); see blocked freeze receipt. L3 harness-pty-question-120x40-v1: question dock (Pick one / options). A-PIXELS blocked (no Grok freeze). Evidence honesty loop3: L5=blocked freeze receipt (no capturable Grok L1). L3 refresh loop3: freeze-matched overlay capture. | status=blocked: reference freeze capture blocked (L5 *.blocked.json); not incomplete product theater 2026-07-19 L3 harness-pty-question-120x32-v16: geometry matches freeze (Waiting L17, Thought→Ask adjacent, dock packing, y copy, left pad 2). Residual: identity/clock, scrollbar, right-meta gap, product-honest Ctrl+c dismiss. A-CELLS masked GREEN. | L3 refresh wave4: browser-captured 120x40 xterm.js evidence; L1 reference freeze remains blocked; A-PIXELS blocked. (2026-07-19) | L3 refresh wave4: browser-captured 120x40 xterm.js evidence with PNG/ANSI/metadata; L1 reference freeze remains blocked; row stays blocked (2026-07-19). | v9 integration (2026-07-20): L1 reference freeze updated to run1-shell-question-v9; L3 harness capture updated to harness-shell-question-v9; masked mismatch count=87732/3525120 (2.49%). Residual: No change from v8 (overlay, no pack_clock_on_body). Unmasked and masked identical to v8. Residual: progress timing; scrollbar chrome; help line keybinding (ref: Shift+x:dismiss, L3: Ctrl+c:dismiss); footer border trailing whitespace; line count (v9=39, ref=40)..  | v11 refresh (2026-07-20): text-color improvement (white rgb(0xEE,0xEE,0xEC)) reduced masked mismatch from 87732 to 72127; residual divergence remains (structural differences: help line keybindings, footer border trailing whitespace, line count, content differences). L3/L4/L5/L6 updated to v11; L1 reference freeze unchanged; v9 evidence retained. | Wave4.4: reference question-UI L1 capture attempted with the PINNED binary 883e3dea (mock chat_completions `question` tool-call provider 'Which parity color? / Red/Green/Blue', sandboxed scratch HOME, SSH env unset): the reference renders the question tool call as executed ❙◆ question chips + waiting-for-response spinner — NO interactive question UI (no question text/options) appears from black-box tool-call injection (same blocker class as Wave4.3 permission rows; prior palette-proxy path not reproducible). status=blocked: reference question UI unreachable (state captured = tool-in-flight; 970434/3525120 masked px = state mismatch, not residual). Harness side real: harness-shell-question-pinned-v1 question dock ('Which color?' + numbered options 1 Red/2 Green/3 Blue + ❙ waiting chrome + draft preserved); structural owners GREEN incl. new digit-select+Enter answer-intent, Esc fail-closed deny, and multi-question tab-navigation owners. differential_evaluator pending. 2026-07-21",
       "slice": "scaffold",
       "evidence": {
-        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-shell-question-v11/",
-        "L3_capture_note": "Refreshed browser-rendered L3: harness-pty-question-120x40-v5 (2026-07-19).",
-        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-question-divergence-receipt-v11.json",
-        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-shell-question-v9/",
-        "L4_pixel_diff": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-question-pixel-diff-v11-masked.json",
-        "L6_identity_mask": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-question-identity-field-mask-v11.json"
+        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-shell-question-pinned-v1/",
+        "L2_cells": "",
+        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-shell-question-pinned-v1/",
+        "L4_pixel_diff": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-question-pixel-diff-blocked-v2-masked.json",
+        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-question-blocked-v2.json",
+        "L6_mask": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-question-identity-field-mask-v17.json"
       }
     },
     {
@@ -2079,8 +2079,8 @@
       "surface": "overlay",
       "state": "question_prompt",
       "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
-      "reference_receipt_id": "reference-freeze",
-      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "reference_receipt_id": "shell-question-reference-freeze-v1",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-question-reference-freeze.v1.json",
       "preconditions": "Question overlay open and focused.",
       "seeded_inputs": {
         "overlay": "question"
@@ -2117,15 +2117,15 @@
         "state_interaction_test": "crates/harness-tui/tests/reference_parity_perm_question_test.rs::shell_question_parses_prompts_preserves_draft_no_allow_chrome",
         "render_test": "crates/harness-tui/src/ui_permission_dock.rs question dock",
         "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::ovl_question_pty",
-        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-palette-question/"
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/ovl-question-blocked-v2.json"
       },
       "evidence_paths": {
-        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-ovl-question-v9/",
+        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-shell-question-pinned-v1/",
         "L2": "",
-        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-ovl-question-v11/",
-        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/ovl-question-pixel-diff-v11-masked.json",
-        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/ovl-question-divergence-receipt-v11.json",
-        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/ovl-question-identity-field-mask-v11.json"
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-shell-question-pinned-v1/",
+        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-question-pixel-diff-blocked-v2-masked.json",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/ovl-question-blocked-v2.json",
+        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-question-identity-field-mask-v17.json"
       },
       "identity_substitution": {
         "fields": [
@@ -2144,15 +2144,16 @@
         "A-INVARIANTS",
         "A-NO-RESKIN"
       ],
-      "status": "incomplete",
-      "notes": "Scaffold §10 question overlay. A-PTY owner wired (event-injection/live PTY). Structural owners GREEN. Status incomplete pending full A-* suite. L3 PTY-helper question_overlay dock. A-PTY GREEN. No matching Grok freeze for A-PIXELS. Status incomplete. Grok L1 freeze blocked (dummy API / no stable black-box path); see blocked freeze receipt. L3 harness-pty-question-120x40-v1: question overlay dock. A-PIXELS blocked (no Grok freeze). Evidence honesty loop3: L5=blocked freeze receipt (no capturable Grok L1). L3 refresh loop3: freeze-matched overlay capture. | status=blocked: reference freeze capture blocked (L5 *.blocked.json); not incomplete product theater 2026-07-19 L3 harness-pty-question-120x32-v16: geometry matches freeze (Waiting L17, Thought→Ask adjacent, dock packing, y copy, left pad 2). Residual: identity/clock, scrollbar, right-meta gap, product-honest Ctrl+c dismiss. A-CELLS masked GREEN. | L3 refresh wave4: xterm.js browser capture (PNG+ANSI+metadata) at harness-pty-question-120x40-wave4-l3; A-PTY GREEN (2026-07-19). | L3 refresh wave4: browser-captured 120x40 xterm.js evidence; L1 reference freeze remains blocked; A-PIXELS blocked. (2026-07-19) | L3 refresh wave4: browser-captured 120x40 xterm.js evidence with PNG/ANSI/metadata; L1 reference freeze remains blocked; row stays blocked (2026-07-19). | v9 integration (2026-07-20): L1 reference freeze updated to run1-ovl-question-v9; L3 harness capture updated to harness-ovl-question-v9; masked mismatch count=87732/3525120 (2.49%). Residual: No change from v8 (shared capture with SHELL-QUESTION). Unmasked and masked identical to v8. Residual: same as SHELL-QUESTION..  | v11 refresh (2026-07-20): text-color improvement (white rgb(0xEE,0xEE,0xEC)) reduced masked mismatch from 87732 to 72127; residual divergence remains (structural differences: help line keybindings, footer border trailing whitespace, line count, content differences). L3/L4/L5/L6 updated to v11; L1 reference freeze unchanged; v9 evidence retained.",
+      "status": "blocked",
+      "notes": "Scaffold §10 question overlay. A-PTY owner wired (event-injection/live PTY). Structural owners GREEN. Status incomplete pending full A-* suite. L3 PTY-helper question_overlay dock. A-PTY GREEN. No matching Grok freeze for A-PIXELS. Status incomplete. Grok L1 freeze blocked (dummy API / no stable black-box path); see blocked freeze receipt. L3 harness-pty-question-120x40-v1: question overlay dock. A-PIXELS blocked (no Grok freeze). Evidence honesty loop3: L5=blocked freeze receipt (no capturable Grok L1). L3 refresh loop3: freeze-matched overlay capture. | status=blocked: reference freeze capture blocked (L5 *.blocked.json); not incomplete product theater 2026-07-19 L3 harness-pty-question-120x32-v16: geometry matches freeze (Waiting L17, Thought→Ask adjacent, dock packing, y copy, left pad 2). Residual: identity/clock, scrollbar, right-meta gap, product-honest Ctrl+c dismiss. A-CELLS masked GREEN. | L3 refresh wave4: xterm.js browser capture (PNG+ANSI+metadata) at harness-pty-question-120x40-wave4-l3; A-PTY GREEN (2026-07-19). | L3 refresh wave4: browser-captured 120x40 xterm.js evidence; L1 reference freeze remains blocked; A-PIXELS blocked. (2026-07-19) | L3 refresh wave4: browser-captured 120x40 xterm.js evidence with PNG/ANSI/metadata; L1 reference freeze remains blocked; row stays blocked (2026-07-19). | v9 integration (2026-07-20): L1 reference freeze updated to run1-ovl-question-v9; L3 harness capture updated to harness-ovl-question-v9; masked mismatch count=87732/3525120 (2.49%). Residual: No change from v8 (shared capture with SHELL-QUESTION). Unmasked and masked identical to v8. Residual: same as SHELL-QUESTION..  | v11 refresh (2026-07-20): text-color improvement (white rgb(0xEE,0xEE,0xEC)) reduced masked mismatch from 87732 to 72127; residual divergence remains (structural differences: help line keybindings, footer border trailing whitespace, line count, content differences). L3/L4/L5/L6 updated to v11; L1 reference freeze unchanged; v9 evidence retained. | Wave4.4: reference question-UI L1 capture attempted with the PINNED binary 883e3dea (mock chat_completions `question` tool-call provider 'Which parity color? / Red/Green/Blue', sandboxed scratch HOME, SSH env unset): the reference renders the question tool call as executed ❙◆ question chips + waiting-for-response spinner — NO interactive question UI (no question text/options) appears from black-box tool-call injection (same blocker class as Wave4.3 permission rows; prior palette-proxy path not reproducible). status=blocked: reference question UI unreachable (state captured = tool-in-flight; 970434/3525120 masked px = state mismatch, not residual). Harness side real: harness-shell-question-pinned-v1 question dock ('Which color?' + numbered options 1 Red/2 Green/3 Blue + ❙ waiting chrome + draft preserved); structural owners GREEN incl. new digit-select+Enter answer-intent, Esc fail-closed deny, and multi-question tab-navigation owners. differential_evaluator pending. 2026-07-21",
       "slice": "scaffold",
       "evidence": {
-        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-ovl-question-v11/",
-        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/ovl-question-divergence-receipt-v11.json",
-        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-ovl-question-v9/",
-        "L4_pixel_diff": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/ovl-question-pixel-diff-v11-masked.json",
-        "L6_identity_mask": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/ovl-question-identity-field-mask-v11.json"
+        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-shell-question-pinned-v1/",
+        "L2_cells": "",
+        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-shell-question-pinned-v1/",
+        "L4_pixel_diff": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-question-pixel-diff-blocked-v2-masked.json",
+        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/ovl-question-blocked-v2.json",
+        "L6_mask": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-question-identity-field-mask-v17.json"
       }
     },
     {
