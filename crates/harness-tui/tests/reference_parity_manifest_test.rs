@@ -22,11 +22,11 @@ mod status;
 #[path = "support/reference_parity_manifest.rs"]
 mod support;
 
-use status::{derive_status, seed_claimed_row_evidence, validate_manifest_evidence};
+use status::derive_status;
 use support::{
-    divergence_policy, divergence_receipt_path, rollup_status, validate_manifest, ValidateResult,
-    ACCEPTANCE_GATES, FIRST_SLICE_IDS, FREEZE_PNG_SHA256, REFERENCE_BINARY_SHA256,
-    REQUIRED_SCAFFOLD_IDS, SCHEMA_VERSION,
+    divergence_policy, rollup_status, validate_manifest, ValidateResult, ACCEPTANCE_GATES,
+    FIRST_SLICE_IDS, FREEZE_PNG_SHA256, REFERENCE_BINARY_SHA256, REQUIRED_SCAFFOLD_IDS,
+    SCHEMA_VERSION,
 };
 
 const MANIFEST_SRC: &str = include_str!("../../../docs/tui-reference-parity-manifest.v1.json");
@@ -41,15 +41,6 @@ fn assert_control(result: ValidateResult, control: &str) {
         failures.iter().any(|failure| failure.control == control),
         "expected control {control}, got {failures:?}"
     );
-}
-
-fn row_value<'a>(manifest: &'a Value, behavior_id: &str) -> &'a Value {
-    manifest["rows"]
-        .as_array()
-        .unwrap_or_abort()
-        .iter()
-        .find(|row| row["behavior_id"].as_str() == Some(behavior_id))
-        .unwrap_or_abort()
 }
 
 fn row_mut<'a>(manifest: &'a mut Value, behavior_id: &str) -> &'a mut Value {
@@ -68,13 +59,6 @@ fn first_row_with_status_mut<'a>(manifest: &'a mut Value, status: &str) -> &'a m
         .iter_mut()
         .find(|row| row["status"].as_str() == Some(status))
         .unwrap_or_abort()
-}
-
-fn seeded_evidence_root() -> (tempfile::TempDir, Value) {
-    let root = tempfile::tempdir().unwrap_or_abort();
-    let mut manifest = checked_in_manifest();
-    seed_claimed_row_evidence(root.path(), &mut manifest);
-    (root, manifest)
 }
 
 #[test]
@@ -715,73 +699,4 @@ fn derive_status_demotes_claims_with_evidence_gaps() {
         blocked_derived, "blocked",
         "unapproved divergences must derive blocked"
     );
-}
-
-#[test]
-fn evidence_validator_passes_with_seeded_evidence_root() {
-    // arrange
-    let (root, manifest) = seeded_evidence_root();
-
-    // act
-    let result = validate_manifest_evidence(&manifest, root.path());
-
-    // assert
-    result.unwrap_or_else(|failures| {
-        panic!("seeded evidence root failed validation: {failures:?}");
-    });
-}
-
-#[test]
-fn evidence_validator_rejects_missing_layer_file() {
-    // arrange
-    let (root, manifest) = seeded_evidence_root();
-    let layer_path = row_value(&manifest, "OVL-PALETTE")["evidence_paths"]["L4"]
-        .as_str()
-        .unwrap_or_abort()
-        .to_owned();
-    std::fs::remove_file(root.path().join(&layer_path)).unwrap_or_abort();
-
-    // act
-    let result = validate_manifest_evidence(&manifest, root.path());
-
-    // assert
-    assert_control(result, "missing-evidence-file");
-}
-
-#[test]
-fn evidence_validator_rejects_stale_capture_digest() {
-    // arrange
-    let (root, mut manifest) = seeded_evidence_root();
-    let artifact = row_mut(&mut manifest, "P0-START-01")["expected_semantic_cell_artifact"]
-        .as_str()
-        .unwrap_or_abort()
-        .to_owned();
-    std::fs::write(root.path().join(&artifact), b"stale capture content").unwrap_or_abort();
-
-    // act
-    let result = validate_manifest_evidence(&manifest, root.path());
-
-    // assert
-    assert_control(result, "stale-evidence-digest");
-}
-
-#[test]
-fn evidence_validator_rejects_missing_divergence_receipt_file() {
-    // arrange
-    let (root, manifest) = seeded_evidence_root();
-    let note = manifest["identity_policy"]["approved_divergence_notes"]["DIV-AA-PALETTE"]
-        .as_str()
-        .unwrap_or_abort();
-    let receipt_rel = divergence_receipt_path(note).unwrap_or_abort();
-    let receipt = root
-        .path()
-        .join(manifest["evidence_root"].as_str().unwrap_or_abort())
-        .join(receipt_rel);
-    std::fs::remove_file(receipt).unwrap_or_abort();
-
-    // act
-    let result = validate_manifest_evidence(&manifest, root.path());
-
-    // assert
-    assert_control(result, "missing-divergence-receipt");
 }

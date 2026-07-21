@@ -445,6 +445,10 @@ Current fail-closed stages (no `|| true`):
 - Prerequisites gate: independent reference-parity manifest path must exist; `cargo` must be on
   `PATH`; all owner test files listed below must exist (missing owner = FAIL, not skip).
 - `test -f docs/tui-reference-parity-manifest.v1.json`
+- `reference_binary_present`: the pinned reference binary
+  `inspirations/grok-build/target/debug/xai-grok-pager` must exist and its SHA-256 must match the
+  pinned digest `883e3dea…3bb9a9a5` (presence and digest check only; the lane never rebuilds or
+  copies the binary)
 - `cargo nextest run -p harness-tui --test reference_parity_manifest_test`
 - `cargo nextest run -p harness-tui --test p0_parity_contract_test`
 - `cargo nextest run -p harness-tui --test shell_topology_contract_test`
@@ -458,8 +462,25 @@ Current fail-closed stages (no `|| true`):
 - `HARNESS_TUI_PARITY_STRICT=1 cargo nextest run -p harness-tui --test reference_parity_responsive_test`
 - `HARNESS_TUI_PTY_SIGNOFF=1 HARNESS_TUI_PARITY_STRICT=1 cargo nextest run -p harness-tui --test reference_parity_pty_test`
   (forces PTY owners on; silent no-op without the env is forbidden in this lane)
+- `reference_parity_manifest_evidence` (final gate):
+  `HARNESS_TUI_PARITY_STRICT=1 HARNESS_TUI_PARITY_ARTIFACT_DIR="$parity_artifacts_dir" cargo nextest run -p harness-tui --test reference_parity_evidence_test`
+  runs the strict validator (`validate_manifest_evidence` in
+  `crates/harness-tui/tests/support/reference_parity_status.rs`) against the lane's fresh evidence
+  root under `target/test-lanes/`, never the repository `artifacts/` tree. Every claimed
+  (`pass`/`diverged`) row must have all L1–L6 evidence files present, declared capture digests
+  (`reference_txt_sha256`/`reference_png_sha256`) must hash-match the actual artifact bytes,
+  embedded receipt `path`/`sha256` pairs must hash-match, the freeze receipt must match the pinned
+  reference block (binary digest, freeze txt/png digests, scenario, viewport), divergence
+  approval receipt files must exist, and L3 `metadata.json` behavior_id/viewport provenance must
+  match the rows owning that capture. Any missing, stale, copied, or mismatched artifact fails
+  the lane.
 - Aggregate `parity-lane-verdict.txt` under the lane artifact tree, including an explicit
   `stages=` list of the owners that ran
+
+Ordinary `cargo nextest` runs do not set `HARNESS_TUI_PARITY_STRICT`, so the env-gated strict
+provenance test stays inert and the suite passes from a clean checkout without signoff artifacts.
+Only the lane (with the fresh evidence root populated by the capture flow) drives the executable
+provenance validation.
 
 `--dry-run` still records the same stage command shape without executing. Optional live/native
 lanes (`signoff-live`, `signoff-native`) and developer lanes (`fast`, …) keep soft-stage semantics.

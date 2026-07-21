@@ -32,7 +32,7 @@ Modes:
   signoff-pty          Strict fail-closed deterministic PTY signoff (dual-binary CLI journeys), single-threaded.
   signoff-live         Live provider signoff. Requires live env and runs live_proxy_preflight_requires_live_env first.
   signoff-native       Native visual signoff. Requires native visual env and runs ignored native visual tests single-threaded.
-  signoff-parity       Strict fail-closed dual-binary TUI reference parity (cells/pixels). Missing manifest/env/binary/owners = FAIL.
+  signoff-parity       Strict fail-closed dual-binary TUI reference parity (cells/pixels) with executable evidence provenance. Missing manifest/env/binary/owners = FAIL.
   signoff-journeys     Strict fail-closed A-JOURNEYS scaffolding: offline config CLI journeys + worktree owner doc. Missing binary/owners = FAIL.
   stress-offline       Delegates to scripts/stress-harness.sh --mode offline.
   stress-live          Requires live env/config and delegates to scripts/stress-harness.sh --mode live.
@@ -727,8 +727,15 @@ run_signoff_parity() {
   local cells_test_rel="crates/harness-tui/tests/reference_parity_cells_test.rs"
   local pixels_test_rel="crates/harness-tui/tests/reference_parity_pixels_test.rs"
   local pty_test_rel="crates/harness-tui/tests/reference_parity_pty_test.rs"
-  local parity_artifacts_dir
-  parity_artifacts_dir="$(stage_dir_for signoff-parity parity_evidence)/artifacts"
+  local reference_binary_rel="inspirations/grok-build/target/debug/xai-grok-pager"
+  local reference_binary_path="${repo_root}/${reference_binary_rel}"
+  # Pinned reference binary sha256 (must match $.reference.binary_sha256 in the manifest).
+  local reference_binary_sha256="883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5"
+  local parity_evidence_root
+  parity_evidence_root="$(stage_dir_for signoff-parity parity_evidence)"
+  local parity_artifacts_dir="${parity_evidence_root}/artifacts"
+  local reference_pin_path="${parity_evidence_root}/reference-binary-sha256.txt"
+  printf '%s' "$reference_binary_sha256" >"$reference_pin_path"
   mkdir -p "$parity_artifacts_dir"
 
   if [[ "$dry_run" -eq 0 ]]; then
@@ -764,6 +771,11 @@ run_signoff_parity() {
 
   run_stage "$mode_name" reference_parity_manifest_present "$repo_root" test -f "$manifest_path"
 
+  # Presence + digest of the pinned reference binary only; never rebuild or copy it.
+  run_stage "$mode_name" reference_binary_present "$repo_root" \
+    bash -c 'test -f "$0" || { echo "missing pinned reference binary $0" >&2; exit 1; }; actual="$(sha256sum "$0" | cut -d" " -f1)"; expected="$(cat "$1")"; if [ "$actual" != "$expected" ]; then echo "reference binary digest mismatch: actual=$actual expected=$expected" >&2; exit 1; fi' \
+    "$reference_binary_path" "$reference_pin_path"
+
   run_stage "$mode_name" reference_parity_manifest_test "$repo_root" \
     env HARNESS_TUI_PARITY_ARTIFACT_DIR="$parity_artifacts_dir" \
     cargo nextest run -p harness-tui --test reference_parity_manifest_test
@@ -794,6 +806,13 @@ run_signoff_parity() {
   run_stage "$mode_name" reference_parity_pty_test "$repo_root" \
     env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 HARNESS_TUI_PARITY_STRICT=1 \
     cargo nextest run -p harness-tui --test reference_parity_pty_test --test-threads 1
+
+  # Final fail-closed provenance gate: the strict validator must accept the
+  # fresh evidence root (L1-L6 files present, capture/freeze/receipt digests
+  # hash-matched, capture metadata matched to the owning rows).
+  run_stage "$mode_name" reference_parity_manifest_evidence "$repo_root" \
+    env HARNESS_TUI_PARITY_ARTIFACT_DIR="$parity_artifacts_dir" HARNESS_TUI_PARITY_STRICT=1 \
+    cargo nextest run -p harness-tui --test reference_parity_evidence_test
 
   local mode_failed=0
   local stage_status
@@ -852,7 +871,7 @@ note=${note}
 git_revision=${git_rev}
 manifest_sha256=${manifest_digest}
 owns=dual_binary_cells_and_pixels
-stages=manifest,p0_contract,shell_topology,cells,pixels,first_slice,perm_question,tx_shell,responsive,pty_with_signoff
+stages=manifest,reference_binary,p0_contract,shell_topology,cells,pixels,first_slice,perm_question,tx_shell,responsive,pty_with_signoff,evidence_provenance
 does_not_own=tui-signoff-manifest.v1.json
 manifest=docs/tui-reference-parity-manifest.v1.json
 EOF
