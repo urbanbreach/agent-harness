@@ -819,11 +819,30 @@ write_signoff_parity_verdict() {
   local note="$3"
   local verdict_path="${artifacts_dir}/parity-lane-verdict.txt"
   mkdir -p "$artifacts_dir"
+
+  local git_rev
+  git_rev="$(git -C "$repo_root" rev-parse HEAD 2>/dev/null || echo 'unknown')"
+  local manifest_path="${repo_root}/docs/tui-reference-parity-manifest.v1.json"
+  local manifest_digest
+  manifest_digest="$(sha256sum "$manifest_path" 2>/dev/null | cut -d' ' -f1 || echo 'missing')"
+
+  # Fail-closed: PASS requires at least one non-verdict artifact in the evidence dir
+  if [[ "$verdict" == "PASS" ]]; then
+    local artifact_count
+    artifact_count="$(find "$artifacts_dir" -type f ! -name 'parity-lane-verdict.txt' | wc -l | tr -d ' ')"
+    if [[ "$artifact_count" -eq 0 ]]; then
+      verdict="FAIL"
+      note="no_evidence_artifacts_in_fresh_root"
+    fi
+  fi
+
   cat >"$verdict_path" <<EOF
 schema=harness-signoff-parity-verdict-v1
 mode=signoff-parity
 verdict=${verdict}
 note=${note}
+git_revision=${git_rev}
+manifest_sha256=${manifest_digest}
 owns=dual_binary_cells_and_pixels
 stages=manifest,p0_contract,shell_topology,cells,pixels,first_slice,perm_question,tx_shell,responsive,pty_with_signoff
 does_not_own=tui-signoff-manifest.v1.json
