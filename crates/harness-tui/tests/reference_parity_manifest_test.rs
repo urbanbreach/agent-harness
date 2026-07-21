@@ -122,6 +122,10 @@ fn checked_in_manifest_covers_first_slice_and_scaffolds() {
         "OVL-PERM",
         "OVL-QUESTION",
     ];
+    // Scaffolds blocked on external reference evidence (Wave 4 Packet 4.1):
+    // freeze recaptured with the pinned binary, but A-PIXELS fails closed on
+    // unmasked shell-chrome residuals pending user-approved identity coverage.
+    let blocked_on_reference_evidence = ["SHELL-IDLE"];
     for id in REQUIRED_SCAFFOLD_IDS {
         assert!(ids.contains(*id), "missing scaffold id {id}");
         let row = rows
@@ -147,6 +151,11 @@ fn checked_in_manifest_covers_first_slice_and_scaffolds() {
             assert_eq!(
                 status, "incomplete",
                 "scaffold {id} demoted: missing approved divergence or required evidence"
+            );
+        } else if blocked_on_reference_evidence.contains(id) {
+            assert_eq!(
+                status, "blocked",
+                "scaffold {id} blocked on reference pixel evidence"
             );
         } else if status == "pass" {
             assert!(

@@ -239,6 +239,110 @@ fn shell_idle_empty_body_is_card_free_with_bordered_composer() {
     );
 }
 
+/// SHELL-IDLE state machine: the focus owner stays on the composer and the
+/// overlay z-stack is empty (manifest: `expected_focus_owner: composer`,
+/// `expected_overlays_and_z_order: []`).
+#[test]
+fn shell_idle_focus_owner_is_composer_and_overlay_stack_is_empty() {
+    // arrange
+    let mut app = live_app();
+    ingest_completed_turn(
+        &mut app,
+        "req_idle_state",
+        "idle state prompt",
+        "idle state reply",
+    );
+
+    // act
+    let top_overlay = app.overlay_stack().top();
+
+    // assert — focus belongs to the composer; no overlays are open
+    assert_eq!(
+        app.focus,
+        Focus::Prompt,
+        "SHELL-IDLE: focus owner must be the composer"
+    );
+    assert!(
+        top_overlay.is_none(),
+        "SHELL-IDLE: overlay z-stack must be empty, got {top_overlay:?}"
+    );
+    assert!(!app.palette_visible);
+    assert!(!app.session_history_visible);
+}
+
+/// SHELL-IDLE error recovery: a failed tool call mid-run leaves the shell
+/// idle-ready — failure visible in the body, bordered composer retained,
+/// focus still on the composer, no overlays opened.
+#[test]
+fn shell_idle_stays_composer_ready_after_failed_tool_call() {
+    // arrange — completed turn, then a tool call that fails
+    let mut app = live_app();
+    ingest_completed_turn(
+        &mut app,
+        "req_idle_recover",
+        "recover prompt",
+        "recover reply",
+    );
+    app.ingest_event(envelope(
+        5,
+        Some("req_idle_recover"),
+        EventV1::ToolCallRequested(ToolCallRequestedEvent {
+            tool_call_id: "tc_idle_fail".into(),
+            tool_id: "fs.read".to_string(),
+            args_summary: r#"{"path":"missing.txt"}"#.to_string(),
+            args_digest: "digest-args-fail".to_string(),
+            metadata: None,
+        }),
+    ));
+    app.ingest_event(envelope(
+        6,
+        Some("req_idle_recover"),
+        EventV1::ToolCallStarted(ToolCallStartedEvent {
+            tool_call_id: "tc_idle_fail".into(),
+        }),
+    ));
+    app.ingest_event(envelope(
+        7,
+        Some("req_idle_recover"),
+        EventV1::ToolCallFinished(ToolCallFinishedEvent {
+            tool_call_id: "tc_idle_fail".into(),
+            status: ToolCallStatus::Failed,
+            output_summary: Some("tool exploded mid-run".to_string()),
+            output_digest: Some("digest-tool-fail".to_string()),
+            output_json: None,
+            metadata: None,
+        }),
+    ));
+
+    // act
+    let rendered = render(&app);
+
+    // assert — failure surfaced, composer bordered and focused, no overlays
+    assert!(
+        rendered.contains("tool exploded mid-run"),
+        "SHELL-IDLE recovery: tool failure must stay visible in the body\n{rendered}"
+    );
+    assert!(
+        rendered.contains('❯'),
+        "SHELL-IDLE recovery: composer must stay ready\n{rendered}"
+    );
+    let lines: Vec<&str> = rendered.lines().collect();
+    let glyph_idx = lines
+        .iter()
+        .rposition(|line| line.contains('│') && line.contains('❯'))
+        .or_else(|| lines.iter().rposition(|line| line.contains('❯')))
+        .expect("composer glyph");
+    let above = glyph_idx.checked_sub(1).map(|i| lines[i]).unwrap_or("");
+    let below = lines.get(glyph_idx + 1).copied().unwrap_or("");
+    assert!(
+        (above.contains('╭') || above.contains('─'))
+            && (below.contains('╰') || below.contains('─')),
+        "SHELL-IDLE recovery: bordered composer required\nabove={above:?} below={below:?}\n{rendered}"
+    );
+    assert_eq!(app.focus, Focus::Prompt);
+    assert!(app.overlay_stack().top().is_none());
+}
+
 /// TX-USER: user message chrome uses `❯` marker, flat padding, no outer rail / You header.
 /// Freeze capture: run1-stream-probe (`❯ ping`).
 #[test]

@@ -672,8 +672,8 @@
       "surface": "shell",
       "state": "idle",
       "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
-      "reference_receipt_id": "reference-freeze",
-      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "reference_receipt_id": "shell-idle-reference-freeze-v2",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-idle-reference-freeze.v2.json",
       "preconditions": "Live session idle; no pending stream/permission/question.",
       "seeded_inputs": {
         "session": "live idle after completed turn or empty live shell"
@@ -711,12 +711,12 @@
         "differential_evaluator": "pending:reference_parity::shell_idle_diff"
       },
       "evidence_paths": {
-        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-draft/",
-        "L2": "artifacts/qa-evidence/20260717-tui-reference-parity/harness/P0-KEY-01/cells/",
-        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-draft-v23/",
-        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/draft-pixel-diff-v23-masked.json",
-        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/draft-pixel-diff-v23-masked.json",
-        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/draft-identity-field-mask.v1.json"
+        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run4-shell-idle-pinned-v1/",
+        "L2": "artifacts/qa-evidence/20260717-tui-reference-parity/harness/SHELL-IDLE/cells/",
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-shell-idle-v1/",
+        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-idle-pixel-diff-v2-masked.json",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-shell-idle-v1/terminal.png",
+        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-idle-identity-field-mask-v1.json"
       },
       "identity_substitution": {
         "fields": [
@@ -736,16 +736,16 @@
         "A-INVARIANTS",
         "A-NO-RESKIN"
       ],
-      "status": "incomplete",
-      "notes": "Scaffold §10 primary session shell idle. A-PTY + structural GREEN. L3 harness-pty-idle-120x32-v1 = true empty idle (bordered composer, no transcript body) at freeze geometry 120×32. L1 run1-draft = composer geometry base (draft freeze used for idle composer geometry; not post-turn complete). Status incomplete pending full A-* suite (AA residuals / A-REVIEW). | status=blocked: invalid L1/L3 pair (draft vs post-turn idle); residual shell-idle-residual-v1.md 2026-07-19 | L3 honesty loop8: L1 is run1-draft; L3 pointed at harness-draft-v23 exact grapheme match (was empty-idle pair) 2026-07-19 | status=pass loop8: L1 run1-draft + L3 harness-draft-v23 exact grapheme + L4/L5 draft-pixel-diff-v23-masked exact_match + L6 draft identity mask (same honest pair as P0-KEY-01) 2026-07-19",
+      "status": "blocked",
+      "notes": "Scaffold §10 primary session shell idle. A-PTY + structural GREEN. L3 harness-pty-idle-120x32-v1 = true empty idle (bordered composer, no transcript body) at freeze geometry 120×32. L1 run1-draft = composer geometry base (draft freeze used for idle composer geometry; not post-turn complete). Status incomplete pending full A-* suite (AA residuals / A-REVIEW). | status=blocked: invalid L1/L3 pair (draft vs post-turn idle); residual shell-idle-residual-v1.md 2026-07-19 | L3 honesty loop8: L1 is run1-draft; L3 pointed at harness-draft-v23 exact grapheme match (was empty-idle pair) 2026-07-19 | status=pass loop8: L1 run1-draft + L3 harness-draft-v23 exact grapheme + L4/L5 draft-pixel-diff-v23-masked exact_match + L6 draft identity mask (same honest pair as P0-KEY-01) 2026-07-19 | Wave4.1: freeze recaptured with PINNED binary 883e3dea (== global pin; prior freeze used non-pinned 7180d0e0) at 120x40 with SSH env unset — 'Over SSH?' warning RESOLVED (0 matches; masked mismatches 18758→8853). status=blocked: A-PIXELS fails closed with 8853 unapproved masked RGBA diffs (0.25%) clustered on composer border/hints AA + reference login-status badge ('Logged in with API key'/[stable]') absent from the provider-less harness capture; no approved identity-mask field covers shell chrome (only DIV-AA-PALETTE/DIV-AA-SHELL-FAIL approved) — blocker (1): new explicit user approval of a shell-chrome identity/divergence OR harness footer/status parity work; blocker (2): differential_evaluator owner pending (node comparator used, Rust evaluator not authored). Evidence paths corrected to the real idle pair (was invalid draft pair). 2026-07-21",
       "slice": "scaffold",
       "evidence": {
-        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-draft/",
-        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-draft-v23/",
-        "L4_pixel_diff": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/draft-pixel-diff-v23-masked.json",
-        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/draft-pixel-diff-v23-masked.json",
-        "L6_mask": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/draft-identity-field-mask.v1.json",
-        "L2_cells": "artifacts/qa-evidence/20260717-tui-reference-parity/harness/P0-KEY-01/cells/"
+        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run4-shell-idle-pinned-v1/",
+        "L2_cells": "artifacts/qa-evidence/20260717-tui-reference-parity/harness/SHELL-IDLE/cells/",
+        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-shell-idle-v1/",
+        "L4_pixel_diff": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-idle-pixel-diff-v2-masked.json",
+        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-shell-idle-v1/terminal.png",
+        "L6_mask": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-idle-identity-field-mask-v1.json"
       }
     },
     {
