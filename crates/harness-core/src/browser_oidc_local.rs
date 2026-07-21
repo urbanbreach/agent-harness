@@ -338,6 +338,9 @@ mod tests {
 
     #[test]
     fn local_oidc_product_writes_state_and_receipt() {
+        // arrange
+        // act
+        // assert
         let dir = tempdir().expect("tempdir");
         let root = dir.path();
         let product = run_local_browser_oidc_product(root).expect("product");
@@ -379,6 +382,9 @@ mod tests {
 
     #[test]
     fn complete_without_start_fails_closed() {
+        // arrange
+        // act
+        // assert
         let dir = tempdir().expect("tempdir");
         let mut oidc = LocalBrowserOidc::open(dir.path()).expect("open");
         let err = oidc.complete("nope").expect_err("must fail");
@@ -387,6 +393,9 @@ mod tests {
 
     #[test]
     fn wrong_code_fails_closed() {
+        // arrange
+        // act
+        // assert
         let dir = tempdir().expect("tempdir");
         let mut oidc = LocalBrowserOidc::open(dir.path()).expect("open");
         oidc.start("https://issuer.local", "client").expect("start");

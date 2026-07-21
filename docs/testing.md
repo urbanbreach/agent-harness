@@ -58,9 +58,12 @@ python3 scripts/check-test-suite-gates.py --self-test
 
 The gates cover deterministic-test sleeps, process-global env/cwd mutation, subprocess and
 real-world dependency usage, widened test-file focus, T5 tree-total line budget, arrange/act/assert
-conventions, cassette secret hygiene, committed snapshot orphans, and test taxonomy. Existing
+conventions, cassette secret hygiene, committed snapshot orphans, and test taxonomy. Any residual
 arrange/act/assert debt is stored as SHA-256 keys in `docs/test-suite-conventions-baseline.json`;
-the gate fails on new or stale debt without storing source-brand terms in docs. Committed `.snap`
+the gate fails on new or stale debt without storing source-brand terms in docs. The baseline is
+currently empty (Wave 3 Packet 3.5 fixed all 81 listed tests by adding arrange/act/assert
+sections and removed every exemption); re-adding entries requires explicit approval and a
+documented removal path, because the goal is to keep this file at zero debt. Committed `.snap`
 files with `source:` metadata must point at an existing source file with an insta assertion, or be
 referenced by snapshot name in crate Rust code. Acceptance requires the strict command without
 `--report-only` to return zero violations.

@@ -356,6 +356,9 @@ mod tests {
 
     #[test]
     fn local_hub_product_writes_state_and_upload() {
+        // arrange
+        // act
+        // assert
         let dir = tempdir().expect("tempdir");
         let root = dir.path();
         let product = run_local_workspace_hub_product(root).expect("product");
@@ -376,6 +379,9 @@ mod tests {
 
     #[test]
     fn bind_without_connect_fails_closed() {
+        // arrange
+        // act
+        // assert
         let dir = tempdir().expect("tempdir");
         let mut hub = LocalWorkspaceHub::open(dir.path()).expect("open");
         let err = hub.bind("ws").expect_err("must fail");

@@ -337,7 +337,9 @@ mod tests {
 
     #[test]
     fn field_matches_star_list_range_and_step() {
-        // arrange / act / assert
+        // arrange
+        // act
+        // assert
         assert!(field_matches("*", 7));
         assert!(field_matches("1,5,9", 5));
         assert!(!field_matches("1,5,9", 3));
@@ -358,7 +360,8 @@ mod tests {
         let weekend = CronCivilTime::new(0, 9, 15, 7, 0).unwrap();
         let wrong_hour = CronCivilTime::new(0, 10, 15, 7, 3).unwrap();
 
-        // act / assert
+        // act
+        // assert
         assert!(schedule_is_due(&schedule, weekday_morning).unwrap());
         assert!(!schedule_is_due(&schedule, weekend).unwrap());
         assert!(!schedule_is_due(&schedule, wrong_hour).unwrap());
@@ -427,7 +430,8 @@ mod tests {
         let id = ScheduleId::parse("nightly").unwrap();
         let now = CronCivilTime::new(30, 12, 1, 1, 1).unwrap();
 
-        // act / assert
+        // act
+        // assert
         let err = executor.fire_one_if_due(&registry, &id, now).unwrap_err();
         assert!(matches!(err, CronScheduleError::NotDue { .. }));
         assert_eq!(executor.fire_count(), 0);

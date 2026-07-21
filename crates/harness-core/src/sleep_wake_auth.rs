@@ -761,6 +761,9 @@ mod tests {
 
     #[test]
     fn sleep_wake_policy_is_active_hook_strategy() {
+        // arrange
+        // act
+        // assert
         let policy = evaluate_sleep_wake_credential_refresh();
         assert!(policy.is_active());
         assert!(!policy.is_noop_or_unavailable());
@@ -775,6 +778,9 @@ mod tests {
 
     #[test]
     fn availability_alias_is_active_when_hook_source_is_product_default() {
+        // arrange
+        // act
+        // assert
         let availability = sleep_wake_credential_refresh_availability();
         assert!(availability.is_active());
         assert!(availability.one_line().contains("active"));
@@ -782,6 +788,9 @@ mod tests {
 
     #[test]
     fn platform_event_source_opens_active_hook() {
+        // arrange
+        // act
+        // assert
         let opened = open_platform_sleep_wake_event_source();
         assert!(opened.is_active());
         assert!(opened.policy().is_active());
@@ -803,6 +812,9 @@ mod tests {
 
     #[test]
     fn unavailable_event_source_is_structured_fail_closed() {
+        // arrange
+        // act
+        // assert
         let opened = unavailable_sleep_wake_event_source("no native wake API on this host");
         assert!(!opened.is_active());
         match opened.policy() {
@@ -815,6 +827,9 @@ mod tests {
 
     #[test]
     fn observe_host_events_records_active_policy() {
+        // arrange
+        // act
+        // assert
         for event in [
             SleepWakeHostEvent::Sleep,
             SleepWakeHostEvent::Wake,
@@ -838,6 +853,9 @@ mod tests {
 
     #[test]
     fn sleep_wake_operator_diagnostics_cover_active_policy() {
+        // arrange
+        // act
+        // assert
         let policy = evaluate_sleep_wake_credential_refresh();
         let observations = [
             observe_sleep_wake_host_event(SleepWakeHostEvent::Sleep),
@@ -854,6 +872,9 @@ mod tests {
 
     #[test]
     fn decide_sleep_wake_skips_refresh_without_expiry_context() {
+        // arrange
+        // act
+        // assert
         for event in [
             SleepWakeHostEvent::Sleep,
             SleepWakeHostEvent::Wake,
@@ -869,6 +890,9 @@ mod tests {
 
     #[test]
     fn decide_recommends_refresh_on_wake_when_credentials_near_expiry() {
+        // arrange
+        // act
+        // assert
         let expiry = near_expiry_snapshot();
         let wake =
             decide_sleep_wake_credential_refresh_for(SleepWakeHostEvent::Wake, Some(&expiry));
@@ -902,6 +926,9 @@ mod tests {
 
     #[test]
     fn decide_skips_refresh_on_wake_when_credentials_still_fresh() {
+        // arrange
+        // act
+        // assert
         let decision = decide_sleep_wake_credential_refresh_for(
             SleepWakeHostEvent::Wake,
             Some(&fresh_snapshot()),
@@ -912,6 +939,9 @@ mod tests {
 
     #[test]
     fn decide_skips_when_expiry_unknown_even_on_wake() {
+        // arrange
+        // act
+        // assert
         let expiry = CredentialExpirySnapshot::with_default_leeway(None, 1_700_000_000_000);
         let decision =
             decide_sleep_wake_credential_refresh_for(SleepWakeHostEvent::Wake, Some(&expiry));
@@ -921,6 +951,9 @@ mod tests {
 
     #[test]
     fn credential_expiry_snapshot_near_expiry_includes_already_expired() {
+        // arrange
+        // act
+        // assert
         let now = 1_000i64;
         let expired = CredentialExpirySnapshot {
             expires_at_unix_ms: Some(now - 1),
@@ -933,6 +966,9 @@ mod tests {
 
     #[test]
     fn observe_and_decide_dual_cycle_records_active_and_skip_without_expiry() {
+        // arrange
+        // act
+        // assert
         let mut observations = Vec::new();
         let mut decisions = Vec::new();
         for _cycle in 0..2 {
@@ -956,6 +992,9 @@ mod tests {
 
     #[tokio::test]
     async fn execute_skips_when_decision_is_skip_fresh_token() {
+        // arrange
+        // act
+        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let store = CredentialStore::new(temp.path());
         let refresher = Arc::new(CountingRefresher {
@@ -988,6 +1027,9 @@ mod tests {
 
     #[tokio::test]
     async fn execute_near_expiry_single_refresh_and_persists_replacement() {
+        // arrange
+        // act
+        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let store = CredentialStore::new(temp.path());
         let refresher = Arc::new(CountingRefresher {
@@ -1033,6 +1075,9 @@ mod tests {
 
     #[tokio::test]
     async fn execute_transient_failure_is_failed_without_store_replacement() {
+        // arrange
+        // act
+        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let store = CredentialStore::new(temp.path());
         let refresher = Arc::new(CountingRefresher {
@@ -1071,6 +1116,9 @@ mod tests {
 
     #[tokio::test]
     async fn execute_missing_refresh_token_is_failed_unavailable() {
+        // arrange
+        // act
+        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let store = CredentialStore::new(temp.path());
         let refresher = Arc::new(CountingRefresher {
@@ -1115,6 +1163,9 @@ mod tests {
 
     #[tokio::test]
     async fn execute_cancellation_before_refresh() {
+        // arrange
+        // act
+        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let store = CredentialStore::new(temp.path());
         let refresher = Arc::new(CountingRefresher {
@@ -1152,6 +1203,9 @@ mod tests {
 
     #[tokio::test]
     async fn execute_cancellation_during_refresh() {
+        // arrange
+        // act
+        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let store = CredentialStore::new(temp.path());
         let (started_tx, started_rx) = oneshot::channel();
@@ -1199,6 +1253,9 @@ mod tests {
 
     #[tokio::test]
     async fn hook_source_loop_near_expiry_refreshes_once() {
+        // arrange
+        // act
+        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let store = CredentialStore::new(temp.path());
         let refresher = Arc::new(CountingRefresher {
@@ -1257,6 +1314,9 @@ mod tests {
 
     #[tokio::test]
     async fn observe_decide_and_execute_product_path_on_resume() {
+        // arrange
+        // act
+        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let store = CredentialStore::new(temp.path());
         let refresher = Arc::new(CountingRefresher {

@@ -290,6 +290,9 @@ fn deactivate_and_remove_lifecycle() {
 
 #[test]
 fn activate_loads_hooks_json_and_writes_receipt() {
+    // arrange
+    // act
+    // assert
     // Given: package with descriptor + hooks.json
     let temp = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp.path().join("ws");
@@ -322,6 +325,9 @@ fn activate_loads_hooks_json_and_writes_receipt() {
 
 #[test]
 fn full_lifecycle_install_activate_load_deactivate_remove() {
+    // arrange
+    // act
+    // assert
     // Given: package with plugin_entry + skills
     let temp = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp.path().join("ws");
@@ -355,6 +361,9 @@ fn full_lifecycle_install_activate_load_deactivate_remove() {
 
 #[test]
 fn activate_fails_closed_on_invalid_plugin_entry() {
+    // arrange
+    // act
+    // assert
     // Given: package with corrupt plugin_entry.json
     let temp = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp.path().join("ws");
@@ -386,6 +395,9 @@ fn activate_fails_closed_on_invalid_plugin_entry() {
 
 #[test]
 fn activate_fails_closed_when_declared_entrypoint_missing() {
+    // arrange
+    // act
+    // assert
     // Given: plugin_entry declares skills but skills dir is absent
     let temp = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp.path().join("ws");
@@ -413,6 +425,9 @@ fn activate_fails_closed_when_declared_entrypoint_missing() {
 
 #[test]
 fn activate_fails_closed_on_invalid_hooks_json() {
+    // arrange
+    // act
+    // assert
     // Given
     let temp = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp.path().join("ws");

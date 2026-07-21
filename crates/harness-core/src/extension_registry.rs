@@ -272,6 +272,9 @@ mod tests {
 
     #[test]
     fn discover_register_persists_and_reloads() {
+        // arrange
+        // act
+        // assert
         // Given
         let temp = tempfile::tempdir().expect("temp");
         let root = temp.path();
@@ -300,6 +303,9 @@ mod tests {
 
     #[test]
     fn register_manifest_path_fail_closed_on_missing() {
+        // arrange
+        // act
+        // assert
         // Given
         let temp = tempfile::tempdir().expect("temp");
         let mut registry = ExtensionDescriptorRegistry::open(temp.path()).expect("open");
@@ -337,6 +343,9 @@ mod tests {
 
     #[test]
     fn path_escape_attempts_are_rejected() {
+        // arrange
+        // act
+        // assert
         // Given
         let temp = tempfile::tempdir().expect("temp");
         let outside = tempfile::tempdir().expect("outside");

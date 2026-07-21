@@ -3420,6 +3420,9 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_binary_update_p
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_sleep_wake_observations() {
+    // arrange
+    // act
+    // assert
     // Given: live app with sleep/wake observation summary bound for the status dialog
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_operator_summary(&app).sleep_wake.is_none());

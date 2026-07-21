@@ -419,6 +419,9 @@ mod tests {
 
     #[test]
     fn local_mcp_oauth_product_writes_state_and_receipt() {
+        // arrange
+        // act
+        // assert
         let dir = tempdir().expect("tempdir");
         let root = dir.path();
         let product = run_local_mcp_oauth_product(root).expect("product");
@@ -463,6 +466,9 @@ mod tests {
 
     #[test]
     fn exchange_without_begin_fails_closed() {
+        // arrange
+        // act
+        // assert
         let dir = tempdir().expect("tempdir");
         let mut oauth = LocalMcpOauth::open(dir.path()).expect("open");
         let err = oauth.exchange("nope").expect_err("must fail");
@@ -471,6 +477,9 @@ mod tests {
 
     #[test]
     fn open_without_exchange_fails_closed() {
+        // arrange
+        // act
+        // assert
         let dir = tempdir().expect("tempdir");
         let mut oauth = LocalMcpOauth::open(dir.path()).expect("open");
         oauth.begin("s", "https://mcp.local/auth").expect("begin");

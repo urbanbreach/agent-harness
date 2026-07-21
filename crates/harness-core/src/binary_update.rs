@@ -862,6 +862,9 @@ mod tests {
 
     #[test]
     fn local_manifest_up_to_date_when_current_meets_channel() {
+        // arrange
+        // act
+        // assert
         // Given
         let manifest = LocalUpdateManifest {
             version: "0.1.0".to_string(),
@@ -882,6 +885,9 @@ mod tests {
 
     #[test]
     fn local_manifest_update_available_when_channel_is_newer() {
+        // arrange
+        // act
+        // assert
         // Given
         let manifest = LocalUpdateManifest {
             version: "0.2.0".to_string(),
@@ -912,6 +918,9 @@ mod tests {
 
     #[test]
     fn local_manifest_product_writes_receipt_and_can_succeed() {
+        // arrange
+        // act
+        // assert
         // Given
         let dir = tempfile::tempdir().expect("tempdir");
         let root = dir.path();
@@ -947,6 +956,9 @@ mod tests {
 
     #[test]
     fn local_manifest_product_up_to_date_writes_receipt() {
+        // arrange
+        // act
+        // assert
         // Given
         let dir = tempfile::tempdir().expect("tempdir");
         let root = dir.path();
@@ -990,6 +1002,9 @@ mod tests {
 
     #[test]
     fn missing_local_manifest_fails_closed_but_still_writes_receipt() {
+        // arrange
+        // act
+        // assert
         // Given
         let dir = tempfile::tempdir().expect("tempdir");
         let root = dir.path();

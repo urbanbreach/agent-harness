@@ -1020,6 +1020,9 @@ fn user_row_wall_clock_right_aligned_matches_freeze_geometry() {
 
 #[test]
 fn user_row_packs_all_names_with_wall_clock_at_scroll_geometry() {
+    // arrange
+    // act
+    // assert
     // Given: SCROLL freeze user prompt + wall clock (run1-scroll-proxy-v3)
     let prompt = "List every file in the current directory using a tool, then write a numbered inventory of all names one per line.";
     let mut app = AppState::default();

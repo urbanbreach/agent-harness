@@ -210,6 +210,9 @@ mod tests {
 
     #[test]
     fn durable_team_mailbox_persists_deliver_and_reloads() {
+        // arrange
+        // act
+        // assert
         // Given
         let temp = tempfile::tempdir().expect("temp");
         let root = temp.path();
@@ -243,6 +246,9 @@ mod tests {
 
     #[test]
     fn durable_team_fail_closed_on_non_member_send() {
+        // arrange
+        // act
+        // assert
         // Given
         let temp = tempfile::tempdir().expect("temp");
         let mut durable = DurableTeamRegistry::open(temp.path()).expect("open");
@@ -286,6 +292,9 @@ mod tests {
 
     #[test]
     fn durable_multi_agent_team_product_meets_contract() {
+        // arrange
+        // act
+        // assert
         // Given
         let temp = tempfile::tempdir().expect("temp");
 

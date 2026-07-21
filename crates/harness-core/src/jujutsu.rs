@@ -895,6 +895,9 @@ mod tests {
 
     #[test]
     fn product_with_receipt_writes_file_when_cli_missing() {
+        // arrange
+        // act
+        // assert
         // Given
         let root = tempfile::tempdir().unwrap();
         let workspace = root.path().join("ws");
@@ -918,6 +921,9 @@ mod tests {
 
     #[test]
     fn product_with_fake_jj_can_run_status_and_log() {
+        // arrange
+        // act
+        // assert
         // Given: fake jj that accepts --version/log/root/status
         let dir = tempfile::tempdir().unwrap();
         let fake = dir.path().join("jj");

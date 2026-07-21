@@ -393,7 +393,8 @@ mod tests {
 
     #[test]
     fn mock_acp_agent_mode_product_meets_contract() {
-        // arrange / act
+        // arrange
+        // act
         let product = run_mock_acp_agent_mode_product();
         // assert
         assert!(
