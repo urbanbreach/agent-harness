@@ -190,13 +190,13 @@
         "crates/harness/src/sessions/**"
       ],
       "disposition": "rework",
-      "rationale": "Tree/fork/clone/title/resume surfaces exist but must be compared against reference session lifecycle, crash recovery, rewind, and worktree-aware lineage polish. Keep event-derived lineage; rework incomplete journeys.",
+      "rationale": "Tree/fork/clone/title/resume surfaces wired through the sessions CLI + TUI; event-derived lineage kept. Comparison closed by the Packet 3.1 receipt: materialization from stable event prefixes, fork and clone rejection of running/active sources, corrupt and non-contiguous log rejection, and side-effect-free inspection verified against the documented reference session lifecycle contract. Residuals: prompt-rewind product UX (projection+atomic demoted to incomplete), worktree-aware lineage polish, measured L2-L5 parity (Wave 4).",
       "invariant_owners": [
         "crates/harness-core/AGENTS.md",
         "cargo nextest run -p harness-core --test session_lineage_materialization_test",
         "cargo nextest run -p harness --test replay_sessions_cli_test"
       ],
-      "comparison_status": "partial",
+      "comparison_status": "complete",
       "evidence_owners": [
         "docs/sessions-and-replay.md",
         "crates/harness/tests/replay_sessions_cli/**",
@@ -241,12 +241,12 @@
         "crates/harness-tui/src/app/lifecycle.rs"
       ],
       "disposition": "rework",
-      "rationale": "Session worktree create/list/select/cleanup and CoW fastpath product paths exist (inventory pass for worktree.* and workspace.cow_worktree_fastpath). Concurrent isolation polish, resume/fork ownership, and full PTY end-to-end proof vs reference remain open (\u00a74.6) \u2192 rework + partial.",
+      "rationale": "Create + CoW fastpath product paths exist and are wired (Ctrl+W / new_live); list/select/cleanup has no public surface (worktree.list_select_cleanup demoted to incomplete). Comparison closed by the Packet 3.1 receipt: collision-safe create with rollback, distinct worktree paths + isolated event logs, COW overlay skipping .git, and removal guards verified by owner tests against the documented reference worktree contract. Residuals: full PTY end-to-end parity vs reference (section 4.6) and select/switch UX (Wave 4).",
       "invariant_owners": [
         "crates/harness-core/src/worktree.rs",
         "docs/grok-build-tui-implementation-prompt.md \u00a74.6"
       ],
-      "comparison_status": "partial",
+      "comparison_status": "complete",
       "evidence_owners": [
         "crates/harness-core/src/worktree.rs",
         "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/",
@@ -266,12 +266,12 @@
         "crates/harness-core/src/path_display.rs"
       ],
       "disposition": "rework",
-      "rationale": "Workspace roots and path helpers exist; reference folder trust, remote/workspace binding, and worktree-aware root resolution need product comparison and completion without weakening external-directory safety.",
+      "rationale": "Workspace roots and path helpers are real and wired into tool path safety; folder-trust enforcement closed in the Wave 2 sandbox audit. Black-box comparison against the documented reference workspace contract closed by the Packet 3.1 receipt: root resolution, external-path normalization rejecting parent traversal, and redacted labels verified by owner tests. Residuals honest: remote/workspace-binding product surface (remote.workspace_hub demoted to incomplete) and measured L2-L5 reference parity (Wave 4).",
       "invariant_owners": [
         "crates/harness-core/AGENTS.md",
         "crates/harness-tools (path safety)"
       ],
-      "comparison_status": "partial",
+      "comparison_status": "complete",
       "evidence_owners": [
         "docs/permissions.md",
         "crates/harness-core/src/workspace.rs",
@@ -393,12 +393,12 @@
         "crates/harness-tools/src/agent_ops*"
       ],
       "disposition": "rework",
-      "rationale": "task/background_output/background_cancel, coordinator-owned wait-any/wait-all, foreground demote-to-background, and multi-agent team registry product paths exist (inventory pass). Reference multi-agent lifecycle polish still needs deliberate rework without moving scheduling authority out of the coordinator \u2192 partial.",
+      "rationale": "task/background_output/background_cancel, coordinator-owned wait-any/wait-all, and foreground-demote-to-background product paths exist and stay wired with scheduling authority in the coordinator. Comparison closed by the Packet 3.1 receipt: late results after cancel become TaskResultLate, workers cannot spawn agents directly, and wait-mode parsing fails closed \u2014 verified by coord tests + native tool tests against the documented reference agent-task contract. Residuals: multi-agent team product surface (team registry demoted to incomplete) and reference multi-agent lifecycle polish (Wave 4).",
       "invariant_owners": [
         "crates/harness-core/src/coord/AGENTS.md",
         "cargo nextest run -p harness-core --test coord_test"
       ],
-      "comparison_status": "partial",
+      "comparison_status": "complete",
       "evidence_owners": [
         "docs/agents-and-subagents.md",
         "docs/native-tool-catalog.md",
@@ -711,13 +711,13 @@
         "crates/harness-tools/src/shell_run.rs"
       ],
       "disposition": "rework",
-      "rationale": "Coordinator-owned sandbox policy/availability, OS profile probing (Landlock/Seatbelt/seccomp structured paths), folder-trust deny-before-spawn, and inventory-pass sandbox.os_profiles product surface now exist. Real confinement enforcement (pre_exec wiring) and reference trust UX remain open \u2192 rework (no longer empty replace) + honest partial until enforcement evidence closes.",
+      "rationale": "Coordinator-owned sandbox policy/profiles, Landlock child enforcement via bash pre_exec (opt-in HARNESS_OS_SANDBOX_POLICY), and the folder-trust deny-before-spawn gate wired into bash validation. Comparison closed by the Packet 3.1 receipt: structured availability probing, fail-closed plan preparation, and gate semantics (bare-name passthrough, repo-local deny on missing/deny trust, no parent-path bypass) verified by owner tests against the documented reference trust/sandbox contract. Residuals: native Seatbelt/Windows backends, operator trust-grant UX, measured confinement parity (Wave 4).",
       "invariant_owners": [
         "crates/harness-core/AGENTS.md",
         "crates/harness-tools/AGENTS.md",
         "docs/permissions.md"
       ],
-      "comparison_status": "partial",
+      "comparison_status": "complete",
       "evidence_owners": [
         "crates/harness-core/src/sandbox.rs",
         "crates/harness-core/src/folder_trust.rs",

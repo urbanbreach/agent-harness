@@ -290,6 +290,24 @@ mod tests {
     }
 
     #[test]
+    fn gate_applies_to_parent_relative_executables_against_bypass() {
+        // arrange — an executable that escapes upward out of the workspace
+        let workspace = Path::new("/workspace/project");
+
+        // act
+        let untrusted = gate_repository_local_executable("../bin/tool", workspace, None);
+        let trusted = gate_repository_local_executable(
+            "../bin/tool",
+            workspace,
+            Some(FolderTrustDecision::Allow),
+        );
+
+        // assert — parent-relative stays path-qualified: denied without trust, allowed with it
+        assert!(untrusted.is_denied());
+        assert!(trusted.is_allowed());
+    }
+
+    #[test]
     fn gate_from_store_denies_persisted_deny_decision() {
         // arrange
         let temp = tempfile::tempdir().unwrap_or_abort();

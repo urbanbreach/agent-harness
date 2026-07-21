@@ -958,3 +958,24 @@ fn build_thinking_artifact(
 
     Ok(Some((inline, artifact_ref)))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_wait_mode_fails_closed_for_unknown_and_missing_modes() {
+        // arrange
+        // act
+        let missing = parse_wait_mode(None).expect_err("missing wait_mode");
+        let unknown = parse_wait_mode(Some("sometimes")).expect_err("unknown wait_mode");
+        let any_mode = parse_wait_mode(Some("any"));
+        let all_mode = parse_wait_mode(Some("all"));
+
+        // assert — fail-closed parsing of the wait-any/wait-all contract
+        assert!(missing.to_string().contains("required"));
+        assert!(unknown.to_string().contains("must be `any` or `all`"));
+        assert!(any_mode.is_ok());
+        assert!(all_mode.is_ok());
+    }
+}

@@ -502,6 +502,28 @@ fn session_lineage_rejects_unstable_prefixes() {
 }
 
 #[test]
+fn session_lineage_fork_rejects_running_source_without_stable_prefix() {
+    // arrange — a source session with no terminal run lifecycle
+    let events = vec![envelope(
+        1,
+        EventV1::RunStarted(RunStartedEvent {
+            run_name: "interactive".into(),
+            workspace_root: "/workspace".to_string(),
+        }),
+    )];
+
+    // act
+    let err = validate_fork_stable_prefix(&events, 1).expect_err("running source");
+
+    // assert — fork fails closed on active sources, same as clone
+    assert!(matches!(
+        err,
+        SessionLineageError::UnstablePrefix { cutoff_seq: 1, reason }
+            if reason.contains("run is still active")
+    ));
+}
+
+#[test]
 fn session_lineage_clone_rejects_running_source_without_stable_prefix() {
     // arrange
     // act

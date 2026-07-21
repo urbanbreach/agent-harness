@@ -75,4 +75,24 @@ mod tests {
             None
         );
     }
+
+    #[test]
+    fn workspace_selector_rejects_parent_traversal_inside_absolute_path() {
+        // arrange — a workspace prefix that an escaping path could match
+        let workspace = Path::new("/workspace/project");
+
+        // act — resolution of paths that escape the prefix
+        // assert — prefix matches must not smuggle `..` components through
+        assert_eq!(
+            workspace_relative_path_from_maybe_absolute(
+                workspace,
+                Path::new("/workspace/project/../evil/x")
+            ),
+            None
+        );
+        assert_eq!(
+            normalize_workspace_relative_path(Path::new("src/../../x")),
+            None
+        );
+    }
 }

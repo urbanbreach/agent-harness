@@ -83,7 +83,7 @@
       "visible_action_id": null,
       "side_effect_kind": "git",
       "disposition": "retain",
-      "notes": "Wave 2 honest audit: backend create/list/remove session worktrees exist in crates/harness-core/src/worktree.rs with safe parent-scoped cleanup, primary/unsafe refusal, rollback, and unit tests; create is wired through the TUI new-live flow (worktree.create scope). However list_session_worktrees and remove_session_worktree have zero production callers (no CLI/TUI/tool surface wired), and no select/switch-worktree backend exists; the select/apply-sync list UI is residual chrome. Demoted: public surface for list, select, and cleanup is missing.",
+      "notes": "Wave 2 honest audit: backend create/list/remove session worktrees exist in crates/harness-core/src/worktree.rs with safe parent-scoped cleanup, primary/unsafe refusal, rollback, and unit tests; create is wired through the TUI new-live flow (worktree.create scope). However list_session_worktrees and remove_session_worktree have zero production callers (no CLI/TUI/tool surface wired), and no select/switch-worktree backend exists; the select/apply-sync list UI is residual chrome. Demoted: public surface for list, select, and cleanup is missing. Wave 3 Packet 3.1 closed the worktree comparison receipt (receipts/core-audit/worktree.md); the missing list/select/cleanup surface stays the honest residual.",
       "honesty_demotion": {
         "from": "pass",
         "reason": "no_public_surface_for_list_select_cleanup",
@@ -100,7 +100,7 @@
       "visible_action_id": null,
       "side_effect_kind": "process",
       "disposition": "retain",
-      "notes": "Real runtime enforcement: SandboxPolicy profiles (off|workspace_write|read_only|strict) with honest per-platform availability (evaluate_availability / prepare_sandbox_for_spawn fail closed: non-Linux, missing Landlock, missing roots, or missing apply hook \u2192 Unavailable, never silent allow); the bash tool spawn path applies Landlock in the child pre_exec (crates/harness-tools/src/shell_run.rs) when HARNESS_OS_SANDBOX_POLICY is non-Off; default policy is Off (opt-in, SandboxPolicy::parse returns None for unknown input). Owner tests: plan shapes per policy, child-process enforcement, profiles honesty, bash spawn integration point. Residual: no Seatbelt/Windows backends; no network confinement.",
+      "notes": "Real runtime enforcement: SandboxPolicy profiles (off|workspace_write|read_only|strict) with honest per-platform availability (evaluate_availability / prepare_sandbox_for_spawn fail closed: non-Linux, missing Landlock, missing roots, or missing apply hook \u2192 Unavailable, never silent allow); the bash tool spawn path applies Landlock in the child pre_exec (crates/harness-tools/src/shell_run.rs) when HARNESS_OS_SANDBOX_POLICY is non-Off; default policy is Off (opt-in, SandboxPolicy::parse returns None for unknown input). Owner tests: plan shapes per policy, child-process enforcement, profiles honesty, bash spawn integration point. Residual: no Seatbelt/Windows backends; no network confinement. Comparison vs the documented reference sandbox/trust contract closed in Wave 3 Packet 3.1 (receipts/core-audit/sandbox.md).",
       "honesty_demotion": false
     },
     {
@@ -147,7 +147,7 @@
       "visible_action_id": null,
       "side_effect_kind": "filesystem",
       "disposition": "retain",
-      "notes": "Workspace root + external-directory safety for tools; not sandbox isolation."
+      "notes": "Workspace root + external-directory safety for tools; not sandbox isolation. Comparison vs the documented reference workspace contract closed in Wave 3 Packet 3.1 (receipts/core-audit/workspace.md)."
     },
     {
       "capability_id": "vcs.edit_attribution",
@@ -191,7 +191,7 @@
       "visible_action_id": "session.fork",
       "side_effect_kind": "session",
       "disposition": "retain",
-      "notes": "Tree/fork/clone/title lineage with stable cutoff validation."
+      "notes": "Tree/fork/clone/title lineage with stable cutoff validation. Comparison vs the documented reference session-lifecycle contract closed in Wave 3 Packet 3.1 (receipts/core-audit/sessions_lineage.md)."
     },
     {
       "capability_id": "sessions.export_support",
@@ -388,7 +388,7 @@
       "visible_action_id": "harness.session_background",
       "side_effect_kind": "process",
       "disposition": "retain",
-      "notes": "background_output / background_cancel coordinator-owned."
+      "notes": "background_output / background_cancel coordinator-owned. Comparison vs the documented reference agent-task contract closed in Wave 3 Packet 3.1 (receipts/core-audit/background_tasks.md)."
     },
     {
       "capability_id": "scheduler.cron_recurring",

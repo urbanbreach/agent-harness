@@ -791,6 +791,37 @@ mod tests {
     }
 
     #[test]
+    fn list_session_worktrees_marks_foreign_entries_not_harness_managed() {
+        // arrange — one harness worktree under the default parent, listed against another
+        let temp = tempfile::tempdir().unwrap_or_abort();
+        let repo = temp.path().join("repo");
+        fs::create_dir_all(&repo).unwrap_or_abort();
+        init_git_repo(&repo);
+        let created = create_slug(&repo, "alpha");
+        let foreign_parent = temp.path().join("other-parent");
+        fs::create_dir_all(&foreign_parent).unwrap_or_abort();
+
+        // act
+        let foreign_listing =
+            list_session_worktrees(&repo, Some(foreign_parent.as_path())).unwrap_or_abort();
+        let default_listing = list_session_worktrees(&repo, None).unwrap_or_abort();
+
+        // assert — same entry, managed flag follows the parent scope (isolation invariant)
+        let foreign_entry = foreign_listing
+            .iter()
+            .find(|entry| entry.path.ends_with("alpha"))
+            .expect("entry listed under foreign parent");
+        assert!(!foreign_entry.harness_managed);
+        assert!(foreign_entry.slug.is_none());
+        let managed_entry = default_listing
+            .iter()
+            .find(|entry| entry.slug.as_deref() == Some("alpha"))
+            .expect("entry listed under default parent");
+        assert!(managed_entry.harness_managed);
+        assert_eq!(managed_entry.path, created.path);
+    }
+
+    #[test]
     fn two_worktrees_have_distinct_paths_and_branches() {
         // arrange
         // act
