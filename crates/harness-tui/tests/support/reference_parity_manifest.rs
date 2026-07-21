@@ -5,6 +5,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::Value;
 
+use crate::status::{
+    parse_cols_rows, validate_claimed_evidence, validate_declared_digests, validate_state_viewport,
+};
+
 pub const SCHEMA_VERSION: &str = "harness-tui-reference-parity-manifest-v1";
 pub const REFERENCE_BINARY_SHA256: &str =
     "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5";
@@ -40,6 +44,9 @@ pub const ACCEPTANCE_GATES: &[&str] = &[
 
 pub const ROW_KIND_VALUES: &[&str] = &["visual", "journey"];
 pub const JOURNEY_REQUIRED_JOIN_FIELDS: &[&str] = &["capability_id", "journey_id", "backend_owner"];
+
+/// L1-L6 evidence layers every claimed (`pass`/`diverged`) row must declare.
+pub const EVIDENCE_LAYERS: [&str; 6] = ["L1", "L2", "L3", "L4", "L5", "L6"];
 
 pub const FIRST_SLICE_IDS: &[&str] = &[
     "P0-START-01",
@@ -77,7 +84,7 @@ pub const REQUIRED_SCAFFOLD_IDS: &[&str] = &[
     "RESP-WIDE",
 ];
 
-const OWNER_KEYS: &[&str] = &[
+pub const OWNER_KEYS: &[&str] = &[
     "fixture",
     "state_interaction_test",
     "render_test",
@@ -180,6 +187,41 @@ pub fn rollup_status(manifest: &Value) -> StatusRollup {
     rollup
 }
 
+/// Approved-divergence policy backing fail-closed `diverged` row semantics.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DivergencePolicy<'a> {
+    /// Divergence ids listed in `identity_policy.approved_divergences`.
+    pub approved: BTreeSet<&'a str>,
+    /// `identity_policy.approved_divergence_notes` entries (id -> note text).
+    pub notes: BTreeMap<&'a str, &'a str>,
+}
+
+/// Extract the approved-divergence policy from a manifest value.
+pub fn divergence_policy(manifest: &Value) -> DivergencePolicy<'_> {
+    let identity_policy = &manifest["identity_policy"];
+    DivergencePolicy {
+        approved: identity_policy["approved_divergences"]
+            .as_array()
+            .map(|values| values.iter().filter_map(|value| value.as_str()).collect())
+            .unwrap_or_default(),
+        notes: identity_policy["approved_divergence_notes"]
+            .as_object()
+            .map(|entries| {
+                entries
+                    .iter()
+                    .filter_map(|(id, note)| Some((id.as_str(), note.as_str()?)))
+                    .collect()
+            })
+            .unwrap_or_default(),
+    }
+}
+
+/// Parse the `Receipt: <path>` marker from an approved-divergence note.
+pub fn divergence_receipt_path(note: &str) -> Option<&str> {
+    note.rsplit_once("Receipt:")
+        .and_then(|(_, rest)| rest.split_whitespace().next())
+}
+
 pub fn validate_manifest(manifest: &Value) -> ValidateResult {
     let mut failures = Vec::new();
 
@@ -243,10 +285,11 @@ pub fn validate_manifest(manifest: &Value) -> ValidateResult {
 
     let status_allow = STATUS_VALUES.iter().copied().collect::<BTreeSet<_>>();
     let gate_allow = ACCEPTANCE_GATES.iter().copied().collect::<BTreeSet<_>>();
-    let approved_divergences: BTreeSet<&str> = manifest["identity_policy"]["approved_divergences"]
-        .as_array()
-        .map(|values| values.iter().filter_map(|v| v.as_str()).collect())
-        .unwrap_or_default();
+    let policy = divergence_policy(manifest);
+    let freeze_viewport = manifest["reference"]["freeze_scenario"]
+        .as_str()
+        .and_then(|scenario| scenario.rsplit_once('_'))
+        .and_then(|(_, suffix)| parse_cols_rows(suffix));
     validate_top_level_acceptance_gates(manifest, &gate_allow, &mut failures);
 
     let Some(rows) = manifest["rows"].as_array() else {
@@ -274,7 +317,8 @@ pub fn validate_manifest(manifest: &Value) -> ValidateResult {
             &path,
             &status_allow,
             &gate_allow,
-            &approved_divergences,
+            &policy,
+            freeze_viewport,
             &mut failures,
         );
         if let Some(behavior_id) = row["behavior_id"].as_str() {
@@ -369,7 +413,8 @@ fn validate_row(
     path: &str,
     status_allow: &BTreeSet<&str>,
     gate_allow: &BTreeSet<&str>,
-    approved_divergences: &BTreeSet<&str>,
+    policy: &DivergencePolicy<'_>,
+    freeze_viewport: Option<(u64, u64)>,
     failures: &mut Vec<ManifestFailure>,
 ) {
     for field in ROW_REQUIRED_FIELDS {
@@ -479,26 +524,38 @@ fn validate_row(
         ));
     }
 
-    validate_owners(row, path, row["status"].as_str().unwrap_or(""), failures);
+    let status_str = row["status"].as_str().unwrap_or("");
+    validate_owners(row, path, status_str, failures);
+    validate_claimed_evidence(row, path, status_str, failures);
+    validate_declared_digests(row, path, failures);
+    validate_state_viewport(row, path, freeze_viewport, failures);
 
     if let Some(divergence) = row.get("deliberate_divergence_id") {
         if let Some(id) = divergence.as_str() {
-            if id == "DIV-004" {
+            if id.is_empty() {
+                failures.push(ManifestFailure::new(
+                    "missing-divergence-id",
+                    format!("{path}.deliberate_divergence_id"),
+                    "deliberate_divergence_id must be null or a non-empty divergence id",
+                ));
+            } else if id == "DIV-004" {
                 failures.push(ManifestFailure::new(
                     "div-004-rejected",
                     format!("{path}.deliberate_divergence_id"),
                     "DIV-004 is rejected; welcome panel is required",
                 ));
-            }
-            if row["status"].as_str() == Some("diverged") && !approved_divergences.contains(id) {
-                failures.push(ManifestFailure::new(
-                    "unauthorized-divergence",
-                    format!("{path}.deliberate_divergence_id"),
-                    format!("divergence {id:?} is not in the approved_divergences allowlist"),
-                ));
+            } else if status_str == "diverged" {
+                if !policy.approved.contains(id) {
+                    failures.push(ManifestFailure::new(
+                        "unauthorized-divergence",
+                        format!("{path}.deliberate_divergence_id"),
+                        format!("divergence {id:?} is not in the approved_divergences allowlist"),
+                    ));
+                }
+                validate_divergence_receipt_note(id, path, policy, failures);
             }
         } else if divergence.is_null() {
-            if row["status"].as_str() == Some("diverged") {
+            if status_str == "diverged" {
                 failures.push(ManifestFailure::new(
                     "missing-divergence-id",
                     format!("{path}.deliberate_divergence_id"),
@@ -512,7 +569,7 @@ fn validate_row(
                 "deliberate_divergence_id must be string or null",
             ));
         }
-    } else if row["status"].as_str() == Some("diverged") {
+    } else if status_str == "diverged" {
         failures.push(ManifestFailure::new(
             "missing-divergence-id",
             format!("{path}.deliberate_divergence_id"),
@@ -589,6 +646,29 @@ fn validate_optional_join_fields(row: &Value, path: &str, failures: &mut Vec<Man
                 )),
             }
         }
+    }
+}
+
+fn validate_divergence_receipt_note(
+    id: &str,
+    path: &str,
+    policy: &DivergencePolicy<'_>,
+    failures: &mut Vec<ManifestFailure>,
+) {
+    let declared_receipt = policy
+        .notes
+        .get(id)
+        .copied()
+        .and_then(divergence_receipt_path);
+    if declared_receipt.is_none_or(str::is_empty) {
+        failures.push(ManifestFailure::new(
+            "missing-divergence-receipt",
+            format!("{path}.deliberate_divergence_id"),
+            format!(
+                "divergence {id} must declare a receipt via 'Receipt: <path>' \
+                 in identity_policy.approved_divergence_notes"
+            ),
+        ));
     }
 }
 

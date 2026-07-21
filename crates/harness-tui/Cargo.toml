@@ -29,6 +29,7 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 insta = { version = "1.39", features = ["json"] }
 tempfile.workspace = true
 portable-pty = "0.9"
+sha2 = "0.11"
 vt100 = "0.16"
 
 [lints]
