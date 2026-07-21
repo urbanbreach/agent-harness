@@ -283,3 +283,54 @@ fn journey_manifest_rows_point_at_signoff_scaffolding() {
     let rows = manifest["rows"].as_array().unwrap_or_abort();
     assert_all_journey_manifest_evidence(rows);
 }
+
+#[test]
+fn ordinary_mode_skips_missing_gitignored_journey_evidence() {
+    // arrange
+    let path = "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/missing-receipt.md";
+
+    // act
+    let result = std::panic::catch_unwind(|| {
+        journey_signoff::assert_evidence_path_exists("JOURNEY-TEST-SKIP", "L6", path, false);
+    });
+
+    // assert
+    assert!(
+        result.is_ok(),
+        "ordinary mode must not fail when a gitignored receipt is missing"
+    );
+}
+
+#[test]
+fn strict_mode_rejects_missing_gitignored_journey_evidence() {
+    // arrange
+    let path = "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/missing-receipt.md";
+
+    // act
+    let result = std::panic::catch_unwind(|| {
+        journey_signoff::assert_evidence_path_exists("JOURNEY-TEST-STRICT", "L6", path, true);
+    });
+
+    // assert
+    assert!(
+        result.is_err(),
+        "strict mode must fail when a referenced gitignored receipt is missing"
+    );
+}
+
+#[test]
+fn ordinary_mode_still_rejects_missing_committed_source_evidence() {
+    // arrange
+    let path = "crates/harness/src/this_file_does_not_exist.rs";
+
+    // act
+    let result = std::panic::catch_unwind(|| {
+        journey_signoff::assert_evidence_path_exists("JOURNEY-TEST-SOURCE", "L2", path, false);
+    });
+
+    // assert
+    assert!(
+        result.is_err(),
+        "ordinary mode must still fail on missing committed source evidence"
+    );
+}

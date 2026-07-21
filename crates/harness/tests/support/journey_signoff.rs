@@ -6,7 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::common::repo_root;
+use crate::common::{repo_root, strict_journey_signoff};
 
 pub(crate) const WORKTREE_PTY_OWNER_REL: &str = "crates/harness/tests/pty_happy_path_recorded.rs";
 pub(crate) const WORKTREE_PTY_OWNER_FN: &str =
@@ -195,19 +195,17 @@ pub(crate) fn find_journey<'a>(rows: &'a [Value], journey_id: &str) -> &'a Value
         .unwrap_or_else(|| panic!("missing journey row {journey_id}"))
 }
 
-pub(crate) fn assert_evidence_path_exists(journey_id: &str, layer: &str, rel: &str) {
+pub(crate) fn assert_evidence_path_exists(journey_id: &str, layer: &str, rel: &str, strict: bool) {
     if rel.is_empty() {
         return;
     }
     let file_rel = rel.split("::").next().unwrap_or(rel);
     // Clean-checkout self-containment (Packet 0.5): signoff-lane evidence under
     // the parity receipt root is generated fresh by strict lanes and gitignored.
-    // Only assert on-disk existence when the evidence root directory is present
-    // (i.e., a signoff run has populated it). Committed-source paths (L2, L5)
-    // never start with this prefix and always assert unconditionally.
-    if file_rel.starts_with("artifacts/qa-evidence/20260717-tui-reference-parity")
-        && !repo_root().join("artifacts/qa-evidence/20260717-tui-reference-parity/receipts").is_dir()
-    {
+    // Only assert on-disk existence when strict mode is on. Committed-source
+    // paths (L2, L5) never start with this prefix and always assert
+    // unconditionally.
+    if file_rel.starts_with("artifacts/qa-evidence/20260717-tui-reference-parity") && !strict {
         return;
     }
     let path = repo_root().join(file_rel);
@@ -228,12 +226,13 @@ fn assert_empty_layer(journey_id: &str, row: &Value, layer: &str) {
     );
 }
 
-fn assert_static_evidence_layers(journey_id: &str, row: &Value) {
+fn assert_static_evidence_layers(journey_id: &str, row: &Value, strict: bool) {
     for layer in ["L2", "L5", "L6"] {
         assert_evidence_path_exists(
             journey_id,
             layer,
             row["evidence_paths"][layer].as_str().unwrap_or(""),
+            strict,
         );
     }
 }
@@ -248,7 +247,7 @@ fn assert_owner_names_journey_signoff(journey_id: &str, row: &Value) {
     );
 }
 
-fn assert_config_journey_evidence(row: &Value, journey_id: &str, l3: &str, l6: &str) {
+fn assert_config_journey_evidence(row: &Value, journey_id: &str, l3: &str, l6: &str, strict: bool) {
     assert_eq!(
         row["status"].as_str(),
         Some("incomplete"),
@@ -263,22 +262,28 @@ fn assert_config_journey_evidence(row: &Value, journey_id: &str, l3: &str, l6: &
     assert_empty_layer(journey_id, row, "L4");
     assert_eq!(row["evidence_paths"]["L5"].as_str(), Some(JOURNEY_TEST_REL));
     assert_eq!(row["evidence_paths"]["L6"].as_str(), Some(l6));
-    assert_static_evidence_layers(journey_id, row);
+    assert_static_evidence_layers(journey_id, row, strict);
     assert_owner_names_journey_signoff(journey_id, row);
 }
 
 pub(crate) fn assert_all_journey_manifest_evidence(rows: &[Value]) {
+    assert_all_journey_manifest_evidence_with(rows, strict_journey_signoff());
+}
+
+pub(crate) fn assert_all_journey_manifest_evidence_with(rows: &[Value], strict: bool) {
     assert_config_journey_evidence(
         find_journey(rows, "JOURNEY-CONFIG-SHOW-EFFECTIVE"),
         "JOURNEY-CONFIG-SHOW-EFFECTIVE",
         STABLE_L3_CONFIG_SHOW_REL,
         CONFIG_SHOW_RECEIPT_REL,
+        strict,
     );
     assert_config_journey_evidence(
         find_journey(rows, "JOURNEY-CONFIG-SOURCES-EXPLAIN"),
         "JOURNEY-CONFIG-SOURCES-EXPLAIN",
         STABLE_L3_CONFIG_SOURCES_REL,
         CONFIG_SOURCES_RECEIPT_REL,
+        strict,
     );
 
     let journey_id = "JOURNEY-WORKTREE-CTRL-W";
@@ -311,8 +316,8 @@ pub(crate) fn assert_all_journey_manifest_evidence(rows: &[Value]) {
             || l6 == JOURNEY_EVIDENCE_EXPAND_RECEIPT_REL,
         "worktree L6 must point at an existing worktree/journey receipt, got {l6}"
     );
-    assert_static_evidence_layers(journey_id, worktree);
-    assert_evidence_path_exists(journey_id, "core", WORKTREE_CORE_TEST_REL);
+    assert_static_evidence_layers(journey_id, worktree, strict);
+    assert_evidence_path_exists(journey_id, "core", WORKTREE_CORE_TEST_REL, strict);
     let pty_owner = worktree["owners"]["pty_test"].as_str().unwrap_or("");
     assert!(
         pty_owner.contains(WORKTREE_PTY_OWNER_FN) || pty_owner.contains("pty_happy_path_recorded"),
@@ -335,6 +340,7 @@ pub(crate) fn assert_all_journey_manifest_evidence(rows: &[Value]) {
         WAIT_ANY_ALL_L5_REL,
         WAIT_ANY_ALL_L6_REL,
         "incomplete",
+        strict,
     );
     assert_surface_journey_evidence(
         rows,
@@ -345,6 +351,7 @@ pub(crate) fn assert_all_journey_manifest_evidence(rows: &[Value]) {
         FOLDER_TRUST_L5_REL,
         FOLDER_TRUST_L6_REL,
         "incomplete",
+        strict,
     );
     assert_surface_journey_evidence(
         rows,
@@ -355,6 +362,7 @@ pub(crate) fn assert_all_journey_manifest_evidence(rows: &[Value]) {
         MEMORY_CLI_L5_REL,
         MEMORY_CLI_L6_REL,
         "incomplete",
+        strict,
     );
     assert_surface_journey_evidence(
         rows,
@@ -365,6 +373,7 @@ pub(crate) fn assert_all_journey_manifest_evidence(rows: &[Value]) {
         ALWAYS_APPROVE_L5_REL,
         ALWAYS_APPROVE_L6_REL,
         "incomplete",
+        strict,
     );
     assert_surface_journey_evidence(
         rows,
@@ -375,8 +384,14 @@ pub(crate) fn assert_all_journey_manifest_evidence(rows: &[Value]) {
         SETTINGS_EDITOR_L5_REL,
         SETTINGS_EDITOR_L6_REL,
         "incomplete",
+        strict,
     );
-    assert_evidence_path_exists("JOURNEY-ROWS-EXPAND", "L6", JOURNEY_ROWS_EXPAND_RECEIPT_REL);
+    assert_evidence_path_exists(
+        "JOURNEY-ROWS-EXPAND",
+        "L6",
+        JOURNEY_ROWS_EXPAND_RECEIPT_REL,
+        strict,
+    );
 }
 
 fn assert_surface_journey_evidence(
@@ -388,6 +403,7 @@ fn assert_surface_journey_evidence(
     l5: &str,
     l6: &str,
     expected_status: &str,
+    strict: bool,
 ) {
     let row = find_journey(rows, journey_id);
     assert_eq!(row["status"].as_str(), Some(expected_status));
@@ -400,7 +416,7 @@ fn assert_surface_journey_evidence(
     assert_eq!(row["evidence_paths"]["L3"].as_str(), Some(l3));
     assert_eq!(row["evidence_paths"]["L5"].as_str(), Some(l5));
     assert_eq!(row["evidence_paths"]["L6"].as_str(), Some(l6));
-    assert_static_evidence_layers(journey_id, row);
+    assert_static_evidence_layers(journey_id, row, strict);
     let state_owner = row["owners"]["state_interaction_test"]
         .as_str()
         .unwrap_or("");

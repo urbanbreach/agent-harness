@@ -11,7 +11,7 @@ use std::path::PathBuf;
 
 mod common;
 
-use common::repo_root;
+use common::{repo_root, strict_journey_signoff};
 
 const MATRIX_REL: &str = "docs/core-subsystem-disposition.v1.json";
 const SCHEMA_VERSION: &str = "harness-core-subsystem-disposition-v1";
@@ -289,61 +289,17 @@ fn core_subsystem_disposition_matrix_is_fail_closed() {
     );
 
     // All 26 A-CORE-AUDIT comparison receipts: no longer not-started.
-    // Receipt-existence is only validated when the artifacts root is present
-    // (strict signoff lanes generate fresh evidence); structural assertions
-    // always run so ordinary nextest passes in a clean checkout (Packet 0.5).
+    // Receipt-existence is only validated in strict signoff mode (signoff lanes
+    // generate fresh evidence); structural assertions always run so ordinary
+    // nextest passes in a clean checkout (Packet 0.5).
     let receipts_dir = repo_root().join(CORE_AUDIT_RECEIPTS_REL);
-    let receipts_available = receipts_dir.is_dir();
     let partial_set: BTreeSet<&str> = PARTIAL_COMPARISON_SUBSYSTEMS.iter().copied().collect();
-    for id in REQUIRED_SUBSYSTEM_IDS {
-        let row = subsystems
-            .iter()
-            .find(|r| r["subsystem_id"].as_str() == Some(*id))
-            .unwrap_or_abort();
-        let status = row["comparison_status"].as_str().unwrap_or_abort();
-        assert_ne!(
-            status, "not-started",
-            "subsystem {id} must leave not-started after comparison receipt"
-        );
-        assert!(
-            matches!(status, "partial" | "complete"),
-            "subsystem {id}: comparison_status must be partial|complete, got {status}"
-        );
-        if receipts_available {
-            let receipt = receipts_dir.join(format!("{id}.md"));
-            assert!(
-                receipt.is_file(),
-                "missing comparison receipt for {id}: {}",
-                receipt.display()
-            );
-        }
-        let evidence = row["evidence_owners"]
-            .as_array()
-            .unwrap_or_abort()
-            .iter()
-            .filter_map(|v| v.as_str())
-            .collect::<Vec<_>>();
-        let receipt_rel = format!("{CORE_AUDIT_RECEIPTS_REL}/{id}.md");
-        assert!(
-            evidence
-                .iter()
-                .any(|e| e.contains(&format!("core-audit/{id}.md"))
-                    || *e == receipt_rel
-                    || e.ends_with(&format!("/{id}.md"))),
-            "subsystem {id}: evidence_owners must reference core-audit/{id}.md receipt"
-        );
-        if partial_set.contains(id) {
-            assert_eq!(
-                status, "partial",
-                "subsystem {id} must keep honest partial comparison_status"
-            );
-        } else {
-            assert_eq!(
-                status, "complete",
-                "subsystem {id} comparison receipt is complete (not in partial residual set)"
-            );
-        }
-    }
+    assert_subsystem_comparison_receipts(
+        subsystems,
+        &partial_set,
+        &receipts_dir,
+        strict_journey_signoff(),
+    );
 
     for rework_partial in ["plugins", "acp", "sandbox"] {
         let row = subsystems
@@ -385,5 +341,112 @@ fn core_subsystem_disposition_matrix_is_fail_closed() {
     assert!(
         disposition_counts.values().sum::<usize>() >= REQUIRED_SUBSYSTEM_IDS.len(),
         "disposition row count below required floor"
+    );
+}
+
+#[allow(
+    clippy::panic,
+    reason = "fail-closed subsystem receipt validation helper"
+)]
+fn assert_subsystem_comparison_receipts(
+    subsystems: &[Value],
+    partial_set: &BTreeSet<&str>,
+    receipts_dir: &std::path::Path,
+    strict: bool,
+) {
+    for id in REQUIRED_SUBSYSTEM_IDS {
+        let row = subsystems
+            .iter()
+            .find(|r| r["subsystem_id"].as_str() == Some(*id))
+            .unwrap_or_abort();
+        let status = row["comparison_status"].as_str().unwrap_or_abort();
+        assert_ne!(
+            status, "not-started",
+            "subsystem {id} must leave not-started after comparison receipt"
+        );
+        assert!(
+            matches!(status, "partial" | "complete"),
+            "subsystem {id}: comparison_status must be partial|complete, got {status}"
+        );
+        if strict {
+            let receipt = receipts_dir.join(format!("{id}.md"));
+            assert!(
+                receipt.is_file(),
+                "missing comparison receipt for {id}: {}",
+                receipt.display()
+            );
+        }
+        let evidence = row["evidence_owners"]
+            .as_array()
+            .unwrap_or_abort()
+            .iter()
+            .filter_map(|v| v.as_str())
+            .collect::<Vec<_>>();
+        let receipt_rel = format!("{CORE_AUDIT_RECEIPTS_REL}/{id}.md");
+        assert!(
+            evidence
+                .iter()
+                .any(|e| e.contains(&format!("core-audit/{id}.md"))
+                    || *e == receipt_rel
+                    || e.ends_with(&format!("/{id}.md"))),
+            "subsystem {id}: evidence_owners must reference core-audit/{id}.md receipt"
+        );
+        if partial_set.contains(id) {
+            assert_eq!(
+                status, "partial",
+                "subsystem {id} must keep honest partial comparison_status"
+            );
+        } else {
+            assert_eq!(
+                status, "complete",
+                "subsystem {id} comparison receipt is complete (not in partial residual set)"
+            );
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::panic, reason = "test code must panic gracefully")]
+fn ordinary_core_audit_ignores_partial_ambient_receipts() {
+    // arrange
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
+    std::fs::write(temp_dir.path().join("coordinator.md"), "# ok").unwrap_or_abort();
+
+    let doc = load_matrix();
+    let subsystems = doc["subsystems"].as_array().unwrap_or_abort();
+    let partial_set: BTreeSet<&str> = PARTIAL_COMPARISON_SUBSYSTEMS.iter().copied().collect();
+
+    // act
+    let result = std::panic::catch_unwind(|| {
+        assert_subsystem_comparison_receipts(subsystems, &partial_set, temp_dir.path(), false);
+    });
+
+    // assert
+    assert!(
+        result.is_ok(),
+        "ordinary mode must not fail when core-audit receipts are incomplete"
+    );
+}
+
+#[test]
+#[allow(clippy::panic, reason = "test code must panic gracefully")]
+fn strict_core_audit_rejects_partial_receipts() {
+    // arrange
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
+    std::fs::write(temp_dir.path().join("coordinator.md"), "# ok").unwrap_or_abort();
+
+    let doc = load_matrix();
+    let subsystems = doc["subsystems"].as_array().unwrap_or_abort();
+    let partial_set: BTreeSet<&str> = PARTIAL_COMPARISON_SUBSYSTEMS.iter().copied().collect();
+
+    // act
+    let result = std::panic::catch_unwind(|| {
+        assert_subsystem_comparison_receipts(subsystems, &partial_set, temp_dir.path(), true);
+    });
+
+    // assert
+    assert!(
+        result.is_err(),
+        "strict mode must fail when core-audit receipts are incomplete"
     );
 }
