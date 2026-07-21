@@ -713,18 +713,17 @@
       "capability_id": "code.persistent_graph",
       "family": "code-intelligence-terminal-input",
       "surface": "product",
-      "status": "pass",
+      "status": "incomplete",
       "backend_owner": "crates/harness-core/src/code_graph.rs",
       "visible_action_id": null,
       "side_effect_kind": "filesystem",
       "disposition": "retain",
-      "notes": "Product: detect .codegraph/codegraph or .agent-harness/code-graph-index.json; build_persistent_graph_index writes simple symbol index from workspace sources; query_persistent_graph returns Hit for symbol_def and fails closed for callers/callees/references; probe_persistent_graph_product builds index + multi-symbol batch. Owner tests: index side effects, symbol_def hits, product probe hit_results. Residual: no callers/callees/references backend; external SQLite codegraph not queried.",
+      "notes": "Wave 2 honest audit: the simple on-disk index is real and side-effect-tested \u2014 detect_persistent_graph finds .codegraph/codegraph or .agent-harness/code-graph-index.json, build_persistent_graph_index writes a symbol index from workspace sources, and query_persistent_graph returns Hit for symbol_def (file/line precision) while structurally failing closed (Unavailable) for callers/callees/references even with a built index. But probe_persistent_graph_product has zero production callers (its own test only) \u2014 no CLI command, coordinator code tooling, or TUI surface queries the graph; external SQLite codegraph is never queried; three of four query kinds have no backend. Demoted: no production surface exercises the graph, and only the symbol_def backend exists.",
       "honesty_demotion": {
-        "from": "incomplete",
-        "reason": "prd_probe_ban_or_residual_notes",
-        "demoted_at": "2026-07-19Tphase0",
-        "restored": true,
-        "restore_reason": "simple_on_disk_index_detect_query_side_effects"
+        "from": "pass",
+        "reason": "symbol_def_index_only_with_no_production_consumer_or_call_queries",
+        "demoted_at": "2026-07-21Twave2-packet-2.6",
+        "restored": false
       }
     },
     {
@@ -752,10 +751,10 @@
       "surface": "tui",
       "status": "pass",
       "backend_owner": "crates/harness-tui/src/clipboard.rs",
-      "visible_action_id": "messages.copy",
+      "visible_action_id": "copy_message",
       "side_effect_kind": "none",
       "disposition": "retain",
-      "notes": "OSC52 + native clipboard copy paths + OSC 8 hyperlink sequence helper; full rich hyperlink matrix vs reference remains partial but owner-backed.",
+      "notes": "Real and wired: clipboard::copy writes OSC52 to the TTY then falls back to native clipboard tools (pbcopy/wl-copy/xclip by environment), copy_on_select honors platform env defaults, and format_osc8_hyperlink emits OSC 8 sequences; the TUI wires Action::CopyMessage (palette copy / slash_copy) to clipboard::copy with a confirmation toast, plus copy-on-select mouse paths and hyperlink rendering in plan-view, session-nav, and transcript-selection surfaces. Owner tests: OSC52->native fallback, error when no clipboard path succeeds, OSC8 wrap + empty-label fallback, copy-on-select env defaults. Residual: the full rich hyperlink matrix versus the reference product \u2014 Wave 1/4 parity scope, not a capability gap.",
       "honesty_demotion": {
         "from": "pass",
         "reason": "prd_probe_ban_or_residual_notes",
@@ -1012,8 +1011,7 @@
       "visible_action_id": null,
       "side_effect_kind": "config",
       "disposition": "retain",
-      "notes": "Product: typed settings_registry + settings_registry_json + summarize + 6 project bool write/reset paths + explain_setting source-explanation (surface/scope/merge/mutability/write/default, secrets omitted) + settings_compat_migrations (hashlineEdit/hashline-edit\u2192hashline_edit) applied on lookup/write. Worktree.relative_base/branch_prefix remain Worktree-scoped product defaults (metadata-only; used by worktree product constants). Residual: public harness.json worktree keys + full multi-layer A-CONFIG-SCHEMA engine / dual-review chrome.",
-      "note": "explain_setting + resolve_setting_id + compat migrations + write_project_setting_bool legacy id path; settings_registry/settings_write owner tests PASS. Residual: worktree public schema keys and full layered schema engine only."
+      "notes": "Real cli+core surface: typed settings_registry + settings_registry_json + summarize; explain_setting returns source-explanation records (surface/scope/merge/mutability/write/secret-sensitivity \u2014 no value field, secrets never explained as values); resolve_setting_id applies settings_compat_migrations (hashlineEdit -> hashline_edit) on lookup and write; the CLI harness config explain command is dispatched through execute_config_explain (crates/harness/src/lib.rs) and the TUI settings editor uses the settings_write project bool write/reset paths (hashline_edit + five runtime.compaction/deterministic keys). Owner tests: registry metadata completeness, secret marking, unique setting/schema ids, merge + mutability coverage, compat migrations, explain scope/write flags. Residual: public harness.json worktree keys + the full multi-layer A-CONFIG-SCHEMA engine + dual-review chrome."
     },
     {
       "capability_id": "config.schema_generation",

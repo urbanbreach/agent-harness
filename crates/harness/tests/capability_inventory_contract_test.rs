@@ -80,7 +80,6 @@ const REQUIRED_PASS_IDS: &[&str] = &[
     "vcs.edit_attribution",
     "plugins.descriptor_manifest",
     "orchestration.foreground_demote_background",
-    "code.persistent_graph",
     "sandbox.os_profiles",
 ];
 
@@ -102,6 +101,7 @@ const REQUIRED_NON_PASS_IDS: &[&str] = &[
     "auth.sleep_wake_credential_refresh",
     "provider.non_openai_protocols",
     "platform.binary_update",
+    "code.persistent_graph",
 ];
 const MAX_ROWS: usize = 200;
 

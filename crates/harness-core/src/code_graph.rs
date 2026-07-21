@@ -797,6 +797,51 @@ mod tests {
     }
 
     #[test]
+    fn batch_query_mixed_kinds_resolve_per_entry_with_index() {
+        // arrange — workspace with two definitions, indexed
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        let src = root.join("src");
+        fs::create_dir_all(&src).expect("src");
+        fs::write(
+            src.join("lib.rs"),
+            "pub fn Coordinator() {}\npub struct RunState {}\n",
+        )
+        .expect("write");
+        build_persistent_graph_index(root).expect("build");
+
+        // act — one batch interleaving a supported and an unsupported query kind
+        let batch = query_persistent_graph_batch(
+            root,
+            &[
+                GraphQuery::symbol_def("Coordinator"),
+                GraphQuery::with_kind("Coordinator", GraphQueryKind::Callers),
+                GraphQuery::symbol_def("RunState"),
+            ],
+        );
+
+        // assert — per-entry outcomes incl. line precision; unsupported kind fails closed
+        assert_eq!(batch.results.len(), 3);
+        match &batch.results[0] {
+            GraphQueryResult::Hit { hits, .. } => {
+                assert!(hits
+                    .iter()
+                    .any(|hit| hit.symbol == "Coordinator" && hit.line == 1));
+            }
+            other => panic!("expected Hit, got {other:?}"),
+        }
+        assert!(batch.results[1].is_unavailable());
+        match &batch.results[2] {
+            GraphQueryResult::Hit { hits, .. } => {
+                assert!(hits
+                    .iter()
+                    .any(|hit| hit.symbol == "RunState" && hit.line == 2));
+            }
+            other => panic!("expected Hit, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn product_probe_builds_index_and_returns_symbol_def_hits() {
         // Given
         let dir = tempfile::tempdir().expect("tempdir");

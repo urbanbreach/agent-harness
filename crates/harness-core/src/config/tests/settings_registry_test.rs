@@ -470,6 +470,22 @@ fn resolve_setting_id_applies_compat_migrations() {
 }
 
 #[test]
+fn explain_setting_flags_secret_settings_without_value_leakage() {
+    // arrange — the registered secret setting
+    let entry = setting_definition("provider.apiKey").expect("provider.apiKey registered");
+    assert_eq!(entry.sensitivity, SettingSensitivity::Secret);
+
+    // act
+    let explanation = explain_setting("provider.apiKey").expect("provider.apiKey explained");
+
+    // assert — secret sensitivity surfaces; the record shape carries no value field
+    assert_eq!(explanation.setting_id, "provider.apiKey");
+    assert_eq!(explanation.sensitivity, "secret");
+    assert!(!explanation.has_default);
+    assert!(explanation.default_value.is_none());
+}
+
+#[test]
 fn explain_setting_covers_writable_and_worktree_scopes() {
     // arrange
     // act
