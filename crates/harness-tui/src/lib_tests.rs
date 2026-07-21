@@ -138,6 +138,7 @@ delegate_test!(wide_diff_renderer_pairs_before_and_after_columns => tests::modul
 delegate_test!(startup_slash_commands_execute_without_menu => app::exact_test_startup_slash_commands_execute_without_menu);
 delegate_test!(slash_new_preserves_draft_and_returns_home => app::exact_test_slash_new_preserves_draft_and_returns_home);
 delegate_test!(replay_mode_disables_slash_workflow => app::exact_test_replay_mode_disables_slash_workflow);
+delegate_test!(replay_mode_blocks_composer_input_and_submit => app::exact_test_replay_mode_blocks_composer_input_and_submit);
 delegate_test!(slash_resume_opens_history_and_restores_draft => app::exact_test_slash_resume_opens_history_and_restores_draft);
 delegate_test!(slash_events_is_removed => app::exact_test_slash_events_is_removed);
 delegate_test!(slash_shell_closes_review_surface => app::exact_test_slash_shell_closes_review_surface);

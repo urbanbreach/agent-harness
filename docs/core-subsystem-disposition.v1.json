@@ -501,12 +501,12 @@
         "crates/harness-tui/src/view_model.rs"
       ],
       "disposition": "retain-seam-only",
-      "rationale": "AppState/projection/intent/overlay-stack seams are Harness-owned interaction state machines. Keep data seams; do not treat current shell choreography as reference-correct (see TUI module disposition for painters).",
+      "rationale": "AppState/projection/intent/overlay-stack seams are Harness-owned interaction state machines (disposition stays retain-seam-only). Comparison closed by Packet 3.3 with hard invariants proven: replay mode disables the composer (composer_disabled gate + focus redirection \u2014 exact tests), replay navigation never emits live intents, deterministic render/replay tests cover the presentation-only contract, and permission modal lifecycle stays coordinator-facing. Residuals: reference shell choreography/pixel parity (Wave 4; painters are out of this seam).",
       "invariant_owners": [
         "crates/harness-tui/src/app/AGENTS.md",
         "docs/tui-reference-module-disposition.v1.json"
       ],
-      "comparison_status": "partial",
+      "comparison_status": "complete",
       "evidence_owners": [
         "crates/harness-tui/tests/**",
         "docs/tui-reference-module-disposition.v1.json",
@@ -559,13 +559,13 @@
         "crates/harness/src/replay/**"
       ],
       "disposition": "rework",
-      "rationale": "CLI\u2192TUI handoff and run/prompt/replay commands are real product surfaces. Rework incomplete journeys and wiring while keeping CLI a thin shell: no coordinator/permission/event-append authority in CLI modules.",
+      "rationale": "CLI\u2192TUI handoff plus tui/run/prompt/replay commands are real, thin-shell product surfaces: the handoff test suite (tui_cli 01-03: help does not expose headless flags, replay bootstrap fallback, invalid config fails without side effects; run_cli: out-file + durable run logs + interactive permission flow; prompt_cli 01-05: endpoint + parity with run; replay_sessions_cli 01-10: inspection/export/fork surfaces). Comparison closed by Packet 3.3 against the documented CLI contract (thin shell; no coordinator/permission/event-append authority in CLI modules). Residuals: incomplete live journeys reworked in Wave 4 against reference captures.",
       "invariant_owners": [
         "crates/harness/AGENTS.md",
         "cargo nextest run -p harness --test tui_cli_test",
         "cargo nextest run -p harness --test run_cli_test"
       ],
-      "comparison_status": "partial",
+      "comparison_status": "complete",
       "evidence_owners": [
         "crates/harness/tests/tui_cli/**",
         "crates/harness/tests/prompt_cli/**",
@@ -610,12 +610,12 @@
         "crates/harness/src/readiness.rs"
       ],
       "disposition": "rework",
-      "rationale": "Doctor reports local readiness without network side effects. Expand capability/auth diagnostics and schema-aware reporting for parity polish without turning doctor into a live provider/MCP executor.",
+      "rationale": "Doctor reports local readiness without network side effects: `harness doctor` (Commands::Doctor dispatch) prints 'local readiness only \u2014 not provider execution proof' with provider credentials, model references, native tool catalog, formatter, and workflow profile readiness sections (owner tests 02/02b/02c/02e/02f). Comparison closed by Packet 3.3 against the documented doctor contract; redaction pinned (secrets never in doctor output). Residuals: schema-aware reporting polish and expanded capability diagnostics (Wave 4 scope, never live provider/MCP execution).",
       "invariant_owners": [
         "crates/harness/AGENTS.md",
         "cargo nextest run -p harness --test config_schema_cli_test"
       ],
-      "comparison_status": "partial",
+      "comparison_status": "complete",
       "evidence_owners": [
         "crates/harness/tests/config_schema_cli/02_doctor_cli_reports_shipped_orchestration_health_test.rs",
         "crates/harness/tests/config_schema_cli/02b_doctor_cli_reports_native_tool_catalog_readiness_test.rs",
@@ -635,12 +635,12 @@
         "crates/harness/src/recovery.rs"
       ],
       "disposition": "rework",
-      "rationale": "Support export bundles exist with redaction/scan stages. Rework completeness and recovery packaging against reference support workflows while keeping redaction fail-closed.",
+      "rationale": "Support export bundles are replay-derived and redaction fail-closed: `sessions export` writes the JSON bundle, redacts secret payload shapes, scans the bundle, and includes artifact index + readiness/config summaries (owner tests 08/08b/09); missing sessions fail closed with a structured error; crash-recovery + foreign-import journeys covered (test 10). Comparison closed by Packet 3.3 against the documented support-export/privacy contract. Residuals: reference support-workflow completeness polish (Wave 4).",
       "invariant_owners": [
         "crates/harness/AGENTS.md",
         "docs/privacy-and-local-data.md"
       ],
-      "comparison_status": "partial",
+      "comparison_status": "complete",
       "evidence_owners": [
         "crates/harness/tests/replay_sessions_cli/08_sessions_export_test.rs",
         "crates/harness/tests/replay_sessions_cli/08b_sessions_export_redaction_artifacts_test.rs",

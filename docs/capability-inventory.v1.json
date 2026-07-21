@@ -202,7 +202,7 @@
       "visible_action_id": "session.export",
       "side_effect_kind": "filesystem",
       "disposition": "retain",
-      "notes": "Support export with redaction; replay-derived only."
+      "notes": "Support export with redaction; replay-derived only. Wave 3 Packet 3.3 closed the support_export subsystem comparison (receipts/core-audit/support_export.md)."
     },
     {
       "capability_id": "sessions.event_store_append_only",
@@ -689,7 +689,7 @@
       "visible_action_id": null,
       "side_effect_kind": "none",
       "disposition": "retain",
-      "notes": "Offline doctor readiness; no provider/MCP network execution."
+      "notes": "Offline doctor readiness; no provider/MCP network execution. Wave 3 Packet 3.3 closed the doctor subsystem comparison (receipts/core-audit/doctor.md)."
     },
     {
       "capability_id": "code.lsp_tools",
@@ -862,7 +862,7 @@
       "visible_action_id": null,
       "side_effect_kind": "none",
       "disposition": "retain",
-      "notes": "AppState projection stack, permissions, composer, model switcher ownership."
+      "notes": "AppState projection stack, permissions, composer, model switcher ownership. Wave 3 Packet 3.3 closed the tui_app_state subsystem comparison (receipts/core-audit/tui_app_state.md)."
     },
     {
       "capability_id": "tui.settings_editor",
@@ -1114,7 +1114,7 @@
       "visible_action_id": null,
       "side_effect_kind": "mixed",
       "disposition": "retain",
-      "notes": "\u00a74.5 CLI audit floor: tui/run/prompt/doctor/auth/models/replay/sessions/config/schema.",
+      "notes": "\u00a74.5 CLI audit floor: tui/run/prompt/doctor/auth/models/replay/sessions/config/schema. Wave 3 Packet 3.3 closed the cli_handoff subsystem comparison (receipts/core-audit/cli_handoff.md).",
       "honesty_demotion": {
         "from": "pass",
         "reason": "prd_probe_ban_or_residual_notes",

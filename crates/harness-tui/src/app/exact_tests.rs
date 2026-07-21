@@ -993,3 +993,27 @@ pub(crate) fn exact_test_any_key_closes_dialog_on_success() {
         "toast should be cleared after closing"
     );
 }
+
+#[cfg(test)]
+pub(crate) fn exact_test_replay_mode_blocks_composer_input_and_submit() {
+    // arrange — replay app with composer focus forced
+    let mut app = AppState::new_replay(PathBuf::from("/tmp/replay"), Vec::new());
+    app.focus = Focus::Prompt;
+
+    // act — typing + submit attempts in replay mode
+    app.handle_key(KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE));
+    app.handle_key(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE));
+    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+    // assert — composer stays disabled: no input accepted, no live submit workflow
+    assert!(app.replay_mode);
+    assert!(
+        app.composer_disabled(),
+        "composer must be disabled in replay"
+    );
+    assert!(
+        app.composer.prompt_buffer.is_empty(),
+        "replay must not accept composer input"
+    );
+    assert_eq!(app.overlay_stack().top(), None);
+}

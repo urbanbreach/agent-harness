@@ -54,3 +54,13 @@ mod part_10_sessions_crash_and_foreign_import_test {
     use super::*;
     include!("replay_sessions_cli/10_sessions_crash_and_foreign_import_test.rs");
 }
+
+mod part_11_replay_cli_fails_closed_for_missing_events_test {
+    use super::*;
+    include!("replay_sessions_cli/11_replay_cli_fails_closed_for_missing_events_test.rs");
+}
+
+mod part_12_sessions_export_fails_closed_for_missing_session_test {
+    use super::*;
+    include!("replay_sessions_cli/12_sessions_export_fails_closed_for_missing_session_test.rs");
+}
