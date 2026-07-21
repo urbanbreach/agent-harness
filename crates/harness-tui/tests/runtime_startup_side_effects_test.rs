@@ -14,14 +14,14 @@
     reason = "integration owner tests use fail-fast asserts"
 )]
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 
 use harness_tui::{run_tui_with_options, TuiMode, TuiOptions};
 use tempfile::TempDir;
 
 /// Probe artifacts that `seed_operator_host_probes` writes to the workspace root.
-/// Production TUI startup must NOT create any of these.
+/// Retained as documentation of the concrete artifacts that must never appear.
 const PROBE_ARTIFACT_RELATIVE_PATHS: &[&str] = &[
     "harness.json",
     ".agent-harness/plans",
@@ -30,6 +30,15 @@ const PROBE_ARTIFACT_RELATIVE_PATHS: &[&str] = &[
     ".harness-foreign-probe-root",
     ".jj",
 ];
+
+/// Returns true when `dir` contains no files or subdirectories at all.
+/// A full-tree emptiness check is strictly stronger than checking named probe
+/// paths: it proves zero filesystem writes of any kind during TUI init.
+fn dir_is_empty(dir: &Path) -> bool {
+    std::fs::read_dir(dir)
+        .map(|mut entries| entries.next().is_none())
+        .unwrap_or(true)
+}
 
 /// Given an empty temp workspace, when production TUI startup runs, then no
 /// synthetic operator-host probe artifacts are written to the workspace.
@@ -55,18 +64,11 @@ fn production_tui_startup_does_not_write_synthetic_probe_artifacts() {
         workspace_root: Some(workspace_root.to_path_buf()),
     });
 
-    // assert
-    let created_artifacts: Vec<&str> = PROBE_ARTIFACT_RELATIVE_PATHS
-        .iter()
-        .filter(|relative| workspace_root.join(relative).exists())
-        .copied()
-        .collect();
-
+    // assert: full-tree check — workspace must be completely empty after startup
     assert!(
-        created_artifacts.is_empty(),
-        "production TUI startup wrote synthetic probe artifacts to the workspace: {created_artifacts:?}\n\
-         These should only be created by explicit `seed_operator_host_probes` calls in tests, \
-         not by the production startup path `run_tui_with_options`."
+        dir_is_empty(workspace_root),
+        "production TUI startup wrote to the workspace; full tree must be empty.\n\
+         Named probe paths checked: {PROBE_ARTIFACT_RELATIVE_PATHS:?}"
     );
 }
 
@@ -98,21 +100,14 @@ fn production_tui_live_init_does_not_write_synthetic_probe_artifacts() {
         workspace_root: Some(workspace_root.to_path_buf()),
     });
 
-    // assert: no probe artifacts in workspace
-    let created_artifacts: Vec<&str> = PROBE_ARTIFACT_RELATIVE_PATHS
-        .iter()
-        .filter(|relative| workspace_root.join(relative).exists())
-        .copied()
-        .collect();
-
+    // assert: full-tree workspace check — must be completely empty
     assert!(
-        created_artifacts.is_empty(),
-        "production TUI live init wrote synthetic probe artifacts to the workspace: {created_artifacts:?}\n\
-         These should only be created by explicit `seed_operator_host_probes` calls in tests, \
-         not by the production live init path `run_tui_with_options`."
+        dir_is_empty(workspace_root),
+        "production TUI live init wrote to the workspace; full tree must be empty.\n\
+         Named probe paths checked: {PROBE_ARTIFACT_RELATIVE_PATHS:?}"
     );
 
-    // assert: no probe artifacts in run_dir
+    // assert: run_dir receives legitimate session writes, so only probe paths are checked
     let created_in_run_dir: Vec<&str> = PROBE_ARTIFACT_RELATIVE_PATHS
         .iter()
         .filter(|relative| run_dir.path().join(relative).exists())
