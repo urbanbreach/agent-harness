@@ -209,6 +209,56 @@ fn import_events_jsonl_creates_replay_only_session_without_mutating_source() {
 }
 
 #[test]
+fn import_meta_preserves_source_path_and_event_count_provenance() {
+    // arrange
+    let root = tempdir().unwrap();
+    let foreign = root.path().join("foreign-provenance");
+    let dest = root.path().join("harness-sessions");
+    fs::create_dir_all(&foreign).unwrap();
+    let source_events = vec![
+        sample_envelope(
+            1,
+            "foreign-run",
+            EventV1::RunStarted(RunStartedEvent {
+                run_name: "interactive".into(),
+                workspace_root: "/tmp/ws".into(),
+            }),
+        ),
+        sample_envelope(
+            2,
+            "foreign-run",
+            EventV1::RunFinished(RunFinishedEvent {
+                summary: "done".into(),
+            }),
+        ),
+        sample_envelope(
+            3,
+            "foreign-run",
+            EventV1::RunFinished(RunFinishedEvent {
+                summary: "done again".into(),
+            }),
+        ),
+    ];
+    write_events_jsonl(&foreign.join("events.jsonl"), &source_events);
+
+    // act
+    let imported = import_foreign_session_as_replay(&foreign, &dest).unwrap();
+    let meta: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(imported.run_dir.join("meta.json")).unwrap())
+            .unwrap();
+
+    // assert — the imported replay keeps auditable provenance of its source
+    let provenance = &meta["foreign_import"];
+    assert_eq!(provenance["source_path"], foreign.display().to_string());
+    assert_eq!(provenance["event_count"], 3);
+    assert_eq!(imported.event_count, 3);
+    assert_eq!(
+        provenance["policy"],
+        "read-only replay import; append-only new events.jsonl; source path never mutated"
+    );
+}
+
+#[test]
 fn import_unknown_marker_fails_closed() {
     // arrange
     // act

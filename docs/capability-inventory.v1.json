@@ -219,18 +219,17 @@
       "capability_id": "sessions.prompt_rewind_atomic",
       "family": "sessions-memory-persistence-rewind-crash-recovery",
       "surface": "product",
-      "status": "pass",
+      "status": "incomplete",
       "backend_owner": "crates/harness-core/src/prompt_rewind.rs",
       "visible_action_id": null,
       "side_effect_kind": "mixed",
       "disposition": "retain",
-      "notes": "atomic_prompt_rewind plans conversation through cutoff then restores file snapshot fail-closed with rollback; events.jsonl never rewritten. Full product UX residual only.",
+      "notes": "Wave 2 honest audit: backend is real and unit-tested \u2014 plan_prompt_rewind plans the conversation through the cutoff, atomic_prompt_rewind restores file snapshots with pre-backup and rollback on failure (fail-closed, no partial success), and events.jsonl is never rewritten (digest-pinned tests). But atomic_prompt_rewind has zero production callers \u2014 no CLI command, coordinator command, or TUI action wires it; the product rewind UX is entirely residual. Demoted: public surface not wired to the backend.",
       "honesty_demotion": {
         "from": "pass",
-        "reason": "prd_probe_ban_or_residual_notes",
-        "demoted_at": "2026-07-19Tphase0",
-        "restored": true,
-        "restore_reason": "required_pass_or_real_backend"
+        "reason": "no_public_surface_for_prompt_rewind",
+        "demoted_at": "2026-07-21Twave2-packet-2.2",
+        "restored": false
       }
     },
     {
@@ -253,7 +252,7 @@
       "visible_action_id": "context.memory",
       "side_effect_kind": "session",
       "disposition": "retain",
-      "notes": "Product CLI harness memory list/get/put/search over DurableMemoryStore (redacted on write). Palette /memory TUI remains residual chrome, not the product surface claim.",
+      "notes": "Real product surface: CLI harness memory list|get|put|search dispatched from crates/harness/src/lib.rs (Commands::Memory -> memory_cmd::execute_with_io) over harness_core::memory::DurableMemoryStore (workspace-scoped atomic JSON; values redacted on write by DefaultRedactor, so persisted values and CLI output never carry raw secrets). CLI-handler tests cover put/get/list roundtrip and nonzero on missing key; store tests cover write-time redaction, search, and empty-key rejection; context.memory journey evidence exists. Residual: palette /memory TUI chrome.",
       "honesty_demotion": {
         "from": "pass",
         "reason": "prd_probe_ban_or_residual_notes",
@@ -282,43 +281,40 @@
       "visible_action_id": null,
       "side_effect_kind": "session",
       "disposition": "implement",
-      "notes": "Product: multi-source discover under foreign_scan_root (3+ importable events.jsonl + corrupt classification); import_foreign_session_as_replay / import_foreign_session_outcome materializes replay-only harness sessions without mutating source; CLI sessions discover/import; corrupt/unsupported markers fail closed. Owner: foreign_session_test multi_source + import + corrupt; seed binds discover/import outcomes. Residual: multi-format codex/claude native import converters; operator UI discover\u2192select\u2192import\u2192open journey.",
-      "note": "Product multi-source foreign discover+importable events.jsonl+corrupt handling; import success path and fail-closed corrupt. Residual multi-format marketplace converters and packed operator UI journey."
+      "notes": "Real product surface: CLI harness sessions discover (read-only multi-source scan that classifies importable events.jsonl and corrupt candidates) and harness sessions import, dispatched from crates/harness/src/sessions.rs; import_foreign_session_as_replay materializes an append-only replay-only harness session (meta.json marks mode_source=replay_only with source path/event-count provenance) and never mutates the foreign source; fail-closed for non-envelope JSONL, unknown markers, and corrupt candidates. Owner tests cover import + source non-mutation, multi-source discovery + corrupt, and the fail-closed paths. Residual: native multi-format codex/claude converters; operator discover->select->import->open UI journey."
     },
     {
       "capability_id": "sessions.prompt_queue_persistence",
       "family": "sessions-memory-persistence-rewind-crash-recovery",
       "surface": "product",
-      "status": "pass",
+      "status": "incomplete",
       "backend_owner": "crates/harness-core/src/prompt_queue.rs",
       "visible_action_id": null,
       "side_effect_kind": "session",
       "disposition": "retain",
-      "notes": "Durable session-local FIFO prompt queue under tui/prompt-queue.json (enqueue/dequeue/list). Multi-client lock coordination and send-now product UX still open.",
+      "notes": "Wave 2 honest audit: backend is real and unit-tested \u2014 DurablePromptQueue FIFO enqueue/dequeue/list under tui/prompt-queue.json with empty-text rejection and durable reopen and removal persistence. But there are zero production consumers \u2014 nothing in the TUI, CLI, or coordinator ever constructs, enqueues, or dequeues it, and nothing outside the module's own tests reads or writes tui/prompt-queue.json; the send-now product UX is open per the prior notes. Demoted: durable queue backend is unwired to any public surface.",
       "honesty_demotion": {
         "from": "pass",
-        "reason": "prd_probe_ban_or_residual_notes",
-        "demoted_at": "2026-07-19Tphase0",
-        "restored": true,
-        "restore_reason": "required_pass_or_real_backend"
+        "reason": "no_production_consumer_for_prompt_queue",
+        "demoted_at": "2026-07-21Twave2-packet-2.2",
+        "restored": false
       }
     },
     {
       "capability_id": "sessions.mid_turn_interjection",
       "family": "sessions-memory-persistence-rewind-crash-recovery",
       "surface": "tui+core",
-      "status": "pass",
+      "status": "incomplete",
       "backend_owner": "crates/harness-core/src/prompt_queue.rs",
       "visible_action_id": null,
       "side_effect_kind": "session",
       "disposition": "retain",
-      "notes": "DurablePromptQueue.interject_mid_turn front-inserts while turn_running without mutating conversation events (mutates_conversation_events=false). TUI send-now chrome still residual.",
+      "notes": "Wave 2 honest audit: the backend primitive is real and unit-tested \u2014 interject_mid_turn front-inserts into the durable queue, reports the honest turn_was_running flag, and never mutates conversation events (mutates_conversation_events=false). But nothing ever consumes the interjection \u2014 the coordinator never drains the prompt queue mid-turn or post-turn, and the TUI send-now chrome is residual per the prior notes; surface=tui+core is claimed while neither layer wires the queue. Demoted: no mid-turn interjection consumer exists.",
       "honesty_demotion": {
         "from": "pass",
-        "reason": "prd_probe_ban_or_residual_notes",
-        "demoted_at": "2026-07-19Tphase0",
-        "restored": true,
-        "restore_reason": "required_pass_or_real_backend"
+        "reason": "no_consumer_for_mid_turn_interjection",
+        "demoted_at": "2026-07-21Twave2-packet-2.2",
+        "restored": false
       }
     },
     {

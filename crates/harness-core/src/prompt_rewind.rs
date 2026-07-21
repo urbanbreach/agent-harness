@@ -420,6 +420,40 @@ mod tests {
     }
 
     #[test]
+    fn atomic_prompt_rewind_never_rewrites_events_jsonl() {
+        // arrange
+        let temp = tempfile::tempdir().unwrap_or_abort();
+        let workspace = temp.path().join("ws");
+        fs::create_dir_all(&workspace).unwrap_or_abort();
+        let events_path = workspace.join("events.jsonl");
+        let events = vec![user_message(1, "first"), user_message(2, "second")];
+        {
+            let mut file = fs::File::create(&events_path).unwrap_or_abort();
+            for event in &events {
+                let line = serde_json::to_string(event).unwrap_or_abort();
+                writeln!(file, "{line}").unwrap_or_abort();
+            }
+            file.sync_all().unwrap_or_abort();
+        }
+        let before_digest = event_log_digest(&events_path).unwrap_or_abort();
+        let snapshot = [FileSnapshotEntry {
+            path: "notes.txt".into(),
+            content: "rewound".into(),
+        }];
+
+        // act
+        let result = atomic_prompt_rewind(&events, 1, &workspace, &snapshot).unwrap_or_abort();
+
+        // assert — file restore ran while the on-disk event log stayed append-only
+        assert!(result.events_append_only);
+        assert_eq!(result.files_restored, 1);
+        assert_eq!(
+            event_log_digest(&events_path).unwrap_or_abort(),
+            before_digest
+        );
+    }
+
+    #[test]
     fn atomic_prompt_rewind_fails_closed_on_conversation_error() {
         // arrange
         // act

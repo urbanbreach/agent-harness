@@ -288,4 +288,44 @@ mod tests {
         drop(io);
         assert!(String::from_utf8_lossy(&stderr).contains("not found"));
     }
+
+    #[test]
+    fn cli_put_redacts_secret_like_value_before_get() {
+        // arrange
+        let dir = tempdir().unwrap();
+        let workspace = dir.path().to_path_buf();
+        let deps = deps_with_cwd(workspace.clone());
+        let secret = "sk-abcdefghijklmnopqrstuvwxyz";
+
+        // act — put the secret-like value through the CLI, then get it back
+        let put_out = {
+            let mut stdout = Vec::new();
+            let mut stderr = Vec::new();
+            let mut stdin = Cursor::new(Vec::new());
+            let mut io = CliIo::new(&mut stdin, &mut stdout, &mut stderr);
+            let code = run_put(
+                "creds.token".to_string(),
+                secret.to_string(),
+                Some(workspace.clone()),
+                &mut io,
+                &deps,
+            );
+            assert_eq!(code, 0);
+            stdout
+        };
+        let get_out = {
+            let mut stdout = Vec::new();
+            let mut stderr = Vec::new();
+            let mut stdin = Cursor::new(Vec::new());
+            let mut io = CliIo::new(&mut stdin, &mut stdout, &mut stderr);
+            let code = run_get("creds.token".to_string(), Some(workspace), &mut io, &deps);
+            assert_eq!(code, 0);
+            String::from_utf8_lossy(&stdout).to_string()
+        };
+
+        // assert — raw secret survives nowhere; the redaction marker does
+        assert!(!String::from_utf8_lossy(&put_out).contains(secret));
+        assert!(!get_out.contains(secret));
+        assert!(get_out.contains("[REDACTED_API_KEY]"));
+    }
 }

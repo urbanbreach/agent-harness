@@ -319,6 +319,26 @@ mod tests {
     }
 
     #[test]
+    fn dequeue_persists_removal_across_queue_reopen() {
+        // arrange
+        let dir = tempdir().unwrap();
+        let path = DurablePromptQueue::default_path_for_session(dir.path());
+        let queue = DurablePromptQueue::open(&path);
+        queue.enqueue("a", "first", 1).unwrap();
+        queue.enqueue("b", "second", 2).unwrap();
+
+        // act — pop on one instance, then reopen a fresh instance
+        let popped = queue.dequeue().unwrap().unwrap();
+        let reopened = DurablePromptQueue::open(&path);
+        let surviving = reopened.list().unwrap();
+
+        // assert — the removal is durable; the FIFO tail survives intact
+        assert_eq!(popped.id, "a");
+        assert_eq!(surviving.len(), 1);
+        assert_eq!(surviving[0].id, "b");
+    }
+
+    #[test]
     fn mid_turn_interjection_inserts_front_without_event_mutation() {
         // arrange
         // act
@@ -342,5 +362,23 @@ mod tests {
         assert_eq!(listed[1].id, "tail");
         let first = queue.dequeue().unwrap().unwrap();
         assert_eq!(first.id, "inj");
+    }
+
+    #[test]
+    fn interject_mid_turn_records_idle_state_when_turn_not_running() {
+        // arrange
+        let dir = tempdir().unwrap();
+        let queue = DurablePromptQueue::for_session(dir.path());
+
+        // act — interject while no turn is running
+        let interjection = queue
+            .interject_mid_turn("idle-inj", "queued while idle", 5, false)
+            .unwrap();
+
+        // assert — honest turn-state flag for post-turn drain; events untouched
+        assert!(!interjection.turn_was_running);
+        assert!(!interjection.mutates_conversation_events);
+        assert_eq!(interjection.position, 0);
+        assert_eq!(queue.dequeue().unwrap().unwrap().id, "idle-inj");
     }
 }

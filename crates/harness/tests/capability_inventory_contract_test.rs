@@ -59,13 +59,10 @@ const REQUIRED_PASS_IDS: &[&str] = &[
     "permission.four_option_with_session_grant",
     "orchestration.wait_any",
     "orchestration.wait_all",
-    "sessions.prompt_queue_persistence",
     "provider.non_openai_protocols",
     "terminal.clipboard_hyperlink",
     "workspace.folder_trust",
     "memory.durable_product_surface",
-    "sessions.mid_turn_interjection",
-    "sessions.prompt_rewind_atomic",
     "tui.feedback_help",
     "workspace.cow_worktree_fastpath",
     "orchestration.foreground_demote_background",
@@ -97,9 +94,15 @@ const REQUIRED_PASS_IDS: &[&str] = &[
     "auth.browser_oidc_sso",
 ];
 
-/// Wave 2 Packet 2.1 demotions: these rows were overclaimed `pass` (probe-only or
-/// missing public surface) and must stay non-pass until the gap is closed.
-const REQUIRED_NON_PASS_IDS: &[&str] = &["worktree.list_select_cleanup", "vcs.jujutsu"];
+/// Wave 2 demotions: these rows were overclaimed `pass` (probe-only or missing
+/// public surface/consumer) and must stay non-pass until the gap is closed.
+const REQUIRED_NON_PASS_IDS: &[&str] = &[
+    "worktree.list_select_cleanup",
+    "vcs.jujutsu",
+    "sessions.prompt_rewind_atomic",
+    "sessions.prompt_queue_persistence",
+    "sessions.mid_turn_interjection",
+];
 const MAX_ROWS: usize = 200;
 
 fn inventory_path(root: &Path) -> PathBuf {
