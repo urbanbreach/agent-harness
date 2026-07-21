@@ -735,6 +735,7 @@ run_signoff_parity() {
   parity_evidence_root="$(stage_dir_for signoff-parity parity_evidence)"
   local parity_artifacts_dir="${parity_evidence_root}/artifacts"
   local reference_pin_path="${parity_evidence_root}/reference-binary-sha256.txt"
+  mkdir -p "$parity_evidence_root"
   printf '%s' "$reference_binary_sha256" >"$reference_pin_path"
   mkdir -p "$parity_artifacts_dir"
 
