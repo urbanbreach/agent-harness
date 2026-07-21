@@ -29,9 +29,18 @@ fn repo_root() -> PathBuf {
         .expect("repo root must resolve")
 }
 
+fn parity_evidence_root() -> PathBuf {
+    std::env::var_os("HARNESS_TUI_PARITY_ARTIFACT_DIR")
+        .map(PathBuf::from)
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| {
+            repo_root().join("artifacts/qa-evidence/20260717-tui-reference-parity")
+        })
+}
+
 fn freeze_png(rel: &str) -> PathBuf {
-    repo_root()
-        .join("artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze")
+    parity_evidence_root()
+        .join("reference/freeze")
         .join(rel)
         .join("terminal.png")
 }
