@@ -219,7 +219,11 @@ fn w0_p02_c1_replay_early_return_does_not_mutate_filesystem() {
     // arrange
     let workspace_a = tempdir().unwrap_or_abort();
     let workspace_a_path = workspace_a.path().canonicalize().unwrap_or_abort();
-    std::fs::write(workspace_a_path.join("README.marker"), "workspace-a-marker\n").unwrap_or_abort();
+    std::fs::write(
+        workspace_a_path.join("README.marker"),
+        "workspace-a-marker\n",
+    )
+    .unwrap_or_abort();
 
     let cwd_b = tempdir().unwrap_or_abort();
     let cwd_b_path = cwd_b.path().canonicalize().unwrap_or_abort();
@@ -257,7 +261,11 @@ fn w0_p02_c2_replay_full_init_does_not_mutate_filesystem() {
     // arrange
     let workspace_a = tempdir().unwrap_or_abort();
     let workspace_a_path = workspace_a.path().canonicalize().unwrap_or_abort();
-    std::fs::write(workspace_a_path.join("README.marker"), "workspace-a-marker\n").unwrap_or_abort();
+    std::fs::write(
+        workspace_a_path.join("README.marker"),
+        "workspace-a-marker\n",
+    )
+    .unwrap_or_abort();
 
     let cwd_b = tempdir().unwrap_or_abort();
     let cwd_b_path = cwd_b.path().canonicalize().unwrap_or_abort();

@@ -297,9 +297,7 @@ fn evidence_root() -> PathBuf {
     std::env::var_os("HARNESS_TUI_PARITY_ARTIFACT_DIR")
         .map(PathBuf::from)
         .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or_else(|| {
-            repo_root().join("artifacts/qa-evidence/20260717-tui-reference-parity")
-        })
+        .unwrap_or_else(|| repo_root().join("artifacts/qa-evidence/20260717-tui-reference-parity"))
 }
 
 fn frame_from_terminal_txt(path: &Path, cols: u16, rows: u16) -> SemanticFrame {
