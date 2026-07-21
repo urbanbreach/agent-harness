@@ -495,27 +495,35 @@
       "capability_id": "mcp.oauth_remote_transports",
       "family": "integrations-plugins-acp-remote-mcp",
       "surface": "product",
-      "status": "pass",
+      "status": "incomplete",
       "backend_owner": "crates/harness-core/src/mcp_oauth_local.rs",
       "visible_action_id": null,
       "side_effect_kind": "filesystem",
       "disposition": "retain",
-      "notes": "Product: LocalMcpOauth begin/exchange/open_transport with durable state under .agent-harness/mcp-oauth/state.json + open.receipt.json (redacted token hints); fail-closed without begin/exchange. run_local_mcp_oauth_product multi-step product. Owner tests: mcp_oauth_local unit suite. Residual: no live remote HTTP OAuth peer; local file transport only.",
-      "note": "Product: probe_mcp_oauth_remote_product multi-endpoint fail-closed walk; last-of-each summary total=3 all_unavailable with redaction. Residual: live OAuth remote transport success path not claimed.",
-      "honesty_demotion": false
+      "notes": "Wave 2 honest audit: the local OAuth state machine is real and unit-tested \u2014 LocalMcpOauth begin/exchange/open_transport with durable state under .agent-harness/mcp-oauth/state.json + open.receipt.json (redacted token hints), fail-closed without begin/exchange. But it has zero production consumers (no CLI command, no coordinator or TUI wiring; run_local_mcp_oauth_product is called only by its own test), no live remote HTTP OAuth peer exists, and open_transport opens a local file 'transport', not a network transport. Demoted: the advertised remote OAuth transports do not exist \u2014 only a local durable stand-in with no operator surface.",
+      "honesty_demotion": {
+        "from": "pass",
+        "reason": "local_file_transport_only_no_remote_oauth_peer_or_operator_surface",
+        "demoted_at": "2026-07-21Twave2-packet-2.4",
+        "restored": false
+      }
     },
     {
       "capability_id": "plugins.runtime_lifecycle",
       "family": "integrations-plugins-acp-remote-mcp",
       "surface": "product",
-      "status": "pass",
+      "status": "incomplete",
       "backend_owner": "crates/harness-core/src/integrations/plugin.rs",
       "visible_action_id": null,
       "side_effect_kind": "mixed",
       "disposition": "retain",
-      "notes": "Product: PluginLifecycleRegistry install/activate/deactivate/remove with real package-entry load (hooks.json / skills/ / plugin_entry.json), LoadedCode + .harness-plugin-load-receipt.json side effects, loads_code=true when loaded; fail-closed missing/invalid entries; permission-before-activation. Residual: no dynamic .so/wasm exec, no marketplace/remote install.",
-      "note": "Real package-entry load + receipt on activate; residual no .so/wasm exec.",
-      "honesty_demotion": false
+      "notes": "Wave 2 honest audit: the registry backend is real and integration-tested \u2014 PluginLifecycleRegistry install/activate/deactivate/remove loads descriptor or package-entry packages (hooks.json / skills/ / plugin_entry.json), records LoadedCode with .harness-plugin-load-receipt.json side effects, gates activation on permission, and fails closed on corrupt/invalid descriptors (integrations_lifecycle_test). But no production code drives the lifecycle: the coordinator constructs a registry in RunState and never invokes it, there is no CLI plugin command, and the only TUI consumer is the lifecycle product-runner status probe. Demoted: no operator or runtime surface exercises install/activate/deactivate; residual no .so/wasm execution and no marketplace install.",
+      "honesty_demotion": {
+        "from": "pass",
+        "reason": "registry_built_but_never_driven_no_cli_or_tui_operator_surface",
+        "demoted_at": "2026-07-21Twave2-packet-2.4",
+        "restored": false
+      }
     },
     {
       "capability_id": "plugins.descriptor_manifest",
@@ -534,27 +542,35 @@
       "capability_id": "acp.agent_mode",
       "family": "integrations-plugins-acp-remote-mcp",
       "surface": "product",
-      "status": "pass",
+      "status": "incomplete",
       "backend_owner": "crates/harness-core/src/integrations/acp_file.rs",
       "visible_action_id": null,
       "side_effect_kind": "filesystem",
       "disposition": "retain",
-      "notes": "Product: FileAcpTransport (AcpTransport) writes connected.marker + frames.jsonl under .agent-harness/acp-transport/; run_file_acp_agent_mode_product connect/bind/operate with durable side effects. Owner tests: acp_file unit suite. Residual: no live IDE/editor ACP protocol peer; file-backed local transport only.",
-      "note": "Product fail-then-success connect/bind path in integrations/product.rs. AppState binds last connect/bind + session; status dialog surfaces ACP lines.",
-      "honesty_demotion": false
+      "notes": "Wave 2 honest audit: FileAcpTransport is a file-backed mock, not an ACP protocol peer \u2014 it writes connected.marker + frames.jsonl under .agent-harness/acp-transport/ and nothing outside the integrations module consumes it; the TUI binds run_mock_acp_agent_mode_product output to status-dialog strings only. No live IDE/editor ACP peer, no protocol exchange, and no agent that actually operates in ACP agent mode. Demoted: mock file transport with no ACP consumer.",
+      "honesty_demotion": {
+        "from": "pass",
+        "reason": "file_backed_mock_transport_no_acp_peer_or_consumer",
+        "demoted_at": "2026-07-21Twave2-packet-2.4",
+        "restored": false
+      }
     },
     {
       "capability_id": "remote.workspace_hub",
       "family": "integrations-plugins-acp-remote-mcp",
       "surface": "product",
-      "status": "pass",
+      "status": "incomplete",
       "backend_owner": "crates/harness-core/src/workspace_hub_local.rs",
       "visible_action_id": "provider.connect",
       "side_effect_kind": "filesystem",
       "disposition": "retain",
-      "notes": "Product: LocalWorkspaceHub connect/bind/upload/recover with durable state under .agent-harness/workspace-hub/state.json + uploaded artifact bytes; fail-closed without connect. run_local_workspace_hub_product multi-step product. Owner tests: workspace_hub_local unit suite. Residual: no live remote hub peer; local durable hub only.",
-      "note": "Product: probe_workspace_hub_product multi-endpoint fail-closed walk; last-of-each summary total=4 all_unavailable. Residual: live workspace hub peer not claimed.",
-      "honesty_demotion": false
+      "notes": "Wave 2 honest audit: LocalWorkspaceHub connect/bind/upload/recover is a durable local stand-in (state.json + uploaded bytes under .agent-harness/workspace-hub/, fail-closed without connect) with its product runner called only by its own test; no production consumer exists (no CLI command, no coordinator or TUI wiring) and there is no live remote hub peer. The visible_action_id provider.connect does not correspond to a hub surface. Demoted: the advertised remote workspace hub does not exist \u2014 only a local durable stand-in.",
+      "honesty_demotion": {
+        "from": "pass",
+        "reason": "local_durable_hub_only_no_remote_peer_or_operator_surface",
+        "demoted_at": "2026-07-21Twave2-packet-2.4",
+        "restored": false
+      }
     },
     {
       "capability_id": "hooks.file_discovered",
@@ -565,7 +581,7 @@
       "visible_action_id": null,
       "side_effect_kind": "process",
       "disposition": "retain",
-      "notes": "Coordinator-owned hooks exist; plugin-provided hook marketplace incomplete."
+      "notes": "Real core behavior: lifecycle hooks are declared in discovered config files (HooksConfig/LifecycleHookConfig, deny_unknown_fields, parsed by the config loader) and executed by the coordinator at live lifecycle points (provider request start/finish, tool-call permission requested/resolved, compaction, subagent spawn/finish, run start/finish/fail) via TokioLifecycleHookCommandExecutor with allowlist-gated commands, timeouts, env, and redacted output summaries; event-scoped, suppressible, and fail-closed for critical hooks. Owner tests: injected-executor run + coordinator lifecycle coverage. Residual: plugin-provided hook marketplace discovery is incomplete."
     },
     {
       "capability_id": "provider.openai_compatible_stream",

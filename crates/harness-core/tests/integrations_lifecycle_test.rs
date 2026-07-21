@@ -227,6 +227,31 @@ fn activation_denied_without_permission_leaves_disabled() {
 }
 
 #[test]
+fn hooks_and_skills_only_package_activates_without_code_load() {
+    // arrange — package with hooks.json + skills/ but no plugin_entry.json
+    let temp = tempfile::tempdir().unwrap_or_abort();
+    let workspace = temp.path().join("ws");
+    fs::create_dir_all(&workspace).unwrap_or_abort();
+    let package = write_plugin_package(&workspace, "plugins/tools-only", "tools.plugin");
+    write_hooks_json(&package);
+    write_skills_dir(&package);
+    let mut registry = PluginLifecycleRegistry::new(&workspace);
+    registry
+        .install_from_package_root(&package)
+        .unwrap_or_abort();
+
+    // act
+    let active = registry
+        .activate("tools.plugin", PluginActivationPermission::Granted)
+        .unwrap_or_abort();
+
+    // assert — descriptor-only packages enable without any code-load claim
+    assert_eq!(active.enablement, PluginEnablement::Enabled);
+    assert!(!active.manifest.runtime_effects().loads_external_code);
+    assert!(registry.is_enabled("tools.plugin"));
+}
+
+#[test]
 fn deactivate_and_remove_lifecycle() {
     // arrange
     // act

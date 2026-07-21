@@ -381,4 +381,20 @@ mod tests {
         let err = hub.bind("ws").expect_err("must fail");
         assert!(matches!(err, LocalWorkspaceHubError::NotConnected));
     }
+
+    #[test]
+    fn upload_without_connect_fails_closed() {
+        // arrange
+        let dir = tempdir().expect("tempdir");
+        let mut hub = LocalWorkspaceHub::open(dir.path()).expect("open");
+
+        // act
+        let err = hub
+            .upload("artifact.bin", b"payload")
+            .expect_err("must fail");
+
+        // assert — no upload is accepted before connect
+        assert!(matches!(err, LocalWorkspaceHubError::NotConnected));
+        assert!(!hub.is_connected());
+    }
 }

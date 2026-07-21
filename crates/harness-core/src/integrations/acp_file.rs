@@ -207,6 +207,25 @@ mod tests {
     }
 
     #[test]
+    fn frames_journal_appends_one_line_per_operate() {
+        // arrange
+        let dir = tempdir().expect("tempdir");
+        let mut transport = FileAcpTransport::new(dir.path());
+
+        // act
+        transport.connect().expect("connect");
+        transport.operate(b"frame-one").expect("operate one");
+        transport.operate(b"frame-two").expect("operate two");
+
+        // assert — durable marker + one journal line per operate, honest counter
+        assert!(transport.is_connected());
+        assert_eq!(transport.operate_calls(), 2);
+        let frames = std::fs::read_to_string(transport.transport_root().join(ACP_FRAME_LOG))
+            .expect("frames journal written");
+        assert_eq!(frames.lines().count(), 2);
+    }
+
+    #[test]
     fn operate_without_connect_fails() {
         let dir = tempdir().expect("tempdir");
         let mut transport = FileAcpTransport::new(dir.path());

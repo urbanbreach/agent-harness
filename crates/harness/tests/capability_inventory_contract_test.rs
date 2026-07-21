@@ -80,15 +80,11 @@ const REQUIRED_PASS_IDS: &[&str] = &[
     "sessions.foreign_import",
     "auth.sleep_wake_credential_refresh",
     "vcs.edit_attribution",
-    "plugins.runtime_lifecycle",
     "plugins.descriptor_manifest",
     "orchestration.foreground_demote_background",
     "platform.binary_update",
     "code.persistent_graph",
     "sandbox.os_profiles",
-    "mcp.oauth_remote_transports",
-    "acp.agent_mode",
-    "remote.workspace_hub",
     "auth.browser_oidc_sso",
 ];
 
@@ -102,6 +98,10 @@ const REQUIRED_NON_PASS_IDS: &[&str] = &[
     "sessions.mid_turn_interjection",
     "scheduler.cron_recurring",
     "orchestration.multi_agent_team",
+    "mcp.oauth_remote_transports",
+    "plugins.runtime_lifecycle",
+    "acp.agent_mode",
+    "remote.workspace_hub",
 ];
 const MAX_ROWS: usize = 200;
 

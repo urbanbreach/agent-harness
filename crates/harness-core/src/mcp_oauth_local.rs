@@ -433,6 +433,35 @@ mod tests {
     }
 
     #[test]
+    fn oauth_state_survives_reopen_after_exchange() {
+        // arrange
+        let dir = tempdir().expect("tempdir");
+        let mut oauth = LocalMcpOauth::open(dir.path()).expect("open");
+        let begun = oauth
+            .begin("srv-a", "https://auth.example/authorize")
+            .expect("begin");
+        let authorization_code = match begun {
+            LocalMcpOauthBeginResult::Begun {
+                authorization_code, ..
+            } => authorization_code,
+            other => panic!("expected Begun, got {other:?}"),
+        };
+
+        // act — exchange, drop, and reopen a fresh instance over the same workspace
+        oauth.exchange(authorization_code).expect("exchange");
+        drop(oauth);
+        let reopened = LocalMcpOauth::open(dir.path()).expect("reopen");
+
+        // assert — durable flow state persisted; token hint stays redacted
+        let state = reopened.state();
+        assert!(state.begun);
+        assert!(state.exchanged);
+        assert_eq!(state.server_id.as_deref(), Some("srv-a"));
+        let hint = state.access_token_hint.as_deref().expect("hint persisted");
+        assert!(!hint.contains("mcp-tok"));
+    }
+
+    #[test]
     fn exchange_without_begin_fails_closed() {
         let dir = tempdir().expect("tempdir");
         let mut oauth = LocalMcpOauth::open(dir.path()).expect("open");

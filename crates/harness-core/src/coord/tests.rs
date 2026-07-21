@@ -216,6 +216,66 @@ async fn lifecycle_hooks_use_injected_executor_without_spawning() {
     );
 }
 
+#[tokio::test]
+async fn lifecycle_hooks_scoped_to_declared_event_invoke_nothing_else() {
+    // arrange — one hook declared for run_started only
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
+    let executor = FakeLifecycleHookCommandExecutor::new();
+    let runtime = HookRuntimeConfig {
+        hooks: HooksConfig {
+            lifecycle: vec![LifecycleHookConfig {
+                id: Some("scoped-hook".to_string()),
+                event: HookLifecycleEvent::RunStarted,
+                command: vec!["fake-hook-bin".to_string()],
+                cwd: None,
+                timeout_ms: 100,
+                critical: true,
+                env: BTreeMap::new(),
+            }],
+        },
+        shell_allowlist: ShellAllowlist {
+            executables: vec!["fake-hook-bin".to_string()],
+            cwd_roots: Vec::new(),
+            ..ShellAllowlist::default()
+        },
+        suppress_execution: false,
+    };
+    let clock = FakeClock::new();
+
+    // act — fire a different lifecycle event
+    let batch = super::hooks::run_lifecycle_hooks(
+        &clock,
+        &executor,
+        &runtime,
+        HookInvocationContext {
+            event: HookLifecycleEvent::ToolCallStarted,
+            run_id: "run_scoped".into(),
+            workspace_root: temp_dir.path().to_path_buf(),
+            artifacts_dir: temp_dir.path().join("artifacts"),
+            actor: Some(EventActor::new(ActorKind::System, None)),
+            agent_id: None,
+            request_id: None,
+            permission_id: None,
+            task_id: None,
+            tool_call_id: None,
+            tool_id: None,
+            provider_id: None,
+            model_id: None,
+            parent_agent_id: None,
+            category: None,
+            outcome: None,
+            output_summary: None,
+            failure_reason: None,
+        },
+    )
+    .await;
+
+    // assert — discovery is event-scoped: nothing runs, nothing is recorded
+    assert_eq!(batch.hook_executions.len(), 0);
+    assert_eq!(batch.critical_failure, None);
+    assert!(executor.invocations.lock().unwrap_or_abort().is_empty());
+}
+
 #[test]
 fn summarize_hook_output_preserves_existing_summary_contract() {
     // arrange
