@@ -106,14 +106,15 @@ fn checked_in_manifest_covers_first_slice_and_scaffolds() {
             .contains("artifacts/qa-evidence/20260717-tui-reference-parity"));
     }
     let user_approved_scaffold_diverged = ["OVL-PALETTE"];
-    let demoted_to_incomplete = ["TX-USER", "TX-ASSISTANT", "TX-TOOL", "TX-DIFF"];
-    // Scaffolds blocked on external reference evidence (Wave 4 Packets 4.1-4.5):
+    let demoted_to_incomplete: [&str; 0] = [];
+    // Scaffolds blocked on external reference evidence (Wave 4 Packets 4.1-4.6):
     // shell-idle/stream freezes captured from the pinned binary but A-PIXELS
     // fails closed on unmasked chrome residuals; perm/question blocked because
     // the reference tool UIs are not reachable via black-box tool-call
-    // injection; turn-lifecycle rows blocked on state/content divergence
-    // (cancel unreachable via scripted Ctrl+C; fail/recover chrome divergence;
-    // complete/scroll non-deterministic content/state mismatch).
+    // injection; turn-lifecycle rows blocked on state/content divergence;
+    // transcript primitive rows blocked on non-deterministic body content
+    // (TX-USER/ASSISTANT), scenario-dependent tool chrome (TX-TOOL), and the
+    // reference not projecting inline diff bodies (TX-DIFF).
     let blocked_on_reference_evidence = [
         "SHELL-IDLE",
         "SHELL-STREAM",
@@ -126,6 +127,10 @@ fn checked_in_manifest_covers_first_slice_and_scaffolds() {
         "SHELL-RECOVER",
         "SHELL-COMPLETE",
         "SHELL-SCROLL",
+        "TX-USER",
+        "TX-ASSISTANT",
+        "TX-TOOL",
+        "TX-DIFF",
     ];
     for id in REQUIRED_SCAFFOLD_IDS {
         assert!(ids.contains(*id), "missing scaffold id {id}");
