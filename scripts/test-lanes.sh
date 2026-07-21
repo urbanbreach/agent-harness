@@ -685,7 +685,7 @@ run_signoff_journeys() {
 
   run_stage "$mode_name" journey_signoff_owner_present "$repo_root" test -f "$journey_test_path"
   run_stage "$mode_name" journey_signoff_test "$repo_root" \
-    env HARNESS_JOURNEY_ARTIFACT_DIR="$journey_artifacts_dir" \
+    env HARNESS_JOURNEY_STRICT=1 HARNESS_JOURNEY_ARTIFACT_DIR="$journey_artifacts_dir" \
     cargo nextest run -p harness --test journey_signoff_test
 
   local mode_failed=0

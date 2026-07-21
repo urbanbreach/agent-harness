@@ -154,7 +154,8 @@ fn signoff_journeys_mode_is_fail_closed() {
         && script.contains("Strict fail-closed A-JOURNEYS scaffolding");
     let owns_owner = body.contains("crates/harness/tests/journey_signoff_test.rs")
         && body.contains("journey_signoff_test")
-        && body.contains("HARNESS_JOURNEY_ARTIFACT_DIR");
+        && body.contains("HARNESS_JOURNEY_ARTIFACT_DIR")
+        && body.contains("HARNESS_JOURNEY_STRICT=1");
     let fail_closed = !body.contains("|| true")
         && body.contains("silent skip is forbidden")
         && body.contains("journey-lane-verdict.txt");

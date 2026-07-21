@@ -408,8 +408,13 @@ Fail-closed stages (no `|| true`):
 
 - Prerequisites: `journey_signoff_test.rs` must exist; `cargo` on `PATH` (missing owner = FAIL)
 - `cargo nextest run -p harness --test journey_signoff_test` with
-  `HARNESS_JOURNEY_ARTIFACT_DIR` pointing at the lane artifact tree
+  `HARNESS_JOURNEY_STRICT=1` and `HARNESS_JOURNEY_ARTIFACT_DIR` pointing at the lane artifact tree
 - Aggregate `journey-lane-verdict.txt` under the lane artifact tree
+
+`HARNESS_JOURNEY_STRICT=1` enables fail-closed evidence validation: referenced L1/L3/L4/L6 paths
+under the gitignored parity evidence root must exist on disk. Ordinary `cargo nextest` runs do not
+set this variable and only validate manifest structure plus committed source owners, so the suite
+passes from a clean checkout without pre-existing signoff artifacts.
 
 Missing compiled harness binary fails the owner tests (no skip). Journey rows stay `incomplete`
 until L1–L6 are complete; this lane only scaffolds L5/L6 owners.
