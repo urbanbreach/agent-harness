@@ -408,3 +408,36 @@ fn empty_fixed_tick_plan_fails_closed() {
     let err = capture_fixed_tick_sequence(&mut app, &clock, &plan).expect_err("empty plan");
     assert_eq!(err, AnimationEvidenceError::EmptyPlan);
 }
+
+/// Trace ordering: fixed-tick frame traces must be strictly ordered and
+/// duplicate-free (monotonic mono_ms and animation phase, every consecutive
+/// frame differs from its predecessor).
+#[test]
+fn fixed_tick_trace_frames_are_strictly_ordered_and_unique() {
+    // arrange — fixed-tick plan for an animated spinner surface
+    let plan = FixedTickPlan::new("trace-ordering", 100, 24, 8).with_tick_ms(100);
+
+    // act
+    let (sequence, _second, _clock) = capture_pair(&plan, streaming_wait_app);
+
+    // assert — strictly increasing clock + phase; no duplicate frames
+    assert_eq!(sequence.frames.len(), 8);
+    for pair in sequence.frames.windows(2) {
+        assert!(
+            pair[1].mono_ms > pair[0].mono_ms,
+            "trace mono_ms must strictly increase: {} then {}",
+            pair[0].mono_ms,
+            pair[1].mono_ms
+        );
+        assert!(
+            pair[1].animation_phase > pair[0].animation_phase,
+            "animation phase must strictly increase: {} then {}",
+            pair[0].animation_phase,
+            pair[1].animation_phase
+        );
+        assert_ne!(
+            pair[0].cells, pair[1].cells,
+            "consecutive fixed-tick frames must differ (animation must advance)"
+        );
+    }
+}

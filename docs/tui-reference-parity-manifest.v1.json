@@ -1869,15 +1869,15 @@
         "state_interaction_test": "crates/harness-tui/tests/p0_parity/pickers_help_life_test.rs::session_picker_opens_with_searchable_history",
         "render_test": "crates/harness-tui/src/ui_overlays.rs session history overlay",
         "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::ovl_session_pty",
-        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/session-pixel-diff-v63-masked.json"
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/ovl-session-blocked-v1.json"
       },
       "evidence_paths": {
-        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-session/",
-        "L2": "artifacts/qa-evidence/20260717-tui-reference-parity/harness/OVL-SESSION/L2/",
-        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-session-v63/",
-        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/ovl-session-pixel-diff-precise-v1.json",
-        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/session-holdout-v1-masked.json",
-        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/overlay-identity-field-mask.precise-v1.json"
+        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-ovl-session-pinned-v1/",
+        "L2": "",
+        "L3": "",
+        "L4": "",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/ovl-session-blocked-v1.json",
+        "L6": ""
       },
       "identity_substitution": {
         "fields": [
@@ -1898,8 +1898,8 @@
         "A-INVARIANTS",
         "A-NO-RESKIN"
       ],
-      "status": "incomplete",
-      "notes": "Scaffold §10 session picker overlay. L1 freeze + L3 harness-session-v63 + L4 masked A-PIXELS PASS (0 unapproved). A-PTY owner GREEN. Status incomplete pending A-REVIEW/A-NO-RESKIN. Holdout re-capture PASS: harness-session-holdout-v1 + session-holdout-v1-masked.json. Evidence honesty loop3: L1=freeze, L3=act, L4=pixel report, L6=identity mask (paths verified on disk). | status=pass: L1 freeze + L2 cells + L3 harness + L5 masked exact_match + L6 mask present (2026-07-19).",
+      "status": "blocked",
+      "notes": "Scaffold §10 session picker overlay. L1 freeze + L3 harness-session-v63 + L4 masked A-PIXELS PASS (0 unapproved). A-PTY owner GREEN. Status incomplete pending A-REVIEW/A-NO-RESKIN. Holdout re-capture PASS: harness-session-holdout-v1 + session-holdout-v1-masked.json. Evidence honesty loop3: L1=freeze, L3=act, L4=pixel report, L6=identity mask (paths verified on disk). | status=pass: L1 freeze + L2 cells + L3 harness + L5 masked exact_match + L6 mask present (2026-07-19). | Wave4.8: reference 'Resume session' picker overlay CAPTURED (Ctrl+P → resume → picker with Projects section + session list). Harness has NO comparable picker overlay (LineageBrowser/ForkSelector/CommandPalette/session-history surfaces serve related functions). status=blocked: overlay-surface divergence (reference picker vs harness palette/lineage) needs overlay-equivalence design or approved divergence. 2026-07-21",
       "slice": "scaffold",
       "evidence": {
         "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-session/",
@@ -1954,15 +1954,15 @@
         "state_interaction_test": "crates/harness-tui/tests/p0_parity/pickers_help_life_test.rs::help_and_toggles_surfaces_open_harness_safe",
         "render_test": "crates/harness-tui/src/ui_secondary_events_tab.rs::render_help_tab",
         "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::ovl_help_pty",
-        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/help-pixel-diff-v1-masked.json"
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/ovl-help-blocked-v1.json"
       },
       "evidence_paths": {
-        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-shortcuts-ctrlx/",
-        "L2": "artifacts/qa-evidence/20260717-tui-reference-parity/harness/OVL-HELP/L2/",
-        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-help-v1/",
-        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/ovl-help-pixel-diff-precise-v1.json",
-        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/help-holdout-v1-masked.json",
-        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/overlay-identity-field-mask.precise-v1.json"
+        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-ovl-help-pinned-v1/",
+        "L2": "",
+        "L3": "",
+        "L4": "",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/ovl-help-blocked-v1.json",
+        "L6": ""
       },
       "identity_substitution": {
         "fields": [
@@ -1982,8 +1982,8 @@
         "A-INVARIANTS",
         "A-NO-RESKIN"
       ],
-      "status": "incomplete",
-      "notes": "Scaffold §10 help overlay. L1 freeze + L3 harness-help-v1 + L4 masked A-PIXELS PASS (0 unapproved). A-PTY owner GREEN. Status incomplete pending A-REVIEW/A-NO-RESKIN. Holdout re-capture PASS: harness-help-holdout-v1 + help-holdout-v1-masked.json. Evidence honesty loop3: L1=freeze, L3=act, L4=pixel report, L6=identity mask (paths verified on disk). | status=pass: L1 freeze + L2 cells + L3 harness + L5 masked exact_match + L6 mask present (2026-07-19).",
+      "status": "blocked",
+      "notes": "Scaffold §10 help overlay. L1 freeze + L3 harness-help-v1 + L4 masked A-PIXELS PASS (0 unapproved). A-PTY owner GREEN. Status incomplete pending A-REVIEW/A-NO-RESKIN. Holdout re-capture PASS: harness-help-holdout-v1 + help-holdout-v1-masked.json. Evidence honesty loop3: L1=freeze, L3=act, L4=pixel report, L6=identity mask (paths verified on disk). | status=pass: L1 freeze + L2 cells + L3 harness + L5 masked exact_match + L6 mask present (2026-07-19). | Wave4.8: blocked: help-overlay trigger NOT discoverable from black-box surface ({F1} types literal text; reference CLI --help lists commands agent/completions/dashboard/export/help/inspect/login/logout/mcp/memory/models — 'help' is command help, not an overlay trigger). Harness help = palette Help command. Blocker: reference help-overlay trigger needs black-box discovery. 2026-07-21",
       "slice": "scaffold",
       "evidence": {
         "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-shortcuts-ctrlx/",
@@ -2168,8 +2168,8 @@
       "surface": "responsive",
       "state": "viewport_120x50",
       "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
-      "reference_receipt_id": "reference-freeze",
-      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "reference_receipt_id": "resp-120x50-reference-freeze-v1",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/resp-120x50-reference-freeze.v1.json",
       "preconditions": "Reference-primary viewport 120x50.",
       "seeded_inputs": {
         "viewport": "120x50"
@@ -2204,7 +2204,7 @@
         "state_interaction_test": "crates/harness-tui/tests/reference_parity_responsive_test.rs::resp_120x50_startup_keeps_bordered_welcome",
         "render_test": "crates/harness-tui/tests/reference_parity_responsive_test.rs::resp_120x50_startup_keeps_bordered_welcome",
         "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::resp_120x50_pty",
-        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/compare-120x50-v8/masked.json"
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/resp-120x50-blocked-v1.json"
       },
       "evidence_paths": {
         "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup-120x50/",
@@ -2233,8 +2233,8 @@
         "A-INVARIANTS",
         "A-NO-RESKIN"
       ],
-      "status": "incomplete",
-      "notes": "Scaffold §10 responsive 120x50. v8 capture + masked A-PIXELS PASS (identity mask startup-identity-field-mask.120x50.v1.json); structural cell match OK except RESP-100x30 +1 vertical residual. A-PTY still pending — status remains incomplete. A-PTY owner wired (Startup-mode PTY at viewport). Masked A-PIXELS PASS (v8). Structural render owners GREEN. Status remains incomplete pending A-REVIEW/A-NO-RESKIN and full gate suite. Evidence L1-L6 wired (v8). Evidence honesty loop3: L1=freeze, L3=act, L4=pixel report, L6=identity mask (paths verified on disk). | status=pass: L5 masked exact_match (receipts/compare-120x50-v8/masked.json) 2026-07-19",
+      "status": "blocked",
+      "notes": "Scaffold §10 responsive 120x50. v8 capture + masked A-PIXELS PASS (identity mask startup-identity-field-mask.120x50.v1.json); structural cell match OK except RESP-100x30 +1 vertical residual. A-PTY still pending — status remains incomplete. A-PTY owner wired (Startup-mode PTY at viewport). Masked A-PIXELS PASS (v8). Structural render owners GREEN. Status remains incomplete pending A-REVIEW/A-NO-RESKIN and full gate suite. Evidence L1-L6 wired (v8). Evidence honesty loop3: L1=freeze, L3=act, L4=pixel report, L6=identity mask (paths verified on disk). | status=pass: L5 masked exact_match (receipts/compare-120x50-v8/masked.json) 2026-07-19 | Wave4.8: responsive pixel capture at 120x50 with PINNED binary (real HOME idle shell) vs harness pty live-draft at the same viewport: masked mm=17708 — chrome/content divergence per viewport (identity rows masked). status=blocked: viewport rendering owner-tested (resp_120x50/wide structural tests GREEN); blockers: per-viewport chrome alignment or user-approved residuals; differential_evaluator pending. 2026-07-21",
       "slice": "scaffold",
       "evidence": {
         "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup-120x50/",
@@ -2251,8 +2251,8 @@
       "surface": "responsive",
       "state": "viewport_120x40",
       "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
-      "reference_receipt_id": "reference-freeze",
-      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "reference_receipt_id": "resp-120x40-reference-freeze-v1",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/resp-120x40-reference-freeze.v1.json",
       "preconditions": "Harness signoff viewport 120x40.",
       "seeded_inputs": {
         "viewport": "120x40"
@@ -2287,7 +2287,7 @@
         "state_interaction_test": "crates/harness-tui/tests/reference_parity_responsive_test.rs::resp_120x40_startup_keeps_bordered_welcome",
         "render_test": "crates/harness-tui/tests/reference_parity_responsive_test.rs::resp_120x40_startup_keeps_bordered_welcome",
         "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::resp_120x40_pty",
-        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/compare-120x40-v8/masked.json"
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/resp-120x40-blocked-v1.json"
       },
       "evidence_paths": {
         "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup-120x40/",
@@ -2316,8 +2316,8 @@
         "A-INVARIANTS",
         "A-NO-RESKIN"
       ],
-      "status": "incomplete",
-      "notes": "Scaffold §10 responsive 120x40. v8 capture + masked A-PIXELS PASS (identity mask startup-identity-field-mask.120x40.v1.json); structural cell match OK except RESP-100x30 +1 vertical residual. A-PTY still pending — status remains incomplete. A-PTY owner wired (Startup-mode PTY at viewport). Masked A-PIXELS PASS (v8). Structural render owners GREEN. Status remains incomplete pending A-REVIEW/A-NO-RESKIN and full gate suite. Evidence L1-L6 wired (v8). Holdout re-capture PASS: harness-startup-120x40-holdout-v1 + startup-120x40-holdout-v1-masked.json. Evidence honesty loop3: L1=freeze, L3=act, L4=pixel report, L6=identity mask (paths verified on disk). | status=pass: L5 masked exact_match (receipts/compare-120x40-v8/masked.json) 2026-07-19",
+      "status": "blocked",
+      "notes": "Scaffold §10 responsive 120x40. v8 capture + masked A-PIXELS PASS (identity mask startup-identity-field-mask.120x40.v1.json); structural cell match OK except RESP-100x30 +1 vertical residual. A-PTY still pending — status remains incomplete. A-PTY owner wired (Startup-mode PTY at viewport). Masked A-PIXELS PASS (v8). Structural render owners GREEN. Status remains incomplete pending A-REVIEW/A-NO-RESKIN and full gate suite. Evidence L1-L6 wired (v8). Holdout re-capture PASS: harness-startup-120x40-holdout-v1 + startup-120x40-holdout-v1-masked.json. Evidence honesty loop3: L1=freeze, L3=act, L4=pixel report, L6=identity mask (paths verified on disk). | status=pass: L5 masked exact_match (receipts/compare-120x40-v8/masked.json) 2026-07-19 | Wave4.8: responsive pixel capture at 120x40 with PINNED binary (real HOME idle shell) vs harness pty live-draft at the same viewport: masked mm=17708 — chrome/content divergence per viewport (identity rows masked). status=blocked: viewport rendering owner-tested (resp_120x40/wide structural tests GREEN); blockers: per-viewport chrome alignment or user-approved residuals; differential_evaluator pending. 2026-07-21",
       "slice": "scaffold",
       "evidence": {
         "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup-120x40/",
@@ -2334,8 +2334,8 @@
       "surface": "responsive",
       "state": "viewport_100x30",
       "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
-      "reference_receipt_id": "reference-freeze",
-      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "reference_receipt_id": "resp-100x30-reference-freeze-v1",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/resp-100x30-reference-freeze.v1.json",
       "preconditions": "Viewport 100x30.",
       "seeded_inputs": {
         "viewport": "100x30"
@@ -2370,7 +2370,7 @@
         "state_interaction_test": "crates/harness-tui/tests/reference_parity_responsive_test.rs::resp_100x30_startup_keeps_bordered_welcome",
         "render_test": "crates/harness-tui/tests/reference_parity_responsive_test.rs::resp_100x30_startup_keeps_bordered_welcome",
         "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::resp_100x30_pty",
-        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/compare-100x30-v8/masked.json"
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/resp-100x30-blocked-v1.json"
       },
       "evidence_paths": {
         "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup-100x30/",
@@ -2399,8 +2399,8 @@
         "A-INVARIANTS",
         "A-NO-RESKIN"
       ],
-      "status": "incomplete",
-      "notes": "Structural owner GREEN; masked A-PIXELS PASS (v5) with per-geometry identity mask. A-PTY still pending. v8 capture + masked A-PIXELS PASS (identity mask startup-identity-field-mask.100x30.v1.json); structural cell match OK except RESP-100x30 +1 vertical residual. A-PTY still pending — status remains incomplete. A-PTY owner wired (Startup-mode PTY at viewport). Masked A-PIXELS PASS (v8). Structural render owners GREEN. Status remains incomplete pending A-REVIEW/A-NO-RESKIN and full gate suite. Evidence L1-L6 wired (v8). Evidence honesty loop3: L1=freeze, L3=act, L4=pixel report, L6=identity mask (paths verified on disk). v9 vertical ladder fix: clipboard L4/welcome L7 freeze-aligned; unmasked mm 136834→78997. | status=pass: L5 masked exact_match (receipts/compare-100x30-v9/masked.json) 2026-07-19",
+      "status": "blocked",
+      "notes": "Structural owner GREEN; masked A-PIXELS PASS (v5) with per-geometry identity mask. A-PTY still pending. v8 capture + masked A-PIXELS PASS (identity mask startup-identity-field-mask.100x30.v1.json); structural cell match OK except RESP-100x30 +1 vertical residual. A-PTY still pending — status remains incomplete. A-PTY owner wired (Startup-mode PTY at viewport). Masked A-PIXELS PASS (v8). Structural render owners GREEN. Status remains incomplete pending A-REVIEW/A-NO-RESKIN and full gate suite. Evidence L1-L6 wired (v8). Evidence honesty loop3: L1=freeze, L3=act, L4=pixel report, L6=identity mask (paths verified on disk). v9 vertical ladder fix: clipboard L4/welcome L7 freeze-aligned; unmasked mm 136834→78997. | status=pass: L5 masked exact_match (receipts/compare-100x30-v9/masked.json) 2026-07-19 | Wave4.8: responsive pixel capture at 100x30 with PINNED binary (real HOME idle shell) vs harness pty live-draft at the same viewport: masked mm=26843 — chrome/content divergence per viewport (identity rows masked). status=blocked: viewport rendering owner-tested (resp_100x30/wide structural tests GREEN); blockers: per-viewport chrome alignment or user-approved residuals; differential_evaluator pending. 2026-07-21",
       "slice": "scaffold",
       "evidence": {
         "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup-100x30/",
@@ -2417,8 +2417,8 @@
       "surface": "responsive",
       "state": "viewport_80x24",
       "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
-      "reference_receipt_id": "reference-freeze",
-      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "reference_receipt_id": "resp-80x24-reference-freeze-v1",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/resp-80x24-reference-freeze.v1.json",
       "preconditions": "Viewport 80x24.",
       "seeded_inputs": {
         "viewport": "80x24"
@@ -2453,7 +2453,7 @@
         "state_interaction_test": "crates/harness-tui/tests/reference_parity_responsive_test.rs::resp_80x24_startup_unboxed_welcome_keeps_composer_border",
         "render_test": "crates/harness-tui/tests/reference_parity_responsive_test.rs::resp_80x24_startup_unboxed_welcome_keeps_composer_border",
         "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::resp_80x24_pty",
-        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/compare-80x24-v9/masked.json"
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/resp-80x24-blocked-v1.json"
       },
       "evidence_paths": {
         "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup-80x24/",
@@ -2482,8 +2482,8 @@
         "A-INVARIANTS",
         "A-NO-RESKIN"
       ],
-      "status": "incomplete",
-      "notes": "Structural owner GREEN; masked A-PIXELS PASS (v6) with per-geometry identity mask. A-PTY still pending. v8 capture + masked A-PIXELS PASS (identity mask startup-identity-field-mask.80x24.v1.json); structural cell match OK except RESP-100x30 +1 vertical residual. A-PTY still pending — status remains incomplete. A-PTY owner wired (Startup-mode PTY at viewport). Masked A-PIXELS PASS (v8). Structural render owners GREEN. Status remains incomplete pending A-REVIEW/A-NO-RESKIN and full gate suite. Evidence L1-L6 wired (v8). Evidence honesty loop3: L1=freeze, L3=act, L4=pixel report, L6=identity mask (paths verified on disk). | status=pass: L5 masked exact_match (receipts/compare-80x24-v8/masked.json) 2026-07-19",
+      "status": "blocked",
+      "notes": "Structural owner GREEN; masked A-PIXELS PASS (v6) with per-geometry identity mask. A-PTY still pending. v8 capture + masked A-PIXELS PASS (identity mask startup-identity-field-mask.80x24.v1.json); structural cell match OK except RESP-100x30 +1 vertical residual. A-PTY still pending — status remains incomplete. A-PTY owner wired (Startup-mode PTY at viewport). Masked A-PIXELS PASS (v8). Structural render owners GREEN. Status remains incomplete pending A-REVIEW/A-NO-RESKIN and full gate suite. Evidence L1-L6 wired (v8). Evidence honesty loop3: L1=freeze, L3=act, L4=pixel report, L6=identity mask (paths verified on disk). | status=pass: L5 masked exact_match (receipts/compare-80x24-v8/masked.json) 2026-07-19 | Wave4.8: responsive pixel capture at 80x24 with PINNED binary (real HOME idle shell) vs harness pty live-draft at the same viewport: masked mm=23659 — chrome/content divergence per viewport (identity rows masked). status=blocked: viewport rendering owner-tested (resp_80x24/wide structural tests GREEN); blockers: per-viewport chrome alignment or user-approved residuals; differential_evaluator pending. 2026-07-21",
       "slice": "scaffold",
       "evidence": {
         "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup-80x24/",
@@ -2500,8 +2500,8 @@
       "surface": "responsive",
       "state": "viewport_79x24",
       "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
-      "reference_receipt_id": "reference-freeze",
-      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "reference_receipt_id": "resp-79x24-reference-freeze-v1",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/resp-79x24-reference-freeze.v1.json",
       "preconditions": "Narrow boundary viewport 79x24.",
       "seeded_inputs": {
         "viewport": "79x24"
@@ -2536,7 +2536,7 @@
         "state_interaction_test": "crates/harness-tui/tests/reference_parity_responsive_test.rs::resp_79x24_startup_unboxed_welcome_keeps_composer_border",
         "render_test": "crates/harness-tui/tests/reference_parity_responsive_test.rs::resp_79x24_startup_unboxed_welcome_keeps_composer_border",
         "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::resp_79x24_pty",
-        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/compare-79x24-v8/masked.json"
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/resp-79x24-blocked-v1.json"
       },
       "evidence_paths": {
         "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup-79x24/",
@@ -2565,8 +2565,8 @@
         "A-INVARIANTS",
         "A-NO-RESKIN"
       ],
-      "status": "incomplete",
-      "notes": "Scaffold §10 responsive 79x24. v8 capture + masked A-PIXELS PASS (identity mask startup-identity-field-mask.79x24.v1.json); structural cell match OK except RESP-100x30 +1 vertical residual. A-PTY still pending — status remains incomplete. A-PTY owner wired (Startup-mode PTY at viewport). Masked A-PIXELS PASS (v8). Structural render owners GREEN. Status remains incomplete pending A-REVIEW/A-NO-RESKIN and full gate suite. Evidence L1-L6 wired (v8). Evidence honesty loop3: L1=freeze, L3=act, L4=pixel report, L6=identity mask (paths verified on disk). | status=pass: L5 masked exact_match (receipts/compare-79x24-v8/masked.json) 2026-07-19",
+      "status": "blocked",
+      "notes": "Scaffold §10 responsive 79x24. v8 capture + masked A-PIXELS PASS (identity mask startup-identity-field-mask.79x24.v1.json); structural cell match OK except RESP-100x30 +1 vertical residual. A-PTY still pending — status remains incomplete. A-PTY owner wired (Startup-mode PTY at viewport). Masked A-PIXELS PASS (v8). Structural render owners GREEN. Status remains incomplete pending A-REVIEW/A-NO-RESKIN and full gate suite. Evidence L1-L6 wired (v8). Evidence honesty loop3: L1=freeze, L3=act, L4=pixel report, L6=identity mask (paths verified on disk). | status=pass: L5 masked exact_match (receipts/compare-79x24-v8/masked.json) 2026-07-19 | Wave4.8: responsive pixel capture at 79x24 with PINNED binary (real HOME idle shell) vs harness pty live-draft at the same viewport: masked mm=23477 — chrome/content divergence per viewport (identity rows masked). status=blocked: viewport rendering owner-tested (resp_79x24/wide structural tests GREEN); blockers: per-viewport chrome alignment or user-approved residuals; differential_evaluator pending. 2026-07-21",
       "slice": "scaffold",
       "evidence": {
         "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup-79x24/",
@@ -2583,8 +2583,8 @@
       "surface": "responsive",
       "state": "viewport_60x20",
       "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
-      "reference_receipt_id": "reference-freeze",
-      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "reference_receipt_id": "resp-60x20-reference-freeze-v1",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/resp-60x20-reference-freeze.v1.json",
       "preconditions": "Compact viewport 60x20.",
       "seeded_inputs": {
         "viewport": "60x20"
@@ -2619,7 +2619,7 @@
         "state_interaction_test": "crates/harness-tui/tests/reference_parity_responsive_test.rs::resp_60x20_startup_unboxed_welcome_keeps_composer_border",
         "render_test": "crates/harness-tui/tests/reference_parity_responsive_test.rs::resp_60x20_startup_unboxed_welcome_keeps_composer_border",
         "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::resp_60x20_pty",
-        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/compare-60x20-v8/masked.json"
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/resp-60x20-blocked-v1.json"
       },
       "evidence_paths": {
         "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup-60x20/",
@@ -2648,8 +2648,8 @@
         "A-INVARIANTS",
         "A-NO-RESKIN"
       ],
-      "status": "incomplete",
-      "notes": "Structural owner GREEN; masked A-PIXELS PASS (v6) with per-geometry identity mask. A-PTY still pending. v8 capture + masked A-PIXELS PASS (identity mask startup-identity-field-mask.60x20.v1.json); structural cell match OK except RESP-100x30 +1 vertical residual. A-PTY still pending — status remains incomplete. A-PTY owner wired (Startup-mode PTY at viewport). Masked A-PIXELS PASS (v8). Structural render owners GREEN. Status remains incomplete pending A-REVIEW/A-NO-RESKIN and full gate suite. Evidence L1-L6 wired (v8). Evidence honesty loop3: L1=freeze, L3=act, L4=pixel report, L6=identity mask (paths verified on disk). | status=pass: L5 masked exact_match (receipts/compare-60x20-v8/masked.json) 2026-07-19",
+      "status": "blocked",
+      "notes": "Structural owner GREEN; masked A-PIXELS PASS (v6) with per-geometry identity mask. A-PTY still pending. v8 capture + masked A-PIXELS PASS (identity mask startup-identity-field-mask.60x20.v1.json); structural cell match OK except RESP-100x30 +1 vertical residual. A-PTY still pending — status remains incomplete. A-PTY owner wired (Startup-mode PTY at viewport). Masked A-PIXELS PASS (v8). Structural render owners GREEN. Status remains incomplete pending A-REVIEW/A-NO-RESKIN and full gate suite. Evidence L1-L6 wired (v8). Evidence honesty loop3: L1=freeze, L3=act, L4=pixel report, L6=identity mask (paths verified on disk). | status=pass: L5 masked exact_match (receipts/compare-60x20-v8/masked.json) 2026-07-19 | Wave4.8: responsive pixel capture at 60x20 with PINNED binary (real HOME idle shell) vs harness pty live-draft at the same viewport: masked mm=21427 — chrome/content divergence per viewport (identity rows masked). status=blocked: viewport rendering owner-tested (resp_60x20/wide structural tests GREEN); blockers: per-viewport chrome alignment or user-approved residuals; differential_evaluator pending. 2026-07-21",
       "slice": "scaffold",
       "evidence": {
         "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup-60x20/",
@@ -2666,8 +2666,8 @@
       "surface": "responsive",
       "state": "viewport_wide_gt_120",
       "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
-      "reference_receipt_id": "reference-freeze",
-      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "reference_receipt_id": "resp-140x40-reference-freeze-v1",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/resp-140x40-reference-freeze.v1.json",
       "preconditions": "Wide viewport greater than 120 columns (e.g. 140x40).",
       "seeded_inputs": {
         "viewport": "140x40"
@@ -2702,15 +2702,15 @@
         "state_interaction_test": "crates/harness-tui/tests/reference_parity_responsive_test.rs::resp_wide_140x40_startup_keeps_bordered_welcome",
         "render_test": "crates/harness-tui/tests/reference_parity_responsive_test.rs::resp_wide_140x40_startup_keeps_bordered_welcome",
         "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::resp_wide_pty",
-        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/compare-140x40-v8/masked.json"
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/resp-140x40-blocked-v1.json"
       },
       "evidence_paths": {
-        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup-140x40/",
-        "L2": "artifacts/qa-evidence/20260717-tui-reference-parity/harness/RESP-WIDE/cells/",
-        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-startup-140x40-v8/",
-        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/compare-140x40-precise-identity.json",
-        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/compare-140x40-v8/masked.json",
-        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/startup-identity-field-mask.140x40.v1.json"
+        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-resp-140x40-pinned-v1/",
+        "L2": "",
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-resp-140x40-pinned-v1/",
+        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/resp-140x40-pixel-diff-blocked-v1-masked.json",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/resp-140x40-blocked-v1.json",
+        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/resp-140x40-identity-mask-v1.json"
       },
       "identity_substitution": {
         "fields": [
@@ -2731,8 +2731,8 @@
         "A-INVARIANTS",
         "A-NO-RESKIN"
       ],
-      "status": "incomplete",
-      "notes": "Scaffold §10 responsive wide (>120 cols). v8 capture + masked A-PIXELS PASS (identity mask startup-identity-field-mask.140x40.v1.json); structural cell match OK except RESP-100x30 +1 vertical residual. A-PTY still pending — status remains incomplete. A-PTY owner wired (Startup-mode PTY at viewport). Masked A-PIXELS PASS (v8). Structural render owners GREEN. Status remains incomplete pending A-REVIEW/A-NO-RESKIN and full gate suite. Evidence L1-L6 wired (v8). Evidence honesty loop3: L1=freeze, L3=act, L4=pixel report, L6=identity mask (paths verified on disk). | status=pass: L5 masked exact_match (receipts/compare-140x40-v8/masked.json) 2026-07-19",
+      "status": "blocked",
+      "notes": "Scaffold §10 responsive wide (>120 cols). v8 capture + masked A-PIXELS PASS (identity mask startup-identity-field-mask.140x40.v1.json); structural cell match OK except RESP-100x30 +1 vertical residual. A-PTY still pending — status remains incomplete. A-PTY owner wired (Startup-mode PTY at viewport). Masked A-PIXELS PASS (v8). Structural render owners GREEN. Status remains incomplete pending A-REVIEW/A-NO-RESKIN and full gate suite. Evidence L1-L6 wired (v8). Evidence honesty loop3: L1=freeze, L3=act, L4=pixel report, L6=identity mask (paths verified on disk). | status=pass: L5 masked exact_match (receipts/compare-140x40-v8/masked.json) 2026-07-19 | Wave4.8: responsive pixel capture at 140x40 with PINNED binary (real HOME idle shell) vs harness pty live-draft at the same viewport: masked mm=18812 — chrome/content divergence. status=blocked: wide viewport rendering owner-tested (resp_wide_140x40 structural tests GREEN); blockers: per-viewport chrome alignment or user-approved residuals; differential_evaluator pending. 2026-07-21",
       "slice": "scaffold",
       "evidence": {
         "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup-140x40/",
@@ -2791,7 +2791,7 @@
         "state_interaction_test": "crates/harness/tests/journey_signoff_test.rs::journey_worktree_ctrl_w_owner_is_env_gated_dual_binary_pty",
         "render_test": "pending",
         "pty_test": "crates/harness/tests/pty_happy_path_recorded.rs::dual_binary_cli_pty_worktree_ctrl_w_creates_git_worktree",
-        "differential_evaluator": "pending"
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/journey-blocked-v1.json"
       },
       "evidence_paths": {
         "L1": "",
@@ -2819,8 +2819,8 @@
         "A-CORE-AUDIT",
         "A-PTY"
       ],
-      "status": "incomplete",
-      "notes": "Nonvisual journey pass: L1/L4 remain empty because no reference freeze is claimed. L2=Ctrl+W/UiIntent state tests; L3=owner and dual-binary PTY postconditions; L5=journey_signoff_test owner; L6=worktree PTY receipt. The env-gated HARNESS_TUI_PTY_SIGNOFF=1 owner proves Ctrl+W creates the on-disk worktree, harness/wt-* branch, and live mock shell handoff. A-PIXELS and real-provider proof are not claimed.",
+      "status": "blocked",
+      "notes": "Nonvisual journey pass: L1/L4 remain empty because no reference freeze is claimed. L2=Ctrl+W/UiIntent state tests; L3=owner and dual-binary PTY postconditions; L5=journey_signoff_test owner; L6=worktree PTY receipt. The env-gated HARNESS_TUI_PTY_SIGNOFF=1 owner proves Ctrl+W creates the on-disk worktree, harness/wt-* branch, and live mock shell handoff. A-PIXELS and real-provider proof are not claimed. | Wave4.8: blocked: reference-CLI journey pairing pending — reference CLI exposes paired commands (memory/inspect/export/agent/dashboard/...) but paired CLI-output captures need reference-CLI journey execution in a controlled environment (auth + deterministic output) — outside Packet 4.8 scope. Harness journeys PTY-owned, owners GREEN. 2026-07-21",
       "slice": "journey-template"
     },
     {
@@ -2872,7 +2872,7 @@
         "state_interaction_test": "crates/harness/tests/journey_signoff_test.rs::journey_config_show_effective_cli_writes_artifact",
         "render_test": "pending",
         "pty_test": "pending",
-        "differential_evaluator": "pending"
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/journey-blocked-v1.json"
       },
       "evidence_paths": {
         "L1": "",
@@ -2899,8 +2899,8 @@
         "A-INVARIANTS",
         "A-CONFIG-SCHEMA"
       ],
-      "status": "incomplete",
-      "notes": "Nonvisual journey pass: L1/L4 remain empty because no reference freeze is claimed. L2=lib config_show unit state tests; L3=stable CLI captures and postconditions proving successful, redacted effective output with no secret-looking token; L5=owner test; L6=config-show receipt.",
+      "status": "blocked",
+      "notes": "Nonvisual journey pass: L1/L4 remain empty because no reference freeze is claimed. L2=lib config_show unit state tests; L3=stable CLI captures and postconditions proving successful, redacted effective output with no secret-looking token; L5=owner test; L6=config-show receipt. | Wave4.8: blocked: reference-CLI journey pairing pending — reference CLI exposes paired commands (memory/inspect/export/agent/dashboard/...) but paired CLI-output captures need reference-CLI journey execution in a controlled environment (auth + deterministic output) — outside Packet 4.8 scope. Harness journeys PTY-owned, owners GREEN. 2026-07-21",
       "slice": "journey-template"
     },
     {
@@ -2952,7 +2952,7 @@
         "state_interaction_test": "crates/harness/tests/journey_signoff_test.rs::journey_config_sources_cli_writes_artifact;journey_config_explain_cli_writes_artifact",
         "render_test": "pending",
         "pty_test": "pending",
-        "differential_evaluator": "pending"
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/journey-blocked-v1.json"
       },
       "evidence_paths": {
         "L1": "",
@@ -2979,8 +2979,8 @@
         "A-INVARIANTS",
         "A-CONFIG-SCHEMA"
       ],
-      "status": "incomplete",
-      "notes": "Nonvisual journey pass: L1/L4 remain empty because no reference freeze is claimed. L2=lib config_sources/explain unit state tests; L3=stable CLI captures and postconditions proving successful sources and explain output; L5=owner test; L6=sources-explain receipt.",
+      "status": "blocked",
+      "notes": "Nonvisual journey pass: L1/L4 remain empty because no reference freeze is claimed. L2=lib config_sources/explain unit state tests; L3=stable CLI captures and postconditions proving successful sources and explain output; L5=owner test; L6=sources-explain receipt. | Wave4.8: blocked: reference-CLI journey pairing pending — reference CLI exposes paired commands (memory/inspect/export/agent/dashboard/...) but paired CLI-output captures need reference-CLI journey execution in a controlled environment (auth + deterministic output) — outside Packet 4.8 scope. Harness journeys PTY-owned, owners GREEN. 2026-07-21",
       "slice": "journey-template"
     },
     {
@@ -3032,7 +3032,7 @@
         "state_interaction_test": "crates/harness-core/src/coord/background_notifications.rs::wait_mode_tests",
         "render_test": "pending",
         "pty_test": "pending",
-        "differential_evaluator": "pending"
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/journey-blocked-v1.json"
       },
       "evidence_paths": {
         "L1": "",
@@ -3059,8 +3059,8 @@
         "A-INVARIANTS",
         "A-CORE-AUDIT"
       ],
-      "status": "incomplete",
-      "notes": "Nonvisual journey pass: L1/L4 remain empty because no reference freeze is claimed. journey_signoff runs the in-process wait-mode contract and verifies the harness-tools multi-wait integration owner, writing L3 under actual/journey-wait-any-all-v1. L2=coord wait_mode predicates; L5=tools multi-wait integration; L6=surface evidence receipt. No A-PIXELS claim.",
+      "status": "blocked",
+      "notes": "Nonvisual journey pass: L1/L4 remain empty because no reference freeze is claimed. journey_signoff runs the in-process wait-mode contract and verifies the harness-tools multi-wait integration owner, writing L3 under actual/journey-wait-any-all-v1. L2=coord wait_mode predicates; L5=tools multi-wait integration; L6=surface evidence receipt. No A-PIXELS claim. | Wave4.8: blocked: reference-CLI journey pairing pending — reference CLI exposes paired commands (memory/inspect/export/agent/dashboard/...) but paired CLI-output captures need reference-CLI journey execution in a controlled environment (auth + deterministic output) — outside Packet 4.8 scope. Harness journeys PTY-owned, owners GREEN. 2026-07-21",
       "slice": "journey-template"
     },
     {
@@ -3112,7 +3112,7 @@
         "state_interaction_test": "crates/harness-core/src/folder_trust.rs::folder_trust_persists_allow_and_deny",
         "render_test": "pending",
         "pty_test": "pending",
-        "differential_evaluator": "pending"
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/journey-blocked-v1.json"
       },
       "evidence_paths": {
         "L1": "",
@@ -3139,8 +3139,8 @@
         "A-INVARIANTS",
         "A-CORE-AUDIT"
       ],
-      "status": "incomplete",
-      "notes": "Nonvisual journey pass: L1/L4 remain empty because no reference freeze is claimed. journey_signoff proves deny-before-spawn through the core gate and shell_safety owner path, with denied=true and spawn_attempted=false in L3 under actual/journey-folder-trust-deny-v1. L2=core allow/deny persistence tests; L5=shell_safety bash deny when trust is missing; L6=surface evidence receipt. No A-PIXELS claim.",
+      "status": "blocked",
+      "notes": "Nonvisual journey pass: L1/L4 remain empty because no reference freeze is claimed. journey_signoff proves deny-before-spawn through the core gate and shell_safety owner path, with denied=true and spawn_attempted=false in L3 under actual/journey-folder-trust-deny-v1. L2=core allow/deny persistence tests; L5=shell_safety bash deny when trust is missing; L6=surface evidence receipt. No A-PIXELS claim. | Wave4.8: blocked: reference-CLI journey pairing pending — reference CLI exposes paired commands (memory/inspect/export/agent/dashboard/...) but paired CLI-output captures need reference-CLI journey execution in a controlled environment (auth + deterministic output) — outside Packet 4.8 scope. Harness journeys PTY-owned, owners GREEN. 2026-07-21",
       "slice": "journey-template"
     },
     {
@@ -3192,7 +3192,7 @@
         "state_interaction_test": "crates/harness/src/memory_cmd.rs::put_get_list_roundtrip_via_cli_handlers",
         "render_test": "pending",
         "pty_test": "pending",
-        "differential_evaluator": "pending"
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/journey-blocked-v1.json"
       },
       "evidence_paths": {
         "L1": "",
@@ -3219,8 +3219,8 @@
         "A-INVARIANTS",
         "A-CORE-AUDIT"
       ],
-      "status": "incomplete",
-      "notes": "Nonvisual journey pass: L1/L4 remain empty because no reference freeze is claimed. journey_signoff runs the harness binary memory put/get/list fail-closed against a temporary workspace and writes successful L3 captures under actual/journey-memory-cli-v1. L2=core DurableMemoryStore; L5=memory_cmd CLI handlers; L6=surface evidence receipt. No A-PIXELS claim.",
+      "status": "blocked",
+      "notes": "Nonvisual journey pass: L1/L4 remain empty because no reference freeze is claimed. journey_signoff runs the harness binary memory put/get/list fail-closed against a temporary workspace and writes successful L3 captures under actual/journey-memory-cli-v1. L2=core DurableMemoryStore; L5=memory_cmd CLI handlers; L6=surface evidence receipt. No A-PIXELS claim. | Wave4.8: blocked: reference-CLI journey pairing pending — reference CLI exposes paired commands (memory/inspect/export/agent/dashboard/...) but paired CLI-output captures need reference-CLI journey execution in a controlled environment (auth + deterministic output) — outside Packet 4.8 scope. Harness journeys PTY-owned, owners GREEN. 2026-07-21",
       "slice": "journey-template"
     },
     {
@@ -3272,7 +3272,7 @@
         "state_interaction_test": "crates/harness-tui/src/app/tests/permission_modal_tests.rs::always_approve_mode_auto_allows_subsequent_non_question_permission",
         "render_test": "pending",
         "pty_test": "pending",
-        "differential_evaluator": "pending"
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/journey-blocked-v1.json"
       },
       "evidence_paths": {
         "L1": "",
@@ -3299,8 +3299,8 @@
         "A-INVARIANTS",
         "A-CORE-AUDIT"
       ],
-      "status": "incomplete",
-      "notes": "Real product surface evidence added: AppState AlwaysConfirm engages via the permission modal; a subsequent non-question permission request auto-emits a ResolvePermission Allow intent through the intent sink, and the composer badge renders once both permissions resolve. Status remains incomplete because L1/L4 reference freeze artifacts are empty and the manifest validator requires incomplete for rows without a claimed L1 freeze. | Status updated to pass: real L3/L5/L6 product surface evidence exists; L1 remains empty per journey policy (non-visual journey).",
+      "status": "blocked",
+      "notes": "Real product surface evidence added: AppState AlwaysConfirm engages via the permission modal; a subsequent non-question permission request auto-emits a ResolvePermission Allow intent through the intent sink, and the composer badge renders once both permissions resolve. Status remains incomplete because L1/L4 reference freeze artifacts are empty and the manifest validator requires incomplete for rows without a claimed L1 freeze. | Status updated to pass: real L3/L5/L6 product surface evidence exists; L1 remains empty per journey policy (non-visual journey). | Wave4.8: blocked: reference-CLI journey pairing pending — reference CLI exposes paired commands (memory/inspect/export/agent/dashboard/...) but paired CLI-output captures need reference-CLI journey execution in a controlled environment (auth + deterministic output) — outside Packet 4.8 scope. Harness journeys PTY-owned, owners GREEN. 2026-07-21",
       "slice": "journey-template"
     },
     {
@@ -3352,7 +3352,7 @@
         "state_interaction_test": "crates/harness-tui/src/app/tests/settings_editor_tests.rs::settings_editor_opens_and_lists_registry_rows",
         "render_test": "pending",
         "pty_test": "pending",
-        "differential_evaluator": "pending"
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/journey-blocked-v1.json"
       },
       "evidence_paths": {
         "L1": "",
@@ -3379,9 +3379,325 @@
         "A-INVARIANTS",
         "A-CONFIG-SCHEMA"
       ],
-      "status": "incomplete",
-      "notes": "Real product surface evidence added: /settings opens the AppState overlay; navigating to the hashline_edit row and activating it toggles the value, persists the project harness.json via write_project_hashline_edit, and read_effective_hashline_edit reflects the change. A direct backend write followed by re-bind proves the editor reloads effective configuration. Status remains incomplete because L1/L4 reference freeze artifacts are empty and the manifest validator requires incomplete for rows without a claimed L1 freeze. | Status updated to pass: real L3/L5/L6 product surface evidence exists; L1 remains empty per journey policy (non-visual journey).",
+      "status": "blocked",
+      "notes": "Real product surface evidence added: /settings opens the AppState overlay; navigating to the hashline_edit row and activating it toggles the value, persists the project harness.json via write_project_hashline_edit, and read_effective_hashline_edit reflects the change. A direct backend write followed by re-bind proves the editor reloads effective configuration. Status remains incomplete because L1/L4 reference freeze artifacts are empty and the manifest validator requires incomplete for rows without a claimed L1 freeze. | Status updated to pass: real L3/L5/L6 product surface evidence exists; L1 remains empty per journey policy (non-visual journey). | Wave4.8: blocked: reference-CLI journey pairing pending — reference CLI exposes paired commands (memory/inspect/export/agent/dashboard/...) but paired CLI-output captures need reference-CLI journey execution in a controlled environment (auth + deterministic output) — outside Packet 4.8 scope. Harness journeys PTY-owned, owners GREEN. 2026-07-21",
       "slice": "journey-template"
+    },
+    {
+      "behavior_id": "TERM-CAP-COLOR",
+      "requirement_id": "TERM-CAP-COLOR",
+      "priority": "P2",
+      "surface": "terminal",
+      "state": "termcap_color",
+      "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
+      "reference_receipt_id": "resp-80x24-reference-freeze-v1",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/resp-80x24-reference-freeze.v1.json",
+      "preconditions": "truecolor/reduced color negotiation",
+      "seeded_inputs": {
+        "terminal_capability": "termcap_color"
+      },
+      "viewport": {
+        "cols": 120,
+        "rows": 40
+      },
+      "terminal_environment": {
+        "term": "xterm-256color",
+        "colorterm": "truecolor"
+      },
+      "input_sequence": [],
+      "capture_checkpoints": [],
+      "expected_focus_owner": "composer",
+      "expected_cursor_state": {
+        "visible": true,
+        "owner": "composer_prompt"
+      },
+      "expected_scroll_and_selection_state": {
+        "scroll_offset": 0,
+        "follow_mode": true,
+        "selection": null
+      },
+      "expected_overlays_and_z_order": [],
+      "expected_semantic_cell_artifact": "",
+      "expected_png_artifact": "",
+      "expected_frame_sequence": "",
+      "timing_contract": null,
+      "owners": {
+        "fixture": "crates/harness-tui/src/runtime.rs::TerminalCapabilityState",
+        "state_interaction_test": "crates/harness-tui/src/runtime.rs capability-state unit tests",
+        "render_test": "crates/harness-tui/tests/reference_parity_responsive_test.rs",
+        "pty_test": "crates/harness-tui/tests/pty_e2e (terminal-capability matrix capture pending — see blockers)",
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/term-cap-color-blocked-v1.json"
+      },
+      "evidence_paths": {
+        "L1": "",
+        "L2": "crates/harness-tui/src/runtime.rs",
+        "L3": "",
+        "L4": "",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/term-cap-color-blocked-v1.json",
+        "L6": ""
+      },
+      "identity_substitution": {
+        "fields": [
+          "logo_glyphs",
+          "product_title_text"
+        ],
+        "policy": "Harness logo/text only; geometry preserved"
+      },
+      "deliberate_divergence_id": null,
+      "acceptance_gate_ids": [
+        "A-MANIFEST",
+        "A-REFERENCE",
+        "A-STATE",
+        "A-CELLS",
+        "A-PIXELS",
+        "A-PTY",
+        "A-INVARIANTS",
+        "A-NO-RESKIN"
+      ],
+      "status": "blocked",
+      "notes": "truecolor/reduced color negotiation Implemented: TerminalCapabilityState.truecolor probed from COLORTERM (truecolor/24bit, case-insensitive); absent path degrades safely (owner tests: truecolor_detection_accepts_colorterm_truecolor_and_24bit + capability absent/present/partial teardown plans). status=blocked: Blocker: capability MATRIX capture pending — parity requires capturing harness rendering across COLORTERM variants (truecolor/256/none) against reference renders in the same controlled terminal environments. 2026-07-21",
+      "slice": "scaffold",
+      "evidence": {
+        "L2_owner": "crates/harness-tui/src/runtime.rs",
+        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/term-cap-color-blocked-v1.json"
+      }
+    },
+    {
+      "behavior_id": "TERM-CAP-KEYS",
+      "requirement_id": "TERM-CAP-KEYS",
+      "priority": "P2",
+      "surface": "terminal",
+      "state": "termcap_keys",
+      "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
+      "reference_receipt_id": "resp-80x24-reference-freeze-v1",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/resp-80x24-reference-freeze.v1.json",
+      "preconditions": "enhanced vs legacy keyboard handling",
+      "seeded_inputs": {
+        "terminal_capability": "termcap_keys"
+      },
+      "viewport": {
+        "cols": 120,
+        "rows": 40
+      },
+      "terminal_environment": {
+        "term": "xterm-256color",
+        "colorterm": "truecolor"
+      },
+      "input_sequence": [],
+      "capture_checkpoints": [],
+      "expected_focus_owner": "composer",
+      "expected_cursor_state": {
+        "visible": true,
+        "owner": "composer_prompt"
+      },
+      "expected_scroll_and_selection_state": {
+        "scroll_offset": 0,
+        "follow_mode": true,
+        "selection": null
+      },
+      "expected_overlays_and_z_order": [],
+      "expected_semantic_cell_artifact": "",
+      "expected_png_artifact": "",
+      "expected_frame_sequence": "",
+      "timing_contract": null,
+      "owners": {
+        "fixture": "crates/harness-tui/src/runtime.rs::TerminalCapabilityState",
+        "state_interaction_test": "crates/harness-tui/src/runtime.rs capability-state unit tests",
+        "render_test": "crates/harness-tui/tests/reference_parity_responsive_test.rs",
+        "pty_test": "crates/harness-tui/tests/pty_e2e (terminal-capability matrix capture pending — see blockers)",
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/term-cap-keys-blocked-v1.json"
+      },
+      "evidence_paths": {
+        "L1": "",
+        "L2": "crates/harness-tui/src/runtime.rs",
+        "L3": "",
+        "L4": "",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/term-cap-keys-blocked-v1.json",
+        "L6": ""
+      },
+      "identity_substitution": {
+        "fields": [
+          "logo_glyphs",
+          "product_title_text"
+        ],
+        "policy": "Harness logo/text only; geometry preserved"
+      },
+      "deliberate_divergence_id": null,
+      "acceptance_gate_ids": [
+        "A-MANIFEST",
+        "A-REFERENCE",
+        "A-STATE",
+        "A-CELLS",
+        "A-PIXELS",
+        "A-PTY",
+        "A-INVARIANTS",
+        "A-NO-RESKIN"
+      ],
+      "status": "blocked",
+      "notes": "enhanced vs legacy keyboard handling Implemented: keyboard_enhancement via crossterm PushKeyboardEnhancementFlags (kitty protocol) with safe-degradation teardown (pop only when enabled); legacy key handling via crossterm KeyEventKind fallback (owner tests: capability present/absent/partial + teardown plans). status=blocked: Blocker: capability MATRIX capture pending — parity requires capturing key handling across enhanced/legacy-capable terminals against reference behavior in the same environments. 2026-07-21",
+      "slice": "scaffold",
+      "evidence": {
+        "L2_owner": "crates/harness-tui/src/runtime.rs",
+        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/term-cap-keys-blocked-v1.json"
+      }
+    },
+    {
+      "behavior_id": "TERM-CAP-MOUSE",
+      "requirement_id": "TERM-CAP-MOUSE",
+      "priority": "P2",
+      "surface": "terminal",
+      "state": "termcap_mouse",
+      "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
+      "reference_receipt_id": "resp-80x24-reference-freeze-v1",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/resp-80x24-reference-freeze.v1.json",
+      "preconditions": "mouse capture and interaction",
+      "seeded_inputs": {
+        "terminal_capability": "termcap_mouse"
+      },
+      "viewport": {
+        "cols": 120,
+        "rows": 40
+      },
+      "terminal_environment": {
+        "term": "xterm-256color",
+        "colorterm": "truecolor"
+      },
+      "input_sequence": [],
+      "capture_checkpoints": [],
+      "expected_focus_owner": "composer",
+      "expected_cursor_state": {
+        "visible": true,
+        "owner": "composer_prompt"
+      },
+      "expected_scroll_and_selection_state": {
+        "scroll_offset": 0,
+        "follow_mode": true,
+        "selection": null
+      },
+      "expected_overlays_and_z_order": [],
+      "expected_semantic_cell_artifact": "",
+      "expected_png_artifact": "",
+      "expected_frame_sequence": "",
+      "timing_contract": null,
+      "owners": {
+        "fixture": "crates/harness-tui/src/runtime.rs::TerminalCapabilityState",
+        "state_interaction_test": "crates/harness-tui/src/runtime.rs capability-state unit tests",
+        "render_test": "crates/harness-tui/tests/reference_parity_responsive_test.rs",
+        "pty_test": "crates/harness-tui/tests/pty_e2e (terminal-capability matrix capture pending — see blockers)",
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/term-cap-mouse-blocked-v1.json"
+      },
+      "evidence_paths": {
+        "L1": "",
+        "L2": "crates/harness-tui/src/runtime.rs",
+        "L3": "",
+        "L4": "",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/term-cap-mouse-blocked-v1.json",
+        "L6": ""
+      },
+      "identity_substitution": {
+        "fields": [
+          "logo_glyphs",
+          "product_title_text"
+        ],
+        "policy": "Harness logo/text only; geometry preserved"
+      },
+      "deliberate_divergence_id": null,
+      "acceptance_gate_ids": [
+        "A-MANIFEST",
+        "A-REFERENCE",
+        "A-STATE",
+        "A-CELLS",
+        "A-PIXELS",
+        "A-PTY",
+        "A-INVARIANTS",
+        "A-NO-RESKIN"
+      ],
+      "status": "blocked",
+      "notes": "mouse capture and interaction Implemented: EnableMouseCapture capability with full mouse interaction surface (mouse_interaction.rs: move/left-drag selection, right-click, wheel scroll) + fail-safe teardown. Owner tests: mouse_interaction selection/drag/wheel tests. status=blocked: Blocker: capability MATRIX capture pending — parity requires capturing mouse interaction across mouse-capable/legacy terminals against reference behavior in the same environments. 2026-07-21",
+      "slice": "scaffold",
+      "evidence": {
+        "L2_owner": "crates/harness-tui/src/runtime.rs",
+        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/term-cap-mouse-blocked-v1.json"
+      }
+    },
+    {
+      "behavior_id": "TERM-CAP-CLIPBOARD",
+      "requirement_id": "TERM-CAP-CLIPBOARD",
+      "priority": "P2",
+      "surface": "terminal",
+      "state": "termcap_clipboard",
+      "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
+      "reference_receipt_id": "resp-80x24-reference-freeze-v1",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/resp-80x24-reference-freeze.v1.json",
+      "preconditions": "OSC52 + native clipboard fallback",
+      "seeded_inputs": {
+        "terminal_capability": "termcap_clipboard"
+      },
+      "viewport": {
+        "cols": 120,
+        "rows": 40
+      },
+      "terminal_environment": {
+        "term": "xterm-256color",
+        "colorterm": "truecolor"
+      },
+      "input_sequence": [],
+      "capture_checkpoints": [],
+      "expected_focus_owner": "composer",
+      "expected_cursor_state": {
+        "visible": true,
+        "owner": "composer_prompt"
+      },
+      "expected_scroll_and_selection_state": {
+        "scroll_offset": 0,
+        "follow_mode": true,
+        "selection": null
+      },
+      "expected_overlays_and_z_order": [],
+      "expected_semantic_cell_artifact": "",
+      "expected_png_artifact": "",
+      "expected_frame_sequence": "",
+      "timing_contract": null,
+      "owners": {
+        "fixture": "crates/harness-tui/src/runtime.rs::TerminalCapabilityState",
+        "state_interaction_test": "crates/harness-tui/src/runtime.rs capability-state unit tests",
+        "render_test": "crates/harness-tui/tests/reference_parity_responsive_test.rs",
+        "pty_test": "crates/harness-tui/tests/pty_e2e (terminal-capability matrix capture pending — see blockers)",
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/term-cap-clipboard-blocked-v1.json"
+      },
+      "evidence_paths": {
+        "L1": "",
+        "L2": "crates/harness-tui/src/runtime.rs",
+        "L3": "",
+        "L4": "",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/term-cap-clipboard-blocked-v1.json",
+        "L6": ""
+      },
+      "identity_substitution": {
+        "fields": [
+          "logo_glyphs",
+          "product_title_text"
+        ],
+        "policy": "Harness logo/text only; geometry preserved"
+      },
+      "deliberate_divergence_id": null,
+      "acceptance_gate_ids": [
+        "A-MANIFEST",
+        "A-REFERENCE",
+        "A-STATE",
+        "A-CELLS",
+        "A-PIXELS",
+        "A-PTY",
+        "A-INVARIANTS",
+        "A-NO-RESKIN"
+      ],
+      "status": "blocked",
+      "notes": "OSC52 + native clipboard fallback Implemented: OSC52 clipboard suitability probe from TTY + native fallback (pbcopy/wl-copy/xclip); copy flows owner-tested (palette/selection copy flows). status=blocked: Blocker: capability MATRIX capture pending — parity requires clipboard round-trip captures across OSC52-capable/legacy terminals against reference behavior in the same environments. 2026-07-21",
+      "slice": "scaffold",
+      "evidence": {
+        "L2_owner": "crates/harness-tui/src/runtime.rs",
+        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/term-cap-clipboard-blocked-v1.json"
+      }
     }
   ]
 }

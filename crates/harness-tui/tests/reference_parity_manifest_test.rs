@@ -132,6 +132,21 @@ fn checked_in_manifest_covers_first_slice_and_scaffolds() {
         "TX-TOOL",
         "TX-DIFF",
         "OVL-PALETTE",
+        "JOURNEY-WORKTREE-CTRL-W",
+        "JOURNEY-CONFIG-SHOW-EFFECTIVE",
+        "JOURNEY-CONFIG-SOURCES-EXPLAIN",
+        "JOURNEY-WAIT-ANY-ALL",
+        "JOURNEY-FOLDER-TRUST-DENY",
+        "JOURNEY-MEMORY-CLI",
+        "JOURNEY-ALWAYS-APPROVE-MODE",
+        "JOURNEY-SETTINGS-EDITOR",
+        "RESP-120x50",
+        "RESP-120x40",
+        "RESP-100x30",
+        "RESP-80x24",
+        "RESP-79x24",
+        "RESP-60x20",
+        "RESP-WIDE",
     ];
     for id in REQUIRED_SCAFFOLD_IDS {
         assert!(ids.contains(*id), "missing scaffold id {id}");
@@ -422,6 +437,8 @@ fn checked_in_journey_templates_join_inventory_without_fake_l1() {
             .unwrap_or_else(|| panic!("missing journey template {journey_id}"));
         assert_eq!(row["row_kind"].as_str(), Some("journey"));
         let expected_status = match journey_id {
+            // Wave 4.8: all journey rows are blocked on reference-CLI journey pairing
+            // (the reference CLI exposes paired commands, but paired CLI captures are pending).
             "JOURNEY-WORKTREE-CTRL-W"
             | "JOURNEY-CONFIG-SHOW-EFFECTIVE"
             | "JOURNEY-CONFIG-SOURCES-EXPLAIN"
@@ -429,7 +446,7 @@ fn checked_in_journey_templates_join_inventory_without_fake_l1() {
             | "JOURNEY-FOLDER-TRUST-DENY"
             | "JOURNEY-MEMORY-CLI"
             | "JOURNEY-ALWAYS-APPROVE-MODE"
-            | "JOURNEY-SETTINGS-EDITOR" => "incomplete",
+            | "JOURNEY-SETTINGS-EDITOR" => "blocked",
             _ => panic!("unexpected checked-in journey id: {journey_id}"),
         };
         assert_eq!(row["status"].as_str(), Some(expected_status));
