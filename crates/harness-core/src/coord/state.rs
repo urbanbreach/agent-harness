@@ -122,7 +122,7 @@ pub(in crate::coord) struct RunState {
     pub(in crate::coord) edit_attribution: crate::edit_attribution::EditAttributionJournal,
     /// Session-local multi-agent team registry + in-memory mailbox (not Team Mode product).
     pub(in crate::coord) team_registry: crate::team_registry::TeamRegistry,
-    /// Session-local cron schedule definitions only (`executes_schedules() == false`).
+    /// Session-local cron schedule definitions only (`executor_available() == false`).
     pub(in crate::coord) cron_schedules: crate::cron_schedule::CronScheduleRegistry,
     /// Session-local plugin descriptor lifecycle (install/activate/deactivate/remove; no code host).
     pub(in crate::coord) plugin_lifecycle: crate::integrations::PluginLifecycleRegistry,

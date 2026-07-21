@@ -247,8 +247,9 @@ fn sessions_reopen_json_surfaces_prompt_context_child_sessions_and_artifacts() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let summary: serde_json::Value =
+    let response: serde_json::Value =
         serde_json::from_slice(&output.stdout).unwrap_or_abort();
+    let summary = &response["summary"];
     assert_eq!(summary["run_id"], "run_resume_fixture");
     assert_eq!(summary["resumable"], true);
     assert_eq!(summary["resume_agent_id"], "agent_000002");
@@ -366,8 +367,9 @@ fn sessions_surfaces_checkpoint_artifacts_in_catalog_and_recovery_views() {
         "stderr:\n{}",
         String::from_utf8_lossy(&reopen_output.stderr)
     );
-    let summary: serde_json::Value =
+    let response: serde_json::Value =
         serde_json::from_slice(&reopen_output.stdout).unwrap_or_abort();
+    let summary = &response["summary"];
     assert_eq!(
         summary["artifacts"][0]["path"],
         "artifacts/compactions/agent_000001/checkpoint_000003.json"

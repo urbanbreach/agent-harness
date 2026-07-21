@@ -5,7 +5,8 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use harness_core::crash_recovery::{
-    inspect_previous_crash, resolve_crash_recovery_action, CrashRecoveryAction, PreviousCrashReport,
+    inspect_previous_crash, resolve_crash_recovery_action, CrashRecoveryAction,
+    CrashRecoveryApplyResult, PreviousCrashReport,
 };
 use harness_core::event::{ActorKind, EventEnvelopeV1, EventV1};
 use harness_core::proj::{
@@ -132,6 +133,20 @@ pub struct SessionRecoverySummary {
     /// Operator-facing command/hint for the structured recovery action.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub recovery_action_hint: Option<String>,
+}
+
+/// Canonical `harness sessions reopen --json` response (Packet 3.4).
+///
+/// Exactly one typed envelope: the recovery summary nests under `summary` and
+/// crash-recovery details (when present) under `crash_recovery`. The legacy
+/// shape duplicated every summary field at the top level next to `summary`;
+/// that duplication is removed — consumers read `summary.*` and the optional
+/// `crash_recovery` object only.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SessionReopenJsonResponse {
+    pub summary: SessionRecoverySummary,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub crash_recovery: Option<CrashRecoveryApplyResult>,
 }
 
 pub fn resolve_session_run_dir(

@@ -4728,7 +4728,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_cron_schedule_c
     app.set_cron_schedule_summary(Some(harness_core::cron_schedule::CronScheduleSummary {
         registered: 2,
         with_label: 1,
-        executes_schedules: true,
+        executor_available: false,
     }));
 
     // When
@@ -4761,8 +4761,8 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_cron_schedule_c
         "expected cron line: {rendered}"
     );
     assert!(
-        rendered.contains("executes=true"),
-        "expected executes=true in cron line: {rendered}"
+        rendered.contains("executor_available=false"),
+        "expected executor_available=false in cron line: {rendered}"
     );
 }
 

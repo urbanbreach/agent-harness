@@ -202,7 +202,9 @@ impl CronScheduleRegistry {
         self.schedules.is_empty()
     }
 
-    pub const fn executes_schedules(&self) -> bool {
+    /// False until a product executor loop is wired: registering a schedule
+    /// never claims execution is available.
+    pub const fn executor_available(&self) -> bool {
         false
     }
 
@@ -221,7 +223,7 @@ impl CronScheduleRegistry {
         CronScheduleSummary {
             registered: self.schedules.len(),
             with_label,
-            executes_schedules: self.executes_schedules(),
+            executor_available: self.executor_available(),
         }
     }
 }
@@ -231,15 +233,17 @@ impl CronScheduleRegistry {
 pub struct CronScheduleSummary {
     pub registered: usize,
     pub with_label: usize,
-    /// True when the product executor path is available.
-    pub executes_schedules: bool,
+    /// True only when registered schedules can actually execute through a
+    /// product executor path. Registration alone never sets this; the public
+    /// contract keeps `registered` and `executor_available` separate.
+    pub executor_available: bool,
 }
 
 impl CronScheduleSummary {
     pub fn one_line(&self) -> String {
         format!(
-            "cron: {} registered ({} labeled; executes={})",
-            self.registered, self.with_label, self.executes_schedules
+            "cron: {} registered ({} labeled; executor_available={})",
+            self.registered, self.with_label, self.executor_available
         )
     }
 
@@ -350,7 +354,7 @@ mod tests {
 
         // Then
         assert_eq!(registry.len(), 1);
-        assert!(!registry.executes_schedules());
+        assert!(!registry.executor_available());
         let listed = registry.list();
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].id.as_str(), "weekday-doctor");
@@ -511,7 +515,7 @@ mod tests {
             CronScheduleError::InvalidFieldCount { field_count: 2, .. }
         ));
         assert!(registry.is_empty());
-        assert!(!registry.executes_schedules());
+        assert!(!registry.executor_available());
     }
 
     #[test]
@@ -540,14 +544,31 @@ mod tests {
             CronScheduleSummary {
                 registered: 2,
                 with_label: 1,
-                executes_schedules: false,
+                executor_available: false,
             }
         );
         assert!(summary.has_schedules());
         assert!(summary.one_line().contains("2 registered"));
         assert!(summary.one_line().contains("1 labeled"));
-        assert!(summary.one_line().contains("executes=false"));
+        assert!(summary.one_line().contains("executor_available=false"));
         assert_eq!(CronScheduleRegistry::new().summary().registered, 0);
+    }
+
+    #[test]
+    fn cron_registration_never_claims_executor_availability() {
+        // arrange — registered schedules, no product executor loop
+        let mut registry = CronScheduleRegistry::new();
+        registry.register(sample("weekday-doctor")).unwrap();
+        registry.register(sample("nightly-scan")).unwrap();
+
+        // act
+        let summary = registry.summary();
+
+        // assert — registration is counted; execution is never claimed
+        assert_eq!(summary.registered, 2);
+        assert!(!summary.executor_available);
+        assert!(summary.one_line().contains("executor_available=false"));
+        assert!(!registry.executor_available());
     }
 
     #[test]
@@ -599,7 +620,7 @@ mod tests {
                 && s.label.as_deref() == Some("probe-2")
                 && s.one_line().contains("executes=false")
         }));
-        assert!(!registry.executes_schedules());
+        assert!(!registry.executor_available());
 
         // When: remove first probe
         let probe_id = ScheduleId::parse("(probe)").unwrap();
@@ -615,7 +636,7 @@ mod tests {
             summary.registered >= 2 && summary.with_label >= 2,
             "expected multi-schedule after remove: {summary:?}"
         );
-        assert!(!summary.executes_schedules);
+        assert!(!summary.executor_available);
         assert_eq!(
             registry.list().first().map(|s| s.id.as_str()),
             Some("(probe-2)")

@@ -64,3 +64,8 @@ mod part_12_sessions_export_fails_closed_for_missing_session_test {
     use super::*;
     include!("replay_sessions_cli/12_sessions_export_fails_closed_for_missing_session_test.rs");
 }
+
+mod part_13_sessions_reopen_json_single_summary_shape_test {
+    use super::*;
+    include!("replay_sessions_cli/13_sessions_reopen_json_single_summary_shape_test.rs");
+}

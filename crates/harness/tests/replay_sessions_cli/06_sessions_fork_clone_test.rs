@@ -350,8 +350,9 @@ fn sessions_child_replay_and_continue_readiness_survive_parent_movement() {
         "stderr:\n{}",
         String::from_utf8_lossy(&reopen_output.stderr)
     );
-    let recovery: serde_json::Value =
+    let response: serde_json::Value =
         serde_json::from_slice(&reopen_output.stdout).unwrap_or_abort();
+    let recovery = &response["summary"];
     assert_eq!(recovery["run_id"], child_run_id);
     assert_eq!(recovery["resumable"], true);
     assert!(recovery["continue_hint"]

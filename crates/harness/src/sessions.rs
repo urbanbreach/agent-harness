@@ -20,7 +20,10 @@ use serde::Serialize;
 use serde_json::json;
 
 use crate::defaults::DEFAULT_SESSION_DIR;
-use crate::recovery::{inspect_session_recovery, resolve_session_run_dir, SessionRecoverySummary};
+use crate::recovery::{
+    inspect_session_recovery, resolve_session_run_dir, SessionRecoverySummary,
+    SessionReopenJsonResponse,
+};
 #[cfg(test)]
 use crate::replay::ReplaySummary;
 #[cfg(test)]
@@ -273,32 +276,17 @@ fn reopen_session(
     };
 
     if command.json {
-        let summary_value = match serde_json::to_value(&summary) {
-            Ok(value) => value,
+        let response = SessionReopenJsonResponse {
+            summary,
+            crash_recovery,
+        };
+        return match serde_json::to_value(&response) {
+            Ok(value) => write_json_output(&value, None, stdout, stderr),
             Err(err) => {
-                let _ = writeln!(
-                    stderr,
-                    "failed to serialize session recovery summary: {err}"
-                );
-                return 1;
+                let _ = writeln!(stderr, "failed to serialize session reopen response: {err}");
+                1
             }
         };
-        let mut output = summary_value.clone();
-        if let Some(obj) = output.as_object_mut() {
-            obj.insert("summary".to_string(), summary_value);
-            if let Some(crash_recovery) = &crash_recovery {
-                match serde_json::to_value(crash_recovery) {
-                    Ok(value) => {
-                        obj.insert("crash_recovery".to_string(), value);
-                    }
-                    Err(err) => {
-                        let _ = writeln!(stderr, "failed to serialize crash recovery: {err}");
-                        return 1;
-                    }
-                }
-            }
-        }
-        return write_json_output(&output, None, stdout, stderr);
     }
 
     if let Some(recovery) = &crash_recovery {

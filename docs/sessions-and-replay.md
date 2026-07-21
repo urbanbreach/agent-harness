@@ -12,6 +12,20 @@ The operator CLI remains available:
 - `harness sessions export <run-id-or-path>`
 - `harness sessions tree|fork|clone`
 
+`sessions reopen --json` emits one typed response envelope (Packet 3.4 contract):
+
+```json
+{
+  "summary": { "run_id": "…", "resumable": true, "…": "SessionRecoverySummary fields" },
+  "crash_recovery": { "…": "present only when a previous crash was detected and repaired" }
+}
+```
+
+The recovery summary nests under `summary`; `crash_recovery` is present only when crash recovery
+applied. The legacy shape duplicated every summary field at the top level next to `summary` —
+that duplication is removed (breaking contract change): consumers read `summary.*` and the
+optional `crash_recovery` object only, and no summary field appears at the top level.
+
 Support export includes replay-derived session metadata, doctor JSON, config/provider summaries, agent catalog summary, native tool catalog summary, session-tool readiness, route metadata, artifact index, redaction manifest, and secret-scan status.
 
 Typed extension manifests use the same replay boundary. V1 stores and renders

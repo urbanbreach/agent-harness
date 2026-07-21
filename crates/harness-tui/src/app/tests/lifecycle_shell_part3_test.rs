@@ -62,7 +62,7 @@ pub(super) fn seed_operator_host_probes_sets_binary_update_and_jujutsu_continuat
         cron.registered >= 4 && cron.with_label >= 3,
         "expected multi-schedule cron registry after remove: {cron:?}"
     );
-    assert!(!cron.executes_schedules);
+    assert!(!cron.executor_available);
     let cron_reg = app.cron_last_register().expect("cron last register bound");
     assert!(
         cron_reg.one_line().contains("ok") && cron_reg.one_line().contains("(probe-5)"),

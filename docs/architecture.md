@@ -23,6 +23,9 @@ Core runtime and domain logic:
 - **store/** - Event store trait, in-memory and JSONL file implementations
 - **coord/** - Coordinator actor (single scheduling authority)
 - **sched/** - Scheduler with concurrency slots and stale detection
+- **cron_schedule** - Cron schedule registry. Its public summary keeps `registered` and
+  `executor_available` separate: registering a schedule never claims execution is available
+  (`executor_available=false` until a product executor loop is wired).
 - **perm/** - Permission engine (allow/deny/ask)
 - **tool/** - Tool framework and capability gating
 - **edit/** - Hashline edit engine

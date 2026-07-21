@@ -77,8 +77,8 @@ fn perf_large_session_list_reopen_and_session_search_write_artifact() {
     );
     let reopen_json: serde_json::Value =
         serde_json::from_slice(&reopen_output.stdout).unwrap_or_abort();
-    assert_eq!(reopen_json["run_id"], target_run_id);
-    assert_eq!(reopen_json["resumable"], true);
+    assert_eq!(reopen_json["summary"]["run_id"], target_run_id);
+    assert_eq!(reopen_json["summary"]["resumable"], true);
 
     let registry = coordinator_registry(ShellAllowlist::default());
     let search_started = Instant::now();
