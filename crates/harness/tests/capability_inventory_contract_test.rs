@@ -52,7 +52,6 @@ const REQUIRED_FAMILIES: &[&str] = &[
 /// Oracle (ses_089f6a0f9ffecFkOly2z7H1PGL): foundation/unavailable MVPs must NOT be required pass.
 const REQUIRED_PASS_IDS: &[&str] = &[
     "worktree.create",
-    "worktree.list_select_cleanup",
     "config.show.effective",
     "config.sources",
     "config.explain",
@@ -86,7 +85,6 @@ const REQUIRED_PASS_IDS: &[&str] = &[
     "auth.sleep_wake_credential_refresh",
     "scheduler.cron_recurring",
     "vcs.edit_attribution",
-    "vcs.jujutsu",
     "plugins.runtime_lifecycle",
     "plugins.descriptor_manifest",
     "orchestration.multi_agent_team",
@@ -99,7 +97,9 @@ const REQUIRED_PASS_IDS: &[&str] = &[
     "auth.browser_oidc_sso",
 ];
 
-const REQUIRED_NON_PASS_IDS: &[&str] = &[];
+/// Wave 2 Packet 2.1 demotions: these rows were overclaimed `pass` (probe-only or
+/// missing public surface) and must stay non-pass until the gap is closed.
+const REQUIRED_NON_PASS_IDS: &[&str] = &["worktree.list_select_cleanup", "vcs.jujutsu"];
 const MAX_ROWS: usize = 200;
 
 fn inventory_path(root: &Path) -> PathBuf {

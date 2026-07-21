@@ -22,6 +22,23 @@ fn off_policy_is_available_and_not_required() {
 }
 
 #[test]
+fn sandbox_policy_parse_rejects_unknown_input() {
+    // arrange
+    // act
+    // assert
+    // Public policy names parse; anything else stays None so callers fail closed
+    // to Off (see resolve_os_sandbox_policy in harness-tools shell_run).
+    assert_eq!(SandboxPolicy::parse("off"), Some(SandboxPolicy::Off));
+    assert_eq!(
+        SandboxPolicy::parse("workspace_write"),
+        Some(SandboxPolicy::WorkspaceWrite)
+    );
+    assert_eq!(SandboxPolicy::parse("strict"), Some(SandboxPolicy::Strict));
+    assert_eq!(SandboxPolicy::parse(""), None);
+    assert_eq!(SandboxPolicy::parse("permissive"), None);
+}
+
+#[test]
 fn non_off_policy_returns_structured_unavailable_not_silent_allow() {
     // arrange
     // act

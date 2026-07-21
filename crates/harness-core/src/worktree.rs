@@ -602,6 +602,20 @@ mod tests {
     }
 
     #[test]
+    fn list_session_worktrees_fails_closed_on_non_git_repository() {
+        // arrange
+        // act
+        // assert
+        let temp = tempfile::tempdir().unwrap_or_abort();
+        let not_a_repo = temp.path().join("not-a-repo");
+        fs::create_dir_all(&not_a_repo).unwrap_or_abort();
+
+        let err = list_session_worktrees(&not_a_repo, None).expect_err("non-git should fail");
+
+        assert!(matches!(err, WorktreeError::NotAGitRepository { .. }));
+    }
+
+    #[test]
     fn create_session_worktree_rejects_path_collision() {
         // arrange
         // act

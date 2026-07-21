@@ -588,6 +588,30 @@ mod tests {
     }
 
     #[test]
+    fn workspace_jj_file_marker_is_not_a_repo() {
+        // arrange
+        // act
+        // assert
+        // Given: a plain FILE named `.jj` (copied/faked marker, not a repo directory)
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join("project");
+        std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::write(workspace.join(".jj"), b"not a jujutsu repo dir").unwrap();
+
+        // When
+        let status = detect_jujutsu_workspace(&workspace);
+
+        // Then: the probe must not report Repo for a file marker
+        assert!(status.is_not_a_repo());
+        match status {
+            JujutsuWorkspaceStatus::NotARepo { reason, .. } => {
+                assert!(reason.contains(".jj"));
+            }
+            other => panic!("expected NotARepo, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn workspace_walks_parents_for_jj_marker() {
         // arrange
         // act

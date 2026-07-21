@@ -288,4 +288,22 @@ mod tests {
             gate_repository_local_executable_from_store("./x", &workspace).unwrap_or_abort();
         assert_eq!(allowed, LocalExecutableGate::Allowed);
     }
+
+    #[test]
+    fn gate_from_store_denies_persisted_deny_decision() {
+        // arrange
+        let temp = tempfile::tempdir().unwrap_or_abort();
+        let workspace = temp.path().join("ws");
+        fs::create_dir_all(&workspace).unwrap_or_abort();
+        FolderTrustStore::for_workspace(&workspace)
+            .set(&workspace, FolderTrustDecision::Deny)
+            .unwrap_or_abort();
+
+        // act — gate through a fresh store instance (decisions must be durable)
+        let gate = gate_repository_local_executable_from_store("./release/tool", &workspace)
+            .unwrap_or_abort();
+
+        // assert
+        assert!(gate.is_denied());
+    }
 }

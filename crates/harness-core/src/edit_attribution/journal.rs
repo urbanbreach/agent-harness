@@ -321,6 +321,21 @@ mod tests {
     }
 
     #[test]
+    fn revert_path_fails_closed_without_agent_snapshot() {
+        // arrange
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut journal = EditAttributionJournal::open(dir.path()).expect("open");
+
+        // act
+        let err = journal
+            .revert_path("src/never-edited.rs")
+            .expect_err("no agent snapshot");
+
+        // assert
+        assert!(matches!(err, EditAttributionError::NoAgentSnapshot { .. }));
+    }
+
+    #[test]
     fn revert_path_restores_agent_snapshot_after_drift() {
         let dir = tempfile::tempdir().expect("tempdir");
         let root = dir.path();
