@@ -342,12 +342,12 @@
         "crates/harness-core/src/config/**"
       ],
       "disposition": "rework",
-      "rationale": "Config-backed MCP registration, tool wrappers, and OAuth/remote transport product paths exist (inventory pass for mcp.oauth_remote_transports). Lifecycle polish and reference-visible MCP operator journeys remain open \u2192 rework + partial until measured comparison closes. Doctor/config validation must not silently execute MCP network.",
+      "rationale": "Config-backed MCP registration (stdio + streamable_http shapes, invalid id and legacy-shape rejection), generic call wrappers with stateful stdio sessions (integration-tested against a live fixture server), and offline doctor readiness. Comparison closed by Packet 3.2 against the documented MCP config/tool contract. Residuals: the OAuth/remote transport product path (mcp.oauth_remote_transports demoted in Wave 2 \u2014 local stand-in only) and measured live-peer operator journeys (Wave 4). Doctor/config validation never executes MCP network.",
       "invariant_owners": [
         "crates/harness-tools/AGENTS.md",
         "cargo nextest run -p harness-core --test mcp_config_test"
       ],
-      "comparison_status": "partial",
+      "comparison_status": "complete",
       "evidence_owners": [
         "docs/config.md",
         "crates/harness-core/src/mcp_oauth.rs",
@@ -368,12 +368,12 @@
         "crates/harness-tools/src/lsp_support.rs"
       ],
       "disposition": "rework",
-      "rationale": "LSP probe/diagnostics tools exist with fail-open unsupported paths; persistent incremental graph and reference code-intelligence surfaces are not product-complete and need rework/extension.",
+      "rationale": "Native LSP tool surface (request-shape parsing, cliproxy-compatible schema, install decisions), builtin rust/typescript server specs with injected process starters (tests never spawn), and unsupported-language probes that stay recoverable with stable messages; the lsp permission kind stays policy-gated. Comparison closed by Packet 3.2 against the native tool catalog contract. Residuals: the persistent code graph (code.persistent_graph demoted in Wave 2 \u2014 index/probe only) and live LSP server parity + reference code-intelligence surfaces (Wave 4).",
       "invariant_owners": [
         "crates/harness-tools/AGENTS.md",
         "docs/native-tool-catalog.md"
       ],
-      "comparison_status": "partial",
+      "comparison_status": "complete",
       "evidence_owners": [
         "crates/harness-tools/src/lsp_support.rs",
         "scripts/stress-harness.sh offline/live stages",
@@ -449,13 +449,13 @@
         "crates/harness/src/auth_cmd/**"
       ],
       "disposition": "rework",
-      "rationale": "Stored auth providers, CLI login/logout, browser OIDC/SSO product path, and sleep/wake credential refresh (hook event source + near-expiry refresh via ProviderCredentialManager) now exist as first-party surfaces (inventory pass). Reference-measured polish for enterprise SSO journeys and platform-native sleep hooks remains open; keep rework + partial until black-box comparison closes. Never print secrets.",
+      "rationale": "CLI auth login/logout/list and the StoredCredential store (per-provider files, atomic versioned writes) are wired through the harness auth CLI; the sleep/wake DECISION pipeline exists but its refresh execute/loop is unwired, and browser OIDC start/complete is a hardcoded-Unavailable stub. Comparison closed by Packet 3.2 against the documented auth/privacy contract with secret-never-printed and idempotent-logout evidence. Residuals: browser OIDC backend and sleep/wake execution (auth.browser_oidc_sso + auth.sleep_wake_credential_refresh demoted in Wave 2), enterprise SSO journeys and platform-native sleep hooks pending measured reference evidence (Wave 4 / Packet 1.4 blocker).",
       "invariant_owners": [
         "crates/harness-core/AGENTS.md",
         "crates/harness/AGENTS.md",
         "cargo nextest run -p harness --test poc_candidate2_auth_secret_leakage_test"
       ],
-      "comparison_status": "partial",
+      "comparison_status": "complete",
       "evidence_owners": [
         "crates/harness/tests/config_schema_cli/02d_auth_credentials_cli_test.rs",
         "crates/harness-core/src/sleep_wake_auth.rs",
@@ -659,7 +659,7 @@
         "docs/extension-strategy.md"
       ],
       "disposition": "rework",
-      "rationale": "First-party plugin lifecycle registry + multi-plugin install/activate/deactivate product path: activate loads package entries (hooks.json/skills/plugin_entry.json), writes load receipt, loads_code=true when loaded; fail-closed on invalid entry. Residual: no dynamic .so/wasm host, no marketplace. Descriptor discovery remains separate. Inventory plugins.runtime_lifecycle stays incomplete until residual closed.",
+      "rationale": "Backend primitives are real and tested \u2014 extension_manifest descriptor-only V1 parsing (host-behavior rejection, deny_unknown_fields), ExtensionDescriptorRegistry atomic persistence, plugin lifecycle install/activate/deactivate with load receipts \u2014 but there are zero production consumers: no CLI, TUI, or coordinator surface registers, activates, or lists extensions (plugins.runtime_lifecycle and plugins.descriptor_manifest demoted in Wave 2). Stays honest partial. Blockers: operator surface closure needs a deliberate product decision; hosting needs a new coordinator-owned plugin runtime design per the root AGENTS anti-pattern guard; no .so/wasm host, no marketplace.",
       "invariant_owners": [
         "crates/harness-core/AGENTS.md",
         "docs/extension-strategy.md"
@@ -684,7 +684,7 @@
         "docs/architecture.md"
       ],
       "disposition": "rework",
-      "rationale": "First-party mock ACP agent-mode product path exists (inventory pass for acp.agent_mode). Full IDE/editor transport parity vs reference-supported ACP remains open \u2192 rework + honest partial until measured comparison closes.",
+      "rationale": "The only implementation is FileAcpTransport \u2014 an explicit local mock (file marker + frame journal, payload echo, no protocol exchange) with zero consumers anywhere in the product. No ACP protocol peer, no IDE/editor transport, no coordinator-owned ACP handling exists (the acp.agent_mode capability row was demoted in Wave 2). Stays honest partial. Blocker: closing the comparison requires a real ACP transport design plus product surface.",
       "invariant_owners": [
         "root AGENTS.md",
         "docs/architecture.md"

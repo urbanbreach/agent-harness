@@ -1,8 +1,8 @@
 use harness_core::extension_manifest::{
     discover_extension_manifests, first_extension_manifest_summary,
-    load_extension_manifest_from_path, ExtensionManifestError, ExtensionManifestRuntimeEffects,
-    ExtensionManifestSummary, ExtensionManifestV1, EXTENSION_MANIFEST_FILE_NAME,
-    EXTENSION_MANIFEST_V1_SCHEMA_VERSION,
+    load_extension_manifest_from_path, load_extension_manifest_outcome, ExtensionLoadOutcome,
+    ExtensionManifestError, ExtensionManifestRuntimeEffects, ExtensionManifestSummary,
+    ExtensionManifestV1, EXTENSION_MANIFEST_FILE_NAME, EXTENSION_MANIFEST_V1_SCHEMA_VERSION,
 };
 use harness_core::UnwrapOrAbort;
 use schemars::generate::SchemaSettings;
@@ -261,4 +261,26 @@ fn load_and_discover_extension_manifests_from_workspace_layout() {
     ));
 
     let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn load_extension_manifest_outcome_is_structured_for_loaded_and_failed() {
+    // arrange
+    let temp = tempfile::tempdir().unwrap_or_abort();
+    let manifest_path = temp.path().join(EXTENSION_MANIFEST_FILE_NAME);
+    std::fs::write(&manifest_path, valid_manifest_json()).unwrap_or_abort();
+
+    // act
+    let loaded = load_extension_manifest_outcome(&manifest_path);
+    let failed = load_extension_manifest_outcome(temp.path().join("missing.json"));
+
+    // assert — structured outcomes only; descriptor-only contract surfaced
+    match &loaded {
+        ExtensionLoadOutcome::Loaded { extension_id, .. } => {
+            assert_eq!(extension_id, "demo.extension");
+        }
+        other => panic!("expected Loaded, got {other:?}"),
+    }
+    assert!(loaded.one_line().contains("loads_code=false"));
+    assert!(matches!(failed, ExtensionLoadOutcome::Failed { .. }));
 }

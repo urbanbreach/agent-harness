@@ -120,6 +120,28 @@ fn lsp_operation_parse_rejects_unsupported_values_with_stable_message() {
 }
 
 #[test]
+fn server_for_path_returns_language_specific_builtin_specs() {
+    // arrange
+    let tempdir = tempfile::tempdir().unwrap_or_abort();
+    let rust_file = tempdir.path().join("lib.rs");
+    let ts_file = tempdir.path().join("app.ts");
+    fs::write(&rust_file, "fn main() {}\n").unwrap_or_abort();
+    fs::write(&ts_file, "export {};\n").unwrap_or_abort();
+    let cfg = LspConfig::default();
+
+    // act
+    let rust_spec = server_for_path(&rust_file, &cfg).expect("rust spec");
+    let ts_spec = server_for_path(&ts_file, &cfg).expect("typescript spec");
+
+    // assert — language-specific builtin servers resolve; no process is spawned
+    assert_eq!(rust_spec.name, "rust");
+    assert_eq!(rust_spec.command, vec!["rust-analyzer".to_string()]);
+    assert!(rust_spec.extensions.iter().any(|ext| ext == ".rs"));
+    assert_eq!(ts_spec.name, "typescript");
+    assert!(ts_spec.extensions.iter().any(|ext| ext == ".ts"));
+}
+
+#[test]
 fn server_for_path_rejects_unsupported_extension_with_stable_message() {
     // arrange
     // act

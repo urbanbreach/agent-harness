@@ -506,7 +506,7 @@
       "visible_action_id": null,
       "side_effect_kind": "filesystem",
       "disposition": "retain",
-      "notes": "Wave 2 honest audit: the local OAuth state machine is real and unit-tested \u2014 LocalMcpOauth begin/exchange/open_transport with durable state under .agent-harness/mcp-oauth/state.json + open.receipt.json (redacted token hints), fail-closed without begin/exchange. But it has zero production consumers (no CLI command, no coordinator or TUI wiring; run_local_mcp_oauth_product is called only by its own test), no live remote HTTP OAuth peer exists, and open_transport opens a local file 'transport', not a network transport. Demoted: the advertised remote OAuth transports do not exist \u2014 only a local durable stand-in with no operator surface.",
+      "notes": "Wave 2 honest audit: the local OAuth state machine is real and unit-tested \u2014 LocalMcpOauth begin/exchange/open_transport with durable state under .agent-harness/mcp-oauth/state.json + open.receipt.json (redacted token hints), fail-closed without begin/exchange. But it has zero production consumers (no CLI command, no coordinator or TUI wiring; run_local_mcp_oauth_product is called only by its own test), no live remote HTTP OAuth peer exists, and open_transport opens a local file 'transport', not a network transport. Demoted: the advertised remote OAuth transports do not exist \u2014 only a local durable stand-in with no operator surface. Wave 3 Packet 3.2 closed the mcp subsystem comparison (receipts/core-audit/mcp.md), recording this local stand-in as the subsystem's honest residual.",
       "honesty_demotion": {
         "from": "pass",
         "reason": "local_file_transport_only_no_remote_oauth_peer_or_operator_surface",
@@ -523,7 +523,7 @@
       "visible_action_id": null,
       "side_effect_kind": "mixed",
       "disposition": "retain",
-      "notes": "Wave 2 honest audit: the registry backend is real and integration-tested \u2014 PluginLifecycleRegistry install/activate/deactivate/remove loads descriptor or package-entry packages (hooks.json / skills/ / plugin_entry.json), records LoadedCode with .harness-plugin-load-receipt.json side effects, gates activation on permission, and fails closed on corrupt/invalid descriptors (integrations_lifecycle_test). But no production code drives the lifecycle: the coordinator constructs a registry in RunState and never invokes it, there is no CLI plugin command, and the only TUI consumer is the lifecycle product-runner status probe. Demoted: no operator or runtime surface exercises install/activate/deactivate; residual no .so/wasm execution and no marketplace install.",
+      "notes": "Wave 2 honest audit: the registry backend is real and integration-tested \u2014 PluginLifecycleRegistry install/activate/deactivate/remove loads descriptor or package-entry packages (hooks.json / skills/ / plugin_entry.json), records LoadedCode with .harness-plugin-load-receipt.json side effects, gates activation on permission, and fails closed on corrupt/invalid descriptors (integrations_lifecycle_test). But no production code drives the lifecycle: the coordinator constructs a registry in RunState and never invokes it, there is no CLI plugin command, and the only TUI consumer is the lifecycle product-runner status probe. Demoted: no operator or runtime surface exercises install/activate/deactivate; residual no .so/wasm execution and no marketplace install. Wave 3 Packet 3.2 kept the plugins subsystem comparison partial (receipts/core-audit/plugins.md): lifecycle primitives stay tested with no production consumers.",
       "honesty_demotion": {
         "from": "pass",
         "reason": "registry_built_but_never_driven_no_cli_or_tui_operator_surface",
@@ -540,7 +540,7 @@
       "visible_action_id": null,
       "side_effect_kind": "filesystem",
       "disposition": "retain",
-      "notes": "Wave 2 Packet 2.7 audit: the durable descriptor registry is real and unit-tested \u2014 ExtensionDescriptorRegistry discover/register/reload under .agent-harness/extension-registry.json (atomic write, workspace-relative persistence, fail-closed on missing/escape/invalid manifests, loads_external_code=false per the V1 descriptor-only contract). But its only consumers are a lib.rs re-export, the seed-time run_multi_descriptor_discover_product probe, and status-dialog display (PluginLifecycleSummary + descriptor outcomes) \u2014 no CLI command, coordinator design, or operator surface registers or consumes extension descriptors. Demoted: registry without a product surface; descriptors stay descriptor-only per the crate invariant (no runtime tool registration, command execution, or code loading).",
+      "notes": "Wave 2 Packet 2.7 audit: the durable descriptor registry is real and unit-tested \u2014 ExtensionDescriptorRegistry discover/register/reload under .agent-harness/extension-registry.json (atomic write, workspace-relative persistence, fail-closed on missing/escape/invalid manifests, loads_external_code=false per the V1 descriptor-only contract). But its only consumers are a lib.rs re-export, the seed-time run_multi_descriptor_discover_product probe, and status-dialog display (PluginLifecycleSummary + descriptor outcomes) \u2014 no CLI command, coordinator design, or operator surface registers or consumes extension descriptors. Demoted: registry without a product surface; descriptors stay descriptor-only per the crate invariant (no runtime tool registration, command execution, or code loading). Wave 3 Packet 3.2 kept the plugins subsystem comparison partial (receipts/core-audit/plugins.md).",
       "note": "Durable multi-descriptor registry under workspace; residual no marketplace/host code load.",
       "honesty_demotion": {
         "from": "pass",
@@ -558,7 +558,7 @@
       "visible_action_id": null,
       "side_effect_kind": "filesystem",
       "disposition": "retain",
-      "notes": "Wave 2 honest audit: FileAcpTransport is a file-backed mock, not an ACP protocol peer \u2014 it writes connected.marker + frames.jsonl under .agent-harness/acp-transport/ and nothing outside the integrations module consumes it; the TUI binds run_mock_acp_agent_mode_product output to status-dialog strings only. No live IDE/editor ACP peer, no protocol exchange, and no agent that actually operates in ACP agent mode. Demoted: mock file transport with no ACP consumer.",
+      "notes": "Wave 2 honest audit: FileAcpTransport is a file-backed mock, not an ACP protocol peer \u2014 it writes connected.marker + frames.jsonl under .agent-harness/acp-transport/ and nothing outside the integrations module consumes it; the TUI binds run_mock_acp_agent_mode_product output to status-dialog strings only. No live IDE/editor ACP peer, no protocol exchange, and no agent that actually operates in ACP agent mode. Demoted: mock file transport with no ACP consumer. Wave 3 Packet 3.2 kept the acp subsystem comparison partial (receipts/core-audit/acp.md): the file transport remains an explicit mock with zero consumers.",
       "honesty_demotion": {
         "from": "pass",
         "reason": "file_backed_mock_transport_no_acp_peer_or_consumer",
@@ -643,7 +643,7 @@
       "visible_action_id": null,
       "side_effect_kind": "filesystem",
       "disposition": "retain",
-      "notes": "Wave 2 honest audit: neither module implements browser SSO. browser_oidc.rs start/complete_browser_oidc_flow hardcode Unavailable ('browser/device backend is not implemented') and the TUI consumes only multi-endpoint probe summaries for the status dialog; browser_oidc_local.rs is a durable local pseudo-OIDC lifecycle (state.json + complete.receipt.json, redacted code hints, fail-closed without start/wrong code) called only by its own product test. No live IdP, no browser launch, no loopback callback, no operator command. Demoted: stub probes + local stand-in only; the advertised browser OIDC SSO does not exist.",
+      "notes": "Wave 2 honest audit: neither module implements browser SSO. browser_oidc.rs start/complete_browser_oidc_flow hardcode Unavailable ('browser/device backend is not implemented') and the TUI consumes only multi-endpoint probe summaries for the status dialog; browser_oidc_local.rs is a durable local pseudo-OIDC lifecycle (state.json + complete.receipt.json, redacted code hints, fail-closed without start/wrong code) called only by its own product test. No live IdP, no browser launch, no loopback callback, no operator command. Demoted: stub probes + local stand-in only; the advertised browser OIDC SSO does not exist. Wave 3 Packet 3.2 closed the auth subsystem comparison (receipts/core-audit/auth.md), recording this stub as the subsystem's honest residual.",
       "honesty_demotion": {
         "from": "pass",
         "reason": "start_complete_hardcoded_unavailable_no_browser_or_idp_backend",
@@ -700,7 +700,7 @@
       "visible_action_id": null,
       "side_effect_kind": "process",
       "disposition": "retain",
-      "notes": "Native LSP tool surface; unsupported probes recoverable.",
+      "notes": "Native LSP tool surface; unsupported probes recoverable. Wave 3 Packet 3.2 closed the lsp subsystem comparison (receipts/core-audit/lsp.md).",
       "honesty_demotion": {
         "from": "pass",
         "reason": "prd_probe_ban_or_residual_notes",
@@ -1202,7 +1202,7 @@
       "visible_action_id": null,
       "side_effect_kind": "provider",
       "disposition": "retain",
-      "notes": "Wave 2 honest audit: the decision half is real and thoroughly tested (20 unit tests: observe/decide/evaluate, near-expiry refresh recommendations on Wake/Resume, single-flight execute against a credential manager in unit harness, cancellation, transient failure) and the TUI computes decisions/observations through apply_sleep_wake_host_event_with_expiry for the status surface. But the execution half is never wired in any product build: execute_sleep_wake_refresh_decision, run_sleep_wake_refresh_loop, and open_platform_sleep_wake_event_source have zero production callers \u2014 no host event source is opened, nothing injects sleep/wake events into the app, and no credential is ever refreshed outside unit tests. Demoted: refresh pipeline unreachable from the running product.",
+      "notes": "Wave 2 honest audit: the decision half is real and thoroughly tested (20 unit tests: observe/decide/evaluate, near-expiry refresh recommendations on Wake/Resume, single-flight execute against a credential manager in unit harness, cancellation, transient failure) and the TUI computes decisions/observations through apply_sleep_wake_host_event_with_expiry for the status surface. But the execution half is never wired in any product build: execute_sleep_wake_refresh_decision, run_sleep_wake_refresh_loop, and open_platform_sleep_wake_event_source have zero production callers \u2014 no host event source is opened, nothing injects sleep/wake events into the app, and no credential is ever refreshed outside unit tests. Demoted: refresh pipeline unreachable from the running product. Wave 3 Packet 3.2 closed the auth subsystem comparison (receipts/core-audit/auth.md), recording this unwired execution half as the subsystem's honest residual.",
       "honesty_demotion": {
         "from": "pass",
         "reason": "refresh_execution_loop_and_event_source_never_wired_in_production",

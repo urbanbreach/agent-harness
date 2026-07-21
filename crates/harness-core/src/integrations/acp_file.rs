@@ -226,6 +226,27 @@ mod tests {
     }
 
     #[test]
+    fn file_acp_operate_is_local_echo_not_protocol_exchange() {
+        // arrange — a connected local file transport
+        let dir = tempdir().expect("tempdir");
+        let mut transport = FileAcpTransport::new(dir.path());
+        transport.connect().expect("connect");
+
+        // act
+        let response = transport.operate(b"ping-12").expect("operate");
+
+        // assert — the mock echoes bytes verbatim and journals frame metadata
+        assert_eq!(response, b"ping-12");
+        let frames = std::fs::read_to_string(transport.transport_root().join(ACP_FRAME_LOG))
+            .expect("frames journal");
+        let entry: serde_json::Value =
+            serde_json::from_str(frames.lines().next().expect("frame line")).expect("json frame");
+        assert_eq!(entry["seq"], 1);
+        assert_eq!(entry["len"], 7);
+        assert!(entry["payloadB64"].is_string());
+    }
+
+    #[test]
     fn operate_without_connect_fails() {
         let dir = tempdir().expect("tempdir");
         let mut transport = FileAcpTransport::new(dir.path());

@@ -202,6 +202,26 @@ fn config_schema_exports_top_level_mcp_servers() {
 }
 
 #[test]
+fn integrations_mcp_rejects_stdio_server_missing_command() {
+    // arrange — a stdio server entry without the required command field
+    let config = config_with_mcp_servers_json(
+        r#"                broken_stdio: {
+                  transport: "stdio",
+                  env: { MODE: "stdio" },
+                },"#,
+    );
+
+    // act
+    let result = load_config_from_str(&config);
+
+    // assert — shape validation fails closed: no partial stdio server is accepted
+    assert!(
+        result.is_err(),
+        "stdio server without command must fail closed"
+    );
+}
+
+#[test]
 fn integrations_mcp_rejects_invalid_server_ids() {
     // arrange
     // act

@@ -558,3 +558,18 @@ fn credential_store_file_permissions_are_0600() {
         // no-op on non-unix
     }
 }
+
+#[test]
+fn credential_store_scopes_files_per_provider_and_delete_is_idempotent() {
+    // arrange — hermetic temp-dir credential store
+    let temp = tempfile::tempdir().expect("tempdir");
+    let store = CredentialStore::new(temp.path());
+
+    // act — layout for a known provider + deletion of an absent credential
+    let codex_path = store.credential_path(&ProviderId::codex());
+    let removed = store.delete(&ProviderId::codex()).expect("delete");
+
+    // assert — per-provider file layout; missing delete is a structured no-op
+    assert!(codex_path.ends_with(std::path::Path::new("credentials").join("codex.json")));
+    assert!(!removed);
+}
