@@ -254,8 +254,10 @@ pub struct TuiOptions {
     pub keybindings: Option<std::collections::BTreeMap<String, String>>,
     pub toggles: Option<TogglesConfig>,
     pub preserve_terminal_on_exit: bool,
-    /// Workspace root used to anchor operator probes and project config discovery.
-    /// When `None`, probes fall back to the process current directory.
+    /// Workspace root previously used to anchor operator probes.
+    ///
+    /// Kept for API compatibility; production startup no longer seeds probes
+    /// (see `seed_operator_host_probes` for explicit test/diagnostic use).
     pub workspace_root: Option<PathBuf>,
 }
 
@@ -276,7 +278,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         keybindings: _,
         toggles,
         preserve_terminal_on_exit,
-        workspace_root,
+        mut workspace_root,
     } = options;
 
     let (mut app, mut live_updates) = match mode {
@@ -298,6 +300,9 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         }
         TuiMode::Replay { run_dir, events } => {
             let mut app = AppState::new_replay(run_dir, events);
+            if let Some(root) = workspace_root.take() {
+                app.set_file_mention_workspace_root_for_test(root);
+            }
             if let Some(on_ui_intent) = on_ui_intent {
                 app.enable_replay_navigation_handoff(on_ui_intent);
             }
@@ -358,7 +363,6 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         app.set_toggles_config(toggles);
     }
 
-    app.seed_operator_host_probes(workspace_root.as_deref());
     app.maybe_set_no_provider_banner();
 
     let preserved_terminal = recover_mutex_lock(preserved_terminal_session()).clone();

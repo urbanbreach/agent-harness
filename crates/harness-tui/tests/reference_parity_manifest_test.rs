@@ -83,12 +83,13 @@ fn checked_in_manifest_covers_first_slice_and_scaffolds() {
             .unwrap_or("")
             .contains("artifacts/qa-evidence/20260717-tui-reference-parity"));
     }
-    let user_approved_scaffold_diverged = ["OVL-PALETTE", "SHELL-FAIL"];
-    let evidence_backed_scaffold_diverged = [
+    let user_approved_scaffold_diverged = ["OVL-PALETTE"];
+    let demoted_to_incomplete = [
         "SHELL-STREAM",
         "SHELL-PERM",
         "SHELL-QUESTION",
         "SHELL-CANCEL",
+        "SHELL-FAIL",
         "SHELL-RECOVER",
         "SHELL-COMPLETE",
         "SHELL-SCROLL",
@@ -120,14 +121,10 @@ fn checked_in_manifest_covers_first_slice_and_scaffolds() {
                     .starts_with("DIV-AA-"),
                 "scaffold {id} missing DIV-AA-* id"
             );
-        } else if evidence_backed_scaffold_diverged.contains(id) {
+        } else if demoted_to_incomplete.contains(id) {
             assert_eq!(
-                status, "diverged",
-                "scaffold {id} has evidence-backed divergence"
-            );
-            assert!(
-                !l5.is_empty(),
-                "scaffold {id} diverged requires L5 evidence receipt"
+                status, "incomplete",
+                "scaffold {id} demoted: missing approved divergence or required evidence"
             );
         } else if status == "pass" {
             assert!(
@@ -341,41 +338,19 @@ fn checked_in_manifest_status_rollup_tracks_evidence_backed_passes() {
     // act
     let rollup = rollup_status(&manifest);
 
-    // assert — A-MANIFEST allows only evidence-backed pass rows (not self-certify-all).
-    // 2026-07-20: 23 pass (21 visual + 2 non-visual journeys), 2 user-approved AA divergences,
-    // 13 evidence-backed scaffold divergences (valid L1/L3 pair, residual pixel differences).
+    // assert — fail-closed structural consistency (no hard-coded minimum counts).
     assert!(rollup.required >= 30, "expected at least prior 30 rows");
-    assert!(
-        rollup.pass >= 23,
-        "expected at least 23 evidence-backed pass rows, got {}",
-        rollup.pass
-    );
-    assert!(
-        rollup.diverged_user_approved >= 2,
-        "expected at least 2 user-approved AA divergences, got {}",
-        rollup.diverged_user_approved
-    );
-    assert!(
-        rollup.diverged_evidence_backed >= 13,
-        "expected at least 13 evidence-backed scaffold divergences, got {}",
-        rollup.diverged_evidence_backed
-    );
-    assert_eq!(
-        rollup.blocked, 0,
-        "expected no freeze-blocked / invalid-pair rows, got {}",
-        rollup.blocked
-    );
-    assert_eq!(
-        rollup.incomplete, 0,
-        "expected no incomplete rows, got {}",
-        rollup.incomplete
-    );
-    assert_eq!(rollup.unknown, 0);
     assert_eq!(
         rollup.pass + rollup.incomplete + rollup.blocked + rollup.diverged,
-        rollup.required
+        rollup.required,
+        "status counts must sum to required"
     );
-    // Not complete until every required row is pass or user-approved diverged.
+    assert_eq!(rollup.unknown, 0, "no unknown statuses allowed");
+    assert!(
+        rollup.diverged <= 2,
+        "only DIV-AA-PALETTE and DIV-AA-SHELL-FAIL are user-approved; got {}",
+        rollup.diverged
+    );
     assert!(!rollup.a_manifest_complete());
 }
 
@@ -418,7 +393,7 @@ fn checked_in_journey_templates_join_inventory_without_fake_l1() {
             | "JOURNEY-FOLDER-TRUST-DENY"
             | "JOURNEY-MEMORY-CLI"
             | "JOURNEY-ALWAYS-APPROVE-MODE"
-            | "JOURNEY-SETTINGS-EDITOR" => "pass",
+            | "JOURNEY-SETTINGS-EDITOR" => "incomplete",
             _ => panic!("unexpected checked-in journey id: {journey_id}"),
         };
         assert_eq!(row["status"].as_str(), Some(expected_status));
@@ -457,4 +432,79 @@ fn validator_rejects_journey_row_missing_capability_join() {
 
     // act / assert
     assert_control(validate_manifest(&manifest), "missing-journey-join");
+}
+
+#[test]
+fn validator_rejects_diverged_with_null_divergence_id() {
+    // arrange
+    // act
+    // assert
+    // arrange
+    let mut manifest = checked_in_manifest();
+    let rows = manifest["rows"].as_array_mut().unwrap_or_abort();
+    let diverged_row = rows
+        .iter_mut()
+        .find(|row| row["status"].as_str() == Some("diverged"))
+        .unwrap_or_abort();
+    diverged_row["deliberate_divergence_id"] = json!(null);
+
+    // act / assert
+    assert_control(validate_manifest(&manifest), "missing-divergence-id");
+}
+
+#[test]
+fn validator_rejects_diverged_with_absent_divergence_id() {
+    // arrange
+    // act
+    // assert
+    // arrange
+    let mut manifest = checked_in_manifest();
+    let rows = manifest["rows"].as_array_mut().unwrap_or_abort();
+    let diverged_row = rows
+        .iter_mut()
+        .find(|row| row["status"].as_str() == Some("diverged"))
+        .unwrap_or_abort();
+    diverged_row
+        .as_object_mut()
+        .unwrap_or_abort()
+        .remove("deliberate_divergence_id");
+
+    // act / assert
+    assert_control(validate_manifest(&manifest), "missing-divergence-id");
+}
+
+#[test]
+fn validator_rejects_diverged_with_unauthorized_divergence_id() {
+    // arrange
+    // act
+    // assert
+    // arrange
+    let mut manifest = checked_in_manifest();
+    let rows = manifest["rows"].as_array_mut().unwrap_or_abort();
+    let diverged_row = rows
+        .iter_mut()
+        .find(|row| row["status"].as_str() == Some("diverged"))
+        .unwrap_or_abort();
+    diverged_row["deliberate_divergence_id"] = json!("DIV-NOT-APPROVED");
+
+    // act / assert
+    assert_control(validate_manifest(&manifest), "unauthorized-divergence");
+}
+
+#[test]
+fn validator_rejects_pending_owner_on_pass_row() {
+    // arrange
+    // act
+    // assert
+    // arrange
+    let mut manifest = checked_in_manifest();
+    let rows = manifest["rows"].as_array_mut().unwrap_or_abort();
+    let pass_row = rows
+        .iter_mut()
+        .find(|row| row["status"].as_str() == Some("pass"))
+        .unwrap_or_abort();
+    pass_row["owners"]["render_test"] = json!("pending");
+
+    // act / assert
+    assert_control(validate_manifest(&manifest), "pending-owner");
 }

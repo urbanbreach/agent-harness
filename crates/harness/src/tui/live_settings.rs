@@ -11,6 +11,7 @@ use harness_tui::app::{LaunchMetadata, TogglesConfig};
 
 use crate::bootstrap;
 use crate::cli_config::load_optional_config_with_digest_context;
+use crate::cli_io::load_events_from_run_dir;
 use crate::defaults::{DEFAULT_MOCK_PROFILE, DEFAULT_SESSION_DIR};
 use crate::scenarios::{
     create_workspace, default_permission_policy, golden_path_profiles, golden_path_provider,
@@ -45,6 +46,7 @@ pub(super) struct LiveSettings {
 pub(super) enum ResolvedTuiMode {
     Replay {
         run_dir: PathBuf,
+        workspace_root: Option<PathBuf>,
     },
     Continue {
         settings: LiveSettings,
@@ -76,8 +78,12 @@ pub(super) fn resolve_tui_mode(
     config_context: &harness_core::config::ConfigLoadContext,
 ) -> Result<ResolvedTuiMode, String> {
     if let Some(run_dir) = &cmd.replay {
+        let workspace_root = load_events_from_run_dir(run_dir)
+            .ok()
+            .and_then(|events| super::replay::replay_workspace_root_from_events(&events));
         return Ok(ResolvedTuiMode::Replay {
             run_dir: run_dir.clone(),
+            workspace_root,
         });
     }
 

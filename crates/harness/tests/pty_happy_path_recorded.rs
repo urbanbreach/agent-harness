@@ -1219,6 +1219,7 @@ struct SpawnedHarness {
     writer: Box<dyn Write + Send>,
     output_rx: Receiver<Vec<u8>>,
     parser: Parser,
+    _workspace: Option<tempfile::TempDir>,
 }
 
 impl SpawnedHarness {
@@ -1289,10 +1290,21 @@ impl SpawnedHarness {
 }
 
 fn spawn_harness_pty(args: &[String]) -> SpawnedHarness {
-    spawn_harness_pty_in(Path::new("."), args)
+    let workspace = tempdir().unwrap_or_abort();
+    fs::write(workspace.path().join("README.md"), "# PTY test workspace\n").unwrap_or_abort();
+    let cwd = workspace.path().to_path_buf();
+    spawn_harness_pty_in_owned(&cwd, args, Some(workspace))
 }
 
 fn spawn_harness_pty_in(cwd: &Path, args: &[String]) -> SpawnedHarness {
+    spawn_harness_pty_in_owned(cwd, args, None)
+}
+
+fn spawn_harness_pty_in_owned(
+    cwd: &Path,
+    args: &[String],
+    workspace: Option<tempfile::TempDir>,
+) -> SpawnedHarness {
     let pty_system = native_pty_system();
     let pair = pty_system
         .openpty(PtySize {
@@ -1323,6 +1335,7 @@ fn spawn_harness_pty_in(cwd: &Path, args: &[String]) -> SpawnedHarness {
         writer,
         output_rx,
         parser: Parser::new(ROWS, COLS, 0),
+        _workspace: workspace,
     }
 }
 

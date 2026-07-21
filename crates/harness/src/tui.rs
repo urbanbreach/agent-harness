@@ -125,6 +125,7 @@ use self::new_live::{run_new_live_session, run_new_worktree_live_session};
 use self::profile_log::profile_handoff;
 #[cfg(test)]
 use self::replay::is_terminal_event;
+pub use self::replay::replay_workspace_root_from_events;
 use self::replay::{execute_replay_mode, run_replay_tui};
 #[cfg(test)]
 use self::runtime_toggles::runtime_toggles_config;
@@ -323,8 +324,12 @@ pub(crate) fn execute_with_io(
         }
     };
 
-    if let ResolvedTuiMode::Replay { run_dir } = &mode {
-        return execute_replay_mode(run_dir, cmd.exit_on_finish, stderr);
+    if let ResolvedTuiMode::Replay {
+        run_dir,
+        workspace_root,
+    } = &mode
+    {
+        return execute_replay_mode(run_dir, workspace_root.clone(), cmd.exit_on_finish, stderr);
     }
 
     let runtime = match tokio::runtime::Builder::new_multi_thread()

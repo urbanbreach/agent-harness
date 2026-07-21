@@ -57,6 +57,8 @@ use sessions::SessionsCommand;
 
 pub use harness_core::UnwrapOrAbort;
 
+pub use crate::tui::replay_workspace_root_from_events;
+
 #[doc(hidden)]
 pub use auth_cmd::AuthBackendOutput;
 

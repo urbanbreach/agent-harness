@@ -200,6 +200,16 @@ pub(crate) fn assert_evidence_path_exists(journey_id: &str, layer: &str, rel: &s
         return;
     }
     let file_rel = rel.split("::").next().unwrap_or(rel);
+    // Clean-checkout self-containment (Packet 0.5): signoff-lane evidence under
+    // the parity receipt root is generated fresh by strict lanes and gitignored.
+    // Only assert on-disk existence when the evidence root directory is present
+    // (i.e., a signoff run has populated it). Committed-source paths (L2, L5)
+    // never start with this prefix and always assert unconditionally.
+    if file_rel.starts_with("artifacts/qa-evidence/20260717-tui-reference-parity")
+        && !repo_root().join("artifacts/qa-evidence/20260717-tui-reference-parity/receipts").is_dir()
+    {
+        return;
+    }
     let path = repo_root().join(file_rel);
     assert!(
         path.exists(),
@@ -239,7 +249,11 @@ fn assert_owner_names_journey_signoff(journey_id: &str, row: &Value) {
 }
 
 fn assert_config_journey_evidence(row: &Value, journey_id: &str, l3: &str, l6: &str) {
-    assert_eq!(row["status"].as_str(), Some("pass"));
+    assert_eq!(
+        row["status"].as_str(),
+        Some("incomplete"),
+        "{journey_id} demoted: missing L1 reference freeze evidence"
+    );
     assert_empty_layer(journey_id, row, "L1");
     assert_eq!(
         row["evidence_paths"]["L2"].as_str(),
@@ -269,7 +283,11 @@ pub(crate) fn assert_all_journey_manifest_evidence(rows: &[Value]) {
 
     let journey_id = "JOURNEY-WORKTREE-CTRL-W";
     let worktree = find_journey(rows, journey_id);
-    assert_eq!(worktree["status"].as_str(), Some("pass"));
+    assert_eq!(
+        worktree["status"].as_str(),
+        Some("incomplete"),
+        "worktree demoted: missing L1 reference freeze evidence"
+    );
     assert_empty_layer(journey_id, worktree, "L1");
     let l2 = worktree["evidence_paths"]["L2"].as_str().unwrap_or("");
     assert!(
@@ -316,7 +334,7 @@ pub(crate) fn assert_all_journey_manifest_evidence(rows: &[Value]) {
         STABLE_L3_WAIT_ANY_REL,
         WAIT_ANY_ALL_L5_REL,
         WAIT_ANY_ALL_L6_REL,
-        "pass",
+        "incomplete",
     );
     assert_surface_journey_evidence(
         rows,
@@ -326,7 +344,7 @@ pub(crate) fn assert_all_journey_manifest_evidence(rows: &[Value]) {
         STABLE_L3_FOLDER_TRUST_REL,
         FOLDER_TRUST_L5_REL,
         FOLDER_TRUST_L6_REL,
-        "pass",
+        "incomplete",
     );
     assert_surface_journey_evidence(
         rows,
@@ -336,7 +354,7 @@ pub(crate) fn assert_all_journey_manifest_evidence(rows: &[Value]) {
         STABLE_L3_MEMORY_CLI_REL,
         MEMORY_CLI_L5_REL,
         MEMORY_CLI_L6_REL,
-        "pass",
+        "incomplete",
     );
     assert_surface_journey_evidence(
         rows,
@@ -346,7 +364,7 @@ pub(crate) fn assert_all_journey_manifest_evidence(rows: &[Value]) {
         STABLE_L3_ALWAYS_APPROVE_REL,
         ALWAYS_APPROVE_L5_REL,
         ALWAYS_APPROVE_L6_REL,
-        "pass",
+        "incomplete",
     );
     assert_surface_journey_evidence(
         rows,
@@ -356,7 +374,7 @@ pub(crate) fn assert_all_journey_manifest_evidence(rows: &[Value]) {
         STABLE_L3_SETTINGS_EDITOR_REL,
         SETTINGS_EDITOR_L5_REL,
         SETTINGS_EDITOR_L6_REL,
-        "pass",
+        "incomplete",
     );
     assert_evidence_path_exists("JOURNEY-ROWS-EXPAND", "L6", JOURNEY_ROWS_EXPAND_RECEIPT_REL);
 }

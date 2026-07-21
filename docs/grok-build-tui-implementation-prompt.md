@@ -1,16 +1,288 @@
-# Harness / Grok Build Parity PRD, Binding Specification, and Execution Plan
+# Harness / Grok Build Parity Continuation Contract
 
-> **Status:** Binding implementation contract. This supersedes prior completion claims.
-> **Scope:** The entire Harness product surface required for parity: TUI, CLI handoff, coordinator, sessions, workspaces, providers, authentication, tools, permissions, persistence, integrations, and parity evidence.
-> **Done when:** Every acceptance gate in this document passes on the same current revision, every advertised Harness action works end-to-end, and every required Grok Build capability has a complete Harness-native implementation or a user-approved divergence.
-> **Not done when:** The result is a topology change, a glyph/color reskin, an accepted snapshot refresh, or marker-only PTY evidence.
-> **First actions:** Re-audit the tree, inventory every visible action and backend capability, reproduce known functional defects, freeze the reference, author the traceability manifest, then implement journey-by-journey.
-> **Never:** Copy reference source/tests/harnesses or allow evidence to self-certify.
+> **Use:** This file is the complete prompt for the next autonomous implementation loop. Start at **Audited checkpoint** and execute the **Required work order** exactly; do not wait for another prompt.
+> **Status:** Binding implementation contract. It supersedes prior completion claims, manifest rollups, and agent summaries when they conflict with verified behavior.
+> **Scope:** The entire Harness product surface required for parity: TUI, CLI handoff, coordinator, sessions, workspaces, providers, authentication, tools, permissions, persistence, integrations, configuration, and parity evidence.
+> **Done when:** Every acceptance gate passes on one clean, identifiable revision; every advertised action works end-to-end; runtime and replay remain side-effect safe; and every required capability is complete or has an exact user-approved divergence.
+> **Not done when:** A lane exits zero while mutating the checkout, a manifest calls missing work `pass` or `diverged`, a capability has only a registry/probe/local stand-in, or the UI is only a topology/glyph/color reskin.
+> **First actions:** Remove destructive TUI startup/replay probes, make tests clean-checkout reproducible, restore fail-closed manifest/capability semantics, then continue backend and visual parity.
+> **Never:** Copy reference source/tests/harnesses; let production diagnostics write fixtures; let replay mutate state; or allow evidence to self-certify.
 > **Stop:** Only under the Stop Rule at the end of this contract.
+
+## Audited checkpoint — 2026-07-20
+
+The facts below were independently audited from the committed tree and by executing tests in a detached review worktree. They are the starting state for the next loop.
+
+### Git state
+
+- Branch: `ui-ux-experiments`.
+- Committed checkpoint: `3b111f8e74293afa1f09aea01b9eb4f5734a8865`.
+- Latest checkpoint commits, oldest first:
+  - `3b9bedcb` — core module/test splitting for the file-focus gate.
+  - `dd506b45` — TUI shell, transcript, overlay, and snapshot changes.
+  - `c5b3925d` — partial `workspace_root` propagation.
+  - `3b111f8e` — parity manifest, capability inventory, convention baseline, and capture script changes.
+- Local `dev` merge-base: `f54f7c2ddf42edc065ff58db656ed86f05699c42`.
+- `origin/dev` merge-base: `852c28a37be0f2253650b9439ee8320de7d6d9de`.
+- The branch has no configured upstream.
+- The implementation checkpoint is committed. This refreshed contract is the intentional handoff edit, and untracked debug artifact `crates/harness-tui/test_trace.log` remains; do not commit or treat that artifact as evidence.
+- Preserve unrelated dirty state during implementation. Before final acceptance, include this contract in the immutable revision and run signoff from a dedicated clean worktree; if commit authorization has not been given, ask only when the final freeze is otherwise ready.
+- Fix forward. Do not rewrite the four checkpoint commits unless the user explicitly requests history editing.
+
+### Verified green checks
+
+- `cargo fmt --all -- --check`.
+- `cargo clippy --all-targets --all-features --workspace -- -D warnings`.
+- `cargo check --workspace`.
+- `scripts/test-lanes.sh quality-gates`.
+- `cargo nextest run -p harness-tui --test reference_parity_manifest_test --profile ci` — 16/16 pass, but the validator semantics are insufficient and must be fixed below.
+- `cargo nextest run -p harness-core --test extension_manifest_test --profile ci` — 5/5 pass.
+- `cargo nextest run -p harness --test capability_inventory_contract_test --profile ci` — 3/3 pass, but it proves shape/path existence rather than capability completeness.
+- The recorded PTY happy path test exits zero, but its side effects make it a failing product/test-isolation journey.
+
+### Verified blockers and false-green claims
+
+1. **Production TUI initialization performs destructive fixture work.** `run_tui_with_options` unconditionally calls `seed_operator_host_probes`. The probe path creates or rewrites config, plan, cron, team, plugin, graph, foreign-session, crash/replay, and edit-attribution data. It can overwrite tracked files such as `src/agent.rs`, `src/external.rs`, and `src/drift.rs`.
+2. **Replay is not side-effect free.** Replay passes `workspace_root: None`, stores the historical run directory as `session_path`, then executes the same write-capable probes. This violates replay purity, permission-before-execution, and explicit root authority.
+3. **The PTY happy path mutates the checkout.** It creates `crates/harness/harness.json` and changes tracked `crates/harness/src/drift.rs`. A zero exit code is not a pass when the source tree changes.
+4. **The `workspace_root` fix is partial.** Primary live paths improved, but replay still passes `None` and write-capable code retains a `current_dir()` fallback.
+5. **Clean-checkout validation is not reproducible.** `core_subsystem_disposition_test` and `journey_signoff_test` require pre-existing gitignored receipts under `artifacts/qa-evidence/20260717-tui-reference-parity/`. They fail in the detached committed checkout.
+6. **The harness test suite is red.** A clean-checkpoint `cargo nextest run -p harness --profile ci --no-fail-fast` produced 545 passed, 8 failed, and 15 skipped. Failures include two missing-artifact owners plus assertions that detect source implementation branding in shipped prompts/config.
+7. **The sandbox test suite is registered twice.** `sandbox.rs` includes both `sandbox/sandbox_tests.rs` and a byte-equivalent `sandbox_sandbox_tests.rs`; parallel execution can race on shared paths.
+8. **The convention baseline was widened, not proven reduced.** `3b111f8e` adds 81 exemption hashes relative to its parent. Treat this as an unreviewed gate bypass until each entry is removed or explicitly justified.
+9. **Manifest status semantics are invalid.** The checked-in rollup is 23 `pass`, 15 `diverged`, 0 `blocked`, 0 `incomplete`, but:
+   - 13 `diverged` rows have no user-approved divergence ID.
+   - 14 terminal rows have empty `L2`.
+   - Eight journey rows are `pass` with empty `L1` and `L4` by explicit test exemption.
+   - `SHELL-IDLE` reuses draft-state evidence and is not a valid idle-shell pass.
+   - `SHELL-FAIL` has an approved AA divergence but still lacks required `L2`; approval does not waive missing evidence.
+10. **Only two divergences are user-approved:** `DIV-AA-PALETTE` and `DIV-AA-SHELL-FAIL`. “Evidence-backed divergence” is not an approved status class.
+11. **Capability completion is overclaimed.** All 85 capability rows are marked `pass`; at least 25 admit missing public behavior in their own notes. Owner-path existence, bookkeeping, local-file transports, structured-unavailable results, or diagnostic probes are not complete product capabilities.
+12. **`A-CORE-AUDIT` is explicitly incomplete.** The disposition matrix contains 26 subsystems: 12 complete and 14 partial. Partial IDs are `sessions_lineage`, `worktree`, `workspace`, `mcp`, `lsp`, `background_tasks`, `auth`, `tui_app_state`, `cli_handoff`, `doctor`, `support_export`, `plugins`, `acp`, and `sandbox`.
+13. **No final same-revision acceptance exists.** There is no fresh clean-checkout Phase 9 package, no complete artifact provenance tied to `3b111f8e`, and no successful independent dual review/holdout result.
+
+No `A-*` gate is finally accepted at this checkpoint. Individual owner tests may be green, but the product is not accepted.
+
+## Required work order
+
+This is a single ordered queue, not a menu. Keep exactly one implementation packet active. Always take the first incomplete packet below.
+
+The packet order, required behavior, invariants, and exit conditions are binding. The named files and suggested change shape are starting points, not a prescribed architecture. The implementer owns the internal design, types, decomposition, migrations, and test placement after reading the real callers and repository conventions. If discovery reveals a smaller or more correct root fix, use it and record why. You may split or combine work inside the active packet, or touch additional files required by the call path, but do not skip the packet's outcome, weaken its evidence, or begin a later dependency early.
+
+For each packet:
+
+1. Read the named files and callers.
+2. Add or identify the narrow failing regression.
+3. Make the smallest root fix.
+4. Run the packet's focused checks.
+5. Drive the compiled public surface when the packet changes behavior.
+6. Update manifests and evidence only after behavior passes.
+7. Continue immediately to the next packet.
+
+Do not skip a packet because another task is easier. If a packet is blocked only by an external reference/environment dependency, record the exact blocker and continue only to a later packet that is genuinely independent of the missing output. Otherwise retain the blocker and do not close the wave. Do not have multiple agents edit the same files concurrently; parallelize only read-only investigation, captures, and independent validation.
+
+### Wave 0 — Restore runtime purity and a reproducible baseline
+
+#### Packet 0.1 — Remove synthetic probes from production startup
+
+- **First prove red:** Add Startup and Live-initialization regressions that snapshot the relevant file trees and fail when initialization writes before a user action.
+- **Implement:** Remove the unconditional runtime call to `seed_operator_host_probes`. Split any genuinely useful status collection into read-only inspection; move synthetic product exercises to testkit-only fixtures.
+- **Primary files:** `crates/harness-tui/src/runtime.rs`, `crates/harness-tui/src/app.rs`, `crates/harness-tui/src/app/lifecycle.rs`.
+- **Prove:** Startup and Live initialization perform no config, plan, cron, team, plugin, graph, session, or edit-attribution writes before a user action.
+
+#### Packet 0.2 — Make Replay side-effect free and root-explicit
+
+- **First prove red:** Add a Replay regression launched from a different process CWD that snapshots the workspace and historical run directory.
+- **Implement:** Derive the replay workspace root from replayed `RunStarted` data when available. Remove `workspace_root: None` plus root-sensitive `current_dir()` fallback from Replay. Missing root authority must remain read-only/unavailable.
+- **Primary files:** `crates/harness/src/tui/replay.rs`, `crates/harness-tui/src/runtime.rs`, `crates/harness-tui/src/app.rs`, replay projection/event owners in `harness-core` only if required.
+- **Prove:** Opening Replay from a different process CWD leaves the workspace, run directory, config, journals, and source tree byte-identical.
+
+#### Packet 0.3 — Isolate PTY journeys from the source checkout
+
+- **First prove red:** Add before/after checkout assertions and a symlink-overwrite regression for historical fixed probe paths such as `src/agent.rs` and `src/drift.rs`.
+- **Implement:** Launch every PTY child from a dedicated temporary Git repository/workspace and pass that root explicitly. Remove reliance on package-root `cwd = "."`.
+- **Primary files:** `crates/harness/tests/pty_happy_path_recorded.rs`, `crates/harness-testkit/tests/pty_e2e.rs`, `crates/harness-tui/tests/pty_e2e.rs`, related testkit workspace helpers.
+- **Prove:** The recorded happy path no longer creates `crates/harness/harness.json` or changes `crates/harness/src/drift.rs`; before/after checkout status is identical.
+
+#### Packet 0.4 — Remove duplicate sandbox test registration
+
+- **Implement:** Keep one sandbox test module; remove the duplicate registration/file without deleting unique coverage.
+- **Primary files:** `crates/harness-core/src/sandbox.rs`, `crates/harness-core/src/sandbox/sandbox_tests.rs`, `crates/harness-core/src/sandbox_sandbox_tests.rs`.
+- **Prove:** Each sandbox test appears once under `cargo nextest list -p harness-core`, and the harness-core suite passes under parallel execution.
+
+#### Packet 0.5 — Make contract tests clean-checkout self-contained
+
+- **Implement:** Remove dependence on pre-existing gitignored receipts from ordinary nextest owners. Use committed test fixtures or generate temporary receipts. Keep real evidence generation in strict signoff lanes.
+- **Primary files:** `crates/harness/tests/core_subsystem_disposition_test.rs`, `crates/harness/tests/journey_signoff_test.rs`, their fixture/support modules.
+- **Prove:** Both tests pass in a detached checkout with no `artifacts/` directory.
+
+#### Packet 0.6 — Fix shipped branding failures
+
+- **Implement:** Remove source implementation branding from shipped dynamic prompts and bootstrap profiles without weakening the assertions.
+- **Primary files:** prompt/profile builders and `.agent-harness/agents/` or prompt-family assets identified by the failing tests.
+- **Prove:** All six branding assertion failures are gone.
+
+#### Packet 0.7 — Establish the new baseline
+
+- **Run:** `cargo nextest run -p harness --profile ci --no-fail-fast`, targeted TUI/runtime tests, harness-core sandbox tests, and the recorded PTY happy path with before/after status capture.
+- **Exit:** The harness suite is green from a clean checkout; Startup/Live initialization and Replay are write-free; PTY journeys leave the checkout unchanged.
+
+### Wave 1 — Restore manifest and evidence truth
+
+#### Packet 1.1 — Replace permissive status semantics
+
+- **Implement:** Delete `diverged_evidence_backed`. Define fail-closed status rules by row kind. `pass` requires every applicable owner and evidence layer; `diverged` requires a user-approved ID and approval receipt; missing work derives `blocked` or `incomplete`.
+- **Primary files:** `crates/harness-tui/tests/support/reference_parity_manifest.rs`, `crates/harness-tui/tests/reference_parity_manifest_test.rs`.
+- **Prove:** Mutation tests reject null divergence IDs, unauthorized IDs, `pending` owners, missing paths/files, stale digests, wrong state/viewport pairs, and missing applicable evidence.
+
+#### Packet 1.2 — Correct the checked-in parity manifest
+
+- **Implement:** Demote the 13 unauthorized divergences; demote the eight journey passes with empty `L1`/`L4`; demote `SHELL-IDLE`; keep `SHELL-FAIL` incomplete until `L2` exists. Do not preserve a target status count.
+- **Primary file:** `docs/tui-reference-parity-manifest.v1.json`.
+- **Prove:** The strict validator derives a truthful rollup without hard-coded minimum pass/divergence assertions.
+
+#### Packet 1.3 — Make evidence provenance executable
+
+- **Implement:** Strict signoff creates a fresh evidence root and validates file existence, hashes, behavior IDs, source revision, manifest/reference/environment digests, scenario, viewport, and freshness.
+- **Primary files:** parity lane scripts, `scripts/test-lanes.sh`, manifest validator/support code, `docs/testing.md` when lane behavior changes.
+- **Prove:** A missing, stale, copied, or mismatched artifact causes the strict lane to fail.
+
+#### Packet 1.4 — Close Wave 1
+
+- **Run:** manifest mutation tests, checked-in manifest validation, strict signoff against a freshly generated evidence root, and clean-checkout validation.
+- **Exit:** No unauthorized divergence or evidence exemption remains; the rollup matches actual evidence.
+
+### Wave 2 — Implement the incomplete capability families
+
+Within each packet, process the listed capability IDs in order, one row at a time. Read each inventory row's `backend_owner`; correct the owner when the row points to bookkeeping or a narrower stand-in. For every row use the §19 row loop before advancing.
+
+#### Packet 2.1 — Workspace, isolation, trust, and VCS
+
+1. `worktree.list_select_cleanup`
+2. `sandbox.os_profiles`
+3. `workspace.folder_trust`
+4. `vcs.jujutsu`
+5. `vcs.edit_attribution`
+
+**Exit:** real create/list/select/enter/cleanup and rollback; enforced sandbox modes; durable trust; real exposed VCS workflows; truthful edit attribution.
+
+#### Packet 2.2 — Sessions, rewind, memory, and input persistence
+
+1. `sessions.prompt_rewind_atomic`
+2. `memory.durable_product_surface`
+3. `sessions.foreign_import`
+4. `sessions.prompt_queue_persistence`
+5. `sessions.mid_turn_interjection`
+
+**Exit:** conversation and files rewind atomically; memory and imports are durable; queued/interjected input survives and recovers correctly.
+
+#### Packet 2.3 — Scheduling and orchestration
+
+1. `scheduler.cron_recurring`
+2. `orchestration.foreground_demote_background`
+3. `orchestration.multi_agent_team`
+
+**Exit:** schedules actually execute; foreground work can become monitored background work; team/mailbox/process/workspace lifecycle works end-to-end.
+
+#### Packet 2.4 — Extensions and remote integration
+
+1. `mcp.oauth_remote_transports`
+2. `plugins.runtime_lifecycle`
+3. `acp.agent_mode`
+4. `remote.workspace_hub`
+5. `hooks.file_discovered`
+
+**Exit:** real remote/OAuth transports, plugin install/activate/upgrade/remove, ACP transport, remote workspace lifecycle, and discovered blocking hooks work through public surfaces.
+
+#### Packet 2.5 — Authentication, providers, and updates
+
+1. `auth.browser_oidc_sso`
+2. `auth.sleep_wake_credential_refresh`
+3. `provider.non_openai_protocols`
+4. `platform.binary_update`
+
+**Exit:** real browser/device or enterprise auth where required, sleep/wake refresh, non-OpenAI protocols, fallback/error behavior, and update apply/restart recovery.
+
+#### Packet 2.6 — Code intelligence, terminal behavior, and settings
+
+1. `code.persistent_graph`
+2. `terminal.clipboard_hyperlink`
+3. `config.settings_registry`
+
+**Exit:** persistent relationship-aware code graph, real terminal clipboard/hyperlink/selection behavior, and complete typed/layered/writable settings product.
+
+#### Packet 2.7 — Re-audit the remaining 60 capability rows
+
+- **Implement:** Drive every remaining `pass` row through its public surface and recovery path. Demote or split any row whose evidence proves only an owner path, registry, local stand-in, diagnostic, mock, or structured-unavailable result.
+- **Exit:** all 85 original rows plus any required split rows have truthful status and real end-to-end evidence.
+
+### Wave 3 — Close core audit and public contract regressions
+
+#### Packet 3.1 — Close root/session subsystem comparisons
+
+Process in order: `workspace`, `worktree`, `sandbox`, `sessions_lineage`, `background_tasks`.
+
+#### Packet 3.2 — Close integration subsystem comparisons
+
+Process in order: `auth`, `mcp`, `lsp`, `plugins`, `acp`.
+
+#### Packet 3.3 — Close shell/operator subsystem comparisons
+
+Process in order: `cli_handoff`, `tui_app_state`, `doctor`, `support_export`.
+
+For Packets 3.1–3.3, each subsystem needs measured reference behavior, final disposition, real owner tests, migration/recovery evidence, and public-surface proof before `comparison_status=complete`.
+
+#### Packet 3.4 — Normalize public contracts
+
+- Define one typed `sessions reopen --json` response instead of duplicating top-level and `summary` fields.
+- Separate cron `registered` from `executor_available`; registration must not claim execution.
+- Add exact-shape and truthful-status tests.
+
+#### Packet 3.5 — Remove gate exemptions and restore coverage ownership
+
+- Remove each of the 81 convention baseline entries or obtain explicit user approval for every retained exemption; baseline growth requires user approval.
+- Re-audit the historical seventeen-class visual coverage regression and create a one-for-one replacement matrix with executable owners.
+
+**Wave 3 exit:** all 26 core subsystem comparisons are complete; public contracts are unambiguous; static and coverage gates contain no unapproved bypass.
+
+### Wave 4 — Close the remaining parity rows in dependency order
+
+Only begin after Waves 0–3 are green. For each packet: freeze the applicable reference contract first, then complete backend/state behavior, semantic cells, PTY trace, pixels, animation/timing, and adjacent error/recovery states.
+
+1. **Packet 4.1 — Idle baseline:** `SHELL-IDLE`.
+2. **Packet 4.2 — Streaming:** `SHELL-STREAM`.
+3. **Packet 4.3 — Permission:** `SHELL-PERM`, then `OVL-PERM`.
+4. **Packet 4.4 — Question:** `SHELL-QUESTION`, then `OVL-QUESTION`.
+5. **Packet 4.5 — Turn lifecycle:** `SHELL-CANCEL`, `SHELL-FAIL`, `SHELL-RECOVER`, `SHELL-COMPLETE`, `SHELL-SCROLL`.
+6. **Packet 4.6 — Transcript primitives:** `TX-USER`, `TX-ASSISTANT`, `TX-TOOL`, `TX-DIFF`.
+7. **Packet 4.7 — Overlay regression:** revalidate `OVL-PALETTE`; retain `DIV-AA-PALETTE` only if the exact approved residual remains.
+8. **Packet 4.8 — Responsive and dynamic closure:** all required viewports, terminal capabilities, fixed animation ticks, trace ordering, median/p95 timing, and holdout states.
+
+Allow at most `DIV-AA-PALETTE` and `DIV-AA-SHELL-FAIL`; eliminating either residual is preferable. No other row may remain diverged without new explicit user approval.
+
+### Wave 5 — Same-revision acceptance
+
+#### Packet 5.1 — Freeze
+
+- Include this contract in one immutable revision and create a dedicated clean worktree with empty porcelain status.
+
+#### Packet 5.2 — Generate and validate evidence
+
+- Generate all evidence fresh from that revision/environment and run the complete §20 stack.
+- After every lane, require empty worktree status and validate all digests/provenance.
+
+#### Packet 5.3 — Product journeys and independent review
+
+- Run compiled-product happy, denial, cancellation, interruption, restart, rollback, recovery, capability, configuration, and responsive journeys.
+- Obtain two independent reviews and holdouts against the same revision and evidence root.
+
+#### Packet 5.4 — Stop decision
+
+- Produce the §21 report and stop only when §22 is satisfied.
 
 ## Part I — Execution Plan
 
-This part is the implementer's primary entrypoint. Execute the phases in order. The detailed specification in Part II remains binding and authoritative when a checklist item needs exact requirements, tolerances, field definitions, or evidence rules.
+The **Required work order** above controls implementation sequencing through Wave 5. Use the phases below only as the complete lifecycle and end-state checklist. Part II remains binding when an item needs exact requirements, tolerances, field definitions, or evidence rules.
 
 Checkboxes are execution controls, not self-authored completion claims. Machine-readable manifests, current-revision artifacts, test results, external postconditions, and independent review remain the source of truth.
 
@@ -39,7 +311,7 @@ Phase 0  Mission lock and current-state reset
   -> Phase 10 Independent review, final report, and stop decision
 ```
 
-Do not skip forward because later work is easier. A phase may overlap only where explicitly allowed, and no later phase can certify an earlier incomplete exit gate.
+Do not skip a current wave or phase because later work is easier. A phase may overlap only where explicitly allowed, and no later phase can certify an earlier incomplete exit gate.
 
 ### Master completion checklist
 
@@ -58,7 +330,7 @@ The goal is complete only when every item below is `[x]` on one fresh current re
 - [ ] Canonical interaction and animation traces have no missing, extra, or reordered frames.
 - [ ] Timed behavior satisfies the frozen timing contract.
 - [ ] Harness authority, event, replay, permission, cancellation, redaction, and lifecycle invariants remain green.
-- [ ] The seventeen deleted broad visual coverage classes are restored or replaced one-for-one with equal-or-stronger owners.
+- [ ] The historical seventeen-class visual coverage regression is re-audited and every class has a one-for-one equal-or-stronger owner in a machine-readable replacement matrix.
 - [ ] Two independent reviewers approve fresh clean-checkout evidence and holdouts on the same revision.
 - [ ] No visual surface is merely old Harness behavior with changed punctuation, color, glyphs, or placement.
 - [ ] No production control, capability, provider, integration, or settings entry is a placeholder, unrelated dispatch, mock-only success path, or structured-unavailable substitute for the required product.
@@ -165,7 +437,7 @@ The goal is complete only when every item below is `[x]` on one fresh current re
 - [ ] Drive the real compiled Harness product through PTY journeys and inspect external postconditions.
 - [ ] Provide equivalent isolated launch adapters for reference and Harness without scenario branching or synthesized success.
 - [ ] Pin full-frame xterm.js/Chromium capture with identical fonts, geometry, DPR, theme, locale, and renderer.
-- [ ] Restore or define one-for-one replacements for the seventeen deleted broad visual coverage classes.
+- [ ] Re-audit the historical seventeen-class visual coverage regression and define one-for-one equal-or-stronger replacements where any class remains missing.
 - [ ] Produce a machine-readable rollup linking each row, gate, layer, command, artifact, and result.
 
 **Exit:** L0–L5 infrastructure exists, fails closed, and cannot certify labels, probes, markers, mocks, or environment metadata as product parity.
@@ -279,7 +551,7 @@ Capability-family completion checklist:
 - [ ] Prove every shortcut in every applicable focus state and every palette/slash entry.
 - [ ] Prove all affected CLI/tool happy and failure paths, subsystem migrations/recovery, setting/schema journeys, required integrations, and animation ticks.
 - [ ] Prove generated schemas, docs, examples, manifests, and migration tests are synchronized.
-- [ ] Prove the seventeen deleted broad snapshot classes are restored or replaced one-for-one.
+- [ ] Prove the historical seventeen-class visual coverage regression is fully reconciled by the replacement matrix and executable owners.
 - [ ] Confirm the complete stack used the same source revision, manifest digest, environment digest, and reference digest.
 
 **Exit:** `A-INVARIANTS`, `A-PTY`, `A-COVERAGE`, the final `A-MANIFEST` rollup, and every same-revision automated gate are green.
@@ -301,9 +573,9 @@ Capability-family completion checklist:
 
 **Stop decision:**
 
-- [ ] Stop only if every capability, action, journey, setting, schema, subsystem, manifest row, evidence layer, acceptance gate, invariant, review, and holdout is green on the same current revision; every affected Harness function is operational and polished; no known defect remains; and no visible control is a placeholder or wrong dispatch.
+- [ ] Stop only if every capability, action, journey, setting, schema, subsystem, manifest row, evidence layer, acceptance gate, invariant, review, and holdout is green on the same current revision, with any exact user-approved divergence substituting only for its accepted difference; every affected Harness function is operational and polished; no known defect remains; and no visible control is a placeholder or wrong dispatch.
 - [ ] Otherwise continue. A cleaner shell, removed sidebar, updated snapshots, passing build, passing subset, a sample reviewer approval, missing time, large scope, absent backend architecture, unavailable fixtures, or a visually convincing substitute is not a stop condition.
-- [ ] The only alternative stop is an exact invariant conflict with an exact user-approved divergence.
+- [ ] A user-approved divergence is not an early-stop path. Every unaffected requirement and gate must still pass. The two approved AA divergences may remain if fully evidenced, but eliminating either is preferable.
 
 ## Part II — Detailed Binding Specification
 
@@ -703,111 +975,39 @@ Read the current versions of:
 - `docs/AGENTS.md`
 - `docs/testing.md`
 - `docs/tui-signoff-manifest.v1.json`
+- `docs/tui-reference-parity-manifest.v1.json`
+- `docs/capability-inventory.v1.json`
+- `docs/core-subsystem-disposition.v1.json`
+- `docs/tui-reference-module-disposition.v1.json`
 - `scripts/AGENTS.md`
 - `scripts/test-lanes.sh`
 
 Load the repository-required coding skills before editing Rust, scripts, tests, schemas, or AGENTS guidance.
 
-### 6. Historical Audited Starting Point — Refresh Before Use
+### 6. Current-State Authority
 
-Do not trust prior completion claims. Re-run the audit because the tree may have moved.
+The **Audited checkpoint** and **Required work order** at the top of this file are the current-state authority. Do not resurrect the superseded `ed95105d` reskin audit, its raw startup/draft PNG scores, or its prose list of partially changed modules.
 
-The latest audit found:
+Use the machine-readable files for current row and subsystem scope:
 
-- Branch: `ui-ux-experiments`.
-- Committed `HEAD`: `ed95105d`.
-- Audited `dev` and merge-base: `f54f7c2d`.
-- The committed branch primarily removed the persistent sidebar and made the transcript and composer full-width.
-- Approximately three quarters of committed line churn was tests, snapshots, documentation, or evidence wiring rather than replacement of observable renderers.
-- The working tree then added a large uncommitted reskin attempt.
-- The reskin changed composer punctuation, transcript rails, tool markers, magenta accents, permission chrome, some overlays, and several input behaviors.
-- It did not replace the complete layout, transcript, tool, markdown, diff, overlay, secondary-surface, or state architecture.
-- Seventeen broad startup, stream, permission, narrow, split, and tool-lifecycle snapshots were deleted while narrower reskinned snapshots were accepted.
+- `docs/tui-reference-parity-manifest.v1.json`
+- `docs/capability-inventory.v1.json`
+- `docs/core-subsystem-disposition.v1.json`
+- `docs/tui-reference-module-disposition.v1.json`
+- `docs/tui-signoff-manifest.v1.json`
 
-Known superficial changes in the current on-disk attempt include:
-
-- Composer rail and separator grammar reduced to a lone `❯`.
-- Tool headers forced to `◆` while residual `◈`, `$`, and other old glyph paths remain.
-- Card glyphs blanked and accent colors shifted to a magenta family.
-- User transcript rails hidden without replacing the underlying transcript surface model.
-- Model and session surfaces collapsed into palette-like chrome.
-- Permission choices restyled with `●` and `○`.
-- Ctrl+C, double-Escape, PageUp/PageDown, and focus behavior partially changed.
-
-Known inherited or only partially changed areas include:
-
-- `crates/harness-tui/src/layout.rs`
-- `crates/harness-tui/src/ui.rs`
-- `crates/harness-tui/src/ui_lifecycle.rs`
-- `crates/harness-tui/src/ui_secondary.rs`
-- `crates/harness-tui/src/ui_markdown.rs`
-- `crates/harness-tui/src/ui_tool_titles.rs`
-- `crates/harness-tui/src/ui_tool_output.rs`
-- `crates/harness-tui/src/ui_diff_render.rs`
-- `crates/harness-tui/src/ui_transcript_layout.rs`
-- `crates/harness-tui/src/ui_overlays/auth_dialog.rs`
-- `crates/harness-tui/src/ui_subagent_footer.rs`
-- `crates/harness-tui/src/ui_terminal.rs`
-- `crates/harness-tui/src/app/composer.rs`
-- `crates/harness-tui/src/app/permissions.rs`
-- `crates/harness-tui/src/app/secondary_surfaces.rs`
-- `crates/harness-tui/src/keybindings.rs`
-- `crates/harness-tui/src/overlay.rs`
-
-Treat the committed topology change and dirty reskin as a failed partial implementation. Retain only proven Harness authority/safety seams and useful behavioral coverage; compare all other implementation and presentation choices against the reference before deciding whether to keep them. Do not preserve old behavior simply to reduce the diff.
-
-Before editing, run and inspect the equivalent of:
+Before editing, refresh only facts that can change:
 
 ```bash
 git branch --show-current
-git status --short
+git status --short --branch
+git log --oneline -12
 git merge-base HEAD dev
-git log --oneline --reverse dev..HEAD
-git diff --stat dev -- crates/harness-tui crates/harness/src/tui crates/harness-core/src docs/tui-signoff-manifest.v1.json scripts/test-lanes.sh
-git diff --name-status dev -- crates/harness-tui crates/harness/src/tui crates/harness-core/src docs/tui-signoff-manifest.v1.json scripts/test-lanes.sh
-git diff --stat HEAD -- crates/harness-tui docs/tui-signoff-manifest.v1.json scripts/test-lanes.sh
-git diff --name-status HEAD -- crates/harness-tui docs/tui-signoff-manifest.v1.json scripts/test-lanes.sh
+git merge-base HEAD origin/dev
+git diff --check
 ```
 
-Do not overwrite unrelated working-tree changes.
-
-#### Measured reference comparison: audited Harness versus Grok
-
-The following fresh captures were produced through the same PTY, xterm.js, Chromium, font, 120x32-cell, and device-pixel-ratio pipeline. They are diagnostic evidence for this contract, not acceptance goldens.
-
-| State | Harness evidence | Grok evidence | Measured result |
-|---|---|---|---|
-| Startup | `.../evidence/harness-startup/` | `.../evidence/grok-startup/` | Same PNG dimensions: 2448x1152. Raw PNG diff: 253,377 pixels, `diffRatio=0.0898`, `similarityScore=91`. |
-| Typed draft | `.../evidence/harness-draft/` | `.../evidence/grok-draft/` | Same PNG dimensions. Raw PNG diff: 206,126 pixels, `diffRatio=0.0731`, `similarityScore=93`. |
-| Harness startup text | `terminal.txt` | - | 32 rows; centered HARNESS logo, onboarding hints, bare prompt, model line, bottom status. |
-| Grok startup text | - | `terminal.txt` | 31 visible rows; breadcrumb, clipboard warning, bordered welcome panel, logo, changelog, four action rows, bordered composer, login footer. |
-| Harness draft transition | `terminal.txt` | - | Typing changes the composer text and footer hint, but the welcome logo and onboarding content remain visible. |
-| Grok draft transition | - | `terminal.txt` | Typing dismisses the welcome panel; the body clears, the bordered composer remains, and the shortcut footer changes to `Enter:send`, `Shift+Tab:mode`, and `Ctrl+x:shortcuts`. |
-
-The captures prove that the current Harness is not merely off by palette or glyph choice. Its startup information architecture, composer anatomy, footer grammar, and startup-to-edit transition are different.
-
-#### Required first-slice requirements from the measured comparison
-
-The first implementation slice must explicitly own and evidence:
-
-| Requirement | Reference behavior to reproduce | Current Harness gap | Acceptance evidence |
-|---|---|---|---|
-| `P0-START-01` | Welcome uses a bordered primary panel with logo, title/version, changelog, and action rows with right-aligned shortcuts | Harness shows centered logo and hints without the bordered action panel | Reference/Harness semantic cells and xterm.js captures at 120x32, 100x30, and 80x24 |
-| `P0-START-02` | Top breadcrumb and contextual warning occupy stable shell regions | Harness has no equivalent measured breadcrumb/warning composition | Cell geometry, style, and screenshot comparison with identity/path fields declared explicitly |
-| `P0-START-03` | Typing transitions from welcome to the active composer shell | Harness keeps welcome content visible while editing | Same input trace; compare frame sequence, focus, cursor, and cleared/retained regions |
-| `P0-COMP-01` | Composer is a bordered strip with prompt, cursor, and right-aligned model badge | Harness composer is a different unboxed arrangement | Styled cell grid plus settled PNG comparison |
-| `P0-KEY-01` | Contextual shortcut footer changes with composer state | Harness uses a different footer vocabulary and placement | Exact footer geometry and interaction trace, with only identity fields masked |
-
-The raw PNG scores above are not passes. They include deliberate identity/path differences and therefore require the registered mask policy. They are included to prevent future agents from describing this baseline as “close.”
-
-Evidence paths used for this audit:
-
-```text
-<evidence-root>/harness-startup/
-<evidence-root>/harness-draft/
-<evidence-root>/reference-startup/
-<evidence-root>/reference-draft/
-```
+Then run the Wave 0 targeted regressions and the narrow manifest/capability/core owners before broader lanes. Do not trust cached artifact directories, previous rollups, or a lane that leaves the checkout dirty. Do not overwrite unrelated working-tree changes.
 
 ### 7. Clean-room Reference Decision
 
@@ -1382,6 +1582,13 @@ If any divergence or mask remains, the final claim must say "exact outside the d
 
 Implementation convenience, missing time, old Harness behavior, and inability to reproduce the reference are not valid divergence reasons.
 
+At the audited checkpoint, the complete user-approved divergence allowlist is:
+
+- `DIV-AA-PALETTE`
+- `DIV-AA-SHELL-FAIL`
+
+No other divergence is approved. A nonzero difference with a receipt is still `blocked` or `incomplete` until the user approves an exact divergence. The category “evidence-backed divergence” is forbidden. An approved divergence waives only the exact accepted difference; it does not waive missing evidence layers, stale provenance, wrong state pairing, runtime defects, or failed acceptance gates.
+
 ### 17. Evidence Integrity and Anti-Gaming Rules
 
 - Harness production code must not read reference captures, expected hashes, evaluator manifests, scenario IDs, or golden files.
@@ -1404,40 +1611,45 @@ Implementation convenience, missing time, old Harness behavior, and inability to
 - Do not let manifest descriptions outrun executable evidence.
 - Do not let a lane report success when any owned stage failed.
 - No golden refresh may accompany an implementation change without separate reference-corpus approval and a documented reference reason.
+- Do not let Startup or Live initialization, rendering, diagnostics, status collection, or any Replay path create product fixtures, rewrite configuration, append journals, create sessions, or edit workspace files. User-authorized Live operations may mutate state only through the normal intent, coordinator, permission, event, and recovery path.
+- Do not use `current_dir()` as implicit authority for root-sensitive work. Missing authority must remain missing or produce an explicit error/read-only unavailable state.
+- Do not allow an ordinary test to depend on a pre-existing gitignored artifact tree. The owning strict lane must generate fresh evidence before validating it.
+- Do not let tests hard-code minimum pass/divergence counts or exempt journey rows from required evidence merely to preserve a favorable rollup.
+- Do not accept `pending`, prose placeholders, nonexistent paths, stale digests, or reused evidence from another state as an owner or evidence layer.
+- Do not add or retain a static-gate baseline entry merely because fixing the test is inconvenient. Baseline growth requires explicit user approval.
+- Every PTY, dogfood, and signoff run must prove the source checkout remains unchanged except for declared gitignored evidence under its isolated artifact root.
 
-The seventeen deleted broad snapshots are a coverage regression unless restored or replaced one-for-one with equal-or-stronger tests covering the same geometry and state classes.
+The historical seventeen-class visual coverage regression remains open until a machine-readable replacement matrix proves one-for-one equal-or-stronger coverage of the same geometry and state classes.
 
 ### 18. Signoff Infrastructure Corrections
 
-The current evidence system cannot certify reference parity without changes.
+The current evidence system cannot certify reference parity. Correct these audited defects before trusting rollups:
 
-Correct at least these audited defects:
+- Remove all write-capable synthetic probes from production TUI initialization and Replay.
+- Make Replay and status inspection side-effect free by construction.
+- Run PTY children in temporary repositories and fail when the source checkout changes.
+- Make ordinary nextest owners self-contained; do not require a developer's existing gitignored evidence directory.
+- Make strict signoff generate a fresh evidence root and bind every receipt to Harness revision, manifest digest, reference digest, environment digest, scenario, viewport, and timestamp.
+- Require actual evidence-file existence and digest verification rather than non-empty path strings.
+- Reject unauthorized divergences, missing evidence, `pending` owners, reused state evidence, and stale reference/actual pairs.
+- Remove count-preserving assertions such as “at least 23 pass” or “at least 13 evidence-backed divergences.”
+- Remove the duplicate sandbox test registration and any shared-path test race.
+- Remove the 81 convention baseline additions or obtain explicit user approval for each justified inherited exemption.
+- Restore clean-checkout green status for the harness suite, including branding, core-audit, and journey-signoff failures.
+- Keep semantic-cell, full-frame xterm.js, PTY, trace, timing, and native visual stages fail-closed when required by a row.
 
-- Symbol-only snapshots omit colors and modifiers.
-- Current snapshots compare Harness against itself.
-- PTY tests are marker-based and often opt-in.
-- Default nextest profiles exclude PTY/native binaries.
-- Some PTY paths return success without running when an environment variable is absent.
-- `scripts/test-lanes.sh` signoff stages use fail-open `|| true` behavior.
-- The signoff manifest checks shape and names, not that owner tests ran or markers appeared.
-- Several unrelated flows reuse a generic PTY smoke owner.
-- Native visual tests prove environment metadata rather than capturing and comparing the UI.
-- A test named as live TUI parity only checks environment/config preconditions.
-- Existing visual renderer/helper capability is not wired into a fail-closed parity gate.
-
-Create a dedicated strict parity lane if changing existing optional lanes would violate another documented contract. The strict lane must fail on every missing or failed stage and produce one machine-readable summary linking all artifacts.
+The strict lane must fail on every missing or failed stage and produce one machine-readable summary linking rows, gates, commands, artifacts, side effects, checkout-cleanliness proof, and review results.
 
 ### 19. Required Work Loop
 
-Before more pixel-polish work:
+Follow the **Required work order** at the top of this file. Finish the current wave before selecting work from a later wave. In particular:
 
-1. Inventory every visible action, public capability, and affected first-party subsystem in the pinned reference and current Harness.
-2. Compare each affected Harness core subsystem against the equivalent reference behavior and author its disposition before editing it.
-3. Inventory every public setting, schema, config layer, migration, alias, capability dependency, and effective-value surface in the pinned reference and current Harness.
-4. Compare current Harness configuration behavior against the reference and author its schema/settings disposition before editing it.
-5. Drive every currently advertised Harness action and configuration journey through the compiled binary.
-6. Convert every discovered dead shortcut, wrong dispatch, stale transition, placeholder, missing side effect, inferior legacy behavior, broken Harness function, stale schema, or config mismatch into a P0 manifest row and failing regression test.
-7. Finish those P0 functional rows, core-subsystem dispositions, and config/schema dispositions before returning to antialiasing or cosmetic residuals.
+1. Runtime/replay purity and clean test isolation precede evidence bookkeeping.
+2. Evidence/status honesty precedes capability completion claims.
+3. Real capability and core-audit closure precede pixel residual work.
+4. Same-revision validation and independent review come last.
+
+When a defect is found, add the narrowest failing regression that proves the public behavior or invariant, fix the correct architectural owner, drive the compiled product through the matching surface, and then update the machine-readable row. Do not update status first.
 
 For every capability and parity row:
 
@@ -1464,18 +1676,31 @@ Do not defer functional integration until after the UI looks correct. A visually
 Discover current exact targets, then run the narrowest owners and broader gates. At minimum the final revision must include successful current runs of:
 
 ```bash
-cargo fmt --all --check
+cargo fmt --all -- --check
+cargo clippy --all-targets --all-features --workspace -- -D warnings
+cargo check --workspace
+cargo nextest run -p harness-tui --test reference_parity_manifest_test --profile ci
+cargo nextest run -p harness --test capability_inventory_contract_test --profile ci
+cargo nextest run -p harness --test core_subsystem_disposition_test --profile ci
+cargo nextest run -p harness --test journey_signoff_test --profile ci
 cargo nextest run -p harness-tui
 cargo nextest run -p harness-core
 cargo nextest run -p harness
 cargo nextest run -p harness-tools
+cargo nextest run -p harness-providers
+cargo nextest run -p harness-testkit
 scripts/test-lanes.sh quality-gates
 scripts/test-lanes.sh all-deterministic
+scripts/test-lanes.sh signoff-parity
 scripts/test-lanes.sh signoff-pty
+scripts/test-lanes.sh signoff-journeys
 bash scripts/harness-qa-dogfood.sh --self-test
+git diff --check
 ```
 
 Also run the new strict differential parity lane, complete xterm.js capture suite, and independent review gates.
+
+During iterative work, record `git status --porcelain=v1 --untracked-files=all` immediately before and after every PTY, dogfood, and signoff lane; the results must be identical except for declared gitignored evidence under that lane's isolated artifact root. Final acceptance is stricter: run from a dedicated clean worktree whose porcelain status is empty both before and after. Tests must not create `crates/harness/harness.json` or modify tracked source files.
 
 For every newly required backend capability, run its real owner tests and at least one compiled-product journey. The final revision must additionally prove:
 
@@ -1519,7 +1744,7 @@ Report:
 - Holdout result.
 - Independent visual-review result.
 - Independent code/clean-room-review result.
-- Restored or replacement coverage for the seventeen deleted snapshots.
+- The historical seventeen-class coverage replacement matrix and executable owner results.
 - Remaining divergences and masks.
 - Any lane that could not run and why.
 - Every known user-reported defect and its closing evidence.
@@ -1535,6 +1760,6 @@ If identity substitutions, masks, or divergences remain, qualify the claim preci
 
 Do not stop because the shell looks cleaner, because the old sidebar is gone, because snapshots were updated, because tests pass, or because an independent reviewer likes a sample screen.
 
-Stop only when every required capability, action, journey, and manifest row passes the same fresh, fail-closed backend, side-effect, semantic, pixel, interaction, animation, timing, invariant, and independent-review gates on the current revision, every existing Harness function affected by the work is fully operational and polished, no known user-reported defect remains, and no visible control is a placeholder or wrong dispatch.
+Stop only when every required capability, action, journey, and manifest row passes the same fresh, fail-closed backend, side-effect, semantic, pixel, interaction, animation, timing, invariant, and independent-review gates on the current revision, or carries an exact user-approved divergence whose remaining evidence and gates pass; every existing Harness function affected by the work is fully operational and polished; no known user-reported defect remains; and no visible control is a placeholder or wrong dispatch.
 
-The only alternative stop condition is a genuine Harness invariant that makes one exact capability impossible and the user has explicitly accepted that exact divergence. Missing implementation time, large scope, absent backend architecture, unavailable fixtures, or a visually convincing substitute are not stop conditions.
+A user-approved divergence substitutes only for its exact accepted difference. It does not waive implementation, evidence, recovery, safety, or review requirements elsewhere and is not an early-stop path. Missing implementation time, large scope, absent backend architecture, unavailable fixtures, or a visually convincing substitute are not stop conditions.

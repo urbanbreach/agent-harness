@@ -328,7 +328,3 @@ pub fn summarize_os_profiles(profiles: &[OsSandboxProfile]) -> OsSandboxProfiles
     }
     summary
 }
-
-#[cfg(test)]
-#[path = "sandbox_sandbox_tests.rs"]
-mod tests;

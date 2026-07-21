@@ -146,18 +146,15 @@ pub struct StatusRollup {
     pub blocked: usize,
     pub pass: usize,
     pub diverged: usize,
-    pub diverged_user_approved: usize,
-    pub diverged_evidence_backed: usize,
     pub unknown: usize,
 }
 
 impl StatusRollup {
     /// A-MANIFEST is complete when every required row is `pass` or user-approved `diverged`.
-    /// Evidence-backed divergences (no `deliberate_divergence_id`) do not count as complete.
+    /// All `diverged` rows must carry a user-approved divergence ID (enforced at row level).
     pub fn a_manifest_complete(&self) -> bool {
         self.required > 0
-            && self.pass + self.diverged_user_approved == self.required
-            && self.diverged_evidence_backed == 0
+            && self.pass + self.diverged == self.required
             && self.unknown == 0
             && self.incomplete == 0
             && self.blocked == 0
@@ -165,8 +162,6 @@ impl StatusRollup {
 }
 
 /// Count row statuses for fail-closed A-MANIFEST rollup reporting.
-/// Divergences are split into user-approved (carry a `deliberate_divergence_id`) and
-/// evidence-backed (valid L1/L3 pair but residual differences, no approved divergence).
 pub fn rollup_status(manifest: &Value) -> StatusRollup {
     let mut rollup = StatusRollup::default();
     let Some(rows) = manifest["rows"].as_array() else {
@@ -178,17 +173,7 @@ pub fn rollup_status(manifest: &Value) -> StatusRollup {
             Some("incomplete") => rollup.incomplete += 1,
             Some("blocked") => rollup.blocked += 1,
             Some("pass") => rollup.pass += 1,
-            Some("diverged") => {
-                rollup.diverged += 1;
-                let has_approved_div = row["deliberate_divergence_id"]
-                    .as_str()
-                    .is_some_and(|id| !id.is_empty());
-                if has_approved_div {
-                    rollup.diverged_user_approved += 1;
-                } else {
-                    rollup.diverged_evidence_backed += 1;
-                }
-            }
+            Some("diverged") => rollup.diverged += 1,
             _ => rollup.unknown += 1,
         }
     }
@@ -258,6 +243,10 @@ pub fn validate_manifest(manifest: &Value) -> ValidateResult {
 
     let status_allow = STATUS_VALUES.iter().copied().collect::<BTreeSet<_>>();
     let gate_allow = ACCEPTANCE_GATES.iter().copied().collect::<BTreeSet<_>>();
+    let approved_divergences: BTreeSet<&str> = manifest["identity_policy"]["approved_divergences"]
+        .as_array()
+        .map(|values| values.iter().filter_map(|v| v.as_str()).collect())
+        .unwrap_or_default();
     validate_top_level_acceptance_gates(manifest, &gate_allow, &mut failures);
 
     let Some(rows) = manifest["rows"].as_array() else {
@@ -280,7 +269,14 @@ pub fn validate_manifest(manifest: &Value) -> ValidateResult {
     let mut seen_ids = BTreeMap::<String, usize>::new();
     for (index, row) in rows.iter().enumerate() {
         let path = format!("$.rows[{index}]");
-        validate_row(row, &path, &status_allow, &gate_allow, &mut failures);
+        validate_row(
+            row,
+            &path,
+            &status_allow,
+            &gate_allow,
+            &approved_divergences,
+            &mut failures,
+        );
         if let Some(behavior_id) = row["behavior_id"].as_str() {
             if let Some(first_index) = seen_ids.insert(behavior_id.to_owned(), index) {
                 failures.push(ManifestFailure::new(
@@ -373,6 +369,7 @@ fn validate_row(
     path: &str,
     status_allow: &BTreeSet<&str>,
     gate_allow: &BTreeSet<&str>,
+    approved_divergences: &BTreeSet<&str>,
     failures: &mut Vec<ManifestFailure>,
 ) {
     for field in ROW_REQUIRED_FIELDS {
@@ -482,7 +479,7 @@ fn validate_row(
         ));
     }
 
-    validate_owners(row, path, failures);
+    validate_owners(row, path, row["status"].as_str().unwrap_or(""), failures);
 
     if let Some(divergence) = row.get("deliberate_divergence_id") {
         if let Some(id) = divergence.as_str() {
@@ -493,13 +490,34 @@ fn validate_row(
                     "DIV-004 is rejected; welcome panel is required",
                 ));
             }
-        } else if !divergence.is_null() {
+            if row["status"].as_str() == Some("diverged") && !approved_divergences.contains(id) {
+                failures.push(ManifestFailure::new(
+                    "unauthorized-divergence",
+                    format!("{path}.deliberate_divergence_id"),
+                    format!("divergence {id:?} is not in the approved_divergences allowlist"),
+                ));
+            }
+        } else if divergence.is_null() {
+            if row["status"].as_str() == Some("diverged") {
+                failures.push(ManifestFailure::new(
+                    "missing-divergence-id",
+                    format!("{path}.deliberate_divergence_id"),
+                    "diverged status requires a non-null deliberate_divergence_id in approved_divergences",
+                ));
+            }
+        } else {
             failures.push(ManifestFailure::new(
                 "invalid-field-type",
                 format!("{path}.deliberate_divergence_id"),
                 "deliberate_divergence_id must be string or null",
             ));
         }
+    } else if row["status"].as_str() == Some("diverged") {
+        failures.push(ManifestFailure::new(
+            "missing-divergence-id",
+            format!("{path}.deliberate_divergence_id"),
+            "diverged status requires a non-null deliberate_divergence_id in approved_divergences",
+        ));
     }
 
     if let Some(identity) = row.get("identity_substitution") {
@@ -574,7 +592,7 @@ fn validate_optional_join_fields(row: &Value, path: &str, failures: &mut Vec<Man
     }
 }
 
-fn validate_owners(row: &Value, path: &str, failures: &mut Vec<ManifestFailure>) {
+fn validate_owners(row: &Value, path: &str, status: &str, failures: &mut Vec<ManifestFailure>) {
     let Some(owners) = row.get("owners") else {
         return;
     };
@@ -588,12 +606,19 @@ fn validate_owners(row: &Value, path: &str, failures: &mut Vec<ManifestFailure>)
     }
     for owner_key in OWNER_KEYS {
         match owners.get(*owner_key).and_then(Value::as_str) {
-            Some(value) if !value.is_empty() => {}
-            Some(_) => failures.push(ManifestFailure::new(
+            Some("") => failures.push(ManifestFailure::new(
                 "missing-owners",
                 format!("{path}.owners.{owner_key}"),
                 format!("owner {owner_key} must be non-empty"),
             )),
+            Some("pending") if status == "pass" || status == "diverged" => {
+                failures.push(ManifestFailure::new(
+                    "pending-owner",
+                    format!("{path}.owners.{owner_key}"),
+                    format!("owner {owner_key} must not be 'pending' for {status} rows"),
+                ))
+            }
+            Some(_) => {}
             None => failures.push(ManifestFailure::new(
                 "missing-owners",
                 format!("{path}.owners.{owner_key}"),

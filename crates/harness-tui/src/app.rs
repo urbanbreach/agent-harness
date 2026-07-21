@@ -2122,8 +2122,7 @@ impl AppState {
 
         let probe_root = workspace_root
             .map(std::path::Path::to_path_buf)
-            .or_else(|| self.file_mention_workspace_root.clone())
-            .or_else(|| std::env::current_dir().ok());
+            .or_else(|| self.file_mention_workspace_root.clone());
         if let Some(root) = probe_root.clone() {
             self.file_mention_workspace_root = Some(root.clone());
             let plans_dir = root.join(harness_core::plan::PLAN_DIR);
