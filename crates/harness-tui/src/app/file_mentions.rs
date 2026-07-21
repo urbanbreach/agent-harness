@@ -1,6 +1,7 @@
 // allow: SIZE_OK — TUI app state (session projection + interaction)
 use crate::UnwrapOrAbort;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
@@ -498,6 +499,13 @@ impl AppState {
     pub fn set_file_mention_workspace_root_for_test(&mut self, root: PathBuf) {
         self.file_mention_workspace_root = Some(root);
         self.file_mention_index = None;
+    }
+
+    /// Disable the CWD-based workspace root provider. Called for rootless replay
+    /// so workspace-dependent surfaces remain unavailable instead of falling back
+    /// to the process CWD.
+    pub(crate) fn disable_cwd_workspace_root_provider(&mut self) {
+        self.file_mention_workspace_root_provider = Arc::new(|| None);
     }
 
     #[cfg(test)]

@@ -808,8 +808,16 @@ run_signoff_parity() {
     write_signoff_parity_verdict "$parity_artifacts_dir" DRY-RUN command_not_executed
   elif [[ "$mode_failed" -ne 0 ]]; then
     write_signoff_parity_verdict "$parity_artifacts_dir" FAIL stage_failure
+    fail_count=$((fail_count + 1))
   else
     write_signoff_parity_verdict "$parity_artifacts_dir" PASS all_required_stages_passed
+    # write_signoff_parity_verdict may downgrade PASS→FAIL when the fresh root has
+    # zero artifacts; re-read the verdict to reflect that in the exit count.
+    local final_verdict
+    final_verdict="$(grep '^verdict=' "${parity_artifacts_dir}/parity-lane-verdict.txt" | head -1 | cut -d= -f2)"
+    if [[ "$final_verdict" == "FAIL" ]]; then
+      fail_count=$((fail_count + 1))
+    fi
   fi
 }
 

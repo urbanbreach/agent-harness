@@ -302,6 +302,8 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
             let mut app = AppState::new_replay(run_dir, events);
             if let Some(root) = workspace_root.take() {
                 app.set_file_mention_workspace_root_for_test(root);
+            } else {
+                app.disable_cwd_workspace_root_provider();
             }
             if let Some(on_ui_intent) = on_ui_intent {
                 app.enable_replay_navigation_handoff(on_ui_intent);
