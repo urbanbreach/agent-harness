@@ -409,6 +409,18 @@ mod tests {
     }
 
     #[test]
+    fn demote_batch_with_no_handles_yields_empty_outcomes() {
+        // arrange — demotable tasks exist, but no handles are requested
+        let demotable = ["task-1", "task-2"];
+
+        // act
+        let results = demote_task_handles_against_registry(&[], &demotable).unwrap();
+
+        // assert — an empty batch is a clean no-op, not an error
+        assert!(results.is_empty());
+    }
+
+    #[test]
     fn demote_task_handles_against_registry_batches_mixed_outcomes() {
         // arrange
         // act

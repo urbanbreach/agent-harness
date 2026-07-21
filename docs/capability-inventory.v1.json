@@ -388,14 +388,18 @@
       "capability_id": "scheduler.cron_recurring",
       "family": "agents-background-orchestration-scheduler-queue",
       "surface": "product",
-      "status": "pass",
+      "status": "incomplete",
       "backend_owner": "crates/harness-core/src/cron_execute.rs",
       "visible_action_id": null,
       "side_effect_kind": "process",
       "disposition": "implement",
-      "notes": "Product: CronScheduleRegistry register/list/remove (bookkeeping only; executes_schedules=false) + CronExecutor fire_due/fire_one_if_due with five-field match (*, lists, ranges, steps), fire journal side effects (cron-fires.jsonl), executes_schedules=true. Owner tests: 15 cron unit tests including journal write. Residual: no wall-clock daemon/coordinator timer wheel; civil time injected.",
-      "note": "Product: register/list/remove + CronExecutor fire_due with journal (registry executes=false; executor executes=true). Residual: no wall-clock daemon/timer wheel.",
-      "honesty_demotion": false
+      "notes": "Wave 2 honest audit: backend logic is real \u2014 CronScheduleRegistry register/get/list/remove (explicitly definitions-only bookkeeping: executes_schedules()=false; even the coordinator's session-local registry says definitions only) plus CronExecutor five-field cron matching, fire_due with injected civil time, and a durable appended cron-fires.jsonl journal, all unit-tested. But no production code ever fires a schedule: run_cron_execution_product is called only by its own test, the coordinator holds definitions without executing them, and the only TUI cron touch is the diagnostics-only status probe. No wall-clock daemon, coordinator timer wheel, or per-fire task spawn exists. Demoted: no execution driver runs recurring schedules inside the product.",
+      "honesty_demotion": {
+        "from": "pass",
+        "reason": "no_wallclock_or_coordinator_firing_loop",
+        "demoted_at": "2026-07-21Twave2-packet-2.3",
+        "restored": false
+      }
     },
     {
       "capability_id": "orchestration.wait_any",
@@ -428,20 +432,24 @@
       "visible_action_id": null,
       "side_effect_kind": "process",
       "disposition": "retain",
-      "notes": "Product: demote_task_handle(s)_against_registry + coordinator demote_foreground_child_task / demote_all_foreground_child_tasks (real session side effects: parent released, child run_in_background=true, background_id=request_id). TUI Ctrl+B single-handle via focused activity or bulk BackgroundForegroundSubagents; live_intents wires demote_all summary. Shell demote remains structured Unavailable (default_demote_policy). Owner tests: single+multi demote, registry batch mix."
+      "notes": "Real end-to-end chain: key action (focused demote handle -> UiIntent::DemoteForegroundChildTask single, otherwise bulk UiIntent::BackgroundForegroundSubagents; replay mode refuses with a read-only banner) -> handle_ui_intents (crates/harness/src/tui/live_intents.rs) -> coordinator demote_foreground_child_task / demote_all_foreground_child_tasks with real session side effects (parent released, child run_in_background=true, background_id=request_id) and a structured outcome summary surfaced to the status dialog. Shell (process) demote is intentionally structured Unavailable per default_demote_policy. Owner tests: single + multi demote with real session side effects, registry batch mixed outcomes, fail-closed unknown/empty handles, replay-mode guard."
     },
     {
       "capability_id": "orchestration.multi_agent_team",
       "family": "agents-background-orchestration-scheduler-queue",
       "surface": "product",
-      "status": "pass",
+      "status": "incomplete",
       "backend_owner": "crates/harness-core/src/team_mailbox_journal",
       "visible_action_id": null,
       "side_effect_kind": "filesystem",
       "disposition": "retain",
-      "notes": "Product: DurableTeamRegistry under .agent-harness/team-mailbox.json \u2014 create/add-member/send/deliver/cancel with atomic journal persist + reload; fail-closed non-member/cancelled. run_durable_multi_agent_team_product multi-team active+cancelled + delivered_count. Owner tests: team_mailbox_journal unit suite. Residual: no process/workspace multi-agent IPC or operator team UI journey beyond status diagnostics.",
-      "note": "Durable team mailbox journal with deliver + reload; residual no process IPC/team UI.",
-      "honesty_demotion": false
+      "notes": "Wave 2 honest audit: the durable backend is real \u2014 DurableTeamMailboxJournal/DurableTeamRegistry under .agent-harness/team-mailbox.json with create/add-member/send/deliver/cancel, atomic journal persist + reload, fail-closed non-member and cancelled-team sends, and run_durable_multi_agent_team_product multi-team contract tests. But the only production consumer is the TUI diagnostics-only status probe (seed_operator_host_probes_with_roots); the coordinator does not drive teams from this registry, no process/workspace multi-agent IPC exists, and there is no operator team UI journey. Demoted: durable journal exposed only as status diagnostics, not as a functioning multi-agent team surface.",
+      "honesty_demotion": {
+        "from": "pass",
+        "reason": "diagnostic_probe_only_no_coordinator_team_wiring",
+        "demoted_at": "2026-07-21Twave2-packet-2.3",
+        "restored": false
+      }
     },
     {
       "capability_id": "agents.profile_catalog",

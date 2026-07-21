@@ -262,6 +262,29 @@ mod tests {
     }
 
     #[test]
+    fn durable_team_send_after_cancel_fails_closed() {
+        // arrange
+        let temp = tempfile::tempdir().expect("temp");
+        let mut durable = DurableTeamRegistry::open(temp.path()).expect("open");
+        let team = durable.create_team("winding-down").expect("create");
+        durable
+            .add_member(&team.team_id, "lead", "lead")
+            .expect("lead");
+        durable.cancel_team(&team.team_id).expect("cancel");
+
+        // act — even a member cannot send once the team is cancelled
+        let err = durable
+            .send_message(&team.team_id, "lead", None, "late message")
+            .expect_err("cancelled team");
+
+        // assert
+        assert!(matches!(
+            err,
+            TeamMailboxJournalError::Registry(TeamRegistryError::Cancelled { .. })
+        ));
+    }
+
+    #[test]
     fn durable_multi_agent_team_product_meets_contract() {
         // Given
         let temp = tempfile::tempdir().expect("temp");

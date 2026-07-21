@@ -393,6 +393,32 @@ mod tests {
     }
 
     #[test]
+    fn fire_journal_accumulates_across_executor_instances() {
+        // arrange
+        let dir = tempfile::tempdir().unwrap();
+        let journal = dir.path().join("cron-fires.jsonl");
+        let mut registry = CronScheduleRegistry::new();
+        register_cron_schedule(&mut registry, sample("morning", "30 14 * * *"));
+        register_cron_schedule(&mut registry, sample("evening", "0 20 * * *"));
+
+        // act — two independent executor passes, like separate daemon ticks
+        let first = CronExecutor::with_journal_dir(dir.path())
+            .fire_due(&registry, CronCivilTime::new(30, 14, 1, 1, 3).unwrap())
+            .unwrap();
+        let second = CronExecutor::with_journal_dir(dir.path())
+            .fire_due(&registry, CronCivilTime::new(0, 20, 1, 1, 3).unwrap())
+            .unwrap();
+
+        // assert — both fires land in one durable append-only journal
+        assert_eq!(first.fired.len(), 1);
+        assert_eq!(second.fired.len(), 1);
+        let body = fs::read_to_string(&journal).expect("journal written");
+        assert!(body.contains("\"schedule_id\":\"morning\""));
+        assert!(body.contains("\"schedule_id\":\"evening\""));
+        assert_eq!(body.lines().count(), 2);
+    }
+
+    #[test]
     fn fire_one_if_due_fails_closed_when_not_due() {
         // arrange
         let mut registry = CronScheduleRegistry::new();

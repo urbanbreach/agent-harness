@@ -65,7 +65,6 @@ const REQUIRED_PASS_IDS: &[&str] = &[
     "memory.durable_product_surface",
     "tui.feedback_help",
     "workspace.cow_worktree_fastpath",
-    "orchestration.foreground_demote_background",
     "sessions.crash_recovery_ux",
     "config.settings_registry",
     "provider.auto_fallback",
@@ -80,11 +79,10 @@ const REQUIRED_PASS_IDS: &[&str] = &[
     "terminal.capability_presentation",
     "sessions.foreign_import",
     "auth.sleep_wake_credential_refresh",
-    "scheduler.cron_recurring",
     "vcs.edit_attribution",
     "plugins.runtime_lifecycle",
     "plugins.descriptor_manifest",
-    "orchestration.multi_agent_team",
+    "orchestration.foreground_demote_background",
     "platform.binary_update",
     "code.persistent_graph",
     "sandbox.os_profiles",
@@ -102,6 +100,8 @@ const REQUIRED_NON_PASS_IDS: &[&str] = &[
     "sessions.prompt_rewind_atomic",
     "sessions.prompt_queue_persistence",
     "sessions.mid_turn_interjection",
+    "scheduler.cron_recurring",
+    "orchestration.multi_agent_team",
 ];
 const MAX_ROWS: usize = 200;
 
