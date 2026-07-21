@@ -107,7 +107,6 @@ fn checked_in_manifest_covers_first_slice_and_scaffolds() {
     }
     let user_approved_scaffold_diverged = ["OVL-PALETTE"];
     let demoted_to_incomplete = [
-        "SHELL-PERM",
         "SHELL-QUESTION",
         "SHELL-CANCEL",
         "SHELL-FAIL",
@@ -118,14 +117,15 @@ fn checked_in_manifest_covers_first_slice_and_scaffolds() {
         "TX-ASSISTANT",
         "TX-TOOL",
         "TX-DIFF",
-        "OVL-PERM",
         "OVL-QUESTION",
     ];
-    // Scaffolds blocked on external reference evidence (Wave 4 Packets 4.1/4.2):
-    // freezes captured from the pinned binary, but A-PIXELS fails closed on
-    // unmasked shell-chrome / stream-chrome residuals pending user-approved
-    // identity coverage (DIV-AA-SHELL-* approvals not granted).
-    let blocked_on_reference_evidence = ["SHELL-IDLE", "SHELL-STREAM"];
+    // Scaffolds blocked on external reference evidence (Wave 4 Packets 4.1-4.3):
+    // shell-idle/stream freezes captured from the pinned binary but A-PIXELS
+    // fails closed on unmasked chrome residuals; shell-perm/ovl-perm blocked
+    // because the reference permission-prompt UI is not reachable via
+    // black-box tool-call injection (tool calls render as executing chips,
+    // never an ask UI).
+    let blocked_on_reference_evidence = ["SHELL-IDLE", "SHELL-STREAM", "SHELL-PERM", "OVL-PERM"];
     for id in REQUIRED_SCAFFOLD_IDS {
         assert!(ids.contains(*id), "missing scaffold id {id}");
         let row = rows

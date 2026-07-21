@@ -14,12 +14,16 @@
     reason = "integration parity tests use fail-fast asserts"
 )]
 
+use std::sync::{Arc, Mutex};
+
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use harness_core::event::{
     ActorKind, EventActor, EventEnvelopeV1, EventV1, PermissionRequestedEvent, SCHEMA_VERSION,
 };
-use harness_tui::app::{AppState, Focus, LaunchMetadata};
+use harness_core::perm::PermissionDecision;
+use harness_tui::app::{AppState, Focus, LaunchMetadata, UiIntent};
 use harness_tui::render_test::render_to_string;
-use harness_tui::{ui, FrameLayoutPlan};
+use harness_tui::{ui, FrameLayoutPlan, UnwrapOrAbort};
 use ratatui::layout::Rect;
 
 const W: u16 = 120;
@@ -230,5 +234,130 @@ fn shell_question_parses_prompts_preserves_draft_no_allow_chrome() {
     assert!(
         rendered.contains('┃'),
         "OVL-QUESTION: question dock must paint ┃ rail matching Grok packing\n{rendered}"
+    );
+}
+
+/// OVL-PERM decision surface: the dock renders all four judgment options
+/// (always-approve / session / once / reject) with the default selection
+/// marker on always-approve.
+#[test]
+fn shell_perm_dock_renders_all_decision_options_with_default_marker() {
+    // arrange
+    let mut app = live_app();
+    app.ingest_event(permission_requested_event(
+        1,
+        "perm_options_parity",
+        "tool_call_options",
+    ));
+
+    // act
+    let rendered = render(&app);
+
+    // assert — the full ask/deny/allow surface with numbered radio options
+    assert!(
+        rendered.contains("1 (●) Yes, and don't ask again for anything (always-approve mode)"),
+        "OVL-PERM: option 1 always-approve selected by default\n{rendered}"
+    );
+    assert!(
+        rendered.contains("2 (○) Yes, allow all edits during this session"),
+        "OVL-PERM: option 2 session grant rendered\n{rendered}"
+    );
+    assert!(
+        rendered.contains("3 (○) Yes"),
+        "OVL-PERM: option 3 allow-once rendered\n{rendered}"
+    );
+    assert!(
+        rendered.contains("4 (○) No, reject (type to add feedback)"),
+        "OVL-PERM: option 4 reject rendered\n{rendered}"
+    );
+}
+
+/// SHELL-PERM state machine: cycling moves the radio marker between options
+/// (h/l or arrows), preserving the draft; the default marker starts on
+/// always-approve and moves to session grant after one cycle-forward.
+#[test]
+fn shell_perm_selection_cycling_moves_option_marker() {
+    // arrange
+    let mut app = live_app();
+    app.composer.prompt_buffer = "cycling draft".to_string();
+    app.composer.prompt_cursor = "cycling draft".chars().count();
+    app.ingest_event(permission_requested_event(
+        1,
+        "perm_cycle_parity",
+        "tool_call_cycle",
+    ));
+    let initial = render(&app);
+
+    // act
+    app.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
+    let cycled = render(&app);
+
+    // assert — marker moves option 1 -> option 2; draft preserved
+    assert!(
+        initial.contains("(●) Yes, and don't ask again for anything"),
+        "SHELL-PERM: default marker on always-approve\n{initial}"
+    );
+    assert!(
+        cycled.contains("(○) Yes, and don't ask again for anything"),
+        "SHELL-PERM: marker leaves option 1 after cycle\n{cycled}"
+    );
+    assert!(
+        cycled.contains("(●) Yes, allow all edits during this session"),
+        "SHELL-PERM: marker lands on session grant after cycle\n{cycled}"
+    );
+    assert_eq!(app.composer.prompt_buffer, "cycling draft");
+}
+
+/// SHELL-PERM / OVL-PERM fail-closed recovery: Esc dismisses the dock as
+/// Deny — DismissModal emits a ResolvePermission{Deny} intent to the
+/// coordinator and keeps the draft; the modal view then waits for the
+/// coordinator resolution event.
+#[test]
+fn shell_perm_esc_sends_fail_closed_deny_intent_and_keeps_draft() {
+    // arrange — live app with an intent sink; active permission dock + draft
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink_intents = Arc::clone(&intents);
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> =
+        Arc::new(move |intent| sink_intents.lock().unwrap_or_abort().push(intent));
+    let mut app = AppState::new_live(None, false, Some(sink));
+    app.set_launch_metadata(
+        LaunchMetadata::from_model_ref("build", "mock:model-tx").with_mode_label("Demo"),
+    );
+    let draft = "draft under esc-reject";
+    app.composer.prompt_buffer = draft.to_string();
+    app.composer.prompt_cursor = draft.chars().count();
+    app.focus = Focus::Prompt;
+    app.ingest_event(permission_requested_event(
+        1,
+        "perm_esc_parity",
+        "tool_call_esc",
+    ));
+    assert!(
+        app.active_permission().is_some(),
+        "precondition: permission dock active before Esc"
+    );
+
+    // act — Esc = fail-closed deny
+    app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+
+    // assert — Deny intent emitted for the pending permission; draft intact
+    let emitted = intents.lock().unwrap_or_abort();
+    let deny = emitted.iter().find_map(|intent| match intent {
+        UiIntent::ResolvePermission {
+            permission_id,
+            decision,
+            ..
+        } if permission_id == "perm_esc_parity" => Some(*decision),
+        _ => None,
+    });
+    assert_eq!(
+        deny,
+        Some(PermissionDecision::Deny),
+        "SHELL-PERM: Esc must resolve as Deny (fail-closed)"
+    );
+    assert_eq!(app.focus, Focus::Prompt, "composer keeps focus after deny");
+    assert_eq!(
+        app.composer.prompt_buffer, draft,
+        "SHELL-PERM: draft preserved across Esc reject"
     );
 }

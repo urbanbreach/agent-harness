@@ -841,8 +841,8 @@
       "surface": "shell",
       "state": "waiting_permission",
       "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
-      "reference_receipt_id": "reference-freeze",
-      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "reference_receipt_id": "shell-perm-reference-freeze-v4",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-perm-reference-freeze.v4.json",
       "preconditions": "Pending permission prompt from coordinator.",
       "seeded_inputs": {
         "permission": "pending bash/edit or equivalent"
@@ -879,15 +879,15 @@
         "state_interaction_test": "crates/harness-tui/tests/reference_parity_perm_question_test.rs::shell_perm_preempts_composer_preserves_draft_full_width",
         "render_test": "crates/harness-tui/tests/reference_parity_perm_question_test.rs::shell_perm_preempts_composer_preserves_draft_full_width",
         "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::shell_perm_pty",
-        "differential_evaluator": "pending:reference_parity::shell_perm_diff"
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-perm-blocked-v2.json"
       },
       "evidence_paths": {
-        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-shell-perm-v9/",
+        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run4-shell-perm-pinned-v4/",
         "L2": "",
-        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-shell-perm-v13/",
-        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-perm-pixel-diff-v13-masked.json",
-        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-perm-divergence-receipt-v13.json",
-        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-perm-identity-field-mask-v13.json"
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-shell-perm-pinned-v4/",
+        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-perm-pixel-diff-blocked-v2-masked.json",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-perm-blocked-v2.json",
+        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-perm-identity-field-mask-v16.json"
       },
       "identity_substitution": {
         "fields": [
@@ -906,16 +906,16 @@
         "A-INVARIANTS",
         "A-NO-RESKIN"
       ],
-      "status": "incomplete",
-      "notes": "Scaffold §10 shell waiting on permission. A-PTY owner wired. Structural render owners GREEN. Status incomplete pending full A-* suite. L3 golden_path_interactive permission dock (tool=edit Allow once/always/Reject). No matching Grok freeze for A-PIXELS. A-PTY GREEN. Status incomplete. Grok L1 freeze blocked (dummy API / no stable black-box path); see blocked freeze receipt. L3 harness-pty-perm-120x40-v1: Permission required dock. A-PIXELS blocked (no Grok freeze). Evidence honesty loop3: L5=blocked freeze receipt (no capturable Grok L1). L3 refresh loop3: freeze-matched overlay capture. | status=blocked: reference freeze capture blocked (L5 *.blocked.json); not incomplete product theater 2026-07-19 | L3 refresh loop7: harness-pty-perm-120x32-v8 freeze-matched 120x32 (2026-07-19) | L3 refresh loop7: harness-pty-perm-120x32-v9 draft packs without +1 dock height (2026-07-19) | L3 refresh loop8: harness-pty-perm-120x32-v14 pin/height/lead match freeze; residual path+draft+identity (2026-07-19) | L3 refresh wave4: browser-captured 120x40 xterm.js evidence; L1 reference freeze remains blocked; A-PIXELS blocked. (2026-07-19) | L3 refresh wave4: browser-captured 120x40 xterm.js evidence with PNG/ANSI/metadata; L1 reference freeze remains blocked; row stays blocked (2026-07-19). | v9 integration (2026-07-20): L1 reference freeze updated to run1-shell-perm-v9; L3 harness capture updated to harness-shell-perm-v9; masked mismatch count=281843/3525120 (8.00%). Residual: No change from v8 (overlay, no pack_clock_on_body). Overlay color fix from v8 maintained: option lines 33-36 use surface bg [85,87,83] with light gray fg [215,218,224], no golden background. Pixel sampling confirms v9 line 33 col 10 = RGB(85,87,83) surface. Residual: tool call file path/timing (masked); footer border trailing whitespace; 'Draft preserved' line present in L3 but not ref (from PTY helper scenario input); fg color [215,218,224] vs ref [255,255,255] palette 15 (close but not identical); line count (v9=40, ref=40 MATCHES)..  | v11 refresh (2026-07-20): text-color improvement (white rgb(0xEE,0xEE,0xEC)) reduced masked mismatch from 281843 to 261372; residual divergence remains (structural differences: help line keybindings, footer border trailing whitespace, line count, content differences). L3/L4/L5/L6 updated to v11; L1 reference freeze unchanged; v9 evidence retained. | v13 refresh (2026-07-20): 'Draft preserved' line removed from permission dock, reducing masked mismatch from 261372 (v11) to 255749 (v13, delta 5623); residual divergence remains (fg color [215,218,224] vs ref [255,255,255], footer border trailing whitespace, line count). L3/L4/L5/L6 updated to v13; L1 reference freeze unchanged; v11 evidence retained.",
+      "status": "blocked",
+      "notes": "Scaffold §10 shell waiting on permission. A-PTY owner wired. Structural render owners GREEN. Status incomplete pending full A-* suite. L3 golden_path_interactive permission dock (tool=edit Allow once/always/Reject). No matching Grok freeze for A-PIXELS. A-PTY GREEN. Status incomplete. Grok L1 freeze blocked (dummy API / no stable black-box path); see blocked freeze receipt. L3 harness-pty-perm-120x40-v1: Permission required dock. A-PIXELS blocked (no Grok freeze). Evidence honesty loop3: L5=blocked freeze receipt (no capturable Grok L1). L3 refresh loop3: freeze-matched overlay capture. | status=blocked: reference freeze capture blocked (L5 *.blocked.json); not incomplete product theater 2026-07-19 | L3 refresh loop7: harness-pty-perm-120x32-v8 freeze-matched 120x32 (2026-07-19) | L3 refresh loop7: harness-pty-perm-120x32-v9 draft packs without +1 dock height (2026-07-19) | L3 refresh loop8: harness-pty-perm-120x32-v14 pin/height/lead match freeze; residual path+draft+identity (2026-07-19) | L3 refresh wave4: browser-captured 120x40 xterm.js evidence; L1 reference freeze remains blocked; A-PIXELS blocked. (2026-07-19) | L3 refresh wave4: browser-captured 120x40 xterm.js evidence with PNG/ANSI/metadata; L1 reference freeze remains blocked; row stays blocked (2026-07-19). | v9 integration (2026-07-20): L1 reference freeze updated to run1-shell-perm-v9; L3 harness capture updated to harness-shell-perm-v9; masked mismatch count=281843/3525120 (8.00%). Residual: No change from v8 (overlay, no pack_clock_on_body). Overlay color fix from v8 maintained: option lines 33-36 use surface bg [85,87,83] with light gray fg [215,218,224], no golden background. Pixel sampling confirms v9 line 33 col 10 = RGB(85,87,83) surface. Residual: tool call file path/timing (masked); footer border trailing whitespace; 'Draft preserved' line present in L3 but not ref (from PTY helper scenario input); fg color [215,218,224] vs ref [255,255,255] palette 15 (close but not identical); line count (v9=40, ref=40 MATCHES)..  | v11 refresh (2026-07-20): text-color improvement (white rgb(0xEE,0xEE,0xEC)) reduced masked mismatch from 281843 to 261372; residual divergence remains (structural differences: help line keybindings, footer border trailing whitespace, line count, content differences). L3/L4/L5/L6 updated to v11; L1 reference freeze unchanged; v9 evidence retained. | v13 refresh (2026-07-20): 'Draft preserved' line removed from permission dock, reducing masked mismatch from 261372 (v11) to 255749 (v13, delta 5623); residual divergence remains (fg color [215,218,224] vs ref [255,255,255], footer border trailing whitespace, line count). L3/L4/L5/L6 updated to v13; L1 reference freeze unchanged; v11 evidence retained. | Wave4.3: reference permission-prompt L1 capture attempted with the PINNED binary 883e3dea (mock chat_completions tool-call provider, sandboxed scratch HOME, SSH env unset, --permission-mode default): 4 captures (shell echo auto-executed; mkdir/write executed; edit on /tmp and repo file rendered as executed ◆ edit chips with ❙ tool rows + waiting spinner) — the reference NEVER surfaces an ask/deny/allow permission prompt for injected chat_completions tool calls (tool calls render as already-executing chips). status=blocked: reference permission-prompt UI unreachable via black-box tool-call injection (state captured = tool-in-flight, not waiting-permission; 715196/3525120 masked px = state mismatch, not residual). Harness side real: harness-shell-perm-pinned-v4 inline dock (Allow Edit + 4 options + draft preserved); structural owners GREEN; blocker (1) reference prompt path needs reference-internal tool protocol access; blocker (2) differential_evaluator pending. 2026-07-21",
       "slice": "scaffold",
       "evidence": {
-        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-shell-perm-v13/",
-        "L3_capture_note": "Refreshed browser-rendered L3: harness-pty-perm-120x40-v5 (2026-07-19).",
-        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-perm-divergence-receipt-v13.json",
-        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-shell-perm-v9/",
-        "L4_pixel_diff": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-perm-pixel-diff-v13-masked.json",
-        "L6_identity_mask": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-perm-identity-field-mask-v13.json"
+        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run4-shell-perm-pinned-v4/",
+        "L2_cells": "",
+        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-shell-perm-pinned-v4/",
+        "L4_pixel_diff": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-perm-pixel-diff-blocked-v2-masked.json",
+        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-perm-blocked-v2.json",
+        "L6_mask": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-perm-identity-field-mask-v16.json"
       }
     },
     {
@@ -1995,8 +1995,8 @@
       "surface": "overlay",
       "state": "permission_prompt",
       "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
-      "reference_receipt_id": "reference-freeze",
-      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "reference_receipt_id": "shell-perm-reference-freeze-v4",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-perm-reference-freeze.v4.json",
       "preconditions": "Permission overlay open and focused.",
       "seeded_inputs": {
         "overlay": "permission"
@@ -2033,15 +2033,15 @@
         "state_interaction_test": "crates/harness-tui/tests/reference_parity_perm_question_test.rs::shell_perm_preempts_composer_preserves_draft_full_width",
         "render_test": "crates/harness-tui/src/ui_permission_dock.rs::render_inline_permission_dock",
         "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::ovl_perm_pty",
-        "differential_evaluator": "pending:reference_parity::ovl_perm_diff"
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/ovl-perm-blocked-v2.json"
       },
       "evidence_paths": {
-        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-ovl-perm-v9/",
+        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run4-shell-perm-pinned-v4/",
         "L2": "",
-        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-ovl-perm-v13/",
-        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/ovl-perm-pixel-diff-v13-masked.json",
-        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/ovl-perm-divergence-receipt-v13.json",
-        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/ovl-perm-identity-field-mask-v13.json"
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-shell-perm-pinned-v4/",
+        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-perm-pixel-diff-blocked-v2-masked.json",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/ovl-perm-blocked-v2.json",
+        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-perm-identity-field-mask-v16.json"
       },
       "identity_substitution": {
         "fields": [
@@ -2060,15 +2060,16 @@
         "A-INVARIANTS",
         "A-NO-RESKIN"
       ],
-      "status": "incomplete",
-      "notes": "Scaffold §10 permission overlay. L3 golden_path_interactive permission dock capture. No matching Grok freeze for A-PIXELS. A-PTY GREEN. Status incomplete. Grok L1 freeze blocked (dummy API / no stable black-box path); see blocked freeze receipt. L3 harness-pty-perm-120x40-v1: permission overlay dock. A-PIXELS blocked (no Grok freeze). Evidence honesty loop3: L5=blocked freeze receipt (no capturable Grok L1). L3 refresh loop3: freeze-matched overlay capture. | status=blocked: reference freeze capture blocked (L5 *.blocked.json); not incomplete product theater 2026-07-19 | L3 refresh loop7: harness-pty-perm-120x32-v8 freeze-matched 120x32 (2026-07-19) | L3 refresh loop7: harness-pty-perm-120x32-v9 draft packs without +1 dock height (2026-07-19) | L3 refresh loop8: harness-pty-perm-120x32-v14 pin/height/lead match freeze; residual path+draft+identity (2026-07-19) | L3 refresh wave4: xterm.js browser capture (PNG+ANSI+metadata) at harness-pty-perm-120x40-wave4-l3; A-PTY GREEN (2026-07-19). | L3 refresh wave4: browser-captured 120x40 xterm.js evidence; L1 reference freeze remains blocked; A-PIXELS blocked. (2026-07-19) | L3 refresh wave4: browser-captured 120x40 xterm.js evidence with PNG/ANSI/metadata; L1 reference freeze remains blocked; row stays blocked (2026-07-19). | v9 integration (2026-07-20): L1 reference freeze updated to run1-ovl-perm-v9; L3 harness capture updated to harness-ovl-perm-v9; masked mismatch count=281843/3525120 (8.00%). Residual: No change from v8 (shared capture with SHELL-PERM). Overlay color fix maintained. Residual: same as SHELL-PERM..  | v11 refresh (2026-07-20): text-color improvement (white rgb(0xEE,0xEE,0xEC)) reduced masked mismatch from 281843 to 261372; residual divergence remains (structural differences: help line keybindings, footer border trailing whitespace, line count, content differences). L3/L4/L5/L6 updated to v11; L1 reference freeze unchanged; v9 evidence retained. | v13 refresh (2026-07-20): 'Draft preserved' line removed from permission dock, reducing masked mismatch from 261372 (v11) to 255749 (v13, delta 5623); residual divergence remains (fg color [215,218,224] vs ref [255,255,255], footer border trailing whitespace, line count). L3/L4/L5/L6 updated to v13; L1 reference freeze unchanged; v11 evidence retained.",
+      "status": "blocked",
+      "notes": "Scaffold §10 permission overlay. L3 golden_path_interactive permission dock capture. No matching Grok freeze for A-PIXELS. A-PTY GREEN. Status incomplete. Grok L1 freeze blocked (dummy API / no stable black-box path); see blocked freeze receipt. L3 harness-pty-perm-120x40-v1: permission overlay dock. A-PIXELS blocked (no Grok freeze). Evidence honesty loop3: L5=blocked freeze receipt (no capturable Grok L1). L3 refresh loop3: freeze-matched overlay capture. | status=blocked: reference freeze capture blocked (L5 *.blocked.json); not incomplete product theater 2026-07-19 | L3 refresh loop7: harness-pty-perm-120x32-v8 freeze-matched 120x32 (2026-07-19) | L3 refresh loop7: harness-pty-perm-120x32-v9 draft packs without +1 dock height (2026-07-19) | L3 refresh loop8: harness-pty-perm-120x32-v14 pin/height/lead match freeze; residual path+draft+identity (2026-07-19) | L3 refresh wave4: xterm.js browser capture (PNG+ANSI+metadata) at harness-pty-perm-120x40-wave4-l3; A-PTY GREEN (2026-07-19). | L3 refresh wave4: browser-captured 120x40 xterm.js evidence; L1 reference freeze remains blocked; A-PIXELS blocked. (2026-07-19) | L3 refresh wave4: browser-captured 120x40 xterm.js evidence with PNG/ANSI/metadata; L1 reference freeze remains blocked; row stays blocked (2026-07-19). | v9 integration (2026-07-20): L1 reference freeze updated to run1-ovl-perm-v9; L3 harness capture updated to harness-ovl-perm-v9; masked mismatch count=281843/3525120 (8.00%). Residual: No change from v8 (shared capture with SHELL-PERM). Overlay color fix maintained. Residual: same as SHELL-PERM..  | v11 refresh (2026-07-20): text-color improvement (white rgb(0xEE,0xEE,0xEC)) reduced masked mismatch from 281843 to 261372; residual divergence remains (structural differences: help line keybindings, footer border trailing whitespace, line count, content differences). L3/L4/L5/L6 updated to v11; L1 reference freeze unchanged; v9 evidence retained. | v13 refresh (2026-07-20): 'Draft preserved' line removed from permission dock, reducing masked mismatch from 261372 (v11) to 255749 (v13, delta 5623); residual divergence remains (fg color [215,218,224] vs ref [255,255,255], footer border trailing whitespace, line count). L3/L4/L5/L6 updated to v13; L1 reference freeze unchanged; v11 evidence retained. | Wave4.3: reference permission-prompt L1 capture attempted with the PINNED binary 883e3dea (mock chat_completions tool-call provider, sandboxed scratch HOME, SSH env unset, --permission-mode default): 4 captures (shell echo auto-executed; mkdir/write executed; edit on /tmp and repo file rendered as executed ◆ edit chips with ❙ tool rows + waiting spinner) — the reference NEVER surfaces an ask/deny/allow permission prompt for injected chat_completions tool calls (tool calls render as already-executing chips). status=blocked: reference permission-prompt UI unreachable via black-box tool-call injection (state captured = tool-in-flight, not waiting-permission; 715196/3525120 masked px = state mismatch, not residual). Harness side real: harness-shell-perm-pinned-v4 inline dock (Allow Edit + 4 options + draft preserved); structural owners GREEN; blocker (1) reference prompt path needs reference-internal tool protocol access; blocker (2) differential_evaluator pending. 2026-07-21",
       "slice": "scaffold",
       "evidence": {
-        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-ovl-perm-v13/",
-        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/ovl-perm-divergence-receipt-v13.json",
-        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-ovl-perm-v9/",
-        "L4_pixel_diff": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/ovl-perm-pixel-diff-v13-masked.json",
-        "L6_identity_mask": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/ovl-perm-identity-field-mask-v13.json"
+        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run4-shell-perm-pinned-v4/",
+        "L2_cells": "",
+        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-shell-perm-pinned-v4/",
+        "L4_pixel_diff": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-perm-pixel-diff-blocked-v2-masked.json",
+        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/ovl-perm-blocked-v2.json",
+        "L6_mask": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-perm-identity-field-mask-v16.json"
       }
     },
     {
