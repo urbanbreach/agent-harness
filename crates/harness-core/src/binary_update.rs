@@ -971,6 +971,24 @@ mod tests {
     }
 
     #[test]
+    fn corrupt_local_manifest_fails_closed_as_unavailable_and_writes_receipt() {
+        // arrange — a workspace whose update manifest is unreadable JSON
+        let temp = tempfile::tempdir().expect("tempdir");
+        let workspace = temp.path();
+        let manifest_path = workspace.join(LOCAL_UPDATE_MANIFEST_REL);
+        fs::create_dir_all(manifest_path.parent().expect("parent")).expect("mkdir");
+        fs::write(&manifest_path, "{ not valid json").expect("write corrupt manifest");
+
+        // act
+        let product = run_local_manifest_update_check(workspace, Some("0.1.0")).expect("product");
+
+        // assert — structured unavailable verdict; the receipt is still written
+        assert!(product.check.is_unavailable());
+        assert!(product.receipt_path.is_file());
+        assert_eq!(product.manifest_path, manifest_path);
+    }
+
+    #[test]
     fn missing_local_manifest_fails_closed_but_still_writes_receipt() {
         // Given
         let dir = tempfile::tempdir().expect("tempdir");

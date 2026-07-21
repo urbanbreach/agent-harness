@@ -627,14 +627,18 @@
       "capability_id": "auth.browser_oidc_sso",
       "family": "providers-identity-auth-update",
       "surface": "product",
-      "status": "pass",
+      "status": "incomplete",
       "backend_owner": "crates/harness-core/src/browser_oidc_local.rs",
       "visible_action_id": null,
       "side_effect_kind": "filesystem",
       "disposition": "retain",
-      "notes": "Product: LocalBrowserOidc start/complete with durable state under .agent-harness/browser-oidc/state.json + complete.receipt.json (redacted code hints); fail-closed without start/wrong code. run_local_browser_oidc_product multi-step product. Owner tests: browser_oidc_local unit suite. Residual: no live IdP/browser SSO; local durable OIDC lifecycle only.",
-      "note": "Product: probe_browser_oidc_product multi-endpoint fail-closed walk; last-of-each summary total=2 all_unavailable with issuer/client hints + code redaction. Residual: live browser OIDC success path not claimed.",
-      "honesty_demotion": false
+      "notes": "Wave 2 honest audit: neither module implements browser SSO. browser_oidc.rs start/complete_browser_oidc_flow hardcode Unavailable ('browser/device backend is not implemented') and the TUI consumes only multi-endpoint probe summaries for the status dialog; browser_oidc_local.rs is a durable local pseudo-OIDC lifecycle (state.json + complete.receipt.json, redacted code hints, fail-closed without start/wrong code) called only by its own product test. No live IdP, no browser launch, no loopback callback, no operator command. Demoted: stub probes + local stand-in only; the advertised browser OIDC SSO does not exist.",
+      "honesty_demotion": {
+        "from": "pass",
+        "reason": "start_complete_hardcoded_unavailable_no_browser_or_idp_backend",
+        "demoted_at": "2026-07-21Twave2-packet-2.5",
+        "restored": false
+      }
     },
     {
       "capability_id": "provider.auto_fallback",
@@ -652,18 +656,17 @@
       "capability_id": "platform.binary_update",
       "family": "providers-identity-auth-update",
       "surface": "product",
-      "status": "pass",
+      "status": "incomplete",
       "backend_owner": "crates/harness-core/src/binary_update.rs",
       "visible_action_id": null,
       "side_effect_kind": "process",
       "disposition": "retain",
-      "notes": "Product: run_local_manifest_update_check reads .agent-harness/update-manifest.json and writes .agent-harness/update-check.receipt.json with UpToDate|UpdateAvailable|Unavailable; offline multi-channel path remains structured unavailable without a local manifest. Owner tests: local manifest up_to_date/update_available + receipt side effects; missing manifest fails closed with receipt. Residual: live download/apply/restart recovery not claimed.",
+      "notes": "Wave 2 honest audit: the local-manifest channel is real and tested \u2014 run_local_manifest_update_check reads .agent-harness/update-manifest.json, decides UpToDate/UpdateAvailable, writes .agent-harness/update-check.receipt.json, and fails closed (still writing a receipt) on missing/invalid manifests; offline multi-channel checks are structured unavailable, never fake success. But there is no operator surface or update pipeline: no CLI update command, no TUI action (the TUI only renders the offline probe summary in the status dialog via the seed probe), and no download/apply/restart/recovery. Demoted: check-only local channel with no product path that updates the binary.",
       "honesty_demotion": {
-        "from": "incomplete",
-        "reason": "prd_probe_ban_or_residual_notes",
-        "demoted_at": "2026-07-19Tphase0",
-        "restored": true,
-        "restore_reason": "local_manifest_channel_check_and_receipt"
+        "from": "pass",
+        "reason": "local_manifest_check_only_no_update_command_download_apply_or_restart",
+        "demoted_at": "2026-07-21Twave2-packet-2.5",
+        "restored": false
       }
     },
     {
@@ -1185,37 +1188,34 @@
       "capability_id": "auth.sleep_wake_credential_refresh",
       "family": "providers-identity-auth-update",
       "surface": "product",
-      "status": "pass",
+      "status": "incomplete",
       "backend_owner": "crates/harness-core/src/sleep_wake_auth.rs",
       "visible_action_id": null,
       "side_effect_kind": "provider",
       "disposition": "retain",
-      "notes": "Product complete: open_platform_sleep_wake_event_source Active hook listener (strategy=hook; OS adapters inject events); evaluate_sleep_wake_credential_refresh Active; CredentialExpirySnapshot + decide_* recommends Refresh on Wake/Resume near expiry; execute_sleep_wake_refresh_decision / observe_decide_and_execute / run_sleep_wake_refresh_loop call ProviderCredentialManager::refresh_oauth_if_near_expiry (single-flight + atomic store replace, cancellable). Fail-closed Unavailable via unavailable_sleep_wake_event_source when no source opened. Owner tests: fresh skip, near-expiry single refresh + persist, transient failure, missing refresh token, cancellation, hook loop. TUI dual-cycle + status dialog surface Active policy. Does not claim native OS power API beyond hook bridge.",
-      "note": "Hook event source + proactive OAuth refresh pipeline closed holdout.",
+      "notes": "Wave 2 honest audit: the decision half is real and thoroughly tested (20 unit tests: observe/decide/evaluate, near-expiry refresh recommendations on Wake/Resume, single-flight execute against a credential manager in unit harness, cancellation, transient failure) and the TUI computes decisions/observations through apply_sleep_wake_host_event_with_expiry for the status surface. But the execution half is never wired in any product build: execute_sleep_wake_refresh_decision, run_sleep_wake_refresh_loop, and open_platform_sleep_wake_event_source have zero production callers \u2014 no host event source is opened, nothing injects sleep/wake events into the app, and no credential is ever refreshed outside unit tests. Demoted: refresh pipeline unreachable from the running product.",
       "honesty_demotion": {
         "from": "pass",
-        "reason": "no_os_wake_listener_no_credential_refresh_pipeline",
-        "demoted_at": "2026-07-19Tphase6",
-        "restored": true,
-        "restore_reason": "hook_event_source_and_proactive_oauth_refresh_pipeline"
+        "reason": "refresh_execution_loop_and_event_source_never_wired_in_production",
+        "demoted_at": "2026-07-21Twave2-packet-2.5",
+        "restored": false
       }
     },
     {
       "capability_id": "provider.non_openai_protocols",
       "family": "providers-identity-auth-update",
       "surface": "providers",
-      "status": "pass",
+      "status": "incomplete",
       "backend_owner": "crates/harness-core/src/provider_protocol.rs",
       "visible_action_id": null,
       "side_effect_kind": "provider",
       "disposition": "retain",
-      "notes": "Protocol capability catalog: only openai_compatible Supported; anthropic/google/bedrock/azure catalogued Unsupported with notes. No false non-OpenAI parity claims.",
+      "notes": "Wave 2 honest audit: provider_protocol.rs is an honest capability catalog only \u2014 it marks openai_compatible Supported and anthropic_messages/google_generative/aws_bedrock/azure_openai Unsupported with 'do not claim parity' notes, and the providers crate ships only the OpenAI-compatible transport (+ mock/cassette/schema-compat). The honesty of the catalog is valuable but is not delivery of non-OpenAI protocols; no Anthropic/Google/Bedrock/Azure transport exists and the catalog has no product consumer beyond a re-export. Demoted: the advertised non-OpenAI protocols are deliberately unimplemented.",
       "honesty_demotion": {
         "from": "pass",
-        "reason": "prd_probe_ban_or_residual_notes",
-        "demoted_at": "2026-07-19Tphase0",
-        "restored": true,
-        "restore_reason": "required_pass_or_real_backend"
+        "reason": "catalog_only_no_non_openai_transports_implemented",
+        "demoted_at": "2026-07-21Twave2-packet-2.5",
+        "restored": false
       }
     }
   ]

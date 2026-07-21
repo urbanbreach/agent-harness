@@ -883,6 +883,24 @@ mod tests {
     }
 
     #[test]
+    fn observe_and_decide_returns_refresh_for_resume_near_expiry() {
+        // arrange — the exact entry point the TUI apply path calls
+        let expiry = near_expiry_snapshot();
+
+        // act
+        let (resume_observation, resume_decision) =
+            observe_and_decide_sleep_wake_host_event_for(SleepWakeHostEvent::Resume, Some(&expiry));
+        let (sleep_observation, sleep_decision) =
+            observe_and_decide_sleep_wake_host_event_for(SleepWakeHostEvent::Sleep, Some(&expiry));
+
+        // assert — resume near expiry recommends refresh; sleep never does
+        assert!(resume_decision.is_refresh());
+        assert!(sleep_decision.is_skip());
+        let summary = summarize_sleep_wake_observations(&[resume_observation, sleep_observation]);
+        assert_eq!(summary.total, 2);
+    }
+
+    #[test]
     fn decide_skips_refresh_on_wake_when_credentials_still_fresh() {
         let decision = decide_sleep_wake_credential_refresh_for(
             SleepWakeHostEvent::Wake,

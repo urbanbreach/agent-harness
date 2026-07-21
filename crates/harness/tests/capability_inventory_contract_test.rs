@@ -59,7 +59,6 @@ const REQUIRED_PASS_IDS: &[&str] = &[
     "permission.four_option_with_session_grant",
     "orchestration.wait_any",
     "orchestration.wait_all",
-    "provider.non_openai_protocols",
     "terminal.clipboard_hyperlink",
     "workspace.folder_trust",
     "memory.durable_product_surface",
@@ -78,14 +77,11 @@ const REQUIRED_PASS_IDS: &[&str] = &[
     "permission.dock_ui",
     "terminal.capability_presentation",
     "sessions.foreign_import",
-    "auth.sleep_wake_credential_refresh",
     "vcs.edit_attribution",
     "plugins.descriptor_manifest",
     "orchestration.foreground_demote_background",
-    "platform.binary_update",
     "code.persistent_graph",
     "sandbox.os_profiles",
-    "auth.browser_oidc_sso",
 ];
 
 /// Wave 2 demotions: these rows were overclaimed `pass` (probe-only or missing
@@ -102,6 +98,10 @@ const REQUIRED_NON_PASS_IDS: &[&str] = &[
     "plugins.runtime_lifecycle",
     "acp.agent_mode",
     "remote.workspace_hub",
+    "auth.browser_oidc_sso",
+    "auth.sleep_wake_credential_refresh",
+    "provider.non_openai_protocols",
+    "platform.binary_update",
 ];
 const MAX_ROWS: usize = 200;
 

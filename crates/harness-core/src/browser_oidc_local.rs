@@ -352,6 +352,32 @@ mod tests {
     }
 
     #[test]
+    fn oidc_state_survives_reopen_after_complete() {
+        // arrange
+        let dir = tempdir().expect("tempdir");
+        let mut oidc = LocalBrowserOidc::open(dir.path()).expect("open");
+        let started = oidc.start("issuer-a", "client-a").expect("start");
+        let authorization_code = match started {
+            LocalOidcStartResult::Started {
+                authorization_code, ..
+            } => authorization_code,
+            other => panic!("expected Started, got {other:?}"),
+        };
+
+        // act — complete, drop, and reopen a fresh instance over the same workspace
+        oidc.complete(authorization_code).expect("complete");
+        drop(oidc);
+        let reopened = LocalBrowserOidc::open(dir.path()).expect("reopen");
+
+        // assert — durable flow state persisted across instances
+        let state = reopened.state();
+        assert!(state.started);
+        assert!(state.completed);
+        assert_eq!(state.issuer.as_deref(), Some("issuer-a"));
+        assert!(state.subject.is_some());
+    }
+
+    #[test]
     fn complete_without_start_fails_closed() {
         let dir = tempdir().expect("tempdir");
         let mut oidc = LocalBrowserOidc::open(dir.path()).expect("open");

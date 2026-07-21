@@ -118,6 +118,34 @@ mod tests {
     use super::*;
 
     #[test]
+    fn every_protocol_row_carries_a_non_empty_explanatory_note() {
+        // arrange
+        let catalog = provider_protocol_catalog();
+
+        // act — the catalog is static; evaluation is the walk itself
+
+        // assert — honest catalog contract: non-empty notes, unique protocols, one Supported
+        let mut seen = std::collections::HashSet::new();
+        for entry in &catalog {
+            assert!(
+                !entry.notes.trim().is_empty(),
+                "protocol {:?} has empty notes",
+                entry.protocol
+            );
+            assert!(
+                seen.insert(entry.protocol),
+                "duplicate {:?}",
+                entry.protocol
+            );
+        }
+        let supported = catalog
+            .iter()
+            .filter(|entry| entry.support.is_supported())
+            .count();
+        assert_eq!(supported, 1);
+    }
+
+    #[test]
     fn catalog_marks_only_openai_compatible_supported() {
         // arrange
         // act
