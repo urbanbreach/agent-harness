@@ -2554,3 +2554,61 @@ pub(super) fn palette_inventory_comprehensive_fields() {
         );
     }
 }
+
+/// OVL-PALETTE fail-closed: Enter with no matching commands closes the
+/// palette without executing any command or touching the composer.
+pub(super) fn palette_enter_with_no_matches_closes_without_executing() {
+    let mut app = AppState::new_live(None, false, None);
+    open_palette(&mut app);
+    for ch in "zzz-no-match-zzz".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+    assert!(app.palette_filtered.is_empty(), "precondition: no matches");
+    let composer_before = app.composer.prompt_buffer.clone();
+
+    app.handle_key(key(KeyCode::Enter));
+
+    assert!(
+        !app.palette_visible,
+        "OVL-PALETTE: Enter with no matches closes the palette"
+    );
+    assert_eq!(
+        app.composer.prompt_buffer, composer_before,
+        "OVL-PALETTE: Enter with no matches must not touch the composer"
+    );
+    assert!(
+        app.overlay_stack().top() != Some(OverlayKind::CommandPalette),
+        "OVL-PALETTE: no palette overlay may remain open"
+    );
+}
+
+/// OVL-PALETTE state machine: Esc closes; reopening via Ctrl+P restores a
+/// clean palette (filter cleared, selection reset to the top).
+pub(super) fn palette_reopen_after_escape_restores_clean_palette() {
+    let mut app = AppState::new_live(None, false, None);
+    open_palette(&mut app);
+    app.handle_key(key(KeyCode::Down));
+    for ch in "new ses".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+    assert!(!app.palette_input.is_empty(), "precondition: filter typed");
+    app.handle_key(key(KeyCode::Esc));
+    assert!(!app.palette_visible, "Esc must close the palette");
+
+    open_palette(&mut app);
+
+    assert!(app.palette_visible, "Ctrl+P must reopen the palette");
+    assert!(
+        app.palette_input.is_empty(),
+        "OVL-PALETTE: reopen must clear the filter, got {:?}",
+        app.palette_input
+    );
+    assert_eq!(
+        app.palette_selected, 0,
+        "OVL-PALETTE: reopen must reset selection"
+    );
+    assert!(
+        !app.palette_filtered.is_empty(),
+        "OVL-PALETTE: reopened palette must list commands again"
+    );
+}

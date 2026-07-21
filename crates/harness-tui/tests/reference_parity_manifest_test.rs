@@ -105,7 +105,7 @@ fn checked_in_manifest_covers_first_slice_and_scaffolds() {
             .unwrap_or("")
             .contains("artifacts/qa-evidence/20260717-tui-reference-parity"));
     }
-    let user_approved_scaffold_diverged = ["OVL-PALETTE"];
+    let user_approved_scaffold_diverged: [&str; 0] = [];
     let demoted_to_incomplete: [&str; 0] = [];
     // Scaffolds blocked on external reference evidence (Wave 4 Packets 4.1-4.6):
     // shell-idle/stream freezes captured from the pinned binary but A-PIXELS
@@ -131,6 +131,7 @@ fn checked_in_manifest_covers_first_slice_and_scaffolds() {
         "TX-ASSISTANT",
         "TX-TOOL",
         "TX-DIFF",
+        "OVL-PALETTE",
     ];
     for id in REQUIRED_SCAFFOLD_IDS {
         assert!(ids.contains(*id), "missing scaffold id {id}");
@@ -471,59 +472,50 @@ fn validator_rejects_journey_row_missing_capability_join() {
 
 #[test]
 fn validator_rejects_diverged_with_null_divergence_id() {
-    // arrange
-    // act
-    // assert
-    // arrange
+    // arrange — no checked-in row is diverged (Wave 4.7), so synthesize one
     let mut manifest = checked_in_manifest();
-    let rows = manifest["rows"].as_array_mut().unwrap_or_abort();
-    let diverged_row = rows
-        .iter_mut()
-        .find(|row| row["status"].as_str() == Some("diverged"))
-        .unwrap_or_abort();
+    let diverged_row = first_row_with_status_mut(&mut manifest, "pass");
+    diverged_row["status"] = json!("diverged");
     diverged_row["deliberate_divergence_id"] = json!(null);
 
-    // act / assert
-    assert_control(validate_manifest(&manifest), "missing-divergence-id");
+    // act
+    let result = validate_manifest(&manifest);
+
+    // assert
+    assert_control(result, "missing-divergence-id");
 }
 
 #[test]
 fn validator_rejects_diverged_with_absent_divergence_id() {
-    // arrange
-    // act
-    // assert
-    // arrange
+    // arrange — no checked-in row is diverged (Wave 4.7), so synthesize one
     let mut manifest = checked_in_manifest();
-    let rows = manifest["rows"].as_array_mut().unwrap_or_abort();
-    let diverged_row = rows
-        .iter_mut()
-        .find(|row| row["status"].as_str() == Some("diverged"))
-        .unwrap_or_abort();
+    let diverged_row = first_row_with_status_mut(&mut manifest, "pass");
+    diverged_row["status"] = json!("diverged");
     diverged_row
         .as_object_mut()
         .unwrap_or_abort()
         .remove("deliberate_divergence_id");
 
-    // act / assert
-    assert_control(validate_manifest(&manifest), "missing-divergence-id");
+    // act
+    let result = validate_manifest(&manifest);
+
+    // assert
+    assert_control(result, "missing-divergence-id");
 }
 
 #[test]
 fn validator_rejects_diverged_with_unauthorized_divergence_id() {
-    // arrange
-    // act
-    // assert
-    // arrange
+    // arrange — no checked-in row is diverged (Wave 4.7), so synthesize one
     let mut manifest = checked_in_manifest();
-    let rows = manifest["rows"].as_array_mut().unwrap_or_abort();
-    let diverged_row = rows
-        .iter_mut()
-        .find(|row| row["status"].as_str() == Some("diverged"))
-        .unwrap_or_abort();
+    let diverged_row = first_row_with_status_mut(&mut manifest, "pass");
+    diverged_row["status"] = json!("diverged");
     diverged_row["deliberate_divergence_id"] = json!("DIV-NOT-APPROVED");
 
-    // act / assert
-    assert_control(validate_manifest(&manifest), "unauthorized-divergence");
+    // act
+    let result = validate_manifest(&manifest);
+
+    // assert
+    assert_control(result, "unauthorized-divergence");
 }
 
 #[test]
@@ -546,9 +538,11 @@ fn validator_rejects_pending_owner_on_pass_row() {
 
 #[test]
 fn validator_rejects_diverged_with_empty_divergence_id() {
-    // arrange
+    // arrange — no checked-in row is diverged (Wave 4.7), so synthesize one
     let mut manifest = checked_in_manifest();
-    first_row_with_status_mut(&mut manifest, "diverged")["deliberate_divergence_id"] = json!("");
+    let diverged_row = first_row_with_status_mut(&mut manifest, "pass");
+    diverged_row["status"] = json!("diverged");
+    diverged_row["deliberate_divergence_id"] = json!("");
 
     // act
     let result = validate_manifest(&manifest);
@@ -559,10 +553,12 @@ fn validator_rejects_diverged_with_empty_divergence_id() {
 
 #[test]
 fn validator_rejects_pending_owner_on_diverged_row() {
-    // arrange
+    // arrange — no checked-in row is diverged (Wave 4.7), so synthesize one
     let mut manifest = checked_in_manifest();
-    first_row_with_status_mut(&mut manifest, "diverged")["owners"]["render_test"] =
-        json!("pending");
+    let diverged_row = first_row_with_status_mut(&mut manifest, "pass");
+    diverged_row["status"] = json!("diverged");
+    diverged_row["deliberate_divergence_id"] = json!("DIV-AA-PALETTE");
+    diverged_row["owners"]["render_test"] = json!("pending");
 
     // act
     let result = validate_manifest(&manifest);
@@ -652,8 +648,11 @@ fn validator_rejects_viewport_inconsistent_with_reference_freeze() {
 
 #[test]
 fn validator_rejects_diverged_without_declared_receipt_note() {
-    // arrange
+    // arrange — no checked-in row is diverged (Wave 4.7), so synthesize one
     let mut manifest = checked_in_manifest();
+    let diverged_row = first_row_with_status_mut(&mut manifest, "pass");
+    diverged_row["status"] = json!("diverged");
+    diverged_row["deliberate_divergence_id"] = json!("DIV-AA-PALETTE");
     manifest["identity_policy"]["approved_divergence_notes"]["DIV-AA-PALETTE"] =
         json!("User-approved pure AA residual. Receipt marker removed.");
 
@@ -684,7 +683,14 @@ fn derive_status_demotes_claims_with_evidence_gaps() {
     // arrange
     let mut manifest = checked_in_manifest();
     let pass_row = row_mut(&mut manifest, "P0-START-01").clone();
-    let diverged_row = row_mut(&mut manifest, "OVL-PALETTE").clone();
+    // No row in the checked-in manifest is diverged anymore (OVL-PALETTE's
+    // DIV-AA-PALETTE approval was invalidated in Wave 4.7), so synthesize the
+    // diverged case from an approval still recorded in the identity policy.
+    let diverged_row = {
+        let mut row = row_mut(&mut manifest, "OVL-PALETTE").clone();
+        row["deliberate_divergence_id"] = json!("DIV-AA-PALETTE");
+        row
+    };
     let gap_row = {
         let mut row = pass_row.clone();
         row["evidence_paths"]["L4"] = json!("");

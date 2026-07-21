@@ -24,7 +24,7 @@
       "DIV-AA-SHELL-FAIL"
     ],
     "approved_divergence_notes": {
-      "DIV-AA-PALETTE": "User-approved pure AA residual for OVL-PALETTE (mm=112). No mask expansion. Receipt: receipts/div-aa-palette-20260719.md",
+      "DIV-AA-PALETTE": "User-approved pure AA residual for OVL-PALETTE (mm=112). No mask expansion. Receipt: receipts/div-aa-palette-20260719.md | Wave4.7 (2026-07-21) revalidation INVALIDATED this approval: fresh pinned capture (run1-palette-pinned-v1) shows 152639 unapproved px incl. command-catalog divergence; OVL-PALETTE demoted to blocked; see palette-blocked-v2.json.",
       "DIV-AA-SHELL-FAIL": "User-approved pure AA residual for SHELL-FAIL (mm=25441). No mask expansion. Receipt: receipts/div-aa-shell-fail-20260719.md"
     }
   },
@@ -1747,8 +1747,8 @@
       "surface": "overlay",
       "state": "command_palette",
       "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
-      "reference_receipt_id": "reference-freeze",
-      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "reference_receipt_id": "palette-reference-freeze-v1",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/palette-reference-freeze.v1.json",
       "preconditions": "Command palette open.",
       "seeded_inputs": {
         "overlay": "palette open"
@@ -1785,15 +1785,15 @@
         "state_interaction_test": "crates/harness-tui/src/app/tests/palette_parity_tests.rs + p0 command_palette_opens_filters_and_dismisses_without_sidebar",
         "render_test": "crates/harness-tui/src/ui_overlays.rs::render_command_palette_overlay",
         "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::ovl_palette_pty",
-        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/palette-pixel-diff-v63-masked.json"
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/palette-blocked-v2.json"
       },
       "evidence_paths": {
-        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-palette/",
+        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-palette-pinned-v1/",
         "L2": "artifacts/qa-evidence/20260717-tui-reference-parity/harness/OVL-PALETTE/L2/",
-        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-palette-v63/",
-        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/ovl-palette-pixel-diff-precise-v1.json",
-        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/overlay-residual-v62.md",
-        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/overlay-identity-field-mask.precise-v1.json"
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-palette-pinned-v1/",
+        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/palette-pixel-diff-pinned-v1-masked.json",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/palette-blocked-v2.json",
+        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/overlay-identity-field-mask-v2.json"
       },
       "identity_substitution": {
         "fields": [
@@ -1802,7 +1802,7 @@
         ],
         "policy": "Harness logo/text only; geometry preserved"
       },
-      "deliberate_divergence_id": "DIV-AA-PALETTE",
+      "deliberate_divergence_id": null,
       "acceptance_gate_ids": [
         "A-MANIFEST",
         "A-REFERENCE",
@@ -1813,15 +1813,15 @@
         "A-INVARIANTS",
         "A-NO-RESKIN"
       ],
-      "status": "diverged",
-      "notes": "Scaffold §10 command palette overlay. L1 freeze + L3 harness-palette-v63 + L4 masked compare (112 residual unapproved RGBA). A-PTY owner GREEN. Session overlay sibling PASS masked. Status incomplete pending palette residual close + A-REVIEW. Palette residual 112 RGBA confirmed pure subpixel AA: terminal.txt differs only on identity breadcrumb (line1) + model badge (line28); residual at x≈779–792,y≈875–880 is identical-glyph AA at palette×composer junction. Fail-closed until product AA match. A-NO-RESKIN disposition: REWRITE* with 112 AA residual fail-closed (see a-no-reskin-disposition-v1.md). Residual analysis: receipts/palette-aa-residual-v1.md (112 AA fail-closed; v63=v64). Evidence honesty (loop3): L1=run1-palette freeze; L3=harness-palette-v63; L4=v63 masked mm=112; L6=overlay identity mask. AA unlock #1 fontSize14 NEGATIVE (see aa-font-size-unlock-v1/RECEIPT.md). | diverged=DIV-AA-PALETTE pure AA residual user-approved 2026-07-19; receipt div-aa-palette-20260719.md",
+      "status": "blocked",
+      "notes": "Scaffold §10 command palette overlay. L1 freeze + L3 harness-palette-v63 + L4 masked compare (112 residual unapproved RGBA). A-PTY owner GREEN. Session overlay sibling PASS masked. Status incomplete pending palette residual close + A-REVIEW. Palette residual 112 RGBA confirmed pure subpixel AA: terminal.txt differs only on identity breadcrumb (line1) + model badge (line28); residual at x≈779–792,y≈875–880 is identical-glyph AA at palette×composer junction. Fail-closed until product AA match. A-NO-RESKIN disposition: REWRITE* with 112 AA residual fail-closed (see a-no-reskin-disposition-v1.md). Residual analysis: receipts/palette-aa-residual-v1.md (112 AA fail-closed; v63=v64). Evidence honesty (loop3): L1=run1-palette freeze; L3=harness-palette-v63; L4=v63 masked mm=112; L6=overlay identity mask. AA unlock #1 fontSize14 NEGATIVE (see aa-font-size-unlock-v1/RECEIPT.md). | diverged=DIV-AA-PALETTE pure AA residual user-approved 2026-07-19; receipt div-aa-palette-20260719.md | Wave4.7 revalidation (2026-07-21) against PINNED binary 883e3dea: DIV-AA-PALETTE INVALIDATED — fresh capture shows 152639 unapproved px (4.3%) vs the approved 112 AA, with real command-catalog divergence (reference Context/Model & Input/Tools sections + nav footer vs harness Help/Fork/toggles catalog) and keybinding-hint divergence (Ctrl+P → worktree vs Ctrl+W). status diverged→blocked; deliberate_divergence_id cleared (validator requires null for non-diverged). Blockers: harness palette catalog alignment or user approval of the catalog divergence; differential_evaluator pending.",
       "slice": "scaffold",
       "evidence": {
-        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-palette/",
-        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-palette-v63/",
-        "L4_pixel_diff": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/palette-pixel-diff-v63-masked.json",
-        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/palette-aa-residual-v1.md",
-        "L6_mask": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/overlay-identity-field-mask.v1.json"
+        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-palette-pinned-v1/",
+        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-palette-pinned-v1/",
+        "L4_pixel_diff": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/palette-pixel-diff-pinned-v1-masked.json",
+        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/palette-blocked-v2.json",
+        "L6_mask": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/overlay-identity-field-mask-v2.json"
       }
     },
     {

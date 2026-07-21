@@ -112,9 +112,9 @@ fn evidence_validator_passes_with_seeded_evidence_root() {
 
 #[test]
 fn evidence_validator_rejects_missing_layer_file() {
-    // arrange
+    // arrange — a pass row's seeded L4 file removed
     let (root, manifest) = seeded_evidence_root();
-    let layer_file = resolved_row_path(root.path(), &manifest, "OVL-PALETTE", "L4");
+    let layer_file = resolved_row_path(root.path(), &manifest, "P0-START-01", "L4");
     std::fs::remove_file(layer_file).unwrap_or_abort();
 
     // act
@@ -144,13 +144,14 @@ fn evidence_validator_rejects_stale_capture_digest() {
 
 #[test]
 fn evidence_validator_rejects_missing_divergence_receipt_file() {
-    // arrange
-    let (root, manifest) = seeded_evidence_root();
-    let note = manifest["identity_policy"]["approved_divergence_notes"]["DIV-AA-PALETTE"]
-        .as_str()
-        .unwrap_or_abort();
-    let receipt_rel = divergence_receipt_path(note).unwrap_or_abort();
-    std::fs::remove_file(root.path().join(receipt_rel)).unwrap_or_abort();
+    // arrange — synthesize a diverged row whose receipt file was never seeded
+    // (no checked-in row is diverged since Wave 4.7, so the seeded tree has
+    // no divergence receipt). The identity-policy note keeps its Receipt:
+    // marker, so the receipt path is required but absent.
+    let (root, mut manifest) = seeded_evidence_root();
+    let diverged_row = row_mut(&mut manifest, "P0-START-01");
+    diverged_row["status"] = json!("diverged");
+    diverged_row["deliberate_divergence_id"] = json!("DIV-AA-PALETTE");
 
     // act
     let result = validate_manifest_evidence(&manifest, root.path());
