@@ -3,7 +3,7 @@ source: crates/harness-tui/src/lib_tests/transcript_flow.rs
 expression: "render_live_lines(&app, 80, 24)"
 ---
                                                                                 
-   ui-ux-experiments ~/Projects/agent-harness/crates/harness-tui               
+   test-workspace /workspace/agent-harness                                     
                                                                                 
   ❙  ◆ Thought for 0.0s                                                         
                                                                                 

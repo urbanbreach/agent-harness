@@ -3,7 +3,7 @@ source: crates/harness-tui/src/lib_tests/transcript_flow.rs
 expression: rendered
 ---
 
-   ui-ux-experiments ~/Projects/agent-harness/crates/harness-tui
+   test-workspace /workspace/agent-harness
 
 
 

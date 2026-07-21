@@ -3,7 +3,7 @@ source: crates/harness-tui/tests/deterministic_render_test.rs
 expression: trim_trailing_snapshot_whitespace(&rendered)
 ---
 
-   ui-ux-experiments ~/Projects/agent-harness/crates/harness-tui
+   test-workspace /workspace/agent-harness
 
 
      ❯ Inspect deterministic sidebar

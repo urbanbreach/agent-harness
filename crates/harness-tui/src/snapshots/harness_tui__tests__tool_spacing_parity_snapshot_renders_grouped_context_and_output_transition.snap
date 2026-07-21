@@ -6,7 +6,7 @@ Buffer {
     area: Rect { x: 0, y: 0, width: 120, height: 30 },
     content: [
         "                                                                                                                        ",
-        "  î  ui-ux-experiments ~/Projects/agent-harness/crates/harness-tui                                                       ",
+        "  î  test-workspace /workspace/agent-harness                                                                             ",
         "                                                                                                                        ",
         "                                                                                                                        ",
         "     â¯ Match harness tool spacing                                                                                       ",

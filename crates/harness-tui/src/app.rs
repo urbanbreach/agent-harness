@@ -178,6 +178,24 @@ pub use self::transcript_state::TranscriptInteractionSnapshot;
 pub(crate) use self::transcript_state::{ToastState, ToastVariant};
 use self::transcript_view::TranscriptViewState;
 use self::workspace_display::{directory_branch_label, workspace_context_labels};
+
+/// Deterministic workspace environment for snapshot/render tests: active when
+/// running under a test runner (the `NEXTEST` env var, or the explicit
+/// `HARNESS_TUI_TEST_WORKSPACE` escape hatch) so renders are identical across
+/// worktrees instead of embedding the live checkout path and branch.
+fn test_workspace_env_override() -> Option<WorkspaceEnvironment> {
+    let active = std::env::var_os("NEXTEST").is_some()
+        || std::env::var_os("HARNESS_TUI_TEST_WORKSPACE").is_some();
+    if !active {
+        return None;
+    }
+    Some(WorkspaceEnvironment {
+        working_directory: std::path::PathBuf::from("/workspace/agent-harness"),
+        workspace_root: std::path::PathBuf::from("/workspace/agent-harness"),
+        is_git_repository: true,
+        git_branch: Some("test-workspace".to_owned()),
+    })
+}
 pub use crate::view_model::{ForkSelectorViewModel, LineageBrowserViewModel};
 #[cfg(test)]
 pub(crate) use file_mentions::FileMentionSelectedTag;
@@ -2620,7 +2638,10 @@ impl AppState {
     }
 
     pub(crate) fn startup_directory_branch_label(&self) -> String {
-        directory_branch_label(&WorkspaceEnvironment::current(), false)
+        directory_branch_label(
+            &test_workspace_env_override().unwrap_or_else(WorkspaceEnvironment::current),
+            false,
+        )
     }
 
     pub(crate) fn sidebar_directory_branch_label(&self) -> Option<&str> {

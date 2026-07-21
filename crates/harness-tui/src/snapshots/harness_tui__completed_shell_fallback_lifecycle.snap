@@ -3,7 +3,7 @@ source: crates/harness-tui/src/lib_tests/startup_lifecycle_surface.rs
 expression: "fallback_render.lines().map(str::trim_end).collect::<Vec<_>>().join(\"\\n\")"
 ---
 
-             ui-ux-experiments ~/Projects/agent-harness/crates/harness-tui
+             test-workspace /workspace/agent-harness
 
 
 
