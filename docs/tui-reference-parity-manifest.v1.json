@@ -755,8 +755,8 @@
       "surface": "shell",
       "state": "streaming",
       "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
-      "reference_receipt_id": "reference-freeze",
-      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "reference_receipt_id": "shell-stream-reference-freeze-v15",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-stream-reference-freeze.receipt.v15.json",
       "preconditions": "Live session with active assistant/tool stream.",
       "seeded_inputs": {
         "session": "streaming provider deltas"
@@ -791,15 +791,15 @@
         "state_interaction_test": "crates/harness-tui/tests/reference_parity_tx_shell_test.rs::shell_stream_keeps_full_width_body_and_bordered_composer",
         "render_test": "crates/harness-tui/tests/reference_parity_tx_shell_test.rs::shell_stream_keeps_full_width_body_and_bordered_composer",
         "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::shell_stream_pty",
-        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-stream-pixel-diff-invalid-pair-v1.json"
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-stream-pixel-diff-v15-masked.json"
       },
       "evidence_paths": {
-        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-shell-stream-v9/",
+        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run2-shell-stream-pinned-v2/",
         "L2": "",
-        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-shell-stream-v14/",
-        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-stream-pixel-diff-v14-masked.json",
-        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-stream-divergence-receipt-v14.json",
-        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-stream-identity-field-mask-v14.json"
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-shell-stream-pinned-v1/",
+        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-stream-pixel-diff-v15-masked.json",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-stream-divergence-receipt-v15.json",
+        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-stream-identity-field-mask-v15.json"
       },
       "identity_substitution": {
         "fields": [
@@ -820,16 +820,18 @@
         "A-INVARIANTS",
         "A-NO-RESKIN"
       ],
-      "status": "incomplete",
-      "notes": "Scaffold §10 primary session shell streaming. A-PTY owner wired (event-injection/live PTY). Structural owners GREEN. Status incomplete pending full A-* suite. L3 harness-pty-stream-120x40-v1: streaming partial tokens + breadcrumb+❯. L1 run1-stream-probe is NOT a stream freeze — content is fail chrome (Retry failed / Request URL); same invalid-pair class as SHELL-IDLE. A-PIXELS blocked until a real mid-stream Grok freeze exists. Receipt: shell-stream-residual-v1.md. Evidence honesty loop3: L1=freeze, L3=act, L4=pixel report, L6=identity mask (paths verified on disk). L3 refresh loop3: freeze-matched inset+disclosure capture (stale pre-inset L3 superseded). | status=blocked: invalid L1 pair (fail freeze mislabeled as stream); residual shell-stream-residual-v1.md 2026-07-19 | L3 refresh wave4: browser-captured 120x40 xterm.js evidence; L1 reference freeze remains blocked; A-PIXELS blocked. (2026-07-19) | L3 refresh wave4: browser-captured 120x40 xterm.js evidence with PNG/ANSI/metadata; L1 reference freeze remains blocked; row stays blocked (2026-07-19). | v9 integration (2026-07-20): L1 reference freeze updated to run1-shell-stream-v9; L3 harness capture updated to harness-shell-stream-v9; masked mismatch count=111935/3525120 (3.18%). Residual: No change from v8 (no tool calls, no overlay, no pack_clock_on_body). Unmasked improved +20px (timing noise). Masked identical. Residual: mid-stream essay text (non-deterministic, partially masked); footer border trailing whitespace (ref pads to 120 chars, L3 does not); help line Ctrl+c:cancel now matches reference (fixed v14; was missing in v9-v11); footer model label (masked); breadcrumb (masked); line count (v9=39, ref=40)..  | v11 refresh (2026-07-20): text-color improvement (white rgb(0xEE,0xEE,0xEC)) reduced masked mismatch from 111935 to 111663; residual divergence remains (structural differences: help line keybindings (Ctrl+c:cancel fixed v14; Shift+x:dismiss is deliberate product decision for SHELL-QUESTION), footer border trailing whitespace, line count, content differences). L3/L4/L5/L6 updated to v11; L1 reference freeze unchanged; v9 evidence retained. | v14 fix (2026-07-20): added Ctrl+c:cancel to live_freeze_shortcut_disclosure_row when active_turn_in_progress() is true; help line now matches reference (Shift+Tab:mode | Ctrl+c:cancel | Ctrl+x:shortcuts). Masked mismatch unchanged at 111663 (help line is masked). Unmasked improved by ~4653px. | v14 evidence integration (2026-07-20): L3/L4/L5/L6 updated to v14 captures; L1 reference freeze unchanged; v11 evidence retained.",
+      "status": "blocked",
+      "notes": "Scaffold §10 primary session shell streaming. A-PTY owner wired (event-injection/live PTY). Structural owners GREEN. Status incomplete pending full A-* suite. L3 harness-pty-stream-120x40-v1: streaming partial tokens + breadcrumb+❯. L1 run1-stream-probe is NOT a stream freeze — content is fail chrome (Retry failed / Request URL); same invalid-pair class as SHELL-IDLE. A-PIXELS blocked until a real mid-stream Grok freeze exists. Receipt: shell-stream-residual-v1.md. Evidence honesty loop3: L1=freeze, L3=act, L4=pixel report, L6=identity mask (paths verified on disk). L3 refresh loop3: freeze-matched inset+disclosure capture (stale pre-inset L3 superseded). | status=blocked: invalid L1 pair (fail freeze mislabeled as stream); residual shell-stream-residual-v1.md 2026-07-19 | L3 refresh wave4: browser-captured 120x40 xterm.js evidence; L1 reference freeze remains blocked; A-PIXELS blocked. (2026-07-19) | L3 refresh wave4: browser-captured 120x40 xterm.js evidence with PNG/ANSI/metadata; L1 reference freeze remains blocked; row stays blocked (2026-07-19). | v9 integration (2026-07-20): L1 reference freeze updated to run1-shell-stream-v9; L3 harness capture updated to harness-shell-stream-v9; masked mismatch count=111935/3525120 (3.18%). Residual: No change from v8 (no tool calls, no overlay, no pack_clock_on_body). Unmasked improved +20px (timing noise). Masked identical. Residual: mid-stream essay text (non-deterministic, partially masked); footer border trailing whitespace (ref pads to 120 chars, L3 does not); help line Ctrl+c:cancel now matches reference (fixed v14; was missing in v9-v11); footer model label (masked); breadcrumb (masked); line count (v9=39, ref=40)..  | v11 refresh (2026-07-20): text-color improvement (white rgb(0xEE,0xEE,0xEC)) reduced masked mismatch from 111935 to 111663; residual divergence remains (structural differences: help line keybindings (Ctrl+c:cancel fixed v14; Shift+x:dismiss is deliberate product decision for SHELL-QUESTION), footer border trailing whitespace, line count, content differences). L3/L4/L5/L6 updated to v11; L1 reference freeze unchanged; v9 evidence retained. | v14 fix (2026-07-20): added Ctrl+c:cancel to live_freeze_shortcut_disclosure_row when active_turn_in_progress() is true; help line now matches reference (Shift+Tab:mode | Ctrl+c:cancel | Ctrl+x:shortcuts). Masked mismatch unchanged at 111663 (help line is masked). Unmasked improved by ~4653px. | v14 evidence integration (2026-07-20): L3/L4/L5/L6 updated to v14 captures; L1 reference freeze unchanged; v11 evidence retained. | Wave4.2: reference freeze REGENERATED with the PINNED binary 883e3dea (== global pin) against a deterministic local mock chat_completions SSE provider in a sandboxed scratch HOME, SSH env unset (no SSH warning). Captured mid-stream waiting-for-response phase (animated spinner + elapsed + download counter + [stop] hint + Ctrl+c:cancel help, empty bordered composer retained): run2-shell-stream-pinned-v2 (5.3s) + early-phase run1-shell-stream-pinned-v1 (2.2s). L3 harness capture refreshed: harness-shell-stream-pinned-v1 (pty_helper:live_stream xterm.js). status=blocked: A-PIXELS fails closed — masked mismatch 39850/3525120 (1.13%, 3 identity rows masked); blockers: (1) stream-chrome divergence: reference 'Waiting for response… <t>' spinner vs harness '⠙ model-tx' spinner (needs user-approved DIV-AA-SHELL-STREAM-style residual — only DIV-AA-PALETTE/DIV-AA-SHELL-FAIL approved); (2) body-projection timing: reference buffers the first turn before body rows in the mock capture window while the harness scenario projects body immediately (non-deterministic body content by construction); (3) wall-clock timestamp content; (4) differential_evaluator owners entry now points at the v15 node-comparator receipt; the Rust differential evaluator is still not authored. Structural matches documented in shell-stream-divergence-receipt-v15.json (composer geometry, exact help row, breadcrumb/model-badge rows, no overlays). 2026-07-21",
       "slice": "scaffold",
       "evidence": {
-        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-shell-stream-v9/",
-        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-stream-divergence-receipt-v14.json",
-        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-shell-stream-v14/",
-        "L3_capture_note": "Refreshed browser-rendered L3: harness-pty-stream-120x40-v5 (2026-07-19).",
-        "L4_pixel_diff": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-stream-pixel-diff-v14-masked.json",
-        "L6_identity_mask": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-stream-identity-field-mask-v14.json"
+        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run2-shell-stream-pinned-v2/",
+        "L1_early_phase_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-shell-stream-pinned-v1/",
+        "L2_cells": "",
+        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-shell-stream-pinned-v1/",
+        "L3_capture_note": "Browser-rendered (xterm.js replay of pty_helper:live_stream PTY) 120x40 L3; deterministic scenario stream.",
+        "L4_pixel_diff": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-stream-pixel-diff-v15-masked.json",
+        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-stream-divergence-receipt-v15.json",
+        "L6_identity_mask": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-stream-identity-field-mask-v15.json"
       }
     },
     {

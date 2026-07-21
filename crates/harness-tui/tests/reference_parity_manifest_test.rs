@@ -107,7 +107,6 @@ fn checked_in_manifest_covers_first_slice_and_scaffolds() {
     }
     let user_approved_scaffold_diverged = ["OVL-PALETTE"];
     let demoted_to_incomplete = [
-        "SHELL-STREAM",
         "SHELL-PERM",
         "SHELL-QUESTION",
         "SHELL-CANCEL",
@@ -122,10 +121,11 @@ fn checked_in_manifest_covers_first_slice_and_scaffolds() {
         "OVL-PERM",
         "OVL-QUESTION",
     ];
-    // Scaffolds blocked on external reference evidence (Wave 4 Packet 4.1):
-    // freeze recaptured with the pinned binary, but A-PIXELS fails closed on
-    // unmasked shell-chrome residuals pending user-approved identity coverage.
-    let blocked_on_reference_evidence = ["SHELL-IDLE"];
+    // Scaffolds blocked on external reference evidence (Wave 4 Packets 4.1/4.2):
+    // freezes captured from the pinned binary, but A-PIXELS fails closed on
+    // unmasked shell-chrome / stream-chrome residuals pending user-approved
+    // identity coverage (DIV-AA-SHELL-* approvals not granted).
+    let blocked_on_reference_evidence = ["SHELL-IDLE", "SHELL-STREAM"];
     for id in REQUIRED_SCAFFOLD_IDS {
         assert!(ids.contains(*id), "missing scaffold id {id}");
         let row = rows
