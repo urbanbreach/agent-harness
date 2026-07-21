@@ -1009,8 +1009,8 @@
       "surface": "shell",
       "state": "cancelled",
       "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
-      "reference_receipt_id": "reference-freeze",
-      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "reference_receipt_id": "shell-cancel-reference-freeze-v1",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-cancel-reference-freeze.v1.json",
       "preconditions": "Turn cancelled; cancellation presentation visible.",
       "seeded_inputs": {
         "session": "cancelled turn"
@@ -1045,15 +1045,15 @@
         "state_interaction_test": "crates/harness-tui/tests/reference_parity_tx_shell_test.rs::shell_cancel_projects_cancelled_distinct_from_failure",
         "render_test": "crates/harness-tui/tests/reference_parity_tx_shell_test.rs::shell_cancel_projects_cancelled_distinct_from_failure",
         "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::shell_cancel_pty",
-        "differential_evaluator": "pending:reference_parity::shell_cancel_diff"
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-cancel-blocked-v2.json"
       },
       "evidence_paths": {
-        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-shell-cancel-v9/",
+        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-shell-cancel-pinned-v1/",
         "L2": "",
-        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-shell-cancel-v11/",
-        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-cancel-pixel-diff-v11-masked.json",
-        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-cancel-divergence-receipt-v11.json",
-        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-cancel-identity-field-mask-v11.json"
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-shell-live_cancel-pinned-v1/",
+        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-cancel-pixel-diff-blocked-v2-masked.json",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-cancel-blocked-v2.json",
+        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-lifecycle-identity-field-mask-v18.json"
       },
       "identity_substitution": {
         "fields": [
@@ -1072,16 +1072,16 @@
         "A-INVARIANTS",
         "A-NO-RESKIN"
       ],
-      "status": "incomplete",
-      "notes": "Scaffold §10 shell cancelled. A-PTY owner wired (event-injection/live PTY). Structural owners GREEN. Status incomplete pending full A-* suite. L3 PTY-helper live_cancel capture (user interrupted streaming turn). A-PTY GREEN. No matching Grok freeze for A-PIXELS. Status incomplete. Grok L1 freeze blocked (dummy API / no stable black-box path); see blocked freeze receipt. L3 harness-pty-cancel-120x40-v2: cancel reason without Retry-failed fail chrome; breadcrumb+❯. A-PIXELS blocked (no Grok freeze). Evidence honesty loop3: L5=blocked freeze receipt (no capturable Grok L1). L3 refresh loop3: freeze-matched inset+disclosure capture (stale pre-inset L3 superseded). | status=blocked: reference freeze capture blocked (L5 *.blocked.json); not incomplete product theater 2026-07-19 | L3 refresh wave4: browser-captured 120x40 xterm.js evidence; L1 reference freeze remains blocked; A-PIXELS blocked. (2026-07-19) | L3 refresh wave4: browser-captured 120x40 xterm.js evidence with PNG/ANSI/metadata; L1 reference freeze remains blocked; row stays blocked (2026-07-19). | v9 integration (2026-07-20): L1 reference freeze updated to run1-shell-cancel-v9; L3 harness capture updated to harness-shell-cancel-v9; masked mismatch count=78457/3525120 (2.23%). Residual: No change from v8 (multi-line essay body, body_is_single_line_plain=false, pack_clock_on_body does not apply). Unmasked and masked identical to v8. Residual: essay content (non-deterministic); cancel timing; thought timing; assistant message layout (ref: text+timestamp same row, L3: separate rows - CONTENT-DEPENDENT, not fixable without matching body text); footer border trailing whitespace; line count (v9=39, ref=40)..  | v11 refresh (2026-07-20): text-color improvement (white rgb(0xEE,0xEE,0xEC)) reduced masked mismatch from 78457 to 65549; residual divergence remains (structural differences: help line keybindings, footer border trailing whitespace, line count, content differences). L3/L4/L5/L6 updated to v11; L1 reference freeze unchanged; v9 evidence retained.",
+      "status": "blocked",
+      "notes": "Scaffold §10 shell cancelled. A-PTY owner wired (event-injection/live PTY). Structural owners GREEN. Status incomplete pending full A-* suite. L3 PTY-helper live_cancel capture (user interrupted streaming turn). A-PTY GREEN. No matching Grok freeze for A-PIXELS. Status incomplete. Grok L1 freeze blocked (dummy API / no stable black-box path); see blocked freeze receipt. L3 harness-pty-cancel-120x40-v2: cancel reason without Retry-failed fail chrome; breadcrumb+❯. A-PIXELS blocked (no Grok freeze). Evidence honesty loop3: L5=blocked freeze receipt (no capturable Grok L1). L3 refresh loop3: freeze-matched inset+disclosure capture (stale pre-inset L3 superseded). | status=blocked: reference freeze capture blocked (L5 *.blocked.json); not incomplete product theater 2026-07-19 | L3 refresh wave4: browser-captured 120x40 xterm.js evidence; L1 reference freeze remains blocked; A-PIXELS blocked. (2026-07-19) | L3 refresh wave4: browser-captured 120x40 xterm.js evidence with PNG/ANSI/metadata; L1 reference freeze remains blocked; row stays blocked (2026-07-19). | v9 integration (2026-07-20): L1 reference freeze updated to run1-shell-cancel-v9; L3 harness capture updated to harness-shell-cancel-v9; masked mismatch count=78457/3525120 (2.23%). Residual: No change from v8 (multi-line essay body, body_is_single_line_plain=false, pack_clock_on_body does not apply). Unmasked and masked identical to v8. Residual: essay content (non-deterministic); cancel timing; thought timing; assistant message layout (ref: text+timestamp same row, L3: separate rows - CONTENT-DEPENDENT, not fixable without matching body text); footer border trailing whitespace; line count (v9=39, ref=40)..  | v11 refresh (2026-07-20): text-color improvement (white rgb(0xEE,0xEE,0xEC)) reduced masked mismatch from 78457 to 65549; residual divergence remains (structural differences: help line keybindings, footer border trailing whitespace, line count, content differences). L3/L4/L5/L6 updated to v11; L1 reference freeze unchanged; v9 evidence retained. | Wave4.5: reference cancel capture BLOCKED at capture stage: scripted Ctrl+C consistently cancels the pending send (draft restored, turn never starts) at every key-delay tested (150/400/500ms) — mid-stream cancel chrome unreachable via scripted xterm input. Captured = cancelled-send draft state. status=blocked: (1) reference mid-stream cancel unreachable via scripted input; (2) state mismatch vs harness cancel chrome (11.3%); (3) differential_evaluator pending. Harness side owner-tested via event injection (Cancelled runtime + 'Turn cancelled by user' footer). 2026-07-21",
       "slice": "scaffold",
       "evidence": {
-        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-shell-cancel-v11/",
-        "L3_capture_note": "Refreshed browser-rendered L3: harness-pty-cancel-120x40-v7 (2026-07-19).",
-        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-cancel-divergence-receipt-v11.json",
-        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-shell-cancel-v9/",
-        "L4_pixel_diff": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-cancel-pixel-diff-v11-masked.json",
-        "L6_identity_mask": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-cancel-identity-field-mask-v11.json"
+        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-shell-cancel-pinned-v1/",
+        "L2_cells": "",
+        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-shell-live_cancel-pinned-v1/",
+        "L4_pixel_diff": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-cancel-pixel-diff-blocked-v2-masked.json",
+        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-cancel-blocked-v2.json",
+        "L6_mask": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-lifecycle-identity-field-mask-v18.json"
       }
     },
     {
@@ -1091,8 +1091,8 @@
       "surface": "shell",
       "state": "failed",
       "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
-      "reference_receipt_id": "reference-freeze",
-      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "reference_receipt_id": "shell-fail-reference-freeze-v1",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-fail-reference-freeze.v1.json",
       "preconditions": "Run or tool failure visible in shell.",
       "seeded_inputs": {
         "session": "failed run/tool"
@@ -1127,15 +1127,15 @@
         "state_interaction_test": "crates/harness-tui/tests/reference_parity_tx_shell_test.rs::shell_fail_keeps_error_in_full_width_transcript_with_composer",
         "render_test": "crates/harness-tui/tests/reference_parity_tx_shell_test.rs::shell_fail_keeps_error_in_full_width_transcript_with_composer",
         "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::shell_fail_pty",
-        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-fail-v20-compare/report-masked.json"
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-fail-blocked-v2.json"
       },
       "evidence_paths": {
-        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-stream-probe/",
+        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-shell-fail-pinned-v1/",
         "L2": "",
-        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-pty-fail-120x40-v21/",
-        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-fail-v20-compare/report-masked.json",
-        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-fail-residual-v1.md",
-        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-fail-identity-field-mask.120x40.v1.json"
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-shell-live_fail-pinned-v1/",
+        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-fail-pixel-diff-blocked-v2-masked.json",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-fail-blocked-v2.json",
+        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-lifecycle-identity-field-mask-v18.json"
       },
       "identity_substitution": {
         "fields": [
@@ -1154,15 +1154,16 @@
         "A-INVARIANTS",
         "A-NO-RESKIN"
       ],
-      "status": "incomplete",
-      "notes": "Scaffold §10 shell failed. A-PTY + structural GREEN (freeze-aligned). Product: live breadcrumb; multi-line Retry failed body (byte-equal L07–L15); user marker ❯ text.primary; fail body fg Rgb(113,116,122) freeze-matched solid; no elevated Failure/Review card; no Error-status ✗ footer; gutter_x=5; wall-clock on user row; live composer horizontal inset lead=2; live idle disclosure freeze-matched `Shift+Tab:mode │ Ctrl+x:shortcuts` (no live-ctx/? commands cluster). L1 stream-probe. L3 harness-pty-fail-120x40-v18. L4 masked A-PIXELS FAIL-CLOSED (25441) — residual is error-body glyph AA after solid-color match (stable v13→v18; disclosure rewrite did not change AA residual). Status incomplete pending AA pipeline/policy. See shell-fail-residual-v1.md. L3 refresh loop3: freeze-matched inset+disclosure capture (stale pre-inset L3 superseded). | diverged=DIV-AA-SHELL-FAIL pure AA residual user-approved 2026-07-19; receipt div-aa-shell-fail-20260719.md",
+      "status": "blocked",
+      "notes": "Scaffold §10 shell failed. A-PTY + structural GREEN (freeze-aligned). Product: live breadcrumb; multi-line Retry failed body (byte-equal L07–L15); user marker ❯ text.primary; fail body fg Rgb(113,116,122) freeze-matched solid; no elevated Failure/Review card; no Error-status ✗ footer; gutter_x=5; wall-clock on user row; live composer horizontal inset lead=2; live idle disclosure freeze-matched `Shift+Tab:mode │ Ctrl+x:shortcuts` (no live-ctx/? commands cluster). L1 stream-probe. L3 harness-pty-fail-120x40-v18. L4 masked A-PIXELS FAIL-CLOSED (25441) — residual is error-body glyph AA after solid-color match (stable v13→v18; disclosure rewrite did not change AA residual). Status incomplete pending AA pipeline/policy. See shell-fail-residual-v1.md. L3 refresh loop3: freeze-matched inset+disclosure capture (stale pre-inset L3 superseded). | diverged=DIV-AA-SHELL-FAIL pure AA residual user-approved 2026-07-19; receipt div-aa-shell-fail-20260719.md | Wave4.5: reference FAIL captured with the PINNED binary: provider stream error triggers AUTO-RETRY ('Retrying (attempt 2) …' spinner with attempt counter). status=blocked: failure-CHROME divergence vs harness 'Retry failed:' text chrome (auto-retry spinner vs retry prompt; 2.5%) needs product-level alignment decision; differential_evaluator pending. 2026-07-21",
       "slice": "scaffold",
       "evidence": {
-        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-stream-probe/",
-        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-pty-fail-120x40-v21/",
-        "L4_pixel_diff": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-fail-v18-compare/report-masked.json",
-        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-fail-residual-v1.md",
-        "L6_identity_mask": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-fail-identity-field-mask.120x40.v1.json"
+        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-shell-fail-pinned-v1/",
+        "L2_cells": "",
+        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-shell-live_fail-pinned-v1/",
+        "L4_pixel_diff": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-fail-pixel-diff-blocked-v2-masked.json",
+        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-fail-blocked-v2.json",
+        "L6_mask": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-lifecycle-identity-field-mask-v18.json"
       }
     },
     {
@@ -1172,8 +1173,8 @@
       "surface": "shell",
       "state": "recovered",
       "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
-      "reference_receipt_id": "reference-freeze",
-      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "reference_receipt_id": "shell-recover-reference-freeze-v1",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-recover-reference-freeze.v1.json",
       "preconditions": "Recovered from failure/cancel into editable composer.",
       "seeded_inputs": {
         "session": "recovered live shell"
@@ -1208,15 +1209,15 @@
         "state_interaction_test": "crates/harness-tui/tests/reference_parity_tx_shell_test.rs::shell_recover_after_failure_keeps_composer_and_accepts_draft",
         "render_test": "crates/harness-tui/tests/reference_parity_tx_shell_test.rs::shell_recover_after_failure_keeps_composer_and_accepts_draft",
         "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::shell_recover_pty",
-        "differential_evaluator": "pending:reference_parity::shell_recover_diff"
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-recover-blocked-v2.json"
       },
       "evidence_paths": {
-        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-shell-recover-v9/",
+        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-shell-recover-pinned-v1/",
         "L2": "",
-        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-shell-recover-v11/",
-        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-recover-pixel-diff-v11-masked.json",
-        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-recover-divergence-receipt-v11.json",
-        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-recover-identity-field-mask-v11.json"
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-shell-live_recover-pinned-v1/",
+        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-recover-pixel-diff-blocked-v2-masked.json",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-recover-blocked-v2.json",
+        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-lifecycle-identity-field-mask-v18.json"
       },
       "identity_substitution": {
         "fields": [
@@ -1235,16 +1236,16 @@
         "A-INVARIANTS",
         "A-NO-RESKIN"
       ],
-      "status": "incomplete",
-      "notes": "Scaffold §10 shell recover after failure. A-PTY owner wired (event-injection/live PTY). Structural owners GREEN. Status incomplete pending full A-* suite. L3 harness-pty-recover-120x32-v1: fail chrome retained + composer draft `retry after failure` (choreography matches shell_recover_pty). A-PIXELS blocked (no dedicated Grok recover freeze). Receipt: shell-recover-l3-v1.md. Evidence honesty loop3: L5=blocked freeze receipt (no capturable Grok L1). L3 refresh loop3: freeze-matched inset+disclosure capture (stale pre-inset L3 superseded). | status=blocked: reference freeze capture blocked (L5 *.blocked.json); not incomplete product theater 2026-07-19 | L3 refresh wave4: browser-captured 120x40 xterm.js evidence; L1 reference freeze remains blocked; A-PIXELS blocked. (2026-07-19) | L3 refresh wave4: browser-captured 120x40 xterm.js evidence with PNG/ANSI/metadata; L1 reference freeze remains blocked; row stays blocked (2026-07-19). | v9 integration (2026-07-20): L1 reference freeze updated to run1-shell-recover-v9; L3 harness capture updated to harness-shell-recover-v9; masked mismatch count=21847/3525120 (0.62%). Residual: No change from v8 (no pack_clock_on_body). Unmasked and masked identical to v8. Residual: completely different content state (ref: RECOVERED_OK completed turn, L3: cancelled essay + draft); user message text differs; layout differences; help line keybinding (ref: Shift+Tab:mode, L3: Enter:send + Shift+Tab:mode + Ctrl+x:shortcuts - L3 has extra Enter:send); footer border trailing whitespace; line count (v9=39, ref=40)..  | v11 refresh (2026-07-20): text-color improvement (white rgb(0xEE,0xEE,0xEC)) reduced masked mismatch from 21847 to 21111; residual divergence remains (structural differences: help line keybindings, footer border trailing whitespace, line count, content differences). L3/L4/L5/L6 updated to v11; L1 reference freeze unchanged; v9 evidence retained.",
+      "status": "blocked",
+      "notes": "Scaffold §10 shell recover after failure. A-PTY owner wired (event-injection/live PTY). Structural owners GREEN. Status incomplete pending full A-* suite. L3 harness-pty-recover-120x32-v1: fail chrome retained + composer draft `retry after failure` (choreography matches shell_recover_pty). A-PIXELS blocked (no dedicated Grok recover freeze). Receipt: shell-recover-l3-v1.md. Evidence honesty loop3: L5=blocked freeze receipt (no capturable Grok L1). L3 refresh loop3: freeze-matched inset+disclosure capture (stale pre-inset L3 superseded). | status=blocked: reference freeze capture blocked (L5 *.blocked.json); not incomplete product theater 2026-07-19 | L3 refresh wave4: browser-captured 120x40 xterm.js evidence; L1 reference freeze remains blocked; A-PIXELS blocked. (2026-07-19) | L3 refresh wave4: browser-captured 120x40 xterm.js evidence with PNG/ANSI/metadata; L1 reference freeze remains blocked; row stays blocked (2026-07-19). | v9 integration (2026-07-20): L1 reference freeze updated to run1-shell-recover-v9; L3 harness capture updated to harness-shell-recover-v9; masked mismatch count=21847/3525120 (0.62%). Residual: No change from v8 (no pack_clock_on_body). Unmasked and masked identical to v8. Residual: completely different content state (ref: RECOVERED_OK completed turn, L3: cancelled essay + draft); user message text differs; layout differences; help line keybinding (ref: Shift+Tab:mode, L3: Enter:send + Shift+Tab:mode + Ctrl+x:shortcuts - L3 has extra Enter:send); footer border trailing whitespace; line count (v9=39, ref=40)..  | v11 refresh (2026-07-20): text-color improvement (white rgb(0xEE,0xEE,0xEC)) reduced masked mismatch from 21847 to 21111; residual divergence remains (structural differences: help line keybindings, footer border trailing whitespace, line count, content differences). L3/L4/L5/L6 updated to v11; L1 reference freeze unchanged; v9 evidence retained. | Wave4.5: reference RECOVER captured: auto-retry in progress + recovery draft + 'Enter:queue | Ctrl+Enter:send now' hints. status=blocked: recovery-choreography divergence (reference auto-retries the same turn; harness projects a new-turn essay body; 6.1%) needs alignment decision; differential_evaluator pending. 2026-07-21",
       "slice": "scaffold",
       "evidence": {
-        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-shell-recover-v11/",
-        "L3_capture_note": "Refreshed browser-rendered L3: harness-pty-recover-120x40-v5 (2026-07-19).",
-        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-recover-divergence-receipt-v11.json",
-        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-shell-recover-v9/",
-        "L4_pixel_diff": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-recover-pixel-diff-v11-masked.json",
-        "L6_identity_mask": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-recover-identity-field-mask-v11.json"
+        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-shell-recover-pinned-v1/",
+        "L2_cells": "",
+        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-shell-live_recover-pinned-v1/",
+        "L4_pixel_diff": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-recover-pixel-diff-blocked-v2-masked.json",
+        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-recover-blocked-v2.json",
+        "L6_mask": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-lifecycle-identity-field-mask-v18.json"
       }
     },
     {
@@ -1254,8 +1255,8 @@
       "surface": "shell",
       "state": "completed",
       "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
-      "reference_receipt_id": "reference-freeze",
-      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "reference_receipt_id": "shell-complete-reference-freeze-v1",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-complete-reference-freeze.v1.json",
       "preconditions": "Turn completed successfully.",
       "seeded_inputs": {
         "session": "completed turn"
@@ -1290,15 +1291,15 @@
         "state_interaction_test": "crates/harness-tui/tests/reference_parity_tx_shell_test.rs::shell_complete_keeps_full_width_body_and_bordered_composer",
         "render_test": "crates/harness-tui/tests/reference_parity_tx_shell_test.rs::shell_complete_keeps_full_width_body_and_bordered_composer",
         "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::shell_complete_pty",
-        "differential_evaluator": "pending:reference_parity::shell_complete_diff"
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-complete-blocked-v2.json"
       },
       "evidence_paths": {
-        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-shell-complete-v9/",
+        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-shell-complete-pinned-v1/",
         "L2": "",
-        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-shell-complete-v11/",
-        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-complete-pixel-diff-v11-masked.json",
-        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-complete-divergence-receipt-v11.json",
-        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-complete-identity-field-mask-v11.json"
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-shell-live_complete-pinned-v1/",
+        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-complete-pixel-diff-blocked-v2-masked.json",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-complete-blocked-v2.json",
+        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-lifecycle-identity-field-mask-v18.json"
       },
       "identity_substitution": {
         "fields": [
@@ -1317,16 +1318,16 @@
         "A-INVARIANTS",
         "A-NO-RESKIN"
       ],
-      "status": "incomplete",
-      "notes": "Scaffold §10 shell completed. A-PTY owner wired (event-injection/live PTY). Structural owners GREEN. Status incomplete pending full A-* suite. L3 golden_path completed-turn capture (planner/worker deltas + ready footer). No matching Grok freeze for true A-PIXELS. A-PTY GREEN. Status incomplete. Grok L1 freeze blocked (dummy API / no stable black-box path); see blocked freeze receipt. L3 updated to harness-pty-complete-120x40-v1 (live breadcrumb + ❯ marker + gutter=5; structural only). Evidence honesty loop3: L5=blocked freeze receipt (no capturable Grok L1). L3 refresh loop3: freeze-matched inset+disclosure capture (stale pre-inset L3 superseded). | status=blocked: reference freeze capture blocked (L5 *.blocked.json); not incomplete product theater 2026-07-19 | L3 refresh loop7: harness-pty-complete-120x32-v4 freeze-matched 120x32 (2026-07-19) L3 harness-pty-complete-120x32-v5: PNG+ANSI via web-terminal-visual-qa. A-CELLS identity residual (L2/L5/L10/L29). A-PIXELS FAIL 161k rgba (theme surface color vs freeze; no mask expansion). | L3 refresh wave4: browser-captured 120x40 xterm.js evidence; L1 reference freeze remains blocked; A-PIXELS blocked. (2026-07-19) | L3 refresh wave4: browser-captured 120x40 xterm.js evidence with PNG/ANSI/metadata; L1 reference freeze remains blocked; row stays blocked (2026-07-19). | v9 integration (2026-07-20): L1 reference freeze updated to run1-shell-complete-v9; L3 harness capture updated to harness-shell-complete-v9; masked mismatch count=14005/3525120 (0.40%). Residual: EXTRA BLANK LINE FIX APPLIED. v9 layout: thought -> blank -> body+clock (3 rows, matching reference). v8 had thought -> blank -> blank -> body+clock (4 rows, extra blank line). Verified: v9 line 10 = 'HELLO_PARITY_OK ... 12:00 PM' (body+clock same row, no extra blank). v8 line 10 was blank, body+clock was on line 11. Reference line 10 = body+clock. Unmasked improved +4435 (50945 -> 46510). Masked improved +5467 (19472 -> 14005) - v9 mask correctly aligned with new layout (worked_for_timing moved from y=432 to y=396). Tool-call chrome maintained: '  ❙  ◆ Thought for' (2sp+❙+2sp+◆). Residual: thought timing (ref: 0.1s, L3: 0.0s); worked timing (ref: 1.0s, L3: 0.8s); footer border trailing whitespace; line count (v9=39, ref=40)..  | v11 refresh (2026-07-20): text-color improvement (white rgb(0xEE,0xEE,0xEC)) reduced masked mismatch from 14005 to 7097; residual divergence remains (structural differences: help line keybindings, footer border trailing whitespace, line count, content differences). L3/L4/L5/L6 updated to v11; L1 reference freeze unchanged; v9 evidence retained.",
+      "status": "blocked",
+      "notes": "Scaffold §10 shell completed. A-PTY owner wired (event-injection/live PTY). Structural owners GREEN. Status incomplete pending full A-* suite. L3 golden_path completed-turn capture (planner/worker deltas + ready footer). No matching Grok freeze for true A-PIXELS. A-PTY GREEN. Status incomplete. Grok L1 freeze blocked (dummy API / no stable black-box path); see blocked freeze receipt. L3 updated to harness-pty-complete-120x40-v1 (live breadcrumb + ❯ marker + gutter=5; structural only). Evidence honesty loop3: L5=blocked freeze receipt (no capturable Grok L1). L3 refresh loop3: freeze-matched inset+disclosure capture (stale pre-inset L3 superseded). | status=blocked: reference freeze capture blocked (L5 *.blocked.json); not incomplete product theater 2026-07-19 | L3 refresh loop7: harness-pty-complete-120x32-v4 freeze-matched 120x32 (2026-07-19) L3 harness-pty-complete-120x32-v5: PNG+ANSI via web-terminal-visual-qa. A-CELLS identity residual (L2/L5/L10/L29). A-PIXELS FAIL 161k rgba (theme surface color vs freeze; no mask expansion). | L3 refresh wave4: browser-captured 120x40 xterm.js evidence; L1 reference freeze remains blocked; A-PIXELS blocked. (2026-07-19) | L3 refresh wave4: browser-captured 120x40 xterm.js evidence with PNG/ANSI/metadata; L1 reference freeze remains blocked; row stays blocked (2026-07-19). | v9 integration (2026-07-20): L1 reference freeze updated to run1-shell-complete-v9; L3 harness capture updated to harness-shell-complete-v9; masked mismatch count=14005/3525120 (0.40%). Residual: EXTRA BLANK LINE FIX APPLIED. v9 layout: thought -> blank -> body+clock (3 rows, matching reference). v8 had thought -> blank -> blank -> body+clock (4 rows, extra blank line). Verified: v9 line 10 = 'HELLO_PARITY_OK ... 12:00 PM' (body+clock same row, no extra blank). v8 line 10 was blank, body+clock was on line 11. Reference line 10 = body+clock. Unmasked improved +4435 (50945 -> 46510). Masked improved +5467 (19472 -> 14005) - v9 mask correctly aligned with new layout (worked_for_timing moved from y=432 to y=396). Tool-call chrome maintained: '  ❙  ◆ Thought for' (2sp+❙+2sp+◆). Residual: thought timing (ref: 0.1s, L3: 0.0s); worked timing (ref: 1.0s, L3: 0.8s); footer border trailing whitespace; line count (v9=39, ref=40)..  | v11 refresh (2026-07-20): text-color improvement (white rgb(0xEE,0xEE,0xEC)) reduced masked mismatch from 14005 to 7097; residual divergence remains (structural differences: help line keybindings, footer border trailing whitespace, line count, content differences). L3/L4/L5/L6 updated to v11; L1 reference freeze unchanged; v9 evidence retained. | Wave4.5: reference COMPLETED-turn freeze captured with the PINNED binary (mock completing provider; user turn + body + 'Worked for 2.3s.' footer). status=blocked: both sides complete a turn but A-PIXELS fails closed (1.9%) on non-deterministic body content — needs user-approved content mask or same-content methodology; differential_evaluator pending. 2026-07-21",
       "slice": "scaffold",
       "evidence": {
-        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-shell-complete-v11/",
-        "L3_capture_note": "Refreshed browser-rendered L3: harness-pty-complete-120x40-v10 (2026-07-19).",
-        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-complete-divergence-receipt-v11.json",
-        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-shell-complete-v9/",
-        "L4_pixel_diff": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-complete-pixel-diff-v11-masked.json",
-        "L6_identity_mask": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-complete-identity-field-mask-v11.json"
+        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-shell-complete-pinned-v1/",
+        "L2_cells": "",
+        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-shell-live_complete-pinned-v1/",
+        "L4_pixel_diff": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-complete-pixel-diff-blocked-v2-masked.json",
+        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-complete-blocked-v2.json",
+        "L6_mask": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-lifecycle-identity-field-mask-v18.json"
       }
     },
     {
@@ -1336,8 +1337,8 @@
       "surface": "shell",
       "state": "scrolled_away_from_follow",
       "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
-      "reference_receipt_id": "reference-freeze",
-      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
+      "reference_receipt_id": "shell-scroll-reference-freeze-v1",
+      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-scroll-reference-freeze.v1.json",
       "preconditions": "Transcript scrolled away from follow mode.",
       "seeded_inputs": {
         "session": "long transcript with scroll"
@@ -1372,15 +1373,15 @@
         "state_interaction_test": "crates/harness-tui/tests/reference_parity_tx_shell_test.rs::shell_scroll_page_keys_adjust_transcript_under_full_width",
         "render_test": "crates/harness-tui/tests/reference_parity_tx_shell_test.rs::shell_scroll_page_keys_adjust_transcript_under_full_width",
         "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::shell_scroll_pty",
-        "differential_evaluator": "pending:reference_parity::shell_scroll_diff"
+        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-scroll-blocked-v2.json"
       },
       "evidence_paths": {
-        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-shell-scroll-v9/",
+        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-shell-scroll-pinned-v1/",
         "L2": "",
-        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-shell-scroll-v11/",
-        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-scroll-pixel-diff-v11-masked.json",
-        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-scroll-divergence-receipt-v11.json",
-        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-scroll-identity-field-mask-v11.json"
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-shell-live_scroll-pinned-v1/",
+        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-scroll-pixel-diff-blocked-v2-masked.json",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-scroll-blocked-v2.json",
+        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-lifecycle-identity-field-mask-v18.json"
       },
       "identity_substitution": {
         "fields": [
@@ -1399,16 +1400,16 @@
         "A-INVARIANTS",
         "A-NO-RESKIN"
       ],
-      "status": "incomplete",
-      "notes": "Scaffold §10 shell scrolled away from follow mode. A-PTY owner wired (event-injection/live PTY). Structural owners GREEN. Status incomplete pending full A-* suite. L3 PTY-helper live_scroll multi-turn transcript. A-PTY GREEN. No matching Grok freeze for A-PIXELS. Status incomplete. Grok L1 freeze blocked (dummy API / no stable black-box path); see blocked freeze receipt. L3 harness-pty-scroll-120x40-v1: multi-turn scroll transcript + breadcrumb+❯. A-PIXELS blocked (no Grok freeze). Evidence honesty loop3: L5=blocked freeze receipt (no capturable Grok L1). L3 refresh loop3: freeze-matched inset+disclosure capture (stale pre-inset L3 superseded). | status=blocked: reference freeze capture blocked (L5 *.blocked.json); not incomplete product theater 2026-07-19 | L3 refresh loop6d: harness-pty-scroll-120x32-v10 packs all names + wall clock sticky user + wall-clock 5:54 AM + f39–f55 packing (2026-07-19). | L3 refresh loop7: harness-pty-scroll-120x32-v10 freeze-matched 120x32 (2026-07-19) | L3 refresh wave4: browser-captured 120x40 xterm.js evidence; L1 reference freeze remains blocked; A-PIXELS blocked. (2026-07-19) | L3 refresh wave4: browser-captured 120x40 xterm.js evidence with PNG/ANSI/metadata; L1 reference freeze remains blocked; row stays blocked (2026-07-19). | v9 integration (2026-07-20): L1 reference freeze updated to run1-shell-scroll-v9; L3 harness capture updated to harness-shell-scroll-v9; masked mismatch count=111183/3525120 (3.15%). Residual: No change from v8 (no pack_clock_on_body). Unmasked and masked identical to v8. Residual: scroll position content (non-deterministic inventory); footer border trailing whitespace; memory indicator (ref: 19K, L3: different); line count (v9=39, ref=40)..  | v11 refresh (2026-07-20): text-color improvement (white rgb(0xEE,0xEE,0xEC)) reduced masked mismatch from 111183 to 110291; residual divergence remains (structural differences: help line keybindings, footer border trailing whitespace, line count, content differences). L3/L4/L5/L6 updated to v11; L1 reference freeze unchanged; v9 evidence retained.",
+      "status": "blocked",
+      "notes": "Scaffold §10 shell scrolled away from follow mode. A-PTY owner wired (event-injection/live PTY). Structural owners GREEN. Status incomplete pending full A-* suite. L3 PTY-helper live_scroll multi-turn transcript. A-PTY GREEN. No matching Grok freeze for A-PIXELS. Status incomplete. Grok L1 freeze blocked (dummy API / no stable black-box path); see blocked freeze receipt. L3 harness-pty-scroll-120x40-v1: multi-turn scroll transcript + breadcrumb+❯. A-PIXELS blocked (no Grok freeze). Evidence honesty loop3: L5=blocked freeze receipt (no capturable Grok L1). L3 refresh loop3: freeze-matched inset+disclosure capture (stale pre-inset L3 superseded). | status=blocked: reference freeze capture blocked (L5 *.blocked.json); not incomplete product theater 2026-07-19 | L3 refresh loop6d: harness-pty-scroll-120x32-v10 packs all names + wall clock sticky user + wall-clock 5:54 AM + f39–f55 packing (2026-07-19). | L3 refresh loop7: harness-pty-scroll-120x32-v10 freeze-matched 120x32 (2026-07-19) | L3 refresh wave4: browser-captured 120x40 xterm.js evidence; L1 reference freeze remains blocked; A-PIXELS blocked. (2026-07-19) | L3 refresh wave4: browser-captured 120x40 xterm.js evidence with PNG/ANSI/metadata; L1 reference freeze remains blocked; row stays blocked (2026-07-19). | v9 integration (2026-07-20): L1 reference freeze updated to run1-shell-scroll-v9; L3 harness capture updated to harness-shell-scroll-v9; masked mismatch count=111183/3525120 (3.15%). Residual: No change from v8 (no pack_clock_on_body). Unmasked and masked identical to v8. Residual: scroll position content (non-deterministic inventory); footer border trailing whitespace; memory indicator (ref: 19K, L3: different); line count (v9=39, ref=40)..  | v11 refresh (2026-07-20): text-color improvement (white rgb(0xEE,0xEE,0xEC)) reduced masked mismatch from 111183 to 110291; residual divergence remains (structural differences: help line keybindings, footer border trailing whitespace, line count, content differences). L3/L4/L5/L6 updated to v11; L1 reference freeze unchanged; v9 evidence retained. | Wave4.5: reference SCROLL captured mid-stream (PageUp during streaming; partial body + 'Responding … 0.2s' spinner). status=blocked: reference captured mid-stream scroll vs harness post-completion multi-line scroll (state/content mismatch 8.7%); differential_evaluator pending. Harness scroll owners verified (PageUp/Home/End bounds + follow mode). 2026-07-21",
       "slice": "scaffold",
       "evidence": {
-        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-shell-scroll-v11/",
-        "L3_capture_note": "Refreshed browser-rendered L3: harness-pty-scroll-120x40-v7 (2026-07-19).",
-        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-scroll-divergence-receipt-v11.json",
-        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-shell-scroll-v9/",
-        "L4_pixel_diff": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-scroll-pixel-diff-v11-masked.json",
-        "L6_identity_mask": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-scroll-identity-field-mask-v11.json"
+        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-shell-scroll-pinned-v1/",
+        "L2_cells": "",
+        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-shell-live_scroll-pinned-v1/",
+        "L4_pixel_diff": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-scroll-pixel-diff-blocked-v2-masked.json",
+        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-scroll-blocked-v2.json",
+        "L6_mask": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/shell-lifecycle-identity-field-mask-v18.json"
       }
     },
     {

@@ -106,23 +106,14 @@ fn checked_in_manifest_covers_first_slice_and_scaffolds() {
             .contains("artifacts/qa-evidence/20260717-tui-reference-parity"));
     }
     let user_approved_scaffold_diverged = ["OVL-PALETTE"];
-    let demoted_to_incomplete = [
-        "SHELL-CANCEL",
-        "SHELL-FAIL",
-        "SHELL-RECOVER",
-        "SHELL-COMPLETE",
-        "SHELL-SCROLL",
-        "TX-USER",
-        "TX-ASSISTANT",
-        "TX-TOOL",
-        "TX-DIFF",
-    ];
-    // Scaffolds blocked on external reference evidence (Wave 4 Packets 4.1-4.4):
+    let demoted_to_incomplete = ["TX-USER", "TX-ASSISTANT", "TX-TOOL", "TX-DIFF"];
+    // Scaffolds blocked on external reference evidence (Wave 4 Packets 4.1-4.5):
     // shell-idle/stream freezes captured from the pinned binary but A-PIXELS
     // fails closed on unmasked chrome residuals; perm/question blocked because
-    // the reference permission/question tool UIs are not reachable via
-    // black-box tool-call injection (tool calls render as executing chips,
-    // never an interactive ask/question UI).
+    // the reference tool UIs are not reachable via black-box tool-call
+    // injection; turn-lifecycle rows blocked on state/content divergence
+    // (cancel unreachable via scripted Ctrl+C; fail/recover chrome divergence;
+    // complete/scroll non-deterministic content/state mismatch).
     let blocked_on_reference_evidence = [
         "SHELL-IDLE",
         "SHELL-STREAM",
@@ -130,6 +121,11 @@ fn checked_in_manifest_covers_first_slice_and_scaffolds() {
         "OVL-PERM",
         "SHELL-QUESTION",
         "OVL-QUESTION",
+        "SHELL-CANCEL",
+        "SHELL-FAIL",
+        "SHELL-RECOVER",
+        "SHELL-COMPLETE",
+        "SHELL-SCROLL",
     ];
     for id in REQUIRED_SCAFFOLD_IDS {
         assert!(ids.contains(*id), "missing scaffold id {id}");
