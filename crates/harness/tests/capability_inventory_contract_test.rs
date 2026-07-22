@@ -98,8 +98,9 @@ const REQUIRED_PASS_IDS: &[&str] = &[
 /// ExtensionDescriptorRegistry.
 /// `code.persistent_graph` was restored to pass in Wave 5 after relationship
 /// edge extraction (callers/callees/references) was implemented.
+/// `vcs.jujutsu` was restored to pass in Wave 5 after real VCS workflow
+/// operations (status/log/new/describe/bookmark) were implemented.
 const REQUIRED_NON_PASS_IDS: &[&str] = &[
-    "vcs.jujutsu",
     "mcp.oauth_remote_transports",
     "acp.agent_mode",
     "remote.workspace_hub",

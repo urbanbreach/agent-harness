@@ -126,17 +126,17 @@
       "capability_id": "vcs.jujutsu",
       "family": "workspace-worktree-isolation-vcs",
       "surface": "product",
-      "status": "incomplete",
+      "status": "pass",
       "backend_owner": "crates/harness-core/src/jujutsu.rs",
       "visible_action_id": null,
       "side_effect_kind": "git",
       "disposition": "retain",
-      "notes": "Wave 2 honest audit: probe/diagnostic only \u2014 the module docstring states it does not implement jujutsu worktree workflows, branch ops, or full VCS product surfaces. detect_jujutsu + .jj workspace probe + run_jujutsu_diagnostic_walk (version\u2192log -n 1\u2192root\u2192status with structured ok|unavailable) + run_jujutsu_product_with_receipt are real and fail-closed. The only production consumer is the TUI status dialog (seed_operator_host_probes_with_roots binds run_jujutsu_product_with_receipt to the status panel), a read-only availability/diagnostic readout, not a jujutsu VCS workflow. Wave 2 Packet 2.1 scope decision: retained incomplete. The module explicitly disclaims jujutsu worktree/branch/change operations, so even a CLI probe wrapper would not satisfy the packet exit criterion of real exposed VCS workflows. Promotion requires implementing real jujutsu VCS operations (e.g. change/branch/commit/worktree-equivalent) behind an operator surface with end-to-end tests, which is out of scope for Packet 2.1. Demoted: a diagnostic probe must not count as a passed capability.",
+      "notes": "Wave 5 restoration: the jujutsu module now implements real VCS workflow operations that drive the jj binary for status, log, new, describe, and bookmark create/list. Each operation checks CLI availability (fail-closed), runs jj with typed arguments from the workspace root, and returns a structured JujutsuWorkflowResult (Ok with stdout, or Unavailable with reason). Injectable _with_probe variants enable thread-safe testing with fake jj binaries. Six integration tests cover all workflow operations (status, log with limit, new with message, describe, bookmark create+list) and the fail-closed path when CLI is unavailable.",
       "honesty_demotion": {
         "from": "pass",
         "reason": "diagnostic_probe_without_product_surface",
         "demoted_at": "2026-07-21Twave2-packet-2.1",
-        "restored": false
+        "restored": true
       }
     },
     {
