@@ -16,6 +16,7 @@ use serde_json::Value;
 use thiserror::Error;
 use tokio_stream::{self, Stream};
 
+pub mod anthropic;
 pub mod cassette;
 pub mod mock;
 pub mod openai;

@@ -72,7 +72,7 @@ mod tests {
     }
 
     #[test]
-    fn protocols_prints_honest_catalog_with_only_openai_supported() {
+    fn protocols_prints_honest_catalog_with_openai_and_anthropic_supported() {
         // arrange
         // act
         let (code, stdout, stderr) = run_cli(&["protocols"]);
@@ -89,22 +89,24 @@ mod tests {
             .collect();
         assert_eq!(
             supported.len(),
-            1,
-            "exactly one protocol should be supported"
+            2,
+            "exactly two protocols should be supported"
         );
-        assert_eq!(
-            supported[0]["protocol"].as_str(),
-            Some("open_ai_compatible"),
-            "only open_ai_compatible (serde snake_case) is supported"
+        let protocols: Vec<&str> = supported
+            .iter()
+            .filter_map(|row| row["protocol"].as_str())
+            .collect();
+        assert!(
+            protocols.contains(&"open_ai_compatible"),
+            "open_ai_compatible must be supported"
+        );
+        assert!(
+            protocols.contains(&"anthropic_messages"),
+            "anthropic_messages must be supported"
         );
 
         for row in &catalog {
-            if row["protocol"].as_str() != Some("open_ai_compatible") {
-                assert_eq!(
-                    row["support"].as_str(),
-                    Some("unsupported"),
-                    "non-OpenAI protocols must be unsupported"
-                );
+            if row["support"].as_str() == Some("unsupported") {
                 assert!(
                     row["notes"].as_str().is_some_and(|n| !n.trim().is_empty()),
                     "unsupported rows carry honest notes"

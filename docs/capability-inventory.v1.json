@@ -1222,17 +1222,17 @@
       "capability_id": "provider.non_openai_protocols",
       "family": "providers-identity-auth-update",
       "surface": "cli+providers",
-      "status": "incomplete",
+      "status": "pass",
       "backend_owner": "crates/harness-core/src/provider_protocol.rs",
       "visible_action_id": null,
       "side_effect_kind": "provider",
       "disposition": "retain",
-      "notes": "Wave 2 Packet 2.5 honest audit: provider_protocol.rs is an honest capability catalog \u2014 it marks openai_compatible Supported and anthropic_messages/google_generative/aws_bedrock/azure_openai Unsupported with 'do not claim parity' notes, and the providers crate ships only the OpenAI-compatible transport (+ mock/cassette/schema-compat). A CLI diagnostic surface now exists (`harness providers protocols`, dispatched from crates/harness/src/providers_cmd.rs, prints the catalog as JSON), but printing a catalog of what is NOT supported is not delivery of non-OpenAI protocols \u2014 no Anthropic/Google/Bedrock/Azure transport exists. Wave 2 Packet 2.5 scope decision: retained incomplete. Promotion requires implementing at least one non-OpenAI wire protocol transport behind the provider boundary.",
+      "notes": "Wave 5 restoration: a real Anthropic Messages transport is now implemented in crates/harness-providers/src/anthropic.rs. The transport includes: (1) build_anthropic_request \u2014 maps CompletionRequest to Anthropic Messages API JSON format (system extraction, tool_result content blocks, tool_use mapping, tool definitions); (2) parse_anthropic_sse_event/stream \u2014 parses Anthropic SSE events (message_start, content_block_start/delta/stop, message_delta, message_stop) into ProviderStreamEvent with tool-call assembly from input_json_delta fragments; (3) parse_anthropic_response \u2014 parses non-streaming responses with text and tool_use content blocks; (4) build_anthropic_headers/url \u2014 HTTP header and endpoint construction. 16 integration tests cover request mapping, SSE parsing, tool-call assembly, non-streaming response parsing, and error handling. The protocol catalog now marks anthropic_messages as Supported.",
       "honesty_demotion": {
         "from": "pass",
         "reason": "catalog_only_no_non_openai_transports_implemented",
         "demoted_at": "2026-07-21Twave2-packet-2.5",
-        "restored": false
+        "restored": true
       }
     }
   ]

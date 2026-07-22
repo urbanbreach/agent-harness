@@ -1,8 +1,8 @@
-//! Provider protocol capability catalog (honest MVP).
+//! Provider protocol capability catalog.
 //!
-//! Documents which wire protocols the runtime can claim. Only
-//! OpenAI-compatible is currently supported; other reference protocols are
-//! catalogued as unsupported so inventory/doctor never imply false parity.
+//! Documents which wire protocols the runtime can claim. OpenAI-compatible
+//! and Anthropic Messages transports are supported; other reference protocols
+//! are catalogued as unsupported so inventory/doctor never imply false parity.
 
 use serde::{Deserialize, Serialize};
 
@@ -75,8 +75,8 @@ pub fn provider_protocol_catalog() -> Vec<ProviderProtocolCapability> {
         },
         ProviderProtocolCapability {
             protocol: ProviderProtocolId::AnthropicMessages,
-            support: ProtocolSupport::Unsupported,
-            notes: "No first-party Anthropic Messages transport; do not claim parity.".to_string(),
+            support: ProtocolSupport::Supported,
+            notes: "First-party Anthropic Messages transport (request mapping, SSE parsing, tool-call assembly).".to_string(),
         },
         ProviderProtocolCapability {
             protocol: ProviderProtocolId::GoogleGenerative,
@@ -124,7 +124,7 @@ mod tests {
 
         // act — the catalog is static; evaluation is the walk itself
 
-        // assert — honest catalog contract: non-empty notes, unique protocols, one Supported
+        // assert — honest catalog contract: non-empty notes, unique protocols
         let mut seen = std::collections::HashSet::new();
         for entry in &catalog {
             assert!(
@@ -142,11 +142,11 @@ mod tests {
             .iter()
             .filter(|entry| entry.support.is_supported())
             .count();
-        assert_eq!(supported, 1);
+        assert_eq!(supported, 2);
     }
 
     #[test]
-    fn catalog_marks_only_openai_compatible_supported() {
+    fn catalog_marks_openai_and_anthropic_supported() {
         // arrange
         // act
         // assert
@@ -159,16 +159,25 @@ mod tests {
             .iter()
             .filter(|row| row.support.is_supported())
             .collect();
-        assert_eq!(supported.len(), 1);
-        assert_eq!(supported[0].protocol, ProviderProtocolId::OpenAiCompatible);
-        assert!(!non_openai_protocols_supported());
+        assert_eq!(supported.len(), 2);
+        assert!(supported
+            .iter()
+            .any(|row| row.protocol == ProviderProtocolId::OpenAiCompatible));
+        assert!(supported
+            .iter()
+            .any(|row| row.protocol == ProviderProtocolId::AnthropicMessages));
+        assert!(non_openai_protocols_supported());
         assert_eq!(
             protocol_support(ProviderProtocolId::AnthropicMessages),
-            ProtocolSupport::Unsupported
+            ProtocolSupport::Supported
         );
         assert_eq!(
             protocol_support(ProviderProtocolId::OpenAiCompatible),
             ProtocolSupport::Supported
+        );
+        assert_eq!(
+            protocol_support(ProviderProtocolId::GoogleGenerative),
+            ProtocolSupport::Unsupported
         );
     }
 
@@ -178,7 +187,7 @@ mod tests {
         // act
         // assert
         for row in provider_protocol_catalog() {
-            if row.protocol == ProviderProtocolId::OpenAiCompatible {
+            if row.support.is_supported() {
                 continue;
             }
             assert_eq!(row.support, ProtocolSupport::Unsupported);

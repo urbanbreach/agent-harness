@@ -100,12 +100,13 @@ const REQUIRED_PASS_IDS: &[&str] = &[
 /// edge extraction (callers/callees/references) was implemented.
 /// `vcs.jujutsu` was restored to pass in Wave 5 after real VCS workflow
 /// operations (status/log/new/describe/bookmark) were implemented.
+/// `provider.non_openai_protocols` was restored to pass in Wave 5 after
+/// a real Anthropic Messages transport was implemented.
 const REQUIRED_NON_PASS_IDS: &[&str] = &[
     "mcp.oauth_remote_transports",
     "acp.agent_mode",
     "remote.workspace_hub",
     "auth.browser_oidc_sso",
-    "provider.non_openai_protocols",
     "platform.binary_update",
 ];
 const MAX_ROWS: usize = 200;
