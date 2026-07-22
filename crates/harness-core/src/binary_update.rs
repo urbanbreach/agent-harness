@@ -9,8 +9,10 @@
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 /// Package identity for the harness binary (compile-time).
 pub const BINARY_PACKAGE_NAME: &str = "harness";
@@ -78,6 +80,10 @@ pub struct LocalUpdateManifest {
     pub channel: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub download_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sha256: Option<String>,
 }
 
 /// Result of an update check.
@@ -387,6 +393,14 @@ pub fn load_local_update_manifest(
             .min_version
             .map(|v| v.trim().to_string())
             .filter(|v| !v.is_empty()),
+        download_url: manifest
+            .download_url
+            .map(|u| u.trim().to_string())
+            .filter(|u| !u.is_empty()),
+        sha256: manifest
+            .sha256
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty()),
     })
 }
 
@@ -612,6 +626,301 @@ pub fn write_local_update_manifest(
         source,
     })?;
     Ok(path)
+}
+
+/// Result of downloading an update artifact.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum BinaryUpdateDownload {
+    Downloaded {
+        url: String,
+        artifact_path: String,
+        bytes: u64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        sha256_verified: Option<bool>,
+    },
+    Unavailable {
+        url: String,
+        reason: String,
+    },
+}
+
+impl BinaryUpdateDownload {
+    pub const fn is_downloaded(&self) -> bool {
+        matches!(self, Self::Downloaded { .. })
+    }
+
+    pub const fn is_unavailable(&self) -> bool {
+        matches!(self, Self::Unavailable { .. })
+    }
+
+    pub fn one_line(&self) -> String {
+        match self {
+            Self::Downloaded {
+                url,
+                artifact_path,
+                bytes,
+                sha256_verified,
+            } => {
+                let mut line = format!(
+                    "update download: downloaded url={url} path={artifact_path} bytes={bytes}"
+                );
+                if let Some(verified) = sha256_verified {
+                    line.push_str(&format!("; sha256_verified={verified}"));
+                }
+                line
+            }
+            Self::Unavailable { url, reason } => {
+                format!("update download: unavailable url={url} ({reason})")
+            }
+        }
+    }
+}
+
+/// Download an update artifact from a URL to a temp directory.
+///
+/// Uses `curl` as a subprocess for HTTP/HTTPS downloads. For `file://` URLs,
+/// copies the file directly. Verifies SHA-256 when the manifest provides one.
+pub fn download_update_artifact(
+    url: &str,
+    expected_sha256: Option<&str>,
+    dest_dir: &Path,
+) -> BinaryUpdateDownload {
+    if url.is_empty() {
+        return BinaryUpdateDownload::Unavailable {
+            url: url.to_string(),
+            reason: "download URL is empty".to_string(),
+        };
+    }
+
+    let artifact_name = url.rsplit('/').next().unwrap_or("update-artifact");
+    let artifact_path = dest_dir.join(artifact_name);
+
+    if let Err(err) = fs::create_dir_all(dest_dir) {
+        return BinaryUpdateDownload::Unavailable {
+            url: url.to_string(),
+            reason: format!("failed to create download directory: {err}"),
+        };
+    }
+
+    if let Some(rest) = url.strip_prefix("file://") {
+        let source = Path::new(rest);
+        if !source.is_file() {
+            return BinaryUpdateDownload::Unavailable {
+                url: url.to_string(),
+                reason: format!("local file not found: {}", source.display()),
+            };
+        }
+        if let Err(err) = fs::copy(source, &artifact_path) {
+            return BinaryUpdateDownload::Unavailable {
+                url: url.to_string(),
+                reason: format!("failed to copy local file: {err}"),
+            };
+        }
+    } else {
+        let output = Command::new("curl")
+            .args(["-sSfL", "-o", &artifact_path.display().to_string(), url])
+            .output();
+        match output {
+            Ok(output) if output.status.success() => {}
+            Ok(output) => {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return BinaryUpdateDownload::Unavailable {
+                    url: url.to_string(),
+                    reason: format!(
+                        "curl exited with status {}: {}",
+                        output.status,
+                        stderr.trim()
+                    ),
+                };
+            }
+            Err(err) => {
+                return BinaryUpdateDownload::Unavailable {
+                    url: url.to_string(),
+                    reason: format!("failed to spawn curl: {err}"),
+                };
+            }
+        }
+    }
+
+    let bytes = fs::metadata(&artifact_path).map(|m| m.len()).unwrap_or(0);
+
+    let sha256_verified = if let Some(expected) = expected_sha256 {
+        match compute_sha256(&artifact_path) {
+            Ok(actual) => Some(actual == expected),
+            Err(_) => Some(false),
+        }
+    } else {
+        None
+    };
+
+    if let Some(false) = sha256_verified {
+        let _ = fs::remove_file(&artifact_path);
+        return BinaryUpdateDownload::Unavailable {
+            url: url.to_string(),
+            reason: "SHA-256 verification failed; artifact removed".to_string(),
+        };
+    }
+
+    BinaryUpdateDownload::Downloaded {
+        url: url.to_string(),
+        artifact_path: artifact_path.display().to_string(),
+        bytes,
+        sha256_verified,
+    }
+}
+
+fn compute_sha256(path: &Path) -> Result<String, io::Error> {
+    use std::io::Read;
+    let mut file = fs::File::open(path)?;
+    let mut hasher = Sha256::new();
+    let mut buf = [0u8; 8192];
+    loop {
+        let n = file.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    let result = hasher.finalize();
+    let mut hex = String::with_capacity(result.len() * 2);
+    use std::fmt::Write;
+    for b in result.iter() {
+        let _ = write!(&mut hex, "{b:02x}");
+    }
+    Ok(hex)
+}
+
+/// Result of applying a downloaded update artifact.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum BinaryUpdateApply {
+    Applied {
+        artifact_path: String,
+        target_path: String,
+        backup_path: String,
+    },
+    Failed {
+        artifact_path: String,
+        target_path: String,
+        reason: String,
+        rolled_back: bool,
+    },
+}
+
+impl BinaryUpdateApply {
+    pub const fn is_applied(&self) -> bool {
+        matches!(self, Self::Applied { .. })
+    }
+
+    pub fn one_line(&self) -> String {
+        match self {
+            Self::Applied {
+                artifact_path,
+                target_path,
+                backup_path,
+            } => {
+                format!(
+                    "update apply: applied artifact={artifact_path} target={target_path} backup={backup_path}"
+                )
+            }
+            Self::Failed {
+                artifact_path,
+                target_path,
+                reason,
+                rolled_back,
+            } => {
+                format!(
+                    "update apply: failed artifact={artifact_path} target={target_path} reason={reason} rolled_back={rolled_back}"
+                )
+            }
+        }
+    }
+}
+
+/// Apply a downloaded update artifact by replacing the target binary.
+///
+/// Creates a backup of the current binary before replacing it. On failure,
+/// attempts to restore the backup (rollback).
+pub fn apply_update(artifact_path: &Path, target_path: &Path) -> BinaryUpdateApply {
+    let backup_path = target_path.with_extension("bak");
+
+    if !artifact_path.is_file() {
+        return BinaryUpdateApply::Failed {
+            artifact_path: artifact_path.display().to_string(),
+            target_path: target_path.display().to_string(),
+            reason: "artifact file not found".to_string(),
+            rolled_back: false,
+        };
+    }
+
+    if target_path.is_file() {
+        if let Err(err) = fs::rename(target_path, &backup_path) {
+            return BinaryUpdateApply::Failed {
+                artifact_path: artifact_path.display().to_string(),
+                target_path: target_path.display().to_string(),
+                reason: format!("failed to backup current binary: {err}"),
+                rolled_back: false,
+            };
+        }
+    }
+
+    if let Err(err) = fs::copy(artifact_path, target_path) {
+        let rolled_back = if backup_path.is_file() {
+            fs::rename(&backup_path, target_path).is_ok()
+        } else {
+            false
+        };
+        return BinaryUpdateApply::Failed {
+            artifact_path: artifact_path.display().to_string(),
+            target_path: target_path.display().to_string(),
+            reason: format!("failed to copy artifact to target: {err}"),
+            rolled_back,
+        };
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(metadata) = fs::metadata(target_path) {
+            let mut perms = metadata.permissions();
+            perms.set_mode(0o755);
+            let _ = fs::set_permissions(target_path, perms);
+        }
+    }
+
+    BinaryUpdateApply::Applied {
+        artifact_path: artifact_path.display().to_string(),
+        target_path: target_path.display().to_string(),
+        backup_path: backup_path.display().to_string(),
+    }
+}
+
+/// Signal that a restart is needed after applying an update.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BinaryUpdateRestart {
+    pub restart_needed: bool,
+    pub target_path: String,
+    pub new_version: Option<String>,
+}
+
+impl BinaryUpdateRestart {
+    pub fn one_line(&self) -> String {
+        let version = self.new_version.as_deref().unwrap_or("(unknown)");
+        format!(
+            "update restart: restart_needed={} target={} version={version}",
+            self.restart_needed, self.target_path
+        )
+    }
+}
+
+/// Signal that the process should restart after a successful update apply.
+pub fn restart_after_update(target_path: &Path, new_version: Option<&str>) -> BinaryUpdateRestart {
+    BinaryUpdateRestart {
+        restart_needed: true,
+        target_path: target_path.display().to_string(),
+        new_version: new_version.map(String::from),
+    }
 }
 
 fn compare_dotted_versions(left: &str, right: &str) -> Option<std::cmp::Ordering> {
@@ -870,6 +1179,8 @@ mod tests {
             version: "0.1.0".to_string(),
             channel: Some("stable".to_string()),
             min_version: None,
+            download_url: None,
+            sha256: None,
         };
 
         // When
@@ -893,6 +1204,8 @@ mod tests {
             version: "0.2.0".to_string(),
             channel: Some("stable".to_string()),
             min_version: None,
+            download_url: None,
+            sha256: None,
         };
 
         // When
@@ -930,6 +1243,8 @@ mod tests {
                 version: "0.2.0".to_string(),
                 channel: Some("offline".to_string()),
                 min_version: None,
+                download_url: None,
+                sha256: None,
             },
         )
         .expect("write manifest");
@@ -968,6 +1283,8 @@ mod tests {
                 version: "1.0.0".to_string(),
                 channel: Some("stable".to_string()),
                 min_version: None,
+                download_url: None,
+                sha256: None,
             },
         )
         .expect("write manifest");
@@ -1017,5 +1334,159 @@ mod tests {
         assert!(product.receipt_path.is_file());
         assert!(!product.summary.update_available);
         assert_eq!(product.summary.checks_unavailable, 1);
+    }
+
+    #[test]
+    fn download_artifact_from_local_file_url_succeeds() {
+        // arrange
+        let dir = tempfile::tempdir().expect("tempdir");
+        let source = dir.path().join("new-binary");
+        fs::write(&source, b"fake binary content").expect("write");
+        let dest_dir = dir.path().join("downloads");
+
+        // act
+        let result =
+            download_update_artifact(&format!("file://{}", source.display()), None, &dest_dir);
+
+        // assert
+        assert!(result.is_downloaded(), "{}", result.one_line());
+        match result {
+            BinaryUpdateDownload::Downloaded {
+                artifact_path,
+                bytes,
+                sha256_verified,
+                ..
+            } => {
+                assert!(Path::new(&artifact_path).is_file());
+                assert_eq!(bytes, 19);
+                assert_eq!(sha256_verified, None);
+            }
+            other => panic!("expected Downloaded, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn download_artifact_verifies_sha256_when_provided() {
+        // arrange
+        let dir = tempfile::tempdir().expect("tempdir");
+        let source = dir.path().join("new-binary");
+        let content = b"verified content";
+        fs::write(&source, content).expect("write");
+        let dest_dir = dir.path().join("downloads");
+
+        // compute the real sha256
+        let mut hasher = Sha256::new();
+        hasher.update(content);
+        let digest = hasher.finalize();
+        let mut expected_hash = String::with_capacity(digest.len() * 2);
+        use std::fmt::Write;
+        for b in digest.iter() {
+            let _ = write!(&mut expected_hash, "{b:02x}");
+        }
+
+        // act
+        let result = download_update_artifact(
+            &format!("file://{}", source.display()),
+            Some(&expected_hash),
+            &dest_dir,
+        );
+
+        // assert
+        assert!(result.is_downloaded(), "{}", result.one_line());
+        match result {
+            BinaryUpdateDownload::Downloaded {
+                sha256_verified, ..
+            } => {
+                assert_eq!(sha256_verified, Some(true));
+            }
+            other => panic!("expected Downloaded, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn download_artifact_rejects_mismatched_sha256() {
+        // arrange
+        let dir = tempfile::tempdir().expect("tempdir");
+        let source = dir.path().join("new-binary");
+        fs::write(&source, b"content").expect("write");
+        let dest_dir = dir.path().join("downloads");
+
+        // act
+        let result = download_update_artifact(
+            &format!("file://{}", source.display()),
+            Some("0000000000000000000000000000000000000000000000000000000000000000"),
+            &dest_dir,
+        );
+
+        // assert
+        assert!(result.is_unavailable(), "{}", result.one_line());
+    }
+
+    #[test]
+    fn download_artifact_fails_closed_on_empty_url() {
+        // arrange
+        let dir = tempfile::tempdir().expect("tempdir");
+
+        // act
+        let result = download_update_artifact("", None, dir.path());
+
+        // assert
+        assert!(result.is_unavailable());
+    }
+
+    #[test]
+    fn apply_update_replaces_binary_with_backup() {
+        // arrange
+        let dir = tempfile::tempdir().expect("tempdir");
+        let target = dir.path().join("harness");
+        fs::write(&target, b"old binary").expect("write old");
+        let artifact = dir.path().join("new-harness");
+        fs::write(&artifact, b"new binary").expect("write new");
+
+        // act
+        let result = apply_update(&artifact, &target);
+
+        // assert
+        assert!(result.is_applied(), "{}", result.one_line());
+        assert_eq!(fs::read_to_string(&target).unwrap(), "new binary");
+        let backup = target.with_extension("bak");
+        assert!(backup.is_file());
+        assert_eq!(fs::read_to_string(&backup).unwrap(), "old binary");
+    }
+
+    #[test]
+    fn apply_update_fails_closed_when_artifact_missing() {
+        // arrange
+        let dir = tempfile::tempdir().expect("tempdir");
+        let target = dir.path().join("harness");
+        fs::write(&target, b"old binary").expect("write old");
+        let artifact = dir.path().join("nonexistent");
+
+        // act
+        let result = apply_update(&artifact, &target);
+
+        // assert
+        match result {
+            BinaryUpdateApply::Failed { rolled_back, .. } => {
+                assert!(!rolled_back, "no backup existed, nothing to roll back");
+            }
+            other => panic!("expected Failed, got {other:?}"),
+        }
+        assert_eq!(fs::read_to_string(&target).unwrap(), "old binary");
+    }
+
+    #[test]
+    fn restart_signal_carries_target_and_version() {
+        // arrange
+        let target = Path::new("/usr/local/bin/harness");
+
+        // act
+        let signal = restart_after_update(target, Some("0.2.0"));
+
+        // assert
+        assert!(signal.restart_needed);
+        assert_eq!(signal.target_path, "/usr/local/bin/harness");
+        assert_eq!(signal.new_version.as_deref(), Some("0.2.0"));
+        assert!(signal.one_line().contains("restart_needed=true"));
     }
 }

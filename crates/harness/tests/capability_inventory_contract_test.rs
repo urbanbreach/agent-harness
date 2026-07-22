@@ -102,12 +102,13 @@ const REQUIRED_PASS_IDS: &[&str] = &[
 /// operations (status/log/new/describe/bookmark) were implemented.
 /// `provider.non_openai_protocols` was restored to pass in Wave 5 after
 /// a real Anthropic Messages transport was implemented.
+/// `platform.binary_update` was restored to pass in Wave 5 after the
+/// download/apply/restart pipeline was implemented.
 const REQUIRED_NON_PASS_IDS: &[&str] = &[
     "mcp.oauth_remote_transports",
     "acp.agent_mode",
     "remote.workspace_hub",
     "auth.browser_oidc_sso",
-    "platform.binary_update",
 ];
 const MAX_ROWS: usize = 200;
 
