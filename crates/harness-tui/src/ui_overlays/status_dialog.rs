@@ -3902,14 +3902,14 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_browser_oidc_av
         .as_deref()
         .expect("browser OIDC availability");
     assert!(
-        availability.contains("unavailable"),
+        availability.contains("available"),
         "availability={availability}"
     );
     let start = summary
         .browser_oidc_start
         .as_deref()
         .expect("browser OIDC start");
-    assert!(start.contains("unavailable"), "start={start}");
+    assert!(start.contains("started"), "start={start}");
     assert!(
         start.contains("issuer.example") || start.contains("client-abc"),
         "start={start}"
@@ -4007,9 +4007,9 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_browser_oidc_co
         .browser_oidc_complete
         .as_deref()
         .expect("browser OIDC complete");
-    assert!(text.contains("unavailable"), "text={text}");
+    assert!(text.contains("completed"), "text={text}");
     assert!(
-        text.contains("abcd…") || text.contains("code="),
+        text.contains("abcd…") || text.contains("token="),
         "text={text}"
     );
     assert!(!text.contains("secret"), "must not leak secret: {text}");

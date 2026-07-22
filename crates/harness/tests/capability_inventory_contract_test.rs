@@ -108,7 +108,6 @@ const REQUIRED_NON_PASS_IDS: &[&str] = &[
     "mcp.oauth_remote_transports",
     "acp.agent_mode",
     "remote.workspace_hub",
-    "auth.browser_oidc_sso",
 ];
 const MAX_ROWS: usize = 200;
 

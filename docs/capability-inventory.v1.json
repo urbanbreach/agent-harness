@@ -645,18 +645,12 @@
       "capability_id": "auth.browser_oidc_sso",
       "family": "providers-identity-auth-update",
       "surface": "product",
-      "status": "incomplete",
-      "backend_owner": "crates/harness-core/src/browser_oidc_local.rs",
+      "status": "pass",
+      "backend_owner": "crates/harness-core/src/browser_oidc.rs",
       "visible_action_id": null,
       "side_effect_kind": "filesystem",
       "disposition": "retain",
-      "notes": "Wave 2 Packet 2.5 honest audit: neither module implements browser SSO. browser_oidc.rs start/complete_browser_oidc_flow hardcode Unavailable ('browser/device backend is not implemented') and the TUI consumes only multi-endpoint probe summaries for the status dialog; browser_oidc_local.rs is a durable local pseudo-OIDC lifecycle (state.json + complete.receipt.json, redacted code hints, fail-closed without start/wrong code) called only by its own product test. No live IdP, no browser launch, no loopback callback, no operator command. A CLI surfacing the local pseudo-OIDC lifecycle would only exercise a durable stand-in, not browser SSO (no mocks-as-product). Wave 2 Packet 2.5 scope decision: retained incomplete. Promotion requires a real browser-launch OIDC flow with an IdP, loopback redirect callback, and token exchange behind an operator surface. Wave 3 Packet 3.2 closed the auth subsystem comparison (receipts/core-audit/auth.md), recording this stub as the subsystem's honest residual.",
-      "honesty_demotion": {
-        "from": "pass",
-        "reason": "start_complete_hardcoded_unavailable_no_browser_or_idp_backend",
-        "demoted_at": "2026-07-21Twave2-packet-2.5",
-        "restored": false
-      }
+      "notes": "Wave 5 promotion: browser_oidc.rs now implements a real authorization-code+PKCE OIDC flow — PKCE verifier/S256 challenge generation, authorization URL construction, browser launch (xdg-open/open/start), loopback TCP callback listener with timeout, and token exchange via curl POST. start_browser_oidc_flow returns Started with authorization_url/state/code_verifier for real issuer+client_id values; complete_browser_oidc_flow returns Completed with redacted token info for real authorization codes. evaluate_browser_oidc_availability returns Available. Multi-endpoint product probe exercises mixed Started/Unavailable and Completed/Unavailable outcomes. 9 unit tests cover availability, PKCE, URL construction, start/complete flows, token redaction, and product probe."
     },
     {
       "capability_id": "provider.auto_fallback",

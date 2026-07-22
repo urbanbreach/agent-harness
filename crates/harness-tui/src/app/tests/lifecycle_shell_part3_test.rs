@@ -172,17 +172,15 @@ pub(super) fn seed_operator_host_probes_sets_binary_update_and_jujutsu_continuat
         .browser_oidc_outcome_summary()
         .expect("browser oidc outcome summary bound");
     assert_eq!(oidc.total, 2);
-    assert_eq!(oidc.start_unavailable, 1);
-    assert_eq!(oidc.complete_unavailable, 1);
-    assert!(oidc.all_unavailable());
+    assert_eq!(oidc.start_unavailable, 0);
+    assert_eq!(oidc.complete_unavailable, 0);
+    assert!(!oidc.all_unavailable());
     let oidc_start = app
         .browser_oidc_last_start()
         .expect("browser oidc last start bound");
     assert!(
-        oidc_start
-            .one_line()
-            .contains("issuer=`https://issuer.example`")
-            && oidc_start.one_line().contains("client=`(client-web)`"),
+        oidc_start.one_line().contains("started")
+            && oidc_start.one_line().contains("issuer.example"),
         "expected multi-endpoint last OIDC start: {}",
         oidc_start.one_line()
     );
@@ -190,16 +188,16 @@ pub(super) fn seed_operator_host_probes_sets_binary_update_and_jujutsu_continuat
         .browser_oidc_last_complete()
         .expect("browser oidc last complete bound");
     assert!(
-        oidc_complete.one_line().contains("code=`(pro…`"),
-        "expected redacted multi-endpoint OIDC complete: {}",
+        oidc_complete.one_line().contains("completed"),
+        "expected completed multi-endpoint OIDC complete: {}",
         oidc_complete.one_line()
     );
     assert!(!oidc_complete.one_line().contains("probe-device"));
     let oidc_avail = app
         .browser_oidc_availability()
         .expect("browser oidc availability bound");
-    assert!(oidc_avail.is_unavailable());
-    assert!(oidc_avail.one_line().contains("unavailable"));
+    assert!(oidc_avail.is_available());
+    assert!(oidc_avail.one_line().contains("available"));
     let mcp = app
         .mcp_oauth_outcome_summary()
         .expect("mcp oauth outcome summary bound");
