@@ -542,18 +542,18 @@
       "capability_id": "plugins.descriptor_manifest",
       "family": "integrations-plugins-acp-remote-mcp",
       "surface": "product",
-      "status": "incomplete",
+      "status": "pass",
       "backend_owner": "crates/harness-core/src/extension_registry",
       "visible_action_id": null,
       "side_effect_kind": "filesystem",
       "disposition": "retain",
-      "notes": "Wave 2 Packet 2.7 audit: the durable descriptor registry is real and unit-tested \u2014 ExtensionDescriptorRegistry discover/register/reload under .agent-harness/extension-registry.json (atomic write, workspace-relative persistence, fail-closed on missing/escape/invalid manifests, loads_external_code=false per the V1 descriptor-only contract). But its only consumers are a lib.rs re-export, the seed-time run_multi_descriptor_discover_product probe, and status-dialog display (PluginLifecycleSummary + descriptor outcomes) \u2014 no CLI command, coordinator design, or operator surface registers or consumes extension descriptors. Demoted: registry without a product surface; descriptors stay descriptor-only per the crate invariant (no runtime tool registration, command execution, or code loading). Wave 3 Packet 3.2 kept the plugins subsystem comparison partial (receipts/core-audit/plugins.md).",
+      "notes": "Wave 5 restoration: the descriptor registry now has a real production consumer via `harness plugin discover` (crates/harness/src/plugin_cmd.rs). The discover subcommand calls ExtensionDescriptorRegistry::open + discover_and_register, scans the workspace for extension manifests, persists them to .agent-harness/extension-registry.json, and reports discovered/registered counts with full descriptor views. Two integration tests cover the happy path (find + persist + idempotent re-scan) and the empty-workspace case. The registry is no longer consumer-less: the CLI surface is a real operator command that exercises discover/register/reload end-to-end.",
       "note": "Durable multi-descriptor registry under workspace; residual no marketplace/host code load.",
       "honesty_demotion": {
         "from": "pass",
         "reason": "registry_built_but_only_seed_probe_and_status_display_consumers",
         "demoted_at": "2026-07-21Twave2-packet-2.7",
-        "restored": false
+        "restored": true
       }
     },
     {

@@ -5,12 +5,16 @@
 //! `<workspace>/.agent-harness/plugins.json`, so a plugin installed in one
 //! invocation is visible to the next. `activate` is an explicit operator action:
 //! invoking the command is the permission grant (the registry never auto-grants).
+//! `discover` scans the workspace for extension manifests and registers them in
+//! the durable [`harness_core::extension_registry::ExtensionDescriptorRegistry`]
+//! at `<workspace>/.agent-harness/extension-registry.json`.
 //! No `.so`/wasm execution, marketplace, or remote install is performed.
 
 use std::io::Write;
 use std::path::PathBuf;
 
 use clap::{Args, Subcommand};
+use harness_core::extension_registry::ExtensionDescriptorRegistry;
 use harness_core::integrations::{
     InstalledPlugin, PluginActivationPermission, PluginLifecycleError, PluginLifecycleRegistry,
     PluginLifecycleSummary,
@@ -37,6 +41,8 @@ enum PluginSubcommand {
     Remove(IdArgs),
     /// List installed plugins with a lifecycle summary (JSON result).
     List(ListArgs),
+    /// Discover extension manifests under the workspace and register them in the descriptor registry (JSON result).
+    Discover(ListArgs),
 }
 
 #[derive(Debug, Args, Clone)]
@@ -71,6 +77,7 @@ pub(crate) fn execute_with_io(command: PluginCommand, io: &mut CliIo<'_>, deps: 
         PluginSubcommand::Deactivate(args) => run_deactivate(args, io, deps),
         PluginSubcommand::Remove(args) => run_remove(args, io, deps),
         PluginSubcommand::List(args) => run_list(args, io, deps),
+        PluginSubcommand::Discover(args) => run_discover(args, io, deps),
     }
 }
 
@@ -169,6 +176,43 @@ fn run_list(args: ListArgs, io: &mut CliIo<'_>, deps: &CliDeps) -> i32 {
     )
 }
 
+fn run_discover(args: ListArgs, io: &mut CliIo<'_>, deps: &CliDeps) -> i32 {
+    let root = resolve_workspace_root(&args.workspace, deps);
+    let mut descriptor_registry = match ExtensionDescriptorRegistry::open(&root) {
+        Ok(registry) => registry,
+        Err(err) => {
+            let _ = writeln!(io.stderr, "plugin discover: {err}");
+            return 1;
+        }
+    };
+    let discover = match descriptor_registry.discover_and_register(&root) {
+        Ok(summary) => summary,
+        Err(err) => {
+            let _ = writeln!(io.stderr, "plugin discover: {err}");
+            return 1;
+        }
+    };
+    let registry_summary = descriptor_registry.summary();
+    let entries: Vec<DescriptorView> = descriptor_registry
+        .list()
+        .into_iter()
+        .map(DescriptorView::from)
+        .collect();
+    let count = entries.len();
+    write_json(
+        io,
+        &DiscoverJson {
+            workspace_root: root.display().to_string(),
+            registry_path: descriptor_registry.registry_path().display().to_string(),
+            discovered: discover.discovered,
+            loads_external_code: discover.loads_external_code,
+            registered: registry_summary.registered,
+            count,
+            descriptors: entries,
+        },
+    )
+}
+
 fn single_view(
     root: &std::path::Path,
     registry: &PluginLifecycleRegistry,
@@ -232,6 +276,42 @@ struct ListJson {
     summary: PluginLifecycleSummary,
     count: usize,
     plugins: Vec<PluginView>,
+}
+
+#[derive(Debug, Serialize)]
+struct DescriptorView {
+    extension_id: String,
+    manifest_path: String,
+    capabilities: usize,
+    enabled_capabilities: usize,
+    tools: usize,
+    hooks: usize,
+    loads_external_code: bool,
+}
+
+impl From<&harness_core::extension_registry::ExtensionRegistryEntry> for DescriptorView {
+    fn from(entry: &harness_core::extension_registry::ExtensionRegistryEntry) -> Self {
+        Self {
+            extension_id: entry.extension_id.clone(),
+            manifest_path: entry.manifest_path.clone(),
+            capabilities: entry.capabilities,
+            enabled_capabilities: entry.enabled_capabilities,
+            tools: entry.tools,
+            hooks: entry.hooks,
+            loads_external_code: entry.loads_external_code,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct DiscoverJson {
+    workspace_root: String,
+    registry_path: String,
+    discovered: usize,
+    loads_external_code: bool,
+    registered: usize,
+    count: usize,
+    descriptors: Vec<DescriptorView>,
 }
 
 fn write_json(io: &mut CliIo<'_>, value: &impl Serialize) -> i32 {
@@ -445,5 +525,50 @@ mod tests {
             !ws.join(".agent-harness/plugins.json").is_file(),
             "journal must not leak into unrelated cwd"
         );
+    }
+
+    #[test]
+    fn discover_finds_extension_manifests_and_persists_descriptor_registry() {
+        // arrange — a workspace with a valid extension manifest one level deep
+        let dir = tempdir().unwrap();
+        let ws = dir.path();
+        seed_plugin_package(ws, "demo", "demo.discover");
+
+        // act — discover scans the workspace and registers descriptors
+        let (code, stdout, stderr) = run_cli(ws, &["discover"]);
+
+        // assert — descriptor found, persisted, and reported
+        assert_eq!(code, 0, "stderr: {stderr}");
+        assert!(
+            stdout.contains("\"extension_id\": \"demo.discover\""),
+            "stdout: {stdout}"
+        );
+        assert!(stdout.contains("\"discovered\": 1"), "stdout: {stdout}");
+        assert!(
+            ws.join(".agent-harness/extension-registry.json").is_file(),
+            "descriptor registry must persist after discover"
+        );
+
+        // act — a second discover is idempotent (upsert by id)
+        let (code, stdout, stderr) = run_cli(ws, &["discover"]);
+
+        // assert
+        assert_eq!(code, 0, "stderr: {stderr}");
+        assert!(stdout.contains("\"count\": 1"), "stdout: {stdout}");
+    }
+
+    #[test]
+    fn discover_on_empty_workspace_reports_zero() {
+        // arrange
+        let dir = tempdir().unwrap();
+        let ws = dir.path();
+
+        // act
+        let (code, stdout, stderr) = run_cli(ws, &["discover"]);
+
+        // assert
+        assert_eq!(code, 0, "stderr: {stderr}");
+        assert!(stdout.contains("\"discovered\": 0"), "stdout: {stdout}");
+        assert!(stdout.contains("\"count\": 0"), "stdout: {stdout}");
     }
 }

@@ -93,6 +93,9 @@ const REQUIRED_PASS_IDS: &[&str] = &[
 /// public surface/consumer) and must stay non-pass until the gap is closed.
 /// `sessions.prompt_rewind_projection` was restored to pass in Wave 5 after
 /// the `--dry-run` projection surface was added to `harness sessions rewind`.
+/// `plugins.descriptor_manifest` was restored to pass in Wave 5 after
+/// `harness plugin discover` was added as a production consumer for
+/// ExtensionDescriptorRegistry.
 const REQUIRED_NON_PASS_IDS: &[&str] = &[
     "vcs.jujutsu",
     "mcp.oauth_remote_transports",
@@ -102,7 +105,6 @@ const REQUIRED_NON_PASS_IDS: &[&str] = &[
     "provider.non_openai_protocols",
     "platform.binary_update",
     "code.persistent_graph",
-    "plugins.descriptor_manifest",
 ];
 const MAX_ROWS: usize = 200;
 
