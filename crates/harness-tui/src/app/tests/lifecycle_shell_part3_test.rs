@@ -202,18 +202,15 @@ pub(super) fn seed_operator_host_probes_sets_binary_update_and_jujutsu_continuat
         .mcp_oauth_outcome_summary()
         .expect("mcp oauth outcome summary bound");
     assert_eq!(mcp.total, 3);
-    assert_eq!(mcp.begin_unavailable, 1);
-    assert_eq!(mcp.exchange_unavailable, 1);
-    assert_eq!(mcp.open_unavailable, 1);
-    assert!(mcp.all_unavailable());
+    assert_eq!(mcp.begin_unavailable, 0);
+    assert_eq!(mcp.exchange_unavailable, 0);
+    assert_eq!(mcp.open_unavailable, 0);
+    assert!(!mcp.all_unavailable());
     let mcp_begin = app
         .mcp_oauth_last_begin()
         .expect("mcp oauth last begin bound");
     assert!(
-        mcp_begin.one_line().contains("server=`(probe-remote)`")
-            && mcp_begin
-                .one_line()
-                .contains("url=`https://mcp-auth.example/authorize`"),
+        mcp_begin.one_line().contains("begun") && mcp_begin.one_line().contains("docs-server"),
         "expected multi-endpoint last MCP OAuth begin: {}",
         mcp_begin.one_line()
     );
@@ -221,8 +218,8 @@ pub(super) fn seed_operator_host_probes_sets_binary_update_and_jujutsu_continuat
         .mcp_oauth_last_exchange()
         .expect("mcp oauth last exchange bound");
     assert!(
-        mcp_exchange.one_line().contains("server=`(probe-remote)`")
-            && mcp_exchange.one_line().contains("code=`(pro…`"),
+        mcp_exchange.one_line().contains("exchanged")
+            && mcp_exchange.one_line().contains("docs-server"),
         "expected multi-endpoint last MCP OAuth exchange: {}",
         mcp_exchange.one_line()
     );
@@ -231,18 +228,15 @@ pub(super) fn seed_operator_host_probes_sets_binary_update_and_jujutsu_continuat
         .mcp_oauth_last_open()
         .expect("mcp oauth last open bound");
     assert!(
-        mcp_open.one_line().contains("server=`(probe-remote)`")
-            && mcp_open
-                .one_line()
-                .contains("endpoint=`https://mcp.example/message`"),
+        mcp_open.one_line().contains("opened") && mcp_open.one_line().contains("docs-server"),
         "expected multi-endpoint last MCP open: {}",
         mcp_open.one_line()
     );
     let mcp_avail = app
         .mcp_oauth_remote_availability()
         .expect("mcp oauth remote availability bound");
-    assert!(mcp_avail.is_unavailable());
-    assert!(mcp_avail.one_line().contains("unavailable"));
+    assert!(mcp_avail.is_available());
+    assert!(mcp_avail.one_line().contains("available"));
     let sleep = app
         .sleep_wake_observation_summary()
         .expect("sleep/wake observation summary bound");

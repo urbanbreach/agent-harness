@@ -527,7 +527,7 @@ pub fn probe_browser_oidc_product() -> BrowserOidcProductProbe {
     }
 }
 
-fn generate_random_string(len: usize) -> String {
+pub fn generate_random_string(len: usize) -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let seed = SystemTime::now()
         .duration_since(UNIX_EPOCH)

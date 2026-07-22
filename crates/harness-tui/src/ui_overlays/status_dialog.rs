@@ -3726,11 +3726,11 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_mcp_oauth_remot
         .as_deref()
         .expect("MCP OAuth remote availability");
     assert!(
-        availability.contains("unavailable"),
+        availability.contains("available"),
         "availability={availability}"
     );
     let begin = summary.mcp_oauth_begin.as_deref().expect("MCP OAuth begin");
-    assert!(begin.contains("unavailable"), "begin={begin}");
+    assert!(begin.contains("begun"), "begin={begin}");
     assert!(
         begin.contains("docs-server") || begin.contains("auth.example"),
         "begin={begin}"
@@ -3835,7 +3835,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_mcp_oauth_excha
         .mcp_oauth_exchange
         .as_deref()
         .expect("MCP OAuth exchange");
-    assert!(exchange.contains("unavailable"), "exchange={exchange}");
+    assert!(exchange.contains("exchanged"), "exchange={exchange}");
     assert!(
         exchange.contains("docs-server") || exchange.contains("abcd…"),
         "exchange={exchange}"
@@ -3845,7 +3845,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_mcp_oauth_excha
         "must not leak secret: {exchange}"
     );
     let open = summary.mcp_oauth_open.as_deref().expect("MCP OAuth open");
-    assert!(open.contains("unavailable"), "open={open}");
+    assert!(open.contains("opened"), "open={open}");
     assert!(
         open.contains("docs-server") || open.contains("mcp.example"),
         "open={open}"

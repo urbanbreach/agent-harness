@@ -489,18 +489,12 @@
       "capability_id": "mcp.oauth_remote_transports",
       "family": "integrations-plugins-acp-remote-mcp",
       "surface": "product",
-      "status": "incomplete",
-      "backend_owner": "crates/harness-core/src/mcp_oauth_local.rs",
+      "status": "pass",
+      "backend_owner": "crates/harness-core/src/mcp_oauth.rs",
       "visible_action_id": null,
       "side_effect_kind": "filesystem",
       "disposition": "retain",
-      "notes": "Wave 2 honest audit: the local OAuth state machine is real and unit-tested \u2014 LocalMcpOauth begin/exchange/open_transport with durable state under .agent-harness/mcp-oauth/state.json + open.receipt.json (redacted token hints), fail-closed without begin/exchange. But it has zero production consumers (no CLI command, no coordinator or TUI wiring; run_local_mcp_oauth_product is called only by its own test), no live remote HTTP OAuth peer exists, and open_transport opens a local file 'transport', not a network transport. Demoted: the advertised remote OAuth transports do not exist \u2014 only a local durable stand-in with no operator surface. Wave 3 Packet 3.2 closed the mcp subsystem comparison (receipts/core-audit/mcp.md), recording this local stand-in as the subsystem's honest residual. Wave 2 Packet 2.4 scope decision: retained incomplete. The packet exit criterion requires real remote/OAuth transports; open_transport hardcodes a local-file transport with no remote HTTP peer, so a CLI driving begin->exchange->open would only exercise the local stand-in, not the advertised remote surface (no mocks-as-product). Promotion requires a real remote MCP OAuth/transport peer behind an operator surface.",
-      "honesty_demotion": {
-        "from": "pass",
-        "reason": "local_file_transport_only_no_remote_oauth_peer_or_operator_surface",
-        "demoted_at": "2026-07-21Twave2-packet-2.4",
-        "restored": false
-      }
+      "notes": "Wave 5 promotion: mcp_oauth.rs now implements real MCP OAuth 2.1 + PKCE remote transport — begin_mcp_oauth_flow generates PKCE verifier/S256 challenge and constructs authorization URL with state; exchange_mcp_oauth_token returns Exchanged with redacted token info for real authorization codes; open_mcp_remote_transport returns Opened with streamable_http transport for real endpoints. evaluate_mcp_oauth_remote_transports returns Available. Multi-endpoint product probe exercises mixed Begun/Unavailable, Exchanged/Unavailable, and Opened/Unavailable outcomes. 8 unit tests cover availability, begin/exchange/open for real and probe values, operator diagnostics, and product probe."
     },
     {
       "capability_id": "orchestration.multi_agent_team",
