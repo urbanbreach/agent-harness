@@ -339,6 +339,7 @@ impl AppState {
             thinking_first_mono_ms: None,
             thinking_last_mono_ms: None,
             transcript_text: String::new(),
+            first_delta_mono_ms: None,
             usage: None,
             cache_usage: None,
             error_message: None,
@@ -348,6 +349,7 @@ impl AppState {
             last_seq: 0,
             first_mono_ms: 0,
             last_mono_ms: 0,
+            request_started_mono_ms: None,
             revision: 0,
         });
         self.transcript_view.selected_activity_index = self.activities.len().saturating_sub(1);

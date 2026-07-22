@@ -20,6 +20,11 @@ use super::plugin_load::{
 /// Canonical relative filename for a plugin package descriptor.
 pub const PLUGIN_MANIFEST_FILE_NAME: &str = "extension.manifest.json";
 
+/// Relative durable registry journal under a workspace.
+pub const PLUGIN_REGISTRY_REL: &str = ".agent-harness/plugins.json";
+
+const PLUGIN_REGISTRY_SCHEMA_VERSION: &str = "harness-plugin-registry.v1";
+
 pub use super::plugin_load::{
     LoadedCode as PluginLoadedCode, PluginLoadKind, PLUGIN_ENTRY_FILE_NAME, PLUGIN_HOOKS_FILE_NAME,
     PLUGIN_LOAD_RECEIPT_FILE_NAME, PLUGIN_SKILLS_DIR_NAME,
@@ -58,7 +63,11 @@ impl PluginEnablement {
 }
 
 /// A validated, registry-tracked plugin package.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// Serializable so a durable registry can persist membership, enablement, and
+/// loaded-entry metadata across operator invocations.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct InstalledPlugin {
     pub id: String,
     pub package_root: PathBuf,
@@ -122,16 +131,32 @@ pub enum PluginLifecycleError {
     WorkspaceRootUnavailable { path: String, message: String },
     #[error("plugin `{id}` package load failed: {source}")]
     PackageLoadFailed { id: String, source: PluginLoadError },
+    #[error("plugin registry io error at {path}: {message}")]
+    RegistryIo { path: String, message: String },
+    #[error("plugin registry serialize error at {path}: {message}")]
+    RegistrySerialize { path: String, message: String },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PersistedPluginRegistry {
+    schema_version: String,
+    plugins: Vec<InstalledPlugin>,
 }
 
 /// In-memory coordinator-owned registry of installed plugin packages.
 ///
 /// Install validates path + descriptor before registration. On any validation
 /// failure the registry is left unchanged (no partial / stale entries).
+///
+/// [`Self::new`] is in-memory only (no filesystem writes), for coordinator/run
+/// ownership; [`Self::open`] is durable and persists each successful mutation to
+/// [`PLUGIN_REGISTRY_REL`] so an operator CLI lifecycle survives across processes.
 #[derive(Debug, Clone, Default)]
 pub struct PluginLifecycleRegistry {
     workspace_root: PathBuf,
     packages: BTreeMap<String, InstalledPlugin>,
+    persist_path: Option<PathBuf>,
 }
 
 impl PluginLifecycleRegistry {
@@ -139,7 +164,79 @@ impl PluginLifecycleRegistry {
         Self {
             workspace_root: workspace_root.into(),
             packages: BTreeMap::new(),
+            persist_path: None,
         }
+    }
+
+    /// Open a durable registry rooted at `workspace_root`.
+    ///
+    /// Loads any persisted membership from [`PLUGIN_REGISTRY_REL`] and persists
+    /// each successful mutation. Reload trusts the persisted record (members were
+    /// validated at install time); descriptors are not re-read on load.
+    pub fn open(workspace_root: impl Into<PathBuf>) -> Result<Self, PluginLifecycleError> {
+        let workspace_root = workspace_root.into();
+        let persist_path = workspace_root.join(PLUGIN_REGISTRY_REL);
+        let mut registry = Self {
+            workspace_root,
+            packages: BTreeMap::new(),
+            persist_path: Some(persist_path.clone()),
+        };
+        if persist_path.is_file() {
+            let body = fs::read_to_string(&persist_path).map_err(|err| {
+                PluginLifecycleError::RegistryIo {
+                    path: persist_path.display().to_string(),
+                    message: err.to_string(),
+                }
+            })?;
+            let persisted: PersistedPluginRegistry =
+                serde_json::from_str(&body).map_err(|err| {
+                    PluginLifecycleError::RegistrySerialize {
+                        path: persist_path.display().to_string(),
+                        message: err.to_string(),
+                    }
+                })?;
+            for plugin in persisted.plugins {
+                registry.packages.insert(plugin.id.clone(), plugin);
+            }
+        }
+        Ok(registry)
+    }
+
+    /// Durable journal path when opened durably; `None` for in-memory registries.
+    pub fn registry_path(&self) -> Option<&Path> {
+        self.persist_path.as_deref()
+    }
+
+    fn persist_if_durable(&self) -> Result<(), PluginLifecycleError> {
+        let Some(path) = &self.persist_path else {
+            return Ok(());
+        };
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|err| PluginLifecycleError::RegistryIo {
+                path: parent.display().to_string(),
+                message: err.to_string(),
+            })?;
+        }
+        let persisted = PersistedPluginRegistry {
+            schema_version: PLUGIN_REGISTRY_SCHEMA_VERSION.to_string(),
+            plugins: self.packages.values().cloned().collect(),
+        };
+        let body = serde_json::to_string_pretty(&persisted).map_err(|err| {
+            PluginLifecycleError::RegistrySerialize {
+                path: path.display().to_string(),
+                message: err.to_string(),
+            }
+        })?;
+        let temp = path.with_extension("json.tmp");
+        fs::write(&temp, format!("{body}\n")).map_err(|err| PluginLifecycleError::RegistryIo {
+            path: temp.display().to_string(),
+            message: err.to_string(),
+        })?;
+        fs::rename(&temp, path).map_err(|err| PluginLifecycleError::RegistryIo {
+            path: path.display().to_string(),
+            message: err.to_string(),
+        })?;
+        Ok(())
     }
 
     pub fn workspace_root(&self) -> &Path {
@@ -221,6 +318,7 @@ impl PluginLifecycleRegistry {
                 loaded: None,
             },
         );
+        self.persist_if_durable()?;
 
         self.packages
             .get(&id)
@@ -258,30 +356,47 @@ impl PluginLifecycleRegistry {
             }
         })?;
 
-        let plugin = self
-            .packages
-            .get_mut(id)
-            .ok_or_else(|| PluginLifecycleError::NotInstalled { id: id.to_string() })?;
-        plugin.loaded = loaded;
-        plugin.enablement = PluginEnablement::Enabled;
-        Ok(plugin)
+        {
+            let plugin = self
+                .packages
+                .get_mut(id)
+                .ok_or_else(|| PluginLifecycleError::NotInstalled { id: id.to_string() })?;
+            plugin.loaded = loaded;
+            plugin.enablement = PluginEnablement::Enabled;
+        }
+        self.persist_if_durable()?;
+        self.packages
+            .get(id)
+            .ok_or_else(|| PluginLifecycleError::NotInstalled { id: id.to_string() })
     }
 
     /// Disable an enabled plugin without removing its registration.
     ///
     /// Clears loaded package state and removes the load receipt when present.
     pub fn deactivate(&mut self, id: &str) -> Result<&InstalledPlugin, PluginLifecycleError> {
-        let plugin = self
-            .packages
-            .get_mut(id)
-            .ok_or_else(|| PluginLifecycleError::NotInstalled { id: id.to_string() })?;
-        if !plugin.enablement.is_enabled() {
-            return Err(PluginLifecycleError::NotEnabled { id: id.to_string() });
+        let package_root = {
+            let plugin = self
+                .packages
+                .get_mut(id)
+                .ok_or_else(|| PluginLifecycleError::NotInstalled { id: id.to_string() })?;
+            if !plugin.enablement.is_enabled() {
+                return Err(PluginLifecycleError::NotEnabled { id: id.to_string() });
+            }
+            plugin.package_root.clone()
+        };
+        clear_package_load_receipt(&package_root);
+        {
+            let plugin = self
+                .packages
+                .get_mut(id)
+                .ok_or_else(|| PluginLifecycleError::NotInstalled { id: id.to_string() })?;
+            plugin.loaded = None;
+            plugin.enablement = PluginEnablement::Disabled;
         }
-        clear_package_load_receipt(&plugin.package_root);
-        plugin.loaded = None;
-        plugin.enablement = PluginEnablement::Disabled;
-        Ok(plugin)
+        self.persist_if_durable()?;
+        self.packages
+            .get(id)
+            .ok_or_else(|| PluginLifecycleError::NotInstalled { id: id.to_string() })
     }
 
     /// Remove a disabled plugin registration.
@@ -297,9 +412,12 @@ impl PluginLifecycleRegistry {
         if enabled {
             return Err(PluginLifecycleError::RemoveWhileEnabled { id: id.to_string() });
         }
-        self.packages
+        let removed = self
+            .packages
             .remove(id)
-            .ok_or_else(|| PluginLifecycleError::NotInstalled { id: id.to_string() })
+            .ok_or_else(|| PluginLifecycleError::NotInstalled { id: id.to_string() })?;
+        self.persist_if_durable()?;
+        Ok(removed)
     }
 
     /// Operator-facing counts for installed packages (diagnostics only).

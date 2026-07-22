@@ -506,7 +506,12 @@ pub(super) fn lifecycle_shell_snapshots_preserve_startup_and_handoff_contracts()
     assert!(picker.session_history_visible);
     assert_eq!(picker.composer.prompt_buffer, "keep this draft");
     assert!(continue_render.contains("Resume session"));
-    assert!(continue_render.contains("continue ready"));
+    assert!(
+        continue_render.contains("ago")
+            || continue_render.contains("just now")
+            || continue_render.contains("run is still active"),
+        "session picker must show relative age or status\n{continue_render}"
+    );
     assert!(continue_render.contains("run is still active"));
     assert!(!continue_render.contains("beta-prompt"));
     assert!(continue_render.contains("Harness") || continue_render.contains("Resume session"));

@@ -378,6 +378,7 @@ mod tests {
             thinking_first_mono_ms: None,
             thinking_last_mono_ms: None,
             transcript_text: "assistant reply".to_string(),
+            first_delta_mono_ms: None,
             usage: None,
             cache_usage: None,
             error_message: None,
@@ -387,6 +388,7 @@ mod tests {
             last_seq: seq,
             first_mono_ms: seq,
             last_mono_ms: seq,
+            request_started_mono_ms: None,
             revision: 0,
         }
     }

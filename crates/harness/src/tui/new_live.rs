@@ -197,7 +197,6 @@ pub(super) async fn run_new_live_session(
         );
     }
 
-    let workspace_root = settings.workspace_root.clone();
     let tui_result = tokio::task::spawn_blocking(move || {
         profile_handoff("new_live.live_tui_begin");
         run_tui_with_options(new_live_tui_options(
@@ -209,7 +208,6 @@ pub(super) async fn run_new_live_session(
             true,
             prompt_history_path,
             toggles,
-            workspace_root,
         ))
     })
     .await;

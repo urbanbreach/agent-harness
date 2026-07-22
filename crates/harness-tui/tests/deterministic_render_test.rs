@@ -239,7 +239,10 @@ fn startup_session_history_picker_renders_without_pty() {
         "session history search affordance\n{rendered}"
     );
     assert!(rendered.contains("alpha-run"));
-    assert!(rendered.contains("continue ready"));
+    assert!(
+        rendered.contains("ago") || rendered.contains("just now"),
+        "session history footer must show relative age\n{rendered}"
+    );
     assert!(!rendered.contains("beta-blocked"));
     assert!(!rendered.contains("run is still active"));
     assert!(!rendered.contains("provider unknown"));

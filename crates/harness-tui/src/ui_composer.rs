@@ -287,9 +287,21 @@ fn render_bordered_composer(
         return;
     }
 
-    let surface = Color::Reset;
+    let surface = if context.dock.variant == crate::view_model::ControlDockVariant::Live {
+        Color::Indexed(0)
+    } else {
+        Color::Reset
+    };
     let composer_surface = surface;
-    let border_style = Style::default().bg(surface);
+    // Reference idle composer border uses 256-color palette color 15 (bright
+    // white). The startup variant uses default foreground (Color::Reset) to
+    // match the reference startup freeze.
+    let border_fg = if context.dock.variant == crate::view_model::ControlDockVariant::Live {
+        Color::Indexed(15)
+    } else {
+        Color::Reset
+    };
+    let border_style = Style::default().fg(border_fg).bg(surface);
     let badge = composer_model_badge(app);
     let content_lines = context.composer_lines.max(1);
     let strip_height = area
@@ -312,7 +324,10 @@ fn render_bordered_composer(
     } else {
         (
             format!(" {badge} ─"),
-            Style::default().bg(surface).add_modifier(Modifier::DIM),
+            Style::default()
+                .fg(border_fg)
+                .bg(surface)
+                .add_modifier(Modifier::DIM),
         )
     };
     block = block.title_bottom(Line::from(Span::styled(badge_title, badge_style)).right_aligned());

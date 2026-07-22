@@ -109,10 +109,10 @@ fn command_palette_overlay_height(app: &AppState, terminal_height: u16) -> u16 {
     const SESSION_HISTORY_OVERLAY_ROWS: u16 = 8;
     const MODEL_SWITCHER_OVERLAY_ROWS: u16 = 6;
     const MAX_LIST_ROWS: usize = 7;
-    const FREEZE_MODAL_HEIGHT: u16 = 24;
+    const FREEZE_MODAL_HEIGHT: u16 = 32;
 
     let freeze_height = FREEZE_MODAL_HEIGHT
-        .min(terminal_height.saturating_sub(FREEZE_MODAL_TOP_ROW.saturating_add(2)))
+        .min(terminal_height.saturating_sub(FREEZE_MODAL_TOP_ROW.saturating_add(1)))
         .max(12);
 
     if app.session_history_visible {

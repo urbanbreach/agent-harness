@@ -147,6 +147,7 @@ impl SessionProjection {
                         entry.model_id = data.model_id.clone();
                         entry.provider_id = data.provider_id.clone();
                         entry.request_data = Some(data.clone());
+                        entry.request_started_mono_ms = Some(event.mono_ms);
                         mark_activity_event(entry, event.seq, event.mono_ms);
                     }
                 } else {
@@ -164,6 +165,9 @@ impl SessionProjection {
                             first_mono_ms: event.mono_ms,
                         },
                     ));
+                    if let Some(entry) = self.activities.back_mut() {
+                        entry.request_started_mono_ms = Some(event.mono_ms);
+                    }
                 }
                 self.ensure_orphan_question_tool_calls();
             }
@@ -176,6 +180,9 @@ impl SessionProjection {
                 {
                     if let Some(entry) = self.activities.get_mut(index) {
                         entry.status = ActivityStatus::Streaming;
+                        if entry.first_delta_mono_ms.is_none() {
+                            entry.first_delta_mono_ms = Some(event.mono_ms);
+                        }
                         entry.transcript_text.push_str(&data.delta);
                         entry.bump_revision();
                         mark_activity_event(entry, event.seq, event.mono_ms);
@@ -275,13 +282,18 @@ impl SessionProjection {
                         if let Some(usage) = data.usage.as_ref() {
                             // Context breadcrumb uses prompt/context fill when reported;
                             // turn footer (⇣Nk) uses activity.usage.total_tokens separately.
-                            let context_tokens = if usage.prompt_tokens > 0 {
-                                usage.prompt_tokens
-                            } else {
-                                usage.total_tokens
-                            };
-                            self.active_context_usage =
-                                Some(ActiveContextUsage::estimate(context_tokens));
+                            // Skip active_context_usage when the activity stays Streaming
+                            // (TaskScheduled keeps it alive) so the standard footer hints
+                            // are not replaced by the live-ctx status strip.
+                            if should_mark_done {
+                                let context_tokens = if usage.prompt_tokens > 0 {
+                                    usage.prompt_tokens
+                                } else {
+                                    usage.total_tokens
+                                };
+                                self.active_context_usage =
+                                    Some(ActiveContextUsage::estimate(context_tokens));
+                            }
                         }
                         entry.last_seq = event.seq;
                         entry.last_mono_ms = event.mono_ms;

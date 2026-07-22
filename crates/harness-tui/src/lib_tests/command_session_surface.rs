@@ -339,11 +339,14 @@ pub(super) fn session_history_picker_renders_resumable_and_replay_rows() {
     assert!(
         resume_render.contains("New session")
             || resume_render.contains("New Session")
-            || resume_render.contains("continue ready")
+            || resume_render.contains("ago")
     );
     assert!(!resume_render.contains("New session - 2026-03-08T12:34:56.000Z"));
     assert!(!resume_render.contains("beta-prompt"));
-    assert!(resume_render.contains("continue ready"));
+    assert!(
+        resume_render.contains("ago") || resume_render.contains("just now"),
+        "resume picker must show relative age\n{resume_render}"
+    );
 }
 
 pub(super) fn session_history_filter_matches_visible_fields_and_fuzzy_title() {
@@ -608,7 +611,10 @@ pub(super) fn replay_picker_keeps_prompt_runs_visible() {
     );
     let rendered = render_live_lines(&app, 120, 30);
     assert!(rendered.contains("Resume session"));
-    assert!(rendered.contains("continue ready"));
+    assert!(
+        rendered.contains("ago") || rendered.contains("just now"),
+        "session picker must show relative age\n{rendered}"
+    );
     assert!(!rendered.contains("scenario-fixture"));
     assert!(!rendered.contains("prompt-only"));
     assert!(!rendered.contains("replay-only"));

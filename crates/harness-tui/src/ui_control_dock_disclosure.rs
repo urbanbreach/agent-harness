@@ -643,13 +643,16 @@ fn live_freeze_shortcut_disclosure_row(
     theme: &Theme,
     surface: Color,
 ) -> Vec<Span<'static>> {
+    let _ = theme;
+    // Reference idle footer uses 256-color palette: color 15 (bright white) for
+    // bold key bindings, color 7 (normal white) for labels and dim separator.
     let bold = Style::default()
-        .fg(theme.text.primary)
+        .fg(Color::Indexed(15))
         .bg(surface)
         .add_modifier(Modifier::BOLD);
-    let normal = Style::default().fg(theme.text.primary).bg(surface);
+    let normal = Style::default().fg(Color::Indexed(7)).bg(surface);
     let dim = Style::default()
-        .fg(theme.text.tertiary)
+        .fg(Color::Indexed(7))
         .bg(surface)
         .add_modifier(Modifier::DIM);
 

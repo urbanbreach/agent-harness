@@ -52,6 +52,7 @@ const REQUIRED_FAMILIES: &[&str] = &[
 /// Oracle (ses_089f6a0f9ffecFkOly2z7H1PGL): foundation/unavailable MVPs must NOT be required pass.
 const REQUIRED_PASS_IDS: &[&str] = &[
     "worktree.create",
+    "worktree.list_select_cleanup",
     "config.show.effective",
     "config.sources",
     "config.explain",
@@ -80,28 +81,27 @@ const REQUIRED_PASS_IDS: &[&str] = &[
     "vcs.edit_attribution",
     "orchestration.foreground_demote_background",
     "sandbox.os_profiles",
-];
-
-/// Wave 2 demotions: these rows were overclaimed `pass` (probe-only or missing
-/// public surface/consumer) and must stay non-pass until the gap is closed.
-const REQUIRED_NON_PASS_IDS: &[&str] = &[
-    "worktree.list_select_cleanup",
-    "vcs.jujutsu",
     "sessions.prompt_rewind_atomic",
     "sessions.prompt_queue_persistence",
     "sessions.mid_turn_interjection",
     "scheduler.cron_recurring",
     "orchestration.multi_agent_team",
-    "mcp.oauth_remote_transports",
     "plugins.runtime_lifecycle",
+];
+
+/// Wave 2 demotions: these rows were overclaimed `pass` (probe-only or missing
+/// public surface/consumer) and must stay non-pass until the gap is closed.
+/// `sessions.prompt_rewind_projection` was restored to pass in Wave 5 after
+/// the `--dry-run` projection surface was added to `harness sessions rewind`.
+const REQUIRED_NON_PASS_IDS: &[&str] = &[
+    "vcs.jujutsu",
+    "mcp.oauth_remote_transports",
     "acp.agent_mode",
     "remote.workspace_hub",
     "auth.browser_oidc_sso",
-    "auth.sleep_wake_credential_refresh",
     "provider.non_openai_protocols",
     "platform.binary_update",
     "code.persistent_graph",
-    "sessions.prompt_rewind_projection",
     "plugins.descriptor_manifest",
 ];
 const MAX_ROWS: usize = 200;

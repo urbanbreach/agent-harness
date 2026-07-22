@@ -656,10 +656,12 @@
       "subsystem_id": "plugins",
       "path_globs": [
         "crates/harness-core/src/integrations/**",
+        "crates/harness-core/src/extension_registry/**",
+        "crates/harness/src/plugin_cmd.rs",
         "docs/extension-strategy.md"
       ],
       "disposition": "rework",
-      "rationale": "Backend primitives are real and tested \u2014 extension_manifest descriptor-only V1 parsing (host-behavior rejection, deny_unknown_fields), ExtensionDescriptorRegistry atomic persistence, plugin lifecycle install/activate/deactivate with load receipts \u2014 but there are zero production consumers: no CLI, TUI, or coordinator surface registers, activates, or lists extensions (plugins.runtime_lifecycle and plugins.descriptor_manifest demoted in Wave 2). Stays honest partial. Blockers: operator surface closure needs a deliberate product decision; hosting needs a new coordinator-owned plugin runtime design per the root AGENTS anti-pattern guard; no .so/wasm host, no marketplace.",
+      "rationale": "Backend primitives are real and tested \u2014 extension_manifest descriptor-only V1 parsing (host-behavior rejection, deny_unknown_fields), ExtensionDescriptorRegistry atomic persistence, plugin lifecycle install/activate/deactivate with load receipts \u2014 and a CLI surface exists (`harness plugin install|activate|deactivate|remove|list` with durable registry persistence and 5 passing integration tests). However no runtime code execution exists: activate validates a package entry but never loads/executes plugin code, no TUI surface manages plugins, and the coordinator does not consult the registry for tool/hook dispatch (plugins.runtime_lifecycle and plugins.descriptor_manifest demoted in Wave 2). Stays honest partial. Blockers: hosting needs a new coordinator-owned plugin runtime design per the root AGENTS anti-pattern guard; no .so/wasm host, no marketplace, no TUI management surface.",
       "invariant_owners": [
         "crates/harness-core/AGENTS.md",
         "docs/extension-strategy.md"
@@ -667,6 +669,7 @@
       "comparison_status": "partial",
       "evidence_owners": [
         "crates/harness-core/src/integrations/",
+        "crates/harness/src/plugin_cmd.rs",
         "docs/extension-strategy.md",
         "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/core-audit/plugins.md"
       ],
@@ -680,6 +683,7 @@
       "subsystem_id": "acp",
       "path_globs": [
         "crates/harness-core/src/integrations/acp.rs",
+        "crates/harness-core/src/integrations/acp_file.rs",
         "crates/harness-core/src/integrations/product.rs",
         "docs/architecture.md"
       ],

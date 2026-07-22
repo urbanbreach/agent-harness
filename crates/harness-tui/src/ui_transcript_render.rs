@@ -5,6 +5,7 @@ use super::ui_transcript_tool_render::{
     tool_call_is_todo,
 };
 use super::*;
+use harness_core::event::ProviderRequestRetryMetadata;
 
 pub(super) fn build_transcript_render_surfaces(
     section: &TranscriptTurnSection,
@@ -367,6 +368,21 @@ fn assistant_footer_target_index(turn: &TranscriptTurnSection) -> Option<usize> 
         return Some(turn.assistant_parts.len());
     }
 
+    // Grok FAIL/RECOVER freeze: auto-retry spinner is a separate footer surface
+    // pinned just above the dock (matching the "Waiting for response…" layout).
+    if turn.header.retry.is_some() {
+        return Some(turn.assistant_parts.len());
+    }
+
+    // Grok SCROLL freeze: streaming with body text and token usage shows
+    // "Responding…" as a separate footer surface pinned just above the dock.
+    if matches!(turn.header.status, ActivityStatus::Streaming)
+        && !turn.assistant_parts.is_empty()
+        && turn.header.total_tokens.is_some_and(|tokens| tokens > 0)
+    {
+        return Some(turn.assistant_parts.len());
+    }
+
     Some(turn.assistant_parts.len() - 1)
 }
 
@@ -489,8 +505,7 @@ fn build_assistant_part_render_surface(
                     && turn.tool_calls.is_empty(),
                 turn.animation_phase,
                 base_surface,
-                // Reasoning-only span for Thought for (Grok: 0.1s Thought vs 0.9s Waiting;
-                // COMPLETE with no reasoning mono packs Thought for 0.0s, not turn duration).
+                // Reasoning-only span for Thought for (Grok: 0.1s Thought vs 0.9s Waiting).
                 turn.header.thinking_duration_ms,
                 turn.header.is_selected,
                 // Waiting on answers / pending edit permission ⇒ Thought for (Grok freezes).
@@ -985,6 +1000,55 @@ fn build_assistant_footer_line(
         return pack_waiting_on_answers_footer_line(turn, &waiting, theme, content_width);
     }
 
+    // Auto-retry chrome: streaming with retry metadata shows
+    // "⠸ Retrying (attempt N)… <retry-elapsed>" with total duration + tokens + [stop] right meta.
+    if matches!(turn.header.status, ActivityStatus::Streaming) {
+        if let Some(retry) = turn.header.retry.as_ref() {
+            return pack_retrying_footer_line(
+                turn,
+                retry,
+                assistant_icon,
+                assistant_color,
+                theme,
+                content_width,
+            );
+        }
+    }
+
+    // Grok STREAM freeze: streaming with no body text but with token usage
+    // (ProviderRequestFinished seeded total_tokens) shows "Waiting for response…"
+    // with elapsed time + download counter + [stop] right meta.
+    if matches!(turn.header.status, ActivityStatus::Streaming)
+        && turn.assistant_parts.is_empty()
+        && turn.body_blocks.is_empty()
+        && turn.tool_calls.is_empty()
+        && turn.header.total_tokens.is_some_and(|tokens| tokens > 0)
+    {
+        return pack_waiting_for_response_footer_line(
+            turn,
+            assistant_icon,
+            assistant_color,
+            theme,
+            content_width,
+        );
+    }
+
+    // Grok SCROLL freeze: streaming with body text and token usage
+    // shows "Responding…" with responding-elapsed (time since first delta)
+    // + total duration + download counter + [stop] right meta.
+    if matches!(turn.header.status, ActivityStatus::Streaming)
+        && !turn.assistant_parts.is_empty()
+        && turn.header.total_tokens.is_some_and(|tokens| tokens > 0)
+    {
+        return pack_responding_footer_line(
+            turn,
+            assistant_icon,
+            assistant_color,
+            theme,
+            content_width,
+        );
+    }
+
     if !assistant_icon.is_empty() {
         spans.push(Span::styled(
             format!("{assistant_icon} "),
@@ -1015,6 +1079,124 @@ fn build_assistant_footer_line(
             assistant_footer_label(&turn.header.profile_label),
             Style::default().fg(assistant_primary_label_color(turn.header.status, theme)),
         ));
+    }
+    Line::from(spans)
+}
+
+fn pack_waiting_for_response_footer_line(
+    turn: &TranscriptTurnSection,
+    assistant_icon: &str,
+    assistant_color: Color,
+    theme: &Theme,
+    content_width: u16,
+) -> Line<'static> {
+    let mut left_text = String::new();
+    if !assistant_icon.is_empty() {
+        left_text.push_str(assistant_icon);
+        left_text.push(' ');
+    }
+    left_text.push_str("Waiting for response…");
+    if let Some(duration_ms) = turn.header.duration_ms {
+        left_text.push(' ');
+        left_text.push_str(&format_thought_duration_ms(duration_ms));
+    }
+    let right = waiting_status_right_meta(turn);
+    let target = usize::from(content_width);
+    let left_width = display_width(&left_text);
+    let right_width = display_width(&right);
+    let gap = target
+        .saturating_sub(left_width)
+        .saturating_sub(right_width)
+        .max(if right.is_empty() { 0 } else { 1 });
+
+    let mut spans = vec![
+        Span::raw(TRANSCRIPT_ASSISTANT_BODY_PREFIX.to_string()),
+        Span::styled(left_text, Style::default().fg(assistant_color)),
+    ];
+    if gap > 0 {
+        spans.push(Span::raw(" ".repeat(gap)));
+    }
+    if !right.is_empty() {
+        spans.push(Span::styled(right, muted_meta_style(theme)));
+    }
+    Line::from(spans)
+}
+
+fn pack_responding_footer_line(
+    turn: &TranscriptTurnSection,
+    assistant_icon: &str,
+    assistant_color: Color,
+    theme: &Theme,
+    content_width: u16,
+) -> Line<'static> {
+    let mut left_text = String::new();
+    if !assistant_icon.is_empty() {
+        left_text.push_str(assistant_icon);
+        left_text.push(' ');
+    }
+    left_text.push_str("Responding…");
+    if let Some(duration_ms) = turn.header.responding_duration_ms {
+        left_text.push(' ');
+        left_text.push_str(&format_thought_duration_ms(duration_ms));
+    }
+    let right = waiting_status_right_meta(turn);
+    let target = usize::from(content_width);
+    let left_width = display_width(&left_text);
+    let right_width = display_width(&right);
+    let gap = target
+        .saturating_sub(left_width)
+        .saturating_sub(right_width)
+        .max(if right.is_empty() { 0 } else { 1 });
+
+    let mut spans = vec![
+        Span::raw(TRANSCRIPT_ASSISTANT_BODY_PREFIX.to_string()),
+        Span::styled(left_text, Style::default().fg(assistant_color)),
+    ];
+    if gap > 0 {
+        spans.push(Span::raw(" ".repeat(gap)));
+    }
+    if !right.is_empty() {
+        spans.push(Span::styled(right, muted_meta_style(theme)));
+    }
+    Line::from(spans)
+}
+
+fn pack_retrying_footer_line(
+    turn: &TranscriptTurnSection,
+    retry: &ProviderRequestRetryMetadata,
+    assistant_icon: &str,
+    assistant_color: Color,
+    theme: &Theme,
+    content_width: u16,
+) -> Line<'static> {
+    let mut left_text = String::new();
+    if !assistant_icon.is_empty() {
+        left_text.push_str(assistant_icon);
+        left_text.push(' ');
+    }
+    left_text.push_str(&format!("Retrying (attempt {})…", retry.attempt));
+    if let Some(elapsed_ms) = turn.header.retry_elapsed_ms {
+        left_text.push(' ');
+        left_text.push_str(&format_thought_duration_ms(elapsed_ms));
+    }
+    let right = waiting_status_right_meta(turn);
+    let target = usize::from(content_width);
+    let left_width = display_width(&left_text);
+    let right_width = display_width(&right);
+    let gap = target
+        .saturating_sub(left_width)
+        .saturating_sub(right_width)
+        .max(if right.is_empty() { 0 } else { 1 });
+
+    let mut spans = vec![
+        Span::raw(TRANSCRIPT_ASSISTANT_BODY_PREFIX.to_string()),
+        Span::styled(left_text, Style::default().fg(assistant_color)),
+    ];
+    if gap > 0 {
+        spans.push(Span::raw(" ".repeat(gap)));
+    }
+    if !right.is_empty() {
+        spans.push(Span::styled(right, muted_meta_style(theme)));
     }
     Line::from(spans)
 }
@@ -1079,6 +1261,9 @@ fn format_waiting_token_count(count: u32) -> String {
         let thousands = f64::from(count) / 1000.0;
         if count.is_multiple_of(1000) {
             return format!("{}k", count / 1000);
+        }
+        if count < 10_000 {
+            return format!("{thousands:.2}k");
         }
         return format!("{thousands:.1}k");
     }

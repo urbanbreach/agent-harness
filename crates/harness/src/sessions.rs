@@ -37,6 +37,7 @@ use crate::CliDeps;
 mod export;
 mod lineage;
 mod list;
+mod rewind;
 #[cfg(test)]
 use export::{
     write_redacted_export_output_with_redactor, SessionExportBundle, SessionExportSupport,
@@ -72,6 +73,8 @@ pub enum SessionsCommand {
     Discover(DiscoverSessionCommand),
     /// Scan session run directories for previous-crash markers (read-only).
     CrashScan(CrashScanSessionCommand),
+    /// Atomically rewind conversation and workspace files to a cutoff (events stay append-only).
+    Rewind(rewind::RewindSessionCommand),
 }
 
 #[derive(Debug, Args, Clone)]
@@ -234,6 +237,9 @@ pub fn execute_with_io(
         SessionsCommand::Discover(command) => discover_sessions(command, stdout, stderr),
         SessionsCommand::CrashScan(command) => {
             crash_scan_sessions(command, global_session_dir, stdout, stderr)
+        }
+        SessionsCommand::Rewind(command) => {
+            rewind::rewind_session(command, global_session_dir, stdout, stderr)
         }
     }
 }

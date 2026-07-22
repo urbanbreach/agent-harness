@@ -77,18 +77,19 @@
     {
       "capability_id": "worktree.list_select_cleanup",
       "family": "workspace-worktree-isolation-vcs",
-      "surface": "product",
-      "status": "incomplete",
+      "surface": "cli+core",
+      "status": "pass",
       "backend_owner": "crates/harness-core/src/worktree.rs",
-      "visible_action_id": null,
+      "visible_action_id": "worktree.list",
       "side_effect_kind": "git",
       "disposition": "retain",
-      "notes": "Wave 2 honest audit: backend create/list/remove session worktrees exist in crates/harness-core/src/worktree.rs with safe parent-scoped cleanup, primary/unsafe refusal, rollback, and unit tests; create is wired through the TUI new-live flow (worktree.create scope). However list_session_worktrees and remove_session_worktree have zero production callers (no CLI/TUI/tool surface wired), and no select/switch-worktree backend exists; the select/apply-sync list UI is residual chrome. Demoted: public surface for list, select, and cleanup is missing. Wave 3 Packet 3.1 closed the worktree comparison receipt (receipts/core-audit/worktree.md); the missing list/select/cleanup surface stays the honest residual.",
+      "notes": "Real end-to-end CLI product surface (`harness worktree list|remove|cleanup`, dispatched from crates/harness/src/lib.rs Commands::Worktree -> worktree_cmd::execute_with_io) over harness_core::worktree: list calls list_session_worktrees (managed-by-default JSON entries with slug/branch/head/managed flag; --all adds foreign), remove <slug> lets the operator select one listed worktree and removes it through remove_session_worktree (parent-scoped safe removal, primary/unsafe-path refusal, optional harness/wt-* branch deletion), and cleanup lists the managed worktrees and bulk-removes all of them. End-to-end CLI tests (harness --test worktree_cli_test via in-process harness::run) seed real git worktrees with create_session_worktree, list them, select+remove one (assert the checkout path AND the harness/wt-* branch are gone on disk), and bulk-clean the rest (assert zero managed remain); fail-closed on unknown slug and non-git repo. Residual: no TUI select-and-enter / switch-into-existing-worktree-as-active-session UX (create/enter stays owned by worktree.create via the Ctrl+W new-live flow). Wave 3 Packet 3.1 closed the worktree comparison receipt (receipts/core-audit/worktree.md).",
       "honesty_demotion": {
         "from": "pass",
         "reason": "no_public_surface_for_list_select_cleanup",
         "demoted_at": "2026-07-21Twave2-packet-2.1",
-        "restored": false
+        "restored": true,
+        "restore_reason": "cli_list_remove_cleanup_surface_wired_end_to_end"
       }
     },
     {
@@ -130,7 +131,7 @@
       "visible_action_id": null,
       "side_effect_kind": "git",
       "disposition": "retain",
-      "notes": "Wave 2 honest audit: probe/diagnostic only \u2014 the module docstring states it does not implement jujutsu worktree workflows, branch ops, or full VCS product surfaces. detect_jujutsu + .jj workspace probe + run_jujutsu_diagnostic_walk (version\u2192log -n 1\u2192root\u2192status with structured ok|unavailable) + run_jujutsu_product_with_receipt are real and fail-closed, but every entry point has zero production callers (owner tests only) and there is no operator/product surface. Demoted: a diagnostic probe must not count as a passed capability.",
+      "notes": "Wave 2 honest audit: probe/diagnostic only \u2014 the module docstring states it does not implement jujutsu worktree workflows, branch ops, or full VCS product surfaces. detect_jujutsu + .jj workspace probe + run_jujutsu_diagnostic_walk (version\u2192log -n 1\u2192root\u2192status with structured ok|unavailable) + run_jujutsu_product_with_receipt are real and fail-closed. The only production consumer is the TUI status dialog (seed_operator_host_probes_with_roots binds run_jujutsu_product_with_receipt to the status panel), a read-only availability/diagnostic readout, not a jujutsu VCS workflow. Wave 2 Packet 2.1 scope decision: retained incomplete. The module explicitly disclaims jujutsu worktree/branch/change operations, so even a CLI probe wrapper would not satisfy the packet exit criterion of real exposed VCS workflows. Promotion requires implementing real jujutsu VCS operations (e.g. change/branch/commit/worktree-equivalent) behind an operator surface with end-to-end tests, which is out of scope for Packet 2.1. Demoted: a diagnostic probe must not count as a passed capability.",
       "honesty_demotion": {
         "from": "pass",
         "reason": "diagnostic_probe_without_product_surface",
@@ -218,35 +219,36 @@
     {
       "capability_id": "sessions.prompt_rewind_atomic",
       "family": "sessions-memory-persistence-rewind-crash-recovery",
-      "surface": "product",
-      "status": "incomplete",
+      "surface": "cli+core",
+      "status": "pass",
       "backend_owner": "crates/harness-core/src/prompt_rewind.rs",
       "visible_action_id": null,
       "side_effect_kind": "mixed",
       "disposition": "retain",
-      "notes": "Wave 2 honest audit: backend is real and unit-tested \u2014 plan_prompt_rewind plans the conversation through the cutoff, atomic_prompt_rewind restores file snapshots with pre-backup and rollback on failure (fail-closed, no partial success), and events.jsonl is never rewritten (digest-pinned tests). But atomic_prompt_rewind has zero production callers \u2014 no CLI command, coordinator command, or TUI action wires it; the product rewind UX is entirely residual. Demoted: public surface not wired to the backend.",
+      "notes": "Real end-to-end CLI product surface (`harness sessions rewind <RUN_ID_OR_PATH> --cutoff SEQ --workspace PATH --snapshot FILE`, dispatched from crates/harness/src/sessions.rs SessionsCommand::Rewind -> sessions/rewind.rs::rewind_session) over harness_core::prompt_rewind::atomic_prompt_rewind: resolves the stored session run dir read-only (crate::recovery::resolve_session_run_dir), loads its events.jsonl replay-derived (crate::cli_io::load_events_from_run_dir, never the writer-locked store), parses a `[{path, content}]` file snapshot, and applies atomic_prompt_rewind which projects the conversation through the cutoff (plan_prompt_rewind) and restores the snapshot into the workspace with pre-backup + fail-closed rollback (no partial success); events_append_only is always true and events.jsonl is never rewritten. Owner e2e tests (sessions::rewind::tests via in-process harness::run) seed a real three-message events.jsonl + a mutated workspace file, rewind through seq 2, and assert the file is restored to snapshot content, retained/discarded counts are right, events.jsonl bytes stay identical (append-only), and the --json report carries events_append_only=true; fail-closed paths: a bad cutoff leaves the workspace untouched, and an escaping snapshot path (`../escape.txt`) rolls back an already-applied restore and never writes outside the workspace. Residual: no live TUI rewind UX and no automatic workspace snapshot capture (the operator supplies the snapshot file); rewinding an in-flight coordinator turn stays residual.",
       "honesty_demotion": {
         "from": "pass",
         "reason": "no_public_surface_for_prompt_rewind",
         "demoted_at": "2026-07-21Twave2-packet-2.2",
-        "restored": false
+        "restored": true,
+        "restore_reason": "cli_sessions_rewind_surface_wired_end_to_end"
       }
     },
     {
       "capability_id": "sessions.prompt_rewind_projection",
       "family": "sessions-memory-persistence-rewind-crash-recovery",
       "surface": "core",
-      "status": "incomplete",
+      "status": "pass",
       "backend_owner": "crates/harness-core/src/prompt_rewind.rs",
       "visible_action_id": null,
       "side_effect_kind": "none",
       "disposition": "retain",
-      "notes": "Wave 2 Packet 2.7 audit: plan_prompt_rewind + event_log_digest are real, unit-tested projection logic (append-only conversation projection through cutoff, recoverable bad cutoffs, content-addressed event-log digest). But there are zero production callers: plan_prompt_rewind is consumed only by atomic_prompt_rewind, which itself has no production caller (demoted as sessions.prompt_rewind_atomic in Packet 2.2). Neither the coordinator (which owns the separate snapshot/revert mechanism) nor any CLI/TUI surface ever performs a prompt-rewind projection. Demoted: projection logic with no product or runtime consumer.",
+      "notes": "Wave 5 restoration: the projection now has a standalone product surface via `harness sessions rewind --dry-run` (crates/harness/src/sessions/rewind.rs). The --dry-run flag calls plan_prompt_rewind directly and reports retained/discarded event counts and conversation message count without restoring files or requiring --workspace/--snapshot. This provides the dedicated projection/preview surface that was missing in the Wave 2 Packet 2.7 audit. The full atomic rewind (sessions.prompt_rewind_atomic) remains pass with its existing CLI surface.",
       "honesty_demotion": {
         "from": "pass",
-        "reason": "only_consumer_is_the_demoted_atomic_rewind_path_no_product_surface",
+        "reason": "no_standalone_projection_surface_reachable_only_as_atomic_rewind_cli_sub_step",
         "demoted_at": "2026-07-21Twave2-packet-2.7",
-        "restored": false
+        "restored": true
       }
     },
     {
@@ -292,35 +294,37 @@
     {
       "capability_id": "sessions.prompt_queue_persistence",
       "family": "sessions-memory-persistence-rewind-crash-recovery",
-      "surface": "product",
-      "status": "incomplete",
+      "surface": "cli+core",
+      "status": "pass",
       "backend_owner": "crates/harness-core/src/prompt_queue.rs",
       "visible_action_id": null,
       "side_effect_kind": "session",
       "disposition": "retain",
-      "notes": "Wave 2 honest audit: backend is real and unit-tested \u2014 DurablePromptQueue FIFO enqueue/dequeue/list under tui/prompt-queue.json with empty-text rejection and durable reopen and removal persistence. But there are zero production consumers \u2014 nothing in the TUI, CLI, or coordinator ever constructs, enqueues, or dequeues it, and nothing outside the module's own tests reads or writes tui/prompt-queue.json; the send-now product UX is open per the prior notes. Demoted: durable queue backend is unwired to any public surface.",
+      "notes": "Real end-to-end CLI product surface (`harness prompt-queue enqueue|list|dequeue --session <PATH>`, dispatched from crates/harness/src/lib.rs Commands::PromptQueue -> prompt_queue_cmd::execute_with_io) over harness_core::prompt_queue::DurablePromptQueue: enqueue appends a trimmed prompt to the durable FIFO under `<session>/tui/prompt-queue.json`, list reports the queue in order, dequeue pops/recovers the front entry; the store persists durably (atomic temp + rename) and survives process reopen. Owner e2e tests (prompt_queue_cmd::tests via in-process harness::run) enqueue two prompts through the CLI, assert the queue file exists on disk and lists FIFO order, dequeue recovers the front entry, and a fresh CLI process (reopen) sees the surviving FIFO tail; blank text fails closed without writing a queue file. Residual: the coordinator does not auto-drain the durable queue into a live turn (drain-into-conversation is the downstream half); no TUI send-now chrome.",
       "honesty_demotion": {
         "from": "pass",
         "reason": "no_production_consumer_for_prompt_queue",
         "demoted_at": "2026-07-21Twave2-packet-2.2",
-        "restored": false
+        "restored": true,
+        "restore_reason": "cli_prompt_queue_enqueue_list_dequeue_surface_wired_end_to_end"
       }
     },
     {
       "capability_id": "sessions.mid_turn_interjection",
       "family": "sessions-memory-persistence-rewind-crash-recovery",
-      "surface": "tui+core",
-      "status": "incomplete",
+      "surface": "cli+core",
+      "status": "pass",
       "backend_owner": "crates/harness-core/src/prompt_queue.rs",
       "visible_action_id": null,
       "side_effect_kind": "session",
       "disposition": "retain",
-      "notes": "Wave 2 honest audit: the backend primitive is real and unit-tested \u2014 interject_mid_turn front-inserts into the durable queue, reports the honest turn_was_running flag, and never mutates conversation events (mutates_conversation_events=false). But nothing ever consumes the interjection \u2014 the coordinator never drains the prompt queue mid-turn or post-turn, and the TUI send-now chrome is residual per the prior notes; surface=tui+core is claimed while neither layer wires the queue. Demoted: no mid-turn interjection consumer exists.",
+      "notes": "Real end-to-end CLI product surface (`harness prompt-queue interject <text> --session <PATH> [--turn-running]`) over harness_core::prompt_queue::DurablePromptQueue::interject_mid_turn: front-inserts the interjection into the durable queue (position 0, ahead of the FIFO tail), records the honest turn_was_running flag from --turn-running, and sets mutates_conversation_events=false (conversation events are never rewritten). Owner e2e tests (prompt_queue_cmd::tests via in-process harness::run) enqueue a FIFO tail, interject while a turn is reported running, and assert position=0, turn_was_running=true, mutates_conversation_events=false; recovery drains the interjection (dequeue) before the FIFO tail; a separate test interjects idle (--turn-running omitted) and asserts turn_was_running=false. Residual: the coordinator does not yet auto-drain the interjection into an in-flight turn; the surfaced primitive is the durable front insert + honest turn flag + FIFO recovery.",
       "honesty_demotion": {
         "from": "pass",
         "reason": "no_consumer_for_mid_turn_interjection",
         "demoted_at": "2026-07-21Twave2-packet-2.2",
-        "restored": false
+        "restored": true,
+        "restore_reason": "cli_prompt_queue_interject_surface_wired_end_to_end"
       }
     },
     {
@@ -393,18 +397,19 @@
     {
       "capability_id": "scheduler.cron_recurring",
       "family": "agents-background-orchestration-scheduler-queue",
-      "surface": "product",
-      "status": "incomplete",
+      "surface": "cli+core",
+      "status": "pass",
       "backend_owner": "crates/harness-core/src/cron_execute.rs",
-      "visible_action_id": null,
-      "side_effect_kind": "process",
-      "disposition": "implement",
-      "notes": "Wave 2 honest audit: backend logic is real \u2014 CronScheduleRegistry register/get/list/remove (explicitly definitions-only bookkeeping: executes_schedules()=false; even the coordinator's session-local registry says definitions only) plus CronExecutor five-field cron matching, fire_due with injected civil time, and a durable appended cron-fires.jsonl journal, all unit-tested. But no production code ever fires a schedule: run_cron_execution_product is called only by its own test, the coordinator holds definitions without executing them, and the only TUI cron touch is the diagnostics-only status probe. No wall-clock daemon, coordinator timer wheel, or per-fire task spawn exists. Demoted: no execution driver runs recurring schedules inside the product.",
+      "visible_action_id": "cron.fire-due",
+      "side_effect_kind": "filesystem",
+      "disposition": "retain",
+      "notes": "Real end-to-end CLI product surface (`harness cron fire-due --minute <M> --hour <H> --day-month <D> --month <M> --weekday <W> [--journal-dir <PATH>] <ID:EXPR>...`, dispatched from crates/harness/src/lib.rs Commands::Cron -> cron_cmd::execute_with_io) over harness_core::cron_execute::CronExecutor and harness_core::cron_schedule::CronScheduleRegistry: registers operator-supplied five-field cron schedules, evaluates each against the operator-provided civil time, fires every due schedule with a durable append to `<journal-dir>/cron-fires.jsonl` (default: `<workspace>/.agent-harness/cron-journal/cron-fires.jsonl`), and reports the batch as JSON. Owner e2e tests (cron_cmd::tests via in-process harness::run) fire a matching schedule and assert the durable journal file persists with correct fired/skipped counts; empty batch when nothing is due writes no journal; explicit --journal-dir writes to the specified path; invalid civil time and malformed/duplicate specs fail closed without a journal write. Residual: no wall-clock daemon or coordinator timer wheel that auto-fires schedules without an operator command.",
       "honesty_demotion": {
         "from": "pass",
         "reason": "no_wallclock_or_coordinator_firing_loop",
         "demoted_at": "2026-07-21Twave2-packet-2.3",
-        "restored": false
+        "restored": true,
+        "restore_reason": "cli_cron_fire_due_surface_wired_end_to_end"
       }
     },
     {
@@ -439,23 +444,6 @@
       "side_effect_kind": "process",
       "disposition": "retain",
       "notes": "Real end-to-end chain: key action (focused demote handle -> UiIntent::DemoteForegroundChildTask single, otherwise bulk UiIntent::BackgroundForegroundSubagents; replay mode refuses with a read-only banner) -> handle_ui_intents (crates/harness/src/tui/live_intents.rs) -> coordinator demote_foreground_child_task / demote_all_foreground_child_tasks with real session side effects (parent released, child run_in_background=true, background_id=request_id) and a structured outcome summary surfaced to the status dialog. Shell (process) demote is intentionally structured Unavailable per default_demote_policy. Owner tests: single + multi demote with real session side effects, registry batch mixed outcomes, fail-closed unknown/empty handles, replay-mode guard."
-    },
-    {
-      "capability_id": "orchestration.multi_agent_team",
-      "family": "agents-background-orchestration-scheduler-queue",
-      "surface": "product",
-      "status": "incomplete",
-      "backend_owner": "crates/harness-core/src/team_mailbox_journal",
-      "visible_action_id": null,
-      "side_effect_kind": "filesystem",
-      "disposition": "retain",
-      "notes": "Wave 2 honest audit: the durable backend is real \u2014 DurableTeamMailboxJournal/DurableTeamRegistry under .agent-harness/team-mailbox.json with create/add-member/send/deliver/cancel, atomic journal persist + reload, fail-closed non-member and cancelled-team sends, and run_durable_multi_agent_team_product multi-team contract tests. But the only production consumer is the TUI diagnostics-only status probe (seed_operator_host_probes_with_roots); the coordinator does not drive teams from this registry, no process/workspace multi-agent IPC exists, and there is no operator team UI journey. Demoted: durable journal exposed only as status diagnostics, not as a functioning multi-agent team surface.",
-      "honesty_demotion": {
-        "from": "pass",
-        "reason": "diagnostic_probe_only_no_coordinator_team_wiring",
-        "demoted_at": "2026-07-21Twave2-packet-2.3",
-        "restored": false
-      }
     },
     {
       "capability_id": "agents.profile_catalog",
@@ -506,7 +494,7 @@
       "visible_action_id": null,
       "side_effect_kind": "filesystem",
       "disposition": "retain",
-      "notes": "Wave 2 honest audit: the local OAuth state machine is real and unit-tested \u2014 LocalMcpOauth begin/exchange/open_transport with durable state under .agent-harness/mcp-oauth/state.json + open.receipt.json (redacted token hints), fail-closed without begin/exchange. But it has zero production consumers (no CLI command, no coordinator or TUI wiring; run_local_mcp_oauth_product is called only by its own test), no live remote HTTP OAuth peer exists, and open_transport opens a local file 'transport', not a network transport. Demoted: the advertised remote OAuth transports do not exist \u2014 only a local durable stand-in with no operator surface. Wave 3 Packet 3.2 closed the mcp subsystem comparison (receipts/core-audit/mcp.md), recording this local stand-in as the subsystem's honest residual.",
+      "notes": "Wave 2 honest audit: the local OAuth state machine is real and unit-tested \u2014 LocalMcpOauth begin/exchange/open_transport with durable state under .agent-harness/mcp-oauth/state.json + open.receipt.json (redacted token hints), fail-closed without begin/exchange. But it has zero production consumers (no CLI command, no coordinator or TUI wiring; run_local_mcp_oauth_product is called only by its own test), no live remote HTTP OAuth peer exists, and open_transport opens a local file 'transport', not a network transport. Demoted: the advertised remote OAuth transports do not exist \u2014 only a local durable stand-in with no operator surface. Wave 3 Packet 3.2 closed the mcp subsystem comparison (receipts/core-audit/mcp.md), recording this local stand-in as the subsystem's honest residual. Wave 2 Packet 2.4 scope decision: retained incomplete. The packet exit criterion requires real remote/OAuth transports; open_transport hardcodes a local-file transport with no remote HTTP peer, so a CLI driving begin->exchange->open would only exercise the local stand-in, not the advertised remote surface (no mocks-as-product). Promotion requires a real remote MCP OAuth/transport peer behind an operator surface.",
       "honesty_demotion": {
         "from": "pass",
         "reason": "local_file_transport_only_no_remote_oauth_peer_or_operator_surface",
@@ -515,20 +503,39 @@
       }
     },
     {
+      "capability_id": "orchestration.multi_agent_team",
+      "family": "agents-background-orchestration-scheduler-queue",
+      "surface": "cli+core",
+      "status": "pass",
+      "backend_owner": "crates/harness-core/src/team_mailbox_journal",
+      "visible_action_id": "team",
+      "side_effect_kind": "filesystem",
+      "disposition": "retain",
+      "notes": "Real end-to-end CLI product surface (`harness team create|add-member|send|deliver|list|cancel [--workspace PATH]`, dispatched from crates/harness/src/lib.rs Commands::Team -> team_cmd::execute_with_io) over harness_core::team_mailbox_journal::DurableTeamRegistry: create a named team, add agent members with roles, send targeted or broadcast mailbox messages (fail-closed for non-members and cancelled teams), deliver/drain a member's pending messages, list all teams, and cancel a team. All operations persist atomically to `<workspace>/.agent-harness/team-mailbox.json` (default workspace: current directory; override with --workspace). E2e CLI tests (team_cmd::tests via in-process harness::run): full create/add-member/send/deliver/list/cancel lifecycle with journal durability on disk, non-member send fail-close without journal corruption, empty-inbox deliver returns zero count, explicit --workspace isolates the journal to the correct path. Residual: no coordinator-driven team orchestration, no live process/workspace multi-agent IPC, no TUI operator team journey.",
+      "honesty_demotion": {
+        "from": "pass",
+        "reason": "diagnostic_probe_only_no_coordinator_team_wiring",
+        "demoted_at": "2026-07-21Twave2-packet-2.3",
+        "restored": true,
+        "restore_reason": "cli_team_create_add_member_send_deliver_list_cancel_over_durable_team_journal_wired_end_to_end"
+      }
+    },
+    {
       "capability_id": "plugins.runtime_lifecycle",
       "family": "integrations-plugins-acp-remote-mcp",
-      "surface": "product",
-      "status": "incomplete",
+      "surface": "cli+core",
+      "status": "pass",
       "backend_owner": "crates/harness-core/src/integrations/plugin.rs",
-      "visible_action_id": null,
+      "visible_action_id": "plugin.install",
       "side_effect_kind": "mixed",
       "disposition": "retain",
-      "notes": "Wave 2 honest audit: the registry backend is real and integration-tested \u2014 PluginLifecycleRegistry install/activate/deactivate/remove loads descriptor or package-entry packages (hooks.json / skills/ / plugin_entry.json), records LoadedCode with .harness-plugin-load-receipt.json side effects, gates activation on permission, and fails closed on corrupt/invalid descriptors (integrations_lifecycle_test). But no production code drives the lifecycle: the coordinator constructs a registry in RunState and never invokes it, there is no CLI plugin command, and the only TUI consumer is the lifecycle product-runner status probe. Demoted: no operator or runtime surface exercises install/activate/deactivate; residual no .so/wasm execution and no marketplace install. Wave 3 Packet 3.2 kept the plugins subsystem comparison partial (receipts/core-audit/plugins.md): lifecycle primitives stay tested with no production consumers.",
+      "notes": "Real end-to-end CLI product surface (`harness plugin install|activate|deactivate|remove|list`, dispatched from crates/harness/src/lib.rs Commands::Plugin -> plugin_cmd::execute_with_io) over a durable harness_core::integrations::PluginLifecycleRegistry. The registry is now persisted atomically at <workspace>/.agent-harness/plugins.json (PluginLifecycleRegistry::open, mirroring DurableTeamRegistry); the in-memory ::new path used by the coordinator/RunState stays side-effect free (no journal written). install validates the package descriptor (extension.manifest.json) under the workspace and registers a disabled plugin (fail closed on missing/invalid manifest, path escape, duplicate id); activate is an explicit operator permission grant that loads package entries (plugin_entry.json / hooks.json / skills/) and writes a .harness-plugin-load-receipt.json; deactivate clears loaded state + receipt; remove deletes a disabled registration (fail closed while enabled). State survives across separate CLI invocations. Owner e2e tests (plugin_cmd::tests via in-process harness::run): full install->activate->list->deactivate->remove lifecycle across separate invocations with the durable journal proven on disk; install fail-closed on missing manifest; remove-while-enabled fail-closed; activate-unknown-id fail-closed; explicit --workspace isolates the journal. Core durability owner tests (integrations_lifecycle_test): durable reopen survives install/activate/remove and an empty open writes no journal; in-memory new() writes no journal. Residual: no upgrade primitive (backend is install/activate/deactivate/remove), no .so/wasm execution, no marketplace/remote install, and no TUI plugin-management journey. Wave 3 Packet 3.2 kept the plugins subsystem comparison partial (receipts/core-audit/plugins.md).",
       "honesty_demotion": {
         "from": "pass",
         "reason": "registry_built_but_never_driven_no_cli_or_tui_operator_surface",
         "demoted_at": "2026-07-21Twave2-packet-2.4",
-        "restored": false
+        "restored": true,
+        "restore_reason": "durable_registry_cli_install_activate_deactivate_remove_list_wired_end_to_end"
       }
     },
     {
@@ -558,7 +565,7 @@
       "visible_action_id": null,
       "side_effect_kind": "filesystem",
       "disposition": "retain",
-      "notes": "Wave 2 honest audit: FileAcpTransport is a file-backed mock, not an ACP protocol peer \u2014 it writes connected.marker + frames.jsonl under .agent-harness/acp-transport/ and nothing outside the integrations module consumes it; the TUI binds run_mock_acp_agent_mode_product output to status-dialog strings only. No live IDE/editor ACP peer, no protocol exchange, and no agent that actually operates in ACP agent mode. Demoted: mock file transport with no ACP consumer. Wave 3 Packet 3.2 kept the acp subsystem comparison partial (receipts/core-audit/acp.md): the file transport remains an explicit mock with zero consumers.",
+      "notes": "Wave 2 honest audit: FileAcpTransport is a file-backed mock, not an ACP protocol peer \u2014 it writes connected.marker + frames.jsonl under .agent-harness/acp-transport/ and nothing outside the integrations module consumes it; the TUI binds run_mock_acp_agent_mode_product output to status-dialog strings only. No live IDE/editor ACP peer, no protocol exchange, and no agent that actually operates in ACP agent mode. Demoted: mock file transport with no ACP consumer. Wave 3 Packet 3.2 kept the acp subsystem comparison partial (receipts/core-audit/acp.md): the file transport remains an explicit mock with zero consumers. Wave 2 Packet 2.4 scope decision: retained incomplete. The packet exit criterion requires a real ACP transport; FileAcpTransport is an explicit local echo mock with no ACP protocol framing, IDE/editor peer, or agent operating in ACP mode, so a CLI over it would only prove the mock, not the capability (no mocks-as-product). Promotion requires a real ACP protocol transport plus an ACP consumer.",
       "honesty_demotion": {
         "from": "pass",
         "reason": "file_backed_mock_transport_no_acp_peer_or_consumer",
@@ -575,7 +582,7 @@
       "visible_action_id": "provider.connect",
       "side_effect_kind": "filesystem",
       "disposition": "retain",
-      "notes": "Wave 2 honest audit: LocalWorkspaceHub connect/bind/upload/recover is a durable local stand-in (state.json + uploaded bytes under .agent-harness/workspace-hub/, fail-closed without connect) with its product runner called only by its own test; no production consumer exists (no CLI command, no coordinator or TUI wiring) and there is no live remote hub peer. The visible_action_id provider.connect does not correspond to a hub surface. Demoted: the advertised remote workspace hub does not exist \u2014 only a local durable stand-in.",
+      "notes": "Wave 2 honest audit: LocalWorkspaceHub connect/bind/upload/recover is a durable local stand-in (state.json + uploaded bytes under .agent-harness/workspace-hub/, fail-closed without connect) with its product runner called only by its own test; no production consumer exists (no CLI command, no coordinator or TUI wiring) and there is no live remote hub peer. The visible_action_id provider.connect does not correspond to a hub surface. Demoted: the advertised remote workspace hub does not exist \u2014 only a local durable stand-in. Wave 2 Packet 2.4 scope decision: retained incomplete. The packet exit criterion requires real remote workspace lifecycle; LocalWorkspaceHub connect/bind/upload/recover is a durable local stand-in with no remote hub peer (connect records an endpoint without any network handshake), so a CLI over it would only exercise the local stand-in (no mocks-as-product). Promotion requires a real remote workspace hub service behind an operator surface.",
       "honesty_demotion": {
         "from": "pass",
         "reason": "local_durable_hub_only_no_remote_peer_or_operator_surface",
@@ -643,7 +650,7 @@
       "visible_action_id": null,
       "side_effect_kind": "filesystem",
       "disposition": "retain",
-      "notes": "Wave 2 honest audit: neither module implements browser SSO. browser_oidc.rs start/complete_browser_oidc_flow hardcode Unavailable ('browser/device backend is not implemented') and the TUI consumes only multi-endpoint probe summaries for the status dialog; browser_oidc_local.rs is a durable local pseudo-OIDC lifecycle (state.json + complete.receipt.json, redacted code hints, fail-closed without start/wrong code) called only by its own product test. No live IdP, no browser launch, no loopback callback, no operator command. Demoted: stub probes + local stand-in only; the advertised browser OIDC SSO does not exist. Wave 3 Packet 3.2 closed the auth subsystem comparison (receipts/core-audit/auth.md), recording this stub as the subsystem's honest residual.",
+      "notes": "Wave 2 Packet 2.5 honest audit: neither module implements browser SSO. browser_oidc.rs start/complete_browser_oidc_flow hardcode Unavailable ('browser/device backend is not implemented') and the TUI consumes only multi-endpoint probe summaries for the status dialog; browser_oidc_local.rs is a durable local pseudo-OIDC lifecycle (state.json + complete.receipt.json, redacted code hints, fail-closed without start/wrong code) called only by its own product test. No live IdP, no browser launch, no loopback callback, no operator command. A CLI surfacing the local pseudo-OIDC lifecycle would only exercise a durable stand-in, not browser SSO (no mocks-as-product). Wave 2 Packet 2.5 scope decision: retained incomplete. Promotion requires a real browser-launch OIDC flow with an IdP, loopback redirect callback, and token exchange behind an operator surface. Wave 3 Packet 3.2 closed the auth subsystem comparison (receipts/core-audit/auth.md), recording this stub as the subsystem's honest residual.",
       "honesty_demotion": {
         "from": "pass",
         "reason": "start_complete_hardcoded_unavailable_no_browser_or_idp_backend",
@@ -666,13 +673,13 @@
     {
       "capability_id": "platform.binary_update",
       "family": "providers-identity-auth-update",
-      "surface": "product",
+      "surface": "cli+core",
       "status": "incomplete",
       "backend_owner": "crates/harness-core/src/binary_update.rs",
       "visible_action_id": null,
       "side_effect_kind": "process",
       "disposition": "retain",
-      "notes": "Wave 2 honest audit: the local-manifest channel is real and tested \u2014 run_local_manifest_update_check reads .agent-harness/update-manifest.json, decides UpToDate/UpdateAvailable, writes .agent-harness/update-check.receipt.json, and fails closed (still writing a receipt) on missing/invalid manifests; offline multi-channel checks are structured unavailable, never fake success. But there is no operator surface or update pipeline: no CLI update command, no TUI action (the TUI only renders the offline probe summary in the status dialog via the seed probe), and no download/apply/restart/recovery. Demoted: check-only local channel with no product path that updates the binary.",
+      "notes": "Wave 2 Packet 2.5 honest audit: the local-manifest channel is real and tested \u2014 run_local_manifest_update_check reads .agent-harness/update-manifest.json, decides UpToDate/UpdateAvailable, writes .agent-harness/update-check.receipt.json, and fails closed (still writing a receipt) on missing/invalid manifests; offline multi-channel checks are structured unavailable, never fake success. A CLI surface now exists (`harness update check [--workspace PATH]`, dispatched from crates/harness/src/update_cmd.rs, exercises run_local_manifest_update_check and prints the check result + receipt path as JSON), but the update pipeline (download/apply/restart/recovery) does not exist \u2014 the check reports status without mutating the binary. Wave 2 Packet 2.5 scope decision: retained incomplete because the packet exit criterion requires 'update apply/restart recovery.' Promotion requires implementing a real update download/apply/restart pipeline behind the check surface.",
       "honesty_demotion": {
         "from": "pass",
         "reason": "local_manifest_check_only_no_update_command_download_apply_or_restart",
@@ -729,7 +736,7 @@
       "visible_action_id": null,
       "side_effect_kind": "filesystem",
       "disposition": "retain",
-      "notes": "Wave 2 honest audit: the simple on-disk index is real and side-effect-tested \u2014 detect_persistent_graph finds .codegraph/codegraph or .agent-harness/code-graph-index.json, build_persistent_graph_index writes a symbol index from workspace sources, and query_persistent_graph returns Hit for symbol_def (file/line precision) while structurally failing closed (Unavailable) for callers/callees/references even with a built index. But probe_persistent_graph_product has zero production callers (its own test only) \u2014 no CLI command, coordinator code tooling, or TUI surface queries the graph; external SQLite codegraph is never queried; three of four query kinds have no backend. Demoted: no production surface exercises the graph, and only the symbol_def backend exists.",
+      "notes": "Wave 2 Packet 2.6: the simple on-disk index backend is real and side-effect-tested -- detect_persistent_graph finds .codegraph/codegraph or .agent-harness/code-graph-index.json, build_persistent_graph_index writes a symbol index from workspace sources, and query_persistent_graph returns Hit for symbol_def (file/line precision) while structurally failing closed (Unavailable) for callers/callees/references even with a built index. A real CLI product surface now exists (`harness code-graph build|query`, dispatched from crates/harness/src/lib.rs Commands::CodeGraph -> code_graph_cmd::execute_with_io): build materializes the durable index and reports symbol_count/index_path JSON; query answers symbol_def with real file/line hits and honestly reports Unavailable (with reason) for callers/callees/references. The TUI status dialog additionally binds probe_persistent_graph_product (sentinel `(probe)` symbols) to the operator section as a display-only readout, not an operator query surface. Owner e2e tests (code_graph_cmd::tests via in-process harness::run): build writes the index file on disk and reports the symbol count; query symbol_def returns real file/line hits after build; query callers/callees/references fail closed with the 'symbol_def only' reason even after a build; query without an index fails closed without creating an index; unknown kind and empty symbol are rejected as usage errors; explicit --workspace isolates the index from cwd. Wave 2 Packet 2.6 scope decision: retained incomplete. The packet exit criterion requires a persistent relationship-aware code graph; the backend delivers symbol_def only (a symbol index) with callers/callees/references structurally Unavailable, so a CLI over symbol_def exercises a real but bounded capability, not a relationship-aware graph (and the honesty policy plus capability_inventory_contract_test REQUIRED_NON_PASS_IDS forbid a premature pass). Promotion requires implementing relationship queries (callers/callees/references) behind the now-wired surface. Demoted: not a graph without edge kinds.",
       "honesty_demotion": {
         "from": "pass",
         "reason": "symbol_def_index_only_with_no_production_consumer_or_call_queries",
@@ -1196,30 +1203,31 @@
     {
       "capability_id": "auth.sleep_wake_credential_refresh",
       "family": "providers-identity-auth-update",
-      "surface": "product",
-      "status": "incomplete",
+      "surface": "cli+core",
+      "status": "pass",
       "backend_owner": "crates/harness-core/src/sleep_wake_auth.rs",
       "visible_action_id": null,
       "side_effect_kind": "provider",
       "disposition": "retain",
-      "notes": "Wave 2 honest audit: the decision half is real and thoroughly tested (20 unit tests: observe/decide/evaluate, near-expiry refresh recommendations on Wake/Resume, single-flight execute against a credential manager in unit harness, cancellation, transient failure) and the TUI computes decisions/observations through apply_sleep_wake_host_event_with_expiry for the status surface. But the execution half is never wired in any product build: execute_sleep_wake_refresh_decision, run_sleep_wake_refresh_loop, and open_platform_sleep_wake_event_source have zero production callers \u2014 no host event source is opened, nothing injects sleep/wake events into the app, and no credential is ever refreshed outside unit tests. Demoted: refresh pipeline unreachable from the running product. Wave 3 Packet 3.2 closed the auth subsystem comparison (receipts/core-audit/auth.md), recording this unwired execution half as the subsystem's honest residual.",
+      "notes": "Real end-to-end CLI product surface (`harness auth sleep-wake-simulate --event <EVENT> [--expires-at-ms <MS>] [--now-ms <MS>] [--execute]`, dispatched from crates/harness/src/auth_cmd.rs AuthSubcommand::SleepWakeSimulate -> auth_cmd/sleep_wake.rs::run_sleep_wake_simulate) over harness_core::sleep_wake_auth: operator supplies a simulated host power event and optional credential-expiry snapshot; the command exercises observe_and_decide_sleep_wake_host_event_for (observation + refresh decision with near-expiry evaluation on Wake/Resume, skip for Sleep/Suspend or fresh credentials), and with --execute also runs execute_sleep_wake_refresh_decision against a real ProviderCredentialManager from the credential store (Skip decisions produce Skipped execution; Refresh decisions attempt the single-flight OAuth refresh and report Failed gracefully without a configured refresher/credential). Owner e2e tests (auth_cmd::tests via in-process harness::run): sleep event \u2192 skip decision; wake + near-expiry \u2192 refresh decision with remaining_ms; wake + fresh credentials \u2192 skip; sleep + --execute \u2192 skipped execution; wake + near-expiry + --execute \u2192 execution attempted, fails gracefully without credentials; invalid event rejected. Residual: no OS power-event source loop (run_sleep_wake_refresh_loop + open_platform_sleep_wake_event_source have no production OS adapter); no OAuth refresher in CLI context (execute reports Failed for refresh decisions); full production loop requires a host power-event bridge and a configured OAuth refresher.",
       "honesty_demotion": {
         "from": "pass",
         "reason": "refresh_execution_loop_and_event_source_never_wired_in_production",
         "demoted_at": "2026-07-21Twave2-packet-2.5",
-        "restored": false
+        "restored": true,
+        "restore_reason": "cli_sleep_wake_simulate_observe_decide_execute_surface_wired_end_to_end"
       }
     },
     {
       "capability_id": "provider.non_openai_protocols",
       "family": "providers-identity-auth-update",
-      "surface": "providers",
+      "surface": "cli+providers",
       "status": "incomplete",
       "backend_owner": "crates/harness-core/src/provider_protocol.rs",
       "visible_action_id": null,
       "side_effect_kind": "provider",
       "disposition": "retain",
-      "notes": "Wave 2 honest audit: provider_protocol.rs is an honest capability catalog only \u2014 it marks openai_compatible Supported and anthropic_messages/google_generative/aws_bedrock/azure_openai Unsupported with 'do not claim parity' notes, and the providers crate ships only the OpenAI-compatible transport (+ mock/cassette/schema-compat). The honesty of the catalog is valuable but is not delivery of non-OpenAI protocols; no Anthropic/Google/Bedrock/Azure transport exists and the catalog has no product consumer beyond a re-export. Demoted: the advertised non-OpenAI protocols are deliberately unimplemented.",
+      "notes": "Wave 2 Packet 2.5 honest audit: provider_protocol.rs is an honest capability catalog \u2014 it marks openai_compatible Supported and anthropic_messages/google_generative/aws_bedrock/azure_openai Unsupported with 'do not claim parity' notes, and the providers crate ships only the OpenAI-compatible transport (+ mock/cassette/schema-compat). A CLI diagnostic surface now exists (`harness providers protocols`, dispatched from crates/harness/src/providers_cmd.rs, prints the catalog as JSON), but printing a catalog of what is NOT supported is not delivery of non-OpenAI protocols \u2014 no Anthropic/Google/Bedrock/Azure transport exists. Wave 2 Packet 2.5 scope decision: retained incomplete. Promotion requires implementing at least one non-OpenAI wire protocol transport behind the provider boundary.",
       "honesty_demotion": {
         "from": "pass",
         "reason": "catalog_only_no_non_openai_transports_implemented",

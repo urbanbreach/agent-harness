@@ -247,7 +247,6 @@ pub(crate) fn pty_helper_type_first_startup() {
         keybindings: None,
         toggles: None,
         preserve_terminal_on_exit: false,
-        workspace_root: Some(run_dir.path().to_path_buf()),
     })
     .unwrap_or_abort();
 }
@@ -316,7 +315,6 @@ pub(crate) fn pty_helper_permission_overlay() {
         keybindings: None,
         toggles: None,
         preserve_terminal_on_exit: false,
-        workspace_root: Some(run_dir.path().to_path_buf()),
     })
     .unwrap_or_abort();
     drop(keepalive_tx);
@@ -327,6 +325,7 @@ pub(crate) fn pty_helper_connect_auth() {
         return;
     }
 
+    let _workspace_root = tempfile::tempdir().unwrap_or_abort();
     let (update_tx, update_rx) = mpsc::channel();
     let auth_tx = update_tx.clone();
     let on_ui_intent: Arc<dyn Fn(UiIntent) + Send + Sync> = Arc::new(move |intent| {
@@ -348,7 +347,6 @@ pub(crate) fn pty_helper_connect_auth() {
         keybindings: None,
         toggles: None,
         preserve_terminal_on_exit: false,
-        workspace_root: None,
     })
     .unwrap_or_abort();
 }

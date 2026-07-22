@@ -46,6 +46,7 @@ pub(crate) fn exact_test_compaction_applied_updates_active_context_usage_estimat
         thinking_first_mono_ms: None,
         thinking_last_mono_ms: None,
         transcript_text: String::new(),
+        first_delta_mono_ms: None,
         usage: Some(ActivityUsage {
             prompt_tokens: 400,
             completion_tokens: 100,
@@ -59,6 +60,7 @@ pub(crate) fn exact_test_compaction_applied_updates_active_context_usage_estimat
         last_seq: 2,
         first_mono_ms: 10,
         last_mono_ms: 20,
+        request_started_mono_ms: None,
         revision: 0,
     });
     assert_eq!(

@@ -263,6 +263,14 @@ fn pty_helper_type_first_startup() {
 }
 
 #[test]
+fn pty_helper_idle_shell() {
+    // arrange
+    // act
+    // assert
+    reference_parity_pty_impl::pty_helper_idle_shell();
+}
+
+#[test]
 fn pty_helper_live_draft() {
     // arrange
     // act
@@ -276,6 +284,14 @@ fn pty_helper_live_stream() {
     // act
     // assert
     reference_parity_pty_impl::pty_helper_live_stream();
+}
+
+#[test]
+fn pty_helper_live_perm_stream() {
+    // arrange
+    // act
+    // assert
+    reference_parity_pty_impl::pty_helper_live_perm_stream();
 }
 
 #[test]
@@ -340,6 +356,14 @@ fn pty_helper_question_overlay() {
     // act
     // assert
     reference_parity_pty_impl::pty_helper_question_overlay();
+}
+
+#[test]
+fn pty_helper_live_question_stream() {
+    // arrange
+    // act
+    // assert
+    reference_parity_pty_impl::pty_helper_live_question_stream();
 }
 
 #[test]

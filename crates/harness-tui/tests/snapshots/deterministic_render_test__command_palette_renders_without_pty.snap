@@ -12,30 +12,30 @@ expression: snapshot.as_str()
                               │──────────────────────────────────────────────────────────│
                               │   Session ────────────────────────────────────────────  █│
                               │  ◆ New Session                                 Ctrl+N   █│
-                              │  ◆ New Session in Worktree                     Ctrl+W   █│
+                              │  ◆ New Session in Worktree          Ctrl+P → worktree   █│
                               │  ◆ Agent Dashboard                         /dashboard   █│
                               │  ◆ Back to Home                                 /home   █│
                               │  ◆ Resume Session                             /resume   █│
-                              │  ◆ Rename Session                            /rename    █│
+                              │  ◆ Rename Session                             /rename   █│
                               │  ◆ Session Info                         /session-info   █│
-                              │  ◆ Help                                     /feedback   █│
-                              │  ◆ Fork session                                         █│
-                              │  ◆ Open status                               Ctrl+x s   █│
-                              │  ◆ Show timestamps                                      █│
-                              │  ◆ Collapse thinking                                    █│
-                              │  ◆ Hide tool details                                    █│
-                              │  ◆ Toggle session scrollbar                             █│
-                              │  ◆ Show generic tool output                             █│
-                              │  ◆ Copy last assistant message               Ctrl+x y   █│
-                              │  ◆ Copy session transcript                              █│
-                              │          ↑/↓ nav  |  Enter select  |  Esc close          │
-                              └──────────────────────────────────────────────────────────┘
-
-
-
-
-
-
-  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-  │ ❯                                                                                                                │
+                              │  ◆ Send Feedback                            /feedback   █│
+                              │                                                          │
+                              │   Context ────────────────────────────────────────────   │
+                              │  ◆ Compact History                           /compact    │
+                              │  ◆ Context Usage                             /context    │
+                              │  ◆ View Plan                               /view-plan    │
+                              │  ◆ Memory                                     /memory    │
+                              │                                                          │
+                              │   Model & Input ──────────────────────────────────────   │
+                              │  ◆ Switch Model                                /model    │
+                              │  ◆ Always Approve Mode                /always-approve    │
+                              │  ◆ Multiline Input                         /multiline    │
+                              │                                                          │
+                              │   Tools ──────────────────────────────────────────────   │
+                              │  ◆ Hooks                                       /hooks    │
+                              │  ◆ Plugins                                   /plugins    │
+                              │  ◆ Marketplace                           /marketplace    │
+                              │                                                          │
+  ╭───────────────────────────│          ↑/↓ nav  |  Enter select  |  Esc close          │───────────────────────────╮
+  │ ❯                         └──────────────────────────────────────────────────────────┘                           │
   ╰──────────────────────────────────────────────────────────────────────────────────────────────────────── unknown ─╯

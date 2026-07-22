@@ -771,3 +771,178 @@ fn config_with_null_auth_provider_passes() {
         }
     }
 }
+
+fn run_sleep_wake_cli(data_home: &std::path::Path, args: &[&str]) -> (i32, String, String) {
+    let mut stdin = std::io::Cursor::new(Vec::<u8>::new());
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let mut io = crate::CliIo::new(&mut stdin, &mut stdout, &mut stderr);
+    let deps = auth_deps(data_home);
+    let mut argv: Vec<String> = vec![
+        "harness".to_string(),
+        "auth".to_string(),
+        "sleep-wake-simulate".to_string(),
+    ];
+    for arg in args {
+        argv.push((*arg).to_string());
+    }
+    let outcome = crate::run(argv, &mut io, deps);
+    (
+        outcome.code,
+        String::from_utf8_lossy(&stdout).to_string(),
+        String::from_utf8_lossy(&stderr).to_string(),
+    )
+}
+
+#[test]
+fn sleep_wake_simulate_skip_on_sleep_without_expiry() {
+    // arrange
+    let dir = tempdir().unwrap_or_abort();
+
+    // act
+    let (code, stdout, stderr) = run_sleep_wake_cli(dir.path(), &["--event", "sleep"]);
+
+    // assert — sleep events never trigger refresh evaluation
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert!(stdout.contains("\"event\": \"sleep\""), "stdout: {stdout}");
+    assert!(
+        stdout.contains("\"decision\": \"skip\""),
+        "stdout: {stdout}"
+    );
+    assert!(
+        stdout.contains("does not evaluate credential refresh"),
+        "stdout: {stdout}"
+    );
+    assert!(
+        !stdout.contains("\"execution\""),
+        "no execution without --execute"
+    );
+}
+
+#[test]
+fn sleep_wake_simulate_refresh_on_wake_near_expiry() {
+    // arrange
+    let dir = tempdir().unwrap_or_abort();
+    let now: i64 = 1_700_000_000_000;
+    let expires_at: i64 = now + 120_000; // 2 minutes left, within 5-min leeway
+
+    // act
+    let (code, stdout, stderr) = run_sleep_wake_cli(
+        dir.path(),
+        &[
+            "--event",
+            "wake",
+            "--expires-at-ms",
+            &expires_at.to_string(),
+            "--now-ms",
+            &now.to_string(),
+        ],
+    );
+
+    // assert — wake + near-expiry recommends refresh
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert!(stdout.contains("\"event\": \"wake\""), "stdout: {stdout}");
+    assert!(
+        stdout.contains("\"decision\": \"refresh\""),
+        "stdout: {stdout}"
+    );
+    assert!(
+        stdout.contains("\"remaining_ms\": 120000"),
+        "stdout: {stdout}"
+    );
+}
+
+#[test]
+fn sleep_wake_simulate_skip_on_wake_fresh_credentials() {
+    // arrange
+    let dir = tempdir().unwrap_or_abort();
+    let now: i64 = 1_700_000_000_000;
+    let expires_at: i64 = now + 3_600_000; // 1 hour left, fresh
+
+    // act
+    let (code, stdout, stderr) = run_sleep_wake_cli(
+        dir.path(),
+        &[
+            "--event",
+            "wake",
+            "--expires-at-ms",
+            &expires_at.to_string(),
+            "--now-ms",
+            &now.to_string(),
+        ],
+    );
+
+    // assert — wake but credentials still fresh
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert!(
+        stdout.contains("\"decision\": \"skip\""),
+        "stdout: {stdout}"
+    );
+    assert!(stdout.contains("still fresh"), "stdout: {stdout}");
+}
+
+#[test]
+fn sleep_wake_simulate_execute_skips_for_sleep_event() {
+    // arrange — --execute runs the full pipeline; skip decisions produce Skipped execution
+    let dir = tempdir().unwrap_or_abort();
+
+    // act
+    let (code, stdout, stderr) = run_sleep_wake_cli(dir.path(), &["--event", "sleep", "--execute"]);
+
+    // assert — execution ran and reported skipped
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert!(
+        stdout.contains("\"decision\": \"skip\""),
+        "stdout: {stdout}"
+    );
+    assert!(
+        stdout.contains("\"execution\": \"sleep/wake execute: skipped"),
+        "stdout: {stdout}"
+    );
+}
+
+#[test]
+fn sleep_wake_simulate_execute_fails_gracefully_for_refresh_without_credentials() {
+    // arrange — no credentials stored; execute attempts refresh and fails gracefully
+    let dir = tempdir().unwrap_or_abort();
+    let now: i64 = 1_700_000_000_000;
+    let expires_at: i64 = now + 120_000;
+
+    // act
+    let (code, stdout, stderr) = run_sleep_wake_cli(
+        dir.path(),
+        &[
+            "--event",
+            "wake",
+            "--expires-at-ms",
+            &expires_at.to_string(),
+            "--now-ms",
+            &now.to_string(),
+            "--execute",
+        ],
+    );
+
+    // assert — refresh decision made, execution attempted but fails (no credentials/refresher)
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert!(
+        stdout.contains("\"decision\": \"refresh\""),
+        "stdout: {stdout}"
+    );
+    assert!(
+        stdout.contains("sleep/wake execute: failed"),
+        "execute reports failure gracefully without a refresher: {stdout}"
+    );
+}
+
+#[test]
+fn sleep_wake_simulate_rejects_invalid_event() {
+    // arrange
+    let dir = tempdir().unwrap_or_abort();
+
+    // act
+    let (code, _stdout, stderr) = run_sleep_wake_cli(dir.path(), &["--event", "hibernate"]);
+
+    // assert — invalid event rejected
+    assert_eq!(code, 2);
+    assert!(stderr.contains("invalid event"), "stderr: {stderr}");
+}

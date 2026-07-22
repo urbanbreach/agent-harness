@@ -8,11 +8,11 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result};
 use crossterm::cursor::MoveTo;
 use crossterm::event::{
-    DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
-    KeyboardEnhancementFlags, MouseButton, MouseEventKind, PopKeyboardEnhancementFlags,
-    PushKeyboardEnhancementFlags,
+    DisableBracketedPaste, DisableFocusChange, DisableMouseCapture, EnableBracketedPaste,
+    EnableFocusChange, EnableMouseCapture, KeyboardEnhancementFlags, MouseButton, MouseEventKind,
+    PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
 };
-use crossterm::terminal::{Clear, ClearType};
+use crossterm::terminal::{BeginSynchronizedUpdate, Clear, ClearType, EndSynchronizedUpdate};
 use harness_core::event::EventEnvelopeV1;
 use ratatui::buffer::Buffer;
 use ratatui::{backend::CrosstermBackend, Terminal};
@@ -49,6 +49,7 @@ pub(crate) struct TerminalCapabilityState {
     pub mouse_capture: bool,
     pub osc52_clipboard: bool,
     pub alternate_screen: bool,
+    pub focus_reporting: bool,
 }
 
 /// Ordered restore steps derived from capability state (pure; no I/O).
@@ -57,6 +58,7 @@ pub(crate) struct TerminalTeardownPlan {
     pub disable_raw_mode: bool,
     pub disable_mouse_capture: bool,
     pub disable_bracketed_paste: bool,
+    pub disable_focus_change: bool,
     pub pop_keyboard_enhancement: bool,
     pub leave_alternate_screen: bool,
 }
@@ -70,6 +72,7 @@ impl TerminalCapabilityState {
             mouse_capture: false,
             osc52_clipboard: false,
             alternate_screen: false,
+            focus_reporting: false,
         }
     }
 
@@ -82,6 +85,7 @@ impl TerminalCapabilityState {
             mouse_capture: true,
             osc52_clipboard: true,
             alternate_screen: true,
+            focus_reporting: true,
         }
     }
 
@@ -100,6 +104,7 @@ impl TerminalCapabilityState {
             disable_raw_mode: true,
             disable_mouse_capture: self.mouse_capture,
             disable_bracketed_paste: self.bracketed_paste,
+            disable_focus_change: self.focus_reporting,
             pop_keyboard_enhancement: self.keyboard_enhancement,
             leave_alternate_screen: true,
         }
@@ -119,6 +124,7 @@ fn apply_interactive_setup_results(
     paste_ok: bool,
     mouse_ok: bool,
     alt_screen_ok: bool,
+    focus_ok: bool,
 ) -> TerminalCapabilityState {
     TerminalCapabilityState {
         keyboard_enhancement: keyboard_ok,
@@ -127,6 +133,7 @@ fn apply_interactive_setup_results(
         mouse_capture: mouse_ok,
         osc52_clipboard: base.osc52_clipboard,
         alternate_screen: alt_screen_ok,
+        focus_reporting: focus_ok,
     }
 }
 
@@ -254,11 +261,6 @@ pub struct TuiOptions {
     pub keybindings: Option<std::collections::BTreeMap<String, String>>,
     pub toggles: Option<TogglesConfig>,
     pub preserve_terminal_on_exit: bool,
-    /// Workspace root previously used to anchor operator probes.
-    ///
-    /// Kept for API compatibility; production startup no longer seeds probes
-    /// (see `seed_operator_host_probes` for explicit test/diagnostic use).
-    pub workspace_root: Option<PathBuf>,
 }
 
 impl TuiOptions {
@@ -278,7 +280,6 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         keybindings: _,
         toggles,
         preserve_terminal_on_exit,
-        mut workspace_root,
     } = options;
 
     let (mut app, mut live_updates) = match mode {
@@ -300,11 +301,9 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         }
         TuiMode::Replay { run_dir, events } => {
             let mut app = AppState::new_replay(run_dir, events);
-            if let Some(root) = workspace_root.take() {
-                app.set_file_mention_workspace_root_for_test(root);
-            } else {
-                app.disable_cwd_workspace_root_provider();
-            }
+            // Replay workspace authority comes exclusively from replayed RunStarted events.
+            // The CWD-based workspace root provider must never substitute missing event authority.
+            app.disable_cwd_workspace_root_provider();
             if let Some(on_ui_intent) = on_ui_intent {
                 app.enable_replay_navigation_handoff(on_ui_intent);
             }
@@ -384,6 +383,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         let mut paste_ok = false;
         let mut mouse_ok = false;
         let mut alt_screen_ok = false;
+        let mut focus_ok = false;
         let setup_result = (|| -> Result<()> {
             crossterm::execute!(stdout, crossterm::terminal::EnterAlternateScreen)
                 .context("failed to enter alternate screen before launching TUI")?;
@@ -408,6 +408,10 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
             crossterm::execute!(stdout, EnableMouseCapture)
                 .context("failed to enable mouse capture before launching TUI")?;
             mouse_ok = true;
+
+            if crossterm::execute!(stdout, EnableFocusChange).is_ok() {
+                focus_ok = true;
+            }
             Ok(())
         })();
 
@@ -417,6 +421,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
             paste_ok,
             mouse_ok,
             alt_screen_ok,
+            focus_ok,
         );
 
         if let Err(err) = setup_result {
@@ -463,7 +468,9 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                 let size = terminal.size()?;
                 let frame_area = ratatui::layout::Rect::new(0, 0, size.width, size.height);
                 app.set_frame_area(frame_area);
+                crossterm::queue!(terminal.backend_mut(), BeginSynchronizedUpdate)?;
                 terminal.draw(|frame| ui::render_app(frame, &app))?;
+                crossterm::execute!(terminal.backend_mut(), EndSynchronizedUpdate)?;
                 redraw_requested = false;
             }
 
@@ -620,6 +627,10 @@ fn teardown_terminal_session(
         crossterm::execute!(writer, DisableBracketedPaste)
             .context("failed to disable bracketed paste after TUI")?;
     }
+    if plan.disable_focus_change {
+        crossterm::execute!(writer, DisableFocusChange)
+            .context("failed to disable focus change reporting after TUI")?;
+    }
     if plan.pop_keyboard_enhancement {
         crossterm::execute!(writer, PopKeyboardEnhancementFlags)
             .context("failed to pop keyboard enhancement flags after TUI")?;
@@ -647,7 +658,6 @@ pub fn run_tui() -> Result<()> {
         keybindings: None,
         toggles: None,
         preserve_terminal_on_exit: false,
-        workspace_root: None,
     })
 }
 
@@ -1097,6 +1107,7 @@ mod tests {
                 mouse_capture: false,
                 osc52_clipboard: false,
                 alternate_screen: false,
+                focus_reporting: false,
             }
         );
         // act
@@ -1105,6 +1116,7 @@ mod tests {
         assert!(plan.disable_raw_mode);
         assert!(!plan.disable_mouse_capture);
         assert!(!plan.disable_bracketed_paste);
+        assert!(!plan.disable_focus_change);
         assert!(!plan.pop_keyboard_enhancement);
         assert!(plan.leave_alternate_screen);
     }
@@ -1120,6 +1132,7 @@ mod tests {
         assert!(present.mouse_capture);
         assert!(present.osc52_clipboard);
         assert!(present.alternate_screen);
+        assert!(present.focus_reporting);
 
         // act — present teardown restores only features that were enabled
         let present_plan = present.teardown_plan();
@@ -1127,6 +1140,7 @@ mod tests {
         assert!(present_plan.disable_raw_mode);
         assert!(present_plan.disable_mouse_capture);
         assert!(present_plan.disable_bracketed_paste);
+        assert!(present_plan.disable_focus_change);
         assert!(present_plan.pop_keyboard_enhancement);
         assert!(present_plan.leave_alternate_screen);
 
@@ -1139,6 +1153,7 @@ mod tests {
         assert!(!absent.mouse_capture);
         assert!(!absent.osc52_clipboard);
         assert!(!absent.alternate_screen);
+        assert!(!absent.focus_reporting);
 
         // act — absent teardown must not disable features that were never enabled
         let absent_plan = absent.teardown_plan();
@@ -1160,6 +1175,7 @@ mod tests {
             true,
             false,
             true,
+            false,
         );
         // assert partial: only successfully applied features are sticky
         assert!(partial.keyboard_enhancement);
@@ -1168,6 +1184,7 @@ mod tests {
         assert!(!partial.mouse_capture);
         assert!(!partial.osc52_clipboard);
         assert!(partial.alternate_screen);
+        assert!(!partial.focus_reporting);
         let partial_plan = partial.teardown_plan();
         assert!(partial_plan.pop_keyboard_enhancement);
         assert!(!partial_plan.disable_mouse_capture);
@@ -1187,6 +1204,7 @@ mod tests {
             true,
             false,
             true,
+            false,
         );
         // act
         let guard = TerminalRestoreGuard::new(caps);
@@ -1209,7 +1227,7 @@ mod tests {
             ..TerminalCapabilityState::absent()
         };
         // act
-        let caps = apply_interactive_setup_results(base, true, true, false, true);
+        let caps = apply_interactive_setup_results(base, true, true, false, true, false);
 
         // assert
         assert!(caps.keyboard_enhancement);

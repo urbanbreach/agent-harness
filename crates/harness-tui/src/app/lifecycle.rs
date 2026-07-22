@@ -775,6 +775,11 @@ impl AppState {
             && !self.composer_disabled()
             && !self.slash_visible
             && self.active_interrupt_task_id().is_some()
+            && !self
+                .activities
+                .iter()
+                .rev()
+                .any(|a| a.status == ActivityStatus::Streaming && a.usage.is_some())
     }
 
     pub(crate) fn interrupt_confirmation_pending(&self) -> bool {

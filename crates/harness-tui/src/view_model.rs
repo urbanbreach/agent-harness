@@ -785,6 +785,7 @@ fn runtime_tool_identity_fixture(status: ToolCallDisplayStatus) -> ActivityEntry
         thinking_first_mono_ms: None,
         thinking_last_mono_ms: None,
         transcript_text: String::new(),
+        first_delta_mono_ms: None,
         usage: None,
         cache_usage: None,
         error_message: None,
@@ -835,6 +836,7 @@ fn runtime_tool_identity_fixture(status: ToolCallDisplayStatus) -> ActivityEntry
         last_seq: 1,
         first_mono_ms: 1,
         last_mono_ms: 1,
+        request_started_mono_ms: None,
         revision: 0,
     }
 }

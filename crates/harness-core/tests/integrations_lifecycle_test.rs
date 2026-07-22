@@ -1,21 +1,19 @@
-//! Plugin + ACP lifecycle foundation tests (T10).
+//! Plugin lifecycle foundation tests (T10).
 //!
 //! Happy / edge / adjacent coverage for descriptor-only plugin install and the
-//! offline ACP connection state machine.
+//! durable plugin registry.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use harness_core::extension_manifest::EXTENSION_MANIFEST_V1_SCHEMA_VERSION;
 use harness_core::integrations::{
-    run_mock_acp_agent_mode_product, run_multi_descriptor_discover_product,
-    run_multi_plugin_lifecycle_product, AcpConnection, AcpConnectionState, AcpConnectionSummary,
-    AcpError, MockAcpTransport, PluginActivationPermission, PluginEnablement, PluginLifecycleError,
-    PluginLifecycleRegistry, PluginLifecycleSummary, PLUGIN_ENTRY_FILE_NAME,
-    PLUGIN_HOOKS_FILE_NAME, PLUGIN_LOAD_RECEIPT_FILE_NAME, PLUGIN_MANIFEST_FILE_NAME,
-    PLUGIN_SKILLS_DIR_NAME, PROBE_ACP_AGENT_NAME, PROBE_EXTENSION_ALT_ID,
-    PROBE_EXTENSION_PRIMARY_ID, PROBE_EXTENSION_TOOLS_ID, PROBE_PLUGIN_PRIMARY_ID,
-    PROBE_PLUGIN_SECONDARY_ID,
+    run_multi_descriptor_discover_product, run_multi_plugin_lifecycle_product,
+    PluginActivationPermission, PluginEnablement, PluginLifecycleError, PluginLifecycleRegistry,
+    PluginLifecycleSummary, PLUGIN_ENTRY_FILE_NAME, PLUGIN_HOOKS_FILE_NAME,
+    PLUGIN_LOAD_RECEIPT_FILE_NAME, PLUGIN_MANIFEST_FILE_NAME, PLUGIN_REGISTRY_REL,
+    PLUGIN_SKILLS_DIR_NAME, PROBE_EXTENSION_ALT_ID, PROBE_EXTENSION_PRIMARY_ID,
+    PROBE_EXTENSION_TOOLS_ID, PROBE_PLUGIN_PRIMARY_ID, PROBE_PLUGIN_SECONDARY_ID,
 };
 use harness_core::UnwrapOrAbort;
 use serde_json::json;
@@ -509,290 +507,91 @@ fn relative_parent_traversal_is_rejected() {
 }
 
 #[test]
-fn acp_connect_happy_path_reaches_connected() {
+fn durable_registry_persists_install_and_activate_across_reopen() {
     // arrange
-    // act
-    // assert
-    // Given
-    let mut session = AcpConnection::new(MockAcpTransport::new());
-    assert_eq!(session.state(), &AcpConnectionState::Disconnected);
+    let temp = tempfile::tempdir().unwrap_or_abort();
+    let workspace = temp.path().join("ws");
+    fs::create_dir_all(&workspace).unwrap_or_abort();
+    let package = write_plugin_package(&workspace, "plugins/demo", "demo.plugin");
+    let journal = workspace.join(PLUGIN_REGISTRY_REL);
 
-    // When
-    session.connect().expect("connect should succeed");
+    // act — install + activate in one durable registry instance
+    let mut registry = PluginLifecycleRegistry::open(&workspace).unwrap_or_abort();
+    registry
+        .install_from_package_root(&package)
+        .unwrap_or_abort();
+    registry
+        .activate("demo.plugin", PluginActivationPermission::Granted)
+        .unwrap_or_abort();
+    drop(registry);
 
-    // Then
-    assert_eq!(session.state(), &AcpConnectionState::Connected);
-    assert!(session.transport().connected);
+    // assert — journal written, and a fresh instance over the same workspace sees the
+    // enabled plugin without re-installing
+    assert!(journal.is_file(), "durable journal must persist");
+    let reopened = PluginLifecycleRegistry::open(&workspace).unwrap_or_abort();
+    assert_eq!(reopened.len(), 1);
+    assert!(reopened.is_enabled("demo.plugin"));
+    let plugin = reopened.get("demo.plugin").expect("restored plugin");
+    assert_eq!(plugin.id, "demo.plugin");
+    assert_eq!(plugin.enablement, PluginEnablement::Enabled);
+    assert_eq!(plugin.manifest.id, "demo.plugin");
 }
 
 #[test]
-fn acp_connect_failure_ends_in_failed_not_connected() {
+fn durable_open_on_empty_workspace_reports_no_plugins_and_no_journal() {
     // arrange
+    let temp = tempfile::tempdir().unwrap_or_abort();
+    let workspace = temp.path().join("ws");
+    fs::create_dir_all(&workspace).unwrap_or_abort();
+
     // act
-    // assert
-    // Given
-    let mut transport = MockAcpTransport::new();
-    transport.fail_connect = true;
-    transport.fail_connect_reason = "refused".to_string();
-    let mut session = AcpConnection::new(transport);
+    let registry = PluginLifecycleRegistry::open(&workspace).unwrap_or_abort();
 
-    // When
-    let err = session.connect().expect_err("connect must fail");
-
-    // Then
-    assert_eq!(err, AcpError::Transport("refused".to_string()));
-    assert_eq!(
-        session.state(),
-        &AcpConnectionState::Failed {
-            reason: "refused".to_string()
-        }
-    );
-    assert!(!session.state().is_connected());
+    // assert — empty registry and no journal until a mutation persists
+    assert!(registry.is_empty());
+    assert!(!workspace.join(PLUGIN_REGISTRY_REL).exists());
 }
 
 #[test]
-fn acp_disconnect_from_connected_returns_to_disconnected() {
+fn durable_remove_persists_deletion_across_reopen() {
     // arrange
-    // act
-    // assert
-    // Given
-    let mut session = AcpConnection::new(MockAcpTransport::new());
-    session.connect().expect("connect");
+    let temp = tempfile::tempdir().unwrap_or_abort();
+    let workspace = temp.path().join("ws");
+    fs::create_dir_all(&workspace).unwrap_or_abort();
+    let package = write_plugin_package(&workspace, "plugins/gone", "gone.plugin");
 
-    // When
-    session.disconnect().expect("disconnect");
+    // act — install durably, then remove in a separate (reopened) instance
+    PluginLifecycleRegistry::open(&workspace)
+        .unwrap_or_abort()
+        .install_from_package_root(&package)
+        .unwrap_or_abort();
+    let mut reopened = PluginLifecycleRegistry::open(&workspace).unwrap_or_abort();
+    assert_eq!(reopened.len(), 1);
+    reopened.remove("gone.plugin").unwrap_or_abort();
+    drop(reopened);
 
-    // Then
-    assert_eq!(session.state(), &AcpConnectionState::Disconnected);
-    assert!(!session.transport().connected);
+    // assert — a further reopen sees the deletion
+    let after = PluginLifecycleRegistry::open(&workspace).unwrap_or_abort();
+    assert!(after.is_empty());
+    assert!(after.get("gone.plugin").is_none());
 }
 
 #[test]
-fn acp_reconnect_from_failed_can_recover() {
-    // arrange
+fn in_memory_new_registry_does_not_write_a_durable_journal() {
+    // arrange — the coordinator/run path uses `new`, which must stay side-effect free
+    let temp = tempfile::tempdir().unwrap_or_abort();
+    let workspace = temp.path().join("ws");
+    fs::create_dir_all(&workspace).unwrap_or_abort();
+    let package = write_plugin_package(&workspace, "plugins/mem", "mem.plugin");
+
     // act
-    // assert
-    // Given: prior failed connect
-    let mut transport = MockAcpTransport::new();
-    transport.fail_connect = true;
-    let mut session = AcpConnection::new(transport);
-    let _ = session.connect();
-    assert!(matches!(session.state(), AcpConnectionState::Failed { .. }));
+    let mut registry = PluginLifecycleRegistry::new(&workspace);
+    registry
+        .install_from_package_root(&package)
+        .unwrap_or_abort();
 
-    // When: clear failure and reconnect
-    session.transport_mut().fail_connect = false;
-    session.reconnect().expect("reconnect");
-
-    // Then
-    assert_eq!(session.state(), &AcpConnectionState::Connected);
-}
-
-#[test]
-fn acp_disconnect_during_operation_is_not_success() {
-    // arrange
-    // act
-    // assert
-    // Given: connected session that will drop mid-operate
-    let mut transport = MockAcpTransport::new();
-    transport.disconnect_on_next_operate = true;
-    let mut session = AcpConnection::new(transport);
-    session.connect().expect("connect");
-
-    // When
-    let err = session
-        .operate(b"ping")
-        .expect_err("mid-op disconnect must not succeed");
-
-    // Then: Failed/Disconnected, never Connected success
-    assert!(matches!(err, AcpError::OperationAborted(_)));
-    assert!(
-        matches!(
-            session.state(),
-            AcpConnectionState::Disconnected | AcpConnectionState::Failed { .. }
-        ),
-        "expected Disconnected or Failed, got {}",
-        session.state()
-    );
-    assert!(!session.state().is_connected());
-}
-
-#[test]
-fn acp_transport_error_during_operation_marks_failed() {
-    // arrange
-    // act
-    // assert
-    // Given
-    let mut transport = MockAcpTransport::new();
-    transport.fail_on_next_operate = true;
-    transport.fail_operate_reason = "io error".to_string();
-    let mut session = AcpConnection::new(transport);
-    session.connect().expect("connect");
-
-    // When
-    let err = session.operate(b"work").expect_err("operate must fail");
-
-    // Then
-    assert_eq!(err, AcpError::OperationAborted("io error".to_string()));
-    assert_eq!(
-        session.state(),
-        &AcpConnectionState::Failed {
-            reason: "io error".to_string()
-        }
-    );
-}
-
-#[test]
-fn acp_operate_while_disconnected_is_rejected() {
-    // arrange
-    // act
-    // assert
-    // Given
-    let mut session = AcpConnection::new(MockAcpTransport::new());
-
-    // When
-    let err = session.operate(b"x").expect_err("must reject");
-
-    // Then
-    assert!(matches!(err, AcpError::NotConnected { .. }));
-    assert_eq!(session.state(), &AcpConnectionState::Disconnected);
-}
-
-#[test]
-fn acp_connect_while_connected_is_rejected() {
-    // arrange
-    // act
-    // assert
-    // Given
-    let mut session = AcpConnection::new(MockAcpTransport::new());
-    session.connect().expect("connect");
-
-    // When
-    let err = session.connect().expect_err("double connect");
-
-    // Then
-    assert!(matches!(err, AcpError::InvalidConnectState { .. }));
-    assert_eq!(session.state(), &AcpConnectionState::Connected);
-}
-
-#[test]
-fn acp_bind_session_while_connected_assigns_session_id() {
-    // arrange
-    // act
-    // assert
-    // Given
-    let mut session = AcpConnection::new(MockAcpTransport::new());
-    session.connect().expect("connect");
-    assert!(session.session().is_none());
-
-    // When
-    let bound = session.bind_session("build").expect("bind");
-
-    // Then
-    assert_eq!(bound.agent_name, "build");
-    assert_eq!(bound.session_id, "acp-session-1");
-    assert_eq!(
-        session.session().map(|s| s.session_id.as_str()),
-        Some("acp-session-1")
-    );
-}
-
-#[test]
-fn acp_bind_session_while_disconnected_is_rejected() {
-    // arrange
-    // act
-    // assert
-    // Given
-    let mut session = AcpConnection::new(MockAcpTransport::new());
-
-    // When
-    let err = session.bind_session("build").expect_err("must reject");
-
-    // Then
-    assert!(matches!(err, AcpError::SessionBindNotConnected { .. }));
-    assert!(session.session().is_none());
-}
-
-#[test]
-fn acp_bind_session_rejects_empty_agent_name_and_double_bind() {
-    // arrange
-    // act
-    // assert
-    // Given
-    let mut session = AcpConnection::new(MockAcpTransport::new());
-    session.connect().expect("connect");
-
-    // When / Then empty name
-    let empty_err = session.bind_session("   ").expect_err("empty");
-    assert!(matches!(empty_err, AcpError::EmptyAgentName));
-
-    // When / Then double bind
-    session.bind_session("build").expect("first bind");
-    let second = session.bind_session("plan").expect_err("double bind");
-    assert!(matches!(
-        second,
-        AcpError::SessionAlreadyBound {
-            session_id
-        } if session_id == "acp-session-1"
-    ));
-}
-
-#[test]
-fn acp_disconnect_clears_bound_session() {
-    // arrange
-    // act
-    // assert
-    // Given
-    let mut session = AcpConnection::new(MockAcpTransport::new());
-    session.connect().expect("connect");
-    session.bind_session("build").expect("bind");
-    assert!(session.session().is_some());
-
-    // When
-    session.disconnect().expect("disconnect");
-
-    // Then
-    assert_eq!(session.state(), &AcpConnectionState::Disconnected);
-    assert!(session.session().is_none());
-}
-
-#[test]
-fn acp_operator_diagnostics_cover_state_session_and_summary() {
-    // arrange
-    // act
-    // assert
-    // Given: disconnected → connected+bound → failed with session retained
-    let mut session = AcpConnection::new(MockAcpTransport::new());
-    assert_eq!(
-        session.summary(),
-        AcpConnectionSummary {
-            state: "disconnected".to_string(),
-            session_id: None,
-            agent_name: None,
-            bound: false,
-        }
-    );
-    assert!(session.state().one_line().contains("ACP: disconnected"));
-    assert!(!session.summary().is_bound());
-
-    // When: connect + bind
-    session.connect().expect("connect");
-    session.bind_session("build").expect("bind");
-    let bound_summary = session.summary();
-    let session_line = session.session().expect("bound").one_line();
-
-    // Then
-    assert!(session.state().one_line().contains("ACP: connected"));
-    assert!(bound_summary.is_bound());
-    assert!(bound_summary.one_line().contains("state=connected"));
-    assert!(bound_summary.one_line().contains("session=`acp-session-1`"));
-    assert!(bound_summary.one_line().contains("agent=`build`"));
-    assert!(session_line.contains("id=`acp-session-1`"));
-    assert!(session_line.contains("agent=`build`"));
-
-    // When: transport error marks failed but keeps session for inspection
-    session.transport_mut().fail_on_next_operate = true;
-    let _ = session.operate(b"ping").expect_err("operate fails");
-    assert!(session.state().one_line().contains("ACP: failed"));
-    assert!(session.summary().is_bound());
-    assert!(session.summary().one_line().contains("state=failed"));
+    // assert — installed in memory but no journal file is written
+    assert_eq!(registry.len(), 1);
+    assert!(registry.registry_path().is_none());
+    assert!(!workspace.join(PLUGIN_REGISTRY_REL).exists());
 }

@@ -156,6 +156,7 @@ fn transcript_layout_cache_invalidates_when_animation_frame_changes() {
         thinking_first_mono_ms: None,
         thinking_last_mono_ms: None,
         transcript_text: String::new(),
+        first_delta_mono_ms: None,
         usage: None,
         cache_usage: None,
         error_message: None,
@@ -165,6 +166,7 @@ fn transcript_layout_cache_invalidates_when_animation_frame_changes() {
         last_seq: 1,
         first_mono_ms: 1,
         last_mono_ms: 1,
+        request_started_mono_ms: None,
         revision: 0,
     }]);
     app.transcript_view.selected_activity_index = 0;
@@ -207,6 +209,7 @@ fn transcript_measure_cache_key_stable_across_animation_phase_changes() {
         thinking_first_mono_ms: None,
         thinking_last_mono_ms: None,
         transcript_text: String::new(),
+        first_delta_mono_ms: None,
         usage: None,
         cache_usage: None,
         error_message: None,
@@ -216,6 +219,7 @@ fn transcript_measure_cache_key_stable_across_animation_phase_changes() {
         last_seq: 1,
         first_mono_ms: 1,
         last_mono_ms: 1,
+        request_started_mono_ms: None,
         revision: 0,
     }]);
     app.transcript_view.selected_activity_index = 0;
@@ -247,6 +251,7 @@ fn transcript_layout_cache_does_not_rebuild_on_animation_phase_change() {
         thinking_first_mono_ms: None,
         thinking_last_mono_ms: None,
         transcript_text: String::new(),
+        first_delta_mono_ms: None,
         usage: None,
         cache_usage: None,
         error_message: None,
@@ -256,6 +261,7 @@ fn transcript_layout_cache_does_not_rebuild_on_animation_phase_change() {
         last_seq: 1,
         first_mono_ms: 1,
         last_mono_ms: 1,
+        request_started_mono_ms: None,
         revision: 0,
     }]);
     app.transcript_view.selected_activity_index = 0;
@@ -297,6 +303,7 @@ fn transcript_layout_cache_invalidates_when_theme_changes() {
         thinking_first_mono_ms: None,
         thinking_last_mono_ms: None,
         transcript_text: "reply".to_string(),
+        first_delta_mono_ms: None,
         usage: None,
         cache_usage: None,
         error_message: None,
@@ -306,6 +313,7 @@ fn transcript_layout_cache_invalidates_when_theme_changes() {
         last_seq: 1,
         first_mono_ms: 1,
         last_mono_ms: 1,
+        request_started_mono_ms: None,
         revision: 0,
     }]);
     app.transcript_view.selected_activity_index = 0;
@@ -389,6 +397,7 @@ fn streaming_assistant_footer_uses_reserved_active_label() {
         thinking_first_mono_ms: None,
         thinking_last_mono_ms: None,
         transcript_text: String::new(),
+        first_delta_mono_ms: None,
         usage: None,
         cache_usage: None,
         error_message: None,
@@ -398,6 +407,7 @@ fn streaming_assistant_footer_uses_reserved_active_label() {
         last_seq: 1,
         first_mono_ms: 1,
         last_mono_ms: 1,
+        request_started_mono_ms: None,
         revision: 0,
     }]);
     app.transcript_view.selected_activity_index = 0;
@@ -443,6 +453,7 @@ fn only_latest_turn_renders_footer_metadata() {
             thinking_first_mono_ms: None,
             thinking_last_mono_ms: None,
             transcript_text: "first reply".to_string(),
+            first_delta_mono_ms: None,
             usage: None,
             cache_usage: None,
             error_message: None,
@@ -452,6 +463,7 @@ fn only_latest_turn_renders_footer_metadata() {
             last_seq: 1,
             first_mono_ms: 1,
             last_mono_ms: 1,
+            request_started_mono_ms: None,
             revision: 0,
         },
         ActivityEntry {
@@ -470,6 +482,7 @@ fn only_latest_turn_renders_footer_metadata() {
             thinking_first_mono_ms: None,
             thinking_last_mono_ms: None,
             transcript_text: "second reply".to_string(),
+            first_delta_mono_ms: None,
             usage: None,
             cache_usage: None,
             error_message: None,
@@ -479,6 +492,7 @@ fn only_latest_turn_renders_footer_metadata() {
             last_seq: 2,
             first_mono_ms: 2,
             last_mono_ms: 2,
+            request_started_mono_ms: None,
             revision: 0,
         },
     ]);
@@ -910,6 +924,7 @@ fn user_message_surface_keeps_timestamp_in_latest_footer_only() {
         thinking_first_mono_ms: None,
         thinking_last_mono_ms: None,
         transcript_text: "reply".to_string(),
+        first_delta_mono_ms: None,
         usage: None,
         cache_usage: None,
         error_message: None,
@@ -919,6 +934,7 @@ fn user_message_surface_keeps_timestamp_in_latest_footer_only() {
         last_seq: 1,
         first_mono_ms: 1,
         last_mono_ms: 1,
+        request_started_mono_ms: None,
         revision: 0,
     }]);
     app.handle_key(crossterm::event::KeyEvent::new(
@@ -981,6 +997,7 @@ fn user_row_wall_clock_right_aligned_matches_freeze_geometry() {
         thinking_first_mono_ms: None,
         thinking_last_mono_ms: None,
         transcript_text: String::new(),
+        first_delta_mono_ms: None,
         usage: None,
         cache_usage: None,
         error_message: Some("API error".to_string()),
@@ -990,6 +1007,7 @@ fn user_row_wall_clock_right_aligned_matches_freeze_geometry() {
         last_seq: 1,
         first_mono_ms: 1,
         last_mono_ms: 1,
+        request_started_mono_ms: None,
         revision: 0,
     }]);
     app.transcript_view.selected_activity_index = 0;
@@ -1042,6 +1060,7 @@ fn user_row_packs_all_names_with_wall_clock_at_scroll_geometry() {
         thinking_first_mono_ms: None,
         thinking_last_mono_ms: None,
         transcript_text: String::new(),
+        first_delta_mono_ms: None,
         usage: None,
         cache_usage: None,
         error_message: None,
@@ -1051,6 +1070,7 @@ fn user_row_packs_all_names_with_wall_clock_at_scroll_geometry() {
         last_seq: 1,
         first_mono_ms: 1,
         last_mono_ms: 1,
+        request_started_mono_ms: None,
         revision: 0,
     }]);
     app.transcript_view.selected_activity_index = 0;
@@ -1768,10 +1788,11 @@ fn completed_turn_without_thinking_text_still_renders_thought_for() {
     ));
     let rendered = lines.join("\n");
 
-    // assert
+    // assert — pinned reference freeze does NOT show Thought for completed
+    // turns without reasoning deltas; only Worked for + body text.
     assert!(
-        rendered.contains("Thought for 0.0s"),
-        "completed turns without reasoning mono pack Thought for 0.0s (Grok COMPLETE)\n{rendered}"
+        !rendered.contains("Thought for"),
+        "completed turns without reasoning must not render Thought for\n{rendered}"
     );
     assert!(
         !rendered.contains("Thinking"),
@@ -1878,6 +1899,7 @@ fn streaming_assistant_footer_spinner_uses_deterministic_braille_frames() {
         thinking_first_mono_ms: None,
         thinking_last_mono_ms: None,
         transcript_text: String::new(),
+        first_delta_mono_ms: None,
         usage: None,
         cache_usage: None,
         error_message: None,
@@ -1887,6 +1909,7 @@ fn streaming_assistant_footer_spinner_uses_deterministic_braille_frames() {
         last_seq: 1,
         first_mono_ms: 1,
         last_mono_ms: 1,
+        request_started_mono_ms: None,
         revision: 0,
     }]);
     app.transcript_view.selected_activity_index = 0;
@@ -1953,6 +1976,7 @@ fn transcript_measurement_wrap_correctness_across_widths_and_styles() {
                 thinking_first_mono_ms: None,
                 thinking_last_mono_ms: None,
                 transcript_text: pattern.to_string(),
+                first_delta_mono_ms: None,
                 usage: None,
                 cache_usage: None,
                 error_message: None,
@@ -1962,6 +1986,7 @@ fn transcript_measurement_wrap_correctness_across_widths_and_styles() {
                 last_seq: 1,
                 first_mono_ms: 1,
                 last_mono_ms: 1,
+                request_started_mono_ms: None,
                 revision: 0,
             }]);
             app.transcript_view.selected_activity_index = 0;
@@ -2209,6 +2234,7 @@ fn capture_all_spacing_evidence() {
             thinking_first_mono_ms: None,
             thinking_last_mono_ms: None,
             transcript_text: "Hi there!".to_string(),
+            first_delta_mono_ms: None,
             usage: None,
             cache_usage: None,
             error_message: None,
@@ -2218,6 +2244,7 @@ fn capture_all_spacing_evidence() {
             last_seq: 1,
             first_mono_ms: 1,
             last_mono_ms: 1,
+            request_started_mono_ms: None,
             revision: 0,
         }]);
         app.transcript_view.selected_activity_index = 0;
@@ -2243,6 +2270,7 @@ fn capture_all_spacing_evidence() {
                 thinking_first_mono_ms: None,
                 thinking_last_mono_ms: None,
                 transcript_text: "First answer".to_string(),
+                first_delta_mono_ms: None,
                 usage: None,
                 cache_usage: None,
                 error_message: None,
@@ -2252,6 +2280,7 @@ fn capture_all_spacing_evidence() {
                 last_seq: 1,
                 first_mono_ms: 1,
                 last_mono_ms: 1,
+                request_started_mono_ms: None,
                 revision: 0,
             },
             ActivityEntry {
@@ -2270,6 +2299,7 @@ fn capture_all_spacing_evidence() {
                 thinking_first_mono_ms: None,
                 thinking_last_mono_ms: None,
                 transcript_text: "Second answer".to_string(),
+                first_delta_mono_ms: None,
                 usage: None,
                 cache_usage: None,
                 error_message: None,
@@ -2279,6 +2309,7 @@ fn capture_all_spacing_evidence() {
                 last_seq: 2,
                 first_mono_ms: 2,
                 last_mono_ms: 2,
+                request_started_mono_ms: None,
                 revision: 0,
             },
         ]);

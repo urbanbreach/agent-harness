@@ -18,6 +18,12 @@ const READ_POLL_TIMEOUT: Duration = Duration::from_millis(50);
 const COLS: u16 = 110;
 const ROWS: u16 = 32;
 
+/// Write a phase breadcrumb to stderr so a timed-out PTY test reports the
+/// exact sub-journey that stalled. `eprintln!` flushes stderr immediately.
+fn pty_phase(label: &str) {
+    eprintln!("[pty-happy-path] phase={label}");
+}
+
 #[test]
 #[ignore = "signoff-pty happy path; run via scripts/test-lanes.sh signoff-pty"]
 #[allow(
@@ -37,18 +43,31 @@ fn scripted_tui_happy_path_records_start_prompt_permission_tool_edit_resume_and_
         .unwrap_or_abort();
     fs::create_dir_all(&artifact_dir).unwrap_or_abort();
 
+    let checkout_before = checkout_status(Some(&artifact_dir));
+    let tracked_drift_path = repo_root().join("crates/harness/src/drift.rs");
+    let tracked_drift_before = fs::read(&tracked_drift_path).unwrap_or_abort();
+    let harness_json_path = repo_root().join("crates/harness/harness.json");
+    assert!(
+        !harness_json_path.exists(),
+        "source tree must not contain crates/harness/harness.json before the recorded happy path"
+    );
+
     let temp = tempdir().unwrap_or_abort();
     let prompt_session_dir = temp.path().join("prompt-sessions");
     let scenario_session_dir = temp.path().join("scenario-sessions");
 
+    pty_phase("main:record_prompt");
     let prompt_recording = record_prompt_and_quit(&prompt_session_dir);
+    pty_phase("main:prompt_done");
     let prompt_run_dir = newest_run_dir(&prompt_session_dir).unwrap_or_abort();
     let prompt_events_path = prompt_run_dir.join("events.jsonl");
     let prompt_events = fs::read_to_string(&prompt_events_path).unwrap_or_abort();
     assert!(prompt_events.contains("\"event_type\":\"user_message_submitted\""));
     assert!(prompt_events.contains("Hello from PTY"));
 
+    pty_phase("main:record_permission_tool_edit");
     let scenario_recording = record_permission_tool_edit_and_auto_exit(&scenario_session_dir);
+    pty_phase("main:scenario_done");
     let scenario_run_dir = newest_run_dir(&scenario_session_dir).unwrap_or_abort();
     let scenario_events_path = scenario_run_dir.join("events.jsonl");
     let scenario_events = fs::read_to_string(&scenario_events_path).unwrap_or_abort();
@@ -67,7 +86,9 @@ fn scripted_tui_happy_path_records_start_prompt_permission_tool_edit_resume_and_
         );
     }
 
+    pty_phase("main:record_resume_picker");
     let resume_recording = record_resume_picker_and_quit(&prompt_session_dir);
+    pty_phase("main:resume_done");
 
     let prompt_events_artifact = artifact_dir.join("prompt.events.jsonl");
     let scenario_events_artifact = artifact_dir.join("scenario.events.jsonl");
@@ -121,6 +142,115 @@ fn scripted_tui_happy_path_records_start_prompt_permission_tool_edit_resume_and_
 
     assert!(manifest_path.is_file());
     assert!(summary_path.is_file());
+
+    let checkout_after = checkout_status(Some(&artifact_dir));
+    assert_eq!(
+        checkout_before, checkout_after,
+        "recorded PTY happy path must leave the source checkout unchanged\nbefore: {checkout_before:?}\nafter: {checkout_after:?}"
+    );
+    assert!(
+        !harness_json_path.exists(),
+        "recorded PTY happy path must not create crates/harness/harness.json"
+    );
+    let tracked_drift_after = fs::read(&tracked_drift_path).unwrap_or_abort();
+    assert_eq!(
+        tracked_drift_before, tracked_drift_after,
+        "recorded PTY happy path must not modify tracked crates/harness/src/drift.rs"
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+#[ignore = "signoff-pty symlink overwrite regression; run via scripts/test-lanes.sh signoff-pty"]
+#[allow(
+    clippy::panic,
+    clippy::match_wild_err_arm,
+    reason = "test code must panic gracefully"
+)]
+fn pty_happy_path_does_not_follow_symlinks_to_historical_probe_paths() {
+    let artifact_dir = std::env::var_os(ARTIFACT_DIR_ENV)
+        .map(PathBuf::from)
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| std::env::temp_dir().join("pty-symlink-regression-artifacts"));
+    fs::create_dir_all(&artifact_dir).unwrap_or_abort();
+
+    let checkout_before = checkout_status(Some(&artifact_dir));
+    let tracked_drift_path = repo_root().join("crates/harness/src/drift.rs");
+    let tracked_drift_before = fs::read(&tracked_drift_path).unwrap_or_abort();
+
+    let temp = tempdir().unwrap_or_abort();
+    let workspace = temp.path().join("symlink-workspace");
+    init_git_repo_for_workspace(&workspace);
+
+    let safe_dir = temp.path().join("safe-targets");
+    fs::create_dir_all(&safe_dir).unwrap_or_abort();
+    let agent_target = safe_dir.join("agent.rs");
+    let drift_target = safe_dir.join("drift.rs");
+    fs::write(&agent_target, "safe-agent-content\n").unwrap_or_abort();
+    fs::write(&drift_target, "safe-drift-content\n").unwrap_or_abort();
+
+    let src_dir = workspace.join("src");
+    fs::create_dir_all(&src_dir).unwrap_or_abort();
+    std::os::unix::fs::symlink(&agent_target, src_dir.join("agent.rs")).unwrap_or_abort();
+    std::os::unix::fs::symlink(&drift_target, src_dir.join("drift.rs")).unwrap_or_abort();
+
+    let session_dir = temp.path().join("symlink-sessions");
+    fs::create_dir_all(&session_dir).unwrap_or_abort();
+
+    let mut screens = Vec::new();
+    let mut helper = spawn_harness_pty_in(
+        &workspace,
+        &[
+            "tui".to_string(),
+            "--mock".to_string(),
+            "--deterministic".to_string(),
+            "--session-dir".to_string(),
+            session_dir.display().to_string(),
+        ],
+    );
+    screens.push(helper.wait_for("❯", "symlink workspace startup"));
+    helper.write_text("Hello from PTY");
+    screens.push(helper.wait_for("Hello from PTY", "symlink prompt draft"));
+    helper.send_key(b'\r');
+    screens.push(helper.wait_for("Hello world", "symlink prompt response"));
+    quit_helper(&mut helper, &mut screens);
+    helper.wait_success("symlink PTY child");
+
+    assert_eq!(
+        fs::read_to_string(&agent_target).unwrap_or_abort(),
+        "safe-agent-content\n",
+        "PTY must not overwrite symlinked src/agent.rs target"
+    );
+    assert_eq!(
+        fs::read_to_string(&drift_target).unwrap_or_abort(),
+        "safe-drift-content\n",
+        "PTY must not overwrite symlinked src/drift.rs target"
+    );
+
+    let checkout_after = checkout_status(Some(&artifact_dir));
+    assert_eq!(
+        checkout_before, checkout_after,
+        "PTY symlink regression must leave the source checkout unchanged\nbefore: {checkout_before:?}\nafter: {checkout_after:?}"
+    );
+    let tracked_drift_after = fs::read(&tracked_drift_path).unwrap_or_abort();
+    assert_eq!(
+        tracked_drift_before, tracked_drift_after,
+        "PTY symlink regression must not modify tracked crates/harness/src/drift.rs"
+    );
+
+    if let Some(artifact_dir) = std::env::var_os(ARTIFACT_DIR_ENV).map(PathBuf::from) {
+        fs::create_dir_all(&artifact_dir).unwrap_or_abort();
+        let receipt = json!({
+            "schema_version": "harness-tui-pty-symlink-overwrite-regression-v1",
+            "workspace": workspace.display().to_string(),
+            "screens": screens,
+        });
+        fs::write(
+            artifact_dir.join("pty-symlink-overwrite-regression.json"),
+            serde_json::to_vec_pretty(&receipt).unwrap_or_abort(),
+        )
+        .unwrap_or_abort();
+    }
 }
 
 #[test]
@@ -304,12 +434,10 @@ fn dual_binary_cli_pty_ctrl_s_resumes_seeded_session() {
     );
 
     helper.send_ctrl(b's');
-    let picker = helper.wait_for("continue ready", "cli resume picker lists seeded session");
+    let picker = helper.wait_for(&seeded_run_id, "cli resume picker lists seeded session");
     let picker_screen = picker["screen"].as_str().unwrap_or("");
     assert!(
-        picker_screen.contains(&seeded_run_id)
-            || picker_screen.contains("continue ready")
-            || helper.screen_text().contains(&seeded_run_id),
+        picker_screen.contains(&seeded_run_id) || helper.screen_text().contains(&seeded_run_id),
         "resume picker must list the seeded session ({seeded_run_id})\n{picker_screen}"
     );
     helper.send_key(b'\r');
@@ -1105,6 +1233,7 @@ fn dual_binary_cli_pty_scenario_question_resolve_markers() {
 }
 
 fn record_prompt_and_quit(session_dir: &Path) -> serde_json::Value {
+    pty_phase("prompt:spawn");
     let mut helper = spawn_harness_pty(&[
         "tui".to_string(),
         "--mock".to_string(),
@@ -1113,13 +1242,21 @@ fn record_prompt_and_quit(session_dir: &Path) -> serde_json::Value {
         session_dir.display().to_string(),
     ]);
     let mut screens = Vec::new();
+    pty_phase("prompt:wait_for_composer");
     screens.push(helper.wait_for("❯", "start"));
+    pty_phase("prompt:type");
     helper.write_text("Hello from PTY");
+    pty_phase("prompt:wait_for_draft");
     screens.push(helper.wait_for("Hello from PTY", "prompt draft"));
+    pty_phase("prompt:submit");
     helper.send_key(b'\r');
+    pty_phase("prompt:wait_for_response");
     screens.push(helper.wait_for("Hello world", "prompt response"));
+    pty_phase("prompt:quit");
     quit_helper(&mut helper, &mut screens);
+    pty_phase("prompt:wait_success");
     helper.wait_success("prompt PTY child");
+    pty_phase("prompt:done");
 
     json!({
         "stage": "prompt_and_quit",
@@ -1153,6 +1290,7 @@ fn run_id_from_events(run_dir: &Path) -> String {
 }
 
 fn record_permission_tool_edit_and_auto_exit(session_dir: &Path) -> serde_json::Value {
+    pty_phase("scenario:spawn");
     let mut helper = spawn_harness_pty(&[
         "tui".to_string(),
         "--scenario".to_string(),
@@ -1163,12 +1301,18 @@ fn record_permission_tool_edit_and_auto_exit(session_dir: &Path) -> serde_json::
         session_dir.display().to_string(),
     ]);
     let mut screens = Vec::new();
+    pty_phase("scenario:wait_permission_modal");
     screens.push(helper.wait_for("Allow Edit", "permission modal"));
+    pty_phase("scenario:wait_permission_choices");
     screens.push(helper.wait_for("always-approve", "permission choices"));
+    pty_phase("scenario:allow");
     helper.send_key(b'\r');
     helper.send_key(b'\r');
+    pty_phase("scenario:wait_tool_completed");
     screens.push(helper.wait_for("demo.txt", "tool edit completed"));
+    pty_phase("scenario:wait_success");
     helper.wait_success("scenario PTY child");
+    pty_phase("scenario:done");
 
     json!({
         "stage": "permission_tool_edit_auto_exit",
@@ -1178,6 +1322,7 @@ fn record_permission_tool_edit_and_auto_exit(session_dir: &Path) -> serde_json::
 }
 
 fn record_resume_picker_and_quit(session_dir: &Path) -> serde_json::Value {
+    pty_phase("resume:spawn");
     let mut helper = spawn_harness_pty(&[
         "tui".to_string(),
         "--mock".to_string(),
@@ -1185,17 +1330,33 @@ fn record_resume_picker_and_quit(session_dir: &Path) -> serde_json::Value {
         session_dir.display().to_string(),
     ]);
     let mut screens = Vec::new();
+    pty_phase("resume:wait_composer");
     screens.push(helper.wait_for("❯", "resume startup"));
     // Filter first: unfiltered slash list is alpha-sorted and hides /sessions off-screen.
+    pty_phase("resume:type_slash");
     helper.write_text("/");
     helper.write_text("sessions");
+    pty_phase("resume:wait_switch_session");
     screens.push(helper.wait_for("Switch session", "slash commands"));
+    pty_phase("resume:select_switch_session");
     helper.send_key(b'\r');
+    pty_phase("resume:wait_resume_picker");
     screens.push(helper.wait_for("Resume session", "resume picker"));
+    pty_phase("resume:dismiss_picker");
     helper.send_key(0x1b);
-    screens.push(helper.wait_for("❯", "resume picker dismissed"));
+    pty_phase("resume:wait_picker_absent");
+    // The composer prompt "❯" is visible behind the overlay, so checking for
+    // "❯" alone is not enough to prove the picker was dismissed. The welcome
+    // screen also contains "Resume session", so wait for a picker-only row to
+    // disappear.
+    screens.push(helper.wait_until_absent("continue ready", "resume picker dismissed"));
+    pty_phase("resume:wait_composer_return");
+    screens.push(helper.wait_for("❯", "composer focus after picker dismiss"));
+    pty_phase("resume:quit");
     quit_helper(&mut helper, &mut screens);
+    pty_phase("resume:wait_success");
     helper.wait_success("resume PTY child");
+    pty_phase("resume:done");
 
     json!({
         "stage": "resume_picker_and_quit",
@@ -1291,9 +1452,19 @@ impl SpawnedHarness {
 
 fn spawn_harness_pty(args: &[String]) -> SpawnedHarness {
     let workspace = tempdir().unwrap_or_abort();
-    fs::write(workspace.path().join("README.md"), "# PTY test workspace\n").unwrap_or_abort();
+    init_git_repo_for_workspace(workspace.path());
     let cwd = workspace.path().to_path_buf();
     spawn_harness_pty_in_owned(&cwd, args, Some(workspace))
+}
+
+fn init_git_repo_for_workspace(path: &Path) {
+    fs::create_dir_all(path).unwrap_or_abort();
+    run_git(path, &["init", "-b", "main"]);
+    run_git(path, &["config", "user.email", "pty-test@example.com"]);
+    run_git(path, &["config", "user.name", "PTY Test"]);
+    fs::write(path.join("README.md"), "# PTY test workspace\n").unwrap_or_abort();
+    run_git(path, &["add", "README.md"]);
+    run_git(path, &["commit", "-m", "seed workspace"]);
 }
 
 fn spawn_harness_pty_in(cwd: &Path, args: &[String]) -> SpawnedHarness {
@@ -1380,6 +1551,43 @@ fn git_text(cwd: &Path, args: &[&str]) -> String {
         String::from_utf8_lossy(&output.stderr)
     );
     String::from_utf8_lossy(&output.stdout).trim().to_string()
+}
+
+fn repo_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
+}
+
+fn checkout_status(artifact_dir: Option<&Path>) -> Vec<String> {
+    let root = repo_root();
+    let output = std::process::Command::new("git")
+        .args(["status", "--porcelain=v1", "--untracked-files=all"])
+        .current_dir(&root)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .output()
+        .unwrap_or_abort();
+    assert!(
+        output.status.success(),
+        "git status failed in {}: {}",
+        root.display(),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let artifact_rel = artifact_dir.and_then(|dir| dir.strip_prefix(&root).ok().map(PathBuf::from));
+    let text = String::from_utf8_lossy(&output.stdout);
+    text.lines()
+        .filter(|line| {
+            if line.len() < 3 {
+                return true;
+            }
+            let path_field = &line[3..];
+            let path = path_field.split(" -> ").last().unwrap_or(path_field);
+            if let Some(prefix) = artifact_rel.as_deref() {
+                !Path::new(path).starts_with(prefix)
+            } else {
+                true
+            }
+        })
+        .map(|line| line.to_string())
+        .collect()
 }
 
 fn list_worktree_dirs(parent: &Path) -> Vec<PathBuf> {

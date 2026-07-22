@@ -642,8 +642,11 @@ fn paint_command_palette_panel_titled(
     }
 
     let surface = ui_chrome::command_palette_surface(theme);
-    let border_style = Style::default().bg(surface);
-    let title_style = Style::default().bg(surface).add_modifier(Modifier::BOLD);
+    let border_style = Style::default().fg(Color::Indexed(8)).bg(surface);
+    let title_style = Style::default()
+        .fg(Color::Indexed(15))
+        .bg(surface)
+        .add_modifier(Modifier::BOLD);
     let close_style = border_style;
     frame.render_widget(Clear, overlay);
     let block = Block::default()
@@ -715,8 +718,11 @@ fn render_command_palette_footer(frame: &mut Frame, theme: &Theme, area: Rect) {
         return;
     }
     let surface = ui_chrome::command_palette_surface(theme);
-    let muted = Style::default();
-    let key = Style::default().add_modifier(Modifier::BOLD);
+    let muted = Style::default().fg(Color::Indexed(7)).bg(surface);
+    let key = Style::default()
+        .fg(Color::Indexed(15))
+        .bg(surface)
+        .add_modifier(Modifier::BOLD);
     let spans = vec![
         Span::styled("↑/↓".to_string(), key),
         Span::styled(" nav  |  ".to_string(), muted),
@@ -764,7 +770,7 @@ fn render_command_palette_input(frame: &mut Frame, app: &AppState, theme: &Theme
     let surface = ui_chrome::command_palette_surface(theme);
     frame.render_widget(Block::default().style(Style::default().bg(surface)), area);
 
-    let chrome = Style::default().bg(surface);
+    let chrome = Style::default().fg(Color::Indexed(7)).bg(surface);
     let cursor = Style::default()
         .fg(command_palette_input_cursor(theme, app))
         .bg(surface);
@@ -832,7 +838,10 @@ fn render_command_palette_input(frame: &mut Frame, app: &AppState, theme: &Theme
     if rule_area.width > 0 {
         let rule = "─".repeat(usize::from(rule_area.width));
         frame.render_widget(
-            Paragraph::new(Line::from(Span::styled(rule, chrome))),
+            Paragraph::new(Line::from(Span::styled(
+                rule,
+                Style::default().fg(Color::Indexed(8)).bg(surface),
+            ))),
             rule_area,
         );
     }
@@ -1013,16 +1022,6 @@ pub(crate) fn palette_overlay_rows(app: &AppState) -> Vec<PaletteOverlayRow> {
         });
     }
 
-    if app.palette_input.is_empty()
-        && last_category.is_some()
-        && last_category != Some(crate::keybindings::palette_model::PaletteCategory::ModelInput)
-    {
-        overlay_rows.push(PaletteOverlayRow::Spacer);
-        overlay_rows.push(PaletteOverlayRow::Section(
-            crate::keybindings::palette_model::PaletteCategory::ModelInput,
-        ));
-    }
-
     overlay_rows
 }
 
@@ -1035,18 +1034,15 @@ fn command_palette_row(
     width: u16,
     show_thumb: bool,
 ) -> Line<'static> {
-    let _ = description;
+    let _ = (description, is_selected);
     let row_width = usize::from(width);
     let gutter = 4usize;
     let body_row_width = row_width.saturating_sub(gutter);
     let surface = ui_chrome::command_palette_surface(theme);
-    let row_style = Style::default().bg(surface);
-    let label_style = if is_selected {
-        Style::default().bg(surface).add_modifier(Modifier::BOLD)
-    } else {
-        row_style
-    };
-    let shortcut_style = row_style;
+    let row_style = Style::default().fg(Color::Indexed(15)).bg(surface);
+    let label_style = Style::default().fg(Color::Indexed(15)).bg(surface);
+    let prefix_style = Style::default().fg(Color::Indexed(8)).bg(surface);
+    let shortcut_style = Style::default().fg(Color::Indexed(7)).bg(surface);
 
     let shortcut_len = if shortcut.is_empty() {
         0
@@ -1055,7 +1051,7 @@ fn command_palette_row(
     };
     let body_width = body_row_width.saturating_sub(shortcut_len);
     let prefix = " ◆ ";
-    let mut spans = vec![Span::styled(prefix.to_string(), row_style)];
+    let mut spans = vec![Span::styled(prefix.to_string(), prefix_style)];
     let mut used_width = prefix.chars().count();
 
     let label = truncate_plain_text(label, 61usize.min(body_width.saturating_sub(used_width)));
@@ -1089,8 +1085,10 @@ fn command_palette_section_row(
     let row_width = usize::from(width);
     let gutter = 3usize;
     let body_row_width = row_width.saturating_sub(gutter);
-    let label_style = Style::default().add_modifier(Modifier::BOLD);
-    let rule_style = Style::default();
+    let label_style = Style::default()
+        .fg(Color::Indexed(7))
+        .add_modifier(Modifier::BOLD);
+    let rule_style = Style::default().fg(Color::Indexed(8));
     let prefix = " ";
     let mut spans = vec![Span::raw(prefix.to_string())];
     let label = truncate_plain_text(
@@ -1133,8 +1131,8 @@ fn render_palette_solid_backdrop(frame: &mut Frame, area: Rect, preserve: Option
             }
             let cell = &mut buffer[(x, y)];
             cell.set_symbol(" ");
-            cell.set_fg(Color::Reset);
-            cell.set_bg(Color::Reset);
+            cell.set_fg(Color::Indexed(0));
+            cell.set_bg(Color::Indexed(0));
         }
     }
 }

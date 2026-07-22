@@ -97,7 +97,7 @@ The facts below were independently audited from the committed tree and by execut
    - Eight journey rows are `pass` with empty `L1` and `L4` by explicit test exemption.
    - `SHELL-IDLE` reuses draft-state evidence and is not a valid idle-shell pass.
    - `SHELL-FAIL` has an approved AA divergence but still lacks required `L2`; approval does not waive missing evidence.
-10. **Only two divergences are user-approved:** `DIV-AA-PALETTE` and `DIV-AA-SHELL-FAIL`. “Evidence-backed divergence” is not an approved status class.
+10. **Only one divergence is user-approved:** `DIV-AA-SHELL-FAIL`. `DIV-AA-PALETTE` was invalidated by Wave 4.7 revalidation and is rejected. “Evidence-backed divergence” is not an approved status class.
 11. **Capability completion is overclaimed.** All 85 capability rows are marked `pass`; at least 25 admit missing public behavior in their own notes. Owner-path existence, bookkeeping, local-file transports, structured-unavailable results, or diagnostic probes are not complete product capabilities.
 12. **`A-CORE-AUDIT` is explicitly incomplete.** The disposition matrix contains 26 subsystems: 12 complete and 14 partial. Partial IDs are `sessions_lineage`, `worktree`, `workspace`, `mcp`, `lsp`, `background_tasks`, `auth`, `tui_app_state`, `cli_handoff`, `doctor`, `support_export`, `plugins`, `acp`, and `sandbox`.
 13. **No final same-revision acceptance exists.** There is no fresh clean-checkout Phase 9 package, no complete artifact provenance tied to `3b111f8e`, and no successful independent dual review/holdout result.
@@ -296,11 +296,11 @@ Only begin after Waves 0–3 are green. For each packet: freeze the applicable r
 4. **Packet 4.4 — Question:** `SHELL-QUESTION`, then `OVL-QUESTION`.
 5. **Packet 4.5 — Turn lifecycle:** `SHELL-CANCEL`, `SHELL-FAIL`, `SHELL-RECOVER`, `SHELL-COMPLETE`, `SHELL-SCROLL`.
 6. **Packet 4.6 — Transcript primitives:** `TX-USER`, `TX-ASSISTANT`, `TX-TOOL`, `TX-DIFF`.
-7. **Packet 4.7 — Overlay regression:** revalidate `OVL-PALETTE`; retain `DIV-AA-PALETTE` only if the exact approved residual remains.
+7. **Packet 4.7 — Overlay regression:** revalidate `OVL-PALETTE`; `DIV-AA-PALETTE` was invalidated by Wave 4.7 and must remain rejected.
+
 8. **Packet 4.8 — Responsive and dynamic closure:** all required viewports, terminal capabilities, fixed animation ticks, trace ordering, median/p95 timing, and holdout states.
 
-Allow at most `DIV-AA-PALETTE` and `DIV-AA-SHELL-FAIL`; eliminating either residual is preferable. No other row may remain diverged without new explicit user approval.
-
+Allow at most `DIV-AA-SHELL-FAIL`; eliminating the residual is preferable. No other row may remain diverged without new explicit user approval.
 ### Wave 5 — Same-revision acceptance
 
 #### Packet 5.1 — Freeze
@@ -1625,10 +1625,9 @@ Implementation convenience, missing time, old Harness behavior, and inability to
 
 At the audited checkpoint, the complete user-approved divergence allowlist is:
 
-- `DIV-AA-PALETTE`
 - `DIV-AA-SHELL-FAIL`
 
-No other divergence is approved. A nonzero difference with a receipt is still `blocked` or `incomplete` until the user approves an exact divergence. The category “evidence-backed divergence” is forbidden. An approved divergence waives only the exact accepted difference; it does not waive missing evidence layers, stale provenance, wrong state pairing, runtime defects, or failed acceptance gates.
+`DIV-AA-PALETTE` was invalidated by Wave 4.7 revalidation and is rejected. No other divergence is approved. A nonzero difference with a receipt is still `blocked` or `incomplete` until the user approves an exact divergence. The category “evidence-backed divergence” is forbidden. An approved divergence waives only the exact accepted difference; it does not waive missing evidence layers, stale provenance, wrong state pairing, runtime defects, or failed acceptance gates.
 
 ### 17. Evidence Integrity and Anti-Gaming Rules
 

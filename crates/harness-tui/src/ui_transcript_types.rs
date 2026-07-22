@@ -1,4 +1,5 @@
 use super::*;
+use harness_core::event::ProviderRequestRetryMetadata;
 
 #[derive(Debug, Clone, Copy)]
 pub(super) struct TranscriptToolCardShell {
@@ -105,7 +106,11 @@ pub(super) struct TranscriptTurnHeader {
     pub(super) duration_ms: Option<u64>,
     /// Reasoning-only mono span for "Thought for" (Grok freeze packing).
     pub(super) thinking_duration_ms: Option<u64>,
+    /// Elapsed time since first stream delta for "Responding…" (Grok freeze packing).
+    pub(super) responding_duration_ms: Option<u64>,
     pub(super) total_tokens: Option<u32>,
+    pub(super) retry: Option<ProviderRequestRetryMetadata>,
+    pub(super) retry_elapsed_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

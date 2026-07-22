@@ -192,10 +192,10 @@ pub(crate) fn exact_test_subagent_replay_suppresses_parent_replay_dock() {
             .transcript_gutter_y
             .min(transcript.height.saturating_sub(1)),
     );
-    // Grok black theme: transcript base surface is #0b0e14 (shell/panel), not terminal Reset.
+    // Transcript base surface is Reset (live_transcript_shell_section renders Reset background).
     assert_eq!(
         terminal.backend().buffer()[(sample_x, sample_y)].bg,
-        theme.surface.shell,
+        ratatui::style::Color::Reset,
         "subagent replay should use the same transcript surface as the main chat"
     );
 }
@@ -233,7 +233,7 @@ pub(crate) fn exact_test_live_control_dock_renders_shared_surface() {
         .x
         .saturating_add(dock.shell.width.saturating_sub(1));
 
-    let expected_surface = ratatui::style::Color::Reset;
+    let expected_surface = ratatui::style::Color::Indexed(0);
     assert_eq!(buffer[(right_edge, composer.y)].bg, expected_surface);
     assert_eq!(buffer[(right_edge, dock.shell.y)].bg, expected_surface);
     assert!(
@@ -301,6 +301,7 @@ pub(crate) fn exact_test_tool_status_summary_uses_effective_tool_identity() {
         thinking_first_mono_ms: None,
         thinking_last_mono_ms: None,
         transcript_text: String::new(),
+        first_delta_mono_ms: None,
         usage: None,
         cache_usage: None,
         error_message: None,
@@ -340,6 +341,7 @@ pub(crate) fn exact_test_tool_status_summary_uses_effective_tool_identity() {
         last_seq: 1,
         first_mono_ms: 1,
         last_mono_ms: 1,
+        request_started_mono_ms: None,
         revision: 0,
     });
 
@@ -387,6 +389,7 @@ pub(crate) fn exact_test_retry_summary_segment_prioritizes_retry_indicator() {
         thinking_first_mono_ms: None,
         thinking_last_mono_ms: None,
         transcript_text: String::new(),
+        first_delta_mono_ms: None,
         usage: None,
         cache_usage: None,
         error_message: None,
@@ -396,6 +399,7 @@ pub(crate) fn exact_test_retry_summary_segment_prioritizes_retry_indicator() {
         last_seq: 1,
         first_mono_ms: 1,
         last_mono_ms: 1,
+        request_started_mono_ms: None,
         revision: 0,
     });
 

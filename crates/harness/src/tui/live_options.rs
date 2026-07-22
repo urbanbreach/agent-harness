@@ -21,7 +21,6 @@ pub(super) fn continue_live_tui_options(
     compact_session_supported: bool,
     prompt_history_path: Option<PathBuf>,
     toggles: Option<TogglesConfig>,
-    workspace_root: PathBuf,
 ) -> TuiOptions {
     TuiOptions {
         mode: TuiMode::Live {
@@ -37,7 +36,6 @@ pub(super) fn continue_live_tui_options(
         keybindings: None,
         toggles,
         preserve_terminal_on_exit: true,
-        workspace_root: Some(workspace_root),
     }
 }
 
@@ -54,7 +52,6 @@ pub(super) fn new_live_tui_options(
     compact_session_supported: bool,
     prompt_history_path: Option<PathBuf>,
     toggles: Option<TogglesConfig>,
-    workspace_root: PathBuf,
 ) -> TuiOptions {
     TuiOptions {
         mode: TuiMode::Live {
@@ -70,6 +67,5 @@ pub(super) fn new_live_tui_options(
         keybindings: None,
         toggles,
         preserve_terminal_on_exit: true,
-        workspace_root: Some(workspace_root),
     }
 }

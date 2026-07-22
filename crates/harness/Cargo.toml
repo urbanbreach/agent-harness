@@ -23,6 +23,7 @@ serde_json.workspace = true
 json5.workspace = true
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "webpki-roots"] }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
+tokio-util.workspace = true
 blake3 = "1"
 uuid = { version = "1", features = ["v5"] }
 tracing = "0.1"

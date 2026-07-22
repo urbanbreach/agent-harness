@@ -10,8 +10,9 @@ expression: normalize_volatile_branch(&trim_trailing_snapshot_whitespace(&render
            │                                                                            │
            │   / to search                                                     All f    │
            │────────────────────────────────────────────────────────────────────────────│
-           │   Sun Mar 08 2026                                                          │
-           │     alpha-run                                                continue ready│
+           │   Projects-workspace                                                       │
+           │     alpha-run                                                       4mo ago│
+           │                                                                            │
            │                                                                            │
            │                                                                            │
            │                                                                            │
@@ -20,6 +21,5 @@ expression: normalize_volatile_branch(&trim_trailing_snapshot_whitespace(&render
            │                                                                            │
            │                                                                            │or this di…
            │                                                                            │
-           │         ↑↓ nav  |  e expand  |  / search  |  f filter  |  d delete         │
+           │             ↑↓ nav | e expand | / search | f filter | d delete             │
            └────────────────────────────────────────────────────────────────────────────┘
-            ╰───────────────────────────────────────────────────────────────────────  ─╯

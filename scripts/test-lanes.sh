@@ -563,7 +563,7 @@ run_signoff_binary() {
   local binary_smoke_artifacts_dir
   binary_smoke_artifacts_dir="$(stage_dir_for signoff-binary harness_binary_smoke)/artifacts"
   mkdir -p "$binary_smoke_artifacts_dir"
-  run_stage signoff-binary harness_binary_smoke "$repo_root" env HARNESS_BINARY_SMOKE=1 HARNESS_BINARY_SMOKE_ARTIFACT_DIR="$binary_smoke_artifacts_dir" cargo nextest run -p harness --test binary_smoke -- --ignored --exact || true
+  run_stage signoff-binary harness_binary_smoke "$repo_root" env HARNESS_BINARY_SMOKE=1 HARNESS_BINARY_SMOKE_ARTIFACT_DIR="$binary_smoke_artifacts_dir" cargo nextest run -p harness --test binary_smoke --ignore-default-filter -- --ignored --exact || true
 }
 
 run_signoff_pty() {
@@ -776,6 +776,15 @@ run_signoff_parity() {
   run_stage "$mode_name" reference_binary_present "$repo_root" \
     bash -c 'test -f "$0" || { echo "missing pinned reference binary $0" >&2; exit 1; }; actual="$(sha256sum "$0" | cut -d" " -f1)"; expected="$(cat "$1")"; if [ "$actual" != "$expected" ]; then echo "reference binary digest mismatch: actual=$actual expected=$expected" >&2; exit 1; fi' \
     "$reference_binary_path" "$reference_pin_path"
+
+  # Stage parity evidence into the fresh evidence root. The canonical evidence
+  # store is gitignored; this lane copies it into the per-run artifact root so
+  # the strict validator operates on a self-contained tree without mutating
+  # the source-of-truth store.
+  run_stage "$mode_name" reference_parity_evidence_stage "$repo_root" \
+    bash -c 'src="$0"; dst="$1"; if [ -d "$src" ]; then mkdir -p "$dst" && cp -r "$src/." "$dst/"; else echo "parity evidence source missing: $src" >&2; exit 1; fi' \
+    "${repo_root}/artifacts/artifacts_bak/artifacts_bak/qa-evidence/20260717-tui-reference-parity" \
+    "$parity_artifacts_dir"
 
   run_stage "$mode_name" reference_parity_manifest_test "$repo_root" \
     env HARNESS_TUI_PARITY_ARTIFACT_DIR="$parity_artifacts_dir" \

@@ -42,7 +42,6 @@ pub fn replay_workspace_root_from_events(events: &[EventEnvelopeV1]) -> Option<P
 
 pub(super) fn execute_replay_mode(
     run_dir: &Path,
-    workspace_root: Option<PathBuf>,
     exit_on_finish: bool,
     stderr: &mut dyn Write,
 ) -> ExitCode {
@@ -70,7 +69,6 @@ pub(super) fn execute_replay_mode(
         keybindings: None,
         toggles: None,
         preserve_terminal_on_exit: false,
-        workspace_root,
     }) {
         let _ = writeln!(stderr, "TUI error: {err}");
         return ExitCode::from(1);
@@ -84,7 +82,7 @@ pub(super) async fn run_replay_tui(
     exit_on_finish: bool,
 ) -> Result<InteractiveWorkflow, String> {
     let events = load_events_from_run_dir(&run_dir).map_err(|err| err.to_string())?;
-    let workspace_root = replay_workspace_root_from_events(&events);
+    // Replay workspace authority is derived exclusively from RunStarted events during ingestion.
     set_pending_replay_launch_metadata(Some(replay_launch_metadata_for_run(&run_dir, &events)));
     let selected_workflow = Arc::new(Mutex::new(None::<InteractiveWorkflow>));
     let selected_workflow_sink = Arc::clone(&selected_workflow);
@@ -102,7 +100,6 @@ pub(super) async fn run_replay_tui(
             keybindings: None,
             toggles: None,
             preserve_terminal_on_exit: true,
-            workspace_root,
         })
     })
     .await

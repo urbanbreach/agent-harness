@@ -80,8 +80,7 @@ fn journey_config_show_effective_cli_writes_artifact() {
         "secret-looking token leaked in journey artifact stdout: {stdout}"
     );
     assert!(artifacts.join("config-show-effective.stdout.txt").is_file());
-    assert!(repo_root()
-        .join(STABLE_L3_CONFIG_SHOW_REL)
+    assert!(stable_l3_artifact_root(STABLE_L3_CONFIG_SHOW_REL)
         .join("config-show-effective.stdout.txt")
         .is_file());
 }
@@ -120,8 +119,7 @@ fn journey_config_sources_cli_writes_artifact() {
         "expected discovered layers: {json}"
     );
     assert!(artifacts.join("config-sources.stdout.txt").is_file());
-    assert!(repo_root()
-        .join(STABLE_L3_CONFIG_SOURCES_REL)
+    assert!(stable_l3_artifact_root(STABLE_L3_CONFIG_SOURCES_REL)
         .join("config-sources.stdout.txt")
         .is_file());
 }
@@ -162,8 +160,7 @@ fn journey_config_explain_cli_writes_artifact() {
         "expected winning source_path: {json}"
     );
     assert!(artifacts.join("config-explain.stdout.txt").is_file());
-    assert!(repo_root()
-        .join(STABLE_L3_CONFIG_SOURCES_REL)
+    assert!(stable_l3_artifact_root(STABLE_L3_CONFIG_SOURCES_REL)
         .join("config-explain.stdout.txt")
         .is_file());
 }

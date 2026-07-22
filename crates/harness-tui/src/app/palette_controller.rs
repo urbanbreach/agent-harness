@@ -155,9 +155,10 @@ pub fn is_available(app: &AppState, entry: &PaletteCommandEntry) -> bool {
         "console.org.switch" => false,
         "variant.list" => false,
 
-        "model.list" | "agent.list" | "mcp.list" => {
-            !app.startup_shell_visible() && app.model_switcher_supported()
-        }
+        "model.list" => !app.startup_shell_visible(),
+        "agent.list" | "mcp.list" => !app.startup_shell_visible() && app.model_switcher_supported(),
+        "model.always_approve" | "model.multiline" => !app.startup_shell_visible(),
+        "tools.hooks" | "tools.plugins" | "tools.marketplace" => !app.startup_shell_visible(),
         "variant.cycle" => !app.startup_shell_visible() && !app.replay_mode,
         "provider.connect" => !app.startup_shell_visible(),
         "app.exit" => !app.startup_shell_visible(),
@@ -256,10 +257,11 @@ pub fn resolve_title(app: &AppState, entry: &PaletteCommandEntry) -> String {
 /// - Results preserve category grouping.
 pub fn compute_palette_rows(app: &AppState, filter: &str) -> Vec<PaletteRow> {
     use PaletteCategory as C;
-    const CATEGORY_ORDER: [C; 9] = [
+    const CATEGORY_ORDER: [C; 10] = [
         C::Session,
         C::Context,
         C::ModelInput,
+        C::Tools,
         C::Suggested,
         C::Agent,
         C::Workspace,
@@ -284,10 +286,11 @@ pub fn compute_palette_rows(app: &AppState, filter: &str) -> Vec<PaletteRow> {
     });
 
     if needle.is_empty() {
-        const EMPTY_FILTER_CATEGORIES: [C; 3] = [C::Session, C::Context, C::ModelInput];
+        const EMPTY_FILTER_CATEGORIES: [C; 4] = [C::Session, C::Context, C::ModelInput, C::Tools];
         available
             .into_iter()
             .filter(|entry| EMPTY_FILTER_CATEGORIES.contains(&entry.category))
+            .filter(|entry| !entry.freeze_shortcut().is_empty())
             .map(|entry| PaletteRow {
                 value: entry.id.to_string(),
                 command_id: entry.id,
@@ -567,9 +570,10 @@ mod tests {
                     PaletteCategory::Session
                         | PaletteCategory::Context
                         | PaletteCategory::ModelInput
+                        | PaletteCategory::Tools
                 )
             }),
-            "empty filter inventory is Session/Context/Model & Input only"
+            "empty filter inventory is Session/Context/Model & Input/Tools only"
         );
     }
 

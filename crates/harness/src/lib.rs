@@ -36,6 +36,7 @@ mod memory_cmd;
 mod model_probe;
 mod models;
 mod prompt;
+mod prompt_queue_cmd;
 mod readiness;
 mod recovery;
 mod replay;
@@ -44,6 +45,14 @@ mod runtime_catalog;
 mod scenarios;
 mod sessions;
 mod tui;
+mod worktree_cmd;
+
+mod code_graph_cmd;
+mod cron_cmd;
+mod plugin_cmd;
+mod providers_cmd;
+mod team_cmd;
+mod update_cmd;
 
 use crate::prompt::PromptCommand;
 use crate::tui::TuiCommand;
@@ -51,9 +60,18 @@ use auth_cmd::AuthCommand;
 use doctor::DoctorCommand;
 use memory_cmd::MemoryCommand;
 use models::ModelsCommand;
+use prompt_queue_cmd::PromptQueueCommand;
 use replay::ReplayCommand;
 use run::RunCommand;
 use sessions::SessionsCommand;
+use worktree_cmd::WorktreeCommand;
+
+use code_graph_cmd::CodeGraphCommand;
+use cron_cmd::CronCommand;
+use plugin_cmd::PluginCommand;
+use providers_cmd::ProvidersCommand;
+use team_cmd::TeamCommand;
+use update_cmd::UpdateCommand;
 
 pub use harness_core::UnwrapOrAbort;
 
@@ -183,6 +201,22 @@ enum Commands {
     },
     /// Durable workspace memory put/get/search/list product surface.
     Memory(MemoryCommand),
+    /// List, select-remove, or clean up Harness session worktrees.
+    Worktree(WorktreeCommand),
+    /// Durable session-local prompt queue enqueue/list/dequeue/interject surface.
+    PromptQueue(PromptQueueCommand),
+    /// Evaluate and fire due cron schedules at a civil time with a durable journal.
+    Cron(CronCommand),
+    /// Manage multi-agent teams with a durable mailbox journal under a workspace.
+    Team(TeamCommand),
+    /// Install, activate, deactivate, remove, or list plugin packages.
+    Plugin(PluginCommand),
+    /// Check for binary updates against a local manifest (no download/apply/restart).
+    Update(UpdateCommand),
+    /// Inspect provider protocol capability catalog (honest support levels).
+    Providers(ProvidersCommand),
+    /// Build or query the first-party persistent code-graph symbol index.
+    CodeGraph(CodeGraphCommand),
 }
 
 #[derive(Debug, Args, Clone, Default)]
@@ -687,6 +721,14 @@ fn execute_cli(cli: Cli, io: &mut CliIo<'_>, deps: CliDeps) -> i32 {
             ConfigCommands::Settings => execute_config_settings(io),
         },
         Commands::Memory(command) => memory_cmd::execute_with_io(command, io, &deps),
+        Commands::Worktree(command) => worktree_cmd::execute_with_io(command, io, &deps),
+        Commands::PromptQueue(command) => prompt_queue_cmd::execute_with_io(command, io, &deps),
+        Commands::Cron(command) => cron_cmd::execute_with_io(command, io, &deps),
+        Commands::Team(command) => team_cmd::execute_with_io(command, io, &deps),
+        Commands::Plugin(command) => plugin_cmd::execute_with_io(command, io, &deps),
+        Commands::Update(command) => update_cmd::execute_with_io(command, io, &deps),
+        Commands::Providers(command) => providers_cmd::execute_with_io(command, io),
+        Commands::CodeGraph(command) => code_graph_cmd::execute_with_io(command, io, &deps),
     }
 }
 

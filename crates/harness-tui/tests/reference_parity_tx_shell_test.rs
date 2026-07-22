@@ -19,8 +19,9 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use harness_core::event::{
     ActorKind, EventActor, EventEnvelopeV1, EventV1, ProviderRequestFinishedEvent,
     ProviderRequestStartedEvent, ProviderStreamDeltaEvent, RunFailedEvent, TaskCancelledEvent,
-    TaskTerminalScope, ToolCallFinishedEvent, ToolCallRequestedEvent, ToolCallStartedEvent,
-    ToolCallStatus, UserMessageSubmittedEvent, SCHEMA_VERSION,
+    TaskScheduleState, TaskScheduledEvent, TaskTerminalScope, ToolCallFinishedEvent,
+    ToolCallRequestedEvent, ToolCallStartedEvent, ToolCallStatus, UserMessageSubmittedEvent,
+    SCHEMA_VERSION,
 };
 use harness_providers::CompletionUsage;
 use harness_tui::app::{AppState, Focus, LaunchMetadata, RuntimeStateKind};
@@ -470,8 +471,8 @@ fn tx_assistant_message_chrome_is_rail_free_with_footer() {
         "TX-ASSISTANT: assistant body lead must match user lead (Grok packing)\nuser={user_rail} asst={asst_rail}\n{rendered}"
     );
     assert!(
-        rendered.contains("Thought for"),
-        "TX-ASSISTANT: completed turns render Thought for header\n{rendered}"
+        !rendered.contains("Thought for"),
+        "TX-ASSISTANT: completed turns without reasoning must not render Thought for header\n{rendered}"
     );
     assert!(
         rendered.contains("Worked for"),
@@ -674,38 +675,56 @@ fn count_char(rendered: &str, ch: char) -> usize {
 }
 
 /// SHELL-STREAM: active provider stream keeps full-width transcript body + bordered composer.
-/// Freeze capture: partial (`run1-stream-probe` is fail path; streaming density from DESIGN §8).
+/// Freeze capture: run2-shell-stream-pinned-v2 ("Waiting for response…" state).
 #[test]
 fn shell_stream_keeps_full_width_body_and_bordered_composer() {
-    // arrange
+    // arrange — Grok STREAM freeze: user submitted, provider started, no body text.
+    // TaskScheduled keeps activity Streaming after ProviderRequestFinished seeds
+    // total_tokens for ⇣ counter.
     let mut app = live_app();
     let request_id = "req_stream";
     app.ingest_event(envelope(
         1,
         Some(request_id),
-        EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-            request_id: request_id.into(),
-            text: "stream probe".to_string(),
+        EventV1::TaskScheduled(TaskScheduledEvent {
+            task_id: "task_stream_parity".to_string().into(),
+            state: TaskScheduleState::Started,
+            queue_key: Some("provider_model:mock:model-tx".to_string()),
         }),
     ));
     app.ingest_event(envelope(
         2,
         Some(request_id),
-        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+        EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
             request_id: request_id.into(),
-            provider_id: "mock".to_string(),
-            model_id: "model-tx".to_string(),
-            prompt_summary: "stream probe".to_string(),
-            request_digest: "digest-stream".to_string(),
-            metadata: None,
+            text: "stream parity probe".to_string(),
         }),
     ));
     app.ingest_event(envelope(
         3,
         Some(request_id),
-        EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
             request_id: request_id.into(),
-            delta: "partial assistant tokens".to_string(),
+            provider_id: "mock".to_string(),
+            model_id: "model-tx".to_string(),
+            prompt_summary: "stream parity probe".to_string(),
+            request_digest: "digest-stream".to_string(),
+            metadata: None,
+        }),
+    ));
+    app.ingest_event(envelope(
+        4,
+        Some(request_id),
+        EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+            request_id: request_id.into(),
+            finish_reason: "done".to_string(),
+            output_digest: Some("digest-out-stream".to_string()),
+            usage: Some(CompletionUsage {
+                prompt_tokens: 1430,
+                completion_tokens: 0,
+                total_tokens: 1430,
+            }),
+            metadata: None,
         }),
     ));
 
@@ -723,12 +742,16 @@ fn shell_stream_keeps_full_width_body_and_bordered_composer() {
         runtime.kind
     );
     assert!(
-        rendered.contains("stream probe"),
+        rendered.contains("stream parity probe"),
         "SHELL-STREAM: user turn retained in transcript\n{rendered}"
     );
     assert!(
-        rendered.contains("partial assistant tokens"),
-        "SHELL-STREAM: partial stream projects into transcript body\n{rendered}"
+        rendered.contains("Waiting for response"),
+        "SHELL-STREAM: waiting-for-response indicator must project\n{rendered}"
+    );
+    assert!(
+        !rendered.contains("partial assistant tokens"),
+        "SHELL-STREAM: no body text in waiting-for-response state\n{rendered}"
     );
     assert!(
         rendered.contains('❯') && count_char(&rendered, '╭') >= 1,
@@ -741,14 +764,14 @@ fn shell_stream_keeps_full_width_body_and_bordered_composer() {
     let lines: Vec<&str> = rendered.lines().collect();
     let user_idx = lines
         .iter()
-        .position(|line| line.contains("stream probe"))
+        .position(|line| line.contains("stream parity probe"))
         .expect("user");
-    let asst_idx = lines
+    let waiting_idx = lines
         .iter()
-        .position(|line| line.contains("partial assistant tokens"))
-        .expect("stream body");
+        .position(|line| line.contains("Waiting for response"))
+        .expect("waiting indicator");
     assert!(
-        user_idx < asst_idx,
-        "SHELL-STREAM: user above streaming assistant body\n{rendered}"
+        user_idx < waiting_idx,
+        "SHELL-STREAM: user above waiting-for-response indicator\n{rendered}"
     );
 }

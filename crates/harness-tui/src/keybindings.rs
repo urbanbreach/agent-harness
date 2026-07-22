@@ -658,6 +658,10 @@ impl KeyMap {
             Action::Help,
         );
         keymap.bind(
+            KeyBinding::new(KeyCode::F(1), KeyModifiers::NONE),
+            Action::Help,
+        );
+        keymap.bind(
             KeyBinding::new(KeyCode::Char('p'), KeyModifiers::CONTROL),
             Action::Palette,
         );

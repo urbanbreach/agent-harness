@@ -620,23 +620,18 @@ fn session_history_row(
     };
     let pin_marker = if is_pinned { "📌 " } else { "" };
     let prefix = "  ";
-    let marker = if current { "●" } else { " " };
+    let marker = if current { "●" } else { "›" };
     let marker_gap = 1usize;
     let footer = if is_armed {
         "Press ctrl+d again to confirm".to_string()
+    } else if !entry.catalog.is_resumable {
+        entry
+            .catalog
+            .resume_disabled_reason
+            .clone()
+            .unwrap_or_else(|| "unavailable".to_string())
     } else {
-        match app.startup_launcher_action {
-            crate::app::StartupLauncherAction::ContinueSession if !entry.catalog.is_resumable => {
-                entry
-                    .catalog
-                    .resume_disabled_reason
-                    .clone()
-                    .unwrap_or_else(|| "continue unavailable".to_string())
-            }
-            crate::app::StartupLauncherAction::ContinueSession => "continue ready".to_string(),
-            crate::app::StartupLauncherAction::ReplaySession => "replay ready".to_string(),
-            crate::app::StartupLauncherAction::NewSession => session_history_footer_label(entry),
-        }
+        session_history_footer_label(entry)
     };
     let footer_width = footer.chars().count();
     let title_padding = 1usize;
@@ -672,8 +667,12 @@ fn session_history_row(
     Line::from(spans)
 }
 
-fn session_history_row_style(theme: &Theme, _selected: bool) -> Style {
-    Style::default().bg(ui_chrome::command_palette_surface(theme))
+fn session_history_row_style(theme: &Theme, selected: bool) -> Style {
+    if selected {
+        Style::default().bg(theme.surface.panel_elevated)
+    } else {
+        Style::default().bg(ui_chrome::command_palette_surface(theme))
+    }
 }
 
 fn render_session_history_actions(frame: &mut Frame, theme: &Theme, area: Rect) {
@@ -686,13 +685,13 @@ fn render_session_history_actions(frame: &mut Frame, theme: &Theme, area: Rect) 
     let key = Style::default().add_modifier(Modifier::BOLD);
     let spans = vec![
         Span::styled("↑↓".to_string(), key),
-        Span::styled(" nav  |  ".to_string(), muted),
+        Span::styled(" nav | ".to_string(), muted),
         Span::styled("e".to_string(), key),
-        Span::styled(" expand  |  ".to_string(), muted),
+        Span::styled(" expand | ".to_string(), muted),
         Span::styled("/".to_string(), key),
-        Span::styled(" search  |  ".to_string(), muted),
+        Span::styled(" search | ".to_string(), muted),
         Span::styled("f".to_string(), key),
-        Span::styled(" filter  |  ".to_string(), muted),
+        Span::styled(" filter | ".to_string(), muted),
         Span::styled("d".to_string(), key),
         Span::styled(" delete".to_string(), muted),
     ];

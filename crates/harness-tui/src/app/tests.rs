@@ -413,6 +413,7 @@ fn transcript_selection_test_app_with_text(transcript_text: &str) -> AppState {
         thinking_first_mono_ms: None,
         thinking_last_mono_ms: None,
         transcript_text: transcript_text.to_string(),
+        first_delta_mono_ms: None,
         usage: None,
         cache_usage: None,
         error_message: None,
@@ -422,6 +423,7 @@ fn transcript_selection_test_app_with_text(transcript_text: &str) -> AppState {
         last_seq: 2,
         first_mono_ms: 1,
         last_mono_ms: 2,
+        request_started_mono_ms: None,
         revision: 0,
     }]);
     app.transcript_view.selected_activity_index = 0;

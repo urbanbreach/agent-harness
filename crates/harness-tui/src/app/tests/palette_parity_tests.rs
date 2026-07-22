@@ -221,6 +221,9 @@ pub(super) fn palette_harness_only_commands_are_prefixed() {
 pub(super) fn palette_toggle_commands_use_dynamic_titles() {
     let mut app = AppState::new_live(None, false, None);
     open_palette(&mut app);
+    for ch in "timestamps".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
 
     let has_collapse = app.palette_filtered.iter().any(|c| {
         if let Some(entry) = palette_model::find(c) {
@@ -231,7 +234,7 @@ pub(super) fn palette_toggle_commands_use_dynamic_titles() {
     });
     assert!(
         has_collapse,
-        "palette should contain dynamic toggle commands"
+        "palette should contain dynamic toggle commands when filtered"
     );
 }
 
@@ -265,10 +268,12 @@ pub(super) fn palette_no_split_show_hide_entries() {
         "session.toggle.actions",
         "session.toggle.generic_tool_output",
     ];
-    for toggle_id in &dynamic_toggle_ids {
+    let toggle_filters = ["thinking", "timestamps", "tool details", "generic tool"];
+    for (toggle_id, filter) in dynamic_toggle_ids.iter().zip(toggle_filters.iter()) {
+        let toggle_rows = palette_controller::compute_palette_rows(&app, filter);
         assert!(
-            app.palette_filtered.contains(&toggle_id.to_string()),
-            "palette should contain dynamic toggle ID: {toggle_id}"
+            toggle_rows.iter().any(|r| r.command_id == *toggle_id),
+            "palette should contain dynamic toggle ID {toggle_id} via filter '{filter}'"
         );
     }
 }
@@ -569,10 +574,12 @@ pub(super) fn palette_state_live_session_idle() {
     assert_excluded_absent(&app);
     assert_hidden_non_targets_absent(&app);
     assert!(app.palette_filtered.contains(&"session.new".to_string()));
+    let thinking_rows = palette_controller::compute_palette_rows(&app, "thinking");
     assert!(
-        app.palette_filtered
-            .contains(&"session.toggle.thinking".to_string()),
-        "toggle thinking should be available in live session empty-filter inventory"
+        thinking_rows
+            .iter()
+            .any(|r| r.command_id == "session.toggle.thinking"),
+        "toggle thinking should be available via filter in live session"
     );
     let exit_rows = palette_controller::compute_palette_rows(&app, "exit");
     assert!(
@@ -1166,6 +1173,14 @@ pub(super) fn palette_exact_dispatch_targets() {
         ),
         ("model.list", PaletteDispatch::OpenModelSwitcher),
         ("agent.list", PaletteDispatch::OpenModelSwitcher),
+        ("model.always_approve", PaletteDispatch::OpenTogglesMenu),
+        (
+            "model.multiline",
+            PaletteDispatch::Action(Action::InsertNewline),
+        ),
+        ("tools.hooks", PaletteDispatch::OpenTogglesMenu),
+        ("tools.plugins", PaletteDispatch::OpenTogglesMenu),
+        ("tools.marketplace", PaletteDispatch::Action(Action::Help)),
         (
             "variant.cycle",
             PaletteDispatch::Action(Action::VariantCycle),

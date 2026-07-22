@@ -17,6 +17,8 @@ use crate::{CliDeps, CliIo};
 mod login;
 #[path = "auth_cmd/prompt_ui.rs"]
 mod prompt_ui;
+#[path = "auth_cmd/sleep_wake.rs"]
+mod sleep_wake;
 #[path = "auth_cmd/support.rs"]
 mod support;
 
@@ -30,6 +32,7 @@ use self::prompt_ui::{
     auth_prompt_io_error, clack_intro, clack_outro, prompt_auth_provider, prompt_input,
     prompt_login_method, run_prompts, AuthInteractiveError,
 };
+use self::sleep_wake::{run_sleep_wake_simulate, SleepWakeSimulateCommand};
 pub(crate) use self::support::auth_statuses;
 use self::support::{
     credential_store_from_deps, credential_store_or_error, load_optional_config, non_empty,
@@ -50,6 +53,8 @@ enum AuthSubcommand {
     Login(AuthLoginCommand),
     /// Remove stored credentials for an auth provider without editing config or env.
     Logout(AuthLogoutCommand),
+    /// Simulate a host sleep/wake event and evaluate the credential-refresh decision.
+    SleepWakeSimulate(SleepWakeSimulateCommand),
 }
 
 #[derive(Debug, Args, Clone, Default)]
@@ -164,6 +169,7 @@ pub(crate) fn execute_with_io(
         AuthSubcommand::Logout(command) => {
             execute_logout(command, config_path, session_dir, io, deps)
         }
+        AuthSubcommand::SleepWakeSimulate(command) => run_sleep_wake_simulate(command, io, deps),
     }
 }
 

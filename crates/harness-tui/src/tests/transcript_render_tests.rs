@@ -216,6 +216,7 @@ pub(super) fn module_transcript_edit_tool_wide_diff_uses_syntax_highlighting_and
         thinking_first_mono_ms: None,
         thinking_last_mono_ms: None,
         transcript_text: String::new(),
+        first_delta_mono_ms: None,
         usage: None,
         cache_usage: None,
         error_message: None,
@@ -225,6 +226,7 @@ pub(super) fn module_transcript_edit_tool_wide_diff_uses_syntax_highlighting_and
         last_seq: 11,
         first_mono_ms: 10,
         last_mono_ms: 11,
+        request_started_mono_ms: None,
         revision: 0,
     };
     entry.tool_calls.push(crate::app::ToolCallEntry {

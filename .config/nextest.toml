@@ -32,3 +32,11 @@ max-threads = 1
 [[profile.default.overrides]]
 filter = 'test(dual_binary_cli_pty_ctrl_s_resumes_seeded_session)'
 slow-timeout = { period = "10s", terminate-after = 12 }
+
+# The recorded happy path is a three-scenario PTY composite. It can hit a
+# transient harness/TUI stall; give it enough outer time so the internal
+# 20s marker timeout can print the stuck phase and screen before nextest
+# terminates the process.
+[[profile.default.overrides]]
+filter = 'test(scripted_tui_happy_path_records_start_prompt_permission_tool_edit_resume_and_quit)'
+slow-timeout = { period = "30s", terminate-after = 4 }

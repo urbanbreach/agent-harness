@@ -1782,11 +1782,15 @@ impl AppState {
     /// sandbox FS plan (plan-only, not enforcement), optional crash-scan summary, and optional
     /// foreign-discover summary. Does not claim product install, jj workflows, OS sandbox
     /// confinement, recovery UX, or import ownership.
+    ///
+    /// Test-only: writes synthetic fixtures and must never be reachable from production TUI startup.
+    #[cfg(test)]
     pub fn seed_operator_host_probes(&mut self, workspace_root: Option<&std::path::Path>) {
         self.seed_operator_host_probes_with_roots(workspace_root, None, None);
     }
 
-    /// Seed host/session probes with explicit optional roots (tests + runtime).
+    /// Seed host/session probes with explicit optional roots (tests only).
+    #[cfg(test)]
     #[allow(
         clippy::expect_used,
         clippy::missing_panics_doc,

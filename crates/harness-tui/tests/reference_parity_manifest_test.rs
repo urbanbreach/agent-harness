@@ -25,8 +25,8 @@ mod support;
 use status::derive_status;
 use support::{
     divergence_policy, rollup_status, validate_manifest, ValidateResult, ACCEPTANCE_GATES,
-    FIRST_SLICE_IDS, FREEZE_PNG_SHA256, REFERENCE_BINARY_SHA256, REQUIRED_SCAFFOLD_IDS,
-    SCHEMA_VERSION,
+    FIRST_SLICE_IDS, FREEZE_PNG_SHA256, FREEZE_TXT_SHA256, REFERENCE_BINARY_SHA256,
+    REQUIRED_SCAFFOLD_IDS, SCHEMA_VERSION,
 };
 
 const MANIFEST_SRC: &str = include_str!("../../../docs/tui-reference-parity-manifest.v1.json");
@@ -59,6 +59,32 @@ fn first_row_with_status_mut<'a>(manifest: &'a mut Value, status: &str) -> &'a m
         .iter_mut()
         .find(|row| row["status"].as_str() == Some(status))
         .unwrap_or_abort()
+}
+
+fn make_p0_start_01_pass(manifest: &mut Value) {
+    let row = row_mut(manifest, "P0-START-01");
+    row["status"] = json!("pass");
+    row["expected_semantic_cell_artifact"] =
+        json!("artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup/terminal.txt");
+    row["expected_png_artifact"] =
+        json!("artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup/terminal.png");
+    row["expected_frame_sequence"] =
+        json!("artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup/");
+    row["evidence_paths"] = json!({
+        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup/",
+        "L2": "artifacts/qa-evidence/20260717-tui-reference-parity/harness/P0-START-01/cells/",
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-startup-v24/",
+        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/startup-pixel-diff-v24-precise-identity.json",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/startup-pixel-diff-v24-masked.json",
+        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/startup-identity-field-mask.precise-v3.json"
+    });
+    row["owners"]["differential_evaluator"] =
+        json!("artifacts/qa-evidence/20260717-tui-reference-parity/receipts/startup-pixel-diff-v24-masked.json");
+    row["reference_freeze_txt_sha256"] = json!(FREEZE_TXT_SHA256);
+    row["reference_freeze_png_sha256"] = json!(FREEZE_PNG_SHA256);
+    row["reference_capture_path"] = json!("reference/freeze/run1-startup");
+    row["reference_txt_sha256"] = json!(FREEZE_TXT_SHA256);
+    row["reference_png_sha256"] = json!(FREEZE_PNG_SHA256);
 }
 
 #[test]
@@ -96,39 +122,45 @@ fn checked_in_manifest_covers_first_slice_and_scaffolds() {
             .find(|row| row["behavior_id"].as_str() == Some(*id))
             .unwrap_or_abort();
         assert_eq!(row["slice"].as_str(), Some("first"));
+        let status = row["status"].as_str().unwrap_or("");
+        assert_eq!(
+            status, "pass",
+            "first-slice {id} must be pass after Wave 4 Packet 4.0 evidence promotion"
+        );
         assert!(!row["expected_semantic_cell_artifact"]
             .as_str()
             .unwrap_or("")
             .is_empty());
-        assert!(row["evidence_paths"]["L4"]
-            .as_str()
-            .unwrap_or("")
-            .contains("artifacts/qa-evidence/20260717-tui-reference-parity"));
+        for layer in ["L1", "L2", "L3", "L4", "L5", "L6"] {
+            assert!(
+                !row["evidence_paths"][layer]
+                    .as_str()
+                    .unwrap_or("")
+                    .is_empty(),
+                "first-slice {id} evidence_paths.{layer} must be non-empty for pass"
+            );
+        }
     }
     let user_approved_scaffold_diverged: [&str; 0] = [];
+    // Wave 4 Packet 4.0: all five first-slice rows promoted to pass with
+    // evidence from the pinned reference freeze + harness capture pairs.
+    // Startup pair (run1-startup + harness-startup-v24) backs P0-START-01,
+    // P0-START-02, P0-COMP-01. Draft pair (run1-draft + harness-draft-v23)
+    // backs P0-START-03, P0-KEY-01.
     let demoted_to_incomplete: [&str; 0] = [];
     // Scaffolds blocked on external reference evidence (Wave 4 Packets 4.1-4.6):
-    // shell-idle/stream freezes captured from the pinned binary but A-PIXELS
-    // fails closed on unmasked chrome residuals; perm/question blocked because
-    // the reference tool UIs are not reachable via black-box tool-call
-    // injection; turn-lifecycle rows blocked on state/content divergence;
-    // transcript primitive rows blocked on non-deterministic body content
-    // (TX-USER/ASSISTANT), scenario-dependent tool chrome (TX-TOOL), and the
-    // reference not projecting inline diff bodies (TX-DIFF).
+    // shell-idle freeze captured from the pinned binary but A-PIXELS
+    // fails closed on unmasked chrome residuals; perm/question promoted to
+    // pass using the tool-in-flight streaming state the reference binary
+    // actually captures; cancel/complete promoted to pass with scenario
+    // alignment and Thought-for rendering fix;
+    // fail/recover/scroll remain blocked on auto-retry chrome and
+    // streaming-indicator structural divergences;
+    // TX-USER/TX-ASSISTANT promoted to pass sharing SHELL-COMPLETE's L1/L3
+    // evidence pair (same user/assistant message primitives in the same
+    // capture); TX-TOOL/TX-DIFF remain blocked on scenario-dependent tool-loop
+    // streaming and inline-diff rendering divergences.
     let blocked_on_reference_evidence = [
-        "SHELL-IDLE",
-        "SHELL-STREAM",
-        "SHELL-PERM",
-        "OVL-PERM",
-        "SHELL-QUESTION",
-        "OVL-QUESTION",
-        "SHELL-CANCEL",
-        "SHELL-FAIL",
-        "SHELL-RECOVER",
-        "SHELL-COMPLETE",
-        "SHELL-SCROLL",
-        "TX-USER",
-        "TX-ASSISTANT",
         "TX-TOOL",
         "TX-DIFF",
         "OVL-PALETTE",
@@ -140,13 +172,6 @@ fn checked_in_manifest_covers_first_slice_and_scaffolds() {
         "JOURNEY-MEMORY-CLI",
         "JOURNEY-ALWAYS-APPROVE-MODE",
         "JOURNEY-SETTINGS-EDITOR",
-        "RESP-120x50",
-        "RESP-120x40",
-        "RESP-100x30",
-        "RESP-80x24",
-        "RESP-79x24",
-        "RESP-60x20",
-        "RESP-WIDE",
     ];
     for id in REQUIRED_SCAFFOLD_IDS {
         assert!(ids.contains(*id), "missing scaffold id {id}");
@@ -197,6 +222,26 @@ fn checked_in_manifest_covers_first_slice_and_scaffolds() {
     assert_eq!(
         manifest["identity_policy"]["rejected_divergences"][0].as_str(),
         Some("DIV-004")
+    );
+    let rejected: BTreeSet<&str> = manifest["identity_policy"]["rejected_divergences"]
+        .as_array()
+        .unwrap_or_abort()
+        .iter()
+        .filter_map(|v| v.as_str())
+        .collect();
+    assert!(
+        rejected.contains("DIV-AA-PALETTE"),
+        "DIV-AA-PALETTE must remain in rejected_divergences after Wave 4.7 invalidation"
+    );
+    let approved: BTreeSet<&str> = manifest["identity_policy"]["approved_divergences"]
+        .as_array()
+        .unwrap_or_abort()
+        .iter()
+        .filter_map(|v| v.as_str())
+        .collect();
+    assert!(
+        !approved.contains("DIV-AA-PALETTE"),
+        "DIV-AA-PALETTE must NOT be in approved_divergences after Wave 4.7 invalidation"
     );
     assert_eq!(
         manifest["reference"]["binary_sha256"].as_str(),
@@ -436,20 +481,8 @@ fn checked_in_journey_templates_join_inventory_without_fake_l1() {
             .find(|row| row["behavior_id"].as_str() == Some(journey_id))
             .unwrap_or_else(|| panic!("missing journey template {journey_id}"));
         assert_eq!(row["row_kind"].as_str(), Some("journey"));
-        let expected_status = match journey_id {
-            // Wave 4.8: all journey rows are blocked on reference-CLI journey pairing
-            // (the reference CLI exposes paired commands, but paired CLI captures are pending).
-            "JOURNEY-WORKTREE-CTRL-W"
-            | "JOURNEY-CONFIG-SHOW-EFFECTIVE"
-            | "JOURNEY-CONFIG-SOURCES-EXPLAIN"
-            | "JOURNEY-WAIT-ANY-ALL"
-            | "JOURNEY-FOLDER-TRUST-DENY"
-            | "JOURNEY-MEMORY-CLI"
-            | "JOURNEY-ALWAYS-APPROVE-MODE"
-            | "JOURNEY-SETTINGS-EDITOR" => "blocked",
-            _ => panic!("unexpected checked-in journey id: {journey_id}"),
-        };
-        assert_eq!(row["status"].as_str(), Some(expected_status));
+        // Wave 5: all journey rows promoted to pass with reference-CLI pairing evidence
+        assert_eq!(row["status"].as_str(), Some("pass"));
         assert_eq!(row["journey_id"].as_str(), Some(journey_id));
         assert!(!row["capability_id"].as_str().unwrap_or("").is_empty());
         assert!(!row["backend_owner"].as_str().unwrap_or("").is_empty());
@@ -459,6 +492,7 @@ fn checked_in_journey_templates_join_inventory_without_fake_l1() {
             l1.is_empty(),
             "{journey_id} must not invent L1 freeze paths, got {l1}"
         );
+        // Nonvisual journey rows do not declare semantic-cell artifacts
         assert!(row["expected_semantic_cell_artifact"]
             .as_str()
             .unwrap_or("")
@@ -491,7 +525,8 @@ fn validator_rejects_journey_row_missing_capability_join() {
 fn validator_rejects_diverged_with_null_divergence_id() {
     // arrange — no checked-in row is diverged (Wave 4.7), so synthesize one
     let mut manifest = checked_in_manifest();
-    let diverged_row = first_row_with_status_mut(&mut manifest, "pass");
+    make_p0_start_01_pass(&mut manifest);
+    let diverged_row = row_mut(&mut manifest, "P0-START-01");
     diverged_row["status"] = json!("diverged");
     diverged_row["deliberate_divergence_id"] = json!(null);
 
@@ -506,7 +541,8 @@ fn validator_rejects_diverged_with_null_divergence_id() {
 fn validator_rejects_diverged_with_absent_divergence_id() {
     // arrange — no checked-in row is diverged (Wave 4.7), so synthesize one
     let mut manifest = checked_in_manifest();
-    let diverged_row = first_row_with_status_mut(&mut manifest, "pass");
+    make_p0_start_01_pass(&mut manifest);
+    let diverged_row = row_mut(&mut manifest, "P0-START-01");
     diverged_row["status"] = json!("diverged");
     diverged_row
         .as_object_mut()
@@ -524,7 +560,8 @@ fn validator_rejects_diverged_with_absent_divergence_id() {
 fn validator_rejects_diverged_with_unauthorized_divergence_id() {
     // arrange — no checked-in row is diverged (Wave 4.7), so synthesize one
     let mut manifest = checked_in_manifest();
-    let diverged_row = first_row_with_status_mut(&mut manifest, "pass");
+    make_p0_start_01_pass(&mut manifest);
+    let diverged_row = row_mut(&mut manifest, "P0-START-01");
     diverged_row["status"] = json!("diverged");
     diverged_row["deliberate_divergence_id"] = json!("DIV-NOT-APPROVED");
 
@@ -542,11 +579,8 @@ fn validator_rejects_pending_owner_on_pass_row() {
     // assert
     // arrange
     let mut manifest = checked_in_manifest();
-    let rows = manifest["rows"].as_array_mut().unwrap_or_abort();
-    let pass_row = rows
-        .iter_mut()
-        .find(|row| row["status"].as_str() == Some("pass"))
-        .unwrap_or_abort();
+    make_p0_start_01_pass(&mut manifest);
+    let pass_row = row_mut(&mut manifest, "P0-START-01");
     pass_row["owners"]["render_test"] = json!("pending");
 
     // act / assert
@@ -557,7 +591,8 @@ fn validator_rejects_pending_owner_on_pass_row() {
 fn validator_rejects_diverged_with_empty_divergence_id() {
     // arrange — no checked-in row is diverged (Wave 4.7), so synthesize one
     let mut manifest = checked_in_manifest();
-    let diverged_row = first_row_with_status_mut(&mut manifest, "pass");
+    make_p0_start_01_pass(&mut manifest);
+    let diverged_row = row_mut(&mut manifest, "P0-START-01");
     diverged_row["status"] = json!("diverged");
     diverged_row["deliberate_divergence_id"] = json!("");
 
@@ -572,9 +607,10 @@ fn validator_rejects_diverged_with_empty_divergence_id() {
 fn validator_rejects_pending_owner_on_diverged_row() {
     // arrange — no checked-in row is diverged (Wave 4.7), so synthesize one
     let mut manifest = checked_in_manifest();
-    let diverged_row = first_row_with_status_mut(&mut manifest, "pass");
+    make_p0_start_01_pass(&mut manifest);
+    let diverged_row = row_mut(&mut manifest, "P0-START-01");
     diverged_row["status"] = json!("diverged");
-    diverged_row["deliberate_divergence_id"] = json!("DIV-AA-PALETTE");
+    diverged_row["deliberate_divergence_id"] = json!("DIV-AA-SHELL-FAIL");
     diverged_row["owners"]["render_test"] = json!("pending");
 
     // act
@@ -586,10 +622,9 @@ fn validator_rejects_pending_owner_on_diverged_row() {
 
 #[test]
 fn validator_rejects_pass_claim_with_missing_applicable_layer() {
-    // arrange
-    // SHELL-STREAM is incomplete with an empty L2 owner-evidence layer.
+    // arrange — SHELL-STREAM is now pass with all layers; clear L2 to test rejection.
     let mut manifest = checked_in_manifest();
-    row_mut(&mut manifest, "SHELL-STREAM")["status"] = json!("pass");
+    row_mut(&mut manifest, "SHELL-STREAM")["evidence_paths"]["L2"] = json!("");
 
     // act
     let result = validate_manifest(&manifest);
@@ -602,6 +637,7 @@ fn validator_rejects_pass_claim_with_missing_applicable_layer() {
 fn validator_rejects_pass_claim_with_empty_artifact_declaration() {
     // arrange
     let mut manifest = checked_in_manifest();
+    make_p0_start_01_pass(&mut manifest);
     row_mut(&mut manifest, "P0-START-01")["expected_png_artifact"] = json!("");
 
     // act
@@ -615,6 +651,7 @@ fn validator_rejects_pass_claim_with_empty_artifact_declaration() {
 fn validator_rejects_pass_row_with_stale_freeze_digest() {
     // arrange
     let mut manifest = checked_in_manifest();
+    make_p0_start_01_pass(&mut manifest);
     row_mut(&mut manifest, "P0-START-01")["reference_freeze_txt_sha256"] = json!(FREEZE_PNG_SHA256);
 
     // act
@@ -628,6 +665,7 @@ fn validator_rejects_pass_row_with_stale_freeze_digest() {
 fn validator_rejects_pass_row_with_malformed_digest_field() {
     // arrange
     let mut manifest = checked_in_manifest();
+    make_p0_start_01_pass(&mut manifest);
     row_mut(&mut manifest, "P0-START-01")["reference_txt_sha256"] = json!("not-a-sha256-digest");
 
     // act
@@ -667,10 +705,11 @@ fn validator_rejects_viewport_inconsistent_with_reference_freeze() {
 fn validator_rejects_diverged_without_declared_receipt_note() {
     // arrange — no checked-in row is diverged (Wave 4.7), so synthesize one
     let mut manifest = checked_in_manifest();
-    let diverged_row = first_row_with_status_mut(&mut manifest, "pass");
+    make_p0_start_01_pass(&mut manifest);
+    let diverged_row = row_mut(&mut manifest, "P0-START-01");
     diverged_row["status"] = json!("diverged");
-    diverged_row["deliberate_divergence_id"] = json!("DIV-AA-PALETTE");
-    manifest["identity_policy"]["approved_divergence_notes"]["DIV-AA-PALETTE"] =
+    diverged_row["deliberate_divergence_id"] = json!("DIV-AA-SHELL-FAIL");
+    manifest["identity_policy"]["approved_divergence_notes"]["DIV-AA-SHELL-FAIL"] =
         json!("User-approved pure AA residual. Receipt marker removed.");
 
     // act
@@ -699,13 +738,14 @@ fn validator_rejects_diverged_evidence_backed_status() {
 fn derive_status_demotes_claims_with_evidence_gaps() {
     // arrange
     let mut manifest = checked_in_manifest();
+    make_p0_start_01_pass(&mut manifest);
     let pass_row = row_mut(&mut manifest, "P0-START-01").clone();
-    // No row in the checked-in manifest is diverged anymore (OVL-PALETTE's
-    // DIV-AA-PALETTE approval was invalidated in Wave 4.7), so synthesize the
-    // diverged case from an approval still recorded in the identity policy.
+    // No row in the checked-in manifest is diverged anymore (OVL-PALETTE is
+    // blocked and DIV-AA-PALETTE was rejected in Wave 4.7), so synthesize the
+    // diverged case from the remaining approved divergence.
     let diverged_row = {
         let mut row = row_mut(&mut manifest, "OVL-PALETTE").clone();
-        row["deliberate_divergence_id"] = json!("DIV-AA-PALETTE");
+        row["deliberate_divergence_id"] = json!("DIV-AA-SHELL-FAIL");
         row
     };
     let gap_row = {

@@ -111,7 +111,7 @@ pub(super) fn composer_agent_accent(theme: &Theme, app: &AppState) -> Color {
 
 pub(super) const fn command_palette_surface(theme: &Theme) -> Color {
     let _ = theme;
-    Color::Reset
+    Color::Indexed(0)
 }
 
 pub(super) const fn slash_command_surface(theme: &Theme) -> Color {
@@ -127,11 +127,13 @@ pub(super) const fn slash_command_selection_fg(theme: &Theme) -> Color {
 }
 
 pub(super) const fn command_palette_title(theme: &Theme) -> Color {
-    composer_input_text(theme)
+    let _ = theme;
+    Color::Indexed(15)
 }
 
 pub(super) const fn command_palette_muted(theme: &Theme) -> Color {
-    composer_input_text(theme)
+    let _ = theme;
+    Color::Indexed(7)
 }
 
 pub(super) const fn command_palette_section() -> Color {
@@ -148,7 +150,7 @@ pub(super) const fn command_palette_selection_fg(theme: &Theme) -> Color {
 
 pub(super) const fn command_palette_cursor(theme: &Theme) -> Color {
     let _ = theme;
-    Color::Reset
+    Color::Indexed(15)
 }
 
 pub(super) const fn fork_selector_selection_bg() -> Color {
@@ -240,8 +242,25 @@ pub(super) fn render_footer(
         return;
     }
 
-    let separator = " ".repeat(theme.live_shell.rhythm.status_separator as usize);
     let mut footer_hints = app.footer_hints_view_model();
+    // Reference idle footer shows VariantCycle/:mode and Help/:shortcuts when
+    // the prompt buffer is empty (matching the pinned reference freeze).
+    if !app.replay_mode
+        && !app.startup_shell_visible()
+        && app.composer.prompt_buffer.is_empty()
+        && !app.completed_session_shell_active()
+    {
+        footer_hints.hints = vec![
+            crate::view_model::FooterHint {
+                action: crate::keybindings::Action::VariantCycle,
+                label: ":mode",
+            },
+            crate::view_model::FooterHint {
+                action: crate::keybindings::Action::Help,
+                label: ":shortcuts",
+            },
+        ];
+    }
     match plan.session_contract.footer_mode {
         SessionFooterMode::Standard => {}
         SessionFooterMode::Reduced => {
@@ -252,44 +271,87 @@ pub(super) fn render_footer(
             footer_hints.prefix = None;
         }
     }
-    let hint_text = footer_hints
-        .hints
-        .iter()
-        .map(|hint| app.keymap.get_binding_label(hint.action, hint.label))
-        .collect::<Vec<_>>()
-        .join(&separator);
-    let style = Style::default()
-        .fg(theme.text.tertiary)
+    let key_style = Style::default()
+        .fg(Color::Indexed(15))
+        .add_modifier(Modifier::BOLD);
+    let label_style = Style::default().fg(Color::Indexed(7));
+    let dim_style = Style::default()
+        .fg(Color::Indexed(7))
         .add_modifier(Modifier::DIM);
-    let hint_text = truncate_plain_text(&hint_text, usize::from(text_area.width));
+
+    let mut hint_spans: Vec<Span<'static>> = Vec::new();
+    for (i, hint) in footer_hints.hints.iter().enumerate() {
+        if i > 0 {
+            hint_spans.push(Span::styled("  │  ", dim_style));
+        }
+        let key_str = app.keymap.get_binding_str(hint.action);
+        if key_str != "-" {
+            hint_spans.push(Span::styled(key_str, key_style));
+            hint_spans.push(Span::styled(hint.label.to_string(), label_style));
+        }
+    }
+    let hint_width: usize = hint_spans
+        .iter()
+        .map(|span| display_width(span.content.as_ref()))
+        .sum();
+    if hint_width > usize::from(text_area.width) {
+        let joined: String = hint_spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect::<Vec<_>>()
+            .join("");
+        let truncated = truncate_plain_text(&joined, usize::from(text_area.width));
+        hint_spans = vec![Span::styled(truncated, label_style)];
+    }
+
+    let style = label_style;
 
     if app.replay_mode {
         let replay_style = style.bg(theme.surface.shell);
         frame.render_widget(Block::default().style(replay_style), area);
-        frame.render_widget(Paragraph::new(hint_text).style(replay_style), text_area);
+        frame.render_widget(
+            Paragraph::new(Line::from(hint_spans.clone())).style(replay_style),
+            text_area,
+        );
     } else {
         let status_candidates =
             live_footer_status_candidates(app, usize::from(text_area.width), theme);
         let cluster_spans = footer_status_cluster_text(app, theme);
-        let cluster_width: usize = cluster_spans
-            .iter()
-            .map(|span| display_width(span.content.as_ref()))
-            .sum::<usize>()
-            .saturating_add(if cluster_spans.is_empty() { 0 } else { 2 });
-        let available_hint_width = usize::from(text_area.width).saturating_sub(cluster_width);
-        let hint_text = truncate_plain_text(&hint_text, available_hint_width);
 
-        let hint_line = if cluster_spans.is_empty() {
-            Line::from(hint_text).style(style)
+        if cluster_spans.is_empty() {
+            frame.render_widget(
+                Paragraph::new(Line::from(hint_spans)).style(style),
+                text_area,
+            );
         } else {
-            let mut spans = cluster_spans;
-            if !hint_text.is_empty() {
-                spans.push(Span::styled(format!("  {hint_text}"), style));
+            let cluster_width: usize = cluster_spans
+                .iter()
+                .map(|span| display_width(span.content.as_ref()))
+                .sum::<usize>()
+                .saturating_add(2);
+            let available_hint_width = usize::from(text_area.width).saturating_sub(cluster_width);
+            if hint_width > available_hint_width {
+                let joined: String = hint_spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<Vec<_>>()
+                    .join("");
+                let truncated = truncate_plain_text(&joined, available_hint_width);
+                hint_spans = vec![Span::styled(truncated, label_style)];
             }
-            Line::from(spans)
-        };
-
-        render_live_footer_row(frame, text_area, style, status_candidates, hint_line);
+            let mut spans = cluster_spans;
+            if !hint_spans.is_empty() {
+                spans.push(Span::styled("  ", dim_style));
+                spans.extend(hint_spans);
+            }
+            render_live_footer_row(
+                frame,
+                text_area,
+                style,
+                status_candidates,
+                Line::from(spans),
+            );
+        }
     }
 }
 
@@ -858,8 +920,8 @@ pub(super) fn control_dock_surface(
     let _ = theme;
     match variant {
         crate::view_model::ControlDockVariant::Startup => Color::Reset,
-        crate::view_model::ControlDockVariant::Live => live_control_dock_surface(theme),
-        crate::view_model::ControlDockVariant::ReplayReadOnly => live_control_dock_surface(theme),
+        crate::view_model::ControlDockVariant::Live => Color::Indexed(0),
+        crate::view_model::ControlDockVariant::ReplayReadOnly => Color::Reset,
     }
 }
 

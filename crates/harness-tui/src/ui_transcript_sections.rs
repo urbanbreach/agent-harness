@@ -130,19 +130,12 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
 
     let thinking = thinking_visible
         .then(|| {
-            if activity_has_thinking_text(activity) {
+            if !activity.thinking_text.trim().is_empty()
+                || activity.thinking_duration_ms().is_some()
+            {
                 Some(TranscriptLabeledTextSection {
                     label: THINKING_TRACE_LABEL,
                     text: activity.thinking_text.clone(),
-                })
-            } else if matches!(activity.status, ActivityStatus::Done)
-                && activity.tool_calls.is_empty()
-            {
-                // Always-on Thought only for answer-only complete turns (Grok COMPLETE).
-                // Error/FAIL freezes are flat Retry failed — no empty Thought for.
-                Some(TranscriptLabeledTextSection {
-                    label: THINKING_TRACE_LABEL,
-                    text: String::new(),
                 })
             } else {
                 None
@@ -215,7 +208,17 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
             model_id: activity.model_id.clone(),
             duration_ms: activity.duration_ms(),
             thinking_duration_ms: activity.thinking_duration_ms(),
+            responding_duration_ms: activity.responding_duration_ms(),
             total_tokens: activity.usage.map(|usage| usage.total_tokens),
+            retry: activity
+                .request_data
+                .as_ref()
+                .and_then(|data| data.metadata.as_ref())
+                .and_then(|metadata| metadata.retry),
+            retry_elapsed_ms: activity
+                .request_started_mono_ms
+                .zip(activity.duration_ms())
+                .map(|(started, _)| activity.last_mono_ms.saturating_sub(started)),
         },
         body_blocks,
         tool_calls,
@@ -273,12 +276,14 @@ fn ensure_completed_thought_header(
     if !thinking_visible {
         return;
     }
-    // Grok COMPLETE always shows Thought; Grok FAIL (Error, no reasoning) is flat Retry failed.
-    // Error turns only keep Thought when real reasoning exists (e.g. cancel after thinking).
-    let always_on_complete = matches!(activity.status, ActivityStatus::Done);
-    let error_with_reasoning =
-        matches!(activity.status, ActivityStatus::Error) && activity_has_thinking_text(activity);
-    if !always_on_complete && !error_with_reasoning {
+    // Pinned reference freeze (run1-shell-complete-pinned-v1) does NOT show
+    // Thought for completed turns without reasoning deltas. Only add Thought
+    // when reasoning events were received or thinking text exists.
+    let has_reasoning =
+        !activity.thinking_text.trim().is_empty() || activity.thinking_duration_ms().is_some();
+    let complete_with_reasoning = matches!(activity.status, ActivityStatus::Done) && has_reasoning;
+    let error_with_reasoning = matches!(activity.status, ActivityStatus::Error) && has_reasoning;
+    if !complete_with_reasoning && !error_with_reasoning {
         return;
     }
     // Grok TOOL omits Thought when there was no reasoning.
@@ -310,24 +315,12 @@ fn sync_reasoning_parts_with_activity(
         return;
     }
 
-    if !activity_has_thinking_text(activity) {
-        // Always-on empty Thought only for Done (Grok COMPLETE). Error/FAIL is flat.
-        if matches!(activity.status, ActivityStatus::Done) && activity.tool_calls.is_empty() {
-            if !parts
-                .iter()
-                .any(|part| matches!(part, TranscriptAssistantPart::Reasoning(_)))
-            {
-                parts.insert(
-                    0,
-                    TranscriptAssistantPart::Reasoning(TranscriptLabeledTextSection {
-                        label: THINKING_TRACE_LABEL,
-                        text: String::new(),
-                    }),
-                );
-            }
-        } else {
-            parts.retain(|part| !matches!(part, TranscriptAssistantPart::Reasoning(_)));
-        }
+    let has_reasoning =
+        !activity.thinking_text.trim().is_empty() || activity.thinking_duration_ms().is_some();
+    if !has_reasoning {
+        // No reasoning events or thinking text — remove reasoning parts
+        // (pinned reference freeze does not show Thought for turns without reasoning).
+        parts.retain(|part| !matches!(part, TranscriptAssistantPart::Reasoning(_)));
         return;
     }
 

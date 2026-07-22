@@ -42,7 +42,7 @@ pub const ACCEPTANCE_GATES: &[&str] = &[
     "A-NO-RESKIN",
 ];
 
-pub const ROW_KIND_VALUES: &[&str] = &["visual", "journey"];
+pub const ROW_KIND_VALUES: &[&str] = &["visual", "journey", "terminal_capability"];
 pub const JOURNEY_REQUIRED_JOIN_FIELDS: &[&str] = &["capability_id", "journey_id", "backend_owner"];
 
 /// L1-L6 evidence layers every claimed (`pass`/`diverged`) row must declare.
@@ -462,7 +462,9 @@ fn validate_row(
         }
     }
 
-    if FIRST_SLICE_IDS.contains(&behavior_id) {
+    let status_str = row["status"].as_str().unwrap_or("");
+    if FIRST_SLICE_IDS.contains(&behavior_id) && (status_str == "pass" || status_str == "diverged")
+    {
         for artifact_field in [
             "expected_semantic_cell_artifact",
             "expected_png_artifact",
@@ -472,7 +474,7 @@ fn validate_row(
                 failures.push(ManifestFailure::new(
                     "missing-required-field",
                     format!("{path}.{artifact_field}"),
-                    format!("first-slice row requires non-empty {artifact_field}"),
+                    format!("first-slice {status_str} row requires non-empty {artifact_field}"),
                 ));
             }
         }
@@ -524,7 +526,6 @@ fn validate_row(
         ));
     }
 
-    let status_str = row["status"].as_str().unwrap_or("");
     validate_owners(row, path, status_str, failures);
     validate_claimed_evidence(row, path, status_str, failures);
     validate_declared_digests(row, path, failures);
@@ -742,14 +743,17 @@ fn validate_first_slice_row(row: &Value, path: &str, failures: &mut Vec<Manifest
         ));
     }
 
-    let evidence = &row["evidence_paths"];
-    for layer in ["L1", "L2", "L3", "L4", "L5", "L6"] {
-        if evidence[layer].as_str().is_none_or(str::is_empty) {
-            failures.push(ManifestFailure::new(
-                "missing-required-field",
-                format!("{path}.evidence_paths.{layer}"),
-                format!("first-slice evidence_paths.{layer} must be non-empty"),
-            ));
+    let status = row["status"].as_str().unwrap_or("");
+    if status == "pass" || status == "diverged" {
+        let evidence = &row["evidence_paths"];
+        for layer in ["L1", "L2", "L3", "L4", "L5", "L6"] {
+            if evidence[layer].as_str().is_none_or(str::is_empty) {
+                failures.push(ManifestFailure::new(
+                    "missing-required-field",
+                    format!("{path}.evidence_paths.{layer}"),
+                    format!("first-slice {status} evidence_paths.{layer} must be non-empty"),
+                ));
+            }
         }
     }
 

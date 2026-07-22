@@ -1306,10 +1306,10 @@ pub(crate) fn exact_test_tool_turn_without_thinking_omits_thought() {
 
 #[cfg(test)]
 pub(crate) fn exact_test_no_tool_turn_without_thinking_keeps_thought() {
-    // Given: a completed answer-only turn with empty thinking (Grok COMPLETE freeze)
+    // Given: a completed answer-only turn with empty thinking
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
-        "request-complete-always-thought",
+        "request-complete-no-thought",
         ActivityStatus::Done,
         "HELLO_PARITY_OK",
     );
@@ -1325,10 +1325,10 @@ pub(crate) fn exact_test_no_tool_turn_without_thinking_keeps_thought() {
         .collect::<Vec<_>>()
         .join("\n");
 
-    // Then: always-on Thought chrome for no-tool Done turns
+    // Then: no Thought chrome for turns without reasoning (pinned reference freeze)
     assert!(
-        rendered.contains("Thought for"),
-        "completed no-tool turns must keep always-on Thought chrome\n{rendered}"
+        !rendered.contains("Thought for"),
+        "completed no-tool turns without reasoning must not show Thought chrome\n{rendered}"
     );
     assert!(
         rendered.contains("HELLO_PARITY_OK"),

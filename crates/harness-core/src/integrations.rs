@@ -33,7 +33,8 @@ pub use plugin::{
     PluginDeactivateOutcome, PluginEnablement, PluginInstallOutcome, PluginLifecycleError,
     PluginLifecycleRegistry, PluginLifecycleSummary, PluginLoadKind, PluginLoadedCode,
     PluginRemoveOutcome, PLUGIN_ENTRY_FILE_NAME, PLUGIN_HOOKS_FILE_NAME,
-    PLUGIN_LOAD_RECEIPT_FILE_NAME, PLUGIN_MANIFEST_FILE_NAME, PLUGIN_SKILLS_DIR_NAME,
+    PLUGIN_LOAD_RECEIPT_FILE_NAME, PLUGIN_MANIFEST_FILE_NAME, PLUGIN_REGISTRY_REL,
+    PLUGIN_SKILLS_DIR_NAME,
 };
 pub use product::{
     run_mock_acp_agent_mode_product, run_multi_descriptor_discover_product,

@@ -36,26 +36,14 @@ pub(crate) fn session_history_current_marker(
 }
 
 pub(crate) fn session_history_category_label(entry: &SessionHistoryEntry) -> String {
-    let Some((year, month, day)) = entry
-        .catalog
-        .last_updated_at
-        .as_deref()
-        .and_then(session_history_date_parts)
-    else {
-        return "Unknown".to_string();
-    };
-
-    if current_utc_date() == Some((year, month, day)) {
-        return "Today".to_string();
+    if let Some(ws_root) = entry.catalog.workspace_root.as_deref() {
+        let project_name = std::path::Path::new(ws_root)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("Unknown");
+        return format!("Projects-{project_name}");
     }
-
-    format!(
-        "{} {} {:02} {}",
-        weekday_name(year, month, day),
-        month_name(month),
-        day,
-        year
-    )
+    "Unknown".to_string()
 }
 
 pub(crate) fn session_history_footer_label(entry: &SessionHistoryEntry) -> String {
@@ -63,7 +51,7 @@ pub(crate) fn session_history_footer_label(entry: &SessionHistoryEntry) -> Strin
         .catalog
         .last_updated_at
         .as_deref()
-        .map(session_history_time_label)
+        .map(relative_age_label)
         .unwrap_or_default()
 }
 
@@ -174,6 +162,64 @@ fn format_twelve_hour_time(hour: u8, minute: u8) -> String {
         hour => hour,
     };
     format!("{display_hour}:{minute:02} {suffix}")
+}
+
+fn relative_age_label(timestamp: &str) -> String {
+    if let Some(ts_seconds) = epoch_millis_seconds(timestamp) {
+        return format_relative_age(ts_seconds);
+    }
+    if let Some(seconds) = iso_to_epoch_seconds(timestamp) {
+        return format_relative_age(seconds);
+    }
+    short_time_or_trimmed(timestamp)
+}
+
+fn format_relative_age(ts_seconds: i64) -> String {
+    let now_seconds = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| i64::try_from(d.as_secs()).unwrap_or(0))
+        .unwrap_or(0);
+    let diff = now_seconds.saturating_sub(ts_seconds);
+    if diff < 60 {
+        "just now".to_string()
+    } else if diff < 3600 {
+        format!("{}m ago", diff / 60)
+    } else if diff < 86400 {
+        format!("{}h ago", diff / 3600)
+    } else if diff < 604_800 {
+        format!("{}d ago", diff / 86_400)
+    } else if diff < 2_592_000 {
+        format!("{}w ago", diff / 604_800)
+    } else if diff < 31_536_000 {
+        format!("{}mo ago", diff / 2_592_000)
+    } else {
+        format!("{}y ago", diff / 31_536_000)
+    }
+}
+
+fn iso_to_epoch_seconds(timestamp: &str) -> Option<i64> {
+    let trimmed = timestamp.trim();
+    let (year, month, day) = iso_date_parts(trimmed)?;
+    let hour = trimmed
+        .get(11..13)
+        .and_then(|h| h.parse::<u8>().ok())
+        .unwrap_or(0);
+    let minute = trimmed
+        .get(14..16)
+        .and_then(|m| m.parse::<u8>().ok())
+        .unwrap_or(0);
+    let second = trimmed
+        .get(17..19)
+        .and_then(|s| s.parse::<u8>().ok())
+        .unwrap_or(0);
+    let y = if month <= 2 { year - 1 } else { year };
+    let m = if month <= 2 { month + 9 } else { month - 3 };
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = y - era * 400;
+    let doy = (153 * i32::from(m) + 2) / 5 + i32::from(day) - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = i64::from(era) * 146_097 + i64::from(doe) - 719_468;
+    Some(days * 86_400 + i64::from(hour) * 3600 + i64::from(minute) * 60 + i64::from(second))
 }
 
 fn session_history_date_parts(timestamp: &str) -> Option<(i32, u8, u8)> {

@@ -1,0 +1,4 @@
+# Snapshot files capture terminal output which naturally includes trailing
+# whitespace (spaces filling the terminal width). Tell git to ignore
+# whitespace errors for these files so `git diff --check` stays clean.
+*.snap -whitespace

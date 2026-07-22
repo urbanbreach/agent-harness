@@ -30,7 +30,7 @@ mod support;
 
 use seed::seed_claimed_row_evidence;
 use status::{resolve_evidence_path, validate_manifest_evidence};
-use support::{divergence_receipt_path, ValidateResult};
+use support::{divergence_receipt_path, ValidateResult, FREEZE_PNG_SHA256, FREEZE_TXT_SHA256};
 
 const MANIFEST_SRC: &str = include_str!("../../../docs/tui-reference-parity-manifest.v1.json");
 
@@ -64,9 +64,36 @@ fn row_mut<'a>(manifest: &'a mut Value, behavior_id: &str) -> &'a mut Value {
         .unwrap_or_abort()
 }
 
+fn make_p0_start_01_pass(manifest: &mut Value) {
+    let row = row_mut(manifest, "P0-START-01");
+    row["status"] = json!("pass");
+    row["expected_semantic_cell_artifact"] =
+        json!("artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup/terminal.txt");
+    row["expected_png_artifact"] =
+        json!("artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup/terminal.png");
+    row["expected_frame_sequence"] =
+        json!("artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup/");
+    row["evidence_paths"] = json!({
+        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup/",
+        "L2": "artifacts/qa-evidence/20260717-tui-reference-parity/harness/P0-START-01/cells/",
+        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-startup-v24/",
+        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/startup-pixel-diff-v24-precise-identity.json",
+        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/startup-pixel-diff-v24-masked.json",
+        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/startup-identity-field-mask.precise-v3.json"
+    });
+    row["owners"]["differential_evaluator"] =
+        json!("artifacts/qa-evidence/20260717-tui-reference-parity/receipts/startup-pixel-diff-v24-masked.json");
+    row["reference_freeze_txt_sha256"] = json!(FREEZE_TXT_SHA256);
+    row["reference_freeze_png_sha256"] = json!(FREEZE_PNG_SHA256);
+    row["reference_capture_path"] = json!("reference/freeze/run1-startup");
+    row["reference_txt_sha256"] = json!(FREEZE_TXT_SHA256);
+    row["reference_png_sha256"] = json!(FREEZE_PNG_SHA256);
+}
+
 fn seeded_evidence_root() -> (tempfile::TempDir, Value) {
     let root = tempfile::tempdir().unwrap_or_abort();
     let mut manifest = checked_in_manifest();
+    make_p0_start_01_pass(&mut manifest);
     seed_claimed_row_evidence(root.path(), &mut manifest);
     (root, manifest)
 }
@@ -151,7 +178,7 @@ fn evidence_validator_rejects_missing_divergence_receipt_file() {
     let (root, mut manifest) = seeded_evidence_root();
     let diverged_row = row_mut(&mut manifest, "P0-START-01");
     diverged_row["status"] = json!("diverged");
-    diverged_row["deliberate_divergence_id"] = json!("DIV-AA-PALETTE");
+    diverged_row["deliberate_divergence_id"] = json!("DIV-AA-SHELL-FAIL");
 
     // act
     let result = validate_manifest_evidence(&manifest, root.path());

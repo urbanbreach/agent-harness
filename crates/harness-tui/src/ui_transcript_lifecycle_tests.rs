@@ -25,6 +25,7 @@ fn queued_runtime_status_without_pending_assistant_does_not_render_user_badge_or
             thinking_first_mono_ms: None,
             thinking_last_mono_ms: None,
             transcript_text: "done".to_string(),
+            first_delta_mono_ms: None,
             usage: None,
             cache_usage: None,
             error_message: None,
@@ -34,6 +35,7 @@ fn queued_runtime_status_without_pending_assistant_does_not_render_user_badge_or
             last_seq: 1,
             first_mono_ms: 1,
             last_mono_ms: 1,
+            request_started_mono_ms: None,
             revision: 0,
         },
         ActivityEntry {
@@ -52,6 +54,7 @@ fn queued_runtime_status_without_pending_assistant_does_not_render_user_badge_or
             thinking_first_mono_ms: None,
             thinking_last_mono_ms: None,
             transcript_text: String::new(),
+            first_delta_mono_ms: None,
             usage: None,
             cache_usage: None,
             error_message: None,
@@ -61,6 +64,7 @@ fn queued_runtime_status_without_pending_assistant_does_not_render_user_badge_or
             last_seq: 2,
             first_mono_ms: 2,
             last_mono_ms: 2,
+            request_started_mono_ms: None,
             revision: 0,
         },
     ]);
@@ -106,6 +110,7 @@ fn streaming_turn_with_own_user_message_does_not_render_queued_badge() {
         thinking_first_mono_ms: None,
         thinking_last_mono_ms: None,
         transcript_text: String::new(),
+        first_delta_mono_ms: None,
         usage: None,
         cache_usage: None,
         error_message: None,
@@ -115,6 +120,7 @@ fn streaming_turn_with_own_user_message_does_not_render_queued_badge() {
         last_seq: 1,
         first_mono_ms: 1,
         last_mono_ms: 1,
+        request_started_mono_ms: None,
         revision: 0,
     }]);
     app.transcript_view.selected_activity_index = 0;
@@ -158,6 +164,7 @@ fn queued_user_followup_keeps_active_footer_on_streaming_turn() {
             thinking_first_mono_ms: None,
             thinking_last_mono_ms: None,
             transcript_text: String::new(),
+            first_delta_mono_ms: None,
             usage: None,
             cache_usage: None,
             error_message: None,
@@ -167,6 +174,7 @@ fn queued_user_followup_keeps_active_footer_on_streaming_turn() {
             last_seq: 1,
             first_mono_ms: 1,
             last_mono_ms: 1,
+            request_started_mono_ms: None,
             revision: 0,
         },
         ActivityEntry {
@@ -185,6 +193,7 @@ fn queued_user_followup_keeps_active_footer_on_streaming_turn() {
             thinking_first_mono_ms: None,
             thinking_last_mono_ms: None,
             transcript_text: String::new(),
+            first_delta_mono_ms: None,
             usage: None,
             cache_usage: None,
             error_message: None,
@@ -194,6 +203,7 @@ fn queued_user_followup_keeps_active_footer_on_streaming_turn() {
             last_seq: 2,
             first_mono_ms: 2,
             last_mono_ms: 2,
+            request_started_mono_ms: None,
             revision: 0,
         },
     ]);
@@ -243,6 +253,7 @@ fn transcript_wrapping_respects_display_width_for_wide_glyphs() {
         thinking_first_mono_ms: None,
         thinking_last_mono_ms: None,
         transcript_text: "漢字🙂漢字🙂漢字🙂 漢字🙂漢字🙂漢字🙂 漢字🙂漢字🙂漢字🙂".to_string(),
+        first_delta_mono_ms: None,
         usage: None,
         cache_usage: None,
         error_message: None,
@@ -252,6 +263,7 @@ fn transcript_wrapping_respects_display_width_for_wide_glyphs() {
         last_seq: 1,
         first_mono_ms: 1,
         last_mono_ms: 1,
+        request_started_mono_ms: None,
         revision: 0,
     }]);
     app.transcript_view.selected_activity_index = 0;
@@ -293,6 +305,7 @@ fn transcript_selection_snapshot_cache_reuses_repeated_hit_tests() {
         thinking_first_mono_ms: None,
         thinking_last_mono_ms: None,
         transcript_text: "Cache this selection text across repeated hit tests".to_string(),
+        first_delta_mono_ms: None,
         usage: None,
         cache_usage: None,
         error_message: None,
@@ -302,6 +315,7 @@ fn transcript_selection_snapshot_cache_reuses_repeated_hit_tests() {
         last_seq: 2,
         first_mono_ms: 1,
         last_mono_ms: 2,
+        request_started_mono_ms: None,
         revision: 0,
     }]);
     app.transcript_view.selected_activity_index = 0;

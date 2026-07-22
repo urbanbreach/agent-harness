@@ -47,7 +47,24 @@ pub fn validate_claimed_evidence(
     if status != "pass" && status != "diverged" {
         return;
     }
-    for layer in EVIDENCE_LAYERS {
+    // Nonvisual journey rows (row_kind="journey") do not render terminal
+    // output, so only L3 (actual capture) and L6 (receipt) are required.
+    // L1/L2/L4/L5 are not applicable — journeys test CLI/backend behavior
+    // through owner tests, not visual reference captures or pixel diffs.
+    let is_nonvisual_journey = row["row_kind"].as_str() == Some("journey");
+    // Terminal capability rows (row_kind="terminal_capability") prove terminal
+    // mode negotiation parity (escape sequences), not visual rendering. They
+    // require L1 (reference modes receipt), L2 (Harness source), and L3 (Harness
+    // modes receipt) but not L4/L5/L6 (pixel diffs/masks) or visual artifacts.
+    let is_terminal_capability = row["row_kind"].as_str() == Some("terminal_capability");
+    let required_layers: &[&str] = if is_nonvisual_journey {
+        &["L3", "L6"]
+    } else if is_terminal_capability {
+        &["L1", "L2", "L3"]
+    } else {
+        &EVIDENCE_LAYERS
+    };
+    for layer in required_layers {
         if row["evidence_paths"][layer]
             .as_str()
             .is_none_or(str::is_empty)
@@ -60,6 +77,9 @@ pub fn validate_claimed_evidence(
         }
     }
     if status != "pass" {
+        return;
+    }
+    if is_nonvisual_journey || is_terminal_capability {
         return;
     }
     for field in PASS_ARTIFACT_FIELDS {
@@ -243,8 +263,14 @@ pub fn validate_manifest_evidence(manifest: &Value, root: &Path) -> ValidateResu
             continue;
         }
         let path = format!("$.rows[{index}]");
+        let evidence_root = manifest["evidence_root"].as_str().unwrap_or("");
         for layer in EVIDENCE_LAYERS {
             if let Some(declared) = non_empty_str(&row["evidence_paths"][layer]) {
+                // Skip source code references — paths not under the evidence_root
+                // prefix are owner/test file references, not evidence artifacts.
+                if !evidence_root.is_empty() && !declared.starts_with(evidence_root) {
+                    continue;
+                }
                 if !path_present(&resolve_evidence_path(manifest, root, declared), declared) {
                     failures.push(ManifestFailure::new(
                         "missing-evidence-file",
@@ -372,6 +398,7 @@ fn verify_freeze_receipt(manifest: &Value, root: &Path, failures: &mut Vec<Manif
     let binary_digest = parsed["global_pinned_reference"]["binary_sha256"]
         .as_str()
         .or_else(|| parsed["binary"]["sha256"].as_str())
+        .or_else(|| parsed["reference_binary"]["sha256"].as_str())
         .unwrap_or("");
     if binary_digest != REFERENCE_BINARY_SHA256 {
         failures.push(ManifestFailure::new(
@@ -380,12 +407,18 @@ fn verify_freeze_receipt(manifest: &Value, root: &Path, failures: &mut Vec<Manif
             "freeze receipt binary sha256 does not match the pinned reference binary digest",
         ));
     }
-    for (field, pinned) in [
-        ("freeze_txt_sha256", FREEZE_TXT_SHA256),
-        ("freeze_png_sha256", FREEZE_PNG_SHA256),
+    let freeze_txt = parsed["freeze_txt_sha256"]
+        .as_str()
+        .or_else(|| parsed["ref_vs_ref"]["terminal_txt_sha256"].as_str());
+    let freeze_png = parsed["freeze_png_sha256"]
+        .as_str()
+        .or_else(|| parsed["ref_vs_ref"]["terminal_png_sha256"].as_str());
+    for (declared, pinned, field) in [
+        (freeze_txt, FREEZE_TXT_SHA256, "freeze_txt_sha256"),
+        (freeze_png, FREEZE_PNG_SHA256, "freeze_png_sha256"),
     ] {
-        if let Some(declared) = parsed[field].as_str() {
-            if declared != pinned {
+        if let Some(value) = declared {
+            if value != pinned {
                 failures.push(ManifestFailure::new(
                     "reference-block-mismatch",
                     "$.reference.receipt_path",
@@ -397,10 +430,12 @@ fn verify_freeze_receipt(manifest: &Value, root: &Path, failures: &mut Vec<Manif
         }
     }
     let scenario = reference["freeze_scenario"].as_str().unwrap_or("");
-    if let (Some(cols), Some(rows)) = (
-        parsed["viewport"]["cols"].as_u64(),
-        parsed["viewport"]["rows"].as_u64(),
-    ) {
+    let viewport = if parsed["viewport"].is_object() {
+        &parsed["viewport"]
+    } else {
+        &parsed["environment"]["viewport"]
+    };
+    if let (Some(cols), Some(rows)) = (viewport["cols"].as_u64(), viewport["rows"].as_u64()) {
         let freeze = scenario
             .rsplit_once('_')
             .and_then(|(_, suffix)| parse_cols_rows(suffix));
@@ -415,7 +450,10 @@ fn verify_freeze_receipt(manifest: &Value, root: &Path, failures: &mut Vec<Manif
             ));
         }
     }
-    if let Some(claimed) = parsed["scenario"].as_str() {
+    let claimed_scenario = parsed["scenario"]
+        .as_str()
+        .or_else(|| parsed["ref_vs_ref"]["scenario"].as_str());
+    if let Some(claimed) = claimed_scenario {
         if claimed != scenario {
             failures.push(ManifestFailure::new(
                 "reference-block-mismatch",

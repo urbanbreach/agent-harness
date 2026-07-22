@@ -309,12 +309,16 @@ fn pending_permission_footer_pin_delta(
     let section = layout.sections.get(section_idx)?;
     let surface_idx = section.surfaces.len().checked_sub(1)?;
     let surface = section.surfaces.get(surface_idx)?;
-    let is_run_write_footer = surface.lines.iter().any(|line| {
-        line.spans
-            .iter()
-            .any(|span| span.content.contains("Run Write") || span.content.contains("Waiting on"))
+    let is_pinned_footer = surface.lines.iter().any(|line| {
+        line.spans.iter().any(|span| {
+            span.content.contains("Run Write")
+                || span.content.contains("Waiting on")
+                || span.content.contains("Waiting for response")
+                || span.content.contains("Retrying (attempt")
+                || span.content.contains("Responding")
+        })
     });
-    if !is_run_write_footer {
+    if !is_pinned_footer {
         return None;
     }
     let section_content_top = section.top_row.saturating_add(section.leading_gap_height);
