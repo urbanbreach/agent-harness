@@ -1,11 +1,11 @@
 //! Code graph CLI surface (`harness code-graph build|query`).
 //!
-//! Surfaces the real first-party simple symbol index from
+//! Surfaces the real first-party symbol index from
 //! [`harness_core::code_graph`] behind operator commands. `build` writes a
-//! durable `.agent-harness/code-graph-index.json` from workspace sources;
-//! `query` answers `symbol_def` with real file/line hits and structurally
-//! fails closed (Unavailable) for callers/callees/references until a richer
-//! graph backend lands. Never claims relationship queries it cannot answer.
+//! durable `.agent-harness/code-graph-index.json` from workspace sources,
+//! extracting both symbol definitions and call/reference edges;
+//! `query` answers `symbol_def`, `callers`, `callees`, and `references`
+//! with real file/line hits from the persisted edge index.
 
 use std::io::Write;
 use std::path::PathBuf;
@@ -230,7 +230,7 @@ mod tests {
     }
 
     #[test]
-    fn code_graph_query_relationship_kind_fails_closed_after_build() {
+    fn code_graph_query_relationship_kind_returns_empty_hit_after_build() {
         // arrange — built index over a seeded workspace
         let dir = tempdir().unwrap();
         let ws = dir.path();
@@ -238,21 +238,23 @@ mod tests {
         let (build_code, _, build_stderr) = run_cli(ws, &["code-graph", "build"]);
         assert_eq!(build_code, 0, "build stderr: {build_stderr}");
 
-        // act — query a relationship kind the backend does not implement
+        // act — query a relationship kind (alpha has no callers in the seed)
         let (code, stdout, stderr) =
             run_cli(ws, &["code-graph", "query", "alpha", "--kind", "callers"]);
 
-        // assert — honest structured Unavailable even with a built index
+        // assert — Hit with 0 hits (honest empty result, not Unavailable)
         assert_eq!(code, 0, "stderr: {stderr}");
         let output: serde_json::Value = serde_json::from_str(stdout.trim()).expect("valid JSON");
         assert_eq!(
             output["result"]["status"].as_str(),
-            Some("unavailable"),
+            Some("hit"),
             "stdout: {stdout}"
         );
-        let reason = output["result"]["reason"].as_str().expect("reason");
-        assert!(reason.contains("symbol_def only"), "reason: {reason}");
-        assert!(reason.contains("callers"), "reason: {reason}");
+        assert_eq!(
+            output["result"]["hits"].as_array().map(|a| a.len()),
+            Some(0),
+            "stdout: {stdout}"
+        );
     }
 
     #[test]

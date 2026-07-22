@@ -96,6 +96,8 @@ const REQUIRED_PASS_IDS: &[&str] = &[
 /// `plugins.descriptor_manifest` was restored to pass in Wave 5 after
 /// `harness plugin discover` was added as a production consumer for
 /// ExtensionDescriptorRegistry.
+/// `code.persistent_graph` was restored to pass in Wave 5 after relationship
+/// edge extraction (callers/callees/references) was implemented.
 const REQUIRED_NON_PASS_IDS: &[&str] = &[
     "vcs.jujutsu",
     "mcp.oauth_remote_transports",
@@ -104,7 +106,6 @@ const REQUIRED_NON_PASS_IDS: &[&str] = &[
     "auth.browser_oidc_sso",
     "provider.non_openai_protocols",
     "platform.binary_update",
-    "code.persistent_graph",
 ];
 const MAX_ROWS: usize = 200;
 

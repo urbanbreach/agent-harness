@@ -3,8 +3,7 @@
 //! Detects an external `.codegraph` index root and/or a harness-owned simple
 //! on-disk symbol index under `.agent-harness/code-graph-index.json`. The simple
 //! index can be built from workspace source files and queried for symbol
-//! definitions (real filesystem side effects). Callers/callees/references stay
-//! fail-closed until a richer graph backend lands.
+//! definitions and call/reference relationships (real filesystem side effects).
 
 use std::fs;
 use std::io;
@@ -132,11 +131,31 @@ pub struct GraphSymbolHit {
     pub kind: GraphQueryKind,
 }
 
+/// Kind of relationship edge between two symbols.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GraphEdgeKind {
+    Call,
+    Reference,
+}
+
+/// A directed relationship edge: `caller` references or calls `callee`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GraphEdge {
+    pub caller: String,
+    pub callee: String,
+    pub path: String,
+    pub line: u32,
+    pub kind: GraphEdgeKind,
+}
+
 /// On-disk simple symbol index (JSON).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct SimpleGraphIndex {
     pub schema: String,
     pub symbols: Vec<GraphSymbolHit>,
+    #[serde(default)]
+    pub edges: Vec<GraphEdge>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -272,7 +291,8 @@ pub enum CodeGraphError {
 /// Build a simple on-disk symbol index from workspace source files.
 ///
 /// Scans limited text/source extensions for definition-like lines (`fn`,
-/// `struct`, `enum`, `trait`, `type`, `class`, `def`) and writes
+/// `struct`, `enum`, `trait`, `type`, `class`, `def`) and extracts call/reference
+/// edges by matching known symbol names in source lines. Writes
 /// [`.agent-harness/code-graph-index.json`](GRAPH_INDEX_REL).
 pub fn build_persistent_graph_index(
     workspace_root: &Path,
@@ -285,9 +305,21 @@ pub fn build_persistent_graph_index(
             .then(a.path.cmp(&b.path))
             .then(a.line.cmp(&b.line))
     });
+    let known_names: std::collections::HashSet<&str> =
+        symbols.iter().map(|s| s.symbol.as_str()).collect();
+    let mut edges = Vec::new();
+    walk_for_edges(workspace_root, workspace_root, 0, &known_names, &mut edges)?;
+    edges.sort_by(|a, b| {
+        a.caller
+            .cmp(&b.caller)
+            .then(a.callee.cmp(&b.callee))
+            .then(a.path.cmp(&b.path))
+            .then(a.line.cmp(&b.line))
+    });
     let index = SimpleGraphIndex {
         schema: "harness-code-graph-index-v1".to_string(),
         symbols,
+        edges,
     };
     let path = workspace_root.join(GRAPH_INDEX_REL);
     if let Some(parent) = path.parent() {
@@ -370,14 +402,58 @@ fn query_simple_index(index: &SimpleGraphIndex, query: &GraphQuery) -> GraphQuer
                 hits,
             }
         }
-        GraphQueryKind::Callers | GraphQueryKind::Callees | GraphQueryKind::References => {
-            GraphQueryResult::Unavailable {
-                reason: format!(
-                    "simple on-disk index supports symbol_def only; {} not implemented",
-                    query.kind.as_str()
-                ),
+        GraphQueryKind::Callers => {
+            let hits: Vec<GraphSymbolHit> = index
+                .edges
+                .iter()
+                .filter(|e| e.callee == query.symbol)
+                .map(|e| GraphSymbolHit {
+                    symbol: e.caller.clone(),
+                    path: e.path.clone(),
+                    line: e.line,
+                    kind: GraphQueryKind::Callers,
+                })
+                .collect();
+            GraphQueryResult::Hit {
                 symbol: query.symbol.clone(),
                 kind: query.kind,
+                hits,
+            }
+        }
+        GraphQueryKind::Callees => {
+            let hits: Vec<GraphSymbolHit> = index
+                .edges
+                .iter()
+                .filter(|e| e.caller == query.symbol)
+                .map(|e| GraphSymbolHit {
+                    symbol: e.callee.clone(),
+                    path: e.path.clone(),
+                    line: e.line,
+                    kind: GraphQueryKind::Callees,
+                })
+                .collect();
+            GraphQueryResult::Hit {
+                symbol: query.symbol.clone(),
+                kind: query.kind,
+                hits,
+            }
+        }
+        GraphQueryKind::References => {
+            let hits: Vec<GraphSymbolHit> = index
+                .edges
+                .iter()
+                .filter(|e| e.callee == query.symbol)
+                .map(|e| GraphSymbolHit {
+                    symbol: e.caller.clone(),
+                    path: e.path.clone(),
+                    line: e.line,
+                    kind: GraphQueryKind::References,
+                })
+                .collect();
+            GraphQueryResult::Hit {
+                symbol: query.symbol.clone(),
+                kind: query.kind,
+                hits,
             }
         }
     }
@@ -459,6 +535,108 @@ fn index_file(
                 path: rel.clone(),
                 line: u32::try_from(idx.saturating_add(1)).unwrap_or(u32::MAX),
                 kind: GraphQueryKind::SymbolDef,
+            });
+        }
+    }
+    Ok(())
+}
+
+const MAX_EDGE_FILES: usize = 400;
+const MAX_EDGES: usize = 16_000;
+
+fn walk_for_edges(
+    workspace_root: &Path,
+    current: &Path,
+    depth: usize,
+    known_names: &std::collections::HashSet<&str>,
+    out: &mut Vec<GraphEdge>,
+) -> Result<(), CodeGraphError> {
+    if depth > MAX_WALK_DEPTH || out.len() >= MAX_EDGES {
+        return Ok(());
+    }
+    let entries = fs::read_dir(current).map_err(|source| CodeGraphError::Read {
+        path: current.display().to_string(),
+        source,
+    })?;
+    let mut files_seen = 0usize;
+    for entry in entries.flatten() {
+        if out.len() >= MAX_EDGES || files_seen >= MAX_EDGE_FILES {
+            break;
+        }
+        let path = entry.path();
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name.starts_with('.')
+            || name == "target"
+            || name == "node_modules"
+            || name == "inspirations"
+        {
+            continue;
+        }
+        if path.is_dir() {
+            walk_for_edges(workspace_root, &path, depth + 1, known_names, out)?;
+            continue;
+        }
+        if !path.is_file() || !is_indexable_source(&path) {
+            continue;
+        }
+        files_seen = files_seen.saturating_add(1);
+        extract_edges_from_file(workspace_root, &path, known_names, out)?;
+    }
+    Ok(())
+}
+
+fn extract_edges_from_file(
+    workspace_root: &Path,
+    path: &Path,
+    known_names: &std::collections::HashSet<&str>,
+    out: &mut Vec<GraphEdge>,
+) -> Result<(), CodeGraphError> {
+    let raw = fs::read_to_string(path).map_err(|source| CodeGraphError::Read {
+        path: path.display().to_string(),
+        source,
+    })?;
+    let rel = path
+        .strip_prefix(workspace_root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .replace('\\', "/");
+    let mut current_caller: Option<String> = None;
+    for (idx, line) in raw.lines().enumerate() {
+        if out.len() >= MAX_EDGES {
+            break;
+        }
+        let line_no = u32::try_from(idx.saturating_add(1)).unwrap_or(u32::MAX);
+        if let Some(def) = extract_definition_symbol(line) {
+            current_caller = Some(def);
+        }
+        let caller = match &current_caller {
+            Some(c) => c.clone(),
+            None => continue,
+        };
+        for word in line.split(|c: char| !c.is_ascii_alphanumeric() && c != '_') {
+            if word.is_empty() || word.len() < 2 {
+                continue;
+            }
+            if !known_names.contains(word) {
+                continue;
+            }
+            if word == caller {
+                continue;
+            }
+            let is_call = line.contains(&format!("{word}("))
+                || line.contains(&format!("{word}::"))
+                || line.contains(&format!(".{word}("));
+            out.push(GraphEdge {
+                caller: caller.clone(),
+                callee: word.to_string(),
+                path: rel.clone(),
+                line: line_no,
+                kind: if is_call {
+                    GraphEdgeKind::Call
+                } else {
+                    GraphEdgeKind::Reference
+                },
             });
         }
     }
@@ -813,7 +991,8 @@ mod tests {
             }
             other => panic!("expected Hit, got {other:?}"),
         }
-        assert!(callers.is_unavailable());
+        assert!(callers.is_hit());
+        assert_eq!(callers.hit_count(), 0);
         assert!(callers.one_line().contains("callers"));
     }
 
@@ -841,7 +1020,7 @@ mod tests {
             ],
         );
 
-        // assert — per-entry outcomes incl. line precision; unsupported kind fails closed
+        // assert — per-entry outcomes incl. line precision; relationship queries return Hit (possibly empty)
         assert_eq!(batch.results.len(), 3);
         match &batch.results[0] {
             GraphQueryResult::Hit { hits, .. } => {
@@ -851,7 +1030,8 @@ mod tests {
             }
             other => panic!("expected Hit, got {other:?}"),
         }
-        assert!(batch.results[1].is_unavailable());
+        assert!(batch.results[1].is_hit());
+        assert_eq!(batch.results[1].hit_count(), 0);
         match &batch.results[2] {
             GraphQueryResult::Hit { hits, .. } => {
                 assert!(hits
@@ -902,5 +1082,87 @@ mod tests {
             .expect("alpha symbol_def");
         assert!(alpha_def.is_hit());
         assert!(alpha_def.hit_count() >= 1);
+    }
+
+    #[test]
+    fn build_index_and_query_relationships_returns_real_edges() {
+        // arrange — workspace where beta calls alpha
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        let src = root.join("src");
+        fs::create_dir_all(&src).expect("src");
+        fs::write(
+            src.join("lib.rs"),
+            "pub fn alpha() {}\npub fn beta() {\n    alpha();\n}\n",
+        )
+        .expect("write");
+
+        // act — build index and query callers/callees/references
+        let (_path, index) = build_persistent_graph_index(root).expect("build");
+        let callers_of_alpha = query_persistent_graph(
+            root,
+            &GraphQuery::with_kind("alpha", GraphQueryKind::Callers),
+        );
+        let callees_of_beta = query_persistent_graph(
+            root,
+            &GraphQuery::with_kind("beta", GraphQueryKind::Callees),
+        );
+        let refs_of_alpha = query_persistent_graph(
+            root,
+            &GraphQuery::with_kind("alpha", GraphQueryKind::References),
+        );
+
+        // assert — index has edges
+        assert!(!index.edges.is_empty(), "edges should not be empty");
+        assert!(
+            index
+                .edges
+                .iter()
+                .any(|e| e.caller == "beta" && e.callee == "alpha"),
+            "expected edge beta->alpha, got edges: {:?}",
+            index.edges
+        );
+
+        // assert — callers of alpha returns beta
+        match &callers_of_alpha {
+            GraphQueryResult::Hit { symbol, kind, hits } => {
+                assert_eq!(symbol, "alpha");
+                assert_eq!(*kind, GraphQueryKind::Callers);
+                assert!(
+                    hits.iter().any(|h| h.symbol == "beta"),
+                    "expected caller beta, got hits: {:?}",
+                    hits
+                );
+            }
+            other => panic!("expected Hit for callers, got {other:?}"),
+        }
+
+        // assert — callees of beta returns alpha
+        match &callees_of_beta {
+            GraphQueryResult::Hit { symbol, kind, hits } => {
+                assert_eq!(symbol, "beta");
+                assert_eq!(*kind, GraphQueryKind::Callees);
+                assert!(
+                    hits.iter().any(|h| h.symbol == "alpha"),
+                    "expected callee alpha, got hits: {:?}",
+                    hits
+                );
+            }
+            other => panic!("expected Hit for callees, got {other:?}"),
+        }
+
+        // assert — references of alpha returns beta
+        match &refs_of_alpha {
+            GraphQueryResult::Hit { symbol, kind, hits } => {
+                assert_eq!(symbol, "alpha");
+                assert_eq!(*kind, GraphQueryKind::References);
+                assert!(
+                    hits.iter().any(|h| h.symbol == "beta"),
+                    "expected reference from beta, got hits: {:?}",
+                    hits
+                );
+            }
+            other => panic!("expected Hit for references, got {other:?}"),
+        }
     }
 }

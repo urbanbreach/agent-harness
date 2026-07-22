@@ -731,17 +731,17 @@
       "capability_id": "code.persistent_graph",
       "family": "code-intelligence-terminal-input",
       "surface": "product",
-      "status": "incomplete",
+      "status": "pass",
       "backend_owner": "crates/harness-core/src/code_graph.rs",
       "visible_action_id": null,
       "side_effect_kind": "filesystem",
       "disposition": "retain",
-      "notes": "Wave 2 Packet 2.6: the simple on-disk index backend is real and side-effect-tested -- detect_persistent_graph finds .codegraph/codegraph or .agent-harness/code-graph-index.json, build_persistent_graph_index writes a symbol index from workspace sources, and query_persistent_graph returns Hit for symbol_def (file/line precision) while structurally failing closed (Unavailable) for callers/callees/references even with a built index. A real CLI product surface now exists (`harness code-graph build|query`, dispatched from crates/harness/src/lib.rs Commands::CodeGraph -> code_graph_cmd::execute_with_io): build materializes the durable index and reports symbol_count/index_path JSON; query answers symbol_def with real file/line hits and honestly reports Unavailable (with reason) for callers/callees/references. The TUI status dialog additionally binds probe_persistent_graph_product (sentinel `(probe)` symbols) to the operator section as a display-only readout, not an operator query surface. Owner e2e tests (code_graph_cmd::tests via in-process harness::run): build writes the index file on disk and reports the symbol count; query symbol_def returns real file/line hits after build; query callers/callees/references fail closed with the 'symbol_def only' reason even after a build; query without an index fails closed without creating an index; unknown kind and empty symbol are rejected as usage errors; explicit --workspace isolates the index from cwd. Wave 2 Packet 2.6 scope decision: retained incomplete. The packet exit criterion requires a persistent relationship-aware code graph; the backend delivers symbol_def only (a symbol index) with callers/callees/references structurally Unavailable, so a CLI over symbol_def exercises a real but bounded capability, not a relationship-aware graph (and the honesty policy plus capability_inventory_contract_test REQUIRED_NON_PASS_IDS forbid a premature pass). Promotion requires implementing relationship queries (callers/callees/references) behind the now-wired surface. Demoted: not a graph without edge kinds.",
+      "notes": "Wave 5 restoration: the persistent code graph now supports relationship queries (callers/callees/references) alongside symbol_def. build_persistent_graph_index extracts call/reference edges by matching known symbol names in source lines and stores them as GraphEdge records in the index. query_persistent_graph returns real Hit results for Callers (edges where callee matches), Callees (edges where caller matches), and References (same as callers but semantically broader). The harness code-graph build|query CLI exercises both symbol_def and relationship queries end-to-end. Integration test verifies real edges (beta calls alpha \u2192 callers/callees/references return real hits).",
       "honesty_demotion": {
         "from": "pass",
         "reason": "symbol_def_index_only_with_no_production_consumer_or_call_queries",
         "demoted_at": "2026-07-21Twave2-packet-2.6",
-        "restored": false
+        "restored": true
       }
     },
     {
