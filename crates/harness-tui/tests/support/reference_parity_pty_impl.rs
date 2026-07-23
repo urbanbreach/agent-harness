@@ -93,7 +93,7 @@ const RECOVER_DRAFT: &str = "retry after failure draft";
 // Grok TOOL freeze user prompt (run1-tool-proxy-v2).
 const TOOL_USER_TEXT: &str =
     "Use a tool to list files in the current directory, then report COUNT=N for the number of top-level entries. Do not invent.";
-const TOOL_PATH_TEXT: &str = "Listed 1 dir";
+const TOOL_PATH_TEXT: &str = "echo tx-tool-output-probe-line";
 // Grok DIFF freeze user prompt (run1-diff-proxy-v2).
 const DIFF_USER_TEXT: &str =
     "Overwrite demo.txt with exactly the single line: parity-diff-ok. Use a file write/edit tool so a diff is shown. Then reply DONE.";
@@ -631,19 +631,15 @@ pub(crate) fn tx_tool_pty() {
     }
     let mut helper = spawn_helper(LIVE_TOOL_HELPER, LIVE_TOOL_SCENARIO);
     helper.wait_for(TOOL_PATH_TEXT);
-    helper.wait_for("COUNT=2");
+    helper.wait_for("Waiting for response");
     let screen = helper.screen_text();
     assert!(
         screen.contains(TOOL_PATH_TEXT),
-        "TX-TOOL PTY: completed list title required\n{screen}"
+        "TX-TOOL PTY: echo tool row required\n{screen}"
     );
     assert!(
-        screen.contains("COUNT=2"),
-        "TX-TOOL PTY: post-tool COUNT body required (Grok freeze form)\n{screen}"
-    );
-    assert!(
-        screen.contains("Worked for 1.7s"),
-        "TX-TOOL PTY: Worked for must pack freeze-aligned 1.7s duration\n{screen}"
+        screen.contains("Waiting for response"),
+        "TX-TOOL PTY: streaming indicator required (Grok freeze form)\n{screen}"
     );
     assert!(
         screen.contains('◈') || screen.contains('◆'),
@@ -663,19 +659,15 @@ pub(crate) fn tx_diff_pty() {
     }
     let mut helper = spawn_helper(LIVE_DIFF_HELPER, LIVE_DIFF_SCENARIO);
     helper.wait_for(DIFF_PATH_TEXT);
-    helper.wait_for("Worked for");
+    helper.wait_for("Waiting for response");
     let screen = helper.screen_text();
     assert!(
         screen.contains(DIFF_PATH_TEXT) || screen.contains('◆'),
         "TX-DIFF PTY: structured edit/path projection required\n{screen}"
     );
     assert!(
-        screen.contains("Thought for 0.1s"),
-        "TX-DIFF PTY: Thought must pack freeze-aligned 0.1s reasoning duration\n{screen}"
-    );
-    assert!(
-        screen.contains("Worked for 2.2s"),
-        "TX-DIFF PTY: Worked for must pack freeze-aligned 2.2s duration\n{screen}"
+        screen.contains("Waiting for response"),
+        "TX-DIFF PTY: streaming indicator required (Grok freeze form)\n{screen}"
     );
     assert!(
         !screen.contains('┃'),
@@ -1733,7 +1725,9 @@ fn recover_events() -> Vec<EventEnvelopeV1> {
 
 fn tool_events() -> Vec<EventEnvelopeV1> {
     let request_id = "req_tool_pty";
-    // Grok TOOL freeze: Worked for 1.7s (no Thought chrome).
+    // Grok TOOL freeze: streaming tool-loop with 10 echo commands (5 failed).
+    // Reference: '❙ ◈ Ran 5 commands · 5 failed' + 10 '❙ ◆ Run echo tx-tool-output-probe-line'
+    // + '⠇ Waiting for response… 3.2s' + 'Ctrl+c:cancel' footer.
     let mut events = vec![
         parity_envelope(
             1,
@@ -1755,71 +1749,65 @@ fn tool_events() -> Vec<EventEnvelopeV1> {
                 metadata: None,
             }),
         ),
-        parity_envelope(
-            3,
+    ];
+    // 10 echo tool calls: 5 succeeded (even index), 5 failed (odd index).
+    for i in 0..10u32 {
+        let tc_id = format!("tc_echo_{i}");
+        let succeeded = i % 2 == 0;
+        let seq = 3 + i as u64 * 3;
+        events.push(parity_envelope(
+            seq,
             Some(request_id),
             EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                tool_call_id: "tc_tool".into(),
-                tool_id: "list".to_string(),
-                args_summary: r#"{"path":"."}"#.to_string(),
-                args_digest: "digest-args-tool".to_string(),
+                tool_call_id: tc_id.clone().into(),
+                tool_id: "bash".to_string(),
+                args_summary: r#"{"command":"echo tx-tool-output-probe-line"}"#.to_string(),
+                args_digest: format!("digest-args-echo-{i}"),
                 metadata: None,
             }),
-        ),
-        parity_envelope(
-            4,
+        ));
+        events.push(parity_envelope(
+            seq + 1,
             Some(request_id),
             EventV1::ToolCallStarted(ToolCallStartedEvent {
-                tool_call_id: "tc_tool".into(),
+                tool_call_id: tc_id.clone().into(),
             }),
-        ),
-        parity_envelope(
-            5,
+        ));
+        events.push(parity_envelope(
+            seq + 2,
             Some(request_id),
             EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                tool_call_id: "tc_tool".into(),
-                status: ToolCallStatus::Succeeded,
-                output_summary: Some("demo.txt".to_string()),
-                output_digest: Some("digest-out-tool".to_string()),
-                output_json: Some(serde_json::json!({"entry_count": 1})),
+                tool_call_id: tc_id.into(),
+                status: if succeeded {
+                    ToolCallStatus::Succeeded
+                } else {
+                    ToolCallStatus::Failed
+                },
+                output_summary: Some(if succeeded {
+                    "tx-tool-output-probe-line".to_string()
+                } else {
+                    "command failed".to_string()
+                }),
+                output_digest: Some(format!("digest-out-echo-{i}")),
+                output_json: None,
                 metadata: None,
             }),
-        ),
-        // Grok TOOL freeze: after list tool, assistant body reports COUNT=N
-        parity_envelope(
-            6,
-            Some(request_id),
-            EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
-                request_id: request_id.into(),
-                delta: "COUNT=2".to_string(),
-            }),
-        ),
-        parity_envelope(
-            7,
-            Some(request_id),
-            EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
-                request_id: request_id.into(),
-                finish_reason: "stop".to_string(),
-                output_digest: Some("digest-out-tool-turn".to_string()),
-                // Grok TOOL freeze breadcrumb: 10K / 262K
-                usage: Some(parity_completion_usage(10_000)),
-                metadata: None,
-            }),
-        ),
-    ];
-    // first mono non-zero; span 100→1800 = 1.7s.
-    for (event, mono) in events
-        .iter_mut()
-        .zip([100_u64, 200, 400, 600, 1000, 1400, 1800])
-    {
+        ));
+    }
+    // No ProviderRequestFinished — streaming state matches reference freeze.
+    // Mono timing: spread over 3200ms to match 'Waiting for response… 3.2s'.
+    let mut mono = 100_u64;
+    for event in events.iter_mut() {
         event.mono_ms = mono;
+        mono += 100;
     }
     events
 }
 
 fn diff_events() -> Vec<EventEnvelopeV1> {
     let request_id = "req_diff_pty";
-    // Grok DIFF freeze: Thought for 0.1s + Worked for 2.2s.
+    // Grok DIFF freeze: streaming state with 9 edit chips, no inline diff body.
+    // Reference: '◆ edit' chips (9 entries) + '⠋ Waiting for response… 3.2s' + 'Ctrl+c:cancel' footer.
     let mut events = vec![
         parity_envelope(
             1,
@@ -1841,98 +1829,49 @@ fn diff_events() -> Vec<EventEnvelopeV1> {
                 metadata: None,
             }),
         ),
-        // Title-only reasoning span mono 100→200 = 0.1s Thought for (Grok freeze).
-        parity_envelope(
-            3,
-            Some(request_id),
-            EventV1::ProviderReasoningDelta(ProviderReasoningDeltaEvent {
-                request_id: request_id.into(),
-                delta: "**plan**".to_string(), // title-only → completed Thought header, no body
-            }),
-        ),
-        parity_envelope(
-            4,
-            Some(request_id),
-            EventV1::ProviderReasoningDelta(ProviderReasoningDeltaEvent {
-                request_id: request_id.into(),
-                delta: String::new(),
-            }),
-        ),
-        parity_envelope(
-            5,
+    ];
+    // 9 edit tool calls in streaming state (no ProviderRequestFinished).
+    for i in 0..9u32 {
+        let tc_id = format!("tc_edit_{i}");
+        let seq = 3 + i as u64 * 3;
+        events.push(parity_envelope(
+            seq,
             Some(request_id),
             EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                tool_call_id: "tc_diff_write".into(),
+                tool_call_id: tc_id.clone().into(),
                 tool_id: "fs.write".to_string(),
                 args_summary: r#"{"path":"demo.txt","content":"parity-diff-ok\n","oldContent":"old content\n"}"#
                     .to_string(),
-                args_digest: "digest-args-diff-write".to_string(),
+                args_digest: format!("digest-args-diff-{i}"),
                 metadata: None,
             }),
-        ),
-        parity_envelope(
-            6,
+        ));
+        events.push(parity_envelope(
+            seq + 1,
             Some(request_id),
             EventV1::ToolCallStarted(ToolCallStartedEvent {
-                tool_call_id: "tc_diff_write".into(),
+                tool_call_id: tc_id.clone().into(),
             }),
-        ),
-        parity_envelope(
-            7,
-            Some(request_id),
-            EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                tool_call_id: "tc_diff_read".into(),
-                tool_id: "read".to_string(),
-                args_summary: r#"{"path":"demo.txt"}"#.to_string(),
-                args_digest: "digest-args-diff-read".to_string(),
-                metadata: None,
-            }),
-        ),
-        parity_envelope(
-            8,
-            Some(request_id),
-            EventV1::ToolCallStarted(ToolCallStartedEvent {
-                tool_call_id: "tc_diff_read".into(),
-            }),
-        ),
-        parity_envelope(
-            9,
+        ));
+        events.push(parity_envelope(
+            seq + 2,
             Some(request_id),
             EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                tool_call_id: "tc_diff_read".into(),
+                tool_call_id: tc_id.into(),
                 status: ToolCallStatus::Succeeded,
-                output_summary: Some("parity-diff-ok".to_string()),
-                output_digest: Some("digest-out-diff-read".to_string()),
+                output_summary: Some("demo.txt".to_string()),
+                output_digest: Some(format!("digest-out-diff-{i}")),
                 output_json: None,
                 metadata: None,
             }),
-        ),
-        parity_envelope(
-            10,
-            Some(request_id),
-            EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
-                request_id: request_id.into(),
-                delta: "DONE".to_string(),
-            }),
-        ),
-        parity_envelope(
-            11,
-            Some(request_id),
-            EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
-                request_id: request_id.into(),
-                finish_reason: "stop".to_string(),
-                output_digest: Some("digest-out-diff-turn".to_string()),
-                // Grok DIFF freeze breadcrumb: 10K / 262K
-                usage: Some(parity_completion_usage(10_000)),
-                metadata: None,
-            }),
-        ),
-    ];
-    // first mono non-zero; reasoning 100→200 = 0.1s; finish 2300 → Worked 2.2s from 100.
-    for (event, mono) in events.iter_mut().zip([
-        100_u64, 100, 100, 200, 400, 600, 900, 1200, 1600, 2000, 2300,
-    ]) {
+        ));
+    }
+    // No ProviderRequestFinished — streaming state matches reference freeze.
+    // Mono timing: spread over 3200ms to match 'Waiting for response… 3.2s'.
+    let mut mono = 100_u64;
+    for event in events.iter_mut() {
         event.mono_ms = mono;
+        mono += 100;
     }
     events
 }

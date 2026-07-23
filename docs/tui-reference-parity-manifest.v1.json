@@ -2007,7 +2007,7 @@
         "A-NO-RESKIN"
       ],
       "status": "blocked",
-      "notes": "Wave 5 resolution: reference black-box discovery (2026-07-22) confirmed the reference has no standalone help overlay. F1 types literally into the composer (no overlay opens). Ctrl+X shows a changelog within the welcome panel (not a separate help overlay). Since the reference does not expose a help overlay state, there is no reference parity requirement to match. Row remains blocked because the L5 evidence path (ovl-help-blocked-v1.json) records the reference discovery finding. Harness help surfaces (if any) are honest product additions, not parity obligations.",
+      "notes": "Wave 5 resolution: reference black-box discovery (2026-07-22) confirmed the reference has no standalone help overlay. F1 types literally into the composer (no overlay opens). Ctrl+X shows a changelog within the welcome panel (not a separate help overlay). Since the reference does not expose a help overlay state, there is no reference parity requirement to match. Row remains blocked because the L5 evidence path records the reference discovery finding. Harness help surfaces (if any) are honest product additions, not parity obligations. The row's declared precondition, focus owner, overlay stack, and expected artifacts describe a help overlay that the reference does not expose; the row should be removed from the parity requirement set or represented as explicitly not applicable in a future manifest revision.",
       "slice": "scaffold",
       "evidence": {
         "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-shortcuts-ctrlx/",
