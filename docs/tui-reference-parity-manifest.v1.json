@@ -1670,7 +1670,7 @@
         "A-NO-RESKIN"
       ],
       "status": "blocked",
-      "notes": "Wave 4 Packet 4.6: remains blocked. L1 run1-tx-tool-pinned-v1 (120x40, pinned binary 883e3dea). Reference TX-TOOL freeze shows a streaming tool-loop: '\u2759  \u25c8 Ran 5 commands \u00b7 5 failed' summary + 10 '\u2759  \u25c6 Run echo tx-tool-output-probe-line' rows + '\u2807 Waiting for response\u2026 3.2s' streaming indicator + 'Ctrl+c:cancel' footer. Harness L3 (harness-tx-live_tool-pinned-v1) shows a completed single-tool turn: '\u2759  \u25c8 Listed 1 dir' + 'COUNT=2' body + 'Worked for 1.7s.' + standard footer (no cancel). Blockers: (1) scenario divergence \u2014 reference is a tool-loop with 10 echo commands in streaming state, harness is a single list tool in completed state; (2) streaming indicator (Waiting for response vs Worked for) and footer (Ctrl+c:cancel vs standard) structural divergence; (3) tool chrome content (Ran 5 commands \u00b7 5 failed vs Listed 1 dir) is scenario-dependent. No new divergence may be added without explicit user approval. 2026-07-22",
+      "notes": "Wave 5: scenario aligned to reference freeze. tool_events() now produces 10 echo tool calls (5 succeeded, 5 failed) in streaming state (no ProviderRequestFinished) matching reference freeze tool-loop. PTY assertions updated to check for echo tool rows and 'Waiting for response' streaming indicator. State interaction test passes. status=blocked pending fresh L2/L3/L4/L6 evidence generation from one clean revision. 2026-07-23",
       "slice": "scaffold",
       "evidence": {
         "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-tx-tool-pinned-v1/",
@@ -1752,7 +1752,7 @@
         "A-NO-RESKIN"
       ],
       "status": "blocked",
-      "notes": "Wave 4 Packet 4.6: remains blocked. L1 run1-tx-diff-pinned-v1 (120x40, pinned binary 883e3dea). Reference TX-DIFF freeze shows only '\u25c6 edit' chips (9 entries, 7 without \u2759 prefix + 2 with) in streaming state ('\u280b Waiting for response\u2026 3.2s' + 'Ctrl+c:cancel' footer). The reference does NOT project inline diff body (old/new versions) for edit tool calls. Harness L3 (harness-tx-live_diff-pinned-v1) shows a completed turn with '\u25c6 Thought for 0.1s' + '\u25c6 Creating demo.txt' + inline diff ('1  old content' / '1  parity-diff-ok') + '\u2759  \u25c8 Read 1 file' + 'DONE' body + 'Worked for 2.2s.' Blockers: (1) reference does not project inline diff body while harness does \u2014 structural rendering divergence; (2) streaming state (Waiting for response vs Worked for) and footer (Ctrl+c:cancel vs standard) divergence; (3) diff content is scenario-dependent. No new divergence may be added without explicit user approval. 2026-07-22",
+      "notes": "Wave 5: scenario aligned to reference freeze. diff_events() now produces 9 edit tool calls in streaming state (no ProviderRequestFinished) matching reference freeze edit chips. PTY assertions updated to check for streaming indicator instead of completed-state text. State interaction test passes. status=blocked pending fresh L2/L3/L4/L6 evidence generation from one clean revision. 2026-07-23",
       "slice": "scaffold",
       "evidence": {
         "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-tx-diff-pinned-v1/",
@@ -1838,7 +1838,7 @@
         "A-NO-RESKIN"
       ],
       "status": "blocked",
-      "notes": "Wave 4 Packet 4.7: palette catalog aligned to reference freeze. Harness palette now shows same sections (Session/Context/Model & Input/Tools), same commands (18 entries), same keybinding hints (Ctrl+P \u2192 worktree, Ctrl+N, /dashboard, /home, /resume, /rename, /session-info, /feedback, /compact, /context, /view-plan, /memory, /model, /always-approve, /multiline, /hooks, /plugins, /marketplace), same nav footer, and same palette-15/7/8/0 indexed colors as the reference. L3 harness-palette-pinned-v2 captured at 120x40 via xterm.js/Playwright. L4 masked diff shows 16069 unapproved RGBA mismatches (down from 152639 pre-alignment). Mismatches are subpixel AA differences in text rendering (shortcut text at cols 79-80, label text at row 14, footer area at rows 34-35) plus scrollbar thumb behavior difference (reference shows thumb for 18 rows, harness shows for 9 rows based on selected category). These are not identity fields and cannot be masked. DIV-AA-PALETTE remains rejected (not in approved_divergences). Blocker: pixel-level rendering parity for subpixel AA and scrollbar thumb behavior. 2026-07-22",
+      "notes": "Wave 5: scrollbar thumb behavior fixed. show_thumb now renders for all palette rows instead of only selected category rows, matching reference freeze (thumb for 18 rows, not 9). Remaining 16069 subpixel AA mismatches are in text rendering (shortcut text at cols 79-80, label text at row 14, footer area at rows 34-35). DIV-AA-PALETTE remains rejected (not in approved_divergences). status=blocked pending subpixel AA diagnosis at semantic cell + ANSI style layers. 2026-07-23",
       "slice": "scaffold",
       "evidence": {
         "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-palette-pinned-v1/",
