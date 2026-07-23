@@ -433,8 +433,11 @@ mod tests {
 
     #[test]
     fn mcp_oauth_remote_reports_available() {
+        // arrange
+        // act
         let availability = evaluate_mcp_oauth_remote_transports();
 
+        // assert
         assert!(availability.is_available());
         assert!(!availability.is_unavailable());
         match availability {
@@ -449,8 +452,11 @@ mod tests {
 
     #[test]
     fn begin_with_real_url_returns_begun() {
+        // arrange
+        // act
         let begin = begin_mcp_oauth_flow("docs-server", "https://auth.example/oauth");
 
+        // assert
         match &begin {
             McpOauthBeginResult::Begun {
                 authorization_url,
@@ -471,8 +477,11 @@ mod tests {
 
     #[test]
     fn begin_with_probe_values_returns_unavailable() {
+        // arrange
+        // act
         let begin = begin_mcp_oauth_flow("(probe)", "https://auth.example/oauth");
 
+        // assert
         match &begin {
             McpOauthBeginResult::Unavailable { reason, .. } => {
                 assert!(!reason.is_empty());
@@ -483,8 +492,11 @@ mod tests {
 
     #[test]
     fn exchange_with_real_code_returns_exchanged() {
+        // arrange
+        // act
         let exchange = exchange_mcp_oauth_token("docs-server", "abcd1234secret");
 
+        // assert
         match &exchange {
             McpOauthTokenExchangeResult::Exchanged {
                 server_id,
@@ -504,8 +516,11 @@ mod tests {
 
     #[test]
     fn exchange_with_probe_code_returns_unavailable() {
+        // arrange
+        // act
         let exchange = exchange_mcp_oauth_token("(probe)", "(probe-code)");
 
+        // assert
         match &exchange {
             McpOauthTokenExchangeResult::Unavailable { reason, .. } => {
                 assert!(!reason.is_empty());
@@ -516,8 +531,11 @@ mod tests {
 
     #[test]
     fn open_with_real_endpoint_returns_opened() {
+        // arrange
+        // act
         let open = open_mcp_remote_transport("docs-server", "https://mcp.example/sse");
 
+        // assert
         match &open {
             McpRemoteTransportOpenResult::Opened {
                 server_id,
@@ -534,8 +552,11 @@ mod tests {
 
     #[test]
     fn open_with_probe_values_returns_unavailable() {
+        // arrange
+        // act
         let open = open_mcp_remote_transport("(probe)", "https://mcp.example/sse");
 
+        // assert
         match &open {
             McpRemoteTransportOpenResult::Unavailable { reason, .. } => {
                 assert!(!reason.is_empty());
@@ -546,13 +567,16 @@ mod tests {
 
     #[test]
     fn mcp_oauth_operator_diagnostics_cover_availability_and_outcomes() {
+        // arrange
         let availability = evaluate_mcp_oauth_remote_transports();
         let begin = begin_mcp_oauth_flow("docs-server", "https://auth.example/oauth");
         let exchange = exchange_mcp_oauth_token("docs-server", "abcd1234secret");
         let open = open_mcp_remote_transport("docs-server", "https://mcp.example/sse");
 
+        // act
         let summary = summarize_mcp_oauth_outcomes(Some(&begin), Some(&exchange), Some(&open));
 
+        // assert
         assert!(availability
             .one_line()
             .contains("MCP OAuth remote: available"));
@@ -566,8 +590,11 @@ mod tests {
 
     #[test]
     fn multi_endpoint_product_probe_has_mixed_outcomes() {
+        // arrange
+        // act
         let probe = probe_mcp_oauth_remote_product();
 
+        // assert
         assert_eq!(probe.begins.len(), 3);
         assert_eq!(probe.exchanges.len(), 3);
         assert_eq!(probe.opens.len(), 3);

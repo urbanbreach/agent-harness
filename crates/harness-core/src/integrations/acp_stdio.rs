@@ -168,21 +168,34 @@ mod tests {
 
     #[test]
     fn stdio_acp_product_connects_and_operates_via_subprocess() {
+        // arrange
+        // act
         let product = run_stdio_acp_agent_mode_product("cat");
+
+        // assert
         assert!(product.meets_agent_mode_contract(), "{product:?}");
         assert!(product.operate_ok);
     }
 
     #[test]
     fn stdio_acp_with_invalid_command_fails_connect() {
+        // arrange
+        // act
         let product = run_stdio_acp_agent_mode_product("exit 1");
+
+        // assert
         assert!(!product.meets_agent_mode_contract());
     }
 
     #[test]
     fn stdio_acp_operate_without_connect_fails() {
+        // arrange
         let mut transport = StdioAcpTransport::new("cat");
+
+        // act
         let err = transport.operate(b"test").expect_err("must fail");
+
+        // assert
         assert!(err.contains("not connected"));
     }
 }

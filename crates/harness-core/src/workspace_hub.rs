@@ -423,16 +423,22 @@ mod tests {
 
     #[test]
     fn workspace_hub_reports_available() {
+        // arrange
+        // act
         let availability = evaluate_workspace_hub();
 
+        // assert
         assert!(availability.is_available());
         assert!(!availability.is_unavailable());
     }
 
     #[test]
     fn connect_with_real_endpoint_returns_connected() {
+        // arrange
+        // act
         let connect = connect_workspace_hub("https://hub.example/v1");
 
+        // assert
         match &connect {
             WorkspaceHubConnectResult::Connected { endpoint } => {
                 assert_eq!(endpoint, "https://hub.example/v1");
@@ -443,8 +449,11 @@ mod tests {
 
     #[test]
     fn connect_with_probe_returns_unavailable() {
+        // arrange
+        // act
         let connect = connect_workspace_hub("(probe)");
 
+        // assert
         match &connect {
             WorkspaceHubConnectResult::Unavailable { reason, .. } => {
                 assert!(!reason.is_empty());
@@ -455,8 +464,11 @@ mod tests {
 
     #[test]
     fn bind_with_real_id_returns_bound() {
+        // arrange
+        // act
         let bind = bind_workspace_hub("ws-local-1");
 
+        // assert
         match &bind {
             WorkspaceHubBindResult::Bound { workspace_id } => {
                 assert_eq!(workspace_id, "ws-local-1");
@@ -467,8 +479,11 @@ mod tests {
 
     #[test]
     fn upload_with_real_path_returns_uploaded() {
+        // arrange
+        // act
         let upload = upload_to_workspace_hub("artifacts/bundle.tar");
 
+        // assert
         match &upload {
             WorkspaceHubUploadResult::Uploaded { artifact_hint } => {
                 assert_eq!(artifact_hint, "artifacts/bundle.tar");
@@ -479,8 +494,11 @@ mod tests {
 
     #[test]
     fn recover_with_real_session_returns_recovered() {
+        // arrange
+        // act
         let recover = recover_workspace_hub("hub-session-9");
 
+        // assert
         match &recover {
             WorkspaceHubRecoveryResult::Recovered { session_hint } => {
                 assert_eq!(session_hint, "hub-session-9");
@@ -491,12 +509,14 @@ mod tests {
 
     #[test]
     fn workspace_hub_operator_diagnostics_cover_availability_and_outcomes() {
+        // arrange
         let availability = evaluate_workspace_hub();
         let connect = connect_workspace_hub("https://hub.example/v1");
         let bind = bind_workspace_hub("ws-local-1");
         let upload = upload_to_workspace_hub("artifacts/bundle.tar");
         let recover = recover_workspace_hub("hub-session-9");
 
+        // act
         let summary = summarize_workspace_hub_outcomes(
             Some(&connect),
             Some(&bind),
@@ -504,6 +524,7 @@ mod tests {
             Some(&recover),
         );
 
+        // assert
         assert!(availability.one_line().contains("workspace hub: available"));
         assert!(connect.one_line().contains("connected"));
         assert!(bind.one_line().contains("bound"));
@@ -515,8 +536,11 @@ mod tests {
 
     #[test]
     fn multi_endpoint_product_probe_has_mixed_outcomes() {
+        // arrange
+        // act
         let probe = probe_workspace_hub_product();
 
+        // assert
         assert_eq!(probe.connects.len(), 3);
         assert_eq!(probe.binds.len(), 3);
         assert_eq!(probe.uploads.len(), 3);
