@@ -320,7 +320,10 @@ impl PluginRuntimeContract {
         new_package_root: impl AsRef<Path>,
         permission: PluginActivationPermission,
     ) -> Result<&InstalledPlugin, PluginRuntimeError> {
-        if self.registry.is_enabled(plugin_id) {
+        let old_package_root = self.registry.get(plugin_id).map(|p| p.package_root.clone());
+        let was_enabled = self.registry.is_enabled(plugin_id);
+
+        if was_enabled {
             self.registry.deactivate(plugin_id)?;
             self.events.push(PluginLifecycleEvent::Deactivated {
                 id: plugin_id.to_string(),
@@ -330,14 +333,32 @@ impl PluginRuntimeContract {
         self.events.push(PluginLifecycleEvent::Removed {
             id: plugin_id.to_string(),
         });
+
+        if let Err(install_err) = self
+            .registry
+            .install_from_package_root(new_package_root.as_ref())
         {
-            self.registry.install_from_package_root(new_package_root)?;
+            if let Some(old_path) = &old_package_root {
+                let _ = self.registry.install_from_package_root(old_path);
+                if was_enabled {
+                    let _ = self.registry.activate(plugin_id, permission);
+                }
+            }
+            return Err(install_err.into());
         }
         self.events.push(PluginLifecycleEvent::Installed {
             id: plugin_id.to_string(),
         });
-        {
-            self.registry.activate(plugin_id, permission)?;
+
+        if let Err(activate_err) = self.registry.activate(plugin_id, permission) {
+            let _ = self.registry.remove(plugin_id);
+            if let Some(old_path) = &old_package_root {
+                let _ = self.registry.install_from_package_root(old_path);
+                if was_enabled {
+                    let _ = self.registry.activate(plugin_id, permission);
+                }
+            }
+            return Err(activate_err.into());
         }
         self.events.push(PluginLifecycleEvent::Activated {
             id: plugin_id.to_string(),
@@ -345,6 +366,7 @@ impl PluginRuntimeContract {
         self.events.push(PluginLifecycleEvent::Upgraded {
             id: plugin_id.to_string(),
         });
+
         self.registry.get(plugin_id).ok_or(
             PluginLifecycleError::NotInstalled {
                 id: plugin_id.to_string(),
