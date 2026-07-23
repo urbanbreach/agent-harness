@@ -7,7 +7,8 @@ use std::path::{Path, PathBuf};
 use harness_core::extension_manifest::EXTENSION_MANIFEST_V1_SCHEMA_VERSION;
 use harness_core::integrations::{
     FailingPlugin, HelloWorldPlugin, PluginActivationPermission, PluginExecutionSurface,
-    PluginLifecycleEvent, PluginRuntimeContract, PluginRuntimeError, PLUGIN_MANIFEST_FILE_NAME,
+    PluginLifecycleEvent, PluginRuntimeContract, PluginRuntimeError, PLUGIN_ENTRY_FILE_NAME,
+    PLUGIN_MANIFEST_FILE_NAME,
 };
 use harness_core::UnwrapOrAbort;
 use serde_json::json;
@@ -358,5 +359,52 @@ fn runtime_contract_upgrade_rejects_mismatched_replacement_id() {
     assert!(matches!(
         &events[events_before + 1],
         PluginLifecycleEvent::Activated { id } if id == "orig.plugin"
+    ));
+}
+
+#[test]
+fn runtime_contract_upgrade_rolls_back_on_activation_failure() {
+    // arrange — v1 descriptor-only (activates without code load); v2 has invalid plugin_entry
+    let temp = tempfile::tempdir().unwrap_or_abort();
+    let workspace = temp.path().join("ws");
+    fs::create_dir_all(&workspace).unwrap_or_abort();
+    let package_v1 = write_plugin_package(&workspace, "plugins/act-v1", "act.plugin");
+    let package_v2 = write_plugin_package(&workspace, "plugins/act-v2", "act.plugin");
+    fs::write(
+        package_v2.join(PLUGIN_ENTRY_FILE_NAME),
+        r#"{"schemaVersion":"plugin.entry.v1","entrypoints":[]}"#,
+    )
+    .unwrap_or_abort();
+    let mut contract = PluginRuntimeContract::new(&workspace);
+    contract
+        .install_from_package_root(&package_v1)
+        .unwrap_or_abort();
+    contract
+        .activate("act.plugin", PluginActivationPermission::Granted)
+        .unwrap_or_abort();
+    let events_before = contract.events().len();
+
+    // act — upgrade to v2 whose activation fails on invalid plugin_entry
+    let result = contract.upgrade_plugin(
+        "act.plugin",
+        &package_v2,
+        PluginActivationPermission::Granted,
+    );
+
+    // assert — activation failure triggers rollback, v1 restored and enabled
+    assert!(result.is_err());
+    assert!(contract.get("act.plugin").is_some());
+    assert!(contract.is_enabled("act.plugin"));
+
+    // assert — failed upgrade events truncated, restoration events recorded
+    let events = contract.events();
+    assert_eq!(events.len(), events_before + 2);
+    assert!(matches!(
+        &events[events_before],
+        PluginLifecycleEvent::Installed { id } if id == "act.plugin"
+    ));
+    assert!(matches!(
+        &events[events_before + 1],
+        PluginLifecycleEvent::Activated { id } if id == "act.plugin"
     ));
 }

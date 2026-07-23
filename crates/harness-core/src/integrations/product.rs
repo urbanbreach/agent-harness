@@ -22,9 +22,10 @@ use super::acp::{
 use super::plugin::{
     activate_plugin_outcome, deactivate_plugin_outcome, install_plugin_outcome,
     remove_plugin_outcome, PluginActivateOutcome, PluginActivationPermission,
-    PluginDeactivateOutcome, PluginInstallOutcome, PluginLifecycleRegistry, PluginLifecycleSummary,
-    PluginRemoveOutcome, PLUGIN_HOOKS_FILE_NAME, PLUGIN_MANIFEST_FILE_NAME, PLUGIN_SKILLS_DIR_NAME,
+    PluginDeactivateOutcome, PluginInstallOutcome, PluginLifecycleSummary, PluginRemoveOutcome,
+    PLUGIN_HOOKS_FILE_NAME, PLUGIN_MANIFEST_FILE_NAME, PLUGIN_SKILLS_DIR_NAME,
 };
+use super::plugin_runtime::PluginRuntimeContract;
 
 /// Canonical multi-plugin probe package ids (product contract).
 pub const PROBE_PLUGIN_PRIMARY_ID: &str = "harness.probe.plugin";
@@ -90,24 +91,25 @@ pub fn run_multi_plugin_lifecycle_product(workspace_root: &Path) -> MultiPluginL
         "Harness Probe Plugin Secondary",
     );
 
-    let mut registry = PluginLifecycleRegistry::new(workspace_root);
-    let _ = install_plugin_outcome(&mut registry, &primary_pkg);
-    let last_install = install_plugin_outcome(&mut registry, &secondary_pkg);
+    let mut contract = PluginRuntimeContract::new(workspace_root);
+    let _ = install_plugin_outcome(contract.registry_mut(), &primary_pkg);
+    let last_install = install_plugin_outcome(contract.registry_mut(), &secondary_pkg);
     let _ = activate_plugin_outcome(
-        &mut registry,
+        contract.registry_mut(),
         PROBE_PLUGIN_PRIMARY_ID,
         PluginActivationPermission::Granted,
     );
     let last_activate = activate_plugin_outcome(
-        &mut registry,
+        contract.registry_mut(),
         PROBE_PLUGIN_SECONDARY_ID,
         PluginActivationPermission::Granted,
     );
-    let last_deactivate = deactivate_plugin_outcome(&mut registry, PROBE_PLUGIN_SECONDARY_ID);
-    let last_remove = remove_plugin_outcome(&mut registry, "(missing-remove-probe)");
-    let first_line = registry.list().next().map(|plugin| plugin.one_line());
+    let last_deactivate =
+        deactivate_plugin_outcome(contract.registry_mut(), PROBE_PLUGIN_SECONDARY_ID);
+    let last_remove = remove_plugin_outcome(contract.registry_mut(), "(missing-remove-probe)");
+    let first_line = contract.list().next().map(|plugin| plugin.one_line());
     MultiPluginLifecycleProduct {
-        summary: registry.summary(),
+        summary: contract.summary(),
         last_install,
         last_activate,
         last_deactivate,

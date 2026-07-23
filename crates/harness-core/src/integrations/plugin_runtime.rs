@@ -212,6 +212,10 @@ impl PluginRuntimeContract {
         &self.registry
     }
 
+    pub fn registry_mut(&mut self) -> &mut PluginLifecycleRegistry {
+        &mut self.registry
+    }
+
     pub fn get(&self, id: &str) -> Option<&InstalledPlugin> {
         self.registry.get(id)
     }
