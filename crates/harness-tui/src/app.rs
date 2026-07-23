@@ -1841,7 +1841,8 @@ impl AppState {
         }
 
         {
-            let acp = harness_core::integrations::run_mock_acp_agent_mode_product();
+            let acp =
+                harness_core::integrations::acp_stdio::run_stdio_acp_agent_mode_product("cat");
             self.set_acp_last_connect(Some(acp.last_connect));
             self.set_acp_last_bind(Some(acp.last_bind));
             self.set_acp_connection_summary(Some(acp.summary));

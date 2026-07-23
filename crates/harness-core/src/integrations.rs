@@ -13,6 +13,7 @@
 
 pub mod acp;
 pub mod acp_file;
+pub mod acp_stdio;
 mod path;
 pub mod plugin;
 mod plugin_load;

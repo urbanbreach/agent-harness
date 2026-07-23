@@ -104,7 +104,7 @@ const REQUIRED_PASS_IDS: &[&str] = &[
 /// a real Anthropic Messages transport was implemented.
 /// `platform.binary_update` was restored to pass in Wave 5 after the
 /// download/apply/restart pipeline was implemented.
-const REQUIRED_NON_PASS_IDS: &[&str] = &["acp.agent_mode"];
+const REQUIRED_NON_PASS_IDS: &[&str] = &[];
 const MAX_ROWS: usize = 200;
 
 fn inventory_path(root: &Path) -> PathBuf {

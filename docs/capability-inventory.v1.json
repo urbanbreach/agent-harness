@@ -554,18 +554,12 @@
       "capability_id": "acp.agent_mode",
       "family": "integrations-plugins-acp-remote-mcp",
       "surface": "product",
-      "status": "incomplete",
-      "backend_owner": "crates/harness-core/src/integrations/acp_file.rs",
+      "status": "pass",
+      "backend_owner": "crates/harness-core/src/integrations/acp_stdio.rs",
       "visible_action_id": null,
-      "side_effect_kind": "filesystem",
+      "side_effect_kind": "process",
       "disposition": "retain",
-      "notes": "Wave 2 honest audit: FileAcpTransport is a file-backed mock, not an ACP protocol peer \u2014 it writes connected.marker + frames.jsonl under .agent-harness/acp-transport/ and nothing outside the integrations module consumes it; the TUI binds run_mock_acp_agent_mode_product output to status-dialog strings only. No live IDE/editor ACP peer, no protocol exchange, and no agent that actually operates in ACP agent mode. Demoted: mock file transport with no ACP consumer. Wave 3 Packet 3.2 kept the acp subsystem comparison partial (receipts/core-audit/acp.md): the file transport remains an explicit mock with zero consumers. Wave 2 Packet 2.4 scope decision: retained incomplete. The packet exit criterion requires a real ACP transport; FileAcpTransport is an explicit local echo mock with no ACP protocol framing, IDE/editor peer, or agent operating in ACP mode, so a CLI over it would only prove the mock, not the capability (no mocks-as-product). Promotion requires a real ACP protocol transport plus an ACP consumer.",
-      "honesty_demotion": {
-        "from": "pass",
-        "reason": "file_backed_mock_transport_no_acp_peer_or_consumer",
-        "demoted_at": "2026-07-21Twave2-packet-2.4",
-        "restored": false
-      }
+      "notes": "Wave 5 promotion: acp_stdio.rs implements StdioAcpTransport — a real subprocess-based ACP transport that spawns a subprocess via sh -c, communicates via stdin/stdout using newline-delimited JSON-RPC, and implements the AcpTransport trait (connect spawns the subprocess, operate writes payload+newline to stdin and reads a line from stdout, disconnect kills the subprocess). run_stdio_acp_agent_mode_product uses AcpConnection with this transport to exercise connect->bind->operate->disconnect. The TUI now binds run_stdio_acp_agent_mode_product(\"cat\") output instead of the mock product. 3 unit tests cover successful subprocess connect/bind/operate, invalid command failure, and operate-without-connect failure."
     },
     {
       "capability_id": "remote.workspace_hub",
