@@ -718,9 +718,9 @@ fn render_command_palette_footer(frame: &mut Frame, theme: &Theme, area: Rect) {
         return;
     }
     let surface = ui_chrome::command_palette_surface(theme);
-    let muted = Style::default().fg(Color::Indexed(7)).bg(surface);
+    let muted = Style::default().fg(Color::Indexed(8)).bg(surface);
     let key = Style::default()
-        .fg(Color::Indexed(15))
+        .fg(Color::Indexed(0))
         .bg(surface)
         .add_modifier(Modifier::BOLD);
     let spans = vec![
@@ -756,7 +756,9 @@ fn render_palette_empty_message(frame: &mut Frame, theme: &Theme, area: Rect, me
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
             truncate_plain_text(message, usize::from(empty_area.width)),
-            Style::default().bg(ui_chrome::command_palette_surface(theme)),
+            Style::default()
+                .fg(Color::Indexed(0))
+                .bg(ui_chrome::command_palette_surface(theme)),
         ))),
         empty_area,
     );
@@ -795,8 +797,11 @@ fn render_command_palette_input(frame: &mut Frame, app: &AppState, theme: &Theme
                 .saturating_sub(trailing)
                 .saturating_sub(chip_len);
             let gap = chip_start.saturating_sub(prefix_len);
-            let plain = Style::default();
-            let chip_key = Style::default().add_modifier(Modifier::BOLD);
+            let plain = Style::default().fg(Color::Indexed(0)).bg(surface);
+            let chip_key = Style::default()
+                .fg(Color::Indexed(0))
+                .bg(surface)
+                .add_modifier(Modifier::BOLD);
             Line::from(vec![
                 Span::styled(prefix, plain),
                 Span::styled(" ".repeat(gap), plain),

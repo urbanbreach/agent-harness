@@ -261,7 +261,7 @@ fn render_fork_selector_empty_message(frame: &mut Frame, theme: &Theme, area: Re
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
             truncate_plain_text("No matches", usize::from(empty_area.width)),
-            Style::default().bg(surface),
+            Style::default().fg(Color::Indexed(0)).bg(surface),
         ))),
         empty_area,
     );
@@ -672,9 +672,13 @@ fn session_history_row(
 
 fn session_history_row_style(theme: &Theme, selected: bool) -> Style {
     if selected {
-        Style::default().bg(theme.surface.panel_elevated)
+        Style::default()
+            .fg(Color::Indexed(15))
+            .bg(theme.surface.panel_elevated)
     } else {
-        Style::default().bg(ui_chrome::command_palette_surface(theme))
+        Style::default()
+            .fg(Color::Indexed(0))
+            .bg(ui_chrome::command_palette_surface(theme))
     }
 }
 
