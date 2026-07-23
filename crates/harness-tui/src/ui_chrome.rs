@@ -111,7 +111,7 @@ pub(super) fn composer_agent_accent(theme: &Theme, app: &AppState) -> Color {
 
 pub(super) const fn command_palette_surface(theme: &Theme) -> Color {
     let _ = theme;
-    Color::Indexed(0)
+    Color::Indexed(7)
 }
 
 pub(super) const fn slash_command_surface(theme: &Theme) -> Color {
@@ -128,12 +128,12 @@ pub(super) const fn slash_command_selection_fg(theme: &Theme) -> Color {
 
 pub(super) const fn command_palette_title(theme: &Theme) -> Color {
     let _ = theme;
-    Color::Indexed(15)
+    Color::Indexed(0)
 }
 
 pub(super) const fn command_palette_muted(theme: &Theme) -> Color {
     let _ = theme;
-    Color::Indexed(7)
+    Color::Indexed(8)
 }
 
 pub(super) const fn command_palette_section() -> Color {
@@ -150,7 +150,7 @@ pub(super) const fn command_palette_selection_fg(theme: &Theme) -> Color {
 
 pub(super) const fn command_palette_cursor(theme: &Theme) -> Color {
     let _ = theme;
-    Color::Indexed(15)
+    Color::Indexed(0)
 }
 
 pub(super) const fn fork_selector_selection_bg() -> Color {

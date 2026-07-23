@@ -350,8 +350,9 @@ pub(super) fn overlays_share_elevated_card_language() {
     assert!(
         bgs[start..end]
             .iter()
-            .all(|color| *color == ratatui::style::Color::Indexed(0)),
-        "selected palette row uses freeze Indexed(0) surface, not inverse card fill\n{row}"
+            .all(|color| *color == ratatui::style::Color::Indexed(0)
+                || *color == ratatui::style::Color::Indexed(7)),
+        "selected palette row uses freeze Indexed(0) or Indexed(7) surface, not inverse card fill\n{row}"
     );
     assert!(
         fgs[start..end]
@@ -393,6 +394,7 @@ pub(super) fn overlays_share_elevated_card_language() {
             .iter()
             .all(|color| *color == ratatui::style::Color::Reset
                 || *color == ratatui::style::Color::Indexed(0)
+                || *color == ratatui::style::Color::Indexed(7)
                 || *color == ratatui::style::Color::Rgb(0xD9, 0x84, 0xD9)
                 || *color == ratatui::style::Color::Rgb(0x0B, 0x0E, 0x14)
                 || *color == ratatui::style::Color::Rgb(0x12, 0x16, 0x1E)),
@@ -430,14 +432,14 @@ pub(super) fn quiet_overlay_helper_rows_use_semantic_chrome_palette() {
     assert!(
         commands_bgs[commands_start..commands_end]
             .iter()
-            .all(|color| *color == ratatui::style::Color::Indexed(0)),
-        "Commands title uses freeze Indexed(0) surface\n{commands_row}"
+            .all(|color| *color == ratatui::style::Color::Indexed(7)),
+        "Commands title uses freeze Indexed(7) surface\n{commands_row}"
     );
     assert!(
         commands_fgs[commands_start..commands_end]
             .iter()
-            .all(|color| *color == ratatui::style::Color::Indexed(15)),
-        "Commands title uses Indexed(15) text on Indexed(0) surface\n{commands_row}"
+            .all(|color| *color == ratatui::style::Color::Indexed(0)),
+        "Commands title uses Indexed(0) text on Indexed(7) surface\n{commands_row}"
     );
 
     let mut sessions = app::AppState::new_startup(
@@ -474,14 +476,14 @@ pub(super) fn quiet_overlay_helper_rows_use_semantic_chrome_palette() {
     assert!(
         title_bgs[title_start..title_end]
             .iter()
-            .all(|color| *color == ratatui::style::Color::Indexed(0)),
-        "session history title uses freeze Indexed(0) surface\n{title_row}"
+            .all(|color| *color == ratatui::style::Color::Indexed(7)),
+        "session history title uses freeze Indexed(7) surface\n{title_row}"
     );
     assert!(
         title_fgs[title_start..title_end]
             .iter()
-            .all(|color| *color == ratatui::style::Color::Indexed(15)),
-        "session history title uses Indexed(15) text on Indexed(0) surface\n{title_row}"
+            .all(|color| *color == ratatui::style::Color::Indexed(0)),
+        "session history title uses Indexed(0) text on Indexed(7) surface\n{title_row}"
     );
 }
 

@@ -644,7 +644,7 @@ fn paint_command_palette_panel_titled(
     let surface = ui_chrome::command_palette_surface(theme);
     let border_style = Style::default().fg(Color::Indexed(8)).bg(surface);
     let title_style = Style::default()
-        .fg(Color::Indexed(15))
+        .fg(ui_chrome::command_palette_title(theme))
         .bg(surface)
         .add_modifier(Modifier::BOLD);
     let close_style = border_style;
@@ -1110,8 +1110,8 @@ fn render_palette_solid_backdrop(frame: &mut Frame, area: Rect, preserve: Option
             }
             let cell = &mut buffer[(x, y)];
             cell.set_symbol(" ");
-            cell.set_fg(Color::Indexed(0));
-            cell.set_bg(Color::Indexed(0));
+            cell.set_fg(Color::Indexed(7));
+            cell.set_bg(Color::Indexed(7));
         }
     }
 }

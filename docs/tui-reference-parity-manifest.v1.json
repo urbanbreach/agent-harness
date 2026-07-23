@@ -1838,7 +1838,7 @@
         "A-NO-RESKIN"
       ],
       "status": "blocked",
-      "notes": "Wave 5: scrollbar thumb behavior fixed. show_thumb now renders for all palette rows instead of only selected category rows, matching reference freeze (thumb for 18 rows, not 9). Diagnosed 16069 mismatches: NOT subpixel AA but structural color scheme differences. Reference uses [238,238,236] (light gray) for palette surface; harness uses Color::Indexed(0) (dark [11,14,20]). Harness dark theme vs reference light palette theme. Fixing requires palette color scheme redesign (surface, backdrop, text colors), not a single color swap. DIV-AA-PALETTE remains rejected. status=blocked pending palette color scheme alignment. 2026-07-23",
+      "notes": "Wave 6: palette color scheme aligned to reference. command_palette_surface changed from Indexed(0) (dark) to Indexed(7) (light gray [238,238,236]) matching reference freeze. Title text changed from Indexed(15) to Indexed(0) for readability on light surface. Muted text changed from Indexed(7) to Indexed(8). Cursor changed from Indexed(15) to Indexed(0). Backdrop changed from Indexed(0) to Indexed(7). Snapshot and assertion tests updated. DIV-AA-PALETTE remains rejected. status=blocked pending fresh pixel evidence recapture to verify mismatch reduction. 2026-07-23",
       "slice": "scaffold",
       "evidence": {
         "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-palette-pinned-v1/",
