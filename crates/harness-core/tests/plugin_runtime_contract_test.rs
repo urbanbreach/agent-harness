@@ -252,6 +252,7 @@ fn runtime_contract_upgrade_rolls_back_on_install_failure() {
     contract
         .activate("upgfail.plugin", PluginActivationPermission::Granted)
         .unwrap_or_abort();
+    let events_before = contract.events().len();
 
     // act — upgrade with invalid package root
     let bad_path = workspace.join("nonexistent");
@@ -265,4 +266,50 @@ fn runtime_contract_upgrade_rolls_back_on_install_failure() {
     assert!(result.is_err());
     assert!(contract.get("upgfail.plugin").is_some());
     assert!(contract.is_enabled("upgfail.plugin"));
+
+    // assert — failed upgrade events truncated, restoration events recorded
+    let events = contract.events();
+    assert_eq!(events.len(), events_before + 2);
+    assert!(matches!(
+        &events[events_before],
+        PluginLifecycleEvent::Installed { id } if id == "upgfail.plugin"
+    ));
+    assert!(matches!(
+        &events[events_before + 1],
+        PluginLifecycleEvent::Activated { id } if id == "upgfail.plugin"
+    ));
+}
+
+#[test]
+fn runtime_contract_upgrade_preserves_disabled_state() {
+    // arrange — plugin installed but NOT activated (disabled)
+    let temp = tempfile::tempdir().unwrap_or_abort();
+    let workspace = temp.path().join("ws");
+    fs::create_dir_all(&workspace).unwrap_or_abort();
+    let package_v1 = write_plugin_package(&workspace, "plugins/dis-upg-v1", "dis.plugin");
+    let package_v2 = write_plugin_package(&workspace, "plugins/dis-upg-v2", "dis.plugin");
+    let mut contract = PluginRuntimeContract::new(&workspace);
+    contract
+        .install_from_package_root(&package_v1)
+        .unwrap_or_abort();
+    assert!(!contract.is_enabled("dis.plugin"));
+
+    // act — upgrade without activating
+    contract
+        .upgrade_plugin(
+            "dis.plugin",
+            &package_v2,
+            PluginActivationPermission::Granted,
+        )
+        .unwrap_or_abort();
+
+    // assert — plugin remains disabled after upgrade
+    assert!(!contract.is_enabled("dis.plugin"));
+    let events = contract.events();
+    assert!(events
+        .iter()
+        .any(|e| matches!(e, PluginLifecycleEvent::Upgraded { id } if id == "dis.plugin")));
+    assert!(!events
+        .iter()
+        .any(|e| matches!(e, PluginLifecycleEvent::Activated { id } if id == "dis.plugin")));
 }

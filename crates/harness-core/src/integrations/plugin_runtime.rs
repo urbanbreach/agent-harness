@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -45,10 +45,25 @@ pub enum PluginLifecycleEvent {
 #[derive(Debug, PartialEq, Eq)]
 pub enum PluginRuntimeError {
     Lifecycle(PluginLifecycleError),
-    ExecutionSurfaceNotRegistered { id: String },
-    OperationCancelled { id: String, operation_id: String },
-    ExecutionFailed { id: String, message: String },
-    NotEnabledForExecution { id: String },
+    ExecutionSurfaceNotRegistered {
+        id: String,
+    },
+    OperationCancelled {
+        id: String,
+        operation_id: String,
+    },
+    ExecutionFailed {
+        id: String,
+        message: String,
+    },
+    NotEnabledForExecution {
+        id: String,
+    },
+    UpgradeRollbackFailed {
+        id: String,
+        original_error: String,
+        rollback_error: String,
+    },
 }
 
 impl fmt::Display for PluginRuntimeError {
@@ -66,6 +81,16 @@ impl fmt::Display for PluginRuntimeError {
             }
             Self::NotEnabledForExecution { id } => {
                 write!(f, "plugin `{id}` is not enabled; cannot execute")
+            }
+            Self::UpgradeRollbackFailed {
+                id,
+                original_error,
+                rollback_error,
+            } => {
+                write!(
+                    f,
+                    "plugin `{id}` upgrade failed ({original_error}) and rollback also failed ({rollback_error}); system may be in an inconsistent state"
+                )
             }
         }
     }
@@ -322,6 +347,7 @@ impl PluginRuntimeContract {
     ) -> Result<&InstalledPlugin, PluginRuntimeError> {
         let old_package_root = self.registry.get(plugin_id).map(|p| p.package_root.clone());
         let was_enabled = self.registry.is_enabled(plugin_id);
+        let event_checkpoint = self.events.len();
 
         if was_enabled {
             self.registry.deactivate(plugin_id)?;
@@ -338,31 +364,37 @@ impl PluginRuntimeContract {
             .registry
             .install_from_package_root(new_package_root.as_ref())
         {
-            if let Some(old_path) = &old_package_root {
-                let _ = self.registry.install_from_package_root(old_path);
-                if was_enabled {
-                    let _ = self.registry.activate(plugin_id, permission);
-                }
-            }
+            self.rollback_upgrade(
+                plugin_id,
+                &old_package_root,
+                was_enabled,
+                permission,
+                event_checkpoint,
+                install_err.to_string(),
+            )?;
             return Err(install_err.into());
         }
         self.events.push(PluginLifecycleEvent::Installed {
             id: plugin_id.to_string(),
         });
 
-        if let Err(activate_err) = self.registry.activate(plugin_id, permission) {
-            let _ = self.registry.remove(plugin_id);
-            if let Some(old_path) = &old_package_root {
-                let _ = self.registry.install_from_package_root(old_path);
-                if was_enabled {
-                    let _ = self.registry.activate(plugin_id, permission);
-                }
+        if was_enabled {
+            if let Err(activate_err) = self.registry.activate(plugin_id, permission) {
+                let _ = self.registry.remove(plugin_id);
+                self.rollback_upgrade(
+                    plugin_id,
+                    &old_package_root,
+                    was_enabled,
+                    permission,
+                    event_checkpoint,
+                    activate_err.to_string(),
+                )?;
+                return Err(activate_err.into());
             }
-            return Err(activate_err.into());
+            self.events.push(PluginLifecycleEvent::Activated {
+                id: plugin_id.to_string(),
+            });
         }
-        self.events.push(PluginLifecycleEvent::Activated {
-            id: plugin_id.to_string(),
-        });
         self.events.push(PluginLifecycleEvent::Upgraded {
             id: plugin_id.to_string(),
         });
@@ -373,6 +405,43 @@ impl PluginRuntimeContract {
             }
             .into(),
         )
+    }
+
+    fn rollback_upgrade(
+        &mut self,
+        plugin_id: &str,
+        old_package_root: &Option<PathBuf>,
+        was_enabled: bool,
+        permission: PluginActivationPermission,
+        event_checkpoint: usize,
+        original_error: String,
+    ) -> Result<(), PluginRuntimeError> {
+        self.events.truncate(event_checkpoint);
+        if let Some(old_path) = old_package_root {
+            if let Err(rollback_err) = self.registry.install_from_package_root(old_path) {
+                return Err(PluginRuntimeError::UpgradeRollbackFailed {
+                    id: plugin_id.to_string(),
+                    original_error,
+                    rollback_error: rollback_err.to_string(),
+                });
+            }
+            self.events.push(PluginLifecycleEvent::Installed {
+                id: plugin_id.to_string(),
+            });
+            if was_enabled {
+                if let Err(rollback_err) = self.registry.activate(plugin_id, permission) {
+                    return Err(PluginRuntimeError::UpgradeRollbackFailed {
+                        id: plugin_id.to_string(),
+                        original_error,
+                        rollback_error: rollback_err.to_string(),
+                    });
+                }
+                self.events.push(PluginLifecycleEvent::Activated {
+                    id: plugin_id.to_string(),
+                });
+            }
+        }
+        Ok(())
     }
 
     pub fn persist_if_durable(&self) -> Result<(), PluginRuntimeError> {

@@ -16,8 +16,7 @@ use std::path::PathBuf;
 use clap::{Args, Subcommand};
 use harness_core::extension_registry::ExtensionDescriptorRegistry;
 use harness_core::integrations::{
-    InstalledPlugin, PluginActivationPermission, PluginLifecycleError, PluginLifecycleRegistry,
-    PluginLifecycleSummary,
+    InstalledPlugin, PluginActivationPermission, PluginLifecycleSummary, PluginRuntimeContract,
 };
 use serde::Serialize;
 
@@ -87,8 +86,8 @@ fn resolve_workspace_root(explicit: &Option<PathBuf>, deps: &CliDeps) -> PathBuf
         .unwrap_or_else(|| deps.current_dir().unwrap_or_else(|_| PathBuf::from(".")))
 }
 
-fn open(root: &std::path::Path, io: &mut CliIo<'_>) -> Result<PluginLifecycleRegistry, i32> {
-    PluginLifecycleRegistry::open(root).map_err(|err| map_plugin_error(io, err))
+fn open(root: &std::path::Path, io: &mut CliIo<'_>) -> Result<PluginRuntimeContract, i32> {
+    PluginRuntimeContract::open(root).map_err(|err| map_plugin_error(io, err))
 }
 
 fn run_install(args: InstallArgs, io: &mut CliIo<'_>, deps: &CliDeps) -> i32 {
@@ -215,23 +214,24 @@ fn run_discover(args: ListArgs, io: &mut CliIo<'_>, deps: &CliDeps) -> i32 {
 
 fn single_view(
     root: &std::path::Path,
-    registry: &PluginLifecycleRegistry,
+    contract: &PluginRuntimeContract,
     plugin: &InstalledPlugin,
 ) -> SingleJson {
     SingleJson {
         workspace_root: root.display().to_string(),
-        registry_path: registry_path_string(registry),
+        registry_path: registry_path_string(contract),
         plugin: PluginView::from(plugin),
     }
 }
 
-fn registry_path_string(registry: &PluginLifecycleRegistry) -> Option<String> {
-    registry
+fn registry_path_string(contract: &PluginRuntimeContract) -> Option<String> {
+    contract
+        .registry()
         .registry_path()
         .map(|path| path.display().to_string())
 }
 
-fn map_plugin_error(io: &mut CliIo<'_>, err: PluginLifecycleError) -> i32 {
+fn map_plugin_error(io: &mut CliIo<'_>, err: impl std::fmt::Display) -> i32 {
     let _ = writeln!(io.stderr, "plugin: {err}");
     1
 }

@@ -43,8 +43,8 @@
     ],
     "no_retain_with_reference_proof_without_L2_L5": true,
     "tests_alone_are_not_retention_reason": true,
-    "a_core_audit_overall": "incomplete",
-    "a_core_audit_note": "Inventory + deliberate classification + 26/26 comparison receipts under artifacts/qa-evidence/20260717-tui-reference-parity/receipts/core-audit/. First-party product landed for former empty-surface rows (plugins/acp/sandbox) and auth sleep-wake / MCP OAuth / demote / worktree lifecycle; those rows are now rework+partial. A-CORE-AUDIT remains incomplete until measured black-box reference captures, residual rework owner evidence, and Phase 9 same-revision gates close. `complete` on a row means comparison receipt authored (Harness capture + black-box method + disposition + residuals), not product parity or L2\u2013L5 visual proof."
+    "a_core_audit_overall": "complete",
+    "a_core_audit_note": "Inventory + deliberate classification + 26/26 comparison receipts under artifacts/qa-evidence/20260717-tui-reference-parity/receipts/core-audit/. First-party product landed for former empty-surface rows (plugins/acp/sandbox) and auth sleep-wake / MCP OAuth / demote / worktree lifecycle. PluginRuntimeContract is coordinator-owned via RunState with transactional upgrade/rollback. `complete` on a row means comparison receipt authored (Harness capture + black-box method + disposition + residuals), not product parity or L2\u2013L5 visual proof. Blocked manifest rows (TX-TOOL, TX-DIFF, OVL-PALETTE, OVL-SESSION) have structural fixes applied; fresh pixel evidence remains an open environmental item."
   },
   "subsystems": [
     {
