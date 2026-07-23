@@ -129,11 +129,11 @@ fn render_lineage_child_dialog(
     let surface = ui_chrome::command_palette_surface(theme);
     let border_style = Style::default().fg(theme.border.subtle).bg(surface);
     let label_style = Style::default()
-        .fg(theme.text.primary)
+        .fg(Color::Indexed(0))
         .bg(surface)
         .add_modifier(Modifier::BOLD);
     let meta_style = Style::default().fg(theme.text.secondary).bg(surface);
-    let key_style = Style::default().fg(theme.text.primary).bg(surface);
+    let key_style = Style::default().fg(Color::Indexed(0)).bg(surface);
 
     frame.render_widget(
         Block::default()
@@ -400,16 +400,20 @@ fn lineage_row_style(theme: &Theme, selected: bool) -> Style {
     if selected {
         ui_chrome::overlay_focus_row_style(theme)
     } else {
-        Style::default().bg(ui_chrome::command_palette_surface(theme))
+        Style::default()
+            .fg(Color::Indexed(0))
+            .bg(ui_chrome::command_palette_surface(theme))
     }
 }
 
 fn fork_selector_row_style(theme: &Theme, selected: bool) -> Style {
     let surface = ui_chrome::command_palette_surface(theme);
     if selected {
-        Style::default().bg(ui_chrome::fork_selector_selection_bg())
+        Style::default()
+            .fg(Color::Indexed(15))
+            .bg(ui_chrome::fork_selector_selection_bg())
     } else {
-        Style::default().bg(surface)
+        Style::default().fg(Color::Indexed(0)).bg(surface)
     }
 }
 

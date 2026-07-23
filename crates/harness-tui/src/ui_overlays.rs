@@ -260,7 +260,9 @@ fn render_session_history_side_hint(frame: &mut Frame, _theme: &Theme, root: Rec
         return;
     }
     let text = truncate_plain_text(hint, usize::from(width));
-    let style = Style::default().add_modifier(Modifier::BOLD);
+    let style = Style::default()
+        .fg(Color::Indexed(0))
+        .add_modifier(Modifier::BOLD);
     let buffer = frame.buffer_mut();
     for (index, ch) in text.chars().enumerate() {
         let cell_x = x.saturating_add(u16::try_from(index).unwrap_or(u16::MAX));
@@ -1065,16 +1067,18 @@ fn command_palette_section_row(
     width: u16,
     show_thumb: bool,
 ) -> Line<'static> {
-    let _ = theme;
+    let surface = ui_chrome::command_palette_surface(theme);
     let row_width = usize::from(width);
     let gutter = 3usize;
     let body_row_width = row_width.saturating_sub(gutter);
     let label_style = Style::default()
         .fg(Color::Indexed(8))
+        .bg(surface)
         .add_modifier(Modifier::BOLD);
-    let rule_style = Style::default().fg(Color::Indexed(8));
+    let rule_style = Style::default().fg(Color::Indexed(8)).bg(surface);
+    let fill_style = Style::default().fg(Color::Indexed(0)).bg(surface);
     let prefix = " ";
-    let mut spans = vec![Span::raw(prefix.to_string())];
+    let mut spans = vec![Span::styled(prefix.to_string(), fill_style)];
     let label = truncate_plain_text(
         label,
         body_row_width
@@ -1089,8 +1093,11 @@ fn command_palette_section_row(
         let rule = "─".repeat(body_row_width.saturating_sub(used_width));
         spans.push(Span::styled(rule, rule_style));
     }
-    spans.push(Span::raw("  ".to_string()));
-    spans.push(Span::raw(if show_thumb { "█" } else { " " }.to_string()));
+    spans.push(Span::styled("  ".to_string(), fill_style));
+    spans.push(Span::styled(
+        if show_thumb { "█" } else { " " }.to_string(),
+        fill_style,
+    ));
     Line::from(spans)
 }
 
