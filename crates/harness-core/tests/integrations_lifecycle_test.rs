@@ -718,7 +718,6 @@ fn runtime_contract_cancels_operations() {
     let result = contract.execute_plugin("cancel.plugin", "op-cancelled", "input");
 
     // assert
-    assert!(result.is_err());
     assert!(matches!(
         result.unwrap_err(),
         PluginRuntimeError::OperationCancelled { id, operation_id } if id == "cancel.plugin" && operation_id == "op-cancelled"
@@ -794,7 +793,6 @@ fn runtime_contract_denies_execution_for_disabled_plugin() {
     let result = contract.execute_plugin("disabled.plugin", "op-1", "input");
 
     // assert
-    assert!(result.is_err());
     assert!(matches!(
         result.unwrap_err(),
         PluginRuntimeError::NotEnabledForExecution { id } if id == "disabled.plugin"
