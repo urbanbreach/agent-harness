@@ -770,7 +770,7 @@ fn render_command_palette_input(frame: &mut Frame, app: &AppState, theme: &Theme
     let surface = ui_chrome::command_palette_surface(theme);
     frame.render_widget(Block::default().style(Style::default().bg(surface)), area);
 
-    let chrome = Style::default().fg(Color::Indexed(7)).bg(surface);
+    let chrome = Style::default().fg(Color::Indexed(0)).bg(surface);
     let cursor = Style::default()
         .fg(command_palette_input_cursor(theme, app))
         .bg(surface);
@@ -1018,10 +1018,10 @@ fn command_palette_row(
     let gutter = 4usize;
     let body_row_width = row_width.saturating_sub(gutter);
     let surface = ui_chrome::command_palette_surface(theme);
-    let row_style = Style::default().fg(Color::Indexed(15)).bg(surface);
-    let label_style = Style::default().fg(Color::Indexed(15)).bg(surface);
+    let row_style = Style::default().fg(Color::Indexed(0)).bg(surface);
+    let label_style = Style::default().fg(Color::Indexed(0)).bg(surface);
     let prefix_style = Style::default().fg(Color::Indexed(8)).bg(surface);
-    let shortcut_style = Style::default().fg(Color::Indexed(7)).bg(surface);
+    let shortcut_style = Style::default().fg(Color::Indexed(8)).bg(surface);
 
     let shortcut_len = if shortcut.is_empty() {
         0
@@ -1065,7 +1065,7 @@ fn command_palette_section_row(
     let gutter = 3usize;
     let body_row_width = row_width.saturating_sub(gutter);
     let label_style = Style::default()
-        .fg(Color::Indexed(7))
+        .fg(Color::Indexed(8))
         .add_modifier(Modifier::BOLD);
     let rule_style = Style::default().fg(Color::Indexed(8));
     let prefix = " ";

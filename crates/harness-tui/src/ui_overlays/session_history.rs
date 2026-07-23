@@ -505,9 +505,12 @@ fn render_session_history_list(frame: &mut Frame, app: &AppState, theme: &Theme,
                 frame.render_widget(
                     Paragraph::new(Line::from(Span::styled(
                         truncate_plain_text(label, usize::from(row_area.width.saturating_sub(3))),
-                        Style::default().bg(surface).add_modifier(Modifier::BOLD),
+                        Style::default()
+                            .fg(Color::Indexed(0))
+                            .bg(surface)
+                            .add_modifier(Modifier::BOLD),
                     )))
-                    .style(Style::default().bg(surface)),
+                    .style(Style::default().fg(Color::Indexed(0)).bg(surface)),
                     Rect::new(
                         row_area.x.saturating_add(3),
                         row_area.y,
@@ -681,8 +684,11 @@ fn render_session_history_actions(frame: &mut Frame, theme: &Theme, area: Rect) 
     }
 
     let surface = ui_chrome::command_palette_surface(theme);
-    let muted = Style::default();
-    let key = Style::default().add_modifier(Modifier::BOLD);
+    let muted = Style::default().fg(Color::Indexed(8)).bg(surface);
+    let key = Style::default()
+        .fg(Color::Indexed(0))
+        .bg(surface)
+        .add_modifier(Modifier::BOLD);
     let spans = vec![
         Span::styled("↑↓".to_string(), key),
         Span::styled(" nav | ".to_string(), muted),

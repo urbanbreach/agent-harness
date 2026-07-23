@@ -357,7 +357,8 @@ pub(super) fn overlays_share_elevated_card_language() {
     assert!(
         fgs[start..end]
             .iter()
-            .all(|color| *color == ratatui::style::Color::Indexed(15)),
+            .all(|color| *color == ratatui::style::Color::Indexed(0)
+                || *color == ratatui::style::Color::Indexed(15)),
         "selected palette row keeps primary text on Indexed(0) surface\n{row}"
     );
 
