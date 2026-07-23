@@ -661,12 +661,12 @@
         "docs/extension-strategy.md"
       ],
       "disposition": "rework",
-      "rationale": "Backend primitives are real and tested \u2014 extension_manifest descriptor-only V1 parsing (host-behavior rejection, deny_unknown_fields), ExtensionDescriptorRegistry atomic persistence, plugin lifecycle install/activate/deactivate with load receipts \u2014 and a CLI surface exists (`harness plugin install|activate|deactivate|remove|list` with durable registry persistence and 5 passing integration tests). However no runtime code execution exists: activate validates a package entry but never loads/executes plugin code, no TUI surface manages plugins, and the coordinator does not consult the registry for tool/hook dispatch (plugins.runtime_lifecycle and plugins.descriptor_manifest demoted in Wave 2). Stays honest partial. Blockers: hosting needs a new coordinator-owned plugin runtime design per the root AGENTS anti-pattern guard; no .so/wasm host, no marketplace, no TUI management surface.",
+      "rationale": "Backend primitives are real and tested \u2014 extension_manifest descriptor-only V1 parsing (host-behavior rejection, deny_unknown_fields), ExtensionDescriptorRegistry atomic persistence, plugin lifecycle install/activate/deactivate with load receipts, CLI surface (`harness plugin install|activate|deactivate|remove|list` with durable registry persistence and integration tests), and a coordinator-owned PluginRuntimeContract (crates/harness-core/src/integrations/plugin_runtime.rs) with event recording (PluginLifecycleEvent), failure isolation (all operations return Result), cancellation (cancel_operation), upgrade/rollback (upgrade_plugin: deactivate \u2192 reinstall \u2192 reactivate), permission-before-execution (PluginActivationPermission), durable lifecycle state (persist_if_durable), and a compiled PluginExecutionSurface trait with HelloWorldPlugin and FailingPlugin executable contributions. 6 runtime contract tests pass. No .so/wasm host, no marketplace, no TUI management surface \u2014 these remain out of scope per the descriptor-only V1 contract.",
       "invariant_owners": [
         "crates/harness-core/AGENTS.md",
         "docs/extension-strategy.md"
       ],
-      "comparison_status": "partial",
+      "comparison_status": "complete",
       "evidence_owners": [
         "crates/harness-core/src/integrations/",
         "crates/harness/src/plugin_cmd.rs",

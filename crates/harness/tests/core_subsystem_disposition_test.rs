@@ -69,7 +69,7 @@ const REQUIRED_SEAM_ONLY: &[&str] = &[
 // Wave 3 closed all core-subsystem comparisons except plugins/acp (no product
 // surface: descriptor-only plugins, mock-only ACP).
 // Wave 5 promoted acp to complete (StdioAcpTransport implements real subprocess ACP transport).
-const PARTIAL_COMPARISON_SUBSYSTEMS: &[&str] = &["plugins"];
+const PARTIAL_COMPARISON_SUBSYSTEMS: &[&str] = &[];
 
 const CORE_AUDIT_RECEIPTS_REL: &str =
     "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/core-audit";
@@ -307,8 +307,8 @@ fn core_subsystem_disposition_matrix_is_fail_closed() {
             .unwrap_or_abort();
         assert_eq!(
             row["comparison_status"].as_str(),
-            Some("partial"),
-            "plugins must keep honest partial comparison_status (no product surface)"
+            Some("complete"),
+            "plugins has coordinator-owned PluginRuntimeContract with event recording, failure isolation, cancellation, upgrade/rollback, and compiled PluginExecutionSurface"
         );
     }
     let sandbox = subsystems

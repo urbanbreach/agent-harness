@@ -17,6 +17,7 @@ pub mod acp_stdio;
 mod path;
 pub mod plugin;
 mod plugin_load;
+pub mod plugin_runtime;
 pub mod product;
 
 pub use acp::{
@@ -36,6 +37,10 @@ pub use plugin::{
     PluginRemoveOutcome, PLUGIN_ENTRY_FILE_NAME, PLUGIN_HOOKS_FILE_NAME,
     PLUGIN_LOAD_RECEIPT_FILE_NAME, PLUGIN_MANIFEST_FILE_NAME, PLUGIN_REGISTRY_REL,
     PLUGIN_SKILLS_DIR_NAME,
+};
+pub use plugin_runtime::{
+    FailingPlugin, HelloWorldPlugin, PluginExecutionResult, PluginExecutionSurface,
+    PluginLifecycleEvent, PluginRuntimeContract, PluginRuntimeError,
 };
 pub use product::{
     run_mock_acp_agent_mode_product, run_multi_descriptor_discover_product,

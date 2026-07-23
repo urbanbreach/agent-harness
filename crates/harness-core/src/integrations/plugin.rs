@@ -207,7 +207,7 @@ impl PluginLifecycleRegistry {
         self.persist_path.as_deref()
     }
 
-    fn persist_if_durable(&self) -> Result<(), PluginLifecycleError> {
+    pub fn persist_if_durable(&self) -> Result<(), PluginLifecycleError> {
         let Some(path) = &self.persist_path else {
             return Ok(());
         };
