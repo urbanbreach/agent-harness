@@ -319,10 +319,7 @@ pub(crate) fn ovl_session_pty() {
     helper.writer.flush().unwrap_or_abort();
     helper.wait_for("x");
     send_key(helper.writer.as_mut(), 0x13).unwrap_or_abort();
-    let screen = wait_for_any(
-        &mut helper,
-        &["Resume session", "Replay session"],
-    );
+    let screen = wait_for_any(&mut helper, &["Resume session", "Replay session"]);
     assert!(
         screen.contains("Resume session") || screen.contains("Replay session"),
         "OVL-SESSION PTY: session picker overlay title required\n{screen}"

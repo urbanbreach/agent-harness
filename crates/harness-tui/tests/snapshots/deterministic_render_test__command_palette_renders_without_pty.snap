@@ -1,5 +1,6 @@
 ---
 source: crates/harness-tui/tests/deterministic_render_test.rs
+assertion_line: 175
 expression: snapshot.as_str()
 ---
 
@@ -20,21 +21,21 @@ expression: snapshot.as_str()
                               │  ◆ Session Info                         /session-info   █│
                               │  ◆ Send Feedback                            /feedback   █│
                               │                                                          │
-                              │   Context ────────────────────────────────────────────   │
-                              │  ◆ Compact History                           /compact    │
-                              │  ◆ Context Usage                             /context    │
-                              │  ◆ View Plan                               /view-plan    │
-                              │  ◆ Memory                                     /memory    │
+                              │   Context ────────────────────────────────────────────  █│
+                              │  ◆ Compact History                           /compact   █│
+                              │  ◆ Context Usage                             /context   █│
+                              │  ◆ View Plan                               /view-plan   █│
+                              │  ◆ Memory                                     /memory   █│
                               │                                                          │
-                              │   Model & Input ──────────────────────────────────────   │
-                              │  ◆ Switch Model                                /model    │
-                              │  ◆ Always Approve Mode                /always-approve    │
-                              │  ◆ Multiline Input                         /multiline    │
+                              │   Model & Input ──────────────────────────────────────  █│
+                              │  ◆ Switch Model                                /model   █│
+                              │  ◆ Always Approve Mode                /always-approve   █│
+                              │  ◆ Multiline Input                         /multiline   █│
                               │                                                          │
-                              │   Tools ──────────────────────────────────────────────   │
-                              │  ◆ Hooks                                       /hooks    │
-                              │  ◆ Plugins                                   /plugins    │
-                              │  ◆ Marketplace                           /marketplace    │
+                              │   Tools ──────────────────────────────────────────────  █│
+                              │  ◆ Hooks                                       /hooks   █│
+                              │  ◆ Plugins                                   /plugins   █│
+                              │  ◆ Marketplace                           /marketplace   █│
                               │                                                          │
   ╭───────────────────────────│          ↑/↓ nav  |  Enter select  |  Esc close          │───────────────────────────╮
   │ ❯                         └──────────────────────────────────────────────────────────┘                           │
