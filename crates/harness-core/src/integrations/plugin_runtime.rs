@@ -64,6 +64,10 @@ pub enum PluginRuntimeError {
         original_error: String,
         rollback_error: String,
     },
+    UpgradeIdMismatch {
+        expected_id: String,
+        actual_id: String,
+    },
 }
 
 impl fmt::Display for PluginRuntimeError {
@@ -90,6 +94,15 @@ impl fmt::Display for PluginRuntimeError {
                 write!(
                     f,
                     "plugin `{id}` upgrade failed ({original_error}) and rollback also failed ({rollback_error}); system may be in an inconsistent state"
+                )
+            }
+            Self::UpgradeIdMismatch {
+                expected_id,
+                actual_id,
+            } => {
+                write!(
+                    f,
+                    "upgrade failed: expected plugin `{expected_id}` but replacement has id `{actual_id}`"
                 )
             }
         }
@@ -360,6 +373,7 @@ impl PluginRuntimeContract {
             id: plugin_id.to_string(),
         });
 
+        let ids_before: BTreeSet<String> = self.registry.list().map(|p| p.id.clone()).collect();
         if let Err(install_err) = self
             .registry
             .install_from_package_root(new_package_root.as_ref())
@@ -374,13 +388,49 @@ impl PluginRuntimeContract {
             )?;
             return Err(install_err.into());
         }
+        let actual_id = self
+            .registry
+            .list()
+            .find(|p| !ids_before.contains(&p.id))
+            .map(|p| p.id.clone());
+        if actual_id.as_deref() != Some(plugin_id) {
+            if let Some(wrong_id) = &actual_id {
+                if let Err(remove_err) = self.registry.remove(wrong_id) {
+                    return Err(PluginRuntimeError::UpgradeRollbackFailed {
+                        id: plugin_id.to_string(),
+                        original_error: format!(
+                            "replacement has wrong id: expected {plugin_id}, got {wrong_id}"
+                        ),
+                        rollback_error: remove_err.to_string(),
+                    });
+                }
+            }
+            self.rollback_upgrade(
+                plugin_id,
+                &old_package_root,
+                was_enabled,
+                permission,
+                event_checkpoint,
+                format!("replacement has wrong id: expected {plugin_id}"),
+            )?;
+            return Err(PluginRuntimeError::UpgradeIdMismatch {
+                expected_id: plugin_id.to_string(),
+                actual_id: actual_id.unwrap_or_default(),
+            });
+        }
         self.events.push(PluginLifecycleEvent::Installed {
             id: plugin_id.to_string(),
         });
 
         if was_enabled {
             if let Err(activate_err) = self.registry.activate(plugin_id, permission) {
-                let _ = self.registry.remove(plugin_id);
+                if let Err(remove_err) = self.registry.remove(plugin_id) {
+                    return Err(PluginRuntimeError::UpgradeRollbackFailed {
+                        id: plugin_id.to_string(),
+                        original_error: activate_err.to_string(),
+                        rollback_error: remove_err.to_string(),
+                    });
+                }
                 self.rollback_upgrade(
                     plugin_id,
                     &old_package_root,

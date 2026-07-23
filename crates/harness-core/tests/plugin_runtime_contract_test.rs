@@ -313,3 +313,50 @@ fn runtime_contract_upgrade_preserves_disabled_state() {
         .iter()
         .any(|e| matches!(e, PluginLifecycleEvent::Activated { id } if id == "dis.plugin")));
 }
+
+#[test]
+fn runtime_contract_upgrade_rejects_mismatched_replacement_id() {
+    // arrange — installed+activated plugin and a package with a different manifest ID
+    let temp = tempfile::tempdir().unwrap_or_abort();
+    let workspace = temp.path().join("ws");
+    fs::create_dir_all(&workspace).unwrap_or_abort();
+    let package_v1 = write_plugin_package(&workspace, "plugins/orig", "orig.plugin");
+    let package_wrong = write_plugin_package(&workspace, "plugins/wrong", "wrong.plugin");
+    let mut contract = PluginRuntimeContract::new(&workspace);
+    contract
+        .install_from_package_root(&package_v1)
+        .unwrap_or_abort();
+    contract
+        .activate("orig.plugin", PluginActivationPermission::Granted)
+        .unwrap_or_abort();
+    let events_before = contract.events().len();
+
+    // act — upgrade with a package whose manifest ID differs
+    let result = contract.upgrade_plugin(
+        "orig.plugin",
+        &package_wrong,
+        PluginActivationPermission::Granted,
+    );
+
+    // assert — UpgradeIdMismatch error, old plugin restored, wrong plugin not registered
+    assert!(matches!(
+        &result.unwrap_err(),
+        PluginRuntimeError::UpgradeIdMismatch { expected_id, actual_id }
+            if expected_id == "orig.plugin" && actual_id == "wrong.plugin"
+    ));
+    assert!(contract.get("orig.plugin").is_some());
+    assert!(contract.is_enabled("orig.plugin"));
+    assert!(contract.get("wrong.plugin").is_none());
+
+    // assert — failed upgrade events truncated, restoration events recorded
+    let events = contract.events();
+    assert_eq!(events.len(), events_before + 2);
+    assert!(matches!(
+        &events[events_before],
+        PluginLifecycleEvent::Installed { id } if id == "orig.plugin"
+    ));
+    assert!(matches!(
+        &events[events_before + 1],
+        PluginLifecycleEvent::Activated { id } if id == "orig.plugin"
+    ));
+}
