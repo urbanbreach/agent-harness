@@ -260,6 +260,7 @@ async fn run_new_live_runtime(
     let _ = live_update_tx.send(LiveUpdate::Status("starting new session".to_string()));
     let bootstrap_error_tx = live_update_tx.clone();
     let session_history_update_tx = live_update_tx.clone();
+    let plugin_summary_tx = live_update_tx.clone();
 
     match bootstrap_new_live_runtime(
         &settings,
@@ -273,6 +274,9 @@ async fn run_new_live_runtime(
     .await
     {
         Ok(runtime) => {
+            if let Ok(summary) = runtime.coordinator.plugin_lifecycle_summary().await {
+                let _ = plugin_summary_tx.send(LiveUpdate::PluginLifecycleSummary(summary));
+            }
             let session_history_task = spawn_session_history_refresh(
                 settings.session_dir.clone(),
                 session_history_update_tx,

@@ -226,6 +226,7 @@ pub enum LiveUpdate {
     AuthProviderCatalogRefreshed {
         launch_metadata: Box<LaunchMetadata>,
     },
+    PluginLifecycleSummary(harness_core::integrations::PluginLifecycleSummary),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -765,6 +766,11 @@ fn drain_live_updates(
             Ok(LiveUpdate::AuthProviderCatalogRefreshed { launch_metadata }) => {
                 drained += 1;
                 app.apply_auth_provider_catalog_refresh(*launch_metadata);
+                state.changed = true;
+            }
+            Ok(LiveUpdate::PluginLifecycleSummary(summary)) => {
+                drained += 1;
+                app.set_plugin_lifecycle_summary(Some(summary));
                 state.changed = true;
             }
             Err(TryRecvError::Empty) => break,
