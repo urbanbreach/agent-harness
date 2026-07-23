@@ -68,7 +68,8 @@ const REQUIRED_SEAM_ONLY: &[&str] = &[
 /// Subsystems that keep honest `partial` comparison_status even with a receipt.
 // Wave 3 closed all core-subsystem comparisons except plugins/acp (no product
 // surface: descriptor-only plugins, mock-only ACP).
-const PARTIAL_COMPARISON_SUBSYSTEMS: &[&str] = &["plugins", "acp"];
+// Wave 5 promoted acp to complete (StdioAcpTransport implements real subprocess ACP transport).
+const PARTIAL_COMPARISON_SUBSYSTEMS: &[&str] = &["plugins"];
 
 const CORE_AUDIT_RECEIPTS_REL: &str =
     "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/core-audit";
@@ -299,15 +300,15 @@ fn core_subsystem_disposition_matrix_is_fail_closed() {
             "{rework_partial} has first-party product → rework (not empty replace)"
         );
     }
-    for must_be_partial in ["plugins", "acp"] {
+    {
         let row = subsystems
             .iter()
-            .find(|r| r["subsystem_id"].as_str() == Some(must_be_partial))
+            .find(|r| r["subsystem_id"].as_str() == Some("plugins"))
             .unwrap_or_abort();
         assert_eq!(
             row["comparison_status"].as_str(),
             Some("partial"),
-            "{must_be_partial} must keep honest partial comparison_status (no product surface)"
+            "plugins must keep honest partial comparison_status (no product surface)"
         );
     }
     let sandbox = subsystems

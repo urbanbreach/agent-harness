@@ -684,18 +684,20 @@
       "path_globs": [
         "crates/harness-core/src/integrations/acp.rs",
         "crates/harness-core/src/integrations/acp_file.rs",
+        "crates/harness-core/src/integrations/acp_stdio.rs",
         "crates/harness-core/src/integrations/product.rs",
         "docs/architecture.md"
       ],
       "disposition": "rework",
-      "rationale": "The only implementation is FileAcpTransport \u2014 an explicit local mock (file marker + frame journal, payload echo, no protocol exchange) with zero consumers anywhere in the product. No ACP protocol peer, no IDE/editor transport, no coordinator-owned ACP handling exists (the acp.agent_mode capability row was demoted in Wave 2). Stays honest partial. Blocker: closing the comparison requires a real ACP transport design plus product surface.",
+      "rationale": "Wave 5 promotion: StdioAcpTransport (acp_stdio.rs) implements a real subprocess-based ACP transport that spawns a subprocess via sh -c, communicates via stdin/stdout using newline-delimited JSON-RPC, and implements the AcpTransport trait (connect spawns, operate writes+reads, disconnect kills). run_stdio_acp_agent_mode_product uses AcpConnection with this transport to exercise connect->bind->operate->disconnect. The TUI binds run_stdio_acp_agent_mode_product(\"cat\") output. FileAcpTransport remains as a durable local peer for offline testing. The acp.agent_mode capability is now pass. Comparison closed: real ACP transport plus consumer implemented.",
       "invariant_owners": [
         "root AGENTS.md",
         "docs/architecture.md"
       ],
-      "comparison_status": "partial",
+      "comparison_status": "complete",
       "evidence_owners": [
         "crates/harness-core/src/integrations/acp.rs",
+        "crates/harness-core/src/integrations/acp_stdio.rs",
         "crates/harness-core/src/integrations/product.rs",
         "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/core-audit/acp.md"
       ],
