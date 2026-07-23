@@ -1393,7 +1393,7 @@ fn test_run_state(session_dir: &Path, run_id: &str) -> RunState {
         )),
         team_registry: crate::team_registry::TeamRegistry::new(),
         cron_schedules: crate::cron_schedule::CronScheduleRegistry::new(),
-        plugin_lifecycle: crate::integrations::PluginLifecycleRegistry::new(Path::new(
+        plugin_lifecycle: crate::integrations::PluginRuntimeContract::new(Path::new(
             "/workspace/project",
         )),
     }

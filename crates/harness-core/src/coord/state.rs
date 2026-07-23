@@ -124,8 +124,8 @@ pub(in crate::coord) struct RunState {
     pub(in crate::coord) team_registry: crate::team_registry::TeamRegistry,
     /// Session-local cron schedule definitions only (`executor_available() == false`).
     pub(in crate::coord) cron_schedules: crate::cron_schedule::CronScheduleRegistry,
-    /// Session-local plugin descriptor lifecycle (install/activate/deactivate/remove; no code host).
-    pub(in crate::coord) plugin_lifecycle: crate::integrations::PluginLifecycleRegistry,
+    /// Coordinator-owned plugin runtime contract (lifecycle + execution surface + event recording).
+    pub(in crate::coord) plugin_lifecycle: crate::integrations::PluginRuntimeContract,
 }
 
 impl RunState {

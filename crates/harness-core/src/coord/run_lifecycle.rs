@@ -135,7 +135,7 @@ impl Coordinator {
             }),
             team_registry: crate::team_registry::TeamRegistry::new(),
             cron_schedules: crate::cron_schedule::CronScheduleRegistry::new(),
-            plugin_lifecycle: crate::integrations::PluginLifecycleRegistry::new(
+            plugin_lifecycle: crate::integrations::PluginRuntimeContract::new(
                 workspace_root.clone(),
             ),
         };
@@ -369,7 +369,7 @@ impl Coordinator {
             }),
             team_registry: crate::team_registry::TeamRegistry::new(),
             cron_schedules: crate::cron_schedule::CronScheduleRegistry::new(),
-            plugin_lifecycle: crate::integrations::PluginLifecycleRegistry::new(
+            plugin_lifecycle: crate::integrations::PluginRuntimeContract::new(
                 workspace_root.clone(),
             ),
         };
