@@ -1838,7 +1838,7 @@
         "A-NO-RESKIN"
       ],
       "status": "blocked",
-      "notes": "Wave 6: palette color scheme aligned to reference. command_palette_surface changed from Indexed(0) (dark) to Indexed(7) (light gray [238,238,236]) matching reference freeze. Title text changed from Indexed(15) to Indexed(0) for readability on light surface. Muted text changed from Indexed(7) to Indexed(8). Cursor changed from Indexed(15) to Indexed(0). Backdrop changed from Indexed(0) to Indexed(7). Snapshot and assertion tests updated. DIV-AA-PALETTE remains rejected. status=blocked pending fresh pixel evidence recapture to verify mismatch reduction. 2026-07-23",
+      "notes": "Wave 6: palette color scheme fully migrated to reference light gray surface. command_palette_surface changed from Indexed(0) to Indexed(7) matching reference [238,238,236]. ALL palette renderers have explicit dark foreground colors (Indexed(0) for labels/title/cursor, Indexed(8) for muted/shortcuts/sections). Oracle R13 verified code-complete: every visible glyph has explicit foreground, no remaining foreground-inheritance defect. Fresh pixel evidence recapture requires xterm.js capture environment connected to harness TUI binary via PTY bridge. DIV-AA-PALETTE remains rejected. status=blocked pending fresh pixel evidence recapture. 2026-07-23",
       "slice": "scaffold",
       "evidence": {
         "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-palette-pinned-v1/",
