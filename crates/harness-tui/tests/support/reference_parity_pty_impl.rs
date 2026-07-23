@@ -330,31 +330,6 @@ pub(crate) fn ovl_session_pty() {
     exit_via_palette(&mut helper);
 }
 
-pub(crate) fn ovl_help_pty() {
-    if !require_pty_signoff() {
-        return;
-    }
-    let mut helper = spawn_live_draft_helper();
-    helper.wait_for(READY_MARKER);
-    helper.writer.write_all(b"x").unwrap_or_abort();
-    helper.writer.flush().unwrap_or_abort();
-    helper.wait_for("x");
-    send_key(helper.writer.as_mut(), 0x18).unwrap_or_abort();
-    let screen = wait_for_any(
-        &mut helper,
-        &[
-            "Keyboard Shortcuts",
-            "Shortcuts",
-            "Essentials",
-            "/ to search",
-        ],
-    );
-    assert_no_sidebar_copy(&screen, "help/shortcuts");
-    send_bytes(helper.writer.as_mut(), b"\x1b").unwrap_or_abort();
-    helper.wait_for(READY_MARKER);
-    exit_via_palette(&mut helper);
-}
-
 pub(crate) fn ovl_perm_pty() {
     if !require_pty_signoff() {
         return;

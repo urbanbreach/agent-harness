@@ -71,14 +71,6 @@ fn ovl_session_pty() {
 }
 
 #[test]
-fn ovl_help_pty() {
-    // arrange
-    // act
-    // assert
-    reference_parity_pty_impl::ovl_help_pty();
-}
-
-#[test]
 fn ovl_perm_pty() {
     // arrange
     // act

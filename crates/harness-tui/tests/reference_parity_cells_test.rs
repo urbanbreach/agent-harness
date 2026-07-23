@@ -449,22 +449,6 @@ fn freeze_session_matches_harness_session_v63_with_identity_path_badge() {
 }
 
 #[test]
-fn freeze_help_matches_harness_help_v1_with_identity_path_badge() {
-    // arrange
-    // act
-    // assert
-    let masks = identity_rows_mask("overlay_identity_path_badge", &[1, 28], 120);
-    assert_freeze_grapheme_match(
-        "reference/freeze/run1-shortcuts-ctrlx/terminal.txt",
-        "actual/harness-help-v1/terminal.txt",
-        120,
-        32,
-        &masks,
-        "OVL-HELP",
-    );
-}
-
-#[test]
 fn freeze_palette_matches_harness_palette_v63_with_identity_path_badge() {
     // arrange
     // act

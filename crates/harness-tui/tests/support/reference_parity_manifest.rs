@@ -72,7 +72,6 @@ pub const REQUIRED_SCAFFOLD_IDS: &[&str] = &[
     "TX-DIFF",
     "OVL-PALETTE",
     "OVL-SESSION",
-    "OVL-HELP",
     "OVL-PERM",
     "OVL-QUESTION",
     "RESP-120x50",

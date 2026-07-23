@@ -161,7 +161,7 @@
         "A-NO-RESKIN"
       ],
       "status": "pass",
-      "notes": "Welcome uses a bordered primary panel with logo, title/version, changelog, and action rows with right-aligned shortcuts. DIV-004 compose-first-only claim is rejected; welcome panel is required. Reference freeze digests: txt 1a5f24dc\u2026 png 08304276\u2026 Evidence paths wired from existing captures. Primary 120x32 evidence wired (masked A-PIXELS PASS). Evidence honesty loop3: L1=freeze, L3=act, L4=pixel report, L6=identity mask (paths verified on disk). | status=pass: L1 freeze + L2 cells + L3 harness + L5 masked exact_match + L6 mask present (2026-07-19).",
+      "notes": "Welcome uses a bordered primary panel with logo, title/version, changelog, and action rows with right-aligned shortcuts. DIV-004 compose-first-only claim is rejected; welcome panel is required. Reference freeze digests: txt 1a5f24dc… png 08304276… Evidence paths wired from existing captures. Primary 120x32 evidence wired (masked A-PIXELS PASS). Evidence honesty loop3: L1=freeze, L3=act, L4=pixel report, L6=identity mask (paths verified on disk). | status=pass: L1 freeze + L2 cells + L3 harness + L5 masked exact_match + L6 mask present (2026-07-19).",
       "slice": "first",
       "reference_freeze_txt_sha256": "1a5f24dc9be953df160e8d2bcb661f6f2d8dc7845021c3153cd415ab3889ca58",
       "reference_freeze_png_sha256": "0830427651ae47645ea3ea49b532ef7ea29a69c3140f140d7df201f5093d6016",
@@ -737,7 +737,7 @@
         "A-NO-RESKIN"
       ],
       "status": "pass",
-      "notes": "Scaffold \u00a710 primary session shell idle. A-PTY + structural GREEN. L3 harness-shell-idle-v1 re-captured with configured model badge (Parity Test Model (Mock) \u00b7 xhigh) via set_pending_live_launch_metadata. Wave5: A-PIXELS PASS with 0 unapproved RGBA diffs (180576 identity-masked pixels skipped). Model badge fix: install_parity_context_window now sets model_display_label + reasoning_effort + calls set_pending_live_launch_metadata for Live mode. status=pass: L1 freeze + L2 cells + L3 harness capture + L4/L5 pixel diff exact_match (0 mismatches) + L6 identity mask. 2026-07-22.",
+      "notes": "Scaffold §10 primary session shell idle. A-PTY + structural GREEN. L3 harness-shell-idle-v1 re-captured with configured model badge (Parity Test Model (Mock) · xhigh) via set_pending_live_launch_metadata. Wave5: A-PIXELS PASS with 0 unapproved RGBA diffs (180576 identity-masked pixels skipped). Model badge fix: install_parity_context_window now sets model_display_label + reasoning_effort + calls set_pending_live_launch_metadata for Live mode. status=pass: L1 freeze + L2 cells + L3 harness capture + L4/L5 pixel diff exact_match (0 mismatches) + L6 identity mask. 2026-07-22.",
       "slice": "scaffold",
       "evidence": {
         "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run4-shell-idle-pinned-v1/",
@@ -1160,7 +1160,7 @@
         "A-NO-RESKIN"
       ],
       "status": "pass",
-      "notes": "Wave 4 Packet 4.5: promoted to pass. Auto-retry chrome implemented: ProviderRequestStarted with ProviderRequestRetryMetadata (attempt 2) renders '\u280f Retrying (attempt 2)\u2026 0.4s 2.6s \u21e34.14k [stop]' spinner pinned to dock. L3 captured at 120x40 via xterm.js. L4 masked diff: 0 unapproved mismatches (969408 approved skipped). DIV-AA-SHELL-FAIL covers pure glyph-AA residual (spinner frame non-determinism). 2026-07-22",
+      "notes": "Wave 4 Packet 4.5: promoted to pass. Auto-retry chrome implemented: ProviderRequestStarted with ProviderRequestRetryMetadata (attempt 2) renders '⠏ Retrying (attempt 2)… 0.4s 2.6s ⇣4.14k [stop]' spinner pinned to dock. L3 captured at 120x40 via xterm.js. L4 masked diff: 0 unapproved mismatches (969408 approved skipped). DIV-AA-SHELL-FAIL covers pure glyph-AA residual (spinner frame non-determinism). 2026-07-22",
       "slice": "scaffold",
       "evidence": {
         "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-shell-fail-pinned-v1/",
@@ -1245,7 +1245,7 @@
         "A-NO-RESKIN"
       ],
       "status": "pass",
-      "notes": "Wave 4 Packet 4.5: promoted to pass. Auto-retry chrome implemented: ProviderRequestStarted with ProviderRequestRetryMetadata (attempt 2) renders '\u2807 Retrying (attempt 2)\u2026 1.2s 3.8s \u21e34.14k [stop]' spinner pinned to dock with 'retry after failure draft' in composer. L3 captured at 120x40 via xterm.js. L4 masked diff: 0 unapproved mismatches (969408 approved skipped). DIV-AA-SHELL-FAIL covers pure glyph-AA residual (spinner frame non-determinism). 2026-07-22",
+      "notes": "Wave 4 Packet 4.5: promoted to pass. Auto-retry chrome implemented: ProviderRequestStarted with ProviderRequestRetryMetadata (attempt 2) renders '⠇ Retrying (attempt 2)… 1.2s 3.8s ⇣4.14k [stop]' spinner pinned to dock with 'retry after failure draft' in composer. L3 captured at 120x40 via xterm.js. L4 masked diff: 0 unapproved mismatches (969408 approved skipped). DIV-AA-SHELL-FAIL covers pure glyph-AA residual (spinner frame non-determinism). 2026-07-22",
       "slice": "scaffold",
       "evidence": {
         "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-shell-recover-pinned-v1/",
@@ -1415,7 +1415,7 @@
         "A-NO-RESKIN"
       ],
       "status": "pass",
-      "notes": "Wave 4 Packet 4.5: promoted to pass. L1 run1-shell-scroll-pinned-v1 (120x40, pinned binary 883e3dea) + L3 harness-shell-live_scroll-pinned-v1 (re-captured with Responding streaming indicator + standard footer parity). Harness rendering fixed: streaming-with-body-text + usage renders Responding\u2026 with responding-elapsed (time since first delta) + total duration + download counter + [stop] right meta; assistant footer pinned at bottom via pending_permission_footer_pin_delta; interrupt_hint_visible suppresses live-ctx footer when streaming with usage; standard footer hints (Shift+Tab:mode | Ctrl+c:cancel | Ctrl+x:shortcuts) shown during streaming. L4/L5 v1: zero unapproved diffs. L6 v1: breadcrumb + model_badge + user_message_timestamp + assistant_message_timestamp + streaming_indicator + composer_border_aa + footer_hints identity fields.",
+      "notes": "Wave 4 Packet 4.5: promoted to pass. L1 run1-shell-scroll-pinned-v1 (120x40, pinned binary 883e3dea) + L3 harness-shell-live_scroll-pinned-v1 (re-captured with Responding streaming indicator + standard footer parity). Harness rendering fixed: streaming-with-body-text + usage renders Responding… with responding-elapsed (time since first delta) + total duration + download counter + [stop] right meta; assistant footer pinned at bottom via pending_permission_footer_pin_delta; interrupt_hint_visible suppresses live-ctx footer when streaming with usage; standard footer hints (Shift+Tab:mode | Ctrl+c:cancel | Ctrl+x:shortcuts) shown during streaming. L4/L5 v1: zero unapproved diffs. L6 v1: breadcrumb + model_badge + user_message_timestamp + assistant_message_timestamp + streaming_indicator + composer_border_aa + footer_hints identity fields.",
       "slice": "scaffold",
       "evidence": {
         "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-shell-scroll-pinned-v1/",
@@ -1500,7 +1500,7 @@
         "A-NO-RESKIN"
       ],
       "status": "pass",
-      "notes": "Wave 4 Packet 4.6: promoted to pass. TX-USER shares the same L1 reference freeze (run1-shell-complete-pinned-v1) and L3 harness capture (harness-shell-live_complete-pinned-v1) as SHELL-COMPLETE. The user message block (\u276f marker + wall clock + user text) is the same primitive rendered in the shared capture. L4/L5 v1: zero unapproved diffs (705024 approved field pixels skipped) \u2014 same masked pixel diff as SHELL-COMPLETE v19. L6 v1: breadcrumb + user_message_timestamp + transcript_content (body wrapping differs due to clock packing) + worked_for_aa + composer_border_aa + model_badge identity fields. No new divergence required.",
+      "notes": "Wave 4 Packet 4.6: promoted to pass. TX-USER shares the same L1 reference freeze (run1-shell-complete-pinned-v1) and L3 harness capture (harness-shell-live_complete-pinned-v1) as SHELL-COMPLETE. The user message block (❯ marker + wall clock + user text) is the same primitive rendered in the shared capture. L4/L5 v1: zero unapproved diffs (705024 approved field pixels skipped) — same masked pixel diff as SHELL-COMPLETE v19. L6 v1: breadcrumb + user_message_timestamp + transcript_content (body wrapping differs due to clock packing) + worked_for_aa + composer_border_aa + model_badge identity fields. No new divergence required.",
       "slice": "scaffold",
       "reference_capture_path": "reference/freeze/run1-shell-complete-pinned-v1",
       "reference_txt_sha256": "2d9555b66cbc284eaa5947bc90ea1ae17f21413c2f7faef72355bb20e7a6ac9b",
@@ -1585,7 +1585,7 @@
         "A-NO-RESKIN"
       ],
       "status": "pass",
-      "notes": "Wave 4 Packet 4.6: promoted to pass. TX-ASSISTANT shares the same L1 reference freeze (run1-shell-complete-pinned-v1) and L3 harness capture (harness-shell-live_complete-pinned-v1) as SHELL-COMPLETE. The assistant message block (rendered stream body + 'Worked for 2.3s.' completion footer) is the same primitive rendered in the shared capture. L4/L5 v1: zero unapproved diffs (705024 approved field pixels skipped) \u2014 same masked pixel diff as SHELL-COMPLETE v19. L6 v1: breadcrumb + user_message_timestamp + transcript_content (body wrapping differs due to clock packing) + worked_for_aa + composer_border_aa + model_badge identity fields. No new divergence required.",
+      "notes": "Wave 4 Packet 4.6: promoted to pass. TX-ASSISTANT shares the same L1 reference freeze (run1-shell-complete-pinned-v1) and L3 harness capture (harness-shell-live_complete-pinned-v1) as SHELL-COMPLETE. The assistant message block (rendered stream body + 'Worked for 2.3s.' completion footer) is the same primitive rendered in the shared capture. L4/L5 v1: zero unapproved diffs (705024 approved field pixels skipped) — same masked pixel diff as SHELL-COMPLETE v19. L6 v1: breadcrumb + user_message_timestamp + transcript_content (body wrapping differs due to clock packing) + worked_for_aa + composer_border_aa + model_badge identity fields. No new divergence required.",
       "slice": "scaffold",
       "reference_capture_path": "reference/freeze/run1-shell-complete-pinned-v1",
       "reference_txt_sha256": "2d9555b66cbc284eaa5947bc90ea1ae17f21413c2f7faef72355bb20e7a6ac9b",
@@ -1929,90 +1929,6 @@
         "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-session/",
         "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-session-v63/",
         "L4_pixel_diff": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/session-pixel-diff-v63-masked.json",
-        "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/a-review-holdout-package-v1.md",
-        "L6_mask": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/overlay-identity-field-mask.v1.json"
-      }
-    },
-    {
-      "behavior_id": "OVL-HELP",
-      "requirement_id": "OVL-HELP",
-      "priority": "P1",
-      "surface": "overlay",
-      "state": "help",
-      "reference_binary_digest": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
-      "reference_receipt_id": "reference-freeze",
-      "reference_receipt_path": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json",
-      "preconditions": "Help/shortcuts overlay open.",
-      "seeded_inputs": {
-        "overlay": "help"
-      },
-      "viewport": {
-        "cols": 120,
-        "rows": 40
-      },
-      "terminal_environment": {
-        "term": "xterm-256color",
-        "colorterm": "truecolor"
-      },
-      "input_sequence": [],
-      "capture_checkpoints": [],
-      "expected_focus_owner": "help_overlay",
-      "expected_cursor_state": {
-        "visible": false,
-        "owner": "none"
-      },
-      "expected_scroll_and_selection_state": {
-        "scroll_offset": 0,
-        "follow_mode": true,
-        "selection": null
-      },
-      "expected_overlays_and_z_order": [
-        "help"
-      ],
-      "expected_semantic_cell_artifact": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-ovl-help-pinned-v1/terminal.txt",
-      "expected_png_artifact": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-ovl-help-pinned-v1/terminal.png",
-      "expected_frame_sequence": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-ovl-help-pinned-v1/",
-      "timing_contract": null,
-      "owners": {
-        "fixture": "crates/harness-tui/tests/p0_parity/pickers_help_life_test.rs::help_and_toggles_surfaces_open_harness_safe",
-        "state_interaction_test": "crates/harness-tui/tests/p0_parity/pickers_help_life_test.rs::help_and_toggles_surfaces_open_harness_safe",
-        "render_test": "crates/harness-tui/src/ui_secondary_events_tab.rs::render_help_tab",
-        "pty_test": "crates/harness-tui/tests/reference_parity_pty_test.rs::ovl_help_pty",
-        "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/ovl-help-blocked-v1.json"
-      },
-      "evidence_paths": {
-        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-ovl-help-pinned-v1/",
-        "L2": "crates/harness-tui/src/runtime.rs",
-        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-help-v1/",
-        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/help-pixel-diff-v1-masked.json",
-        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/ovl-help-blocked-v1.json",
-        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/overlay-identity-field-mask-v3.json"
-      },
-      "identity_substitution": {
-        "fields": [
-          "logo_glyphs",
-          "product_title_text"
-        ],
-        "policy": "Harness logo/text only; geometry preserved"
-      },
-      "deliberate_divergence_id": null,
-      "acceptance_gate_ids": [
-        "A-MANIFEST",
-        "A-REFERENCE",
-        "A-STATE",
-        "A-CELLS",
-        "A-PIXELS",
-        "A-PTY",
-        "A-INVARIANTS",
-        "A-NO-RESKIN"
-      ],
-      "status": "blocked",
-      "notes": "Wave 5 resolution: reference black-box discovery (2026-07-22) confirmed the reference has no standalone help overlay. F1 types literally into the composer (no overlay opens). Ctrl+X shows a changelog within the welcome panel (not a separate help overlay). Since the reference does not expose a help overlay state, there is no reference parity requirement to match. Row remains blocked because the L5 evidence path records the reference discovery finding. Harness help surfaces (if any) are honest product additions, not parity obligations. The row's declared precondition, focus owner, overlay stack, and expected artifacts describe a help overlay that the reference does not expose; the row should be removed from the parity requirement set or represented as explicitly not applicable in a future manifest revision.",
-      "slice": "scaffold",
-      "evidence": {
-        "L1_reference_freeze": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-shortcuts-ctrlx/",
-        "L3_harness_capture": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-help-v1/",
-        "L4_pixel_diff": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/help-pixel-diff-v1-masked.json",
         "L5_receipt": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/a-review-holdout-package-v1.md",
         "L6_mask": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/overlay-identity-field-mask.v1.json"
       }
@@ -2881,7 +2797,7 @@
         "A-PTY"
       ],
       "status": "pass",
-      "notes": "Nonvisual journey pass: L1/L4 remain empty because no reference freeze is claimed. L2=Ctrl+W/UiIntent state tests; L3=owner and dual-binary PTY postconditions; L5=journey_signoff_test owner; L6=worktree PTY receipt. The env-gated HARNESS_TUI_PTY_SIGNOFF=1 owner proves Ctrl+W creates the on-disk worktree, harness/wt-* branch, and live mock shell handoff. A-PIXELS and real-provider proof are not claimed. | Wave4.8: blocked: reference-CLI journey pairing pending \u2014 reference CLI exposes paired commands (memory/inspect/export/agent/dashboard/...) but paired CLI-output captures need reference-CLI journey execution in a controlled environment (auth + deterministic output) \u2014 outside Packet 4.8 scope. Harness journeys PTY-owned, owners GREEN. 2026-07-21 | Wave5: promoted to pass. L1 reference CLI capture generated (artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/journey-worktree-ctrl-w-l1-ref-v1/); L4 differential receipt created (artifacts/qa-evidence/20260717-tui-reference-parity/receipts/journey-worktree-ctrl-w-l4-differential-v1.json). Reference binary 883e3dea executed in isolated workspace for paired CLI-output capture. Nonvisual journey: both reference and Harness CLI surfaces confirmed functional. 2026-07-22",
+      "notes": "Nonvisual journey pass: L1/L4 remain empty because no reference freeze is claimed. L2=Ctrl+W/UiIntent state tests; L3=owner and dual-binary PTY postconditions; L5=journey_signoff_test owner; L6=worktree PTY receipt. The env-gated HARNESS_TUI_PTY_SIGNOFF=1 owner proves Ctrl+W creates the on-disk worktree, harness/wt-* branch, and live mock shell handoff. A-PIXELS and real-provider proof are not claimed. | Wave4.8: blocked: reference-CLI journey pairing pending — reference CLI exposes paired commands (memory/inspect/export/agent/dashboard/...) but paired CLI-output captures need reference-CLI journey execution in a controlled environment (auth + deterministic output) — outside Packet 4.8 scope. Harness journeys PTY-owned, owners GREEN. 2026-07-21 | Wave5: promoted to pass. L1 reference CLI capture generated (artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/journey-worktree-ctrl-w-l1-ref-v1/); L4 differential receipt created (artifacts/qa-evidence/20260717-tui-reference-parity/receipts/journey-worktree-ctrl-w-l4-differential-v1.json). Reference binary 883e3dea executed in isolated workspace for paired CLI-output capture. Nonvisual journey: both reference and Harness CLI surfaces confirmed functional. 2026-07-22",
       "slice": "journey-template"
     },
     {
@@ -2961,7 +2877,7 @@
         "A-CONFIG-SCHEMA"
       ],
       "status": "pass",
-      "notes": "Nonvisual journey pass: L1/L4 remain empty because no reference freeze is claimed. L2=lib config_show unit state tests; L3=stable CLI captures and postconditions proving successful, redacted effective output with no secret-looking token; L5=owner test; L6=config-show receipt. | Wave4.8: blocked: reference-CLI journey pairing pending \u2014 reference CLI exposes paired commands (memory/inspect/export/agent/dashboard/...) but paired CLI-output captures need reference-CLI journey execution in a controlled environment (auth + deterministic output) \u2014 outside Packet 4.8 scope. Harness journeys PTY-owned, owners GREEN. 2026-07-21 | Wave5: promoted to pass. L1 reference CLI capture generated (artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/journey-config-show-effective-l1-ref-v1/); L4 differential receipt created (artifacts/qa-evidence/20260717-tui-reference-parity/receipts/journey-config-show-effective-l4-differential-v1.json). Reference binary 883e3dea executed in isolated workspace for paired CLI-output capture. Nonvisual journey: both reference and Harness CLI surfaces confirmed functional. 2026-07-22",
+      "notes": "Nonvisual journey pass: L1/L4 remain empty because no reference freeze is claimed. L2=lib config_show unit state tests; L3=stable CLI captures and postconditions proving successful, redacted effective output with no secret-looking token; L5=owner test; L6=config-show receipt. | Wave4.8: blocked: reference-CLI journey pairing pending — reference CLI exposes paired commands (memory/inspect/export/agent/dashboard/...) but paired CLI-output captures need reference-CLI journey execution in a controlled environment (auth + deterministic output) — outside Packet 4.8 scope. Harness journeys PTY-owned, owners GREEN. 2026-07-21 | Wave5: promoted to pass. L1 reference CLI capture generated (artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/journey-config-show-effective-l1-ref-v1/); L4 differential receipt created (artifacts/qa-evidence/20260717-tui-reference-parity/receipts/journey-config-show-effective-l4-differential-v1.json). Reference binary 883e3dea executed in isolated workspace for paired CLI-output capture. Nonvisual journey: both reference and Harness CLI surfaces confirmed functional. 2026-07-22",
       "slice": "journey-template"
     },
     {
@@ -3041,7 +2957,7 @@
         "A-CONFIG-SCHEMA"
       ],
       "status": "pass",
-      "notes": "Nonvisual journey pass: L1/L4 remain empty because no reference freeze is claimed. L2=lib config_sources/explain unit state tests; L3=stable CLI captures and postconditions proving successful sources and explain output; L5=owner test; L6=sources-explain receipt. | Wave4.8: blocked: reference-CLI journey pairing pending \u2014 reference CLI exposes paired commands (memory/inspect/export/agent/dashboard/...) but paired CLI-output captures need reference-CLI journey execution in a controlled environment (auth + deterministic output) \u2014 outside Packet 4.8 scope. Harness journeys PTY-owned, owners GREEN. 2026-07-21 | Wave5: promoted to pass. L1 reference CLI capture generated (artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/journey-config-sources-explain-l1-ref-v1/); L4 differential receipt created (artifacts/qa-evidence/20260717-tui-reference-parity/receipts/journey-config-sources-explain-l4-differential-v1.json). Reference binary 883e3dea executed in isolated workspace for paired CLI-output capture. Nonvisual journey: both reference and Harness CLI surfaces confirmed functional. 2026-07-22",
+      "notes": "Nonvisual journey pass: L1/L4 remain empty because no reference freeze is claimed. L2=lib config_sources/explain unit state tests; L3=stable CLI captures and postconditions proving successful sources and explain output; L5=owner test; L6=sources-explain receipt. | Wave4.8: blocked: reference-CLI journey pairing pending — reference CLI exposes paired commands (memory/inspect/export/agent/dashboard/...) but paired CLI-output captures need reference-CLI journey execution in a controlled environment (auth + deterministic output) — outside Packet 4.8 scope. Harness journeys PTY-owned, owners GREEN. 2026-07-21 | Wave5: promoted to pass. L1 reference CLI capture generated (artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/journey-config-sources-explain-l1-ref-v1/); L4 differential receipt created (artifacts/qa-evidence/20260717-tui-reference-parity/receipts/journey-config-sources-explain-l4-differential-v1.json). Reference binary 883e3dea executed in isolated workspace for paired CLI-output capture. Nonvisual journey: both reference and Harness CLI surfaces confirmed functional. 2026-07-22",
       "slice": "journey-template"
     },
     {
@@ -3121,7 +3037,7 @@
         "A-CORE-AUDIT"
       ],
       "status": "pass",
-      "notes": "Nonvisual journey pass: L1/L4 remain empty because no reference freeze is claimed. journey_signoff runs the in-process wait-mode contract and verifies the harness-tools multi-wait integration owner, writing L3 under actual/journey-wait-any-all-v1. L2=coord wait_mode predicates; L5=tools multi-wait integration; L6=surface evidence receipt. No A-PIXELS claim. | Wave4.8: blocked: reference-CLI journey pairing pending \u2014 reference CLI exposes paired commands (memory/inspect/export/agent/dashboard/...) but paired CLI-output captures need reference-CLI journey execution in a controlled environment (auth + deterministic output) \u2014 outside Packet 4.8 scope. Harness journeys PTY-owned, owners GREEN. 2026-07-21 | Wave5: promoted to pass. L1 reference CLI capture generated (artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/journey-wait-any-all-l1-ref-v1/); L4 differential receipt created (artifacts/qa-evidence/20260717-tui-reference-parity/receipts/journey-wait-any-all-l4-differential-v1.json). Reference binary 883e3dea executed in isolated workspace for paired CLI-output capture. Nonvisual journey: both reference and Harness CLI surfaces confirmed functional. 2026-07-22",
+      "notes": "Nonvisual journey pass: L1/L4 remain empty because no reference freeze is claimed. journey_signoff runs the in-process wait-mode contract and verifies the harness-tools multi-wait integration owner, writing L3 under actual/journey-wait-any-all-v1. L2=coord wait_mode predicates; L5=tools multi-wait integration; L6=surface evidence receipt. No A-PIXELS claim. | Wave4.8: blocked: reference-CLI journey pairing pending — reference CLI exposes paired commands (memory/inspect/export/agent/dashboard/...) but paired CLI-output captures need reference-CLI journey execution in a controlled environment (auth + deterministic output) — outside Packet 4.8 scope. Harness journeys PTY-owned, owners GREEN. 2026-07-21 | Wave5: promoted to pass. L1 reference CLI capture generated (artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/journey-wait-any-all-l1-ref-v1/); L4 differential receipt created (artifacts/qa-evidence/20260717-tui-reference-parity/receipts/journey-wait-any-all-l4-differential-v1.json). Reference binary 883e3dea executed in isolated workspace for paired CLI-output capture. Nonvisual journey: both reference and Harness CLI surfaces confirmed functional. 2026-07-22",
       "slice": "journey-template"
     },
     {
@@ -3201,7 +3117,7 @@
         "A-CORE-AUDIT"
       ],
       "status": "pass",
-      "notes": "Nonvisual journey pass: L1/L4 remain empty because no reference freeze is claimed. journey_signoff proves deny-before-spawn through the core gate and shell_safety owner path, with denied=true and spawn_attempted=false in L3 under actual/journey-folder-trust-deny-v1. L2=core allow/deny persistence tests; L5=shell_safety bash deny when trust is missing; L6=surface evidence receipt. No A-PIXELS claim. | Wave4.8: blocked: reference-CLI journey pairing pending \u2014 reference CLI exposes paired commands (memory/inspect/export/agent/dashboard/...) but paired CLI-output captures need reference-CLI journey execution in a controlled environment (auth + deterministic output) \u2014 outside Packet 4.8 scope. Harness journeys PTY-owned, owners GREEN. 2026-07-21 | Wave5: promoted to pass. L1 reference CLI capture generated (artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/journey-folder-trust-deny-l1-ref-v1/); L4 differential receipt created (artifacts/qa-evidence/20260717-tui-reference-parity/receipts/journey-folder-trust-deny-l4-differential-v1.json). Reference binary 883e3dea executed in isolated workspace for paired CLI-output capture. Nonvisual journey: both reference and Harness CLI surfaces confirmed functional. 2026-07-22",
+      "notes": "Nonvisual journey pass: L1/L4 remain empty because no reference freeze is claimed. journey_signoff proves deny-before-spawn through the core gate and shell_safety owner path, with denied=true and spawn_attempted=false in L3 under actual/journey-folder-trust-deny-v1. L2=core allow/deny persistence tests; L5=shell_safety bash deny when trust is missing; L6=surface evidence receipt. No A-PIXELS claim. | Wave4.8: blocked: reference-CLI journey pairing pending — reference CLI exposes paired commands (memory/inspect/export/agent/dashboard/...) but paired CLI-output captures need reference-CLI journey execution in a controlled environment (auth + deterministic output) — outside Packet 4.8 scope. Harness journeys PTY-owned, owners GREEN. 2026-07-21 | Wave5: promoted to pass. L1 reference CLI capture generated (artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/journey-folder-trust-deny-l1-ref-v1/); L4 differential receipt created (artifacts/qa-evidence/20260717-tui-reference-parity/receipts/journey-folder-trust-deny-l4-differential-v1.json). Reference binary 883e3dea executed in isolated workspace for paired CLI-output capture. Nonvisual journey: both reference and Harness CLI surfaces confirmed functional. 2026-07-22",
       "slice": "journey-template"
     },
     {
@@ -3281,7 +3197,7 @@
         "A-CORE-AUDIT"
       ],
       "status": "pass",
-      "notes": "Nonvisual journey pass: L1/L4 remain empty because no reference freeze is claimed. journey_signoff runs the harness binary memory put/get/list fail-closed against a temporary workspace and writes successful L3 captures under actual/journey-memory-cli-v1. L2=core DurableMemoryStore; L5=memory_cmd CLI handlers; L6=surface evidence receipt. No A-PIXELS claim. | Wave4.8: blocked: reference-CLI journey pairing pending \u2014 reference CLI exposes paired commands (memory/inspect/export/agent/dashboard/...) but paired CLI-output captures need reference-CLI journey execution in a controlled environment (auth + deterministic output) \u2014 outside Packet 4.8 scope. Harness journeys PTY-owned, owners GREEN. 2026-07-21 | Wave5: promoted to pass. L1 reference CLI capture generated (artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/journey-memory-cli-l1-ref-v1/); L4 differential receipt created (artifacts/qa-evidence/20260717-tui-reference-parity/receipts/journey-memory-cli-l4-differential-v1.json). Reference binary 883e3dea executed in isolated workspace for paired CLI-output capture. Nonvisual journey: both reference and Harness CLI surfaces confirmed functional. 2026-07-22",
+      "notes": "Nonvisual journey pass: L1/L4 remain empty because no reference freeze is claimed. journey_signoff runs the harness binary memory put/get/list fail-closed against a temporary workspace and writes successful L3 captures under actual/journey-memory-cli-v1. L2=core DurableMemoryStore; L5=memory_cmd CLI handlers; L6=surface evidence receipt. No A-PIXELS claim. | Wave4.8: blocked: reference-CLI journey pairing pending — reference CLI exposes paired commands (memory/inspect/export/agent/dashboard/...) but paired CLI-output captures need reference-CLI journey execution in a controlled environment (auth + deterministic output) — outside Packet 4.8 scope. Harness journeys PTY-owned, owners GREEN. 2026-07-21 | Wave5: promoted to pass. L1 reference CLI capture generated (artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/journey-memory-cli-l1-ref-v1/); L4 differential receipt created (artifacts/qa-evidence/20260717-tui-reference-parity/receipts/journey-memory-cli-l4-differential-v1.json). Reference binary 883e3dea executed in isolated workspace for paired CLI-output capture. Nonvisual journey: both reference and Harness CLI surfaces confirmed functional. 2026-07-22",
       "slice": "journey-template"
     },
     {
@@ -3361,7 +3277,7 @@
         "A-CORE-AUDIT"
       ],
       "status": "pass",
-      "notes": "Real product surface evidence added: AppState AlwaysConfirm engages via the permission modal; a subsequent non-question permission request auto-emits a ResolvePermission Allow intent through the intent sink, and the composer badge renders once both permissions resolve. Status remains incomplete because L1/L4 reference freeze artifacts are empty and the manifest validator requires incomplete for rows without a claimed L1 freeze. | Status updated to pass: real L3/L5/L6 product surface evidence exists; L1 remains empty per journey policy (non-visual journey). | Wave4.8: blocked: reference-CLI journey pairing pending \u2014 reference CLI exposes paired commands (memory/inspect/export/agent/dashboard/...) but paired CLI-output captures need reference-CLI journey execution in a controlled environment (auth + deterministic output) \u2014 outside Packet 4.8 scope. Harness journeys PTY-owned, owners GREEN. 2026-07-21 | Wave5: promoted to pass. L1 reference CLI capture generated (artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/journey-always-approve-mode-l1-ref-v1/); L4 differential receipt created (artifacts/qa-evidence/20260717-tui-reference-parity/receipts/journey-always-approve-mode-l4-differential-v1.json). Reference binary 883e3dea executed in isolated workspace for paired CLI-output capture. Nonvisual journey: both reference and Harness CLI surfaces confirmed functional. 2026-07-22",
+      "notes": "Real product surface evidence added: AppState AlwaysConfirm engages via the permission modal; a subsequent non-question permission request auto-emits a ResolvePermission Allow intent through the intent sink, and the composer badge renders once both permissions resolve. Status remains incomplete because L1/L4 reference freeze artifacts are empty and the manifest validator requires incomplete for rows without a claimed L1 freeze. | Status updated to pass: real L3/L5/L6 product surface evidence exists; L1 remains empty per journey policy (non-visual journey). | Wave4.8: blocked: reference-CLI journey pairing pending — reference CLI exposes paired commands (memory/inspect/export/agent/dashboard/...) but paired CLI-output captures need reference-CLI journey execution in a controlled environment (auth + deterministic output) — outside Packet 4.8 scope. Harness journeys PTY-owned, owners GREEN. 2026-07-21 | Wave5: promoted to pass. L1 reference CLI capture generated (artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/journey-always-approve-mode-l1-ref-v1/); L4 differential receipt created (artifacts/qa-evidence/20260717-tui-reference-parity/receipts/journey-always-approve-mode-l4-differential-v1.json). Reference binary 883e3dea executed in isolated workspace for paired CLI-output capture. Nonvisual journey: both reference and Harness CLI surfaces confirmed functional. 2026-07-22",
       "slice": "journey-template"
     },
     {
@@ -3441,7 +3357,7 @@
         "A-CONFIG-SCHEMA"
       ],
       "status": "pass",
-      "notes": "Real product surface evidence added: /settings opens the AppState overlay; navigating to the hashline_edit row and activating it toggles the value, persists the project harness.json via write_project_hashline_edit, and read_effective_hashline_edit reflects the change. A direct backend write followed by re-bind proves the editor reloads effective configuration. Status remains incomplete because L1/L4 reference freeze artifacts are empty and the manifest validator requires incomplete for rows without a claimed L1 freeze. | Status updated to pass: real L3/L5/L6 product surface evidence exists; L1 remains empty per journey policy (non-visual journey). | Wave4.8: blocked: reference-CLI journey pairing pending \u2014 reference CLI exposes paired commands (memory/inspect/export/agent/dashboard/...) but paired CLI-output captures need reference-CLI journey execution in a controlled environment (auth + deterministic output) \u2014 outside Packet 4.8 scope. Harness journeys PTY-owned, owners GREEN. 2026-07-21 | Wave5: promoted to pass. L1 reference CLI capture generated (artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/journey-settings-editor-l1-ref-v1/); L4 differential receipt created (artifacts/qa-evidence/20260717-tui-reference-parity/receipts/journey-settings-editor-l4-differential-v1.json). Reference binary 883e3dea executed in isolated workspace for paired CLI-output capture. Nonvisual journey: both reference and Harness CLI surfaces confirmed functional. 2026-07-22",
+      "notes": "Real product surface evidence added: /settings opens the AppState overlay; navigating to the hashline_edit row and activating it toggles the value, persists the project harness.json via write_project_hashline_edit, and read_effective_hashline_edit reflects the change. A direct backend write followed by re-bind proves the editor reloads effective configuration. Status remains incomplete because L1/L4 reference freeze artifacts are empty and the manifest validator requires incomplete for rows without a claimed L1 freeze. | Status updated to pass: real L3/L5/L6 product surface evidence exists; L1 remains empty per journey policy (non-visual journey). | Wave4.8: blocked: reference-CLI journey pairing pending — reference CLI exposes paired commands (memory/inspect/export/agent/dashboard/...) but paired CLI-output captures need reference-CLI journey execution in a controlled environment (auth + deterministic output) — outside Packet 4.8 scope. Harness journeys PTY-owned, owners GREEN. 2026-07-21 | Wave5: promoted to pass. L1 reference CLI capture generated (artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/journey-settings-editor-l1-ref-v1/); L4 differential receipt created (artifacts/qa-evidence/20260717-tui-reference-parity/receipts/journey-settings-editor-l4-differential-v1.json). Reference binary 883e3dea executed in isolated workspace for paired CLI-output capture. Nonvisual journey: both reference and Harness CLI surfaces confirmed functional. 2026-07-22",
       "slice": "journey-template"
     },
     {
@@ -3486,7 +3402,7 @@
         "fixture": "crates/harness-tui/src/runtime.rs::TerminalCapabilityState",
         "state_interaction_test": "crates/harness-tui/src/runtime.rs capability-state unit tests",
         "render_test": "crates/harness-tui/tests/reference_parity_responsive_test.rs",
-        "pty_test": "crates/harness-tui/tests/pty_e2e (terminal-capability matrix capture pending \u2014 see blockers)",
+        "pty_test": "crates/harness-tui/tests/pty_e2e (terminal-capability matrix capture pending — see blockers)",
         "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/term-cap-color-blocked-v1.json"
       },
       "evidence_paths": {
@@ -3566,7 +3482,7 @@
         "fixture": "crates/harness-tui/src/runtime.rs::TerminalCapabilityState",
         "state_interaction_test": "crates/harness-tui/src/runtime.rs capability-state unit tests",
         "render_test": "crates/harness-tui/tests/reference_parity_responsive_test.rs",
-        "pty_test": "crates/harness-tui/tests/pty_e2e (terminal-capability matrix capture pending \u2014 see blockers)",
+        "pty_test": "crates/harness-tui/tests/pty_e2e (terminal-capability matrix capture pending — see blockers)",
         "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/term-cap-keys-blocked-v1.json"
       },
       "evidence_paths": {
@@ -3646,7 +3562,7 @@
         "fixture": "crates/harness-tui/src/runtime.rs::TerminalCapabilityState",
         "state_interaction_test": "crates/harness-tui/src/runtime.rs capability-state unit tests",
         "render_test": "crates/harness-tui/tests/reference_parity_responsive_test.rs",
-        "pty_test": "crates/harness-tui/tests/pty_e2e (terminal-capability matrix capture pending \u2014 see blockers)",
+        "pty_test": "crates/harness-tui/tests/pty_e2e (terminal-capability matrix capture pending — see blockers)",
         "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/term-cap-mouse-blocked-v1.json"
       },
       "evidence_paths": {
@@ -3726,7 +3642,7 @@
         "fixture": "crates/harness-tui/src/runtime.rs::TerminalCapabilityState",
         "state_interaction_test": "crates/harness-tui/src/runtime.rs capability-state unit tests",
         "render_test": "crates/harness-tui/tests/reference_parity_responsive_test.rs",
-        "pty_test": "crates/harness-tui/tests/pty_e2e (terminal-capability matrix capture pending \u2014 see blockers)",
+        "pty_test": "crates/harness-tui/tests/pty_e2e (terminal-capability matrix capture pending — see blockers)",
         "differential_evaluator": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/term-cap-clipboard-blocked-v1.json"
       },
       "evidence_paths": {
