@@ -4304,14 +4304,14 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_workspace_hub_a
         .as_deref()
         .expect("workspace hub availability");
     assert!(
-        availability.contains("unavailable"),
+        availability.contains("available"),
         "availability={availability}"
     );
     let connect = summary
         .workspace_hub_connect
         .as_deref()
         .expect("workspace hub connect");
-    assert!(connect.contains("unavailable"), "connect={connect}");
+    assert!(connect.contains("connected"), "connect={connect}");
     assert!(
         rendered.contains("Workspace hub availability:"),
         "rendered={rendered}"

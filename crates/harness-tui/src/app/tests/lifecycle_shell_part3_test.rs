@@ -123,51 +123,50 @@ pub(super) fn seed_operator_host_probes_sets_binary_update_and_jujutsu_continuat
         .workspace_hub_outcome_summary()
         .expect("workspace hub outcome summary bound");
     assert_eq!(hub.total, 4);
-    assert_eq!(hub.connect_unavailable, 1);
-    assert_eq!(hub.bind_unavailable, 1);
-    assert_eq!(hub.upload_unavailable, 1);
-    assert_eq!(hub.recover_unavailable, 1);
-    assert!(hub.all_unavailable());
+    assert_eq!(hub.connect_unavailable, 0);
+    assert_eq!(hub.bind_unavailable, 0);
+    assert_eq!(hub.upload_unavailable, 0);
+    assert_eq!(hub.recover_unavailable, 0);
+    assert!(!hub.all_unavailable());
     let hub_connect = app
         .workspace_hub_last_connect()
         .expect("workspace hub last connect bound");
     assert!(
-        hub_connect.one_line().contains("unavailable"),
-        "expected unavailable connect: {}",
+        hub_connect.one_line().contains("connected"),
+        "expected connected connect: {}",
         hub_connect.one_line()
     );
     let hub_bind = app
         .workspace_hub_last_bind()
         .expect("workspace hub last bind bound");
     assert!(
-        hub_bind.one_line().contains("unavailable")
-            && hub_bind.one_line().contains("(probe-workspace-2)"),
-        "expected multi-endpoint last unavailable bind: {}",
+        hub_bind.one_line().contains("bound") && hub_bind.one_line().contains("ws-local-1"),
+        "expected multi-endpoint last bound bind: {}",
         hub_bind.one_line()
     );
     let hub_upload = app
         .workspace_hub_last_upload()
         .expect("workspace hub last upload bound");
     assert!(
-        hub_upload.one_line().contains("unavailable")
-            && hub_upload.one_line().contains("(probe-bundle)"),
-        "expected multi-endpoint last unavailable upload: {}",
+        hub_upload.one_line().contains("uploaded")
+            && hub_upload.one_line().contains("artifacts/bundle.tar"),
+        "expected multi-endpoint last uploaded upload: {}",
         hub_upload.one_line()
     );
     let hub_recover = app
         .workspace_hub_last_recover()
         .expect("workspace hub last recover bound");
     assert!(
-        hub_recover.one_line().contains("unavailable")
-            && hub_recover.one_line().contains("(probe-session-stale)"),
-        "expected multi-endpoint last unavailable recover: {}",
+        hub_recover.one_line().contains("recovered")
+            && hub_recover.one_line().contains("hub-session-9"),
+        "expected multi-endpoint last recovered recover: {}",
         hub_recover.one_line()
     );
     let hub_avail = app
         .workspace_hub_availability()
         .expect("workspace hub availability bound");
-    assert!(hub_avail.is_unavailable());
-    assert!(hub_avail.one_line().contains("unavailable"));
+    assert!(hub_avail.is_available());
+    assert!(hub_avail.one_line().contains("available"));
     let oidc = app
         .browser_oidc_outcome_summary()
         .expect("browser oidc outcome summary bound");

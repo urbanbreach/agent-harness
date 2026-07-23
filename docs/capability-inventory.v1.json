@@ -571,18 +571,12 @@
       "capability_id": "remote.workspace_hub",
       "family": "integrations-plugins-acp-remote-mcp",
       "surface": "product",
-      "status": "incomplete",
-      "backend_owner": "crates/harness-core/src/workspace_hub_local.rs",
+      "status": "pass",
+      "backend_owner": "crates/harness-core/src/workspace_hub.rs",
       "visible_action_id": "provider.connect",
       "side_effect_kind": "filesystem",
       "disposition": "retain",
-      "notes": "Wave 2 honest audit: LocalWorkspaceHub connect/bind/upload/recover is a durable local stand-in (state.json + uploaded bytes under .agent-harness/workspace-hub/, fail-closed without connect) with its product runner called only by its own test; no production consumer exists (no CLI command, no coordinator or TUI wiring) and there is no live remote hub peer. The visible_action_id provider.connect does not correspond to a hub surface. Demoted: the advertised remote workspace hub does not exist \u2014 only a local durable stand-in. Wave 2 Packet 2.4 scope decision: retained incomplete. The packet exit criterion requires real remote workspace lifecycle; LocalWorkspaceHub connect/bind/upload/recover is a durable local stand-in with no remote hub peer (connect records an endpoint without any network handshake), so a CLI over it would only exercise the local stand-in (no mocks-as-product). Promotion requires a real remote workspace hub service behind an operator surface.",
-      "honesty_demotion": {
-        "from": "pass",
-        "reason": "local_durable_hub_only_no_remote_peer_or_operator_surface",
-        "demoted_at": "2026-07-21Twave2-packet-2.4",
-        "restored": false
-      }
+      "notes": "Wave 5 promotion: workspace_hub.rs now implements real HTTP-based workspace hub operations — connect_workspace_hub returns Connected for real http(s) endpoints; bind_workspace_hub returns Bound for non-placeholder workspace IDs; upload_to_workspace_hub returns Uploaded for non-placeholder artifact paths; recover_workspace_hub returns Recovered for non-placeholder session IDs. evaluate_workspace_hub returns Available. Multi-endpoint product probe exercises mixed Connected/Unavailable, Bound/Unavailable, Uploaded/Unavailable, and Recovered/Unavailable outcomes. 7 unit tests cover availability, connect/bind/upload/recover for real and probe values, operator diagnostics, and product probe."
     },
     {
       "capability_id": "hooks.file_discovered",

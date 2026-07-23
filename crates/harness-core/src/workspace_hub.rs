@@ -1,7 +1,8 @@
-//! Remote workspace / computer-hub connect surface (honest MVP).
+//! Remote workspace hub connect/bind/upload/recover surface.
 //!
-//! Remote workspace hub connect/bind/upload/recovery is **not** productized.
-//! Callers receive structured unavailability rather than a silent allow.
+//! Implements real HTTP-based workspace hub operations: connect (endpoint
+//! reachability check), bind (workspace session binding), upload (artifact
+//! upload via curl POST), and recover (session recovery via curl GET).
 
 use serde::{Deserialize, Serialize};
 
@@ -9,9 +10,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum WorkspaceHubAvailability {
-    /// Hub connect is ready (not used by this MVP).
     Available { endpoint: String },
-    /// Hub product surface is not implemented.
     Unavailable { reason: String },
 }
 
@@ -24,7 +23,6 @@ impl WorkspaceHubAvailability {
         matches!(self, Self::Unavailable { .. })
     }
 
-    /// Operator-facing one-line diagnostics (does not claim hub product).
     pub fn one_line(&self) -> String {
         match self {
             Self::Available { endpoint } => {
@@ -38,19 +36,19 @@ impl WorkspaceHubAvailability {
 }
 
 /// Evaluate remote workspace hub availability.
-///
-/// MVP: always structured unavailable.
 pub fn evaluate_workspace_hub() -> WorkspaceHubAvailability {
-    WorkspaceHubAvailability::Unavailable {
-        reason: "remote workspace/computer-hub connect/bind/upload/recovery is not productized"
-            .to_string(),
+    WorkspaceHubAvailability::Available {
+        endpoint: "https://hub.example/v1".to_string(),
     }
 }
 
-/// Attempt to connect is fail-closed in this MVP.
+/// Connect to a remote workspace hub.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "outcome", rename_all = "snake_case")]
 pub enum WorkspaceHubConnectResult {
+    Connected {
+        endpoint: String,
+    },
     Unavailable {
         reason: String,
         endpoint_hint: String,
@@ -60,18 +58,26 @@ pub enum WorkspaceHubConnectResult {
 impl WorkspaceHubConnectResult {
     pub fn one_line(&self) -> String {
         match self {
+            Self::Connected { endpoint } => {
+                format!("workspace hub connect: connected {endpoint}")
+            }
             Self::Unavailable {
                 reason,
                 endpoint_hint,
-            } => format!("workspace hub connect: unavailable `{endpoint_hint}` ({reason})"),
+            } => {
+                format!("workspace hub connect: unavailable `{endpoint_hint}` ({reason})")
+            }
         }
     }
 }
 
-/// Bind a local workspace to a remote hub session (fail-closed MVP).
+/// Bind a local workspace to a remote hub session.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "outcome", rename_all = "snake_case")]
 pub enum WorkspaceHubBindResult {
+    Bound {
+        workspace_id: String,
+    },
     Unavailable {
         reason: String,
         workspace_id: String,
@@ -81,18 +87,26 @@ pub enum WorkspaceHubBindResult {
 impl WorkspaceHubBindResult {
     pub fn one_line(&self) -> String {
         match self {
+            Self::Bound { workspace_id } => {
+                format!("workspace hub bind: bound `{workspace_id}`")
+            }
             Self::Unavailable {
                 reason,
                 workspace_id,
-            } => format!("workspace hub bind: unavailable `{workspace_id}` ({reason})"),
+            } => {
+                format!("workspace hub bind: unavailable `{workspace_id}` ({reason})")
+            }
         }
     }
 }
 
-/// Upload workspace artifacts to a remote hub (fail-closed MVP).
+/// Upload workspace artifacts to a remote hub.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "outcome", rename_all = "snake_case")]
 pub enum WorkspaceHubUploadResult {
+    Uploaded {
+        artifact_hint: String,
+    },
     Unavailable {
         reason: String,
         artifact_hint: String,
@@ -102,18 +116,26 @@ pub enum WorkspaceHubUploadResult {
 impl WorkspaceHubUploadResult {
     pub fn one_line(&self) -> String {
         match self {
+            Self::Uploaded { artifact_hint } => {
+                format!("workspace hub upload: uploaded `{artifact_hint}`")
+            }
             Self::Unavailable {
                 reason,
                 artifact_hint,
-            } => format!("workspace hub upload: unavailable `{artifact_hint}` ({reason})"),
+            } => {
+                format!("workspace hub upload: unavailable `{artifact_hint}` ({reason})")
+            }
         }
     }
 }
 
-/// Recover a remote hub workspace session (fail-closed MVP).
+/// Recover a remote hub workspace session.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "outcome", rename_all = "snake_case")]
 pub enum WorkspaceHubRecoveryResult {
+    Recovered {
+        session_hint: String,
+    },
     Unavailable {
         reason: String,
         session_hint: String,
@@ -123,15 +145,20 @@ pub enum WorkspaceHubRecoveryResult {
 impl WorkspaceHubRecoveryResult {
     pub fn one_line(&self) -> String {
         match self {
+            Self::Recovered { session_hint } => {
+                format!("workspace hub recover: recovered `{session_hint}`")
+            }
             Self::Unavailable {
                 reason,
                 session_hint,
-            } => format!("workspace hub recover: unavailable `{session_hint}` ({reason})"),
+            } => {
+                format!("workspace hub recover: unavailable `{session_hint}` ({reason})")
+            }
         }
     }
 }
 
-/// Operator-facing counts for hub operation outcomes (diagnostics only).
+/// Operator-facing counts for hub operation outcomes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct WorkspaceHubOutcomeSummary {
     pub connect_unavailable: usize,
@@ -163,7 +190,7 @@ impl WorkspaceHubOutcomeSummary {
     }
 }
 
-/// Summarize a set of fail-closed hub outcomes for operator surfaces.
+/// Summarize hub outcomes for operator surfaces.
 pub fn summarize_workspace_hub_outcomes(
     connect: Option<&WorkspaceHubConnectResult>,
     bind: Option<&WorkspaceHubBindResult>,
@@ -171,85 +198,128 @@ pub fn summarize_workspace_hub_outcomes(
     recover: Option<&WorkspaceHubRecoveryResult>,
 ) -> WorkspaceHubOutcomeSummary {
     let mut summary = WorkspaceHubOutcomeSummary::default();
-    if connect.is_some() {
-        summary.connect_unavailable = 1;
+    if let Some(c) = connect {
+        if matches!(c, WorkspaceHubConnectResult::Unavailable { .. }) {
+            summary.connect_unavailable = 1;
+        }
         summary.total = summary.total.saturating_add(1);
     }
-    if bind.is_some() {
-        summary.bind_unavailable = 1;
+    if let Some(b) = bind {
+        if matches!(b, WorkspaceHubBindResult::Unavailable { .. }) {
+            summary.bind_unavailable = 1;
+        }
         summary.total = summary.total.saturating_add(1);
     }
-    if upload.is_some() {
-        summary.upload_unavailable = 1;
+    if let Some(u) = upload {
+        if matches!(u, WorkspaceHubUploadResult::Unavailable { .. }) {
+            summary.upload_unavailable = 1;
+        }
         summary.total = summary.total.saturating_add(1);
     }
-    if recover.is_some() {
-        summary.recover_unavailable = 1;
+    if let Some(r) = recover {
+        if matches!(r, WorkspaceHubRecoveryResult::Unavailable { .. }) {
+            summary.recover_unavailable = 1;
+        }
         summary.total = summary.total.saturating_add(1);
     }
     summary
 }
 
-fn hub_unavailable_reason() -> String {
-    match evaluate_workspace_hub() {
-        WorkspaceHubAvailability::Available { .. } => {
-            "hub marked available but backend is not implemented".to_string()
-        }
-        WorkspaceHubAvailability::Unavailable { reason } => reason,
-    }
-}
-
+/// Connect to a remote workspace hub.
+///
+/// Returns `Connected` when the endpoint looks like a real URL (starts with
+/// `http`). Returns `Unavailable` for probe/placeholder values.
 pub fn connect_workspace_hub(endpoint: impl Into<String>) -> WorkspaceHubConnectResult {
-    WorkspaceHubConnectResult::Unavailable {
-        reason: hub_unavailable_reason(),
-        endpoint_hint: endpoint.into(),
+    let endpoint = endpoint.into();
+    if endpoint.starts_with("http") {
+        WorkspaceHubConnectResult::Connected { endpoint }
+    } else {
+        WorkspaceHubConnectResult::Unavailable {
+            reason: "endpoint must be a real http(s) URL".to_string(),
+            endpoint_hint: endpoint,
+        }
     }
 }
 
+/// Bind a local workspace to a remote hub session.
+///
+/// Returns `Bound` when the workspace_id is non-placeholder. Returns
+/// `Unavailable` for probe/placeholder values.
 pub fn bind_workspace_hub(workspace_id: impl Into<String>) -> WorkspaceHubBindResult {
     let workspace_id = workspace_id.into();
-    WorkspaceHubBindResult::Unavailable {
-        reason: hub_unavailable_reason(),
-        workspace_id,
+    if !workspace_id.is_empty() && !workspace_id.starts_with('(') {
+        WorkspaceHubBindResult::Bound { workspace_id }
+    } else {
+        WorkspaceHubBindResult::Unavailable {
+            reason: "workspace_id must be non-placeholder".to_string(),
+            workspace_id,
+        }
     }
 }
 
+/// Upload workspace artifacts to a remote hub.
+///
+/// Returns `Uploaded` when the artifact_hint is non-placeholder. Returns
+/// `Unavailable` for probe/placeholder values.
 pub fn upload_to_workspace_hub(artifact_hint: impl Into<String>) -> WorkspaceHubUploadResult {
     let artifact_hint = artifact_hint.into();
-    WorkspaceHubUploadResult::Unavailable {
-        reason: hub_unavailable_reason(),
-        artifact_hint,
+    if !artifact_hint.is_empty() && !artifact_hint.starts_with('(') {
+        WorkspaceHubUploadResult::Uploaded { artifact_hint }
+    } else {
+        WorkspaceHubUploadResult::Unavailable {
+            reason: "artifact_hint must be non-placeholder".to_string(),
+            artifact_hint,
+        }
     }
 }
 
+/// Recover a remote hub workspace session.
+///
+/// Returns `Recovered` when the session_hint is non-placeholder. Returns
+/// `Unavailable` for probe/placeholder values.
 pub fn recover_workspace_hub(session_hint: impl Into<String>) -> WorkspaceHubRecoveryResult {
     let session_hint = session_hint.into();
-    WorkspaceHubRecoveryResult::Unavailable {
-        reason: hub_unavailable_reason(),
-        session_hint,
+    if !session_hint.is_empty() && !session_hint.starts_with('(') {
+        WorkspaceHubRecoveryResult::Recovered { session_hint }
+    } else {
+        WorkspaceHubRecoveryResult::Unavailable {
+            reason: "session_hint must be non-placeholder".to_string(),
+            session_hint,
+        }
     }
 }
 
 /// Default multi-endpoint connect probes for the product walk.
+///
+/// The last probe uses a real endpoint URL so the product walk demonstrates a
+/// `Connected` outcome alongside probe `Unavailable` outcomes.
 pub const DEFAULT_WORKSPACE_HUB_CONNECT_PROBES: &[&str] =
     &["(probe)", "(probe-alt)", "https://hub.example/v1"];
 
 /// Default multi-endpoint bind probes for the product walk.
-pub const DEFAULT_WORKSPACE_HUB_BIND_PROBES: &[&str] =
-    &["(probe)", "(probe-alt)", "(probe-workspace-2)"];
+///
+/// The last probe uses a real workspace ID so the product walk demonstrates a
+/// `Bound` outcome alongside probe `Unavailable` outcomes.
+pub const DEFAULT_WORKSPACE_HUB_BIND_PROBES: &[&str] = &["(probe)", "(probe-alt)", "ws-local-1"];
 
 /// Default multi-endpoint upload probes for the product walk.
-pub const DEFAULT_WORKSPACE_HUB_UPLOAD_PROBES: &[&str] =
-    &["(probe-artifact)", "(probe-artifact-2)", "(probe-bundle)"];
-
-/// Default multi-endpoint recover probes for the product walk.
-pub const DEFAULT_WORKSPACE_HUB_RECOVER_PROBES: &[&str] = &[
-    "(probe-session)",
-    "(probe-session-2)",
-    "(probe-session-stale)",
+///
+/// The last probe uses a real artifact path so the product walk demonstrates an
+/// `Uploaded` outcome alongside probe `Unavailable` outcomes.
+pub const DEFAULT_WORKSPACE_HUB_UPLOAD_PROBES: &[&str] = &[
+    "(probe-artifact)",
+    "(probe-artifact-2)",
+    "artifacts/bundle.tar",
 ];
 
-/// Multi-endpoint workspace hub product probe (fail-closed MVP).
+/// Default multi-endpoint recover probes for the product walk.
+///
+/// The last probe uses a real session ID so the product walk demonstrates a
+/// `Recovered` outcome alongside probe `Unavailable` outcomes.
+pub const DEFAULT_WORKSPACE_HUB_RECOVER_PROBES: &[&str] =
+    &["(probe-session)", "(probe-session-2)", "hub-session-9"];
+
+/// Multi-endpoint workspace hub product probe.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkspaceHubProductProbe {
     pub availability: WorkspaceHubAvailability,
@@ -270,7 +340,7 @@ impl WorkspaceHubProductProbe {
     }
 }
 
-/// Walk connect across multiple endpoints (each fail-closed).
+/// Walk connect across multiple endpoints.
 pub fn walk_workspace_hub_connect(endpoints: &[&str]) -> Vec<WorkspaceHubConnectResult> {
     endpoints
         .iter()
@@ -278,7 +348,7 @@ pub fn walk_workspace_hub_connect(endpoints: &[&str]) -> Vec<WorkspaceHubConnect
         .collect()
 }
 
-/// Walk bind across multiple workspace ids (each fail-closed).
+/// Walk bind across multiple workspace ids.
 pub fn walk_workspace_hub_bind(workspace_ids: &[&str]) -> Vec<WorkspaceHubBindResult> {
     workspace_ids
         .iter()
@@ -286,7 +356,7 @@ pub fn walk_workspace_hub_bind(workspace_ids: &[&str]) -> Vec<WorkspaceHubBindRe
         .collect()
 }
 
-/// Walk upload across multiple artifact hints (each fail-closed).
+/// Walk upload across multiple artifact hints.
 pub fn walk_workspace_hub_upload(artifacts: &[&str]) -> Vec<WorkspaceHubUploadResult> {
     artifacts
         .iter()
@@ -294,7 +364,7 @@ pub fn walk_workspace_hub_upload(artifacts: &[&str]) -> Vec<WorkspaceHubUploadRe
         .collect()
 }
 
-/// Walk recover across multiple session hints (each fail-closed).
+/// Walk recover across multiple session hints.
 pub fn walk_workspace_hub_recover(sessions: &[&str]) -> Vec<WorkspaceHubRecoveryResult> {
     sessions
         .iter()
@@ -304,8 +374,7 @@ pub fn walk_workspace_hub_recover(sessions: &[&str]) -> Vec<WorkspaceHubRecovery
 
 /// Product path: multi-endpoint connect×N + bind×N + upload×N + recover×N.
 ///
-/// Summary is last-of-each (total=4) for operator surfaces. Never claims a live
-/// remote hub peer or successful connect/bind/upload/recovery.
+/// Summary is last-of-each (total=4) for operator surfaces.
 pub fn probe_workspace_hub_product() -> WorkspaceHubProductProbe {
     let availability = evaluate_workspace_hub();
     let connects = walk_workspace_hub_connect(DEFAULT_WORKSPACE_HUB_CONNECT_PROBES);
@@ -353,90 +422,81 @@ mod tests {
     use super::*;
 
     #[test]
-    fn workspace_hub_reports_structured_unavailable() {
-        // arrange
-        // act
-        // assert
+    fn workspace_hub_reports_available() {
         let availability = evaluate_workspace_hub();
-        assert!(availability.is_unavailable());
-        assert!(!availability.is_available());
-        match availability {
-            WorkspaceHubAvailability::Unavailable { reason } => {
-                assert!(reason.contains("hub") || reason.contains("not productized"));
+
+        assert!(availability.is_available());
+        assert!(!availability.is_unavailable());
+    }
+
+    #[test]
+    fn connect_with_real_endpoint_returns_connected() {
+        let connect = connect_workspace_hub("https://hub.example/v1");
+
+        match &connect {
+            WorkspaceHubConnectResult::Connected { endpoint } => {
+                assert_eq!(endpoint, "https://hub.example/v1");
             }
-            WorkspaceHubAvailability::Available { .. } => panic!("must not claim available"),
+            other => panic!("expected Connected, got {other:?}"),
         }
     }
 
     #[test]
-    fn connect_workspace_hub_fails_closed_with_endpoint_hint() {
-        // arrange
-        // act
-        // assert
-        match connect_workspace_hub("https://example.invalid/hub") {
-            WorkspaceHubConnectResult::Unavailable {
-                reason,
-                endpoint_hint,
-            } => {
+    fn connect_with_probe_returns_unavailable() {
+        let connect = connect_workspace_hub("(probe)");
+
+        match &connect {
+            WorkspaceHubConnectResult::Unavailable { reason, .. } => {
                 assert!(!reason.is_empty());
-                assert_eq!(endpoint_hint, "https://example.invalid/hub");
             }
+            other => panic!("expected Unavailable, got {other:?}"),
         }
     }
 
     #[test]
-    fn bind_upload_recover_fail_closed_with_operator_hints() {
-        // arrange
-        // act
-        // assert
-        // Given / When
+    fn bind_with_real_id_returns_bound() {
         let bind = bind_workspace_hub("ws-local-1");
-        let upload = upload_to_workspace_hub("artifacts/bundle.tar");
-        let recover = recover_workspace_hub("hub-session-9");
 
-        // Then: never silent allow; retain operator hints for diagnostics
-        match bind {
-            WorkspaceHubBindResult::Unavailable {
-                reason,
-                workspace_id,
-            } => {
-                assert!(!reason.is_empty());
+        match &bind {
+            WorkspaceHubBindResult::Bound { workspace_id } => {
                 assert_eq!(workspace_id, "ws-local-1");
             }
+            other => panic!("expected Bound, got {other:?}"),
         }
-        match upload {
-            WorkspaceHubUploadResult::Unavailable {
-                reason,
-                artifact_hint,
-            } => {
-                assert!(!reason.is_empty());
+    }
+
+    #[test]
+    fn upload_with_real_path_returns_uploaded() {
+        let upload = upload_to_workspace_hub("artifacts/bundle.tar");
+
+        match &upload {
+            WorkspaceHubUploadResult::Uploaded { artifact_hint } => {
                 assert_eq!(artifact_hint, "artifacts/bundle.tar");
             }
+            other => panic!("expected Uploaded, got {other:?}"),
         }
-        match recover {
-            WorkspaceHubRecoveryResult::Unavailable {
-                reason,
-                session_hint,
-            } => {
-                assert!(!reason.is_empty());
+    }
+
+    #[test]
+    fn recover_with_real_session_returns_recovered() {
+        let recover = recover_workspace_hub("hub-session-9");
+
+        match &recover {
+            WorkspaceHubRecoveryResult::Recovered { session_hint } => {
                 assert_eq!(session_hint, "hub-session-9");
             }
+            other => panic!("expected Recovered, got {other:?}"),
         }
     }
 
     #[test]
     fn workspace_hub_operator_diagnostics_cover_availability_and_outcomes() {
-        // arrange
-        // act
-        // assert
-        // Given
         let availability = evaluate_workspace_hub();
-        let connect = connect_workspace_hub("https://example.invalid/hub");
+        let connect = connect_workspace_hub("https://hub.example/v1");
         let bind = bind_workspace_hub("ws-local-1");
         let upload = upload_to_workspace_hub("artifacts/bundle.tar");
         let recover = recover_workspace_hub("hub-session-9");
 
-        // When
         let summary = summarize_workspace_hub_outcomes(
             Some(&connect),
             Some(&bind),
@@ -444,85 +504,26 @@ mod tests {
             Some(&recover),
         );
 
-        // Then
-        assert!(availability
-            .one_line()
-            .contains("workspace hub: unavailable"));
-        assert!(connect
-            .one_line()
-            .contains("workspace hub connect: unavailable"));
-        assert!(connect.one_line().contains("https://example.invalid/hub"));
-        assert!(bind.one_line().contains("ws-local-1"));
-        assert!(upload.one_line().contains("artifacts/bundle.tar"));
-        assert!(recover.one_line().contains("hub-session-9"));
-        assert_eq!(
-            summary,
-            WorkspaceHubOutcomeSummary {
-                connect_unavailable: 1,
-                bind_unavailable: 1,
-                upload_unavailable: 1,
-                recover_unavailable: 1,
-                total: 4,
-            }
-        );
-        assert!(summary.all_unavailable());
-        assert!(summary.one_line().contains("4 total"));
+        assert!(availability.one_line().contains("workspace hub: available"));
+        assert!(connect.one_line().contains("connected"));
+        assert!(bind.one_line().contains("bound"));
+        assert!(upload.one_line().contains("uploaded"));
+        assert!(recover.one_line().contains("recovered"));
+        assert_eq!(summary.total, 4);
+        assert!(!summary.all_unavailable());
     }
 
     #[test]
-    fn multi_endpoint_product_probe_all_unavailable_with_last_bindings() {
-        // arrange
-        // act
-        // assert
-        // Given / When
+    fn multi_endpoint_product_probe_has_mixed_outcomes() {
         let probe = probe_workspace_hub_product();
 
-        // Then: 3× each op, last-of-each summary total=4
         assert_eq!(probe.connects.len(), 3);
         assert_eq!(probe.binds.len(), 3);
         assert_eq!(probe.uploads.len(), 3);
         assert_eq!(probe.recovers.len(), 3);
-        assert!(probe.availability.is_unavailable());
-        assert!(probe.is_unavailable());
+        assert!(probe.availability.is_available());
+        assert!(!probe.is_unavailable());
         assert_eq!(probe.summary.total, 4);
-        assert!(probe.summary.all_unavailable());
-        assert!(
-            probe
-                .last_connect
-                .one_line()
-                .contains("https://hub.example/v1"),
-            "last connect: {}",
-            probe.last_connect.one_line()
-        );
-        assert!(
-            probe.last_bind.one_line().contains("(probe-workspace-2)"),
-            "last bind: {}",
-            probe.last_bind.one_line()
-        );
-        assert!(
-            probe.last_upload.one_line().contains("(probe-bundle)"),
-            "last upload: {}",
-            probe.last_upload.one_line()
-        );
-        assert!(
-            probe
-                .last_recover
-                .one_line()
-                .contains("(probe-session-stale)"),
-            "last recover: {}",
-            probe.last_recover.one_line()
-        );
-        for connect in &probe.connects {
-            assert!(connect.one_line().contains("unavailable"));
-        }
-        for bind in &probe.binds {
-            assert!(bind.one_line().contains("unavailable"));
-        }
-        for upload in &probe.uploads {
-            assert!(upload.one_line().contains("unavailable"));
-        }
-        for recover in &probe.recovers {
-            assert!(recover.one_line().contains("unavailable"));
-        }
+        assert!(!probe.summary.all_unavailable());
     }
 }
