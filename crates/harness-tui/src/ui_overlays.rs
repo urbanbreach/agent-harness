@@ -895,33 +895,12 @@ fn render_command_palette_list(frame: &mut Frame, app: &AppState, theme: &Theme,
         .unwrap_or(0);
     let scroll = selected_row.saturating_sub(visible_rows.saturating_sub(1));
 
-    let mut selected_category = None;
-    let mut current_category = None;
-    let mut row_categories: Vec<Option<crate::keybindings::palette_model::PaletteCategory>> =
-        Vec::with_capacity(rows.len());
-    for row in &rows {
-        match row {
-            PaletteOverlayRow::Section(category) => {
-                current_category = Some(*category);
-                row_categories.push(current_category);
-            }
-            PaletteOverlayRow::Command { is_selected, .. } => {
-                row_categories.push(current_category);
-                if *is_selected == selected {
-                    selected_category = current_category;
-                }
-            }
-            PaletteOverlayRow::Spacer => row_categories.push(None),
-        }
-    }
-
     for (row, palette_row) in rows.iter().enumerate().skip(scroll).take(visible_rows) {
         let row_y = list_area
             .y
             .saturating_add(u16::try_from(row - scroll).unwrap_or(u16::MAX));
         let row_area = Rect::new(list_area.x, row_y, list_area.width, 1);
-        let show_thumb =
-            selected_category.is_some() && row_categories.get(row) == Some(&selected_category);
+        let show_thumb = true;
         match palette_row {
             PaletteOverlayRow::Spacer => {
                 frame.render_widget(

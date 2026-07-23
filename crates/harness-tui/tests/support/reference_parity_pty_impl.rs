@@ -1758,7 +1758,7 @@ fn tool_events() -> Vec<EventEnvelopeV1> {
     for i in 0..10u32 {
         let tc_id = format!("tc_echo_{i}");
         let succeeded = i % 2 == 0;
-        let seq = 3 + i as u64 * 3;
+        let seq = 3 + u64::from(i) * 3;
         events.push(parity_envelope(
             seq,
             Some(request_id),
@@ -1837,7 +1837,7 @@ fn diff_events() -> Vec<EventEnvelopeV1> {
     // 9 edit tool calls in streaming state (no ProviderRequestFinished).
     for i in 0..9u32 {
         let tc_id = format!("tc_edit_{i}");
-        let seq = 3 + i as u64 * 3;
+        let seq = 3 + u64::from(i) * 3;
         events.push(parity_envelope(
             seq,
             Some(request_id),
