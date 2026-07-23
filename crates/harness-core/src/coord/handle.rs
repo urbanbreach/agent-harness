@@ -579,4 +579,11 @@ impl CoordinatorHandle {
         })
         .await
     }
+
+    pub async fn plugin_lifecycle_summary(
+        &self,
+    ) -> Result<crate::integrations::PluginLifecycleSummary, CoordinatorError> {
+        self.request(|respond_to| Command::GetPluginLifecycleSummary { respond_to })
+            .await
+    }
 }

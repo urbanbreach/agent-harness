@@ -529,6 +529,10 @@ pub enum Command {
         snapshot_request_id: String,
         respond_to: oneshot::Sender<Result<WorkspaceRevertSummary, CoordinatorError>>,
     },
+    GetPluginLifecycleSummary {
+        respond_to:
+            oneshot::Sender<Result<crate::integrations::PluginLifecycleSummary, CoordinatorError>>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

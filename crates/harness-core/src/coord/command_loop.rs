@@ -463,6 +463,14 @@ impl Coordinator {
                 let result = self.revert_workspace_internal(snapshot_request_id).await;
                 warn_oneshot_send_failure(respond_to.send(result), "revert_workspace");
             }
+            Command::GetPluginLifecycleSummary { respond_to } => {
+                let result = self
+                    .run_state
+                    .as_ref()
+                    .map(|rs| rs.plugin_lifecycle.summary())
+                    .ok_or(CoordinatorError::RunNotStarted);
+                warn_oneshot_send_failure(respond_to.send(result), "get_plugin_lifecycle_summary");
+            }
         }
     }
 }
