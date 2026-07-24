@@ -67,7 +67,7 @@ const LIVE_PERM_STREAM_SCENARIO: &str = "live_perm_stream";
 /// tool-call injection (see shell-question-reference-freeze.v1.json
 /// blocker). This scenario produces the matching streaming state.
 const LIVE_QUESTION_STREAM_SCENARIO: &str = "live_question_stream";
-const TYPE_FIRST_STARTUP_HELPER: &str = "pty_helper_type_first_startup";
+const TYPE_FIRST_STARTUP_HELPER: &str = "reference_parity_pty_helper_type_first_startup";
 const IDLE_SHELL_HELPER: &str = "pty_helper_idle_shell";
 const LIVE_DRAFT_HELPER: &str = "pty_helper_live_draft";
 const LIVE_STREAM_HELPER: &str = "pty_helper_live_stream";
@@ -79,7 +79,7 @@ const LIVE_TOOL_HELPER: &str = "pty_helper_live_tool";
 const LIVE_DIFF_HELPER: &str = "pty_helper_live_diff";
 const LIVE_SCROLL_HELPER: &str = "pty_helper_live_scroll";
 const QUESTION_OVERLAY_HELPER: &str = "pty_helper_question_overlay";
-const PERMISSION_OVERLAY_HELPER: &str = "pty_helper_permission_overlay";
+const PERMISSION_OVERLAY_HELPER: &str = "reference_parity_pty_helper_permission_overlay";
 const LIVE_PERM_STREAM_HELPER: &str = "pty_helper_live_perm_stream";
 const LIVE_QUESTION_STREAM_HELPER: &str = "pty_helper_live_question_stream";
 const STREAM_USER_TEXT: &str = "stream parity probe";
