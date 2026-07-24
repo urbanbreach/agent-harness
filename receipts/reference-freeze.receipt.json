@@ -2,7 +2,10 @@
   "schema_version": "harness-tui-reference-freeze-receipt-v1",
   "receipt_id": "reference-freeze",
   "global_pinned_reference": {
-    "binary_sha256": ""
+    "binary_sha256": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
+    "binary_version": "grok 0.1.220-alpha.4 (c1b5909) [stable]",
+    "reference_revision": "c1b5909ec707c069f1d21a93917af044e71da0d7",
+    "binary_path": "inspirations/grok-build/target/debug/xai-grok-pager"
   },
   "viewport": {
     "cols": 120,
