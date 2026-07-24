@@ -149,11 +149,6 @@ fn checked_in_manifest_covers_first_slice_and_scaffolds() {
         }
     }
     let user_approved_scaffold_diverged: [&str; 0] = [];
-    // Wave 4 Packet 4.0: all five first-slice rows promoted to pass with
-    // evidence from the pinned reference freeze + harness capture pairs.
-    // Startup pair (run1-startup + harness-startup-v24) backs P0-START-01,
-    // P0-START-02, P0-COMP-01. Draft pair (run1-draft + harness-draft-v23)
-    // backs P0-START-03, P0-KEY-01.
     let demoted_to_incomplete: [&str; 7] = [
         "RESP-120x50",
         "RESP-120x40",
@@ -163,18 +158,6 @@ fn checked_in_manifest_covers_first_slice_and_scaffolds() {
         "RESP-60x20",
         "RESP-WIDE",
     ];
-    // Scaffolds blocked on external reference evidence (Wave 4 Packets 4.1-4.6):
-    // shell-idle freeze captured from the pinned binary but A-PIXELS
-    // fails closed on unmasked chrome residuals; perm/question promoted to
-    // pass using the tool-in-flight streaming state the reference binary
-    // actually captures; cancel/complete promoted to pass with scenario
-    // alignment and Thought-for rendering fix;
-    // fail/recover/scroll remain blocked on auto-retry chrome and
-    // streaming-indicator structural divergences;
-    // TX-USER/TX-ASSISTANT promoted to pass sharing SHELL-COMPLETE's L1/L3
-    // evidence pair (same user/assistant message primitives in the same
-    // capture); TX-TOOL/TX-DIFF remain blocked on scenario-dependent tool-loop
-    // streaming and inline-diff rendering divergences.
     let blocked_on_reference_evidence = [
         "TX-TOOL",
         "TX-DIFF",
@@ -496,8 +479,9 @@ fn checked_in_journey_templates_join_inventory_without_fake_l1() {
             .find(|row| row["behavior_id"].as_str() == Some(journey_id))
             .unwrap_or_else(|| panic!("missing journey template {journey_id}"));
         assert_eq!(row["row_kind"].as_str(), Some("journey"));
-        // Wave 5: all journey rows promoted to pass with reference-CLI pairing evidence
-        assert_eq!(row["status"].as_str(), Some("pass"));
+        // Wave 1 honesty: journey rows stay incomplete until the strict signoff
+        // lane generates fresh L3+L6 evidence for them (Contract §4).
+        assert_eq!(row["status"].as_str(), Some("incomplete"));
         assert_eq!(row["journey_id"].as_str(), Some(journey_id));
         assert!(!row["capability_id"].as_str().unwrap_or("").is_empty());
         assert!(!row["backend_owner"].as_str().unwrap_or("").is_empty());
@@ -637,9 +621,18 @@ fn validator_rejects_pending_owner_on_diverged_row() {
 
 #[test]
 fn validator_rejects_pass_claim_with_missing_applicable_layer() {
-    // arrange — SHELL-STREAM is now pass with all layers; clear L2 to test rejection.
+    // arrange — promote SHELL-STREAM to pass with all layers; clear L2 to test rejection.
     let mut manifest = checked_in_manifest();
-    row_mut(&mut manifest, "SHELL-STREAM")["evidence_paths"]["L2"] = json!("");
+    let row = row_mut(&mut manifest, "SHELL-STREAM");
+    row["status"] = json!("pass");
+    row["evidence_paths"] = json!({
+        "L1": "target/test-lanes/latest/signoff-parity/evidence/reference/freeze/run2-shell-stream-pinned-v2/",
+        "L2": "",
+        "L3": "target/test-lanes/latest/signoff-parity/evidence/actual/harness-shell-stream-pinned-v1/",
+        "L4": "target/test-lanes/latest/signoff-parity/evidence/receipts/shell-stream-pixel-diff-v16-masked.json",
+        "L5": "target/test-lanes/latest/signoff-parity/evidence/receipts/shell-stream-divergence-receipt-v16.json",
+        "L6": "target/test-lanes/latest/signoff-parity/evidence/receipts/shell-stream-identity-field-mask-v16.json"
+    });
 
     // act
     let result = validate_manifest(&manifest);
