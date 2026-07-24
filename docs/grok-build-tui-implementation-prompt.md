@@ -1,4 +1,9 @@
-# Harness / Grok Build Parity Continuation Contract
+# Legacy Harness / Grok Build Parity Contract
+
+> **Superseded:** The binding continuation contract is now
+> [`docs/grok-build-parity-loop-contract.md`](grok-build-parity-loop-contract.md).
+> This file is retained only as historical context. Do not use its reference
+> access rules, baseline, status claims, or stop conditions as current authority.
 
 > **Use:** This file is the complete prompt for the next autonomous implementation loop. Start at **Audited checkpoint** and execute the **Required work order** exactly; do not wait for another prompt.
 > **Status:** Binding implementation contract. It supersedes prior completion claims, manifest rollups, and agent summaries when they conflict with verified behavior.

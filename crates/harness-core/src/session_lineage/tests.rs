@@ -711,6 +711,7 @@ fn session_lineage_rejects_source_event_log_changed_while_materializing() {
         },
         &SystemChildRunIdSource,
         None,
+        1000,
         || write_events_jsonl(&source_run_dir, &changed_events),
         |from, to| fs::rename(from, to),
     )
@@ -755,6 +756,7 @@ fn session_lineage_destination_collision_cleans_temp_without_overwriting_existin
             child_run_dir.clone(),
             temp_run_dir.clone(),
         )),
+        1000,
         || {},
         |from, to| fs::rename(from, to),
     )
@@ -796,6 +798,7 @@ fn session_lineage_cross_device_publish_error_cleans_temp_without_fallback() {
             child_run_dir.clone(),
             temp_run_dir.clone(),
         )),
+        1000,
         || {},
         |_, _| Err(std::io::Error::from_raw_os_error(18)),
     )
@@ -831,6 +834,7 @@ fn session_lineage_materialization_uses_injected_child_run_id_source() {
         },
         &StaticChildRunIdSource("run_harness_child_seeded"),
         None,
+        1000,
         || {},
         |from, to| fs::rename(from, to),
     )
@@ -842,6 +846,84 @@ fn session_lineage_materialization_uses_injected_child_run_id_source() {
         fs::read_to_string(result.child_run_dir.join(EVENTS_FILE_NAME)).unwrap_or_abort();
     assert!(child_events.contains("run_harness_child_seeded"));
     assert!(child_events.contains("evt-run_harness_child_seeded-00000000000000000001"));
+}
+
+#[test]
+fn session_lineage_fixed_id_collision_returns_promptly() {
+    // arrange
+    // act
+    // assert
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
+    let source_run_dir = temp_dir.path().join("run_session_lineage");
+    fs::create_dir_all(&source_run_dir).unwrap_or_abort();
+    let events = finished_events();
+    write_events_jsonl(&source_run_dir, &events);
+    let prefix = validate_fork_stable_prefix(&events, events.len() as u64).unwrap_or_abort();
+
+    let fixed_id = "run_harness_child_fixed";
+    let existing_dest = temp_dir.path().join(fixed_id);
+    fs::create_dir_all(&existing_dest).unwrap_or_abort();
+
+    let err = materialize_child_session_inner(
+        ChildSessionMaterializationRequest {
+            source_run_dir: &source_run_dir,
+            events: &events,
+            stable_prefix: &prefix,
+            source_kind: ChildSessionMaterializationSourceKind::DiskRunDirectory,
+        },
+        &StaticChildRunIdSource(fixed_id),
+        None,
+        1,
+        || {},
+        |from, to| fs::rename(from, to),
+    )
+    .expect_err("existing destination must produce collision error, not hang");
+
+    let ChildSessionMaterializationError::ChildRunIdCollision {
+        attempts,
+        child_run_id,
+    } = err
+    else {
+        panic!("expected ChildRunIdCollision, got {err:?}")
+    };
+    assert_eq!(attempts, 1);
+    assert_eq!(child_run_id, "run_harness_child_fixed");
+    assert!(existing_dest.exists());
+    assert_no_unpublished_temp_dirs(temp_dir.path());
+}
+
+#[test]
+fn session_lineage_zero_max_retries_returns_invalid_max_retries() {
+    // arrange
+    // act
+    // assert
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
+    let source_run_dir = temp_dir.path().join("run_session_lineage");
+    fs::create_dir_all(&source_run_dir).unwrap_or_abort();
+    let events = finished_events();
+    write_events_jsonl(&source_run_dir, &events);
+    let prefix = validate_fork_stable_prefix(&events, events.len() as u64).unwrap_or_abort();
+
+    let err = materialize_child_session_inner(
+        ChildSessionMaterializationRequest {
+            source_run_dir: &source_run_dir,
+            events: &events,
+            stable_prefix: &prefix,
+            source_kind: ChildSessionMaterializationSourceKind::DiskRunDirectory,
+        },
+        &StaticChildRunIdSource("run_harness_child_fixed"),
+        None,
+        0,
+        || {},
+        |from, to| fs::rename(from, to),
+    )
+    .expect_err("max_retries == 0 must return InvalidMaxRetries, not proceed");
+
+    assert!(
+        matches!(err, ChildSessionMaterializationError::InvalidMaxRetries),
+        "expected InvalidMaxRetries, got {err:?}"
+    );
+    assert_no_unpublished_temp_dirs(temp_dir.path());
 }
 
 fn envelope(seq: u64, payload: EventV1) -> EventEnvelopeV1 {

@@ -123,7 +123,7 @@ pub(super) fn seed_operator_host_probes_sets_binary_update_and_jujutsu_continuat
         .workspace_hub_outcome_summary()
         .expect("workspace hub outcome summary bound");
     assert_eq!(hub.total, 4);
-    assert_eq!(hub.connect_unavailable, 0);
+    assert_eq!(hub.connect_unavailable, 1);
     assert_eq!(hub.bind_unavailable, 0);
     assert_eq!(hub.upload_unavailable, 0);
     assert_eq!(hub.recover_unavailable, 0);
@@ -132,8 +132,13 @@ pub(super) fn seed_operator_host_probes_sets_binary_update_and_jujutsu_continuat
         .workspace_hub_last_connect()
         .expect("workspace hub last connect bound");
     assert!(
-        hub_connect.one_line().contains("connected"),
-        "expected connected connect: {}",
+        hub_connect.one_line().contains("unavailable"),
+        "expected unavailable connect: {}",
+        hub_connect.one_line()
+    );
+    assert!(
+        hub_connect.one_line().contains("hub.example"),
+        "expected hub.example in connect: {}",
         hub_connect.one_line()
     );
     let hub_bind = app
@@ -165,14 +170,14 @@ pub(super) fn seed_operator_host_probes_sets_binary_update_and_jujutsu_continuat
     let hub_avail = app
         .workspace_hub_availability()
         .expect("workspace hub availability bound");
-    assert!(hub_avail.is_available());
-    assert!(hub_avail.one_line().contains("available"));
+    assert!(hub_avail.is_unavailable());
+    assert!(hub_avail.one_line().contains("unavailable"));
     let oidc = app
         .browser_oidc_outcome_summary()
         .expect("browser oidc outcome summary bound");
     assert_eq!(oidc.total, 2);
     assert_eq!(oidc.start_unavailable, 0);
-    assert_eq!(oidc.complete_unavailable, 0);
+    assert_eq!(oidc.complete_unavailable, 1);
     assert!(!oidc.all_unavailable());
     let oidc_start = app
         .browser_oidc_last_start()
@@ -187,23 +192,23 @@ pub(super) fn seed_operator_host_probes_sets_binary_update_and_jujutsu_continuat
         .browser_oidc_last_complete()
         .expect("browser oidc last complete bound");
     assert!(
-        oidc_complete.one_line().contains("completed"),
-        "expected completed multi-endpoint OIDC complete: {}",
+        oidc_complete.one_line().contains("unavailable"),
+        "expected unavailable multi-endpoint OIDC complete (real callback timeout): {}",
         oidc_complete.one_line()
     );
     assert!(!oidc_complete.one_line().contains("probe-device"));
     let oidc_avail = app
         .browser_oidc_availability()
         .expect("browser oidc availability bound");
-    assert!(oidc_avail.is_available());
-    assert!(oidc_avail.one_line().contains("available"));
+    assert!(oidc_avail.is_unavailable());
+    assert!(oidc_avail.one_line().contains("unavailable"));
     let mcp = app
         .mcp_oauth_outcome_summary()
         .expect("mcp oauth outcome summary bound");
     assert_eq!(mcp.total, 3);
     assert_eq!(mcp.begin_unavailable, 0);
     assert_eq!(mcp.exchange_unavailable, 0);
-    assert_eq!(mcp.open_unavailable, 0);
+    assert_eq!(mcp.open_unavailable, 1);
     assert!(!mcp.all_unavailable());
     let mcp_begin = app
         .mcp_oauth_last_begin()
@@ -227,15 +232,15 @@ pub(super) fn seed_operator_host_probes_sets_binary_update_and_jujutsu_continuat
         .mcp_oauth_last_open()
         .expect("mcp oauth last open bound");
     assert!(
-        mcp_open.one_line().contains("opened") && mcp_open.one_line().contains("docs-server"),
-        "expected multi-endpoint last MCP open: {}",
+        mcp_open.one_line().contains("unavailable") && mcp_open.one_line().contains("docs-server"),
+        "expected multi-endpoint last MCP open unavailable: {}",
         mcp_open.one_line()
     );
     let mcp_avail = app
         .mcp_oauth_remote_availability()
         .expect("mcp oauth remote availability bound");
-    assert!(mcp_avail.is_available());
-    assert!(mcp_avail.one_line().contains("available"));
+    assert!(mcp_avail.is_unavailable());
+    assert!(mcp_avail.one_line().contains("unavailable"));
     let sleep = app
         .sleep_wake_observation_summary()
         .expect("sleep/wake observation summary bound");

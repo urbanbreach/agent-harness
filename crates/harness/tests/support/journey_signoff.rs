@@ -14,64 +14,64 @@ pub(crate) const WORKTREE_PTY_OWNER_FN: &str =
     "dual_binary_cli_pty_worktree_ctrl_w_creates_git_worktree";
 pub(crate) const JOURNEY_TEST_REL: &str = "crates/harness/tests/journey_signoff_test.rs";
 pub(crate) const JOURNEY_LANE_RECEIPT_REL: &str =
-    "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/loop15-journey-lane-v1.md";
+    "target/test-lanes/latest/signoff-parity/evidence/receipts/loop15-journey-lane-v1.md";
 pub(crate) const JOURNEY_EVIDENCE_EXPAND_RECEIPT_REL: &str =
-    "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/loop15-journey-evidence-expand-v1.md";
+    "target/test-lanes/latest/signoff-parity/evidence/receipts/loop15-journey-evidence-expand-v1.md";
 pub(crate) const JOURNEY_ROWS_EXPAND_RECEIPT_REL: &str =
-    "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/loop15-journey-rows-expand-v1.md";
+    "target/test-lanes/latest/signoff-parity/evidence/receipts/loop15-journey-rows-expand-v1.md";
 pub(crate) const WAIT_ANY_ALL_L2_REL: &str =
     "crates/harness-core/src/coord/background_notifications.rs";
 pub(crate) const WAIT_ANY_ALL_L5_REL: &str =
     "crates/harness-tools/tests/native_agent_spawn_and_batch_preserve_lineage_permissions_and_order/10_background_output_wait_any_all_test.rs";
 pub(crate) const WAIT_ANY_ALL_L6_REL: &str =
-    "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/loop15-journey-surface-evidence-v1.md";
+    "target/test-lanes/latest/signoff-parity/evidence/receipts/loop15-journey-surface-evidence-v1.md";
 pub(crate) const FOLDER_TRUST_L2_REL: &str = "crates/harness-core/src/folder_trust.rs";
 pub(crate) const FOLDER_TRUST_L5_REL: &str = "crates/harness-tools/src/shell_safety.rs";
 pub(crate) const FOLDER_TRUST_L6_REL: &str =
-    "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/loop15-journey-surface-evidence-v1.md";
+    "target/test-lanes/latest/signoff-parity/evidence/receipts/loop15-journey-surface-evidence-v1.md";
 pub(crate) const MEMORY_CLI_L2_REL: &str = "crates/harness-core/src/memory.rs";
 pub(crate) const MEMORY_CLI_L5_REL: &str = "crates/harness/src/memory_cmd.rs";
 pub(crate) const MEMORY_CLI_L6_REL: &str =
-    "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/loop15-journey-surface-evidence-v1.md";
+    "target/test-lanes/latest/signoff-parity/evidence/receipts/loop15-journey-surface-evidence-v1.md";
 pub(crate) const STABLE_L3_WAIT_ANY_REL: &str =
-    "artifacts/qa-evidence/20260717-tui-reference-parity/actual/journey-wait-any-all-v1/";
+    "target/test-lanes/latest/signoff-parity/evidence/actual/journey-wait-any-all-v1/";
 pub(crate) const STABLE_L3_MEMORY_CLI_REL: &str =
-    "artifacts/qa-evidence/20260717-tui-reference-parity/actual/journey-memory-cli-v1/";
+    "target/test-lanes/latest/signoff-parity/evidence/actual/journey-memory-cli-v1/";
 pub(crate) const STABLE_L3_FOLDER_TRUST_REL: &str =
-    "artifacts/qa-evidence/20260717-tui-reference-parity/actual/journey-folder-trust-deny-v1/";
+    "target/test-lanes/latest/signoff-parity/evidence/actual/journey-folder-trust-deny-v1/";
 pub(crate) const ALWAYS_APPROVE_L2_REL: &str =
     "crates/harness-tui/src/app/tests/permission_modal_tests.rs";
 pub(crate) const ALWAYS_APPROVE_L5_REL: &str = "crates/harness-tui/src/keybindings/tests.rs";
 pub(crate) const ALWAYS_APPROVE_L6_REL: &str =
-    "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/loop15-journey-always-settings-l3-v1.md";
+    "target/test-lanes/latest/signoff-parity/evidence/receipts/loop15-journey-always-settings-l3-v1.md";
 pub(crate) const STABLE_L3_ALWAYS_APPROVE_REL: &str =
-    "artifacts/qa-evidence/20260717-tui-reference-parity/actual/journey-always-approve-mode-v1/";
+    "target/test-lanes/latest/signoff-parity/evidence/actual/journey-always-approve-mode-v1/";
 pub(crate) const SETTINGS_EDITOR_L2_REL: &str =
     "crates/harness-tui/src/app/tests/settings_editor_tests.rs";
 pub(crate) const SETTINGS_EDITOR_L5_REL: &str =
     "crates/harness-tui/src/app/tests/settings_editor_tests.rs";
 pub(crate) const SETTINGS_EDITOR_L6_REL: &str =
-    "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/loop15-journey-always-settings-l3-v1.md";
+    "target/test-lanes/latest/signoff-parity/evidence/receipts/loop15-journey-always-settings-l3-v1.md";
 pub(crate) const STABLE_L3_SETTINGS_EDITOR_REL: &str =
-    "artifacts/qa-evidence/20260717-tui-reference-parity/actual/journey-settings-editor-v1/";
+    "target/test-lanes/latest/signoff-parity/evidence/actual/journey-settings-editor-v1/";
 pub(crate) const CONFIG_SHOW_RECEIPT_REL: &str =
-    "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/loop15-config-show-effective-v1.md";
+    "target/test-lanes/latest/signoff-parity/evidence/receipts/loop15-config-show-effective-v1.md";
 pub(crate) const CONFIG_SOURCES_RECEIPT_REL: &str =
-    "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/loop15-config-sources-explain-v1.md";
+    "target/test-lanes/latest/signoff-parity/evidence/receipts/loop15-config-sources-explain-v1.md";
 pub(crate) const WORKTREE_PTY_RECEIPT_REL: &str =
-    "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/loop15-worktree-pty-journey-v1.md";
+    "target/test-lanes/latest/signoff-parity/evidence/receipts/loop15-worktree-pty-journey-v1.md";
 pub(crate) const WORKTREE_FUNCTIONAL_RECEIPT_REL: &str =
-    "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/loop15-worktree-functional-v1.md";
+    "target/test-lanes/latest/signoff-parity/evidence/receipts/loop15-worktree-functional-v1.md";
 pub(crate) const CONFIG_STATE_TEST_REL: &str = "crates/harness/src/lib.rs";
 pub(crate) const WORKTREE_STATE_TEST_REL: &str =
     "crates/harness-tui/src/app/tests/lifecycle_shell_tests.rs";
 pub(crate) const WORKTREE_CORE_TEST_REL: &str = "crates/harness-core/src/worktree.rs";
 pub(crate) const STABLE_L3_CONFIG_SHOW_REL: &str =
-    "artifacts/qa-evidence/20260717-tui-reference-parity/actual/journey-config-show-effective-v1/";
+    "target/test-lanes/latest/signoff-parity/evidence/actual/journey-config-show-effective-v1/";
 pub(crate) const STABLE_L3_CONFIG_SOURCES_REL: &str =
-    "artifacts/qa-evidence/20260717-tui-reference-parity/actual/journey-config-sources-explain-v1/";
+    "target/test-lanes/latest/signoff-parity/evidence/actual/journey-config-sources-explain-v1/";
 pub(crate) const STABLE_L3_WORKTREE_REL: &str =
-    "artifacts/qa-evidence/20260717-tui-reference-parity/actual/journey-worktree-owner-v1/";
+    "target/test-lanes/latest/signoff-parity/evidence/actual/journey-worktree-owner-v1/";
 pub(crate) const EXAMPLE_CONFIG_REL: &str = "configs/harness.example.jsonc";
 
 pub(crate) fn require_harness_binary() -> PathBuf {
@@ -219,7 +219,7 @@ pub(crate) fn assert_evidence_path_exists(journey_id: &str, layer: &str, rel: &s
     // Only assert on-disk existence when strict mode is on. Committed-source
     // paths (L2, L5) never start with this prefix and always assert
     // unconditionally.
-    if file_rel.starts_with("artifacts/qa-evidence/20260717-tui-reference-parity") && !strict {
+    if file_rel.starts_with("target/test-lanes/latest/signoff-parity/evidence") && !strict {
         return;
     }
     let path = repo_root().join(file_rel);

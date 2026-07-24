@@ -50,6 +50,9 @@ const LIVE_DIFF_SCENARIO: &str = "live_diff";
 const LIVE_SCROLL_SCENARIO: &str = "live_scroll";
 const QUESTION_OVERLAY_SCENARIO: &str = "question_overlay";
 const PERMISSION_OVERLAY_SCENARIO: &str = "permission_overlay";
+/// Empty-draft variant: same permission overlay but without seeding a draft, so
+/// the capture verifies "Allow Edit" chrome renders with an empty composer.
+const PERMISSION_OVERLAY_EMPTY_DRAFT_SCENARIO: &str = "permission_overlay_empty_draft";
 /// SHELL-PERM reference freeze (run4-shell-perm-pinned-v4) shows a
 /// tool-in-flight streaming state, NOT a permission overlay. The reference
 /// binary cannot surface a permission prompt via black-box tool-call
@@ -607,14 +610,14 @@ pub(crate) fn tx_tool_pty() {
     }
     let mut helper = spawn_helper(LIVE_TOOL_HELPER, LIVE_TOOL_SCENARIO);
     helper.wait_for(TOOL_PATH_TEXT);
-    helper.wait_for("Waiting for response");
+    helper.wait_for("Responding");
     let screen = helper.screen_text();
     assert!(
         screen.contains(TOOL_PATH_TEXT),
         "TX-TOOL PTY: echo tool row required\n{screen}"
     );
     assert!(
-        screen.contains("Waiting for response"),
+        screen.contains("Responding") || screen.contains("Waiting for response"),
         "TX-TOOL PTY: streaming indicator required (Grok freeze form)\n{screen}"
     );
     assert!(
@@ -635,14 +638,14 @@ pub(crate) fn tx_diff_pty() {
     }
     let mut helper = spawn_helper(LIVE_DIFF_HELPER, LIVE_DIFF_SCENARIO);
     helper.wait_for(DIFF_PATH_TEXT);
-    helper.wait_for("Waiting for response");
+    helper.wait_for("Responding");
     let screen = helper.screen_text();
     assert!(
         screen.contains(DIFF_PATH_TEXT) || screen.contains('◆'),
         "TX-DIFF PTY: structured edit/path projection required\n{screen}"
     );
     assert!(
-        screen.contains("Waiting for response"),
+        screen.contains("Responding") || screen.contains("Waiting for response"),
         "TX-DIFF PTY: streaming indicator required (Grok freeze form)\n{screen}"
     );
     assert!(
@@ -775,6 +778,7 @@ pub(crate) fn pty_helper_type_first_startup() {
         keybindings: None,
         toggles: None,
         preserve_terminal_on_exit: false,
+        skip_alternate_screen: false,
     })
     .unwrap_or_abort();
 }
@@ -841,6 +845,7 @@ pub(crate) fn pty_helper_idle_shell() {
         keybindings: None,
         toggles: None,
         preserve_terminal_on_exit: false,
+        skip_alternate_screen: false,
     })
     .unwrap_or_abort();
 }
@@ -866,6 +871,7 @@ pub(crate) fn pty_helper_live_draft() {
         keybindings: None,
         toggles: None,
         preserve_terminal_on_exit: false,
+        skip_alternate_screen: false,
     })
     .unwrap_or_abort();
 }
@@ -997,6 +1003,7 @@ pub(crate) fn pty_helper_question_overlay() {
         keybindings: None,
         toggles: None,
         preserve_terminal_on_exit: false,
+        skip_alternate_screen: false,
     })
     .unwrap_or_abort();
 }
@@ -1019,6 +1026,7 @@ fn run_live_with_historical_events(historical_events: Vec<EventEnvelopeV1>) {
         keybindings: None,
         toggles: None,
         preserve_terminal_on_exit: false,
+        skip_alternate_screen: false,
     })
     .unwrap_or_abort();
 }
@@ -1084,6 +1092,45 @@ pub(crate) fn pty_helper_permission_overlay() {
         keybindings: None,
         toggles: None,
         preserve_terminal_on_exit: false,
+        skip_alternate_screen: false,
+    })
+    .unwrap_or_abort();
+}
+
+pub(crate) fn pty_helper_permission_overlay_empty_draft() {
+    if std::env::var(HELPER_SCENARIO_ENV).as_deref() != Ok(PERMISSION_OVERLAY_EMPTY_DRAFT_SCENARIO)
+    {
+        return;
+    }
+
+    let run_dir = tempfile::tempdir().unwrap_or_abort();
+    let (update_tx, update_rx) = mpsc::channel();
+    let inject_tx = update_tx.clone();
+    thread::spawn(move || {
+        thread::sleep(PERMISSION_INJECT_DELAY);
+        let _ = inject_tx.send(LiveUpdate::Event(Box::new(permission_requested_event(
+            7,
+            "perm_parity_empty_draft",
+            PERMISSION_TOOL_CALL_ID,
+        ))));
+    });
+
+    install_parity_context_window();
+    run_tui_with_options(TuiOptions {
+        mode: TuiMode::Live {
+            run_dir: run_dir.path().to_path_buf(),
+            historical_events: permission_turn_events(),
+            session_history_entries: Vec::new(),
+            prompt_history_path: None,
+            update_rx,
+            compact_session_supported: false,
+        },
+        exit_on_finish: false,
+        on_ui_intent: None,
+        keybindings: None,
+        toggles: None,
+        preserve_terminal_on_exit: false,
+        skip_alternate_screen: false,
     })
     .unwrap_or_abort();
 }
@@ -1708,13 +1755,22 @@ fn tool_events() -> Vec<EventEnvelopeV1> {
         parity_envelope(
             1,
             Some(request_id),
+            EventV1::TaskScheduled(TaskScheduledEvent {
+                task_id: "task_tool_parity".to_string().into(),
+                state: TaskScheduleState::Started,
+                queue_key: Some("provider_model:mock:model-tx".to_string()),
+            }),
+        ),
+        parity_envelope(
+            2,
+            Some(request_id),
             EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
                 request_id: request_id.into(),
                 text: TOOL_USER_TEXT.to_string(),
             }),
         ),
         parity_envelope(
-            2,
+            3,
             Some(request_id),
             EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
                 request_id: request_id.into(),
@@ -1730,7 +1786,7 @@ fn tool_events() -> Vec<EventEnvelopeV1> {
     for i in 0..10u32 {
         let tc_id = format!("tc_echo_{i}");
         let succeeded = i % 2 == 0;
-        let seq = 3 + u64::from(i) * 3;
+        let seq = 4 + u64::from(i) * 3;
         events.push(parity_envelope(
             seq,
             Some(request_id),
@@ -1770,7 +1826,19 @@ fn tool_events() -> Vec<EventEnvelopeV1> {
             }),
         ));
     }
-    // No ProviderRequestFinished — streaming state matches reference freeze.
+    // ProviderRequestFinished seeds the token counter; TaskScheduled(Started)
+    // keeps the activity Streaming so "Waiting for response" renders.
+    events.push(parity_envelope(
+        34,
+        Some(request_id),
+        EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+            request_id: request_id.into(),
+            finish_reason: "tool_calls".to_string(),
+            output_digest: Some("digest-out-tool".to_string()),
+            usage: Some(parity_completion_usage(3_200)),
+            metadata: None,
+        }),
+    ));
     // Mono timing: spread over 3200ms to match 'Waiting for response… 3.2s'.
     let mut mono = 100_u64;
     for event in events.iter_mut() {
@@ -1788,13 +1856,22 @@ fn diff_events() -> Vec<EventEnvelopeV1> {
         parity_envelope(
             1,
             Some(request_id),
+            EventV1::TaskScheduled(TaskScheduledEvent {
+                task_id: "task_diff_parity".to_string().into(),
+                state: TaskScheduleState::Started,
+                queue_key: Some("provider_model:mock:model-tx".to_string()),
+            }),
+        ),
+        parity_envelope(
+            2,
+            Some(request_id),
             EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
                 request_id: request_id.into(),
                 text: DIFF_USER_TEXT.to_string(),
             }),
         ),
         parity_envelope(
-            2,
+            3,
             Some(request_id),
             EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
                 request_id: request_id.into(),
@@ -1809,7 +1886,7 @@ fn diff_events() -> Vec<EventEnvelopeV1> {
     // 9 edit tool calls in streaming state (no ProviderRequestFinished).
     for i in 0..9u32 {
         let tc_id = format!("tc_edit_{i}");
-        let seq = 3 + u64::from(i) * 3;
+        let seq = 4 + u64::from(i) * 3;
         events.push(parity_envelope(
             seq,
             Some(request_id),
@@ -1842,7 +1919,19 @@ fn diff_events() -> Vec<EventEnvelopeV1> {
             }),
         ));
     }
-    // No ProviderRequestFinished — streaming state matches reference freeze.
+    // ProviderRequestFinished seeds the token counter; TaskScheduled(Started)
+    // keeps the activity Streaming so "Waiting for response" renders.
+    events.push(parity_envelope(
+        31,
+        Some(request_id),
+        EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+            request_id: request_id.into(),
+            finish_reason: "tool_calls".to_string(),
+            output_digest: Some("digest-out-diff".to_string()),
+            usage: Some(parity_completion_usage(3_200)),
+            metadata: None,
+        }),
+    ));
     // Mono timing: spread over 3200ms to match 'Waiting for response… 3.2s'.
     let mut mono = 100_u64;
     for event in events.iter_mut() {

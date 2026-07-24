@@ -247,6 +247,7 @@ pub(crate) fn pty_helper_type_first_startup() {
         keybindings: None,
         toggles: None,
         preserve_terminal_on_exit: false,
+        skip_alternate_screen: false,
     })
     .unwrap_or_abort();
 }
@@ -315,6 +316,7 @@ pub(crate) fn pty_helper_permission_overlay() {
         keybindings: None,
         toggles: None,
         preserve_terminal_on_exit: false,
+        skip_alternate_screen: false,
     })
     .unwrap_or_abort();
     drop(keepalive_tx);
@@ -347,6 +349,7 @@ pub(crate) fn pty_helper_connect_auth() {
         keybindings: None,
         toggles: None,
         preserve_terminal_on_exit: false,
+        skip_alternate_screen: false,
     })
     .unwrap_or_abort();
 }

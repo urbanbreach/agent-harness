@@ -1,0 +1,14 @@
+{
+  "schema_version": "harness-tui-reference-freeze-receipt-v1",
+  "receipt_id": "reference-freeze",
+  "global_pinned_reference": {
+    "binary_sha256": ""
+  },
+  "viewport": {
+    "cols": 120,
+    "rows": 32
+  },
+  "scenario": "startup_welcome_120x32",
+  "freeze_txt_sha256": "1a5f24dc9be953df160e8d2bcb661f6f2d8dc7845021c3153cd415ab3889ca58",
+  "freeze_png_sha256": "0830427651ae47645ea3ea49b532ef7ea29a69c3140f140d7df201f5093d6016"
+}

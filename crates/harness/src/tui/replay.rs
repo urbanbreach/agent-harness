@@ -43,6 +43,7 @@ pub fn replay_workspace_root_from_events(events: &[EventEnvelopeV1]) -> Option<P
 pub(super) fn execute_replay_mode(
     run_dir: &Path,
     exit_on_finish: bool,
+    skip_alternate_screen: bool,
     stderr: &mut dyn Write,
 ) -> ExitCode {
     let events = match load_events_from_run_dir(run_dir) {
@@ -69,6 +70,7 @@ pub(super) fn execute_replay_mode(
         keybindings: None,
         toggles: None,
         preserve_terminal_on_exit: false,
+        skip_alternate_screen,
     }) {
         let _ = writeln!(stderr, "TUI error: {err}");
         return ExitCode::from(1);
@@ -80,6 +82,7 @@ pub(super) fn execute_replay_mode(
 pub(super) async fn run_replay_tui(
     run_dir: PathBuf,
     exit_on_finish: bool,
+    skip_alternate_screen: bool,
 ) -> Result<InteractiveWorkflow, String> {
     let events = load_events_from_run_dir(&run_dir).map_err(|err| err.to_string())?;
     // Replay workspace authority is derived exclusively from RunStarted events during ingestion.
@@ -100,6 +103,7 @@ pub(super) async fn run_replay_tui(
             keybindings: None,
             toggles: None,
             preserve_terminal_on_exit: true,
+            skip_alternate_screen,
         })
     })
     .await

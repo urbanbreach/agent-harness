@@ -65,7 +65,14 @@ fn tool_call_support_metadata(
             "no_network_probes": true,
         });
     };
-    let ProviderConfig::OpenAiCompatible(provider) = provider;
+    let ProviderConfig::OpenAiCompatible(provider) = provider else {
+        return json!({
+            "status": "unknown",
+            "supports_tool_calls": Value::Null,
+            "source": "provider_model_metadata_missing",
+            "no_network_probes": true,
+        });
+    };
     let Some(model) = provider.models.get(model_id) else {
         return json!({
             "status": "unknown",
@@ -124,7 +131,13 @@ fn prompt_family_asset_metadata(
             "no_network_probes": true,
         });
     };
-    let ProviderConfig::OpenAiCompatible(provider) = provider;
+    let ProviderConfig::OpenAiCompatible(provider) = provider else {
+        return json!({
+            "status": "unknown",
+            "source": "provider_model_metadata_missing",
+            "no_network_probes": true,
+        });
+    };
     let Some(model) = provider.models.get(model_id) else {
         return json!({
             "status": "unknown",

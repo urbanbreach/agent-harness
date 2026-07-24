@@ -1,26 +1,39 @@
 use crate::UnwrapOrAbort;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use async_trait::async_trait;
 use harness_core::auth::{
     AuthProviderId, CredentialClock, CredentialStore, StoredCredential, SystemCredentialClock,
 };
 use harness_core::event::{
-    ActorKind, EventActor, EventEnvelopeV1, EventV1, ProviderRequestFinishedEvent, RunFailedEvent,
-    TaskCancelledEvent, TaskCompletedEvent, TaskCompletionMetadata, TaskLineageMetadata,
-    TaskScheduleState, TaskScheduledEvent,
+    ActorKind, AgentSpawnedEvent, EventActor, EventEnvelopeV1, EventV1,
+    ProviderRequestFinishedEvent, ProviderRequestStartedEvent, RunFailedEvent, RunFinishedEvent,
+    RunStartedEvent, TaskCancelledEvent, TaskCompletedEvent, TaskCompletionMetadata,
+    TaskLineageMetadata, TaskScheduleState, TaskScheduledEvent, UserMessageSubmittedEvent,
 };
 use harness_core::store::{
     EventEnvelopeWithoutSeqV1, EventStore, EventStoreError, EventStream, InMemoryEventStore,
+};
+use harness_providers::mock::{request_digest, MockProvider};
+use harness_providers::{
+    CompletionRequest, CompletionUsage, Provider, ProviderEventStream, ProviderStreamEvent,
 };
 
 use super::stream::{
     evaluate_prompt_completion, has_provider_error_finish, parse_wait_timeout_ms,
     wait_for_prompt_completion, PromptCompletionStatus, DEFAULT_WAIT_TIMEOUT,
 };
-use super::{resolve_settings, PromptCommand, PromptOutputFormat};
-
+use super::{
+    apply_prompt_command_config, permission_policy_for_resolution,
+    resolve_effective_permission_policy, resolve_permission_mode, resolve_settings, run_prompt,
+    PermissionModeResolution, PromptCommand, PromptOutputFormat,
+};
+use harness_core::config::PermissionMode;
+use harness_core::coord::CoordinatorConfig;
+use harness_core::perm::{PermissionKind, PermissionPolicy, PolicyDecision};
+use uuid::Uuid;
 fn default_prompt_command() -> PromptCommand {
     PromptCommand {
         text: Some("hello".to_string()),
@@ -34,6 +47,25 @@ fn default_prompt_command() -> PromptCommand {
         resume: None,
         out: None,
         print_run_dir: false,
+        max_turns: None,
+        no_subagents: false,
+        no_plan: false,
+        tools: Vec::new(),
+        disallowed_tools: Vec::new(),
+        disable_web_search: false,
+        no_memory: false,
+        prompt_file: None,
+        verbatim: false,
+        system_prompt_override: None,
+        dangerously_skip_permissions: false,
+        permission_mode: None,
+        session_id: None,
+        rules: None,
+        reasoning_effort: None,
+        allow: Vec::new(),
+        deny: Vec::new(),
+        fork_session: false,
+        sandbox: None,
         format: PromptOutputFormat::Default,
     }
 }
@@ -101,6 +133,55 @@ fn no_config_prompt_with_stored_codex_uses_runtime_catalog() {
     assert!(config.providers.contains_key("openai-codex"));
     assert!(settings.config_digest.contains("builtin-auth-runtime"));
     assert_eq!(settings.default_profile, "build");
+}
+
+#[tokio::test]
+async fn run_prompt_with_mock_provider_completes_successfully() {
+    // arrange
+    // act
+    // assert
+    let temp = tempfile::tempdir().unwrap_or_abort();
+    let deps = crate::CliDeps::real()
+        .with_current_dir(temp.path().to_path_buf())
+        .with_env(
+            "HARNESS_DATA_HOME",
+            temp.path().join("data").to_string_lossy(),
+        );
+    let context = deps.config_load_context().unwrap_or_abort();
+
+    let mut cmd = default_prompt_command();
+    cmd.mock = true;
+    cmd.text = Some("Hello from PTY".to_string());
+    cmd.permission_mode = Some("bypassPermissions".to_string());
+
+    let settings = resolve_settings(
+        &cmd,
+        None,
+        Some(temp.path().join("sessions")),
+        temp.path().to_path_buf(),
+        &context,
+        &deps,
+    )
+    .unwrap_or_abort();
+
+    // act
+    let mut stdout = std::io::sink();
+    let outcome = run_prompt(&cmd, &settings, "Hello from PTY", &mut stdout).await;
+
+    // assert
+    let outcome = outcome.unwrap_or_abort();
+    assert!(outcome.events_path.exists(), "events file should exist");
+    assert!(outcome.run_dir.exists(), "run dir should exist");
+
+    let events_body = std::fs::read_to_string(&outcome.events_path).unwrap_or_abort();
+    assert!(
+        events_body.contains("Hello world"),
+        "expected mock transcript to include scripted response: {events_body}"
+    );
+    assert!(
+        events_body.contains("\"event_type\":\"task_completed\""),
+        "expected prompt mock run to complete a task: {events_body}"
+    );
 }
 
 #[test]
@@ -529,6 +610,1036 @@ async fn wait_for_prompt_completion_subscribes_once_and_streams_new_events() {
     assert_eq!(store.replay_calls(), 0);
 }
 
+#[test]
+fn resolve_permission_mode_bypass_activates_allow_all() {
+    // arrange
+    // act
+    // assert
+    assert_eq!(
+        resolve_permission_mode(Some("bypassPermissions"), false).unwrap_or_abort(),
+        PermissionModeResolution::AllowAll
+    );
+    assert_eq!(
+        resolve_permission_mode(Some("yolo"), false).unwrap_or_abort(),
+        PermissionModeResolution::AllowAll
+    );
+    assert_eq!(
+        resolve_permission_mode(None, true).unwrap_or_abort(),
+        PermissionModeResolution::AllowAll
+    );
+}
+
+#[test]
+fn resolve_permission_mode_default_resets_to_default() {
+    // arrange
+    // act
+    // assert
+    assert_eq!(
+        resolve_permission_mode(Some("default"), false).unwrap_or_abort(),
+        PermissionModeResolution::ResetToDefault
+    );
+}
+
+#[test]
+fn resolve_permission_mode_non_bypass_modes_do_not_activate() {
+    // arrange
+    // act
+    // assert
+    assert_eq!(
+        resolve_permission_mode(Some("plan"), false).unwrap_or_abort(),
+        PermissionModeResolution::NoChange
+    );
+    assert_eq!(
+        resolve_permission_mode(None, false).unwrap_or_abort(),
+        PermissionModeResolution::NoChange
+    );
+}
+
+#[test]
+fn resolve_permission_mode_accept_edits_allows_edits_only() {
+    // arrange
+    // act
+    // assert
+    assert_eq!(
+        resolve_permission_mode(Some("acceptEdits"), false).unwrap_or_abort(),
+        PermissionModeResolution::AcceptEdits
+    );
+}
+
+#[test]
+fn resolve_permission_mode_dont_ask_denies_mutations() {
+    // arrange
+    // act
+    // assert
+    assert_eq!(
+        resolve_permission_mode(Some("dontAsk"), false).unwrap_or_abort(),
+        PermissionModeResolution::DenyByDefault
+    );
+}
+
+#[test]
+fn accept_edits_policy_evaluates_all_kinds_correctly() {
+    // arrange
+    // act
+    // assert
+    let policy = permission_policy_for_resolution(PermissionModeResolution::AcceptEdits).unwrap();
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::EditFs),
+        PolicyDecision::Allow
+    );
+    assert!(matches!(
+        policy.evaluate(None, PermissionKind::Shell),
+        PolicyDecision::Ask { .. }
+    ));
+    assert!(matches!(
+        policy.evaluate(None, PermissionKind::Network),
+        PolicyDecision::Ask { .. }
+    ));
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Question),
+        PolicyDecision::Deny
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Task),
+        PolicyDecision::Allow
+    );
+    assert!(matches!(
+        policy.evaluate(None, PermissionKind::WebFetch),
+        PolicyDecision::Ask { .. }
+    ));
+    assert!(matches!(
+        policy.evaluate(None, PermissionKind::WebSearch),
+        PolicyDecision::Ask { .. }
+    ));
+    assert!(matches!(
+        policy.evaluate(None, PermissionKind::CodeSearch),
+        PolicyDecision::Ask { .. }
+    ));
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Lsp),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Read),
+        PolicyDecision::Allow
+    );
+    assert!(matches!(
+        policy.evaluate(None, PermissionKind::ExternalDirectory),
+        PolicyDecision::Ask { .. }
+    ));
+    assert!(matches!(
+        policy.evaluate(None, PermissionKind::DoomLoop),
+        PolicyDecision::Ask { .. }
+    ));
+}
+
+#[test]
+fn dont_ask_policy_evaluates_all_kinds_correctly() {
+    // arrange
+    // act
+    // assert
+    let policy = permission_policy_for_resolution(PermissionModeResolution::DenyByDefault).unwrap();
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::EditFs),
+        PolicyDecision::Deny
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Shell),
+        PolicyDecision::Deny
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Network),
+        PolicyDecision::Deny
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Question),
+        PolicyDecision::Deny
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Task),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::WebFetch),
+        PolicyDecision::Deny
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::WebSearch),
+        PolicyDecision::Deny
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::CodeSearch),
+        PolicyDecision::Deny
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Lsp),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Read),
+        PolicyDecision::Allow
+    );
+    assert!(matches!(
+        policy.evaluate(None, PermissionKind::ExternalDirectory),
+        PolicyDecision::Ask { .. }
+    ));
+    assert!(matches!(
+        policy.evaluate(None, PermissionKind::DoomLoop),
+        PolicyDecision::Ask { .. }
+    ));
+}
+
+#[test]
+fn allow_all_policy_evaluates_all_kinds_correctly() {
+    // arrange
+    // act
+    // assert
+    let policy = permission_policy_for_resolution(PermissionModeResolution::AllowAll).unwrap();
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::EditFs),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Shell),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Network),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Question),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Task),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::WebFetch),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::WebSearch),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::CodeSearch),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Lsp),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Read),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::ExternalDirectory),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::DoomLoop),
+        PolicyDecision::Allow
+    );
+}
+
+#[test]
+fn reset_to_default_policy_evaluates_all_kinds_correctly() {
+    // arrange
+    // act
+    // assert
+    let policy =
+        permission_policy_for_resolution(PermissionModeResolution::ResetToDefault).unwrap();
+    assert!(matches!(
+        policy.evaluate(None, PermissionKind::EditFs),
+        PolicyDecision::Ask { .. }
+    ));
+    assert!(matches!(
+        policy.evaluate(None, PermissionKind::Shell),
+        PolicyDecision::Ask { .. }
+    ));
+    assert!(matches!(
+        policy.evaluate(None, PermissionKind::Network),
+        PolicyDecision::Ask { .. }
+    ));
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Question),
+        PolicyDecision::Deny
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Task),
+        PolicyDecision::Allow
+    );
+    assert!(matches!(
+        policy.evaluate(None, PermissionKind::WebFetch),
+        PolicyDecision::Ask { .. }
+    ));
+    assert!(matches!(
+        policy.evaluate(None, PermissionKind::WebSearch),
+        PolicyDecision::Ask { .. }
+    ));
+    assert!(matches!(
+        policy.evaluate(None, PermissionKind::CodeSearch),
+        PolicyDecision::Ask { .. }
+    ));
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Lsp),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Read),
+        PolicyDecision::Allow
+    );
+    assert!(matches!(
+        policy.evaluate(None, PermissionKind::ExternalDirectory),
+        PolicyDecision::Ask { .. }
+    ));
+    assert!(matches!(
+        policy.evaluate(None, PermissionKind::DoomLoop),
+        PolicyDecision::Ask { .. }
+    ));
+}
+
+#[test]
+fn no_change_resolution_yields_no_policy() {
+    // arrange
+    // act
+    // assert
+    assert!(permission_policy_for_resolution(PermissionModeResolution::NoChange).is_none());
+}
+
+#[test]
+fn resolve_permission_mode_rejects_unknown_mode() {
+    // arrange
+    // act
+    // assert
+    assert!(resolve_permission_mode(Some("invalid"), false).is_err());
+    assert!(resolve_permission_mode(Some(""), false).is_err());
+    assert!(resolve_permission_mode(Some("auto"), false).is_err());
+}
+
+#[test]
+fn sandbox_profile_rejects_invalid_values() {
+    // arrange
+    // act
+    // assert
+    assert!(PermissionPolicy::from_sandbox_profile("readonly").is_some());
+    assert!(PermissionPolicy::from_sandbox_profile("workspace").is_some());
+    assert!(PermissionPolicy::from_sandbox_profile("danger").is_some());
+    assert!(PermissionPolicy::from_sandbox_profile("invalid").is_none());
+    assert!(PermissionPolicy::from_sandbox_profile("").is_none());
+}
+
+#[test]
+fn command_path_sandbox_alone_evaluates_all_kinds() {
+    // arrange
+    // act
+    // assert
+    let mut cmd = default_prompt_command();
+    cmd.sandbox = Some("readonly".to_string());
+    let policy = resolve_effective_permission_policy(&cmd, PermissionPolicy::default()).unwrap();
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::EditFs),
+        PolicyDecision::Deny
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Shell),
+        PolicyDecision::Deny
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Network),
+        PolicyDecision::Deny
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Question),
+        PolicyDecision::Deny
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Task),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::WebFetch),
+        PolicyDecision::Deny
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::WebSearch),
+        PolicyDecision::Deny
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::CodeSearch),
+        PolicyDecision::Deny
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Lsp),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Read),
+        PolicyDecision::Allow
+    );
+    assert!(matches!(
+        policy.evaluate(None, PermissionKind::ExternalDirectory),
+        PolicyDecision::Ask { .. }
+    ));
+    assert!(matches!(
+        policy.evaluate(None, PermissionKind::DoomLoop),
+        PolicyDecision::Ask { .. }
+    ));
+}
+
+#[test]
+fn command_path_permission_mode_overrides_sandbox_evaluates_all_kinds() {
+    // arrange
+    // act
+    // assert
+    let mut cmd = default_prompt_command();
+    cmd.sandbox = Some("readonly".to_string());
+    cmd.permission_mode = Some("bypassPermissions".to_string());
+    let policy = resolve_effective_permission_policy(&cmd, PermissionPolicy::default()).unwrap();
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::EditFs),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Shell),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Network),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Question),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Task),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::WebFetch),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::WebSearch),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::CodeSearch),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Lsp),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Read),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::ExternalDirectory),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::DoomLoop),
+        PolicyDecision::Allow
+    );
+}
+
+#[test]
+fn command_path_allow_override_preserves_other_kinds() {
+    // arrange
+    // act
+    // assert
+    let mut cmd = default_prompt_command();
+    cmd.permission_mode = Some("acceptEdits".to_string());
+    cmd.allow = vec!["bash".to_string()];
+    let policy = resolve_effective_permission_policy(&cmd, PermissionPolicy::default()).unwrap();
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::EditFs),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Shell),
+        PolicyDecision::Allow
+    );
+    assert!(matches!(
+        policy.evaluate(None, PermissionKind::Network),
+        PolicyDecision::Ask { .. }
+    ));
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Question),
+        PolicyDecision::Deny
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Task),
+        PolicyDecision::Allow
+    );
+    assert!(matches!(
+        policy.evaluate(None, PermissionKind::WebFetch),
+        PolicyDecision::Ask { .. }
+    ));
+    assert!(matches!(
+        policy.evaluate(None, PermissionKind::WebSearch),
+        PolicyDecision::Ask { .. }
+    ));
+    assert!(matches!(
+        policy.evaluate(None, PermissionKind::CodeSearch),
+        PolicyDecision::Ask { .. }
+    ));
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Lsp),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Read),
+        PolicyDecision::Allow
+    );
+    assert!(matches!(
+        policy.evaluate(None, PermissionKind::ExternalDirectory),
+        PolicyDecision::Ask { .. }
+    ));
+    assert!(matches!(
+        policy.evaluate(None, PermissionKind::DoomLoop),
+        PolicyDecision::Ask { .. }
+    ));
+}
+
+#[test]
+fn command_path_deny_override_preserves_other_kinds() {
+    // arrange
+    // act
+    // assert
+    let mut cmd = default_prompt_command();
+    cmd.dangerously_skip_permissions = true;
+    cmd.deny = vec!["edit".to_string()];
+    let policy = resolve_effective_permission_policy(&cmd, PermissionPolicy::default()).unwrap();
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::EditFs),
+        PolicyDecision::Deny
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Shell),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Network),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Question),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Task),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::WebFetch),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::WebSearch),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::CodeSearch),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Lsp),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Read),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::ExternalDirectory),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::DoomLoop),
+        PolicyDecision::Allow
+    );
+}
+
+#[test]
+fn command_path_conflicting_allow_and_deny_deny_wins() {
+    // arrange
+    // act
+    // assert
+    let mut cmd = default_prompt_command();
+    cmd.dangerously_skip_permissions = true;
+    cmd.allow = vec!["bash".to_string()];
+    cmd.deny = vec!["bash".to_string()];
+    let policy = resolve_effective_permission_policy(&cmd, PermissionPolicy::default()).unwrap();
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Shell),
+        PolicyDecision::Deny
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::EditFs),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Network),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Question),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Task),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::WebFetch),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::WebSearch),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::CodeSearch),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Lsp),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Read),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::ExternalDirectory),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::DoomLoop),
+        PolicyDecision::Allow
+    );
+}
+
+#[test]
+fn command_path_full_precedence_chain_evaluates_all_kinds() {
+    // arrange
+    // act
+    // assert
+    let mut cmd = default_prompt_command();
+    cmd.sandbox = Some("readonly".to_string());
+    cmd.permission_mode = Some("acceptEdits".to_string());
+    cmd.allow = vec!["bash".to_string()];
+    let policy = resolve_effective_permission_policy(&cmd, PermissionPolicy::default()).unwrap();
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::EditFs),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Shell),
+        PolicyDecision::Allow
+    );
+    assert!(matches!(
+        policy.evaluate(None, PermissionKind::Network),
+        PolicyDecision::Ask { .. }
+    ));
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Question),
+        PolicyDecision::Deny
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Task),
+        PolicyDecision::Allow
+    );
+    assert!(matches!(
+        policy.evaluate(None, PermissionKind::WebFetch),
+        PolicyDecision::Ask { .. }
+    ));
+    assert!(matches!(
+        policy.evaluate(None, PermissionKind::WebSearch),
+        PolicyDecision::Ask { .. }
+    ));
+    assert!(matches!(
+        policy.evaluate(None, PermissionKind::CodeSearch),
+        PolicyDecision::Ask { .. }
+    ));
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Lsp),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Read),
+        PolicyDecision::Allow
+    );
+    assert!(matches!(
+        policy.evaluate(None, PermissionKind::ExternalDirectory),
+        PolicyDecision::Ask { .. }
+    ));
+    assert!(matches!(
+        policy.evaluate(None, PermissionKind::DoomLoop),
+        PolicyDecision::Ask { .. }
+    ));
+}
+
+#[test]
+fn command_path_no_flags_preserves_base_policy_all_kinds() {
+    // arrange
+    // act
+    // assert
+    let cmd = default_prompt_command();
+    let base = PermissionPolicy::default();
+    let policy = resolve_effective_permission_policy(&cmd, base).unwrap();
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::EditFs),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Shell),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Network),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Question),
+        PolicyDecision::Deny
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Task),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::WebFetch),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::WebSearch),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::CodeSearch),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Lsp),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::Read),
+        PolicyDecision::Allow
+    );
+    assert!(matches!(
+        policy.evaluate(None, PermissionKind::ExternalDirectory),
+        PolicyDecision::Ask { .. }
+    ));
+    assert!(matches!(
+        policy.evaluate(None, PermissionKind::DoomLoop),
+        PolicyDecision::Ask { .. }
+    ));
+}
+
+#[test]
+fn command_level_apply_prompt_command_config_sets_permission_policy() {
+    // arrange
+    // act
+    // assert
+    let temp_dir = tempfile::tempdir().unwrap();
+    let mut config = CoordinatorConfig::new(temp_dir.path().to_path_buf());
+    config.permission_policy = PermissionPolicy::default();
+
+    let mut cmd = default_prompt_command();
+    cmd.permission_mode = Some("acceptEdits".to_string());
+    cmd.allow = vec!["bash".to_string()];
+
+    apply_prompt_command_config(&cmd, &mut config, false, "test").unwrap();
+
+    let p = &config.permission_policy;
+    assert_eq!(
+        p.evaluate(None, PermissionKind::EditFs),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        p.evaluate(None, PermissionKind::Shell),
+        PolicyDecision::Allow
+    );
+    assert!(matches!(
+        p.evaluate(None, PermissionKind::Network),
+        PolicyDecision::Ask { .. }
+    ));
+    assert_eq!(
+        p.evaluate(None, PermissionKind::Question),
+        PolicyDecision::Deny
+    );
+    assert_eq!(
+        p.evaluate(None, PermissionKind::Task),
+        PolicyDecision::Allow
+    );
+    assert!(matches!(
+        p.evaluate(None, PermissionKind::WebFetch),
+        PolicyDecision::Ask { .. }
+    ));
+    assert!(matches!(
+        p.evaluate(None, PermissionKind::WebSearch),
+        PolicyDecision::Ask { .. }
+    ));
+    assert!(matches!(
+        p.evaluate(None, PermissionKind::CodeSearch),
+        PolicyDecision::Ask { .. }
+    ));
+    assert_eq!(p.evaluate(None, PermissionKind::Lsp), PolicyDecision::Allow);
+    assert_eq!(
+        p.evaluate(None, PermissionKind::Read),
+        PolicyDecision::Allow
+    );
+    assert!(matches!(
+        p.evaluate(None, PermissionKind::ExternalDirectory),
+        PolicyDecision::Ask { .. }
+    ));
+    assert!(matches!(
+        p.evaluate(None, PermissionKind::DoomLoop),
+        PolicyDecision::Ask { .. }
+    ));
+}
+
+#[test]
+fn command_level_apply_prompt_command_config_sandbox_overrides_base_then_mode_overrides_sandbox() {
+    // arrange
+    // act
+    // assert
+    let temp_dir = tempfile::tempdir().unwrap();
+    let mut config = CoordinatorConfig::new(temp_dir.path().to_path_buf());
+    config.permission_policy = PermissionPolicy::default();
+
+    let mut cmd = default_prompt_command();
+    cmd.sandbox = Some("readonly".to_string());
+    cmd.permission_mode = Some("bypassPermissions".to_string());
+
+    apply_prompt_command_config(&cmd, &mut config, false, "test").unwrap();
+
+    let p = &config.permission_policy;
+    assert_eq!(
+        p.evaluate(None, PermissionKind::EditFs),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        p.evaluate(None, PermissionKind::Shell),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        p.evaluate(None, PermissionKind::Network),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        p.evaluate(None, PermissionKind::Question),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        p.evaluate(None, PermissionKind::Task),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        p.evaluate(None, PermissionKind::WebFetch),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        p.evaluate(None, PermissionKind::WebSearch),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        p.evaluate(None, PermissionKind::CodeSearch),
+        PolicyDecision::Allow
+    );
+    assert_eq!(p.evaluate(None, PermissionKind::Lsp), PolicyDecision::Allow);
+    assert_eq!(
+        p.evaluate(None, PermissionKind::Read),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        p.evaluate(None, PermissionKind::ExternalDirectory),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        p.evaluate(None, PermissionKind::DoomLoop),
+        PolicyDecision::Allow
+    );
+}
+
+#[test]
+fn resolve_effective_permission_policy_preserves_ask_timeout_ms() {
+    // arrange
+    // act
+    // assert
+    let base = PermissionPolicy::default().with_ask_timeout_ms(99_999);
+    let mut cmd = default_prompt_command();
+    cmd.permission_mode = Some("bypassPermissions".to_string());
+
+    let resolved = resolve_effective_permission_policy(&cmd, base).unwrap();
+
+    assert_eq!(resolved.ask_timeout_ms(), 99_999);
+    assert_eq!(
+        resolved.evaluate(None, PermissionKind::EditFs),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        resolved.evaluate(None, PermissionKind::Shell),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        resolved.evaluate(None, PermissionKind::Network),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        resolved.evaluate(None, PermissionKind::Question),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        resolved.evaluate(None, PermissionKind::Task),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        resolved.evaluate(None, PermissionKind::WebFetch),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        resolved.evaluate(None, PermissionKind::WebSearch),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        resolved.evaluate(None, PermissionKind::CodeSearch),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        resolved.evaluate(None, PermissionKind::Lsp),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        resolved.evaluate(None, PermissionKind::Read),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        resolved.evaluate(None, PermissionKind::ExternalDirectory),
+        PolicyDecision::Allow
+    );
+    assert_eq!(
+        resolved.evaluate(None, PermissionKind::DoomLoop),
+        PolicyDecision::Allow
+    );
+}
+
+#[test]
+fn apply_tool_overrides_sets_all_twelve_kinds_allow_and_deny() {
+    // arrange
+    // act
+    // assert
+    let all_kinds = [
+        "edit",
+        "bash",
+        "network",
+        "question",
+        "task",
+        "webfetch",
+        "websearch",
+        "codesearch",
+        "lsp",
+        "read",
+        "external_directory",
+        "doom_loop",
+    ];
+    let all_permission_kinds = [
+        PermissionKind::EditFs,
+        PermissionKind::Shell,
+        PermissionKind::Network,
+        PermissionKind::Question,
+        PermissionKind::Task,
+        PermissionKind::WebFetch,
+        PermissionKind::WebSearch,
+        PermissionKind::CodeSearch,
+        PermissionKind::Lsp,
+        PermissionKind::Read,
+        PermissionKind::ExternalDirectory,
+        PermissionKind::DoomLoop,
+    ];
+
+    let mut policy = PermissionPolicy::allow_all();
+    let deny_list: Vec<String> = all_kinds.iter().map(|s| s.to_string()).collect();
+    policy.apply_tool_overrides(&[], &deny_list).unwrap();
+
+    for kind in &all_permission_kinds {
+        assert_eq!(
+            policy.evaluate(None, *kind),
+            PolicyDecision::Deny,
+            "expected Deny for {kind:?}"
+        );
+    }
+
+    let allow_list: Vec<String> = all_kinds.iter().map(|s| s.to_string()).collect();
+    policy.apply_tool_overrides(&allow_list, &[]).unwrap();
+
+    for kind in &all_permission_kinds {
+        assert_eq!(
+            policy.evaluate(None, *kind),
+            PolicyDecision::Allow,
+            "expected Allow for {kind:?}"
+        );
+    }
+}
+
+#[test]
+fn apply_tool_overrides_rejects_unknown_kind() {
+    // arrange
+    // act
+    // assert
+    let mut policy = PermissionPolicy::allow_all();
+
+    let err = policy
+        .apply_tool_overrides(&["nonexistent".to_string()], &[])
+        .unwrap_err();
+    assert!(
+        err.contains("unknown permission kind `nonexistent`"),
+        "{err}"
+    );
+
+    let err = policy
+        .apply_tool_overrides(&[], &["bogus".to_string()])
+        .unwrap_err();
+    assert!(err.contains("unknown permission kind `bogus`"), "{err}");
+}
+
+#[test]
+fn apply_tool_overrides_deny_wins_over_allow_for_same_kind() {
+    // arrange
+    // act
+    // assert
+    let mut policy = PermissionPolicy::allow_all();
+    policy
+        .apply_tool_overrides(&["edit".to_string()], &["edit".to_string()])
+        .unwrap();
+
+    assert_eq!(
+        policy.evaluate(None, PermissionKind::EditFs),
+        PolicyDecision::Deny
+    );
+}
+
+#[test]
+fn session_id_uuid_validation_rejects_non_uuid() {
+    // arrange
+    // act
+    // assert
+    assert!(Uuid::parse_str("not-a-uuid").is_err());
+    assert!(Uuid::parse_str("").is_err());
+    assert!(Uuid::parse_str("../etc/passwd").is_err());
+    assert!(Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").is_ok());
+    assert!(Uuid::parse_str("550e8400e29b41d4a716446655440000").is_ok());
+}
+
 fn event(payload: EventV1) -> EventEnvelopeV1 {
     event_with_correlation(payload, None)
 }
@@ -573,6 +1684,365 @@ fn event_with_correlation(payload: EventV1, correlation_id: Option<&str>) -> Eve
         stream_key: None,
         payload,
     }
+}
+
+struct SequenceProvider {
+    responses: Vec<Vec<ProviderStreamEvent>>,
+    index: Mutex<usize>,
+}
+
+impl SequenceProvider {
+    fn new(responses: Vec<Vec<ProviderStreamEvent>>) -> Arc<Self> {
+        Arc::new(Self {
+            responses,
+            index: Mutex::new(0),
+        })
+    }
+}
+
+#[async_trait]
+impl Provider for SequenceProvider {
+    async fn stream_completion(&self, req: CompletionRequest) -> ProviderEventStream {
+        let response = {
+            let mut guard = self.index.lock().unwrap_or_abort();
+            let response = self.responses.get(*guard).cloned().unwrap_or_else(|| {
+                vec![
+                    ProviderStreamEvent::Start,
+                    ProviderStreamEvent::TextDelta("Done".to_string()),
+                    ProviderStreamEvent::Done { usage: None },
+                ]
+            });
+            *guard += 1;
+            response
+        };
+
+        let digest = request_digest(&req);
+        let provider = MockProvider::new(std::collections::BTreeMap::from([(digest, response)]));
+        provider.stream_completion(req).await
+    }
+}
+
+fn tool_call_events(
+    tool_call_id: &str,
+    function_name: &str,
+    arguments: serde_json::Value,
+) -> Vec<ProviderStreamEvent> {
+    vec![
+        ProviderStreamEvent::Start,
+        ProviderStreamEvent::ToolCallComplete {
+            tool_call_id: tool_call_id.to_string(),
+            function_name: function_name.to_string(),
+            arguments_json: arguments.to_string(),
+        },
+        ProviderStreamEvent::Done {
+            usage: Some(CompletionUsage {
+                prompt_tokens: 12,
+                completion_tokens: 3,
+                total_tokens: 15,
+            }),
+        },
+    ]
+}
+
+fn text_events(text: &str) -> Vec<ProviderStreamEvent> {
+    vec![
+        ProviderStreamEvent::Start,
+        ProviderStreamEvent::TextDelta(text.to_string()),
+        ProviderStreamEvent::Done {
+            usage: Some(CompletionUsage {
+                prompt_tokens: 5,
+                completion_tokens: 1,
+                total_tokens: 6,
+            }),
+        },
+    ]
+}
+
+#[tokio::test]
+async fn run_prompt_with_tool_call_bypass_permissions_allows_edit() {
+    // arrange
+    // act
+    // assert
+    let temp = tempfile::tempdir().unwrap_or_abort();
+    std::fs::write(temp.path().join("test.txt"), "hello").unwrap_or_abort();
+
+    let provider = SequenceProvider::new(vec![
+        tool_call_events(
+            "call_1",
+            "edit",
+            serde_json::json!({"path": "test.txt", "oldString": "hello", "newString": "world"}),
+        ),
+        text_events("File updated."),
+    ]);
+
+    let deps = crate::CliDeps::real()
+        .with_current_dir(temp.path().to_path_buf())
+        .with_env(
+            "HARNESS_DATA_HOME",
+            temp.path().join("data").to_string_lossy(),
+        )
+        .with_provider_override(provider);
+    let context = deps.config_load_context().unwrap_or_abort();
+
+    let mut cmd = default_prompt_command();
+    cmd.mock = true;
+    cmd.text = Some("edit test.txt".to_string());
+    cmd.permission_mode = Some("bypassPermissions".to_string());
+
+    let settings = resolve_settings(
+        &cmd,
+        None,
+        Some(temp.path().join("sessions")),
+        temp.path().to_path_buf(),
+        &context,
+        &deps,
+    )
+    .unwrap_or_abort();
+
+    let mut stdout = std::io::sink();
+    let outcome = run_prompt(&cmd, &settings, "edit test.txt", &mut stdout)
+        .await
+        .unwrap_or_abort();
+
+    let events_body = std::fs::read_to_string(&outcome.events_path).unwrap_or_abort();
+    assert!(
+        events_body.contains("tool_call_finished"),
+        "expected tool_call_finished event: {events_body}"
+    );
+    assert!(
+        events_body.contains("\"status\":\"succeeded\""),
+        "expected tool call to succeed: {events_body}"
+    );
+
+    let file_content = std::fs::read_to_string(temp.path().join("test.txt")).unwrap_or_abort();
+    assert_eq!(file_content, "world", "expected file to be modified");
+}
+
+#[tokio::test]
+async fn run_prompt_with_tool_call_readonly_sandbox_denies_edit() {
+    // arrange
+    // act
+    // assert
+    let temp = tempfile::tempdir().unwrap_or_abort();
+    std::fs::write(temp.path().join("test.txt"), "hello").unwrap_or_abort();
+
+    let provider = SequenceProvider::new(vec![
+        tool_call_events(
+            "call_1",
+            "edit",
+            serde_json::json!({"path": "test.txt", "oldString": "hello", "newString": "world"}),
+        ),
+        text_events("Okay, I won't edit."),
+    ]);
+
+    let deps = crate::CliDeps::real()
+        .with_current_dir(temp.path().to_path_buf())
+        .with_env(
+            "HARNESS_DATA_HOME",
+            temp.path().join("data").to_string_lossy(),
+        )
+        .with_provider_override(provider);
+    let context = deps.config_load_context().unwrap_or_abort();
+
+    let mut cmd = default_prompt_command();
+    cmd.mock = true;
+    cmd.text = Some("edit test.txt".to_string());
+    cmd.sandbox = Some("readonly".to_string());
+
+    let settings = resolve_settings(
+        &cmd,
+        None,
+        Some(temp.path().join("sessions")),
+        temp.path().to_path_buf(),
+        &context,
+        &deps,
+    )
+    .unwrap_or_abort();
+
+    let mut stdout = std::io::sink();
+    let outcome = run_prompt(&cmd, &settings, "edit test.txt", &mut stdout)
+        .await
+        .unwrap_or_abort();
+
+    let events_body = std::fs::read_to_string(&outcome.events_path).unwrap_or_abort();
+    assert!(
+        events_body.contains("permission_resolved"),
+        "expected permission_resolved event: {events_body}"
+    );
+    assert!(
+        events_body.contains("\"decision\":\"deny\""),
+        "expected deny decision: {events_body}"
+    );
+
+    let file_content = std::fs::read_to_string(temp.path().join("test.txt")).unwrap_or_abort();
+    assert_eq!(file_content, "hello", "expected file to be unmodified");
+}
+
+#[tokio::test]
+async fn run_prompt_resume_appends_turn_to_existing_session() {
+    // arrange
+    // act
+    // assert
+    let temp = tempfile::tempdir().unwrap_or_abort();
+    let session_dir = temp.path().join("sessions");
+    let run_id = "run_resume_test";
+    let run_dir = session_dir.join(run_id);
+    std::fs::create_dir_all(&run_dir).unwrap_or_abort();
+
+    let seed_events = [
+        EventEnvelopeV1 {
+            schema_version: 1,
+            event_id: "evt-00000000000000000001".to_string(),
+            seq: 1,
+            run_id: run_id.into(),
+            mono_ms: 0,
+            ts: None,
+            actor: EventActor::new(ActorKind::System, Some("coordinator".to_string())),
+            correlation_id: None,
+            causation_id: None,
+            stream_key: None,
+            payload: EventV1::RunStarted(RunStartedEvent {
+                run_name: "interactive".into(),
+                workspace_root: temp.path().to_string_lossy().to_string(),
+            }),
+        },
+        EventEnvelopeV1 {
+            schema_version: 1,
+            event_id: "evt-00000000000000000002".to_string(),
+            seq: 2,
+            run_id: run_id.into(),
+            mono_ms: 1,
+            ts: None,
+            actor: EventActor::new(ActorKind::System, Some("coordinator".to_string())),
+            correlation_id: None,
+            causation_id: None,
+            stream_key: None,
+            payload: EventV1::AgentSpawned(AgentSpawnedEvent {
+                agent_id: "agent_000001".to_string(),
+                profile: "worker".to_string(),
+                parent_agent_id: None,
+            }),
+        },
+        EventEnvelopeV1 {
+            schema_version: 1,
+            event_id: "evt-00000000000000000003".to_string(),
+            seq: 3,
+            run_id: run_id.into(),
+            mono_ms: 2,
+            ts: None,
+            actor: EventActor::new(ActorKind::User, None),
+            correlation_id: Some("req_000001".to_string()),
+            causation_id: None,
+            stream_key: None,
+            payload: EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                request_id: "req_000001".into(),
+                text: "Original prompt".to_string(),
+            }),
+        },
+        EventEnvelopeV1 {
+            schema_version: 1,
+            event_id: "evt-00000000000000000004".to_string(),
+            seq: 4,
+            run_id: run_id.into(),
+            mono_ms: 3,
+            ts: None,
+            actor: EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
+            correlation_id: Some("req_000001".to_string()),
+            causation_id: None,
+            stream_key: None,
+            payload: EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: "req_000001".into(),
+                provider_id: "mock".to_string(),
+                model_id: "model-1".to_string(),
+                prompt_summary: "Original prompt".to_string(),
+                request_digest: "seed-digest".to_string(),
+                metadata: None,
+            }),
+        },
+        EventEnvelopeV1 {
+            schema_version: 1,
+            event_id: "evt-00000000000000000005".to_string(),
+            seq: 5,
+            run_id: run_id.into(),
+            mono_ms: 4,
+            ts: None,
+            actor: EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
+            correlation_id: Some("req_000001".to_string()),
+            causation_id: None,
+            stream_key: None,
+            payload: EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+                request_id: "req_000001".into(),
+                finish_reason: "stop".to_string(),
+                output_digest: Some("seed-output".to_string()),
+                usage: None,
+                metadata: None,
+            }),
+        },
+        EventEnvelopeV1 {
+            schema_version: 1,
+            event_id: "evt-00000000000000000006".to_string(),
+            seq: 6,
+            run_id: run_id.into(),
+            mono_ms: 5,
+            ts: None,
+            actor: EventActor::new(ActorKind::System, Some("coordinator".to_string())),
+            correlation_id: None,
+            causation_id: None,
+            stream_key: None,
+            payload: EventV1::RunFinished(RunFinishedEvent {
+                summary: "done".to_string(),
+            }),
+        },
+    ];
+
+    let body = seed_events
+        .iter()
+        .map(|e| serde_json::to_string(e).unwrap_or_abort())
+        .collect::<Vec<_>>()
+        .join("\n");
+    std::fs::write(run_dir.join("events.jsonl"), format!("{body}\n")).unwrap_or_abort();
+
+    let provider = SequenceProvider::new(vec![text_events("Hello again")]);
+    let deps = crate::CliDeps::real()
+        .with_current_dir(temp.path().to_path_buf())
+        .with_env(
+            "HARNESS_DATA_HOME",
+            temp.path().join("data").to_string_lossy(),
+        )
+        .with_provider_override(provider);
+    let context = deps.config_load_context().unwrap_or_abort();
+
+    let mut resume_cmd = default_prompt_command();
+    resume_cmd.mock = true;
+    resume_cmd.text = Some("second prompt".to_string());
+    resume_cmd.resume = Some(run_id.to_string());
+
+    let resume_settings = resolve_settings(
+        &resume_cmd,
+        None,
+        Some(session_dir),
+        temp.path().to_path_buf(),
+        &context,
+        &deps,
+    )
+    .unwrap_or_abort();
+
+    let mut stdout = std::io::sink();
+    let resume_outcome =
+        match run_prompt(&resume_cmd, &resume_settings, "second prompt", &mut stdout).await {
+            Ok(o) => o,
+            Err(e) => panic!("resume run_prompt failed: {e}"),
+        };
+
+    let resume_events = std::fs::read_to_string(&resume_outcome.events_path).unwrap_or_abort();
+    assert!(
+        resume_events.contains("task_completed"),
+        "expected task_completed in resumed session: {resume_events}"
+    );
+    assert!(
+        resume_events.contains("Hello again"),
+        "expected scripted response in resumed session: {resume_events}"
+    );
 }
 
 struct CountingEventStore {

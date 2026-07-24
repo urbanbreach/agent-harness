@@ -189,6 +189,13 @@ pub enum ChildSessionMaterializationError {
         #[source]
         source: std::io::Error,
     },
+    #[error("could not allocate a free child run ID after {attempts} attempt(s) for `{child_run_id}`; the session directory may have stale temporary directories or existing destinations")]
+    ChildRunIdCollision {
+        attempts: usize,
+        child_run_id: String,
+    },
+    #[error("max_retries must be greater than 0")]
+    InvalidMaxRetries,
 }
 
 /// Materialize a fresh child run directory from a validated stable prefix.
@@ -200,17 +207,19 @@ pub enum ChildSessionMaterializationError {
 pub fn materialize_child_session(
     request: ChildSessionMaterializationRequest<'_>,
 ) -> Result<ChildSessionMaterializationResult, ChildSessionMaterializationError> {
-    materialize_child_session_with_child_run_id_source(request, &SystemChildRunIdSource)
+    materialize_child_session_with_child_run_id_source(request, &SystemChildRunIdSource, 1000)
 }
 
 pub fn materialize_child_session_with_child_run_id_source(
     request: ChildSessionMaterializationRequest<'_>,
     child_run_ids: &dyn ChildRunIdSource,
+    max_retries: usize,
 ) -> Result<ChildSessionMaterializationResult, ChildSessionMaterializationError> {
     materialize_child_session_inner(
         request,
         child_run_ids,
         None,
+        max_retries,
         || {},
         |from, to| fs::rename(from, to),
     )
@@ -220,6 +229,7 @@ pub(super) fn materialize_child_session_inner<BeforePublish, Publish>(
     request: ChildSessionMaterializationRequest<'_>,
     child_run_ids: &dyn ChildRunIdSource,
     path_plan: Option<(String, PathBuf, PathBuf)>,
+    max_retries: usize,
     before_publish: BeforePublish,
     publish: Publish,
 ) -> Result<ChildSessionMaterializationResult, ChildSessionMaterializationError>
@@ -227,6 +237,10 @@ where
     BeforePublish: FnOnce(),
     Publish: FnOnce(&Path, &Path) -> std::io::Result<()>,
 {
+    if max_retries == 0 {
+        return Err(ChildSessionMaterializationError::InvalidMaxRetries);
+    }
+
     let validated = if request.source_kind
         == ChildSessionMaterializationSourceKind::TuiStableInMemorySnapshot
     {
@@ -273,7 +287,15 @@ where
     })?;
     let source_run_id = validated.run_id.clone();
     let (child_run_id, child_run_dir, temp_run_dir) =
-        path_plan.unwrap_or_else(|| fresh_child_run_paths(session_dir, child_run_ids));
+        match path_plan {
+            Some(plan) => plan,
+            None => fresh_child_run_paths(session_dir, child_run_ids, max_retries).map_err(
+                |last_id| ChildSessionMaterializationError::ChildRunIdCollision {
+                    attempts: max_retries,
+                    child_run_id: last_id,
+                },
+            )?,
+        };
 
     fs::create_dir(&temp_run_dir).map_err(|source| {
         ChildSessionMaterializationError::CreateTempRunDirectory {
@@ -804,15 +826,18 @@ fn read_source_event_log_digest(
 fn fresh_child_run_paths(
     session_dir: &Path,
     child_run_ids: &dyn ChildRunIdSource,
-) -> (String, PathBuf, PathBuf) {
-    loop {
-        let child_run_id = child_run_ids.next_child_run_id();
-        let child_run_dir = session_dir.join(&child_run_id);
-        let temp_run_dir = sibling_temp_run_dir(session_dir, &child_run_id);
+    max_retries: usize,
+) -> Result<(String, PathBuf, PathBuf), String> {
+    let mut last_id = String::new();
+    for _ in 0..max_retries {
+        last_id = child_run_ids.next_child_run_id();
+        let child_run_dir = session_dir.join(&last_id);
+        let temp_run_dir = sibling_temp_run_dir(session_dir, &last_id);
         if !child_run_dir.exists() && !temp_run_dir.exists() {
-            return (child_run_id, child_run_dir, temp_run_dir);
+            return Ok((last_id, child_run_dir, temp_run_dir));
         }
     }
+    Err(last_id)
 }
 
 fn sibling_temp_run_dir(session_dir: &Path, child_run_id: &str) -> PathBuf {

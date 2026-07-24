@@ -468,7 +468,9 @@ fn config_validate_cli_accepts_shipped_example_config() {
     let ProviderConfig::OpenAiCompatible(provider) = parsed
         .providers
         .get("openai-codex")
-        .unwrap_or_abort();
+        .unwrap_or_abort() else {
+        panic!("expected openai-codex provider to be OpenAiCompatible")
+    };
     assert_eq!(provider.models.len(), 2);
     assert!(provider.models.contains_key("gpt-5.5"));
     assert!(provider.models.contains_key("gpt-5.4-mini"));

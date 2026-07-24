@@ -25,7 +25,9 @@ pub(super) fn session_export_config_credential_values(
         }
     }
     for provider in config.providers.values() {
-        let ProviderConfig::OpenAiCompatible(provider) = provider;
+        let ProviderConfig::OpenAiCompatible(provider) = provider else {
+            continue;
+        };
         push_credential_value(&mut values, &provider.api_key);
         if let (Some(auth_provider), Some(store)) = (
             provider.auth_provider.clone(),
@@ -74,7 +76,9 @@ pub(super) fn session_export_credential_store_manifest(
     credential_store: Option<&CredentialStore>,
 ) -> Value {
     let providers = config.providers.values().filter_map(|provider| {
-        let ProviderConfig::OpenAiCompatible(provider) = provider;
+        let ProviderConfig::OpenAiCompatible(provider) = provider else {
+            return None;
+        };
         provider.auth_provider.clone()
     });
     let Some(store) = credential_store else {

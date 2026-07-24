@@ -365,3 +365,11 @@ fn pty_helper_permission_overlay() {
     // assert
     reference_parity_pty_impl::pty_helper_permission_overlay();
 }
+
+#[test]
+fn pty_helper_permission_overlay_empty_draft() {
+    // arrange
+    // act
+    // assert
+    reference_parity_pty_impl::pty_helper_permission_overlay_empty_draft();
+}

@@ -441,7 +441,9 @@ fn openai_compatible_cache_retention_normalizes_from_options_and_rejects_conflic
         "#;
 
     let parsed = load_config_from_str(cfg).unwrap_or_abort();
-    let ProviderConfig::OpenAiCompatible(provider) = &parsed.providers["default"];
+    let ProviderConfig::OpenAiCompatible(provider) = &parsed.providers["default"] else {
+        panic!("expected OpenAiCompatible");
+    };
     assert_eq!(
         provider.cache_retention,
         harness_providers::CacheRetention::Long
@@ -501,7 +503,9 @@ fn openai_compatible_auth_provider_normalizes_from_options_and_rejects_conflicts
         "#;
 
     let parsed = load_config_from_str(cfg).unwrap_or_abort();
-    let ProviderConfig::OpenAiCompatible(provider) = &parsed.providers["default"];
+    let ProviderConfig::OpenAiCompatible(provider) = &parsed.providers["default"] else {
+        panic!("expected OpenAiCompatible");
+    };
     assert_eq!(provider.auth_provider, Some(ProviderId::codex()));
 
     let conflicting = r#"

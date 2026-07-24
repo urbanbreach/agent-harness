@@ -621,11 +621,14 @@ mod tests {
         assert!(resolved
             .connected_provider_ids
             .contains(&BUILTIN_CODEX_PROVIDER_ID.to_string()));
-        let ProviderConfig::OpenAiCompatible(provider) = resolved
+        let ProviderConfig::OpenAiCompatible(provider) = &resolved
             .config
             .providers
             .get(BUILTIN_CODEX_PROVIDER_ID)
-            .unwrap_or_abort();
+            .unwrap_or_abort()
+        else {
+            panic!("expected OpenAiCompatible for codex");
+        };
         assert_eq!(provider.auth_provider, Some(AuthProviderId::codex()));
         assert!(provider.api_key.is_empty());
         assert_eq!(provider.api_key_env, ["OPENAI_API_KEY".to_string()]);
@@ -702,16 +705,22 @@ mod tests {
 
         let resolved = resolve_runtime_catalog(None, None, None, Some(&copilot_store), &|_| None)
             .unwrap_or_abort();
-        let ProviderConfig::OpenAiCompatible(codex) = resolved
+        let ProviderConfig::OpenAiCompatible(codex) = &resolved
             .config
             .providers
             .get(BUILTIN_CODEX_PROVIDER_ID)
-            .unwrap_or_abort();
-        let ProviderConfig::OpenAiCompatible(copilot) = resolved
+            .unwrap_or_abort()
+        else {
+            panic!("expected OpenAiCompatible for codex");
+        };
+        let ProviderConfig::OpenAiCompatible(copilot) = &resolved
             .config
             .providers
             .get(BUILTIN_COPILOT_PROVIDER_ID)
-            .unwrap_or_abort();
+            .unwrap_or_abort()
+        else {
+            panic!("expected OpenAiCompatible for copilot");
+        };
 
         assert_eq!(codex.auth_provider, Some(AuthProviderId::codex()));
         assert_eq!(

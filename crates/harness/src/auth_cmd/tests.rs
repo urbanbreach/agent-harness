@@ -664,6 +664,9 @@ fn config_with_arbitrary_auth_provider_parses() {
                 Some("anthropic")
             );
         }
+        harness_core::config::ProviderConfig::Anthropic(_) => {
+            panic!("unexpected Anthropic provider in auth_provider_from_options test")
+        }
     }
 }
 
@@ -735,6 +738,9 @@ fn config_with_codex_auth_provider_backward_compat() {
                 Some("codex")
             );
         }
+        harness_core::config::ProviderConfig::Anthropic(_) => {
+            panic!("unexpected Anthropic provider in config_with_codex_auth_provider_succeeds test")
+        }
     }
 }
 
@@ -768,6 +774,9 @@ fn config_with_null_auth_provider_passes() {
     match provider {
         harness_core::config::ProviderConfig::OpenAiCompatible(opts) => {
             assert!(opts.auth_provider.is_none());
+        }
+        harness_core::config::ProviderConfig::Anthropic(_) => {
+            panic!("unexpected Anthropic provider in config_with_null_auth_provider_passes test")
         }
     }
 }

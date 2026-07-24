@@ -902,24 +902,60 @@ pub struct BinaryUpdateRestart {
     pub restart_needed: bool,
     pub target_path: String,
     pub new_version: Option<String>,
+    /// Set when an exec-based restart was attempted but failed (Unix), or when
+    /// exec is not implemented on the current platform.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exec_error: Option<String>,
 }
 
 impl BinaryUpdateRestart {
     pub fn one_line(&self) -> String {
         let version = self.new_version.as_deref().unwrap_or("(unknown)");
-        format!(
+        let mut line = format!(
             "update restart: restart_needed={} target={} version={version}",
             self.restart_needed, self.target_path
-        )
+        );
+        if let Some(err) = &self.exec_error {
+            line.push_str(&format!(" exec_error={err}"));
+        }
+        line
     }
 }
 
-/// Signal that the process should restart after a successful update apply.
+/// Restart the process by replacing it with the updated binary via `exec`.
+///
+/// On Unix, this calls `execvp` which replaces the current process image. If
+/// exec succeeds, this function **never returns** — the caller is replaced.
+/// If exec fails (e.g. the target binary does not exist or is not executable),
+/// a [`BinaryUpdateRestart`] with `exec_error` set is returned.
+///
+/// On non-Unix platforms, exec is not implemented; the returned signal carries
+/// `exec_error` so the caller can fall back to a manual restart.
 pub fn restart_after_update(target_path: &Path, new_version: Option<&str>) -> BinaryUpdateRestart {
-    BinaryUpdateRestart {
-        restart_needed: true,
-        target_path: target_path.display().to_string(),
-        new_version: new_version.map(String::from),
+    let target_path_str = target_path.display().to_string();
+    let new_version = new_version.map(String::from);
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        // exec() only returns on failure; on success the process is replaced.
+        let exec_error = std::process::Command::new(target_path).exec();
+        BinaryUpdateRestart {
+            restart_needed: true,
+            target_path: target_path_str,
+            new_version,
+            exec_error: Some(format!("exec failed: {exec_error}")),
+        }
+    }
+
+    #[cfg(not(unix))]
+    {
+        BinaryUpdateRestart {
+            restart_needed: true,
+            target_path: target_path_str,
+            new_version,
+            exec_error: Some("restart via exec not implemented on this platform".to_string()),
+        }
     }
 }
 
@@ -962,10 +998,10 @@ mod tests {
         // arrange
         // act
         // assert
-        // When
+        // act
         let info = current_binary_version();
 
-        // Then
+        // assert
         assert_eq!(info.package_name, BINARY_PACKAGE_NAME);
         assert!(!info.version.is_empty());
         assert_eq!(info.version, env!("CARGO_PKG_VERSION"));
@@ -976,10 +1012,10 @@ mod tests {
         // arrange
         // act
         // assert
-        // When
+        // act
         let check = check_for_update_with_version("0.1.0");
 
-        // Then
+        // assert
         assert!(check.is_unavailable());
         match check {
             BinaryUpdateCheck::Unavailable {
@@ -1023,15 +1059,15 @@ mod tests {
         // arrange
         // act
         // assert
-        // Given
+        // arrange
         let policy = BinaryUpdatePolicy::new()
             .with_channel("stable")
             .with_min_version("0.2.0");
 
-        // When
+        // act
         let check = check_for_update_with_policy("0.1.0", policy);
 
-        // Then: still unavailable (no fake up-to-date / no network fetch)
+        // assert: still unavailable (no fake up-to-date / no network fetch)
         assert!(check.is_unavailable());
         match check {
             BinaryUpdateCheck::Unavailable {
@@ -1055,15 +1091,15 @@ mod tests {
         // arrange
         // act
         // assert
-        // Given
+        // arrange
         let policy = BinaryUpdatePolicy::new()
             .with_channel("   ")
             .with_min_version("");
 
-        // When
+        // act
         let check = check_for_update_with_policy("1.0.0", policy);
 
-        // Then
+        // assert
         match check {
             BinaryUpdateCheck::Unavailable {
                 channel,
@@ -1082,14 +1118,14 @@ mod tests {
         // arrange
         // act
         // assert
-        // Given
+        // arrange
         let info = current_binary_version();
         let policy = BinaryUpdatePolicy::new()
             .with_channel("stable")
             .with_min_version("0.2.0");
         let check = check_for_update_with_policy("0.1.0", policy.clone());
 
-        // When / Then
+        // act / Then
         assert!(info.one_line().contains("binary: harness"));
         assert!(info.one_line().contains(&info.version));
         assert!(policy.one_line().contains("channel=stable"));
@@ -1107,16 +1143,16 @@ mod tests {
         // arrange
         // act
         // assert
-        // Given
+        // arrange
         let checks = [
             check_for_update_with_version("0.1.0"),
             check_for_update_with_policy("0.1.0", BinaryUpdatePolicy::new().with_channel("stable")),
         ];
 
-        // When
+        // act
         let summary = summarize_binary_update_checks(&checks);
 
-        // Then
+        // assert
         assert_eq!(
             summary,
             BinaryUpdateSummary {
@@ -1137,10 +1173,10 @@ mod tests {
         // arrange
         // act
         // assert
-        // Given / When
+        // arrange / When
         let result = run_offline_multi_channel_update_checks(Some("0.1.0"));
 
-        // Then: default channels + version-only check
+        // assert: default channels + version-only check
         assert!(result.summary.total >= 5);
         assert!(result.all_unavailable());
         assert!(!result.summary.update_available);
@@ -1174,7 +1210,7 @@ mod tests {
         // arrange
         // act
         // assert
-        // Given
+        // arrange
         let manifest = LocalUpdateManifest {
             version: "0.1.0".to_string(),
             channel: Some("stable".to_string()),
@@ -1183,10 +1219,10 @@ mod tests {
             sha256: None,
         };
 
-        // When
+        // act
         let check = check_for_update_from_manifest("0.1.0", &manifest, None);
 
-        // Then
+        // assert
         assert!(check.is_up_to_date());
         assert!(check.is_checked());
         assert!(!check.is_unavailable());
@@ -1199,7 +1235,7 @@ mod tests {
         // arrange
         // act
         // assert
-        // Given
+        // arrange
         let manifest = LocalUpdateManifest {
             version: "0.2.0".to_string(),
             channel: Some("stable".to_string()),
@@ -1208,10 +1244,10 @@ mod tests {
             sha256: None,
         };
 
-        // When
+        // act
         let check = check_for_update_from_manifest("0.1.0", &manifest, None);
 
-        // Then
+        // assert
         assert!(check.is_update_available());
         assert!(check.is_checked());
         match check {
@@ -1234,7 +1270,7 @@ mod tests {
         // arrange
         // act
         // assert
-        // Given
+        // arrange
         let dir = tempfile::tempdir().expect("tempdir");
         let root = dir.path();
         write_local_update_manifest(
@@ -1249,10 +1285,10 @@ mod tests {
         )
         .expect("write manifest");
 
-        // When
+        // act
         let product = run_local_manifest_update_check(root, Some("0.1.0")).expect("product");
 
-        // Then: real filesystem side effects
+        // assert: real filesystem side effects
         assert!(product.manifest_path.is_file());
         assert!(product.receipt_path.is_file());
         assert!(product.receipt_path.ends_with(UPDATE_CHECK_RECEIPT_REL));
@@ -1274,7 +1310,7 @@ mod tests {
         // arrange
         // act
         // assert
-        // Given
+        // arrange
         let dir = tempfile::tempdir().expect("tempdir");
         let root = dir.path();
         write_local_update_manifest(
@@ -1289,10 +1325,10 @@ mod tests {
         )
         .expect("write manifest");
 
-        // When
+        // act
         let product = run_local_manifest_update_check(root, Some("1.0.0")).expect("product");
 
-        // Then
+        // assert
         assert!(product.check.is_up_to_date());
         assert!(!product.summary.update_available);
         assert_eq!(product.summary.checks_up_to_date, 1);
@@ -1322,14 +1358,14 @@ mod tests {
         // arrange
         // act
         // assert
-        // Given
+        // arrange
         let dir = tempfile::tempdir().expect("tempdir");
         let root = dir.path();
 
-        // When
+        // act
         let product = run_local_manifest_update_check(root, Some("0.1.0")).expect("product");
 
-        // Then: fail closed + receipt side effect
+        // assert: fail closed + receipt side effect
         assert!(product.check.is_unavailable());
         assert!(product.receipt_path.is_file());
         assert!(!product.summary.update_available);
@@ -1476,17 +1512,152 @@ mod tests {
     }
 
     #[test]
-    fn restart_signal_carries_target_and_version() {
-        // arrange
-        let target = Path::new("/usr/local/bin/harness");
+    fn restart_signal_carries_target_and_version_and_exec_error_when_target_missing() {
+        // arrange — a target path that does not exist (exec will fail on Unix)
+        let dir = tempfile::tempdir().expect("tempdir");
+        let target = dir.path().join("harness");
+
+        // act — attempt restart (exec fails, returns signal)
+        let signal = restart_after_update(&target, Some("0.2.0"));
+
+        // assert — signal carries target/version and exec_error is set
+        assert!(signal.restart_needed);
+        assert_eq!(signal.target_path, target.display().to_string());
+        assert_eq!(signal.new_version.as_deref(), Some("0.2.0"));
+        assert!(
+            signal.exec_error.is_some(),
+            "exec_error should be set when exec fails"
+        );
+        assert!(signal.one_line().contains("restart_needed=true"));
+        assert!(signal.one_line().contains("exec_error="));
+    }
+
+    #[test]
+    fn restart_signal_without_version_still_carries_exec_error() {
+        // arrange — a non-existent target
+        let dir = tempfile::tempdir().expect("tempdir");
+        let target = dir.path().join("harness");
 
         // act
-        let signal = restart_after_update(target, Some("0.2.0"));
+        let signal = restart_after_update(&target, None);
 
         // assert
         assert!(signal.restart_needed);
-        assert_eq!(signal.target_path, "/usr/local/bin/harness");
-        assert_eq!(signal.new_version.as_deref(), Some("0.2.0"));
-        assert!(signal.one_line().contains("restart_needed=true"));
+        assert!(signal.new_version.is_none());
+        assert!(signal.exec_error.is_some());
+        assert!(signal.one_line().contains("version=(unknown)"));
+    }
+
+    #[test]
+    fn full_pipeline_check_download_apply_restart_succeeds_end_to_end() {
+        // arrange — a workspace with a manifest advertising a newer version
+        // and a file:// download URL pointing to a fake artifact
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        let artifact_source = root.join("new-harness-artifact");
+        fs::write(&artifact_source, b"fake new binary content").expect("write artifact");
+
+        let manifest = LocalUpdateManifest {
+            version: "99.0.0".to_string(),
+            channel: Some("stable".to_string()),
+            min_version: None,
+            download_url: Some(format!("file://{}", artifact_source.display())),
+            sha256: None,
+        };
+        write_local_update_manifest(root, &manifest).expect("write manifest");
+
+        // fake current binary to be replaced
+        let target_binary = root.join("harness");
+        fs::write(&target_binary, b"old binary content").expect("write old binary");
+
+        // act — step 1: check
+        let product = run_local_manifest_update_check(root, Some("0.1.0")).expect("check product");
+        // assert — step 1: update available
+        assert!(product.check.is_update_available());
+
+        // act — step 2: download (using manifest's download_url)
+        let manifest_loaded =
+            load_local_update_manifest(&product.manifest_path).expect("load manifest");
+        let download_url = manifest_loaded
+            .download_url
+            .as_deref()
+            .expect("download_url");
+        let dest_dir = root.join(".agent-harness/downloads");
+        let download =
+            download_update_artifact(download_url, manifest_loaded.sha256.as_deref(), &dest_dir);
+        assert!(download.is_downloaded(), "{}", download.one_line());
+
+        let artifact_path = match &download {
+            BinaryUpdateDownload::Downloaded { artifact_path, .. } => artifact_path.clone(),
+            _ => panic!("expected Downloaded"),
+        };
+
+        // act — step 3: apply (with backup + rollback)
+        let apply = apply_update(Path::new(&artifact_path), &target_binary);
+        assert!(apply.is_applied(), "{}", apply.one_line());
+        assert_eq!(
+            fs::read_to_string(&target_binary).unwrap(),
+            "fake new binary content"
+        );
+        let backup = target_binary.with_extension("bak");
+        assert!(backup.is_file());
+        assert_eq!(fs::read_to_string(&backup).unwrap(), "old binary content");
+
+        // act — step 4: restart — use a non-existent path so exec fails
+        // (we cannot safely exec a real binary inside a unit test)
+        let restart_target = root.join("nonexistent-restart-target");
+        let restart = restart_after_update(&restart_target, Some("99.0.0"));
+        assert!(restart.restart_needed);
+        assert_eq!(restart.new_version.as_deref(), Some("99.0.0"));
+        assert!(restart.exec_error.is_some());
+    }
+
+    #[test]
+    fn full_pipeline_aborts_when_check_reports_up_to_date() {
+        // arrange — manifest at current version (no update available)
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        let current = current_binary_version().version;
+        write_local_update_manifest(
+            root,
+            &LocalUpdateManifest {
+                version: current.clone(),
+                channel: Some("stable".to_string()),
+                min_version: None,
+                download_url: Some("file:///nonexistent".to_string()),
+                sha256: None,
+            },
+        )
+        .expect("write manifest");
+
+        // act — check
+        let product = run_local_manifest_update_check(root, None).expect("check");
+
+        // assert — up to date, pipeline should not proceed to download
+        assert!(product.check.is_up_to_date());
+        assert!(!product.summary.update_available);
+    }
+
+    #[test]
+    fn apply_update_rolls_back_on_copy_failure() {
+        // arrange — artifact exists but target directory is read-only
+        // (simulate copy failure by making target path's parent a file)
+        let dir = tempfile::tempdir().expect("tempdir");
+        let target_parent = dir.path().join("blocking-file");
+        fs::write(&target_parent, b"blocker").expect("write blocker");
+        let target = target_parent.join("harness"); // parent is a file, not a dir
+        let artifact = dir.path().join("new-harness");
+        fs::write(&artifact, b"new binary").expect("write artifact");
+
+        // act — apply will fail at the copy step (no backup since target doesn't exist)
+        let result = apply_update(&artifact, &target);
+
+        // assert — Failed with rolled_back=false (no backup existed)
+        match result {
+            BinaryUpdateApply::Failed { rolled_back, .. } => {
+                assert!(!rolled_back);
+            }
+            other => panic!("expected Failed, got {other:?}"),
+        }
     }
 }

@@ -262,6 +262,7 @@ pub struct TuiOptions {
     pub keybindings: Option<std::collections::BTreeMap<String, String>>,
     pub toggles: Option<TogglesConfig>,
     pub preserve_terminal_on_exit: bool,
+    pub skip_alternate_screen: bool,
 }
 
 impl TuiOptions {
@@ -281,6 +282,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         keybindings: _,
         toggles,
         preserve_terminal_on_exit,
+        skip_alternate_screen,
     } = options;
 
     let (mut app, mut live_updates) = match mode {
@@ -386,9 +388,11 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         let mut alt_screen_ok = false;
         let mut focus_ok = false;
         let setup_result = (|| -> Result<()> {
-            crossterm::execute!(stdout, crossterm::terminal::EnterAlternateScreen)
-                .context("failed to enter alternate screen before launching TUI")?;
-            alt_screen_ok = true;
+            if !skip_alternate_screen {
+                crossterm::execute!(stdout, crossterm::terminal::EnterAlternateScreen)
+                    .context("failed to enter alternate screen before launching TUI")?;
+                alt_screen_ok = true;
+            }
 
             if crossterm::execute!(
                 stdout,
@@ -659,6 +663,7 @@ pub fn run_tui() -> Result<()> {
         keybindings: None,
         toggles: None,
         preserve_terminal_on_exit: false,
+        skip_alternate_screen: false,
     })
 }
 

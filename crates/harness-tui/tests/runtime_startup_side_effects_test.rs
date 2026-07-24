@@ -61,6 +61,7 @@ fn production_tui_startup_does_not_write_synthetic_probe_artifacts() {
         keybindings: None,
         toggles: None,
         preserve_terminal_on_exit: false,
+        skip_alternate_screen: false,
     });
 
     // assert: full-tree check — workspace must be completely empty after startup
@@ -96,6 +97,7 @@ fn production_tui_live_init_does_not_write_synthetic_probe_artifacts() {
         keybindings: None,
         toggles: None,
         preserve_terminal_on_exit: false,
+        skip_alternate_screen: false,
     });
 
     // assert: full-tree workspace check — must be completely empty
@@ -181,6 +183,7 @@ fn production_tui_startup_preserves_existing_files_and_symlinks() {
         keybindings: None,
         toggles: None,
         preserve_terminal_on_exit: false,
+        skip_alternate_screen: false,
     });
 
     // assert
@@ -239,6 +242,7 @@ fn production_tui_live_init_preserves_existing_workspace_files() {
         keybindings: None,
         toggles: None,
         preserve_terminal_on_exit: false,
+        skip_alternate_screen: false,
     });
 
     // assert

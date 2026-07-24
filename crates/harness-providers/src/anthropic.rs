@@ -8,12 +8,17 @@
 //! message format (content blocks), and SSE events (`message_start`,
 //! `content_block_delta`, `message_delta`, `message_stop`).
 
+use std::collections::BTreeMap;
+use std::time::Duration;
+
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::{
-    CompletionMessage, CompletionRequest, CompletionUsage, MessageRole, ProviderErrorCategory,
-    ProviderStreamEvent, ProviderStreamFinishedMetadata, ToolChoice, ToolDef,
+    CompletionMessage, CompletionRequest, CompletionUsage, MessageRole, Provider,
+    ProviderErrorCategory, ProviderEventStream, ProviderStreamEvent,
+    ProviderStreamFinishedMetadata, ToolChoice, ToolDef,
 };
 
 /// Anthropic API version header value.
@@ -452,10 +457,135 @@ pub fn parse_anthropic_response(body: &str) -> Vec<ProviderStreamEvent> {
     events
 }
 
+/// Provider-layer configuration for the Anthropic Messages transport.
+#[derive(Debug, Clone)]
+pub struct AnthropicProviderConfig {
+    pub base_url: String,
+    pub api_key: String,
+    pub timeout_ms: u64,
+    pub headers: BTreeMap<String, String>,
+}
+
+/// Error constructing an [`AnthropicProvider`].
+#[derive(Debug, thiserror::Error)]
+pub enum AnthropicProviderError {
+    #[error("failed to build HTTP client: {0}")]
+    BuildHttpClient(reqwest::Error),
+}
+
+/// Anthropic Messages API provider implementing [`Provider`].
+///
+/// Uses `x-api-key` authentication and POSTs to `/v1/messages`.
+/// Streaming responses are parsed via [`parse_anthropic_sse_stream`];
+/// non-streaming responses via [`parse_anthropic_response`].
+pub struct AnthropicProvider {
+    client: reqwest::Client,
+    base_url: String,
+    api_key: String,
+    headers: BTreeMap<String, String>,
+}
+
+impl AnthropicProvider {
+    pub fn new(config: AnthropicProviderConfig) -> Result<Self, AnthropicProviderError> {
+        let mut builder = reqwest::Client::builder();
+        if config.timeout_ms > 0 {
+            builder = builder.timeout(Duration::from_millis(config.timeout_ms));
+        }
+        let client = builder
+            .build()
+            .map_err(AnthropicProviderError::BuildHttpClient)?;
+        Ok(Self {
+            client,
+            base_url: config.base_url,
+            api_key: config.api_key,
+            headers: config.headers,
+        })
+    }
+}
+
+#[async_trait]
+impl Provider for AnthropicProvider {
+    async fn stream_completion(&self, req: CompletionRequest) -> ProviderEventStream {
+        let body = build_anthropic_request(&req);
+        let url = anthropic_messages_url(&self.base_url);
+
+        let mut request = self
+            .client
+            .post(&url)
+            .header("x-api-key", &self.api_key)
+            .header("anthropic-version", ANTHROPIC_VERSION)
+            .header("content-type", "application/json")
+            .json(&body);
+
+        for (key, value) in &self.headers {
+            request = request.header(key.as_str(), value.as_str());
+        }
+
+        match request.send().await {
+            Ok(response) => {
+                let status = response.status();
+                if !status.is_success() {
+                    let message = format!("anthropic request to {url} returned status {status}");
+                    return Box::pin(tokio_stream::iter(vec![
+                        ProviderStreamEvent::categorized_error(
+                            message,
+                            ProviderErrorCategory::TransportFailure,
+                        ),
+                    ]));
+                }
+                let bytes = match response.bytes().await {
+                    Ok(bytes) => bytes,
+                    Err(err) => {
+                        return Box::pin(tokio_stream::iter(vec![
+                            ProviderStreamEvent::categorized_error(
+                                format!("failed to read anthropic response body: {err}"),
+                                ProviderErrorCategory::TransportFailure,
+                            ),
+                        ]));
+                    }
+                };
+                let raw = String::from_utf8_lossy(&bytes);
+                let events = if req.stream {
+                    parse_anthropic_sse_stream(&raw)
+                } else {
+                    parse_anthropic_response(&raw)
+                };
+                Box::pin(tokio_stream::iter(events))
+            }
+            Err(err) => {
+                let message = format!("anthropic transport error: {err}");
+                Box::pin(tokio_stream::iter(vec![
+                    ProviderStreamEvent::categorized_error(
+                        message,
+                        ProviderErrorCategory::TransportFailure,
+                    ),
+                ]))
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{AssistantToolCall, CompletionMessage, MessageRole, ToolDef};
+
+    #[test]
+    fn anthropic_provider_constructs_from_config() {
+        // arrange
+        let config = AnthropicProviderConfig {
+            base_url: "https://api.anthropic.com".to_string(),
+            api_key: "sk-test".to_string(),
+            timeout_ms: 30_000,
+            headers: BTreeMap::new(),
+        };
+
+        // act
+        let provider = AnthropicProvider::new(config);
+
+        // assert
+        assert!(provider.is_ok());
+    }
 
     // arrange
     fn basic_request() -> CompletionRequest {

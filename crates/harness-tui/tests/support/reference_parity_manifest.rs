@@ -13,7 +13,7 @@ pub const SCHEMA_VERSION: &str = "harness-tui-reference-parity-manifest-v1";
 pub const REFERENCE_BINARY_SHA256: &str =
     "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5";
 pub const REFERENCE_RECEIPT_PATH: &str =
-    "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json";
+    "target/test-lanes/latest/signoff-parity/evidence/receipts/reference-freeze.receipt.json";
 pub const FREEZE_TXT_SHA256: &str =
     "1a5f24dc9be953df160e8d2bcb661f6f2d8dc7845021c3153cd415ab3889ca58";
 pub const FREEZE_PNG_SHA256: &str =

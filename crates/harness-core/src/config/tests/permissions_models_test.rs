@@ -580,7 +580,10 @@ fn model_limit_modalities_and_options_normalize_to_catalog_metadata() {
         "#;
 
     let parsed = load_config_from_str(cfg).unwrap_or_abort();
-    let ProviderConfig::OpenAiCompatible(provider) = parsed.providers.get("default").unwrap();
+    let ProviderConfig::OpenAiCompatible(provider) = parsed.providers.get("default").unwrap()
+    else {
+        panic!("expected OpenAiCompatible");
+    };
     assert_eq!(provider.timeout_ms, 30_000);
     let model = &provider.models["gpt-4o-mini"];
     assert_eq!(model.limit.context, Some(272_000));

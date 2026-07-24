@@ -74,14 +74,102 @@ pub struct RunCommand {
     #[arg(long, default_value_t = false)]
     pub thinking: bool,
 
-    #[arg(long, value_enum, default_value_t = PromptOutputFormat::Default)]
+    #[arg(long, alias = "output-format", value_enum, default_value_t = PromptOutputFormat::Default)]
     pub format: PromptOutputFormat,
 
     #[arg(long = "file", short = 'f', value_name = "PATH")]
     pub files: Vec<PathBuf>,
 
-    #[arg(long = "dangerously-skip-permissions", default_value_t = false)]
+    #[arg(
+        long = "dangerously-skip-permissions",
+        alias = "always-approve",
+        default_value_t = false
+    )]
     pub dangerously_skip_permissions: bool,
+
+    #[arg(long, value_name = "N")]
+    pub max_turns: Option<u32>,
+
+    #[arg(long, default_value_t = false)]
+    pub no_subagents: bool,
+
+    #[arg(long, default_value_t = false)]
+    pub no_plan: bool,
+
+    #[arg(long, value_name = "RULES")]
+    pub rules: Option<String>,
+
+    #[arg(long, value_name = "EFFORT")]
+    pub reasoning_effort: Option<String>,
+
+    /// Built-in tools to allow (comma-separated).
+    #[arg(long, value_name = "TOOLS", value_delimiter = ',')]
+    pub tools: Vec<String>,
+
+    /// Built-in tools to remove (comma-separated).
+    #[arg(long, value_name = "TOOLS", value_delimiter = ',')]
+    pub disallowed_tools: Vec<String>,
+
+    /// Disable web search and web fetch tools.
+    #[arg(long, default_value_t = false)]
+    pub disable_web_search: bool,
+
+    /// Permission mode (default, plan, auto).
+    #[arg(long, value_name = "MODE")]
+    pub permission_mode: Option<String>,
+
+    /// Permission allow rule (repeatable).
+    #[arg(long, value_name = "RULE", value_delimiter = ',')]
+    pub allow: Vec<String>,
+
+    /// Permission deny rule (repeatable).
+    #[arg(long, value_name = "RULE", value_delimiter = ',')]
+    pub deny: Vec<String>,
+
+    /// Override the agent's system prompt.
+    #[arg(long, value_name = "PROMPT")]
+    pub system_prompt_override: Option<String>,
+
+    /// Read prompt text from a file.
+    #[arg(long, value_name = "PATH")]
+    pub prompt_file: Option<PathBuf>,
+
+    /// Disable cross-session memory for this session.
+    #[arg(long, default_value_t = false)]
+    pub no_memory: bool,
+
+    /// Send the prompt exactly as given.
+    #[arg(long, default_value_t = false)]
+    pub verbatim: bool,
+
+    /// Sandbox profile for filesystem and network access.
+    #[arg(long, value_name = "PROFILE")]
+    pub sandbox: Option<String>,
+
+    /// Run the task N ways in parallel and pick the best.
+    #[arg(long, value_name = "N", conflicts_with = "no_subagents")]
+    pub best_of_n: Option<u32>,
+
+    /// Append a self-verification loop to the prompt.
+    #[arg(
+        long,
+        alias = "self-verify",
+        default_value_t = false,
+        conflicts_with = "no_subagents"
+    )]
+    pub check: bool,
+
+    /// Use a specific session ID for a new conversation.
+    #[arg(long, value_name = "SESSION_ID")]
+    pub session_id: Option<String>,
+
+    /// When resuming, create a new session ID instead of reusing the original.
+    #[arg(long, default_value_t = false)]
+    pub fork_session: bool,
+
+    /// Check out the original session's commit when resuming.
+    #[arg(long, default_value_t = false)]
+    pub restore_code: bool,
 
     #[arg(long, short = 'i', default_value_t = false)]
     pub interactive: bool,
@@ -235,6 +323,25 @@ fn execute_prompt_run(
         resume,
         out: cmd.out.clone(),
         print_run_dir: cmd.print_run_dir,
+        max_turns: cmd.max_turns,
+        no_subagents: cmd.no_subagents,
+        no_plan: cmd.no_plan,
+        tools: cmd.tools.clone(),
+        disallowed_tools: cmd.disallowed_tools.clone(),
+        disable_web_search: cmd.disable_web_search,
+        no_memory: cmd.no_memory,
+        prompt_file: None,
+        verbatim: cmd.verbatim,
+        system_prompt_override: cmd.system_prompt_override.clone(),
+        dangerously_skip_permissions: cmd.dangerously_skip_permissions,
+        permission_mode: cmd.permission_mode.clone(),
+        session_id: cmd.session_id.clone(),
+        rules: cmd.rules.clone(),
+        reasoning_effort: cmd.reasoning_effort.clone(),
+        allow: cmd.allow.clone(),
+        deny: cmd.deny.clone(),
+        fork_session: cmd.fork_session,
+        sandbox: cmd.sandbox.clone(),
         format: cmd.format,
     };
 
@@ -270,8 +377,33 @@ fn resolve_run_prompt_text(
         }
     }
 
+    if let Some(ref prompt_file) = cmd.prompt_file {
+        let resolved = if prompt_file.is_absolute() {
+            prompt_file.clone()
+        } else {
+            deps.current_dir()
+                .map_err(|err| format!("failed to resolve current working directory: {err}"))?
+                .join(prompt_file)
+        };
+        if !resolved.exists() {
+            return Err(format!(
+                "--prompt-file path does not exist: {}",
+                prompt_file.display()
+            ));
+        }
+        let content = std::fs::read_to_string(&resolved)
+            .map_err(|err| format!("failed to read --prompt-file: {err}"))?;
+        let trimmed = content.trim_end_matches(['\r', '\n']);
+        if !trimmed.is_empty() {
+            parts.push(trimmed.to_string());
+        }
+    }
+
     if parts.is_empty() {
-        return Err("no prompt text provided; pass a positional message or pipe stdin".to_string());
+        return Err(
+            "no prompt text provided; pass a positional message, pipe stdin, or use --prompt-file"
+                .to_string(),
+        );
     }
 
     let current_dir = deps
@@ -581,6 +713,27 @@ mod tests {
             format: crate::prompt::PromptOutputFormat::Default,
             files: Vec::new(),
             dangerously_skip_permissions: false,
+            max_turns: None,
+            no_subagents: false,
+            no_plan: false,
+            rules: None,
+            reasoning_effort: None,
+            tools: Vec::new(),
+            disallowed_tools: Vec::new(),
+            disable_web_search: false,
+            permission_mode: None,
+            allow: Vec::new(),
+            deny: Vec::new(),
+            system_prompt_override: None,
+            prompt_file: None,
+            no_memory: false,
+            verbatim: false,
+            sandbox: None,
+            best_of_n: None,
+            check: false,
+            session_id: None,
+            fork_session: false,
+            restore_code: false,
             interactive: false,
             command: None,
             message: Vec::new(),

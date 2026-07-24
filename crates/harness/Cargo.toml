@@ -12,6 +12,7 @@ categories.workspace = true
 [dependencies]
 async-trait = "0.1"
 clap.workspace = true
+clap_complete = "4"
 crossterm.workspace = true
 dotenvy = "0.15"
 harness-core = { path = "../harness-core" }
@@ -29,6 +30,8 @@ uuid = { version = "1", features = ["v5"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
 tracing-appender = "0.2"
+tar = "0.4"
+flate2 = "1"
 
 [dev-dependencies]
 harness-testkit = { path = "../harness-testkit" }

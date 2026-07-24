@@ -21,7 +21,10 @@ fn env_var_substitution_works() {
     );
 
     let parsed = load_config_from_str(&cfg).unwrap_or_abort();
-    let ProviderConfig::OpenAiCompatible(provider) = parsed.providers.get("default").unwrap();
+    let ProviderConfig::OpenAiCompatible(provider) = parsed.providers.get("default").unwrap()
+    else {
+        panic!("expected OpenAiCompatible");
+    };
     assert_eq!(provider.api_key, expected);
 }
 
@@ -122,7 +125,10 @@ fn env_var_default_fallback_works() {
     );
 
     let parsed = loader::load_config_from_str_with_lookup(&cfg, &|_| None).unwrap_or_abort();
-    let ProviderConfig::OpenAiCompatible(provider) = parsed.providers.get("default").unwrap();
+    let ProviderConfig::OpenAiCompatible(provider) = parsed.providers.get("default").unwrap()
+    else {
+        panic!("expected OpenAiCompatible");
+    };
     assert_eq!(provider.api_key, "fallback-key");
 }
 
@@ -140,7 +146,10 @@ fn env_var_default_fallback_uses_fallback_for_empty_var() {
 
     let parsed =
         loader::load_config_from_str_with_lookup(&cfg, &|_| Some(String::new())).unwrap_or_abort();
-    let ProviderConfig::OpenAiCompatible(provider) = parsed.providers.get("default").unwrap();
+    let ProviderConfig::OpenAiCompatible(provider) = parsed.providers.get("default").unwrap()
+    else {
+        panic!("expected OpenAiCompatible");
+    };
     assert_eq!(provider.api_key, "fallback-key");
 }
 
@@ -158,7 +167,10 @@ fn empty_env_var_uses_default_fallback() {
 
     let parsed =
         loader::load_config_from_str_with_lookup(&cfg, &|_| Some(String::new())).unwrap_or_abort();
-    let ProviderConfig::OpenAiCompatible(provider) = parsed.providers.get("default").unwrap();
+    let ProviderConfig::OpenAiCompatible(provider) = parsed.providers.get("default").unwrap()
+    else {
+        panic!("expected OpenAiCompatible");
+    };
     assert_eq!(provider.api_key, "fallback-key");
 }
 
@@ -222,7 +234,10 @@ fn upstream_env_reference_uses_empty_string_when_missing() {
     );
 
     let parsed = loader::load_config_from_str_with_lookup(&cfg, &|_| None).unwrap_or_abort();
-    let ProviderConfig::OpenAiCompatible(provider) = parsed.providers.get("default").unwrap();
+    let ProviderConfig::OpenAiCompatible(provider) = parsed.providers.get("default").unwrap()
+    else {
+        panic!("expected OpenAiCompatible");
+    };
     assert_eq!(provider.api_key, "");
 }
 
@@ -249,7 +264,10 @@ fn upstream_file_reference_resolves_relative_to_config_file() {
     .unwrap_or_abort();
 
     let parsed = load_config_from_file(&config_path).unwrap_or_abort();
-    let ProviderConfig::OpenAiCompatible(provider) = parsed.providers.get("default").unwrap();
+    let ProviderConfig::OpenAiCompatible(provider) = parsed.providers.get("default").unwrap()
+    else {
+        panic!("expected OpenAiCompatible");
+    };
     assert_eq!(provider.api_key, "file-key");
 }
 

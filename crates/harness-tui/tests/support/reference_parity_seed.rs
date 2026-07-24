@@ -148,6 +148,7 @@ fn seed_capture_metadata(evidence_root: &str, root: &Path, row: &Value) {
     let metadata = json!({
         "behavior_id": row["behavior_id"],
         "viewport": row["viewport"],
+        "generating_command": "fixture-seed: reference_parity_seed.rs",
     });
     let body = serde_json::to_string_pretty(&metadata).unwrap_or_default();
     write_fixture_content(&metadata_path, body.as_bytes());

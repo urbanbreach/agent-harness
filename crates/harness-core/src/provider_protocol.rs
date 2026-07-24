@@ -76,7 +76,7 @@ pub fn provider_protocol_catalog() -> Vec<ProviderProtocolCapability> {
         ProviderProtocolCapability {
             protocol: ProviderProtocolId::AnthropicMessages,
             support: ProtocolSupport::Supported,
-            notes: "First-party Anthropic Messages transport (request mapping, SSE parsing, tool-call assembly).".to_string(),
+            notes: "First-party Anthropic Messages transport (`ProviderConfig::Anthropic`); config-reachable via `type: \"anthropic_messages\"`.".to_string(),
         },
         ProviderProtocolCapability {
             protocol: ProviderProtocolId::GoogleGenerative,
@@ -192,6 +192,55 @@ mod tests {
             }
             assert_eq!(row.support, ProtocolSupport::Unsupported);
             assert!(!row.notes.is_empty());
+        }
+    }
+
+    #[test]
+    fn anthropic_protocol_is_config_reachable() {
+        // arrange
+        let cfg = crate::config::load_config_from_str(
+            r#"
+            {
+              provider: {
+                anthropic: {
+                  type: "anthropic_messages",
+                  apiKey: "sk-test-key",
+                  models: {
+                    claude: { name: "Claude Sonnet" }
+                  }
+                }
+              },
+              model: "anthropic/claude",
+              small_model: "anthropic/claude",
+              agent: {
+                build: { system_prompt: "Build" },
+                plan: { system_prompt: "Plan" },
+              },
+              default_agent: "build",
+              permission: {
+                edit: "allow", bash: "allow", question: "allow",
+                task: "allow", webfetch: "allow", websearch: "allow",
+                codesearch: "allow", lsp: "allow"
+              }
+            }
+            "#,
+        );
+
+        // act
+        let config = cfg.expect("anthropic provider config should parse");
+
+        // assert
+        let provider = config
+            .providers
+            .get("anthropic")
+            .expect("anthropic provider");
+        match provider {
+            crate::config::ProviderConfig::Anthropic(anthropic) => {
+                assert_eq!(anthropic.api_key, "sk-test-key");
+                assert_eq!(anthropic.base_url, "https://api.anthropic.com");
+                assert!(anthropic.models.contains_key("claude"));
+            }
+            other => panic!("expected Anthropic, got {other:?}"),
         }
     }
 }

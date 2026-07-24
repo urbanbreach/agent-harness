@@ -52,6 +52,7 @@ PROCESS_GLOBAL_STATE_EXEMPTIONS: Final[set[str]] = {
     "crates/harness-core/src/provider_catalog.rs",
     "crates/harness-core/src/coord/tests/workspace_snapshot_tests.rs",
     "crates/harness-core/tests/poc_candidate3_catalog_poisoning_test.rs",
+    "crates/harness-core/tests/browser_oidc_test.rs",
     "crates/harness-tui/src/app/tests/palette_parity_tests.rs",
 }
 

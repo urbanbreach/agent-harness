@@ -284,7 +284,7 @@ fn journey_manifest_rows_point_at_signoff_scaffolding() {
 #[test]
 fn ordinary_mode_skips_missing_gitignored_journey_evidence() {
     // arrange
-    let path = "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/missing-receipt.md";
+    let path = "target/test-lanes/latest/signoff-parity/evidence/receipts/missing-receipt.md";
 
     // act
     let result = std::panic::catch_unwind(|| {
@@ -301,7 +301,7 @@ fn ordinary_mode_skips_missing_gitignored_journey_evidence() {
 #[test]
 fn strict_mode_rejects_missing_gitignored_journey_evidence() {
     // arrange
-    let path = "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/missing-receipt.md";
+    let path = "target/test-lanes/latest/signoff-parity/evidence/receipts/missing-receipt.md";
 
     // act
     let result = std::panic::catch_unwind(|| {

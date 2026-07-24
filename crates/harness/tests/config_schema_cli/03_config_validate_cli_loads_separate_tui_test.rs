@@ -341,7 +341,9 @@ fn shipped_example_config_uses_codex_oauth_provider_without_openai_api_key() {
     let ProviderConfig::OpenAiCompatible(provider) = parsed
         .providers
         .get("openai-codex")
-        .unwrap_or_abort();
+        .unwrap_or_abort() else {
+        panic!("expected openai-codex provider to be OpenAiCompatible")
+    };
 
     assert_eq!(provider.name.as_deref(), Some("OpenAI Codex"));
     assert_eq!(provider.base_url, "https://api.openai.com/v1");
@@ -367,7 +369,9 @@ fn shipped_example_config_keeps_codex_oauth_provider_even_when_openai_api_key_is
     let ProviderConfig::OpenAiCompatible(provider) = parsed
         .providers
         .get("openai-codex")
-        .unwrap_or_abort();
+        .unwrap_or_abort() else {
+        panic!("expected openai-codex provider to be OpenAiCompatible")
+    };
 
     assert_eq!(provider.name.as_deref(), Some("OpenAI Codex"));
     assert_eq!(provider.base_url, "https://api.openai.com/v1");
@@ -440,7 +444,9 @@ fn shipped_runtime_example_parses_as_public_runtime_config() {
     let ProviderConfig::OpenAiCompatible(provider) = parsed
         .provider
         .get("openai-codex")
-        .unwrap_or_abort();
+        .unwrap_or_abort() else {
+        panic!("expected openai-codex provider to be OpenAiCompatible")
+    };
     assert_eq!(provider.models.len(), 2);
     assert!(provider.models.contains_key("gpt-5.5"));
     assert!(provider.models.contains_key("gpt-5.4-mini"));

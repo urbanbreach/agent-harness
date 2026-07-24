@@ -56,7 +56,10 @@ fn legacy_provider_name_and_options_normalize_to_runtime_shape() {
         "#;
 
     let parsed = load_config_from_str(cfg).unwrap_or_abort();
-    let ProviderConfig::OpenAiCompatible(provider) = parsed.providers.get("default").unwrap();
+    let ProviderConfig::OpenAiCompatible(provider) = parsed.providers.get("default").unwrap()
+    else {
+        panic!("expected OpenAiCompatible");
+    };
     assert_eq!(provider.name.as_deref(), Some("CLIProxyAPI"));
     assert_eq!(provider.base_url, "http://127.0.0.1:8317/v1");
     assert_eq!(provider.api_key, "test-key");

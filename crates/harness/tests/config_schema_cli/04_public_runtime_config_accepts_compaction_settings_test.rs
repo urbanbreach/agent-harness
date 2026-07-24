@@ -119,7 +119,9 @@ fn root_runtime_example_uses_canonical_public_keys() {
     assert!(!root_example.contains("\"model_backed\""));
 
     let provider = parsed.provider.get("default").unwrap_or_abort();
-    let ProviderConfig::OpenAiCompatible(provider) = provider;
+    let ProviderConfig::OpenAiCompatible(provider) = provider else {
+        panic!("expected default provider to be OpenAiCompatible")
+    };
     let mini = provider
         .models
         .get("gpt-5.4-mini")

@@ -5,6 +5,7 @@
 //! upload via curl POST), and recover (session recovery via curl GET).
 
 use serde::{Deserialize, Serialize};
+use std::process::Command;
 
 /// Remote workspace hub availability.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -36,9 +37,35 @@ impl WorkspaceHubAvailability {
 }
 
 /// Evaluate remote workspace hub availability.
+///
+/// Returns `Unavailable` when no workspace hub endpoint is configured. The
+/// connect/bind/upload/recover helpers are implemented, but there is no public
+/// config surface or live hub proof yet.
 pub fn evaluate_workspace_hub() -> WorkspaceHubAvailability {
-    WorkspaceHubAvailability::Available {
-        endpoint: "https://hub.example/v1".to_string(),
+    WorkspaceHubAvailability::Unavailable {
+        reason: "no workspace hub endpoint configured".to_string(),
+    }
+}
+
+/// Probe an HTTP endpoint for reachability via curl.
+///
+/// Uses `curl -sSf -o /dev/null <endpoint>` so that HTTP error statuses
+/// (4xx/5xx) are treated as failures.
+fn probe_http_endpoint(endpoint: &str) -> Result<(), String> {
+    let output = Command::new("curl")
+        .args(["-sSf", "-o", "/dev/null", "--max-time", "10", endpoint])
+        .output();
+    match output {
+        Ok(output) if output.status.success() => Ok(()),
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            Err(format!(
+                "curl exited with status {}: {}",
+                output.status,
+                stderr.trim()
+            ))
+        }
+        Err(err) => Err(format!("failed to spawn curl: {err}")),
     }
 }
 
@@ -227,17 +254,25 @@ pub fn summarize_workspace_hub_outcomes(
 
 /// Connect to a remote workspace hub.
 ///
-/// Returns `Connected` when the endpoint looks like a real URL (starts with
-/// `http`). Returns `Unavailable` for probe/placeholder values.
+/// Connect to a remote workspace hub.
+///
+/// Probes the endpoint via curl. Returns `Connected` only when the
+/// endpoint responds with a successful HTTP status. Returns `Unavailable`
+/// for unreachable endpoints, non-HTTP URLs, or probe/placeholder values.
 pub fn connect_workspace_hub(endpoint: impl Into<String>) -> WorkspaceHubConnectResult {
     let endpoint = endpoint.into();
-    if endpoint.starts_with("http") {
-        WorkspaceHubConnectResult::Connected { endpoint }
-    } else {
-        WorkspaceHubConnectResult::Unavailable {
+    if !endpoint.starts_with("http") {
+        return WorkspaceHubConnectResult::Unavailable {
             reason: "endpoint must be a real http(s) URL".to_string(),
             endpoint_hint: endpoint,
-        }
+        };
+    }
+    match probe_http_endpoint(&endpoint) {
+        Ok(()) => WorkspaceHubConnectResult::Connected { endpoint },
+        Err(reason) => WorkspaceHubConnectResult::Unavailable {
+            reason,
+            endpoint_hint: endpoint,
+        },
     }
 }
 
@@ -422,28 +457,38 @@ mod tests {
     use super::*;
 
     #[test]
-    fn workspace_hub_reports_available() {
+    fn workspace_hub_reports_unavailable_for_unreachable_endpoint() {
         // arrange
         // act
         let availability = evaluate_workspace_hub();
 
         // assert
-        assert!(availability.is_available());
-        assert!(!availability.is_unavailable());
+        assert!(!availability.is_available());
+        assert!(availability.is_unavailable());
+        match &availability {
+            WorkspaceHubAvailability::Unavailable { reason } => {
+                assert!(!reason.is_empty());
+            }
+            other => panic!("expected Unavailable, got {other:?}"),
+        }
     }
 
     #[test]
-    fn connect_with_real_endpoint_returns_connected() {
+    fn connect_with_unreachable_endpoint_returns_unavailable() {
         // arrange
         // act
         let connect = connect_workspace_hub("https://hub.example/v1");
 
         // assert
         match &connect {
-            WorkspaceHubConnectResult::Connected { endpoint } => {
-                assert_eq!(endpoint, "https://hub.example/v1");
+            WorkspaceHubConnectResult::Unavailable {
+                reason,
+                endpoint_hint,
+            } => {
+                assert!(!reason.is_empty());
+                assert_eq!(endpoint_hint, "https://hub.example/v1");
             }
-            other => panic!("expected Connected, got {other:?}"),
+            other => panic!("expected Unavailable, got {other:?}"),
         }
     }
 
@@ -525,8 +570,10 @@ mod tests {
         );
 
         // assert
-        assert!(availability.one_line().contains("workspace hub: available"));
-        assert!(connect.one_line().contains("connected"));
+        assert!(availability
+            .one_line()
+            .contains("workspace hub: unavailable"));
+        assert!(connect.one_line().contains("unavailable"));
         assert!(bind.one_line().contains("bound"));
         assert!(upload.one_line().contains("uploaded"));
         assert!(recover.one_line().contains("recovered"));
@@ -545,7 +592,7 @@ mod tests {
         assert_eq!(probe.binds.len(), 3);
         assert_eq!(probe.uploads.len(), 3);
         assert_eq!(probe.recovers.len(), 3);
-        assert!(probe.availability.is_available());
+        assert!(probe.availability.is_unavailable());
         assert!(!probe.is_unavailable());
         assert_eq!(probe.summary.total, 4);
         assert!(!probe.summary.all_unavailable());

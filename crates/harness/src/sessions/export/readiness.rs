@@ -5,7 +5,9 @@ use std::path::{Path, PathBuf};
 
 use harness_core::agent_catalog::resolve_agent_catalog;
 use harness_core::auth::CredentialStore;
-use harness_core::config::{HarnessConfig, OpenAiCompatibleProviderConfig, ProviderConfig};
+use harness_core::config::{
+    AnthropicProviderConfig, HarnessConfig, OpenAiCompatibleProviderConfig, ProviderConfig,
+};
 use harness_tools::{
     coordinator_registry_with_mcp_and_editing, discover_skill_catalog_with_config,
     native_tool_catalog_entries, EditingToolSurfaceConfig, SkillCatalogStatus,
@@ -171,6 +173,7 @@ fn session_export_provider_summary(config: &HarnessConfig) -> Value {
             ProviderConfig::OpenAiCompatible(provider) => {
                 openai_compatible_provider_summary(id, provider)
             }
+            ProviderConfig::Anthropic(provider) => anthropic_provider_summary(id, provider),
         })
         .collect::<Vec<_>>();
 
@@ -333,7 +336,32 @@ fn openai_compatible_provider_summary(
     })
 }
 
+fn anthropic_provider_summary(id: &str, provider: &AnthropicProviderConfig) -> Value {
+    json!({
+        "id": id,
+        "type": "anthropic_messages",
+        "name": provider.name.as_deref(),
+        "base_url": provider.base_url.as_str(),
+        "model_count": provider.models.len(),
+        "models": provider.models.keys().cloned().collect::<Vec<_>>(),
+        "credentials": anthropic_credentials_summary(provider),
+        "api_key_env": provider.api_key_env.clone(),
+        "timeout_ms": provider.timeout_ms,
+        "header_count": provider.headers.len(),
+    })
+}
+
 fn provider_credentials_summary(provider: &OpenAiCompatibleProviderConfig) -> &'static str {
+    if !provider.api_key.trim().is_empty() {
+        "inline_redacted"
+    } else if !provider.api_key_env.is_empty() {
+        "env_reference"
+    } else {
+        "missing"
+    }
+}
+
+fn anthropic_credentials_summary(provider: &AnthropicProviderConfig) -> &'static str {
     if !provider.api_key.trim().is_empty() {
         "inline_redacted"
     } else if !provider.api_key_env.is_empty() {

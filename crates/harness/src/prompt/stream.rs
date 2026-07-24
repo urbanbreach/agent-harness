@@ -118,6 +118,7 @@ struct PromptStreamPrinter<'a, W: Write + ?Sized> {
     wrote_output: bool,
     assistant_buffer: String,
     saw_thinking: bool,
+    json_buffer: Vec<String>,
 }
 
 impl<'a, W: Write + ?Sized> PromptStreamPrinter<'a, W> {
@@ -130,12 +131,22 @@ impl<'a, W: Write + ?Sized> PromptStreamPrinter<'a, W> {
             wrote_output: false,
             assistant_buffer: String::new(),
             saw_thinking: false,
+            json_buffer: Vec::new(),
         }
     }
 
     fn observe(&mut self, event: &EventEnvelopeV1, request_id: &str) {
-        if self.format == PromptOutputFormat::Json {
-            self.write_json(event, request_id);
+        match self.format {
+            PromptOutputFormat::Json => {
+                self.buffer_json(event, request_id);
+            }
+            PromptOutputFormat::StreamingJson => {
+                self.write_json(event, request_id);
+            }
+            PromptOutputFormat::Default => {}
+        }
+
+        if self.format != PromptOutputFormat::Default {
             return;
         }
 
@@ -160,9 +171,24 @@ impl<'a, W: Write + ?Sized> PromptStreamPrinter<'a, W> {
     }
 
     fn finish(&mut self) {
-        if self.format == PromptOutputFormat::Json {
-            let _ = self.stdout.flush();
-            return;
+        match self.format {
+            PromptOutputFormat::Json => {
+                let _ = write!(self.stdout, "[");
+                for (i, line) in self.json_buffer.iter().enumerate() {
+                    if i > 0 {
+                        let _ = write!(self.stdout, ",");
+                    }
+                    let _ = write!(self.stdout, "{line}");
+                }
+                let _ = writeln!(self.stdout, "]");
+                let _ = self.stdout.flush();
+                return;
+            }
+            PromptOutputFormat::StreamingJson => {
+                let _ = self.stdout.flush();
+                return;
+            }
+            PromptOutputFormat::Default => {}
         }
 
         self.flush_assistant_buffer();
@@ -203,6 +229,38 @@ impl<'a, W: Write + ?Sized> PromptStreamPrinter<'a, W> {
         if let Ok(line) = serde_json::to_string(event) {
             let _ = writeln!(self.stdout, "{line}");
             let _ = self.stdout.flush();
+        }
+    }
+
+    fn buffer_json(&mut self, event: &EventEnvelopeV1, request_id: &str) {
+        let include = match &event.payload {
+            EventV1::ProviderReasoningDelta(data) => {
+                provider_event_matches_prompt(event, data.request_id.as_str(), request_id)
+            }
+            EventV1::ProviderStreamDelta(data) => {
+                provider_event_matches_prompt(event, data.request_id.as_str(), request_id)
+            }
+            EventV1::ProviderRequestStarted(data) => {
+                provider_event_matches_prompt(event, data.request_id.as_str(), request_id)
+            }
+            EventV1::ProviderRequestFinished(data) => {
+                provider_finish_matches_prompt(event, data, request_id)
+            }
+            EventV1::ToolCallRequested(_)
+            | EventV1::ToolCallStarted(_)
+            | EventV1::ToolCallFinished(_)
+            | EventV1::TaskCompleted(_)
+            | EventV1::TaskCancelled(_) => event_matches_request(event, request_id),
+            EventV1::RunFailed(_) => true,
+            _ => false,
+        };
+
+        if !include {
+            return;
+        }
+
+        if let Ok(line) = serde_json::to_string(event) {
+            self.json_buffer.push(line);
         }
     }
 

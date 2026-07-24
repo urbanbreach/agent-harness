@@ -456,6 +456,70 @@ impl PermissionPolicy {
         self
     }
 
+    /// Overlays default modes from another policy, preserving this policy's
+    /// rules, profile overrides, and ask_timeout_ms.
+    pub fn overlay_defaults_from(&mut self, other: &PermissionPolicy) {
+        self.defaults = other.defaults.clone();
+    }
+
+    pub fn from_sandbox_profile(profile: &str) -> Option<Self> {
+        match profile {
+            "readonly" | "read-only" => Some(Self::new(
+                PermissionMode::Deny,
+                PermissionMode::Deny,
+                PermissionMode::Deny,
+            )),
+            "workspace" => Some(Self::new(
+                PermissionMode::Ask,
+                PermissionMode::Ask,
+                PermissionMode::Deny,
+            )),
+            "danger" | "full" => Some(Self::allow_all()),
+            _ => None,
+        }
+    }
+
+    pub fn apply_tool_overrides(
+        &mut self,
+        allow: &[String],
+        deny: &[String],
+    ) -> Result<(), String> {
+        fn set_mode(
+            defaults: &mut DefaultPermissionModes,
+            tool: &str,
+            mode: PermissionMode,
+        ) -> Result<(), String> {
+            match tool {
+                "bash" | "shell" => defaults.shell = mode,
+                "edit" => defaults.edit = mode,
+                "question" => defaults.question = mode,
+                "task" => defaults.task = mode,
+                "webfetch" => defaults.webfetch = mode,
+                "websearch" => defaults.websearch = mode,
+                "codesearch" => defaults.codesearch = mode,
+                "lsp" => defaults.lsp = mode,
+                "read" => defaults.read = mode,
+                "network" => defaults.network = mode,
+                "external_directory" | "external" => defaults.external_directory = mode,
+                "doom_loop" | "doom" => defaults.doom_loop = mode,
+                _ => {
+                    return Err(format!(
+                        "unknown permission kind `{tool}`; expected one of: bash, edit, question, task, webfetch, websearch, codesearch, lsp, read, network, external_directory, doom_loop"
+                    ));
+                }
+            }
+            Ok(())
+        }
+
+        for tool in allow {
+            set_mode(&mut self.defaults, tool, PermissionMode::Allow)?;
+        }
+        for tool in deny {
+            set_mode(&mut self.defaults, tool, PermissionMode::Deny)?;
+        }
+        Ok(())
+    }
+
     pub fn ask_timeout_ms(&self) -> u64 {
         self.ask_timeout_ms
     }

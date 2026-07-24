@@ -36,6 +36,12 @@ const ALLOWED_SIDE_EFFECTS: &[&str] = &[
     "mixed",
 ];
 
+/// §5.2 evidence layer ids.
+const ALLOWED_LAYERS: &[&str] = &["L0", "L1", "L2", "L3", "L4", "L5", "L6"];
+
+/// Per-layer status values.
+const ALLOWED_LAYER_STATUSES: &[&str] = &["pass", "fail", "pending", "not_applicable"];
+
 /// §4.5 capability family floor (must each have ≥1 inventory row).
 const REQUIRED_FAMILIES: &[&str] = &[
     "workspace-worktree-isolation-vcs",
@@ -48,46 +54,12 @@ const REQUIRED_FAMILIES: &[&str] = &[
     "config-schema-settings",
 ];
 
-/// Known-closed product surfaces that must remain inventory `pass`.
-/// Oracle (ses_089f6a0f9ffecFkOly2z7H1PGL): foundation/unavailable MVPs must NOT be required pass.
-const REQUIRED_PASS_IDS: &[&str] = &[
-    "worktree.create",
-    "worktree.list_select_cleanup",
-    "config.show.effective",
-    "config.sources",
-    "config.explain",
-    "permission.always_approve_mode",
-    "permission.four_option_with_session_grant",
-    "orchestration.wait_any",
-    "orchestration.wait_all",
-    "terminal.clipboard_hyperlink",
-    "workspace.folder_trust",
-    "memory.durable_product_surface",
-    "tui.feedback_help",
-    "workspace.cow_worktree_fastpath",
-    "sessions.crash_recovery_ux",
-    "config.settings_registry",
-    "provider.auto_fallback",
-    "tui.settings_editor",
-    "tui.view_plan",
-    "tui.composer",
-    "tui.transcript",
-    "tui.overlays",
-    "tui.home_shell",
-    "tui.session_status_dashboard",
-    "permission.dock_ui",
-    "terminal.capability_presentation",
-    "sessions.foreign_import",
-    "vcs.edit_attribution",
-    "orchestration.foreground_demote_background",
-    "sandbox.os_profiles",
-    "sessions.prompt_rewind_atomic",
-    "sessions.prompt_queue_persistence",
-    "sessions.mid_turn_interjection",
-    "scheduler.cron_recurring",
-    "orchestration.multi_agent_team",
-    "plugins.runtime_lifecycle",
-];
+/// Known-closed product surfaces that had been previously required `pass`.
+/// Emptied in iteration 4 after Oracle verification found that all 81 `pass`
+/// rows violated §4 evidence requirements (missing visual, live, dogfood, and
+/// independent-review gates). Rows are now `incomplete` until fresh evidence
+/// is generated for the current revision.
+const REQUIRED_PASS_IDS: &[&str] = &[];
 
 /// Wave 2 demotions: these rows were overclaimed `pass` (probe-only or missing
 /// public surface/consumer) and must stay non-pass until the gap is closed.
@@ -238,6 +210,114 @@ fn capability_inventory_covers_section_4_5_families_and_row_shape() {
             assert!(
                 owner_path_exists(&root, &backend_owner),
                 "capability {capability_id}: pass backend_owner `{backend_owner}` does not exist on disk"
+            );
+        }
+
+        // §5 evidence contract: every row must carry an evidence object.
+        let evidence = row["evidence"]
+            .as_object()
+            .unwrap_or_else(|| panic!("capability {capability_id}: missing evidence object"));
+
+        let applicable_layers = evidence["applicable_layers"].as_array().unwrap_or_else(|| {
+            panic!("capability {capability_id}: evidence.applicable_layers must be an array")
+        });
+        assert!(
+            !applicable_layers.is_empty(),
+            "capability {capability_id}: evidence.applicable_layers must not be empty"
+        );
+
+        let mut layer_ids = Vec::new();
+        for layer in applicable_layers {
+            let layer_id = layer.as_str().unwrap_or_else(|| {
+                panic!("capability {capability_id}: applicable_layers entry must be a string")
+            });
+            assert!(
+                ALLOWED_LAYERS.contains(&layer_id),
+                "capability {capability_id}: invalid evidence layer `{layer_id}`"
+            );
+            layer_ids.push(layer_id);
+        }
+
+        // Pass rows: every applicable layer must have non-empty path, command, and status=pass.
+        if status == "pass" {
+            for layer_id in &layer_ids {
+                let layer_obj = evidence[*layer_id].as_object().unwrap_or_else(|| {
+                    panic!(
+                        "capability {capability_id}: pass row missing evidence layer `{layer_id}`"
+                    )
+                });
+                let path = layer_obj["path"].as_str().unwrap_or_else(|| {
+                    panic!("capability {capability_id}: pass row layer `{layer_id}` missing path")
+                });
+                assert!(
+                    !path.is_empty(),
+                    "capability {capability_id}: pass row layer `{layer_id}` path must be non-empty"
+                );
+                let command = layer_obj["command"].as_str().unwrap_or_else(|| {
+                    panic!(
+                        "capability {capability_id}: pass row layer `{layer_id}` missing command"
+                    )
+                });
+                assert!(
+                    !command.is_empty(),
+                    "capability {capability_id}: pass row layer `{layer_id}` command must be non-empty"
+                );
+                let layer_status = layer_obj["status"].as_str().unwrap_or_else(|| {
+                    panic!("capability {capability_id}: pass row layer `{layer_id}` missing status")
+                });
+                assert_eq!(
+                    layer_status, "pass",
+                    "capability {capability_id}: pass row layer `{layer_id}` status must be pass, got {layer_status}"
+                );
+            }
+        }
+
+        // Blocked rows: require a blocked object with dependency, reason, and owner.
+        if status == "blocked" {
+            let blocked = row["blocked"].as_object().unwrap_or_else(|| {
+                panic!("capability {capability_id}: blocked row missing blocked object")
+            });
+            let dependency = blocked["dependency"].as_str().unwrap_or_else(|| {
+                panic!("capability {capability_id}: blocked.dependency must be a string")
+            });
+            assert!(
+                !dependency.is_empty(),
+                "capability {capability_id}: blocked.dependency must not be empty"
+            );
+            let reason = blocked["reason"].as_str().unwrap_or_else(|| {
+                panic!("capability {capability_id}: blocked.reason must be a string")
+            });
+            assert!(
+                !reason.is_empty(),
+                "capability {capability_id}: blocked.reason must not be empty"
+            );
+            let blocked_owner = blocked["owner"].as_str().unwrap_or_else(|| {
+                panic!("capability {capability_id}: blocked.owner must be a string")
+            });
+            assert!(
+                !blocked_owner.is_empty(),
+                "capability {capability_id}: blocked.owner must not be empty"
+            );
+        }
+
+        // Diverged rows: require a divergence object with id and reason.
+        if status == "diverged" {
+            let divergence = row["divergence"].as_object().unwrap_or_else(|| {
+                panic!("capability {capability_id}: diverged row missing divergence object")
+            });
+            let div_id = divergence["id"].as_str().unwrap_or_else(|| {
+                panic!("capability {capability_id}: divergence.id must be a string")
+            });
+            assert!(
+                !div_id.is_empty(),
+                "capability {capability_id}: divergence.id must not be empty"
+            );
+            let div_reason = divergence["reason"].as_str().unwrap_or_else(|| {
+                panic!("capability {capability_id}: divergence.reason must be a string")
+            });
+            assert!(
+                !div_reason.is_empty(),
+                "capability {capability_id}: divergence.reason must not be empty"
             );
         }
     }

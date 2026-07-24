@@ -9,6 +9,7 @@
 //! separate. This module handles the remote OAuth + transport lifecycle.
 
 use serde::{Deserialize, Serialize};
+use std::process::Command;
 
 use crate::browser_oidc::generate_pkce;
 
@@ -42,9 +43,35 @@ impl McpOauthRemoteAvailability {
 }
 
 /// Evaluate MCP OAuth + remote transport availability.
+///
+/// Returns `Unavailable` when no MCP OAuth remote transport is configured. The
+/// begin/exchange/open helpers are implemented, but there is no public config
+/// surface or live MCP OAuth proof yet.
 pub fn evaluate_mcp_oauth_remote_transports() -> McpOauthRemoteAvailability {
-    McpOauthRemoteAvailability::Available {
-        transport: "streamable_http".to_string(),
+    McpOauthRemoteAvailability::Unavailable {
+        reason: "no MCP OAuth remote transport configured".to_string(),
+    }
+}
+
+/// Probe an HTTP endpoint for reachability via curl.
+///
+/// Uses `curl -sSf -o /dev/null <endpoint>` so that HTTP error statuses
+/// (4xx/5xx) are treated as failures.
+fn probe_http_endpoint(endpoint: &str) -> Result<(), String> {
+    let output = Command::new("curl")
+        .args(["-sSf", "-o", "/dev/null", "--max-time", "10", endpoint])
+        .output();
+    match output {
+        Ok(output) if output.status.success() => Ok(()),
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            Err(format!(
+                "curl exited with status {}: {}",
+                output.status,
+                stderr.trim()
+            ))
+        }
+        Err(err) => Err(format!("failed to spawn curl: {err}")),
     }
 }
 
@@ -292,28 +319,34 @@ pub fn exchange_mcp_oauth_token(
 
 /// Open a remote MCP transport.
 ///
-/// Returns `Opened` when the endpoint looks like a real URL (starts with
-/// `http`) and server_id is non-placeholder. Returns `Unavailable` for
-/// probe/placeholder values.
+/// Probes the endpoint via curl. Returns `Opened` only when the endpoint
+/// responds with a successful HTTP status. Returns `Unavailable` for
+/// unreachable endpoints, non-HTTP URLs, or probe/placeholder values.
 pub fn open_mcp_remote_transport(
     server_id: impl Into<String>,
     endpoint_hint: impl Into<String>,
 ) -> McpRemoteTransportOpenResult {
     let server_id = server_id.into();
     let endpoint = endpoint_hint.into();
-    if endpoint.starts_with("http") && !server_id.starts_with('(') {
-        McpRemoteTransportOpenResult::Opened {
-            server_id,
-            endpoint,
-            transport: "streamable_http".to_string(),
-        }
-    } else {
-        McpRemoteTransportOpenResult::Unavailable {
+    if !endpoint.starts_with("http") || server_id.starts_with('(') {
+        return McpRemoteTransportOpenResult::Unavailable {
             reason: "endpoint must be a real http(s) URL and server_id must be non-placeholder"
                 .to_string(),
             server_id,
             endpoint_hint: endpoint,
-        }
+        };
+    }
+    match probe_http_endpoint(&endpoint) {
+        Ok(()) => McpRemoteTransportOpenResult::Opened {
+            server_id,
+            endpoint,
+            transport: "streamable_http".to_string(),
+        },
+        Err(reason) => McpRemoteTransportOpenResult::Unavailable {
+            reason,
+            server_id,
+            endpoint_hint: endpoint,
+        },
     }
 }
 
@@ -432,20 +465,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn mcp_oauth_remote_reports_available() {
+    fn mcp_oauth_remote_reports_unavailable_for_unreachable_endpoint() {
         // arrange
         // act
         let availability = evaluate_mcp_oauth_remote_transports();
 
         // assert
-        assert!(availability.is_available());
-        assert!(!availability.is_unavailable());
+        assert!(!availability.is_available());
+        assert!(availability.is_unavailable());
         match availability {
-            McpOauthRemoteAvailability::Available { transport } => {
-                assert!(!transport.is_empty());
+            McpOauthRemoteAvailability::Unavailable { reason } => {
+                assert!(!reason.is_empty());
             }
-            McpOauthRemoteAvailability::Unavailable { .. } => {
-                panic!("must report available")
+            McpOauthRemoteAvailability::Available { .. } => {
+                panic!("must report unavailable for unreachable endpoint")
             }
         }
     }
@@ -530,23 +563,17 @@ mod tests {
     }
 
     #[test]
-    fn open_with_real_endpoint_returns_opened() {
+    fn open_with_unreachable_endpoint_returns_unavailable() {
         // arrange
         // act
         let open = open_mcp_remote_transport("docs-server", "https://mcp.example/sse");
 
         // assert
         match &open {
-            McpRemoteTransportOpenResult::Opened {
-                server_id,
-                endpoint,
-                transport,
-            } => {
-                assert_eq!(server_id, "docs-server");
-                assert_eq!(endpoint, "https://mcp.example/sse");
-                assert!(!transport.is_empty());
+            McpRemoteTransportOpenResult::Unavailable { reason, .. } => {
+                assert!(!reason.is_empty());
             }
-            other => panic!("expected Opened, got {other:?}"),
+            other => panic!("expected Unavailable, got {other:?}"),
         }
     }
 
@@ -579,11 +606,11 @@ mod tests {
         // assert
         assert!(availability
             .one_line()
-            .contains("MCP OAuth remote: available"));
+            .contains("MCP OAuth remote: unavailable"));
         assert!(begin.one_line().contains("begun"));
         assert!(exchange.one_line().contains("exchanged"));
         assert!(!exchange.one_line().contains("secret"));
-        assert!(open.one_line().contains("opened"));
+        assert!(open.one_line().contains("unavailable"));
         assert_eq!(summary.total, 3);
         assert!(!summary.all_unavailable());
     }
@@ -598,7 +625,7 @@ mod tests {
         assert_eq!(probe.begins.len(), 3);
         assert_eq!(probe.exchanges.len(), 3);
         assert_eq!(probe.opens.len(), 3);
-        assert!(probe.availability.is_available());
+        assert!(probe.availability.is_unavailable());
         assert!(!probe.is_unavailable());
         assert_eq!(probe.summary.total, 3);
         assert!(!probe.summary.all_unavailable());

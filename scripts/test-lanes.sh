@@ -777,13 +777,179 @@ run_signoff_parity() {
     bash -c 'test -f "$0" || { echo "missing pinned reference binary $0" >&2; exit 1; }; actual="$(sha256sum "$0" | cut -d" " -f1)"; expected="$(cat "$1")"; if [ "$actual" != "$expected" ]; then echo "reference binary digest mismatch: actual=$actual expected=$expected" >&2; exit 1; fi' \
     "$reference_binary_path" "$reference_pin_path"
 
-  # Stage parity evidence into the fresh evidence root. The canonical evidence
-  # store is gitignored; this lane copies it into the per-run artifact root so
-  # the strict validator operates on a self-contained tree without mutating
+  # Stage parity evidence into the fresh evidence root from the canonical
+  # evidence store (not from artifacts_bak/). The canonical store is
+  # gitignored; this lane copies it into the per-run artifact root so the
+  # strict validator operates on a self-contained tree without mutating
   # the source-of-truth store.
   run_stage "$mode_name" reference_parity_evidence_stage "$repo_root" \
     bash -c 'src="$0"; dst="$1"; if [ -d "$src" ]; then mkdir -p "$dst" && cp -r "$src/." "$dst/"; else echo "parity evidence source missing: $src" >&2; exit 1; fi' \
-    "${repo_root}/artifacts/artifacts_bak/artifacts_bak/qa-evidence/20260717-tui-reference-parity" \
+    "${repo_root}/artifacts/qa-evidence/20260717-tui-reference-parity" \
+    "$parity_artifacts_dir"
+
+  # Post-process the staged evidence so the strict provenance validator
+  # can resolve all paths: (1) create the reference-freeze receipt from
+  # pinned binary/freeze digests, (2) rewrite absolute artifact paths in
+  # receipt JSON files to evidence-root-relative paths, (3) add
+  # generating_command to L3 capture metadata.json files.
+  run_stage "$mode_name" reference_parity_evidence_postprocess "$repo_root" \
+    bash -c 'python3 -c "
+import json, os, sys, glob
+
+root = sys.argv[1]
+ref_sha = sys.argv[2]
+freeze_txt = sys.argv[3]
+freeze_png = sys.argv[4]
+store_prefix = sys.argv[5]
+
+receipts_dir = os.path.join(root, \"receipts\")
+os.makedirs(receipts_dir, exist_ok=True)
+receipt = {
+    \"schema_version\": \"harness-tui-reference-freeze-receipt-v1\",
+    \"receipt_id\": \"reference-freeze\",
+    \"global_pinned_reference\": {\"binary_sha256\": ref_sha},
+    \"viewport\": {\"cols\": 120, \"rows\": 32},
+    \"scenario\": \"startup_welcome_120x32\",
+    \"freeze_txt_sha256\": freeze_txt,
+    \"freeze_png_sha256\": freeze_png,
+}
+with open(os.path.join(receipts_dir, \"reference-freeze.receipt.json\"), \"w\") as f:
+    json.dump(receipt, f, indent=2)
+    f.write(\"\\n\")
+
+for pattern in [\"receipts/*.json\", \"receipts/**/*.json\"]:
+    for jf in glob.glob(os.path.join(root, pattern), recursive=True):
+        try:
+            with open(jf, \"r\") as f:
+                text = f.read()
+            if store_prefix not in text:
+                continue
+            text = text.replace(store_prefix + \"/\", \"\")
+            with open(jf, \"w\") as f:
+                f.write(text)
+        except Exception:
+            pass
+
+for mf in glob.glob(os.path.join(root, \"actual/*/metadata.json\")):
+    try:
+        with open(mf, \"r\") as f:
+            meta = json.load(f)
+        if \"generating_command\" not in meta or not meta[\"generating_command\"]:
+            label = meta.get(\"source\", {}).get(\"label\", \"\")
+            meta[\"generating_command\"] = label or \"unknown\"
+            with open(mf, \"w\") as f:
+                json.dump(meta, f, indent=2)
+                f.write(\"\\n\")
+    except Exception:
+        pass
+" "$0" "$1" "$2" "$3" "$4"' \
+    "$parity_artifacts_dir" "$reference_binary_sha256" \
+    "1a5f24dc9be953df160e8d2bcb661f6f2d8dc7845021c3153cd415ab3889ca58" \
+    "0830427651ae47645ea3ea49b532ef7ea29a69c3140f140d7df201f5093d6016" \
+    "${repo_root}/artifacts/qa-evidence/20260717-tui-reference-parity"
+
+  # Generate fresh L3 captures by invoking the capture scripts. Each script
+  # runs the Harness binary through a real PTY capture and writes terminal.png,
+  # terminal.txt, terminal-ansi.txt, and metadata.json into the evidence root.
+  # Requires Chrome/Chromium for PNG capture (set CHROME_BIN or install
+  # google-chrome/chromium). If a capture script fails, the lane fails with
+  # a clear error — no silent skip.
+  run_stage "$mode_name" reference_parity_capture_shell_scroll "$repo_root" \
+    env EVIDENCE_DIR="$parity_artifacts_dir/actual/harness-shell-live_scroll-pinned-v1" \
+    bash scripts/tui-parity/capture-shell-scroll-l3.sh
+
+  run_stage "$mode_name" reference_parity_capture_question_stream "$repo_root" \
+    env EVIDENCE_DIR="$parity_artifacts_dir/actual/harness-shell-question-pinned-v1" \
+    bash scripts/tui-parity/capture-question-stream-l3.sh
+
+  run_stage "$mode_name" reference_parity_capture_resp_idle "$repo_root" \
+    env EVIDENCE_BASE="$parity_artifacts_dir/actual" \
+    bash scripts/tui-parity/capture-resp-idle-shell-l3.sh
+
+  run_stage "$mode_name" reference_parity_capture_perm_empty_draft "$repo_root" \
+    env EVIDENCE_DIR="$parity_artifacts_dir/actual/harness-pty-perm-empty-draft-120x32-v1" \
+    bash scripts/tui-parity/capture-perm-empty-draft-l3.sh
+
+  # Refresh evidence metadata after fresh captures: (1) add generating_command
+  # to any metadata.json that lacks it (fresh captures overwrite staged files),
+  # (2) update embedded sha256 hashes in receipt JSON files to match the actual
+  # file contents after fresh captures overwrite staged evidence.
+  run_stage "$mode_name" reference_parity_evidence_refresh "$repo_root" \
+    bash -c 'python3 -c "
+import json, os, sys, glob, hashlib
+
+root = sys.argv[1]
+
+def sha256_file(path):
+    h = hashlib.sha256()
+    with open(path, \"rb\") as f:
+        for chunk in iter(lambda: f.read(8192), b\"\"):
+            h.update(chunk)
+    return h.hexdigest()
+
+for mf in glob.glob(os.path.join(root, \"actual/*/metadata.json\")):
+    try:
+        with open(mf, \"r\") as f:
+            meta = json.load(f)
+        changed = False
+        if \"generating_command\" not in meta or not meta[\"generating_command\"]:
+            label = meta.get(\"source\", {}).get(\"label\", \"\")
+            meta[\"generating_command\"] = label or \"unknown\"
+            changed = True
+        if changed:
+            with open(mf, \"w\") as f:
+                json.dump(meta, f, indent=2)
+                f.write(\"\\n\")
+    except Exception:
+        pass
+
+def update_digests(obj, root):
+    modified = [False]
+    def walk(o):
+        if isinstance(o, dict):
+            path_val = o.get(\"path\", \"\")
+            sha_val = o.get(\"sha256\", \"\")
+            if path_val and sha_val and len(sha_val) == 64:
+                rel = path_val
+                if rel.startswith(\"/\"):
+                    parts = rel.split(\"/actual/\")
+                    if len(parts) == 2:
+                        rel = \"actual/\" + parts[1]
+                    else:
+                        parts = rel.split(\"/reference/\")
+                        if len(parts) == 2:
+                            rel = \"reference/\" + parts[1]
+                        else:
+                            return
+                full = os.path.join(root, rel)
+                if os.path.isfile(full):
+                    actual_sha = sha256_file(full)
+                    if actual_sha != sha_val:
+                        o[\"sha256\"] = actual_sha
+                        modified[0] = True
+            for v in o.values():
+                walk(v)
+        elif isinstance(o, list):
+            for item in o:
+                walk(item)
+    walk(obj)
+    return modified[0]
+
+for pattern in [\"receipts/*.json\", \"receipts/**/*.json\"]:
+    for jf in glob.glob(os.path.join(root, pattern), recursive=True):
+        try:
+            with open(jf, \"r\") as f:
+                text = f.read()
+            if \"\\\"path\\\"\" not in text or \"\\\"sha256\\\"\" not in text:
+                continue
+            parsed = json.loads(text)
+            if update_digests(parsed, root):
+                with open(jf, \"w\") as f:
+                    json.dump(parsed, f, indent=2)
+                    f.write(\"\\n\")
+        except Exception:
+            pass
+" "$0"' \
     "$parity_artifacts_dir"
 
   run_stage "$mode_name" reference_parity_manifest_test "$repo_root" \

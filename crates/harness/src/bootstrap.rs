@@ -246,55 +246,82 @@ fn build_provider(
     provider_id: &str,
     provider: &ProviderConfig,
 ) -> Result<Arc<dyn Provider>, String> {
-    let ProviderConfig::OpenAiCompatible(provider) = provider;
-    let api_key = provider
-        .api_key_env
-        .iter()
-        .find_map(|name| {
-            std::env::var(name)
-                .ok()
-                .filter(|value| !value.trim().is_empty())
-        })
-        .unwrap_or_else(|| provider.api_key.clone());
+    match provider {
+        ProviderConfig::OpenAiCompatible(provider) => {
+            let api_key = provider
+                .api_key_env
+                .iter()
+                .find_map(|name| {
+                    std::env::var(name)
+                        .ok()
+                        .filter(|value| !value.trim().is_empty())
+                })
+                .unwrap_or_else(|| provider.api_key.clone());
 
-    let mut openai_provider = OpenAiCompatibleProvider::new(OpenAiCompatibleProviderConfig {
-        base_url: provider.base_url.clone(),
-        api_key,
-        api_mode: map_openai_api_mode(provider.api_mode.clone()),
-        timeout_ms: provider.timeout_ms,
-        headers: provider.headers.clone(),
-    })
-    .map_err(|err| format!("failed to build provider `{provider_id}`: {err}"))?;
+            let mut openai_provider =
+                OpenAiCompatibleProvider::new(OpenAiCompatibleProviderConfig {
+                    base_url: provider.base_url.clone(),
+                    api_key,
+                    api_mode: map_openai_api_mode(provider.api_mode.clone()),
+                    timeout_ms: provider.timeout_ms,
+                    headers: provider.headers.clone(),
+                })
+                .map_err(|err| format!("failed to build provider `{provider_id}`: {err}"))?;
 
-    if let Some(auth_provider) = provider.auth_provider.clone() {
-        let auth_profile = if auth_provider == AuthProviderId::codex() {
-            OpenAiAuthProfile::Codex
-        } else if auth_provider == AuthProviderId::github_copilot() {
-            OpenAiAuthProfile::GithubCopilot
-        } else {
-            return Err(format!(
-                "unsupported auth provider `{auth_provider}` for provider `{provider_id}`"
-            ));
-        };
-        openai_provider = openai_provider.with_auth_profile(auth_profile);
-        if let Some(store) = CredentialStore::from_env() {
-            let mut manager = ProviderCredentialManager::new(
-                store,
-                auth_provider.clone(),
-                provider.api_key_env.clone(),
-                provider.api_key.clone(),
-                |name| std::env::var(name).ok(),
-            );
-            if auth_provider == AuthProviderId::codex() {
-                manager = manager.with_refresher(Arc::new(CodexOAuthClient::new(Arc::new(
-                    ReqwestAuthHttpClient::default(),
-                ))));
+            if let Some(auth_provider) = provider.auth_provider.clone() {
+                let auth_profile = if auth_provider == AuthProviderId::codex() {
+                    OpenAiAuthProfile::Codex
+                } else if auth_provider == AuthProviderId::github_copilot() {
+                    OpenAiAuthProfile::GithubCopilot
+                } else {
+                    return Err(format!(
+                        "unsupported auth provider `{auth_provider}` for provider `{provider_id}`"
+                    ));
+                };
+                openai_provider = openai_provider.with_auth_profile(auth_profile);
+                if let Some(store) = CredentialStore::from_env() {
+                    let mut manager = ProviderCredentialManager::new(
+                        store,
+                        auth_provider.clone(),
+                        provider.api_key_env.clone(),
+                        provider.api_key.clone(),
+                        |name| std::env::var(name).ok(),
+                    );
+                    if auth_provider == AuthProviderId::codex() {
+                        manager = manager.with_refresher(Arc::new(CodexOAuthClient::new(
+                            Arc::new(ReqwestAuthHttpClient::default()),
+                        )));
+                    }
+                    openai_provider = openai_provider.with_credential_source(Arc::new(manager));
+                }
             }
-            openai_provider = openai_provider.with_credential_source(Arc::new(manager));
+
+            Ok(Arc::new(openai_provider) as Arc<dyn Provider>)
+        }
+        ProviderConfig::Anthropic(provider) => {
+            let api_key = provider
+                .api_key_env
+                .iter()
+                .find_map(|name| {
+                    std::env::var(name)
+                        .ok()
+                        .filter(|value| !value.trim().is_empty())
+                })
+                .unwrap_or_else(|| provider.api_key.clone());
+
+            let anthropic_provider = harness_providers::anthropic::AnthropicProvider::new(
+                harness_providers::anthropic::AnthropicProviderConfig {
+                    base_url: provider.base_url.clone(),
+                    api_key,
+                    timeout_ms: provider.timeout_ms,
+                    headers: provider.headers.clone(),
+                },
+            )
+            .map_err(|err| format!("failed to build provider `{provider_id}`: {err}"))?;
+
+            Ok(Arc::new(anthropic_provider) as Arc<dyn Provider>)
         }
     }
-
-    Ok(Arc::new(openai_provider) as Arc<dyn Provider>)
 }
 
 #[derive(Debug, Default)]
@@ -501,8 +528,10 @@ fn interactive_agent_profiles_with_extra_tools(
 }
 
 fn provider_cache_retention(provider: &ProviderConfig) -> harness_providers::CacheRetention {
-    let ProviderConfig::OpenAiCompatible(provider) = provider;
-    provider.cache_retention
+    match provider {
+        ProviderConfig::OpenAiCompatible(provider) => provider.cache_retention,
+        ProviderConfig::Anthropic(_) => harness_providers::CacheRetention::None,
+    }
 }
 
 fn normalize_profile_toolset(

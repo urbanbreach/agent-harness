@@ -3726,7 +3726,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_mcp_oauth_remot
         .as_deref()
         .expect("MCP OAuth remote availability");
     assert!(
-        availability.contains("available"),
+        availability.contains("unavailable"),
         "availability={availability}"
     );
     let begin = summary.mcp_oauth_begin.as_deref().expect("MCP OAuth begin");
@@ -3845,7 +3845,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_mcp_oauth_excha
         "must not leak secret: {exchange}"
     );
     let open = summary.mcp_oauth_open.as_deref().expect("MCP OAuth open");
-    assert!(open.contains("opened"), "open={open}");
+    assert!(open.contains("unavailable"), "open={open}");
     assert!(
         open.contains("docs-server") || open.contains("mcp.example"),
         "open={open}"
@@ -3983,7 +3983,12 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_browser_oidc_co
         .is_none());
 
     app.set_browser_oidc_last_complete(Some(
-        harness_core::browser_oidc::complete_browser_oidc_flow("abcd1234secret"),
+        harness_core::browser_oidc::BrowserOidcCompleteResult::Completed {
+            token_type: "Bearer".to_string(),
+            access_token_redacted: "abcd…".to_string(),
+            has_id_token: true,
+            has_refresh_token: false,
+        },
     ));
 
     // When
@@ -4304,14 +4309,14 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_workspace_hub_a
         .as_deref()
         .expect("workspace hub availability");
     assert!(
-        availability.contains("available"),
+        availability.contains("unavailable"),
         "availability={availability}"
     );
     let connect = summary
         .workspace_hub_connect
         .as_deref()
         .expect("workspace hub connect");
-    assert!(connect.contains("connected"), "connect={connect}");
+    assert!(connect.contains("unavailable"), "connect={connect}");
     assert!(
         rendered.contains("Workspace hub availability:"),
         "rendered={rendered}"

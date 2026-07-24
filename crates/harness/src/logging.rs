@@ -68,6 +68,46 @@ pub fn init_logging(cfg: &HarnessConfig, run_dir: &Path) -> Result<PathBuf, Stri
     Ok(log_path)
 }
 
+pub fn init_debug_logging(level: &str, file: Option<&Path>) -> Result<(), String> {
+    let level = LevelFilter::from_str(level)
+        .map_err(|err| format!("invalid debug log level `{level}`: {err}"))?;
+
+    let registry = tracing_subscriber::registry().with(level);
+
+    match file {
+        Some(path) => {
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent).map_err(|err| {
+                    format!("failed to create log directory {}: {err}", parent.display())
+                })?;
+            }
+            let f = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path)
+                .map_err(|err| format!("failed to open log file {}: {err}", path.display()))?;
+            let (writer, guard) = tracing_appender::non_blocking(f);
+            let _ = LOG_GUARD.set(guard);
+            let subscriber = registry.with(
+                tracing_subscriber::fmt::layer()
+                    .with_ansi(false)
+                    .with_writer(writer),
+            );
+            let _ = tracing::subscriber::set_global_default(subscriber);
+        }
+        None => {
+            let subscriber = registry.with(
+                tracing_subscriber::fmt::layer()
+                    .with_ansi(false)
+                    .with_writer(std::io::stderr),
+            );
+            let _ = tracing::subscriber::set_global_default(subscriber);
+        }
+    }
+
+    Ok(())
+}
+
 fn append_init_marker(log_path: &Path) -> Result<(), String> {
     if let Some(parent) = log_path.parent() {
         std::fs::create_dir_all(parent)

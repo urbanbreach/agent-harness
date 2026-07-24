@@ -43,8 +43,15 @@ impl BrowserOidcAvailability {
 }
 
 /// Evaluate browser OIDC / enterprise SSO availability.
+///
+/// Returns `Unavailable` when no OIDC issuer is configured. The PKCE helpers
+/// are implemented, but the public config/workflow and a live OIDC proof are
+/// incomplete.
 pub fn evaluate_browser_oidc_availability() -> BrowserOidcAvailability {
-    BrowserOidcAvailability::Available
+    BrowserOidcAvailability::Unavailable {
+        reason: "no OIDC issuer configured; browser OIDC workflow is not yet config-reachable"
+            .to_string(),
+    }
 }
 
 /// PKCE code verifier and challenge pair.
@@ -278,6 +285,252 @@ impl TokenResponse {
     }
 }
 
+/// Phase of a browser OIDC authorization-code + PKCE flow.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BrowserOidcFlowPhase {
+    Idle,
+    Starting,
+    WaitingForCallback,
+    ExchangingToken,
+    Completed,
+    Failed,
+}
+
+impl std::fmt::Display for BrowserOidcFlowPhase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Idle => write!(f, "idle"),
+            Self::Starting => write!(f, "starting"),
+            Self::WaitingForCallback => write!(f, "waiting_for_callback"),
+            Self::ExchangingToken => write!(f, "exchanging_token"),
+            Self::Completed => write!(f, "completed"),
+            Self::Failed => write!(f, "failed"),
+        }
+    }
+}
+
+/// State machine for a browser OIDC authorization-code + PKCE flow.
+///
+/// Tracks the flow through: Idle -> Starting -> WaitingForCallback ->
+/// ExchangingToken -> Completed | Failed.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "phase", rename_all = "snake_case")]
+pub enum BrowserOidcFlow {
+    #[default]
+    Idle,
+    Starting {
+        issuer: String,
+        client_id: String,
+    },
+    WaitingForCallback {
+        authorization_url: String,
+        state: String,
+        code_verifier: String,
+        redirect_uri: String,
+        port: u16,
+        token_endpoint: String,
+        client_id: String,
+        manual_url_fallback: Option<String>,
+    },
+    ExchangingToken {
+        code: String,
+        code_verifier: String,
+        redirect_uri: String,
+        token_endpoint: String,
+        client_id: String,
+    },
+    Completed {
+        token: TokenResponse,
+    },
+    Failed {
+        reason: String,
+    },
+}
+
+impl BrowserOidcFlow {
+    /// Create a new flow in the Idle state.
+    pub fn new() -> Self {
+        Self::Idle
+    }
+
+    /// Current phase of the flow.
+    pub const fn phase(&self) -> BrowserOidcFlowPhase {
+        match self {
+            Self::Idle => BrowserOidcFlowPhase::Idle,
+            Self::Starting { .. } => BrowserOidcFlowPhase::Starting,
+            Self::WaitingForCallback { .. } => BrowserOidcFlowPhase::WaitingForCallback,
+            Self::ExchangingToken { .. } => BrowserOidcFlowPhase::ExchangingToken,
+            Self::Completed { .. } => BrowserOidcFlowPhase::Completed,
+            Self::Failed { .. } => BrowserOidcFlowPhase::Failed,
+        }
+    }
+
+    /// Start the flow: generate PKCE, build URL, launch browser.
+    ///
+    /// Transitions: Idle -> Starting -> WaitingForCallback.
+    /// Browser launch failure is non-fatal: the flow continues with a
+    /// manual URL fallback so the operator can open the URL by hand.
+    pub fn start(&mut self, issuer: &str, client_id: &str, port: u16) {
+        *self = Self::Starting {
+            issuer: issuer.to_string(),
+            client_id: client_id.to_string(),
+        };
+        let pkce = generate_pkce();
+        let state = generate_random_string(32);
+        let redirect_uri = format!("http://127.0.0.1:{port}/callback");
+        let token_endpoint = format!("{issuer}/token");
+        let authorization_url =
+            build_authorization_url(issuer, client_id, &redirect_uri, &state, &pkce, None);
+        let manual_url_fallback = match launch_browser(&authorization_url) {
+            Ok(()) => None,
+            Err(reason) => Some(reason),
+        };
+        *self = Self::WaitingForCallback {
+            authorization_url,
+            state,
+            code_verifier: pkce.code_verifier,
+            redirect_uri,
+            port,
+            token_endpoint,
+            client_id: client_id.to_string(),
+            manual_url_fallback,
+        };
+    }
+
+    /// Complete the flow: listen for callback, exchange code for token.
+    ///
+    /// Transitions: WaitingForCallback -> ExchangingToken -> Completed | Failed.
+    /// Returns early without transitioning if already Failed.
+    pub fn complete(&mut self, callback_timeout_secs: u64) {
+        let (code_verifier, redirect_uri, port, token_endpoint, client_id) = match self {
+            Self::WaitingForCallback {
+                code_verifier,
+                redirect_uri,
+                port,
+                token_endpoint,
+                client_id,
+                ..
+            } => (
+                code_verifier.clone(),
+                redirect_uri.clone(),
+                *port,
+                token_endpoint.clone(),
+                client_id.clone(),
+            ),
+            Self::Failed { .. } => return,
+            _ => {
+                *self = Self::Failed {
+                    reason: "complete called outside WaitingForCallback state".to_string(),
+                };
+                return;
+            }
+        };
+        let (code, _callback_state) = match listen_for_callback(port, callback_timeout_secs) {
+            Ok(result) => result,
+            Err(reason) => {
+                *self = Self::Failed { reason };
+                return;
+            }
+        };
+        *self = Self::ExchangingToken {
+            code: code.clone(),
+            code_verifier: code_verifier.clone(),
+            redirect_uri: redirect_uri.clone(),
+            token_endpoint: token_endpoint.clone(),
+            client_id: client_id.clone(),
+        };
+        match exchange_code_for_token(
+            &token_endpoint,
+            &client_id,
+            &redirect_uri,
+            &code,
+            &code_verifier,
+        ) {
+            Ok(token) => *self = Self::Completed { token },
+            Err(reason) => *self = Self::Failed { reason },
+        }
+    }
+
+    /// Reconstruct a flow in WaitingForCallback from a start result.
+    pub fn from_start_result(start: &BrowserOidcStartResult) -> Self {
+        match start {
+            BrowserOidcStartResult::Started {
+                authorization_url,
+                state,
+                code_verifier,
+                redirect_uri,
+                port,
+                token_endpoint,
+                client_id,
+                manual_url_fallback,
+            } => Self::WaitingForCallback {
+                authorization_url: authorization_url.clone(),
+                state: state.clone(),
+                code_verifier: code_verifier.clone(),
+                redirect_uri: redirect_uri.clone(),
+                port: *port,
+                token_endpoint: token_endpoint.clone(),
+                client_id: client_id.clone(),
+                manual_url_fallback: manual_url_fallback.clone(),
+            },
+            BrowserOidcStartResult::Unavailable { .. } => Self::Failed {
+                reason: "start result is Unavailable".to_string(),
+            },
+        }
+    }
+
+    /// Convert to a BrowserOidcStartResult for operator surfaces.
+    pub fn to_start_result(&self) -> BrowserOidcStartResult {
+        match self {
+            Self::WaitingForCallback {
+                authorization_url,
+                state,
+                code_verifier,
+                redirect_uri,
+                port,
+                token_endpoint,
+                client_id,
+                manual_url_fallback,
+            } => BrowserOidcStartResult::Started {
+                authorization_url: authorization_url.clone(),
+                state: state.clone(),
+                code_verifier: code_verifier.clone(),
+                redirect_uri: redirect_uri.clone(),
+                token_endpoint: token_endpoint.clone(),
+                client_id: client_id.clone(),
+                port: *port,
+                manual_url_fallback: manual_url_fallback.clone(),
+            },
+            _ => BrowserOidcStartResult::Unavailable {
+                reason: "flow not in WaitingForCallback state".to_string(),
+                issuer_hint: String::new(),
+                client_id_hint: String::new(),
+            },
+        }
+    }
+
+    /// Convert to a BrowserOidcCompleteResult for operator surfaces.
+    pub fn to_complete_result(&self) -> BrowserOidcCompleteResult {
+        match self {
+            Self::Completed { token } => BrowserOidcCompleteResult::Completed {
+                token_type: token.token_type.clone(),
+                access_token_redacted: token.redacted_access_token(),
+                has_id_token: token.id_token.is_some(),
+                has_refresh_token: token.refresh_token.is_some(),
+            },
+            Self::Failed { reason } => BrowserOidcCompleteResult::Unavailable {
+                reason: reason.clone(),
+                authorization_code_hint: String::new(),
+            },
+            _ => BrowserOidcCompleteResult::Unavailable {
+                reason: "flow not in Completed or Failed state".to_string(),
+                authorization_code_hint: String::new(),
+            },
+        }
+    }
+}
+
 /// Result of starting a browser/device OIDC flow.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "outcome", rename_all = "snake_case")]
@@ -287,6 +540,10 @@ pub enum BrowserOidcStartResult {
         state: String,
         code_verifier: String,
         redirect_uri: String,
+        token_endpoint: String,
+        client_id: String,
+        port: u16,
+        manual_url_fallback: Option<String>,
     },
     Unavailable {
         reason: String,
@@ -299,10 +556,15 @@ impl BrowserOidcStartResult {
     pub fn one_line(&self) -> String {
         match self {
             Self::Started {
+                authorization_url,
+                manual_url_fallback: Some(fallback),
+                ..
+            } => format!(
+                "browser OIDC start: started url={authorization_url} (manual fallback: {fallback})"
+            ),
+            Self::Started {
                 authorization_url, ..
-            } => {
-                format!("browser OIDC start: started url={authorization_url}")
-            }
+            } => format!("browser OIDC start: started url={authorization_url}"),
             Self::Unavailable {
                 reason,
                 issuer_hint,
@@ -393,11 +655,19 @@ pub fn summarize_browser_oidc_outcomes(
     summary
 }
 
+/// Default callback port for the loopback OIDC redirect.
+pub const DEFAULT_OIDC_CALLBACK_PORT: u16 = 8765;
+
 /// Start a browser OIDC flow with PKCE.
 ///
-/// Returns `Started` with the authorization URL when issuer and client_id
-/// look like real values (issuer starts with `http`, client_id is non-empty
-/// and not a probe placeholder). Returns `Unavailable` for probe/fake values.
+/// For real issuer/client_id values, drives a `BrowserOidcFlow` through
+/// Idle -> Starting -> WaitingForCallback, calling `launch_browser()` with
+/// the authorization URL. Browser launch failure is non-fatal: the returned
+/// `Started` result carries a `manual_url_fallback` so the operator can open
+/// the URL by hand.
+///
+/// Returns `Unavailable` for probe/placeholder values (issuer not starting
+/// with `http`, client_id empty or starting with `(`).
 pub fn start_browser_oidc_flow(
     issuer_hint: impl Into<String>,
     client_id_hint: impl Into<String>,
@@ -405,16 +675,9 @@ pub fn start_browser_oidc_flow(
     let issuer = issuer_hint.into();
     let client_id = client_id_hint.into();
     if issuer.starts_with("http") && !client_id.is_empty() && !client_id.starts_with('(') {
-        let pkce = generate_pkce();
-        let state = generate_random_string(32);
-        let redirect_uri = "http://127.0.0.1:8765/callback".to_string();
-        let url = build_authorization_url(&issuer, &client_id, &redirect_uri, &state, &pkce, None);
-        BrowserOidcStartResult::Started {
-            authorization_url: url,
-            state,
-            code_verifier: pkce.code_verifier,
-            redirect_uri,
-        }
+        let mut flow = BrowserOidcFlow::new();
+        flow.start(&issuer, &client_id, DEFAULT_OIDC_CALLBACK_PORT);
+        flow.to_start_result()
     } else {
         BrowserOidcStartResult::Unavailable {
             reason: "issuer must be a real URL and client_id must be non-empty (not a probe placeholder)".to_string(),
@@ -424,32 +687,28 @@ pub fn start_browser_oidc_flow(
     }
 }
 
-/// Complete a browser OIDC flow by exchanging the authorization code.
+/// Complete a browser OIDC flow by listening for the callback and exchanging
+/// the authorization code for tokens.
 ///
-/// Returns `Completed` when the code looks valid (non-empty, not a probe).
-/// Returns `Unavailable` for probe/fake codes.
+/// Drives a `BrowserOidcFlow` from WaitingForCallback through
+/// ExchangingToken to Completed | Failed, calling `listen_for_callback()`
+/// and `exchange_code_for_token()`.
+///
+/// For `Unavailable` start results (probe/placeholder values), returns
+/// `Unavailable` immediately without blocking.
 pub fn complete_browser_oidc_flow(
-    authorization_code_hint: impl Into<String>,
+    start_result: &BrowserOidcStartResult,
+    callback_timeout_secs: u64,
 ) -> BrowserOidcCompleteResult {
-    let code = authorization_code_hint.into();
-    if !code.is_empty() && !code.starts_with('(') {
-        BrowserOidcCompleteResult::Completed {
-            token_type: "Bearer".to_string(),
-            access_token_redacted: format!("{}…", &code[..code.len().min(4)]),
-            has_id_token: true,
-            has_refresh_token: false,
-        }
-    } else {
-        let redacted = if code.trim().is_empty() {
-            String::new()
-        } else {
-            format!("{}…", code.chars().take(4).collect::<String>())
+    let mut flow = BrowserOidcFlow::from_start_result(start_result);
+    if flow.phase() == BrowserOidcFlowPhase::Failed {
+        return BrowserOidcCompleteResult::Unavailable {
+            reason: "start result is Unavailable".to_string(),
+            authorization_code_hint: String::new(),
         };
-        BrowserOidcCompleteResult::Unavailable {
-            reason: "authorization code must be non-empty (not a probe placeholder)".to_string(),
-            authorization_code_hint: redacted,
-        }
     }
+    flow.complete(callback_timeout_secs);
+    flow.to_complete_result()
 }
 
 /// Default multi-endpoint start probes for the product walk.
@@ -463,12 +722,11 @@ pub const DEFAULT_BROWSER_OIDC_START_PROBES: &[(&str, &str)] = &[
     ("https://issuer.example", "harness-cli"),
 ];
 
-/// Default multi-endpoint complete probes for the product walk.
+/// Callback timeout (seconds) for the product probe path.
 ///
-/// The last probe uses a real authorization code so the product walk
-/// demonstrates a `Completed` outcome alongside probe `Unavailable` outcomes.
-pub const DEFAULT_BROWSER_OIDC_COMPLETE_PROBES: &[&str] =
-    &["(probe-code)", "(probe-code-alt)", "real-auth-code-12345"];
+/// Zero avoids blocking operator surfaces while still exercising the real
+/// `listen_for_callback` implementation.
+pub const PRODUCT_PROBE_CALLBACK_TIMEOUT_SECS: u64 = 0;
 
 /// Multi-endpoint browser OIDC product probe.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -495,27 +753,37 @@ pub fn walk_browser_oidc_start(probes: &[(&str, &str)]) -> Vec<BrowserOidcStartR
         .collect()
 }
 
-/// Walk complete across multiple authorization codes (codes redacted).
-pub fn walk_browser_oidc_complete(codes: &[&str]) -> Vec<BrowserOidcCompleteResult> {
-    codes
+/// Walk complete across multiple start results, wiring the real
+/// `listen_for_callback` and `exchange_code_for_token` implementations.
+pub fn walk_browser_oidc_complete(
+    starts: &[BrowserOidcStartResult],
+    callback_timeout_secs: u64,
+) -> Vec<BrowserOidcCompleteResult> {
+    starts
         .iter()
-        .map(|code| complete_browser_oidc_flow(*code))
+        .map(|start| complete_browser_oidc_flow(start, callback_timeout_secs))
         .collect()
 }
 
 /// Product path: multi-endpoint start×N + complete×N, bind last of each.
+///
+/// Start and complete are connected: each start result feeds its matching
+/// complete, so the real `launch_browser`, `listen_for_callback`, and
+/// `exchange_code_for_token` implementations are exercised end-to-end.
 pub fn probe_browser_oidc_product() -> BrowserOidcProductProbe {
     let availability = evaluate_browser_oidc_availability();
     let starts = walk_browser_oidc_start(DEFAULT_BROWSER_OIDC_START_PROBES);
-    let completes = walk_browser_oidc_complete(DEFAULT_BROWSER_OIDC_COMPLETE_PROBES);
+    let completes = walk_browser_oidc_complete(&starts, PRODUCT_PROBE_CALLBACK_TIMEOUT_SECS);
     let last_start = starts
         .last()
         .cloned()
         .unwrap_or_else(|| start_browser_oidc_flow("(probe)", "(client)"));
-    let last_complete = completes
-        .last()
-        .cloned()
-        .unwrap_or_else(|| complete_browser_oidc_flow("(probe-code)"));
+    let last_complete = completes.last().cloned().unwrap_or_else(|| {
+        complete_browser_oidc_flow(
+            &start_browser_oidc_flow("(probe)", "(client)"),
+            PRODUCT_PROBE_CALLBACK_TIMEOUT_SECS,
+        )
+    });
     let summary = summarize_browser_oidc_outcomes(Some(&last_start), Some(&last_complete));
     BrowserOidcProductProbe {
         availability,
@@ -578,14 +846,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn browser_oidc_reports_available() {
+    fn browser_oidc_reports_unavailable_when_unconfigured() {
         // arrange
         // act
         let availability = evaluate_browser_oidc_availability();
 
         // assert
-        assert!(availability.is_available());
-        assert!(!availability.is_unavailable());
+        assert!(!availability.is_available());
+        assert!(availability.is_unavailable());
+        assert!(
+            availability
+                .one_line()
+                .contains("no OIDC issuer configured"),
+            "availability={availability:?}"
+        );
     }
 
     #[test]
@@ -601,6 +875,10 @@ mod tests {
                 state,
                 code_verifier,
                 redirect_uri,
+                token_endpoint,
+                client_id,
+                port,
+                manual_url_fallback,
             } => {
                 assert!(authorization_url.contains("https://issuer.example/authorize"));
                 assert!(authorization_url.contains("client_id=client-abc"));
@@ -608,6 +886,13 @@ mod tests {
                 assert!(!state.is_empty());
                 assert!(!code_verifier.is_empty());
                 assert!(redirect_uri.starts_with("http://127.0.0.1"));
+                assert_eq!(token_endpoint, "https://issuer.example/token");
+                assert_eq!(client_id, "client-abc");
+                assert_eq!(*port, DEFAULT_OIDC_CALLBACK_PORT);
+                // Browser launch may fail in headless test env; fallback is set then.
+                if let Some(fallback) = manual_url_fallback {
+                    assert!(fallback.contains("open manually"));
+                }
             }
             other => panic!("expected Started, got {other:?}"),
         }
@@ -629,38 +914,34 @@ mod tests {
     }
 
     #[test]
-    fn complete_with_real_code_returns_completed() {
+    fn complete_with_started_result_returns_unavailable_on_callback_timeout() {
         // arrange
-        // act
-        let complete = complete_browser_oidc_flow("abcd1234secret");
+        let start = start_browser_oidc_flow("https://issuer.example", "client-abc");
 
-        // assert
+        // act — 0-second timeout: listen_for_callback returns immediately
+        let complete = complete_browser_oidc_flow(&start, 0);
+
+        // assert — no callback arrives, so the result is Unavailable
         match &complete {
-            BrowserOidcCompleteResult::Completed {
-                token_type,
-                access_token_redacted,
-                has_id_token,
-                ..
-            } => {
-                assert_eq!(token_type, "Bearer");
-                assert!(access_token_redacted.contains("…"));
-                assert!(!access_token_redacted.contains("secret"));
-                assert!(*has_id_token);
+            BrowserOidcCompleteResult::Unavailable { reason, .. } => {
+                assert!(!reason.is_empty());
             }
-            other => panic!("expected Completed, got {other:?}"),
+            other => panic!("expected Unavailable, got {other:?}"),
         }
     }
 
     #[test]
-    fn complete_with_probe_code_returns_unavailable() {
+    fn complete_with_unavailable_start_returns_unavailable() {
         // arrange
-        // act
-        let complete = complete_browser_oidc_flow("(probe-code)");
+        let start = start_browser_oidc_flow("(probe)", "(client)");
 
-        // assert
+        // act
+        let complete = complete_browser_oidc_flow(&start, 0);
+
+        // assert — probe start returns Unavailable immediately without blocking
         match &complete {
             BrowserOidcCompleteResult::Unavailable { reason, .. } => {
-                assert!(!reason.is_empty());
+                assert!(reason.contains("Unavailable"));
             }
             other => panic!("expected Unavailable, got {other:?}"),
         }
@@ -709,14 +990,19 @@ mod tests {
         // act
         let availability = evaluate_browser_oidc_availability();
         let start = start_browser_oidc_flow("https://issuer.example", "client-abc");
-        let complete = complete_browser_oidc_flow("abcd1234secret");
+        let complete = complete_browser_oidc_flow(&start, 0);
         let summary = summarize_browser_oidc_outcomes(Some(&start), Some(&complete));
 
         // assert
-        assert!(availability.one_line().contains("browser OIDC: available"));
+        assert!(
+            availability
+                .one_line()
+                .contains("browser OIDC: unavailable"),
+            "availability={availability:?}"
+        );
         assert!(start.one_line().contains("started"));
-        assert!(complete.one_line().contains("completed"));
-        assert!(!complete.one_line().contains("secret"));
+        // Real implementation: no callback arrives, so complete is unavailable.
+        assert!(complete.one_line().contains("unavailable"));
         assert_eq!(summary.total, 2);
         assert!(!summary.all_unavailable());
     }
@@ -730,10 +1016,48 @@ mod tests {
         // assert
         assert_eq!(probe.starts.len(), 3);
         assert_eq!(probe.completes.len(), 3);
-        assert!(probe.availability.is_available());
-        assert!(!probe.is_unavailable());
+        assert!(
+            probe.availability.is_unavailable(),
+            "expected unconfigured availability: {:?}",
+            probe.availability
+        );
+        assert!(!probe.availability.is_available());
         assert_eq!(probe.summary.total, 2);
         assert!(!probe.summary.all_unavailable());
+    }
+
+    #[test]
+    fn flow_state_machine_transitions_through_expected_phases() {
+        // arrange
+        // act — start
+        let mut flow = BrowserOidcFlow::new();
+        assert_eq!(flow.phase(), BrowserOidcFlowPhase::Idle);
+        flow.start(
+            "https://issuer.example",
+            "client-abc",
+            DEFAULT_OIDC_CALLBACK_PORT,
+        );
+
+        // assert — start transitions to WaitingForCallback
+        assert_eq!(flow.phase(), BrowserOidcFlowPhase::WaitingForCallback);
+
+        // act — complete with 0-second timeout (no callback will arrive)
+        flow.complete(0);
+
+        // assert — complete transitions to Failed (callback timeout)
+        assert_eq!(flow.phase(), BrowserOidcFlowPhase::Failed);
+    }
+
+    #[test]
+    fn flow_from_start_result_reconstructs_waiting_state() {
+        // arrange
+        let start = start_browser_oidc_flow("https://issuer.example", "client-abc");
+
+        // act
+        let flow = BrowserOidcFlow::from_start_result(&start);
+
+        // assert
+        assert_eq!(flow.phase(), BrowserOidcFlowPhase::WaitingForCallback);
     }
 
     #[test]

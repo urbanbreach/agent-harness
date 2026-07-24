@@ -176,7 +176,9 @@ fn configured_auth_provider_fallbacks(
     };
 
     for (provider_id, provider) in &config.providers {
-        let ProviderConfig::OpenAiCompatible(provider) = provider;
+        let ProviderConfig::OpenAiCompatible(provider) = provider else {
+            continue;
+        };
         let Some(auth_provider) = provider.auth_provider.clone() else {
             continue;
         };

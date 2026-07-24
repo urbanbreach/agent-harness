@@ -10,6 +10,56 @@
       ],
       "type": "string"
     },
+    "AnthropicProviderOptions": {
+      "additionalProperties": false,
+      "properties": {
+        "apiKey": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "apiKeyEnv": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "baseURL": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "headers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "name": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "timeoutMs": {
+          "default": null,
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
     "CacheRetention": {
       "enum": [
         "none",
@@ -843,6 +893,77 @@
             },
             "type": {
               "const": "openai_compatible",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Configuration for an Anthropic Messages API provider.\n\nUses `x-api-key` authentication and the Anthropic `/v1/messages` endpoint.\nThe Anthropic transport is implemented in `harness_providers::anthropic`.",
+          "properties": {
+            "apiKey": {
+              "default": "",
+              "type": "string"
+            },
+            "apiKeyEnv": {
+              "default": [],
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "baseURL": {
+              "default": "https://api.anthropic.com",
+              "type": "string"
+            },
+            "headers": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "default": {},
+              "type": "object"
+            },
+            "models": {
+              "additionalProperties": {
+                "$ref": "#/definitions/ModelConfig"
+              },
+              "default": {},
+              "type": "object"
+            },
+            "name": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "options": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/AnthropicProviderOptions"
+                }
+              ],
+              "default": {
+                "apiKey": null,
+                "apiKeyEnv": [],
+                "baseURL": null,
+                "headers": {},
+                "name": null,
+                "timeoutMs": null
+              }
+            },
+            "timeoutMs": {
+              "default": 60000,
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "anthropic_messages",
               "type": "string"
             }
           },

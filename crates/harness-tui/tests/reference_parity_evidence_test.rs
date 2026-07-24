@@ -17,6 +17,7 @@
 )]
 
 use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime};
 
 use harness_tui::UnwrapOrAbort;
 use serde_json::{json, Value};
@@ -68,21 +69,21 @@ fn make_p0_start_01_pass(manifest: &mut Value) {
     let row = row_mut(manifest, "P0-START-01");
     row["status"] = json!("pass");
     row["expected_semantic_cell_artifact"] =
-        json!("artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup/terminal.txt");
+        json!("target/test-lanes/latest/signoff-parity/evidence/reference/freeze/run1-startup/terminal.txt");
     row["expected_png_artifact"] =
-        json!("artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup/terminal.png");
+        json!("target/test-lanes/latest/signoff-parity/evidence/reference/freeze/run1-startup/terminal.png");
     row["expected_frame_sequence"] =
-        json!("artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup/");
+        json!("target/test-lanes/latest/signoff-parity/evidence/reference/freeze/run1-startup/");
     row["evidence_paths"] = json!({
-        "L1": "artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup/",
-        "L2": "artifacts/qa-evidence/20260717-tui-reference-parity/harness/P0-START-01/cells/",
-        "L3": "artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-startup-v24/",
-        "L4": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/startup-pixel-diff-v24-precise-identity.json",
-        "L5": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/startup-pixel-diff-v24-masked.json",
-        "L6": "artifacts/qa-evidence/20260717-tui-reference-parity/receipts/startup-identity-field-mask.precise-v3.json"
+        "L1": "target/test-lanes/latest/signoff-parity/evidence/reference/freeze/run1-startup/",
+        "L2": "target/test-lanes/latest/signoff-parity/evidence/harness/P0-START-01/cells/",
+        "L3": "target/test-lanes/latest/signoff-parity/evidence/actual/harness-startup-v24/",
+        "L4": "target/test-lanes/latest/signoff-parity/evidence/receipts/startup-pixel-diff-v24-precise-identity.json",
+        "L5": "target/test-lanes/latest/signoff-parity/evidence/receipts/startup-pixel-diff-v24-masked.json",
+        "L6": "target/test-lanes/latest/signoff-parity/evidence/receipts/startup-identity-field-mask.precise-v3.json"
     });
     row["owners"]["differential_evaluator"] =
-        json!("artifacts/qa-evidence/20260717-tui-reference-parity/receipts/startup-pixel-diff-v24-masked.json");
+        json!("target/test-lanes/latest/signoff-parity/evidence/receipts/startup-pixel-diff-v24-masked.json");
     row["reference_freeze_txt_sha256"] = json!(FREEZE_TXT_SHA256);
     row["reference_freeze_png_sha256"] = json!(FREEZE_PNG_SHA256);
     row["reference_capture_path"] = json!("reference/freeze/run1-startup");
@@ -294,4 +295,67 @@ fn strict_evidence_provenance_under_signoff_environment() {
     result.unwrap_or_else(|failures| {
         panic!("fresh signoff evidence root failed strict provenance validation: {failures:?}");
     });
+}
+
+#[test]
+fn evidence_validator_rejects_stale_evidence_timestamp() {
+    // arrange — age an evidence file's mtime past the 1-hour run window
+    let (root, manifest) = seeded_evidence_root();
+    let artifact = row_value(&manifest, "P0-START-01")["expected_semantic_cell_artifact"]
+        .as_str()
+        .unwrap_or_abort()
+        .to_owned();
+    let artifact_path = resolve_evidence_path(&manifest, root.path(), &artifact);
+    let old_time = SystemTime::now() - Duration::from_secs(7200);
+    let file = std::fs::OpenOptions::new()
+        .write(true)
+        .open(&artifact_path)
+        .unwrap_or_abort();
+    let times = std::fs::FileTimes::new().set_modified(old_time);
+    file.set_times(times).unwrap_or_abort();
+
+    // act
+    let result = validate_manifest_evidence(&manifest, root.path());
+
+    // assert
+    assert_control(result, "stale-evidence-timestamp");
+}
+
+#[test]
+fn evidence_validator_rejects_missing_provenance_metadata() {
+    // arrange — strip generating_command from L3 capture metadata
+    let (root, manifest) = seeded_evidence_root();
+    let metadata =
+        resolved_row_path(root.path(), &manifest, "P0-START-01", "L3").join("metadata.json");
+    overwrite_json(&metadata, |parsed| {
+        if let Some(obj) = parsed.as_object_mut() {
+            obj.remove("generating_command");
+        }
+    });
+
+    // act
+    let result = validate_manifest_evidence(&manifest, root.path());
+
+    // assert
+    assert_control(result, "missing-provenance-metadata");
+}
+
+#[test]
+fn evidence_validator_rejects_copied_artifact_matching_backup() {
+    // arrange — copy an evidence file into artifacts_bak/ with identical content
+    let (root, manifest) = seeded_evidence_root();
+    let artifact = row_value(&manifest, "P0-START-01")["expected_semantic_cell_artifact"]
+        .as_str()
+        .unwrap_or_abort()
+        .to_owned();
+    let artifact_path = resolve_evidence_path(&manifest, root.path(), &artifact);
+    let backup_dir = root.path().join("artifacts_bak");
+    std::fs::create_dir_all(&backup_dir).unwrap_or_abort();
+    std::fs::copy(&artifact_path, backup_dir.join("stale_terminal.txt")).unwrap_or_abort();
+
+    // act
+    let result = validate_manifest_evidence(&manifest, root.path());
+
+    // assert
+    assert_control(result, "copied-evidence-backup");
 }

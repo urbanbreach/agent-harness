@@ -71,7 +71,8 @@ pub use self::model_types::{
     ResolvedProfileModelMetadata,
 };
 pub use self::provider::{
-    OpenAiApiMode, OpenAiCompatibleProviderConfig, OpenAiCompatibleProviderOptions, ProviderConfig,
+    AnthropicProviderConfig, OpenAiApiMode, OpenAiCompatibleProviderConfig,
+    OpenAiCompatibleProviderOptions, ProviderConfig,
 };
 pub use self::public::{
     harness_schema_pretty_json, harness_tui_schema_pretty_json, public_config_contract,

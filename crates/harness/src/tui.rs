@@ -200,7 +200,9 @@ fn connect_provider_options(
         if provider_ids.contains(provider_id) {
             continue;
         }
-        let ProviderConfig::OpenAiCompatible(ref oc) = provider_config;
+        let ProviderConfig::OpenAiCompatible(ref oc) = provider_config else {
+            continue;
+        };
         let label = oc.name.as_deref().unwrap_or(provider_id).to_string();
 
         if let Some(auth_provider) = oc.auth_provider.clone() {
@@ -272,6 +274,18 @@ pub struct TuiCommand {
 
     #[arg(long)]
     pub profile: Option<String>,
+
+    /// Run inline instead of using the terminal alternate screen.
+    #[arg(long, default_value_t = false)]
+    pub no_alt_screen: bool,
+
+    /// Use scrollback-native rendering instead of the fullscreen TUI.
+    #[arg(long, default_value_t = false, conflicts_with = "fullscreen")]
+    pub minimal: bool,
+
+    /// Open in the standard fullscreen TUI, overriding a sticky minimal preference.
+    #[arg(long, default_value_t = false, conflicts_with = "minimal")]
+    pub fullscreen: bool,
 }
 
 struct LiveBootstrap {
@@ -325,7 +339,7 @@ pub(crate) fn execute_with_io(
     };
 
     if let ResolvedTuiMode::Replay { run_dir, .. } = &mode {
-        return execute_replay_mode(run_dir, cmd.exit_on_finish, stderr);
+        return execute_replay_mode(run_dir, cmd.exit_on_finish, cmd.no_alt_screen, stderr);
     }
 
     let runtime = match tokio::runtime::Builder::new_multi_thread()
@@ -381,75 +395,79 @@ async fn run_interactive_mode(
     let coordinator_config_warmup = LiveCoordinatorConfigWarmup::start(settings, demo_mode);
     profile_handoff("interactive_mode.warmup_started");
 
-    let result = run_interactive_workflow_loop(
-        InteractiveWorkflow::Startup,
-        {
-            let launch_selection = Arc::clone(&launch_selection);
-            move || {
-                set_pending_live_launch_metadata(launch_metadata_for_mode(
-                    settings,
-                    &launch_selection,
-                ));
-                load_startup_session_history_entries(&settings.session_dir)
-            }
-        },
-        {
-            let launch_selection = Arc::clone(&launch_selection);
-            move |session_history_entries| {
-                run_startup_launcher(
-                    cmd.exit_on_finish,
-                    session_history_entries,
-                    Arc::clone(&launch_selection),
-                    persist_model_selection,
-                    Some(prompt_history_path_for_session_dir(&settings.session_dir)),
-                    TuiAuthBackendContext::from_settings(settings),
-                )
-            }
-        },
-        {
-            let launch_selection = Arc::clone(&launch_selection);
-            let coordinator_config_warmup = coordinator_config_warmup.clone();
-            move || {
-                run_new_live_session(
-                    cmd,
-                    settings,
-                    demo_mode,
-                    Arc::clone(&launch_selection),
-                    coordinator_config_warmup.clone(),
-                )
-            }
-        },
-        {
-            let launch_selection = Arc::clone(&launch_selection);
-            let coordinator_config_warmup = coordinator_config_warmup.clone();
-            move || {
-                run_new_worktree_live_session(
-                    cmd,
-                    settings,
-                    demo_mode,
-                    Arc::clone(&launch_selection),
-                    coordinator_config_warmup.clone(),
-                )
-            }
-        },
-        {
-            let launch_selection = Arc::clone(&launch_selection);
-            let coordinator_config_warmup = coordinator_config_warmup.clone();
-            move |run_id, run_dir| {
-                run_continue_session_bootstrap(
-                    cmd,
-                    settings,
-                    demo_mode,
-                    run_id,
-                    run_dir,
-                    Arc::clone(&launch_selection),
-                    coordinator_config_warmup.clone(),
-                )
-            }
-        },
-        |run_dir| async move { run_replay_tui(run_dir, cmd.exit_on_finish).await },
-    )
-    .await;
+    let result =
+        run_interactive_workflow_loop(
+            InteractiveWorkflow::Startup,
+            {
+                let launch_selection = Arc::clone(&launch_selection);
+                move || {
+                    set_pending_live_launch_metadata(launch_metadata_for_mode(
+                        settings,
+                        &launch_selection,
+                    ));
+                    load_startup_session_history_entries(&settings.session_dir)
+                }
+            },
+            {
+                let launch_selection = Arc::clone(&launch_selection);
+                move |session_history_entries| {
+                    run_startup_launcher(
+                        cmd.exit_on_finish,
+                        session_history_entries,
+                        Arc::clone(&launch_selection),
+                        persist_model_selection,
+                        Some(prompt_history_path_for_session_dir(&settings.session_dir)),
+                        TuiAuthBackendContext::from_settings(settings),
+                        cmd.no_alt_screen,
+                    )
+                }
+            },
+            {
+                let launch_selection = Arc::clone(&launch_selection);
+                let coordinator_config_warmup = coordinator_config_warmup.clone();
+                move || {
+                    run_new_live_session(
+                        cmd,
+                        settings,
+                        demo_mode,
+                        Arc::clone(&launch_selection),
+                        coordinator_config_warmup.clone(),
+                    )
+                }
+            },
+            {
+                let launch_selection = Arc::clone(&launch_selection);
+                let coordinator_config_warmup = coordinator_config_warmup.clone();
+                move || {
+                    run_new_worktree_live_session(
+                        cmd,
+                        settings,
+                        demo_mode,
+                        Arc::clone(&launch_selection),
+                        coordinator_config_warmup.clone(),
+                    )
+                }
+            },
+            {
+                let launch_selection = Arc::clone(&launch_selection);
+                let coordinator_config_warmup = coordinator_config_warmup.clone();
+                move |run_id, run_dir| {
+                    run_continue_session_bootstrap(
+                        cmd,
+                        settings,
+                        demo_mode,
+                        run_id,
+                        run_dir,
+                        Arc::clone(&launch_selection),
+                        coordinator_config_warmup.clone(),
+                    )
+                }
+            },
+            |run_dir| async move {
+                run_replay_tui(run_dir, cmd.exit_on_finish, cmd.no_alt_screen).await
+            },
+        )
+        .await;
 
     if persist_model_selection {
         persist_launch_selection_for_exit(
@@ -492,75 +510,79 @@ async fn run_direct_continue_mode(
         })?
         .to_string();
 
-    let result = run_interactive_workflow_loop(
-        InteractiveWorkflow::Continue { run_id, run_dir },
-        {
-            let launch_selection = Arc::clone(&launch_selection);
-            move || {
-                set_pending_live_launch_metadata(launch_metadata_for_mode(
-                    settings,
-                    &launch_selection,
-                ));
-                load_startup_session_history_entries(&settings.session_dir)
-            }
-        },
-        {
-            let launch_selection = Arc::clone(&launch_selection);
-            move |session_history_entries| {
-                run_startup_launcher(
-                    cmd.exit_on_finish,
-                    session_history_entries,
-                    Arc::clone(&launch_selection),
-                    persist_model_selection,
-                    Some(prompt_history_path_for_session_dir(&settings.session_dir)),
-                    TuiAuthBackendContext::from_settings(settings),
-                )
-            }
-        },
-        {
-            let launch_selection = Arc::clone(&launch_selection);
-            let coordinator_config_warmup = coordinator_config_warmup.clone();
-            move || {
-                run_new_live_session(
-                    cmd,
-                    settings,
-                    demo_mode,
-                    Arc::clone(&launch_selection),
-                    coordinator_config_warmup.clone(),
-                )
-            }
-        },
-        {
-            let launch_selection = Arc::clone(&launch_selection);
-            let coordinator_config_warmup = coordinator_config_warmup.clone();
-            move || {
-                run_new_worktree_live_session(
-                    cmd,
-                    settings,
-                    demo_mode,
-                    Arc::clone(&launch_selection),
-                    coordinator_config_warmup.clone(),
-                )
-            }
-        },
-        {
-            let launch_selection = Arc::clone(&launch_selection);
-            let coordinator_config_warmup = coordinator_config_warmup.clone();
-            move |run_id, run_dir| {
-                run_continue_session_bootstrap(
-                    cmd,
-                    settings,
-                    demo_mode,
-                    run_id,
-                    run_dir,
-                    Arc::clone(&launch_selection),
-                    coordinator_config_warmup.clone(),
-                )
-            }
-        },
-        |run_dir| async move { run_replay_tui(run_dir, cmd.exit_on_finish).await },
-    )
-    .await;
+    let result =
+        run_interactive_workflow_loop(
+            InteractiveWorkflow::Continue { run_id, run_dir },
+            {
+                let launch_selection = Arc::clone(&launch_selection);
+                move || {
+                    set_pending_live_launch_metadata(launch_metadata_for_mode(
+                        settings,
+                        &launch_selection,
+                    ));
+                    load_startup_session_history_entries(&settings.session_dir)
+                }
+            },
+            {
+                let launch_selection = Arc::clone(&launch_selection);
+                move |session_history_entries| {
+                    run_startup_launcher(
+                        cmd.exit_on_finish,
+                        session_history_entries,
+                        Arc::clone(&launch_selection),
+                        persist_model_selection,
+                        Some(prompt_history_path_for_session_dir(&settings.session_dir)),
+                        TuiAuthBackendContext::from_settings(settings),
+                        cmd.no_alt_screen,
+                    )
+                }
+            },
+            {
+                let launch_selection = Arc::clone(&launch_selection);
+                let coordinator_config_warmup = coordinator_config_warmup.clone();
+                move || {
+                    run_new_live_session(
+                        cmd,
+                        settings,
+                        demo_mode,
+                        Arc::clone(&launch_selection),
+                        coordinator_config_warmup.clone(),
+                    )
+                }
+            },
+            {
+                let launch_selection = Arc::clone(&launch_selection);
+                let coordinator_config_warmup = coordinator_config_warmup.clone();
+                move || {
+                    run_new_worktree_live_session(
+                        cmd,
+                        settings,
+                        demo_mode,
+                        Arc::clone(&launch_selection),
+                        coordinator_config_warmup.clone(),
+                    )
+                }
+            },
+            {
+                let launch_selection = Arc::clone(&launch_selection);
+                let coordinator_config_warmup = coordinator_config_warmup.clone();
+                move |run_id, run_dir| {
+                    run_continue_session_bootstrap(
+                        cmd,
+                        settings,
+                        demo_mode,
+                        run_id,
+                        run_dir,
+                        Arc::clone(&launch_selection),
+                        coordinator_config_warmup.clone(),
+                    )
+                }
+            },
+            |run_dir| async move {
+                run_replay_tui(run_dir, cmd.exit_on_finish, cmd.no_alt_screen).await
+            },
+        )
+        .await;
 
     if persist_model_selection {
         persist_launch_selection_for_exit(
@@ -579,6 +601,7 @@ async fn run_startup_launcher(
     persist_model_selection: bool,
     prompt_history_path: Option<PathBuf>,
     auth_backend: TuiAuthBackendContext,
+    skip_alternate_screen: bool,
 ) -> Result<InteractiveWorkflow, String> {
     profile_handoff("startup_launcher.begin");
     let selected_intent = Arc::new(Mutex::new(None::<UiIntent>));
@@ -640,6 +663,7 @@ async fn run_startup_launcher(
             keybindings: None,
             toggles: None,
             preserve_terminal_on_exit: true,
+            skip_alternate_screen,
         })
     })
     .await
@@ -779,6 +803,7 @@ async fn run_continue_session_bootstrap(
     );
 
     let exit_on_finish = cmd.exit_on_finish;
+    let no_alt_screen = cmd.no_alt_screen;
     let toggles = Some(settings.toggles.clone());
     set_pending_live_launch_metadata(continue_metadata);
     if let Some(config_path) = settings.config_path.clone() {
@@ -837,6 +862,7 @@ async fn run_continue_session_bootstrap(
             true,
             prompt_history_path,
             toggles,
+            no_alt_screen,
         ))
     })
     .await
@@ -974,6 +1000,7 @@ async fn run_live_mode(
     };
 
     let exit_on_finish = cmd.exit_on_finish;
+    let no_alt_screen = cmd.no_alt_screen;
     let toggles = Some(settings.toggles.clone());
     let prompt_history_path = Some(prompt_history_path_for_session_dir(&settings.session_dir));
     set_pending_live_launch_metadata(scenario_launch_metadata());
@@ -991,6 +1018,7 @@ async fn run_live_mode(
             false,
             prompt_history_path,
             toggles,
+            no_alt_screen,
         ))
     })
     .await
