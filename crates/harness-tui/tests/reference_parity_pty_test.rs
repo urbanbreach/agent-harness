@@ -247,7 +247,7 @@ fn resp_wide_pty() {
 }
 
 #[test]
-fn pty_helper_type_first_startup() {
+fn reference_parity_pty_helper_type_first_startup() {
     // arrange
     // act
     // assert
@@ -359,7 +359,7 @@ fn pty_helper_live_question_stream() {
 }
 
 #[test]
-fn pty_helper_permission_overlay() {
+fn reference_parity_pty_helper_permission_overlay() {
     // arrange
     // act
     // assert
