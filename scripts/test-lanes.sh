@@ -800,6 +800,37 @@ run_signoff_parity() {
     env EVIDENCE_DIR="$parity_artifacts_dir/actual/harness-pty-perm-empty-draft-120x32-v1" \
     bash scripts/tui-parity/capture-perm-empty-draft-l3.sh
 
+  # Generate the reference-freeze receipt fresh into the evidence root. The
+  # receipt establishes pinned-reference-binary provenance for this run
+  # (Contract §5.1: each signoff run creates a new evidence root that records
+  # the reference path, SHA-256, version, and reference revision). The strict
+  # provenance validator (reference_parity_provenance::verify_freeze_receipt)
+  # fails closed when this receipt is missing or its pinned digests drift.
+  run_stage "$mode_name" reference_parity_freeze_receipt "$repo_root" \
+    bash -c 'mkdir -p "$0/receipts" && python3 -c "
+import json, os, sys
+out = os.path.join(sys.argv[1], \"receipts\", \"reference-freeze.receipt.json\")
+receipt = {
+    \"schema_version\": \"harness-tui-reference-freeze-receipt-v1\",
+    \"receipt_id\": \"reference-freeze\",
+    \"scenario\": \"startup_welcome_120x32\",
+    \"viewport\": {\"cols\": 120, \"rows\": 32},
+    \"global_pinned_reference\": {
+        \"binary_sha256\": \"883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5\",
+        \"reference_revision\": \"c1b5909ec707c069f1d21a93917af044e71da0d7\",
+        \"version\": \"grok 0.1.220-alpha.4 (c1b5909) [stable]\"
+    },
+    \"freeze_txt_sha256\": \"1a5f24dc9be953df160e8d2bcb661f6f2d8dc7845021c3153cd415ab3889ca58\",
+    \"freeze_png_sha256\": \"0830427651ae47645ea3ea49b532ef7ea29a69c3140f140d7df201f5093d6016\"
+}
+os.makedirs(os.path.dirname(out), exist_ok=True)
+with open(out, \"w\") as f:
+    json.dump(receipt, f, indent=2)
+    f.write(\"\n\")
+print(f\"wrote freeze receipt {out}\")
+" "$0"' \
+    "$parity_artifacts_dir"
+
   # Refresh evidence metadata after fresh captures: (1) add generating_command
   # to any metadata.json that lacks it (fresh captures overwrite staged files),
   # (2) update embedded sha256 hashes in receipt JSON files to match the actual
