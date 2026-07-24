@@ -1829,10 +1829,10 @@
       "visible_action_id": null,
       "side_effect_kind": "filesystem",
       "disposition": "implement",
-      "notes": "Demoted from pass: evaluate_mcp_oauth_remote_transports returns Available unconditionally, which is a hardcoded availability probe, not proof of real MCP OAuth connectivity. begin/exchange/open functions exist but have no CLI surface and no live MCP server proof. Contract finding #3: unconditional Available states are not implementations. Contract finding #10: hardcoded availability must be classified as incomplete.",
+      "notes": "Backend implemented: evaluate_mcp_oauth_remote_transports returns Unavailable (no transport configured); begin_mcp_oauth_flow generates real PKCE + state for http(s) URLs; exchange_mcp_oauth_token does real HTTP POST via curl. Blocked on: no CLI surface exposing begin/exchange/open, and no live MCP OAuth server to prove end-to-end connectivity.",
       "blocked": {
-        "dependency": "live MCP OAuth server endpoint",
-        "reason": "evaluate_mcp_oauth_remote_transports returns Available unconditionally; no live MCP OAuth server to prove connectivity",
+        "dependency": "live MCP OAuth server endpoint + CLI surface for begin/exchange/open",
+        "reason": "no CLI surface exposes begin/exchange/open; no live MCP OAuth server to prove end-to-end connectivity",
         "owner": "crates/harness-core/src/mcp_oauth.rs"
       },
       "evidence": {
@@ -2094,10 +2094,10 @@
       "visible_action_id": "provider.connect",
       "side_effect_kind": "filesystem",
       "disposition": "implement",
-      "notes": "Demoted from pass: evaluate_workspace_hub returns Available unconditionally, which is a hardcoded availability probe, not proof of real hub connectivity. connect/bind/upload/recover functions exist but return success for any non-placeholder value without real HTTP connectivity. Contract finding #3: unconditional Available states and hardcoded example endpoints are not implementations. Contract finding #10: hardcoded availability must be classified as incomplete.",
+      "notes": "Backend implemented: evaluate_workspace_hub returns Unavailable (no endpoint configured); connect_workspace_hub probes real HTTP via curl and returns Connected only on 2xx; bind/upload/recover do real HTTP via curl. Blocked on: no CLI surface exposing connect/bind/upload/recover, and no live workspace hub endpoint to prove end-to-end connectivity.",
       "blocked": {
-        "dependency": "workspace hub HTTP endpoint",
-        "reason": "evaluate_workspace_hub returns Available unconditionally; connect/bind/upload return success for any non-placeholder value without real HTTP connectivity",
+        "dependency": "workspace hub HTTP endpoint + CLI surface for connect/bind/upload/recover",
+        "reason": "no CLI surface exposes connect/bind/upload/recover; no live workspace hub endpoint to prove end-to-end connectivity",
         "owner": "crates/harness-core/src/workspace_hub.rs"
       },
       "evidence": {
@@ -2318,10 +2318,10 @@
       "visible_action_id": null,
       "side_effect_kind": "filesystem",
       "disposition": "implement",
-      "notes": "Demoted from pass: evaluate_browser_oidc_availability returns Available unconditionally, which is a hardcoded availability probe. start_browser_oidc_flow and complete_browser_oidc_flow exist but have no CLI surface and no live OIDC provider proof. Contract finding #3: unconditional Available states are not implementations. Contract finding #10: hardcoded availability must be classified as incomplete.",
+      "notes": "Backend implemented: evaluate_browser_oidc_availability returns Unavailable (no issuer configured); start_browser_oidc_flow drives a real BrowserOidcFlow state machine (Idle→Starting→WaitingForCallback) that calls launch_browser with the authorization URL; complete_browser_oidc_flow calls listen_for_callback on a loopback TCP port and exchange_code_for_token via real HTTP. Blocked on: no CLI surface exposing start/complete, and no live OIDC issuer to prove end-to-end connectivity.",
       "blocked": {
-        "dependency": "browser OIDC issuer endpoint",
-        "reason": "evaluate_browser_oidc_availability returns Available unconditionally; start/complete flows have no CLI surface and no live OIDC provider",
+        "dependency": "browser OIDC issuer endpoint + CLI surface for start/complete",
+        "reason": "no CLI surface exposes start/complete; no live OIDC issuer to prove end-to-end connectivity",
         "owner": "crates/harness-core/src/browser_oidc.rs"
       },
       "evidence": {
