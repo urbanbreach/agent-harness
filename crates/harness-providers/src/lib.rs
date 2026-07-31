@@ -18,6 +18,7 @@ use tokio_stream::{self, Stream};
 
 pub mod anthropic;
 pub mod cassette;
+pub mod leaf;
 pub mod mock;
 pub mod openai;
 pub mod schema_compat;
