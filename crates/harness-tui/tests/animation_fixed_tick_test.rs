@@ -349,7 +349,7 @@ fn permission_wait_fixed_tick_sequence_is_deterministic() {
     // arrange
     // act
     // assert
-    // Given: permission dock open during an active turn (Grok freezes spinner while waiting).
+    // Given: permission dock open during an active turn (spinner stays static while waiting).
     // Modal/waiting chrome is static under phase ticks; capture is still fail-closed deterministic.
     let plan = FixedTickPlan::new("permission-wait", 100, 28, 6).with_tick_ms(100);
 
