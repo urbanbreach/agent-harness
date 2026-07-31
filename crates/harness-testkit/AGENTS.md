@@ -32,7 +32,7 @@ target/                      # generated local artifacts; not source
 | Semantic cell parity (L2/A-CELLS) | `src/parity.rs`, `src/parity/`, `tests/parity_cells_test.rs` | Exact SemanticFrame capture/compare; identity grapheme masks only; no SSIM. |
 | Native visual helper | `src/bin/native_visual_helper.rs` | Local screenshot metadata helper used by native signoff. |
 | E2E lanes | `tests/AGENTS.md`, `tests/*.rs` | PTY, live proxy, native visual, and simulation validator contracts. |
-| Simulation contract | `../../docs/simulation-matrix.json`, `tests/simulation_validator_test.rs` | Keep matrix, validator, and evidence outputs aligned. |
+| Simulation contract | `../../docs/testing/simulation-matrix.json`, `tests/simulation_validator_test.rs` | Keep matrix, validator, and evidence outputs aligned. |
 
 ## CONVENTIONS
 - Library helpers under `src/` should stay deterministic and reusable by crate tests.

@@ -24,7 +24,7 @@ tests/
 | Offline UI regression | `pty_e2e.rs` | Single-threaded deterministic PTY evidence and manifest artifact copies. |
 | Live proxy setup | `README.live-proxy.md`, `live_proxy_e2e.rs` | Env/config preflight; behavior assertions mostly live in deterministic owners. |
 | Native screenshots | `native_visual_e2e.rs` | Local display/capture helper checks, manifest-backed screenshots. |
-| Simulation validation | `simulation_validator_test.rs`, `support/simulation_validator.rs` | Checks `docs/simulation-matrix.json`. |
+| Simulation validation | `simulation_validator_test.rs`, `support/simulation_validator.rs` | Checks `docs/testing/simulation-matrix.json`. |
 | Secret hygiene | `secretscan_test.rs` | Scans simulation/cassette artifacts when env points at them. |
 | Focus regions | `focus_region_test.rs`, `support/focus_region.rs` | Screenshot focus metadata and region calculations. |
 | Repo helpers | `support/repo_root.rs` | Keep local to test-only path resolution. |

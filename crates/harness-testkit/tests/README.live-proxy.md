@@ -2,7 +2,7 @@
 
 This lane retains env-gated live proxy signoff entrypoint names after T5 slimming. The current
 wrappers verify live prerequisites and documented provider/model selection; provider/tool-flow
-behavior is owned by deterministic tests listed in `docs/testing.md` unless a human explicitly runs
+behavior is owned by deterministic tests listed in `docs/testing/testing.md` unless a human explicitly runs
 and records separate live evidence.
 
 ## Preflight
@@ -39,7 +39,7 @@ Minimal portable baseline:
 
 ## Batch 1 parity signoff
 
-When the change is tied to the canonical signoff map from `docs/testing.md`, prefer the composed
+When the change is tied to the canonical signoff map from `docs/testing/testing.md`, prefer the composed
 Batch 1 parity wrappers first:
 
 ```bash
@@ -70,7 +70,7 @@ they do not write live manifests or summarize provider-turn behavior.
 
 The previous prompt chat/native-tool/TUI tool-flow matrix was retired during T5 slimming. Its
 behavioral assertions are now owned by deterministic provider cassette, harness-tools native parity,
-and harness-tui render/view-model tests listed in `docs/testing.md`. T5 retains only the explicit
+and harness-tui render/view-model tests listed in `docs/testing/testing.md`. T5 retains only the explicit
 env-gated live signoff names above.
 
 ## Artifact layout

@@ -27,7 +27,7 @@ Read `../../AGENTS.md` first. This directory owns parsing and validation, not co
 
 ## CONTRACT RULES
 - Public runtime config is `harness.json{,c}`; TUI config is `tui.json{,c}`. Do not merge those surfaces.
-- Add canonical keys in all four places: `PublicRuntimeConfig`, `public/contract.rs`, generated schema expectations, and `docs/config.md` drift tests.
+- Add canonical keys in all four places: `PublicRuntimeConfig`, `public/contract.rs`, generated schema expectations, and `docs/configuration/config.md` drift tests.
 - Compatibility aliases are migration inputs only. Do not expose them as canonical examples/help/docs.
 - Runtime schemas come from `harness_schema_pretty_json()` / `harness_tui_schema_pretty_json()`; do not hand-edit `configs/config.json` or `configs/tui.json`.
 - Provider option aliases must use the conflict-detecting alias helpers. New transport variants need their own alias normalization.
@@ -43,7 +43,7 @@ cargo nextest run -p harness --test config_docs_reference_test
 
 ## ANTI-PATTERNS
 - Do not add `#[serde(alias = ...)]` without representing the alias in the public contract.
-- Do not change discovery precedence without updating `docs/config.md` and discovery merge tests.
+- Do not change discovery precedence without updating `docs/configuration/config.md` and discovery merge tests.
 - Do not validate by accepting unknown top-level keys; unsupported areas should fail explicitly.
 - Do not make generated schema drift pass by editing JSON outputs alone.
 - Do not put credential values or host-specific paths into defaults or examples.

@@ -15,7 +15,7 @@ Read root `AGENTS.md` first. Lane semantics are documented in `../docs/testing.m
 | Branding/source-term gate | `check-forbidden-branding.py` | Forbidden source-brand terms and allowlist handling. |
 | Coverage ratchet | `coverage-ratchet.sh` | `cargo-llvm-cov` line coverage artifact and baseline comparison. |
 | Perf artifacts | `check-perf-artifacts.py` | Freshness/provenance checks for perf lane outputs. |
-| Nextest profiles | `../.config/nextest.toml` | Test isolation profiles: `default`, `ci`, `perf`, `process-global-state`. |
+| Nextest profiles | Cargo nextest defaults and lane flags | Test isolation profiles: `default`, `ci`, `perf`, `process-global-state`. |
 
 ## LANE RULES
 - `test-lanes.sh` writes `<artifact-root>/summary.txt`, `<artifact-root>/env.txt`, and per-stage `command.txt`, `stdout.txt`, `stderr.txt`, `status.txt`, `verification.txt`.
@@ -27,10 +27,10 @@ Read root `AGENTS.md` first. Lane semantics are documented in `../docs/testing.m
 ## UPDATE TOGETHER
 | Change | Also update |
 |--------|-------------|
-| Lane mode/stage | `../docs/testing.md`, `crates/harness/tests/test_lanes_script_test.rs`, owner tests |
-| Static gate rule | `../docs/testing.md`, baseline JSON only when debt legitimately changes |
-| Coverage ratchet | `../docs/testing.md`, coverage baseline docs/artifacts |
-| Perf artifact rule | `../docs/budgets.md`, perf tests producing the artifacts |
+| Lane mode/stage | `../docs/testing/testing.md`, `crates/harness/tests/test_lanes_script_test.rs`, owner tests |
+| Static gate rule | `../docs/testing/testing.md`, baseline JSON only when debt legitimately changes |
+| Coverage ratchet | `../docs/testing/testing.md`, coverage baseline docs/artifacts |
+| Perf artifact rule | `../docs/testing/budgets.md`, perf tests producing the artifacts |
 
 ## COMMANDS
 ```bash

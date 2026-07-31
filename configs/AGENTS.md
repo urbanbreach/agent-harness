@@ -3,7 +3,7 @@
 ## OVERVIEW
 Generated schemas, starter runtime/TUI configs, extension manifest schema, and provider catalog fixtures. These files are public contract inputs.
 
-Read root `AGENTS.md` first. Human-facing explanation belongs in `../docs/config.md`; runtime parsing lives in `crates/harness-core/src/config/`.
+Read root `AGENTS.md` first. Human-facing explanation belongs in `../docs/configuration/config.md`; runtime parsing lives in `crates/harness-core/src/config/`.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
@@ -26,10 +26,10 @@ Read root `AGENTS.md` first. Human-facing explanation belongs in `../docs/config
 ## UPDATE TOGETHER
 | Change | Also update |
 |--------|-------------|
-| Runtime config field | `../docs/config.md`, core config parser/schema tests, examples, README |
-| TUI config field | `../docs/config.md`, TUI config parser/tests, `tui.example.jsonc` |
-| Provider catalog default | generated catalog code/tests, `../docs/provider-support.md`, README if first-run behavior changes |
-| Extension manifest schema | `../docs/extension-strategy.md`, `crates/harness-core` extension manifest tests |
+| Runtime config field | `../docs/configuration/config.md`, core config parser/schema tests, examples, README |
+| TUI config field | `../docs/configuration/config.md`, TUI config parser/tests, `tui.example.jsonc` |
+| Provider catalog default | generated catalog code/tests, `../docs/configuration/provider-support.md`, README if first-run behavior changes |
+| Extension manifest schema | `../docs/operations/extension-strategy.md`, `crates/harness-core` extension manifest tests |
 
 ## TESTS
 ```bash

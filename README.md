@@ -34,7 +34,7 @@
 
 ## Configuration
 
-The current public integration surface is documented in [`docs/config.md`](docs/config.md).
+The current public integration surface is documented in [`docs/configuration/config.md`](docs/configuration/config.md).
 Config-backed `mcp` servers are first-class: enabled MCP servers are
 registered into the runtime tool registry, discovered server tools are exposed to
 interactive profiles alongside the built-ins, and the generic
@@ -146,7 +146,7 @@ Model-visible session inspection is available through `session_list`,
 `session_read`, `session_search`, and `session_info`; these tools read stored
 event logs with `source: "event_replay"` and do not execute providers, tools,
 hooks, MCP servers, network calls, or the `harness sessions` CLI. The V1 native
-tool catalog is summarized in [`docs/native-tool-catalog.md`](docs/native-tool-catalog.md).
+tool catalog is summarized in [`docs/tools/native-tool-catalog.md`](docs/tools/native-tool-catalog.md).
 
 Troubleshooting starts with the local checks before live provider execution:
 
@@ -199,7 +199,7 @@ call `plan_enter` to ask whether complex work should switch into Plan first.
 Plan uses native read/search/LSP tools for inspection, exposes `bash` only behind
 permission prompts plus a read-only shell guard, and may delegate only to the
 read-only `explore` profile under the current runtime policy. See the
-[`docs/config.md` Plan operator workflow](docs/config.md#plan-operator-workflow)
+[`docs/configuration/config.md` Plan operator workflow](docs/configuration/config.md#plan-operator-workflow)
 for the step-by-step Build → Plan → Build approval flow.
 
 Use category subagents when delegation should pick a domain-optimized lane
@@ -281,5 +281,5 @@ scripts/test-lanes.sh all-deterministic
 scripts/test-lanes.sh signoff-binary
 ```
 
-See [`docs/testing.md`](docs/testing.md) for every lane mode, dry-run usage, env-gated live and
+See [`docs/testing/testing.md`](docs/testing/testing.md) for every lane mode, dry-run usage, env-gated live and
 native signoff, stress lanes, and artifact expectations.

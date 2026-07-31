@@ -96,11 +96,11 @@ RUST_TEST_THREADS=1 cargo nextest run -p harness-testkit --test pty_e2e --test-t
 ## UPDATE TOGETHER
 | Change | Also update |
 |--------|-------------|
-| Public config keys or validation | `docs/config.md`, `configs/config.json`, `configs/tui.json`, example configs, config schema tests |
-| Event variants or replay semantics | `docs/architecture.md`, `docs/sessions-and-replay.md`, event/replay docs tests |
-| Native tool ids/schema/capability | `docs/native-tool-catalog.md`, `native_tool_parity_matrix_test`, permission docs as needed |
-| Test lane behavior or evidence shape | `docs/testing.md`, `scripts/test-lanes.sh`, owner tests |
-| Simulation invariants | `docs/simulation-matrix.json`, `simulation_validator_test`, simulation evidence, secret scan |
+| Public config keys or validation | `docs/configuration/config.md`, `configs/config.json`, `configs/tui.json`, example configs, config schema tests |
+| Event variants or replay semantics | `docs/architecture/architecture.md`, `docs/architecture/sessions-and-replay.md`, event/replay docs tests |
+| Native tool ids/schema/capability | `docs/tools/native-tool-catalog.md`, `native_tool_parity_matrix_test`, permission docs as needed |
+| Test lane behavior or evidence shape | `docs/testing/testing.md`, `scripts/test-lanes.sh`, owner tests |
+| Simulation invariants | `docs/testing/simulation-matrix.json`, `simulation_validator_test`, simulation evidence, secret scan |
 | Provider model catalog | `configs/provider-catalog.generated.json`, `configs/provider-catalog.reference.jsonc`, generated catalog docs/tests |
 | Runtime prompt assets or shipped skills | `.agent-harness/AGENTS.md`, bootstrap/profile/skill discovery tests, prompt snapshots |
 | Starter config defaults | `configs/harness.example.jsonc`, `configs/tui.example.jsonc`, README quick start |

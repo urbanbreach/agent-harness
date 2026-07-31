@@ -69,4 +69,4 @@ Stop if a dogfood/live-smoke command fails unexpectedly, isolation receipt shows
 
 ## Advanced Notes
 
-Stable id: `skill:project:harness-qa`. Offline is the mandatory product-touching channel; live-smoke is opt-in only. Neither owns `docs/simulation-matrix.json` or the simulation lane. For multi-skill activation verification, see `references/skill-activation-recipe.md`. Evidence layout: `references/evidence-convention.md`.
+Stable id: `skill:project:harness-qa`. Offline is the mandatory product-touching channel; live-smoke is opt-in only. Neither owns `docs/testing/simulation-matrix.json` or the simulation lane. For multi-skill activation verification, see `references/skill-activation-recipe.md`. Evidence layout: `references/evidence-convention.md`.
