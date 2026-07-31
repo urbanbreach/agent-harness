@@ -257,6 +257,11 @@ impl EditAttributionJournal {
 
     pub fn diff(&self, path: impl AsRef<Path>) -> Result<super::DiffResult, EditAttributionError> {
         let path_key = normalize_workspace_relative(&self.workspace_root, path.as_ref())?;
+        if self.tracker.get(&path_key).is_none() {
+            return Err(EditAttributionError::NotFound {
+                path: path_key.clone(),
+            });
+        }
         let snapshot = self
             .agent_snapshots
             .get(&path_key)
@@ -273,6 +278,11 @@ impl EditAttributionJournal {
         path: impl AsRef<Path>,
     ) -> Result<super::BlameResult, EditAttributionError> {
         let path_key = normalize_workspace_relative(&self.workspace_root, path.as_ref())?;
+        if self.tracker.get(&path_key).is_none() {
+            return Err(EditAttributionError::NotFound {
+                path: path_key.clone(),
+            });
+        }
         let snapshot = self
             .agent_snapshots
             .get(&path_key)
