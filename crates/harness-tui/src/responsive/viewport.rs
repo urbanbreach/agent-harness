@@ -250,13 +250,28 @@ mod tests {
         let vwide = ViewportPlan::for_viewport(VIEWPORT_WIDE);
 
         // assert — only 60x20 has zero breadcrumb top margin
-        assert_eq!(v60.breadcrumb_top_margin, 0, "60x20: no breadcrumb top margin");
+        assert_eq!(
+            v60.breadcrumb_top_margin, 0,
+            "60x20: no breadcrumb top margin"
+        );
         assert_eq!(v79.breadcrumb_top_margin, 1, "79x24: breadcrumb top margin");
         assert_eq!(v80.breadcrumb_top_margin, 1, "80x24: breadcrumb top margin");
-        assert_eq!(v100.breadcrumb_top_margin, 1, "100x30: breadcrumb top margin");
-        assert_eq!(v120x40.breadcrumb_top_margin, 1, "120x40: breadcrumb top margin");
-        assert_eq!(v120x50.breadcrumb_top_margin, 1, "120x50: breadcrumb top margin");
-        assert_eq!(vwide.breadcrumb_top_margin, 1, "140x40: breadcrumb top margin");
+        assert_eq!(
+            v100.breadcrumb_top_margin, 1,
+            "100x30: breadcrumb top margin"
+        );
+        assert_eq!(
+            v120x40.breadcrumb_top_margin, 1,
+            "120x40: breadcrumb top margin"
+        );
+        assert_eq!(
+            v120x50.breadcrumb_top_margin, 1,
+            "120x50: breadcrumb top margin"
+        );
+        assert_eq!(
+            vwide.breadcrumb_top_margin, 1,
+            "140x40: breadcrumb top margin"
+        );
     }
 
     #[test]

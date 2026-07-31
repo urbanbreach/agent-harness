@@ -98,8 +98,8 @@ use super::ui_transcript_surface::{
     append_prefixed_wrapped_spans_line, append_surface_row, append_user_surface_text_block,
     append_user_surface_text_block_with_first_line_reserve, nested_surface_prefix_width,
     render_empty_scrollback_indicator, surface_prefix_width, surface_span,
-    transcript_surface_content_width,
-    transcript_surface_render_width, user_surface_line, wrap_surface_spans, TRANSCRIPT_RAIL_GLYPH,
+    transcript_surface_content_width, transcript_surface_render_width, user_surface_line,
+    wrap_surface_spans, TRANSCRIPT_RAIL_GLYPH,
 };
 #[path = "ui_transcript_types.rs"]
 mod ui_transcript_types;

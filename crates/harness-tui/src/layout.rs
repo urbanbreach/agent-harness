@@ -526,14 +526,9 @@ pub(crate) fn session_shell_layout(
         } else if disclosure_height == 0 {
             control_dock_layout(shell_area, None, shell_area, None)
         } else {
-            let composer_height = live_prompt_block_height(
-                app,
-                content_column,
-                contract,
-                shell,
-                terminal_height,
-            )
-            .min(shell_area.height);
+            let composer_height =
+                live_prompt_block_height(app, content_column, contract, shell, terminal_height)
+                    .min(shell_area.height);
             let status_rows = rhythm.status_rows.min(shell_area.height);
             let composer_footer_spacer = rhythm
                 .composer_footer_spacer_rows
@@ -746,12 +741,12 @@ fn live_dock_rhythm(
     status_row_height: u16,
 ) -> LiveDockRhythm {
     let disclosure_rows = control_dock_disclosure_rows(app, contract);
-    let status_rows = if disclosure_rows > 0 && terminal_height >= LIVE_STATUS_ROW_MIN_TERMINAL_HEIGHT
-    {
-        status_row_height
-    } else {
-        0
-    };
+    let status_rows =
+        if disclosure_rows > 0 && terminal_height >= LIVE_STATUS_ROW_MIN_TERMINAL_HEIGHT {
+            status_row_height
+        } else {
+            0
+        };
     let composer_footer_spacer_rows = if disclosure_rows > 0 {
         composer_footer_spacer_rows(width)
     } else {

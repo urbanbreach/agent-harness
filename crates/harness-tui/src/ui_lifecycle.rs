@@ -3,15 +3,24 @@ use super::*;
 
 use ratatui::widgets::{BorderType, Clear};
 
-#[path = "app/welcome.rs"]
-#[allow(dead_code, reason = "view model helpers wired for contract use; not all consumed yet")]
-mod welcome;
-#[path = "app/trust_prompt.rs"]
-#[allow(dead_code, reason = "trust prompt constants and helpers; consumed by render_trust_folder_prompt_overlay")]
-mod trust_prompt;
 #[path = "app/first_prompt.rs"]
-#[allow(dead_code, reason = "first-prompt composer focus helpers; wired for contract verification")]
+#[allow(
+    dead_code,
+    reason = "first-prompt composer focus helpers; wired for contract verification"
+)]
 mod first_prompt;
+#[path = "app/trust_prompt.rs"]
+#[allow(
+    dead_code,
+    reason = "trust prompt constants and helpers; consumed by render_trust_folder_prompt_overlay"
+)]
+mod trust_prompt;
+#[path = "app/welcome.rs"]
+#[allow(
+    dead_code,
+    reason = "view model helpers wired for contract use; not all consumed yet"
+)]
+mod welcome;
 
 const LIFECYCLE_COPY_INSET_X: u16 = 3;
 const WELCOME_PANEL_INSET_X: u16 = 3;
@@ -207,7 +216,9 @@ pub(super) fn render_live_breadcrumb(
     }
     let row = Rect {
         x: area.x,
-        y: area.y.saturating_add(crate::layout::breadcrumb_top_margin(area.width)),
+        y: area
+            .y
+            .saturating_add(crate::layout::breadcrumb_top_margin(area.width)),
         width: area.width,
         height: 1,
     };
@@ -432,10 +443,8 @@ fn welcome_inner_lines(theme: &Theme, inner_width: usize, app: &AppState) -> Vec
         match idx {
             0 => {
                 let title_text = format!("  {title}  ");
-                let version_text = welcome_text_after_logo(
-                    &format!("{title_text}{version}"),
-                    inner_width,
-                );
+                let version_text =
+                    welcome_text_after_logo(&format!("{title_text}{version}"), inner_width);
                 let title_prefix = welcome_text_after_logo(&title_text, inner_width);
                 let title_len = title_prefix.chars().count();
                 if version_text.chars().count() > title_len {
@@ -501,10 +510,7 @@ fn welcome_inner_lines(theme: &Theme, inner_width: usize, app: &AppState) -> Vec
             let used = text_col.min(inner_width) + label_width_actual;
             let target = inner_width.saturating_sub(shortcut_chars.saturating_add(2));
             if used < target {
-                spans.push(Span::styled(
-                    " ".repeat(target.saturating_sub(used)),
-                    muted,
-                ));
+                spans.push(Span::styled(" ".repeat(target.saturating_sub(used)), muted));
             }
             spans.push(Span::styled(shortcut.to_string(), muted));
         }
