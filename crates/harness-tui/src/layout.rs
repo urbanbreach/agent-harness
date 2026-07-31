@@ -56,9 +56,57 @@ const STARTUP_COMPOSER_SPACER_ROWS: u16 = 1;
 const STARTUP_FOOTER_ROWS: u16 = 2;
 const SUBAGENT_FOOTER_ROWS: u16 = 3;
 const LIVE_POST_TURN_BOTTOM_MARGIN_ROWS: u16 = 1;
+/// Spacer between the composer bottom border and the disclosure/footer row.
+/// Present at all viewports wider than the dense (60-col) compact cutoff;
+/// suppressed at ultra-compact sizes to maximize transcript space.
+const COMPOSER_FOOTER_SPACER_ROWS: u16 = 1;
+
+/// Measured live dock order, top to bottom: an optional reserved status row,
+/// composer, composer/footer spacer, disclosure, and trailing blank margin.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct LiveDockRhythm {
+    status_rows: u16,
+    composer_footer_spacer_rows: u16,
+    disclosure_rows: u16,
+    bottom_margin_rows: u16,
+}
+
+/// Breadcrumb top-margin rows: 1 at standard/compact viewports (>60 cols),
+/// 0 at ultra-compact (≤60 cols) so the breadcrumb sits on row 1.
+pub(crate) fn breadcrumb_top_margin(width: u16) -> u16 {
+    if width <= DENSE_SESSION_MAX_WIDTH {
+        0
+    } else {
+        1
+    }
+}
+
+/// Total breadcrumb reserve rows (top margin + 1 breadcrumb text row).
+pub(crate) fn breadcrumb_reserve_rows(width: u16) -> u16 {
+    breadcrumb_top_margin(width).saturating_add(1)
+}
+
+/// Composer→disclosure spacer: 1 row at viewports wider than the dense cutoff,
+/// 0 at ultra-compact (≤60 cols) to match freeze run1-resp-60x20 (gap=0).
+pub(crate) fn composer_footer_spacer_rows(width: u16) -> u16 {
+    if width <= DENSE_SESSION_MAX_WIDTH {
+        0
+    } else {
+        COMPOSER_FOOTER_SPACER_ROWS
+    }
+}
+
+pub(crate) fn composer_horizontal_inset(width: u16) -> u16 {
+    let preferred = if width <= DENSE_SESSION_MAX_WIDTH {
+        0
+    } else {
+        STARTUP_COMPOSER_INSET_X
+    };
+    preferred.min(width.saturating_sub(4) / 2)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SessionResponsiveMode {
+pub enum SessionResponsiveMode {
     Dense,
     CompactMinimum,
     StandardMinimum,
@@ -330,7 +378,7 @@ pub(crate) fn session_geometry_contract(
     }
 }
 
-fn session_responsive_mode(area: Rect, shell: LiveShellLayout) -> SessionResponsiveMode {
+pub fn session_responsive_mode(area: Rect, shell: LiveShellLayout) -> SessionResponsiveMode {
     if area.width <= DENSE_SESSION_MAX_WIDTH && area.height <= DENSE_SESSION_MAX_HEIGHT {
         return SessionResponsiveMode::Dense;
     }
@@ -353,8 +401,8 @@ fn hide_session_header(app: &AppState, contract: SessionGeometryContract) -> boo
     if app.startup_shell_visible() {
         return true;
     }
-    // Permission/question docks keep the freeze-aligned headerless shell: Grok freezes
-    // for PERM/QUESTION start at the breadcrumb row, not `run … · profile/provider · model`.
+    // Permission/question docks keep the waiting-state headerless shell: they begin
+    // at the breadcrumb row, not `run … · profile/provider · model`.
     app.review_surface().is_none()
         && matches!(contract.header_mode, SessionHeaderMode::Hidden)
         && (!app.replay_mode || app.current_subagent_session_present())
@@ -419,21 +467,18 @@ pub(crate) fn session_shell_layout(
         // becomes empty rows above the bottom-anchored dock (freeze PERM packing).
         live_prompt_block_height(app, content_column, contract, shell, terminal_height)
     } else {
-        let disclosure_rows = control_dock_disclosure_rows(app, contract);
-        let status_rows =
-            if disclosure_rows > 0 && terminal_height >= LIVE_STATUS_ROW_MIN_TERMINAL_HEIGHT {
-                shell_tokens.spacing.heights.status
-            } else {
-                0
-            };
-        let bottom_margin = if disclosure_rows > 0 {
-            LIVE_POST_TURN_BOTTOM_MARGIN_ROWS
-        } else {
-            0
-        };
+        let rhythm = live_dock_rhythm(
+            app,
+            contract,
+            content_column.width,
+            terminal_height,
+            shell_tokens.spacing.heights.status,
+        );
         live_prompt_block_height(app, content_column, contract, shell, terminal_height)
-            .saturating_add(status_rows)
-            .saturating_add(bottom_margin)
+            .saturating_add(rhythm.composer_footer_spacer_rows)
+            .saturating_add(rhythm.status_rows)
+            .saturating_add(rhythm.bottom_margin_rows)
+            .saturating_add(rhythm.disclosure_rows)
     };
 
     let main_chunks = Layout::default()
@@ -446,8 +491,16 @@ pub(crate) fn session_shell_layout(
         control_dock_layout(main_chunks[1], None, main_chunks[1], None)
     } else {
         let shell_area = main_chunks[1];
-        let disclosure_height =
-            control_dock_disclosure_rows(app, contract).min(shell_area.height.saturating_sub(1));
+        let rhythm = live_dock_rhythm(
+            app,
+            contract,
+            content_column.width,
+            terminal_height,
+            shell_tokens.spacing.heights.status,
+        );
+        let disclosure_height = rhythm
+            .disclosure_rows
+            .min(shell_area.height.saturating_sub(1));
         if app.startup_shell_visible() {
             let composer_height = shell_area
                 .height
@@ -473,21 +526,38 @@ pub(crate) fn session_shell_layout(
         } else if disclosure_height == 0 {
             control_dock_layout(shell_area, None, shell_area, None)
         } else {
-            let bottom_margin = LIVE_POST_TURN_BOTTOM_MARGIN_ROWS.min(
-                shell_area
-                    .height
-                    .saturating_sub(disclosure_height.saturating_add(1)),
+            let composer_height = live_prompt_block_height(
+                app,
+                content_column,
+                contract,
+                shell,
+                terminal_height,
+            )
+            .min(shell_area.height);
+            let status_rows = rhythm.status_rows.min(shell_area.height);
+            let composer_footer_spacer = rhythm
+                .composer_footer_spacer_rows
+                .min(shell_area.height.saturating_sub(status_rows));
+            let bottom_margin = rhythm.bottom_margin_rows.min(
+                shell_area.height.saturating_sub(
+                    status_rows
+                        .saturating_add(composer_height)
+                        .saturating_add(composer_footer_spacer)
+                        .saturating_add(disclosure_height),
+                ),
             );
             let rows = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Min(1),
+                    Constraint::Length(status_rows),
+                    Constraint::Length(composer_height),
+                    Constraint::Length(composer_footer_spacer),
                     Constraint::Length(disclosure_height),
                     Constraint::Length(bottom_margin),
                 ])
                 .split(shell_area);
-            let disclosure = (disclosure_height > 0).then_some(rows[1]);
-            control_dock_layout(shell_area, None, rows[0], disclosure)
+            let disclosure = (disclosure_height > 0).then_some(rows[3]);
+            control_dock_layout(shell_area, None, rows[1], disclosure)
         }
     };
     let dock = if operator_sidebar.is_some() {
@@ -668,6 +738,39 @@ fn wrapped_text_rows(text: &str, width: usize) -> u16 {
     u16::try_from(rows).unwrap_or(u16::MAX)
 }
 
+fn live_dock_rhythm(
+    app: &AppState,
+    contract: SessionGeometryContract,
+    width: u16,
+    terminal_height: u16,
+    status_row_height: u16,
+) -> LiveDockRhythm {
+    let disclosure_rows = control_dock_disclosure_rows(app, contract);
+    let status_rows = if disclosure_rows > 0 && terminal_height >= LIVE_STATUS_ROW_MIN_TERMINAL_HEIGHT
+    {
+        status_row_height
+    } else {
+        0
+    };
+    let composer_footer_spacer_rows = if disclosure_rows > 0 {
+        composer_footer_spacer_rows(width)
+    } else {
+        0
+    };
+    let bottom_margin_rows = if disclosure_rows > 0 {
+        LIVE_POST_TURN_BOTTOM_MARGIN_ROWS
+    } else {
+        0
+    };
+
+    LiveDockRhythm {
+        status_rows,
+        composer_footer_spacer_rows,
+        disclosure_rows,
+        bottom_margin_rows,
+    }
+}
+
 fn permission_prompt_block_height(
     app: &AppState,
     width: u16,
@@ -730,10 +833,8 @@ fn live_prompt_block_height(
 
     if app.active_permission_view().is_none() {
         let input_height = composer_input_height(&app.composer.prompt_buffer, area.width).max(1);
-        let disclosure_rows = control_dock_disclosure_rows(app, contract);
         return input_height
             .saturating_add(STARTUP_BORDERED_COMPOSER_CHROME_ROWS)
-            .saturating_add(disclosure_rows)
             .min(max_block_height)
             .max(3);
     }
@@ -800,12 +901,7 @@ fn dock_with_horizontal_inset(dock: ControlDockLayout, area: Rect) -> ControlDoc
         return dock;
     }
 
-    let preferred_inset = if area.width <= DENSE_SESSION_MAX_WIDTH {
-        0
-    } else {
-        STARTUP_COMPOSER_INSET_X
-    };
-    let inset = preferred_inset.min(area.width.saturating_sub(4) / 2);
+    let inset = composer_horizontal_inset(area.width);
     if inset == 0 {
         return dock;
     }
@@ -847,12 +943,7 @@ fn centered_startup_dock_layout(
         return dock;
     }
 
-    let preferred_inset = if area.width <= DENSE_SESSION_MAX_WIDTH {
-        0
-    } else {
-        STARTUP_COMPOSER_INSET_X
-    };
-    let inset = preferred_inset.min(area.width.saturating_sub(4) / 2);
+    let inset = composer_horizontal_inset(area.width);
     let width = area.width.saturating_sub(inset.saturating_mul(2)).max(1);
     let x = area.x.saturating_add(inset);
     let shell_height = dock.shell.height;
@@ -1015,7 +1106,7 @@ mod tests {
         let plan = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, 120, 40));
         let dock = plan.dock.unwrap_or_abort();
 
-        // Then: composer dock matches freeze lead=2 inset (run1-stream-probe / run1-draft)
+        // Then: composer dock matches freeze lead=2 inset (h1-stream-probe / run1-draft)
         assert_eq!(
             dock.shell.x,
             plan.shell.x.saturating_add(STARTUP_COMPOSER_INSET_X),

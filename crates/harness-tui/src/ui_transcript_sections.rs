@@ -93,7 +93,7 @@ fn inject_compaction_events(
 }
 
 fn turn_supports_assistant_footer(turn: &TranscriptTurnSection) -> bool {
-    // Freeze run1-stream-probe: fail chrome is flat `Retry failed:` only — no ✗ model footer.
+    // Freeze h1-stream-probe: fail chrome is flat `Retry failed:` only — no ✗ model footer.
     if matches!(turn.header.status, ActivityStatus::Error) {
         return false;
     }
@@ -286,7 +286,7 @@ fn ensure_completed_thought_header(
     if !complete_with_reasoning && !error_with_reasoning {
         return;
     }
-    // Grok TOOL omits Thought when there was no reasoning.
+    // Reference tool state omits Thought when there was no reasoning.
     if !activity.tool_calls.is_empty() && !activity_has_thinking_text(activity) {
         return;
     }

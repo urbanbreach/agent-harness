@@ -10,6 +10,11 @@ const TRANSCRIPT_BRAILLE_SPINNER_FRAMES: [&str; 10] =
     ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 pub(super) fn transcript_streaming_spinner_frame(animation_phase: usize) -> &'static str {
+    // Freeze the spinner glyph when animations are disabled so PTY/signoff
+    // captures are reproducible across runs.
+    if std::env::var_os("HARNESS_DISABLE_ANIMATIONS").is_some() {
+        return TRANSCRIPT_BRAILLE_SPINNER_FRAMES[0];
+    }
     TRANSCRIPT_BRAILLE_SPINNER_FRAMES[animation_phase % TRANSCRIPT_BRAILLE_SPINNER_FRAMES.len()]
 }
 

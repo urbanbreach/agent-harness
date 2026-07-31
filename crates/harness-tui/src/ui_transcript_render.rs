@@ -76,7 +76,7 @@ fn build_user_render_surface(
     }
 }
 
-/// Grok SCROLL freeze packs max text on the first user row, then right-aligns the
+/// Reference scroll state packs max text on the first user row, then right-aligns the
 /// wall clock into remaining space. Prefer full-width wrap + pack; only re-wrap
 /// with a first-line reserve when the clock cannot fit on the first content row.
 fn build_user_surface_lines(
@@ -362,19 +362,19 @@ fn assistant_footer_target_index(turn: &TranscriptTurnSection) -> Option<usize> 
         .then_some(0);
     }
 
-    // Grok PERM/QUESTION freeze: Run Write / Waiting on answers is a separate footer surface
+    // Reference permission/question state: Run Write / Waiting on answers is a separate footer surface.
     // (not glued to the tool body) so layout can pin it just above the dock.
     if pending_permission_tool_waiting(turn).is_some() || waiting_on_answers_label(turn).is_some() {
         return Some(turn.assistant_parts.len());
     }
 
-    // Grok FAIL/RECOVER freeze: auto-retry spinner is a separate footer surface
+    // Reference failure/recovery state: auto-retry spinner is a separate footer surface.
     // pinned just above the dock (matching the "Waiting for response…" layout).
     if turn.header.retry.is_some() {
         return Some(turn.assistant_parts.len());
     }
 
-    // Grok SCROLL freeze: streaming with body text and token usage shows
+    // Reference scroll state: streaming with body text and token usage shows
     // "Responding…" as a separate footer surface pinned just above the dock.
     if matches!(turn.header.status, ActivityStatus::Streaming)
         && !turn.assistant_parts.is_empty()
@@ -505,10 +505,10 @@ fn build_assistant_part_render_surface(
                     && turn.tool_calls.is_empty(),
                 turn.animation_phase,
                 base_surface,
-                // Reasoning-only span for Thought for (Grok: 0.1s Thought vs 0.9s Waiting).
+                // Reasoning-only span for Thought for (0.1s Thought vs 0.9s Waiting).
                 turn.header.thinking_duration_ms,
                 turn.header.is_selected,
-                // Waiting on answers / pending edit permission ⇒ Thought for (Grok freezes).
+                // Waiting on answers / pending edit permission ⇒ Thought for.
                 waiting_on_answers_label(turn).is_some()
                     || pending_permission_tool_waiting(turn).is_some(),
             );
@@ -525,8 +525,8 @@ fn build_assistant_part_render_surface(
         TranscriptAssistantPart::Body(block) => {
             let content_width = transcript_surface_content_width(width, false);
             let TranscriptBodyBlock::RichText(text) = block;
-            // Grok COMPLETE/CANCEL: pack wall clock on a single-line plain body row.
-            // Grok DIFF/TOOL: keep wall clock on its own row when tools are present.
+            // Reference completed/cancellation state: pack wall clock on a single-line plain body row.
+            // Reference diff/tool state: keep wall clock on its own row when tools are present.
             let pack_clock_on_body = !turn_has_tool_parts(turn)
                 && body_is_single_line_plain(text)
                 && turn.footer_timestamp.as_ref().is_some_and(|clock| {
@@ -534,8 +534,8 @@ fn build_assistant_part_render_surface(
                     let clock_width = display_width(clock);
                     text_width.saturating_add(clock_width) < usize::from(content_width)
                 });
-            // Grok COMPLETE: Thought → blank (inter-surface gap) → body+clock.
-            // Grok DIFF: Thought → blank → wall-clock row → blank → body.
+            // Reference completed state: Thought → blank (inter-surface gap) → body+clock.
+            // Reference diff state: Thought → blank → wall-clock row → blank → body.
             if prepend_gap {
                 if let Some(clock) = turn.footer_timestamp.as_deref() {
                     if pack_clock_on_body {
@@ -753,7 +753,7 @@ pub(super) fn append_reasoning_block(
     let header_style = Style::default().fg(header_color);
 
     let (title, body) = reasoning_summary(&thinking.text);
-    // Grok question freeze shows Thought for while Waiting on answers (thinking phase done).
+    // Reference question state shows Thought for while Waiting on answers (thinking phase done).
     let completed =
         force_completed || !matches!(status, ActivityStatus::Streaming | ActivityStatus::Queued);
     if title.is_none() && body.trim().is_empty() && !completed {
@@ -995,7 +995,7 @@ fn build_assistant_footer_line(
     if let Some(waiting) = waiting_on_answers_label(turn) {
         return pack_waiting_on_answers_footer_line(turn, &waiting, theme, content_width);
     }
-    // Grok PERM freeze: ◆ Run Write `path` … right meta while Allow Edit dock is open.
+    // Reference permission state: ◆ Run Write `path` … right meta while Allow Edit dock is open.
     if let Some(waiting) = pending_permission_tool_waiting(turn) {
         return pack_waiting_on_answers_footer_line(turn, &waiting, theme, content_width);
     }
@@ -1015,7 +1015,7 @@ fn build_assistant_footer_line(
         }
     }
 
-    // Grok STREAM freeze: streaming with no body text but with token usage
+    // Reference streaming state: streaming with no body text but with token usage
     // (ProviderRequestFinished seeded total_tokens) shows "Waiting for response…"
     // with elapsed time + download counter + [stop] right meta.
     if matches!(turn.header.status, ActivityStatus::Streaming)
@@ -1033,7 +1033,7 @@ fn build_assistant_footer_line(
         );
     }
 
-    // Grok SCROLL freeze: streaming with body text and token usage
+    // Reference scroll state: streaming with body text and token usage
     // shows "Responding…" with responding-elapsed (time since first delta)
     // + total duration + download counter + [stop] right meta.
     if matches!(turn.header.status, ActivityStatus::Streaming)
@@ -1270,7 +1270,7 @@ fn format_waiting_token_count(count: u32) -> String {
     format!("{:.1}M", f64::from(count) / 1_000_000.0)
 }
 
-/// Pending write/edit tool under permission — Grok PERM freeze packs completed Thought for.
+/// Pending write/edit tool under permission — reference permission state packs completed Thought for.
 fn pending_permission_tool_waiting(turn: &TranscriptTurnSection) -> Option<String> {
     for part in &turn.assistant_parts {
         let TranscriptAssistantPart::ToolCall(tool) = part else {
@@ -1285,7 +1285,7 @@ fn pending_permission_tool_waiting(turn: &TranscriptTurnSection) -> Option<Strin
         ) {
             continue;
         }
-        // Grok PERM freeze: "Run Write `path`" while Allow Edit dock is open.
+        // Reference permission state: "Run Write `path`" while Allow Edit dock is open.
         let title = tool.header.title.trim();
         let label = if let Some(path) = title.strip_prefix("Creating ") {
             format!("Write `{path}`")

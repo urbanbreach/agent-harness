@@ -7,19 +7,27 @@
 pub mod animation_evidence;
 pub mod app;
 mod clipboard;
+pub mod clipboard_leaf;
 pub mod event;
 pub mod keybindings;
 pub mod layout;
+pub mod leaf_actions;
+pub mod leaf_views;
 #[cfg(test)]
 mod lib_tests;
+pub mod mouse;
 pub mod overlay;
 pub mod render_test;
+pub mod responsive;
 mod runtime;
 mod session_events;
+pub mod slash;
+pub mod terminal;
 #[cfg(test)]
 mod tests;
 mod text;
 pub mod theme;
+pub mod theme_leaf;
 mod time_format;
 pub mod ui;
 
@@ -27,6 +35,10 @@ pub use harness_core::UnwrapOrAbort;
 
 mod view_model;
 
+pub use app::notifications;
+pub use app::terminal_diagnostics;
+pub use app::theme_preview;
+pub use app::tips;
 pub use app::{ReviewSurface, UiIntent};
 pub use keybindings::{Action, KeyMap};
 pub use layout::FrameLayoutPlan;

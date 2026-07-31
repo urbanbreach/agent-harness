@@ -311,7 +311,7 @@ pub(in crate::ui) fn question_permission_actions_text(
     } else {
         "confirm"
     };
-    // Grok QUESTION freeze packs "y copy"; prefer bare `y` when bound.
+    // Reference question state packs "y copy"; prefer bare `y` when bound.
     let bindings = app.keymap.get_binding_strs(Action::CopyMessage);
     let copy_key = if bindings.iter().any(|binding| binding == "y") {
         "y".to_string()
@@ -460,11 +460,11 @@ pub(in crate::ui) fn question_permission_body_text(
         },
         primary_style,
     )]));
-    // Grok QUESTION freeze: two blank rows between title and options.
+    // Waiting-state layout: two blank rows between title and options.
     lines.push(Line::default());
     lines.push(Line::default());
 
-    // Grok freeze packing: pad option labels so descriptions share a column
+    // Label-column packing: pad option labels so descriptions share a column
     // (e.g. "Red    Choose red" / "Green  Choose green").
     let label_column_width = prompt
         .options
@@ -483,7 +483,7 @@ pub(in crate::ui) fn question_permission_body_text(
                 "[ ]"
             }
         } else if picked {
-            // Grok freeze: (○) until answered; cursor focus uses active styles only.
+            // Unanswered options use (○); cursor focus uses active styles only.
             "●"
         } else {
             "○"
@@ -536,7 +536,7 @@ pub(in crate::ui) fn question_permission_body_text(
                 "[ ]"
             }
         } else if picked {
-            // Grok freeze: (○) until answered; cursor focus uses active styles only.
+            // Unanswered options use (○); cursor focus uses active styles only.
             "●"
         } else {
             "○"

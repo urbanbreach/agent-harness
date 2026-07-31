@@ -629,7 +629,7 @@ fn runtime_state_surface_copy(
             "Reopen the TUI, then continue from the transcript.",
             app.theme().status.error,
         )),
-        // Freeze run1-stream-probe: fail chrome is flat transcript `Retry failed: …`,
+        // Freeze h1-stream-probe: fail chrome is flat transcript `Retry failed: …`,
         // not an elevated Failure / Review required card over the body.
         RuntimeStateKind::Failure => None,
         _ => None,

@@ -322,13 +322,7 @@ fn render_bordered_composer(
     let (badge_title, badge_style) = if badge.is_empty() {
         ("  ─".to_string(), border_style)
     } else {
-        (
-            format!(" {badge} ─"),
-            Style::default()
-                .fg(border_fg)
-                .bg(surface)
-                .add_modifier(Modifier::DIM),
-        )
+        (format!(" {badge} ─"), border_style)
     };
     block = block.title_bottom(Line::from(Span::styled(badge_title, badge_style)).right_aligned());
 

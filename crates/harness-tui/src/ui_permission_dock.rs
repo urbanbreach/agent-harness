@@ -448,7 +448,7 @@ fn render_question_permission_dock(
         );
     }
 
-    // Grok QUESTION freeze: two spaces after ┃ ("┃  Which color?") + bottom blank rail.
+    // Reference question state: two spaces after ┃ ("┃  Which color?") + bottom blank rail.
     let inner = pad_rect(body_area, crate::layout::EdgeInsets::new(2, 1, 1, 1));
     if inner.width == 0 || inner.height == 0 {
         return;

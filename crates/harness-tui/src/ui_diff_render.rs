@@ -50,7 +50,7 @@ pub(super) fn render_structured_diff_model(
         }
 
         let line_number_width = if plain_numbered {
-            // Grok plain form uses natural digit width (no dual-gutter min-4 pad).
+            // Reference plain form uses natural digit width (no dual-gutter min-4 pad).
             structured_diff_plain_line_number_width(file)
         } else {
             structured_diff_line_number_width(file)

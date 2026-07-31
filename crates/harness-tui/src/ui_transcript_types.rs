@@ -104,9 +104,9 @@ pub(super) struct TranscriptTurnHeader {
     pub(super) profile_label: String,
     pub(super) model_id: String,
     pub(super) duration_ms: Option<u64>,
-    /// Reasoning-only mono span for "Thought for" (Grok freeze packing).
+    /// Reasoning-only mono span for "Thought for" (waiting-state packing).
     pub(super) thinking_duration_ms: Option<u64>,
-    /// Elapsed time since first stream delta for "Responding…" (Grok freeze packing).
+    /// Elapsed time since first stream delta for "Responding…" (waiting-state packing).
     pub(super) responding_duration_ms: Option<u64>,
     pub(super) total_tokens: Option<u32>,
     pub(super) retry: Option<ProviderRequestRetryMetadata>,

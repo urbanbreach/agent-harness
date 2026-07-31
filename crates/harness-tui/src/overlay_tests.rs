@@ -248,6 +248,11 @@ fn test_permission_pending_preempts_all_other_overlays() {
         auth_dialog_visible: false,
         settings_editor_visible: false,
         plan_view_visible: false,
+        memory_browser_visible: false,
+        worktree_picker_visible: false,
+        new_worktree_dialog_visible: false,
+        foreign_import_picker_visible: false,
+        trust_folder_prompt_visible: false,
         permission_pending: true,
     };
     let stack = OverlayStack::from_state(state);

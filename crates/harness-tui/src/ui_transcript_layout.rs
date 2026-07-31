@@ -161,9 +161,9 @@ pub(super) fn render_transcript_layout_surfaces(
         return;
     }
 
-    // Grok PERM freeze: pin pending-permission Run Write footer to viewport bottom above dock.
+    // Reference permission state: pin pending-permission Run Write footer to viewport bottom above dock.
     let footer_pin = pending_permission_footer_pin_delta(layout, viewport_height, scroll_top);
-    // Grok SCROLL freeze: keep the latest turn's user prompt sticky at the top while body scrolls.
+    // Reference scroll state: keep the latest turn's user prompt sticky at the top while body scrolls.
     // Freeze packs one blank separator under the sticky user before inventory (f39 at L9, not L8).
     const STICKY_USER_SEPARATOR_ROWS: usize = 1;
     let sticky_user = sticky_user_surface(layout, scroll_top, viewport_height);

@@ -306,7 +306,7 @@ fn append_block_tool_section_lines(
     };
     // Nested card shell is only for todo checklist cards. Non-todo Block tools
     // (write/edit with diffs) must stay flat like Thought / inline tools so
-    // Creating titles share Grok lead=5, not nested-rail lead=7.
+    // Creating titles share reference lead=5, not nested-rail lead=7.
     let card_shell = if is_todo_block {
         Some(TranscriptToolCardShell {
             indent: TRANSCRIPT_TODO_BLOCK_INDENT,
@@ -864,7 +864,7 @@ fn append_tool_call_diff_block(
         },
         theme,
     ) {
-        // Grok PERM freeze: blank packing row between Creating title and plain numbered body.
+        // Reference permission state: blank packing row between Creating title and plain numbered body.
         // interaction_rows are padded by the caller via append_noninteractive_rows.
         let blank_before = plain_numbered && !diff_lines.is_empty();
         if blank_before {

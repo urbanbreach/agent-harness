@@ -3,8 +3,14 @@ use super::*;
 
 #[path = "ui_overlays/auth_dialog.rs"]
 mod auth_dialog;
+#[path = "ui_overlays/foreign_import_picker.rs"]
+mod foreign_import_picker;
+#[path = "ui_overlays/memory_browser.rs"]
+mod memory_browser;
 #[path = "ui_overlays/model_switcher.rs"]
 mod model_switcher;
+#[path = "ui_overlays/new_worktree_dialog.rs"]
+mod new_worktree_dialog;
 #[path = "ui_overlays/permission_modal.rs"]
 mod permission_modal;
 #[path = "ui_overlays/plan_view.rs"]
@@ -21,9 +27,14 @@ mod status_dialog;
 mod theme_dialog;
 #[path = "ui_overlays/toggles_menu.rs"]
 mod toggles_menu;
+#[path = "ui_overlays/worktree_picker.rs"]
+mod worktree_picker;
 
 use auth_dialog::render_auth_dialog_overlay;
+use foreign_import_picker::render_foreign_import_picker_overlay;
+use memory_browser::render_memory_browser_overlay;
 use model_switcher::{model_switcher_overlay_title, render_model_switcher_overlay};
+use new_worktree_dialog::render_new_worktree_dialog;
 pub(super) use permission_modal::{
     permission_modal_actions_text, permission_modal_draft_line, permission_modal_guidance,
     permission_modal_icon, permission_modal_metadata_line, permission_modal_subject_line,
@@ -116,6 +127,7 @@ pub(crate) use status_dialog::{
 };
 use theme_dialog::render_theme_dialog_overlay;
 use toggles_menu::{render_toggles_menu_list, render_yolo_warning_popup};
+use worktree_picker::render_worktree_picker_overlay;
 
 pub(super) fn render_overlays(
     frame: &mut Frame,
@@ -161,10 +173,23 @@ pub(super) fn render_overlays(
                 render_prompt_stash_list_overlay(frame, app, theme, plan.root)
             }
             OverlayKind::AuthDialog => render_auth_dialog_overlay(frame, app, theme, plan.root),
+            OverlayKind::NewWorktreeDialog => {
+                render_new_worktree_dialog(frame, app, theme, plan.root)
+            }
             OverlayKind::SettingsEditor => {
                 render_settings_editor_overlay(frame, app, theme, plan.root)
             }
             OverlayKind::PlanView => render_plan_view_overlay(frame, app, theme, plan.root),
+            OverlayKind::MemoryBrowser => {
+                render_memory_browser_overlay(frame, app, theme, plan.root)
+            }
+            OverlayKind::WorktreePicker => {
+                render_worktree_picker_overlay(frame, app, theme, plan.root)
+            }
+            OverlayKind::ForeignImportPicker => {
+                render_foreign_import_picker_overlay(frame, app, theme, plan.root)
+            }
+            OverlayKind::TrustFolderPrompt => {}
         }
     }
 }

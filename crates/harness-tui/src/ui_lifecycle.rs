@@ -1,7 +1,17 @@
 // allow: SIZE_OK — TUI rendering (indivisible view model)
 use super::*;
 
-use ratatui::widgets::BorderType;
+use ratatui::widgets::{BorderType, Clear};
+
+#[path = "app/welcome.rs"]
+#[allow(dead_code, reason = "view model helpers wired for contract use; not all consumed yet")]
+mod welcome;
+#[path = "app/trust_prompt.rs"]
+#[allow(dead_code, reason = "trust prompt constants and helpers; consumed by render_trust_folder_prompt_overlay")]
+mod trust_prompt;
+#[path = "app/first_prompt.rs"]
+#[allow(dead_code, reason = "first-prompt composer focus helpers; wired for contract verification")]
+mod first_prompt;
 
 const LIFECYCLE_COPY_INSET_X: u16 = 3;
 const WELCOME_PANEL_INSET_X: u16 = 3;
@@ -135,6 +145,12 @@ pub(crate) fn render_startup_lifecycle_flow(
         render_startup_clipboard_warning(frame, area, theme);
         render_welcome_panel(frame, app, area, theme);
     }
+
+    // Trust prompt z-order: render on top of the startup content so the
+    // folder-trust dialog overlays the welcome panel and breadcrumb.
+    if app.trust_folder_prompt_visible {
+        render_trust_folder_prompt_overlay(frame, area, theme);
+    }
 }
 
 fn startup_breadcrumb_text(app: &AppState) -> String {
@@ -174,11 +190,7 @@ fn render_startup_breadcrumb(frame: &mut Frame, app: &AppState, area: Rect, _the
     };
     let text = truncate_plain_text(&startup_breadcrumb_text(app), usize::from(row.width));
     frame.render_widget(
-        Paragraph::new(text).style(
-            Style::default()
-                .bg(Color::Reset)
-                .add_modifier(Modifier::DIM),
-        ),
+        Paragraph::new(text).style(Style::default().bg(Color::Reset)),
         row,
     );
 }
@@ -189,12 +201,13 @@ pub(super) fn render_live_breadcrumb(
     area: Rect,
     _theme: &Theme,
 ) {
-    if area.height < LIVE_BREADCRUMB_RESERVE_ROWS {
+    let reserve = crate::layout::breadcrumb_reserve_rows(area.width);
+    if area.height < reserve {
         return;
     }
     let row = Rect {
         x: area.x,
-        y: area.y.saturating_add(1),
+        y: area.y.saturating_add(crate::layout::breadcrumb_top_margin(area.width)),
         width: area.width,
         height: 1,
     };
@@ -272,14 +285,15 @@ fn pack_breadcrumb_line(left: &str, meta: Option<&str>, width: usize) -> String 
 }
 
 pub(super) fn live_transcript_area_with_breadcrumb(area: Rect) -> Rect {
-    if area.height <= LIVE_BREADCRUMB_RESERVE_ROWS {
+    let reserve = crate::layout::breadcrumb_reserve_rows(area.width);
+    if area.height <= reserve {
         return area;
     }
     Rect {
         x: area.x,
-        y: area.y.saturating_add(LIVE_BREADCRUMB_RESERVE_ROWS),
+        y: area.y.saturating_add(reserve),
         width: area.width,
-        height: area.height.saturating_sub(LIVE_BREADCRUMB_RESERVE_ROWS),
+        height: area.height.saturating_sub(reserve),
     }
 }
 
@@ -298,8 +312,6 @@ fn startup_clipboard_y(area: Rect) -> u16 {
         return STARTUP_CLIPBOARD_Y_DENSE;
     }
     let terminal_h = estimated_terminal_height(area);
-    // 100x30 freezes (run1/2/3) place clipboard at L4; 120x32+ stay on the base-4 scale.
-    // Compact viewports (< bordered min width) keep base-4 so 80x24 remains L5.
     let base = if welcome_bordered_panel_fits(area) && terminal_h <= 30 {
         STARTUP_CLIPBOARD_Y.saturating_sub(1)
     } else {
@@ -348,7 +360,6 @@ fn welcome_bordered_panel_fits(area: Rect) -> bool {
 
 fn welcome_panel_top_pad(area: Rect) -> u16 {
     let terminal_h = estimated_terminal_height(area);
-    // Paired with startup_clipboard_y: 100x30 freeze welcome top L7; 120x32+ keep base-7 scale.
     let base = if welcome_bordered_panel_fits(area) && terminal_h <= 30 {
         WELCOME_PANEL_TOP_PAD.saturating_sub(1)
     } else {
@@ -395,12 +406,13 @@ fn welcome_text_after_logo(text: &str, inner_width: usize) -> String {
     truncate_plain_text(text, budget)
 }
 
-fn welcome_inner_lines(theme: &Theme, inner_width: usize) -> Vec<Line<'static>> {
+fn welcome_inner_lines(theme: &Theme, inner_width: usize, app: &AppState) -> Vec<Line<'static>> {
     let surface = Color::Reset;
     let title_style = Style::default().bg(surface).add_modifier(Modifier::BOLD);
     let muted = Style::default().bg(surface);
     let body = Style::default().bg(surface);
     let logo_style = Style::default().bg(surface);
+    let dim_style = Style::default().bg(surface).add_modifier(Modifier::DIM);
     let version = env!("CARGO_PKG_VERSION");
     let title = theme.live_shell.startup.title;
     let text_col = WELCOME_LOGO_WIDTH.saturating_add(5);
@@ -419,15 +431,27 @@ fn welcome_inner_lines(theme: &Theme, inner_width: usize) -> Vec<Line<'static>> 
         let mut spans = vec![Span::styled(logo, logo_style)];
         match idx {
             0 => {
-                spans.push(Span::styled(
-                    welcome_text_after_logo(&format!("  {title}  {version}"), inner_width),
-                    title_style,
-                ));
+                let title_text = format!("  {title}  ");
+                let version_text = welcome_text_after_logo(
+                    &format!("{title_text}{version}"),
+                    inner_width,
+                );
+                let title_prefix = welcome_text_after_logo(&title_text, inner_width);
+                let title_len = title_prefix.chars().count();
+                if version_text.chars().count() > title_len {
+                    spans.push(Span::styled(title_prefix, title_style));
+                    spans.push(Span::styled(
+                        version_text.chars().skip(title_len).collect::<String>(),
+                        muted,
+                    ));
+                } else {
+                    spans.push(Span::styled(version_text, title_style));
+                }
             }
             2 => {
                 spans.push(Span::styled(
                     welcome_text_after_logo("  Changelog", inner_width),
-                    title_style,
+                    dim_style,
                 ));
             }
             4 => {
@@ -467,22 +491,41 @@ fn welcome_inner_lines(theme: &Theme, inner_width: usize) -> Vec<Line<'static>> 
     for (label, shortcut) in welcome_action_rows() {
         let pad = " ".repeat(text_col.min(inner_width));
         let label_text = truncate_plain_text(label, label_width);
-        let mut row = format!("{pad}{label_text}");
+        let label_width_actual = super::display_width(&label_text);
+        let mut spans: Vec<Span<'static>> = vec![
+            Span::styled(pad, muted),
+            Span::styled(label_text.to_string(), body.add_modifier(Modifier::BOLD)),
+        ];
         if let Some(shortcut) = shortcut {
-            let used = row.chars().count();
-            let target = inner_width.saturating_sub(shortcut.chars().count().saturating_add(2));
+            let shortcut_chars = shortcut.chars().count();
+            let used = text_col.min(inner_width) + label_width_actual;
+            let target = inner_width.saturating_sub(shortcut_chars.saturating_add(2));
             if used < target {
-                row.push_str(&" ".repeat(target.saturating_sub(used)));
+                spans.push(Span::styled(
+                    " ".repeat(target.saturating_sub(used)),
+                    muted,
+                ));
             }
-            row.push_str(shortcut);
+            spans.push(Span::styled(shortcut.to_string(), muted));
         }
-        lines.push(Line::from(Span::styled(
-            truncate_plain_text(&row, inner_width),
-            body.add_modifier(Modifier::BOLD),
-        )));
+        lines.push(Line::from(spans));
     }
 
-    lines.push(Line::from(Span::styled(" ", muted)));
+    // Local notices section: derived from app status banner (e.g. missing
+    // provider). Replaces the trailing blank so the panel height stays stable.
+    if let Some(banner) = app.status_banner.as_deref().filter(|b| !b.is_empty()) {
+        let label = "Notices: ";
+        let label_width = super::display_width(label);
+        let budget = inner_width.saturating_sub(label_width).max(1);
+        let notice_text = truncate_plain_text(banner, budget);
+        lines.push(Line::from(vec![
+            Span::styled(label.to_string(), dim_style),
+            Span::styled(notice_text, muted),
+        ]));
+    } else {
+        lines.push(Line::from(Span::styled(" ", muted)));
+    }
+
     lines
 }
 
@@ -498,11 +541,12 @@ fn compact_welcome_lines(
     _theme: &Theme,
     inner_width: usize,
     max_lines: usize,
+    app: &AppState,
 ) -> Vec<Line<'static>> {
     let surface = Color::Reset;
     let body = Style::default().bg(surface).add_modifier(Modifier::BOLD);
     let muted = Style::default().bg(surface);
-    let title_style = Style::default().bg(surface).add_modifier(Modifier::BOLD);
+    let dim_style = Style::default().bg(surface).add_modifier(Modifier::DIM);
     let shortcut_width = 8usize;
     let label_width = inner_width
         .saturating_sub(shortcut_width)
@@ -548,7 +592,7 @@ fn compact_welcome_lines(
     let changelog_min_lines = 2 + 1 + 1 + 1;
     if max_lines.saturating_sub(lines.len()) >= changelog_min_lines {
         lines.push(Line::from(Span::styled(" ", muted)));
-        lines.push(Line::from(Span::styled("Changelog", title_style)));
+        lines.push(Line::from(Span::styled("Changelog", dim_style)));
         lines.push(Line::from(Span::styled(" ", muted)));
         for bullet in WELCOME_CHANGELOG_BULLETS {
             if lines.len() >= max_lines {
@@ -559,6 +603,19 @@ fn compact_welcome_lines(
                 truncate_plain_text(&text, inner_width),
                 muted,
             )));
+        }
+    }
+    // Compact local notices: show the status banner if present.
+    if lines.len() < max_lines {
+        if let Some(banner) = app.status_banner.as_deref().filter(|b| !b.is_empty()) {
+            let label = "Notices: ";
+            let label_width = super::display_width(label);
+            let budget = inner_width.saturating_sub(label_width).max(1);
+            let notice_text = truncate_plain_text(banner, budget);
+            lines.push(Line::from(vec![
+                Span::styled(label.to_string(), dim_style),
+                Span::styled(notice_text, muted),
+            ]));
         }
     }
     lines
@@ -582,7 +639,7 @@ fn compact_welcome_content_area(area: Rect) -> Option<Rect> {
     ))
 }
 
-fn render_compact_welcome_body(frame: &mut Frame, area: Rect, theme: &Theme) {
+fn render_compact_welcome_body(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
     let Some(content) = compact_welcome_content_area(area) else {
         return;
     };
@@ -594,6 +651,7 @@ fn render_compact_welcome_body(frame: &mut Frame, area: Rect, theme: &Theme) {
         theme,
         usize::from(content.width),
         usize::from(content.height),
+        app,
     );
     frame.render_widget(
         Paragraph::new(Text::from(lines)).style(Style::default().bg(surface)),
@@ -601,7 +659,7 @@ fn render_compact_welcome_body(frame: &mut Frame, area: Rect, theme: &Theme) {
     );
 }
 
-fn render_welcome_panel(frame: &mut Frame, _app: &AppState, area: Rect, theme: &Theme) {
+fn render_welcome_panel(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
     if let Some(panel) = welcome_panel_area(area) {
         let surface = Color::Reset;
         let block = Block::default()
@@ -614,14 +672,98 @@ fn render_welcome_panel(frame: &mut Frame, _app: &AppState, area: Rect, theme: &
         if inner.width == 0 || inner.height == 0 {
             return;
         }
-        let lines = welcome_inner_lines(theme, usize::from(inner.width));
+        let lines = welcome_inner_lines(theme, usize::from(inner.width), app);
         frame.render_widget(
             Paragraph::new(Text::from(lines)).style(Style::default().bg(surface)),
             inner,
         );
         return;
     }
-    render_compact_welcome_body(frame, area, theme);
+    render_compact_welcome_body(frame, app, area, theme);
+}
+
+/// Render the folder-trust prompt as a centered overlay dialog.
+///
+/// Display-only: the actual trust decision is persisted through the
+/// coordinator when the operator confirms. This renders on top of the
+/// startup content (welcome panel + breadcrumb) with correct z-order.
+fn render_trust_folder_prompt_overlay(frame: &mut Frame, area: Rect, theme: &Theme) {
+    let root = frame.area();
+
+    // Dim the backdrop so the dialog stands out.
+    frame.render_widget(Block::default().style(Style::default().dim()), root);
+
+    let width = 56u16.min(root.width.saturating_sub(4));
+    let height = 9u16.min(root.height.saturating_sub(4));
+    if width < 28 || height < 5 {
+        return;
+    }
+    let x = root.x + (root.width.saturating_sub(width)) / 2;
+    let y = root.y + (root.height.saturating_sub(height)) / 2;
+    let dialog = Rect::new(x, y, width, height);
+
+    let chunks = Layout::vertical([
+        Constraint::Length(3),
+        Constraint::Min(1),
+        Constraint::Length(1),
+    ])
+    .split(dialog);
+
+    let surface = theme.surface.overlay;
+    let accent = theme.text.accent;
+    let muted = theme.text.secondary;
+    let text = theme.text.primary;
+    let border = Style::default().fg(theme.border.subtle).bg(surface);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(Span::styled(
+            trust_prompt::TRUST_PROMPT_TITLE,
+            Style::default().fg(accent).bg(surface),
+        ))
+        .border_style(border);
+    frame.render_widget(Clear, dialog);
+    frame.render_widget(block, dialog);
+
+    let body_lines: Vec<Line> = trust_prompt::trust_prompt_body_lines()
+        .iter()
+        .enumerate()
+        .map(|(i, line)| {
+            let style = if i == 1 {
+                Style::default().fg(text).bg(surface)
+            } else {
+                Style::default().fg(muted).bg(surface)
+            };
+            Line::from(Span::styled(
+                truncate_plain_text(line, usize::from(chunks[1].width)),
+                style,
+            ))
+        })
+        .collect();
+    let body = Paragraph::new(body_lines).alignment(Alignment::Left);
+    frame.render_widget(body, chunks[1]);
+
+    let hints = trust_prompt::trust_prompt_footer_hints();
+    let footer_spans: Vec<Span> = hints
+        .iter()
+        .enumerate()
+        .flat_map(|(i, hint)| {
+            let style = if i == 0 {
+                Style::default().fg(accent).bg(surface)
+            } else {
+                Style::default().fg(muted).bg(surface)
+            };
+            let mut spans = vec![Span::styled(*hint, style)];
+            if i < hints.len() - 1 {
+                spans.push(Span::styled("  ", Style::default().bg(surface)));
+            }
+            spans
+        })
+        .collect();
+    let footer = Paragraph::new(vec![Line::from(footer_spans)]).alignment(Alignment::Center);
+    frame.render_widget(footer, chunks[2]);
+
+    let _ = area; // area is the content rect; the overlay uses the full frame.
 }
 
 fn startup_lifecycle_flow_selection_surface(
@@ -638,7 +780,7 @@ fn startup_lifecycle_flow_selection_surface(
         if content_area.width == 0 || content_area.height == 0 {
             return None;
         }
-        let text_rows = welcome_inner_lines(theme, usize::from(content_area.width))
+        let text_rows = welcome_inner_lines(theme, usize::from(content_area.width), app)
             .into_iter()
             .enumerate()
             .map(|(idx, line)| LifecycleSelectableText {
@@ -661,6 +803,7 @@ fn startup_lifecycle_flow_selection_surface(
         theme,
         usize::from(content_area.width),
         usize::from(content_area.height),
+        app,
     )
     .into_iter()
     .enumerate()

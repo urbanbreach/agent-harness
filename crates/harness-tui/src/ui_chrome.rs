@@ -765,7 +765,7 @@ fn render_question_permission_with_shell_footer(
         return;
     }
 
-    // Grok QUESTION freeze: dock (11) + blank + Esc footer + trailing blank.
+    // Reference question state: dock (11) + blank + Esc footer + trailing blank.
     const FOOTER_ROWS: u16 = 3;
     if area.height <= FOOTER_ROWS {
         render_inline_permission_dock(frame, app, area, theme, permission);
@@ -803,7 +803,7 @@ fn render_question_permission_with_shell_footer(
         .bg(surface)
         .add_modifier(Modifier::DIM);
 
-    // Grok question freeze outer shell:
+    // Reference question-state outer shell:
     //   Esc:unselect │ Tab:scrollback │ Shift+x:dismiss
     // Harness product-honest keys (no invented Shift+x):
     //   Esc / Ctrl+c both DismissModal; Tab is FocusNext ("scrollback" elsewhere).

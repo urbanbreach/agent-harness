@@ -17,12 +17,50 @@ const TRANSCRIPT_SURFACE_RAIL_WIDTH: u16 = 1;
 pub(super) const TRANSCRIPT_SURFACE_TRAILING_GAP_WIDTH: u16 = 2;
 pub(super) const TRANSCRIPT_RAIL_GLYPH: &str = " ";
 
+/// Column offset for the empty-scrollback `~` indicator.
+///
+/// Matches the pinned reference layout: accent (1) + left padding (2) = 3
+/// chars from the pane left edge, so `~` lands at column 2 (0-indexed) within
+/// the transcript inner area.
+const TRANSCRIPT_EMPTY_INDICATOR_COL: u16 = 2;
+/// Row offset for the empty-scrollback `~` indicator (after top vertical
+/// padding).
+const TRANSCRIPT_EMPTY_INDICATOR_ROW: u16 = 1;
+
+/// Render the `~` empty-scrollback indicator at the top of the transcript pane
+/// when there are no conversation entries.
+///
+/// The pinned reference binary writes a single `~` at the first content row
+/// of the scrollback area (after accent + left padding) to signal that the
+/// scrollback is empty — identical to how editors mark non-existent lines.
+pub(super) fn render_empty_scrollback_indicator(
+    frame: &mut Frame,
+    inner_area: Rect,
+    theme: &Theme,
+) {
+    if inner_area.width <= TRANSCRIPT_EMPTY_INDICATOR_COL
+        || inner_area.height <= TRANSCRIPT_EMPTY_INDICATOR_ROW
+    {
+        return;
+    }
+    let x = inner_area.x + TRANSCRIPT_EMPTY_INDICATOR_COL;
+    let y = inner_area.y + TRANSCRIPT_EMPTY_INDICATOR_ROW;
+    frame.render_widget(
+        Paragraph::new(Text::from(Line::from(Span::styled(
+            "~".to_string(),
+            Style::default().fg(theme.text.secondary),
+        ))))
+        .style(Style::default().bg(theme.surface.shell)),
+        Rect::new(x, y, 1, 1),
+    );
+}
+
 pub(super) fn transcript_surface_leading_gap(
     previous: Option<TranscriptRenderSurfaceKind>,
     current: TranscriptRenderSurfaceKind,
 ) -> usize {
     match previous {
-        // Grok QUESTION freeze: Thought then Ask are adjacent (no blank between).
+        // Reference question state: Thought then Ask are adjacent (no blank between).
         Some(TranscriptRenderSurfaceKind::AssistantReasoning)
             if transcript_surface_is_assistant_tool_like(current) =>
         {

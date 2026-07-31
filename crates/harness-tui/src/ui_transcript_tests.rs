@@ -606,7 +606,7 @@ fn pending_question_turn_renders_waiting_on_answers_footer() {
     );
     entry.first_mono_ms = 0;
     entry.last_mono_ms = 900;
-    // Grok freeze: Thought for 0.1s (reasoning span) vs Waiting 0.9s (turn span).
+    // Waiting state: Thought for 0.1s (reasoning span) vs Waiting 0.9s (turn span).
     entry.thinking_text = "**plan**".to_string();
     entry.thinking_first_mono_ms = Some(100);
     entry.thinking_last_mono_ms = Some(200);
@@ -689,7 +689,7 @@ fn waiting_on_answers_shows_thought_for_not_thinking() {
     // arrange
     // act
     // assert
-    // Grok question freeze: Thought for (completed chrome) while Waiting on answers.
+    // Waiting state: Thought for (completed chrome) while Waiting on answers.
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
         "request-question-thought-for",
@@ -1474,7 +1474,7 @@ fn assistant_tool_surface_spacing_matches_shell_rhythm() {
             TranscriptRenderSurfaceKind::AssistantTool,
         ),
         0,
-        "Grok QUESTION freeze: Thought then Ask are adjacent with no blank between"
+        "Reference question state: Thought then Ask are adjacent with no blank between"
     );
 }
 
@@ -1689,7 +1689,7 @@ fn completed_reasoning_header_renders_thinking_with_title() {
     );
     entry.thinking_text = "**Review**\n\nbody text".to_string();
     entry.last_mono_ms = 1501;
-    // Grok packing: Thought for uses reasoning mono span, not full turn duration.
+    // Reference packing: Thought for uses reasoning mono span, not full turn duration.
     entry.thinking_first_mono_ms = Some(0);
     entry.thinking_last_mono_ms = Some(1500);
     app.activities = std::collections::VecDeque::from(vec![entry]);
@@ -1733,7 +1733,7 @@ fn completed_reasoning_header_without_title_renders_thinking() {
     );
     entry.thinking_text = "simple reasoning".to_string();
     entry.last_mono_ms = 1501;
-    // Grok packing: Thought for uses reasoning mono span, not full turn duration.
+    // Reference packing: Thought for uses reasoning mono span, not full turn duration.
     entry.thinking_first_mono_ms = Some(0);
     entry.thinking_last_mono_ms = Some(1500);
     app.activities = std::collections::VecDeque::from(vec![entry]);
@@ -1813,7 +1813,7 @@ fn failed_turn_without_thinking_text_omits_thought_for() {
     // arrange
     // act
     // assert
-    // Given: failed turn with no reasoning (Grok run1-stream-probe fail freeze)
+    // Given: failed turn with no reasoning (reference run1-stream-probe failure state)
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
         "request-failed-no-thinking",
@@ -1840,7 +1840,7 @@ fn failed_turn_without_thinking_text_omits_thought_for() {
     // Then: fail chrome is flat Retry failed / Turn failed — no empty Thought for
     assert!(
         !rendered.contains("Thought for"),
-        "failed turns without reasoning must omit Thought for (Grok fail freeze)\n{rendered}"
+        "failed turns without reasoning must omit Thought for (reference failure state)\n{rendered}"
     );
     assert!(
         rendered.contains("Retry failed") || rendered.contains("API error"),

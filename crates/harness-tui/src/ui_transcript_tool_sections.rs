@@ -1039,7 +1039,7 @@ fn completed_list_tool_title(tool_call: &crate::app::ToolCallEntry) -> String {
 }
 
 fn completed_read_tool_title(tool_call: &crate::app::ToolCallEntry, _path: Option<&str>) -> String {
-    // Grok freeze packing: completed reads use count form ("Read 1 file"),
+    // Waiting-state packing: completed reads use count form ("Read 1 file"),
     // not path form. Running/failed keep path via the caller match arm.
     let count = tool_file_count(tool_call).unwrap_or(1);
     let noun = if count == 1 { "file" } else { "files" };
