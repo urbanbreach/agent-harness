@@ -800,6 +800,58 @@ run_signoff_parity() {
     env EVIDENCE_DIR="$parity_artifacts_dir/actual/harness-pty-perm-empty-draft-120x32-v1" \
     bash scripts/tui-parity/capture-perm-empty-draft-l3.sh
 
+  run_stage "$mode_name" reference_parity_capture_startup_welcome "$repo_root" \
+    env EVIDENCE_DIR="$parity_artifacts_dir/actual/harness-startup-v24" \
+    bash scripts/tui-parity/capture-startup-welcome-l3.sh
+
+  run_stage "$mode_name" reference_parity_capture_draft_composer "$repo_root" \
+    env EVIDENCE_DIR="$parity_artifacts_dir/actual/harness-draft-v23" \
+    bash scripts/tui-parity/capture-draft-composer-l3.sh
+
+  run_stage "$mode_name" reference_parity_capture_shell_lifecycle "$repo_root" \
+    env EVIDENCE_BASE="$parity_artifacts_dir/actual" \
+    bash scripts/tui-parity/capture-shell-lifecycle-l3.sh
+
+  # Fresh nonvisual journey L3 captures (one stage per journey row): each
+  # stage runs the A-JOURNEYS owner tests in crates/harness/tests/
+  # journey_signoff_test.rs in self-contained mode (CLI/backend evidence
+  # only — no Chrome, no pixel PNG), then relocates the generated
+  # journey-*-v1 evidence directory into the lane's fresh evidence root and
+  # writes a provenance metadata.json (behavior_id + generating_command) for
+  # the strict provenance validator. A failed capture fails the lane — no
+  # silent skip.
+  run_stage "$mode_name" reference_parity_capture_journey_worktree_owner "$repo_root" \
+    env EVIDENCE_BASE="$parity_artifacts_dir/actual" \
+    bash scripts/tui-parity/capture-journey-l3.sh worktree-owner
+
+  run_stage "$mode_name" reference_parity_capture_journey_config_show_effective "$repo_root" \
+    env EVIDENCE_BASE="$parity_artifacts_dir/actual" \
+    bash scripts/tui-parity/capture-journey-l3.sh config-show-effective
+
+  run_stage "$mode_name" reference_parity_capture_journey_config_sources_explain "$repo_root" \
+    env EVIDENCE_BASE="$parity_artifacts_dir/actual" \
+    bash scripts/tui-parity/capture-journey-l3.sh config-sources-explain
+
+  run_stage "$mode_name" reference_parity_capture_journey_wait_any_all "$repo_root" \
+    env EVIDENCE_BASE="$parity_artifacts_dir/actual" \
+    bash scripts/tui-parity/capture-journey-l3.sh wait-any-all
+
+  run_stage "$mode_name" reference_parity_capture_journey_memory_cli "$repo_root" \
+    env EVIDENCE_BASE="$parity_artifacts_dir/actual" \
+    bash scripts/tui-parity/capture-journey-l3.sh memory-cli
+
+  run_stage "$mode_name" reference_parity_capture_journey_folder_trust_deny "$repo_root" \
+    env EVIDENCE_BASE="$parity_artifacts_dir/actual" \
+    bash scripts/tui-parity/capture-journey-l3.sh folder-trust-deny
+
+  run_stage "$mode_name" reference_parity_capture_journey_always_approve_mode "$repo_root" \
+    env EVIDENCE_BASE="$parity_artifacts_dir/actual" \
+    bash scripts/tui-parity/capture-journey-l3.sh always-approve-mode
+
+  run_stage "$mode_name" reference_parity_capture_journey_settings_editor "$repo_root" \
+    env EVIDENCE_BASE="$parity_artifacts_dir/actual" \
+    bash scripts/tui-parity/capture-journey-l3.sh settings-editor
+
   # Generate the reference-freeze receipt fresh into the evidence root. The
   # receipt establishes pinned-reference-binary provenance for this run
   # (Contract §5.1: each signoff run creates a new evidence root that records
@@ -831,10 +883,32 @@ print(f\"wrote freeze receipt {out}\")
 " "$0"' \
     "$parity_artifacts_dir"
 
-  # Refresh evidence metadata after fresh captures: (1) add generating_command
-  # to any metadata.json that lacks it (fresh captures overwrite staged files),
-  # (2) update embedded sha256 hashes in receipt JSON files to match the actual
-  # file contents after fresh captures overwrite staged evidence.
+  # Fresh terminal capability L3 capture (shared by the four TERM-CAP-* rows):
+  # runs the env-gated terminal_capability_matrix_capture_test, which derives
+  # the Harness negotiated terminal mode set, asserts exact parity with the
+  # pinned reference binary (fail-closed), and writes the capability matrix
+  # receipt plus a provenance metadata.json. Journey-style L3+receipt contract
+  # — no Chrome/PNG. A failed capture fails the lane (no silent skip).
+  run_stage "$mode_name" reference_parity_capture_term_cap "$repo_root" \
+    env EVIDENCE_DIR="$parity_artifacts_dir/actual/harness-term-cap-v1" \
+    bash scripts/tui-parity/capture-term-cap-l3.sh
+
+  # Generate canonical L1/L4/L5/L6 evidence layers from the pinned reference
+  # lab and the fresh L3 captures produced above. Fail-closed: any missing
+  # reference freeze, capture, or receipt causes the lane to fail.
+  run_stage "$mode_name" reference_parity_generate_evidence_layers "$repo_root" \
+    python3 scripts/tui-parity/generate-evidence-layers.py \
+      --lab "artifacts/qa-evidence/20260717-tui-reference-parity" \
+      --out "$parity_artifacts_dir" \
+      --lane
+
+  # Refresh evidence metadata after fresh captures AND L1-L6 layer generation:
+  # (1) add generating_command to any metadata.json that lacks it (fresh captures
+  # overwrite staged files), (2) update embedded sha256 hashes in receipt JSON
+  # files to match the actual file contents. This stage runs AFTER
+  # generate-evidence-layers because copied L5 receipts (CANCEL/COMPLETE) contain
+  # embedded path+sha256 pairs referencing lab-relative paths that must be
+  # refreshed to match the fresh lane capture digests.
   run_stage "$mode_name" reference_parity_evidence_refresh "$repo_root" \
     bash -c 'python3 -c "
 import json, os, sys, glob, hashlib

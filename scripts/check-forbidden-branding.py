@@ -52,6 +52,8 @@ ALLOWED_PARITY_PATHS: Final[set[Path]] = {
     Path("docs/grok-build-tui-implementation-prompt.md"),
     Path("docs/tui-reference-module-disposition.v1.json"),
     Path("crates/harness-tui/DESIGN.md"),
+    Path("grok-build-clean-room-parity.md"),
+    Path("scripts/tui-parity/generate-evidence-layers.py"),
 }
 ALLOWED_MATCH_LINES: Final[dict[Path, set[int]]] = {
     Path("scripts/check-forbidden-branding.py"): set(),
