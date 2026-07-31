@@ -1,5 +1,5 @@
 //! P0–P2 inventory fixtures for Harness permission parity (PRD).
-//! Wave-0 T0: OpenCode agent.ts golden matrix (`opencode_agent_ts_matrix.json`).
+//! Wave-0 T0: reference agent tool matrix (`opencode_agent_ts_matrix.json`).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;

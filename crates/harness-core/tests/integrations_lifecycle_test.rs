@@ -10,7 +10,7 @@ use harness_core::extension_manifest::EXTENSION_MANIFEST_V1_SCHEMA_VERSION;
 use harness_core::integrations::{
     run_multi_descriptor_discover_product, run_multi_plugin_lifecycle_product,
     PluginActivationPermission, PluginEnablement, PluginLifecycleError, PluginLifecycleRegistry,
-    PluginLifecycleSummary, PLUGIN_ENTRY_FILE_NAME, PLUGIN_HOOKS_FILE_NAME,
+    PluginLifecycleSummary, PluginRuntimeContract, PLUGIN_ENTRY_FILE_NAME, PLUGIN_HOOKS_FILE_NAME,
     PLUGIN_LOAD_RECEIPT_FILE_NAME, PLUGIN_MANIFEST_FILE_NAME, PLUGIN_REGISTRY_REL,
     PLUGIN_SKILLS_DIR_NAME, PROBE_EXTENSION_ALT_ID, PROBE_EXTENSION_PRIMARY_ID,
     PROBE_EXTENSION_TOOLS_ID, PROBE_PLUGIN_PRIMARY_ID, PROBE_PLUGIN_SECONDARY_ID,
@@ -574,6 +574,40 @@ fn durable_remove_persists_deletion_across_reopen() {
     let after = PluginLifecycleRegistry::open(&workspace).unwrap_or_abort();
     assert!(after.is_empty());
     assert!(after.get("gone.plugin").is_none());
+}
+
+#[test]
+fn durable_contract_upgrade_persists_across_reopen_and_preserves_enablement() {
+    // arrange — a durable contract with an installed + activated package
+    let temp = tempfile::tempdir().unwrap_or_abort();
+    let workspace = temp.path().join("ws");
+    fs::create_dir_all(&workspace).unwrap_or_abort();
+    let v1 = write_plugin_package(&workspace, "plugins/du-v1", "du.plugin");
+    let v2 = write_plugin_package(&workspace, "plugins/du-v2", "du.plugin");
+    let journal = workspace.join(PLUGIN_REGISTRY_REL);
+    let mut contract = PluginRuntimeContract::open(&workspace).unwrap_or_abort();
+    contract.install_from_package_root(&v1).unwrap_or_abort();
+    contract
+        .activate("du.plugin", PluginActivationPermission::Granted)
+        .unwrap_or_abort();
+
+    // act — upgrade to the replacement package and drop the durable contract
+    contract
+        .upgrade_plugin("du.plugin", &v2, PluginActivationPermission::Granted)
+        .unwrap_or_abort();
+    drop(contract);
+
+    // assert — a fresh durable open over the same workspace sees the upgraded, enabled plugin
+    assert!(journal.is_file(), "durable journal must persist");
+    let reopened = PluginLifecycleRegistry::open(&workspace).unwrap_or_abort();
+    let plugin = reopened.get("du.plugin").expect("restored plugin");
+    assert_eq!(plugin.enablement, PluginEnablement::Enabled);
+    assert!(
+        plugin.package_root.ends_with("plugins/du-v2"),
+        "upgrade must persist the new package root: {}",
+        plugin.package_root.display()
+    );
+    assert_eq!(plugin.manifest.id, "du.plugin");
 }
 
 #[test]
