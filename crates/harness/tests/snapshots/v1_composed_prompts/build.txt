@@ -153,11 +153,11 @@ RUST_TEST_THREADS=1 cargo nextest run -p harness-testkit --test pty_e2e --test-t
 ## UPDATE TOGETHER
 | Change | Also update |
 |--------|-------------|
-| Public config keys or validation | `docs/config.md`, `configs/config.json`, `configs/tui.json`, example configs, config schema tests |
-| Event variants or replay semantics | `docs/architecture.md`, `docs/sessions-and-replay.md`, event/replay docs tests |
-| Native tool ids/schema/capability | `docs/native-tool-catalog.md`, `native_tool_parity_matrix_test`, permission docs as needed |
-| Test lane behavior or evidence shape | `docs/testing.md`, `scripts/test-lanes.sh`, owner tests |
-| Simulation invariants | `docs/simulation-matrix.json`, `simulation_validator_test`, simulation evidence, secret scan |
+| Public config keys or validation | `docs/configuration/config.md`, `configs/config.json`, `configs/tui.json`, example configs, config schema tests |
+| Event variants or replay semantics | `docs/architecture/architecture.md`, `docs/architecture/sessions-and-replay.md`, event/replay docs tests |
+| Native tool ids/schema/capability | `docs/tools/native-tool-catalog.md`, `native_tool_parity_matrix_test`, permission docs as needed |
+| Test lane behavior or evidence shape | `docs/testing/testing.md`, `scripts/test-lanes.sh`, owner tests |
+| Simulation invariants | `docs/testing/simulation-matrix.json`, `simulation_validator_test`, simulation evidence, secret scan |
 | Provider model catalog | `configs/provider-catalog.generated.json`, `configs/provider-catalog.reference.jsonc`, generated catalog docs/tests |
 | Runtime prompt assets or shipped skills | `.agent-harness/AGENTS.md`, bootstrap/profile/skill discovery tests, prompt snapshots |
 | Starter config defaults | `configs/harness.example.jsonc`, `configs/tui.example.jsonc`, README quick start |
@@ -184,7 +184,7 @@ Instructions from: /workspace/agent-harness/AGENTS.md
 ## OVERVIEW
 Generated schemas, starter runtime/TUI configs, extension manifest schema, and provider catalog fixtures. These files are public contract inputs.
 
-Read root `AGENTS.md` first. Human-facing explanation belongs in `../docs/config.md`; runtime parsing lives in `crates/harness-core/src/config/`.
+Read root `AGENTS.md` first. Human-facing explanation belongs in `../docs/configuration/config.md`; runtime parsing lives in `crates/harness-core/src/config/`.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
@@ -207,10 +207,10 @@ Read root `AGENTS.md` first. Human-facing explanation belongs in `../docs/config
 ## UPDATE TOGETHER
 | Change | Also update |
 |--------|-------------|
-| Runtime config field | `../docs/config.md`, core config parser/schema tests, examples, README |
-| TUI config field | `../docs/config.md`, TUI config parser/tests, `tui.example.jsonc` |
-| Provider catalog default | generated catalog code/tests, `../docs/provider-support.md`, README if first-run behavior changes |
-| Extension manifest schema | `../docs/extension-strategy.md`, `crates/harness-core` extension manifest tests |
+| Runtime config field | `../docs/configuration/config.md`, core config parser/schema tests, examples, README |
+| TUI config field | `../docs/configuration/config.md`, TUI config parser/tests, `tui.example.jsonc` |
+| Provider catalog default | generated catalog code/tests, `../docs/configuration/provider-support.md`, README if first-run behavior changes |
+| Extension manifest schema | `../docs/operations/extension-strategy.md`, `crates/harness-core` extension manifest tests |
 
 ## TESTS
 ```bash

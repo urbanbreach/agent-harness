@@ -275,7 +275,7 @@ fn journey_manifest_rows_point_at_signoff_scaffolding() {
     // arrange
     // act
     // assert
-    let manifest_path = repo_root().join("docs/tui-reference-parity-manifest.v1.json");
+    let manifest_path = repo_root().join("docs/reference/tui-reference-parity-manifest.v1.json");
     let manifest: Value =
         serde_json::from_str(&fs::read_to_string(&manifest_path).unwrap_or_abort())
             .unwrap_or_abort();

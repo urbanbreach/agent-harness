@@ -147,7 +147,7 @@ fn check_no_whisper_in_source(root: &Path) {
 }
 
 fn check_no_voice_in_capability_inventory(root: &Path) {
-    let path = root.join("docs/capability-inventory.v1.json");
+    let path = root.join("docs/reference/capability-inventory.v1.json");
     let raw = std::fs::read_to_string(&path).unwrap_or_abort();
     let doc: Value = serde_json::from_str(&raw).unwrap_or_abort();
     let rows = doc["capabilities"].as_array().unwrap_or_abort();

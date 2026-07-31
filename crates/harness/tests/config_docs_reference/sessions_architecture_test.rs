@@ -2,7 +2,7 @@ use harness::UnwrapOrAbort;
 #[test]
 fn sessions_docs_cover_lineage_source_cutoff_summary_and_artifact_semantics() {
     // arrange
-    let sessions = read_doc("docs/sessions-and-replay.md");
+    let sessions = read_doc("docs/architecture/sessions-and-replay.md");
     let lineage_source = [
         read_doc("crates/harness-core/src/session_lineage.rs"),
         read_doc("crates/harness-core/src/session_lineage/materialization.rs"),
@@ -47,7 +47,7 @@ fn sessions_docs_cover_lineage_source_cutoff_summary_and_artifact_semantics() {
 #[test]
 fn sessions_docs_cover_resume_acceptance_realistic_interrupted_session() {
     // arrange
-    let sessions = read_doc("docs/sessions-and-replay.md");
+    let sessions = read_doc("docs/architecture/sessions-and-replay.md");
     let resume_test = [
         read_doc("crates/harness-core/tests/coord/12_resume_existing_run_persists_bindings_for_test.rs"),
         read_doc("crates/harness-core/tests/coord/12b_resume_acceptance_restores_realistic_interrupted_session_test.rs"),
@@ -91,7 +91,7 @@ fn sessions_docs_cover_resume_acceptance_realistic_interrupted_session() {
 #[test]
 fn architecture_docs_cover_compaction_contracts_and_preservation_context() {
     // arrange
-    let architecture = read_doc("docs/architecture.md");
+    let architecture = read_doc("docs/architecture/architecture.md");
     let provider_context = [
         read_doc("crates/harness-core/src/coord/provider_context.rs"),
         read_doc("crates/harness-core/src/coord/provider_context/operational_memory.rs"),

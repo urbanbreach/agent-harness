@@ -13,7 +13,7 @@ mod common;
 
 use common::repo_root;
 
-const INVENTORY_REL: &str = "docs/capability-inventory.v1.json";
+const INVENTORY_REL: &str = "docs/reference/capability-inventory.v1.json";
 const SCHEMA_VERSION: &str = "harness-capability-inventory-v1";
 
 const ALLOWED_STATUSES: &[&str] = &["incomplete", "blocked", "pass", "diverged", "excluded"];

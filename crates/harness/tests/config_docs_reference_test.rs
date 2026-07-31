@@ -115,7 +115,7 @@ fn config_docs_runtime_and_tui_keys_match_generated_schemas() {
         .map(str::to_string)
         .collect::<BTreeSet<_>>();
 
-    let doc_path = repo_root().join("docs/config.md");
+    let doc_path = repo_root().join("docs/configuration/config.md");
     let doc = std::fs::read_to_string(&doc_path).unwrap_or_abort();
 
     let documented_runtime_keys = documented_table_keys(&doc, "Runtime top-level keys");
@@ -153,7 +153,7 @@ fn config_docs_document_variable_substitution_and_config_layering() {
     let root = repo_root();
 
     // act
-    let doc = std::fs::read_to_string(root.join("docs/config.md")).unwrap_or_abort();
+    let doc = std::fs::read_to_string(root.join("docs/configuration/config.md")).unwrap_or_abort();
 
     // assert
     assert!(
@@ -204,7 +204,7 @@ fn config_contract_semantic_metadata_matches_docs() {
     // arrange
     let contract = public_config_contract();
     let root = repo_root();
-    let doc = std::fs::read_to_string(root.join("docs/config.md")).unwrap_or_abort();
+    let doc = std::fs::read_to_string(root.join("docs/configuration/config.md")).unwrap_or_abort();
 
     // act
     let runtime_key = contract
@@ -276,8 +276,8 @@ fn config_contract_semantic_metadata_matches_docs() {
 fn config_docs_capture_v1_skill_contract_and_authoring_guide() {
     // arrange
     let root = repo_root();
-    let doc = std::fs::read_to_string(root.join("docs/config.md")).unwrap_or_abort();
-    let starter = std::fs::read_to_string(root.join("docs/starter-skills.md")).unwrap_or_abort();
+    let doc = std::fs::read_to_string(root.join("docs/configuration/config.md")).unwrap_or_abort();
+    let starter = std::fs::read_to_string(root.join("docs/configuration/starter-skills.md")).unwrap_or_abort();
     let readme = std::fs::read_to_string(root.join("README.md")).unwrap_or_abort();
     let runtime_schema = harness_schema_pretty_json().unwrap_or_abort();
     let runtime_schema: serde_json::Value =
@@ -352,9 +352,9 @@ fn config_docs_capture_v1_skill_contract_and_authoring_guide() {
 #[allow(clippy::panic, reason = "test code must panic gracefully")]
 fn built_in_skill_docs_and_capability_map_cover_catalog_stable_ids() {
     // arrange
-    let config = read_doc("docs/config.md");
-    let starter = read_doc("docs/starter-skills.md");
-    let extension = read_doc("docs/extension-strategy.md");
+    let config = read_doc("docs/configuration/config.md");
+    let starter = read_doc("docs/configuration/starter-skills.md");
+    let extension = read_doc("docs/operations/extension-strategy.md");
     let starter_rows = markdown_table_rows(&starter);
     let extension_rows = markdown_table_rows(&extension);
 
@@ -424,12 +424,12 @@ fn built_in_skill_docs_and_capability_map_cover_catalog_stable_ids() {
 fn v1_release_docs_cover_permissions_extension_privacy_migration_and_provider_support() {
     // arrange
     let required_docs = [
-        "docs/permissions.md",
-        "docs/extension-strategy.md",
-        "docs/privacy-and-local-data.md",
-        "docs/migration-notes.md",
-        "docs/provider-support.md",
-        "docs/budgets.md",
+        "docs/permissions/permissions.md",
+        "docs/operations/extension-strategy.md",
+        "docs/permissions/privacy-and-local-data.md",
+        "docs/operations/migration-notes.md",
+        "docs/configuration/provider-support.md",
+        "docs/testing/budgets.md",
     ];
 
     for path in required_docs {
@@ -442,7 +442,7 @@ fn v1_release_docs_cover_permissions_extension_privacy_migration_and_provider_su
         );
     }
 
-    let permissions = read_doc("docs/permissions.md");
+    let permissions = read_doc("docs/permissions/permissions.md");
     for permission in [
         "bash",
         "edit",
@@ -461,7 +461,7 @@ fn v1_release_docs_cover_permissions_extension_privacy_migration_and_provider_su
     assert!(permissions.contains("operator approval layer, not a sandbox"));
     assert!(permissions.contains("runtime-enforced vs behavioral"));
 
-    let extension = read_doc("docs/extension-strategy.md");
+    let extension = read_doc("docs/operations/extension-strategy.md");
     for seam in [
         "typed extension manifest",
         "command/hook",
@@ -476,7 +476,7 @@ fn v1_release_docs_cover_permissions_extension_privacy_migration_and_provider_su
         );
     }
 
-    let privacy = read_doc("docs/privacy-and-local-data.md");
+    let privacy = read_doc("docs/permissions/privacy-and-local-data.md");
     for topic in [
         "Data egress",
         "Storage paths",
@@ -488,7 +488,7 @@ fn v1_release_docs_cover_permissions_extension_privacy_migration_and_provider_su
         assert!(privacy.contains(topic), "privacy doc missing `{topic}`");
     }
 
-    let migration = read_doc("docs/migration-notes.md");
+    let migration = read_doc("docs/operations/migration-notes.md");
     for unsupported in [
         "HTTP server",
         "web share",
@@ -507,7 +507,7 @@ fn v1_release_docs_cover_permissions_extension_privacy_migration_and_provider_su
         );
     }
 
-    let provider = read_doc("docs/provider-support.md");
+    let provider = read_doc("docs/configuration/provider-support.md");
     for category in ProviderErrorCategory::ALL {
         let variant = format!("{category:?}");
         assert!(

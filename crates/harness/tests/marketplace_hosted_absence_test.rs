@@ -237,7 +237,7 @@ fn scope_removal_ledger_covers_marketplace_and_telemetry_families() {
 #[test]
 fn capability_inventory_has_no_marketplace_or_telemetry_rows() {
     let root = repo_root();
-    let inventory_path = root.join("docs/capability-inventory.v1.json");
+    let inventory_path = root.join("docs/reference/capability-inventory.v1.json");
     let raw = fs::read_to_string(&inventory_path).unwrap_or_abort();
     let inventory: Value = serde_json::from_str(&raw).unwrap_or_abort();
 

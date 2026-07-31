@@ -54,11 +54,11 @@ fn architecture_event_docs_match_event_v1_variants() {
     let event_source =
         std::fs::read_to_string(root.join("crates/harness-core/src/event.rs")).unwrap_or_abort();
     let architecture_doc =
-        std::fs::read_to_string(root.join("docs/architecture.md")).unwrap_or_abort();
+        std::fs::read_to_string(root.join("docs/architecture/architecture.md")).unwrap_or_abort();
 
     assert_eq!(
         documented_event_variants(&architecture_doc),
         event_variants_from_source(&event_source),
-        "docs/architecture.md Event Types drifted from EventV1"
+        "docs/architecture/architecture.md Event Types drifted from EventV1"
     );
 }

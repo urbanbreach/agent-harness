@@ -13,7 +13,7 @@ mod common;
 
 use common::{repo_root, strict_journey_signoff};
 
-const MATRIX_REL: &str = "docs/core-subsystem-disposition.v1.json";
+const MATRIX_REL: &str = "docs/reference/core-subsystem-disposition.v1.json";
 const SCHEMA_VERSION: &str = "harness-core-subsystem-disposition-v1";
 
 const ALLOWED_DISPOSITIONS: &[&str] = &[

@@ -29,7 +29,7 @@ fn hook_lifecycle_event_names_from_source() -> Vec<String> {
 #[test]
 fn extension_strategy_documents_command_hook_lifecycle_map() {
     // arrange
-    let extension = read_doc("docs/extension-strategy.md");
+    let extension = read_doc("docs/operations/extension-strategy.md");
     let lifecycle_section = extension
         .split("### Lifecycle phase map\n")
         .nth(1)
@@ -111,9 +111,9 @@ fn extension_strategy_documents_command_hook_lifecycle_map() {
 fn extension_strategy_documents_descriptor_only_manifest_seam() {
     // arrange
     let root = repo_root();
-    let extension = read_doc("docs/extension-strategy.md");
-    let config = read_doc("docs/config.md");
-    let sessions = read_doc("docs/sessions-and-replay.md");
+    let extension = read_doc("docs/operations/extension-strategy.md");
+    let config = read_doc("docs/configuration/config.md");
+    let sessions = read_doc("docs/architecture/sessions-and-replay.md");
     let schema_path = root.join("configs/extension-manifest.v1.schema.json");
 
     // act
