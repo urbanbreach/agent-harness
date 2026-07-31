@@ -1362,6 +1362,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "which",
+ "zbus",
 ]
 
 [[package]]
@@ -1457,6 +1458,7 @@ dependencies = [
  "sha2 0.11.0",
  "syntect",
  "tempfile",
+ "unicode-width",
  "vt100",
 ]
 
