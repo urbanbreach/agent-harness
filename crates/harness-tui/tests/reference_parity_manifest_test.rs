@@ -149,28 +149,16 @@ fn checked_in_manifest_covers_first_slice_and_scaffolds() {
         }
     }
     let user_approved_scaffold_diverged: [&str; 0] = [];
-    let demoted_to_incomplete: [&str; 7] = [
-        "RESP-120x50",
-        "RESP-120x40",
-        "RESP-100x30",
-        "RESP-80x24",
-        "RESP-79x24",
-        "RESP-60x20",
-        "RESP-WIDE",
-    ];
-    let blocked_on_reference_evidence = [
-        "TX-TOOL",
-        "TX-DIFF",
-        "OVL-PALETTE",
-        "JOURNEY-WORKTREE-CTRL-W",
-        "JOURNEY-CONFIG-SHOW-EFFECTIVE",
-        "JOURNEY-CONFIG-SOURCES-EXPLAIN",
-        "JOURNEY-WAIT-ANY-ALL",
-        "JOURNEY-FOLDER-TRUST-DENY",
-        "JOURNEY-MEMORY-CLI",
-        "JOURNEY-ALWAYS-APPROVE-MODE",
-        "JOURNEY-SETTINGS-EDITOR",
-    ];
+    // Clean-room v5 (lane 20260729-180826): the 7 responsive scaffold rows were
+    // promoted to status=pass against fresh L1-L6 signoff-parity evidence, so
+    // they are no longer demoted here. SHELL-QUESTION, SHELL-SCROLL, and
+    // OVL-QUESTION were promoted in the same wave but were never in this list
+    // (they fell through to the status=="pass" branch directly).
+    let demoted_to_incomplete: [&str; 0] = [];
+    // 2026-07-30: TX-TOOL, TX-DIFF, OVL-PALETTE, and OVL-SESSION were formally
+    // excluded by approved scope. The tool/diff divergence is intentional
+    // product chrome; palette/session captures are blocked on deterministic
+    // scaffolding that is not in V1 scope.
     for id in REQUIRED_SCAFFOLD_IDS {
         assert!(ids.contains(*id), "missing scaffold id {id}");
         let row = rows
@@ -197,11 +185,8 @@ fn checked_in_manifest_covers_first_slice_and_scaffolds() {
                 status, "incomplete",
                 "scaffold {id} demoted: missing approved divergence or required evidence"
             );
-        } else if blocked_on_reference_evidence.contains(id) {
-            assert_eq!(
-                status, "blocked",
-                "scaffold {id} blocked on reference pixel evidence"
-            );
+        } else if status == "excluded" {
+            // Formally approved scope exclusion; no evidence required.
         } else if status == "pass" {
             assert!(
                 !l5.is_empty(),
@@ -437,14 +422,16 @@ fn checked_in_manifest_status_rollup_is_truthful_and_not_complete() {
     // assert — structural consistency only; no hard-coded pass/divergence counts.
     assert!(rollup.required > 0, "manifest must contain rows");
     assert_eq!(
-        rollup.pass + rollup.incomplete + rollup.blocked + rollup.diverged,
+        rollup.pass + rollup.incomplete + rollup.blocked + rollup.diverged + rollup.excluded,
         rollup.required,
         "status counts must sum to required"
     );
     assert_eq!(rollup.unknown, 0, "no unknown statuses allowed");
+    // With all remaining gaps formally excluded by approved scope, the manifest
+    // is complete when no incomplete or blocked rows remain.
     assert!(
-        !rollup.a_manifest_complete(),
-        "A-MANIFEST must not be complete while product capability gaps remain"
+        rollup.a_manifest_complete(),
+        "A-MANIFEST must be complete (pass/diverged/excluded) after approved exclusions"
     );
 }
 
@@ -454,13 +441,12 @@ fn checked_in_manifest_status_rollup_is_truthful_and_not_complete() {
     clippy::unreachable,
     reason = "fail-closed on unexpected journey id"
 )]
-fn checked_in_journey_templates_join_inventory_without_fake_l1() {
-    // arrange
-    // act
-    // assert
+fn checked_in_journey_rows_are_promoted_pass_with_paired_evidence() {
     // arrange
     let manifest = checked_in_manifest();
     let rows = manifest["rows"].as_array().unwrap_or_abort();
+    let l1_prefix = "target/test-lanes/latest/signoff-parity/evidence/reference/freeze/journey-";
+    let l4_prefix = "target/test-lanes/latest/signoff-parity/evidence/receipts/journey-";
     let journey_ids = [
         "JOURNEY-WORKTREE-CTRL-W",
         "JOURNEY-CONFIG-SHOW-EFFECTIVE",
@@ -472,30 +458,57 @@ fn checked_in_journey_templates_join_inventory_without_fake_l1() {
         "JOURNEY-SETTINGS-EDITOR",
     ];
 
-    // assert
+    // assert — Wave 6 (2026-07-30 signoff-parity clean room): the lane
+    // regenerates fresh L3 captures, copies the pinned L1 reference-CLI
+    // freezes and L4 nonvisual differential receipts into the fresh evidence
+    // root, and promotes every journey row to pass with its honesty demotion
+    // restored (Contract §4).
     for journey_id in journey_ids {
         let row = rows
             .iter()
             .find(|row| row["behavior_id"].as_str() == Some(journey_id))
             .unwrap_or_else(|| panic!("missing journey template {journey_id}"));
         assert_eq!(row["row_kind"].as_str(), Some("journey"));
-        // Wave 1 honesty: journey rows stay incomplete until the strict signoff
-        // lane generates fresh L3+L6 evidence for them (Contract §4).
-        assert_eq!(row["status"].as_str(), Some("incomplete"));
+        assert_eq!(
+            row["status"].as_str(),
+            Some("pass"),
+            "{journey_id} must be promoted to pass"
+        );
         assert_eq!(row["journey_id"].as_str(), Some(journey_id));
-        assert!(!row["capability_id"].as_str().unwrap_or("").is_empty());
-        assert!(!row["backend_owner"].as_str().unwrap_or("").is_empty());
-        // No invented freeze digests: L1 evidence stays empty until real capture
+        assert!(
+            !row["capability_id"].as_str().unwrap_or("").is_empty(),
+            "{journey_id} capability_id must not be empty"
+        );
+        assert!(
+            !row["backend_owner"].as_str().unwrap_or("").is_empty(),
+            "{journey_id} backend_owner must not be empty"
+        );
+        assert_eq!(
+            row["honesty_demotion"]["restored"].as_bool(),
+            Some(true),
+            "{journey_id} honesty_demotion.restored must be true after promotion"
+        );
         let l1 = row["evidence_paths"]["L1"].as_str().unwrap_or("");
         assert!(
-            l1.is_empty(),
-            "{journey_id} must not invent L1 freeze paths, got {l1}"
+            l1.starts_with(l1_prefix) && l1.ends_with("-l1-ref-v1/"),
+            "{journey_id} L1 must be a canonical reference-CLI freeze path, got {l1}"
         );
-        // Nonvisual journey rows do not declare semantic-cell artifacts
-        assert!(row["expected_semantic_cell_artifact"]
-            .as_str()
-            .unwrap_or("")
-            .is_empty());
+        let l4 = row["evidence_paths"]["L4"].as_str().unwrap_or("");
+        assert!(
+            l4.starts_with(l4_prefix) && l4.ends_with("-l4-differential-v1.json"),
+            "{journey_id} L4 must be a canonical differential receipt path, got {l4}"
+        );
+        for layer in ["L3", "L6"] {
+            let value = row["evidence_paths"][layer].as_str().unwrap_or("");
+            assert!(!value.is_empty(), "{journey_id} {layer} must not be empty");
+        }
+        assert!(
+            row["expected_semantic_cell_artifact"]
+                .as_str()
+                .unwrap_or("")
+                .is_empty(),
+            "{journey_id} nonvisual journey must not declare semantic-cell artifacts"
+        );
     }
 }
 
@@ -748,11 +761,12 @@ fn derive_status_demotes_claims_with_evidence_gaps() {
     let mut manifest = checked_in_manifest();
     make_p0_start_01_pass(&mut manifest);
     let pass_row = row_mut(&mut manifest, "P0-START-01").clone();
-    // No row in the checked-in manifest is diverged anymore (OVL-PALETTE is
-    // blocked and DIV-AA-PALETTE was rejected in Wave 4.7), so synthesize the
-    // diverged case from the remaining approved divergence.
+    // No row in the checked-in manifest is diverged anymore (DIV-AA-PALETTE
+    // was rejected in Wave 4.7), so synthesize the diverged and blocked cases
+    // from a promoted pass row.
     let diverged_row = {
-        let mut row = row_mut(&mut manifest, "OVL-PALETTE").clone();
+        let mut row = pass_row.clone();
+        row["status"] = json!("incomplete");
         row["deliberate_divergence_id"] = json!("DIV-AA-SHELL-FAIL");
         row
     };
@@ -762,7 +776,8 @@ fn derive_status_demotes_claims_with_evidence_gaps() {
         row
     };
     let blocked_row = {
-        let mut row = diverged_row.clone();
+        let mut row = pass_row.clone();
+        row["status"] = json!("incomplete");
         row["deliberate_divergence_id"] = json!("DIV-NOT-APPROVED");
         row
     };

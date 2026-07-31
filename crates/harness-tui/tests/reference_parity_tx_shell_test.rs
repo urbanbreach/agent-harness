@@ -450,7 +450,7 @@ fn tx_assistant_message_chrome_is_rail_free_with_footer() {
         "TX-ASSISTANT: no outer rail on footer\n{rendered}"
     );
 
-    // Grok COMPLETE freeze packs Thought + dedicated wall-clock row between user and body
+    // Reference completed state packs Thought plus a dedicated wall-clock row between user and body.
     // (user → Thought → clock → body ⇒ gap 7 at 100x30 unit geometry).
     assert!(
         asst_idx - user_idx <= 7,
@@ -468,7 +468,7 @@ fn tx_assistant_message_chrome_is_rail_free_with_footer() {
     let asst_rail = first_non_whitespace_column(lines[asst_idx]);
     assert_eq!(
         asst_rail, user_rail,
-        "TX-ASSISTANT: assistant body lead must match user lead (Grok packing)\nuser={user_rail} asst={asst_rail}\n{rendered}"
+        "TX-ASSISTANT: assistant body lead must match user lead (reference packing)\nuser={user_rail} asst={asst_rail}\n{rendered}"
     );
     assert!(
         !rendered.contains("Thought for"),
@@ -678,7 +678,7 @@ fn count_char(rendered: &str, ch: char) -> usize {
 /// Freeze capture: run2-shell-stream-pinned-v2 ("Waiting for response…" state).
 #[test]
 fn shell_stream_keeps_full_width_body_and_bordered_composer() {
-    // arrange — Grok STREAM freeze: user submitted, provider started, no body text.
+    // arrange — reference streaming state: user submitted, provider started, no body text.
     // TaskScheduled keeps activity Streaming after ProviderRequestFinished seeds
     // total_tokens for ⇣ counter.
     let mut app = live_app();

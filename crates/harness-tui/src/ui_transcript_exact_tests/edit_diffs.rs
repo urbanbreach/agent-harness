@@ -541,7 +541,7 @@ pub(crate) fn exact_test_transcript_inline_diff_stays_compact_between_tool_rows(
         96,
     ));
     let rendered = lines.join("\n");
-    // Grok freeze packing: completed reads use count form ("Read 1 file"), not path form.
+    // Waiting-state packing: completed reads use count form ("Read 1 file"), not path form.
     let read_before = lines
         .iter()
         .position(|line| line.contains("Read 1 file"))
@@ -934,7 +934,7 @@ pub(crate) fn exact_test_write_tool_hides_redundant_patched_file_header() {
 
 #[cfg(test)]
 pub(crate) fn exact_test_write_tool_renders_plain_numbered_dual_line_body() {
-    // Given: a write overwrite with before+after content (Grok Creating dual-line form)
+    // Given: a write overwrite with before+after content (reference Creating dual-line form)
     let run_dir = tempfile::tempdir().unwrap_or_abort();
     let mut write = transcript_section_model_test_tool_call("call-write-dual", "fs.write");
     write.args_summary =
@@ -998,7 +998,7 @@ pub(crate) fn exact_test_write_tool_renders_plain_numbered_dual_line_body() {
                 && !trimmed.starts_with("1 -")
                 && !line.contains("← Patched")
         }),
-        "Grok write body is plain numbered dual-line (1  text), not unified +/- markers\n{rendered}"
+        "Reference write body is plain numbered dual-line (1  text), not unified +/- markers\n{rendered}"
     );
 }
 
@@ -1064,15 +1064,15 @@ pub(crate) fn exact_test_write_tool_title_matches_thought_lead() {
     // (matching reference), so title lead is 3 and body lead is title + 2 = 5.
     assert_eq!(
         title_lead, 3,
-        "Grok Creating title aligns with Thought (flat lead); nested card rail adds +2\n{title:?}\n{}",
+        "Reference Creating title aligns with Thought (flat lead); nested card rail adds +2\n{title:?}\n{}",
         lines.join("\n")
     );
     assert_eq!(
         body_lead, 5,
-        "Grok plain body is title+2 (`  1  text`); min-4 line pad was lead=5\ntitle_lead={title_lead} body_lead={body_lead}\n{}",
+        "Reference plain body is title+2 (`  1  text`); min-4 line pad was lead=5\ntitle_lead={title_lead} body_lead={body_lead}\n{}",
         lines.join("\n")
     );
-    // Grok PERM freeze: blank packing row between Creating title and plain numbered body
+    // Reference permission state: blank packing row between Creating title and plain numbered body.
     assert!(
         body_idx >= title_idx + 2 && lines[title_idx + 1].trim().is_empty(),
         "freeze packs blank between Creating title and numbered body\ntitle={title_idx} body={body_idx}\n{}",

@@ -98,7 +98,7 @@ pub(super) fn question_permission_modal_renders_questions_and_answer_input() {
 
     let debug = render_live_buffer(&app, 100, 28);
     assert!(debug.contains("Pick one"));
-    // Grok freeze: all options (○) until answered; cursor focus uses styles only.
+    // Waiting state: all options (○) until answered; cursor focus uses styles only.
     assert!(
         debug.contains("(○)"),
         "unanswered options must paint ○\n{debug}"

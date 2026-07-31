@@ -91,13 +91,18 @@ mod composer_editing;
 #[cfg(test)]
 mod exact_tests;
 mod file_mentions;
+pub mod footer_state;
+mod foreign_import;
 mod key_interaction;
 mod lifecycle;
 mod lineage;
+mod memory_browser;
 mod model_favorites;
 mod model_metadata;
 mod model_switcher;
 mod mouse_interaction;
+mod new_worktree_dialog;
+pub mod notifications;
 mod operator_sidebar;
 pub(crate) mod palette_controller;
 mod pending_live;
@@ -109,6 +114,7 @@ mod prompt_input;
 mod prompt_stash;
 mod prompt_stash_actions;
 mod question_prompt;
+pub mod recovery_state;
 mod secondary_surfaces;
 pub(crate) mod session_history;
 mod session_live_routing;
@@ -118,9 +124,13 @@ mod session_projection;
 mod session_slash;
 mod session_stack;
 mod settings_editor;
+pub mod shell_status;
+pub mod terminal_diagnostics;
 mod terminal_panel;
 #[cfg(test)]
 mod tests;
+pub mod theme_preview;
+pub mod tips;
 #[cfg(test)]
 pub(crate) use exact_tests::*;
 mod toggles;
@@ -130,6 +140,7 @@ mod transcript_cache;
 mod transcript_state;
 mod transcript_view;
 mod workspace_display;
+mod worktree_picker;
 
 pub(crate) use self::activity::{
     humanize_profile_label, task_completed_updates_assistant_transcript,
@@ -151,6 +162,7 @@ pub use self::lifecycle::{
     default_shell_registry, Focus, LifecycleShellState, MemoryCaps, PostRunHandoffAction,
     ReviewSurface, ShellDescriptor, ShellKind, StartupLauncherAction, Tab, UiIntent,
 };
+use self::new_worktree_dialog::NewWorktreeDialogState;
 use self::permission_prompt::PermissionPromptState;
 use self::permissions::{
     PermissionConfirmSelection, PermissionModalSelection, PermissionModalStage,
@@ -204,7 +216,9 @@ pub(crate) use file_mentions::{
     FileMentionFrecency, FileMentionIndex, FileMentionTag, FileMentionWorkspaceScanner,
     SystemFileMentionWorkspaceScanner,
 };
+pub use foreign_import::ForeignImportPickerState;
 pub use lineage::{ForkSelectorState, LineageBrowserState};
+pub use memory_browser::{MemoryBrowserEntry, MemoryBrowserState};
 pub use model_metadata::{LaunchMetadata, McpResourceOption, ModelOption};
 pub use pending_live::{
     set_pending_connect_providers, set_pending_live_launch_metadata,
@@ -223,6 +237,7 @@ pub use prompt_history::prompt_history_path_for_session_dir;
 pub use prompt_stash::prompt_stash_path_for_session_dir;
 use secondary_surfaces::SecondarySurfaceState;
 pub use toggles::{ToggleEntryConfig, ToggleEntryKind, ToggleMenuRow, TogglesConfig};
+pub use worktree_picker::WorktreePickerState;
 
 /// Truncation limit for tool output display in the TUI (chars)
 const TOOL_OUTPUT_DISPLAY_MAX_CHARS: usize = 100;
@@ -498,6 +513,7 @@ pub struct AppState {
     /// Last ACP session bind outcome (diagnostics; fail-closed when disconnected).
     pub(crate) acp_last_bind: Option<AcpBindOutcome>,
     pub plan_view_visible: bool,
+    pub trust_folder_prompt_visible: bool,
     pub plan_view_selected: usize,
     pub plan_view_preview: Option<String>,
     pub theme_name: String,
@@ -517,6 +533,10 @@ pub struct AppState {
     pub lineage_browser_visible: bool,
     pub fork_selector: ForkSelectorState,
     pub fork_selector_visible: bool,
+    pub memory_browser: MemoryBrowserState,
+    pub worktree_picker: WorktreePickerState,
+    pub(crate) new_worktree_dialog: NewWorktreeDialogState,
+    pub foreign_import_picker: ForeignImportPickerState,
     pub slash_visible: bool,
     pub slash_filtered: Vec<String>,
     pub slash_selected: usize,
@@ -701,6 +721,7 @@ impl Default for AppState {
             acp_last_connect: None,
             acp_last_bind: None,
             plan_view_visible: false,
+            trust_folder_prompt_visible: false,
             plan_view_selected: 0,
             plan_view_preview: None,
             theme_name: "default".to_string(),
@@ -720,6 +741,10 @@ impl Default for AppState {
             lineage_browser_visible: false,
             fork_selector: ForkSelectorState::default(),
             fork_selector_visible: false,
+            memory_browser: MemoryBrowserState::default(),
+            worktree_picker: WorktreePickerState::default(),
+            new_worktree_dialog: NewWorktreeDialogState::default(),
+            foreign_import_picker: ForeignImportPickerState::default(),
             slash_visible: false,
             slash_filtered: Vec::new(),
             slash_selected: 0,
@@ -2702,5 +2727,128 @@ impl AppState {
 
     pub(crate) fn provider_disconnected(&self) -> bool {
         !self.launch_metadata.has_provider()
+    }
+
+    // -----------------------------------------------------------------------
+    // Scrollback test helpers (compilation shims for scrollback_state_test)
+    // -----------------------------------------------------------------------
+
+    /// Record the maximum scroll offset for the current transcript content.
+    pub fn record_transcript_max_scroll(&mut self, max_scroll: usize) {
+        self.transcript_view
+            .last_transcript_max_scroll
+            .set(max_scroll);
+    }
+
+    /// Returns `true` when follow mode is active (scroll pinned to bottom).
+    pub fn follow_mode_active(&self) -> bool {
+        self.transcript_view.follow_mode
+    }
+
+    /// Current scroll offset (0 = bottom / most recent content).
+    pub fn transcript_scroll_offset(&self) -> usize {
+        self.transcript_view.transcript_scroll
+    }
+
+    /// Scroll up (away from bottom) by `viewport` rows, breaking follow mode.
+    pub fn scroll_page_up(&mut self, viewport: usize) {
+        self.transcript_view.follow_mode = false;
+        self.transcript_view.transcript_scroll = self
+            .transcript_view
+            .transcript_scroll
+            .saturating_add(viewport.max(1));
+    }
+
+    /// Scroll down (toward bottom) by `viewport` rows. Re-engages follow at 0.
+    pub fn scroll_page_down(&mut self, viewport: usize) {
+        self.transcript_view.transcript_scroll = self
+            .transcript_view
+            .transcript_scroll
+            .saturating_sub(viewport.max(1));
+        if self.transcript_view.transcript_scroll == 0 {
+            self.transcript_view.follow_mode = true;
+        }
+    }
+
+    /// Scroll up by half of `viewport` (rounded up), breaking follow mode.
+    pub fn scroll_half_page_up(&mut self, viewport: usize) {
+        let half = (viewport + 1) / 2;
+        self.scroll_page_up(half);
+    }
+
+    /// Scroll down by half of `viewport` (rounded up). Re-engages follow at 0.
+    pub fn scroll_half_page_down(&mut self, viewport: usize) {
+        let half = (viewport + 1) / 2;
+        self.scroll_page_down(half);
+    }
+
+    /// Jump to the top (oldest content). Breaks follow mode.
+    pub fn scroll_goto_top(&mut self) {
+        let max = self.transcript_view.last_transcript_max_scroll.get();
+        self.transcript_view.transcript_scroll = max;
+        self.transcript_view.follow_mode = false;
+    }
+
+    /// Jump to the bottom (newest content). Re-engages follow mode.
+    pub fn scroll_goto_bottom(&mut self) {
+        self.transcript_view.transcript_scroll = 0;
+        self.transcript_view.follow_mode = true;
+    }
+
+    /// Called when new content arrives. If in follow mode, scroll stays at 0.
+    /// If not in follow mode, scroll position is unchanged.
+    pub fn follow_mode_content_arrived(&mut self) {
+        if self.transcript_view.follow_mode {
+            self.transcript_view.transcript_scroll = 0;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Tool output fold test helpers (compilation shims for scrollback_state_test)
+    // -----------------------------------------------------------------------
+
+    /// Toggle the expansion state of a single tool output by id.
+    pub fn toggle_tool_output_for_test(&mut self, tool_call_id: &str) {
+        if !self
+            .transcript_view
+            .expanded_tool_outputs
+            .insert(tool_call_id.to_string())
+        {
+            self.transcript_view
+                .expanded_tool_outputs
+                .remove(tool_call_id);
+        }
+    }
+
+    /// Check whether a tool output is expanded.
+    pub fn is_tool_output_expanded_for_test(&self, tool_call_id: &str) -> bool {
+        self.transcript_view
+            .expanded_tool_outputs
+            .contains(tool_call_id)
+    }
+
+    /// Return all expanded tool-output ids.
+    pub fn expanded_tool_output_ids_for_test(&self) -> Vec<String> {
+        self.transcript_view
+            .expanded_tool_outputs
+            .iter()
+            .cloned()
+            .collect()
+    }
+
+    /// Expand all known tool-call outputs.
+    pub fn expand_all_tool_outputs_for_test(&mut self) {
+        for activity in &self.projection.activities {
+            for tc in &activity.tool_calls {
+                self.transcript_view
+                    .expanded_tool_outputs
+                    .insert(tc.tool_call_id.clone());
+            }
+        }
+    }
+
+    /// Collapse all tool-call outputs.
+    pub fn collapse_all_tool_outputs_for_test(&mut self) {
+        self.transcript_view.expanded_tool_outputs.clear();
     }
 }

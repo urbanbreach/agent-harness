@@ -621,7 +621,7 @@ pub(super) fn permission_modal_remains_visually_dominant_and_fail_closed() {
             || rendered.contains("esc:cancel")
     );
     assert!(!rendered.contains("Commands"));
-    // Grok freeze: selected option is distinguished by the filled marker only, with the same
+    // Waiting state: selected option is distinguished by the filled marker only, with the same
     // card-surface background and primary text as unselected options.
     assert!(
         bgs[start..end]

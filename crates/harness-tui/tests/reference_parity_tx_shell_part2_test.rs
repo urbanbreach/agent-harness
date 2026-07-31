@@ -427,7 +427,7 @@ fn shell_cancel_projects_cancelled_distinct_from_failure() {
     );
     assert!(
         rendered.contains("Turn cancelled by user"),
-        "SHELL-CANCEL: cancel reason must surface as Grok-style cancel footer\n{rendered}"
+        "SHELL-CANCEL: cancel reason must surface as Harness cancel footer\n{rendered}"
     );
     assert!(
         !rendered.contains("Retry failed:"),

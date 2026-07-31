@@ -199,7 +199,12 @@ pub fn validate_state_viewport(
 ///
 /// A non-empty unapproved divergence id blocks the row; missing owners or
 /// missing applicable evidence/artifact declarations keep it incomplete.
+/// Rows formally marked `excluded` in the manifest preserve that status without
+/// requiring evidence.
 pub fn derive_status(row: &Value, policy: &DivergencePolicy<'_>) -> &'static str {
+    if row["status"].as_str() == Some("excluded") {
+        return "excluded";
+    }
     let divergence_id = row["deliberate_divergence_id"].as_str().unwrap_or("");
     if !divergence_id.is_empty() {
         return if policy.approved.contains(divergence_id) {

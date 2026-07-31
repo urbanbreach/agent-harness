@@ -1165,7 +1165,7 @@ pub(crate) fn exact_test_selected_rail_falls_back_to_thought_without_tools() {
 pub(crate) fn exact_test_done_body_after_tool_keeps_separate_wall_clock_row() {
     // Given: a completed tool turn with single-line DONE body + footer wall clock
     // Tool seq must precede body (last_seq) so assistant_parts order is Tool → Body
-    // (matches Grok DIFF / live_diff event order).
+    // (matches the reference diff / live_diff event order).
     let mut app = AppState::default();
     let mut entry =
         transcript_section_model_test_activity("request-done-clock", ActivityStatus::Done, "DONE");
@@ -1196,7 +1196,7 @@ pub(crate) fn exact_test_done_body_after_tool_keeps_separate_wall_clock_row() {
         })
         .collect();
 
-    // Then: Grok DIFF keeps wall clock on its own row between the tool and DONE body
+    // Then: the reference diff state keeps wall clock on its own row between the tool and DONE body.
     let done_line = lines
         .iter()
         .find(|line| line.contains("DONE"))
@@ -1241,7 +1241,7 @@ pub(crate) fn exact_test_body_after_thought_packs_wall_clock_on_same_line() {
         })
         .collect();
 
-    // Then: Grok COMPLETE packs wall clock on the single-line body row.
+    // Then: the reference completed state packs wall clock on the single-line body row.
     let hello_idx = lines
         .iter()
         .position(|line| line.contains("HELLO_PARITY_OK"))
@@ -1263,7 +1263,7 @@ pub(crate) fn exact_test_body_after_thought_packs_wall_clock_on_same_line() {
 
 #[cfg(test)]
 pub(crate) fn exact_test_tool_turn_without_thinking_omits_thought() {
-    // Given: a completed tool turn with empty thinking text (Grok TOOL freeze)
+    // Given: a completed tool turn with empty thinking text (reference tool state)
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
         "request-tool-no-thought",
@@ -1289,7 +1289,7 @@ pub(crate) fn exact_test_tool_turn_without_thinking_omits_thought() {
         .collect::<Vec<_>>()
         .join("\n");
 
-    // Then: Grok TOOL omits Thought when there was no reasoning
+    // Then: the reference tool state omits Thought when there was no reasoning.
     assert!(
         !rendered.contains("Thought for"),
         "completed tool turns without thinking must omit Thought chrome\n{rendered}"
@@ -1375,7 +1375,7 @@ pub(crate) fn exact_test_pending_question_has_no_selected_rail() {
         .collect::<Vec<_>>()
         .join("\n");
 
-    // Then: Grok question freeze paints no ❙ while Waiting on answers
+    // Then: the reference question state paints no ❙ while Waiting on answers.
     assert!(
         selected.is_empty(),
         "pending question turns must not paint selected rail\nselected={selected:#?}\n{rendered}"

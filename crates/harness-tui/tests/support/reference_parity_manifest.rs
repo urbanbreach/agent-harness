@@ -19,7 +19,7 @@ pub const FREEZE_TXT_SHA256: &str =
 pub const FREEZE_PNG_SHA256: &str =
     "0830427651ae47645ea3ea49b532ef7ea29a69c3140f140d7df201f5093d6016";
 
-pub const STATUS_VALUES: &[&str] = &["incomplete", "blocked", "pass", "diverged"];
+pub const STATUS_VALUES: &[&str] = &["incomplete", "blocked", "pass", "diverged", "excluded"];
 /// Expanded §4.1 acceptance gates. Top-level `acceptance_gate_ids` must list every gate.
 pub const ACCEPTANCE_GATES: &[&str] = &[
     "A-MANIFEST",
@@ -144,7 +144,7 @@ impl ManifestFailure {
 
 pub type ValidateResult = Result<(), Vec<ManifestFailure>>;
 
-/// Status counts for §4.2 rollup (required / pass / blocked / diverged / incomplete).
+/// Status counts for §4.2 rollup (required / pass / blocked / diverged / incomplete / excluded).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct StatusRollup {
     pub required: usize,
@@ -152,15 +152,17 @@ pub struct StatusRollup {
     pub blocked: usize,
     pub pass: usize,
     pub diverged: usize,
+    pub excluded: usize,
     pub unknown: usize,
 }
 
 impl StatusRollup {
-    /// A-MANIFEST is complete when every required row is `pass` or user-approved `diverged`.
-    /// All `diverged` rows must carry a user-approved divergence ID (enforced at row level).
+    /// A-MANIFEST is complete when every required row is `pass`, user-approved `diverged`,
+    /// or formally `excluded` by approved scope. All `diverged` rows must carry a
+    /// user-approved divergence ID (enforced at row level).
     pub fn a_manifest_complete(&self) -> bool {
         self.required > 0
-            && self.pass + self.diverged == self.required
+            && self.pass + self.diverged + self.excluded == self.required
             && self.unknown == 0
             && self.incomplete == 0
             && self.blocked == 0
@@ -180,6 +182,7 @@ pub fn rollup_status(manifest: &Value) -> StatusRollup {
             Some("blocked") => rollup.blocked += 1,
             Some("pass") => rollup.pass += 1,
             Some("diverged") => rollup.diverged += 1,
+            Some("excluded") => rollup.excluded += 1,
             _ => rollup.unknown += 1,
         }
     }

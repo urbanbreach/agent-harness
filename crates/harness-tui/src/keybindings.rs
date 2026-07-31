@@ -8,7 +8,9 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::collections::{BTreeMap, HashMap};
 use std::str::FromStr;
 
+pub mod action_dispatch;
 mod command_registry;
+pub mod focus;
 pub mod palette_model;
 pub mod parity_matrix;
 
@@ -121,6 +123,8 @@ pub enum Action {
     OpenSessionHistory,
     OpenSettings,
     OpenViewPlan,
+    OpenMemoryBrowser,
+    OpenWorktreePicker,
 }
 
 impl Action {
@@ -202,6 +206,8 @@ impl Action {
             Action::OpenSessionHistory => Some("open_session_history"),
             Action::OpenSettings => Some("open_settings"),
             Action::OpenViewPlan => Some("open_view_plan"),
+            Action::OpenMemoryBrowser => Some("open_memory_browser"),
+            Action::OpenWorktreePicker => Some("open_worktree_picker"),
         }
     }
 
@@ -302,6 +308,8 @@ impl Action {
             Action::OpenSessionHistory => "open_session_history",
             Action::OpenSettings => "open_settings",
             Action::OpenViewPlan => "open_view_plan",
+            Action::OpenMemoryBrowser => "open_memory_browser",
+            Action::OpenWorktreePicker => "open_worktree_picker",
         }
     }
 
@@ -425,6 +433,10 @@ impl FromStr for Action {
             "open_session_history" | "resume_session" => Ok(Action::OpenSessionHistory),
             "open_settings" | "settings" => Ok(Action::OpenSettings),
             "open_view_plan" | "view_plan" | "view-plan" => Ok(Action::OpenViewPlan),
+            "open_memory_browser" | "memory" => Ok(Action::OpenMemoryBrowser),
+            "open_worktree_picker" | "worktree" | "switch_worktree" => {
+                Ok(Action::OpenWorktreePicker)
+            }
             _ => Err(format!("unknown action: {s}")),
         }
     }

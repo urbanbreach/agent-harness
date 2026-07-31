@@ -105,7 +105,7 @@ fn startup_welcome_is_compose_first_with_harness_branding_no_reference_identity(
     );
     assert!(
         !rendered.to_ascii_lowercase().contains("grok"),
-        "P0-START-01: must not render Grok reference identity\n{rendered}"
+        "P0-START-01: must not render the external reference identity\n{rendered}"
     );
     assert!(
         !rendered.to_ascii_lowercase().contains("spacexai"),

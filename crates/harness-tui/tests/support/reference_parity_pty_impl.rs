@@ -88,16 +88,16 @@ const QUESTION_STREAM_USER_TEXT: &str = "ask me the parity question";
 const FAIL_USER_TEXT: &str = "fail the parity probe";
 const COMPLETE_USER_TEXT: &str = "complete the parity probe";
 const COMPLETE_ASSISTANT_TEXT: &str = "parity turn complete stream final response rendered cleanly under the shell composer parity turn complete stream final response rendered cleanly under the shell composer parity turn complete stream final response rendered cleanly under the shell composer";
-// Grok CANCEL freeze (run1-shell-cancel-pinned-v1): empty transcript + draft in composer.
+// Reference cancellation state (run1-shell-cancel-pinned-v1): empty transcript + draft in composer.
 const CANCEL_USER_TEXT: &str = "cancel the parity probe";
-// Grok RECOVER freeze (run1-shell-recover-pinned-v1): same fail state + draft in composer.
+// Reference recovery state (run1-shell-recover-pinned-v1): same fail state + draft in composer.
 const RECOVER_USER_TEXT: &str = "recover the parity probe";
 const RECOVER_DRAFT: &str = "retry after failure draft";
-// Grok TOOL freeze user prompt (run1-tool-proxy-v2).
+// Reference tool-state user prompt (run1-tool-proxy-v2).
 const TOOL_USER_TEXT: &str =
     "Use a tool to list files in the current directory, then report COUNT=N for the number of top-level entries. Do not invent.";
 const TOOL_PATH_TEXT: &str = "echo tx-tool-output-probe-line";
-// Grok DIFF freeze user prompt (run1-diff-proxy-v2).
+// Reference diff-state user prompt (run1-diff-proxy-v2).
 const DIFF_USER_TEXT: &str =
     "Overwrite demo.txt with exactly the single line: parity-diff-ok. Use a file write/edit tool so a diff is shown. Then reply DONE.";
 
@@ -152,7 +152,7 @@ fn install_parity_context_window() {
     set_pending_replay_launch_metadata(Some(LaunchMetadata::from_model_option(&option)));
 }
 const DIFF_PATH_TEXT: &str = "demo.txt";
-// Grok SCROLL freeze (run1-shell-scroll-pinned-v1): streaming state with partial response.
+// Reference scroll state (run1-shell-scroll-pinned-v1): streaming state with partial response.
 const SCROLL_USER_TEXT: &str = "scroll the parity probe";
 const SCROLL_ASSISTANT_TEXT: &str =
     "parity turn complete stream final response rendered cleanly under the shell";
@@ -160,7 +160,7 @@ const QUESTION_USER_TEXT: &str = "You MUST use the AskUserQuestion tool (or equi
 const READY_MARKER: &str = "❯";
 const DRAFT_TEXT: &str = "parity draft";
 const PERMISSION_DRAFT: &str = "keep draft under permission";
-// Grok PERM freeze packing: Thought + Creating demo.txt above edit permission dock.
+// Reference permission-state packing: Thought + Creating demo.txt above edit permission dock.
 const PERMISSION_USER_TEXT: &str =
     "Create or overwrite demo.txt with the single line: parity-ok. Use a file write tool.";
 const PERMISSION_TOOL_CALL_ID: &str = "tool_call_parity_overlay";
@@ -582,7 +582,7 @@ pub(crate) fn shell_scroll_pty() {
     let mut helper = spawn_helper_at(LIVE_SCROLL_HELPER, LIVE_SCROLL_SCENARIO, 120, 40);
     helper.wait_for(SCROLL_USER_TEXT);
     helper.wait_for(SCROLL_ASSISTANT_TEXT);
-    // Grok SCROLL freeze: PageUp during streaming to scroll away from follow.
+    // Reference scroll state: PageUp during streaming to scroll away from follow.
     send_bytes(helper.writer.as_mut(), b"\x1b[5~").unwrap_or_abort();
     thread::sleep(READ_POLL_TIMEOUT);
     let screen = helper.screen_text();
@@ -618,7 +618,7 @@ pub(crate) fn tx_tool_pty() {
     );
     assert!(
         screen.contains("Responding") || screen.contains("Waiting for response"),
-        "TX-TOOL PTY: streaming indicator required (Grok freeze form)\n{screen}"
+        "TX-TOOL PTY: streaming indicator required (waiting-state form)\n{screen}"
     );
     assert!(
         screen.contains('◈') || screen.contains('◆'),
@@ -646,7 +646,7 @@ pub(crate) fn tx_diff_pty() {
     );
     assert!(
         screen.contains("Responding") || screen.contains("Waiting for response"),
-        "TX-DIFF PTY: streaming indicator required (Grok freeze form)\n{screen}"
+        "TX-DIFF PTY: streaming indicator required (waiting-state form)\n{screen}"
     );
     assert!(
         !screen.contains('┃'),
@@ -915,7 +915,7 @@ pub(crate) fn pty_helper_live_cancel() {
     if std::env::var(HELPER_SCENARIO_ENV).as_deref() != Ok(LIVE_CANCEL_SCENARIO) {
         return;
     }
-    // Grok CANCEL freeze (run1-shell-cancel-pinned-v1): empty transcript + draft
+    // Reference cancellation state (run1-shell-cancel-pinned-v1): empty transcript + draft
     // "cancel the parity probe" in the composer. The reference binary clears the
     // transcript after cancellation and restores the prompt as a draft.
     set_pending_live_prompt_draft(Some(CANCEL_USER_TEXT.to_string()));
@@ -959,7 +959,7 @@ pub(crate) fn pty_helper_question_overlay() {
     let run_dir = tempfile::tempdir().unwrap_or_abort();
     let (update_tx, update_rx) = mpsc::channel();
     let inject_tx = update_tx.clone();
-    // Grok question freeze: Thought + Ask + Waiting chrome above the dock.
+    // Reference question state: Thought + Ask + Waiting chrome above the dock.
     // Seed an in-flight turn, then inject the question permission so orphan Ask projects.
     thread::spawn(move || {
         thread::sleep(PERMISSION_INJECT_DELAY);
@@ -1080,7 +1080,7 @@ pub(crate) fn pty_helper_permission_overlay() {
     run_tui_with_options(TuiOptions {
         mode: TuiMode::Live {
             run_dir: run_dir.path().to_path_buf(),
-            // Grok PERM freeze: Thought + Creating above the dock (seed like question overlay).
+            // Reference permission state: Thought + Creating above the dock (seed like question overlay).
             historical_events: permission_turn_events(),
             session_history_entries: Vec::new(),
             prompt_history_path: None,
@@ -1382,7 +1382,7 @@ fn parity_envelope(seq: u64, correlation_id: Option<&str>, payload: EventV1) -> 
 
 fn stream_events() -> Vec<EventEnvelopeV1> {
     let request_id = "req_stream_pty";
-    // Grok STREAM freeze: "Waiting for response…" state — user submitted, provider
+    // Reference streaming state: "Waiting for response…" state — user submitted, provider
     // started, no body text yet. TaskScheduled keeps the activity Streaming after
     // ProviderRequestFinished seeds total_tokens for the ⇣ download counter.
     // Elapsed 5.3s, ⇣1.43k tokens.
@@ -1551,7 +1551,7 @@ fn question_stream_events() -> Vec<EventEnvelopeV1> {
 
 fn fail_events() -> Vec<EventEnvelopeV1> {
     let request_id = "req_fail_pty";
-    // Grok FAIL freeze (run1-shell-fail-pinned-v1): user message + "parity
+    // Reference failure state (run1-shell-fail-pinned-v1): user message + "parity
     // turn fails mid stream" assistant text + "⠸ Retrying (attempt 2)… 0.4s
     // 2.6s ⇣4.14k [stop]" activity footer. Single activity: TaskScheduled
     // keeps it Streaming after ProviderRequestFinished seeds total_tokens.
@@ -1626,7 +1626,7 @@ fn fail_events() -> Vec<EventEnvelopeV1> {
 
 fn complete_events() -> Vec<EventEnvelopeV1> {
     let request_id = "req_complete_pty";
-    // Grok COMPLETE freeze (run1-shell-complete-pinned-v1): Worked for 2.3s.
+    // Reference completed state (run1-shell-complete-pinned-v1): Worked for 2.3s.
     let mut events = vec![
         parity_envelope(
             1,
@@ -1677,7 +1677,7 @@ fn complete_events() -> Vec<EventEnvelopeV1> {
 
 fn recover_events() -> Vec<EventEnvelopeV1> {
     let request_id = "req_recover_pty";
-    // Grok RECOVER freeze (run1-shell-recover-pinned-v1): same retry structure
+    // Reference recovery state (run1-shell-recover-pinned-v1): same retry structure
     // as SHELL-FAIL but with "recover the parity probe" user message and
     // "retry after failure draft" in the composer. Retry spinner shows
     // "⠸ Retrying (attempt 2)… 1.2s    3.8s ⇣4.14k [stop]".
@@ -1748,7 +1748,7 @@ fn recover_events() -> Vec<EventEnvelopeV1> {
 
 fn tool_events() -> Vec<EventEnvelopeV1> {
     let request_id = "req_tool_pty";
-    // Grok TOOL freeze: streaming tool-loop with 10 echo commands (5 failed).
+    // Reference tool state: streaming tool-loop with 10 echo commands (5 failed).
     // Reference: '❙ ◈ Ran 5 commands · 5 failed' + 10 '❙ ◆ Run echo tx-tool-output-probe-line'
     // + '⠇ Waiting for response… 3.2s' + 'Ctrl+c:cancel' footer.
     let mut events = vec![
@@ -1850,7 +1850,7 @@ fn tool_events() -> Vec<EventEnvelopeV1> {
 
 fn diff_events() -> Vec<EventEnvelopeV1> {
     let request_id = "req_diff_pty";
-    // Grok DIFF freeze: streaming state with 9 edit chips, no inline diff body.
+    // Reference diff state: streaming state with 9 edit chips, no inline diff body.
     // Reference: '◆ edit' chips (9 entries) + '⠋ Waiting for response… 3.2s' + 'Ctrl+c:cancel' footer.
     let mut events = vec![
         parity_envelope(
@@ -1943,7 +1943,7 @@ fn diff_events() -> Vec<EventEnvelopeV1> {
 
 fn scroll_events() -> Vec<EventEnvelopeV1> {
     let request_id = "req_scroll_pty";
-    // Grok SCROLL freeze (run1-shell-scroll-pinned-v1): streaming state with
+    // Reference scroll state (run1-shell-scroll-pinned-v1): streaming state with
     // partial assistant response visible. TaskScheduled keeps activity Streaming
     // after ProviderRequestFinished seeds total_tokens for the ⇣ download counter.
     let mut events = vec![
@@ -2005,7 +2005,7 @@ fn scroll_events() -> Vec<EventEnvelopeV1> {
 
 fn question_turn_events() -> Vec<EventEnvelopeV1> {
     let request_id = "req_question_pty";
-    // mono 0 → inject at 900ms so Waiting footer packs 0.9s like Grok freeze.
+    // mono 0 → inject at 900ms so Waiting footer packs 0.9s in the waiting state.
     let mut events = vec![
         parity_envelope(
             1,
@@ -2027,7 +2027,7 @@ fn question_turn_events() -> Vec<EventEnvelopeV1> {
                 metadata: None,
             }),
         ),
-        // Title-only reasoning span mono 100→200 = 0.1s Thought for (Grok freeze).
+        // Title-only reasoning span mono 100→200 = 0.1s Thought for (waiting state).
         parity_envelope(
             3,
             Some(request_id),
@@ -2064,7 +2064,7 @@ fn question_permission_requested_event(
         event_id: format!("evt_parity_question_{seq:04}"),
         seq,
         run_id: "run_parity_question_overlay".into(),
-        // Grok freeze packs Waiting meta as ~0.9s.
+        // Waiting state packs Waiting meta as ~0.9s.
         // Historical first mono settles at 100 (0 is treated as unset); inject at 1000 → 0.9s.
         mono_ms: 1000,
         ts: Some("2026-07-17T12:00:00Z".to_string()),
@@ -2102,7 +2102,7 @@ fn question_permission_requested_event(
 
 fn permission_turn_events() -> Vec<EventEnvelopeV1> {
     let request_id = PERMISSION_REQUEST_ID;
-    // Grok PERM freeze: Thought for 0.1s + Creating demo.txt above Allow Edit dock.
+    // Waiting state: Thought for 0.1s + Creating demo.txt above Allow Edit dock.
     let mut events = vec![
         parity_envelope(
             1,
@@ -2124,7 +2124,7 @@ fn permission_turn_events() -> Vec<EventEnvelopeV1> {
                 metadata: None,
             }),
         ),
-        // Title-only reasoning span mono 100→200 = 0.1s Thought for (Grok freeze).
+        // Title-only reasoning span mono 100→200 = 0.1s Thought for (waiting state).
         parity_envelope(
             3,
             Some(request_id),

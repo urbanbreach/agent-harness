@@ -241,3 +241,224 @@ fn resp_wide_140x40_idle_shell_keeps_bordered_composer() {
         "RESP-WIDE: idle shell must not show draft footer\n{rendered}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Boundary column tests: 59/60/61, 79/80/81, 99/100/101, 119/120/121
+// ---------------------------------------------------------------------------
+
+/// Boundary 59/60/61 columns: composer border and footer survive the dense cutoff.
+#[test]
+fn boundary_59_60_61_columns_keep_bordered_composer_and_footer() {
+    for width in [59u16, 60, 61] {
+        let app = idle_shell_app();
+        let rendered = render_at(&app, width, 20);
+
+        assert!(
+            rendered.contains('❯'),
+            "boundary {width}x20: composer glyph required\n{rendered}"
+        );
+        assert_eq!(
+            count_char(&rendered, '╭'),
+            1,
+            "boundary {width}x20: exactly one bordered box\n{rendered}"
+        );
+        assert!(
+            rendered.contains("Shift+Tab:mode") || rendered.contains("Ctrl+x:shortcuts"),
+            "boundary {width}x20: idle footer required\n{rendered}"
+        );
+    }
+}
+
+/// Boundary 79/80/81 columns: composer border and footer survive the minimum breakpoint.
+#[test]
+fn boundary_79_80_81_columns_keep_bordered_composer_and_footer() {
+    for width in [79u16, 80, 81] {
+        let app = idle_shell_app();
+        let rendered = render_at(&app, width, 24);
+
+        assert!(
+            rendered.contains('❯'),
+            "boundary {width}x24: composer glyph required\n{rendered}"
+        );
+        assert_eq!(
+            count_char(&rendered, '╭'),
+            1,
+            "boundary {width}x24: exactly one bordered box\n{rendered}"
+        );
+        assert!(
+            rendered.contains("Shift+Tab:mode") || rendered.contains("Ctrl+x:shortcuts"),
+            "boundary {width}x24: idle footer required\n{rendered}"
+        );
+    }
+}
+
+/// Boundary 99/100/101 columns: composer border and footer survive the primary breakpoint.
+#[test]
+fn boundary_99_100_101_columns_keep_bordered_composer_and_footer() {
+    for width in [99u16, 100, 101] {
+        let app = idle_shell_app();
+        let rendered = render_at(&app, width, 30);
+
+        assert!(
+            rendered.contains('❯'),
+            "boundary {width}x30: composer glyph required\n{rendered}"
+        );
+        assert_eq!(
+            count_char(&rendered, '╭'),
+            1,
+            "boundary {width}x30: exactly one bordered box\n{rendered}"
+        );
+        assert!(
+            rendered.contains("Shift+Tab:mode") || rendered.contains("Ctrl+x:shortcuts"),
+            "boundary {width}x30: idle footer required\n{rendered}"
+        );
+    }
+}
+
+/// Boundary 119/120/121 columns: composer border and footer survive the wide breakpoint.
+#[test]
+fn boundary_119_120_121_columns_keep_bordered_composer_and_footer() {
+    for width in [119u16, 120, 121] {
+        let app = idle_shell_app();
+        let rendered = render_at(&app, width, 32);
+
+        assert!(
+            rendered.contains('❯'),
+            "boundary {width}x32: composer glyph required\n{rendered}"
+        );
+        assert_eq!(
+            count_char(&rendered, '╭'),
+            1,
+            "boundary {width}x32: exactly one bordered box\n{rendered}"
+        );
+        assert!(
+            rendered.contains("Shift+Tab:mode") || rendered.contains("Ctrl+x:shortcuts"),
+            "boundary {width}x32: idle footer required\n{rendered}"
+        );
+    }
+}
+
+/// Boundary 120×40 and 120×50: tall viewports keep anatomy.
+#[test]
+fn boundary_120_col_tall_heights_keep_bordered_composer_and_footer() {
+    for height in [40u16, 50] {
+        let app = idle_shell_app();
+        let rendered = render_at(&app, 120, height);
+
+        assert_eq!(
+            count_char(&rendered, '╭'),
+            1,
+            "120x{height}: exactly one bordered box\n{rendered}"
+        );
+        assert!(
+            rendered.contains("Shift+Tab:mode") || rendered.contains("Ctrl+x:shortcuts"),
+            "120x{height}: idle footer required\n{rendered}"
+        );
+    }
+}
+
+/// Layout plan boundary: composer and disclosure rects are valid at all boundaries.
+#[test]
+fn layout_plan_boundary_viewports_have_valid_composer_and_disclosure() {
+    use harness_tui::FrameLayoutPlan;
+    use ratatui::layout::Rect;
+
+    let app = idle_shell_app();
+    let boundaries: &[(u16, u16)] = &[
+        (59, 20), (60, 20), (61, 20),
+        (79, 24), (80, 24), (81, 24),
+        (99, 30), (100, 30), (101, 30),
+        (119, 32), (120, 32), (121, 32),
+        (120, 40), (120, 50), (140, 40),
+    ];
+
+    for &(w, h) in boundaries {
+        let plan = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, w, h));
+        let composer = plan
+            .composer
+            .unwrap_or_else(|| panic!("composer at {w}x{h}"));
+        assert!(
+            composer.height >= 3,
+            "composer ≥3 rows at {w}x{h}; got {composer:?}"
+        );
+        assert!(
+            composer.y + composer.height <= plan.shell.y + plan.shell.height,
+            "composer fits in shell at {w}x{h}"
+        );
+        if let Some(disc) = plan.disclosure {
+            assert!(
+                disc.height >= 1,
+                "disclosure ≥1 row at {w}x{h}; got {disc:?}"
+            );
+            assert!(
+                disc.y + disc.height <= plan.shell.y + plan.shell.height,
+                "disclosure fits in shell at {w}x{h}"
+            );
+        }
+    }
+}
+
+/// Characterization: preserve the current full-width live-shell contract while
+/// the measured dock rhythm is tightened below.
+#[test]
+fn characterization_current_live_shell_geometry_is_full_width_and_bottom_safe() {
+    use harness_tui::FrameLayoutPlan;
+    use ratatui::layout::Rect;
+
+    let app = idle_shell_app();
+    for (width, height) in [
+        (60u16, 20u16),
+        (79, 24),
+        (80, 24),
+        (100, 30),
+        (120, 32),
+        (120, 40),
+        (120, 50),
+        (140, 40),
+    ] {
+        let plan = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, width, height));
+        let transcript = plan
+            .transcript
+            .unwrap_or_else(|| panic!("transcript at {width}x{height}"));
+        let composer = plan
+            .composer
+            .unwrap_or_else(|| panic!("composer at {width}x{height}"));
+        let inset = if width <= 60 { 0 } else { 2 };
+
+        assert_eq!(transcript.x, plan.shell.x);
+        assert_eq!(transcript.width, plan.shell.width);
+        assert_eq!(composer.x, plan.shell.x + inset);
+        assert_eq!(composer.width, plan.shell.width.saturating_sub(inset * 2));
+        assert!(composer.y + composer.height <= plan.shell.y + plan.shell.height);
+        assert_eq!(plan.disclosure.map(|rect| rect.height), Some(1));
+    }
+}
+
+/// Regression: the pinned idle `120x40` frame keeps a three-row composer at
+/// rows 34..=36, one blank row, then its disclosure at row 38.
+#[test]
+fn resp_120x40_matches_reference_dock_rhythm() {
+    use harness_tui::FrameLayoutPlan;
+    use ratatui::layout::Rect;
+
+    let app = idle_shell_app();
+    let plan = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, 120, 40));
+    let composer = plan.composer.expect("composer at 120x40");
+    let disclosure = plan.disclosure.expect("disclosure at 120x40");
+
+    assert_eq!(
+        composer,
+        Rect::new(2, 34, 116, 3),
+        "idle 120x40 composer must retain the pinned three-row dock"
+    );
+    assert_eq!(
+        disclosure,
+        Rect::new(2, 38, 116, 1),
+        "idle 120x40 disclosure must follow one blank spacer row"
+    );
+    assert_eq!(
+        disclosure.y.saturating_sub(composer.y + composer.height),
+        1,
+        "idle 120x40 composer/disclosure gap must be one row"
+    );
+}

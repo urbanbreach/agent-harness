@@ -93,7 +93,7 @@ fn p0_start_01_startup_has_bordered_welcome_and_composer() {
     );
     assert!(
         !rendered.to_ascii_lowercase().contains("grok"),
-        "identity: must not render Grok product name\n{rendered}"
+        "identity: must not render the external product name\n{rendered}"
     );
 
     let action_line = rendered

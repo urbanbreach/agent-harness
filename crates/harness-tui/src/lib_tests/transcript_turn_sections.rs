@@ -42,7 +42,7 @@ pub(super) fn transcript_turn_sections_render_open_rail_surfaces() {
 
     assert!(
         assistant_body_rail >= user_body_rail,
-        "assistant prose should start at or after the user prompt rail (Grok gutter packing)\n{rendered}"
+        "assistant prose should start at or after the user prompt rail (reference gutter packing)\n{rendered}"
     );
     assert!(
         user_body_column.abs_diff(assistant_body_column) <= 2,

@@ -311,7 +311,7 @@ fn shell_question_parses_prompts_preserves_draft_no_allow_chrome() {
     );
     assert!(
         rendered.contains('┃'),
-        "OVL-QUESTION: question dock must paint ┃ rail matching Grok packing\n{rendered}"
+        "OVL-QUESTION: question dock must paint ┃ rail matching reference packing\n{rendered}"
     );
 }
 
