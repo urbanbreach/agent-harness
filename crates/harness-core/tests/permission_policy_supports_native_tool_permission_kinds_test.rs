@@ -179,7 +179,7 @@ fn permission_policy_supports_native_tool_permission_kinds() {
 fn permissions_docs_state_file_workspace_and_network_implications() {
     // arrange
     let docs = fs::read_to_string(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/permissions.md"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/permissions/permissions.md"),
     )
     .unwrap_or_abort();
 

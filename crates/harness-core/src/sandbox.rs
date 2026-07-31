@@ -1,6 +1,6 @@
 //! Coordinator-owned OS sandbox *policy* surface (Landlock MVP).
 //!
-//! Operator **permission** approval (`docs/permissions.md`) is an approval layer,
+//! Operator **permission** approval (`docs/permissions/permissions.md`) is an approval layer,
 //! **not** a sandbox. This module models OS/process confinement intent: public
 //! policy modes, Landlock detection, FS plans, and whether confinement was
 //! actually applied. Unavailable is never a silent allow.

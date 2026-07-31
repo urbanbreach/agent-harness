@@ -1,6 +1,6 @@
 //! Persistent workspace folder-trust MVP.
 //!
-//! Folder trust is **not** operator permission approval (`docs/permissions.md`).
+//! Folder trust is **not** operator permission approval (`docs/permissions/permissions.md`).
 //! Permissions decide whether the coordinator may run a tool; folder trust
 //! decides whether repository-local / path-qualified executables may be spawned
 //! for a workspace path.
