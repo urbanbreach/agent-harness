@@ -452,6 +452,35 @@ Current fail-closed stages (no `|| true`):
   `inspirations/grok-build/target/debug/xai-grok-pager` must exist and its SHA-256 must match the
   pinned digest `883e3dea…3bb9a9a5` (presence and digest check only; the lane never rebuilds or
   copies the binary)
+- Fresh L3 capture stages (`reference_parity_capture_*`, including
+  `reference_parity_capture_shell_lifecycle` for the 7 shell lifecycle rows): each stage runs a
+  real PTY capture rendered through xterm.js/Chromium and writes `terminal.png`, `terminal.txt`,
+  `terminal-ansi.txt`, and `metadata.json` under the lane's fresh evidence root. A failed capture
+  fails the lane (no silent skip)
+- Fresh nonvisual journey L3 capture stages (`reference_parity_capture_journey_*`, one per
+  journey row): each stage runs `scripts/tui-parity/capture-journey-l3.sh <key>`, which invokes
+  the A-JOURNEYS owner tests in `crates/harness/tests/journey_signoff_test.rs` in self-contained
+  mode (CLI/backend evidence only — no Chrome, no pixel PNG), relocates the generated
+  `journey-*-v1` evidence directory into the lane's fresh evidence root, and writes a provenance
+  `metadata.json` (`behavior_id` + `generating_command`) for the strict provenance validator
+- Fresh terminal capability L3 capture stage (`reference_parity_capture_term_cap`, shared by the
+  4 `TERM-CAP-*` rows): runs `scripts/tui-parity/capture-term-cap-l3.sh` with `EVIDENCE_DIR`
+  pointed at the lane's fresh `actual/harness-term-cap-v1` directory. The script exports
+  `HARNESS_TERMCAP_ARTIFACT_DIR` to a temp work dir and invokes
+  `cargo nextest run -p harness-tui --test terminal_capability_matrix_capture_test`, whose
+  env-gated owner test derives the Harness negotiated terminal mode set from the L2 owner
+  `crates/harness-tui/src/runtime.rs`, asserts exact parity with the pinned reference enabled
+  mode set (fail-closed), and writes `harness-term-cap-v1/term-cap-matrix.json`. The script
+  relocates that receipt into `EVIDENCE_DIR` and writes the provenance `metadata.json`
+  (`behavior_ids` + `generating_command`). Journey-style L3+receipt contract — no Chrome, no
+  pixel PNG. A failed capture fails the lane (no silent skip)
+- Evidence-generation stages after the captures: `reference_parity_freeze_receipt` writes the
+  pinned freeze receipt; `reference_parity_generate_evidence_layers` builds L1 reference freezes,
+  L2 cells, and L4/L5/L6 receipts from the pinned lab plus the fresh L3 captures (fail-closed on
+  any missing artifact or digest mismatch); `reference_parity_evidence_refresh` then updates
+  embedded `path`/`sha256` pairs in copied receipts (the CANCEL/COMPLETE divergence receipts carry
+  them) so every embedded digest hash-matches the fresh files. The refresh must run after layer
+  generation, not before
 - `cargo nextest run -p harness-tui --test reference_parity_manifest_test`
 - `cargo nextest run -p harness-tui --test p0_parity_contract_test`
 - `cargo nextest run -p harness-tui --test shell_topology_contract_test`

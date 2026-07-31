@@ -42,3 +42,11 @@ inspirations/
 /harness.json
 /src/
 crates/harness/harness.json
+
+# Local runtime configuration, agent evidence, and task scratch
+/harness.jsonc
+/tui.jsonc
+/.omo/
+/ATTEMPT/
+**/__pycache__/
+scripts/tui-parity/node_modules/
