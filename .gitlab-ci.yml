@@ -1,6 +1,7 @@
 stages:
   - test
   - secret-detection
+  - deploy
 
 include:
   - template: Security/SAST.gitlab-ci.yml
@@ -156,3 +157,21 @@ rust:binary_smoke:
       artifacts: true
   script:
     - env HARNESS_BINARY_SMOKE=1 cargo test -p harness --test binary_smoke -- --ignored --exact
+
+pages:
+  tags:
+    - dind
+  stage: deploy
+  image: ghcr.io/astral-sh/uv:python3.12-bookworm
+  needs: []
+  script:
+    - uv sync --locked --directory oppimispaivakirja/docs
+    - uv run --locked --directory oppimispaivakirja/docs mkdocs build --strict --verbose --site-dir ../../public
+  pages:
+    path_prefix: "$CI_COMMIT_REF_SLUG"
+    expire_in: never
+  artifacts:
+    paths:
+      - public
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "ui-ux-experiments"'
