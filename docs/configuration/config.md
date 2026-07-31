@@ -457,7 +457,7 @@ defaults.
 
 Typed extension manifests are not a runtime config key in V1. The descriptor
 schema lives at
-[`configs/extension-manifest.v1.schema.json`](../configs/extension-manifest.v1.schema.json)
+[`configs/extension-manifest.v1.schema.json`](../../configs/extension-manifest.v1.schema.json)
 and is validated by `harness-core::extension_manifest::ExtensionManifestV1`.
 The seam is descriptor-only: parsing a manifest records stable extension ids,
 capability ids, disablement defaults, optional tool/hook/command/prompt/MCP
@@ -833,7 +833,7 @@ allow-with-safety-exceptions: ordinary tools (`bash`, `edit`, `task`,
 is omitted, the same allow-with-safety-exceptions defaults apply.
 
 The V1 native tool catalog is documented in
-[`docs/native-tool-catalog.md`](native-tool-catalog.md). New control-plane tools
+[`docs/tools/native-tool-catalog.md`](../tools/native-tool-catalog.md). New control-plane tools
 `task`; `ast_grep_search` uses `codesearch`; `ast_grep_replace` uses `edit`; `session_list`, `session_read`,
 `session_search`, and `session_info` are read-only replay/session inspectors with
 no additional public permission bucket. Legacy broad `network` remains a

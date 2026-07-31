@@ -55,11 +55,11 @@ Reference prompt-system behavior is adopted only as user-observable Harness beha
 | Reference pattern | Harness seam | V1 status |
 |---|---|---|
 | Intent-gate before tool use | `crates/harness/src/dynamic_prompt.rs` registered `intent_gate` fixture section plus primary `.agent-harness/agents/{build,plan}.md` `## Intent Gate` sections | Shipped through primary prompt assets and covered by prompt asset tests |
-| Structured delegation reminder | `crates/harness/src/dynamic_prompt.rs` registered `delegation_reminder` section, `docs/agents-and-subagents.md`, and the `task` native tool contract | Shipped as V1 guidance; stricter fixture work remains tracked in WS9 |
+| Structured delegation reminder | `crates/harness/src/dynamic_prompt.rs` registered `delegation_reminder` section, `docs/operations/agents-and-subagents.md`, and the `task` native tool contract | Shipped as V1 guidance; stricter fixture work remains tracked in WS9 |
 | Category-specific routing and prompt appends | `harness-core::agent_catalog`, `configs/harness.example.jsonc` category `model_profile` fallback metadata, and `.agent-harness/agents/{visual-engineering,artistry,ultrabrain,deep,quick,unspecified-low,unspecified-high,writing}.md` | Shipped through ordinary non-primary profiles with local GPT-family primary targets plus fallback metadata |
-| Markdown-defined skills with progressive disclosure | `harness-tools::skill_catalog`, `.agent-harness/skills/*/SKILL.md`, and `docs/starter-skills.md` | Shipped for the V1 built-in skill set |
-| Disableable built-in capabilities | `skills.disabled` config shape, `SkillCatalogStatus::Disabled`, doctor skill catalog metadata, `harness-core::extension_manifest`, `configs/extension-manifest.v1.schema.json`, and `docs/extension-strategy.md` | Skills ship as runtime capabilities; typed extension manifests ship as descriptor-only metadata with runtime hosting post-V1 |
-| Command/hook lifecycle maps | `docs/extension-strategy.md` command/hook seam | Native lifecycle hooks ship; markdown command files and extension command-hook execution remain unsupported/post-V1 |
+| Markdown-defined skills with progressive disclosure | `harness-tools::skill_catalog`, `.agent-harness/skills/*/SKILL.md`, and `docs/configuration/starter-skills.md` | Shipped for the V1 built-in skill set |
+| Disableable built-in capabilities | `skills.disabled` config shape, `SkillCatalogStatus::Disabled`, doctor skill catalog metadata, `harness-core::extension_manifest`, `configs/extension-manifest.v1.schema.json`, and `docs/operations/extension-strategy.md` | Skills ship as runtime capabilities; typed extension manifests ship as descriptor-only metadata with runtime hosting post-V1 |
+| Command/hook lifecycle maps | `docs/operations/extension-strategy.md` command/hook seam | Native lifecycle hooks ship; markdown command files and extension command-hook execution remain unsupported/post-V1 |
 
 ### harness-providers (library)
 
