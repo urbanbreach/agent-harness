@@ -1,7 +1,7 @@
 use harness_tui::UnwrapOrAbort;
 use serde_json::Value;
 
-const TUI_SIGNOFF_MANIFEST: &str = include_str!("../../../docs/tui-signoff-manifest.v1.json");
+const TUI_SIGNOFF_MANIFEST: &str = include_str!("../../../docs/testing/tui-signoff-manifest.v1.json");
 
 #[test]
 #[allow(clippy::panic, reason = "test code must panic gracefully")]
@@ -206,7 +206,7 @@ use std::path::{Path, PathBuf};
 use harness_testkit::parity::SemanticFrame;
 
 const REFERENCE_PARITY_MANIFEST: &str =
-    include_str!("../../../docs/tui-reference-parity-manifest.v1.json");
+    include_str!("../../../docs/reference/tui-reference-parity-manifest.v1.json");
 
 const PINNED_REFERENCE_SHA256: &str =
     "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5";

@@ -29,7 +29,7 @@ use support::{
     REQUIRED_SCAFFOLD_IDS, SCHEMA_VERSION,
 };
 
-const MANIFEST_SRC: &str = include_str!("../../../docs/tui-reference-parity-manifest.v1.json");
+const MANIFEST_SRC: &str = include_str!("../../../docs/reference/tui-reference-parity-manifest.v1.json");
 
 fn checked_in_manifest() -> Value {
     serde_json::from_str(MANIFEST_SRC).unwrap_or_abort()
@@ -353,7 +353,7 @@ fn coexists_with_signoff_manifest_without_requiring_reference_images() {
     // assert
     // arrange / act
     let signoff: Value =
-        serde_json::from_str(include_str!("../../../docs/tui-signoff-manifest.v1.json"))
+        serde_json::from_str(include_str!("../../../docs/testing/tui-signoff-manifest.v1.json"))
             .unwrap_or_abort();
     let parity = checked_in_manifest();
 

@@ -26,7 +26,7 @@ fn test_lanes_script() -> PathBuf {
 }
 
 fn reference_parity_manifest() -> PathBuf {
-    repo_root().join("docs/tui-reference-parity-manifest.v1.json")
+    repo_root().join("docs/reference/tui-reference-parity-manifest.v1.json")
 }
 
 #[test]
@@ -96,7 +96,7 @@ fn signoff_parity_fails_closed_when_independent_manifest_missing() {
         let script = fs::read_to_string(test_lanes_script())
             .expect("scripts/test-lanes.sh must be readable");
         assert!(
-            script.contains("docs/tui-reference-parity-manifest.v1.json")
+            script.contains("docs/reference/tui-reference-parity-manifest.v1.json")
                 && script.contains("parity_prerequisites")
                 && script.contains("record_gate_failure"),
             "signoff-parity must keep a fail-closed missing-manifest gate even after the manifest lands"

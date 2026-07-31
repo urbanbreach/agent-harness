@@ -33,7 +33,7 @@ use seed::seed_claimed_row_evidence;
 use status::{resolve_evidence_path, validate_manifest_evidence};
 use support::{divergence_receipt_path, ValidateResult, FREEZE_PNG_SHA256, FREEZE_TXT_SHA256};
 
-const MANIFEST_SRC: &str = include_str!("../../../docs/tui-reference-parity-manifest.v1.json");
+const MANIFEST_SRC: &str = include_str!("../../../docs/reference/tui-reference-parity-manifest.v1.json");
 
 fn checked_in_manifest() -> Value {
     serde_json::from_str(MANIFEST_SRC).unwrap_or_abort()
