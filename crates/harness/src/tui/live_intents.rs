@@ -293,7 +293,8 @@ pub(super) async fn handle_ui_intents(
                 target.last_request_id = None;
             }
             UiIntent::NewSession
-            | UiIntent::NewWorktreeSession
+            | UiIntent::NewWorktreeSession { .. }
+            | UiIntent::SwitchWorktree { .. }
             | UiIntent::ReplaySession { .. }
             | UiIntent::ContinueSession { .. } => {}
             UiIntent::QuitRequested => {
@@ -351,6 +352,30 @@ pub(super) async fn handle_ui_intents(
                 let _ = live_update_tx.send(LiveUpdate::OperatorNotice { message, level });
             }
             UiIntent::ExportSession => {}
+            UiIntent::ImportForeignSession {
+                source_path,
+                dest_session_dir,
+            } => {
+                let (message, level) =
+                    match harness_core::foreign_session::import_foreign_session_as_replay(
+                        &source_path,
+                        &dest_session_dir,
+                    ) {
+                        Ok(result) => (
+                            format!(
+                                "imported {} events from {}",
+                                result.event_count,
+                                result.source_path.display()
+                            ),
+                            OperatorNoticeLevel::Info,
+                        ),
+                        Err(err) => (
+                            format!("foreign import failed: {err}"),
+                            OperatorNoticeLevel::Error,
+                        ),
+                    };
+                let _ = live_update_tx.send(LiveUpdate::OperatorNotice { message, level });
+            }
             UiIntent::DeleteSession { run_id, run_dir } => {
                 let (message, level) = match delete_session_dir(&run_dir) {
                     Ok(trash_dir) => (

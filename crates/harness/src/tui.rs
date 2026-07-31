@@ -438,11 +438,12 @@ async fn run_interactive_mode(
             {
                 let launch_selection = Arc::clone(&launch_selection);
                 let coordinator_config_warmup = coordinator_config_warmup.clone();
-                move || {
+                move |name| {
                     run_new_worktree_live_session(
                         cmd,
                         settings,
                         demo_mode,
+                        name,
                         Arc::clone(&launch_selection),
                         coordinator_config_warmup.clone(),
                     )
@@ -553,11 +554,12 @@ async fn run_direct_continue_mode(
             {
                 let launch_selection = Arc::clone(&launch_selection);
                 let coordinator_config_warmup = coordinator_config_warmup.clone();
-                move || {
+                move |name| {
                     run_new_worktree_live_session(
                         cmd,
                         settings,
                         demo_mode,
+                        name,
                         Arc::clone(&launch_selection),
                         coordinator_config_warmup.clone(),
                     )
@@ -634,7 +636,7 @@ async fn run_startup_launcher(
         if !matches!(
             intent,
             UiIntent::NewSession
-                | UiIntent::NewWorktreeSession
+                | UiIntent::NewWorktreeSession { .. }
                 | UiIntent::ReplaySession { .. }
                 | UiIntent::ContinueSession { .. }
                 | UiIntent::SubmitPrompt { .. }

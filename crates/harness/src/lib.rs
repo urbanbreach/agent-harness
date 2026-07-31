@@ -48,8 +48,10 @@ mod sessions;
 mod tui;
 mod worktree_cmd;
 
+mod agent_stdio_cmd;
 mod code_graph_cmd;
 mod cron_cmd;
+mod dashboard_cmd;
 mod plugin_cmd;
 mod providers_cmd;
 mod team_cmd;
@@ -239,8 +241,16 @@ enum Commands {
     Export(ExportCommand),
     /// Export or upload session trace data as a tar.gz archive.
     Trace(TraceCommand),
-    /// Launch the web dashboard for session analytics and monitoring.
-    Dashboard(DashboardCommand),
+    /// Show session overview: list, status, or recent activity.
+    Dashboard {
+        #[command(subcommand)]
+        command: dashboard_cmd::DashboardSubcommand,
+    },
+    /// Agent profile selection or ACP stdio agent mode.
+    Agent {
+        #[command(subcommand)]
+        command: agent_stdio_cmd::AgentSubcommand,
+    },
     /// Share a session or artifact via a public link.
     Share(ShareCommand),
     /// Run first-time setup wizard for harness configuration.
@@ -289,16 +299,6 @@ struct TraceCommand {
     /// Emit machine-readable JSON output.
     #[arg(long)]
     json: bool,
-}
-
-#[derive(Debug, Args, Clone)]
-struct DashboardCommand {
-    /// Open the dashboard in the default browser.
-    #[arg(long, default_value_t = true)]
-    open: bool,
-    /// Emit the dashboard URL instead of opening it.
-    #[arg(long)]
-    url: bool,
 }
 
 #[derive(Debug, Args, Clone)]
@@ -884,7 +884,12 @@ fn execute_cli(cli: Cli, io: &mut CliIo<'_>, deps: CliDeps) -> i32 {
         }
         Commands::Export(command) => execute_export(command, session_dir, io, &deps),
         Commands::Trace(command) => execute_trace(command, session_dir, io, &deps),
-        Commands::Dashboard(command) => execute_dashboard(command, io),
+        Commands::Dashboard { command } => dashboard_cmd::execute_with_io(
+            dashboard_cmd::DashboardLeafCommand { command },
+            session_dir,
+            io,
+        ),
+        Commands::Agent { command } => agent_stdio_cmd::execute_with_io(command, io),
         Commands::Share(command) => execute_share(command, io),
         Commands::Setup(command) => execute_setup(command, io),
         Commands::Wrap(command) => execute_wrap(command, io),
@@ -1089,18 +1094,6 @@ fn execute_trace(
             output_path.display()
         );
         let _ = writeln!(io.stdout, "{}", output_path.display());
-    }
-    0
-}
-
-fn execute_dashboard(command: DashboardCommand, io: &mut CliIo<'_>) -> i32 {
-    if command.url {
-        let _ = writeln!(io.stdout, "https://dashboard.harness.local");
-        return 0;
-    }
-    if command.open {
-        let _ = writeln!(io.stderr, "opening dashboard in default browser...");
-        let _ = writeln!(io.stdout, "https://dashboard.harness.local");
     }
     0
 }

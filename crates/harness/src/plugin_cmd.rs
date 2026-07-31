@@ -1,6 +1,6 @@
 //! Product CLI for the plugin runtime lifecycle (`harness plugin`).
 //!
-//! Surfaces install/activate/deactivate/remove/list over a durable
+//! Surfaces install/activate/deactivate/remove/upgrade/list over a durable
 //! [`harness_core::integrations::PluginLifecycleRegistry`] persisted at
 //! `<workspace>/.agent-harness/plugins.json`, so a plugin installed in one
 //! invocation is visible to the next. `activate` is an explicit operator action:
@@ -38,6 +38,8 @@ enum PluginSubcommand {
     Deactivate(IdArgs),
     /// Remove a disabled plugin registration (JSON result).
     Remove(IdArgs),
+    /// Upgrade an installed plugin by re-validating a replacement package root (JSON result).
+    Upgrade(UpgradeArgs),
     /// List installed plugins with a lifecycle summary (JSON result).
     List(ListArgs),
     /// Discover extension manifests under the workspace and register them in the descriptor registry (JSON result).
@@ -63,6 +65,17 @@ struct IdArgs {
 }
 
 #[derive(Debug, Args, Clone)]
+struct UpgradeArgs {
+    /// Installed plugin id to upgrade.
+    id: String,
+    /// Replacement package root (directory containing extension.manifest.json).
+    package_root: String,
+    /// Workspace root (default: current directory).
+    #[arg(long)]
+    workspace: Option<PathBuf>,
+}
+
+#[derive(Debug, Args, Clone)]
 struct ListArgs {
     /// Workspace root (default: current directory).
     #[arg(long)]
@@ -75,6 +88,7 @@ pub(crate) fn execute_with_io(command: PluginCommand, io: &mut CliIo<'_>, deps: 
         PluginSubcommand::Activate(args) => run_activate(args, io, deps),
         PluginSubcommand::Deactivate(args) => run_deactivate(args, io, deps),
         PluginSubcommand::Remove(args) => run_remove(args, io, deps),
+        PluginSubcommand::Upgrade(args) => run_upgrade(args, io, deps),
         PluginSubcommand::List(args) => run_list(args, io, deps),
         PluginSubcommand::Discover(args) => run_discover(args, io, deps),
     }
@@ -150,6 +164,42 @@ fn run_remove(args: IdArgs, io: &mut CliIo<'_>, deps: &CliDeps) -> i32 {
                 removed: PluginView::from(&removed),
             },
         ),
+        Err(err) => map_plugin_error(io, err),
+    }
+}
+
+fn run_upgrade(args: UpgradeArgs, io: &mut CliIo<'_>, deps: &CliDeps) -> i32 {
+    let root = resolve_workspace_root(&args.workspace, deps);
+    let mut registry = match open(&root, io) {
+        Ok(registry) => registry,
+        Err(code) => return code,
+    };
+    let previous = registry.get(&args.id).map(|plugin| {
+        (
+            plugin.manifest.version.clone(),
+            plugin.package_root.display().to_string(),
+        )
+    });
+    match registry.upgrade_plugin(
+        &args.id,
+        &args.package_root,
+        PluginActivationPermission::Granted,
+    ) {
+        Ok(plugin) => {
+            let plugin = plugin.clone();
+            let (previous_version, previous_package_root) = previous.unzip();
+            write_json(
+                io,
+                &UpgradeJson {
+                    workspace_root: root.display().to_string(),
+                    registry_path: registry_path_string(&registry),
+                    previous_version: previous_version.flatten(),
+                    previous_package_root,
+                    version: plugin.manifest.version.clone(),
+                    plugin: PluginView::from(&plugin),
+                },
+            )
+        }
         Err(err) => map_plugin_error(io, err),
     }
 }
@@ -270,6 +320,16 @@ struct RemoveJson {
 }
 
 #[derive(Debug, Serialize)]
+struct UpgradeJson {
+    workspace_root: String,
+    registry_path: Option<String>,
+    previous_version: Option<String>,
+    previous_package_root: Option<String>,
+    version: Option<String>,
+    plugin: PluginView,
+}
+
+#[derive(Debug, Serialize)]
 struct ListJson {
     workspace_root: String,
     registry_path: Option<String>,
@@ -357,13 +417,22 @@ mod tests {
     }
 
     fn seed_plugin_package(workspace: &Path, dir_name: &str, id: &str) -> PathBuf {
+        seed_plugin_package_version(workspace, dir_name, id, "0.1.0")
+    }
+
+    fn seed_plugin_package_version(
+        workspace: &Path,
+        dir_name: &str,
+        id: &str,
+        version: &str,
+    ) -> PathBuf {
         let package = workspace.join(dir_name);
         fs::create_dir_all(&package).expect("create package dir");
         let manifest = serde_json::json!({
             "schemaVersion": EXTENSION_MANIFEST_V1_SCHEMA_VERSION,
             "id": id,
             "displayName": "CLI test plugin",
-            "version": "0.1.0",
+            "version": version,
             "capabilities": [
                 {"id": "cap.demo", "defaultEnabled": true}
             ]
@@ -570,5 +639,95 @@ mod tests {
         assert_eq!(code, 0, "stderr: {stderr}");
         assert!(stdout.contains("\"discovered\": 0"), "stdout: {stdout}");
         assert!(stdout.contains("\"count\": 0"), "stdout: {stdout}");
+    }
+
+    #[test]
+    fn upgrade_replaces_package_and_persists_across_invocations() {
+        // arrange — install + activate a v1 package in one workspace
+        let dir = tempdir().unwrap();
+        let ws = dir.path();
+        let v1 = seed_plugin_package_version(ws, "plugins/demo-v1", "demo.plugin", "0.1.0");
+        let (code, _, stderr) = run_cli(ws, &["install", v1.to_str().unwrap()]);
+        assert_eq!(code, 0, "stderr: {stderr}");
+        let (code, _, stderr) = run_cli(ws, &["activate", "demo.plugin"]);
+        assert_eq!(code, 0, "stderr: {stderr}");
+
+        // act — upgrade to a v2 package in a separate invocation
+        let v2 = seed_plugin_package_version(ws, "plugins/demo-v2", "demo.plugin", "0.2.0");
+        let (code, stdout, stderr) = run_cli(ws, &["upgrade", "demo.plugin", v2.to_str().unwrap()]);
+
+        // assert — the upgrade reports the version transition and stays enabled
+        assert_eq!(code, 0, "stderr: {stderr}");
+        assert!(
+            stdout.contains("\"previous_version\": \"0.1.0\""),
+            "stdout: {stdout}"
+        );
+        assert!(
+            stdout.contains("\"version\": \"0.2.0\""),
+            "stdout: {stdout}"
+        );
+        assert!(
+            stdout.contains("\"enablement\": \"enabled\""),
+            "stdout: {stdout}"
+        );
+        assert!(stdout.contains(v2.to_str().unwrap()), "stdout: {stdout}");
+
+        // assert — a further invocation durably sees the upgraded, enabled plugin
+        let (code, stdout, stderr) = run_cli(ws, &["list"]);
+        assert_eq!(code, 0, "stderr: {stderr}");
+        assert!(stdout.contains("\"enabled\": 1"), "stdout: {stdout}");
+        assert!(stdout.contains(v2.to_str().unwrap()), "stdout: {stdout}");
+        assert!(
+            ws.join(".agent-harness/plugins.json").is_file(),
+            "durable journal must persist after upgrade"
+        );
+    }
+
+    #[test]
+    fn upgrade_with_mismatched_manifest_id_fails_closed_and_restores() {
+        // arrange — an enabled plugin and a replacement package with a different id
+        let dir = tempdir().unwrap();
+        let ws = dir.path();
+        let original = seed_plugin_package(ws, "plugins/orig", "orig.plugin");
+        let wrong = seed_plugin_package(ws, "plugins/wrong", "wrong.plugin");
+        let (code, _, stderr) = run_cli(ws, &["install", original.to_str().unwrap()]);
+        assert_eq!(code, 0, "stderr: {stderr}");
+        let (code, _, stderr) = run_cli(ws, &["activate", "orig.plugin"]);
+        assert_eq!(code, 0, "stderr: {stderr}");
+
+        // act — upgrade with the mismatched package
+        let (code, _, stderr) = run_cli(ws, &["upgrade", "orig.plugin", wrong.to_str().unwrap()]);
+
+        // assert — fail closed: the original plugin survives, the wrong id is not registered
+        assert_eq!(code, 1);
+        assert!(
+            stderr.contains("expected plugin `orig.plugin`"),
+            "stderr: {stderr}"
+        );
+        let (code, stdout, _) = run_cli(ws, &["list"]);
+        assert_eq!(code, 0);
+        assert!(stdout.contains("\"count\": 1"), "stdout: {stdout}");
+        assert!(
+            stdout.contains("\"id\": \"orig.plugin\""),
+            "stdout: {stdout}"
+        );
+        assert!(stdout.contains("\"enabled\": 1"), "stdout: {stdout}");
+        assert!(!stdout.contains("wrong.plugin"), "stdout: {stdout}");
+    }
+
+    #[test]
+    fn upgrade_unknown_id_fails_closed() {
+        // arrange
+        let dir = tempdir().unwrap();
+        let ws = dir.path();
+        let package = seed_plugin_package_version(ws, "plugins/ghost-v2", "ghost.plugin", "0.2.0");
+
+        // act — upgrade a plugin that was never installed
+        let (code, _, stderr) =
+            run_cli(ws, &["upgrade", "ghost.plugin", package.to_str().unwrap()]);
+
+        // assert
+        assert_eq!(code, 1);
+        assert!(stderr.contains("not installed"), "stderr: {stderr}");
     }
 }

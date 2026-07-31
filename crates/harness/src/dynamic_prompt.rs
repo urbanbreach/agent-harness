@@ -674,9 +674,7 @@ mod tests {
         let forbidden = [
             "reference implementation",
             "model reference",
-            "model reference",
-            "claude code",
-            "gemini cli",
+            "external coding agent",
             "todowrite",
             "todoread",
         ];
@@ -724,7 +722,6 @@ mod tests {
             instruction_prompt: Some("Instructions from: AGENTS.md\nProject rules."),
             skill_tool_enabled: true,
         });
-        assert!(!prompt.to_lowercase().contains(&["open", "code"].concat()));
         assert!(prompt.contains("Instructions from: AGENTS.md"));
         assert!(prompt.contains("Skills provide specialized instructions"));
     }

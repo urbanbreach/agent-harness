@@ -38,11 +38,12 @@ pub(super) async fn run_new_worktree_live_session(
     cmd: &TuiCommand,
     settings: &LiveSettings,
     demo_mode: bool,
+    name: Option<String>,
     launch_selection: LaunchSelection,
     coordinator_config_warmup: LiveCoordinatorConfigWarmup,
 ) -> Result<InteractiveWorkflow, String> {
     profile_handoff("new_worktree_live.begin");
-    let worktree_settings = prepare_worktree_live_settings(settings)?;
+    let worktree_settings = prepare_worktree_live_settings(settings, name.as_deref())?;
     profile_handoff(&format!(
         "new_worktree_live.created {}",
         worktree_settings.workspace_root.display()
@@ -57,7 +58,10 @@ pub(super) async fn run_new_worktree_live_session(
     .await
 }
 
-fn prepare_worktree_live_settings(settings: &LiveSettings) -> Result<LiveSettings, String> {
+fn prepare_worktree_live_settings(
+    settings: &LiveSettings,
+    name: Option<&str>,
+) -> Result<LiveSettings, String> {
     use harness_core::cow_worktree::apply_cow_worktree_fastpath;
     use harness_core::workspace::WorkspaceEnvironment;
     use harness_core::worktree::{create_session_worktree, CreateWorktreeOptions};
@@ -73,7 +77,7 @@ fn prepare_worktree_live_settings(settings: &LiveSettings) -> Result<LiveSetting
     let created = create_session_worktree(CreateWorktreeOptions {
         repository_root: &environment.workspace_root,
         worktree_parent: None,
-        slug: None,
+        slug: name,
         start_point: None,
     })
     .map_err(|err| format!("failed to create worktree: {err}"))?;
