@@ -306,6 +306,16 @@ fn dual_binary_cli_pty_worktree_ctrl_w_creates_git_worktree() {
     );
 
     helper.send_ctrl(b'w');
+    let dialog = helper.wait_for("Create worktree", "worktree name dialog");
+    assert!(
+        dialog["screen"]
+            .as_str()
+            .unwrap_or("")
+            .contains("Name (optional)"),
+        "Ctrl+W must open the optional-name dialog"
+    );
+    helper.write_text("pty-named-worktree");
+    helper.send_key(b'\r');
 
     let live = wait_for_worktree_created_and_live_shell(
         &mut helper,
@@ -321,16 +331,18 @@ fn dual_binary_cli_pty_worktree_ctrl_w_creates_git_worktree() {
         worktree_parent.display()
     );
     let worktree_path = &worktrees[0];
+    assert_eq!(
+        worktree_path.file_name().and_then(|name| name.to_str()),
+        Some("pty-named-worktree"),
+        "confirmed dialog name must determine the worktree directory"
+    );
     assert!(
         worktree_path.join("README.md").is_file(),
         "worktree checkout must contain seeded README.md at {}",
         worktree_path.display()
     );
     let branch = git_text(worktree_path, &["rev-parse", "--abbrev-ref", "HEAD"]);
-    assert!(
-        branch.starts_with("harness/wt-"),
-        "worktree branch must use harness/wt- prefix, got {branch:?}"
-    );
+    assert_eq!(branch, "harness/wt-pty-named-worktree");
     let live_screen = helper.screen_text();
     assert!(
         live_shell_markers_present(&live_screen),
@@ -358,6 +370,8 @@ fn dual_binary_cli_pty_worktree_ctrl_w_creates_git_worktree() {
             "markers": {
                 "startup": "New worktree",
                 "action": "Ctrl+w",
+                "dialog": "Create worktree",
+                "name": "pty-named-worktree",
                 "postconditions": [
                     "git worktree directory on disk",
                     "harness/wt-* branch",

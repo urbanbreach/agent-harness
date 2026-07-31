@@ -515,11 +515,11 @@ fn shipped_profile_permission_promises_match_runtime_policy_and_toolsets() {
     );
     assert!(
         general_prompt.contains("may redelegate") || general_prompt.contains("can redelegate"),
-        "general prompt should allow task redelegation under OpenCode-aligned matrix"
+        "general prompt should allow task redelegation under Harness-aligned matrix"
     );
     assert!(
         !coordinator_denies_tool_for_profile(&coordinator_config, "general", "task"),
-        "general must allow task (OpenCode general can redelegate)"
+        "general must allow task (Harness general can redelegate)"
     );
     assert!(
         coordinator_config.agent_profiles["general"]

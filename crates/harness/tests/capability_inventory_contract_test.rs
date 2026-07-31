@@ -1,6 +1,6 @@
 //! Fail-closed contract for docs/capability-inventory.v1.json (A-CAPABILITIES / §4.5).
 //!
-//! The inventory is the machine-readable capability floor for Grok Build parity.
+//! The inventory is the machine-readable capability floor for Harness parity.
 //! Missing file, missing families, invalid enums, or `pass` without a real backend
 //! owner path must fail the test.
 
@@ -16,7 +16,7 @@ use common::repo_root;
 const INVENTORY_REL: &str = "docs/capability-inventory.v1.json";
 const SCHEMA_VERSION: &str = "harness-capability-inventory-v1";
 
-const ALLOWED_STATUSES: &[&str] = &["incomplete", "blocked", "pass", "diverged"];
+const ALLOWED_STATUSES: &[&str] = &["incomplete", "blocked", "pass", "diverged", "excluded"];
 const ALLOWED_DISPOSITIONS: &[&str] = &[
     "implement",
     "rework",
@@ -360,8 +360,11 @@ fn capability_inventory_covers_section_4_5_families_and_row_shape() {
             "capability {id} must not be marked pass while backend is incomplete"
         );
         assert!(
-            status == "incomplete" || status == "blocked" || status == "diverged",
-            "capability {id}: expected incomplete|blocked|diverged, got {status}"
+            status == "incomplete"
+                || status == "blocked"
+                || status == "diverged"
+                || status == "excluded",
+            "capability {id}: expected incomplete|blocked|diverged|excluded, got {status}"
         );
     }
 

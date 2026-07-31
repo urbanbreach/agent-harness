@@ -12,7 +12,9 @@
 //! - `JOURNEY-MEMORY-CLI` — binary `harness memory put/get/list`
 //! - `JOURNEY-FOLDER-TRUST-DENY` — deny-before-spawn gate receipt
 //!
-//! AppState-only evidence (status incomplete pending product-shell journeys):
+//! AppState-only evidence (manifest rows promoted to pass, Wave 6 2026-07-30:
+//! AppState surface captures + canonical L1/L4 pairing; full PTY shell
+//! evidence is still env-gated and not claimed):
 //! - `JOURNEY-ALWAYS-APPROVE-MODE` — AppState AlwaysConfirm + badge render dump
 //! - `JOURNEY-SETTINGS-EDITOR` — AppState /settings overlay + registry rows dump
 

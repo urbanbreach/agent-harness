@@ -126,7 +126,7 @@ fn oc_parity_general_task_allow_and_todowrite_deny() {
     assert_policy_deny(policy, "general", PermissionKind::Question, "question");
     assert!(
         general_profile.toolset.iter().any(|t| t == "task"),
-        "expected general toolset to include task (OpenCode general can redelegate); toolset={:?}",
+        "expected general toolset to include task (reference general can redelegate); toolset={:?}",
         general_profile.toolset
     );
     assert!(
@@ -146,7 +146,7 @@ fn oc_parity_general_task_allow_and_todowrite_deny() {
     assert_eq!(
         general_perms.task,
         Some(PermissionMode::Allow),
-        "expected general task permission Allow (OpenCode), got {:?}",
+        "expected general task permission Allow (reference policy), got {:?}",
         general_perms.task
     );
     assert_eq!(
@@ -161,7 +161,7 @@ fn oc_parity_general_task_allow_and_todowrite_deny() {
     assert_eq!(
         todo_eval.action,
         PermissionAction::Deny,
-        "expected Deny for todowrite on general (OpenCode todowrite deny, independent of task allow), got {:?}",
+        "expected Deny for todowrite on general (reference policy denies todowrite independently of task allow), got {:?}",
         todo_eval.action
     );
     assert!(
@@ -237,12 +237,12 @@ fn oc_parity_explore_read_search_allow_and_edit_task_deny() {
     ] {
         assert!(
             explore.toolset.iter().any(|t| t == tool_id),
-            "expected explore toolset to include `{tool_id}` (OpenCode explore allow-list); toolset={:?}",
+            "expected explore toolset to include `{tool_id}` (Harness explore allow-list); toolset={:?}",
             explore.toolset
         );
         assert!(
             !coordinator_denies_tool_for_profile(&coordinator, "explore", tool_id),
-            "expected explore to allow `{tool_id}` under OpenCode-aligned matrix"
+            "expected explore to allow `{tool_id}` under Harness-aligned matrix"
         );
     }
 
@@ -272,7 +272,7 @@ fn oc_parity_example_config_does_not_force_ask_all_scalar() {
     let raw = fs::read_to_string(&example_path).unwrap_or_abort();
     assert!(
         raw.contains(r#""permission": "allow""#),
-        "expected configs/harness.example.jsonc to use permission allow (OpenCode allow-default), not ask-all"
+        "expected configs/harness.example.jsonc to use permission allow (Harness default), not ask-all"
     );
 
     let (config, _) = load_example_coordinator();

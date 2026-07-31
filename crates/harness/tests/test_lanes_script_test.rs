@@ -75,6 +75,7 @@ fn signoff_parity_mode_is_fail_closed() {
         && body.contains("reference_parity_pty_test")
         && body.contains("reference_binary_present")
         && body.contains("reference-binary-sha256.txt")
+        && body.contains("capture-journey-l3.sh")
         && body.contains("reference_parity_manifest_evidence")
         && body.contains("reference_parity_evidence_test")
         && body.contains("HARNESS_TUI_PTY_SIGNOFF=1");
