@@ -73,7 +73,9 @@ pub struct CellDiff {
 }
 
 impl CellDiff {
-    fn new(
+    /// Construct a new cell difference with the given path, expected, and
+    /// observed values.
+    pub fn new(
         path: impl Into<String>,
         expected: impl Into<String>,
         observed: impl Into<String>,
