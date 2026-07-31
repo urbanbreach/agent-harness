@@ -255,6 +255,35 @@ impl EditAttributionJournal {
         })
     }
 
+    pub fn diff(&self, path: impl AsRef<Path>) -> Result<super::DiffResult, EditAttributionError> {
+        let path_key = normalize_workspace_relative(&self.workspace_root, path.as_ref())?;
+        let snapshot = self
+            .agent_snapshots
+            .get(&path_key)
+            .cloned()
+            .ok_or_else(|| EditAttributionError::NoAgentSnapshot {
+                path: path_key.clone(),
+            })?;
+        let current = std::fs::read(self.workspace_root.join(&path_key)).unwrap_or_default();
+        Ok(super::compute_diff(&path_key, &snapshot, &current))
+    }
+
+    pub fn blame(
+        &self,
+        path: impl AsRef<Path>,
+    ) -> Result<super::BlameResult, EditAttributionError> {
+        let path_key = normalize_workspace_relative(&self.workspace_root, path.as_ref())?;
+        let snapshot = self
+            .agent_snapshots
+            .get(&path_key)
+            .cloned()
+            .ok_or_else(|| EditAttributionError::NoAgentSnapshot {
+                path: path_key.clone(),
+            })?;
+        let current = std::fs::read(self.workspace_root.join(&path_key)).unwrap_or_default();
+        Ok(super::compute_blame(&path_key, &snapshot, &current))
+    }
+
     fn alloc_seq(&mut self) -> u64 {
         let seq = self.next_seq;
         self.next_seq = self.next_seq.saturating_add(1);

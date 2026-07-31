@@ -10,6 +10,8 @@
 //! Unsupported native OS power APIs may still use the hook; if no source is opened,
 //! policy is structured [`SleepWakeCredentialPolicy::Unavailable`].
 
+pub mod supervisor;
+
 use std::time::Duration;
 
 use async_trait::async_trait;

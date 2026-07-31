@@ -177,7 +177,7 @@ fn oc_parity_example_config_permission_scalar_is_allow_not_ask_all() {
     let raw = std::fs::read_to_string(&example_path).unwrap_or_abort();
     assert!(
         raw.contains(r#""permission": "allow""#) || raw.contains("permission: \"allow\""),
-        "expected configs/harness.example.jsonc permission scalar to be allow (OpenCode allow-default), not ask-all; found ask or missing allow"
+        "expected configs/harness.example.jsonc permission scalar to be allow (Harness default), not ask-all; found ask or missing allow"
     );
 
     let context = ConfigLoadContext::from_env()

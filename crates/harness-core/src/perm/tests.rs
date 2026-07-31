@@ -681,7 +681,7 @@ fn native_read_tool_id_must_map_to_permission_kind_for_env_patterns() {
     // arrange
     // act
     // assert
-    // Given: OpenCode applies .env ask rules only on the `read` permission name
+    // Given: the reference applies .env ask rules only on the `read` permission name
     // When: permission_kind_for_tool("read") is consulted
     // Then: native tool id `read` maps to Read; glob/grep/list stay unmapped for .env
     assert_eq!(

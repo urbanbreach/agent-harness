@@ -26,11 +26,11 @@ pub use import::import_foreign_session_as_replay;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ForeignAgentKind {
-    /// OpenAI Codex / codex-cli style session trees.
+    /// OpenAI-compatible coding-agent session trees.
     Codex,
-    /// Claude Code / Claude Desktop style session trees.
+    /// Desktop coding-agent style session trees.
     Claude,
-    /// OpenCode-style session trees.
+    /// Recognized external coding-agent session trees.
     OpenCode,
     /// Session-like but family not identified.
     Unknown,

@@ -57,7 +57,7 @@ pub struct SandboxPathRoots {
 /// Minimal FS restriction plan for a non-`Off` policy (read/write path roots).
 ///
 /// Network blocking and full profile parity are **not** included (residual).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SandboxFsPlan {
     pub policy: SandboxPolicy,
     pub read_roots: Vec<PathBuf>,

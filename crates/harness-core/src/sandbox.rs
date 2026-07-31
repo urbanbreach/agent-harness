@@ -11,6 +11,7 @@
 //! full profiles remain residual.
 
 mod landlock;
+pub mod network;
 mod prepare;
 mod product;
 
@@ -23,6 +24,10 @@ pub use landlock::{
     describe_fs_plan_for_policy, detect_landlock, detect_landlock_with, lsm_list_contains_landlock,
     probe_landlock_lsm, summarize_fs_plan, LandlockSupport, SandboxFsPlan, SandboxFsPlanSummary,
     SandboxPathRoots, BASH_SPAWN_SANDBOX_INTEGRATION,
+};
+pub use network::{
+    evaluate_network_confinement, evaluate_network_confinement_with_landlock,
+    NetworkConfinementStatus, SandboxNetworkPolicy, SandboxNetworkPolicyError,
 };
 pub use prepare::{
     evaluate_availability, evaluate_availability_for_platform, evaluate_availability_with_landlock,

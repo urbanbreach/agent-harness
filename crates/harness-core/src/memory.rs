@@ -5,6 +5,9 @@
 //! as the rest of the runtime. This is separate from provider-context
 //! operational memory (compaction facts).
 
+pub mod scope;
+pub use scope::{MemoryScope, ScopedMemoryEntry};
+
 use std::collections::BTreeMap;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
@@ -31,10 +34,11 @@ struct MemoryDocument {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 struct MemoryEntryRecord {
     value: String,
     updated_at_unix_ms: u64,
+    #[serde(default)]
+    scope: MemoryScope,
 }
 
 impl MemoryDocument {
@@ -87,6 +91,8 @@ pub enum MemoryError {
         #[source]
         source: io::Error,
     },
+    #[error("memory key not found: {key}")]
+    NotFound { key: String },
 }
 
 /// Workspace-scoped durable memory store (atomic JSON, redacted on write).
@@ -131,6 +137,7 @@ impl DurableMemoryStore {
             MemoryEntryRecord {
                 value: value.clone(),
                 updated_at_unix_ms,
+                scope: MemoryScope::default(),
             },
         );
         self.flush(&doc)?;
@@ -253,6 +260,11 @@ fn now_unix_ms() -> u64 {
         .ok()
         .and_then(|duration| u64::try_from(duration.as_millis()).ok())
         .unwrap_or(0)
+}
+
+fn redact_value(value: &str) -> String {
+    let redactor = DefaultRedactor::default();
+    redactor.redact_text(value)
 }
 
 fn write_file_atomically(

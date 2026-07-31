@@ -4,6 +4,7 @@
 //! Persists an append-only journal under `.agent-harness/edit-attribution.jsonl`
 //! and exposes query + path-level revert APIs. Not full VCS blame/diff.
 
+pub mod diff_blame;
 mod journal;
 mod journal_store;
 mod product;
@@ -15,6 +16,7 @@ use std::time::SystemTime;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+pub use diff_blame::{compute_blame, compute_diff, BlameLine, BlameResult, DiffResult};
 pub use journal::{
     EditAttributionError, EditAttributionJournal, EditAttributionQuery, RevertAttributionResult,
     EDIT_ATTRIBUTION_JOURNAL_REL,

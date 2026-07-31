@@ -4,7 +4,7 @@
 //! with real side effects (journal append), and marks the product as executing.
 
 use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -203,6 +203,39 @@ impl CronExecutor {
 
     pub fn fire_count(&self) -> usize {
         self.fires.len()
+    }
+
+    pub fn restart_from_journal(&mut self) -> Result<usize, CronScheduleError> {
+        let dir = match &self.journal_dir {
+            Some(d) => d.clone(),
+            None => return Ok(0),
+        };
+        let path = dir.join("cron-fires.jsonl");
+        let body = match fs::read_to_string(&path) {
+            Ok(b) => b,
+            Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(0),
+            Err(err) => {
+                return Err(CronScheduleError::JournalIo {
+                    path: path.display().to_string(),
+                    reason: err.to_string(),
+                })
+            }
+        };
+        let mut count = 0;
+        for line in body.lines() {
+            if line.trim().is_empty() {
+                continue;
+            }
+            let record: CronFireRecord =
+                serde_json::from_str(line).map_err(|err| CronScheduleError::JournalIo {
+                    path: path.display().to_string(),
+                    reason: err.to_string(),
+                })?;
+            self.next_seq = self.next_seq.max(record.journal_seq + 1);
+            self.fires.push(record);
+            count += 1;
+        }
+        Ok(count)
     }
 
     pub fn fires(&self) -> &[CronFireRecord] {

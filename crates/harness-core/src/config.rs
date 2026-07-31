@@ -586,6 +586,8 @@ pub struct CompactionSettings {
     pub fallback_input_tokens: u32,
     #[serde(default)]
     pub split_oversized_turns: bool,
+    #[serde(default)]
+    pub suppress_auto_compaction: bool,
 }
 
 impl Default for CompactionSettings {
@@ -599,6 +601,7 @@ impl Default for CompactionSettings {
             estimated_token_triggers: default_compaction_estimated_token_triggers(),
             fallback_input_tokens: default_compaction_fallback_input_tokens(),
             split_oversized_turns: false,
+            suppress_auto_compaction: false,
         }
     }
 }
@@ -850,7 +853,7 @@ pub struct ProfilePermissions {
     pub question: Option<PermissionMode>,
     #[serde(default)]
     pub task: Option<PermissionMode>,
-    /// Independent of `task` (OpenCode: general allows task but denies todowrite).
+    /// Independent of `task` (reference policy allows task but denies todowrite).
     #[serde(default)]
     pub todowrite: Option<PermissionMode>,
     #[serde(default, alias = "webFetch")]

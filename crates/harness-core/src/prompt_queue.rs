@@ -38,6 +38,8 @@ pub struct PromptQueueEntry {
     pub id: String,
     pub text: String,
     pub enqueued_at_unix_ms: u64,
+    #[serde(default)]
+    pub is_interjection: bool,
 }
 
 /// Result of a mid-turn interjection insert (queue only; events untouched).
@@ -85,6 +87,8 @@ pub enum PromptQueueError {
         #[source]
         source: io::Error,
     },
+    #[error("prompt queue index {index} out of bounds (len {len})")]
+    OutOfBounds { index: usize, len: usize },
 }
 
 /// Session-scoped durable prompt queue store.
@@ -129,6 +133,7 @@ impl DurablePromptQueue {
             id: id.into(),
             text: trimmed.to_string(),
             enqueued_at_unix_ms,
+            is_interjection: false,
         };
         let mut doc = self.load()?;
         doc.entries.push(entry.clone());
@@ -157,6 +162,7 @@ impl DurablePromptQueue {
             id: id.into(),
             text: trimmed.to_string(),
             enqueued_at_unix_ms,
+            is_interjection: true,
         };
         let mut doc = self.load()?;
         // Front-insert: interjections drain before ordinary FIFO tail entries.
@@ -187,6 +193,86 @@ impl DurablePromptQueue {
 
     pub fn is_empty(&self) -> Result<bool, PromptQueueError> {
         Ok(self.load()?.entries.is_empty())
+    }
+
+    /// Remove and return all entries (FIFO order).
+    pub fn drain(&self) -> Result<Vec<PromptQueueEntry>, PromptQueueError> {
+        let mut doc = self.load()?;
+        let entries = std::mem::take(&mut doc.entries);
+        self.store(&doc)?;
+        Ok(entries)
+    }
+
+    /// Remove all entries, returning the count removed.
+    pub fn clear(&self) -> Result<usize, PromptQueueError> {
+        let mut doc = self.load()?;
+        let count = doc.entries.len();
+        doc.entries.clear();
+        self.store(&doc)?;
+        Ok(count)
+    }
+
+    /// Remove and return only interjection entries (preserving order).
+    pub fn drain_interjections(&self) -> Result<Vec<PromptQueueEntry>, PromptQueueError> {
+        let mut doc = self.load()?;
+        let all = std::mem::take(&mut doc.entries);
+        let (interjections, remaining): (Vec<_>, Vec<_>) =
+            all.into_iter().partition(|e| e.is_interjection);
+        doc.entries = remaining;
+        self.store(&doc)?;
+        Ok(interjections)
+    }
+
+    /// Edit the text of the entry with the given `id`.
+    pub fn edit(&self, id: &str, new_text: &str) -> Result<PromptQueueEntry, PromptQueueError> {
+        let trimmed = new_text.trim();
+        if trimmed.is_empty() {
+            return Err(PromptQueueError::EmptyText);
+        }
+        let mut doc = self.load()?;
+        let len = doc.entries.len();
+        let pos = doc
+            .entries
+            .iter()
+            .position(|e| e.id == id)
+            .ok_or(PromptQueueError::OutOfBounds { index: 0, len })?;
+        doc.entries[pos].text = trimmed.to_string();
+        let result = doc.entries[pos].clone();
+        self.store(&doc)?;
+        Ok(result)
+    }
+
+    /// Remove the entry with the given `id` and return it.
+    pub fn remove(&self, id: &str) -> Result<PromptQueueEntry, PromptQueueError> {
+        let mut doc = self.load()?;
+        let len = doc.entries.len();
+        let pos = doc
+            .entries
+            .iter()
+            .position(|e| e.id == id)
+            .ok_or(PromptQueueError::OutOfBounds { index: 0, len })?;
+        let entry = doc.entries.remove(pos);
+        self.store(&doc)?;
+        Ok(entry)
+    }
+
+    /// Move the entry with the given `id` to position `to` (0-based).
+    pub fn reorder(&self, id: &str, to: usize) -> Result<Vec<PromptQueueEntry>, PromptQueueError> {
+        let mut doc = self.load()?;
+        let len = doc.entries.len();
+        let from = doc
+            .entries
+            .iter()
+            .position(|e| e.id == id)
+            .ok_or(PromptQueueError::OutOfBounds { index: 0, len })?;
+        if to >= len {
+            return Err(PromptQueueError::OutOfBounds { index: to, len });
+        }
+        let entry = doc.entries.remove(from);
+        doc.entries.insert(to, entry);
+        let result = doc.entries.clone();
+        self.store(&doc)?;
+        Ok(result)
     }
 
     fn load(&self) -> Result<PromptQueueDocument, PromptQueueError> {
