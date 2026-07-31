@@ -41,7 +41,7 @@ DEFAULT_MAX_LINES: Final[int] = 800
 MIN_TEST_NAME_WORDS: Final[int] = 4
 MAX_DISPLAYED_VIOLATIONS: Final[int] = 300
 CONVENTIONS_BASELINE_PATH: Final[Path] = Path(
-    "docs/test-suite-conventions-baseline.json"
+    "docs/testing/test-suite-conventions-baseline.json"
 )
 
 # Files that are allowed to use process-global-state or real-world
@@ -511,7 +511,7 @@ def scan_conventions(root: Path) -> list[Violation]:
                     "new convention debt: test body must include "
                     "// arrange, // act, and // assert sections "
                     "or be recorded in "
-                    "docs/test-suite-conventions-baseline.json",
+                    "docs/testing/test-suite-conventions-baseline.json",
                 )
             )
     for stale in sorted(baseline - current_debt):

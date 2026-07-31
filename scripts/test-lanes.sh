@@ -64,11 +64,11 @@ Required environment:
     HARNESS_NATIVE_VISUAL=1
     DISPLAY=<display>
   signoff-parity requires (fail-closed; no silent skip):
-    docs/tui-reference-parity-manifest.v1.json
+    docs/reference/tui-reference-parity-manifest.v1.json
     cargo on PATH
     harness-tui owner stages: manifest, p0/shell topology, cells, pixels, first-slice,
       perm/question, tx/shell, responsive, and PTY owners with HARNESS_TUI_PTY_SIGNOFF=1
-    This lane owns dual-binary cells/pixels/PTY acceptance; docs/tui-signoff-manifest.v1.json does not.
+    This lane owns dual-binary cells/pixels/PTY acceptance; docs/testing/tui-signoff-manifest.v1.json does not.
   signoff-binary sets HARNESS_BINARY_SMOKE=1 and HARNESS_BINARY_SMOKE_ARTIFACT_DIR for the ignored binary smoke.
   signoff-journeys requires (fail-closed; no silent skip):
     crates/harness/tests/journey_signoff_test.rs
@@ -554,7 +554,7 @@ run_simulation() {
     run_stage simulation repeat_replay "$repo_root" cargo run -p harness -- replay --session "<repeat-run-dir>" --json || true
   fi
 
-  run_stage simulation simulation_evidence "$repo_root" cargo run -p harness-testkit --bin simulation_evidence -- --artifact-root "$evidence_artifacts_dir" --matrix "${repo_root}/docs/simulation-matrix.json" --baseline-events "$baseline_out" --baseline-replay "$baseline_replay" --repeat-events "$repeat_out" --repeat-replay "$repeat_replay" --seed 0 || true
+  run_stage simulation simulation_evidence "$repo_root" cargo run -p harness-testkit --bin simulation_evidence -- --artifact-root "$evidence_artifacts_dir" --matrix "${repo_root}/docs/testing/simulation-matrix.json" --baseline-events "$baseline_out" --baseline-replay "$baseline_replay" --repeat-events "$repeat_out" --repeat-replay "$repeat_replay" --seed 0 || true
 
   run_stage simulation simulation_secret_scan "$repo_root" env HARNESS_SECRETS_SCAN_ARTIFACTS=1 HARNESS_SIMULATION_ARTIFACT_DIR="$evidence_artifacts_dir" cargo nextest run -p harness-testkit --test secretscan_test || true
 }
@@ -720,7 +720,7 @@ run_signoff_journeys() {
 
 run_signoff_parity() {
   local mode_name="signoff-parity"
-  local manifest_rel="docs/tui-reference-parity-manifest.v1.json"
+  local manifest_rel="docs/reference/tui-reference-parity-manifest.v1.json"
   local manifest_path="${repo_root}/${manifest_rel}"
   local manifest_test_rel="crates/harness-tui/tests/reference_parity_manifest_test.rs"
   local manifest_test_path="${repo_root}/${manifest_test_rel}"
@@ -1060,7 +1060,7 @@ write_signoff_parity_verdict() {
 
   local git_rev
   git_rev="$(git -C "$repo_root" rev-parse HEAD 2>/dev/null || echo 'unknown')"
-  local manifest_path="${repo_root}/docs/tui-reference-parity-manifest.v1.json"
+  local manifest_path="${repo_root}/docs/reference/tui-reference-parity-manifest.v1.json"
   local manifest_digest
   manifest_digest="$(sha256sum "$manifest_path" 2>/dev/null | cut -d' ' -f1 || echo 'missing')"
 
@@ -1084,7 +1084,7 @@ manifest_sha256=${manifest_digest}
 owns=dual_binary_cells_and_pixels
 stages=manifest,reference_binary,p0_contract,shell_topology,cells,pixels,first_slice,perm_question,tx_shell,responsive,pty_with_signoff,evidence_provenance
 does_not_own=tui-signoff-manifest.v1.json
-manifest=docs/tui-reference-parity-manifest.v1.json
+manifest=docs/reference/tui-reference-parity-manifest.v1.json
 EOF
 }
 

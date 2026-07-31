@@ -8,7 +8,7 @@ cd "$repo_root"
 coverage_dir="${COVERAGE_ARTIFACT_DIR:-target/coverage}"
 lcov_path="${COVERAGE_LCOV_PATH:-$coverage_dir/lcov.info}"
 summary_path="${COVERAGE_SUMMARY_PATH:-$coverage_dir/summary.txt}"
-baseline_path="${COVERAGE_BASELINE_PATH:-docs/test-suite-coverage-baseline.txt}"
+baseline_path="${COVERAGE_BASELINE_PATH:-docs/testing/test-suite-coverage-baseline.txt}"
 nextest_profile="${NEXTEST_PROFILE:-ci}"
 
 mkdir -p "$coverage_dir" "$(dirname "$baseline_path")"
@@ -23,7 +23,7 @@ MSG
 fi
 
 # cargo-llvm-cov runs the builtin nextest integration; NEXTEST_PROFILE selects
-# the repository profile from .config/nextest.toml.
+# the repository's configured nextest profile and lane flags.
 NEXTEST_PROFILE="$nextest_profile" \
   cargo llvm-cov nextest --workspace --all-features --lcov --output-path "$lcov_path"
 

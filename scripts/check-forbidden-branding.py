@@ -43,14 +43,14 @@ ALLOWED_PARITY_PATHS: Final[set[Path]] = {
     Path("crates/harness-core/src/perm/tests.rs"),
     Path("crates/harness/tests/bootstrap_profiles_test.rs"),
     Path("configs/harness.example.jsonc"),
-    Path("docs/config.md"),
-    Path("docs/permissions.md"),
+    Path("docs/configuration/config.md"),
+    Path("docs/permissions/permissions.md"),
     Path("crates/harness-core/src/foreign_session.rs"),
     Path("crates/harness-core/src/foreign_session/discover.rs"),
     Path("crates/harness-core/src/foreign_session/import.rs"),
     Path("crates/harness-core/tests/foreign_session_test.rs"),
-    Path("docs/grok-build-tui-implementation-prompt.md"),
-    Path("docs/tui-reference-module-disposition.v1.json"),
+    Path("docs/reference/grok-build-tui-implementation-prompt.md"),
+    Path("docs/reference/tui-reference-module-disposition.v1.json"),
     Path("crates/harness-tui/DESIGN.md"),
     Path("grok-build-clean-room-parity.md"),
     Path("scripts/tui-parity/generate-evidence-layers.py"),
@@ -72,7 +72,7 @@ ALLOWED_MATCH_LINES: Final[dict[Path, set[int]]] = {
         "crates/harness/tests/config_schema_cli/"
         "03_config_validate_cli_loads_separate_tui_test.rs"
     ): {202, 203, 212, 244, 277, 299},
-    Path("docs/config.md"): {
+    Path("docs/configuration/config.md"): {
         73, 89, 100, 118, 134, 135, 136, 137, 139, 140,
         141, 142, 143, 145, 146, 147, 149, 153, 156, 157,
         158, 160, 162, 163, 164, 165, 262, 282, 413, 414,
