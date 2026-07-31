@@ -365,4 +365,67 @@ impl AppState {
         let active_run = self.run_id();
         project_plan_list(&workspace, active_run)
     }
+
+    // -----------------------------------------------------------------------
+    // Plan Mode behavior contracts (Todo 21 implements the bodies)
+    // -----------------------------------------------------------------------
+    // These public entrypoints are the Plan Mode contracts captured by
+    // `tests/plan_vim_screen_mode_parity_test.rs`. They are intentionally
+    // unimplemented stubs so the parity tests compile and run as *red* evidence
+    // for Todo 21, which replaces each body with the real product behavior.
+    // They are NOT wired into any keybinding or `Action`, so they cannot be
+    // triggered outside of tests; they are future product API surface, not
+    // compatibility shims delegating to existing private code.
+
+    /// Write the plan body to the canonical `.agent-harness/plans/<run>.md`.
+    ///
+    /// (Todo 21 contract — currently unimplemented.)
+    pub fn plan_edit(&mut self, _body: String) -> Result<(), String> {
+        unimplemented!("plan_edit is a Todo 21 Plan Mode contract; not yet implemented")
+    }
+
+    /// Approve the active plan: set a status banner and close the plan view.
+    ///
+    /// (Todo 21 contract — currently unimplemented.)
+    pub fn plan_approve(&mut self) {
+        unimplemented!("plan_approve is a Todo 21 Plan Mode contract; not yet implemented")
+    }
+
+    /// Reject the active plan: set a status banner and close the plan view.
+    ///
+    /// (Todo 21 contract — currently unimplemented.)
+    pub fn plan_reject(&mut self) {
+        unimplemented!("plan_reject is a Todo 21 Plan Mode contract; not yet implemented")
+    }
+
+    /// Cancel plan editing: close the plan view without writing a plan file.
+    ///
+    /// (Todo 21 contract — currently unimplemented.)
+    pub fn plan_cancel(&mut self) {
+        unimplemented!("plan_cancel is a Todo 21 Plan Mode contract; not yet implemented")
+    }
+
+    /// Validate that a plan path is confined to `.agent-harness/plans/*.md`.
+    ///
+    /// Rejects path traversal, absolute paths, non-`.md` extensions, and paths
+    /// outside the plans directory. (Todo 21 contract — currently unimplemented.)
+    pub fn plan_validate_path(&self, _path: &str) -> Result<(), String> {
+        unimplemented!("plan_validate_path is a Todo 21 Plan Mode contract; not yet implemented")
+    }
+
+    /// Suspend the active child session as part of Plan Mode handoff.
+    ///
+    /// (Todo 21 contract — currently unimplemented.)
+    pub fn plan_child_suspend(&self) -> Result<(), String> {
+        unimplemented!("plan_child_suspend is a Todo 21 Plan Mode contract; not yet implemented")
+    }
+
+    /// Whether plan mutations are blocked by replay mode.
+    ///
+    /// (Todo 21 contract — currently unimplemented.)
+    pub fn plan_is_replay_mutation_blocked(&self) -> bool {
+        unimplemented!(
+            "plan_is_replay_mutation_blocked is a Todo 21 Plan Mode contract; not yet implemented"
+        )
+    }
 }

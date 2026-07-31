@@ -33,6 +33,12 @@ impl AppState {
             return;
         }
 
+        if self.overlay_stack().top() == Some(OverlayKind::NewWorktreeDialog) {
+            self.handle_new_worktree_dialog_key(key);
+            self.maybe_auto_exit();
+            return;
+        }
+
         if self.overlay_stack().top() == Some(OverlayKind::StatusDialog) {
             if key.code == KeyCode::Esc {
                 self.secondary_surfaces.close_status_dialog();
@@ -73,6 +79,32 @@ impl AppState {
 
         if self.overlay_stack().top() == Some(OverlayKind::PlanView) {
             self.handle_plan_view_key(key);
+            self.maybe_auto_exit();
+            return;
+        }
+
+        if self.overlay_stack().top() == Some(OverlayKind::MemoryBrowser) {
+            self.handle_memory_browser_key(key);
+            self.maybe_auto_exit();
+            return;
+        }
+
+        if self.overlay_stack().top() == Some(OverlayKind::WorktreePicker) {
+            self.handle_worktree_picker_key(key);
+            self.maybe_auto_exit();
+            return;
+        }
+
+        if self.overlay_stack().top() == Some(OverlayKind::ForeignImportPicker) {
+            self.handle_foreign_import_picker_key(&key);
+            self.maybe_auto_exit();
+            return;
+        }
+
+        if self.overlay_stack().top() == Some(OverlayKind::TrustFolderPrompt) {
+            if key.code == KeyCode::Esc {
+                self.trust_folder_prompt_visible = false;
+            }
             self.maybe_auto_exit();
             return;
         }
@@ -983,6 +1015,12 @@ impl AppState {
             }
             Action::OpenLineageBrowser => {
                 self.open_lineage_browser();
+            }
+            Action::OpenMemoryBrowser => {
+                self.open_memory_browser();
+            }
+            Action::OpenWorktreePicker => {
+                self.open_worktree_picker();
             }
             _ => {}
         }

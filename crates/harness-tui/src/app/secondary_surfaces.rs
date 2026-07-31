@@ -80,3 +80,30 @@ impl SecondarySurfaceState {
 }
 
 pub(crate) type OperatorSidebarState = SecondarySurfaceState;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Relocated from dashboard_queue_worktree_parity_test.rs: section
+    // collapse/expand toggles pub(crate) SecondarySurfaceState state.
+    #[test]
+    fn dashboard_roster_group_collapses_and_expands_sections() {
+        let mut state = SecondarySurfaceState::default();
+        // Subagents section starts expanded (not in collapsed_sections by default).
+        assert!(
+            !state.section_collapsed(OperatorSidebarSection::Subagents),
+            "Subagents section must start expanded"
+        );
+        state.toggle_section(OperatorSidebarSection::Subagents);
+        assert!(
+            state.section_collapsed(OperatorSidebarSection::Subagents),
+            "toggling Subagents section must collapse it"
+        );
+        state.toggle_section(OperatorSidebarSection::Subagents);
+        assert!(
+            !state.section_collapsed(OperatorSidebarSection::Subagents),
+            "toggling again must expand it"
+        );
+    }
+}

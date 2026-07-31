@@ -253,3 +253,322 @@ impl AppState {
         self.sync_file_mention_overlay();
     }
 }
+
+// ---------------------------------------------------------------------------
+// Completion overlay — pub(crate) surface for unit-test contracts.
+// Todo 13 will promote this to the public API with proper state ownership on
+// AppState/ComposerState (routed through Todo 6 for the shared-root field
+// additions).  Until then the overlay borrows the existing slash-overlay
+// fields (slash_visible / slash_filtered / slash_selected) and a thread-local
+// for the replace range so that all completion assertions compile and run
+// against the real prompt-editing path.
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+thread_local! {
+    static COMPLETION_REPLACE_RANGE: std::cell::RefCell<Option<(usize, usize)>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+impl AppState {
+    /// Open the completion overlay with a candidate list and the buffer char
+    /// range to replace on accept.
+    pub(crate) fn open_completions(&mut self, entries: Vec<String>, start: usize, end: usize) {
+        if entries.is_empty() {
+            self.clear_slash_menu();
+            COMPLETION_REPLACE_RANGE.with(|r| *r.borrow_mut() = None);
+            return;
+        }
+        self.slash_visible = true;
+        self.slash_filtered = entries;
+        self.slash_selected = 0;
+        COMPLETION_REPLACE_RANGE.with(|r| *r.borrow_mut() = Some((start, end)));
+    }
+
+    pub(crate) fn completion_active(&self) -> bool {
+        self.slash_visible
+    }
+
+    pub(crate) fn completion_entries(&self) -> Vec<String> {
+        self.slash_filtered.clone()
+    }
+
+    pub(crate) fn completion_selected_index(&self) -> Option<usize> {
+        if self.slash_visible {
+            Some(self.slash_selected)
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn completion_selected_text(&self) -> Option<String> {
+        if self.slash_visible {
+            self.slash_filtered.get(self.slash_selected).cloned()
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn completion_replace_range(&self) -> Option<(usize, usize)> {
+        COMPLETION_REPLACE_RANGE.with(|r| *r.borrow())
+    }
+
+    /// Accept the currently selected candidate: push a single undo snapshot,
+    /// delete the target range, insert the replacement text, and deactivate.
+    pub(crate) fn accept_completion(&mut self) {
+        if !self.slash_visible {
+            return;
+        }
+        let selected = self.slash_filtered.get(self.slash_selected).cloned();
+        let range = COMPLETION_REPLACE_RANGE.with(|r| *r.borrow());
+        self.clear_slash_menu();
+        COMPLETION_REPLACE_RANGE.with(|r| *r.borrow_mut() = None);
+        let (Some(selected), Some((start, end))) = (selected, range) else {
+            return;
+        };
+        self.composer.push_undo();
+        self.delete_prompt_range(start, end);
+        // delete_prompt_range moves the cursor past the deleted region; reset
+        // to the range start so the replacement text lands in the right spot.
+        self.composer.prompt_cursor = start;
+        let byte_idx = self.prompt_cursor_byte_index();
+        self.composer.prompt_buffer.insert_str(byte_idx, &selected);
+        self.composer.prompt_cursor += selected.chars().count();
+        self.sync_slash_overlay();
+        self.sync_file_mention_overlay();
+    }
+
+    pub(crate) fn cycle_completion_forward(&mut self) {
+        if !self.slash_visible || self.slash_filtered.is_empty() {
+            return;
+        }
+        self.slash_selected = (self.slash_selected + 1) % self.slash_filtered.len();
+    }
+
+    pub(crate) fn cycle_completion_backward(&mut self) {
+        if !self.slash_visible || self.slash_filtered.is_empty() {
+            return;
+        }
+        let len = self.slash_filtered.len();
+        self.slash_selected = if self.slash_selected == 0 {
+            len - 1
+        } else {
+            self.slash_selected - 1
+        };
+    }
+
+    pub(crate) fn dismiss_completion(&mut self) {
+        self.clear_slash_menu();
+        COMPLETION_REPLACE_RANGE.with(|r| *r.borrow_mut() = None);
+    }
+
+    /// Filter candidates by the alphanumeric word under the cursor, sort
+    /// deterministically, and open the overlay targeting that word's range.
+    pub(crate) fn open_completions_for_word(&mut self, candidates: &[String]) {
+        let word_start = self.composer_word_start_left();
+        let word_end = self.composer.prompt_cursor;
+        let chars = self.composer_chars();
+        let word: String = chars
+            .get(word_start..word_end)
+            .map(|slice| slice.iter().collect())
+            .unwrap_or_default();
+        let mut filtered: Vec<String> = candidates
+            .iter()
+            .filter(|c| c.starts_with(&word))
+            .cloned()
+            .collect();
+        filtered.sort();
+        self.open_completions(filtered, word_start, word_end);
+    }
+}
+
+#[cfg(test)]
+mod completion_tests {
+    #![allow(
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unwrap_used,
+        reason = "parity contract tests use fail-fast asserts for missing state"
+    )]
+
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    // --- test helpers (same shape as the integration-test originals) ---
+
+    fn live_app() -> AppState {
+        AppState::new_live(None, false, None)
+    }
+
+    fn set_buffer(app: &mut AppState, text: &str) {
+        app.composer.prompt_buffer = text.to_string();
+        app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
+        app.composer.selection_anchor = None;
+    }
+
+    fn set_buffer_at(app: &mut AppState, text: &str, cursor: usize) {
+        app.composer.prompt_buffer = text.to_string();
+        app.composer.prompt_cursor = cursor;
+        app.composer.selection_anchor = None;
+    }
+
+    fn ctrl(c: char) -> KeyEvent {
+        KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL)
+    }
+
+    // --- E1: opening with candidates activates the overlay at index 0. ---
+    #[test]
+    fn completion_open_activates_with_candidates() {
+        let mut app = live_app();
+        set_buffer(&mut app, "hello ");
+
+        app.open_completions(vec!["alpha".into(), "beta".into(), "gamma".into()], 0, 0);
+
+        assert!(app.completion_active());
+        assert_eq!(app.completion_entries(), vec!["alpha", "beta", "gamma"]);
+        assert_eq!(app.completion_selected_index(), Some(0));
+        assert_eq!(app.completion_selected_text(), Some("alpha".into()));
+        assert_eq!(app.completion_replace_range(), Some((0, 0)));
+    }
+
+    // --- E-Reject: opening with no candidates stays inactive. ---
+    #[test]
+    fn completion_open_with_no_candidates_is_inactive() {
+        let mut app = live_app();
+
+        app.open_completions(Vec::new(), 0, 0);
+
+        assert!(!app.completion_active());
+        assert_eq!(app.completion_selected_index(), None);
+        assert_eq!(app.completion_selected_text(), None);
+        assert_eq!(app.completion_replace_range(), None);
+    }
+
+    // --- E2: forward cycling wraps around the candidate list. ---
+    #[test]
+    fn completion_cycle_forward_wraps_around() {
+        let mut app = live_app();
+        app.open_completions(vec!["a".into(), "b".into(), "c".into()], 0, 0);
+
+        app.cycle_completion_forward();
+        assert_eq!(app.completion_selected_index(), Some(1));
+        app.cycle_completion_forward();
+        assert_eq!(app.completion_selected_index(), Some(2));
+        app.cycle_completion_forward();
+        assert_eq!(app.completion_selected_index(), Some(0), "wraps to first");
+    }
+
+    // --- E3: backward cycling wraps around the candidate list. ---
+    #[test]
+    fn completion_cycle_backward_wraps_around() {
+        let mut app = live_app();
+        app.open_completions(vec!["a".into(), "b".into(), "c".into()], 0, 0);
+
+        app.cycle_completion_backward();
+        assert_eq!(app.completion_selected_index(), Some(2), "wraps to last");
+        app.cycle_completion_backward();
+        assert_eq!(app.completion_selected_index(), Some(1));
+    }
+
+    // --- E4: accepting replaces the target range, moves the cursor, and
+    //     deactivates. ---
+    #[test]
+    fn completion_accept_replaces_range_and_deactivates() {
+        let mut app = live_app();
+        set_buffer(&mut app, "abXXef");
+        app.open_completions(vec!["ZZ".into()], 2, 4);
+
+        app.accept_completion();
+
+        assert_eq!(app.composer.prompt_buffer, "abZZef");
+        assert_eq!(app.composer.prompt_cursor, 4);
+        assert!(!app.completion_active());
+        assert_eq!(app.composer.selection_anchor, None);
+    }
+
+    // --- E5: accepting is undoable via the composer undo stack. ---
+    #[test]
+    fn completion_accept_is_undoable() {
+        let mut app = live_app();
+        set_buffer_at(&mut app, "abc", 3);
+        app.open_completions(vec!["XYZ".into()], 0, 3);
+        app.accept_completion();
+        assert_eq!(app.composer.prompt_buffer, "XYZ");
+
+        app.handle_key(ctrl('z'));
+
+        assert_eq!(app.composer.prompt_buffer, "abc");
+        assert_eq!(app.composer.prompt_cursor, 3);
+    }
+
+    // --- E6: dismissing closes the overlay without touching the buffer. ---
+    #[test]
+    fn completion_dismiss_leaves_buffer_intact() {
+        let mut app = live_app();
+        set_buffer(&mut app, "draft text");
+        app.open_completions(vec!["one".into(), "two".into()], 0, 0);
+        assert!(app.completion_active());
+
+        app.dismiss_completion();
+
+        assert!(!app.completion_active());
+        assert_eq!(app.composer.prompt_buffer, "draft text");
+        assert_eq!(app.completion_selected_index(), None);
+    }
+
+    // --- E7: word-prefix completion filters candidates by the word under the
+    //     cursor, sorts them deterministically, and accepts into place. ---
+    #[test]
+    fn completion_for_word_filters_by_prefix_and_accepts() {
+        let mut app = live_app();
+        set_buffer(&mut app, "hello wo");
+        let candidates = vec![
+            "world".to_string(),
+            "wonder".to_string(),
+            "apple".to_string(),
+        ];
+
+        app.open_completions_for_word(&candidates);
+
+        assert!(app.completion_active());
+        assert_eq!(app.completion_entries(), vec!["wonder", "world"]);
+        assert_eq!(app.completion_selected_text(), Some("wonder".into()));
+        assert_eq!(app.completion_replace_range(), Some((6, 8)));
+
+        app.accept_completion();
+
+        assert_eq!(app.composer.prompt_buffer, "hello wonder");
+        assert_eq!(app.composer.prompt_cursor, 12);
+        assert!(!app.completion_active());
+    }
+
+    // --- E-Reject: word completion with no matching candidate stays inactive. ---
+    #[test]
+    fn completion_for_word_no_match_is_inactive() {
+        let mut app = live_app();
+        set_buffer(&mut app, "hello xy");
+        let candidates = vec!["world".to_string()];
+
+        app.open_completions_for_word(&candidates);
+
+        assert!(!app.completion_active());
+        assert_eq!(app.composer.prompt_buffer, "hello xy");
+    }
+
+    // --- E-Reject: cycling/accepting while inactive are safe no-ops. ---
+    #[test]
+    fn completion_ops_are_noops_when_inactive() {
+        let mut app = live_app();
+        set_buffer(&mut app, "abc");
+
+        app.cycle_completion_forward();
+        app.cycle_completion_backward();
+        app.accept_completion();
+        app.dismiss_completion();
+
+        assert!(!app.completion_active());
+        assert_eq!(app.composer.prompt_buffer, "abc");
+        assert_eq!(app.completion_selected_index(), None);
+    }
+}

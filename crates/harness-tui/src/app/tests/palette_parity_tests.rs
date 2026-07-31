@@ -1226,7 +1226,11 @@ pub(super) fn palette_exact_dispatch_targets() {
         ),
         (
             "context.memory",
-            PaletteDispatch::Action(Action::OpenLineageBrowser),
+            PaletteDispatch::Action(Action::OpenMemoryBrowser),
+        ),
+        (
+            "worktree.switch",
+            PaletteDispatch::Action(Action::OpenWorktreePicker),
         ),
         (
             "harness.stack_transcript_diffs",
@@ -2284,6 +2288,7 @@ pub(super) fn palette_slash_alias_global_inventory() {
         "dashboard",
         "feedback",
         "follow",
+        "import",
         "settings",
         "shell",
         "toggles",

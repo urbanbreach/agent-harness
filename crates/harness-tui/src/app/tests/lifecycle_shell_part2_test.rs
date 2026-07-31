@@ -161,16 +161,21 @@ pub(super) fn startup_ctrl_w_empty_composer_requests_new_worktree_session() {
         KeyModifiers::CONTROL,
     ));
 
+    assert!(!app.should_quit, "worktree dialog should keep startup open");
+    assert!(intents.lock().unwrap_or_abort().is_empty());
+
+    app.handle_key(key(KeyCode::Enter));
+
     assert!(
         app.should_quit,
-        "worktree handoff should leave startup shell"
+        "confirmed worktree handoff should exit startup"
     );
     assert!(
         matches!(
             intents.lock().unwrap_or_abort().as_slice(),
-            [UiIntent::NewWorktreeSession]
+            [UiIntent::NewWorktreeSession { name: None }]
         ),
-        "empty startup Ctrl+W must request NewWorktreeSession, not word-delete"
+        "empty startup Ctrl+W must confirm NewWorktreeSession, not word-delete"
     );
 }
 
@@ -213,13 +218,19 @@ pub(super) fn palette_new_worktree_requests_new_worktree_session() {
     let mut app = AppState::new_startup(Vec::new(), Some(sink));
     app.request_new_worktree_session();
 
+    assert!(!app.should_quit);
+    assert!(intents.lock().unwrap_or_abort().is_empty());
+
+    app.handle_key(key(KeyCode::Char('n')));
+    app.handle_key(key(KeyCode::Enter));
+
     assert!(app.should_quit);
     assert!(
         matches!(
             intents.lock().unwrap_or_abort().as_slice(),
-            [UiIntent::NewWorktreeSession]
+            [UiIntent::NewWorktreeSession { name: Some(name) }] if name == "n"
         ),
-        "palette/worktree path must emit NewWorktreeSession"
+        "palette/worktree path must emit named NewWorktreeSession after confirmation"
     );
 }
 

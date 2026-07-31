@@ -876,4 +876,257 @@ mod tests {
             );
         }
     }
+
+    // -----------------------------------------------------------------------
+    // Relocated from dashboard_queue_worktree_parity_test.rs (private API).
+    // These scenarios exercise pub(super)/pub(crate) session-stack navigation
+    // state that integration tests cannot reach without widening visibility.
+    // -----------------------------------------------------------------------
+
+    fn setup_parent_with_child(app: &mut AppState) {
+        app.session_path = Some(PathBuf::from("/tmp/harness-dash-parity/parent_run"));
+        app.ingest_event(event(
+            1,
+            None,
+            actor(harness_core::event::ActorKind::System, "dash-parity"),
+            EventV1::RunStarted(harness_core::event::RunStartedEvent {
+                run_name: "parent_run".into(),
+                workspace_root: "/workspace".to_string(),
+            }),
+        ));
+        app.ingest_event(event(
+            2,
+            Some("req_parent"),
+            actor(harness_core::event::ActorKind::User, "interactive-user"),
+            EventV1::UserMessageSubmitted(harness_core::event::UserMessageSubmittedEvent {
+                request_id: "req_parent".into(),
+                text: "Run audit".to_string(),
+            }),
+        ));
+        app.ingest_event(event(
+            3,
+            Some("req_parent"),
+            actor(harness_core::event::ActorKind::Worker, "agent_parent"),
+            EventV1::ProviderRequestStarted(harness_core::event::ProviderRequestStartedEvent {
+                request_id: "req_parent".into(),
+                provider_id: "openai".to_string(),
+                model_id: "gpt-5-codex".to_string(),
+                prompt_summary: "prompt".to_string(),
+                request_digest: "digest-req_parent".to_string(),
+                metadata: None,
+            }),
+        ));
+        app.ingest_event(event(
+            4,
+            Some("req_parent"),
+            actor(harness_core::event::ActorKind::System, "coordinator"),
+            EventV1::ToolCallRequested(harness_core::event::ToolCallRequestedEvent {
+                tool_call_id: "tc_task".into(),
+                tool_id: "task".to_string(),
+                args_summary: r#"{"description":"test task","subagent_type":"explore"}"#
+                    .to_string(),
+                args_digest: "digest-tc_task".to_string(),
+                metadata: Some(harness_core::event::ToolCallMetadata {
+                    lineage: Some(harness_core::event::TaskLineageMetadata {
+                        parent_tool_call_id: Some("tc_task".to_string()),
+                        parent_request_id: Some("req_parent".to_string()),
+                        parent_session_id: Some("parent_run".to_string()),
+                        child_session_id: Some("agent_worker".to_string()),
+                        child_request_id: Some("req_child".to_string()),
+                        ..harness_core::event::TaskLineageMetadata::default()
+                    }),
+                    ..harness_core::event::ToolCallMetadata::default()
+                }),
+            }),
+        ));
+        app.ingest_event(event(
+            5,
+            Some("req_child"),
+            actor(harness_core::event::ActorKind::Worker, "agent_worker"),
+            EventV1::AgentSpawned(harness_core::event::AgentSpawnedEvent {
+                agent_id: "agent_worker".to_string(),
+                profile: "explore".to_string(),
+                parent_agent_id: Some("agent_parent".to_string()),
+            }),
+        ));
+        app.ingest_event(event(
+            6,
+            Some("req_child"),
+            actor(harness_core::event::ActorKind::Worker, "agent_worker"),
+            EventV1::ProviderRequestStarted(harness_core::event::ProviderRequestStartedEvent {
+                request_id: "req_child".into(),
+                provider_id: "default".to_string(),
+                model_id: "model-1".to_string(),
+                prompt_summary: "child task".to_string(),
+                request_digest: "digest-child".to_string(),
+                metadata: None,
+            }),
+        ));
+    }
+
+    #[test]
+    fn subagent_status_returns_info_for_child_session() {
+        let mut app = AppState::new_live(None, false, None);
+        setup_parent_with_child(&mut app);
+        app.navigate_to_child_session_id("agent_worker".to_string());
+        let info = app
+            .current_subagent_session_info()
+            .expect("subagent info must be available after navigating to child");
+        assert!(!info.label.is_empty(), "subagent label must be non-empty");
+        assert!(!info.title.is_empty(), "subagent title must be non-empty");
+        assert_eq!(
+            info.parent_label, "parent_run",
+            "subagent parent_label must match parent session id"
+        );
+    }
+
+    #[test]
+    fn subagent_catalog_lists_child_session_ids() {
+        let mut app = AppState::new_live(None, false, None);
+        setup_parent_with_child(&mut app);
+        let children = app.child_session_ids();
+        assert!(
+            children.iter().any(|id| id == "agent_worker"),
+            "child_session_ids must include agent_worker: {:?}",
+            children
+        );
+    }
+
+    #[test]
+    fn subagent_catalog_empty_when_no_children() {
+        let app = AppState::new_live(None, false, None);
+        let children = app.child_session_ids();
+        assert!(
+            children.is_empty(),
+            "child_session_ids must be empty when no task spawns exist"
+        );
+    }
+
+    #[test]
+    fn subagent_current_session_id_returns_none_without_session_path() {
+        let app = AppState::new_live(None, false, None);
+        assert!(
+            app.current_session_id().is_none(),
+            "current_session_id must be None without session_path"
+        );
+    }
+
+    #[test]
+    fn subagent_current_session_id_returns_path_component() {
+        let mut app = AppState::new_live(None, false, None);
+        app.session_path = Some(PathBuf::from("/tmp/harness-sessions/run-001"));
+        assert_eq!(
+            app.current_session_id(),
+            Some("run-001"),
+            "current_session_id must return the last path component"
+        );
+    }
+
+    #[test]
+    fn subagent_session_present_false_for_root_session() {
+        let mut app = AppState::new_live(None, false, None);
+        app.session_path = Some(PathBuf::from("/tmp/harness-sessions/parent_run"));
+        setup_parent_with_child(&mut app);
+        assert!(
+            !app.current_subagent_session_present(),
+            "root session must not be a subagent"
+        );
+    }
+
+    #[test]
+    fn session_entry_navigates_to_child_session() {
+        let mut app = AppState::new_live(None, false, None);
+        app.session_path = Some(PathBuf::from("/tmp/harness-dash-parity/parent_run"));
+        setup_parent_with_child(&mut app);
+        app.navigate_to_child_session_id("agent_worker".to_string());
+        assert!(
+            app.replay_mode,
+            "navigating to inline child must enter replay mode"
+        );
+        assert_eq!(
+            app.current_session_id(),
+            Some("agent_worker"),
+            "after navigation, current_session_id must be the child"
+        );
+    }
+
+    #[test]
+    fn session_return_navigates_to_parent_session() {
+        let mut app = AppState::new_live(None, false, None);
+        app.session_path = Some(PathBuf::from("/tmp/harness-dash-parity/parent_run"));
+        setup_parent_with_child(&mut app);
+        app.navigate_to_child_session_id("agent_worker".to_string());
+        assert_eq!(app.current_session_id(), Some("agent_worker"));
+        app.navigate_to_parent_session();
+        assert_eq!(
+            app.current_session_id(),
+            Some("parent_run"),
+            "after return, current_session_id must be the parent"
+        );
+    }
+
+    #[test]
+    fn session_entry_sibling_cycle_wraps_around() {
+        let mut app = AppState::new_live(None, false, None);
+        app.session_path = Some(PathBuf::from("/tmp/harness-dash-parity/parent_run"));
+        setup_parent_with_child(&mut app);
+        app.ingest_event(event(
+            7,
+            Some("req_parent"),
+            actor(harness_core::event::ActorKind::System, "coordinator"),
+            EventV1::ToolCallRequested(harness_core::event::ToolCallRequestedEvent {
+                tool_call_id: "tc_task2".into(),
+                tool_id: "task".to_string(),
+                args_summary: r#"{"description":"second task","subagent_type":"general"}"#
+                    .to_string(),
+                args_digest: "digest-tc_task2".to_string(),
+                metadata: Some(harness_core::event::ToolCallMetadata {
+                    lineage: Some(harness_core::event::TaskLineageMetadata {
+                        parent_tool_call_id: Some("tc_task2".to_string()),
+                        parent_request_id: Some("req_parent".to_string()),
+                        parent_session_id: Some("parent_run".to_string()),
+                        child_session_id: Some("agent_worker2".to_string()),
+                        child_request_id: Some("req_child2".to_string()),
+                        ..harness_core::event::TaskLineageMetadata::default()
+                    }),
+                    ..harness_core::event::ToolCallMetadata::default()
+                }),
+            }),
+        ));
+        app.ingest_event(event(
+            8,
+            Some("req_child2"),
+            actor(harness_core::event::ActorKind::Worker, "agent_worker2"),
+            EventV1::AgentSpawned(harness_core::event::AgentSpawnedEvent {
+                agent_id: "agent_worker2".to_string(),
+                profile: "general".to_string(),
+                parent_agent_id: Some("agent_parent".to_string()),
+            }),
+        ));
+        let children = app.child_session_ids();
+        assert!(
+            children.len() >= 2,
+            "must have at least 2 children for sibling cycle: {:?}",
+            children
+        );
+    }
+
+    #[test]
+    fn empty_dashboard_has_no_child_sessions() {
+        let app = AppState::new_live(None, false, None);
+        let children = app.child_session_ids();
+        assert!(
+            children.is_empty(),
+            "empty dashboard must have no child sessions"
+        );
+    }
+
+    #[test]
+    fn empty_dashboard_has_no_subagent_info() {
+        let app = AppState::new_live(None, false, None);
+        assert!(
+            app.current_subagent_session_info().is_none(),
+            "empty dashboard must have no subagent session info"
+        );
+    }
 }

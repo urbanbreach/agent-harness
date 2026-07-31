@@ -444,6 +444,16 @@ const COMMAND_METADATA: &[CommandMetadata] = &[
         description: "Open the Harness session lineage browser",
     },
     CommandMetadata {
+        id: "open_memory_browser",
+        label: "Memory",
+        description: "Open the durable memory browser",
+    },
+    CommandMetadata {
+        id: "open_worktree_picker",
+        label: "Switch worktree",
+        description: "Switch the active session worktree",
+    },
+    CommandMetadata {
         id: "session_child_first",
         label: "First child session",
         description: "Open the first child session of the current session",
@@ -493,13 +503,18 @@ const COMMAND_METADATA: &[CommandMetadata] = &[
         label: "Toggle thinking",
         description: "Toggle inline thinking rows",
     },
+    CommandMetadata {
+        id: "slash_import",
+        label: "Import foreign session",
+        description: "Discover and import a foreign session as replay-only",
+    },
 ];
 
 pub(super) fn command_metadata(id: &str) -> Option<&'static CommandMetadata> {
     COMMAND_METADATA.iter().find(|entry| entry.id == id)
 }
 
-const SLASH_COMMANDS: [SlashCommand; 25] = [
+const SLASH_COMMANDS: [SlashCommand; 26] = [
     SlashCommand {
         id: "new",
         metadata_id: "slash_new",
@@ -624,6 +639,11 @@ const SLASH_COMMANDS: [SlashCommand; 25] = [
         id: "feedback",
         metadata_id: "help",
         aliases: &[],
+    },
+    SlashCommand {
+        id: "import",
+        metadata_id: "slash_import",
+        aliases: &["import-session"],
     },
 ];
 

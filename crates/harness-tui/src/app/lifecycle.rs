@@ -106,7 +106,12 @@ pub enum UiIntent {
         launch_metadata: LaunchMetadata,
     },
     NewSession,
-    NewWorktreeSession,
+    NewWorktreeSession {
+        name: Option<String>,
+    },
+    SwitchWorktree {
+        worktree_path: PathBuf,
+    },
     ReplaySession {
         run_id: String,
         run_dir: PathBuf,
@@ -156,6 +161,10 @@ pub enum UiIntent {
         run_dir: PathBuf,
     },
     ExportSession,
+    ImportForeignSession {
+        source_path: PathBuf,
+        dest_session_dir: PathBuf,
+    },
     RunShellCommand {
         command: String,
     },
@@ -706,6 +715,11 @@ impl AppState {
             auth_dialog_visible: self.connect_dialog.visible,
             settings_editor_visible: self.settings_editor_visible,
             plan_view_visible: self.plan_view_visible,
+            memory_browser_visible: self.memory_browser.visible,
+            worktree_picker_visible: self.worktree_picker.visible,
+            new_worktree_dialog_visible: self.new_worktree_dialog.visible,
+            foreign_import_picker_visible: self.foreign_import_picker.visible,
+            trust_folder_prompt_visible: self.trust_folder_prompt_visible,
         }
     }
 

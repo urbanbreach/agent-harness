@@ -532,3 +532,114 @@ impl AppState {
         self.dispatch_submitted_prompt(text);
     }
 }
+
+// ---------------------------------------------------------------------------
+// Paste contract unit tests — the integration test (prompt_editor_test.rs)
+// cannot call the pub(crate) handle_paste entry point from outside the crate.
+// These tests preserve the D-section paste/input behavior assertions here so
+// they compile and run against the real paste path for Todo 13.
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod paste_tests {
+    #![allow(
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unwrap_used,
+        reason = "parity contract tests use fail-fast asserts for missing state"
+    )]
+
+    use super::*;
+    use std::sync::{Arc, Mutex};
+
+    fn live_app() -> AppState {
+        AppState::new_live(None, false, None)
+    }
+
+    fn live_app_capture() -> (AppState, Arc<Mutex<Vec<UiIntent>>>) {
+        let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+        let sink = {
+            let intents = Arc::clone(&intents);
+            Arc::new(move |intent: UiIntent| intents.lock().unwrap().push(intent))
+        };
+        (AppState::new_live(None, false, Some(sink)), intents)
+    }
+
+    fn set_buffer(app: &mut AppState, text: &str) {
+        app.composer.prompt_buffer = text.to_string();
+        app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
+        app.composer.selection_anchor = None;
+    }
+
+    fn set_buffer_at(app: &mut AppState, text: &str, cursor: usize) {
+        app.composer.prompt_buffer = text.to_string();
+        app.composer.prompt_cursor = cursor;
+        app.composer.selection_anchor = None;
+    }
+
+    /// D1: a multi-line paste normalizes CRLF and CR to LF, places the cursor
+    /// at the end, and does NOT submit or record history.
+    #[test]
+    fn paste_normalizes_line_endings_and_does_not_submit() {
+        let (mut app, intents) = live_app_capture();
+
+        app.handle_paste("alpha\r\n\r\nbeta\rgamma");
+
+        assert_eq!(app.composer.prompt_buffer, "alpha\n\nbeta\ngamma");
+        assert_eq!(
+            app.composer.prompt_cursor,
+            app.composer.prompt_buffer.chars().count()
+        );
+        assert!(app.composer.prompt_history.is_empty());
+        assert!(intents.lock().unwrap().is_empty());
+    }
+
+    /// D2: pasting with the cursor mid-buffer inserts at the cursor.
+    #[test]
+    fn paste_inserts_at_cursor_position() {
+        let mut app = live_app();
+        set_buffer_at(&mut app, "ac", 1);
+
+        app.handle_paste("b");
+
+        assert_eq!(app.composer.prompt_buffer, "abc");
+        assert_eq!(app.composer.prompt_cursor, 2);
+    }
+
+    /// D3: pasting collapses an active selection and replaces it.
+    #[test]
+    fn paste_replaces_active_selection() {
+        let mut app = live_app();
+        set_buffer_at(&mut app, "hello", 5);
+        app.composer.selection_anchor = Some(0);
+
+        app.handle_paste("bye");
+
+        assert_eq!(app.composer.prompt_buffer, "bye");
+        assert_eq!(app.composer.prompt_cursor, 3);
+        assert_eq!(app.composer.selection_anchor, None);
+    }
+
+    /// D-Reject: a paste is ignored when the prompt is not focused (P6
+    /// rejection).
+    #[test]
+    fn paste_is_ignored_when_prompt_not_focused() {
+        let mut app = live_app();
+        app.focus = Focus::List;
+
+        app.handle_paste("should not appear");
+
+        assert!(app.composer.prompt_buffer.is_empty());
+    }
+
+    /// D-Reject: an empty paste is a no-op.
+    #[test]
+    fn paste_empty_string_is_noop() {
+        let mut app = live_app();
+
+        app.handle_paste("");
+
+        assert!(app.composer.prompt_buffer.is_empty());
+        assert_eq!(app.composer.prompt_cursor, 0);
+    }
+}

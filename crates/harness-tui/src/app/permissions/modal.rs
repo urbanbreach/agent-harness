@@ -11,7 +11,7 @@ pub(crate) enum PermissionModalSelection {
 impl PermissionModalSelection {
     pub(super) fn cycle(self, forward: bool, allow_always: bool) -> Self {
         let options = if allow_always {
-            // Grok freeze order: always-approve, session edits, yes, reject.
+            // Permission order: always-approve, session edits, yes, reject.
             [
                 Self::AllowAlways,
                 Self::AllowSession,

@@ -510,3 +510,27 @@ fn surface_label(def: &SettingDefinition) -> &'static str {
         harness_core::config::SettingSurface::Tui => "tui",
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Relocated from overlay_picker_settings_permission_parity_test.rs: the
+    // `is_writable_setting` helper is module-private; exercise it here without
+    // widening visibility.
+    #[test]
+    fn settings_editor_writable_settings_identified() {
+        assert!(
+            is_writable_setting("hashline_edit"),
+            "hashline_edit must be writable"
+        );
+        assert!(
+            is_writable_setting("runtime.compaction.enabled"),
+            "runtime.compaction.enabled must be writable"
+        );
+        assert!(
+            !is_writable_setting("model"),
+            "model must not be writable in settings editor"
+        );
+    }
+}
