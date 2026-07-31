@@ -181,8 +181,7 @@ fn redaction_marker_for_sensitive_key(key: &str) -> Option<&'static str> {
     let segments = key
         .split(|character: char| !character.is_ascii_alphanumeric())
         .filter(|segment| !segment.is_empty())
-        .map(|segment| segment.to_ascii_lowercase())
-        .collect::<Vec<_>>();
+        .collect::<Vec<&str>>();
 
     if normalized == "apikey"
         || normalized.ends_with("apikey")
@@ -212,23 +211,26 @@ fn redaction_marker_for_sensitive_key(key: &str) -> Option<&'static str> {
     None
 }
 
-fn adjacent_segments(segments: &[String], left: &str, right: &str) -> bool {
+fn adjacent_segments(segments: &[&str], left: &str, right: &str) -> bool {
     segments
         .windows(2)
-        .any(|window| window[0] == left && window[1] == right)
+        .any(|window| window[0].eq_ignore_ascii_case(left) && window[1].eq_ignore_ascii_case(right))
 }
 
-fn key_segments_contain(segments: &[String], needle: &str) -> bool {
-    segments.iter().any(|segment| segment == needle)
+fn key_segments_contain(segments: &[&str], needle: &str) -> bool {
+    segments
+        .iter()
+        .any(|segment| segment.eq_ignore_ascii_case(needle))
 }
 
-fn credential_key_segments(segments: &[String]) -> bool {
+fn credential_key_segments(segments: &[&str]) -> bool {
     if !key_segments_contain(segments, "key") {
         return false;
     }
     segments.iter().any(|segment| {
+        let lower = segment.to_ascii_lowercase();
         matches!(
-            segment.as_str(),
+            lower.as_str(),
             "access"
                 | "api"
                 | "auth"
