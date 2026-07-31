@@ -105,12 +105,12 @@ fn coordinator_registry_exposes_single_native_tool_surface() {
 
     let doc_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
-        .join("docs/native-tool-catalog.md");
+        .join("docs/tools/native-tool-catalog.md");
     let doc = std::fs::read_to_string(&doc_path).unwrap_or_abort();
     let doc_ids = documented_tool_ids(&doc);
     assert_eq!(
         doc_ids, registry_ids,
-        "docs/native-tool-catalog.md must list every registered native tool id exactly once"
+        "docs/tools/native-tool-catalog.md must list every registered native tool id exactly once"
     );
 }
 
@@ -119,7 +119,7 @@ fn native_tool_catalog_rows_include_permission_alias_and_replay_metadata() {
     // arrange
     let registry = coordinator_registry(ShellAllowlist::default());
     let catalog = native_tool_catalog_entries(&registry);
-    let doc_path = repo_path("docs/native-tool-catalog.md");
+    let doc_path = repo_path("docs/tools/native-tool-catalog.md");
     let doc = std::fs::read_to_string(&doc_path).unwrap_or_abort();
     let rows = documented_tool_rows(&doc);
 
@@ -184,7 +184,7 @@ fn bash_safety_guidance_and_ast_grep_replace_catalog_match_runtime_sources() {
         harness_core::tool::ToolCapability::EditFs
     );
 
-    let doc = std::fs::read_to_string(repo_path("docs/native-tool-catalog.md")).unwrap_or_abort();
+    let doc = std::fs::read_to_string(repo_path("docs/tools/native-tool-catalog.md")).unwrap_or_abort();
     let doctor = [
         std::fs::read_to_string(repo_path("crates/harness/src/doctor.rs")).unwrap_or_abort(),
         std::fs::read_to_string(repo_path("crates/harness/src/doctor/checks.rs")).unwrap_or_abort(),
@@ -231,7 +231,7 @@ fn changed_tool_schemas_and_docs_reflect_parity_params() {
     // arrange
     // act
     let registry = coordinator_registry(ShellAllowlist::default());
-    let doc = std::fs::read_to_string(repo_path("docs/native-tool-catalog.md")).unwrap_or_abort();
+    let doc = std::fs::read_to_string(repo_path("docs/tools/native-tool-catalog.md")).unwrap_or_abort();
 
     // assert
     let grep_schema = registry
