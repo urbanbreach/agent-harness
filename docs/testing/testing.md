@@ -156,7 +156,7 @@ Run this lane when a change needs offline behavioral evidence that agents can di
 scripts/test-lanes.sh simulation
 ```
 
-`simulation` is offline-only. It uses the checked-in `docs/simulation-matrix.json`, runs the real
+`simulation` is offline-only. It uses the checked-in `docs/testing/simulation-matrix.json`, runs the real
 `harness run --scenario golden_path --deterministic` path twice with the built-in mock provider,
 derives read-only replay summaries for both runs, then generates and validates a simulation evidence
 bundle through `harness-testkit`.
@@ -168,7 +168,7 @@ Current stage commands:
 - `cargo run -p harness -- --session-dir <artifact-root>/simulation/data/sessions-repeat run --scenario golden_path --deterministic --out <artifact-root>/simulation/data/repeat.events.jsonl --print-run-dir`
 - read-only replay summary generation for `<baseline-run-dir>`
 - read-only replay summary generation for `<repeat-run-dir>`
-- `cargo run -p harness-testkit --bin simulation_evidence -- --artifact-root <artifact-root>/simulation/stages/simulation_evidence/artifacts --matrix docs/simulation-matrix.json --baseline-events <baseline.events.jsonl> --baseline-replay <baseline.replay.json> --repeat-events <repeat.events.jsonl> --repeat-replay <repeat.replay.json> --seed 0`
+- `cargo run -p harness-testkit --bin simulation_evidence -- --artifact-root <artifact-root>/simulation/stages/simulation_evidence/artifacts --matrix docs/testing/simulation-matrix.json --baseline-events <baseline.events.jsonl> --baseline-replay <baseline.replay.json> --repeat-events <repeat.events.jsonl> --repeat-replay <repeat.replay.json> --seed 0`
 - `env HARNESS_SECRETS_SCAN_ARTIFACTS=1 HARNESS_SIMULATION_ARTIFACT_DIR=<simulation-artifacts> cargo nextest run -p harness-testkit --test secretscan_test`
 
 The `simulation_evidence` stage writes the standard lane files plus these simulation artifacts under
@@ -270,7 +270,7 @@ For a combined deterministic closeout, use:
 - `env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 HARNESS_TUI_PARITY_STRICT=1 HARNESS_TUI_HAPPY_PATH_ARTIFACT_DIR=<dir> cargo nextest run -p harness --test pty_happy_path_recorded --test-threads 1 -- --ignored dual_binary_cli_pty`
 
 The strict-V1 TUI signoff manifest is checked in at
-[`docs/tui-signoff-manifest.v1.json`](tui-signoff-manifest.v1.json). Its schema version is
+[`docs/testing/tui-signoff-manifest.v1.json`](tui-signoff-manifest.v1.json). Its schema version is
 `harness-tui-signoff-manifest-v1`, and each flow row names:
 
 - deterministic owner tests/snapshots,
@@ -358,7 +358,7 @@ Required live environment:
 `signoff-live` fails closed when the live environment is missing. When the environment is present,
 it runs `live_proxy_preflight_requires_live_env` first, then the prompt parity wrapper, then the TUI parity wrapper.
 The underlying parity order is documented in
-[`crates/harness-testkit/tests/README.live-proxy.md`](../crates/harness-testkit/tests/README.live-proxy.md):
+[`crates/harness-testkit/tests/README.live-proxy.md`](../../crates/harness-testkit/tests/README.live-proxy.md):
 CLI parity runs `live_proxy_preflight_requires_live_env` and `live_proxy_prompt_parity_signoff`;
 TUI parity runs `live_proxy_preflight_requires_live_env` and
 `live_proxy_e2e_tui_parity_signoff`.
@@ -374,7 +374,7 @@ agent iteration order instead of duplicating that contract here.
 
 Optional local free live targets (for example Ollama) are **deferred non-CI residual (WS-L4)** and
 are not part of `signoff-live` or default quality gates. See
-[`docs/provider-support.md`](./provider-support.md).
+[`docs/configuration/provider-support.md`](../configuration/provider-support.md).
 
 Open-ended live freestyle eval missions (for example benchmark sweeps or open-ended agent
 missions) are **rejected as CI or release proof** for V1. Local human experimentation is fine, but
@@ -383,7 +383,7 @@ it is not evidence for release readiness.
 ## Strict A-JOURNEYS scaffolding lane
 
 `signoff-journeys` is a **strict fail-closed** lane for journey-template rows in
-[`docs/tui-reference-parity-manifest.v1.json`](tui-reference-parity-manifest.v1.json):
+[`docs/reference/tui-reference-parity-manifest.v1.json`](../reference/tui-reference-parity-manifest.v1.json):
 
 - `JOURNEY-CONFIG-SHOW-EFFECTIVE` — real-process `harness config show --effective`
 - `JOURNEY-CONFIG-SOURCES-EXPLAIN` — real-process `harness config sources` + `config explain`
@@ -437,9 +437,9 @@ scripts/test-lanes.sh signoff-parity --dry-run
 Ownership:
 
 - **Owns:** dual-binary cells/pixels acceptance against
-  [`docs/tui-reference-parity-manifest.v1.json`](tui-reference-parity-manifest.v1.json) (independent
+  [`docs/reference/tui-reference-parity-manifest.v1.json`](../reference/tui-reference-parity-manifest.v1.json) (independent
   of the older signoff manifest).
-- **Does not own:** [`docs/tui-signoff-manifest.v1.json`](tui-signoff-manifest.v1.json) flow
+- **Does not own:** [`docs/testing/tui-signoff-manifest.v1.json`](tui-signoff-manifest.v1.json) flow
   coverage — that remains with `signoff-pty` / `tui_signoff_manifest_test` and is not a dual-binary
   cells/pixels gate.
 
@@ -447,7 +447,7 @@ Current fail-closed stages (no `|| true`):
 
 - Prerequisites gate: independent reference-parity manifest path must exist; `cargo` must be on
   `PATH`; all owner test files listed below must exist (missing owner = FAIL, not skip).
-- `test -f docs/tui-reference-parity-manifest.v1.json`
+- `test -f docs/reference/tui-reference-parity-manifest.v1.json`
 - `reference_binary_present`: the pinned reference binary
   `inspirations/grok-build/target/debug/xai-grok-pager` must exist and its SHA-256 must match the
   pinned digest `883e3dea…3bb9a9a5` (presence and digest check only; the lane never rebuilds or

@@ -140,9 +140,9 @@ same activation-only contract and are capped/redacted before they enter the
 skill body. Any future release-blocking built-in that writes JSONL or artifact
 state must document its `schema_version`, migration policy, and replay behavior
 before the roadmap box can stay checked. Existing release evidence artifacts
-document their schemas in the owning surface: event logs in `docs/architecture.md` and `docs/sessions-and-replay.md`, native tool artifacts in
-`docs/native-tool-catalog.md`, simulation artifacts in `docs/testing.md`, and
-lane-specific perf/PTY artifacts in `docs/budgets.md` and `docs/testing.md`.
+document their schemas in the owning surface: event logs in `docs/architecture/architecture.md` and `docs/architecture/sessions-and-replay.md`, native tool artifacts in
+`docs/tools/native-tool-catalog.md`, simulation artifacts in `docs/testing/testing.md`, and
+lane-specific perf/PTY artifacts in `docs/testing/budgets.md` and `docs/testing/testing.md`.
 
 ## Deferred seams
 
