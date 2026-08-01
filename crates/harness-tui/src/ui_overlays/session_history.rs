@@ -219,8 +219,8 @@ pub(super) fn render_fork_selector_list(
     );
 
     let vm = app.fork_selector_view_model();
-    if vm.empty_message.is_some() {
-        render_fork_selector_empty_message(frame, theme, area);
+    if let Some(message) = vm.empty_message {
+        render_fork_selector_empty_message(frame, theme, area, &message);
         return;
     }
 
@@ -247,7 +247,7 @@ pub(super) fn render_fork_selector_list(
     }
 }
 
-fn render_fork_selector_empty_message(frame: &mut Frame, theme: &Theme, area: Rect) {
+fn render_fork_selector_empty_message(frame: &mut Frame, theme: &Theme, area: Rect, message: &str) {
     if area.width <= 8 || area.height <= 1 {
         return;
     }
@@ -261,7 +261,7 @@ fn render_fork_selector_empty_message(frame: &mut Frame, theme: &Theme, area: Re
     );
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
-            truncate_plain_text("No results found", usize::from(empty_area.width)),
+            truncate_plain_text(message, usize::from(empty_area.width)),
             Style::default()
                 .fg(ui_chrome::command_palette_muted(theme))
                 .bg(surface),

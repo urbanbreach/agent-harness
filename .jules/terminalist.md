@@ -1,0 +1,3 @@
+## 2024-07-08 - Contextual empty messages in TUI overlays
+**Learning:** Hardcoded "No results found" messages in TUI overlays like the fork selector fail to give the operator enough context when filters are active or when the underlying list is genuinely empty for structural reasons (e.g., "No stable fork points" vs "No fork points match `<input>`").
+**Action:** Always prefer pulling dynamically generated `empty_message` strings from the ViewModel rather than falling back to static strings in the TUI render loop. This makes the interface more predictable and explicitly communicates the current state to the operator.
