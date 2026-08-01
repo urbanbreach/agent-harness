@@ -1,38 +1,40 @@
 <div align="center">
   <h1>agent-harness</h1>
-  <p><strong>An event-sourced, terminal-native harness for agents that need to act, delegate, and leave a replayable trail.</strong></p>
+  <p><strong>Tapahtumalähteinen, päätteessä toimiva harness agenteille, joiden täytyy toimia, delegoida ja jättää toistettava jälki.</strong></p>
   <p>
-    <code>Rust</code> · <code>Ratatui</code> · <code>multi-provider</code> · <code>local-first</code>
+    <code>Rust</code> · <code>Ratatui</code> · <code>monipalveluntarjoaja</code> · <code>paikallinen ensin</code>
   </p>
   <p>
-    <a href="#get-started">Get started</a> ·
-    <a href="#configure-the-harness">Configure</a> ·
-    <a href="#operate-with-confidence">Operate</a> ·
-    <a href="docs/configuration/config.md">Reference</a>
+    <a href="#get-started">Aloita</a> ·
+    <a href="#configure">Määritä</a> ·
+    <a href="#operate">Käytä</a> ·
+    <a href="docs/configuration/config.md">Viite</a>
   </p>
 </div>
 
 <p align="center">
-  <img src="docs/assets/harness-tui.png" alt="The Harness terminal interface, showing its compose-first session shell." width="960" />
+  <img src="docs/assets/harness-tui.png" alt="Harnessin päätekäyttöliittymä, jossa näkyy kirjoituspainotteinen istuntoikkuna." width="960" />
 </p>
 
-<p align="center"><em>Local offline TUI preview. Run <code>harness</code> with no subcommand to open the interactive shell.</em></p>
+<p align="center"><em>Paikallinen, offline-tilassa otettu TUI-esikatselu. Käynnistä vuorovaikutteinen käyttöliittymä ajamalla <code>harness</code> ilman alikomentoa.</em></p>
 
-Harness is a CLI and terminal UI for running coding agents with one coordinator as the authority for scheduling, permissions, tool execution, session history, and recovery. It is designed for people who want an agent to be capable without becoming opaque: every run is recorded as append-only events, and replay reads those events without re-running tools, hooks, providers, or network calls.
+Harness on komentorivityökalu ja päätekäyttöliittymä koodausagenttien ajamiseen. Yksi koordinaattori vastaa aikataulutuksesta, oikeuksista, työkalujen suorituksesta, istuntohistoriasta ja palautumisesta. Se on tarkoitettu ihmisille, jotka haluavat kyvykkään mutta läpinäkyvän agentin: jokainen ajo tallennetaan vain lisättävistä tapahtumista koostuvana ketjuna, ja toisto lukee tapahtumat suorittamatta työkaluja, koukkuja, palveluntarjoajia tai verkkokutsuja uudelleen.
 
-| You need | Harness gives you |
+| Tarvitset | Harness tarjoaa |
 | --- | --- |
-| A dependable interactive agent | A compose-first Ratatui shell, model and agent switching, permission prompts, and session navigation. |
-| Scriptable automation | `run` for headless prompts, `prompt` for the focused compatibility surface, and deterministic mock runs for offline checks. |
-| Controlled delegation | First-class `task` calls, purpose-built agent profiles, category routes, and coordinator-owned background-task controls. |
-| Debuggable history | Redacted event logs, side-effect-free replay and inspection, lineage, and support exports. |
-| A configuration you can reason about | JSONC runtime and TUI settings, layered discovery, source attribution, and a secret-safe doctor. |
+| Luotettavan vuorovaikutteisen agentin | Kirjoituspainotteisen Ratatui-kuoren, mallin ja agentin vaihdon, oikeuspyynnöt sekä istuntonavigoinnin. |
+| Skriptattavan automaation | `run`-komennon ilman käyttöliittymää, kohdennetun yhteensopivuuspinnan `prompt`-komennolla ja deterministiset mock-ajot offline-tarkistuksiin. |
+| Hallitun delegoinnin | Ensiluokkaiset `task`-kutsut, tarkoitukseen tehdyt agenttiprofiilit, kategoriareitit ja koordinaattorin hallitsemat taustatehtävien ohjaimet. |
+| Jäljitettävän historian | Redaktoidut tapahtumalokit, sivuvaikutuksista vapaan toiston ja tarkastelun, sukulinjan sekä tukiviennit. |
+| Ymmärrettävät asetukset | JSONC-ajonaikaiset ja TUI-asetukset, kerroksittaisen haun, asetusten alkuperätiedot ja salaisuuksille turvallisen diagnostiikan. |
 
-## Get started
+<a id="get-started"></a>
 
-### 1. Build from source
+## Aloita
 
-You need the pinned Rust toolchain and `git`. Clone the workspace, build the CLI, then create a clean first-run directory with the shipped starter config:
+### 1. Rakenna lähdekoodista
+
+Tarvitset projektiin kiinnitetyn Rust-työkaluketjun ja `git`in. Kloonaa työtila, rakenna komentorivityökalu ja luo sitten puhdas ensiajo-hakemisto mukana toimitetulla aloitusasetuksella:
 
 ```bash
 git clone <repo-url> agent-harness
@@ -45,9 +47,9 @@ cp configs/harness.example.jsonc /tmp/harness-first-run/harness.jsonc
 cd /tmp/harness-first-run
 ```
 
-### 2. Validate before connecting a provider
+### 2. Tarkista ennen palveluntarjoajaan yhdistämistä
 
-The starter is configured for the built-in `openai-codex` provider. First prove the local setup is coherent:
+Aloitusasetus käyttää sisäänrakennettua `openai-codex`-palveluntarjoajaa. Varmista ensin, että paikallinen asennus on yhtenäinen:
 
 ```bash
 "$HARNESS_BIN" --version
@@ -55,59 +57,61 @@ The starter is configured for the built-in `openai-codex` provider. First prove 
 "$HARNESS_BIN" doctor
 ```
 
-`doctor` checks local readiness—config, provider and model metadata, credential availability, tools, prompts, permissions, session storage, and configured MCP registration. It never makes a provider or MCP network request, so a green doctor is not a live-authentication proof.
+`doctor` tarkistaa paikallisen valmiuden: asetukset, palveluntarjoaja- ja mallimetatiedot, tunnistetietojen saatavuuden, työkalut, promptit, oikeudet, istuntotallennuksen ja määritetyn MCP-rekisteröinnin. Se ei koskaan tee palveluntarjoaja- tai MCP-verkkopyyntöä, joten virheetön tulos ei todista, että todennus toimii verkossa.
 
-### 3. Exercise the full path offline
+### 3. Kokeile koko polku offline-tilassa
 
-Run a deterministic mocked turn before spending a token:
+Aja deterministinen mock-vuoro ennen kuin käytät yhtään tokenia:
 
 ```bash
 "$HARNESS_BIN" run --mock "Hello from Harness" \
   --out prompt.events.jsonl --print-run-dir
 ```
 
-This checks the first-prompt path and writes an event log. It is intentionally separate from credential and transport checks.
+Tämä tarkistaa ensimmäisen promptin suorituspolun ja kirjoittaa tapahtumalokin. Se on tarkoituksella erillään tunnistetietojen ja verkkoyhteyden tarkistuksista.
 
-### 4. Connect and start a real session
+### 4. Yhdistä ja aloita oikea istunto
 
-Keep credentials out of `harness.jsonc`. The starter uses Codex OAuth and supports an `OPENAI_API_KEY` fallback. Authenticate, then launch the terminal UI:
+Pidä tunnistetiedot poissa `harness.jsonc`-tiedostosta. Aloitusasetus käyttää Codex OAuthia ja tukee varavaihtoehtona `OPENAI_API_KEY`-ympäristömuuttujaa. Kirjaudu sisään ja käynnistä sitten päätekäyttöliittymä:
 
 ```bash
 "$HARNESS_BIN" auth login codex
 "$HARNESS_BIN"
 ```
 
-For a one-shot headless prompt instead, use:
+Jos tarvitset sen sijaan kertaluonteisen promptin ilman käyttöliittymää, käytä:
 
 ```bash
 "$HARNESS_BIN" run "Summarize the current workspace"
 ```
 
-Use one live `run` or interactive turn to prove provider authentication and transport. If that fails, start with [`doctor`](docs/operations/troubleshooting.md) and the [provider support guide](docs/configuration/provider-support.md).
+Tarkista palveluntarjoajan todennus ja verkkoyhteys yhdellä oikealla `run`-ajolla tai vuorovaikutteisella vuorolla. Jos se epäonnistuu, aloita [`doctor`-komennosta](docs/operations/troubleshooting.md) ja [palveluntarjoajatuen oppaasta](docs/configuration/provider-support.md).
 
-## Configure the harness
+<a id="configure"></a>
 
-Harness separates runtime configuration from TUI preferences:
+## Määritä Harness
 
-| File | Owns | Start from |
+Harness erottaa ajonaikaiset asetukset TUI-asetuksista:
+
+| Tiedosto | Omistaa | Aloita tästä |
 | --- | --- | --- |
-| `harness.jsonc` | Providers, models, agents, permissions, formatters, skills, and MCP servers | [`configs/harness.example.jsonc`](configs/harness.example.jsonc) |
-| `tui.jsonc` | Keybindings only | [`configs/tui.example.jsonc`](configs/tui.example.jsonc) |
+| `harness.jsonc` | Palveluntarjoajat, mallit, agentit, oikeudet, muotoilijat, taidot ja MCP-palvelimet | [`configs/harness.example.jsonc`](configs/harness.example.jsonc) |
+| `tui.jsonc` | Vain näppäinsidonnat | [`configs/tui.example.jsonc`](configs/tui.example.jsonc) |
 
-Copy the starter, then tune the few decisions that actually shape day-to-day behavior:
+Kopioi aloitusasetus ja säädä sitten niitä harvoja päätöksiä, jotka todella muovaavat päivittäistä käyttöä:
 
 ```jsonc
 {
-  // Default provider/model for sessions started here.
+  // Istuntojen oletuspalveluntarjoaja ja -malli.
   "model": "openai-codex/gpt-5.4-mini",
 
-  // Agents can use a direct model or a named model profile.
+  // Agentit voivat käyttää suoraa mallia tai nimettyä malliprofiilia.
   "agent": {
     "build": { "variant": "high" },
     "explore": { "enable": false }
   },
 
-  // Make sensitive work explicit. The last matching bash rule wins.
+  // Tee arkaluonteisesta työstä eksplisiittistä. Viimeisin täsmäävä bash-sääntö voittaa.
   "permission": {
     "edit": "ask",
     "bash": {
@@ -120,26 +124,26 @@ Copy the starter, then tune the few decisions that actually shape day-to-day beh
 }
 ```
 
-The snippet shows edits to a copied starter, not a standalone config. The starter supplies the provider catalog and agent definitions that those settings refer to.
+Katkelma näyttää kopioituun aloitusasetukseen tehtävät muutokset, ei itsenäistä asetustiedostoa. Aloitusasetus sisältää palveluntarjoajaluettelon ja agenttimäärittelyt, joihin nämä asetukset viittaavat.
 
-### What to configure first
+### Mitä kannattaa määrittää ensin
 
-| Setting | Why it matters |
+| Asetus | Miksi se on tärkeä |
 | --- | --- |
-| `provider` and `model` | Defines the available provider/model catalog and the active default. |
-| `model_profile` | Names reusable model + reasoning-variant routes for category agents and fallbacks. |
-| `agent` and `default_agent` | Enables, disables, and tunes the Build, Plan, Explore, General, and category profiles. |
-| `permission` | Decides whether built-in tool capabilities are allowed, asked, or denied. |
-| `formatter` | Controls post-edit formatters; omit it to keep the built-in formatter registry enabled. |
-| `mcp` | Registers enabled, config-backed MCP servers into the runtime tool registry. |
+| `provider` ja `model` | Määrittävät käytettävissä olevan palveluntarjoaja- ja malliluettelon sekä aktiivisen oletuksen. |
+| `model_profile` | Nimeää uudelleenkäytettävät malli- ja päättelyvarianttireitit kategoria-agenteille ja varavaihtoehdoille. |
+| `agent` ja `default_agent` | Ottavat käyttöön, poistavat käytöstä ja säätävät Build-, Plan-, Explore-, General- ja kategoriaprofiileja. |
+| `permission` | Päättää, sallitaanko sisäänrakennettujen työkalujen kyvykkyydet, kysytäänkö niistä vai kielletäänkö ne. |
+| `formatter` | Hallitsee muokkausten jälkeisiä muotoilijoita; jätä pois, jos haluat pitää sisäänrakennetun muotoilijarekisterin käytössä. |
+| `mcp` | Rekisteröi käytössä olevat, asetuksiin perustuvat MCP-palvelimet ajonaikaiseen työkalurekisteriin. |
 
-The [full config reference](docs/configuration/config.md) documents every public key and its validation behavior. For the exact permission vocabulary and ruleset semantics, read the [permissions guide](docs/permissions/permissions.md).
+[Täydellinen asetusten viite](docs/configuration/config.md) dokumentoi jokaisen julkisen avaimen ja sen validointikäytöksen. Lue [oikeusopas](docs/permissions/permissions.md), kun tarvitset täsmällisen oikeussanaston ja sääntöjoukon semantiikan.
 
-### Understand where a setting came from
+### Selvitä, mistä asetus tulee
 
-Runtime config layers merge from shared defaults to project-local settings. The canonical locations are XDG global config, project `harness.json{,c}`, and `.agent-harness/harness.json{,c}` discovered toward the project root; explicit environment overlays can take final precedence. Agent Markdown profiles in `.agent-harness/agents/` are discovered independently.
+Ajonaikaiset asetuskerrokset yhdistyvät yhteisistä oletuksista projektikohtaisiin asetuksiin. Kanoniset sijainnit ovat XDG:n yleiset asetukset, projektin `harness.json{,c}` ja `.agent-harness/harness.json{,c}`, joita etsitään kohti projektijuurta. Eksplisiittiset ympäristöpeiteasetukset voivat olla viimeisenä etusijalla. Markdown-muotoiset agenttiprofiilit hakemistossa `.agent-harness/agents/` löytyvät tästä riippumatta.
 
-Do not guess which file won. Ask the CLI:
+Älä arvaa, mikä tiedosto voitti. Kysy komentorivityökalulta:
 
 ```bash
 "$HARNESS_BIN" config show --effective
@@ -148,11 +152,11 @@ Do not guess which file won. Ask the CLI:
 "$HARNESS_BIN" config settings
 ```
 
-The effective view redacts secret-bearing values. `sources` shows merge order, `explain` attributes one dotted key to its winning layer, and `settings` lists typed metadata without secret values.
+Lopullinen näkymä redaktoi salaisuuksia sisältävät arvot. `sources` näyttää yhdistämisjärjestyksen, `explain` kohdistaa yhden piste-erotellun avaimen voittaneeseen kerrokseen ja `settings` listaa tyypitetyt metatiedot ilman salaisia arvoja.
 
-### Tune the terminal UI separately
+### Määritä päätekäyttöliittymä erikseen
 
-Put keyboard preferences in `tui.jsonc`; they never share the runtime config surface:
+Tallenna näppäimistöasetukset tiedostoon `tui.jsonc`; ne eivät koskaan jaa ajonaikaisten asetusten pintaa:
 
 ```jsonc
 {
@@ -165,25 +169,27 @@ Put keyboard preferences in `tui.jsonc`; they never share the runtime config sur
 }
 ```
 
-See the [TUI configuration reference](docs/configuration/config.md#tui-top-level-keys) for all action ids and default bindings.
+Katso kaikki toiminto-ID:t ja oletussidonnat [TUI-asetusten viitteestä](docs/configuration/config.md#tui-top-level-keys).
 
-## Operate with confidence
+<a id="operate"></a>
 
-### Pick the right surface
+## Käytä hallitusti
 
-| Goal | Use |
+### Valitse sopiva käyttöliittymä
+
+| Tavoite | Käytä tätä |
 | --- | --- |
-| Work interactively | `harness` — Build is selected by default; use `Tab` to cycle primary agents. |
-| Think before changing files | Switch to Plan. It can inspect the workspace and write its active plan, then asks to hand work back to Build. |
-| Run in CI or a script | `harness run "<prompt>"` |
-| Exercise a focused lower-level prompt path | `harness prompt --text "<prompt>" --out events.jsonl` |
-| Delegate bounded work | Have an agent call the canonical `task` tool with an explicit prompt, background choice, and optional skill list. |
+| Työskentele vuorovaikutteisesti | `harness` — Build on valittu oletuksena; siirry ensisijaisten agenttien välillä `Tab`-näppäimellä. |
+| Ajattele ennen tiedostojen muuttamista | Vaihda Planiin. Se voi tarkastella työtilaa ja kirjoittaa aktiivisen suunnitelmansa, minkä jälkeen se pyytää siirtämään työn takaisin Buildille. |
+| Aja CI:ssä tai skriptissä | `harness run "<prompt>"` |
+| Kokeile kohdennettua alemman tason prompt-suorituspolkua | `harness prompt --text "<prompt>" --out events.jsonl` |
+| Delegoi rajattu työ | Pyydä agenttia kutsumaan kanonista `task`-työkalua eksplisiittisellä promptilla, taustavalinnalla ja valinnaisella taitoluettelolla. |
 
-The [agents and subagents guide](docs/operations/agents-and-subagents.md) explains the shipped profiles, category fallback, delegation-body shape, and the runtime boundaries that prevent worker redelegation bypasses.
+[Agenttien ja ala-agenttien opas](docs/operations/agents-and-subagents.md) selittää mukana toimitetut profiilit, kategoriavaravaihtoehdon, delegointipyynnön rakenteen ja ajonaikaiset rajat, jotka estävät työntekijää ohittamasta uudelleendelegoinnin rajoituksia.
 
-### Keep sessions inspectable
+### Pidä istunnot tarkasteltavina
 
-Harness treats events as the source of truth. Session tools and the CLI inspect replay-derived data only; they do not resume a provider, invoke tools, launch MCP servers, or make network calls.
+Harness käsittelee tapahtumia totuuden lähteenä. Istuntotyökalut ja komentorivityökalu tarkastelevat vain toistosta johdettua dataa; ne eivät jatka palveluntarjoajaa, kutsu työkaluja, käynnistä MCP-palvelimia tai tee verkkokutsuja.
 
 ```bash
 "$HARNESS_BIN" sessions list
@@ -194,17 +200,17 @@ Harness treats events as the source of truth. Session tools and the CLI inspect 
   <run-id-or-directory-name>
 ```
 
-Use a support export rather than sharing raw events. It contains replay-derived metadata, a redaction manifest, non-secret configuration summaries, and a secret-scan result. Learn more in [sessions and replay](docs/architecture/sessions-and-replay.md) and [privacy and local data](docs/permissions/privacy-and-local-data.md).
+Käytä tukivientiä raakojen tapahtumien jakamisen sijaan. Se sisältää toistosta johdetut metatiedot, redaktointimanifestin, ei-salaiset asetusten yhteenvedot ja salaisuusskannauksen tuloksen. Lue lisää [istunnoista ja toistosta](docs/architecture/sessions-and-replay.md) sekä [tietosuojasta ja paikallisesta datasta](docs/permissions/privacy-and-local-data.md).
 
-### Know the safety boundary
+### Tunne turvaraja
 
-The coordinator resolves permissions before a native tool runs. The canonical public permission names are `bash`, `edit`, `question`, `task`, `webfetch`, `websearch`, `codesearch`, and `lsp`. Tool output is captured as part of the event history, while provider metadata and support artifacts are redacted.
+Koordinaattori ratkaisee oikeudet ennen kuin natiivityökalu suoritetaan. Kanoniset julkiset oikeusnimet ovat `bash`, `edit`, `question`, `task`, `webfetch`, `websearch`, `codesearch` ja `lsp`. Työkalun tuloste tallennetaan osana tapahtumahistoriaa, kun taas palveluntarjoajan metatiedot ja tukiartifaktit redaktoidaan.
 
-For capabilities and replay behavior tool by tool, see the [native tool catalog](docs/tools/native-tool-catalog.md). For important limits—such as why replay never executes a tool—see the [architecture](docs/architecture/architecture.md).
+Katso työkalukohtaiset kyvykkyydet ja toistokäytös [natiivityökalujen luettelosta](docs/tools/native-tool-catalog.md). Tärkeät rajat — kuten miksi toisto ei koskaan suorita työkalua — kuvataan [arkkitehtuurissa](docs/architecture/architecture.md).
 
-## Develop and verify
+## Kehitä ja varmista
 
-The repository has fast deterministic checks for everyday work and explicit signoff lanes for PTY, live-provider, and native-visual evidence:
+Tietovarastossa on nopeat deterministiset tarkistukset päivittäiseen työhön sekä erilliset hyväksyntäkaistat PTY:tä, oikeaa palveluntarjoajaa ja natiivia visuaalista näyttöä koskeville todisteille:
 
 ```bash
 scripts/test-lanes.sh fast
@@ -213,32 +219,32 @@ scripts/test-lanes.sh integration
 scripts/test-lanes.sh all-deterministic
 ```
 
-For product-touching runtime, CLI, tool, scenario, or session-path changes, also run the offline mock dogfood path:
+Kun muutos koskee ajonaikaista toimintaa, CLI:tä, työkaluja, skenaarioita tai istuntopolkua, suorita myös offline-mock-dogfood-polku:
 
 ```bash
 bash scripts/harness-qa-dogfood.sh --self-test
 ```
 
-The [testing and signoff map](docs/testing/testing.md) explains exactly what each lane proves—and, just as importantly, what it does not prove.
+[Testaus- ja hyväksyntäkartta](docs/testing/testing.md) kertoo tarkasti, mitä kukin kaista todistaa — ja aivan yhtä tärkeää, mitä se ei todista.
 
-## Troubleshooting shortcuts
+## Vianmäärityksen pikapolut
 
-| Symptom | First move |
+| Oire | Ensimmäinen toimi |
 | --- | --- |
-| A config change appears ignored | Run `config sources` and `config explain <path>`. |
-| `doctor` passes but prompts fail | Run one live prompt; doctor deliberately does not test authentication or transport. |
-| A tool is denied | Review the resolved `permission` policy and the tool’s public permission bucket. |
-| A session will not resume | Inspect it read-only with `sessions inspect`, then export a redacted support bundle. |
-| A terminal surface looks wrong | Retry with `--mock`, open the command palette with `Ctrl+p`, and record terminal details with the support export. |
+| Asetusmuutos näyttää jäävän huomiotta | Aja `config sources` ja `config explain <path>`. |
+| `doctor` onnistuu, mutta promptit epäonnistuvat | Aja yksi oikea prompt; `doctor` ei tarkoituksella testaa todennusta tai verkkoyhteyttä. |
+| Työkalu kielletään | Tarkista ratkaistu `permission`-käytäntö ja työkalun julkinen oikeusluokka. |
+| Istunto ei jatku | Tarkastele sitä vain-luku-tilassa komennolla `sessions inspect`, ja vie sitten redaktoitu tukipaketti. |
+| Päätekäyttöliittymä näyttää väärältä | Yritä uudelleen `--mock`-valinnalla, avaa komentopaletti näppäimillä `Ctrl+p` ja tallenna pääteyksityiskohdat tukivientiin. |
 
-The [first-run troubleshooting guide](docs/operations/troubleshooting.md) contains the longer diagnosis paths.
+[Ensiajon vianmääritysopas](docs/operations/troubleshooting.md) sisältää pidemmät diagnoosipolut.
 
-## Explore the project
+## Tutustu projektiin
 
-| Area | Start here |
+| Alue | Aloita tästä |
 | --- | --- |
-| Configuration and providers | [Config reference](docs/configuration/config.md) · [Provider support](docs/configuration/provider-support.md) |
-| Tools and permissions | [Native tool catalog](docs/tools/native-tool-catalog.md) · [Permissions](docs/permissions/permissions.md) |
-| Sessions and recovery | [Sessions and replay](docs/architecture/sessions-and-replay.md) · [Privacy](docs/permissions/privacy-and-local-data.md) |
-| Architecture | [Crate boundaries and invariants](docs/architecture/architecture.md) |
-| Testing | [Testing and signoff](docs/testing/testing.md) |
+| Asetukset ja palveluntarjoajat | [Asetusviite](docs/configuration/config.md) · [Palveluntarjoajatuki](docs/configuration/provider-support.md) |
+| Työkalut ja oikeudet | [Natiivityökalujen luettelo](docs/tools/native-tool-catalog.md) · [Oikeudet](docs/permissions/permissions.md) |
+| Istunnot ja palautuminen | [Istunnot ja toisto](docs/architecture/sessions-and-replay.md) · [Tietosuoja](docs/permissions/privacy-and-local-data.md) |
+| Arkkitehtuuri | [Crate-rajojen ja invarianttien kuvaus](docs/architecture/architecture.md) |
+| Testaus | [Testaus ja hyväksyntä](docs/testing/testing.md) |
