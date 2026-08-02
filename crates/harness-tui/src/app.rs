@@ -70,7 +70,7 @@ use harness_core::workspace_hub::{
 };
 use ratatui::layout::Rect;
 
-use crate::keybindings::{Action, KeyMap};
+use crate::keybindings::{Action, KeyBinding, KeyMap};
 use crate::overlay::{OverlayKind, OverlayStack, OverlayState};
 use crate::text::{non_empty_trimmed, trimmed_json_string_field};
 use crate::theme::Theme;
@@ -160,7 +160,7 @@ use self::auth_display::auth_status_banner;
 use self::composer::ComposerState;
 pub use self::lifecycle::{
     default_shell_registry, Focus, LifecycleShellState, MemoryCaps, PostRunHandoffAction,
-    ReviewSurface, ShellDescriptor, ShellKind, StartupLauncherAction, Tab, UiIntent,
+    ReviewSurface, SessionMode, ShellDescriptor, ShellKind, StartupLauncherAction, Tab, UiIntent,
 };
 use self::new_worktree_dialog::NewWorktreeDialogState;
 use self::permission_prompt::PermissionPromptState;
@@ -196,7 +196,8 @@ use self::workspace_display::{directory_branch_label, workspace_context_labels};
 /// `HARNESS_TUI_TEST_WORKSPACE` escape hatch) so renders are identical across
 /// worktrees instead of embedding the live checkout path and branch.
 fn test_workspace_env_override() -> Option<WorkspaceEnvironment> {
-    let active = std::env::var_os("NEXTEST").is_some()
+    let active = cfg!(test)
+        || std::env::var_os("NEXTEST").is_some()
         || std::env::var_os("HARNESS_TUI_TEST_WORKSPACE").is_some();
     if !active {
         return None;
@@ -297,12 +298,16 @@ pub struct AppState {
     pub(crate) live_details_drawer_open: bool,
     projection: SessionProjection,
     pub should_quit: bool,
+    pub(crate) quit_confirmation_pending: bool,
+    pub(crate) quit_confirmation_shortcut: Option<KeyBinding>,
+    pub(crate) quit_confirmation_expires_at: Option<Instant>,
     pub replay_mode: bool,
     pub session_path: Option<PathBuf>,
     pub status_banner: Option<String>,
     pub connect_dialog: ConnectDialogState,
     toast: Option<ToastState>,
     pub details_scroll: u16,
+    mouse_wheel_lines_per_tick: u16,
     pub(crate) terminal_panel: TerminalPanelState,
     last_frame_area: Option<Rect>,
     pub(crate) secondary_surfaces: SecondarySurfaceState,
@@ -323,6 +328,7 @@ pub struct AppState {
     pub(crate) pending_subagent_footer_target: Option<SubagentFooterTarget>,
     error_details_visible: bool,
     pub startup_mode: bool,
+    starting_session_seed: bool,
     pub startup_launcher_action: StartupLauncherAction,
     post_run_handoff_action: PostRunHandoffAction,
     continued_post_run_handoff_active: bool,
@@ -528,6 +534,7 @@ pub struct AppState {
     pub toggles_selected: usize,
     toggles_yolo_confirm_visible: bool,
     always_approve_mode: bool,
+    session_mode: SessionMode,
     runtime_toggles: toggles::RuntimeTogglesState,
     pub lineage_browser: LineageBrowserState,
     pub lineage_browser_visible: bool,
@@ -569,6 +576,9 @@ pub struct AppState {
     interrupt_confirm_deadline: Option<Instant>,
     interrupt_confirm_task_ids: BTreeSet<String>,
     clear_prompt_confirm_deadline: Option<Instant>,
+    live_turn_started_at: Option<Instant>,
+    live_turn_phase_started_at: Option<Instant>,
+    live_turn_request_id: Option<String>,
     now_fn: Arc<dyn Fn() -> Instant + Send + Sync>,
     on_ui_intent: Option<Arc<dyn Fn(UiIntent) + Send + Sync>>,
 }
@@ -583,12 +593,16 @@ impl Default for AppState {
             live_details_drawer_open: false,
             projection: SessionProjection::default(),
             should_quit: false,
+            quit_confirmation_pending: false,
+            quit_confirmation_shortcut: None,
+            quit_confirmation_expires_at: None,
             replay_mode: false,
             session_path: None,
             status_banner: None,
             connect_dialog: ConnectDialogState::default(),
             toast: None,
             details_scroll: 0,
+            mouse_wheel_lines_per_tick: 3,
             terminal_panel: TerminalPanelState::default(),
             last_frame_area: None,
             secondary_surfaces: SecondarySurfaceState::default(),
@@ -609,6 +623,7 @@ impl Default for AppState {
             pending_subagent_footer_target: None,
             error_details_visible: false,
             startup_mode: false,
+            starting_session_seed: false,
             startup_launcher_action: StartupLauncherAction::default(),
             post_run_handoff_action: PostRunHandoffAction::default(),
             continued_post_run_handoff_active: false,
@@ -736,6 +751,7 @@ impl Default for AppState {
             toggles_selected: 0,
             toggles_yolo_confirm_visible: false,
             always_approve_mode: false,
+            session_mode: SessionMode::Normal,
             runtime_toggles: toggles::RuntimeTogglesState::default(),
             lineage_browser: LineageBrowserState::default(),
             lineage_browser_visible: false,
@@ -777,6 +793,9 @@ impl Default for AppState {
             interrupt_confirm_deadline: None,
             interrupt_confirm_task_ids: BTreeSet::new(),
             clear_prompt_confirm_deadline: None,
+            live_turn_started_at: None,
+            live_turn_phase_started_at: None,
+            live_turn_request_id: None,
             now_fn: Arc::new(Instant::now),
             on_ui_intent: None,
         }
@@ -798,17 +817,36 @@ impl DerefMut for AppState {
 }
 
 impl AppState {
-    pub fn apply_auth_backend_result(&mut self, success: bool) {
-        self.apply_connect_dialog_auth_result(success);
+    pub fn note_auth_backend_failure(&mut self, message: &str) {
+        if self.connect_dialog.visible
+            && self.connect_dialog.step == auth_dialog::ConnectDialogStep::Waiting
+            && !message.trim().is_empty()
+        {
+            self.connect_dialog.error_message = Some(message.to_string());
+        }
+    }
+
+    pub fn apply_auth_backend_result(&mut self, success: bool, message: &str) {
+        let message = if !success && is_auth_backend_failure_summary(message) {
+            self.connect_dialog
+                .error_message
+                .clone()
+                .unwrap_or_else(|| message.to_string())
+        } else {
+            message.to_string()
+        };
+        self.apply_connect_dialog_auth_result(success, &message);
         if success {
             if self.status_banner.as_deref() == Some(NO_PROVIDER_BANNER) {
                 self.status_banner = None;
             }
         } else {
-            self.status_banner = Some(
+            self.status_banner = Some(if message.trim().is_empty() {
                 "auth backend failed; run `harness auth login` in a terminal or use /connect"
-                    .to_string(),
-            );
+                    .to_string()
+            } else {
+                message
+            });
         }
     }
     pub fn maybe_set_no_provider_banner(&mut self) {
@@ -910,6 +948,7 @@ impl AppState {
             return;
         }
 
+        self.starting_session_seed = false;
         self.bump_transcript_render_epoch();
 
         if matches!(&event.payload, EventV1::PermissionRequested(_)) {
@@ -940,13 +979,8 @@ impl AppState {
         );
         if !historical {
             self.continued_live_reopen_surface_active = false;
+            self.note_live_turn_status_timing(&event);
         }
-        let completed_tool_call_id = match &event.payload {
-            EventV1::ToolCallFinished(data) if data.status == ToolCallStatus::Succeeded => {
-                Some(data.tool_call_id.clone())
-            }
-            _ => None,
-        };
         self.update_transient_state_for_event(&event);
         let trimmed_events = self.projection.ingest_event(event, historical);
         if !historical {
@@ -960,9 +994,6 @@ impl AppState {
             .transcript_view
             .selected_activity_index
             .min(self.projection.activities.len().saturating_sub(1));
-        if let Some(tool_call_id) = completed_tool_call_id.as_ref().map(|id| id.as_str()) {
-            self.seed_apply_patch_file_outputs_for_tool_call(tool_call_id);
-        }
         if trimmed_events > 0 {
             if self.selected_event_index >= trimmed_events {
                 self.selected_event_index -= trimmed_events;
@@ -996,6 +1027,56 @@ impl AppState {
             self.maybe_auto_allow_active_permission();
         }
         self.maybe_auto_exit();
+    }
+
+    fn note_live_turn_status_timing(&mut self, event: &EventEnvelopeV1) {
+        match &event.payload {
+            EventV1::UserMessageSubmitted(data) => {
+                self.begin_live_turn_timing(Some(data.request_id.as_str()));
+            }
+            EventV1::ProviderRequestStarted(data) => {
+                self.begin_live_turn_timing(Some(
+                    event
+                        .correlation_id
+                        .as_deref()
+                        .unwrap_or(data.request_id.as_str()),
+                ));
+            }
+            EventV1::ProviderReasoningDelta(data) => {
+                let turn_id = event
+                    .correlation_id
+                    .as_deref()
+                    .unwrap_or(data.request_id.as_str());
+                let starts_thinking = self
+                    .activities
+                    .iter()
+                    .rev()
+                    .find_map(|activity| (activity.request_id == turn_id).then_some(activity))
+                    .is_none_or(|activity| {
+                        activity.thinking_text.is_empty() && activity.transcript_text.is_empty()
+                    });
+                if starts_thinking {
+                    self.restart_live_turn_phase_timing();
+                }
+            }
+            EventV1::ProviderStreamDelta(data) => {
+                let turn_id = event
+                    .correlation_id
+                    .as_deref()
+                    .unwrap_or(data.request_id.as_str());
+                let starts_responding = self
+                    .activities
+                    .iter()
+                    .rev()
+                    .find_map(|activity| (activity.request_id == turn_id).then_some(activity))
+                    .is_none_or(|activity| activity.transcript_text.is_empty());
+                if starts_responding {
+                    self.restart_live_turn_phase_timing();
+                }
+            }
+            EventV1::ToolCallStarted(_) => self.restart_live_turn_phase_timing(),
+            _ => {}
+        }
     }
 
     pub fn set_status_banner(&mut self, status: Option<String>) {
@@ -2650,6 +2731,16 @@ impl AppState {
 
     pub(crate) fn enable_always_approve_mode(&mut self) {
         self.always_approve_mode = true;
+        self.session_mode = SessionMode::AlwaysApprove;
+    }
+
+    pub(in crate::app) fn toggle_always_approve_mode(&mut self) {
+        self.always_approve_mode = !self.always_approve_mode;
+        self.session_mode = if self.always_approve_mode {
+            SessionMode::AlwaysApprove
+        } else {
+            SessionMode::Normal
+        };
     }
 
     pub(crate) fn set_compact_session_supported(&mut self, supported: bool) {
@@ -2772,14 +2863,18 @@ impl AppState {
 
     /// Scroll up by half of `viewport` (rounded up), breaking follow mode.
     pub fn scroll_half_page_up(&mut self, viewport: usize) {
-        let half = (viewport + 1) / 2;
+        let half = viewport.div_ceil(2);
         self.scroll_page_up(half);
     }
 
     /// Scroll down by half of `viewport` (rounded up). Re-engages follow at 0.
     pub fn scroll_half_page_down(&mut self, viewport: usize) {
-        let half = (viewport + 1) / 2;
+        let half = viewport.div_ceil(2);
         self.scroll_page_down(half);
+    }
+
+    pub fn set_mouse_wheel_lines_per_tick(&mut self, lines: u16) {
+        self.mouse_wheel_lines_per_tick = lines.max(1);
     }
 
     /// Jump to the top (oldest content). Breaks follow mode.
@@ -2818,6 +2913,7 @@ impl AppState {
                 .expanded_tool_outputs
                 .remove(tool_call_id);
         }
+        self.bump_transcript_render_epoch();
     }
 
     /// Check whether a tool output is expanded.
@@ -2825,6 +2921,11 @@ impl AppState {
         self.transcript_view
             .expanded_tool_outputs
             .contains(tool_call_id)
+    }
+
+    pub fn set_generic_tool_output_visible_for_test(&mut self, visible: bool) {
+        self.transcript_view.show_generic_tool_output = visible;
+        self.bump_transcript_render_epoch();
     }
 
     /// Return all expanded tool-output ids.
@@ -2851,4 +2952,8 @@ impl AppState {
     pub fn collapse_all_tool_outputs_for_test(&mut self) {
         self.transcript_view.expanded_tool_outputs.clear();
     }
+}
+
+fn is_auth_backend_failure_summary(message: &str) -> bool {
+    message.starts_with("auth backend failed (exit ") && !message.contains('\n')
 }

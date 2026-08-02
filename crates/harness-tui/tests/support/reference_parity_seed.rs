@@ -37,10 +37,14 @@ pub fn seed_claimed_row_evidence(root: &Path, manifest: &mut Value) {
     let Some(rows) = manifest["rows"].as_array_mut() else {
         return;
     };
-    for row in rows
-        .iter_mut()
-        .filter(|row| matches!(row["status"].as_str(), Some("pass" | "diverged")))
-    {
+    for row in rows.iter_mut().filter(|row| {
+        matches!(
+            row["evidence"]["status"]
+                .as_str()
+                .or_else(|| row["status"].as_str()),
+            Some("pass" | "diverged")
+        )
+    }) {
         for layer in EVIDENCE_LAYERS {
             if let Some(declared) = non_empty_str(&row["evidence_paths"][layer]) {
                 write_fixture(&evidence_root, root, declared);
@@ -52,7 +56,11 @@ pub fn seed_claimed_row_evidence(root: &Path, manifest: &mut Value) {
         if let Some(declared) = non_empty_str(&row["expected_frame_sequence"]) {
             write_fixture(&evidence_root, root, declared);
         }
-        if row["status"].as_str() == Some("diverged") {
+        if row["evidence"]["status"]
+            .as_str()
+            .or_else(|| row["status"].as_str())
+            == Some("diverged")
+        {
             if let Some(id) = non_empty_str(&row["deliberate_divergence_id"]) {
                 if let Some(receipt_rel) =
                     notes.get(id).and_then(|note| divergence_receipt_path(note))
@@ -149,9 +157,82 @@ fn seed_capture_metadata(evidence_root: &str, root: &Path, row: &Value) {
         "behavior_id": row["behavior_id"],
         "viewport": row["viewport"],
         "generating_command": "fixture-seed: reference_parity_seed.rs",
+        "source_head": current_source_head(),
+        "product_source_sha256": current_product_source_hash(),
+    });
+    if row["row_kind"]
+        .as_str()
+        .is_some_and(|kind| kind != "visual")
+    {
+        let body = serde_json::to_string_pretty(&metadata).unwrap_or_default();
+        write_fixture_content(&metadata_path, body.as_bytes());
+        return;
+    }
+    let capture_dir = metadata_path.parent().unwrap_or(root);
+    let text_path = capture_dir.join("terminal.txt");
+    let ansi_path = capture_dir.join("terminal-ansi.txt");
+    let png_path = capture_dir.join("terminal.png");
+    write_fixture_content(&text_path, b"seeded terminal text\n");
+    write_fixture_content(&ansi_path, b"seeded terminal ansi\n");
+    write_fixture_content(&png_path, b"seeded terminal png\n");
+    let mut metadata = metadata;
+    metadata["artifact_sha256"] = json!({
+        "text": sha256_hex(&std::fs::read(&text_path).unwrap_or_default()),
+        "ansi": sha256_hex(&std::fs::read(&ansi_path).unwrap_or_default()),
+        "png": sha256_hex(&std::fs::read(&png_path).unwrap_or_default()),
     });
     let body = serde_json::to_string_pretty(&metadata).unwrap_or_default();
     write_fixture_content(&metadata_path, body.as_bytes());
+}
+
+fn current_source_head() -> String {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let output = std::process::Command::new("git")
+        .args(["-C"])
+        .arg(root)
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .unwrap_or_else(|error| panic!("git rev-parse HEAD failed: {error}"));
+    assert!(output.status.success(), "git rev-parse HEAD must succeed");
+    String::from_utf8_lossy(&output.stdout).trim().to_owned()
+}
+
+fn current_product_source_hash() -> String {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let output = std::process::Command::new("git")
+        .args(["-C"])
+        .arg(&root)
+        .args([
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "--",
+            "crates/harness-tui",
+            "scripts/tui-parity",
+            "Cargo.toml",
+            "Cargo.lock",
+            "rust-toolchain.toml",
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("git ls-files failed: {error}"));
+    assert!(output.status.success(), "git ls-files must succeed");
+    let mut bytes = Vec::new();
+    for path in output
+        .stdout
+        .split(|byte| *byte == 0)
+        .filter(|path| !path.is_empty())
+    {
+        bytes.extend_from_slice(path);
+        bytes.push(0);
+        let source_path = root.join(String::from_utf8_lossy(path).as_ref());
+        bytes.extend_from_slice(
+            &std::fs::read(source_path).unwrap_or_else(|_| b"<deleted>".to_vec()),
+        );
+        bytes.push(0);
+    }
+    sha256_hex(&bytes)
 }
 
 fn seed_layer_receipts(

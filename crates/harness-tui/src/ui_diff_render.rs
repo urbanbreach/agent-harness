@@ -636,11 +636,11 @@ fn stacked_diff_gutter_spans(
     ]
 }
 
-pub(super) fn diff_marker_style(marker: char, row_bg: Option<Color>, _theme: &Theme) -> Style {
+pub(super) fn diff_marker_style(marker: char, row_bg: Option<Color>, theme: &Theme) -> Style {
     let style = match marker {
-        '+' => Style::default().fg(reference_diff_highlight_added()),
-        '-' => Style::default().fg(reference_diff_highlight_removed()),
-        _ => muted_meta_style(_theme),
+        '+' => Style::default().fg(reference_diff_highlight_added(theme)),
+        '-' => Style::default().fg(reference_diff_highlight_removed(theme)),
+        _ => muted_meta_style(theme),
     };
     apply_optional_bg(style, row_bg)
 }
@@ -662,14 +662,14 @@ pub(super) fn diff_segment_style(
         DiffSegmentKind::Removed => {
             let fg = match accent_kind {
                 DiffSegmentKind::Removed => theme.text.primary,
-                _ => reference_diff_highlight_removed(),
+                _ => reference_diff_highlight_removed(theme),
             };
             apply_optional_bg(Style::default().fg(fg), row_bg)
         }
         DiffSegmentKind::Added => {
             let fg = match accent_kind {
                 DiffSegmentKind::Added => theme.text.primary,
-                _ => reference_diff_highlight_added(),
+                _ => reference_diff_highlight_added(theme),
             };
             apply_optional_bg(Style::default().fg(fg), row_bg)
         }
@@ -704,7 +704,7 @@ pub(super) fn render_diff_hunk_header(
     spans.push(Span::styled(
         truncate_plain_text(&format!("⋮ {text}"), header_width),
         apply_optional_bg(
-            Style::default().fg(reference_diff_hunk_header()),
+            Style::default().fg(reference_diff_hunk_header(theme)),
             Some(palette.content_bg),
         ),
     ));
@@ -852,12 +852,12 @@ fn padded_diff_span(width: usize, row_bg: Option<Color>) -> Span<'static> {
 pub(super) fn diff_row_palette(marker: char, theme: &Theme) -> DiffRowPalette {
     match marker {
         '+' => DiffRowPalette {
-            gutter_bg: reference_diff_added_line_number_bg(),
-            content_bg: reference_diff_added_bg(),
+            gutter_bg: reference_diff_added_line_number_bg(theme),
+            content_bg: reference_diff_added_bg(theme),
         },
         '-' => DiffRowPalette {
-            gutter_bg: reference_diff_removed_line_number_bg(),
-            content_bg: reference_diff_removed_bg(),
+            gutter_bg: reference_diff_removed_line_number_bg(theme),
+            content_bg: reference_diff_removed_bg(theme),
         },
         _ => DiffRowPalette {
             gutter_bg: diff_context_background(theme),
@@ -881,32 +881,32 @@ pub(super) fn diff_hunk_palette(theme: &Theme) -> DiffRowPalette {
     }
 }
 
-pub(super) fn reference_diff_added_bg() -> Color {
-    Color::Rgb(0x20, 0x30, 0x3B)
+pub(super) const fn reference_diff_added_bg(theme: &Theme) -> Color {
+    theme.reference_terminal.diff_added
 }
 
-pub(super) fn reference_diff_removed_bg() -> Color {
-    Color::Rgb(0x37, 0x22, 0x2C)
+pub(super) const fn reference_diff_removed_bg(theme: &Theme) -> Color {
+    theme.reference_terminal.diff_removed
 }
 
-pub(super) fn reference_diff_added_line_number_bg() -> Color {
-    Color::Rgb(0x1B, 0x2B, 0x34)
+pub(super) const fn reference_diff_added_line_number_bg(theme: &Theme) -> Color {
+    theme.reference_terminal.diff_added_gutter
 }
 
-pub(super) fn reference_diff_removed_line_number_bg() -> Color {
-    Color::Rgb(0x2D, 0x1F, 0x26)
+pub(super) const fn reference_diff_removed_line_number_bg(theme: &Theme) -> Color {
+    theme.reference_terminal.diff_removed_gutter
 }
 
-pub(super) fn reference_diff_highlight_added() -> Color {
-    Color::Rgb(0xB8, 0xDB, 0x87)
+pub(super) const fn reference_diff_highlight_added(theme: &Theme) -> Color {
+    theme.reference_terminal.diff_added_highlight
 }
 
-pub(super) fn reference_diff_highlight_removed() -> Color {
-    Color::Rgb(0xE2, 0x6A, 0x75)
+pub(super) const fn reference_diff_highlight_removed(theme: &Theme) -> Color {
+    theme.reference_terminal.diff_removed_highlight
 }
 
-pub(super) fn reference_diff_hunk_header() -> Color {
-    Color::Rgb(0x82, 0x8B, 0xB8)
+pub(super) const fn reference_diff_hunk_header(theme: &Theme) -> Color {
+    theme.reference_terminal.diff_hunk_header
 }
 
 fn apply_optional_bg(style: Style, background: Option<Color>) -> Style {

@@ -33,7 +33,7 @@
 use std::sync::{Arc, Mutex};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use harness_tui::app::{AppState, Focus, UiIntent};
+use harness_tui::app::{AppState, Focus, SessionMode, UiIntent};
 
 // ---------------------------------------------------------------------------
 // Test helpers (public surface only)
@@ -338,15 +338,15 @@ fn editor_undo_and_redo_round_trip() {
     assert_eq!(app.composer.prompt_buffer, "ab");
 }
 
-/// A12: InsertNewline (Ctrl+J) inserts a newline WITHOUT submitting.
+/// A12: Shift+Enter inserts a newline WITHOUT submitting.
 #[test]
 fn editor_insert_newline_does_not_submit() {
     // Given: "ab" typed in a live app
     let (mut app, intents) = live_app_capture();
     type_str(&mut app, "ab");
 
-    // When: Ctrl+J newline, then "cd"
-    app.handle_key(ctrl('j'));
+    // When: Shift+Enter newline, then "cd"
+    app.handle_key(keym(KeyCode::Enter, KeyModifiers::SHIFT));
     type_str(&mut app, "cd");
 
     // Then: the buffer spans two lines, nothing was sent, no history recorded
@@ -354,6 +354,106 @@ fn editor_insert_newline_does_not_submit() {
     assert_eq!(app.composer.prompt_cursor, 5);
     assert!(intents.lock().unwrap().is_empty());
     assert!(app.composer.prompt_history.is_empty());
+}
+
+#[test]
+fn ctrl_m_multiline_mode_swaps_enter_and_modified_enter() {
+    let (mut app, intents) = live_app_capture();
+    type_str(&mut app, "first");
+
+    app.handle_key(ctrl('m'));
+    assert!(app.composer.multiline_mode);
+
+    app.handle_key(key(KeyCode::Enter));
+    type_str(&mut app, "second");
+    assert_eq!(app.composer.prompt_buffer, "first\nsecond");
+    assert!(intents.lock().unwrap().is_empty());
+
+    app.handle_key(keym(KeyCode::Enter, KeyModifiers::SHIFT));
+
+    assert!(app.composer.prompt_buffer.is_empty());
+    assert!(matches!(
+        intents.lock().unwrap().as_slice(),
+        [UiIntent::SubmitPrompt { text, .. }] if text == "first\nsecond"
+    ));
+}
+
+#[test]
+fn shift_tab_cycles_normal_and_plan_without_entering_always_approve() {
+    let mut app = live_app();
+    assert_eq!(app.session_mode(), SessionMode::Normal);
+
+    app.handle_key(key(KeyCode::BackTab));
+    assert_eq!(app.session_mode(), SessionMode::Plan);
+    assert_eq!(app.mode_banner_alpha_for_evidence(), Some(1.0));
+    for _ in 0..64 {
+        app.advance_animation_tick_for_evidence();
+    }
+    assert!(app
+        .mode_banner_alpha_for_evidence()
+        .is_some_and(|alpha| alpha > 0.0 && alpha < 1.0));
+    for _ in 0..5 {
+        app.advance_animation_tick_for_evidence();
+    }
+    assert_eq!(app.mode_banner_alpha_for_evidence(), None);
+
+    app.handle_key(key(KeyCode::BackTab));
+    assert_eq!(app.session_mode(), SessionMode::Normal);
+    assert!(!app.always_approve_mode());
+
+    app.handle_key(key(KeyCode::BackTab));
+    assert_eq!(app.session_mode(), SessionMode::Plan);
+    assert!(!app.always_approve_mode());
+}
+
+#[test]
+fn ctrl_g_toggles_the_task_sidebar() {
+    let mut app = live_app();
+    assert!(!app.details_drawer_open());
+
+    app.handle_key(ctrl('g'));
+    assert!(app.details_drawer_open());
+
+    app.handle_key(ctrl('g'));
+    assert!(!app.details_drawer_open());
+}
+
+#[test]
+fn ctrl_o_toggles_session_always_approve_without_a_permission_modal() {
+    let mut app = live_app();
+    assert!(!app.always_approve_mode());
+
+    app.handle_key(ctrl('o'));
+    assert!(app.always_approve_mode());
+    assert_eq!(app.session_mode(), SessionMode::AlwaysApprove);
+
+    app.handle_key(ctrl('o'));
+    assert!(!app.always_approve_mode());
+    assert_eq!(app.session_mode(), SessionMode::Normal);
+}
+
+#[test]
+fn tab_space_and_i_match_prompt_scrollback_focus_contract() {
+    let mut app = live_app();
+
+    app.handle_key(key(KeyCode::Tab));
+    assert_eq!(app.focus, Focus::Details);
+    app.handle_key(key(KeyCode::Tab));
+    assert_eq!(app.focus, Focus::Prompt);
+
+    app.focus = Focus::Details;
+    app.handle_key(key(KeyCode::Char(' ')));
+    assert_eq!(app.focus, Focus::Prompt);
+    assert!(app.composer.prompt_buffer.is_empty());
+
+    app.focus = Focus::Details;
+    app.handle_key(key(KeyCode::Char('i')));
+    assert_eq!(app.focus, Focus::Prompt);
+    assert!(app.composer.prompt_buffer.is_empty());
+
+    app.handle_key(key(KeyCode::Char(' ')));
+    app.handle_key(key(KeyCode::Char('i')));
+    assert_eq!(app.composer.prompt_buffer, " i");
 }
 
 // ===========================================================================
@@ -536,6 +636,58 @@ fn shell_mode_exits_on_backspace_at_empty_prompt() {
 
     // Then
     assert!(!app.composer.shell_mode);
+}
+
+#[test]
+fn quit_requires_two_consecutive_shortcuts() {
+    let (mut app, intents) = live_app_capture();
+
+    app.handle_key(ctrl('q'));
+
+    assert!(!app.should_quit);
+    assert!(intents.lock().unwrap().is_empty());
+
+    app.handle_key(ctrl('q'));
+
+    assert!(app.should_quit);
+    assert!(matches!(
+        intents.lock().unwrap().as_slice(),
+        [UiIntent::QuitRequested]
+    ));
+}
+
+#[test]
+fn slash_exit_quits_without_keyboard_confirmation() {
+    let (mut app, intents) = live_app_capture();
+
+    type_str(&mut app, "/exit");
+    app.handle_key(key(KeyCode::Enter));
+
+    assert!(app.should_quit);
+    assert!(matches!(
+        intents.lock().unwrap().as_slice(),
+        [UiIntent::QuitRequested]
+    ));
+}
+
+#[test]
+fn quit_confirmation_requires_the_same_shortcut() {
+    let (mut app, intents) = live_app_capture();
+
+    app.handle_key(ctrl('q'));
+    app.handle_key(key(KeyCode::Char('a')));
+
+    assert!(!app.should_quit);
+    assert!(intents.lock().unwrap().is_empty());
+
+    app.handle_key(ctrl('q'));
+    app.handle_key(ctrl('q'));
+
+    assert!(app.should_quit);
+    assert!(matches!(
+        intents.lock().unwrap().as_slice(),
+        [UiIntent::QuitRequested]
+    ));
 }
 
 // ===========================================================================

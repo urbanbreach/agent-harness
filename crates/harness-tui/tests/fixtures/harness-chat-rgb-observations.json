@@ -1,0 +1,36 @@
+{
+  "schema": "harness-chat-rgb-observations/v1",
+  "method": "Exact sRGB pixel lookup in frozen black-box terminal PNGs; coordinates are zero-based image pixels.",
+  "observations": [
+    {
+      "role": "chat canvas",
+      "token": "surface.canvas/shell/panel",
+      "rgb": [20, 20, 20],
+      "capture": ".config/artifacts/qa-evidence/20260801-grok-chat-shell-parity-final/reference-normalized/run1-resp-120x40/terminal.png",
+      "pixel": [0, 0]
+    },
+    {
+      "role": "user-message surface",
+      "token": "surface.card",
+      "rgb": [85, 87, 83],
+      "capture": ".config/artifacts/qa-evidence/20260801-grok-chat-shell-parity-final/reference-normalized/run1-resp-120x40/terminal.png",
+      "pixel": [409, 85]
+    },
+    {
+      "role": "elevated composer surface",
+      "token": "surface.panel_elevated",
+      "rgb": [28, 28, 28],
+      "capture": ".config/artifacts/qa-evidence/20260801-grok-chat-shell-parity-final/reference-normalized/run1-draft/terminal.png",
+      "pixel": [339, 57]
+    },
+    {
+      "role": "scrollbar thumb",
+      "token": "scrollbar.thumb",
+      "rgb": [36, 36, 36],
+      "capture": ".config/artifacts/qa-evidence/20260801-grok-chat-shell-parity-final/reference-normalized/run1-draft/terminal.png",
+      "pixel": [184, 54]
+    }
+  ],
+  "sampling_command": "magick <capture> -format '%[pixel:p{x,y}]' info:",
+  "scope": "Only the listed roles are observation-locked. Remaining tokens preserve the pre-existing Harness rendering contract and are not represented as measured black-box RGB values."
+}

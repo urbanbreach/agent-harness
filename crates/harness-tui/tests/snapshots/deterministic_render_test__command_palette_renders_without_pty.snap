@@ -1,9 +1,10 @@
 ---
 source: crates/harness-tui/tests/deterministic_render_test.rs
+assertion_line: 175
 expression: snapshot.as_str()
 ---
 
-
+   test-workspace /workspace/agent-harness
 
 
                               ┌─ Commands ───────────────────────────────────────── [✗] ─┐
@@ -19,23 +20,23 @@ expression: snapshot.as_str()
                               │  ◆ Rename Session                             /rename   █│
                               │  ◆ Session Info                         /session-info   █│
                               │  ◆ Send Feedback                            /feedback   █│
-                              │  ◆ Switch Worktree                          /worktree   █│
-                              │                                                          │
+                              │                                                         █│
                               │   Context ────────────────────────────────────────────  █│
                               │  ◆ Compact History                           /compact   █│
                               │  ◆ Context Usage                             /context   █│
                               │  ◆ View Plan                               /view-plan   █│
                               │  ◆ Memory                                     /memory   █│
-                              │                                                          │
+                              │                                                         █│
                               │   Model & Input ──────────────────────────────────────  █│
                               │  ◆ Switch Model                                /model   █│
                               │  ◆ Always Approve Mode                /always-approve   █│
                               │  ◆ Multiline Input                         /multiline   █│
-                              │                                                          │
+                              │                                                         █│
                               │   Tools ──────────────────────────────────────────────  █│
                               │  ◆ Hooks                                       /hooks   █│
                               │  ◆ Plugins                                   /plugins   █│
                               │  ◆ Marketplace                           /marketplace   █│
+                              │                                                          │
   ╭───────────────────────────│          ↑/↓ nav  |  Enter select  |  Esc close          │───────────────────────────╮
   │ ❯                         └──────────────────────────────────────────────────────────┘                           │
-  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────── unknown ─╯
+  ╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────  ─╯

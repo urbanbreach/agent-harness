@@ -28,4 +28,4 @@ expression: rendered.as_str()
             ┃  4 (○) No, reject (type to add feedback)                                              
             ┃                                                                                       
                                                                                                     
-            1/4:select  │  Ctrl+o:always-approve  │  Ctrl+c:cancel
+                 1/4:select  │  Ctrl+o:always-approve  │  Ctrl+c:cancel

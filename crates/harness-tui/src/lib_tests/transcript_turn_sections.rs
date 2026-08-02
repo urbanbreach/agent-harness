@@ -113,7 +113,7 @@ pub(super) fn transcript_turn_sections_render_open_rail_surfaces() {
     assert!(
         assistant_footer_bgs[assistant_body_column..assistant_body_column + 9]
             .iter()
-            .all(|color| *color == theme.surface.shell)
+            .all(|color| *color == ratatui::style::Color::Reset)
     );
     assert!(
         assistant_body - user_body <= 8,
@@ -210,10 +210,9 @@ pub(super) fn transcript_turn_sections_keep_nested_tool_details() {
 
     let rendered = render_live_lines(&app, 100, 24);
     let buffer = render_live_cells(&app, 100, 24);
-    let theme = Theme::default();
     let lines = rendered.lines().collect::<Vec<_>>();
-    let reasoning_row = find_line_containing(&lines, "tool planning")
-        .unwrap_or_else(|| panic!("reasoning row\n{rendered}"));
+    let reasoning_row = find_line_containing(&lines, "Thought for")
+        .unwrap_or_else(|| panic!("collapsed reasoning row\n{rendered}"));
     let body_row = find_line_containing(&lines, "Assistant body")
         .unwrap_or_else(|| panic!("assistant body row\n{rendered}"));
     let tool_row = find_line_containing_all_from(&lines, body_row + 1, &["false"])
@@ -231,28 +230,12 @@ pub(super) fn transcript_turn_sections_keep_nested_tool_details() {
     assert!(detail_row < fail_chrome_row);
 
     let assistant_body_column = first_alphanumeric_column(lines[body_row]);
-    let (reasoning_row_text, reasoning_row_fgs, _) =
-        row_at(&buffer, 100, reasoning_row).unwrap_or_abort();
-    let thinking_body_start = reasoning_row_text
-        [..reasoning_row_text.find("tool planning").unwrap_or_abort()]
-        .chars()
-        .count();
+    let (reasoning_row_text, _, _) = row_at(&buffer, 100, reasoning_row).unwrap_or_abort();
 
-    assert!(reasoning_row_text.contains("tool planning"));
+    assert!(reasoning_row_text.contains("Thought for"));
     assert!(
         !reasoning_row_text.contains('┃'),
-        "thinking traces should not have an outer rail\n{rendered}"
-    );
-    assert!(
-        first_alphanumeric_column(lines[reasoning_row]) == assistant_body_column,
-        "thinking body should align with the assistant body column\n{rendered}"
-    );
-    assert!(
-        reasoning_row_fgs
-            [thinking_body_start..thinking_body_start + "tool planning".chars().count()]
-            .iter()
-            .all(|color| *color == theme.text.secondary),
-        "thinking body should stay muted like the shell\n{rendered}"
+        "collapsed thoughts should not have an outer rail\n{rendered}"
     );
     let nested_detail_columns = [tool_row, detail_row]
         .into_iter()

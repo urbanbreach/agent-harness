@@ -9,7 +9,7 @@ use std::sync::Arc;
 use harness_core::clock::{Clock, FakeClock};
 
 /// Default per-tick step, matching the animation fixed-tick evidence cadence.
-pub const DEFAULT_FRAME_TICK_MS: u64 = 100;
+pub const DEFAULT_FRAME_TICK_MS: u64 = 1_000 / 30;
 
 /// A frame count, type-distinct from a millisecond reading.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]

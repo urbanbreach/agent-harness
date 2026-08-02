@@ -1,9 +1,70 @@
 use std::cell::Cell;
 use std::collections::BTreeSet;
+use std::time::Duration;
 
 use super::transcript_cache::TranscriptRenderCache;
-use super::TranscriptScrollbarDragState;
+use super::{AppState, TranscriptScrollbarDragState};
 use crate::ui::{TranscriptMouseTarget, TranscriptSelection};
+
+const ACTIVE_ANIMATION_TICK_INTERVAL: Duration = Duration::from_millis(1_000 / 30);
+const STARTUP_ANIMATION_TICK_INTERVAL: Duration = Duration::from_millis(1_000 / 12);
+
+/// The cadence requested by the currently visible TUI state.
+///
+/// `None` intentionally leaves no timer armed. `Slow` is reserved for the
+/// welcome shimmer; turn status and state-expiry work use the 30 Hz root tick.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AnimationTickDemand {
+    None,
+    Slow,
+    Fast,
+}
+
+impl AnimationTickDemand {
+    const fn interval(self) -> Option<Duration> {
+        match self {
+            Self::None => None,
+            Self::Slow => Some(STARTUP_ANIMATION_TICK_INTERVAL),
+            Self::Fast => Some(ACTIVE_ANIMATION_TICK_INTERVAL),
+        }
+    }
+}
+
+impl AppState {
+    /// Returns the next animation-tick interval, or `None` when the terminal
+    /// loop should park its animation timer.
+    pub(crate) fn animation_tick_interval(&self) -> Option<Duration> {
+        self.animation_tick_interval_with_motion(
+            std::env::var_os("HARNESS_DISABLE_ANIMATIONS").is_none(),
+        )
+    }
+
+    pub(crate) fn animation_tick_interval_with_motion(
+        &self,
+        motion_enabled: bool,
+    ) -> Option<Duration> {
+        let has_semantic_tick = self.active_turn_in_progress()
+            || self.toast.is_some()
+            || self.interrupt_confirmation_pending();
+        if has_semantic_tick {
+            return AnimationTickDemand::Fast.interval();
+        }
+
+        if !motion_enabled {
+            return AnimationTickDemand::None.interval();
+        }
+
+        if self.starting_session_seed_visible() || self.active_background_task_count() > 0 {
+            return AnimationTickDemand::Fast.interval();
+        }
+
+        if self.startup_shell_visible() && self.composer.prompt_buffer.is_empty() {
+            return AnimationTickDemand::Slow.interval();
+        }
+
+        AnimationTickDemand::None.interval()
+    }
+}
 
 #[derive(Debug)]
 pub(crate) struct TranscriptViewState {
@@ -53,5 +114,52 @@ impl Default for TranscriptViewState {
             last_transcript_max_scroll: Cell::new(0),
             selected_activity_index: 0,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::super::{AppState, ToastVariant};
+
+    #[test]
+    fn animation_tick_demand_uses_fast_cadence_for_semantic_state() {
+        // Given: a live shell with a transient state that must expire.
+        let mut app = AppState::new_live(None, false, None);
+        app.show_toast("Saved", ToastVariant::Info);
+
+        // When: the animation scheduler queries the full-motion demand.
+        let interval = app.animation_tick_interval_with_motion(true);
+
+        // Then: expiry/state timing remains at the 30 Hz root cadence.
+        assert_eq!(interval, Some(Duration::from_millis(1_000 / 30)));
+    }
+
+    #[test]
+    fn animation_tick_demand_parks_idle_and_reduced_visual_only_shells() {
+        // Given: an idle live shell and a startup shell with visual motion disabled.
+        let idle = AppState::new_live(None, false, None);
+        let startup = AppState::new_startup(Vec::new(), None);
+
+        // When: each shell reports its timer demand.
+        let idle_interval = idle.animation_tick_interval_with_motion(true);
+        let disabled_startup_interval = startup.animation_tick_interval_with_motion(false);
+
+        // Then: neither arms a redraw timer.
+        assert_eq!(idle_interval, None);
+        assert_eq!(disabled_startup_interval, None);
+    }
+
+    #[test]
+    fn animation_tick_demand_keeps_startup_shimmer_on_its_slow_cadence() {
+        // Given: the empty compose-first startup shell.
+        let startup = AppState::new_startup(Vec::new(), None);
+
+        // When: visual motion is enabled.
+        let interval = startup.animation_tick_interval_with_motion(true);
+
+        // Then: logo shimmer does not promote the root loop to 30 Hz.
+        assert_eq!(interval, Some(Duration::from_millis(1_000 / 12)));
     }
 }

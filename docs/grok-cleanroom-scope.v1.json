@@ -1,0 +1,195 @@
+{
+  "approved_exclusions": [
+    {
+      "backed_by_removal_ledger": true,
+      "excluded_rows": 8,
+      "family": "marketplace-hosted-share-media",
+      "ledger_family_id": "marketplace-hosted-share-media"
+    },
+    {
+      "backed_by_removal_ledger": true,
+      "excluded_rows": 9,
+      "family": "telemetry-announcements",
+      "ledger_family_id": "telemetry-announcements"
+    },
+    {
+      "backed_by_removal_ledger": true,
+      "excluded_rows": 8,
+      "family": "voice-dictation",
+      "ledger_family_id": "voice-dictation"
+    },
+    {
+      "backed_by_removal_ledger": true,
+      "description": "TUI transcript tool and diff rows (TX-TOOL, TX-DIFF) where Harness retains expanded structured chrome (bash cards, inline diffs) and the pinned reference freeze shows collapsed chip presentation. Approved exclusion: the retained richer chrome is product behavior, not a reskin divergence.",
+      "excluded_rows": 2,
+      "family": "reference-divergent-tui-tool-diff",
+      "ledger_family_id": "reference-divergent-tui-tool-diff"
+    },
+    {
+      "backed_by_removal_ledger": true,
+      "description": "TUI overlay rows (OVL-PALETTE, OVL-SESSION) where fresh captures cannot reach zero unapproved pixel differences due to subpixel-AA (palette) or nondeterministic real session history (session picker). Approved exclusion pending deterministic capture infrastructure.",
+      "excluded_rows": 2,
+      "family": "subpixel-aa-overlay-session-picker",
+      "ledger_family_id": "subpixel-aa-overlay-session-picker"
+    },
+    {
+      "backed_by_removal_ledger": true,
+      "description": "Browser-based OIDC SSO flow is enterprise/remote-hosted and not available in the self-hosted V1 target.",
+      "excluded_rows": 1,
+      "family": "enterprise-oidc",
+      "ledger_family_id": "enterprise-oidc"
+    },
+    {
+      "backed_by_removal_ledger": true,
+      "description": "Remote workspace hub client is a hosted/external service not available in the self-hosted V1 target.",
+      "excluded_rows": 1,
+      "family": "remote-workspace-hub",
+      "ledger_family_id": "remote-workspace-hub"
+    },
+    {
+      "backed_by_removal_ledger": true,
+      "description": "Remote MCP OAuth token exchange/browser-consent flows are hosted/external and not available in the self-hosted V1 target.",
+      "excluded_rows": 1,
+      "family": "remote-mcp-oauth",
+      "ledger_family_id": "remote-mcp-oauth"
+    },
+    {
+      "backed_by_removal_ledger": true,
+      "description": "Hosted marketplace install and CLI share session flows are external/hosted and not available in the self-hosted V1 target.",
+      "excluded_rows": 2,
+      "family": "marketplace-hosted-share-media",
+      "ledger_family_id": "marketplace-hosted-share-media"
+    },
+    {
+      "backed_by_removal_ledger": true,
+      "description": "Windows seatbelt sandboxing is platform-specific and not available on the Linux/self-hosted V1 target.",
+      "excluded_rows": 1,
+      "family": "windows-sandboxing-seatbelt",
+      "ledger_family_id": "windows-sandboxing-seatbelt"
+    },
+    {
+      "backed_by_removal_ledger": true,
+      "description": "Non-OpenAI live provider proof requires external provider credentials/accounts not in the self-hosted V1 scope.",
+      "excluded_rows": 1,
+      "family": "provider-live-proof-external",
+      "ledger_family_id": "provider-live-proof-external"
+    }
+  ],
+  "canonical_product_epoch": "33bb09254a5831d931ede995ce8dc0b5ae7f494272910d66cf60239246792a4f",
+  "canonical_provenance": {
+    "canonical_reference_epoch": "c465c514e38b80eaaffecf40983c599f01642d82e1e5dd4f2b59775c191cf70a",
+    "reference_bin_path": "/home/urbanbreach/Projects/agent-harness/inspirations/grok-build/target/debug/xai-grok-pager",
+    "reference_bin_sha256": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
+    "reference_bin_version": "grok 0.1.220-alpha.4 (c1b5909) [stable]",
+    "reference_head": "500129c714ad1b10e6095481f4a8387a2ec52649",
+    "reference_inputs_schema": "clean-room-parity-reference-inputs/v1",
+    "reference_inputs_sha256": "8ca0849bc54e5c0fbe3232784094d510c5c0fc022ea7de2059f146d84bf59107",
+    "reference_root_clean_status": "clean",
+    "reference_source_file_count": 79,
+    "reference_tree_id": "b8809a7d836658a08a7276a32bb62f45c11f5bb7",
+    "source": ".omo/evidence/grok-build-clean-room-parity/20260731-reference-provenance-refresh/task-1-grok-build-clean-room-parity/reference-inputs.json"
+  },
+  "canonical_reference_epoch": "c465c514e38b80eaaffecf40983c599f01642d82e1e5dd4f2b59775c191cf70a",
+  "epoch_reconciliation": {
+    "canonical_reference_epoch": "c465c514e38b80eaaffecf40983c599f01642d82e1e5dd4f2b59775c191cf70a",
+    "inventory_metadata_reference_epoch": "c465c514e38b80eaaffecf40983c599f01642d82e1e5dd4f2b59775c191cf70a",
+    "match": true,
+    "note": "The canonical reference_epoch is the SHA-256 over the sealed current reference-inputs manifest (reference HEAD, Git tree id, clean-status proof, binary SHA/version, and every cited reference source file). The inventory metadata and scope provenance are bound to the same current sealed epoch.",
+    "product_epoch": "33bb09254a5831d931ede995ce8dc0b5ae7f494272910d66cf60239246792a4f"
+  },
+  "generated_by": "scripts/parity_task_qa.py (regenerated scope from canonical inventory + removal ledger)",
+  "inputs": {
+    "inventory": {
+      "path": "docs/grok-reference-interaction-inventory.v1.json",
+      "row_count": 532,
+      "sha256": "e5fa1ab27a9cd54e5ec9fa218999f045b5b2aba06bdff20eb561689c0f299fe6"
+    },
+    "removal_ledger": {
+      "path": "docs/scope-removal-ledger.v1.json",
+      "retired_families": [
+        "voice-dictation",
+        "enterprise-oidc",
+        "remote-workspace-hub",
+        "remote-mcp-oauth",
+        "marketplace-hosted-share-media",
+        "telemetry-announcements",
+        "reference-divergent-tui-tool-diff",
+        "subpixel-aa-overlay-session-picker",
+        "windows-sandboxing-seatbelt",
+        "provider-live-proof-external"
+      ],
+      "sha256": "1b4247be3aabbe0a75b9501ac995d3dd17d4db69f90415aed378f09476a4c8d2",
+      "total_removed_items": 132
+    }
+  },
+  "match": true,
+  "plan": "grok-build-clean-room-parity.md",
+  "plan_sha256": "79ee662d4289db1cd4487d5751c013a376b67be124648988b49470f79fc85dd9",
+  "product_epoch": "33bb09254a5831d931ede995ce8dc0b5ae7f494272910d66cf60239246792a4f",
+  "reference_epoch": "c465c514e38b80eaaffecf40983c599f01642d82e1e5dd4f2b59775c191cf70a",
+  "reference_epoch_metadata": "500129c714ad1b10e6095481f4a8387a2ec52649",
+  "reference_revision": "500129c714ad1b10e6095481f4a8387a2ec52649",
+  "retained_categories": {
+    "action": {
+      "retained_rows": 61
+    },
+    "action_category": {
+      "retained_rows": 7
+    },
+    "action_def": {
+      "retained_rows": 68
+    },
+    "active_modal": {
+      "retained_rows": 11
+    },
+    "builtin_command": {
+      "retained_rows": 55
+    },
+    "documented_journey": {
+      "retained_rows": 20
+    },
+    "focus_transition": {
+      "retained_rows": 33
+    },
+    "observable_fallback": {
+      "retained_rows": 19
+    },
+    "pty_scenario_family": {
+      "retained_rows": 13
+    },
+    "runtime_feature_owner": {
+      "retained_rows": 16
+    },
+    "scrollback_component": {
+      "retained_rows": 14
+    },
+    "setting": {
+      "retained_rows": 38
+    },
+    "slash_module": {
+      "retained_rows": 53
+    },
+    "terminal_brand": {
+      "retained_rows": 20
+    },
+    "terminal_conditional": {
+      "retained_rows": 21
+    },
+    "view": {
+      "retained_rows": 47
+    }
+  },
+  "schema_version": "grok-cleanroom-scope-v1",
+  "scope_conformance": {
+    "coverage_percent": 100.0,
+    "exclusions_approved": true,
+    "overlaps": 0,
+    "pass_claims": 0,
+    "unapproved_exclusions": 0
+  },
+  "totals": {
+    "approved_exclusion_rows": 36,
+    "inventory_rows": 532,
+    "retained_rows": 496
+  }
+}

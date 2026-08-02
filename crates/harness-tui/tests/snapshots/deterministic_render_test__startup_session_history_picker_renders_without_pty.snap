@@ -1,17 +1,18 @@
 ---
 source: crates/harness-tui/tests/deterministic_render_test.rs
+assertion_line: 232
 expression: normalize_volatile_branch(&trim_trailing_snapshot_whitespace(&rendered))
 ---
 
-
+   test-workspace /workspace/agent-harness
 
 
            ┌─ Resume session ───────────────────────────────────────────────────── [✗] ─┐
            │                                                                            │
            │   / to search                                                     All f    │
            │────────────────────────────────────────────────────────────────────────────│
-           │   Projects-workspace                                                       │
-           │     alpha-run                                                       4mo ago│
+           │   Projects-workspace ────────────────────────────────────────────────────  │
+           │      alpha-run                                                   4mo ago   │
            │                                                                            │
            │                                                                            │
            │                                                                            │
@@ -19,7 +20,7 @@ expression: normalize_volatile_branch(&trim_trailing_snapshot_whitespace(&render
            │                                                                            │
            │                                                                            │
            │                                                                            │
-           │                                                                            │or this di…
            │                                                                            │
-           │             ↑↓ nav | e expand | / search | f filter | d delete             │
+           │                                                                            │
+           │         ↑↓ nav  |  e expand  |  / search  |  f filter  |  d delete         │
            └────────────────────────────────────────────────────────────────────────────┘

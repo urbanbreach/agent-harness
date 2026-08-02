@@ -391,7 +391,7 @@ fn token_families_preserve_divider_contracts() {
 
 #[test]
 fn by_name_resolves_all_documented_themes() {
-    assert_eq!(Theme::by_name("default"), Some(Theme::harness_dark()));
+    assert_eq!(Theme::by_name("default"), Some(Theme::harness_chat()));
     assert_eq!(Theme::by_name("harness-dark"), Some(Theme::harness_dark()));
     assert_eq!(
         Theme::by_name("harness-light"),
@@ -418,8 +418,8 @@ fn available_theme_names_lists_user_selectable_themes() {
 }
 
 #[test]
-fn default_theme_is_harness_dark() {
-    assert_eq!(Theme::default(), Theme::harness_dark());
+fn default_theme_is_harness_chat() {
+    assert_eq!(Theme::default(), Theme::harness_chat());
 }
 
 // ---------------------------------------------------------------------------

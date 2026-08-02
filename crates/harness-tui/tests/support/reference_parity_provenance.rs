@@ -6,6 +6,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::time::{Duration, SystemTime};
 
 use serde_json::Value;
@@ -59,7 +60,10 @@ pub fn validate_manifest_evidence(manifest: &Value, root: &Path) -> ValidateResu
     };
     let l3_owners = claimed_l3_owners(rows);
     for (index, row) in rows.iter().enumerate() {
-        let status = row["status"].as_str().unwrap_or("");
+        let status = row["evidence"]["status"]
+            .as_str()
+            .or_else(|| row["status"].as_str())
+            .unwrap_or("");
         if status != "pass" && status != "diverged" {
             continue;
         }
@@ -338,7 +342,10 @@ fn resolve_embedded_capture_path(
 fn claimed_l3_owners(rows: &[Value]) -> BTreeMap<String, (BTreeSet<String>, BTreeSet<(u64, u64)>)> {
     let mut owners: BTreeMap<String, (BTreeSet<String>, BTreeSet<(u64, u64)>)> = BTreeMap::new();
     for row in rows {
-        let status = row["status"].as_str().unwrap_or("");
+        let status = row["evidence"]["status"]
+            .as_str()
+            .or_else(|| row["status"].as_str())
+            .unwrap_or("");
         if status != "pass" && status != "diverged" {
             continue;
         }
@@ -565,6 +572,116 @@ fn verify_provenance_metadata(
             format!("{path}.evidence_paths.L3"),
             "L3 capture metadata.json must record the generating_command that produced the evidence",
         ));
+    }
+    verify_current_product_source(&metadata, path, failures);
+    if row["row_kind"].as_str().is_none_or(|kind| kind == "visual") {
+        verify_capture_artifact_hashes(manifest, root, l3, &metadata, path, failures);
+    }
+}
+
+fn verify_current_product_source(
+    metadata: &Value,
+    path: &str,
+    failures: &mut Vec<ManifestFailure>,
+) {
+    let declared = metadata["source_head"].as_str().unwrap_or("");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let current = Command::new("git")
+        .args(["-C"])
+        .arg(&root)
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned());
+    if current.as_deref() != Some(declared) {
+        failures.push(ManifestFailure::new(
+            "stale-product-source",
+            format!("{path}.evidence_paths.L3"),
+            "L3 capture metadata source_head must match the current product source revision",
+        ));
+    }
+    let declared_product = metadata["product_source_sha256"].as_str().unwrap_or("");
+    let current_product = current_product_source_hash(&root);
+    if current_product.as_deref() != Some(declared_product) {
+        failures.push(ManifestFailure::new(
+            "stale-product-source",
+            format!("{path}.evidence_paths.L3"),
+            "L3 capture metadata product_source_sha256 must match the current tracked and untracked TUI source tree",
+        ));
+    }
+}
+
+fn current_product_source_hash(root: &Path) -> Option<String> {
+    let output = Command::new("git")
+        .args(["-C"])
+        .arg(root)
+        .args([
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "--",
+            "crates/harness-tui",
+            "scripts/tui-parity",
+            "Cargo.toml",
+            "Cargo.lock",
+            "rust-toolchain.toml",
+        ])
+        .output()
+        .ok()
+        .filter(|output| output.status.success())?;
+    let mut bytes = Vec::new();
+    for relative in output
+        .stdout
+        .split(|byte| *byte == 0)
+        .filter(|path| !path.is_empty())
+    {
+        bytes.extend_from_slice(relative);
+        bytes.push(0);
+        let source_path = root.join(String::from_utf8_lossy(relative).as_ref());
+        bytes.extend_from_slice(
+            &std::fs::read(source_path).unwrap_or_else(|_| b"<deleted>".to_vec()),
+        );
+        bytes.push(0);
+    }
+    Some(sha256_hex(&bytes))
+}
+
+fn verify_capture_artifact_hashes(
+    manifest: &Value,
+    root: &Path,
+    l3: &str,
+    metadata: &Value,
+    path: &str,
+    failures: &mut Vec<ManifestFailure>,
+) {
+    let Some(expected) = metadata["artifact_sha256"].as_object() else {
+        failures.push(ManifestFailure::new(
+            "capture-artifact-mismatch",
+            format!("{path}.evidence_paths.L3"),
+            "L3 capture metadata.json must bind terminal artifact sha256 values",
+        ));
+        return;
+    };
+    let capture_dir = resolve_evidence_path(manifest, root, l3);
+    for (name, filename) in [
+        ("text", "terminal.txt"),
+        ("ansi", "terminal-ansi.txt"),
+        ("png", "terminal.png"),
+    ] {
+        let declared = expected.get(name).and_then(Value::as_str).unwrap_or("");
+        let actual = std::fs::read(capture_dir.join(filename))
+            .ok()
+            .map(|bytes| sha256_hex(&bytes));
+        if actual.as_deref() != Some(declared) {
+            failures.push(ManifestFailure::new(
+                "capture-artifact-mismatch",
+                format!("{path}.evidence_paths.L3"),
+                format!("L3 capture {filename} does not match metadata artifact_sha256.{name}"),
+            ));
+        }
     }
 }
 

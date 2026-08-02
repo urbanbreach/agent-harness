@@ -25,8 +25,12 @@ use surfaces::split_secondary_surface;
 pub(crate) use surfaces::{
     inset_rect, live_empty_state_area, pad_rect, permission_dock_layout,
     runtime_state_surface_area, runtime_state_surface_width, secondary_surface_layout,
-    startup_shell_area, ControlDockLayout, EdgeInsets,
+    startup_shell_area, ControlDockLayout, EdgeInsets, HELP_MODAL_LAYOUT,
 };
+
+pub(crate) fn centered_overlay_area(area: Rect, width: u16, height: u16) -> Rect {
+    surfaces::centered_block_area(area, width, height)
+}
 
 const MIN_COMPOSER_LINES: u16 = 1;
 const MAX_COMPOSER_LINES: u16 = 6;
@@ -36,11 +40,9 @@ const LIVE_PROMPT_STANDARD_CHROME_ROWS: u16 = 4;
 const LIVE_PROMPT_DENSE_CHROME_ROWS: u16 = 3;
 const LIVE_PROMPT_MIN_HEIGHT: u16 = 5;
 const DENSE_LIVE_PROMPT_MIN_HEIGHT: u16 = 4;
-const LIVE_STATUS_ROW_MIN_TERMINAL_HEIGHT: u16 = 33;
 // Freeze PERM dock zone is 11 rows (shell 3 + tray 8: options/blanks/hints/trailing).
 const LIVE_PERMISSION_PROMPT_MIN_HEIGHT: u16 = 11;
-// Freeze QUESTION: dock 11 + blank + Esc footer + trailing blank (shell footer steals 3).
-const LIVE_QUESTION_PROMPT_MIN_HEIGHT: u16 = 14;
+const LIVE_QUESTION_PROMPT_CHROME_ROWS: u16 = 6;
 const LIVE_DETAILS_MIN_TRANSCRIPT_WIDTH: u16 = 48;
 const TERMINAL_PANEL_MIN_TRANSCRIPT_HEIGHT: u16 = 7;
 const TERMINAL_PANEL_MIN_HEIGHT: u16 = 5;
@@ -56,6 +58,7 @@ const STARTUP_COMPOSER_SPACER_ROWS: u16 = 1;
 const STARTUP_FOOTER_ROWS: u16 = 2;
 const SUBAGENT_FOOTER_ROWS: u16 = 3;
 const LIVE_POST_TURN_BOTTOM_MARGIN_ROWS: u16 = 1;
+const LIVE_STATUS_COMPOSER_SPACER_ROWS: u16 = 1;
 /// Spacer between the composer bottom border and the disclosure/footer row.
 /// Present at all viewports wider than the dense (60-col) compact cutoff;
 /// suppressed at ultra-compact sizes to maximize transcript space.
@@ -66,6 +69,7 @@ const COMPOSER_FOOTER_SPACER_ROWS: u16 = 1;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct LiveDockRhythm {
     status_rows: u16,
+    status_composer_spacer_rows: u16,
     composer_footer_spacer_rows: u16,
     disclosure_rows: u16,
     bottom_margin_rows: u16,
@@ -98,7 +102,7 @@ pub(crate) fn composer_footer_spacer_rows(width: u16) -> u16 {
 
 pub(crate) fn composer_horizontal_inset(width: u16) -> u16 {
     let preferred = if width <= DENSE_SESSION_MAX_WIDTH {
-        0
+        1
     } else {
         STARTUP_COMPOSER_INSET_X
     };
@@ -462,19 +466,15 @@ pub(crate) fn session_shell_layout(
         shell_tokens.spacing.heights.prompt_block()
     } else if app.startup_shell_visible() {
         live_prompt_block_height(app, content_column, contract, shell, terminal_height)
-    } else if app.active_permission_view().is_some() {
-        // Permission dock paints its own tray/hints; do not reserve a status band that
-        // becomes empty rows above the bottom-anchored dock (freeze PERM packing).
-        live_prompt_block_height(app, content_column, contract, shell, terminal_height)
     } else {
         let rhythm = live_dock_rhythm(
             app,
             contract,
             content_column.width,
-            terminal_height,
             shell_tokens.spacing.heights.status,
         );
         live_prompt_block_height(app, content_column, contract, shell, terminal_height)
+            .saturating_add(rhythm.status_composer_spacer_rows)
             .saturating_add(rhythm.composer_footer_spacer_rows)
             .saturating_add(rhythm.status_rows)
             .saturating_add(rhythm.bottom_margin_rows)
@@ -495,7 +495,6 @@ pub(crate) fn session_shell_layout(
             app,
             contract,
             content_column.width,
-            terminal_height,
             shell_tokens.spacing.heights.status,
         );
         let disclosure_height = rhythm
@@ -514,17 +513,6 @@ pub(crate) fn session_shell_layout(
                 height: composer_height,
             };
             control_dock_layout(shell_area, None, composer, None)
-        } else if app.active_permission_view().is_none() && disclosure_height == 0 {
-            let composer_height = shell_area.height.max(3).min(shell_area.height);
-            let composer = Rect {
-                x: shell_area.x,
-                y: shell_area.y,
-                width: shell_area.width,
-                height: composer_height,
-            };
-            control_dock_layout(shell_area, None, composer, None)
-        } else if disclosure_height == 0 {
-            control_dock_layout(shell_area, None, shell_area, None)
         } else {
             let composer_height =
                 live_prompt_block_height(app, content_column, contract, shell, terminal_height)
@@ -533,9 +521,13 @@ pub(crate) fn session_shell_layout(
             let composer_footer_spacer = rhythm
                 .composer_footer_spacer_rows
                 .min(shell_area.height.saturating_sub(status_rows));
+            let status_composer_spacer = rhythm
+                .status_composer_spacer_rows
+                .min(shell_area.height.saturating_sub(status_rows));
             let bottom_margin = rhythm.bottom_margin_rows.min(
                 shell_area.height.saturating_sub(
                     status_rows
+                        .saturating_add(status_composer_spacer)
                         .saturating_add(composer_height)
                         .saturating_add(composer_footer_spacer)
                         .saturating_add(disclosure_height),
@@ -545,14 +537,16 @@ pub(crate) fn session_shell_layout(
                 .direction(Direction::Vertical)
                 .constraints([
                     Constraint::Length(status_rows),
+                    Constraint::Length(status_composer_spacer),
                     Constraint::Length(composer_height),
                     Constraint::Length(composer_footer_spacer),
                     Constraint::Length(disclosure_height),
                     Constraint::Length(bottom_margin),
                 ])
                 .split(shell_area);
-            let disclosure = (disclosure_height > 0).then_some(rows[3]);
-            control_dock_layout(shell_area, None, rows[1], disclosure)
+            let disclosure = (disclosure_height > 0).then_some(rows[4]);
+            let status = (status_rows > 0).then_some(rows[0]);
+            control_dock_layout(shell_area, status, rows[2], disclosure)
         }
     };
     let dock = if operator_sidebar.is_some() {
@@ -737,22 +731,29 @@ fn live_dock_rhythm(
     app: &AppState,
     contract: SessionGeometryContract,
     width: u16,
-    terminal_height: u16,
     status_row_height: u16,
 ) -> LiveDockRhythm {
     let disclosure_rows = control_dock_disclosure_rows(app, contract);
-    let status_rows =
-        if disclosure_rows > 0 && terminal_height >= LIVE_STATUS_ROW_MIN_TERMINAL_HEIGHT {
-            status_row_height
-        } else {
-            0
-        };
+    let status_rows = if app.has_live_turn_activity()
+        || matches!(
+            app.runtime_state().kind,
+            crate::app::RuntimeStateKind::Sending | crate::app::RuntimeStateKind::Streaming
+        ) {
+        status_row_height
+    } else {
+        0
+    };
     let composer_footer_spacer_rows = if disclosure_rows > 0 {
         composer_footer_spacer_rows(width)
     } else {
         0
     };
-    let bottom_margin_rows = if disclosure_rows > 0 {
+    let status_composer_spacer_rows = if status_rows > 0 {
+        LIVE_STATUS_COMPOSER_SPACER_ROWS
+    } else {
+        0
+    };
+    let bottom_margin_rows = if disclosure_rows > 0 && width > DENSE_SESSION_MAX_WIDTH {
         LIVE_POST_TURN_BOTTOM_MARGIN_ROWS
     } else {
         0
@@ -760,6 +761,7 @@ fn live_dock_rhythm(
 
     LiveDockRhythm {
         status_rows,
+        status_composer_spacer_rows,
         composer_footer_spacer_rows,
         disclosure_rows,
         bottom_margin_rows,
@@ -769,15 +771,65 @@ fn live_dock_rhythm(
 fn permission_prompt_block_height(
     app: &AppState,
     width: u16,
+    terminal_height: u16,
     permission: &crate::app::ActivePermissionView,
 ) -> u16 {
     let inner_width = usize::from(width.saturating_sub(6).max(1));
 
-    if permission.question_prompts.is_some() {
-        // Fixed freeze packing (like PERM): dynamic expansion left empty rail rows and
-        // shrank the transcript viewport so Waiting-on-answers pin could not fire.
-        let _ = (app, inner_width);
-        return LIVE_QUESTION_PROMPT_MIN_HEIGHT;
+    if let Some(prompts) = permission.question_prompts.as_deref() {
+        let tab = app
+            .question_prompt_tab(&permission.permission_id)
+            .min(prompts.len().saturating_sub(1));
+        let Some(prompt) = prompts.get(tab) else {
+            return LIVE_QUESTION_PROMPT_CHROME_ROWS.saturating_add(8);
+        };
+        let label_rows = wrapped_text_rows(&prompt.question, inner_width).max(1);
+        let tab_rows = if prompts.len() > 1 { 2 } else { 0 };
+        let chrome_rows = label_rows.saturating_add(3).saturating_add(tab_rows);
+        let selected = app
+            .question_prompt_selection(&permission.permission_id)
+            .min(prompt.options.len().saturating_sub(1));
+        let label_width = prompt
+            .options
+            .iter()
+            .map(|option| option.label.chars().count())
+            .max()
+            .unwrap_or(0);
+        let option_rows = prompt
+            .options
+            .iter()
+            .enumerate()
+            .map(|(index, option)| {
+                if index != selected {
+                    return 1;
+                }
+                let label_padding = label_width.saturating_sub(option.label.chars().count());
+                let visual = if option.description.is_empty() {
+                    format!("{} (○) {}", index + 1, option.label)
+                } else {
+                    format!(
+                        "{} (○) {}{}  {}",
+                        index + 1,
+                        option.label,
+                        " ".repeat(label_padding),
+                        option.description
+                    )
+                };
+                wrapped_text_rows(&visual, inner_width).max(1)
+            })
+            .fold(0u16, u16::saturating_add)
+            .saturating_add(u16::from(prompt.custom));
+        let source_cap = u16::try_from(u32::from(terminal_height).saturating_mul(33) / 100)
+            .unwrap_or(u16::MAX)
+            .max(8)
+            .min(
+                u16::try_from(u32::from(terminal_height).saturating_mul(80) / 100)
+                    .unwrap_or(u16::MAX),
+            );
+        return chrome_rows
+            .saturating_add(option_rows)
+            .min(source_cap)
+            .saturating_add(LIVE_QUESTION_PROMPT_CHROME_ROWS);
     }
 
     // Draft is packed into the fixed 3-row shell body (see ui_permission_dock). Expanding
@@ -805,9 +857,9 @@ fn live_prompt_block_height(
     };
     if !startup_shell {
         if let Some(permission) = app.active_permission_view() {
-            return permission_prompt_block_height(app, area.width, &permission)
+            return permission_prompt_block_height(app, area.width, terminal_height, &permission)
                 .max(if permission.question_prompts.is_some() {
-                    LIVE_QUESTION_PROMPT_MIN_HEIGHT
+                    0
                 } else {
                     LIVE_PERMISSION_PROMPT_MIN_HEIGHT
                 })
@@ -1291,7 +1343,7 @@ mod tests {
                 plan.shell
             );
             let expected_inset = if width <= DENSE_SESSION_MAX_WIDTH {
-                0
+                1
             } else {
                 STARTUP_COMPOSER_INSET_X
             };

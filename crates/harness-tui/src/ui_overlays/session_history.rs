@@ -129,11 +129,11 @@ fn render_lineage_child_dialog(
     let surface = ui_chrome::command_palette_surface(theme);
     let border_style = Style::default().fg(theme.border.subtle).bg(surface);
     let label_style = Style::default()
-        .fg(Color::Indexed(0))
+        .fg(theme.text.primary)
         .bg(surface)
         .add_modifier(Modifier::BOLD);
     let meta_style = Style::default().fg(theme.text.secondary).bg(surface);
-    let key_style = Style::default().fg(Color::Indexed(0)).bg(surface);
+    let key_style = Style::default().fg(theme.text.primary).bg(surface);
 
     frame.render_widget(
         Block::default()
@@ -261,7 +261,7 @@ fn render_fork_selector_empty_message(frame: &mut Frame, theme: &Theme, area: Re
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
             truncate_plain_text("No matches", usize::from(empty_area.width)),
-            Style::default().fg(Color::Indexed(0)).bg(surface),
+            Style::default().fg(theme.text.primary).bg(surface),
         ))),
         empty_area,
     );
@@ -401,7 +401,7 @@ fn lineage_row_style(theme: &Theme, selected: bool) -> Style {
         ui_chrome::overlay_focus_row_style(theme)
     } else {
         Style::default()
-            .fg(Color::Indexed(0))
+            .fg(theme.text.primary)
             .bg(ui_chrome::command_palette_surface(theme))
     }
 }
@@ -410,10 +410,10 @@ fn fork_selector_row_style(theme: &Theme, selected: bool) -> Style {
     let surface = ui_chrome::command_palette_surface(theme);
     if selected {
         Style::default()
-            .fg(Color::Indexed(15))
-            .bg(ui_chrome::fork_selector_selection_bg())
+            .fg(theme.reference_terminal.primary)
+            .bg(ui_chrome::fork_selector_selection_bg(theme))
     } else {
-        Style::default().fg(Color::Indexed(0)).bg(surface)
+        Style::default().fg(theme.text.primary).bg(surface)
     }
 }
 
@@ -450,7 +450,7 @@ pub(super) fn render_fork_selector_input(
         .fg(ui_chrome::command_palette_muted(theme))
         .bg(surface);
     let cursor_style = Style::default()
-        .fg(ui_chrome::fork_selector_cursor())
+        .fg(ui_chrome::fork_selector_cursor(theme))
         .bg(surface);
     let line = if app.palette_input.is_empty() {
         Line::from(vec![
@@ -506,21 +506,16 @@ fn render_session_history_list(frame: &mut Frame, app: &AppState, theme: &Theme,
         match row {
             SessionHistoryVisualRow::Gap => {}
             SessionHistoryVisualRow::Header(label) => {
+                let header_area = Rect::new(
+                    row_area.x.saturating_add(3),
+                    row_area.y,
+                    row_area.width.saturating_sub(3),
+                    1,
+                );
                 frame.render_widget(
-                    Paragraph::new(Line::from(Span::styled(
-                        truncate_plain_text(label, usize::from(row_area.width.saturating_sub(3))),
-                        Style::default()
-                            .fg(Color::Indexed(0))
-                            .bg(surface)
-                            .add_modifier(Modifier::BOLD),
-                    )))
-                    .style(Style::default().fg(Color::Indexed(0)).bg(surface)),
-                    Rect::new(
-                        row_area.x.saturating_add(3),
-                        row_area.y,
-                        row_area.width.saturating_sub(3),
-                        1,
-                    ),
+                    Paragraph::new(session_history_header_line(label, theme, header_area.width))
+                        .style(Style::default().fg(theme.text.primary).bg(surface)),
+                    header_area,
                 );
             }
             SessionHistoryVisualRow::Entry {
@@ -626,9 +621,10 @@ fn session_history_row(
         row_style
     };
     let pin_marker = if is_pinned { "📌 " } else { "" };
-    let prefix = "  ";
-    let marker = if current { "●" } else { "›" };
+    let prefix = "    ";
+    let marker = if current { "●" } else { " " };
     let marker_gap = 1usize;
+    let trailing_padding = 3usize;
     let footer = if is_armed {
         "Press ctrl+d again to confirm".to_string()
     } else if !entry.catalog.is_resumable {
@@ -641,7 +637,7 @@ fn session_history_row(
         session_history_footer_label(entry)
     };
     let footer_width = footer.chars().count();
-    let title_padding = 1usize;
+    let title_padding = 0usize;
     let fixed_width = prefix
         .chars()
         .count()
@@ -649,7 +645,8 @@ fn session_history_row(
         .saturating_add(marker_gap)
         .saturating_add(title_padding)
         .saturating_add(pin_marker.chars().count())
-        .saturating_add(footer_width);
+        .saturating_add(footer_width)
+        .saturating_add(trailing_padding);
     let title_width = row_width.saturating_sub(fixed_width).min(61);
     let display_title = session_history_display_title(entry);
     let title = truncate_plain_text(&display_title, title_width);
@@ -657,7 +654,7 @@ fn session_history_row(
     let gap_width = row_width.saturating_sub(used_width);
 
     let mut spans = vec![Span::styled(prefix, row_style)];
-    if current {
+    if current || is_selected {
         spans.push(Span::styled(marker.to_string(), marker_style));
     } else {
         spans.push(Span::styled(" ", row_style));
@@ -670,6 +667,7 @@ fn session_history_row(
     if !footer.is_empty() {
         spans.push(Span::styled(footer, footer_style));
     }
+    spans.push(Span::styled(" ".repeat(trailing_padding), row_style));
 
     Line::from(spans)
 }
@@ -677,13 +675,37 @@ fn session_history_row(
 fn session_history_row_style(theme: &Theme, selected: bool) -> Style {
     if selected {
         Style::default()
-            .fg(Color::Indexed(15))
-            .bg(theme.surface.panel_elevated)
+            .fg(theme.reference_terminal.primary)
+            .bg(theme.surface.card)
     } else {
         Style::default()
-            .fg(Color::Indexed(0))
+            .fg(theme.text.primary)
             .bg(ui_chrome::command_palette_surface(theme))
     }
+}
+
+fn session_history_header_line(label: &str, theme: &Theme, width: u16) -> Line<'static> {
+    let surface = ui_chrome::command_palette_surface(theme);
+    let width = usize::from(width);
+    let label = truncate_plain_text(label, width.saturating_sub(3));
+    let rule_width = width
+        .saturating_sub(label.chars().count())
+        .saturating_sub(3);
+    Line::from(vec![
+        Span::styled(
+            label,
+            Style::default()
+                .fg(theme.text.primary)
+                .bg(surface)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" ", Style::default().bg(surface)),
+        Span::styled(
+            "─".repeat(rule_width),
+            Style::default().fg(theme.border.subtle).bg(surface),
+        ),
+        Span::styled("  ", Style::default().bg(surface)),
+    ])
 }
 
 fn render_session_history_actions(frame: &mut Frame, theme: &Theme, area: Rect) {
@@ -692,20 +714,20 @@ fn render_session_history_actions(frame: &mut Frame, theme: &Theme, area: Rect) 
     }
 
     let surface = ui_chrome::command_palette_surface(theme);
-    let muted = Style::default().fg(Color::Indexed(8)).bg(surface);
+    let muted = Style::default().fg(theme.text.tertiary).bg(surface);
     let key = Style::default()
-        .fg(Color::Indexed(0))
+        .fg(theme.text.primary)
         .bg(surface)
         .add_modifier(Modifier::BOLD);
     let spans = vec![
         Span::styled("↑↓".to_string(), key),
-        Span::styled(" nav | ".to_string(), muted),
+        Span::styled(" nav  |  ".to_string(), muted),
         Span::styled("e".to_string(), key),
-        Span::styled(" expand | ".to_string(), muted),
+        Span::styled(" expand  |  ".to_string(), muted),
         Span::styled("/".to_string(), key),
-        Span::styled(" search | ".to_string(), muted),
+        Span::styled(" search  |  ".to_string(), muted),
         Span::styled("f".to_string(), key),
-        Span::styled(" filter | ".to_string(), muted),
+        Span::styled(" filter  |  ".to_string(), muted),
         Span::styled("d".to_string(), key),
         Span::styled(" delete".to_string(), muted),
     ];
@@ -789,7 +811,7 @@ pub(super) fn render_session_rename_dialog(
     let after = &app.session_rename_input[cursor_byte..];
     let input_style = Style::default().fg(theme.text.primary).bg(surface);
     let cursor_style = Style::default()
-        .fg(ui_chrome::fork_selector_cursor())
+        .fg(ui_chrome::fork_selector_cursor(theme))
         .bg(surface);
     frame.render_widget(
         Paragraph::new(Line::from(vec![
@@ -845,5 +867,32 @@ mod tests {
         assert_eq!(line.spans[4].content.as_ref(), "12:34");
         assert_eq!(line.spans[4].style.fg, Some(theme.text.inverse));
         assert_eq!(line.spans[5].content.as_ref(), "   ");
+    }
+
+    #[test]
+    fn session_history_selection_uses_reference_neutral_card_fill() {
+        let theme = Theme::harness_chat();
+
+        let style = session_history_row_style(&theme, true);
+
+        assert_eq!(style.bg, Some(theme.surface.card));
+        assert_eq!(style.bg, Some(Color::Rgb(0x55, 0x57, 0x53)));
+        assert_eq!(style.fg, Some(Color::Indexed(15)));
+    }
+
+    #[test]
+    fn session_history_header_draws_reference_divider_to_right_edge() {
+        let theme = Theme::harness_chat();
+
+        let line = session_history_header_line("Projects-agent-harness", &theme, 75);
+        let rendered = line
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect::<String>();
+
+        assert_eq!(rendered.chars().count(), 75);
+        assert!(rendered.starts_with("Projects-agent-harness ─"));
+        assert!(rendered.ends_with("  "));
     }
 }

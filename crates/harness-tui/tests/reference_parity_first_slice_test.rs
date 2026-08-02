@@ -18,6 +18,8 @@ use ratatui::layout::Rect;
 
 const W: u16 = 120;
 const H: u16 = 32;
+const DRAFT_TEXT: &str = "Browser QA draft";
+const DRAFT_FOOTER: &str = "Enter:send  │  Shift+Tab:mode  │  Ctrl+x:shortcuts";
 
 fn startup_app() -> AppState {
     let mut app = AppState::new_startup(Vec::new(), None);
@@ -129,7 +131,7 @@ fn p0_start_01_startup_has_bordered_welcome_and_composer() {
 fn p0_start_03_draft_clears_welcome_and_keeps_composer() {
     // arrange
     let mut app = startup_app();
-    app.composer.prompt_buffer = "Browser QA draft".to_string();
+    app.composer.prompt_buffer = DRAFT_TEXT.to_string();
     app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
 
     // act
@@ -209,7 +211,7 @@ fn p0_comp_01_composer_is_three_row_bordered_strip() {
     );
 }
 
-/// Breadcrumb + clipboard warning band (P0-START-02).
+/// Breadcrumb + reference-shaped top spacing (P0-START-02).
 #[test]
 fn p0_start_02_top_chrome_not_only_bottom_path_bar() {
     // arrange
@@ -227,43 +229,35 @@ fn p0_start_02_top_chrome_not_only_bottom_path_bar() {
         "P0-START-02: top breadcrumb or welcome chrome required\n{rendered}"
     );
     assert!(
-        rendered.contains("Clipboard may be unreachable."),
-        "P0-START-02: clipboard warning band required at startup\n{rendered}"
-    );
-    assert!(
-        rendered.contains("/terminal-setup") || rendered.contains("terminal-setup"),
-        "P0-START-02: clipboard warning second line required\n{rendered}"
+        !rendered.contains("Clipboard may be unreachable.") && !rendered.contains("terminal-setup"),
+        "P0-START-02: startup chrome must not insert non-reference warning rows\n{rendered}"
     );
     let lines: Vec<&str> = rendered.lines().collect();
-    let clip = lines
-        .iter()
-        .find(|line| line.contains("Clipboard may be unreachable."))
-        .expect("clipboard warning line");
-    let setup = lines
-        .iter()
-        .find(|line| line.contains("terminal-setup"))
-        .expect("terminal-setup line");
-    let clip_lead = clip.len() - clip.trim_start_matches(' ').len();
-    let setup_lead = setup.len() - setup.trim_start_matches(' ').len();
-    assert!(
-        clip_lead > 20 && clip_lead < 70,
-        "P0-START-02: clipboard line must be center-biased, not flush-right (lead={clip_lead}; freeze≈46)\n{clip}"
-    );
-    assert!(
-        setup_lead > 15 && setup_lead < 65,
-        "P0-START-02: setup line must be center-biased, not flush-right (lead={setup_lead})\n{setup}"
-    );
-    assert!(
-        clip_lead > setup_lead,
-        "P0-START-02: shorter clipboard line should lead more than longer setup line when centered (clip={clip_lead} setup={setup_lead})"
-    );
     let welcome_top = lines
         .iter()
         .position(|line| line.contains('╭') && line.contains('─'))
         .expect("welcome top border");
-    assert!(
-        welcome_top >= 6,
-        "P0-START-02: welcome panel must sit below breadcrumb+warning band (row {welcome_top})\n{rendered}"
+    assert_eq!(
+        welcome_top, 4,
+        "P0-START-02: welcome panel top must match the 120x32 reference\n{rendered}"
     );
     let _ = line_with(&rendered, "❯");
+}
+
+/// P0-KEY-01: the draft footer keeps the current Grok shortcut grammar.
+#[test]
+fn p0_key_01_draft_footer_matches_reference_grammar() {
+    // arrange
+    let mut app = startup_app();
+    app.composer.prompt_buffer = DRAFT_TEXT.to_string();
+    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
+
+    // act
+    let rendered = render(&app);
+
+    // assert
+    assert!(
+        rendered.contains(DRAFT_FOOTER),
+        "P0-KEY-01: draft footer must retain the current shortcut grammar\n{rendered}"
+    );
 }

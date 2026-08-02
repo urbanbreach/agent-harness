@@ -2,9 +2,9 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use harness_core::auth::CredentialStore;
+use harness_core::auth::{CredentialStore, StoredCredentialKind};
 use harness_core::clock::Determinism;
-use harness_core::config::{HarnessConfig, ShellAllowlist};
+use harness_core::config::{HarnessConfig, ProviderConfig, ShellAllowlist};
 use harness_core::coord::CoordinatorConfig;
 use harness_tools::coordinator_registry;
 use harness_tui::app::{LaunchMetadata, TogglesConfig};
@@ -282,6 +282,15 @@ fn resolve_live_settings_with_deps(
     } else {
         launch_metadata
     };
+    let launch_metadata = if uses_oauth_credential(
+        &launch_metadata,
+        live_config.as_ref(),
+        deps.credential_store,
+    ) {
+        launch_metadata.with_oauth_authentication()
+    } else {
+        launch_metadata
+    };
     let toggles = runtime_toggles_config(live_config.as_ref(), &workspace_root);
 
     Ok(LiveSettings {
@@ -297,6 +306,29 @@ fn resolve_live_settings_with_deps(
         launch_mode_label,
         toggles,
     })
+}
+
+fn uses_oauth_credential(
+    launch_metadata: &LaunchMetadata,
+    config: Option<&HarnessConfig>,
+    credential_store: Option<&CredentialStore>,
+) -> bool {
+    let Some(ProviderConfig::OpenAiCompatible(provider)) =
+        config.and_then(|config| config.providers.get(launch_metadata.provider()))
+    else {
+        return false;
+    };
+    let Some(auth_provider) = provider.auth_provider.as_ref() else {
+        return false;
+    };
+    credential_store
+        .and_then(|store| store.load(auth_provider).ok().flatten())
+        .is_some_and(|credential| {
+            matches!(
+                credential.kind,
+                StoredCredentialKind::Oauth | StoredCredentialKind::WellKnown
+            )
+        })
 }
 
 pub(super) fn launch_metadata_for_mode(

@@ -1,14 +1,21 @@
 use super::*;
 use crate::UnwrapOrAbort;
 
-pub(super) fn space_on_transcript_focus_focuses_prompt_for_typing() {
+pub(super) fn space_on_transcript_focus_toggles_prompt_without_inserting() {
     let mut app = AppState::new_live(None, false, None);
     app.focus = Focus::Details;
     assert!(app.composer.prompt_buffer.is_empty());
 
+    // Space is bound to TogglePromptFocus: it toggles focus to Prompt without
+    // inserting a space character.
     app.handle_key(key(KeyCode::Char(' ')));
 
     assert_eq!(app.focus, Focus::Prompt);
+    assert_eq!(app.composer.prompt_buffer, "");
+    assert_eq!(app.composer.prompt_cursor, 0);
+
+    // A subsequent space (with prompt focus) inserts normally.
+    app.handle_key(key(KeyCode::Char(' ')));
     assert_eq!(app.composer.prompt_buffer, " ");
     assert_eq!(app.composer.prompt_cursor, 1);
 }
@@ -109,6 +116,7 @@ pub(super) fn details_drawer_toggles_without_stealing_transcript_state() {
 pub(super) fn mouse_wheel_scrolls_transcript_without_stealing_focus() {
     let mut app = AppState::new_live(None, false, None);
     app.focus = Focus::Prompt;
+    app.set_mouse_wheel_lines_per_tick(1);
 
     app.handle_mouse(
         MouseEvent {
@@ -123,7 +131,7 @@ pub(super) fn mouse_wheel_scrolls_transcript_without_stealing_focus() {
         None,
     );
     assert!(!app.transcript_view.follow_mode);
-    assert_eq!(app.transcript_view.transcript_scroll, 3);
+    assert_eq!(app.transcript_view.transcript_scroll, 1);
     assert_eq!(app.focus, Focus::Prompt);
 
     app.handle_mouse(
@@ -462,6 +470,7 @@ pub(super) fn diff_hunk_navigation_advances_and_retreats_between_hunks() {
         }),
     ));
     app.set_patch_file_output_expanded_for_test("tc_diff_nav", "docs/demo.md", true);
+    app.toggle_tool_output_for_test("tc_diff_nav");
 
     let frame_area = Rect::new(0, 0, 100, 14);
     app.set_frame_area(frame_area);

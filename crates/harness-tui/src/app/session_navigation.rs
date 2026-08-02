@@ -209,7 +209,7 @@ impl AppState {
     fn slash_command_available(&self, command: &str) -> bool {
         match command {
             "new" | "status" | "dashboard" | "toggles" | "auth" | "connect" | "help" | "exit"
-            | "mcps" | "timestamps" | "thinking" | "settings" | "view-plan" | "feedback" => true,
+            | "mcps" | "timestamps" | "thinking" | "settings" | "view-plan" => true,
             "sessions" | "replay" => !self.replay_mode,
             "fork" => !self.startup_mode && !self.replay_mode,
             "clone" => !self.startup_mode && self.lineage_write_blocked_reason().is_none(),
@@ -237,6 +237,7 @@ impl AppState {
         self.transcript_view.follow_mode = true;
         self.active_tab = Tab::Run;
         self.live_details_drawer_open = false;
+        self.secondary_surfaces.close_status_dialog();
         self.startup_mode = true;
         self.startup_launcher_action = StartupLauncherAction::NewSession;
         self.status_banner = None;
@@ -409,11 +410,7 @@ impl AppState {
                 self.restore_slash_draft(preserved_draft);
                 self.open_plan_view();
             }
-            "feedback" => {
-                self.restore_slash_draft(preserved_draft);
-                self.execute_action(Action::Help);
-            }
-            "exit" => self.execute_action(Action::Quit),
+            "exit" => self.quit_immediately(),
             _ => {}
         }
     }

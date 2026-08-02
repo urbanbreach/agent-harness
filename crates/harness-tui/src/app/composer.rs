@@ -23,6 +23,7 @@ pub struct ComposerState {
     pub(super) undo_stack: Vec<ComposerSnapshot>,
     pub(super) redo_stack: Vec<ComposerSnapshot>,
     pub shell_mode: bool,
+    pub multiline_mode: bool,
 }
 
 impl ComposerState {

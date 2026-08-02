@@ -27,6 +27,8 @@ pub enum Action {
     Quit,
     /// Move focus to the next pane
     FocusNext,
+    /// Toggle focus between the prompt and scrollback
+    TogglePromptFocus,
     /// Move focus to the previous pane
     FocusPrev,
     /// Open the command palette
@@ -36,17 +38,23 @@ pub enum Action {
     /// Open the status dialog (operator status surface)
     OpenStatusDialog,
     ToggleTerminalPanel,
+    ToggleTasks,
     /// Toggle follow mode
     ToggleFollow,
     /// Submit the prompt
     SubmitPrompt,
+    /// Cancel the active turn and submit the current prompt immediately
+    InterjectPrompt,
     InsertNewline,
+    ToggleMultiline,
     /// Clear the prompt
     ClearPrompt,
     /// Scroll up in the details pane
     ScrollUp,
     /// Scroll down in the details pane
     ScrollDown,
+    /// Scroll down by half the transcript viewport
+    HalfPageDown,
     /// Return to the transcript-first session shell
     CloseReviewSurface,
     OpenEventLog,
@@ -63,6 +71,7 @@ pub enum Action {
     DiffHunkPrevious,
     AgentCycle,
     AgentCycleReverse,
+    CycleMode,
     VariantCycle,
     AllowPermission,
     /// Open always-approve confirm for the active permission modal
@@ -132,17 +141,22 @@ impl Action {
         match self {
             Action::Quit => Some("quit"),
             Action::FocusNext => Some("focus_next"),
+            Action::TogglePromptFocus => Some("toggle_prompt_focus"),
             Action::FocusPrev => Some("focus_prev"),
             Action::Palette => None,
             Action::Help => Some("help"),
             Action::OpenStatusDialog => Some("open_status_dialog"),
             Action::ToggleTerminalPanel => Some("toggle_terminal_panel"),
+            Action::ToggleTasks => Some("toggle_tasks"),
             Action::ToggleFollow => Some("toggle_follow"),
             Action::SubmitPrompt => Some("submit_prompt"),
+            Action::InterjectPrompt => Some("interject_prompt"),
             Action::InsertNewline => Some("insert_newline"),
+            Action::ToggleMultiline => Some("toggle_multiline"),
             Action::ClearPrompt => Some("clear_prompt"),
             Action::ScrollUp => None,
             Action::ScrollDown => None,
+            Action::HalfPageDown => None,
             Action::CloseReviewSurface => Some("close_review_surface"),
             Action::OpenEventLog => Some("open_event_log"),
             Action::MoveDown => Some("move_down"),
@@ -156,6 +170,7 @@ impl Action {
             Action::DiffHunkPrevious => Some("diff_hunk_previous"),
             Action::AgentCycle => Some("agent_cycle"),
             Action::AgentCycleReverse => Some("agent_cycle_reverse"),
+            Action::CycleMode => Some("cycle_mode"),
             Action::VariantCycle => Some("cycle_variant"),
             Action::AllowPermission => Some("allow_permission"),
             Action::AlwaysApprovePermission => Some("always_approve_permission"),
@@ -234,17 +249,22 @@ impl Action {
         match self {
             Action::Quit => "quit",
             Action::FocusNext => "focus_next",
+            Action::TogglePromptFocus => "toggle_prompt_focus",
             Action::FocusPrev => "focus_prev",
             Action::Palette => "palette",
             Action::Help => "help",
             Action::OpenStatusDialog => "open_status_dialog",
             Action::ToggleTerminalPanel => "toggle_terminal_panel",
+            Action::ToggleTasks => "toggle_tasks",
             Action::ToggleFollow => "toggle_follow",
             Action::SubmitPrompt => "submit_prompt",
+            Action::InterjectPrompt => "interject_prompt",
             Action::InsertNewline => "insert_newline",
+            Action::ToggleMultiline => "toggle_multiline",
             Action::ClearPrompt => "clear_prompt",
             Action::ScrollUp => "scroll_up",
             Action::ScrollDown => "scroll_down",
+            Action::HalfPageDown => "half_page_down",
             Action::CloseReviewSurface => "close_review_surface",
             Action::OpenEventLog => "open_event_log",
             Action::MoveDown => "move_down",
@@ -258,6 +278,7 @@ impl Action {
             Action::DiffHunkPrevious => "diff_hunk_previous",
             Action::AgentCycle => "agent_cycle",
             Action::AgentCycleReverse => "agent_cycle_reverse",
+            Action::CycleMode => "cycle_mode",
             Action::VariantCycle => "variant_cycle",
             Action::AllowPermission => "allow_permission",
             Action::AlwaysApprovePermission => "always_approve_permission",
@@ -360,17 +381,22 @@ impl FromStr for Action {
         match s {
             "quit" => Ok(Action::Quit),
             "focus_next" => Ok(Action::FocusNext),
+            "toggle_prompt_focus" => Ok(Action::TogglePromptFocus),
             "focus_prev" => Ok(Action::FocusPrev),
             "palette" => Ok(Action::Palette),
             "help" => Ok(Action::Help),
             "open_status_dialog" | "toggle_operator_sidebar" => Ok(Action::OpenStatusDialog),
             "toggle_terminal_panel" => Ok(Action::ToggleTerminalPanel),
+            "toggle_tasks" => Ok(Action::ToggleTasks),
             "toggle_follow" => Ok(Action::ToggleFollow),
             "submit_prompt" => Ok(Action::SubmitPrompt),
+            "interject_prompt" => Ok(Action::InterjectPrompt),
             "insert_newline" => Ok(Action::InsertNewline),
+            "toggle_multiline" => Ok(Action::ToggleMultiline),
             "clear_prompt" => Ok(Action::ClearPrompt),
             "scroll_up" => Ok(Action::ScrollUp),
             "scroll_down" => Ok(Action::ScrollDown),
+            "half_page_down" => Ok(Action::HalfPageDown),
             "close_review_surface" => Ok(Action::CloseReviewSurface),
             "open_event_log" => Ok(Action::OpenEventLog),
             "move_down" => Ok(Action::MoveDown),
@@ -384,6 +410,7 @@ impl FromStr for Action {
             "diff_hunk_previous" => Ok(Action::DiffHunkPrevious),
             "agent_cycle" => Ok(Action::AgentCycle),
             "agent_cycle_reverse" => Ok(Action::AgentCycleReverse),
+            "cycle_mode" => Ok(Action::CycleMode),
             "variant_cycle" => Ok(Action::VariantCycle),
             "allow_permission" => Ok(Action::AllowPermission),
             "always_approve_permission" => Ok(Action::AlwaysApprovePermission),
@@ -581,11 +608,11 @@ impl KeyMap {
 
         keymap.bind(
             KeyBinding::new(KeyCode::Tab, KeyModifiers::NONE),
-            Action::FocusNext,
+            Action::TogglePromptFocus,
         );
         keymap.bind(
             KeyBinding::new(KeyCode::BackTab, KeyModifiers::NONE),
-            Action::VariantCycle,
+            Action::CycleMode,
         );
         keymap.bind(
             KeyBinding::new(KeyCode::Tab, KeyModifiers::CONTROL),
@@ -615,7 +642,7 @@ impl KeyMap {
         );
         keymap.bind(
             KeyBinding::new(KeyCode::Char('d'), KeyModifiers::CONTROL),
-            Action::Quit,
+            Action::HalfPageDown,
         );
         keymap.bind(
             KeyBinding::new(KeyCode::Char('q'), KeyModifiers::NONE),
@@ -623,7 +650,11 @@ impl KeyMap {
         );
         keymap.bind(
             KeyBinding::new(KeyCode::Char(' '), KeyModifiers::NONE),
-            Action::ToggleFollow,
+            Action::TogglePromptFocus,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('i'), KeyModifiers::NONE),
+            Action::TogglePromptFocus,
         );
         keymap.bind(
             KeyBinding::new(KeyCode::Char('r'), KeyModifiers::NONE),
@@ -737,15 +768,19 @@ impl KeyMap {
         );
         keymap.bind(
             KeyBinding::new(KeyCode::Char('j'), KeyModifiers::CONTROL),
-            Action::InsertNewline,
+            Action::ScrollDown,
         );
         keymap.bind(
             KeyBinding::new(KeyCode::Enter, KeyModifiers::CONTROL),
-            Action::InsertNewline,
+            Action::InterjectPrompt,
         );
         keymap.bind(
             KeyBinding::new(KeyCode::Enter, KeyModifiers::ALT),
             Action::InsertNewline,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('m'), KeyModifiers::CONTROL),
+            Action::ToggleMultiline,
         );
         keymap.bind(
             KeyBinding::new(KeyCode::Esc, KeyModifiers::NONE),
@@ -915,7 +950,7 @@ impl KeyMap {
 
         keymap.bind(
             KeyBinding::new(KeyCode::Char('g'), KeyModifiers::CONTROL),
-            Action::FirstMessage,
+            Action::ToggleTasks,
         );
         keymap.bind(
             KeyBinding::new(KeyCode::Home, KeyModifiers::CONTROL),

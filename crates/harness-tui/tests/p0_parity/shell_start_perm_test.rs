@@ -45,8 +45,8 @@ fn canonical_viewports_allocate_full_width_transcript_and_bottom_composer() {
             transcript.width, plan.shell.width,
             "P0-GEOM-01: transcript must span full shell width at {width}x{height}"
         );
-        // Freeze-matched horizontal inset (lead=2); dense width ≤60 keeps inset 0.
-        let composer_inset = if width <= 60 { 0 } else { 2 };
+        // Freeze-matched inset: one cell at 60 columns, two cells above it.
+        let composer_inset = if width <= 60 { 1 } else { 2 };
         assert_eq!(
             composer.x,
             plan.shell.x.saturating_add(composer_inset),
@@ -65,7 +65,7 @@ fn canonical_viewports_allocate_full_width_transcript_and_bottom_composer() {
         );
 
         let dock_bottom = match plan.disclosure {
-            Some(disclosure) => disclosure.y + disclosure.height + 1,
+            Some(disclosure) => disclosure.y + disclosure.height + if width <= 60 { 0 } else { 1 },
             None => composer.y + composer.height,
         };
         assert_eq!(

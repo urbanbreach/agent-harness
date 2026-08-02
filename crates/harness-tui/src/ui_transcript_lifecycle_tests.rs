@@ -136,8 +136,8 @@ fn streaming_turn_with_own_user_message_does_not_render_queued_badge() {
         "a turn should not mark its own user message as queued once it is the active assistant turn: {lines:#?}"
     );
     assert!(
-        lines.iter().any(|line| line.contains("gpt-5.4-mini")),
-        "streaming follow-up should keep the active assistant footer: {lines:#?}"
+        lines.iter().all(|line| !line.contains("gpt-5.4-mini")),
+        "streaming state must not add an assistant footer to the scrollback: {lines:#?}"
     );
 }
 
@@ -216,8 +216,8 @@ fn queued_user_followup_keeps_active_footer_on_streaming_turn() {
     ));
 
     assert!(
-        lines.iter().any(|line| line.contains("gpt-5.4-mini")),
-        "active assistant footer should stay on the in-flight turn: {lines:#?}"
+        lines.iter().all(|line| !line.contains("gpt-5.4-mini")),
+        "active assistant chrome belongs in the prompt-adjacent row: {lines:#?}"
     );
     assert!(
         lines.iter().any(|line| line.contains(" QUEUED ")),
@@ -367,6 +367,7 @@ fn startup_lifecycle_text_participates_in_selection_copy() {
             line.contains("Harness")
                 || line.contains("New worktree")
                 || line.contains("New session")
+                || line.contains('⣿')
                 || line.contains("███████║")
                 || line.contains("██╗  ██╗")
         })
@@ -397,6 +398,7 @@ fn startup_lifecycle_text_participates_in_selection_copy() {
         copied.contains("Harness")
             || copied.contains("New worktree")
             || copied.contains("New session")
+            || copied.contains('⣿')
             || copied.contains("███████║")
             || copied.contains("██╗  ██╗"),
         "selection copy should include welcome panel text\n{copied}"

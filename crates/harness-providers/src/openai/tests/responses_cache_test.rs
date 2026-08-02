@@ -113,6 +113,44 @@ async fn openai_responses_sse_parser_handles_multibyte_utf8_split_across_chunks(
 }
 
 #[tokio::test]
+async fn openai_responses_waits_for_late_terminal_usage_before_finishing() {
+    // arrange
+    let transcript = concat!(
+        "data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\"}}\n\n",
+        "data: {\"type\":\"response.done\",\"response\":{\"status\":\"completed\",\"usage\":{\"input_tokens\":8000,\"output_tokens\":840,\"total_tokens\":8840}}}\n\n",
+        "data: [DONE]\n\n",
+    );
+    let transport =
+        ScriptedOpenAiTransport::new([ScriptedOpenAiResponse::sse(transcript.to_string())]);
+    let provider = provider_for_transport_with_mode(
+        Arc::clone(&transport),
+        "test-secret-key",
+        OpenAiApiMode::Responses,
+    );
+
+    // act
+    let events = collect_events(&provider, basic_request("gpt-5.5")).await;
+
+    // assert
+    let terminal_events = events
+        .iter()
+        .filter(|event| matches!(event, ProviderStreamEvent::DoneWithMetadata { .. }))
+        .collect::<Vec<_>>();
+    assert_eq!(terminal_events.len(), 1, "events: {events:?}");
+    assert!(matches!(
+        terminal_events.first(),
+        Some(ProviderStreamEvent::DoneWithMetadata {
+            usage: Some(CompletionUsage {
+                prompt_tokens: 8_000,
+                completion_tokens: 840,
+                total_tokens: 8_840,
+            }),
+            ..
+        })
+    ));
+}
+
+#[tokio::test]
 async fn openai_compatible_request_uses_stable_clamped_prompt_cache_key() {
     // arrange
     // act

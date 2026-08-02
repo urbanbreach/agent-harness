@@ -9,14 +9,13 @@ expression: trim_trailing_snapshot_whitespace(&rendered)
      ❯ Inspect deterministic sidebar
 
 
-     ◆ Thought for 0.0s
-
      Assistant verified the rendered shell.
-     ◈ Web Search "harness sidebar"
 
-  ❙  ◈ LSP goto_definition src/ui_secondary.rs
+     ◆ Web Search "harness sidebar"  ▸
+     ◆ LSP goto_definition src/ui_secondary.rs  ▸
 
      Worked for 0.0s.
+
 
 
 
@@ -30,4 +29,5 @@ expression: trim_trailing_snapshot_whitespace(&rendered)
   ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
   │ ❯                                                                                                                                                        │
   ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── gpt-5.4-mini ─╯
+
   Shift+Tab:mode  │  Ctrl+x:shortcuts

@@ -15,8 +15,12 @@ fn task_detail_blocks_text(blocks: &[TranscriptToolCallDetailBlock]) -> String {
 
 #[path = "ui_transcript_exact_tests/activity_flow.rs"]
 mod activity_flow;
+#[path = "ui_transcript_exact_tests/command_groups.rs"]
+mod command_groups;
 #[path = "ui_transcript_exact_tests/edit_diffs.rs"]
 mod edit_diffs;
+#[path = "ui_transcript_exact_tests/edit_folds.rs"]
+mod edit_folds;
 #[path = "ui_transcript_exact_tests/failure_shell.rs"]
 mod failure_shell;
 #[path = "ui_transcript_exact_tests/layout_permissions.rs"]

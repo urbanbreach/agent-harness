@@ -12,10 +12,10 @@ pub mod copy;
 pub mod dashboard;
 pub mod exit;
 pub mod export;
-pub mod feedback;
 pub mod follow;
 pub mod fork;
 pub mod help;
+pub mod import;
 pub mod mcps;
 pub mod models;
 pub mod new;
@@ -61,6 +61,6 @@ pub fn all_commands() -> &'static [SlashCommandLeaf] {
         settings::LEAF,
         view_plan::LEAF,
         dashboard::LEAF,
-        feedback::LEAF,
+        import::LEAF,
     ]
 }

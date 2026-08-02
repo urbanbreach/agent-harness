@@ -139,6 +139,25 @@ fn connect_dialog_renders_when_terminal_is_narrow() {
 }
 
 #[test]
+fn connect_dialog_waiting_panel_preserves_oauth_url_and_code() {
+    // arrange
+    let mut app = AppState::new_live(None, false, None);
+    app.open_connect_dialog();
+    app.connect_dialog.step = ConnectDialogStep::Waiting;
+    app.append_connect_dialog_authorization_detail(
+        "auth backend output: Open https://auth.openai.com/codex/device",
+    );
+    app.append_connect_dialog_authorization_detail("auth backend output: Enter code USER-123");
+
+    // act
+    let rendered = render_plain(&app, 100, 30);
+
+    // assert
+    assert!(rendered.contains("https://auth.openai.com/codex/device"));
+    assert!(rendered.contains("Enter code USER-123"));
+}
+
+#[test]
 fn filtered_provider_enter_selects_filtered_provider() {
     // arrange
     // act

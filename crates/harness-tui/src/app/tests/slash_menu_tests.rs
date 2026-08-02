@@ -1,5 +1,7 @@
 use super::*;
 use crate::UnwrapOrAbort;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 pub(super) fn slash_menu_closes_after_whitespace() {
     let mut app = AppState::new_startup(Vec::new(), None);
@@ -85,7 +87,9 @@ pub(super) fn slash_alias_executes_matching_command_without_menu() {
     }
     app.handle_key(key(KeyCode::Enter));
 
+    // Slash commands dispatch quit directly, without keyboard confirmation.
     assert!(app.should_quit);
+    assert!(!app.quit_confirmation_pending);
     assert_eq!(
         intents.lock().unwrap_or_abort().as_slice(),
         &[UiIntent::QuitRequested]
@@ -133,7 +137,7 @@ pub(super) fn slash_escape_clears_token_or_restores_prior_draft() {
     assert!(!with_draft.slash_visible);
 }
 
-pub(super) fn slash_exit_matches_quit_requested_behavior() {
+pub(super) fn slash_exit_quits_immediately_without_key_confirmation() {
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
         let intents = Arc::clone(&intents);
@@ -149,10 +153,50 @@ pub(super) fn slash_exit_matches_quit_requested_behavior() {
     app.handle_key(key(KeyCode::Enter));
 
     assert!(app.should_quit);
+    assert!(!app.quit_confirmation_pending);
     assert_eq!(
         intents.lock().unwrap_or_abort().as_slice(),
         &[UiIntent::QuitRequested]
     );
+}
+
+pub(super) fn ctrl_q_requires_the_same_key_within_grok_confirmation_window() {
+    let now = Arc::new(Mutex::new(Instant::now()));
+    let mut app = AppState::new_startup(Vec::new(), None);
+    let clock = Arc::clone(&now);
+    app.set_now_fn_for_test(Arc::new(move || *clock.lock().unwrap_or_abort()));
+    let ctrl_q = key_with_modifiers(crossterm::event::KeyCode::Char('q'), KeyModifiers::CONTROL);
+
+    app.handle_key(ctrl_q);
+    assert!(!app.should_quit);
+    assert!(app.quit_confirmation_pending);
+
+    *now.lock().unwrap_or_abort() += Duration::from_millis(1_000);
+    app.handle_key(ctrl_q);
+    assert!(!app.should_quit);
+    assert!(app.quit_confirmation_pending);
+
+    app.handle_key(key(KeyCode::Char('a')));
+    assert!(!app.quit_confirmation_pending);
+
+    app.handle_key(ctrl_q);
+    app.handle_key(ctrl_q);
+    assert!(app.should_quit);
+}
+
+pub(super) fn ctrl_q_different_key_clears_pending_confirmation() {
+    let mut app = AppState::new_startup(Vec::new(), None);
+    let ctrl_q = key_with_modifiers(crossterm::event::KeyCode::Char('q'), KeyModifiers::CONTROL);
+
+    app.handle_key(ctrl_q);
+    app.handle_key(key(KeyCode::Char('a')));
+
+    assert!(!app.should_quit);
+    assert!(!app.quit_confirmation_pending);
+
+    app.handle_key(ctrl_q);
+    app.handle_key(ctrl_q);
+    assert!(app.should_quit);
 }
 
 pub(super) fn resume_history_surface_uses_meaningful_session_title() {

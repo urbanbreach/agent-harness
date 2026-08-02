@@ -435,9 +435,8 @@ pub(super) fn tool_call_finished_renders_truncated_output() {
         .unwrap_or_abort();
 
     let debug = format!("{:?}", terminal.backend().buffer());
-    // Waiting-state packing: completed reads use count form ("Read 1 file"), not path form.
     assert!(
-        debug.contains("Read 1 file"),
+        debug.contains("Read test.txt"),
         "transcript must show tool title"
     );
     assert!(

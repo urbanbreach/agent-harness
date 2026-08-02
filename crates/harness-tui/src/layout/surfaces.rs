@@ -62,7 +62,29 @@ pub(crate) struct PermissionDockLayout {
     pub header_gap: u16,
     pub stacked_hint_min_width: u16,
     pub stacked_hint_min_action_width: u16,
+    pub question_content_padding: EdgeInsets,
+    pub question_chrome_gap: u16,
+    pub question_footer_height: u16,
+    pub question_tab_rows: u16,
+    pub question_label_gap_rows: u16,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct HelpModalLayout {
+    pub width_numerator: u32,
+    pub width_denominator: u32,
+    pub max_width: u16,
+    pub min_width: u16,
+    pub vertical_margin: u16,
+}
+
+pub(crate) const HELP_MODAL_LAYOUT: HelpModalLayout = HelpModalLayout {
+    width_numerator: 7,
+    width_denominator: 10,
+    max_width: 80,
+    min_width: 44,
+    vertical_margin: 4,
+};
 
 const PERMISSION_DOCK_RAIL_WIDTH: u16 = 1;
 // Freeze PERM: options(4) + post blank(1) + empty(1) + hints(1) + trailing blank(1).
@@ -90,6 +112,11 @@ pub(crate) fn permission_dock_layout(area: Rect, is_question: bool) -> Permissio
             header_gap: 0,
             stacked_hint_min_width: PERMISSION_DOCK_STACKED_HINT_MIN_WIDTH,
             stacked_hint_min_action_width: PERMISSION_DOCK_STACKED_HINT_MIN_ACTION_WIDTH,
+            question_content_padding: EdgeInsets::new(2, 2, 1, 1),
+            question_chrome_gap: 1,
+            question_footer_height: 1,
+            question_tab_rows: 2,
+            question_label_gap_rows: 2,
         }
     } else {
         PermissionDockLayout {
@@ -101,6 +128,11 @@ pub(crate) fn permission_dock_layout(area: Rect, is_question: bool) -> Permissio
             header_gap: 1,
             stacked_hint_min_width: PERMISSION_DOCK_STACKED_HINT_MIN_WIDTH,
             stacked_hint_min_action_width: PERMISSION_DOCK_STACKED_HINT_MIN_ACTION_WIDTH,
+            question_content_padding: EdgeInsets::ZERO,
+            question_chrome_gap: 0,
+            question_footer_height: 0,
+            question_tab_rows: 0,
+            question_label_gap_rows: 0,
         }
     }
 }

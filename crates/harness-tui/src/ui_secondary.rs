@@ -78,7 +78,8 @@ enum SubagentRailStatus {
     Error,
 }
 
-const SUBAGENT_SPINNER_FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+const SUBAGENT_SPINNER_FRAMES: [&str; 8] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧"];
+const SUBAGENT_SPINNER_TICK_DIVISOR: usize = 4;
 
 impl OperatorRailItem {
     fn text(&self) -> &str {
@@ -172,7 +173,8 @@ impl SubagentRailStatus {
     fn glyph(self, animation_phase: usize) -> &'static str {
         match self {
             Self::Queued | Self::Running => {
-                SUBAGENT_SPINNER_FRAMES[animation_phase % SUBAGENT_SPINNER_FRAMES.len()]
+                let frame = animation_phase / SUBAGENT_SPINNER_TICK_DIVISOR;
+                SUBAGENT_SPINNER_FRAMES[frame % SUBAGENT_SPINNER_FRAMES.len()]
             }
             Self::Completed => "✓",
             Self::Error => "✗",

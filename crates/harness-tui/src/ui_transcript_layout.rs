@@ -16,9 +16,9 @@ use super::ui_transcript_surface::{
     transcript_surface_leading_gap, transcript_surface_render_width,
 };
 
-const SELECTED_RAIL_GLYPH: &str = "❙";
+const SELECTED_RAIL_GLYPH: &str = "┃";
 
-const TRANSCRIPT_SECTION_GAP_HEIGHT: usize = 2;
+const TRANSCRIPT_SECTION_GAP_HEIGHT: usize = 1;
 
 #[derive(Debug, Clone)]
 pub(super) struct MeasuredTranscriptSection {
@@ -114,8 +114,23 @@ pub(super) fn measure_transcript_layout<Section>(
             });
             previous_surface_kind = Some(surface.kind);
         }
-        let leading_gap_height =
-            usize::from(!measured_sections.is_empty()) * TRANSCRIPT_SECTION_GAP_HEIGHT;
+        let previous_ends_with_body =
+            measured_sections
+                .last()
+                .and_then(|section: &MeasuredTranscriptSection| {
+                    section.surfaces.iter().rev().find(|surface| {
+                        surface.kind != TranscriptRenderSurfaceKind::AssistantFooter
+                    })
+                })
+                .is_some_and(|surface| surface.kind == TranscriptRenderSurfaceKind::AssistantBody);
+        let current_starts_with_body = measured_surfaces
+            .first()
+            .is_some_and(|surface| surface.kind == TranscriptRenderSurfaceKind::AssistantBody);
+        let leading_gap_height = if previous_ends_with_body && current_starts_with_body {
+            0
+        } else {
+            usize::from(!measured_sections.is_empty()) * TRANSCRIPT_SECTION_GAP_HEIGHT
+        };
         let measured_section = MeasuredTranscriptSection {
             top_row,
             leading_gap_height,
@@ -164,14 +179,10 @@ pub(super) fn render_transcript_layout_surfaces(
     // Reference permission state: pin pending-permission Run Write footer to viewport bottom above dock.
     let footer_pin = pending_permission_footer_pin_delta(layout, viewport_height, scroll_top);
     // Reference scroll state: keep the latest turn's user prompt sticky at the top while body scrolls.
-    // Freeze packs one blank separator under the sticky user before inventory (f39 at L9, not L8).
-    const STICKY_USER_SEPARATOR_ROWS: usize = 1;
+    // The measured surface gap already supplies the single blank row under a sticky user.
     let sticky_user = sticky_user_surface(layout, scroll_top, viewport_height);
     let sticky_height = sticky_user.map(|(_, _, surface)| surface.height.min(viewport_height));
-    let sticky_block_height = sticky_height.map(|h| {
-        h.saturating_add(STICKY_USER_SEPARATOR_ROWS)
-            .min(viewport_height)
-    });
+    let sticky_block_height = sticky_height;
 
     if let Some((_, _, user_surface)) = sticky_user {
         let sticky_h = sticky_height.unwrap_or(0);
@@ -244,7 +255,7 @@ pub(super) fn render_transcript_layout_surfaces(
             );
             render_transcript_surface(frame, surface, surface_rect, local_scroll, theme);
             if surface.selected_rail && local_scroll == 0 && surface_rect.height > 0 {
-                paint_selected_rail_glyph(frame, surface_rect, theme);
+                paint_selected_rail_glyph(frame, surface_rect, surface.rail_color);
             }
         }
     }
@@ -347,16 +358,18 @@ fn run_write_footer_outdent(surface: &MeasuredTranscriptSurface) -> u16 {
     u16::from(is_run_write_footer)
 }
 
-fn paint_selected_rail_glyph(frame: &mut Frame, surface_rect: Rect, theme: &Theme) {
+fn paint_selected_rail_glyph(frame: &mut Frame, surface_rect: Rect, rail_color: Color) {
     let rail_x = surface_rect.x;
-    let rail_rect = Rect::new(rail_x, surface_rect.y, 1, 1);
-    frame.render_widget(
-        Paragraph::new(Line::from(Span::styled(
-            SELECTED_RAIL_GLYPH,
-            Style::default().fg(theme.text.secondary),
-        ))),
-        rail_rect,
-    );
+    let rail_rect = Rect::new(rail_x, surface_rect.y, 1, surface_rect.height);
+    let rail_lines = (0..surface_rect.height)
+        .map(|_| {
+            Line::from(Span::styled(
+                SELECTED_RAIL_GLYPH,
+                Style::default().fg(rail_color),
+            ))
+        })
+        .collect::<Vec<_>>();
+    frame.render_widget(Paragraph::new(rail_lines), rail_rect);
 }
 
 pub(super) fn transcript_diff_hunk_rows_for_layout(

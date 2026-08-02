@@ -1,5 +1,6 @@
 // allow: SIZE_OK — TUI transcript rendering (indivisible view model)
 use super::ui_tool_delegation::agent_spawn_is_background;
+use super::ui_tool_visibility::tool_call_has_transcript_disclosure;
 use super::*;
 
 const HARNESS_GENERIC_OUTPUT_LINE_CLAMP: usize = 3;
@@ -59,9 +60,9 @@ pub(super) fn build_transcript_tool_call_section(
 ) -> TranscriptToolCallSection {
     let struck_out = tool_call_denied(tool_call);
     let mut detail_blocks = Vec::new();
+    let display_tool_id = tool_call.effective_tool_id();
     let expanded = tool_output_expanded;
     let generic_output_visible = show_generic_tool_output || tool_output_expanded;
-    let display_tool_id = tool_call.effective_tool_id();
     let child_session_id = task_tool_child_session_id(tool_call)
         .map(str::to_string)
         .or_else(|| {
@@ -153,7 +154,7 @@ pub(super) fn build_transcript_tool_call_section(
                     "Shell".to_string(),
                     None,
                     TranscriptToolCallVisualStyle::Block,
-                    false,
+                    true,
                 )
             } else {
                 (
@@ -372,8 +373,13 @@ pub(super) fn build_transcript_tool_call_section(
                 session_path,
                 stacked_diffs,
             );
+            let title = if rendered_diff {
+                edit_tool_title(tool_call)
+            } else {
+                write_tool_title(tool_call)
+            };
             (
-                write_tool_title(tool_call),
+                title,
                 Some("←"),
                 if rendered_diff {
                     TranscriptToolCallVisualStyle::Block
@@ -459,6 +465,12 @@ pub(super) fn build_transcript_tool_call_section(
                 false,
             )
         }
+        "question" => (
+            "question".to_string(),
+            Some("→"),
+            TranscriptToolCallVisualStyle::Inline,
+            false,
+        ),
         "tool.batch" | "batch" => (
             batch_tool_title(tool_call),
             Some("#"),
@@ -539,19 +551,22 @@ pub(super) fn build_transcript_tool_call_section(
         );
     }
 
-    push_failed_tool_error_block(&mut detail_blocks, tool_call);
+    if !matches!(display_tool_id, "user.question" | "question") {
+        push_failed_tool_error_block(&mut detail_blocks, tool_call);
+    }
     push_truncated_output_artifact_block(&mut detail_blocks, tool_call);
 
-    let disclosure_state = if matches!(
-        display_tool_id,
-        "agent.spawn" | "task" | "todo.write" | "todowrite"
-    ) || uses_generic_output_visibility
-        && tool_call.status == ToolCallDisplayStatus::Succeeded
-        && !generic_output_visible
-    {
-        None
+    let details_collapsed_by_default =
+        tool_call_has_transcript_disclosure(tool_call) || !detail_blocks.is_empty();
+    let details_preview_visible = show_generic_tool_output && uses_generic_output_visibility;
+    let disclosure_state = if details_collapsed_by_default {
+        Some(if expanded {
+            TranscriptToolCallDisclosureState::Expanded
+        } else {
+            TranscriptToolCallDisclosureState::Collapsed
+        })
     } else {
-        tool_disclosure_state(tool_call, tool_output_expanded)
+        None
     };
     let default_subtitle = match display_tool_id {
         "shell.run" | "bash" => None,
@@ -586,7 +601,9 @@ pub(super) fn build_transcript_tool_call_section(
                 && !tool_call_denied(tool_call)
             {
                 default_subtitle
-            } else if tool_call.status == ToolCallDisplayStatus::Failed {
+            } else if tool_call.status == ToolCallDisplayStatus::Failed
+                && !matches!(display_tool_id, "user.question" | "question")
+            {
                 join_tool_subtitles(default_subtitle, error_subtitle)
             } else {
                 default_subtitle
@@ -599,6 +616,9 @@ pub(super) fn build_transcript_tool_call_section(
             disclosure_state,
         },
         detail_blocks,
+        details_collapsed_by_default,
+        details_preview_visible,
+        animation_phase,
         expanded,
     }
 }
@@ -1038,9 +1058,11 @@ fn completed_list_tool_title(tool_call: &crate::app::ToolCallEntry) -> String {
     format!("Listed {count} {noun}")
 }
 
-fn completed_read_tool_title(tool_call: &crate::app::ToolCallEntry, _path: Option<&str>) -> String {
-    // Waiting-state packing: completed reads use count form ("Read 1 file"),
-    // not path form. Running/failed keep path via the caller match arm.
+fn completed_read_tool_title(tool_call: &crate::app::ToolCallEntry, path: Option<&str>) -> String {
+    if let Some(path) = path {
+        return format!("Read {path}{}", read_tool_input_suffix(tool_call));
+    }
+
     let count = tool_file_count(tool_call).unwrap_or(1);
     let noun = if count == 1 { "file" } else { "files" };
     format!("Read {count} {noun}")

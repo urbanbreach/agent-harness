@@ -270,14 +270,7 @@ impl AppState {
                 self.hovered_subagent_footer_target = hovered_subagent_footer_target;
                 changed
             }
-            MouseEventKind::Down(MouseButton::Right) => {
-                let copy_on_select_disabled = clipboard::copy_on_select_disabled();
-                if copy_on_select_disabled && self.copy_active_selection(frame_area) {
-                    self.clear_operator_sidebar_selection();
-                    self.clear_transcript_selection();
-                }
-                true
-            }
+            MouseEventKind::Down(MouseButton::Right) => false,
             MouseEventKind::Down(MouseButton::Left) => {
                 self.transcript_view.transcript_click_activated_on_down = false;
                 self.hovered_subagent_footer_target =
@@ -515,30 +508,34 @@ impl AppState {
             }
             MouseEventKind::ScrollUp => match hovered_wheel_target {
                 Some(WheelTarget::Transcript) => {
-                    self.scroll_transcript_up(3);
+                    self.scroll_transcript_up(self.mouse_wheel_lines_per_tick);
                     true
                 }
                 Some(WheelTarget::Terminal) => {
-                    self.scroll_terminal_panel_up(3);
+                    self.scroll_terminal_panel_up(self.mouse_wheel_lines_per_tick);
                     true
                 }
                 Some(WheelTarget::Inspector) => {
-                    self.details_scroll = self.details_scroll.saturating_sub(3);
+                    self.details_scroll = self
+                        .details_scroll
+                        .saturating_sub(self.mouse_wheel_lines_per_tick);
                     true
                 }
                 None => false,
             },
             MouseEventKind::ScrollDown => match hovered_wheel_target {
                 Some(WheelTarget::Transcript) => {
-                    self.scroll_transcript_down(3);
+                    self.scroll_transcript_down(self.mouse_wheel_lines_per_tick);
                     true
                 }
                 Some(WheelTarget::Terminal) => {
-                    self.scroll_terminal_panel_down(3);
+                    self.scroll_terminal_panel_down(self.mouse_wheel_lines_per_tick);
                     true
                 }
                 Some(WheelTarget::Inspector) => {
-                    self.details_scroll = self.details_scroll.saturating_add(3);
+                    self.details_scroll = self
+                        .details_scroll
+                        .saturating_add(self.mouse_wheel_lines_per_tick);
                     true
                 }
                 None => false,

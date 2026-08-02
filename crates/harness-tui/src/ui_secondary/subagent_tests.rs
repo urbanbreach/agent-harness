@@ -2,6 +2,18 @@ use super::operator_rail_test_fixtures::*;
 use super::*;
 use crate::UnwrapOrAbort;
 
+#[test]
+fn subagent_spinner_holds_each_frame_for_four_ticks() {
+    assert_eq!(
+        SubagentRailStatus::Running.glyph(0),
+        SubagentRailStatus::Running.glyph(3)
+    );
+    assert_ne!(
+        SubagentRailStatus::Running.glyph(3),
+        SubagentRailStatus::Running.glyph(4)
+    );
+}
+
 #[cfg(test)]
 pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_state() {
     let mut app = AppState::new_live(None, false, None);

@@ -1,5 +1,5 @@
 use super::*;
-use crate::app::{LaunchMetadata, ModelOption};
+use crate::app::{ActivityUsage, LaunchMetadata, ModelOption};
 use crate::UnwrapOrAbort;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use harness_core::event::{
@@ -9,6 +9,9 @@ use harness_core::event::{
     ToolCallRequestedEvent, ToolCallStartedEvent, ToolCallStatus, UserMessageSubmittedEvent,
     SCHEMA_VERSION,
 };
+use harness_providers::CompletionUsage;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 fn render_debug(app: &AppState, width: u16, height: u16) -> String {
     use ratatui::{backend::TestBackend, Terminal};
@@ -179,6 +182,447 @@ fn live_anchor_stays_hidden_during_active_turn_and_permission_checkpoint_states(
 }
 
 #[test]
+fn live_turn_status_stays_above_composer_and_not_in_streaming_transcript_footer() {
+    let mut app = AppState::new_live(None, false, None);
+    let base = Instant::now();
+    let clock = Arc::new(Mutex::new(base));
+    let now_clock = Arc::clone(&clock);
+    app.set_now_fn_for_test(Arc::new(move || *now_clock.lock().unwrap_or_abort()));
+    app.handle_key(key(KeyCode::Char('h')));
+    app.handle_key(key(KeyCode::Enter));
+    app.ingest_event(envelope(
+        1,
+        "req_live_turn_status",
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "req_live_turn_status".into(),
+            provider_id: "openai".to_string(),
+            model_id: "gpt-5-codex".to_string(),
+            prompt_summary: "hello".to_string(),
+            request_digest: "digest-live-turn-status".to_string(),
+            metadata: None,
+        }),
+    ));
+    app.ingest_event(envelope(
+        2,
+        "req_live_turn_status",
+        EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+            request_id: "req_live_turn_status".into(),
+            delta: "hello back".to_string(),
+        }),
+    ));
+    app.activities.back_mut().unwrap_or_abort().usage = Some(ActivityUsage {
+        prompt_tokens: 8_000,
+        completion_tokens: 4_000,
+        total_tokens: 12_000,
+    });
+    *clock.lock().unwrap_or_abort() = base + Duration::from_millis(2_500);
+
+    let plan = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, 120, 40));
+    let status = plan.status.unwrap_or_abort();
+    let composer = plan.composer.unwrap_or_abort();
+    assert_eq!(
+        status.y.saturating_add(status.height).saturating_add(1),
+        composer.y
+    );
+
+    let rendered = render_debug(&app, 120, 40);
+    assert!(rendered.contains("Responding…"), "{rendered}");
+    assert!(rendered.contains("2.5s"), "{rendered}");
+    assert!(rendered.contains("⇣12.0k"), "{rendered}");
+    assert!(rendered.contains("[stop]"), "{rendered}");
+    let transcript = transcript_debug(&app);
+    assert!(
+        !transcript.contains("gpt-5-codex"),
+        "the active status must replace the old transcript model footer:\n{transcript}"
+    );
+}
+
+#[test]
+fn live_turn_status_uses_projected_event_timing_when_the_live_clock_is_unavailable() {
+    // Given: a replayed-in-progress turn, which has event timing but no local input clock.
+    let mut app = AppState::new_live(None, false, None);
+    let mut started = envelope(
+        1,
+        "req_projected_turn_timing",
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "req_projected_turn_timing".into(),
+            provider_id: "openai".to_string(),
+            model_id: "gpt-5-codex".to_string(),
+            prompt_summary: "measure elapsed time".to_string(),
+            request_digest: "digest-projected-turn-timing".to_string(),
+            metadata: None,
+        }),
+    );
+    started.mono_ms = 100;
+    app.ingest_event(started);
+    let mut response = envelope(
+        2,
+        "req_projected_turn_timing",
+        EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+            request_id: "req_projected_turn_timing".into(),
+            delta: "The response is arriving.".to_string(),
+        }),
+    );
+    response.mono_ms = 5_400;
+    app.ingest_event(response);
+    app.activities.back_mut().unwrap_or_abort().usage = Some(ActivityUsage {
+        prompt_tokens: 1_000,
+        completion_tokens: 430,
+        total_tokens: 1_430,
+    });
+
+    // When: status is rendered from the active projected activity.
+    let rendered = render_debug(&app, 120, 40);
+
+    // Then: the event timeline supplies the elapsed segment alongside status and tokens.
+    assert!(rendered.contains("Responding…"), "{rendered}");
+    assert!(rendered.contains("5.3s"), "{rendered}");
+    assert!(rendered.contains("⇣1.43k"), "{rendered}");
+}
+
+#[test]
+fn live_turn_status_remains_visible_while_streaming_with_permission_dock() {
+    let mut app = AppState::new_live(None, false, None);
+    app.ingest_event(envelope(
+        1,
+        "req_live_turn_permission",
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "req_live_turn_permission".into(),
+            provider_id: "openai".to_string(),
+            model_id: "gpt-5-codex".to_string(),
+            prompt_summary: "update a file".to_string(),
+            request_digest: "digest-live-turn-permission".to_string(),
+            metadata: None,
+        }),
+    ));
+    app.ingest_event(envelope(
+        2,
+        "req_live_turn_permission",
+        EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+            request_id: "req_live_turn_permission".into(),
+            delta: "I found the file.".to_string(),
+        }),
+    ));
+    app.activities.back_mut().unwrap_or_abort().usage = Some(ActivityUsage {
+        prompt_tokens: 8_000,
+        completion_tokens: 840,
+        total_tokens: 8_840,
+    });
+    app.ingest_event(envelope(
+        3,
+        "req_live_turn_permission",
+        EventV1::PermissionRequested(PermissionRequestedEvent {
+            permission_id: "perm_live_turn_permission".to_string(),
+            kind: "edit".to_string(),
+            tool_call_id: Some("tc_live_turn_permission".into()),
+            summary: "Edit src/lib.rs".to_string(),
+            request_digest: "digest-perm-live-turn".to_string(),
+            timeout_ms: 30_000,
+            default_decision: harness_core::event::PermissionDecision::Deny,
+        }),
+    ));
+
+    let plan = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, 120, 40));
+    assert!(
+        plan.status.is_some(),
+        "a permission dock must not remove the active streaming status"
+    );
+
+    let rendered = render_debug(&app, 120, 40);
+    assert!(rendered.contains("Responding…"), "{rendered}");
+    assert!(rendered.contains("⇣8.84k"), "{rendered}");
+    assert!(rendered.contains("[stop]"), "{rendered}");
+}
+
+#[test]
+fn live_turn_status_keeps_latest_context_total_for_the_next_provider_stream() {
+    let mut app = AppState::new_live(None, false, None);
+    app.ingest_event(envelope(
+        1,
+        "turn_one",
+        EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+            request_id: "turn_one".into(),
+            text: "first request".to_string(),
+        }),
+    ));
+    app.ingest_event(envelope(
+        2,
+        "turn_one",
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "provider_one".into(),
+            provider_id: "openai-codex".to_string(),
+            model_id: "gpt-5.5".to_string(),
+            prompt_summary: "first request".to_string(),
+            request_digest: "digest-provider-one".to_string(),
+            metadata: None,
+        }),
+    ));
+    app.ingest_event(envelope(
+        3,
+        "turn_one",
+        EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+            request_id: "provider_one".into(),
+            finish_reason: "stop".to_string(),
+            output_digest: Some("digest-provider-one-output".to_string()),
+            usage: Some(CompletionUsage {
+                prompt_tokens: 8_000,
+                completion_tokens: 840,
+                total_tokens: 8_840,
+            }),
+            metadata: None,
+        }),
+    ));
+    app.ingest_event(envelope(
+        4,
+        "turn_two",
+        EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+            request_id: "turn_two".into(),
+            text: "second request".to_string(),
+        }),
+    ));
+    app.ingest_event(envelope(
+        5,
+        "turn_two",
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "provider_two".into(),
+            provider_id: "openai-codex".to_string(),
+            model_id: "gpt-5.5".to_string(),
+            prompt_summary: "second request".to_string(),
+            request_digest: "digest-provider-two".to_string(),
+            metadata: None,
+        }),
+    ));
+    app.ingest_event(envelope(
+        6,
+        "turn_two",
+        EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+            request_id: "provider_two".into(),
+            delta: "second response".to_string(),
+        }),
+    ));
+
+    let rendered = render_debug(&app, 120, 40);
+    assert!(rendered.contains("Responding…"), "{rendered}");
+    assert!(rendered.contains("⇣8.84k"), "{rendered}");
+    assert!(rendered.contains("[stop]"), "{rendered}");
+}
+
+#[test]
+fn live_turn_status_follows_source_phase_priority() {
+    let mut app = AppState::new_live(None, false, None);
+    app.ingest_event(envelope(
+        1,
+        "req_live_status_priority",
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "req_live_status_priority".into(),
+            provider_id: "openai".to_string(),
+            model_id: "gpt-5-codex".to_string(),
+            prompt_summary: "inspect a file".to_string(),
+            request_digest: "digest-live-status-priority".to_string(),
+            metadata: None,
+        }),
+    ));
+    app.ingest_event(envelope(
+        2,
+        "req_live_status_priority",
+        EventV1::ProviderReasoningDelta(ProviderReasoningDeltaEvent {
+            request_id: "req_live_status_priority".into(),
+            delta: "I should inspect the file first.".to_string(),
+        }),
+    ));
+    assert!(render_debug(&app, 120, 40).contains("Thinking…"));
+
+    app.ingest_event(envelope(
+        3,
+        "req_live_status_priority",
+        EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+            request_id: "req_live_status_priority".into(),
+            delta: "I found the relevant section.".to_string(),
+        }),
+    ));
+    assert!(render_debug(&app, 120, 40).contains("Responding…"));
+
+    app.ingest_event(envelope(
+        4,
+        "req_live_status_priority",
+        EventV1::ToolCallRequested(ToolCallRequestedEvent {
+            tool_call_id: "tc_live_status_priority".into(),
+            tool_id: "fs.read".to_string(),
+            args_summary: r#"{"path":"src/lib.rs"}"#.to_string(),
+            args_digest: "digest-live-status-tool".to_string(),
+            metadata: None,
+        }),
+    ));
+    app.ingest_event(envelope(
+        5,
+        "req_live_status_priority",
+        EventV1::ToolCallStarted(ToolCallStartedEvent {
+            tool_call_id: "tc_live_status_priority".into(),
+        }),
+    ));
+    assert!(render_debug(&app, 120, 40).contains("Run fs.read"));
+
+    let mut retry = AppState::new_live(None, false, None);
+    retry.ingest_event(envelope(
+        1,
+        "req_live_status_retry",
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "req_live_status_retry".into(),
+            provider_id: "openai".to_string(),
+            model_id: "gpt-5-codex".to_string(),
+            prompt_summary: "retry the request".to_string(),
+            request_digest: "digest-live-status-retry".to_string(),
+            metadata: Some(harness_core::event::ProviderRequestStartedMetadata {
+                retry: Some(harness_core::event::ProviderRequestRetryMetadata {
+                    attempt: 2,
+                    max_attempts: 3,
+                    delay_ms: Some(1_000),
+                    category: None,
+                }),
+                ..harness_core::event::ProviderRequestStartedMetadata::default()
+            }),
+        }),
+    ));
+    assert!(
+        render_debug(&retry, 120, 40).contains("Retrying (attempt 2)…"),
+        "retry status must remain a prompt-adjacent live phase"
+    );
+
+    let mut initial_attempt = AppState::new_live(None, false, None);
+    initial_attempt.ingest_event(envelope(
+        1,
+        "req_live_status_initial_attempt",
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "req_live_status_initial_attempt".into(),
+            provider_id: "openai".to_string(),
+            model_id: "gpt-5-codex".to_string(),
+            prompt_summary: "initial request".to_string(),
+            request_digest: "digest-live-status-initial-attempt".to_string(),
+            metadata: Some(harness_core::event::ProviderRequestStartedMetadata {
+                retry: Some(harness_core::event::ProviderRequestRetryMetadata {
+                    attempt: 0,
+                    max_attempts: 3,
+                    delay_ms: None,
+                    category: None,
+                }),
+                ..harness_core::event::ProviderRequestStartedMetadata::default()
+            }),
+        }),
+    ));
+    let rendered = render_debug(&initial_attempt, 120, 40);
+    assert!(rendered.contains("Waiting for response…"), "{rendered}");
+    assert!(!rendered.contains("Retrying"), "{rendered}");
+}
+
+#[test]
+fn live_turn_status_survives_a_provider_call_id_distinct_from_the_turn_id() {
+    let mut app = AppState::new_live(None, false, None);
+    let base = Instant::now();
+    let clock = Arc::new(Mutex::new(base));
+    let now_clock = Arc::clone(&clock);
+    app.set_now_fn_for_test(Arc::new(move || *now_clock.lock().unwrap_or_abort()));
+    app.ingest_event(envelope(
+        1,
+        "req_turn",
+        EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+            request_id: "req_turn".into(),
+            text: "inspect the workspace".to_string(),
+        }),
+    ));
+    let mut provider_started = envelope(
+        2,
+        "req_turn",
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "req_provider_call".into(),
+            provider_id: "openai-codex".to_string(),
+            model_id: "gpt-5-codex".to_string(),
+            prompt_summary: "inspect the workspace".to_string(),
+            request_digest: "digest-provider-call".to_string(),
+            metadata: None,
+        }),
+    );
+    provider_started.correlation_id = Some("req_turn".to_string());
+    app.ingest_event(provider_started);
+
+    *clock.lock().unwrap_or_abort() = base + Duration::from_millis(2_500);
+
+    let mut reasoning = envelope(
+        3,
+        "req_turn",
+        EventV1::ProviderReasoningDelta(ProviderReasoningDeltaEvent {
+            request_id: "req_provider_call".into(),
+            delta: "Inspecting workspace contents".to_string(),
+        }),
+    );
+    reasoning.correlation_id = Some("req_turn".to_string());
+    app.ingest_event(reasoning);
+
+    assert_eq!(app.runtime_state().kind, RuntimeStateKind::Sending);
+    assert!(FrameLayoutPlan::for_app(&app, Rect::new(0, 0, 140, 40))
+        .status
+        .is_some());
+    let rendered = render_debug(&app, 140, 40);
+    assert!(rendered.contains("Thinking…"), "{rendered}");
+    assert!(rendered.contains("2.5s"), "{rendered}");
+    assert!(rendered.contains("[stop]"), "{rendered}");
+}
+
+#[test]
+fn delegated_tool_details_start_collapsed_until_their_header_is_activated() {
+    let mut app = AppState::new_live(None, false, None);
+    app.ingest_event(envelope(
+        1,
+        "req_tool_default_fold",
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "req_tool_default_fold".into(),
+            provider_id: "openai".to_string(),
+            model_id: "gpt-5-codex".to_string(),
+            prompt_summary: "delegate a small task".to_string(),
+            request_digest: "digest-tool-default-fold".to_string(),
+            metadata: None,
+        }),
+    ));
+    app.ingest_event(envelope(
+        2,
+        "req_tool_default_fold",
+        EventV1::ToolCallRequested(ToolCallRequestedEvent {
+            tool_call_id: "tc_tool_default_fold".into(),
+            tool_id: "task".to_string(),
+            args_summary:
+                r#"{"prompt":"inspect the renderer","run_in_background":false,"load_skills":[]}"#
+                    .to_string(),
+            args_digest: "digest-tool-default-fold-args".to_string(),
+            metadata: None,
+        }),
+    ));
+    app.ingest_event(envelope(
+        3,
+        "req_tool_default_fold",
+        EventV1::ToolCallFinished(ToolCallFinishedEvent {
+            tool_call_id: "tc_tool_default_fold".into(),
+            status: ToolCallStatus::Succeeded,
+            output_summary: Some("delegated result".to_string()),
+            output_digest: Some("digest-tool-default-fold-output".to_string()),
+            output_json: None,
+            metadata: None,
+        }),
+    ));
+
+    let collapsed = transcript_debug(&app);
+    assert!(
+        !collapsed.contains("delegated result"),
+        "details must start folded:\n{collapsed}"
+    );
+
+    app.toggle_tool_output_for_test("tc_tool_default_fold");
+    let expanded = transcript_debug(&app);
+    assert!(
+        expanded.contains("delegated result"),
+        "details must appear after the explicit toggle:\n{expanded}"
+    );
+}
+
+#[test]
 fn transcript_debug_places_assistant_answer_before_nested_context() {
     // arrange
     // act
@@ -247,6 +691,7 @@ fn transcript_debug_places_assistant_answer_before_nested_context() {
             metadata: None,
         }),
     ));
+    app.activities[0].status = ActivityStatus::Streaming;
 
     let transcript = transcript_debug(&app);
     let thinking_index = transcript
@@ -255,7 +700,7 @@ fn transcript_debug_places_assistant_answer_before_nested_context() {
     let answer_index = transcript
         .find("Found the transcript renderer and the composer chrome.")
         .unwrap_or_abort();
-    let tool_index = transcript.find("Read 1 file").unwrap_or_abort();
+    let tool_index = transcript.find("Read src/ui.rs").unwrap_or_abort();
 
     assert!(thinking_index < tool_index);
     assert!(tool_index < answer_index);
@@ -557,11 +1002,13 @@ fn footer_hints_follow_keymap_overrides() {
     );
 
     let debug = render_debug(&app, 100, 24);
+    // Idle footer ties :mode to CycleMode (Shift+Tab, not overridden) and
+    // :shortcuts to Help (overridden to g).
     assert!(debug.contains("Shift+Tab:mode"));
-    assert!(debug.contains("Ctrl+x:shortcuts") || debug.contains(":shortcuts"));
+    assert!(debug.contains("g:shortcuts"));
+    assert!(!debug.contains("Ctrl+x:shortcuts"));
     assert!(!debug.contains("Ctrl+s send"));
     assert!(!debug.contains("Ctrl+j nl"));
-    assert!(!debug.contains("g shortcuts"));
     assert!(!debug.contains("q quit"));
 }
 
@@ -612,8 +1059,8 @@ fn startup_shell_shows_profile_provider_and_model_chrome() {
     assert!(!debug.contains("Launch: deep · gpt-5.4"));
     assert!(!debug.contains("Provider proxy"));
     assert!(
-        !debug.contains("gpt-5.4") && !debug.contains("Deep") && !debug.contains("Demo"),
-        "freeze bare startup hides model badge when prompt is empty\n{debug}"
+        debug.contains("gpt-5.4") || debug.contains("Deep") || debug.contains("Demo"),
+        "bare startup should surface model badge in composer chrome\n{debug}"
     );
     assert!(debug.contains('❯'));
     assert!(!debug.contains("Enter select"));
@@ -906,7 +1353,7 @@ fn transcript_tool_rows_keep_status_but_not_raw_json_dump() {
     ));
 
     let transcript = transcript_debug(&app);
-    assert!(transcript.contains("Read 1 file"));
+    assert!(transcript.contains("Read src/lib.rs"));
     assert!(!transcript.contains(r#"{"path":"src/lib.rs","start_line":42,"limit":20}"#));
     assert!(!transcript.contains("args {"));
     assert_eq!(
@@ -965,9 +1412,15 @@ fn failed_tool_rows_still_surface_error_summary() {
     let transcript = transcript_debug(&app);
     assert!(transcript.contains("false"));
     assert!(transcript.contains("exit code: 1"));
-    assert!(transcript.contains("stderr: permission denied"));
+    assert!(!transcript.contains("stderr: permission denied"));
     assert!(!transcript.contains(r#"{"cmd":"false","cwd":"/tmp/demo"}"#));
     assert!(!transcript.contains("args {"));
+
+    app.toggle_tool_output_for_test("tc_error");
+    assert!(
+        transcript_debug(&app).contains("stderr: permission denied"),
+        "the full error payload must remain available after explicit expansion"
+    );
 }
 
 #[test]

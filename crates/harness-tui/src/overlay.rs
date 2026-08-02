@@ -182,7 +182,7 @@ impl<'a> IntoIterator for &'a OverlayStack {
 /// Mutable overlay controller for tests and integration scenarios.
 ///
 /// Provides push/pop/escape/close semantics over an ordered overlay stack.
-/// Re-pushing an already-open overlay is a no-op (no duplicate entries).
+/// Re-pushing an already-open overlay moves it to the top without duplicating it.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct OverlayController {
     overlays: Vec<OverlayKind>,
@@ -209,11 +209,12 @@ impl OverlayController {
         self.overlays.contains(&kind)
     }
 
-    /// Push an overlay. If it is already open, this is a no-op.
+    /// Push an overlay, moving an already-open overlay to the top.
     pub fn push(&mut self, kind: OverlayKind) {
-        if !self.contains(kind) {
-            self.overlays.push(kind);
+        if let Some(index) = self.overlays.iter().position(|open| *open == kind) {
+            self.overlays.remove(index);
         }
+        self.overlays.push(kind);
     }
 
     pub fn pop(&mut self) -> Option<OverlayKind> {

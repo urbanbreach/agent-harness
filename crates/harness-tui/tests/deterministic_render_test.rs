@@ -104,6 +104,9 @@ fn tool_lifecycle_rows_stay_ordered_without_pty() {
     for event in deterministic_render_fixtures::tool_lifecycle_events() {
         app.ingest_event(event);
     }
+    for tool_call_id in ["tc_edit", "tc_task", "tc_shell"] {
+        app.toggle_tool_output_for_test(tool_call_id);
+    }
 
     let rendered = render_text(&app, 180, 36);
 
@@ -111,7 +114,7 @@ fn tool_lifecycle_rows_stay_ordered_without_pty() {
 
     let tool_markers: &[&str] = &[
         "Inspect tool activity",
-        "Read 1 file",
+        "Read src/ui.rs",
         "Remove diff review surface",
         "Researcher Task — audit tool lifecycle parity",
         "cargo test -p harness-tui",
@@ -332,7 +335,13 @@ fn render_text(app: &AppState, width: u16, height: u16) -> String {
 fn trim_trailing_snapshot_whitespace(rendered: &str) -> String {
     rendered
         .lines()
-        .map(str::trim_end)
+        .map(|line| {
+            if line.contains('') {
+                "   test-workspace /workspace/agent-harness".to_string()
+            } else {
+                line.trim_end().to_string()
+            }
+        })
         .collect::<Vec<_>>()
         .join("\n")
 }

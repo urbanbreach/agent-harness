@@ -28,7 +28,23 @@ impl AppState {
         self.connect_dialog.set_providers(providers);
     }
 
-    pub fn apply_connect_dialog_auth_result(&mut self, success: bool) {
+    pub fn append_connect_dialog_authorization_detail(&mut self, message: &str) {
+        if !self.connect_dialog.visible || self.connect_dialog.step != ConnectDialogStep::Waiting {
+            return;
+        }
+        let Some(detail) = message.strip_prefix("auth backend output: ") else {
+            return;
+        };
+        if !detail.starts_with("Open ") && !detail.starts_with("Enter code ") {
+            return;
+        }
+        self.connect_dialog.notice = Some(match self.connect_dialog.notice.take() {
+            Some(notice) => format!("{notice}\n{detail}"),
+            None => detail.to_string(),
+        });
+    }
+
+    pub fn apply_connect_dialog_auth_result(&mut self, success: bool, message: &str) {
         if !self.connect_dialog.visible || self.connect_dialog.step != ConnectDialogStep::Waiting {
             return;
         }
@@ -58,10 +74,12 @@ impl AppState {
                 is_success: false,
             });
             self.connect_dialog.step = ConnectDialogStep::Error;
-            self.connect_dialog.error_message = Some(
+            self.connect_dialog.error_message = Some(if message.trim().is_empty() {
                 "Authentication failed. Try again or run `harness auth login` in a terminal."
-                    .to_string(),
-            );
+                    .to_string()
+            } else {
+                message.to_string()
+            });
         }
     }
 }

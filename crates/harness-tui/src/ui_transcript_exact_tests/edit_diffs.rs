@@ -52,6 +52,7 @@ pub(crate) fn exact_test_transcript_edit_tool_matches_inline_diff_shape() {
         last_timestamp: None,
     });
     app.activities = std::collections::VecDeque::from(vec![entry]);
+    app.toggle_tool_output_for_test("call-edit-1");
 
     let rendered = build_transcript_lines_for_width(&app, &Theme::default(), 160)
         .into_iter()
@@ -130,6 +131,7 @@ pub(crate) fn exact_test_transcript_native_edit_renders_inline_diff_from_artifac
         last_timestamp: None,
     });
     app.activities = std::collections::VecDeque::from(vec![entry]);
+    app.toggle_tool_output_for_test("call-native-edit-1");
 
     let rendered = build_transcript_lines_for_width(&app, &Theme::default(), 140)
         .into_iter()
@@ -142,7 +144,7 @@ pub(crate) fn exact_test_transcript_native_edit_renders_inline_diff_from_artifac
         .collect::<Vec<_>>()
         .join("\n");
 
-    assert!(rendered.contains("Edit docs/rust.md") || rendered.contains("◆ Edit"));
+    assert!(rendered.contains("edit docs/rust.md") || rendered.contains("◆ edit"));
     assert!(rendered.contains("docs"));
     assert!(rendered.contains("Ownership"));
     assert!(rendered
@@ -228,6 +230,7 @@ pub(crate) fn exact_test_transcript_apply_patch_multifile_uses_output_edit_paths
         last_timestamp: None,
     });
     app.activities = std::collections::VecDeque::from(vec![entry]);
+    app.toggle_tool_output_for_test("call-apply-patch-1");
     app.set_patch_file_output_expanded_for_test("call-apply-patch-1", "notes/a.md", true);
     app.set_patch_file_output_expanded_for_test("call-apply-patch-1", "notes/b.md", true);
     assert!(app.patch_file_output_expanded("call-apply-patch-1", "notes/a.md"));
@@ -358,6 +361,7 @@ pub(crate) fn exact_test_transcript_apply_patch_surfaces_rename_and_wrapped_inli
         last_timestamp: None,
     });
     app.activities = std::collections::VecDeque::from(vec![entry]);
+    app.toggle_tool_output_for_test("call-apply-patch-rename-wrap");
     app.set_patch_file_output_expanded_for_test(
         "call-apply-patch-rename-wrap",
         "src/session_diff.rs",
@@ -528,6 +532,7 @@ pub(crate) fn exact_test_transcript_inline_diff_stays_compact_between_tool_rows(
         last_timestamp: None,
     });
     app.activities = std::collections::VecDeque::from(vec![entry]);
+    app.toggle_tool_output_for_test("call-apply-patch-compact");
     app.set_patch_file_output_expanded_for_test(
         "call-apply-patch-compact",
         "docs/spacing.md",
@@ -541,10 +546,9 @@ pub(crate) fn exact_test_transcript_inline_diff_stays_compact_between_tool_rows(
         96,
     ));
     let rendered = lines.join("\n");
-    // Waiting-state packing: completed reads use count form ("Read 1 file"), not path form.
     let read_before = lines
         .iter()
-        .position(|line| line.contains("Read 1 file"))
+        .position(|line| line.contains("Read docs/spacing.md"))
         .unwrap_or_abort();
     let patch_header = lines
         .iter()
@@ -556,7 +560,7 @@ pub(crate) fn exact_test_transcript_inline_diff_stays_compact_between_tool_rows(
         .unwrap_or_abort();
     let read_after = lines
         .iter()
-        .rposition(|line| line.contains("Read 1 file"))
+        .rposition(|line| line.contains("Read docs/spacing.md"))
         .unwrap_or_abort();
 
     assert!(read_before < patch_header && patch_header < diff_tail && diff_tail < read_after);
@@ -624,6 +628,7 @@ pub(crate) fn exact_test_transcript_applied_edit_missing_diff_surfaces_fallback(
         last_timestamp: None,
     });
     app.activities = std::collections::VecDeque::from(vec![entry]);
+    app.toggle_tool_output_for_test("call-edit-missing-diff");
 
     let rendered = build_transcript_lines_for_width(&app, &Theme::default(), 140)
         .into_iter()
@@ -740,7 +745,7 @@ pub(crate) fn exact_test_transcript_harness_tool_progress_indicators() {
     assert!(initial_lines
         .iter()
         .any(|line| line.contains("Read src/lib.rs") || line.contains("Reading file")));
-    assert!(initial_lines.iter().any(|line| line.contains("Edit")));
+    assert!(initial_lines.iter().any(|line| line.contains("edit")));
     assert!(initial_lines.iter().any(|line| line.contains("Patch")));
 
     app.advance_transcript_animation_phase();
@@ -783,9 +788,9 @@ pub(crate) fn exact_test_transcript_harness_tool_progress_indicators() {
         "active context tools should stay as per-tool indicators\n{mixed_context_rendered}"
     );
     assert!(
-        mixed_context_rendered.contains("◆ Read 1 file")
-            || mixed_context_rendered.contains("Read 1 file"),
-        "completed reads use freeze count form\n{mixed_context_rendered}"
+        mixed_context_rendered.contains("◆ Read src/lib.rs")
+            || mixed_context_rendered.contains("Read src/lib.rs"),
+        "completed reads keep the source-style path title\n{mixed_context_rendered}"
     );
     assert!(
         mixed_context_rendered.contains("◆ Glob")
@@ -871,7 +876,7 @@ pub(crate) fn exact_test_write_tool_hides_redundant_patched_file_header() {
         Some(run_dir.path()),
     );
 
-    assert_eq!(section.header.title, "Creating demo.txt");
+    assert_eq!(section.header.title, "edit demo.txt");
     let structured = section
         .detail_blocks
         .iter()
@@ -1046,8 +1051,8 @@ pub(crate) fn exact_test_write_tool_title_matches_thought_lead() {
 
     let title_idx = lines
         .iter()
-        .position(|line| line.contains("Creating demo.txt"))
-        .unwrap_or_else(|| panic!("missing Creating title\n{}", lines.join("\n")));
+        .position(|line| line.contains("◆ edit"))
+        .unwrap_or_else(|| panic!("missing edit title\n{}", lines.join("\n")));
     let body_idx = lines
         .iter()
         .position(|line| line.contains("old content"))
@@ -1058,13 +1063,13 @@ pub(crate) fn exact_test_write_tool_title_matches_thought_lead() {
     let title_lead = title.len() - title.trim_start().len();
     let body_lead = body.len() - body.trim_start().len();
 
-    // Then: Creating title is flat (same lead as Thought / inline tools) — no nested
+    // Then: edit title is flat (same lead as Thought / inline tools) — no nested
     // invisible rail padding. Body keeps the plain-numbered indent under the title.
     // Absolute lead values now include the global 3-char transcript content indent
     // (matching reference), so title lead is 3 and body lead is title + 2 = 5.
     assert_eq!(
         title_lead, 3,
-        "Reference Creating title aligns with Thought (flat lead); nested card rail adds +2\n{title:?}\n{}",
+        "Reference edit title aligns with Thought (flat lead); nested card rail adds +2\n{title:?}\n{}",
         lines.join("\n")
     );
     assert_eq!(
@@ -1072,10 +1077,10 @@ pub(crate) fn exact_test_write_tool_title_matches_thought_lead() {
         "Reference plain body is title+2 (`  1  text`); min-4 line pad was lead=5\ntitle_lead={title_lead} body_lead={body_lead}\n{}",
         lines.join("\n")
     );
-    // Reference permission state: blank packing row between Creating title and plain numbered body.
+    // Reference permission state: blank packing row between edit title and plain numbered body.
     assert!(
         body_idx >= title_idx + 2 && lines[title_idx + 1].trim().is_empty(),
-        "freeze packs blank between Creating title and numbered body\ntitle={title_idx} body={body_idx}\n{}",
+        "freeze packs blank between edit title and numbered body\ntitle={title_idx} body={body_idx}\n{}",
         lines.join("\n")
     );
 }

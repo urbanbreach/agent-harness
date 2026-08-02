@@ -2,22 +2,18 @@ use super::*;
 use crate::UnwrapOrAbort;
 use std::time::{Duration, Instant};
 
-pub(super) fn ctrl_j_inserts_newline_without_submitting() {
+pub(super) fn ctrl_j_scrolls_scrollback_down_one_line() {
     let mut app = AppState::new_live(None, false, None);
+    app.focus = Focus::Details;
+    app.scroll_page_up(3);
 
-    for c in "hello".chars() {
-        app.handle_key(key(KeyCode::Char(c)));
-    }
     app.handle_key(key_with_modifiers(
         KeyCode::Char('j'),
         KeyModifiers::CONTROL,
     ));
-    for c in "world".chars() {
-        app.handle_key(key(KeyCode::Char(c)));
-    }
 
-    assert_eq!(app.composer.prompt_buffer, "hello\nworld");
-    assert_eq!(app.composer.prompt_history.len(), 0);
+    assert_eq!(app.transcript_scroll_offset(), 2);
+    assert!(app.composer.prompt_buffer.is_empty());
 }
 
 pub(super) fn paste_multiline_text_inserts_newlines_without_submitting() {
@@ -251,7 +247,7 @@ pub(super) fn second_esc_after_800ms_restarts_clear_gesture_without_clearing() {
     );
 }
 
-pub(super) fn esc_while_turn_running_does_not_cancel_on_single_press() {
+pub(super) fn esc_while_turn_running_cancels_on_single_press() {
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
         let intents = Arc::clone(&intents);
@@ -275,21 +271,17 @@ pub(super) fn esc_while_turn_running_does_not_cancel_on_single_press() {
 
     app.handle_key(key(KeyCode::Esc));
 
-    assert!(
-        intents.lock().unwrap_or_abort().is_empty(),
-        "single Esc must not emit cancel/interrupt while a turn is running"
+    assert_eq!(
+        intents.lock().unwrap_or_abort().as_slice(),
+        &[UiIntent::InterruptSession {
+            task_ids: vec!["task_active".to_string()],
+        }],
+        "Esc must cancel the running turn immediately"
     );
-    assert!(
-        !intents
-            .lock()
-            .unwrap_or_abort()
-            .iter()
-            .any(|intent| matches!(intent, UiIntent::InterruptSession { .. })),
-        "Esc must not cancel the running turn on first press"
-    );
+    assert_eq!(app.composer.prompt_buffer, "queued draft");
 }
 
-pub(super) fn double_esc_while_turn_running_does_not_emit_interrupt() {
+pub(super) fn repeated_esc_while_turn_running_repeats_interrupt_without_clearing_draft() {
     // Given: busy streaming turn with a non-empty draft
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
@@ -316,18 +308,16 @@ pub(super) fn double_esc_while_turn_running_does_not_emit_interrupt() {
     app.handle_key(key(KeyCode::Esc));
     app.handle_key(key(KeyCode::Esc));
 
-    // Then: no cancel/interrupt intent; draft remains (Esc is mid-turn no-op)
-    assert!(
-        intents.lock().unwrap_or_abort().is_empty(),
-        "double Esc must not emit any UiIntent while a turn is running"
-    );
-    assert!(
-        !intents
-            .lock()
-            .unwrap_or_abort()
-            .iter()
-            .any(|intent| matches!(intent, UiIntent::InterruptSession { .. })),
-        "double Esc must not emit InterruptSession while a turn is running"
+    assert_eq!(
+        intents.lock().unwrap_or_abort().as_slice(),
+        &[
+            UiIntent::InterruptSession {
+                task_ids: vec!["task_active".to_string()],
+            },
+            UiIntent::InterruptSession {
+                task_ids: vec!["task_active".to_string()],
+            },
+        ]
     );
     assert!(!app.interrupt_confirmation_pending());
     assert_eq!(app.composer.prompt_buffer, "queued draft");
@@ -380,6 +370,43 @@ pub(super) fn ctrl_c_clears_draft_then_cancels_running_turn() {
             task_ids: vec!["task_active".to_string()],
         }]
     );
+}
+
+pub(super) fn ctrl_enter_interrupts_active_turn_and_submits_draft() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().unwrap_or_abort().push(intent);
+        })
+    };
+    let mut app = AppState::new_live(None, false, Some(sink));
+    app.focus = Focus::Prompt;
+    app.composer.prompt_buffer = "send now".to_string();
+    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
+    app.ingest_event(envelope(
+        1,
+        "req_active",
+        EventV1::TaskScheduled(TaskScheduledEvent {
+            task_id: "task_active".to_string().into(),
+            state: TaskScheduleState::Started,
+            queue_key: Some("provider_model:default:model-1".to_string()),
+        }),
+    ));
+
+    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::CONTROL));
+
+    assert!(app.composer.prompt_buffer.is_empty());
+    let intents = intents.lock().unwrap_or_abort();
+    assert!(matches!(
+        intents.first(),
+        Some(UiIntent::InterruptSession { task_ids })
+            if task_ids == &["task_active".to_string()]
+    ));
+    assert!(matches!(
+        intents.get(1),
+        Some(UiIntent::SubmitPrompt { text, .. }) if text == "send now"
+    ));
 }
 
 pub(super) fn submit_prompt_while_turn_streams_echoes_as_queued_and_emits_intent() {

@@ -514,7 +514,7 @@ pub(super) fn command_metadata(id: &str) -> Option<&'static CommandMetadata> {
     COMMAND_METADATA.iter().find(|entry| entry.id == id)
 }
 
-const SLASH_COMMANDS: [SlashCommand; 26] = [
+const SLASH_COMMANDS: [SlashCommand; 25] = [
     SlashCommand {
         id: "new",
         metadata_id: "slash_new",
@@ -633,11 +633,6 @@ const SLASH_COMMANDS: [SlashCommand; 26] = [
     SlashCommand {
         id: "dashboard",
         metadata_id: "open_status_dialog",
-        aliases: &[],
-    },
-    SlashCommand {
-        id: "feedback",
-        metadata_id: "help",
         aliases: &[],
     },
     SlashCommand {

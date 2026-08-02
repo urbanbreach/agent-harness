@@ -24,7 +24,7 @@ use crate::app::{
 use crate::event::{self, poll};
 use crate::ui;
 
-const ACTIVE_POLL_INTERVAL: Duration = Duration::from_millis(100);
+const ACTIVE_POLL_INTERVAL: Duration = Duration::from_millis(1_000 / 30);
 const IDLE_POLL_INTERVAL: Duration = Duration::from_secs(1);
 const LIVE_UPDATE_DRAIN_MAX_PER_FRAME: usize = 16;
 const LIVE_UPDATE_DRAIN_MAX_DURATION: Duration = Duration::from_millis(8);
@@ -222,6 +222,7 @@ pub enum LiveUpdate {
     },
     AuthBackendResult {
         success: bool,
+        message: String,
     },
     AuthProviderCatalogRefreshed {
         launch_metadata: Box<LaunchMetadata>,
@@ -327,12 +328,16 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
             compact_session_supported,
         } => {
             let crash_report = harness_core::crash_recovery::inspect_previous_crash(&run_dir);
+            let starting_session_seed = historical_events.is_empty();
             let mut app = AppState::new_live_with_session_history_and_prompt_history_path(
                 Some(run_dir.clone()),
                 exit_on_finish,
                 on_ui_intent,
                 session_history_entries,
                 prompt_history_path,
+            );
+            app.set_starting_session_seed(
+                starting_session_seed && app.composer.prompt_buffer.is_empty(),
             );
             app.set_compact_session_supported(compact_session_supported);
             // Shared pending slot (also used by Replay) packs freeze-aligned context window
@@ -454,7 +459,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
 
     let run_result = (|| -> Result<()> {
         let mut redraw_requested = true;
-        let mut next_animation_tick = Instant::now() + ACTIVE_POLL_INTERVAL;
+        let mut next_animation_tick = None;
 
         loop {
             let mut live_updates_pending = false;
@@ -467,6 +472,9 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                 if drain_state.budget_exhausted {
                     live_updates_pending = true;
                 }
+            }
+            if app.clear_expired_quit_confirmation() {
+                redraw_requested = true;
             }
 
             if redraw_requested {
@@ -483,33 +491,28 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                 break;
             }
 
-            let animation_active = app.has_active_animations();
-            if animation_active {
-                let now = Instant::now();
-                if now >= next_animation_tick {
-                    app.advance_transcript_animation_phase();
-                    next_animation_tick = next_animation_tick_after_frame(now);
-                    redraw_requested = true;
-                    continue;
-                }
-            } else {
-                next_animation_tick = next_animation_tick_after_frame(Instant::now());
+            let now = Instant::now();
+            schedule_tick(&mut next_animation_tick, app.animation_tick_interval(), now);
+            if animation_tick_due(next_animation_tick, now) {
+                next_animation_tick = None;
+                app.advance_transcript_animation_phase();
+                redraw_requested = true;
+                continue;
             }
 
             let event = if live_updates_pending {
                 poll(Duration::ZERO)?
             } else {
                 poll(poll_timeout(
-                    animation_active,
+                    next_animation_tick,
                     live_updates.is_some(),
                     Instant::now(),
-                    next_animation_tick,
                 ))?
             };
 
-            if event.is_none() && animation_active && Instant::now() >= next_animation_tick {
+            if event.is_none() && animation_tick_due(next_animation_tick, Instant::now()) {
+                next_animation_tick = None;
                 app.advance_transcript_animation_phase();
-                next_animation_tick = next_animation_tick_after_frame(Instant::now());
                 redraw_requested = true;
                 continue;
             }
@@ -668,26 +671,33 @@ pub fn run_tui() -> Result<()> {
 }
 
 fn poll_timeout(
-    animation_active: bool,
+    next_animation_tick: Option<Instant>,
     live_updates_connected: bool,
     now: Instant,
-    next_animation_tick: Instant,
 ) -> Duration {
-    if animation_active {
+    if let Some(next_animation_tick) = next_animation_tick {
         return next_animation_tick.saturating_duration_since(now);
     }
 
-    if live_updates_connected {
-        ACTIVE_POLL_INTERVAL
-    } else {
-        IDLE_POLL_INTERVAL
+    let _ = live_updates_connected;
+    IDLE_POLL_INTERVAL
+}
+
+/// Synchronize the one-shot timer to the app's current tick demand.
+///
+/// Redraws do not move an existing deadline: mouse movement and provider
+/// updates therefore cannot accelerate the phase clock. A `None` demand
+/// actively disarms stale work so an idle shell does not redraw itself.
+fn schedule_tick(tick_at: &mut Option<Instant>, interval: Option<Duration>, now: Instant) {
+    match interval {
+        Some(interval) if tick_at.is_none() => *tick_at = Some(now + interval),
+        Some(_) => {}
+        None => *tick_at = None,
     }
 }
 
-fn next_animation_tick_after_frame(frame_completed_at: Instant) -> Instant {
-    // Animation cadence must be independent from redraw cadence. Mouse movement can request
-    // redraws continuously, so only animation advancement should move this deadline forward.
-    frame_completed_at + ACTIVE_POLL_INTERVAL
+fn animation_tick_due(tick_at: Option<Instant>, now: Instant) -> bool {
+    tick_at.is_some_and(|tick_at| now >= tick_at)
 }
 
 fn mouse_event_requires_handling(_kind: MouseEventKind, _slash_visible: bool) -> bool {
@@ -749,8 +759,19 @@ fn drain_live_updates(
             }
             Ok(LiveUpdate::OperatorNotice { message, level }) => {
                 drained += 1;
+                app.append_connect_dialog_authorization_detail(&message);
+                if matches!(level, OperatorNoticeLevel::Error)
+                    && is_auth_backend_failure_detail(&message)
+                {
+                    app.note_auth_backend_failure(&message);
+                }
                 if matches!(level, OperatorNoticeLevel::Error)
                     && app.status_banner.as_deref() != Some(message.as_str())
+                    && !(is_auth_backend_failure_summary(&message)
+                        && app
+                            .status_banner
+                            .as_deref()
+                            .is_some_and(is_auth_backend_failure_detail))
                 {
                     app.set_status_banner(Some(message.clone()));
                 }
@@ -763,9 +784,14 @@ fn drain_live_updates(
                 );
                 state.changed = true;
             }
-            Ok(LiveUpdate::AuthBackendResult { success }) => {
+            Ok(LiveUpdate::AuthBackendResult { success, message }) => {
                 drained += 1;
-                app.apply_auth_backend_result(success);
+                let message = if !success && is_auth_backend_failure_summary(&message) {
+                    app.status_banner.clone().unwrap_or(message)
+                } else {
+                    message
+                };
+                app.apply_auth_backend_result(success, &message);
                 state.changed = true;
             }
             Ok(LiveUpdate::AuthProviderCatalogRefreshed { launch_metadata }) => {
@@ -799,6 +825,14 @@ fn transient_live_status_banner(status: &str) -> bool {
     lower.contains("lagged") || lower.contains("replaying")
 }
 
+fn is_auth_backend_failure_summary(message: &str) -> bool {
+    message.starts_with("auth backend failed (exit ") && !message.contains('\n')
+}
+
+fn is_auth_backend_failure_detail(message: &str) -> bool {
+    message.starts_with("auth backend error:")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -807,19 +841,15 @@ mod tests {
     use harness_core::proj::{RunStatus, SessionCatalogEntry, SessionModeSource};
 
     #[test]
-    fn poll_timeout_blocks_when_idle_and_live_updates_are_gone() {
-        // arrange
-        // act
-        // assert
+    fn poll_timeout_parks_when_no_animation_timer_is_armed() {
+        // Given: an idle shell with and without its live-update receiver.
         let now = Instant::now();
-        assert_eq!(
-            poll_timeout(false, false, now, now + ACTIVE_POLL_INTERVAL),
-            IDLE_POLL_INTERVAL
-        );
-        assert_eq!(
-            poll_timeout(false, true, now, now + ACTIVE_POLL_INTERVAL),
-            ACTIVE_POLL_INTERVAL
-        );
+
+        // When: neither state has an animation deadline.
+
+        // Then: both use the non-redrawing idle poll interval.
+        assert_eq!(poll_timeout(None, false, now), IDLE_POLL_INTERVAL);
+        assert_eq!(poll_timeout(None, true, now), IDLE_POLL_INTERVAL);
     }
 
     #[test]
@@ -831,26 +861,59 @@ mod tests {
         let next_tick = now + Duration::from_millis(42);
 
         assert_eq!(
-            poll_timeout(true, false, now, next_tick),
+            poll_timeout(Some(next_tick), false, now),
             Duration::from_millis(42)
         );
         assert_eq!(
-            poll_timeout(true, true, next_tick, next_tick),
+            poll_timeout(Some(next_tick), true, next_tick),
             Duration::ZERO
         );
     }
 
     #[test]
-    fn next_animation_tick_after_slow_frame_remains_throttled() {
-        // arrange
-        // act
-        // assert
+    fn tick_scheduler_parks_idle_without_a_redraw_deadline() {
+        // Given: a stale deadline from a previously active surface.
+        let now = Instant::now();
+        let mut tick_at = Some(now + ACTIVE_POLL_INTERVAL);
+
+        // When: the app no longer requests animation work.
+        schedule_tick(&mut tick_at, None, now);
+
+        // Then: no animation tick remains armed and event polling uses its idle timeout.
+        assert_eq!(tick_at, None);
+        assert_eq!(poll_timeout(tick_at, false, now), IDLE_POLL_INTERVAL);
+    }
+
+    #[test]
+    fn tick_scheduler_arms_active_work_at_thirty_fps() {
+        // Given: a scheduler with no existing deadline.
+        let now = Instant::now();
+        let mut tick_at = None;
+
+        // When: the app requests the active root cadence.
+        schedule_tick(&mut tick_at, Some(ACTIVE_POLL_INTERVAL), now);
+
+        // Then: exactly one 30 Hz redraw deadline is armed.
+        assert_eq!(tick_at, Some(now + ACTIVE_POLL_INTERVAL));
+    }
+
+    #[test]
+    fn tick_scheduler_rearms_only_after_the_previous_frame_completes() {
+        // Given: a slow previous frame and a disarmed one-shot scheduler.
         let started_at = Instant::now();
         let slow_frame_completed_at = started_at + ACTIVE_POLL_INTERVAL * 3;
-        let next_tick = next_animation_tick_after_frame(slow_frame_completed_at);
+        let mut tick_at = None;
 
+        // When: active animation requests its next deadline.
+        schedule_tick(
+            &mut tick_at,
+            Some(ACTIVE_POLL_INTERVAL),
+            slow_frame_completed_at,
+        );
+
+        // Then: it waits one full 30 Hz interval instead of catching up in a burst.
         assert_eq!(
-            poll_timeout(true, false, slow_frame_completed_at, next_tick),
+            poll_timeout(tick_at, false, slow_frame_completed_at),
             ACTIVE_POLL_INTERVAL
         );
     }
@@ -1035,8 +1098,11 @@ mod tests {
             "No provider connected. Run `harness auth login` in a terminal or use /connect to set up a provider."
                 .to_string(),
         ));
-        tx.send(LiveUpdate::AuthBackendResult { success: true })
-            .unwrap_or_abort();
+        tx.send(LiveUpdate::AuthBackendResult {
+            success: true,
+            message: "auth backend completed".to_string(),
+        })
+        .unwrap_or_abort();
 
         let state = drain_live_updates(&mut app, &rx);
 
@@ -1049,6 +1115,39 @@ mod tests {
             }
         );
         assert_eq!(app.status_banner, None);
+    }
+
+    #[test]
+    fn drain_live_updates_preserves_streamed_auth_failure_detail() {
+        // arrange
+        let (tx, rx) = mpsc::channel();
+        let mut app = AppState::new_startup(Vec::new(), None);
+        tx.send(LiveUpdate::OperatorNotice {
+            message:
+                "auth backend error: auth login failed: could not bind Codex loopback callback"
+                    .to_string(),
+            level: OperatorNoticeLevel::Error,
+        })
+        .unwrap_or_abort();
+        tx.send(LiveUpdate::OperatorNotice {
+            message: "auth backend failed (exit 1): harness auth login openai".to_string(),
+            level: OperatorNoticeLevel::Error,
+        })
+        .unwrap_or_abort();
+        tx.send(LiveUpdate::AuthBackendResult {
+            success: false,
+            message: "auth backend failed (exit 1): harness auth login openai".to_string(),
+        })
+        .unwrap_or_abort();
+
+        // act
+        drain_live_updates(&mut app, &rx);
+
+        // assert
+        assert_eq!(
+            app.status_banner.as_deref(),
+            Some("auth backend error: auth login failed: could not bind Codex loopback callback")
+        );
     }
 
     #[test]

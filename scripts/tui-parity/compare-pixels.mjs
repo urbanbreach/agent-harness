@@ -374,9 +374,17 @@ function sha256File(path) {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
 
+function rejectDefectiveReference(referencePng) {
+  const normalized = referencePng.replaceAll("\\", "/");
+  if (normalized.includes("/reference-normalized/run1-ovl-help-pinned-v1/terminal.png")) {
+    throw new Error("defective help reference is excluded; use reference-final/help-ctrlx-seq/terminal.png");
+  }
+}
+
 function comparePaths(referenceInput, actualInput, opts) {
   const referencePng = resolvePngPath(referenceInput);
   const actualPng = resolvePngPath(actualInput);
+  rejectDefectiveReference(referencePng);
   const reference = decodePngRgba(referencePng);
   const actual = decodePngRgba(actualPng);
   const approvedMask =
@@ -500,8 +508,16 @@ function selfTest() {
   );
   comparePaths(p1, p2, { mask: maskPath, report: join(tmpDir, "masked-pass-report.json") });
 
+  let rejectedHelpReference = false;
+  try {
+    rejectDefectiveReference("/tmp/reference-normalized/run1-ovl-help-pinned-v1/terminal.png");
+  } catch {
+    rejectedHelpReference = true;
+  }
+  if (!rejectedHelpReference) throw new Error("self-test: defective help reference must be rejected");
+
   process.stdout.write(
-    "self-test PASS: identical match; 1-pixel fail-closed; dimension mismatch; field mask; pure PNG (no browser)\n",
+    "self-test PASS: identical match; 1-pixel fail-closed; dimension mismatch; field mask; defective help excluded; pure PNG (no browser)\n",
   );
 }
 

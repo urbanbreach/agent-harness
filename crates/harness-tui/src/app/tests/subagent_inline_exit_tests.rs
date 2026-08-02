@@ -50,6 +50,7 @@ pub(crate) fn slash_exit_from_inline_subagent_restores_parent_before_quit() {
     assert_eq!(app.current_session_id(), Some("agent_child"));
     assert!(app.replay_mode);
 
+    // Slash exit dispatches directly and restores the parent before quitting.
     app.execute_slash_command("exit", None);
 
     assert!(app.should_quit);

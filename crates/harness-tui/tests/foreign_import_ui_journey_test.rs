@@ -7,6 +7,7 @@ use std::path::PathBuf;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use harness_tui::app::{AppState, UiIntent};
+use harness_tui::UnwrapOrAbort;
 
 fn write_foreign_event_envelope(
     path: &std::path::Path,
@@ -18,7 +19,7 @@ fn write_foreign_event_envelope(
         r#"{{"schema_version":1,"event_id":"{event_id}","seq":1,"run_id":"{run_id}","mono_ms":1,"actor":{{"kind":"system"}},"payload":{{"event_type":"run_finished","data":{{"summary":"{summary}"}}}}}}
 "#
     );
-    std::fs::write(path, body).expect("write foreign events.jsonl");
+    std::fs::write(path, body).unwrap_or_abort();
 }
 
 fn unique_temp_dir(label: &str) -> PathBuf {
@@ -27,7 +28,7 @@ fn unique_temp_dir(label: &str) -> PathBuf {
         std::process::id()
     ));
     let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).expect("create temp dir");
+    std::fs::create_dir_all(&dir).unwrap_or_abort();
     dir
 }
 
@@ -56,7 +57,7 @@ fn foreign_import_picker_discover_preview_import_events_appended() {
     // Track emitted UiIntents
     let intents: std::sync::Arc<std::sync::Mutex<Vec<UiIntent>>> =
         std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-    let intents_clone = intents.clone();
+    let intents_clone = std::sync::Arc::clone(&intents);
 
     let mut app = AppState::new_live(
         Some(dest_session_dir.clone()),
@@ -192,7 +193,7 @@ fn foreign_import_picker_emits_ui_intent_on_enter() {
     let dest_session_dir = unique_temp_dir("intent-dest");
     let intents: std::sync::Arc<std::sync::Mutex<Vec<UiIntent>>> =
         std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-    let intents_clone = intents.clone();
+    let intents_clone = std::sync::Arc::clone(&intents);
 
     let mut app = AppState::new_live(
         Some(dest_session_dir.clone()),

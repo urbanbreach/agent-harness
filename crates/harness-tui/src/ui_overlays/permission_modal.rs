@@ -364,28 +364,34 @@ pub(in crate::ui) fn question_permission_body_text(
     prompts: &[crate::app::QuestionPromptView],
     theme: &Theme,
     surface: Color,
+    content_width: u16,
 ) -> Text<'static> {
     if prompts.is_empty() {
         return Text::default();
     }
 
-    let primary_style = Style::default().fg(theme.text.primary).bg(surface);
-    let muted_style = Style::default().fg(theme.text.secondary).bg(surface);
+    let primary_style = Style::default()
+        .fg(theme.question_prompt.primary)
+        .bg(surface);
+    let muted_style = Style::default()
+        .fg(theme.question_prompt.secondary)
+        .bg(surface);
+    let question_accent = ui_chrome::question_prompt_accent(theme);
     let accent_style = Style::default()
-        .fg(theme.text.inverse)
-        .bg(ui_chrome::question_prompt_accent(theme));
-    let active_surface = theme.surface.panel_elevated;
-    let active_number_style = Style::default()
-        .fg(question_prompt_tint(
-            theme.text.secondary,
-            ui_chrome::question_prompt_secondary(theme),
-            0.6,
-        ))
-        .bg(active_surface);
-    let active_label_style = Style::default()
-        .fg(ui_chrome::question_prompt_secondary(theme))
-        .bg(active_surface);
-    let success_style = Style::default().fg(theme.status.success).bg(surface);
+        .fg(question_accent)
+        .bg(surface)
+        .add_modifier(Modifier::BOLD);
+    let active_row_style = Style::default()
+        .fg(theme.question_prompt.primary)
+        .bg(theme.question_prompt.selected);
+    let active_number_style = active_row_style
+        .fg(question_accent)
+        .add_modifier(Modifier::BOLD);
+    let active_label_style = active_row_style.add_modifier(Modifier::BOLD);
+    let selected_style = Style::default()
+        .fg(theme.question_prompt.primary)
+        .bg(surface)
+        .add_modifier(Modifier::BOLD);
     let error_style = Style::default().fg(theme.status.error).bg(surface);
     let single = prompts.len() == 1 && !prompts[0].multiple;
     let tab = app
@@ -452,14 +458,18 @@ pub(in crate::ui) fn question_permission_body_text(
     let selected = app.question_prompt_selection(&permission.permission_id);
     let current_answers = answers.get(tab).cloned().unwrap_or_default();
 
-    lines.push(Line::from(vec![Span::styled(
+    let question_line = Line::from(vec![Span::styled(
         if prompt.multiple {
             format!("{} (select all that apply)", prompt.question)
         } else {
             prompt.question.clone()
         },
         primary_style,
-    )]));
+    )]);
+    lines.extend(wrap_question_line_preserving_spans(
+        question_line,
+        usize::from(content_width.max(1)),
+    ));
     // Waiting-state layout: two blank rows between title and options.
     lines.push(Line::default());
     lines.push(Line::default());
@@ -491,20 +501,18 @@ pub(in crate::ui) fn question_permission_body_text(
         let row_style = if active {
             active_label_style
         } else if picked {
-            success_style
+            selected_style
         } else {
             primary_style
         };
         let number_style = if active {
             active_number_style
-        } else if picked {
-            success_style
         } else {
-            muted_style
+            Style::default().fg(question_accent).bg(surface)
         };
         let mut spans = vec![Span::styled(
             format!("{} ({marker}) ", index + 1),
-            number_style.bg(if active { active_surface } else { surface }),
+            number_style,
         )];
         let label = if option.description.is_empty() {
             option.label.clone()
@@ -516,10 +524,26 @@ pub(in crate::ui) fn question_permission_body_text(
         if !option.description.is_empty() {
             spans.push(Span::styled(
                 format!("  {}", option.description),
-                muted_style,
+                if active {
+                    active_row_style
+                } else {
+                    muted_style
+                },
             ));
         }
-        lines.push(Line::from(spans));
+        let option_line = Line::from(spans).style(if active {
+            active_row_style
+        } else {
+            Style::default().bg(surface)
+        });
+        if active {
+            lines.extend(wrap_question_line_preserving_spans(
+                option_line,
+                usize::from(content_width.max(1)),
+            ));
+        } else {
+            lines.push(option_line);
+        }
     }
 
     if prompt.custom {
@@ -544,24 +568,26 @@ pub(in crate::ui) fn question_permission_body_text(
         let row_style = if active {
             active_label_style
         } else if picked {
-            success_style
+            selected_style
         } else {
             primary_style
         };
         let number_style = if active {
             active_number_style
-        } else if picked {
-            success_style
         } else {
-            muted_style
+            Style::default().fg(question_accent).bg(surface)
         };
-        lines.push(Line::from(vec![
-            Span::styled(
-                format!("z ({marker}) "),
-                number_style.bg(if active { active_surface } else { surface }),
-            ),
-            Span::styled("Type your answer here".to_string(), row_style),
-        ]));
+        lines.push(
+            Line::from(vec![
+                Span::styled(format!("z ({marker}) "), number_style),
+                Span::styled("Type your answer here".to_string(), row_style),
+            ])
+            .style(if active {
+                active_row_style
+            } else {
+                Style::default().bg(surface)
+            }),
+        );
 
         let editing = app.question_prompt_editing(&permission.permission_id) && active;
         if editing {
@@ -591,30 +617,107 @@ pub(in crate::ui) fn question_permission_body_text(
     Text::from(lines)
 }
 
-fn question_prompt_tint(base: Color, overlay: Color, alpha: f32) -> Color {
-    match (base, overlay) {
-        (
-            Color::Rgb(base_red, base_green, base_blue),
-            Color::Rgb(overlay_red, overlay_green, overlay_blue),
-        ) => {
-            #[allow(
-                clippy::cast_possible_truncation,
-                reason = "float-to-int cast is safe: value is clamped to [0, 255] before cast"
-            )]
-            #[allow(
-                clippy::cast_sign_loss,
-                reason = "float-to-int cast is safe: value is clamped to [0, 255] before cast"
-            )]
-            let blend = |base: u8, overlay: u8| -> u8 {
-                let value = (f32::from(base) * (1.0 - alpha)) + (f32::from(overlay) * alpha);
-                value.round().clamp(0.0, 255.0) as u8 // allow: WIDENING — value is clamped to [0, 255] before cast
-            };
-            Color::Rgb(
-                blend(base_red, overlay_red),
-                blend(base_green, overlay_green), // allow: WIDENING — value is clamped to [0, 255] before cast
-                blend(base_blue, overlay_blue),
-            )
-        }
-        _ => overlay,
+#[derive(Debug, Clone, Copy)]
+struct QuestionVisualChar {
+    ch: char,
+    style: Style,
+    width: usize,
+}
+
+fn wrap_question_line_preserving_spans(line: Line<'static>, width: usize) -> Vec<Line<'static>> {
+    if width == 0 || line.width() <= width {
+        return vec![line];
     }
+
+    let line_style = line.style;
+    let chars = line
+        .spans
+        .into_iter()
+        .flat_map(|span| {
+            let style = span.style;
+            span.content
+                .chars()
+                .map(move |ch| QuestionVisualChar {
+                    ch,
+                    style,
+                    width: Line::from(ch.to_string()).width().max(1),
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    wrap_question_chars_by_word(&chars, width)
+        .into_iter()
+        .map(|line| line.style(line_style))
+        .collect()
+}
+
+fn wrap_question_chars_by_word(chars: &[QuestionVisualChar], width: usize) -> Vec<Line<'static>> {
+    if chars.is_empty() {
+        return vec![Line::default()];
+    }
+
+    let mut lines = Vec::new();
+    let mut start = 0usize;
+    while start < chars.len() {
+        let fit_end = question_fit_end(chars, start, width);
+        if fit_end >= chars.len() {
+            lines.push(question_chars_to_line(&chars[start..]));
+            break;
+        }
+
+        if let Some(break_at) = chars[start..fit_end]
+            .iter()
+            .rposition(|visual_char| visual_char.ch.is_whitespace())
+            .map(|offset| start + offset)
+            .filter(|break_at| *break_at > start)
+        {
+            let end = break_at + 1;
+            lines.push(question_chars_to_line(&chars[start..end]));
+            start = end;
+        } else if chars[fit_end].ch.is_whitespace() {
+            lines.push(question_chars_to_line(&chars[start..fit_end]));
+            start = fit_end + 1;
+        } else {
+            let end = chars[fit_end..]
+                .iter()
+                .position(|visual_char| visual_char.ch.is_whitespace())
+                .map(|offset| fit_end + offset)
+                .unwrap_or(chars.len());
+            lines.push(question_chars_to_line(&chars[start..end]));
+            start = end;
+        }
+    }
+    lines
+}
+
+fn question_fit_end(chars: &[QuestionVisualChar], start: usize, width: usize) -> usize {
+    let mut used = 0usize;
+    for (position, visual_char) in chars.iter().enumerate().skip(start) {
+        if position > start && used.saturating_add(visual_char.width) > width {
+            return position;
+        }
+        used = used.saturating_add(visual_char.width);
+    }
+    chars.len()
+}
+
+fn question_chars_to_line(chars: &[QuestionVisualChar]) -> Line<'static> {
+    if chars.is_empty() {
+        return Line::default();
+    }
+
+    let mut spans = Vec::new();
+    let mut current = String::new();
+    let mut current_style = chars[0].style;
+    for visual_char in chars {
+        if visual_char.style == current_style {
+            current.push(visual_char.ch);
+        } else {
+            spans.push(Span::styled(std::mem::take(&mut current), current_style));
+            current_style = visual_char.style;
+            current.push(visual_char.ch);
+        }
+    }
+    spans.push(Span::styled(current, current_style));
+    Line::from(spans)
 }

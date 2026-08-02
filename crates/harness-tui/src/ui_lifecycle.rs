@@ -24,9 +24,12 @@ mod welcome;
 
 const LIFECYCLE_COPY_INSET_X: u16 = 3;
 const WELCOME_PANEL_INSET_X: u16 = 3;
-const WELCOME_PANEL_TOP_PAD: u16 = 7;
+const WELCOME_PANEL_TOP_PAD: u16 = 4;
 const WELCOME_PANEL_HEIGHT: u16 = 16;
+const STARTUP_CLIPBOARD_WARNING: &str = "Clipboard may be unreachable.";
+const STARTUP_CLIPBOARD_SETUP_HINT: &str = "See /terminal-setup for potential fixes.";
 const WELCOME_LOGO_WIDTH: usize = 14;
+const WELCOME_TEXT_COL: usize = 19;
 // Body height at 100x30≈24 / 120x32≈26; width 90 drops 80x24 (shell≈76).
 const WELCOME_BORDERED_MIN_WIDTH: u16 = 90;
 const WELCOME_BORDERED_MIN_HEIGHT: u16 = 22;
@@ -35,26 +38,15 @@ const COMPACT_WELCOME_TOP_DENSE: u16 = 8;
 const COMPACT_WELCOME_CONTENT_WIDTH: u16 = 51;
 const COMPACT_WELCOME_NARROW_INSET_X: u16 = 5;
 const COMPACT_WELCOME_NARROW_WIDTH: u16 = 70;
-const STARTUP_CLIPBOARD_Y: u16 = 4;
-const STARTUP_CLIPBOARD_Y_DENSE: u16 = 5;
 const WELCOME_PANEL_MAX_WIDTH: u16 = 120;
-const STARTUP_CLIPBOARD_WARNING_LINES: [&str; 2] = [
-    "Clipboard may be unreachable.",
-    "See /terminal-setup for potential fixes.",
-];
 const WELCOME_LOGO_ROWS: [&str; 7] = [
-    "  ██╗  ██╗  ",
-    "  ██║  ██║  ",
-    "  ███████║  ",
-    "  ██╔══██║  ",
-    "  ██║  ██║  ",
-    "  ╚═╝  ╚═╝  ",
-    "            ",
-];
-const WELCOME_CHANGELOG_BULLETS: [&str; 3] = [
-    "Event-sourced agent harness with compose-first TUI.",
-    "Native tools, permissions, and offline mock dogfood.",
-    "Replay-safe sessions with redacted provider metadata.",
+    "  ⠷        ⠾",
+    "  ⣿        ⣿",
+    "  ⣿        ⣿",
+    "  ⣿⣶⣶⣶⣶⣶⣶⣶⣿",
+    "  ⣿        ⣿",
+    "  ⣿        ⣿",
+    "  ⢿        ⢿",
 ];
 
 #[derive(Debug, Clone)]
@@ -151,7 +143,7 @@ pub(crate) fn render_startup_lifecycle_flow(
     render_startup_breadcrumb(frame, app, area, theme);
 
     if app.composer.prompt_buffer.is_empty() {
-        render_startup_clipboard_warning(frame, area, theme);
+        render_startup_clipboard_warning(frame, app, area, theme);
         render_welcome_panel(frame, app, area, theme);
     }
 
@@ -159,6 +151,31 @@ pub(crate) fn render_startup_lifecycle_flow(
     // folder-trust dialog overlays the welcome panel and breadcrumb.
     if app.trust_folder_prompt_visible {
         render_trust_folder_prompt_overlay(frame, area, theme);
+    }
+}
+
+fn render_startup_clipboard_warning(frame: &mut Frame, app: &AppState, area: Rect, _theme: &Theme) {
+    if !startup_clipboard_warning_visible(app) || area.width <= 4 || area.height <= 4 {
+        return;
+    }
+    for (offset, line) in [STARTUP_CLIPBOARD_WARNING, STARTUP_CLIPBOARD_SETUP_HINT]
+        .into_iter()
+        .enumerate()
+    {
+        let row = Rect::new(
+            area.x,
+            area.y
+                .saturating_add(4)
+                .saturating_add(u16::try_from(offset).unwrap_or(0)),
+            area.width,
+            1,
+        );
+        frame.render_widget(
+            Paragraph::new(truncate_plain_text(line, usize::from(row.width)))
+                .style(Style::default())
+                .alignment(Alignment::Center),
+            row,
+        );
     }
 }
 
@@ -198,18 +215,28 @@ fn render_startup_breadcrumb(frame: &mut Frame, app: &AppState, area: Rect, _the
         height: 1,
     };
     let text = truncate_plain_text(&startup_breadcrumb_text(app), usize::from(row.width));
-    frame.render_widget(
-        Paragraph::new(text).style(Style::default().bg(Color::Reset)),
-        row,
-    );
+    let line = if let Some(prefix) = text.strip_suffix(" ~") {
+        Line::from(vec![
+            Span::styled(
+                prefix.to_string(),
+                Style::default()
+                    .bg(Color::Reset)
+                    .add_modifier(Modifier::DIM),
+            ),
+            Span::styled(" ~", Style::default().bg(Color::Reset)),
+        ])
+    } else {
+        Line::from(Span::styled(
+            text,
+            Style::default()
+                .bg(Color::Reset)
+                .add_modifier(Modifier::DIM),
+        ))
+    };
+    frame.render_widget(Paragraph::new(line), row);
 }
 
-pub(super) fn render_live_breadcrumb(
-    frame: &mut Frame,
-    app: &AppState,
-    area: Rect,
-    _theme: &Theme,
-) {
+pub(super) fn render_live_breadcrumb(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
     let reserve = crate::layout::breadcrumb_reserve_rows(area.width);
     if area.height < reserve {
         return;
@@ -222,19 +249,33 @@ pub(super) fn render_live_breadcrumb(
         width: area.width,
         height: 1,
     };
+    let context_meta = breadcrumb_context_meta(app);
     let text = pack_breadcrumb_line(
         &live_breadcrumb_text(app),
-        breadcrumb_context_meta(app).as_deref(),
+        context_meta.as_deref(),
         usize::from(row.width),
     );
-    frame.render_widget(
-        Paragraph::new(text).style(
-            Style::default()
-                .bg(Color::Reset)
-                .add_modifier(Modifier::DIM),
-        ),
-        row,
-    );
+    let dim = Style::default()
+        .fg(theme.text.tertiary)
+        .bg(Color::Reset)
+        .add_modifier(Modifier::DIM);
+    let line = context_meta
+        .as_deref()
+        .filter(|meta| text.ends_with(*meta))
+        .map_or_else(
+            || Line::from(Span::styled(text.clone(), dim)),
+            |meta| {
+                let split = text.len().saturating_sub(meta.len());
+                Line::from(vec![
+                    Span::styled(text[..split].to_string(), dim),
+                    Span::styled(
+                        meta.to_string(),
+                        Style::default().fg(theme.text.primary).bg(Color::Reset),
+                    ),
+                ])
+            },
+        );
+    frame.render_widget(Paragraph::new(line), row);
 }
 
 /// Freeze breadcrumb right meta: `12K / 262K` (uppercase K, space slash).
@@ -318,20 +359,6 @@ fn estimated_terminal_height(area: Rect) -> u16 {
     area.height.saturating_add(STARTUP_DOCK_ROWS_ESTIMATE)
 }
 
-fn startup_clipboard_y(area: Rect) -> u16 {
-    if is_dense_startup_area(area) {
-        return STARTUP_CLIPBOARD_Y_DENSE;
-    }
-    let terminal_h = estimated_terminal_height(area);
-    let base = if welcome_bordered_panel_fits(area) && terminal_h <= 30 {
-        STARTUP_CLIPBOARD_Y.saturating_sub(1)
-    } else {
-        STARTUP_CLIPBOARD_Y
-    };
-    let scaled = base.saturating_add(terminal_h.saturating_sub(30) / 3);
-    scaled.min(area.height.saturating_sub(4))
-}
-
 fn compact_welcome_top(area: Rect) -> u16 {
     if is_dense_startup_area(area) {
         COMPACT_WELCOME_TOP_DENSE
@@ -340,47 +367,36 @@ fn compact_welcome_top(area: Rect) -> u16 {
     }
 }
 
-fn render_startup_clipboard_warning(frame: &mut Frame, area: Rect, theme: &Theme) {
-    if area.height < 7 || area.width < 24 {
-        return;
-    }
-    let _ = theme;
-    let style = Style::default();
-    let base_y = startup_clipboard_y(area);
-    for (offset, line) in STARTUP_CLIPBOARD_WARNING_LINES.iter().enumerate() {
-        let row = Rect {
-            x: area.x,
-            y: area
-                .y
-                .saturating_add(base_y + u16::try_from(offset).unwrap_or(0)),
-            width: area.width,
-            height: 1,
-        };
-        frame.render_widget(
-            Paragraph::new(truncate_plain_text(line, usize::from(row.width)))
-                .style(style)
-                .alignment(Alignment::Center),
-            row,
-        );
-    }
-}
-
 fn welcome_bordered_panel_fits(area: Rect) -> bool {
     area.width >= WELCOME_BORDERED_MIN_WIDTH && area.height >= WELCOME_BORDERED_MIN_HEIGHT
 }
 
-fn welcome_panel_top_pad(area: Rect) -> u16 {
+fn startup_clipboard_warning_visible(app: &AppState) -> bool {
+    app.status_banner
+        .as_deref()
+        .is_some_and(startup_banner_is_clipboard_warning)
+}
+
+fn startup_banner_is_clipboard_warning(banner: &str) -> bool {
+    let normalized = banner.to_ascii_lowercase();
+    normalized.contains("clipboard")
+        && (normalized.contains("unreachable") || normalized.contains("inaccessible"))
+}
+
+fn welcome_panel_top_pad(area: Rect, clipboard_warning_visible: bool) -> u16 {
     let terminal_h = estimated_terminal_height(area);
     let base = if welcome_bordered_panel_fits(area) && terminal_h <= 30 {
         WELCOME_PANEL_TOP_PAD.saturating_sub(1)
     } else {
         WELCOME_PANEL_TOP_PAD
     };
-    let scaled = base.saturating_add(terminal_h.saturating_sub(30) / 3);
+    let scaled = base
+        .saturating_add(terminal_h.saturating_sub(30) / 3)
+        .saturating_add(if clipboard_warning_visible { 3 } else { 0 });
     scaled.min(area.height.saturating_sub(8))
 }
 
-fn welcome_panel_area(area: Rect) -> Option<Rect> {
+fn welcome_panel_area(area: Rect, clipboard_warning_visible: bool) -> Option<Rect> {
     if area.width < 24 || area.height < 8 || !welcome_bordered_panel_fits(area) {
         return None;
     }
@@ -388,20 +404,11 @@ fn welcome_panel_area(area: Rect) -> Option<Rect> {
         .width
         .saturating_sub(WELCOME_PANEL_INSET_X.saturating_mul(2))
         .clamp(20, WELCOME_PANEL_MAX_WIDTH);
-    let top_pad = welcome_panel_top_pad(area);
+    let top_pad = welcome_panel_top_pad(area, clipboard_warning_visible);
     let height = WELCOME_PANEL_HEIGHT.min(area.height.saturating_sub(top_pad).max(8));
     let x = area.x.saturating_add(area.width.saturating_sub(width) / 2);
     let y = area.y.saturating_add(top_pad);
     Some(Rect::new(x, y, width, height))
-}
-
-fn welcome_action_rows() -> [(&'static str, Option<&'static str>); 4] {
-    [
-        ("New worktree", Some("ctrl+w")),
-        ("Resume session", Some("ctrl+s")),
-        ("Changelog", None),
-        ("Quit", Some("ctrl+q")),
-    ]
 }
 
 fn pad_logo_cell(row: &str) -> String {
@@ -422,11 +429,10 @@ fn welcome_inner_lines(theme: &Theme, inner_width: usize, app: &AppState) -> Vec
     let title_style = Style::default().bg(surface).add_modifier(Modifier::BOLD);
     let muted = Style::default().bg(surface);
     let body = Style::default().bg(surface);
-    let logo_style = Style::default().bg(surface);
     let dim_style = Style::default().bg(surface).add_modifier(Modifier::DIM);
-    let version = env!("CARGO_PKG_VERSION");
-    let title = theme.live_shell.startup.title;
-    let text_col = WELCOME_LOGO_WIDTH.saturating_add(5);
+    let identity = welcome::welcome_identity(theme.live_shell.startup.title);
+    let changelog_bullets = welcome::changelog_bullets();
+    let text_col = WELCOME_TEXT_COL;
     let shortcut_width = 8usize;
     let label_width = inner_width
         .saturating_sub(text_col)
@@ -439,12 +445,22 @@ fn welcome_inner_lines(theme: &Theme, inner_width: usize, app: &AppState) -> Vec
 
     for (idx, logo_row) in WELCOME_LOGO_ROWS.iter().enumerate() {
         let logo = pad_logo_cell(logo_row);
-        let mut spans = vec![Span::styled(logo, logo_style)];
+        let mut spans = super::ui_startup_logo::animated_logo_line(
+            idx,
+            WELCOME_LOGO_ROWS.len(),
+            &logo,
+            app.animation_phase_for_evidence(),
+            theme,
+            surface,
+        )
+        .spans;
         match idx {
             0 => {
-                let title_text = format!("  {title}  ");
-                let version_text =
-                    welcome_text_after_logo(&format!("{title_text}{version}"), inner_width);
+                let title_text = format!("     {}  ", identity.title);
+                let version_text = welcome_text_after_logo(
+                    &format!("{title_text}{}", identity.version),
+                    inner_width,
+                );
                 let title_prefix = welcome_text_after_logo(&title_text, inner_width);
                 let title_len = title_prefix.chars().count();
                 if version_text.chars().count() > title_len {
@@ -459,14 +475,14 @@ fn welcome_inner_lines(theme: &Theme, inner_width: usize, app: &AppState) -> Vec
             }
             2 => {
                 spans.push(Span::styled(
-                    welcome_text_after_logo("  Changelog", inner_width),
+                    welcome_text_after_logo("     Changelog", inner_width),
                     dim_style,
                 ));
             }
             4 => {
                 spans.push(Span::styled(
                     welcome_text_after_logo(
-                        &format!("   • {}", WELCOME_CHANGELOG_BULLETS[0]),
+                        &format!("      • {}", changelog_bullets[0]),
                         inner_width,
                     ),
                     muted,
@@ -475,7 +491,7 @@ fn welcome_inner_lines(theme: &Theme, inner_width: usize, app: &AppState) -> Vec
             5 => {
                 spans.push(Span::styled(
                     welcome_text_after_logo(
-                        &format!("   • {}", WELCOME_CHANGELOG_BULLETS[1]),
+                        &format!("      • {}", changelog_bullets[1]),
                         inner_width,
                     ),
                     muted,
@@ -484,7 +500,7 @@ fn welcome_inner_lines(theme: &Theme, inner_width: usize, app: &AppState) -> Vec
             6 => {
                 spans.push(Span::styled(
                     welcome_text_after_logo(
-                        &format!("   • {}", WELCOME_CHANGELOG_BULLETS[2]),
+                        &format!("      • {}", changelog_bullets[2]),
                         inner_width,
                     ),
                     muted,
@@ -497,7 +513,9 @@ fn welcome_inner_lines(theme: &Theme, inner_width: usize, app: &AppState) -> Vec
 
     lines.push(Line::from(Span::styled(" ", muted)));
 
-    for (label, shortcut) in welcome_action_rows() {
+    for action in welcome::welcome_actions() {
+        let label = action.label;
+        let shortcut = action.shortcut;
         let pad = " ".repeat(text_col.min(inner_width));
         let label_text = truncate_plain_text(label, label_width);
         let label_width_actual = super::display_width(&label_text);
@@ -519,7 +537,11 @@ fn welcome_inner_lines(theme: &Theme, inner_width: usize, app: &AppState) -> Vec
 
     // Local notices section: derived from app status banner (e.g. missing
     // provider). Replaces the trailing blank so the panel height stays stable.
-    if let Some(banner) = app.status_banner.as_deref().filter(|b| !b.is_empty()) {
+    if let Some(banner) = app
+        .status_banner
+        .as_deref()
+        .filter(|banner| !banner.is_empty() && !startup_banner_is_clipboard_warning(banner))
+    {
         let label = "Notices: ";
         let label_width = super::display_width(label);
         let budget = inner_width.saturating_sub(label_width).max(1);
@@ -560,7 +582,9 @@ fn compact_welcome_lines(
         .max(8);
 
     let mut lines = Vec::new();
-    for (label, shortcut) in welcome_action_rows() {
+    for action in welcome::welcome_actions() {
+        let label = action.label;
+        let shortcut = action.shortcut;
         if lines.len() >= max_lines {
             break;
         }
@@ -600,7 +624,7 @@ fn compact_welcome_lines(
         lines.push(Line::from(Span::styled(" ", muted)));
         lines.push(Line::from(Span::styled("Changelog", dim_style)));
         lines.push(Line::from(Span::styled(" ", muted)));
-        for bullet in WELCOME_CHANGELOG_BULLETS {
+        for bullet in welcome::changelog_bullets() {
             if lines.len() >= max_lines {
                 break;
             }
@@ -613,7 +637,11 @@ fn compact_welcome_lines(
     }
     // Compact local notices: show the status banner if present.
     if lines.len() < max_lines {
-        if let Some(banner) = app.status_banner.as_deref().filter(|b| !b.is_empty()) {
+        if let Some(banner) = app
+            .status_banner
+            .as_deref()
+            .filter(|banner| !banner.is_empty() && !startup_banner_is_clipboard_warning(banner))
+        {
             let label = "Notices: ";
             let label_width = super::display_width(label);
             let budget = inner_width.saturating_sub(label_width).max(1);
@@ -666,7 +694,7 @@ fn render_compact_welcome_body(frame: &mut Frame, app: &AppState, area: Rect, th
 }
 
 fn render_welcome_panel(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
-    if let Some(panel) = welcome_panel_area(area) {
+    if let Some(panel) = welcome_panel_area(area, startup_clipboard_warning_visible(app)) {
         let surface = Color::Reset;
         let block = Block::default()
             .borders(Borders::ALL)
@@ -780,7 +808,7 @@ fn startup_lifecycle_flow_selection_surface(
     if area.width == 0 || area.height == 0 || !app.composer.prompt_buffer.is_empty() {
         return None;
     }
-    if let Some(panel) = welcome_panel_area(area) {
+    if let Some(panel) = welcome_panel_area(area, startup_clipboard_warning_visible(app)) {
         let block = Block::default().borders(Borders::ALL);
         let content_area = block.inner(panel);
         if content_area.width == 0 || content_area.height == 0 {

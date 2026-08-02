@@ -46,12 +46,15 @@ pub(super) fn context_view_plan_palette_dispatch_opens_plan_view() {
     assert!(app.plan_view_is_visible());
 }
 
-pub(super) fn session_feedback_maps_to_help_action() {
+pub(super) fn session_feedback_routes_to_help_from_palette() {
     let entry = PALETTE_COMMAND_ENTRIES
         .iter()
-        .find(|e| e.id == "session.feedback")
-        .expect("session.feedback entry");
-    assert_eq!(entry.dispatch, PaletteDispatch::Action(Action::Help));
+        .find(|e| e.id == "session.feedback");
+    assert_eq!(
+        entry.map(|entry| entry.dispatch),
+        Some(PaletteDispatch::Action(Action::Help)),
+        "session.feedback should retain the visible reference row while routing to Harness help"
+    );
 }
 
 pub(super) fn plan_view_enter_opens_existing_plan_preview() {

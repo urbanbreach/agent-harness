@@ -47,6 +47,7 @@ pub(super) fn append_reasoning_body_lines(
     body: &str,
     theme: &Theme,
     surface: Color,
+    prefix: &str,
     width: u16,
 ) {
     let colors = reasoning_markdown_colors(theme, surface);
@@ -54,13 +55,7 @@ pub(super) fn append_reasoning_body_lines(
 
     for row in body.lines() {
         if row.is_empty() {
-            append_prefixed_wrapped_spans_line(
-                lines,
-                TRANSCRIPT_REASONING_BODY_PREFIX,
-                base_style,
-                Vec::new(),
-                width,
-            );
+            append_prefixed_wrapped_spans_line(lines, prefix, base_style, Vec::new(), width);
             continue;
         }
 
@@ -74,7 +69,7 @@ pub(super) fn append_reasoning_body_lines(
             let spans = parse_reasoning_inline_spans(heading_text, &colors);
             append_prefixed_wrapped_spans_line(
                 lines,
-                &format!("{TRANSCRIPT_REASONING_BODY_PREFIX}{indent}"),
+                &format!("{prefix}{indent}"),
                 heading_style,
                 spans,
                 width,
@@ -83,12 +78,10 @@ pub(super) fn append_reasoning_body_lines(
         }
 
         if markdown_rule(trimmed) {
-            let content_width = usize::from(width)
-                .saturating_sub(TRANSCRIPT_REASONING_BODY_PREFIX.len())
-                .max(1);
+            let content_width = usize::from(width).saturating_sub(prefix.len()).max(1);
             append_prefixed_wrapped_spans_line(
                 lines,
-                TRANSCRIPT_REASONING_BODY_PREFIX,
+                prefix,
                 base_style,
                 vec![Span::styled(
                     "─".repeat(content_width),
@@ -106,7 +99,7 @@ pub(super) fn append_reasoning_body_lines(
             let spans = parse_reasoning_inline_spans(text, &colors);
             append_prefixed_wrapped_spans_line(
                 lines,
-                &format!("{TRANSCRIPT_REASONING_BODY_PREFIX}{indent}▍ "),
+                &format!("{prefix}{indent}▍ "),
                 quote_style,
                 spans,
                 width,
@@ -126,7 +119,7 @@ pub(super) fn append_reasoning_body_lines(
             let spans = parse_reasoning_inline_spans(text, &colors);
             append_prefixed_wrapped_spans_line(
                 lines,
-                &format!("{TRANSCRIPT_REASONING_BODY_PREFIX}{indent}{marker}"),
+                &format!("{prefix}{indent}{marker}"),
                 marker_style,
                 spans,
                 width,
@@ -135,13 +128,7 @@ pub(super) fn append_reasoning_body_lines(
         }
 
         let spans = parse_reasoning_inline_spans(trimmed, &colors);
-        append_prefixed_wrapped_spans_line(
-            lines,
-            TRANSCRIPT_REASONING_BODY_PREFIX,
-            base_style,
-            spans,
-            width,
-        );
+        append_prefixed_wrapped_spans_line(lines, prefix, base_style, spans, width);
     }
 }
 

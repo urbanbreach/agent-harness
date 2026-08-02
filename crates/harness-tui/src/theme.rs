@@ -116,7 +116,7 @@ pub fn nearest_indexed(r: u8, g: u8, b: u8) -> u8 {
     let ri = nearest_cube_channel(r);
     let gi = nearest_cube_channel(g);
     let bi = nearest_cube_channel(b);
-    let cube_idx = 16 + 36 * ri as u16 + 6 * gi as u16 + bi as u16;
+    let cube_idx = 16 + 36 * u16::from(ri) + 6 * u16::from(gi) + u16::from(bi);
     let cube_dist = sq_dist(
         r,
         g,
@@ -126,29 +126,29 @@ pub fn nearest_indexed(r: u8, g: u8, b: u8) -> u8 {
         CUBE_VALUES[bi as usize],
     );
 
-    let lum = (r as u16 + g as u16 + b as u16) / 3;
+    let lum = (u16::from(r) + u16::from(g) + u16::from(b)) / 3;
     let gray_step = if lum <= 3 {
         0u8
     } else if lum >= 243 {
         23
     } else {
-        ((lum as i16 - 8 + 5) / 10).clamp(0, 23) as u8
+        u8::try_from((lum.saturating_sub(3) / 10).min(23)).unwrap_or_default()
     };
-    let gv = (8 + gray_step as u16 * 10) as u8;
+    let gv = u8::try_from(8 + u16::from(gray_step) * 10).unwrap_or_default();
     let gray_dist = sq_dist(r, g, b, gv, gv, gv);
 
     if gray_dist < cube_dist {
         232 + gray_step
     } else {
-        cube_idx as u8
+        u8::try_from(cube_idx).unwrap_or_default()
     }
 }
 
 fn nearest_cube_channel(v: u8) -> u8 {
     let mut best = 0u8;
-    let mut best_d = v.abs_diff(CUBE_VALUES[0]) as u16;
+    let mut best_d = u16::from(v.abs_diff(CUBE_VALUES[0]));
     for i in 1..6u8 {
-        let d = v.abs_diff(CUBE_VALUES[i as usize]) as u16;
+        let d = u16::from(v.abs_diff(CUBE_VALUES[i as usize]));
         if d < best_d {
             best = i;
             best_d = d;
@@ -158,10 +158,10 @@ fn nearest_cube_channel(v: u8) -> u8 {
 }
 
 fn sq_dist(r1: u8, g1: u8, b1: u8, r2: u8, g2: u8, b2: u8) -> u32 {
-    let dr = r1 as i32 - r2 as i32;
-    let dg = g1 as i32 - g2 as i32;
-    let db = b1 as i32 - b2 as i32;
-    (dr * dr + dg * dg + db * db) as u32
+    let dr = u32::from(r1.abs_diff(r2));
+    let dg = u32::from(g1.abs_diff(g2));
+    let db = u32::from(b1.abs_diff(b2));
+    dr * dr + dg * dg + db * db
 }
 
 /// Find the nearest ANSI 16 color for an RGB triplet.
@@ -754,6 +754,7 @@ pub struct SurfaceColors {
     pub panel_elevated: Color,
     pub overlay: Color,
     pub card: Color,
+    pub selected_card: Color,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -774,6 +775,9 @@ pub struct TextColors {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct QuestionPromptColors {
+    pub surface: Color,
+    pub selected: Color,
+    pub primary: Color,
     pub accent: Color,
     pub secondary: Color,
 }
@@ -823,6 +827,48 @@ pub struct ScrollbarColors {
     pub thumb_active: Color,
 }
 
+/// Terminal-native colors measured from the Grok Build chat shell.
+///
+/// These are kept as a named token family because several reference surfaces
+/// intentionally use ANSI palette entries rather than the RGB application
+/// palette. Keeping them here makes the frozen shell styling explicit and
+/// lets terminal capability quantization treat them consistently.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ReferenceTerminalColors {
+    pub canvas: Color,
+    pub primary: Color,
+    pub secondary: Color,
+    pub muted: Color,
+    pub prompt_border_active: Color,
+    pub active_prompt_surface: Color,
+    pub error: Color,
+    pub palette_section: Color,
+    pub fork_accent: Color,
+    pub assistant_error: Color,
+    pub diff_added: Color,
+    pub diff_removed: Color,
+    pub diff_added_gutter: Color,
+    pub diff_removed_gutter: Color,
+    pub diff_added_highlight: Color,
+    pub diff_removed_highlight: Color,
+    pub diff_hunk_header: Color,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ReferenceDiffSyntaxColors {
+    pub context_bg: [u8; 3],
+    pub comment: [u8; 3],
+    pub keyword: [u8; 3],
+    pub function: [u8; 3],
+    pub variable: [u8; 3],
+    pub string: [u8; 3],
+    pub number: [u8; 3],
+    pub r#type: [u8; 3],
+    pub operator: [u8; 3],
+    pub punctuation: [u8; 3],
+    pub error: [u8; 3],
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ThemePalette {
     pub surfaces: SurfaceColors,
@@ -849,10 +895,45 @@ pub struct Theme {
     pub markdown: MarkdownColors,
     pub agents: AgentColors,
     pub scrollbar: ScrollbarColors,
+    pub reference_terminal: ReferenceTerminalColors,
     pub live_shell: LiveShellTokens,
 }
 
 impl Theme {
+    pub(crate) const GROK_DIFF_SYNTAX: ReferenceDiffSyntaxColors = ReferenceDiffSyntaxColors {
+        context_bg: [0x14, 0x14, 0x14],
+        comment: [0x80, 0x80, 0x80],
+        keyword: [0xD9, 0x84, 0xD9],
+        function: [0xE8, 0xA0, 0xE8],
+        variable: [0xE0, 0x6C, 0x75],
+        string: [0x7F, 0xD8, 0x8F],
+        number: [0xE5, 0xC0, 0x7B],
+        r#type: [0xE5, 0xC0, 0x7B],
+        operator: [0x56, 0xB6, 0xC2],
+        punctuation: [0xEE, 0xEE, 0xEE],
+        error: [0xE0, 0x6C, 0x75],
+    };
+
+    const GROK_TERMINAL_COLORS: ReferenceTerminalColors = ReferenceTerminalColors {
+        canvas: Color::Indexed(0),
+        primary: Color::Indexed(15),
+        secondary: Color::Indexed(7),
+        muted: Color::Indexed(8),
+        prompt_border_active: rgb(0x50, 0x50, 0x58),
+        active_prompt_surface: rgb(0x26, 0x26, 0x26),
+        error: rgb(239, 41, 41),
+        palette_section: rgb(0xD9, 0x84, 0xD9),
+        fork_accent: rgb(0xE8, 0xA0, 0xE8),
+        assistant_error: rgb(113, 116, 122),
+        diff_added: rgb(0x20, 0x30, 0x3B),
+        diff_removed: rgb(0x37, 0x22, 0x2C),
+        diff_added_gutter: rgb(0x1B, 0x2B, 0x34),
+        diff_removed_gutter: rgb(0x2D, 0x1F, 0x26),
+        diff_added_highlight: rgb(0xB8, 0xDB, 0x87),
+        diff_removed_highlight: rgb(0xE2, 0x6A, 0x75),
+        diff_hunk_header: rgb(0x82, 0x8B, 0xB8),
+    };
+
     const HARNESS_DARK_SHELL: LiveShellTokens = LiveShellTokens {
         breakpoints: ShellBreakpoints::DEFAULT,
         minimum: LiveShellLayout {
@@ -1161,6 +1242,7 @@ impl Theme {
                 panel_elevated: rgb(0x12, 0x16, 0x1E),
                 overlay: rgb(0x0B, 0x0E, 0x14),
                 card: rgb(0x55, 0x57, 0x53),
+                selected_card: rgb(0x55, 0x57, 0x53),
             },
             border: BorderColors {
                 subtle: rgb(0x3A, 0x3D, 0x43),
@@ -1175,6 +1257,9 @@ impl Theme {
                 inverse: rgb(0x0B, 0x0E, 0x14),
             },
             question_prompt: QuestionPromptColors {
+                surface: rgb(0x12, 0x16, 0x1E),
+                selected: rgb(0x55, 0x57, 0x53),
+                primary: rgb(0xEE, 0xEE, 0xEC),
                 accent: rgb(0xD9, 0x84, 0xD9),
                 secondary: rgb(0x5C, 0x9C, 0xF5),
             },
@@ -1217,8 +1302,36 @@ impl Theme {
                 thumb: rgb(0x32, 0x36, 0x3C),
                 thumb_active: rgb(0x60, 0x63, 0x6A),
             },
+            reference_terminal: Self::GROK_TERMINAL_COLORS,
             live_shell: Self::HARNESS_DARK_SHELL,
         }
+    }
+
+    /// Harness chat-shell tokens, anchored by the frozen RGB observation receipt.
+    pub fn harness_chat() -> Self {
+        let mut theme = Self::harness_dark();
+        theme.surface.canvas = rgb(20, 20, 20);
+        theme.surface.shell = rgb(20, 20, 20);
+        theme.surface.panel = rgb(20, 20, 20);
+        theme.surface.panel_elevated = rgb(28, 28, 28);
+        theme.surface.overlay = rgb(20, 20, 20);
+        theme.surface.card = rgb(85, 87, 83);
+        theme.surface.selected_card = rgb(85, 87, 83);
+        theme.text.primary = rgb(238, 238, 236);
+        theme.text.secondary = rgb(136, 139, 145);
+        theme.text.tertiary = rgb(136, 139, 145);
+        theme.question_prompt.surface = rgb(36, 36, 36);
+        theme.question_prompt.selected = rgb(54, 54, 54);
+        theme.question_prompt.primary = rgb(225, 225, 225);
+        theme.question_prompt.accent = rgb(200, 200, 200);
+        theme.question_prompt.secondary = rgb(108, 108, 108);
+        theme.status.warning = Color::Yellow;
+        theme.status.disabled = rgb(128, 128, 128);
+        theme.scrollbar.track = rgb(20, 20, 20);
+        theme.scrollbar.thumb = rgb(36, 36, 36);
+        theme.reference_terminal = Self::GROK_TERMINAL_COLORS;
+        theme.live_shell = Self::HARNESS_DARK_SHELL;
+        theme
     }
 
     pub fn harness_light() -> Self {
@@ -1230,6 +1343,7 @@ impl Theme {
                 panel_elevated: rgb(0xEF, 0xEF, 0xEA),
                 overlay: rgb(0xFA, 0xFA, 0xF5),
                 card: rgb(0xD4, 0xD4, 0xCF),
+                selected_card: rgb(0xD4, 0xD4, 0xCF),
             },
             border: BorderColors {
                 subtle: rgb(0xC8, 0xC8, 0xC3),
@@ -1244,6 +1358,9 @@ impl Theme {
                 inverse: rgb(0xF5, 0xF5, 0xF0),
             },
             question_prompt: QuestionPromptColors {
+                surface: rgb(0xEF, 0xEF, 0xEA),
+                selected: rgb(0xD4, 0xD4, 0xCF),
+                primary: rgb(0x1E, 0x1E, 0x1E),
                 accent: rgb(0x7B, 0x2D, 0x8E),
                 secondary: rgb(0x1A, 0x5C, 0xB0),
             },
@@ -1286,6 +1403,7 @@ impl Theme {
                 thumb: rgb(0xC8, 0xC8, 0xC3),
                 thumb_active: rgb(0xA0, 0xA0, 0x9B),
             },
+            reference_terminal: Self::GROK_TERMINAL_COLORS,
             live_shell: Self::HARNESS_DARK_SHELL,
         }
     }
@@ -1299,6 +1417,7 @@ impl Theme {
                 panel_elevated: Color::Black,
                 overlay: Color::Black,
                 card: Color::DarkGray,
+                selected_card: Color::DarkGray,
             },
             border: BorderColors {
                 subtle: Color::DarkGray,
@@ -1313,6 +1432,9 @@ impl Theme {
                 inverse: Color::Black,
             },
             question_prompt: QuestionPromptColors {
+                surface: Color::Black,
+                selected: Color::DarkGray,
+                primary: Color::White,
                 accent: Color::Yellow,
                 secondary: Color::Cyan,
             },
@@ -1355,13 +1477,15 @@ impl Theme {
                 thumb: Color::DarkGray,
                 thumb_active: Color::Yellow,
             },
+            reference_terminal: Self::GROK_TERMINAL_COLORS,
             live_shell: Self::HARNESS_DARK_SHELL,
         }
     }
 
     pub fn by_name(name: &str) -> Option<Self> {
         match name {
-            "default" | "harness-dark" => Some(Self::harness_dark()),
+            "default" | "harness-chat" => Some(Self::harness_chat()),
+            "harness-dark" => Some(Self::harness_dark()),
             "harness-light" | "light" => Some(Self::harness_light()),
             "high-contrast" => Some(Self::harness_high_contrast()),
             "terminal-native" => Some(Self::terminal_native()),
@@ -1388,6 +1512,7 @@ impl Theme {
                 panel_elevated: q(self.surface.panel_elevated),
                 overlay: q(self.surface.overlay),
                 card: q(self.surface.card),
+                selected_card: q(self.surface.selected_card),
             },
             border: BorderColors {
                 subtle: q(self.border.subtle),
@@ -1402,6 +1527,9 @@ impl Theme {
                 inverse: q(self.text.inverse),
             },
             question_prompt: QuestionPromptColors {
+                surface: q(self.question_prompt.surface),
+                selected: q(self.question_prompt.selected),
+                primary: q(self.question_prompt.primary),
                 accent: q(self.question_prompt.accent),
                 secondary: q(self.question_prompt.secondary),
             },
@@ -1435,6 +1563,25 @@ impl Theme {
                 track: q(self.scrollbar.track),
                 thumb: q(self.scrollbar.thumb),
                 thumb_active: q(self.scrollbar.thumb_active),
+            },
+            reference_terminal: ReferenceTerminalColors {
+                canvas: q(self.reference_terminal.canvas),
+                primary: q(self.reference_terminal.primary),
+                secondary: q(self.reference_terminal.secondary),
+                muted: q(self.reference_terminal.muted),
+                prompt_border_active: q(self.reference_terminal.prompt_border_active),
+                active_prompt_surface: q(self.reference_terminal.active_prompt_surface),
+                error: q(self.reference_terminal.error),
+                palette_section: q(self.reference_terminal.palette_section),
+                fork_accent: q(self.reference_terminal.fork_accent),
+                assistant_error: q(self.reference_terminal.assistant_error),
+                diff_added: q(self.reference_terminal.diff_added),
+                diff_removed: q(self.reference_terminal.diff_removed),
+                diff_added_gutter: q(self.reference_terminal.diff_added_gutter),
+                diff_removed_gutter: q(self.reference_terminal.diff_removed_gutter),
+                diff_added_highlight: q(self.reference_terminal.diff_added_highlight),
+                diff_removed_highlight: q(self.reference_terminal.diff_removed_highlight),
+                diff_hunk_header: q(self.reference_terminal.diff_hunk_header),
             },
             live_shell: self.live_shell,
         }
@@ -1483,6 +1630,7 @@ impl Theme {
                 panel_elevated: elevated_bg,
                 overlay: elevated_bg,
                 card: elevated_bg,
+                selected_card: elevated_bg,
             },
             border: BorderColors {
                 subtle: dim_fg,
@@ -1497,6 +1645,9 @@ impl Theme {
                 inverse: canvas_bg,
             },
             question_prompt: QuestionPromptColors {
+                surface: elevated_bg,
+                selected: elevated_bg,
+                primary: high_contrast_fg,
                 accent: magenta,
                 secondary: blue,
             },
@@ -1531,6 +1682,25 @@ impl Theme {
                 thumb: muted_fg,
                 thumb_active: high_contrast_fg,
             },
+            reference_terminal: ReferenceTerminalColors {
+                canvas: canvas_bg,
+                primary: high_contrast_fg,
+                secondary: muted_fg,
+                muted: muted_fg,
+                prompt_border_active: muted_fg,
+                active_prompt_surface: canvas_bg,
+                error: red,
+                palette_section: magenta,
+                fork_accent: magenta,
+                assistant_error: muted_fg,
+                diff_added: canvas_bg,
+                diff_removed: canvas_bg,
+                diff_added_gutter: canvas_bg,
+                diff_removed_gutter: canvas_bg,
+                diff_added_highlight: green,
+                diff_removed_highlight: red,
+                diff_hunk_header: blue,
+            },
             live_shell: self.live_shell,
         }
     }
@@ -1546,7 +1716,7 @@ impl Theme {
             _ => return true,
         };
         // BT.709 luminance: 0.2126R + 0.7152G + 0.0722B
-        let luminance = 0.2126 * r as f32 + 0.7152 * g as f32 + 0.0722 * b as f32;
+        let luminance = 0.2126 * f32::from(r) + 0.7152 * f32::from(g) + 0.0722 * f32::from(b);
         luminance < 128.0
     }
 
@@ -1567,6 +1737,7 @@ impl Theme {
                 panel_elevated: Color::Reset,
                 overlay: Color::Reset,
                 card: Color::Reset,
+                selected_card: Color::Reset,
             },
             border: BorderColors {
                 subtle: Color::Reset,
@@ -1581,6 +1752,9 @@ impl Theme {
                 inverse: Color::Reset,
             },
             question_prompt: QuestionPromptColors {
+                surface: Color::Reset,
+                selected: Color::DarkGray,
+                primary: Color::Reset,
                 accent: Color::Magenta,
                 secondary: Color::Blue,
             },
@@ -1622,6 +1796,25 @@ impl Theme {
                 track: Color::Reset,
                 thumb: Color::Reset,
                 thumb_active: Color::Reset,
+            },
+            reference_terminal: ReferenceTerminalColors {
+                canvas: Color::Reset,
+                primary: Color::Reset,
+                secondary: Color::Reset,
+                muted: Color::Reset,
+                prompt_border_active: Color::Reset,
+                active_prompt_surface: Color::Reset,
+                error: Color::Red,
+                palette_section: Color::Magenta,
+                fork_accent: Color::Magenta,
+                assistant_error: Color::Reset,
+                diff_added: Color::Reset,
+                diff_removed: Color::Reset,
+                diff_added_gutter: Color::Reset,
+                diff_removed_gutter: Color::Reset,
+                diff_added_highlight: Color::Green,
+                diff_removed_highlight: Color::Red,
+                diff_hunk_header: Color::Blue,
             },
             live_shell: Self::HARNESS_DARK_SHELL,
         }
@@ -1711,7 +1904,7 @@ impl Theme {
 
 impl Default for Theme {
     fn default() -> Self {
-        Self::harness_dark()
+        Self::harness_chat()
     }
 }
 

@@ -356,7 +356,7 @@ mod tool_disclosure_tests;
 
 delegate_test!(mouse_click_toggles_transcript_tool_disclosure => tool_disclosure_tests::mouse_click_toggles_transcript_tool_disclosure);
 delegate_test!(mouse_click_toggles_apply_patch_file_disclosure => tool_disclosure_tests::mouse_click_toggles_apply_patch_file_disclosure);
-delegate_test!(apply_patch_default_expansion_skips_deleted_files => tool_disclosure_tests::apply_patch_default_expansion_skips_deleted_files);
+delegate_test!(apply_patch_files_start_collapsed => tool_disclosure_tests::apply_patch_files_start_collapsed);
 
 #[cfg(test)]
 #[path = "tests/subagent_navigation_tests.rs"]
@@ -496,6 +496,7 @@ fn shell_card_selection_test_app() -> AppState {
         }),
     ));
     app.transcript_view.selected_activity_index = 0;
+    app.toggle_tool_output_for_test("tc_shell_card_copy");
     app
 }
 
@@ -978,7 +979,7 @@ delegate_test!(repeated_projection_and_render_leaves_intent_queue_empty_and_proj
 delegate_test!(repeated_replay_projection_and_render_is_side_effect_free => render_purity_tests::repeated_replay_projection_and_render_is_side_effect_free);
 delegate_test!(pure_view_model_adapters_are_deterministic => render_purity_tests::pure_view_model_adapters_are_deterministic);
 
-delegate_test!(space_on_transcript_focus_focuses_prompt_for_typing => interaction_tests::space_on_transcript_focus_focuses_prompt_for_typing);
+delegate_test!(space_on_transcript_focus_toggles_prompt_without_inserting => interaction_tests::space_on_transcript_focus_toggles_prompt_without_inserting);
 delegate_test!(letter_on_transcript_focus_focuses_prompt_and_inserts_char => interaction_tests::letter_on_transcript_focus_focuses_prompt_and_inserts_char);
 delegate_test!(focus_returns_after_palette_close => interaction_tests::focus_returns_after_palette_close);
 
@@ -1033,10 +1034,10 @@ delegate_test!(mouse_drag_copy_on_select_copies_transcript_text_and_clears_selec
 delegate_test!(mouse_drag_copy_on_select_copies_shell_card_text => transcript_selection_tests::mouse_drag_copy_on_select_copies_shell_card_text);
 #[cfg(not(windows))]
 delegate_test!(mouse_drag_copy_on_select_copies_operator_sidebar_text => transcript_selection_tests::mouse_drag_copy_on_select_copies_operator_sidebar_text);
-delegate_test!(disabled_copy_on_select_keeps_operator_sidebar_selection_until_right_click_copy => transcript_selection_tests::disabled_copy_on_select_keeps_operator_sidebar_selection_until_right_click_copy);
+delegate_test!(disabled_copy_on_select_leaves_right_click_to_the_terminal => transcript_selection_tests::disabled_copy_on_select_leaves_right_click_to_the_terminal);
 delegate_test!(mouse_drag_copy_on_select_surfaces_error_toast_when_copy_fails => transcript_selection_tests::mouse_drag_copy_on_select_surfaces_error_toast_when_copy_fails);
 delegate_test!(mouse_drag_copy_on_select_preserves_multiline_text_without_render_padding => transcript_selection_tests::mouse_drag_copy_on_select_preserves_multiline_text_without_render_padding);
-delegate_test!(disabled_copy_on_select_keeps_selection_until_right_click_copy => transcript_selection_tests::disabled_copy_on_select_keeps_selection_until_right_click_copy);
+delegate_test!(disabled_copy_on_select_preserves_selection_for_terminal_right_click => transcript_selection_tests::disabled_copy_on_select_preserves_selection_for_terminal_right_click);
 delegate_test!(disabled_copy_on_select_supports_ctrl_c_and_escape => transcript_selection_tests::disabled_copy_on_select_supports_ctrl_c_and_escape);
 #[cfg(not(windows))]
 delegate_test!(mouse_drag_copy_on_select_keeps_body_rows_aligned_after_reasoning_gap => transcript_selection_tests::mouse_drag_copy_on_select_keeps_body_rows_aligned_after_reasoning_gap);
@@ -1108,7 +1109,7 @@ mod prompt_stash_tests;
 #[path = "tests/settings_editor_tests.rs"]
 mod settings_editor_tests;
 
-delegate_test!(ctrl_j_inserts_newline_without_submitting => prompt_input_tests::ctrl_j_inserts_newline_without_submitting);
+delegate_test!(ctrl_j_scrolls_scrollback_down_one_line => prompt_input_tests::ctrl_j_scrolls_scrollback_down_one_line);
 delegate_test!(paste_multiline_text_inserts_newlines_without_submitting => prompt_input_tests::paste_multiline_text_inserts_newlines_without_submitting);
 delegate_test!(multiline_history_keys_move_cursor_before_recalling_history => prompt_input_tests::multiline_history_keys_move_cursor_before_recalling_history);
 delegate_test!(prompt_history_persists_and_restores_draft_after_recall => prompt_input_tests::prompt_history_persists_and_restores_draft_after_recall);
@@ -1117,9 +1118,10 @@ delegate_test!(live_bootstrap_auto_submit_echoes_and_emits_first_prompt => promp
 delegate_test!(first_esc_on_nonempty_idle_prompt_shows_press_again_hint_without_clearing => prompt_input_tests::first_esc_on_nonempty_idle_prompt_shows_press_again_hint_without_clearing);
 delegate_test!(second_esc_within_800ms_clears_prompt_and_saves_history => prompt_input_tests::second_esc_within_800ms_clears_prompt_and_saves_history);
 delegate_test!(second_esc_after_800ms_restarts_clear_gesture_without_clearing => prompt_input_tests::second_esc_after_800ms_restarts_clear_gesture_without_clearing);
-delegate_test!(esc_while_turn_running_does_not_cancel_on_single_press => prompt_input_tests::esc_while_turn_running_does_not_cancel_on_single_press);
-delegate_test!(double_esc_while_turn_running_does_not_emit_interrupt => prompt_input_tests::double_esc_while_turn_running_does_not_emit_interrupt);
+delegate_test!(esc_while_turn_running_cancels_on_single_press => prompt_input_tests::esc_while_turn_running_cancels_on_single_press);
+delegate_test!(repeated_esc_while_turn_running_repeats_interrupt_without_clearing_draft => prompt_input_tests::repeated_esc_while_turn_running_repeats_interrupt_without_clearing_draft);
 delegate_test!(ctrl_c_clears_draft_then_cancels_running_turn => prompt_input_tests::ctrl_c_clears_draft_then_cancels_running_turn);
+delegate_test!(ctrl_enter_interrupts_active_turn_and_submits_draft => prompt_input_tests::ctrl_enter_interrupts_active_turn_and_submits_draft);
 delegate_test!(submit_prompt_while_turn_streams_echoes_as_queued_and_emits_intent => prompt_input_tests::submit_prompt_while_turn_streams_echoes_as_queued_and_emits_intent);
 
 delegate_test!(prompt_stash_push_clears_composer_and_persists_entry => prompt_stash_tests::prompt_stash_push_clears_composer_and_persists_entry);
@@ -1146,7 +1148,7 @@ delegate_test!(pending_settings_project_config_is_applied_on_new_live => setting
 delegate_test!(plan_view_opens_from_action => plan_view_tests::plan_view_opens_from_action);
 delegate_test!(plan_view_closes_on_esc => plan_view_tests::plan_view_closes_on_esc);
 delegate_test!(context_view_plan_palette_dispatch_opens_plan_view => plan_view_tests::context_view_plan_palette_dispatch_opens_plan_view);
-delegate_test!(session_feedback_maps_to_help_action => plan_view_tests::session_feedback_maps_to_help_action);
+delegate_test!(session_feedback_routes_to_help_from_palette => plan_view_tests::session_feedback_routes_to_help_from_palette);
 delegate_test!(plan_view_enter_opens_existing_plan_preview => plan_view_tests::plan_view_enter_opens_existing_plan_preview);
 delegate_test!(plan_view_empty_state_enter_toasts_guidance => plan_view_tests::plan_view_empty_state_enter_toasts_guidance);
 delegate_test!(plan_view_y_key_reports_clipboard_failure_without_dropping_path_banner => plan_view_tests::plan_view_y_key_reports_clipboard_failure_without_dropping_path_banner);
@@ -1213,7 +1215,7 @@ mod session_navigation_tests;
 
 delegate_test!(parent_transcript_hides_child_prompt_before_task_tool_finishes => session_navigation_tests::parent_child_parent_transcript_hides_child_prompt_before_task_tool_finishes);
 
-delegate_test!(replay_mode_focus_cycle_skips_prompt_and_blocks_draft_edits => session_navigation_tests::replay_mode_focus_cycle_skips_prompt_and_blocks_draft_edits);
+delegate_test!(replay_mode_tab_toggles_focus_but_blocks_draft_edits => session_navigation_tests::replay_mode_tab_toggles_focus_but_blocks_draft_edits);
 
 delegate_test!(child_session_navigation_keybinds_follow_default_contract => session_navigation_tests::child_session_navigation_keybinds_follow_default_contract);
 
@@ -1239,7 +1241,9 @@ delegate_test!(slash_menu_matches_descriptions_and_boosts_prefixes => slash_menu
 delegate_test!(slash_alias_executes_matching_command_without_menu => slash_menu_tests::slash_alias_executes_matching_command_without_menu);
 delegate_test!(slash_help_opens_help_surface_and_preserves_draft => slash_menu_tests::slash_help_opens_help_surface_and_preserves_draft);
 delegate_test!(slash_escape_clears_token_or_restores_prior_draft => slash_menu_tests::slash_escape_clears_token_or_restores_prior_draft);
-delegate_test!(slash_exit_matches_quit_requested_behavior => slash_menu_tests::slash_exit_matches_quit_requested_behavior);
+delegate_test!(slash_exit_quits_immediately_without_key_confirmation => slash_menu_tests::slash_exit_quits_immediately_without_key_confirmation);
+delegate_test!(ctrl_q_requires_the_same_key_within_grok_confirmation_window => slash_menu_tests::ctrl_q_requires_the_same_key_within_grok_confirmation_window);
+delegate_test!(ctrl_q_different_key_clears_pending_confirmation => slash_menu_tests::ctrl_q_different_key_clears_pending_confirmation);
 delegate_test!(resume_history_surface_uses_meaningful_session_title => slash_menu_tests::resume_history_surface_uses_meaningful_session_title);
 delegate_test!(live_session_picker_continue_quits_tui_and_emits_intent => slash_menu_tests::live_session_picker_continue_quits_tui_and_emits_intent);
 delegate_test!(live_session_picker_replay_quits_tui_and_emits_intent => slash_menu_tests::live_session_picker_replay_quits_tui_and_emits_intent);
@@ -1271,6 +1275,7 @@ delegate_test!(palette_opens_with_ctrl_p => palette_parity_tests::palette_opens_
 delegate_test!(palette_closes_with_escape => palette_parity_tests::palette_closes_with_escape);
 delegate_test!(palette_closes_with_ctrl_c => palette_parity_tests::palette_closes_with_ctrl_c);
 delegate_test!(palette_empty_filter_has_suggested_duplicates => palette_parity_tests::palette_empty_filter_has_suggested_duplicates);
+delegate_test!(palette_empty_filter_matches_reference_visible_rows => palette_parity_tests::palette_empty_filter_matches_reference_visible_rows);
 delegate_test!(palette_non_empty_filter_has_no_suggested_duplicates => palette_parity_tests::palette_non_empty_filter_has_no_suggested_duplicates);
 delegate_test!(palette_filter_matches_title_not_id => palette_parity_tests::palette_filter_matches_title_not_id);
 delegate_test!(palette_filter_does_not_match_command_id => palette_parity_tests::palette_filter_does_not_match_command_id);

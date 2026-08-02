@@ -84,7 +84,7 @@ pub(super) fn mouse_drag_copy_on_select_copies_operator_sidebar_text() {
     crate::clipboard::set_copy_override(None);
 }
 
-pub(super) fn disabled_copy_on_select_keeps_operator_sidebar_selection_until_right_click_copy() {
+pub(super) fn disabled_copy_on_select_leaves_right_click_to_the_terminal() {
     let _guard = ClipboardModeGuard::disabled_copy_on_select();
     let copied = Arc::new(Mutex::new(None::<String>));
     let sink = Arc::clone(&copied);
@@ -112,16 +112,8 @@ pub(super) fn disabled_copy_on_select_keeps_operator_sidebar_selection_until_rig
         None,
     );
 
-    assert_eq!(
-        copied.lock().unwrap_or_abort().clone(),
-        Some("Copy sidebar task".to_string())
-    );
-    assert!(app.operator_sidebar_selection().is_none());
-    assert_eq!(
-        app.toast()
-            .map(|toast| (toast.message.as_str(), toast.variant)),
-        Some(("Copied to clipboard", ToastVariant::Info))
-    );
+    assert!(copied.lock().unwrap_or_abort().is_none());
+    assert!(app.operator_sidebar_selection().is_some());
 }
 
 pub(super) fn mouse_drag_copy_on_select_surfaces_error_toast_when_copy_fails() {
@@ -178,7 +170,7 @@ pub(super) fn mouse_drag_copy_on_select_preserves_multiline_text_without_render_
     crate::clipboard::set_copy_override(None);
 }
 
-pub(super) fn disabled_copy_on_select_keeps_selection_until_right_click_copy() {
+pub(super) fn disabled_copy_on_select_preserves_selection_for_terminal_right_click() {
     let _guard = ClipboardModeGuard::disabled_copy_on_select();
     let copied = Arc::new(Mutex::new(None::<String>));
     let sink = Arc::clone(&copied);
@@ -206,16 +198,8 @@ pub(super) fn disabled_copy_on_select_keeps_selection_until_right_click_copy() {
         None,
     );
 
-    assert_eq!(
-        copied.lock().unwrap_or_abort().clone(),
-        Some("Copy this exact reply".to_string())
-    );
-    assert!(app.transcript_selection().is_none());
-    assert_eq!(
-        app.toast()
-            .map(|toast| (toast.message.as_str(), toast.variant)),
-        Some(("Copied to clipboard", ToastVariant::Info))
-    );
+    assert!(copied.lock().unwrap_or_abort().is_none());
+    assert!(app.transcript_selection().is_some());
 }
 
 pub(super) fn disabled_copy_on_select_supports_ctrl_c_and_escape() {

@@ -1,9 +1,10 @@
 ---
 source: crates/harness-tui/tests/deterministic_render_test.rs
+assertion_line: 35
 expression: normalize_volatile_branch(&trim_trailing_snapshot_whitespace(&rendered))
 ---
 
-             test-workspace ~
+   test-workspace /workspace/agent-harness
 
 
 

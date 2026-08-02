@@ -14,7 +14,7 @@ const GLYPH_WIDTH: u32 = 8;
 const GLYPH_HEIGHT: u32 = 8;
 const GLYPH_VERTICAL_SCALE: u32 = 2;
 const DEFAULT_FG: [u8; 3] = [216, 216, 216];
-const DEFAULT_BG: [u8; 3] = [18, 18, 18];
+const DEFAULT_BG: [u8; 3] = [20, 20, 20];
 const ANTI_ALIAS_FONT_SIZE_FACTOR: f32 = 0.72;
 
 type AntiAliasMask = Arc<Vec<u8>>;

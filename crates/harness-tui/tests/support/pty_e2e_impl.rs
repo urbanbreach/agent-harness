@@ -1,7 +1,9 @@
 use harness_core::event::{
     ActorKind, EventActor, EventEnvelopeV1, EventV1, PermissionRequestedEvent,
-    ToolCallRequestedEvent, SCHEMA_VERSION,
+    ProviderRequestFinishedEvent, ProviderRequestStartedEvent, ProviderStreamDeltaEvent,
+    TaskScheduleState, TaskScheduledEvent, ToolCallRequestedEvent, SCHEMA_VERSION,
 };
+use harness_providers::CompletionUsage;
 use harness_tui::UnwrapOrAbort;
 use harness_tui::{run_tui_with_options, LiveUpdate, TuiMode, TuiOptions, UiIntent};
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
@@ -25,6 +27,7 @@ const TYPE_FIRST_STARTUP_TEST: &str = "pty_helper_type_first_startup";
 const CONNECT_AUTH_TEST: &str = "pty_helper_connect_auth";
 const PERMISSION_OVERLAY_TEST: &str = "pty_helper_permission_overlay";
 const READY_MARKER: &str = "Shift+Tab:mode";
+const STARTING_SESSION_MARKER: &str = "Starting session…";
 const DRAFT_TEXT: &str = "Hello from PTY";
 const PERMISSION_DRAFT: &str = "keep draft under permission";
 const CLEAR_DRAFT_TEXT: &str = "draft to clear via esc";
@@ -42,7 +45,7 @@ pub(crate) fn pty_smoke_starts_accepts_input_resizes_and_exits() {
     }
 
     let mut helper = spawn_type_first_startup_helper();
-    helper.wait_for(READY_MARKER);
+    helper.wait_for(STARTING_SESSION_MARKER);
     helper.wait_for("❯");
     let startup_screen = helper.screen_text();
     assert_no_multi_row_prompt_rail(&startup_screen, "startup");
@@ -59,7 +62,7 @@ pub(crate) fn pty_smoke_starts_accepts_input_resizes_and_exits() {
         .resize(pty_size(MINIMUM_COLS, MINIMUM_ROWS))
         .unwrap_or_abort();
     helper.parser = Parser::new(MINIMUM_ROWS, MINIMUM_COLS, 0);
-    helper.wait_for(READY_MARKER);
+    helper.wait_for(STARTING_SESSION_MARKER);
 
     send_key(helper.writer.as_mut(), 0x10).unwrap_or_abort();
     helper.wait_for("Commands");
@@ -114,6 +117,9 @@ pub(crate) fn pty_permission_overlay_resolves_and_preserves_draft() {
 
     helper.wait_for("Allow Edit");
     helper.wait_for("always-approve");
+    helper.wait_for("Responding…");
+    helper.wait_for("⇣8.84k");
+    helper.wait_for("[stop]");
     let permission_screen = helper.screen_text();
     assert_permission_dock_shell(&permission_screen);
     assert!(
@@ -150,7 +156,7 @@ pub(crate) fn pty_status_dialog_opens_without_sidebar_copy() {
     }
 
     let mut helper = spawn_type_first_startup_helper();
-    helper.wait_for(READY_MARKER);
+    helper.wait_for(STARTING_SESSION_MARKER);
     helper.wait_for("❯");
 
     send_key(helper.writer.as_mut(), 0x18).unwrap_or_abort();
@@ -171,7 +177,7 @@ pub(crate) fn pty_status_dialog_opens_without_sidebar_copy() {
     );
 
     send_bytes(helper.writer.as_mut(), b"\x1b").unwrap_or_abort();
-    helper.wait_for(READY_MARKER);
+    helper.wait_for(STARTING_SESSION_MARKER);
 
     send_key(helper.writer.as_mut(), 0x10).unwrap_or_abort();
     helper.wait_for("Commands");
@@ -184,7 +190,7 @@ pub(crate) fn pty_status_dialog_opens_without_sidebar_copy() {
     assert_no_sidebar_copy(&palette_status, "status dialog via palette");
 
     send_bytes(helper.writer.as_mut(), b"\x1b").unwrap_or_abort();
-    helper.wait_for(READY_MARKER);
+    helper.wait_for(STARTING_SESSION_MARKER);
     exit_via_palette(&mut helper);
 }
 
@@ -197,7 +203,7 @@ pub(crate) fn pty_draft_esc_esc_clears_composer() {
     // Busy-turn Ctrl+C needs a live TaskScheduled stream; helpers do not drive a
     // provider. Continuous-use cancel-adjacent path: Esc Esc clears draft.
     let mut helper = spawn_type_first_startup_helper();
-    helper.wait_for(READY_MARKER);
+    helper.wait_for(STARTING_SESSION_MARKER);
     helper.wait_for("❯");
 
     helper
@@ -263,14 +269,25 @@ pub(crate) fn pty_helper_permission_overlay() {
     let inject_tx = update_tx.clone();
     thread::spawn(move || {
         thread::sleep(PERMISSION_INJECT_DELAY);
+        let _ = inject_tx.send(LiveUpdate::Event(Box::new(
+            permission_stream_scheduled_event(),
+        )));
+        let _ = inject_tx.send(LiveUpdate::Event(Box::new(
+            permission_stream_started_event(),
+        )));
+        let _ = inject_tx.send(LiveUpdate::Event(Box::new(permission_stream_delta_event())));
+        let _ = inject_tx.send(LiveUpdate::Event(Box::new(
+            permission_stream_finished_event(),
+        )));
+        thread::sleep(Duration::from_millis(1_500));
         let _ = inject_tx.send(LiveUpdate::Event(Box::new(permission_requested_event(
-            2,
+            6,
             "perm_pty_overlay",
             "tool_call_pty_overlay",
         ))));
         thread::sleep(Duration::from_millis(500));
         let _ = inject_tx.send(LiveUpdate::Event(Box::new(permission_requested_event(
-            2,
+            6,
             "perm_pty_overlay",
             "tool_call_pty_overlay",
         ))));
@@ -294,7 +311,7 @@ pub(crate) fn pty_helper_permission_overlay() {
                 }
             };
             let _ = resolve_tx.send(LiveUpdate::Event(Box::new(permission_resolved_event(
-                3,
+                7,
                 &permission_id,
                 event_decision,
                 reason,
@@ -333,7 +350,10 @@ pub(crate) fn pty_helper_connect_auth() {
     let on_ui_intent: Arc<dyn Fn(UiIntent) + Send + Sync> = Arc::new(move |intent| {
         if matches!(intent, UiIntent::OpenAuthManager { .. }) {
             auth_tx
-                .send(LiveUpdate::AuthBackendResult { success: true })
+                .send(LiveUpdate::AuthBackendResult {
+                    success: true,
+                    message: "auth backend completed".to_string(),
+                })
                 .unwrap_or_abort();
         }
     });
@@ -470,6 +490,106 @@ fn permission_seed_tool_call_event() -> EventEnvelopeV1 {
             tool_id: "edit".to_string(),
             args_summary: r#"{"path":"demo.txt"}"#.to_string(),
             args_digest: "digest-args-pty-perm".to_string(),
+            metadata: None,
+        }),
+    }
+}
+
+fn permission_stream_started_event() -> EventEnvelopeV1 {
+    EventEnvelopeV1 {
+        schema_version: SCHEMA_VERSION,
+        event_id: "evt_pty_perm_stream_0003".to_string(),
+        seq: 3,
+        run_id: "run_pty_permission_overlay".into(),
+        mono_ms: 300,
+        ts: Some("2026-07-17T12:00:00Z".to_string()),
+        actor: EventActor::new(
+            ActorKind::System,
+            Some("pty-permission-overlay".to_string()),
+        ),
+        correlation_id: Some("req_pty_perm".to_string()),
+        causation_id: None,
+        stream_key: None,
+        payload: EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "req_pty_perm".into(),
+            provider_id: "mock".to_string(),
+            model_id: "model-1".to_string(),
+            prompt_summary: "update demo.txt".to_string(),
+            request_digest: "digest-pty-perm-stream".to_string(),
+            metadata: None,
+        }),
+    }
+}
+
+fn permission_stream_delta_event() -> EventEnvelopeV1 {
+    EventEnvelopeV1 {
+        schema_version: SCHEMA_VERSION,
+        event_id: "evt_pty_perm_stream_0004".to_string(),
+        seq: 4,
+        run_id: "run_pty_permission_overlay".into(),
+        mono_ms: 400,
+        ts: Some("2026-07-17T12:00:00Z".to_string()),
+        actor: EventActor::new(
+            ActorKind::System,
+            Some("pty-permission-overlay".to_string()),
+        ),
+        correlation_id: Some("req_pty_perm".to_string()),
+        causation_id: None,
+        stream_key: None,
+        payload: EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+            request_id: "req_pty_perm".into(),
+            delta: "Updating demo.txt".to_string(),
+        }),
+    }
+}
+
+fn permission_stream_scheduled_event() -> EventEnvelopeV1 {
+    EventEnvelopeV1 {
+        schema_version: SCHEMA_VERSION,
+        event_id: "evt_pty_perm_stream_0002".to_string(),
+        seq: 2,
+        run_id: "run_pty_permission_overlay".into(),
+        mono_ms: 200,
+        ts: Some("2026-07-17T12:00:00Z".to_string()),
+        actor: EventActor::new(
+            ActorKind::System,
+            Some("pty-permission-overlay".to_string()),
+        ),
+        correlation_id: Some("req_pty_perm".to_string()),
+        causation_id: None,
+        stream_key: None,
+        payload: EventV1::TaskScheduled(TaskScheduledEvent {
+            task_id: "task_pty_perm_stream".to_string().into(),
+            state: TaskScheduleState::Started,
+            queue_key: Some("provider_model:mock:model-1".to_string()),
+        }),
+    }
+}
+
+fn permission_stream_finished_event() -> EventEnvelopeV1 {
+    EventEnvelopeV1 {
+        schema_version: SCHEMA_VERSION,
+        event_id: "evt_pty_perm_stream_0005".to_string(),
+        seq: 5,
+        run_id: "run_pty_permission_overlay".into(),
+        mono_ms: 500,
+        ts: Some("2026-07-17T12:00:00Z".to_string()),
+        actor: EventActor::new(
+            ActorKind::System,
+            Some("pty-permission-overlay".to_string()),
+        ),
+        correlation_id: Some("req_pty_perm".to_string()),
+        causation_id: None,
+        stream_key: None,
+        payload: EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+            request_id: "req_pty_perm".into(),
+            finish_reason: "tool_calls".to_string(),
+            output_digest: Some("digest-pty-perm-stream-output".to_string()),
+            usage: Some(CompletionUsage {
+                prompt_tokens: 8_000,
+                completion_tokens: 840,
+                total_tokens: 8_840,
+            }),
             metadata: None,
         }),
     }

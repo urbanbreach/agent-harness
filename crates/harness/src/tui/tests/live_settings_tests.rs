@@ -70,6 +70,42 @@ fn no_config_tui_with_stored_codex_launches_connected_catalog() {
 }
 
 #[test]
+fn no_config_tui_with_stored_oauth_marks_launch_metadata() {
+    // Given
+    let temp = tempfile::tempdir().unwrap_or_abort();
+    let store = CredentialStore::new(temp.path().join("data/harness"));
+    store
+        .save(&StoredCredential::oauth(
+            AuthProviderId::codex(),
+            "test-access-token",
+            "test-refresh-token",
+            None,
+            SystemCredentialClock.now_rfc3339(),
+        ))
+        .unwrap_or_abort();
+
+    // When
+    let settings = resolve_live_settings_for_test(
+        &live_tui_command(),
+        None,
+        None,
+        temp.path().to_path_buf(),
+        &harness_core::config::ConfigLoadContext::from_env()
+            .with_current_dir(temp.path().to_path_buf()),
+        LiveSettingsDeps {
+            credential_store: Some(&store),
+            env_lookup: &|_| None,
+            model_selection_path: None,
+        },
+    )
+    .unwrap_or_abort();
+
+    // Then
+    assert_eq!(settings.launch_metadata.provider(), "openai-codex");
+    assert!(settings.launch_metadata.uses_oauth_authentication());
+}
+
+#[test]
 fn auth_refresh_reloads_no_config_builtin_catalog_after_login() {
     // arrange
     // act

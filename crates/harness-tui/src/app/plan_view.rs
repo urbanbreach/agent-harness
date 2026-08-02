@@ -1,9 +1,12 @@
 //! Plan list overlay backed by `project_plan_list`, with optional content preview.
 
+use std::ffi::OsStr;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 
-use harness_core::plan::{project_plan_list, PlanProjectionEntry};
+use harness_core::plan::{
+    plan_file_relative_path, project_plan_list, PlanProjectionEntry, PLAN_DIR,
+};
 
 use super::{AppState, ToastVariant};
 
@@ -80,9 +83,15 @@ impl PlanViewSummary {
 
 impl AppState {
     pub(in crate::app) fn open_plan_view(&mut self) {
+        if self.replay_mode {
+            self.status_banner = Some("plan mode is unavailable during replay".to_string());
+            return;
+        }
+
         self.plan_view_visible = true;
         self.plan_view_selected = 0;
         self.plan_view_preview = None;
+        self.status_banner = Some("plan mode entered".to_string());
         self.theme_dialog_visible = false;
         self.error_details_visible = false;
         self.prompt_stash.list_visible = false;
@@ -259,6 +268,11 @@ impl AppState {
 
     /// Delete the selected plan file from disk (existing plans only).
     pub fn plan_view_delete_selected(&mut self) {
+        if self.plan_is_replay_mutation_blocked() {
+            self.status_banner = Some("plan deletion is unavailable during replay".to_string());
+            return;
+        }
+
         let entries = self.plan_view_entries();
         if entries.is_empty() {
             self.show_toast(
@@ -283,7 +297,19 @@ impl AppState {
             .clone()
             .or_else(|| (self.file_mention_workspace_root_provider)())
             .unwrap_or_else(|| PathBuf::from("."));
-        let absolute = workspace.join(&entry.path);
+        let relative = Path::new(&entry.path);
+        if let Err(err) = self
+            .plan_validate_path(&entry.path)
+            .and_then(|()| validate_plan_path_components(&workspace, relative))
+        {
+            self.status_banner = Some(format!("plan deletion rejected: {err}"));
+            self.show_toast(
+                format!("plan deletion rejected for `{}`: {err}", entry.slug),
+                ToastVariant::Error,
+            );
+            return;
+        }
+        let absolute = workspace.join(relative);
         match fs::remove_file(&absolute) {
             Ok(()) => {
                 self.plan_view_preview = None;
@@ -367,65 +393,167 @@ impl AppState {
     }
 
     // -----------------------------------------------------------------------
-    // Plan Mode behavior contracts (Todo 21 implements the bodies)
+    // Plan Mode behavior contracts
     // -----------------------------------------------------------------------
-    // These public entrypoints are the Plan Mode contracts captured by
-    // `tests/plan_vim_screen_mode_parity_test.rs`. They are intentionally
-    // unimplemented stubs so the parity tests compile and run as *red* evidence
-    // for Todo 21, which replaces each body with the real product behavior.
-    // They are NOT wired into any keybinding or `Action`, so they cannot be
-    // triggered outside of tests; they are future product API surface, not
-    // compatibility shims delegating to existing private code.
 
     /// Write the plan body to the canonical `.agent-harness/plans/<run>.md`.
-    ///
-    /// (Todo 21 contract — currently unimplemented.)
-    pub fn plan_edit(&mut self, _body: String) -> Result<(), String> {
-        unimplemented!("plan_edit is a Todo 21 Plan Mode contract; not yet implemented")
+    pub fn plan_edit(&mut self, body: String) -> Result<(), String> {
+        if self.plan_is_replay_mutation_blocked() {
+            let message = "plan edits are unavailable during replay".to_string();
+            self.status_banner = Some(message.clone());
+            return Err(message);
+        }
+
+        let run_id = self
+            .run_id()
+            .ok_or_else(|| "cannot edit a plan without an active run id".to_string())?
+            .to_string();
+        let relative_path = plan_file_relative_path(&run_id);
+        let relative_text = relative_path.to_string_lossy().into_owned();
+        self.plan_validate_path(&relative_text)?;
+
+        let workspace = self
+            .file_mention_workspace_root
+            .clone()
+            .or_else(|| (self.file_mention_workspace_root_provider)())
+            .ok_or_else(|| "cannot edit a plan without a workspace root".to_string())?;
+        validate_plan_path_components(&workspace, &relative_path)?;
+
+        let plans_dir = workspace.join(PLAN_DIR);
+        fs::create_dir_all(&plans_dir).map_err(|err| {
+            format!(
+                "failed to create plan directory `{}`: {err}",
+                plans_dir.display()
+            )
+        })?;
+        let absolute_path = workspace.join(&relative_path);
+        fs::write(&absolute_path, body)
+            .map_err(|err| format!("failed to write plan `{}`: {err}", absolute_path.display()))?;
+        self.status_banner = Some(format!("plan updated: {relative_text}"));
+        Ok(())
     }
 
     /// Approve the active plan: set a status banner and close the plan view.
-    ///
-    /// (Todo 21 contract — currently unimplemented.)
     pub fn plan_approve(&mut self) {
-        unimplemented!("plan_approve is a Todo 21 Plan Mode contract; not yet implemented")
+        if self.plan_is_replay_mutation_blocked() {
+            self.status_banner = Some("plan approval is unavailable during replay".to_string());
+            return;
+        }
+
+        self.status_banner = Some("plan approved; ready for build".to_string());
+        self.close_plan_view();
     }
 
     /// Reject the active plan: set a status banner and close the plan view.
-    ///
-    /// (Todo 21 contract — currently unimplemented.)
     pub fn plan_reject(&mut self) {
-        unimplemented!("plan_reject is a Todo 21 Plan Mode contract; not yet implemented")
+        if self.plan_is_replay_mutation_blocked() {
+            self.status_banner = Some("plan rejection is unavailable during replay".to_string());
+            return;
+        }
+
+        self.status_banner = Some("plan rejected; continue refining".to_string());
+        self.close_plan_view();
     }
 
     /// Cancel plan editing: close the plan view without writing a plan file.
-    ///
-    /// (Todo 21 contract — currently unimplemented.)
     pub fn plan_cancel(&mut self) {
-        unimplemented!("plan_cancel is a Todo 21 Plan Mode contract; not yet implemented")
+        if self.plan_is_replay_mutation_blocked() {
+            self.status_banner = Some("plan cancellation is unavailable during replay".to_string());
+            return;
+        }
+
+        self.close_plan_view();
     }
 
     /// Validate that a plan path is confined to `.agent-harness/plans/*.md`.
     ///
     /// Rejects path traversal, absolute paths, non-`.md` extensions, and paths
-    /// outside the plans directory. (Todo 21 contract — currently unimplemented.)
-    pub fn plan_validate_path(&self, _path: &str) -> Result<(), String> {
-        unimplemented!("plan_validate_path is a Todo 21 Plan Mode contract; not yet implemented")
+    /// outside the plans directory.
+    pub fn plan_validate_path(&self, path: &str) -> Result<(), String> {
+        let path = Path::new(path);
+        if path.is_absolute() {
+            return Err("plan path must be relative to the workspace".to_string());
+        }
+
+        let mut components = path.components();
+        let Some(Component::Normal(root)) = components.next() else {
+            return Err("plan path must be under `.agent-harness/plans/`".to_string());
+        };
+        let Some(Component::Normal(plans)) = components.next() else {
+            return Err("plan path must be under `.agent-harness/plans/`".to_string());
+        };
+        let Some(Component::Normal(filename)) = components.next() else {
+            return Err("plan path must name a markdown file".to_string());
+        };
+        if components.next().is_some()
+            || root != OsStr::new(".agent-harness")
+            || plans != OsStr::new("plans")
+        {
+            return Err("plan path must be confined to `.agent-harness/plans/`".to_string());
+        }
+
+        let filename = filename
+            .to_str()
+            .ok_or_else(|| "plan filename must be valid UTF-8".to_string())?;
+        let filename_path = Path::new(filename);
+        let Some(stem) = filename_path.file_stem() else {
+            return Err("plan filename must not be empty".to_string());
+        };
+        if stem.is_empty() || filename_path.extension() != Some(OsStr::new("md")) {
+            return Err("plan path must end with a non-empty `.md` filename".to_string());
+        }
+
+        let canonical = Path::new(PLAN_DIR).join(filename);
+        if path != canonical {
+            return Err("plan path must use its canonical relative form".to_string());
+        }
+        Ok(())
     }
 
     /// Suspend the active child session as part of Plan Mode handoff.
-    ///
-    /// (Todo 21 contract — currently unimplemented.)
     pub fn plan_child_suspend(&self) -> Result<(), String> {
-        unimplemented!("plan_child_suspend is a Todo 21 Plan Mode contract; not yet implemented")
+        if self.replay_mode {
+            return Err("child suspension is unavailable during replay".to_string());
+        }
+        if self.current_subagent_session_present() {
+            Ok(())
+        } else {
+            Err("no active child session to suspend".to_string())
+        }
     }
 
     /// Whether plan mutations are blocked by replay mode.
-    ///
-    /// (Todo 21 contract — currently unimplemented.)
     pub fn plan_is_replay_mutation_blocked(&self) -> bool {
-        unimplemented!(
-            "plan_is_replay_mutation_blocked is a Todo 21 Plan Mode contract; not yet implemented"
-        )
+        self.replay_mode
     }
+}
+
+/// Reject symlink components before creating or replacing the active plan.
+/// The coordinator applies the same boundary to agent edits; keeping the TUI
+/// writer fail-closed prevents a presentation-layer write from bypassing it.
+fn validate_plan_path_components(workspace: &Path, relative: &Path) -> Result<(), String> {
+    let mut current = workspace.to_path_buf();
+    for component in relative.components() {
+        let Component::Normal(segment) = component else {
+            return Err("plan path contains an invalid component".to_string());
+        };
+        current.push(segment);
+        match fs::symlink_metadata(&current) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                return Err(format!(
+                    "plan path contains symlink component `{}`",
+                    current.display()
+                ));
+            }
+            Ok(_) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(err) => {
+                return Err(format!(
+                    "cannot verify plan path component `{}`: {err}",
+                    current.display()
+                ));
+            }
+        }
+    }
+    Ok(())
 }

@@ -221,11 +221,11 @@ fn orphan_question_permission_becomes_pending_ask_tool_row() {
 
     let rendered = render_debug(&app, 100, 28);
     assert!(
-        rendered.contains("Ask Pick one"),
-        "orphan question should project as Ask tool row\n{rendered}"
+        rendered.contains("Option A"),
+        "orphan question should expose its projected option\n{rendered}"
     );
     assert!(
-        rendered.contains("Waiting on answers for Pick one"),
-        "orphan question should project Waiting on answers footer\n{rendered}"
+        rendered.contains("Pick one"),
+        "orphan question should project the interactive question surface\n{rendered}"
     );
 }

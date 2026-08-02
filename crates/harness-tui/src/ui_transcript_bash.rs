@@ -38,6 +38,7 @@ pub(super) fn append_harness_bash_panel(
     panel: HarnessBashPanel<'_>,
     theme: &Theme,
     width: u16,
+    surface: Color,
 ) {
     let available_width = transcript_surface_content_width(width, false);
     let prefix_width = surface_prefix_width(TRANSCRIPT_COMMAND_TOOL_INDENT);
@@ -52,11 +53,12 @@ pub(super) fn append_harness_bash_panel(
         panel.tone,
         theme,
         panel_width,
+        surface,
     );
     append_prebuilt_surface_lines(
         lines,
         TRANSCRIPT_COMMAND_TOOL_INDENT,
-        theme.surface.panel,
+        surface,
         card_lines,
         available_width,
     );
@@ -184,60 +186,68 @@ fn harness_bash_card_lines(
     tone: TranscriptToolCallDetailTone,
     theme: &Theme,
     panel_width: usize,
+    surface: Color,
 ) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
+    let body_padding_left = if command.trim().is_empty() {
+        HARNESS_BLOCK_TOOL_PADDING_LEFT + 2
+    } else {
+        HARNESS_BLOCK_TOOL_PADDING_LEFT
+    };
 
     if let Some(title) = harness_bash_title(description) {
         append_harness_bash_rows(
             &mut lines,
             &title,
             Style::default().fg(theme.text.secondary),
-            theme,
             panel_width,
             HARNESS_BLOCK_TOOL_PADDING_LEFT,
+            surface,
         );
 
         for _ in 0..HARNESS_BLOCK_TOOL_GAP {
-            lines.push(harness_bash_padding_line(theme));
+            lines.push(harness_bash_padding_line(surface));
         }
     }
 
-    let command_style = Style::default().fg(theme.text.primary);
-    append_harness_bash_rows(
-        &mut lines,
-        &format!("$ {command}"),
-        command_style,
-        theme,
-        panel_width,
-        HARNESS_BLOCK_TOOL_PADDING_LEFT,
-    );
+    if !command.trim().is_empty() {
+        let command_style = Style::default().fg(theme.text.primary);
+        append_harness_bash_rows(
+            &mut lines,
+            &format!("$ {command}"),
+            command_style,
+            panel_width,
+            HARNESS_BLOCK_TOOL_PADDING_LEFT,
+            surface,
+        );
+    }
 
     let output = output.trim();
     if !output.is_empty() {
         for _ in 0..HARNESS_BLOCK_TOOL_GAP {
-            lines.push(harness_bash_padding_line(theme));
+            lines.push(harness_bash_padding_line(surface));
         }
         append_harness_bash_rows(
             &mut lines,
             output,
             harness_bash_output_style(tone, theme),
-            theme,
             panel_width,
-            HARNESS_BLOCK_TOOL_PADDING_LEFT,
+            body_padding_left,
+            surface,
         );
     }
 
     if let Some(expand_hint) = expand_hint.filter(|hint| has_trimmed_content(hint)) {
         for _ in 0..HARNESS_BLOCK_TOOL_GAP {
-            lines.push(harness_bash_padding_line(theme));
+            lines.push(harness_bash_padding_line(surface));
         }
         append_harness_bash_rows(
             &mut lines,
             expand_hint.trim(),
             Style::default().fg(theme.text.secondary),
-            theme,
             panel_width,
-            HARNESS_BLOCK_TOOL_PADDING_LEFT,
+            body_padding_left,
+            surface,
         );
     }
 
@@ -263,9 +273,9 @@ fn append_harness_bash_rows(
     lines: &mut Vec<Line<'static>>,
     text: &str,
     style: Style,
-    theme: &Theme,
     panel_width: usize,
     padding_left: usize,
+    surface: Color,
 ) {
     let content_width = panel_width.saturating_sub(padding_left).max(1);
     let rows = if text.is_empty() {
@@ -280,9 +290,9 @@ fn append_harness_bash_rows(
         lines.push(harness_bash_content_line(
             &row,
             style,
-            theme,
             padding_left,
             content_width,
+            surface,
         ));
     }
 }
@@ -290,9 +300,9 @@ fn append_harness_bash_rows(
 fn harness_bash_content_line(
     text: &str,
     style: Style,
-    theme: &Theme,
     padding_left: usize,
     content_width: usize,
+    surface: Color,
 ) -> Line<'static> {
     let content = sanitize_harness_bash_text(text);
     let remaining = content_width.saturating_sub(display_width(&content));
@@ -302,12 +312,12 @@ fn harness_bash_content_line(
             Span::styled(content, style),
             Span::styled(" ".repeat(remaining), Style::default()),
         ],
-        theme.surface.panel,
+        surface,
     )
 }
 
-fn harness_bash_padding_line(theme: &Theme) -> Line<'static> {
-    harness_bash_line(Vec::new(), theme.surface.panel)
+fn harness_bash_padding_line(surface: Color) -> Line<'static> {
+    harness_bash_line(Vec::new(), surface)
 }
 
 fn harness_bash_line(spans: Vec<Span<'static>>, surface: Color) -> Line<'static> {
@@ -342,4 +352,31 @@ fn wrap_plain_terminal_row(text: &str, width: usize) -> Vec<String> {
 
 fn sanitize_harness_bash_text(text: &str) -> String {
     replace_control_chars_except_tabs(text)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bash_body_can_omit_command_owned_by_header() {
+        let lines = harness_bash_card_lines(
+            "",
+            "stdout",
+            None,
+            None,
+            TranscriptToolCallDetailTone::Primary,
+            &Theme::default(),
+            80,
+            Color::Reset,
+        );
+        let rendered = lines
+            .iter()
+            .flat_map(|line| line.spans.iter())
+            .map(|span| span.content.as_ref())
+            .collect::<String>();
+
+        assert!(!rendered.contains("$ "));
+        assert!(rendered.contains("stdout"));
+    }
 }

@@ -33,7 +33,8 @@ use seed::seed_claimed_row_evidence;
 use status::{resolve_evidence_path, validate_manifest_evidence};
 use support::{divergence_receipt_path, ValidateResult, FREEZE_PNG_SHA256, FREEZE_TXT_SHA256};
 
-const MANIFEST_SRC: &str = include_str!("../../../docs/reference/tui-reference-parity-manifest.v1.json");
+const MANIFEST_SRC: &str =
+    include_str!("../../../docs/reference/tui-reference-parity-manifest.v1.json");
 
 fn checked_in_manifest() -> Value {
     serde_json::from_str(MANIFEST_SRC).unwrap_or_abort()
@@ -68,6 +69,7 @@ fn row_mut<'a>(manifest: &'a mut Value, behavior_id: &str) -> &'a mut Value {
 fn make_p0_start_01_pass(manifest: &mut Value) {
     let row = row_mut(manifest, "P0-START-01");
     row["status"] = json!("pass");
+    row["evidence"]["status"] = json!("pass");
     row["expected_semantic_cell_artifact"] =
         json!("target/test-lanes/latest/signoff-parity/evidence/reference/freeze/run1-startup/terminal.txt");
     row["expected_png_artifact"] =
@@ -78,10 +80,12 @@ fn make_p0_start_01_pass(manifest: &mut Value) {
         "L1": "target/test-lanes/latest/signoff-parity/evidence/reference/freeze/run1-startup/",
         "L2": "target/test-lanes/latest/signoff-parity/evidence/harness/P0-START-01/cells/",
         "L3": "target/test-lanes/latest/signoff-parity/evidence/actual/harness-startup-v24/",
-        "L4": "target/test-lanes/latest/signoff-parity/evidence/receipts/startup-pixel-diff-v24-precise-identity.json",
+        "L4": "crates/harness-tui/tests/fixtures/grok-build-v0.1.220-alpha.4/receipts/startup-pixel-diff-v24-precise-identity.json",
         "L5": "target/test-lanes/latest/signoff-parity/evidence/receipts/startup-pixel-diff-v24-masked.json",
         "L6": "target/test-lanes/latest/signoff-parity/evidence/receipts/startup-identity-field-mask.precise-v3.json"
     });
+    row["evidence"]["L4_pixel_diff"] =
+        json!("crates/harness-tui/tests/fixtures/grok-build-v0.1.220-alpha.4/receipts/startup-pixel-diff-v24-precise-identity.json");
     row["owners"]["differential_evaluator"] =
         json!("target/test-lanes/latest/signoff-parity/evidence/receipts/startup-pixel-diff-v24-masked.json");
     row["reference_freeze_txt_sha256"] = json!(FREEZE_TXT_SHA256);
@@ -140,7 +144,7 @@ fn evidence_validator_passes_with_seeded_evidence_root() {
 
 #[test]
 fn evidence_validator_rejects_missing_layer_file() {
-    // arrange — a pass row's seeded L4 file removed
+    // arrange — a pass row's seeded, claimed L4 file removed
     let (root, manifest) = seeded_evidence_root();
     let layer_file = resolved_row_path(root.path(), &manifest, "P0-START-01", "L4");
     std::fs::remove_file(layer_file).unwrap_or_abort();
@@ -178,7 +182,7 @@ fn evidence_validator_rejects_missing_divergence_receipt_file() {
     // marker, so the receipt path is required but absent.
     let (root, mut manifest) = seeded_evidence_root();
     let diverged_row = row_mut(&mut manifest, "P0-START-01");
-    diverged_row["status"] = json!("diverged");
+    diverged_row["evidence"]["status"] = json!("diverged");
     diverged_row["deliberate_divergence_id"] = json!("DIV-AA-SHELL-FAIL");
 
     // act
@@ -338,6 +342,35 @@ fn evidence_validator_rejects_missing_provenance_metadata() {
 
     // assert
     assert_control(result, "missing-provenance-metadata");
+}
+
+#[test]
+fn evidence_validator_rejects_capture_without_current_product_source_hash() {
+    let (root, manifest) = seeded_evidence_root();
+    let metadata =
+        resolved_row_path(root.path(), &manifest, "P0-START-01", "L3").join("metadata.json");
+    overwrite_json(&metadata, |parsed| {
+        parsed["product_source_sha256"] = json!("0".repeat(64));
+    });
+
+    // act
+    let result = validate_manifest_evidence(&manifest, root.path());
+
+    // assert
+    assert_control(result, "stale-product-source");
+}
+
+#[test]
+fn evidence_validator_rejects_capture_png_replaced_after_metadata_was_written() {
+    let (root, manifest) = seeded_evidence_root();
+    let capture = resolved_row_path(root.path(), &manifest, "P0-START-01", "L3");
+    std::fs::write(capture.join("terminal.png"), b"replacement montage bytes").unwrap_or_abort();
+
+    // act
+    let result = validate_manifest_evidence(&manifest, root.path());
+
+    // assert
+    assert_control(result, "capture-artifact-mismatch");
 }
 
 #[test]

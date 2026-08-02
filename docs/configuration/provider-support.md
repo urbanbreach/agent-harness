@@ -22,6 +22,12 @@ V1 documents a minimal fallback policy: OpenAI-compatible `auto` mode may fall b
 
 Use config/env-backed provider credentials. Missing credentials are reported without printing secret values. Invalid credentials and rate limits require live prompt evidence because doctor stays offline.
 
+## Model catalog refresh
+
+The bundled model catalog is refreshed from `https://models.dev/api.json` using a five-minute cache. Harness accepts both the direct models.dev provider map and the generated catalog shape, serves a valid stale cache immediately, and refreshes stale data in the background with an atomic, mode-`0600` cache write. Set `HARNESS_DISABLE_MODELS_FETCH=1` to keep the embedded catalog only; `HARNESS_MODELS_URL` and `HARNESS_MODELS_PATH` override the source and cache location.
+
+For the built-in `openai-codex` provider, refreshed OpenAI model metadata is merged into the configured Codex model list without replacing explicit entries. This lets newly published GPT models appear in `/model` while preserving local variants and provider settings. Unknown live entries receive conservative metadata and the existing Codex model-id reasoning policy; a provider-specific model endpoint is not required for this catalog path.
+
 ## Stable error categories
 
 | Category | Event value | Meaning | Remediation |

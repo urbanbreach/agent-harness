@@ -86,6 +86,7 @@ RUST_TEST_THREADS=1 cargo nextest run -p harness-testkit --test pty_e2e --test-t
 ## MANDATORY CODING SKILLS
 - For any coding work in this repository, load `karpathy-guidelines` and `programming` before the first edit. Coding work includes implementation, bug fixes, refactors, tests, build scripts, schemas, generated-code maintenance, and AGENTS guidance edits.
 - Delegated coding tasks must include the skills in `load_skills`; omit it only for pure read-only exploration, documentation-only lookup, or non-coding QA.
+- When capturing visual evidence, you must either install chromium or use helium browser.
 
 ## OFFLINE HARNESS DOGFOOD (product-touching changes)
 - After product-touching runtime, CLI, tool, scenario, or session-path changes, run offline mock dogfood in addition to owner nextest: `bash scripts/harness-qa-dogfood.sh --self-test` (or `--slug <name>`). Prefer the runtime skill `harness-qa` for process guidance.

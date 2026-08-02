@@ -1,6 +1,6 @@
 // allow: SIZE_OK — TUI app state (session projection + interaction)
 use crate::UnwrapOrAbort;
-use std::collections::{hash_map::DefaultHasher, BTreeSet};
+use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
 #[cfg(test)]
@@ -11,6 +11,7 @@ use super::*;
 pub(crate) enum ToastVariant {
     Info,
     Error,
+    Mode,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -18,6 +19,16 @@ pub(crate) struct ToastState {
     pub message: String,
     pub variant: ToastVariant,
     remaining_frames: u16,
+}
+
+impl ToastState {
+    pub(crate) fn fade_alpha(&self) -> f32 {
+        if self.variant != ToastVariant::Mode || self.remaining_frames > 9 {
+            1.0
+        } else {
+            f32::from(self.remaining_frames) / 9.0
+        }
+    }
 }
 
 impl AppState {
@@ -233,10 +244,13 @@ impl AppState {
             .transcript_animation_phase
             .wrapping_add(1);
         self.clear_expired_interrupt_confirmation();
-        if let Some(toast) = self.toast.as_mut() {
-            toast.remaining_frames = toast.remaining_frames.saturating_sub(1);
-            if toast.remaining_frames == 0 {
-                self.toast = None;
+        let toast_occluded = self.overlay_stack().top().is_some();
+        if !toast_occluded {
+            if let Some(toast) = self.toast.as_mut() {
+                toast.remaining_frames = toast.remaining_frames.saturating_sub(1);
+                if toast.remaining_frames == 0 {
+                    self.toast = None;
+                }
             }
         }
     }
@@ -252,9 +266,23 @@ impl AppState {
     }
 
     pub(crate) fn has_active_animations(&self) -> bool {
-        self.active_turn_in_progress()
+        (self.startup_shell_visible()
+            && self.composer.prompt_buffer.is_empty()
+            && std::env::var_os("HARNESS_DISABLE_ANIMATIONS").is_none())
+            || (self.starting_session_seed_visible()
+                && std::env::var_os("HARNESS_DISABLE_ANIMATIONS").is_none())
+            || self.active_turn_in_progress()
+            || self.active_background_task_count() > 0
             || self.toast.is_some()
             || self.interrupt_confirmation_pending()
+    }
+
+    pub(crate) fn starting_session_seed_visible(&self) -> bool {
+        self.starting_session_seed
+    }
+
+    pub(crate) fn set_starting_session_seed(&mut self, visible: bool) {
+        self.starting_session_seed = visible;
     }
 
     /// Whether the shell currently requests animation ticks (evidence / tests).
@@ -342,90 +370,6 @@ impl AppState {
             .iter()
             .flat_map(|activity| activity.tool_calls.iter())
             .find(|tool_call| tool_call.tool_call_id == tool_call_id)
-    }
-
-    fn apply_patch_default_expanded_files(tool_call: &ToolCallEntry) -> Vec<String> {
-        if tool_call.effective_tool_id() != "apply_patch" {
-            return Vec::new();
-        }
-
-        let mut seen = BTreeSet::new();
-        let mut files = Vec::new();
-
-        if let Some(edits) = tool_call
-            .output_json
-            .as_ref()
-            .and_then(|value| value.get("edits"))
-            .and_then(serde_json::Value::as_array)
-        {
-            for edit in edits {
-                let Some(path) = edit
-                    .get("path")
-                    .and_then(serde_json::Value::as_str)
-                    .map(str::trim)
-                    .filter(|path| !path.is_empty())
-                    .map(str::to_string)
-                else {
-                    continue;
-                };
-                let deleted = edit
-                    .get("deleted")
-                    .and_then(serde_json::Value::as_bool)
-                    .unwrap_or(false);
-                if deleted || !seen.insert(path.clone()) {
-                    continue;
-                }
-                files.push(path);
-            }
-        }
-
-        if !files.is_empty() {
-            return files;
-        }
-
-        let Some(rows) = tool_call
-            .output_json
-            .as_ref()
-            .and_then(|value| value.get("files"))
-            .and_then(serde_json::Value::as_array)
-        else {
-            return files;
-        };
-
-        for row in rows {
-            let Some(row) = row.as_str().map(str::trim).filter(|row| !row.is_empty()) else {
-                continue;
-            };
-            let (status, path) = row
-                .split_once(' ')
-                .map(|(status, path)| (status.trim(), path.trim()))
-                .filter(|(_, path)| !path.is_empty())
-                .unwrap_or(("", row));
-            if status.eq_ignore_ascii_case("D") {
-                continue;
-            }
-            let path = path.to_string();
-            if seen.insert(path.clone()) {
-                files.push(path);
-            }
-        }
-
-        files
-    }
-
-    pub(in crate::app) fn seed_apply_patch_file_outputs_for_tool_call(
-        &mut self,
-        tool_call_id: &str,
-    ) {
-        let files = self
-            .tool_call_entry(tool_call_id)
-            .map(Self::apply_patch_default_expanded_files)
-            .unwrap_or_default();
-        for file_path in files {
-            self.transcript_view
-                .expanded_patch_file_outputs
-                .insert(Self::patch_file_disclosure_key(tool_call_id, &file_path));
-        }
     }
 
     #[cfg(test)]
@@ -548,8 +492,23 @@ impl AppState {
         self.toast = Some(ToastState {
             message: message.into(),
             variant,
-            remaining_frames: 30,
+            remaining_frames: 90,
         });
+    }
+
+    pub(in crate::app) fn show_mode_banner(&mut self, message: impl Into<String>) {
+        self.toast = Some(ToastState {
+            message: message.into(),
+            variant: ToastVariant::Mode,
+            remaining_frames: 69,
+        });
+    }
+
+    pub fn mode_banner_alpha_for_evidence(&self) -> Option<f32> {
+        self.toast
+            .as_ref()
+            .filter(|toast| toast.variant == ToastVariant::Mode)
+            .map(ToastState::fade_alpha)
     }
 
     pub(crate) fn toast(&self) -> Option<&ToastState> {
@@ -660,4 +619,34 @@ pub struct TranscriptInteractionSnapshot {
     pub selected_activity_index: usize,
     pub show_tool_details: bool,
     pub expanded_tool_call_ids: Vec<String>,
+}
+
+#[cfg(test)]
+mod toast_tests {
+    use super::*;
+
+    #[test]
+    fn ambient_toast_lasts_ninety_ticks_and_pauses_behind_overlays() {
+        // arrange
+        // act
+        // assert
+        let mut app = AppState::new_live(None, false, None);
+        app.show_toast("Saved", ToastVariant::Info);
+        assert_eq!(app.toast().map(|toast| toast.remaining_frames), Some(90));
+
+        for _ in 0..45 {
+            app.advance_animation_tick_for_evidence();
+        }
+        app.palette_visible = true;
+        for _ in 0..30 {
+            app.advance_animation_tick_for_evidence();
+        }
+        assert_eq!(app.toast().map(|toast| toast.remaining_frames), Some(45));
+
+        app.palette_visible = false;
+        for _ in 0..45 {
+            app.advance_animation_tick_for_evidence();
+        }
+        assert!(app.toast().is_none());
+    }
 }

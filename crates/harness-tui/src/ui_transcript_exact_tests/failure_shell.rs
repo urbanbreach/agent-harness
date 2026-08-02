@@ -38,20 +38,17 @@ pub(crate) fn exact_test_block_tool_cards_skip_empty_subtitle_rows() {
     }
     let text_lines = transcript_test_line_texts(lines);
 
-    let command_row = text_lines
-        .iter()
-        .position(|line| line.contains("cargo test -p harness-tui"))
-        .unwrap_or_abort();
-    let exit_row = text_lines
-        .iter()
-        .position(|line| line.contains("exit code: 1"))
-        .unwrap_or_abort();
-    let stderr_row = text_lines
-        .iter()
-        .position(|line| line.contains("stderr: snapshot mismatch"))
-        .unwrap_or_abort();
-
-    assert!(command_row < exit_row && exit_row < stderr_row);
+    assert_eq!(
+        section.header.disclosure_state,
+        Some(TranscriptToolCallDisclosureState::Collapsed)
+    );
+    assert!(
+        text_lines.iter().any(|line| line.contains("exit code: 1"))
+            && text_lines
+                .iter()
+                .all(|line| !line.contains("stderr: snapshot mismatch")),
+        "collapsed failed tools retain only the one-line error summary\n{text_lines:#?}"
+    );
     assert!(
         !text_lines.iter().any(|line| line.contains("# Shell")),
         "failed shell summaries without structured output should stay inline like harness tool rows\n{text_lines:#?}"
@@ -425,7 +422,7 @@ fn batch_write_edit_and_patch_rows_match_reference_headers() {
         None,
     );
     assert_eq!(edit_section.header.icon, Some("←"));
-    assert_eq!(edit_section.header.title, "Edit src/main.rs");
+    assert_eq!(edit_section.header.title, "edit src/main.rs");
     assert_eq!(edit_section.header.subtitle, None);
 
     let mut patch_call = transcript_section_model_test_tool_call("tc-patch-row", "apply_patch");
@@ -449,7 +446,7 @@ fn batch_write_edit_and_patch_rows_match_reference_headers() {
 }
 
 #[test]
-fn consecutive_tool_rows_insert_single_blank_row() {
+fn consecutive_tool_rows_stay_dense() {
     // arrange
     // act
     // assert
@@ -500,8 +497,8 @@ fn consecutive_tool_rows_insert_single_blank_row() {
 
     assert_eq!(
         lsp_surface.top_offset,
-        cancel_surface.top_offset + cancel_surface.height + 1,
-        "consecutive tool surfaces should have 1 blank row between them to match the 12px gap"
+        cancel_surface.top_offset + cancel_surface.height,
+        "consecutive tool surfaces should stay adjacent like the frozen compact rows"
     );
 }
 
@@ -530,6 +527,9 @@ fn block_tool_cards_render_subtitle_inline_with_title() {
             text: "┃ agent_worker · req_child · completed · 2 child tool calls".to_string(),
             tone: TranscriptToolCallDetailTone::Secondary,
         }],
+        details_collapsed_by_default: false,
+        details_preview_visible: false,
+        animation_phase: 0,
         expanded: false,
     };
 
@@ -597,9 +597,34 @@ fn shell_tool_cards_render_harness_bash_panel_with_chrome_and_clamping() {
         }
     );
 
-    let text_lines = transcript_test_line_texts({
+    let collapsed_lines = transcript_test_line_texts({
         let mut lines = Vec::new();
         let render = append_tool_call_section_lines(&section, &theme, 96, theme.surface.panel);
+        lines.extend(render.lines);
+        lines
+    });
+    let collapsed = collapsed_lines.join("\n");
+
+    assert_eq!(
+        section.header.disclosure_state,
+        Some(TranscriptToolCallDisclosureState::Collapsed)
+    );
+    assert!(collapsed.contains("$ echo hi"));
+    assert!(!collapsed.contains("line 1"));
+
+    let expanded = build_transcript_tool_call_section(
+        &tool_call,
+        &AppState::default(),
+        None,
+        false,
+        false,
+        true,
+        false,
+        None,
+    );
+    let text_lines = transcript_test_line_texts({
+        let mut lines = Vec::new();
+        let render = append_tool_call_section_lines(&expanded, &theme, 96, theme.surface.panel);
         lines.extend(render.lines);
         lines
     });
@@ -619,12 +644,8 @@ fn shell_tool_cards_render_harness_bash_panel_with_chrome_and_clamping() {
     );
     assert!(rendered.contains("$ echo hi"));
     assert!(!rendered.contains("stdout>"));
-    assert!(rendered.contains("line 15"));
-    assert!(
-        !rendered.contains("line 16"),
-        "output should be clamped at 15 lines"
-    );
-    assert!(rendered.contains("Click to expand"));
+    assert!(rendered.contains("line 20"));
+    assert!(!rendered.contains("Click to expand"));
 }
 
 #[test]
@@ -661,17 +682,11 @@ fn shell_tool_cards_without_workdir_start_with_command_row() {
         !text_lines.iter().any(|line| line.contains("# Shell")),
         "no fallback shell title row should be rendered\n{text_lines:#?}"
     );
-    let command_row = text_lines
-        .iter()
-        .position(|line| line.contains("$ cargo test -p harness-tui"))
-        .unwrap_or_abort();
-    let preceding_content = text_lines[..command_row]
-        .iter()
-        .filter(|line| line.contains("# "))
-        .collect::<Vec<_>>();
     assert!(
-        preceding_content.is_empty(),
-        "no title row should precede the command row when no workdir description exists\n{text_lines:#?}"
+        text_lines
+            .iter()
+            .any(|line| line.contains("$ cargo test -p harness-tui")),
+        "shell tools without a description should expose the command header\n{text_lines:#?}"
     );
 }
 
@@ -753,7 +768,7 @@ fn shell_tool_cards_render_workdir_as_reference_running_prefix() {
         None,
         false,
         false,
-        false,
+        true,
         false,
         Some(Path::new("/workspace")),
     );
@@ -1045,6 +1060,9 @@ pub(crate) fn exact_test_inline_tool_rows_wrap_long_subtitles_cleanly() {
             disclosure_state: None,
         },
         detail_blocks: Vec::new(),
+        details_collapsed_by_default: false,
+        details_preview_visible: false,
+        animation_phase: 0,
         expanded: false,
     };
 

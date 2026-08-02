@@ -175,6 +175,24 @@ fn tx_diff_pty() {
 }
 
 #[test]
+fn tx_mixed_transcript_pty() {
+    reference_parity_pty_impl::tx_mixed_transcript_pty();
+}
+
+#[test]
+fn tx_mixed_transcript_done_pty() {
+    reference_parity_pty_impl::tx_mixed_transcript_done_pty();
+}
+
+#[test]
+fn tx_tool_and_diff_fixtures_match_the_pinned_transcript_geometry() {
+    // arrange
+    // act
+    // assert
+    reference_parity_pty_impl::tx_tool_and_diff_fixtures_match_pinned_transcript_geometry();
+}
+
+#[test]
 fn shell_question_pty() {
     // arrange
     // act
@@ -303,6 +321,11 @@ fn pty_helper_live_complete() {
 }
 
 #[test]
+fn pty_helper_live_mermaid() {
+    reference_parity_pty_impl::pty_helper_live_mermaid();
+}
+
+#[test]
 fn pty_helper_live_cancel() {
     // arrange
     // act
@@ -327,6 +350,26 @@ fn pty_helper_live_tool() {
 }
 
 #[test]
+fn pty_helper_live_mixed_transcript() {
+    reference_parity_pty_impl::pty_helper_live_mixed_transcript();
+}
+
+#[test]
+fn pty_helper_live_mixed_transcript_done() {
+    reference_parity_pty_impl::pty_helper_live_mixed_transcript_done();
+}
+
+#[test]
+fn pty_helper_live_thinking_animation() {
+    reference_parity_pty_impl::pty_helper_live_thinking_animation();
+}
+
+#[test]
+fn pty_helper_live_running_tool() {
+    reference_parity_pty_impl::pty_helper_live_running_tool();
+}
+
+#[test]
 fn pty_helper_live_diff() {
     // arrange
     // act
@@ -348,6 +391,16 @@ fn pty_helper_question_overlay() {
     // act
     // assert
     reference_parity_pty_impl::pty_helper_question_overlay();
+}
+
+#[test]
+fn pty_helper_question_overlay_overflow() {
+    reference_parity_pty_impl::pty_helper_question_overlay_overflow();
+}
+
+#[test]
+fn pty_helper_question_overlay_wrapped() {
+    reference_parity_pty_impl::pty_helper_question_overlay_wrapped();
 }
 
 #[test]

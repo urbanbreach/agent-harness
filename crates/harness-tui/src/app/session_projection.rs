@@ -671,6 +671,13 @@ impl SessionProjection {
             .map(|row| row.task_id.as_str())
     }
 
+    pub(crate) fn active_background_task_count(&self) -> usize {
+        self.orchestration_tasks
+            .values()
+            .filter(|row| !row.state.is_terminal() && !Self::task_row_is_turn_level(row))
+            .count()
+    }
+
     fn task_row_is_turn_level(row: &OrchestrationTaskRow) -> bool {
         row.queue_key
             .as_deref()

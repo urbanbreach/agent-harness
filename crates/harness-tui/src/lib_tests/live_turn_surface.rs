@@ -10,7 +10,7 @@ pub(super) fn live_shell_type_first_input_snapshot() {
     let rendered = render_live_lines(&app, 80, 24);
 
     assert_live_shell_frame_invariants(&rendered, 80, 24);
-    assert!(rendered.contains("Waiting for first turn…"));
+    assert!(!rendered.contains("Waiting for first turn…"));
     assert!(rendered.contains("draft prompt"));
     assert!(!rendered.contains("┌Session"));
     assert!(!rendered.contains("Start a conversation to begin"));
@@ -20,7 +20,7 @@ pub(super) fn live_shell_type_first_input_snapshot() {
         24,
         Some("draft prompt"),
         None,
-        "q quit",
+        "Shift+Tab:mode",
     );
 }
 
@@ -176,8 +176,8 @@ pub(super) fn live_provider_request_id_alias_reuses_local_turn_placeholder() {
     let lines = rendered.lines().collect::<Vec<_>>();
     assert_eq!(
         count_lines_containing(&lines, "Waiting for response…"),
-        0,
-        "{rendered}"
+        1,
+        "active aliased provider request keeps its waiting status visible\n{rendered}"
     );
 }
 

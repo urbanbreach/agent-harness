@@ -93,6 +93,24 @@ pub enum Focus {
     Prompt,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SessionMode {
+    #[default]
+    Normal,
+    Plan,
+    AlwaysApprove,
+}
+
+impl SessionMode {
+    const fn next(self) -> Self {
+        match self {
+            Self::Normal => Self::Plan,
+            Self::Plan => Self::Normal,
+            Self::AlwaysApprove => Self::Normal,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UiIntent {
     ResolvePermission {
@@ -245,6 +263,21 @@ pub enum LifecycleShellState {
 }
 
 impl AppState {
+    pub fn session_mode(&self) -> SessionMode {
+        self.session_mode
+    }
+
+    pub(in crate::app) fn cycle_session_mode(&mut self) {
+        self.session_mode = self.session_mode.next();
+        self.always_approve_mode = self.session_mode == SessionMode::AlwaysApprove;
+        let label = match self.session_mode {
+            SessionMode::Normal => "Normal mode",
+            SessionMode::Plan => "Plan mode",
+            SessionMode::AlwaysApprove => "Always-approve mode",
+        };
+        self.show_mode_banner(label);
+    }
+
     pub(in crate::app) fn launch_value_is_unknown(value: &str) -> bool {
         let trimmed = value.trim();
         trimmed.is_empty() || trimmed.eq_ignore_ascii_case("unknown")
@@ -264,6 +297,12 @@ impl AppState {
 
     pub(crate) fn compaction_usage_metrics(&self) -> CompactionUsageMetrics {
         self.projection.compaction_usage_metrics
+    }
+
+    pub(crate) fn has_live_turn_activity(&self) -> bool {
+        self.activities
+            .iter()
+            .any(|activity| activity.status == ActivityStatus::Streaming)
     }
 
     pub fn new_live(
@@ -688,7 +727,7 @@ impl AppState {
     }
 
     pub(in crate::app) fn session_shell_operator_rail_interactive(&self) -> bool {
-        self.details_drawer_open() || (!self.replay_mode && self.operator_rail_has_sections())
+        self.details_drawer_open()
     }
 
     pub fn review_surface(&self) -> Option<ReviewSurface> {
@@ -775,7 +814,7 @@ impl AppState {
         self.projection.active_turn_task_id()
     }
 
-    fn active_interrupt_task_ids(&self) -> BTreeSet<String> {
+    pub(in crate::app) fn active_interrupt_task_ids(&self) -> BTreeSet<String> {
         self.projection
             .active_turn_task_ids()
             .into_iter()
@@ -824,11 +863,13 @@ impl AppState {
 
     pub(in crate::app) fn handle_interrupt_escape(&mut self) -> bool {
         let active_task_ids = self.active_interrupt_task_ids();
-        if !self.interrupt_hint_visible() || active_task_ids.is_empty() {
+        if active_task_ids.is_empty() {
             self.reset_interrupt_confirmation();
             return false;
         }
 
+        let task_ids = active_task_ids.into_iter().collect();
+        self.emit_ui_intent(UiIntent::InterruptSession { task_ids });
         self.reset_interrupt_confirmation();
         true
     }
@@ -859,9 +900,49 @@ impl AppState {
         (self.now_fn)()
     }
 
+    pub(crate) fn live_turn_elapsed_ms(&self) -> Option<u64> {
+        self.live_turn_started_at.map(|started| {
+            u64::try_from(self.now().saturating_duration_since(started).as_millis())
+                .unwrap_or(u64::MAX)
+        })
+    }
+
+    pub(crate) fn live_turn_phase_elapsed_ms(&self) -> Option<u64> {
+        self.live_turn_phase_started_at.map(|started| {
+            u64::try_from(self.now().saturating_duration_since(started).as_millis())
+                .unwrap_or(u64::MAX)
+        })
+    }
+
+    pub(in crate::app) fn begin_live_turn_timing(&mut self, request_id: Option<&str>) {
+        let now = self.now();
+        let is_new_turn = self.live_turn_started_at.is_none()
+            || self
+                .live_turn_request_id
+                .as_deref()
+                .zip(request_id)
+                .is_some_and(|(active, incoming)| active != incoming);
+        if is_new_turn {
+            self.live_turn_started_at = Some(now);
+        }
+        if let Some(request_id) = request_id {
+            self.live_turn_request_id = Some(request_id.to_string());
+        }
+        self.live_turn_phase_started_at = Some(now);
+    }
+
+    pub(in crate::app) fn restart_live_turn_phase_timing(&mut self) {
+        self.live_turn_phase_started_at = Some(self.now());
+    }
+
     #[cfg(test)]
     pub(crate) fn set_now_fn_for_test(&mut self, now_fn: Arc<dyn Fn() -> Instant + Send + Sync>) {
         self.now_fn = now_fn;
+    }
+
+    pub fn freeze_now_for_animation_evidence(&mut self) {
+        let now = self.now();
+        self.now_fn = Arc::new(move || now);
     }
 
     #[cfg(test)]

@@ -184,7 +184,8 @@ fn bash_safety_guidance_and_ast_grep_replace_catalog_match_runtime_sources() {
         harness_core::tool::ToolCapability::EditFs
     );
 
-    let doc = std::fs::read_to_string(repo_path("docs/tools/native-tool-catalog.md")).unwrap_or_abort();
+    let doc =
+        std::fs::read_to_string(repo_path("docs/tools/native-tool-catalog.md")).unwrap_or_abort();
     let doctor = [
         std::fs::read_to_string(repo_path("crates/harness/src/doctor.rs")).unwrap_or_abort(),
         std::fs::read_to_string(repo_path("crates/harness/src/doctor/checks.rs")).unwrap_or_abort(),
@@ -231,7 +232,8 @@ fn changed_tool_schemas_and_docs_reflect_parity_params() {
     // arrange
     // act
     let registry = coordinator_registry(ShellAllowlist::default());
-    let doc = std::fs::read_to_string(repo_path("docs/tools/native-tool-catalog.md")).unwrap_or_abort();
+    let doc =
+        std::fs::read_to_string(repo_path("docs/tools/native-tool-catalog.md")).unwrap_or_abort();
 
     // assert
     let grep_schema = registry

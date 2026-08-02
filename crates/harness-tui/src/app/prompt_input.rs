@@ -252,6 +252,9 @@ impl AppState {
     }
 
     pub(crate) fn handle_paste(&mut self, text: &str) {
+        if self.handle_new_worktree_dialog_paste(text) {
+            return;
+        }
         if self.composer_disabled() {
             return;
         }
@@ -369,6 +372,9 @@ impl AppState {
         }
         self.clear_prompt_input();
         self.echo_submitted_prompt(text.clone(), status);
+        if status == ActivityStatus::Streaming {
+            self.begin_live_turn_timing(None);
+        }
     }
 
     fn save_prompt_history(&mut self) {
@@ -502,6 +508,10 @@ impl AppState {
     }
 
     pub(in crate::app) fn submit_prompt(&mut self) {
+        if !self.replay_mode && !self.composer_disabled() && self.apply_backslash_continuation() {
+            return;
+        }
+
         if !self.replay_mode && !self.composer_disabled() {
             if let Some(command) = self.typed_slash_command() {
                 self.execute_slash_command(command, self.slash_draft_snapshot.clone());
@@ -530,6 +540,29 @@ impl AppState {
 
         let text = self.composer.prompt_buffer.clone();
         self.dispatch_submitted_prompt(text);
+    }
+
+    fn apply_backslash_continuation(&mut self) -> bool {
+        let cursor = self.composer.prompt_cursor;
+        if cursor == 0
+            || self
+                .composer
+                .prompt_buffer
+                .chars()
+                .nth(cursor - 1)
+                .is_none_or(|character| character != '\\')
+        {
+            return false;
+        }
+
+        self.composer.push_undo();
+        let start = self.prompt_char_byte_index(cursor - 1);
+        let end = self.prompt_char_byte_index(cursor);
+        self.composer.prompt_buffer.replace_range(start..end, "\n");
+        self.composer.selection_anchor = None;
+        self.sync_slash_overlay();
+        self.sync_file_mention_overlay();
+        true
     }
 }
 
@@ -641,5 +674,17 @@ mod paste_tests {
 
         assert!(app.composer.prompt_buffer.is_empty());
         assert_eq!(app.composer.prompt_cursor, 0);
+    }
+
+    #[test]
+    fn paste_targets_open_worktree_dialog_and_respects_byte_cap() {
+        let mut app = AppState::new_startup(Vec::new(), None);
+        app.open_new_worktree_dialog();
+
+        app.handle_paste(&format!("{}\nignored", "a".repeat(100)));
+
+        assert_eq!(app.new_worktree_dialog.input, "a".repeat(100));
+        assert_eq!(app.new_worktree_dialog.cursor, 100);
+        assert!(app.composer.prompt_buffer.is_empty());
     }
 }

@@ -235,8 +235,8 @@ fn assert_full_width_transcript_above_composer(plan: &FrameLayoutPlan, width: u1
         "transcript must span full shell content width at {width}x{height} (no right-rail reservation); transcript={transcript:?} shell={:?}",
         plan.shell
     );
-    // Freeze-matched composer inset (lead=2). Dense width ≤60 keeps inset 0.
-    let composer_inset = if width <= 60 { 0 } else { 2 };
+    // Freeze-matched composer inset: one cell at 60 columns, two cells above it.
+    let composer_inset = if width <= 60 { 1 } else { 2 };
     assert_eq!(
         composer.x,
         plan.shell.x.saturating_add(composer_inset),
@@ -389,9 +389,9 @@ fn boundary_viewports_never_clip_composer_or_disclosure() {
         let plan = plan_for(&app, width, height);
 
         // Composer must exist and have at least 3 rows (border + content + border)
-        let composer = plan.composer.unwrap_or_else(|| {
-            panic!("composer must exist at boundary {width}x{height}")
-        });
+        let composer = plan
+            .composer
+            .unwrap_or_else(|| panic!("composer must exist at boundary {width}x{height}"));
         assert!(
             composer.height >= 3,
             "composer must have ≥3 rows at boundary {width}x{height}; got {composer:?}"
@@ -456,10 +456,7 @@ fn boundary_spacer_transitions_at_60_column_cutoff() {
             .disclosure
             .unwrap_or_else(|| panic!("disclosure at 61x{height}"));
         let gap = disclosure.y.saturating_sub(composer.y + composer.height);
-        assert_eq!(
-            gap, 1,
-            "spacer must be 1 at 61x{height}; got gap={gap}"
-        );
+        assert_eq!(gap, 1, "spacer must be 1 at 61x{height}; got gap={gap}");
     }
 }
 
@@ -493,16 +490,18 @@ fn boundary_breakpoint_targets_match_theme_contract() {
 fn boundary_composer_inset_transitions_at_60_columns() {
     let app = live_session_app();
 
-    // At ≤60 cols: no horizontal inset (ultra-compact)
+    // At ≤60 cols: retain the reference's one-cell outer inset.
     let plan_60 = plan_for(&app, 60, 20);
     let composer_60 = plan_60.composer.expect("composer at 60x20");
     assert_eq!(
-        composer_60.x, plan_60.shell.x,
-        "composer must have no inset at 60x20"
+        composer_60.x,
+        plan_60.shell.x + 1,
+        "composer must have a one-cell inset at 60x20"
     );
     assert_eq!(
-        composer_60.width, plan_60.shell.width,
-        "composer must span full shell width at 60x20"
+        composer_60.width,
+        plan_60.shell.width - 2,
+        "composer must keep the one-cell inset on both sides at 60x20"
     );
 
     // At >60 cols: horizontal inset of 2 (freeze-matched lead=2)
@@ -615,7 +614,7 @@ fn composer_disclosure_spacer_gap_matches_centralized_contract_at_all_viewports(
     }
 }
 
-/// Composer horizontal inset must be 0 at ultra-compact (≤60 cols) and 2 at
+/// Composer horizontal inset must be 1 at ultra-compact (≤60 cols) and 2 at
 /// every wider required viewport. Locks the centralized
 /// `composer_horizontal_inset` contract via the public seam.
 #[test]
@@ -623,7 +622,7 @@ fn composer_horizontal_inset_matches_centralized_contract_at_all_viewports() {
     let app = live_session_app();
 
     let cases: &[(u16, u16, u16)] = &[
-        (60, 20, 0),
+        (60, 20, 1),
         (79, 24, 2),
         (80, 24, 2),
         (100, 30, 2),

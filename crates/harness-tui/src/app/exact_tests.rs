@@ -17,11 +17,11 @@ pub(crate) fn exact_test_startup_slash_commands_execute_without_menu() {
             "connect".to_string(),
             "dashboard".to_string(),
             "exit".to_string(),
-            "feedback".to_string(),
             "help".to_string(),
             "mcps".to_string(),
             "models".to_string(),
             "new".to_string(),
+            "sessions".to_string(),
         ]
     );
 }
@@ -372,7 +372,7 @@ pub(crate) fn exact_test_apply_auth_backend_result_updates_banner() {
     app.maybe_set_no_provider_banner();
     assert!(app.status_banner.is_some());
 
-    app.apply_auth_backend_result(true);
+    app.apply_auth_backend_result(true, "auth backend completed");
 
     assert!(
         app.status_banner.is_none(),
@@ -385,7 +385,7 @@ pub(crate) fn exact_test_apply_auth_backend_result_failure_shows_error() {
     let mut app = AppState::new_startup(Vec::new(), None);
     app.maybe_set_no_provider_banner();
 
-    app.apply_auth_backend_result(false);
+    app.apply_auth_backend_result(false, "auth backend failed (exit 1): callback unavailable");
 
     assert!(
         app.status_banner
@@ -751,16 +751,19 @@ pub(crate) fn exact_test_compact_operator_rail_skips_focus_cycle() {
     live_overlay.live_details_drawer_open = true;
     assert!(live_overlay.details_drawer_open());
 
+    // Tab toggles Prompt/Details even when the drawer is open, closing the drawer.
     live_overlay.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
-    assert_eq!(live_overlay.focus, Focus::List);
-    assert!(live_overlay.details_drawer_open());
+    assert_eq!(live_overlay.focus, Focus::Prompt);
+    assert!(!live_overlay.details_drawer_open());
 
     let mut replay = AppState::new_replay(PathBuf::from("/tmp/replay-session"), Vec::new());
     assert_eq!(replay.focus, Focus::Details);
 
+    // Tab toggles Prompt/Details even in replay mode.
     replay.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
-    assert_eq!(replay.focus, Focus::Details);
+    assert_eq!(replay.focus, Focus::Prompt);
 
+    // Ctrl+Shift+Tab (FocusPrev) returns focus to Details in replay mode.
     replay.handle_key(KeyEvent::new(
         KeyCode::Tab,
         KeyModifiers::CONTROL | KeyModifiers::SHIFT,
@@ -791,7 +794,7 @@ pub(crate) fn exact_test_select_model_step_shows_models() {
     app.connect_dialog.selected_provider = Some(0);
 
     // act
-    app.apply_connect_dialog_auth_result(true);
+    app.apply_connect_dialog_auth_result(true, "auth backend completed");
 
     // assert
     assert_eq!(
@@ -827,7 +830,7 @@ pub(crate) fn exact_test_select_model_skip_goes_to_success() {
     app.open_connect_dialog();
     app.connect_dialog.step = crate::app::auth_dialog::ConnectDialogStep::Waiting;
     app.connect_dialog.selected_provider = Some(0);
-    app.apply_connect_dialog_auth_result(true);
+    app.apply_connect_dialog_auth_result(true, "auth backend completed");
     app.connect_dialog.selected = 2;
 
     // act
@@ -866,7 +869,7 @@ pub(crate) fn exact_test_select_model_select_goes_to_success() {
     app.open_connect_dialog();
     app.connect_dialog.step = crate::app::auth_dialog::ConnectDialogStep::Waiting;
     app.connect_dialog.selected_provider = Some(0);
-    app.apply_connect_dialog_auth_result(true);
+    app.apply_connect_dialog_auth_result(true, "auth backend completed");
     app.connect_dialog.selected = 0;
 
     // act
@@ -908,7 +911,7 @@ pub(crate) fn exact_test_toast_set_on_auth_success() {
     app.connect_dialog.selected_provider = Some(0);
 
     // act
-    app.apply_connect_dialog_auth_result(true);
+    app.apply_connect_dialog_auth_result(true, "auth backend completed");
 
     // assert
     let toast = app.connect_dialog.toast.as_ref().unwrap_or_abort();
@@ -939,7 +942,7 @@ pub(crate) fn exact_test_toast_set_on_auth_failure() {
     app.connect_dialog.selected_provider = Some(0);
 
     // act
-    app.apply_connect_dialog_auth_result(false);
+    app.apply_connect_dialog_auth_result(false, "auth backend failed");
 
     // assert
     let toast = app.connect_dialog.toast.as_ref().unwrap_or_abort();
@@ -949,6 +952,11 @@ pub(crate) fn exact_test_toast_set_on_auth_failure() {
         app.connect_dialog.step,
         crate::app::auth_dialog::ConnectDialogStep::Error,
         "should advance to Error on failure"
+    );
+    assert_eq!(
+        app.connect_dialog.error_message.as_deref(),
+        Some("auth backend failed"),
+        "backend failure detail should remain visible in the dialog"
     );
 }
 
@@ -973,7 +981,7 @@ pub(crate) fn exact_test_any_key_closes_dialog_on_success() {
     app.open_connect_dialog();
     app.connect_dialog.step = crate::app::auth_dialog::ConnectDialogStep::Waiting;
     app.connect_dialog.selected_provider = Some(0);
-    app.apply_connect_dialog_auth_result(true);
+    app.apply_connect_dialog_auth_result(true, "auth backend completed");
     assert_eq!(
         app.connect_dialog.step,
         crate::app::auth_dialog::ConnectDialogStep::Success,

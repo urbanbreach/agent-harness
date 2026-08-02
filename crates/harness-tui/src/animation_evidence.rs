@@ -20,7 +20,7 @@ use crate::ui;
 pub const ANIMATION_FRAME_SEQUENCE_SCHEMA: &str = "animation-frame-sequence-v1";
 
 /// Default FakeClock step (ms) recorded per animation tick when not overridden.
-pub const DEFAULT_TICK_MS: u64 = 100;
+pub const DEFAULT_TICK_MS: u64 = 1_000 / 30;
 
 /// Capture plan for a fixed-tick animation sequence.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -163,6 +163,7 @@ pub fn capture_fixed_tick_sequence(
         return Err(AnimationEvidenceError::EmptyPlan);
     }
 
+    app.freeze_now_for_animation_evidence();
     let mut frames = Vec::with_capacity(plan.frame_count);
     for index in 0..plan.frame_count {
         if index > 0 {
@@ -246,6 +247,6 @@ pub fn read_sequence_artifact(
 
 /// Collect spinner glyph characters present in a frame cell grid (braille spinner set).
 pub fn spinner_glyphs_in_cells(cells: &str) -> Vec<char> {
-    const SPINNER: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+    const SPINNER: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧'];
     cells.chars().filter(|ch| SPINNER.contains(ch)).collect()
 }

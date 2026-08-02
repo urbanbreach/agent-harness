@@ -23,10 +23,9 @@ pub(super) fn startup_home_screen_renders_compose_first_shell() {
     );
     assert!(rendered.contains('❯'), "composer glyph present\n{rendered}");
     assert!(
-        !rendered.contains("gpt-5.4") && !rendered.contains("Deep") && !rendered.contains("Demo"),
-        "freeze bare startup hides model badge when prompt is empty\n{rendered}"
+        rendered.contains("gpt-5.4"),
+        "startup shell shows the selected model before typing\n{rendered}"
     );
-    assert!(!rendered.contains("Launch: deep · gpt-5.4"));
     assert!(!rendered.contains("Provider proxy"));
     assert!(!rendered.contains("Dispatch a new run, reopen live work, or inspect saved history."));
     assert!(!rendered.contains("Actions: New session · Continue session · Replay session"));
@@ -34,8 +33,8 @@ pub(super) fn startup_home_screen_renders_compose_first_shell() {
     app.handle_key(key(crossterm::event::KeyCode::Char('x')));
     let draft = render_live_lines(&app, 160, 48);
     assert!(
-        draft.contains("gpt-5.4") || draft.contains("Deep") || draft.contains("Demo"),
-        "draft startup restores model chrome on composer\n{draft}"
+        draft.contains("gpt-5.4"),
+        "composer keeps model visible\n{draft}"
     );
 }
 
@@ -169,14 +168,12 @@ pub(super) fn live_composer_disclosure_keeps_compact_summary_and_commands() {
     }
     let rendered = render_live_lines(&ready, 100, 24);
     let lines = rendered.lines().collect::<Vec<_>>();
-    let disclosure_row = find_line_containing(&lines, "Shift+Tab:mode")
-        .or_else(|| find_line_containing(&lines, "Ctrl+x:shortcuts"))
-        .unwrap_or_else(|| panic!("live composer freeze disclosure row\n{rendered}"));
+    let disclosure_row = find_line_containing(&lines, "background task still running")
+        .unwrap_or_else(|| panic!("live composer status row\n{rendered}"));
 
     assert!(
-        lines[disclosure_row].contains("Shift+Tab:mode")
-            && lines[disclosure_row].contains("Ctrl+x:shortcuts"),
-        "live disclosure must match freeze shortcut chrome\n{}",
+        lines[disclosure_row].contains("background task still running"),
+        "live status strip must surface the active orchestration state\n{}",
         lines[disclosure_row]
     );
     assert!(!lines[disclosure_row].contains("live ctx"));

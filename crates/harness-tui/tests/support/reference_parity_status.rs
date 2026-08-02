@@ -93,6 +93,32 @@ pub fn validate_claimed_evidence(
     }
 }
 
+pub fn validate_status_contract(row: &Value, path: &str, failures: &mut Vec<ManifestFailure>) {
+    let Some(evidence_status_value) = row.get("evidence").and_then(|value| value.get("status"))
+    else {
+        return;
+    };
+    let Some(evidence_status) = evidence_status_value.as_str() else {
+        failures.push(ManifestFailure::new(
+            "invalid-status",
+            format!("{path}.evidence.status"),
+            "evidence.status must be a string when present",
+        ));
+        return;
+    };
+    let declared_status = row["status"].as_str().unwrap_or("");
+    if evidence_status != declared_status {
+        failures.push(ManifestFailure::new(
+            "status-evidence-mismatch",
+            format!("{path}.evidence.status"),
+            format!(
+                "evidence.status {evidence_status:?} must match canonical row status \
+                 {declared_status:?}"
+            ),
+        ));
+    }
+}
+
 /// Declared digest fields must be well-formed and freeze digests must match
 /// the pinned reference freeze values.
 pub fn validate_declared_digests(row: &Value, path: &str, failures: &mut Vec<ManifestFailure>) {
@@ -202,7 +228,10 @@ pub fn validate_state_viewport(
 /// Rows formally marked `excluded` in the manifest preserve that status without
 /// requiring evidence.
 pub fn derive_status(row: &Value, policy: &DivergencePolicy<'_>) -> &'static str {
-    if row["status"].as_str() == Some("excluded") {
+    let status = row["evidence"]["status"]
+        .as_str()
+        .or_else(|| row["status"].as_str());
+    if status == Some("excluded") {
         return "excluded";
     }
     let divergence_id = row["deliberate_divergence_id"].as_str().unwrap_or("");

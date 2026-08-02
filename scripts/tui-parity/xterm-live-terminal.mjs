@@ -43,15 +43,16 @@ function healSpawnHelper() {
   }
 }
 
-const DEFAULT_FONT_FAMILY = 'Menlo, "DejaVu Sans Mono", "Noto Sans Mono CJK KR", monospace';
+const DEFAULT_FONT_FAMILY = '"JetBrainsMono Nerd Font Mono", Menlo, "DejaVu Sans Mono", "Noto Sans Mono CJK KR", monospace';
 
-function buildPageHtml({ xtermJs, xtermCss, unicodeJs, cols, rows, fontSize, fontFamily }) {
+function buildPageHtml({ xtermJs, xtermCss, unicodeJs, cols, rows, fontSize, fontFamily, terminalBackground }) {
   const resolvedFontFamily = (fontFamily && String(fontFamily).trim()) || DEFAULT_FONT_FAMILY;
+  const resolvedTerminalBackground = (terminalBackground && String(terminalBackground).trim()) || "#141414";
   // Escape for embedding in a single-quoted JS string literal.
   const fontFamilyJs = resolvedFontFamily.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
   return `<!doctype html><html><head><meta charset="utf-8"><style>
 ${xtermCss}
-html,body{margin:0;padding:0;background:#0b0e14}
+html,body{margin:0;padding:0;background:${resolvedTerminalBackground}}
 #t{padding:8px}
 </style></head><body><div id="t"></div>
 <script>${xtermJs}</script>
@@ -62,17 +63,17 @@ html,body{margin:0;padding:0;background:#0b0e14}
     fontFamily: '${fontFamilyJs}',
     allowProposedApi: true, convertEol: false, scrollback: 0,
     // black=palette index 0: Grok live shell fills with 48;5;0; must match canvas or freezes drift to xterm default #2e3436
-    theme: { background: '#0b0e14', foreground: '#d7dae0', black: '#0b0e14' },
+    theme: { background: '${resolvedTerminalBackground}', foreground: '#d7dae0', black: '${resolvedTerminalBackground}' },
   });
   try { const u = new Unicode11Addon.Unicode11Addon(); term.loadAddon(u); term.unicode.activeVersion = '11'; } catch (e) {}
   term.open(document.getElementById('t'));
-  window.__writeToTerm = (d) => term.write(d);
+  window.__writeToTerm = (d) => new Promise((resolve) => term.write(d, resolve));
   window.__screenText = () => {
     const b = term.buffer.active; const lines = [];
     for (let i = 0; i < b.length; i++) { const ln = b.getLine(i); lines.push(ln ? ln.translateToString(true) : ''); }
     return lines.join('\\n').replace(/\\n+$/, '\\n');
   };
-  window.__resetAndWrite = (d) => { term.reset(); term.write(d); };
+  window.__resetAndWrite = (d) => { term.reset(); return new Promise((resolve) => term.write(d, resolve)); };
   term.focus();
   term.onData((d) => { if (window.__ptyInput) window.__ptyInput(d); });
 </script></body></html>`;
@@ -86,7 +87,7 @@ const NAMED_KEYS = new Set([
 // An `input` token wrapped in {Braces} is pressed as a named key; anything else
 // is typed literally. Both flow through the browser terminal (xterm onData ->
 // pty), so the interaction is genuinely driven in the web terminal.
-async function driveInput(page, inputs, keyDelayMs) {
+async function driveInput(page, inputs, keyDelayMs, cols, rows) {
   for (const raw of inputs) {
     const match = /^\{(.+)\}$/.exec(raw);
     if (match && NAMED_KEYS.has(match[1])) {
@@ -97,11 +98,26 @@ async function driveInput(page, inputs, keyDelayMs) {
       await page.keyboard.down("Control");
       await page.keyboard.press(pressKey);
       await page.keyboard.up("Control");
+    } else if (match && /^Click:(\d+),(\d+)$/.test(match[1])) {
+      const [, column, row] = /^Click:(\d+),(\d+)$/.exec(match[1]);
+      const terminal = await page.$(".xterm");
+      const box = await terminal.boundingBox();
+      if (!box) throw new Error("terminal is not visible for click input");
+      await page.mouse.click(
+        box.x + ((Number(column) + 0.5) / cols) * box.width,
+        box.y + ((Number(row) + 0.5) / rows) * box.height,
+      );
     } else {
       await page.keyboard.type(raw, { delay: 10 });
     }
     if (keyDelayMs > 0) await new Promise((r) => setTimeout(r, keyDelayMs));
   }
+}
+
+async function screenshotTerminal(page) {
+  const screen = await page.$(".xterm-screen");
+  if (!screen) throw new Error("xterm screen is not visible for PNG capture");
+  return screen.screenshot({ type: "png" });
 }
 
 function chromeCandidates(explicit) {
@@ -116,7 +132,7 @@ function chromeCandidates(explicit) {
   return c.filter((x) => x && (x.includes("/") || x.includes("\\") ? existsSync(x) : true));
 }
 
-async function captureLive({ command, cwd, cols, rows, inputs, dwellMs, keyDelayMs, preDwellMs, chromeBin, fromFile, redactStream, fontSize, fontFamily }) {
+async function captureLive({ command, cwd, cols, rows, inputs, dwellMs, frameMs, phaseOriginMs, keyDelayMs, preDwellMs, chromeBin, fromFile, redactStream, fontSize, fontFamily, terminalBackground }) {
   healSpawnHelper();
   const puppeteer = (await import("puppeteer-core")).default;
   const executablePath = chromeCandidates(chromeBin)[0];
@@ -128,7 +144,7 @@ async function captureLive({ command, cwd, cols, rows, inputs, dwellMs, keyDelay
     xtermJs: resolveAsset("@xterm/xterm/lib/xterm.js"),
     xtermCss: resolveAsset("@xterm/xterm/css/xterm.css"),
     unicodeJs: resolveAsset("@xterm/addon-unicode11/lib/addon-unicode11.js"),
-    cols, rows, fontSize: resolvedFontSize, fontFamily: resolvedFontFamily,
+    cols, rows, fontSize: resolvedFontSize, fontFamily: resolvedFontFamily, terminalBackground,
   });
 
   const browser = await puppeteer.launch({
@@ -139,6 +155,9 @@ async function captureLive({ command, cwd, cols, rows, inputs, dwellMs, keyDelay
 
   let rawStream = "";
   let ptyProc;
+  let ptyStartedAt;
+  let writeChain = Promise.resolve();
+  const frames = [];
   const cleanupParts = [];
   try {
     const page = await browser.newPage();
@@ -166,6 +185,7 @@ async function captureLive({ command, cwd, cols, rows, inputs, dwellMs, keyDelay
       delete ptyEnv.NO_COLOR;
       // stty first, then run the command under env -u so NO_COLOR cannot reappear.
       const colorSafeCommand = `stty -ixon 2>/dev/null; env -u NO_COLOR ${command}`;
+      ptyStartedAt = Date.now();
       ptyProc = pty.spawn("/bin/bash", ["-c", colorSafeCommand], {
         name: "xterm-256color", cols, rows, cwd: cwd || process.cwd(),
         env: ptyEnv,
@@ -173,28 +193,49 @@ async function captureLive({ command, cwd, cols, rows, inputs, dwellMs, keyDelay
       await page.exposeFunction("__ptyInput", (d) => { try { ptyProc.write(d); } catch {} });
       ptyProc.onData((d) => {
         rawStream += d;
-        page.evaluate((chunk) => window.__writeToTerm(chunk), d).catch(() => {});
+        writeChain = writeChain
+          .then(() => page.evaluate((chunk) => window.__writeToTerm(chunk), d))
+          .catch(() => {});
       });
       const bootWait = Number.isFinite(preDwellMs) && preDwellMs > 0 ? preDwellMs : 400;
       await new Promise((r) => setTimeout(r, bootWait));
       await page.focus("#t");
-      if (inputs.length) await driveInput(page, inputs, keyDelayMs);
-      await new Promise((r) => setTimeout(r, dwellMs));
+      if (inputs.length) await driveInput(page, inputs, keyDelayMs, cols, rows);
+      const requestedFrames = Array.isArray(frameMs)
+        ? [...new Set(frameMs)].sort((a, b) => a - b)
+        : [];
+      if (requestedFrames.length) {
+        if (!Number.isFinite(phaseOriginMs) || phaseOriginMs < 0) {
+          throw new Error("--frame-ms requires --phase-origin-ms from the equivalent reference visual phase");
+        }
+        const sequenceStartedAt = ptyStartedAt + phaseOriginMs;
+        for (const targetMs of requestedFrames) {
+          const remainingMs = Math.max(0, sequenceStartedAt + targetMs - Date.now());
+          await new Promise((r) => setTimeout(r, remainingMs));
+          await writeChain;
+          await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+          const screenText = await page.evaluate(() => window.__screenText());
+          const pngBuffer = await screenshotTerminal(page);
+          frames.push({ elapsedMs: targetMs, pngBuffer, screenText, rawStream });
+        }
+      } else {
+        await new Promise((r) => setTimeout(r, dwellMs));
+      }
       cleanupParts.push(`pty pid ${ptyProc.pid} killed`);
     }
 
     // When redactions are configured, re-render the masked stream so the PNG
     // never shows a secret that the interaction surfaced on screen.
-    if (redactStream && !fromFile) {
+    if (redactStream) {
       const masked = redactStream(rawStream);
       if (masked !== rawStream) await page.evaluate((d) => window.__resetAndWrite(d), masked);
     }
+    await writeChain;
     await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
 
     const screenText = await page.evaluate(() => window.__screenText());
-    const el = (await page.$(".xterm")) || page;
-    const pngBuffer = await el.screenshot({ type: "png" });
-    return { pngBuffer, screenText, rawStream, connector: fromFile ? "xterm-replay" : "xterm-node-pty", cleanup: cleanupParts.join("; ") };
+    const pngBuffer = await screenshotTerminal(page);
+    return { pngBuffer, screenText, rawStream, frames, connector: fromFile ? "xterm-replay" : "xterm-node-pty", cleanup: cleanupParts.join("; ") };
   } finally {
     try { ptyProc && ptyProc.kill(); } catch {}
     await browser.close();

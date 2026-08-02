@@ -293,7 +293,7 @@ pub(super) fn composer_enter_submits_and_shift_enter_inserts_newline() {
     assert_eq!(activity.status, app::ActivityStatus::Streaming);
 }
 
-pub(super) fn composer_ctrl_j_inserts_newline() {
+pub(super) fn composer_ctrl_j_does_not_insert_newline() {
     let mut app = app::AppState::new_live(None, false, None);
 
     for c in "hello".chars() {
@@ -307,7 +307,10 @@ pub(super) fn composer_ctrl_j_inserts_newline() {
         app.handle_key(key(crossterm::event::KeyCode::Char(c)));
     }
 
-    assert_eq!(app.composer.prompt_buffer, "hello\nworld");
+    // Ctrl+J is bound to ScrollDown (not InsertNewline); with prompt focus it is
+    // a no-op on the buffer and must not splice a newline into the draft.
+    assert_eq!(app.composer.prompt_buffer, "helloworld");
+    assert!(!app.composer.prompt_buffer.contains('\n'));
 }
 
 pub(super) fn composer_submits_queued_followup_while_streaming() {

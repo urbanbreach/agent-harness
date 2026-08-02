@@ -5,11 +5,12 @@
 //! test binary as a helper child with scenario env vars (same pattern as e2e).
 
 use harness_core::event::{
-    ActorKind, EventActor, EventEnvelopeV1, EventV1, PermissionRequestedEvent,
-    ProviderReasoningDeltaEvent, ProviderRequestFinishedEvent, ProviderRequestRetryMetadata,
-    ProviderRequestStartedEvent, ProviderRequestStartedMetadata, ProviderStreamDeltaEvent,
-    TaskScheduleState, TaskScheduledEvent, ToolCallFinishedEvent, ToolCallRequestedEvent,
-    ToolCallStartedEvent, ToolCallStatus, UserMessageSubmittedEvent, SCHEMA_VERSION,
+    ActorKind, CompactionAppliedEvent, EventActor, EventEnvelopeV1, EventV1,
+    PermissionRequestedEvent, ProviderReasoningDeltaEvent, ProviderRequestFinishedEvent,
+    ProviderRequestRetryMetadata, ProviderRequestStartedEvent, ProviderRequestStartedMetadata,
+    ProviderStreamDeltaEvent, RunStartedEvent, TaskScheduleState, TaskScheduledEvent,
+    ToolCallFinishedEvent, ToolCallRequestedEvent, ToolCallStartedEvent, ToolCallStatus,
+    UserMessageSubmittedEvent, SCHEMA_VERSION,
 };
 use harness_core::proj::{RunStatus, SessionCatalogEntry, SessionModeSource};
 use harness_providers::{CompletionUsage, ProviderErrorCategory};
@@ -38,17 +39,26 @@ const PTY_SIGNOFF_ENV: &str = "HARNESS_TUI_PTY_SIGNOFF";
 const PARITY_STRICT_ENV: &str = "HARNESS_TUI_PARITY_STRICT";
 const HELPER_SCENARIO_ENV: &str = "HARNESS_TUI_PTY_HELPER_SCENARIO";
 const TYPE_FIRST_STARTUP_SCENARIO: &str = "type_first_startup";
+const STARTUP_CLIPBOARD_WARNING: &str =
+    "System clipboard may be inaccessible, copy will use OSC 52.";
 const IDLE_SHELL_SCENARIO: &str = "idle_shell";
 const LIVE_DRAFT_SCENARIO: &str = "live_draft";
 const LIVE_STREAM_SCENARIO: &str = "live_stream";
 const LIVE_FAIL_SCENARIO: &str = "live_fail";
 const LIVE_COMPLETE_SCENARIO: &str = "live_complete";
+const LIVE_MERMAID_SCENARIO: &str = "live_mermaid";
 const LIVE_CANCEL_SCENARIO: &str = "live_cancel";
 const LIVE_RECOVER_SCENARIO: &str = "live_recover";
 const LIVE_TOOL_SCENARIO: &str = "live_tool";
+const LIVE_RUNNING_TOOL_SCENARIO: &str = "live_running_tool";
+const LIVE_MIXED_TRANSCRIPT_SCENARIO: &str = "live_mixed_transcript";
+const LIVE_MIXED_TRANSCRIPT_DONE_SCENARIO: &str = "live_mixed_transcript_done";
+const LIVE_THINKING_ANIMATION_SCENARIO: &str = "live_thinking_animation";
 const LIVE_DIFF_SCENARIO: &str = "live_diff";
 const LIVE_SCROLL_SCENARIO: &str = "live_scroll";
 const QUESTION_OVERLAY_SCENARIO: &str = "question_overlay";
+const QUESTION_OVERLAY_OVERFLOW_SCENARIO: &str = "question_overlay_overflow";
+const QUESTION_OVERLAY_WRAPPED_SCENARIO: &str = "question_overlay_wrapped";
 const PERMISSION_OVERLAY_SCENARIO: &str = "permission_overlay";
 /// Empty-draft variant: same permission overlay but without seeding a draft, so
 /// the capture verifies "Allow Edit" chrome renders with an empty composer.
@@ -73,9 +83,12 @@ const LIVE_DRAFT_HELPER: &str = "pty_helper_live_draft";
 const LIVE_STREAM_HELPER: &str = "pty_helper_live_stream";
 const LIVE_FAIL_HELPER: &str = "pty_helper_live_fail";
 const LIVE_COMPLETE_HELPER: &str = "pty_helper_live_complete";
+const LIVE_MERMAID_HELPER: &str = "pty_helper_live_mermaid";
 const LIVE_CANCEL_HELPER: &str = "pty_helper_live_cancel";
 const LIVE_RECOVER_HELPER: &str = "pty_helper_live_recover";
 const LIVE_TOOL_HELPER: &str = "pty_helper_live_tool";
+const LIVE_MIXED_TRANSCRIPT_HELPER: &str = "pty_helper_live_mixed_transcript";
+const LIVE_MIXED_TRANSCRIPT_DONE_HELPER: &str = "pty_helper_live_mixed_transcript_done";
 const LIVE_DIFF_HELPER: &str = "pty_helper_live_diff";
 const LIVE_SCROLL_HELPER: &str = "pty_helper_live_scroll";
 const QUESTION_OVERLAY_HELPER: &str = "pty_helper_question_overlay";
@@ -88,21 +101,21 @@ const QUESTION_STREAM_USER_TEXT: &str = "ask me the parity question";
 const FAIL_USER_TEXT: &str = "fail the parity probe";
 const COMPLETE_USER_TEXT: &str = "complete the parity probe";
 const COMPLETE_ASSISTANT_TEXT: &str = "parity turn complete stream final response rendered cleanly under the shell composer parity turn complete stream final response rendered cleanly under the shell composer parity turn complete stream final response rendered cleanly under the shell composer";
+const MERMAID_USER_TEXT: &str = "render a Mermaid flowchart";
+const MERMAID_ASSISTANT_TEXT: &str =
+    "多言語: 你好，世界 · こんにちは\n```mermaid\ngraph TD\n  A[Start] --> B[Build]\n  B --> C[Done]\n```";
 // Reference cancellation state (run1-shell-cancel-pinned-v1): empty transcript + draft in composer.
 const CANCEL_USER_TEXT: &str = "cancel the parity probe";
 // Reference recovery state (run1-shell-recover-pinned-v1): same fail state + draft in composer.
 const RECOVER_USER_TEXT: &str = "recover the parity probe";
 const RECOVER_DRAFT: &str = "retry after failure draft";
-// Reference tool-state user prompt (run1-tool-proxy-v2).
-const TOOL_USER_TEXT: &str =
-    "Use a tool to list files in the current directory, then report COUNT=N for the number of top-level entries. Do not invent.";
+const TOOL_USER_TEXT: &str = "run the echo probe";
 const TOOL_PATH_TEXT: &str = "echo tx-tool-output-probe-line";
-// Reference diff-state user prompt (run1-diff-proxy-v2).
-const DIFF_USER_TEXT: &str =
-    "Overwrite demo.txt with exactly the single line: parity-diff-ok. Use a file write/edit tool so a diff is shown. Then reply DONE.";
+const DIFF_USER_TEXT: &str = "edit the probe file";
 
 // Freeze breadcrumb token meta uses context window 262K and turn usage like 12K / 10K / 1.5K.
 const PARITY_CONTEXT_WINDOW_TOKENS: u32 = 262_144;
+const TX_CONTEXT_WINDOW_TOKENS: u32 = 8_192;
 
 fn parity_completion_usage(total_tokens: u32) -> CompletionUsage {
     // Breadcrumb context meta prefers prompt_tokens when > 0; keep prompt == total so
@@ -127,35 +140,59 @@ fn parity_completion_usage_context_and_total(
     }
 }
 
+fn parity_model_metadata_for_scenario(scenario: Option<&str>) -> (&'static str, u32) {
+    match scenario {
+        Some(LIVE_TOOL_SCENARIO) => ("Mock TX-Tool Model", TX_CONTEXT_WINDOW_TOKENS),
+        Some(LIVE_MIXED_TRANSCRIPT_SCENARIO | LIVE_MIXED_TRANSCRIPT_DONE_SCENARIO) => {
+            ("Mock Mixed Model", TX_CONTEXT_WINDOW_TOKENS)
+        }
+        Some(LIVE_DIFF_SCENARIO) => ("Mock TX-Diff Model", TX_CONTEXT_WINDOW_TOKENS),
+        Some(IDLE_SHELL_SCENARIO) => (
+            "Umans Kimi K2.7 (CLIProxy) (xhigh) · always-approve",
+            PARITY_CONTEXT_WINDOW_TOKENS,
+        ),
+        Some(LIVE_STREAM_SCENARIO) => ("Mock Stream Model", PARITY_CONTEXT_WINDOW_TOKENS),
+        Some(LIVE_PERM_STREAM_SCENARIO) => ("Mock Perm Model", PARITY_CONTEXT_WINDOW_TOKENS),
+        Some(LIVE_FAIL_SCENARIO | LIVE_RECOVER_SCENARIO) => {
+            ("Mock Error Model", PARITY_CONTEXT_WINDOW_TOKENS)
+        }
+        Some(LIVE_COMPLETE_SCENARIO | LIVE_CANCEL_SCENARIO) => {
+            ("Mock Turn Model", PARITY_CONTEXT_WINDOW_TOKENS)
+        }
+        _ => ("Parity Test Model (Mock)", PARITY_CONTEXT_WINDOW_TOKENS),
+    }
+}
+
 fn install_parity_context_window() {
+    let (model_label, context_window_tokens) =
+        parity_model_metadata_for_scenario(std::env::var(HELPER_SCENARIO_ENV).ok().as_deref());
     let option = ModelOption {
         profile: "parity".to_string(),
         provider: "mock".to_string(),
         provider_display_label: None,
         provider_backend_label: None,
         model: "model-tx".to_string(),
-        model_display_label: Some("Parity Test Model (Mock)".to_string()),
+        model_display_label: Some(model_label.to_string()),
         variant: None,
         variant_display_label: None,
-        display_label: Some("Parity Test Model (Mock) (xhigh)".to_string()),
+        display_label: Some(model_label.to_string()),
         token_window_label: None,
-        context_window_tokens: Some(PARITY_CONTEXT_WINDOW_TOKENS),
+        context_window_tokens: Some(context_window_tokens),
         max_input_tokens: None,
         max_output_tokens: None,
         description: None,
         profile_description: None,
-        reasoning_effort: Some("xhigh".to_string()),
+        reasoning_effort: None,
         text_verbosity: None,
         thinking: None,
         recommended_for: None,
     };
     set_pending_replay_launch_metadata(Some(LaunchMetadata::from_model_option(&option)));
 }
-const DIFF_PATH_TEXT: &str = "demo.txt";
 // Reference scroll state (run1-shell-scroll-pinned-v1): streaming state with partial response.
 const SCROLL_USER_TEXT: &str = "scroll the parity probe";
 const SCROLL_ASSISTANT_TEXT: &str =
-    "parity turn complete stream final response rendered cleanly under the shell";
+    "parity turn complete stream final response rendered cleanly under the shell composer parity turn complete stream final response rendered";
 const QUESTION_USER_TEXT: &str = "You MUST use the AskUserQuestion tool (or equivalent question tool) to ask me exactly one multiple-choice question: Which color? Options: Red, Green, Blue. Do not answer yourself. Do not use any other tools.";
 const READY_MARKER: &str = "❯";
 const DRAFT_TEXT: &str = "parity draft";
@@ -183,6 +220,14 @@ pub(crate) fn startup_welcome_panel_renders_and_focuses_composer() {
     assert!(
         screen.contains('╭') || screen.contains('┌') || screen.contains("Welcome"),
         "startup must show bordered welcome panel chrome\n{screen}"
+    );
+    assert!(
+        !screen.contains("No provider connected"),
+        "reference startup capture must use a connected provider fixture\n{screen}"
+    );
+    assert!(
+        screen.contains("Clipboard may be unreachable.") && screen.contains("/terminal-setup"),
+        "PTY startup must expose the canonical clipboard capability warning\n{screen}"
     );
     assert_no_multi_row_prompt_rail(&screen, "startup welcome");
     exit_via_palette(&mut helper);
@@ -388,6 +433,10 @@ pub(crate) fn shell_perm_pty() {
         "SHELL-PERM PTY: user + waiting-for-response must project\n{screen}"
     );
     assert!(
+        screen.contains("◆ edit"),
+        "SHELL-PERM PTY: in-flight edit tool hierarchy must project\n{screen}"
+    );
+    assert!(
         screen.contains('❯'),
         "SHELL-PERM PTY: composer glyph required\n{screen}"
     );
@@ -407,6 +456,10 @@ pub(crate) fn shell_stream_pty() {
     assert!(
         screen.contains(STREAM_USER_TEXT) && screen.contains("Waiting for response"),
         "SHELL-STREAM PTY: user + waiting-for-response must project\n{screen}"
+    );
+    assert!(
+        !screen.contains("Retrying"),
+        "SHELL-STREAM PTY: initial provider attempts must not render retry chrome\n{screen}"
     );
     assert!(
         screen.contains('❯'),
@@ -454,6 +507,7 @@ pub(crate) fn shell_complete_pty() {
     );
     helper.wait_for(COMPLETE_USER_TEXT);
     helper.wait_for("parity turn complete stream");
+    helper.wait_for("Worked for 2.3s");
     let screen = helper.screen_text();
     assert!(
         screen.contains(COMPLETE_USER_TEXT) && screen.contains("parity turn complete stream"),
@@ -567,8 +621,8 @@ pub(crate) fn shell_recover_pty() {
         "SHELL-RECOVER PTY: auto-retry spinner must render\n{screen}"
     );
     assert!(
-        screen.contains("Enter:send") || screen.contains('❯'),
-        "SHELL-RECOVER PTY: composer must accept draft after retry\n{screen}"
+        screen.contains("Enter:queue") && !screen.contains("Ctrl+Enter:send now"),
+        "SHELL-RECOVER PTY: active retry draft must expose only the reference-visible queue action\n{screen}"
     );
     assert_no_multi_row_prompt_rail(&screen, "SHELL-RECOVER");
     assert_no_sidebar_copy(&screen, "SHELL-RECOVER");
@@ -581,7 +635,7 @@ pub(crate) fn shell_scroll_pty() {
     }
     let mut helper = spawn_helper_at(LIVE_SCROLL_HELPER, LIVE_SCROLL_SCENARIO, 120, 40);
     helper.wait_for(SCROLL_USER_TEXT);
-    helper.wait_for(SCROLL_ASSISTANT_TEXT);
+    helper.wait_for("parity turn complete stream final response rendered cleanly");
     // Reference scroll state: PageUp during streaming to scroll away from follow.
     send_bytes(helper.writer.as_mut(), b"\x1b[5~").unwrap_or_abort();
     thread::sleep(READ_POLL_TIMEOUT);
@@ -591,7 +645,7 @@ pub(crate) fn shell_scroll_pty() {
         "SHELL-SCROLL PTY: user message required\n{screen}"
     );
     assert!(
-        screen.contains(SCROLL_ASSISTANT_TEXT),
+        screen.contains("parity turn complete stream final response rendered cleanly"),
         "SHELL-SCROLL PTY: assistant response required\n{screen}"
     );
     assert!(
@@ -609,24 +663,31 @@ pub(crate) fn tx_tool_pty() {
         return;
     }
     let mut helper = spawn_helper(LIVE_TOOL_HELPER, LIVE_TOOL_SCENARIO);
+    helper.wait_for("Ran 6 commands");
     helper.wait_for(TOOL_PATH_TEXT);
-    helper.wait_for("Responding");
+    helper.wait_for("Waiting for response");
     let screen = helper.screen_text();
     assert!(
         screen.contains(TOOL_PATH_TEXT),
-        "TX-TOOL PTY: echo tool row required\n{screen}"
+        "TX-TOOL PTY: command detail rows remain visible beneath the group summary\n{screen}"
     );
     assert!(
-        screen.contains("Responding") || screen.contains("Waiting for response"),
-        "TX-TOOL PTY: streaming indicator required (waiting-state form)\n{screen}"
+        screen.contains("Waiting for response") && !screen.contains("Responding"),
+        "TX-TOOL PTY: terminal tool loop must remain in waiting-for-response state\n{screen}"
     );
     assert!(
-        screen.contains('◈') || screen.contains('◆'),
-        "TX-TOOL PTY: tool diamond chrome required\n{screen}"
+        screen.contains("Ran 6 commands · 6 failed") && screen.contains("◆ Run echo"),
+        "TX-TOOL PTY: completed command groups keep Grok-style member rows visible\n{screen}"
     );
-    assert!(
-        !screen.contains('┃'),
-        "TX-TOOL PTY: no legacy left rail\n{screen}"
+    assert_eq!(
+        screen.matches("◆ Run echo").count(),
+        12,
+        "TX-TOOL PTY: command groups must render every projected member row\n{screen}"
+    );
+    assert_eq!(
+        screen.matches('┃').count(),
+        13,
+        "TX-TOOL PTY: grouped command summary and all members share the continuous Grok rail\n{screen}"
     );
     assert_no_multi_row_prompt_rail(&screen, "TX-TOOL");
     exit_via_palette(&mut helper);
@@ -637,23 +698,212 @@ pub(crate) fn tx_diff_pty() {
         return;
     }
     let mut helper = spawn_helper(LIVE_DIFF_HELPER, LIVE_DIFF_SCENARIO);
-    helper.wait_for(DIFF_PATH_TEXT);
-    helper.wait_for("Responding");
+    helper.wait_for("◆ edit");
+    helper.wait_for("Waiting for response");
     let screen = helper.screen_text();
     assert!(
-        screen.contains(DIFF_PATH_TEXT) || screen.contains('◆'),
-        "TX-DIFF PTY: structured edit/path projection required\n{screen}"
+        screen.matches("◆ edit").count() == 9 && !screen.contains("demo.txt"),
+        "TX-DIFF PTY: compact edit projection must match the nine pathless reference rows\n{screen}"
     );
     assert!(
-        screen.contains("Responding") || screen.contains("Waiting for response"),
-        "TX-DIFF PTY: streaming indicator required (waiting-state form)\n{screen}"
+        screen.matches("◆ edit").count() == 9 && screen.contains("Waiting for response"),
+        "TX-DIFF PTY: nine edit chips and the waiting-for-response state must remain visible\n{screen}"
     );
     assert!(
-        !screen.contains('┃'),
-        "TX-DIFF PTY: no legacy left rail\n{screen}"
+        !screen.contains('❙') && screen.matches('┃').count() == 1,
+        "TX-DIFF PTY: the final compact edit row carries the selected Grok rail\n{screen}"
     );
     assert_no_multi_row_prompt_rail(&screen, "TX-DIFF");
     exit_via_palette(&mut helper);
+}
+
+pub(crate) fn tx_mixed_transcript_pty() {
+    if !require_pty_signoff() {
+        return;
+    }
+    let mut helper = spawn_helper_at(
+        LIVE_MIXED_TRANSCRIPT_HELPER,
+        LIVE_MIXED_TRANSCRIPT_SCENARIO,
+        120,
+        40,
+    );
+    helper.wait_for("Created, inspected, and verified the file successfully.");
+    let screen = helper.screen_text();
+    maybe_dump_l3("HARNESS_MIXED_TRANSCRIPT_L3_DUMP", &screen);
+    let lines = screen.lines().collect::<Vec<_>>();
+    let start = lines
+        .iter()
+        .position(|line| line.contains("Inspecting the temporary test file"))
+        .unwrap_or_abort();
+    let end = lines
+        .iter()
+        .position(|line| line.contains("Created, inspected, and verified the file successfully."))
+        .unwrap_or_abort();
+    let visible = &lines[start..=end];
+    let maximum_blank_run = visible
+        .split(|line| !line.trim().is_empty())
+        .map(<[&str]>::len)
+        .max()
+        .unwrap_or(0);
+    assert!(
+        maximum_blank_run <= 1,
+        "TX-MIXED PTY: interleaved response and tool rows must remain dense\n{screen}"
+    );
+    let ordered = [
+        "Inspecting the temporary test file",
+        "I'll inspect the temporary test file.",
+        "Verifying the file once more",
+        "The first tool completed; now I'll verify it once more.",
+        "Created, inspected, and verified the file successfully.",
+    ];
+    let mut cursor = 0;
+    for needle in ordered {
+        let position = screen[cursor..]
+            .find(needle)
+            .unwrap_or_else(|| panic!("TX-MIXED PTY: missing {needle:?}\n{screen}"));
+        cursor += position + needle.len();
+    }
+    assert_eq!(
+        screen.matches("◆ Read mixed.txt").count(),
+        2,
+        "TX-MIXED PTY: both read calls must remain visible\n{screen}"
+    );
+    assert_no_multi_row_prompt_rail(&screen, "TX-MIXED");
+    exit_via_palette(&mut helper);
+}
+
+pub(crate) fn tx_mixed_transcript_done_pty() {
+    if !require_pty_signoff() {
+        return;
+    }
+    let mut helper = spawn_helper_at(
+        LIVE_MIXED_TRANSCRIPT_DONE_HELPER,
+        LIVE_MIXED_TRANSCRIPT_DONE_SCENARIO,
+        120,
+        40,
+    );
+    helper.wait_for("Worked for");
+    let screen = helper.screen_text();
+    maybe_dump_l3("HARNESS_MIXED_TRANSCRIPT_DONE_L3_DUMP", &screen);
+    let lines = screen.lines().collect::<Vec<_>>();
+    let start = lines
+        .iter()
+        .position(|line| line.contains("Thought for"))
+        .unwrap_or_abort();
+    let end = lines
+        .iter()
+        .position(|line| line.contains("Worked for"))
+        .unwrap_or_abort();
+    let maximum_blank_run = lines[start..=end]
+        .split(|line| !line.trim().is_empty())
+        .map(<[&str]>::len)
+        .max()
+        .unwrap_or(0);
+    assert!(
+        maximum_blank_run <= 1,
+        "TX-MIXED-DONE PTY: completed mixed transcript must stay densely packed\n{screen}"
+    );
+    assert!(
+        !screen.contains("Inspecting the temporary test file")
+            && !screen.contains("Verifying the file once more"),
+        "TX-MIXED-DONE PTY: completed reasoning bodies must auto-collapse\n{screen}"
+    );
+    assert!(
+        screen.contains("The first tool completed; now I'll verify it once more."),
+        "TX-MIXED-DONE PTY: prose between tool calls must remain visible\n{screen}"
+    );
+    exit_via_palette(&mut helper);
+}
+
+pub(crate) fn tx_tool_and_diff_fixtures_match_pinned_transcript_geometry() {
+    let tool_events = tool_events();
+    let diff_events = diff_events();
+
+    assert_eq!(
+        parity_model_metadata_for_scenario(Some(LIVE_TOOL_SCENARIO)),
+        ("Mock TX-Tool Model", TX_CONTEXT_WINDOW_TOKENS)
+    );
+    assert_eq!(
+        parity_model_metadata_for_scenario(Some(LIVE_DIFF_SCENARIO)),
+        ("Mock TX-Diff Model", TX_CONTEXT_WINDOW_TOKENS)
+    );
+
+    let tool_prompt = tool_events.iter().find_map(|event| match &event.payload {
+        EventV1::UserMessageSubmitted(data) => Some(data.text.as_str()),
+        _ => None,
+    });
+    assert_eq!(tool_prompt, Some("run the echo probe"));
+    assert_eq!(
+        tool_events
+            .iter()
+            .filter(|event| matches!(event.payload, EventV1::ToolCallRequested(_)))
+            .count(),
+        12
+    );
+    assert_eq!(
+        tool_events
+            .iter()
+            .filter(|event| {
+                matches!(
+                    event.payload,
+                    EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                        status: ToolCallStatus::Failed,
+                        ..
+                    })
+                )
+            })
+            .count(),
+        6
+    );
+    assert_eq!(
+        tool_events.iter().find_map(|event| match &event.payload {
+            EventV1::ProviderRequestFinished(data) =>
+                data.usage.as_ref().map(|usage| usage.total_tokens),
+            _ => None,
+        }),
+        Some(4_650)
+    );
+
+    let diff_prompt = diff_events.iter().find_map(|event| match &event.payload {
+        EventV1::UserMessageSubmitted(data) => Some(data.text.as_str()),
+        _ => None,
+    });
+    assert_eq!(diff_prompt, Some("edit the probe file"));
+    assert_eq!(
+        diff_events
+            .iter()
+            .filter(|event| matches!(event.payload, EventV1::ToolCallRequested(_)))
+            .count(),
+        9
+    );
+    assert_eq!(
+        diff_events
+            .iter()
+            .filter(|event| matches!(event.payload, EventV1::ToolCallFinished(_)))
+            .count(),
+        9
+    );
+    assert_eq!(
+        diff_events.iter().find_map(|event| match &event.payload {
+            EventV1::ProviderRequestFinished(data) =>
+                data.usage.as_ref().map(|usage| usage.total_tokens),
+            _ => None,
+        }),
+        Some(4_500)
+    );
+    assert!(
+        diff_events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::ToolCallStarted(data) if data.tool_call_id.as_str() == "tc_edit_8"
+            )
+        }) && diff_events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::ToolCallFinished(data) if data.tool_call_id.as_str() == "tc_edit_8"
+            )
+        })
+    );
 }
 
 pub(crate) fn shell_question_pty() {
@@ -755,6 +1005,10 @@ fn assert_resp_idle_shell_pty(cols: u16, rows: u16, label: &str) {
         !screen.contains("Enter:send"),
         "{label} PTY: idle shell must not show draft footer\n{screen}"
     );
+    assert!(
+        !screen.contains("Starting session"),
+        "{label} PTY: settled idle shell must not retain startup seed\n{screen}"
+    );
     assert_no_sidebar_copy(&screen, label);
     assert_no_multi_row_prompt_rail(&screen, label);
     exit_via_palette(&mut helper);
@@ -766,7 +1020,16 @@ pub(crate) fn pty_helper_type_first_startup() {
         return;
     }
 
-    let (_keepalive, update_rx) = mpsc::channel();
+    let (keepalive, update_rx) = mpsc::channel();
+    keepalive
+        .send(LiveUpdate::AuthBackendResult {
+            success: true,
+            message: "provider fixture connected".to_string(),
+        })
+        .unwrap_or_abort();
+    keepalive
+        .send(LiveUpdate::Status(STARTUP_CLIPBOARD_WARNING.to_string()))
+        .unwrap_or_abort();
     run_tui_with_options(TuiOptions {
         mode: TuiMode::Startup {
             session_history_entries: Vec::new(),
@@ -783,6 +1046,10 @@ pub(crate) fn pty_helper_type_first_startup() {
     .unwrap_or_abort();
 }
 
+#[allow(
+    deprecated,
+    reason = "legacy compaction event seeds idle context usage"
+)]
 pub(crate) fn pty_helper_idle_shell() {
     if std::env::var(HELPER_SCENARIO_ENV).as_deref() != Ok(IDLE_SHELL_SCENARIO) {
         return;
@@ -797,17 +1064,19 @@ pub(crate) fn pty_helper_idle_shell() {
         provider_display_label: None,
         provider_backend_label: None,
         model: "model-tx".to_string(),
-        model_display_label: Some("Parity Test Model (Mock)".to_string()),
+        model_display_label: Some(
+            "Umans Kimi K2.7 (CLIProxy) (xhigh) · always-approve".to_string(),
+        ),
         variant: None,
         variant_display_label: None,
-        display_label: Some("Parity Test Model (Mock) (xhigh)".to_string()),
+        display_label: Some("Umans Kimi K2.7 (CLIProxy) (xhigh) · always-approve".to_string()),
         token_window_label: None,
         context_window_tokens: Some(PARITY_CONTEXT_WINDOW_TOKENS),
         max_input_tokens: None,
         max_output_tokens: None,
         description: None,
         profile_description: None,
-        reasoning_effort: Some("xhigh".to_string()),
+        reasoning_effort: None,
         text_verbosity: None,
         thinking: None,
         recommended_for: None,
@@ -819,7 +1088,7 @@ pub(crate) fn pty_helper_idle_shell() {
             run_id: "run_hello".into(),
             run_name: Some("Hello".to_string()),
             status: Some(RunStatus::Finished),
-            last_updated_at: Some("2026-07-18T12:00:00Z".to_string()),
+            last_updated_at: Some("2026-07-28T12:00:00Z".to_string()),
             workspace_root: Some("/home/urbanbreach/Projects/agent-harness".to_string()),
             profile_preset: Some("build".to_string()),
             provider_model: Some("mock/parity-test".to_string()),
@@ -834,7 +1103,34 @@ pub(crate) fn pty_helper_idle_shell() {
     run_tui_with_options(TuiOptions {
         mode: TuiMode::Live {
             run_dir: run_dir.path().to_path_buf(),
-            historical_events: Vec::new(),
+            historical_events: vec![
+                parity_envelope(
+                    0,
+                    None,
+                    EventV1::RunStarted(RunStartedEvent {
+                        run_name: "idle-shell".into(),
+                        workspace_root: "/home/urbanbreach/Projects/agent-harness".to_string(),
+                    }),
+                ),
+                parity_envelope(
+                    1,
+                    None,
+                    EventV1::CompactionApplied(CompactionAppliedEvent {
+                        checkpoint_id: "checkpoint_idle_shell".to_string(),
+                        agent_id: "agent_idle_shell".to_string(),
+                        through_seq: 0,
+                        through_request_id: None,
+                        tokens_before_estimate: Some(1_700),
+                        tokens_after_estimate: Some(1_700),
+                        summary_tokens_estimate: None,
+                        compacted_turns: None,
+                        preserved_turns: None,
+                        reduction_tokens_estimate: None,
+                        reduction_percent_estimate: None,
+                        estimate_source: None,
+                    }),
+                ),
+            ],
             session_history_entries,
             prompt_history_path: None,
             update_rx,
@@ -880,7 +1176,7 @@ pub(crate) fn pty_helper_live_stream() {
     if std::env::var(HELPER_SCENARIO_ENV).as_deref() != Ok(LIVE_STREAM_SCENARIO) {
         return;
     }
-    run_live_with_historical_events(stream_events());
+    run_live_with_live_events(stream_events());
 }
 
 pub(crate) fn pty_helper_live_perm_stream() {
@@ -911,6 +1207,13 @@ pub(crate) fn pty_helper_live_complete() {
     run_live_with_historical_events(complete_events());
 }
 
+pub(crate) fn pty_helper_live_mermaid() {
+    if std::env::var(HELPER_SCENARIO_ENV).as_deref() != Ok(LIVE_MERMAID_SCENARIO) {
+        return;
+    }
+    run_live_with_historical_events(mermaid_events());
+}
+
 pub(crate) fn pty_helper_live_cancel() {
     if std::env::var(HELPER_SCENARIO_ENV).as_deref() != Ok(LIVE_CANCEL_SCENARIO) {
         return;
@@ -927,7 +1230,7 @@ pub(crate) fn pty_helper_live_recover() {
         return;
     }
     set_pending_live_prompt_draft(Some(RECOVER_DRAFT.to_string()));
-    run_live_with_historical_events(recover_events());
+    run_live_with_live_events(recover_events());
 }
 
 pub(crate) fn pty_helper_live_tool() {
@@ -935,6 +1238,34 @@ pub(crate) fn pty_helper_live_tool() {
         return;
     }
     run_live_with_historical_events(tool_events());
+}
+
+pub(crate) fn pty_helper_live_mixed_transcript() {
+    if std::env::var(HELPER_SCENARIO_ENV).as_deref() != Ok(LIVE_MIXED_TRANSCRIPT_SCENARIO) {
+        return;
+    }
+    run_live_with_historical_events(mixed_transcript_events());
+}
+
+pub(crate) fn pty_helper_live_mixed_transcript_done() {
+    if std::env::var(HELPER_SCENARIO_ENV).as_deref() != Ok(LIVE_MIXED_TRANSCRIPT_DONE_SCENARIO) {
+        return;
+    }
+    run_live_with_historical_events(mixed_transcript_done_events());
+}
+
+pub(crate) fn pty_helper_live_thinking_animation() {
+    if std::env::var(HELPER_SCENARIO_ENV).as_deref() != Ok(LIVE_THINKING_ANIMATION_SCENARIO) {
+        return;
+    }
+    run_live_with_timed_reasoning();
+}
+
+pub(crate) fn pty_helper_live_running_tool() {
+    if std::env::var(HELPER_SCENARIO_ENV).as_deref() != Ok(LIVE_RUNNING_TOOL_SCENARIO) {
+        return;
+    }
+    run_live_with_historical_events(running_tool_events());
 }
 
 pub(crate) fn pty_helper_live_diff() {
@@ -952,7 +1283,19 @@ pub(crate) fn pty_helper_live_scroll() {
 }
 
 pub(crate) fn pty_helper_question_overlay() {
-    if std::env::var(HELPER_SCENARIO_ENV).as_deref() != Ok(QUESTION_OVERLAY_SCENARIO) {
+    run_question_overlay_helper(QUESTION_OVERLAY_SCENARIO, false, false);
+}
+
+pub(crate) fn pty_helper_question_overlay_overflow() {
+    run_question_overlay_helper(QUESTION_OVERLAY_OVERFLOW_SCENARIO, true, false);
+}
+
+pub(crate) fn pty_helper_question_overlay_wrapped() {
+    run_question_overlay_helper(QUESTION_OVERLAY_WRAPPED_SCENARIO, true, true);
+}
+
+fn run_question_overlay_helper(scenario: &str, overflow: bool, wrapped: bool) {
+    if std::env::var(HELPER_SCENARIO_ENV).as_deref() != Ok(scenario) {
         return;
     }
 
@@ -970,6 +1313,8 @@ pub(crate) fn pty_helper_question_overlay() {
                 5,
                 "perm_question_parity",
                 "tool_call_question_parity",
+                overflow,
+                wrapped,
             ),
         )));
         let mut finish = parity_envelope(
@@ -1016,6 +1361,80 @@ fn run_live_with_historical_events(historical_events: Vec<EventEnvelopeV1>) {
         mode: TuiMode::Live {
             run_dir: run_dir.path().to_path_buf(),
             historical_events,
+            session_history_entries: Vec::new(),
+            prompt_history_path: None,
+            update_rx,
+            compact_session_supported: false,
+        },
+        exit_on_finish: false,
+        on_ui_intent: None,
+        keybindings: None,
+        toggles: None,
+        preserve_terminal_on_exit: false,
+        skip_alternate_screen: false,
+    })
+    .unwrap_or_abort();
+}
+
+fn run_live_with_live_events(events: Vec<EventEnvelopeV1>) {
+    let run_dir = tempfile::tempdir().unwrap_or_abort();
+    let (update_tx, update_rx) = mpsc::channel();
+    let inject_tx = update_tx.clone();
+    thread::spawn(move || {
+        thread::sleep(Duration::from_millis(25));
+        for event in events {
+            let _ = inject_tx.send(LiveUpdate::Event(Box::new(event)));
+        }
+    });
+    install_parity_context_window();
+    run_tui_with_options(TuiOptions {
+        mode: TuiMode::Live {
+            run_dir: run_dir.path().to_path_buf(),
+            historical_events: Vec::new(),
+            session_history_entries: Vec::new(),
+            prompt_history_path: None,
+            update_rx,
+            compact_session_supported: false,
+        },
+        exit_on_finish: false,
+        on_ui_intent: None,
+        keybindings: None,
+        toggles: None,
+        preserve_terminal_on_exit: false,
+        skip_alternate_screen: false,
+    })
+    .unwrap_or_abort();
+    drop(update_tx);
+}
+
+fn run_live_with_timed_reasoning() {
+    let request_id = "req_thinking_animation_pty";
+    let run_dir = tempfile::tempdir().unwrap_or_abort();
+    let (update_tx, update_rx) = mpsc::channel();
+    thread::spawn(move || {
+        thread::sleep(Duration::from_millis(1_800));
+        let mut events = thinking_animation_events(request_id).into_iter();
+        let user = events.next().unwrap_or_abort();
+        let _ = update_tx.send(LiveUpdate::Event(Box::new(user)));
+        thread::sleep(Duration::from_millis(50));
+        let started = events.next().unwrap_or_abort();
+        let _ = update_tx.send(LiveUpdate::Event(Box::new(started)));
+        thread::sleep(Duration::from_millis(50));
+        for (index, event) in events.enumerate() {
+            let _ = update_tx.send(LiveUpdate::Event(Box::new(event)));
+            let delay = match index {
+                0 => 600,
+                _ => 300,
+            };
+            thread::sleep(Duration::from_millis(delay));
+        }
+        thread::park();
+    });
+    install_parity_context_window();
+    run_tui_with_options(TuiOptions {
+        mode: TuiMode::Live {
+            run_dir: run_dir.path().to_path_buf(),
+            historical_events: Vec::new(),
             session_history_entries: Vec::new(),
             prompt_history_path: None,
             update_rx,
@@ -1384,8 +1803,8 @@ fn stream_events() -> Vec<EventEnvelopeV1> {
     let request_id = "req_stream_pty";
     // Reference streaming state: "Waiting for response…" state — user submitted, provider
     // started, no body text yet. TaskScheduled keeps the activity Streaming after
-    // ProviderRequestFinished seeds total_tokens for the ⇣ download counter.
-    // Elapsed 5.3s, ⇣1.43k tokens.
+    // ProviderRequestFinished seeds context/turn usage. The PTY helper injects these
+    // through the live-update channel so both timers advance from the runtime clock.
     let mut events = vec![
         parity_envelope(
             1,
@@ -1413,7 +1832,15 @@ fn stream_events() -> Vec<EventEnvelopeV1> {
                 model_id: "model-tx".to_string(),
                 prompt_summary: STREAM_USER_TEXT.to_string(),
                 request_digest: "digest-stream".to_string(),
-                metadata: None,
+                metadata: Some(ProviderRequestStartedMetadata {
+                    retry: Some(ProviderRequestRetryMetadata {
+                        attempt: 0,
+                        max_attempts: 3,
+                        delay_ms: None,
+                        category: None,
+                    }),
+                    ..ProviderRequestStartedMetadata::default()
+                }),
             }),
         ),
         parity_envelope(
@@ -1423,14 +1850,13 @@ fn stream_events() -> Vec<EventEnvelopeV1> {
                 request_id: request_id.into(),
                 finish_reason: "done".to_string(),
                 output_digest: Some("digest-out-stream".to_string()),
-                usage: Some(parity_completion_usage(1430)),
+                usage: Some(parity_completion_usage_context_and_total(1_400, 1_430)),
                 metadata: None,
             }),
         ),
     ];
-    // first mono non-zero; finish at 5400 → elapsed 5.3s from 100.
-    for (event, mono) in events.iter_mut().zip([100_u64, 100, 100, 5400]) {
-        event.mono_ms = mono;
+    for event in &mut events {
+        event.mono_ms = 100;
     }
     events
 }
@@ -1474,6 +1900,126 @@ fn perm_stream_events() -> Vec<EventEnvelopeV1> {
         parity_envelope(
             4,
             Some(request_id),
+            EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                tool_call_id: "tc_perm_stream_edit".into(),
+                tool_id: "edit".to_string(),
+                args_summary: "{}".to_string(),
+                args_digest: "digest-perm-stream-edit".to_string(),
+                metadata: None,
+            }),
+        ),
+        parity_envelope(
+            5,
+            Some(request_id),
+            EventV1::ToolCallStarted(ToolCallStartedEvent {
+                tool_call_id: "tc_perm_stream_edit".into(),
+            }),
+        ),
+        parity_envelope(
+            6,
+            Some(request_id),
+            EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                tool_call_id: "tc_perm_stream_edit".into(),
+                status: ToolCallStatus::Succeeded,
+                output_summary: None,
+                output_digest: None,
+                output_json: None,
+                metadata: None,
+            }),
+        ),
+        parity_envelope(
+            7,
+            Some(request_id),
+            EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                tool_call_id: "tc_perm_stream_edit_2".into(),
+                tool_id: "edit".to_string(),
+                args_summary: "{}".to_string(),
+                args_digest: "digest-perm-stream-edit-2".to_string(),
+                metadata: None,
+            }),
+        ),
+        parity_envelope(
+            8,
+            Some(request_id),
+            EventV1::ToolCallStarted(ToolCallStartedEvent {
+                tool_call_id: "tc_perm_stream_edit_2".into(),
+            }),
+        ),
+        parity_envelope(
+            9,
+            Some(request_id),
+            EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                tool_call_id: "tc_perm_stream_edit_2".into(),
+                status: ToolCallStatus::Succeeded,
+                output_summary: None,
+                output_digest: None,
+                output_json: None,
+                metadata: None,
+            }),
+        ),
+        parity_envelope(
+            10,
+            Some(request_id),
+            EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                tool_call_id: "tc_perm_stream_edit_3".into(),
+                tool_id: "edit".to_string(),
+                args_summary: "{}".to_string(),
+                args_digest: "digest-perm-stream-edit-3".to_string(),
+                metadata: None,
+            }),
+        ),
+        parity_envelope(
+            11,
+            Some(request_id),
+            EventV1::ToolCallStarted(ToolCallStartedEvent {
+                tool_call_id: "tc_perm_stream_edit_3".into(),
+            }),
+        ),
+        parity_envelope(
+            12,
+            Some(request_id),
+            EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                tool_call_id: "tc_perm_stream_edit_3".into(),
+                status: ToolCallStatus::Succeeded,
+                output_summary: None,
+                output_digest: None,
+                output_json: None,
+                metadata: None,
+            }),
+        ),
+        parity_envelope(
+            13,
+            Some(request_id),
+            EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                tool_call_id: "tc_perm_stream_edit_4".into(),
+                tool_id: "edit".to_string(),
+                args_summary: "{}".to_string(),
+                args_digest: "digest-perm-stream-edit-4".to_string(),
+                metadata: None,
+            }),
+        ),
+        parity_envelope(
+            14,
+            Some(request_id),
+            EventV1::ToolCallStarted(ToolCallStartedEvent {
+                tool_call_id: "tc_perm_stream_edit_4".into(),
+            }),
+        ),
+        parity_envelope(
+            15,
+            Some(request_id),
+            EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                tool_call_id: "tc_perm_stream_edit_4".into(),
+                status: ToolCallStatus::Succeeded,
+                output_summary: None,
+                output_digest: None,
+                output_json: None,
+                metadata: None,
+            }),
+        ),
+        parity_envelope(
+            16,
+            Some(request_id),
             EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
                 request_id: request_id.into(),
                 finish_reason: "done".to_string(),
@@ -1484,8 +2030,11 @@ fn perm_stream_events() -> Vec<EventEnvelopeV1> {
         ),
     ];
     // first mono non-zero; finish at 3700 → elapsed 3.6s from 100.
-    for (event, mono) in events.iter_mut().zip([100_u64, 100, 100, 3700]) {
-        event.mono_ms = mono;
+    for event in &mut events {
+        event.mono_ms = 100;
+    }
+    if let Some(finished) = events.last_mut() {
+        finished.mono_ms = 3700;
     }
     events
 }
@@ -1496,10 +2045,8 @@ fn question_stream_events() -> Vec<EventEnvelopeV1> {
     // question-tool-in-flight streaming state — user submitted "ask me the
     // parity question", provider started, 5 ◆ question tool-call chips,
     // waiting-for-response spinner. Elapsed 3.3s, ⇣4.35k tokens.
-    // The reference binary renders question tool calls as ◆ question chips
-    // but never surfaces an interactive question UI. The harness produces a
-    // matching streaming state; transcript content (◆ question chips vs
-    // blank) is masked as identity in the L6 field mask.
+    // The reference binary renders the five failed question tool attempts as
+    // compact red ◆ question rows before returning to the live wait state.
     let mut events = vec![
         parity_envelope(
             1,
@@ -1530,27 +2077,65 @@ fn question_stream_events() -> Vec<EventEnvelopeV1> {
                 metadata: None,
             }),
         ),
-        parity_envelope(
-            4,
+    ];
+    for index in 0..5_u64 {
+        let tool_call_id = format!("tc_question_stream_{index}");
+        let seq = 4 + index * 3;
+        events.push(parity_envelope(
+            seq,
             Some(request_id),
-            EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
-                request_id: request_id.into(),
-                finish_reason: "tool_calls".to_string(),
-                output_digest: Some("digest-out-question-stream".to_string()),
-                usage: Some(parity_completion_usage_context_and_total(4_300, 4_350)),
+            EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                tool_call_id: tool_call_id.clone().into(),
+                tool_id: "question".to_string(),
+                args_summary: "{}".to_string(),
+                args_digest: format!("digest-question-stream-{index}"),
                 metadata: None,
             }),
-        ),
-    ];
+        ));
+        events.push(parity_envelope(
+            seq + 1,
+            Some(request_id),
+            EventV1::ToolCallStarted(ToolCallStartedEvent {
+                tool_call_id: tool_call_id.clone().into(),
+            }),
+        ));
+        events.push(parity_envelope(
+            seq + 2,
+            Some(request_id),
+            EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                tool_call_id: tool_call_id.into(),
+                status: ToolCallStatus::Failed,
+                output_summary: None,
+                output_digest: None,
+                output_json: None,
+                metadata: None,
+            }),
+        ));
+    }
+    events.push(parity_envelope(
+        19,
+        Some(request_id),
+        EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+            request_id: request_id.into(),
+            finish_reason: "tool_calls".to_string(),
+            output_digest: Some("digest-out-question-stream".to_string()),
+            usage: Some(parity_completion_usage_context_and_total(4_300, 4_350)),
+            metadata: None,
+        }),
+    ));
     // first mono non-zero; finish at 3400 → elapsed 3.3s from 100.
-    for (event, mono) in events.iter_mut().zip([100_u64, 100, 100, 3400]) {
-        event.mono_ms = mono;
+    for event in &mut events {
+        event.mono_ms = 100;
+    }
+    if let Some(finished) = events.last_mut() {
+        finished.mono_ms = 3_400;
     }
     events
 }
 
 fn fail_events() -> Vec<EventEnvelopeV1> {
     let request_id = "req_fail_pty";
+    let retry_request_id = "req_fail_retry_pty";
     // Reference failure state (run1-shell-fail-pinned-v1): user message + "parity
     // turn fails mid stream" assistant text + "⠸ Retrying (attempt 2)… 0.4s
     // 2.6s ⇣4.14k [stop]" activity footer. Single activity: TaskScheduled
@@ -1560,7 +2145,7 @@ fn fail_events() -> Vec<EventEnvelopeV1> {
     let mut events = vec![
         parity_envelope(
             1,
-            Some(request_id),
+            Some(retry_request_id),
             EventV1::TaskScheduled(TaskScheduledEvent {
                 task_id: "task_fail_parity".to_string().into(),
                 state: TaskScheduleState::Started,
@@ -1584,15 +2169,7 @@ fn fail_events() -> Vec<EventEnvelopeV1> {
                 model_id: "model-tx".to_string(),
                 prompt_summary: FAIL_USER_TEXT.to_string(),
                 request_digest: "digest-fail".to_string(),
-                metadata: Some(ProviderRequestStartedMetadata {
-                    retry: Some(ProviderRequestRetryMetadata {
-                        attempt: 2,
-                        max_attempts: 5,
-                        delay_ms: None,
-                        category: Some(ProviderErrorCategory::RateLimited),
-                    }),
-                    ..Default::default()
-                }),
+                metadata: None,
             }),
         ),
         parity_envelope(
@@ -1610,6 +2187,45 @@ fn fail_events() -> Vec<EventEnvelopeV1> {
                 request_id: request_id.into(),
                 finish_reason: "done".to_string(),
                 output_digest: Some("digest-out-fail".to_string()),
+                usage: None,
+                metadata: None,
+            }),
+        ),
+        parity_envelope(
+            6,
+            Some(retry_request_id),
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: retry_request_id.into(),
+                provider_id: "mock".to_string(),
+                model_id: "model-tx".to_string(),
+                prompt_summary: FAIL_USER_TEXT.to_string(),
+                request_digest: "digest-fail-retry".to_string(),
+                metadata: Some(ProviderRequestStartedMetadata {
+                    retry: Some(ProviderRequestRetryMetadata {
+                        attempt: 2,
+                        max_attempts: 5,
+                        delay_ms: None,
+                        category: Some(ProviderErrorCategory::RateLimited),
+                    }),
+                    ..Default::default()
+                }),
+            }),
+        ),
+        parity_envelope(
+            7,
+            Some(retry_request_id),
+            EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+                request_id: retry_request_id.into(),
+                delta: "parity turn fails mid stream".to_string(),
+            }),
+        ),
+        parity_envelope(
+            8,
+            Some(retry_request_id),
+            EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+                request_id: retry_request_id.into(),
+                finish_reason: "done".to_string(),
+                output_digest: Some("digest-out-fail-retry".to_string()),
                 usage: Some(parity_completion_usage(4_140)),
                 metadata: None,
             }),
@@ -1618,7 +2234,10 @@ fn fail_events() -> Vec<EventEnvelopeV1> {
     // UserMessageSubmitted at mono 100 sets first_mono_ms; ProviderRequestStarted
     // at mono 2300 sets request_started_mono_ms; ProviderRequestFinished at mono
     // 2700 sets last_mono_ms. duration=2.6s, retry_elapsed=0.4s.
-    for (event, mono) in events.iter_mut().zip([100_u64, 100, 2300, 2400, 2700]) {
+    for (event, mono) in events
+        .iter_mut()
+        .zip([100_u64, 100, 100, 100, 2300, 2300, 2400, 2700])
+    {
         event.mono_ms = mono;
     }
     events
@@ -1675,8 +2294,58 @@ fn complete_events() -> Vec<EventEnvelopeV1> {
     events
 }
 
+fn mermaid_events() -> Vec<EventEnvelopeV1> {
+    let request_id = "req_mermaid_pty";
+    let mut events = vec![
+        parity_envelope(
+            1,
+            Some(request_id),
+            EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                request_id: request_id.into(),
+                text: MERMAID_USER_TEXT.to_string(),
+            }),
+        ),
+        parity_envelope(
+            2,
+            Some(request_id),
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: request_id.into(),
+                provider_id: "mock".to_string(),
+                model_id: "model-tx".to_string(),
+                prompt_summary: MERMAID_USER_TEXT.to_string(),
+                request_digest: "digest-mermaid".to_string(),
+                metadata: None,
+            }),
+        ),
+        parity_envelope(
+            3,
+            Some(request_id),
+            EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+                request_id: request_id.into(),
+                delta: MERMAID_ASSISTANT_TEXT.to_string(),
+            }),
+        ),
+        parity_envelope(
+            4,
+            Some(request_id),
+            EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+                request_id: request_id.into(),
+                finish_reason: "stop".to_string(),
+                output_digest: Some("digest-out-mermaid".to_string()),
+                usage: Some(parity_completion_usage(4_100)),
+                metadata: None,
+            }),
+        ),
+    ];
+    for (event, mono) in events.iter_mut().zip([100_u64, 200, 1_000, 2_400]) {
+        event.mono_ms = mono;
+    }
+    events
+}
+
 fn recover_events() -> Vec<EventEnvelopeV1> {
     let request_id = "req_recover_pty";
+    let retry_request_id = "req_recover_retry_pty";
     // Reference recovery state (run1-shell-recover-pinned-v1): same retry structure
     // as SHELL-FAIL but with "recover the parity probe" user message and
     // "retry after failure draft" in the composer. Retry spinner shows
@@ -1684,7 +2353,7 @@ fn recover_events() -> Vec<EventEnvelopeV1> {
     let mut events = vec![
         parity_envelope(
             1,
-            Some(request_id),
+            Some(retry_request_id),
             EventV1::TaskScheduled(TaskScheduledEvent {
                 task_id: "task_recover_parity".to_string().into(),
                 state: TaskScheduleState::Started,
@@ -1708,15 +2377,7 @@ fn recover_events() -> Vec<EventEnvelopeV1> {
                 model_id: "model-tx".to_string(),
                 prompt_summary: RECOVER_USER_TEXT.to_string(),
                 request_digest: "digest-recover".to_string(),
-                metadata: Some(ProviderRequestStartedMetadata {
-                    retry: Some(ProviderRequestRetryMetadata {
-                        attempt: 2,
-                        max_attempts: 5,
-                        delay_ms: None,
-                        category: Some(ProviderErrorCategory::RateLimited),
-                    }),
-                    ..Default::default()
-                }),
+                metadata: None,
             }),
         ),
         parity_envelope(
@@ -1734,13 +2395,55 @@ fn recover_events() -> Vec<EventEnvelopeV1> {
                 request_id: request_id.into(),
                 finish_reason: "done".to_string(),
                 output_digest: Some("digest-out-recover".to_string()),
+                usage: None,
+                metadata: None,
+            }),
+        ),
+        parity_envelope(
+            6,
+            Some(retry_request_id),
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: retry_request_id.into(),
+                provider_id: "mock".to_string(),
+                model_id: "model-tx".to_string(),
+                prompt_summary: RECOVER_USER_TEXT.to_string(),
+                request_digest: "digest-recover-retry".to_string(),
+                metadata: Some(ProviderRequestStartedMetadata {
+                    retry: Some(ProviderRequestRetryMetadata {
+                        attempt: 2,
+                        max_attempts: 5,
+                        delay_ms: None,
+                        category: Some(ProviderErrorCategory::RateLimited),
+                    }),
+                    ..Default::default()
+                }),
+            }),
+        ),
+        parity_envelope(
+            7,
+            Some(retry_request_id),
+            EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+                request_id: retry_request_id.into(),
+                delta: "parity turn fails mid stream".to_string(),
+            }),
+        ),
+        parity_envelope(
+            8,
+            Some(retry_request_id),
+            EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+                request_id: retry_request_id.into(),
+                finish_reason: "done".to_string(),
+                output_digest: Some("digest-out-recover-retry".to_string()),
                 usage: Some(parity_completion_usage(4_140)),
                 metadata: None,
             }),
         ),
     ];
     // duration=3.8s (100→3900), retry_elapsed=1.2s (3900-2700).
-    for (event, mono) in events.iter_mut().zip([100_u64, 100, 2700, 2800, 3900]) {
+    for (event, mono) in events
+        .iter_mut()
+        .zip([100_u64, 100, 100, 100, 2600, 2700, 2800, 3900])
+    {
         event.mono_ms = mono;
     }
     events
@@ -1748,9 +2451,6 @@ fn recover_events() -> Vec<EventEnvelopeV1> {
 
 fn tool_events() -> Vec<EventEnvelopeV1> {
     let request_id = "req_tool_pty";
-    // Reference tool state: streaming tool-loop with 10 echo commands (5 failed).
-    // Reference: '❙ ◈ Ran 5 commands · 5 failed' + 10 '❙ ◆ Run echo tx-tool-output-probe-line'
-    // + '⠇ Waiting for response… 3.2s' + 'Ctrl+c:cancel' footer.
     let mut events = vec![
         parity_envelope(
             1,
@@ -1782,10 +2482,9 @@ fn tool_events() -> Vec<EventEnvelopeV1> {
             }),
         ),
     ];
-    // 10 echo tool calls: 5 succeeded (even index), 5 failed (odd index).
-    for i in 0..10u32 {
+    for i in 0..12u32 {
         let tc_id = format!("tc_echo_{i}");
-        let succeeded = i % 2 == 0;
+        let succeeded = i < 6;
         let seq = 4 + u64::from(i) * 3;
         events.push(parity_envelope(
             seq,
@@ -1829,13 +2528,13 @@ fn tool_events() -> Vec<EventEnvelopeV1> {
     // ProviderRequestFinished seeds the token counter; TaskScheduled(Started)
     // keeps the activity Streaming so "Waiting for response" renders.
     events.push(parity_envelope(
-        34,
+        40,
         Some(request_id),
         EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
             request_id: request_id.into(),
             finish_reason: "tool_calls".to_string(),
             output_digest: Some("digest-out-tool".to_string()),
-            usage: Some(parity_completion_usage(3_200)),
+            usage: Some(parity_completion_usage(4_650)),
             metadata: None,
         }),
     ));
@@ -1843,15 +2542,227 @@ fn tool_events() -> Vec<EventEnvelopeV1> {
     let mut mono = 100_u64;
     for event in events.iter_mut() {
         event.mono_ms = mono;
-        mono += 100;
+        event.ts = Some("2026-07-17T20:15:00Z".to_string());
+        mono += 85;
     }
+    events
+}
+
+fn running_tool_events() -> Vec<EventEnvelopeV1> {
+    let mut events = tool_events();
+    events.truncate(5);
+    events
+}
+
+fn mixed_transcript_events() -> Vec<EventEnvelopeV1> {
+    let request_id = "req_mixed_transcript_pty";
+    let mut events = vec![
+        parity_envelope(
+            1,
+            Some(request_id),
+            EventV1::TaskScheduled(TaskScheduledEvent {
+                task_id: "task_mixed_transcript_parity".to_string().into(),
+                state: TaskScheduleState::Started,
+                queue_key: Some("provider_model:mock:model-tx".to_string()),
+            }),
+        ),
+        parity_envelope(
+            2,
+            Some(request_id),
+            EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                request_id: request_id.into(),
+                text: "go".to_string(),
+            }),
+        ),
+        parity_envelope(
+            3,
+            Some(request_id),
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: request_id.into(),
+                provider_id: "mock".to_string(),
+                model_id: "model-tx".to_string(),
+                prompt_summary: "go".to_string(),
+                request_digest: "digest-mixed".to_string(),
+                metadata: None,
+            }),
+        ),
+        parity_envelope(
+            4,
+            Some(request_id),
+            EventV1::ProviderReasoningDelta(ProviderReasoningDeltaEvent {
+                request_id: request_id.into(),
+                delta: "Inspecting the temporary test file".to_string(),
+            }),
+        ),
+        parity_envelope(
+            5,
+            Some(request_id),
+            EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+                request_id: request_id.into(),
+                delta: "I'll inspect the temporary test file.".to_string(),
+            }),
+        ),
+        parity_envelope(
+            6,
+            Some(request_id),
+            EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                tool_call_id: "tc_mixed_read_one".into(),
+                tool_id: "fs.read".to_string(),
+                args_summary: r#"{"path":"mixed.txt"}"#.to_string(),
+                args_digest: "digest-mixed-read-one".to_string(),
+                metadata: None,
+            }),
+        ),
+        parity_envelope(
+            7,
+            Some(request_id),
+            EventV1::ToolCallStarted(ToolCallStartedEvent {
+                tool_call_id: "tc_mixed_read_one".into(),
+            }),
+        ),
+        parity_envelope(
+            8,
+            Some(request_id),
+            EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                tool_call_id: "tc_mixed_read_one".into(),
+                status: ToolCallStatus::Succeeded,
+                output_summary: Some("1 file".to_string()),
+                output_digest: Some("digest-mixed-read-one-output".to_string()),
+                output_json: None,
+                metadata: None,
+            }),
+        ),
+        parity_envelope(
+            9,
+            Some(request_id),
+            EventV1::ProviderReasoningDelta(ProviderReasoningDeltaEvent {
+                request_id: request_id.into(),
+                delta: "Verifying the file once more".to_string(),
+            }),
+        ),
+        parity_envelope(
+            10,
+            Some(request_id),
+            EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+                request_id: request_id.into(),
+                delta: "The first tool completed; now I'll verify it once more.".to_string(),
+            }),
+        ),
+        parity_envelope(
+            11,
+            Some(request_id),
+            EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                tool_call_id: "tc_mixed_read_two".into(),
+                tool_id: "fs.read".to_string(),
+                args_summary: r#"{"path":"mixed.txt"}"#.to_string(),
+                args_digest: "digest-mixed-read-two".to_string(),
+                metadata: None,
+            }),
+        ),
+        parity_envelope(
+            12,
+            Some(request_id),
+            EventV1::ToolCallStarted(ToolCallStartedEvent {
+                tool_call_id: "tc_mixed_read_two".into(),
+            }),
+        ),
+        parity_envelope(
+            13,
+            Some(request_id),
+            EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                tool_call_id: "tc_mixed_read_two".into(),
+                status: ToolCallStatus::Succeeded,
+                output_summary: Some("1 file".to_string()),
+                output_digest: Some("digest-mixed-read-two-output".to_string()),
+                output_json: None,
+                metadata: None,
+            }),
+        ),
+        parity_envelope(
+            14,
+            Some(request_id),
+            EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+                request_id: request_id.into(),
+                delta: "Created, inspected, and verified the file successfully.".to_string(),
+            }),
+        ),
+    ];
+    for (event, mono) in events.iter_mut().zip((0_u64..).map(|index| index * 5)) {
+        event.mono_ms = mono;
+    }
+    events
+}
+
+fn thinking_animation_events(request_id: &str) -> Vec<EventEnvelopeV1> {
+    let deltas = [
+        "THOUGHTFOLDSENTINEL",
+        " weighing",
+        " which",
+        "",
+        " fixture",
+        " file",
+    ];
+    let mut events = vec![
+        parity_envelope(
+            1,
+            Some(request_id),
+            EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                request_id: request_id.into(),
+                text: "go".to_string(),
+            }),
+        ),
+        parity_envelope(
+            2,
+            Some(request_id),
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: request_id.into(),
+                provider_id: "mock".to_string(),
+                model_id: "test-model".to_string(),
+                prompt_summary: "go".to_string(),
+                request_digest: "digest-thinking-animation".to_string(),
+                metadata: None,
+            }),
+        ),
+    ];
+    let reasoning_mono_ms = [0, 400, 700, 1_000, 1_200, 1_550];
+    events.extend(deltas.into_iter().enumerate().map(|(index, delta)| {
+        let mut event = parity_envelope(
+            u64::try_from(index).unwrap_or_default() + 3,
+            Some(request_id),
+            EventV1::ProviderReasoningDelta(ProviderReasoningDeltaEvent {
+                request_id: request_id.into(),
+                delta: delta.to_string(),
+            }),
+        );
+        event.mono_ms = reasoning_mono_ms[index];
+        event
+    }));
+    events
+}
+
+fn mixed_transcript_done_events() -> Vec<EventEnvelopeV1> {
+    let request_id = "req_mixed_transcript_pty";
+    let mut events = mixed_transcript_events();
+    events.retain(|event| !matches!(event.payload, EventV1::TaskScheduled(_)));
+    let mut finished = parity_envelope(
+        15,
+        Some(request_id),
+        EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+            request_id: request_id.into(),
+            finish_reason: "stop".to_string(),
+            output_digest: Some("digest-mixed-done".to_string()),
+            usage: Some(parity_completion_usage(120)),
+            metadata: None,
+        }),
+    );
+    finished.mono_ms = 100;
+    events.push(finished);
     events
 }
 
 fn diff_events() -> Vec<EventEnvelopeV1> {
     let request_id = "req_diff_pty";
     // Reference diff state: streaming state with 9 edit chips, no inline diff body.
-    // Reference: '◆ edit' chips (9 entries) + '⠋ Waiting for response… 3.2s' + 'Ctrl+c:cancel' footer.
     let mut events = vec![
         parity_envelope(
             1,
@@ -1883,7 +2794,6 @@ fn diff_events() -> Vec<EventEnvelopeV1> {
             }),
         ),
     ];
-    // 9 edit tool calls in streaming state (no ProviderRequestFinished).
     for i in 0..9u32 {
         let tc_id = format!("tc_edit_{i}");
         let seq = 4 + u64::from(i) * 3;
@@ -1919,8 +2829,6 @@ fn diff_events() -> Vec<EventEnvelopeV1> {
             }),
         ));
     }
-    // ProviderRequestFinished seeds the token counter; TaskScheduled(Started)
-    // keeps the activity Streaming so "Waiting for response" renders.
     events.push(parity_envelope(
         31,
         Some(request_id),
@@ -1928,14 +2836,26 @@ fn diff_events() -> Vec<EventEnvelopeV1> {
             request_id: request_id.into(),
             finish_reason: "tool_calls".to_string(),
             output_digest: Some("digest-out-diff".to_string()),
-            usage: Some(parity_completion_usage(3_200)),
+            usage: Some(parity_completion_usage(4_500)),
             metadata: None,
         }),
     ));
-    // Mono timing: spread over 3200ms to match 'Waiting for response… 3.2s'.
+    events.push(parity_envelope(
+        32,
+        Some(request_id),
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: request_id.into(),
+            provider_id: "mock".to_string(),
+            model_id: "model-tx".to_string(),
+            prompt_summary: DIFF_USER_TEXT.to_string(),
+            request_digest: "digest-diff-waiting".to_string(),
+            metadata: None,
+        }),
+    ));
     let mut mono = 100_u64;
     for event in events.iter_mut() {
         event.mono_ms = mono;
+        event.ts = Some("2026-07-17T20:17:00Z".to_string());
         mono += 100;
     }
     events
@@ -2058,7 +2978,29 @@ fn question_permission_requested_event(
     seq: u64,
     permission_id: &str,
     tool_call_id: &str,
+    overflow: bool,
+    wrapped: bool,
 ) -> EventEnvelopeV1 {
+    let options = if overflow {
+        (1..=24)
+            .map(|index| {
+                serde_json::json!({
+                    "label": format!("地域 {index}"),
+                    "description": if wrapped {
+                        format!("Choose deployment region {index} because this deliberately long explanation must wrap across several visual rows")
+                    } else {
+                        format!("Choose deployment region {index}")
+                    }
+                })
+            })
+            .collect::<Vec<_>>()
+    } else {
+        vec![
+            serde_json::json!({"label": "Red", "description": "Choose red"}),
+            serde_json::json!({"label": "Green", "description": "Choose green"}),
+            serde_json::json!({"label": "Blue", "description": "Choose blue"}),
+        ]
+    };
     EventEnvelopeV1 {
         schema_version: SCHEMA_VERSION,
         event_id: format!("evt_parity_question_{seq:04}"),
@@ -2081,13 +3023,9 @@ fn question_permission_requested_event(
             tool_call_id: Some(tool_call_id.into()),
             summary: serde_json::json!({
                 "questions": [{
-                    "question": "Which color?",
-                    "header": "Color",
-                    "options": [
-                        {"label": "Red", "description": "Choose red"},
-                        {"label": "Green", "description": "Choose green"},
-                        {"label": "Blue", "description": "Choose blue"}
-                    ],
+                    "question": if overflow { "Choose a deployment region 日本語" } else { "Which color?" },
+                    "header": if overflow { "Region" } else { "Color" },
+                    "options": options,
                     "multiple": false,
                     "custom": true,
                 }]

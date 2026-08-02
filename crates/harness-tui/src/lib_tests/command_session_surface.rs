@@ -878,7 +878,7 @@ pub(super) fn theme_dialog_opens_and_cycles_themes() {
     app.handle_key(key(crossterm::event::KeyCode::Down));
     app.handle_key(key(crossterm::event::KeyCode::Enter));
     assert!(!app.theme_dialog_visible);
-    assert_eq!(app.theme_name, "high-contrast");
+    assert_eq!(app.theme_name, "harness-light");
 }
 
 pub(super) fn theme_dialog_escape_closes_without_applying() {

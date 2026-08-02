@@ -33,8 +33,9 @@ pub(super) fn build_transcript_sections(app: &AppState) -> Vec<TranscriptTurnSec
     }
 
     if let Some(latest_assistant_footer_index) = turn_sections
-        .iter()
-        .rposition(turn_supports_assistant_footer)
+        .len()
+        .checked_sub(1)
+        .filter(|index| turn_supports_assistant_footer(&turn_sections[*index]))
     {
         let original_activity_index = visible_activities[latest_assistant_footer_index].0;
         if let Some(turn) = turn_sections.get_mut(latest_assistant_footer_index) {
@@ -93,11 +94,7 @@ fn inject_compaction_events(
 }
 
 fn turn_supports_assistant_footer(turn: &TranscriptTurnSection) -> bool {
-    // Freeze h1-stream-probe: fail chrome is flat `Retry failed:` only — no ✗ model footer.
-    if matches!(turn.header.status, ActivityStatus::Error) {
-        return false;
-    }
-    !turn.assistant_parts.is_empty() || activity_status_supports_footer_only(turn.header.status)
+    matches!(turn.header.status, ActivityStatus::Done)
 }
 
 fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
@@ -204,6 +201,32 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
         header: TranscriptTurnHeader {
             status: activity.status,
             is_selected,
+            provider_request_open: app
+                .events
+                .iter()
+                .rev()
+                .find_map(|event| match &event.payload {
+                    harness_core::event::EventV1::ProviderRequestStarted(data)
+                        if provider_event_matches_activity(
+                            event,
+                            data.request_id.as_str(),
+                            &activity.request_id,
+                        ) =>
+                    {
+                        Some(true)
+                    }
+                    harness_core::event::EventV1::ProviderRequestFinished(data)
+                        if provider_event_matches_activity(
+                            event,
+                            data.request_id.as_str(),
+                            &activity.request_id,
+                        ) =>
+                    {
+                        Some(false)
+                    }
+                    _ => None,
+                })
+                == Some(true),
             profile_label: activity.profile_label.clone(),
             model_id: activity.model_id.clone(),
             duration_ms: activity.duration_ms(),

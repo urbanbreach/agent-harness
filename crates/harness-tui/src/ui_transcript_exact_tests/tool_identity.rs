@@ -122,7 +122,10 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_reference_timestamps_a
         false,
         None,
     );
-    assert_eq!(task_section.header.disclosure_state, None);
+    assert_eq!(
+        task_section.header.disclosure_state,
+        Some(TranscriptToolCallDisclosureState::Collapsed)
+    );
     assert_eq!(
         task_section.child_session_id.as_deref(),
         Some("agent_worker")
@@ -283,7 +286,10 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_reference_timestamps_a
         false,
         None,
     );
-    assert_eq!(fetch_section.header.disclosure_state, None);
+    assert_eq!(
+        fetch_section.header.disclosure_state,
+        Some(TranscriptToolCallDisclosureState::Collapsed)
+    );
     let mut fetch_lines = Vec::new();
     {
         let render =
@@ -496,8 +502,14 @@ pub(crate) fn exact_test_mcp_tool_transcript_rows_use_effective_identity_without
         wrapper_section.header.visual_style,
         direct_section.header.visual_style
     );
-    assert_eq!(direct_section.header.disclosure_state, None);
-    assert_eq!(wrapper_section.header.disclosure_state, None);
+    assert_eq!(
+        direct_section.header.disclosure_state,
+        Some(TranscriptToolCallDisclosureState::Collapsed)
+    );
+    assert_eq!(
+        wrapper_section.header.disclosure_state,
+        Some(TranscriptToolCallDisclosureState::Collapsed)
+    );
 
     let mut direct_lines = Vec::new();
     {
@@ -570,7 +582,10 @@ pub(crate) fn exact_test_generic_tool_successful_output_prefers_inline_backgroun
         section.header.visual_style,
         TranscriptToolCallVisualStyle::Inline
     );
-    assert_eq!(section.header.disclosure_state, None);
+    assert_eq!(
+        section.header.disclosure_state,
+        Some(TranscriptToolCallDisclosureState::Collapsed)
+    );
 
     let rendered = transcript_test_line_texts({
         let mut lines = Vec::new();
@@ -670,7 +685,10 @@ pub(crate) fn exact_test_lsp_tool_successful_output_stays_hidden_until_generic_o
         hidden.header.visual_style,
         TranscriptToolCallVisualStyle::Inline
     );
-    assert_eq!(hidden.header.disclosure_state, None);
+    assert_eq!(
+        hidden.header.disclosure_state,
+        Some(TranscriptToolCallDisclosureState::Collapsed)
+    );
 
     let hidden_text = transcript_test_line_texts({
         let mut lines = Vec::new();
@@ -745,7 +763,10 @@ pub(crate) fn exact_test_skill_tool_rows_match_reference_title_and_icon() {
         section.header.visual_style,
         TranscriptToolCallVisualStyle::Inline
     );
-    assert_eq!(section.header.disclosure_state, None);
+    assert_eq!(
+        section.header.disclosure_state,
+        Some(TranscriptToolCallDisclosureState::Collapsed)
+    );
 
     let rendered = transcript_test_line_texts({
         let render = append_tool_call_section_lines(&section, &theme, 96, theme.surface.panel);
@@ -892,7 +913,7 @@ pub(crate) fn exact_test_todo_write_rows_render_open_checklist() {
     compat_read_call.output_summary = Some("[]".to_string());
 
     let write_section =
-        build_tool_call_section(&write_call, &app, false, false, false, false, false, None)
+        build_tool_call_section(&write_call, &app, true, false, false, true, false, None)
             .unwrap_or_abort();
     assert_eq!(
         write_section.header.visual_style,
@@ -905,7 +926,10 @@ pub(crate) fn exact_test_todo_write_rows_render_open_checklist() {
         ),
         (None, "# Todos")
     );
-    assert_eq!(write_section.header.disclosure_state, None);
+    assert_eq!(
+        write_section.header.disclosure_state,
+        Some(TranscriptToolCallDisclosureState::Expanded)
+    );
 
     let todo_lines = {
         let render =
@@ -960,7 +984,7 @@ pub(crate) fn exact_test_todo_write_rows_render_open_checklist() {
         false,
         false,
         false,
-        false,
+        true,
         false,
         None,
     )
@@ -1041,7 +1065,7 @@ pub(crate) fn exact_test_todo_write_rows_render_open_checklist() {
         false,
         false,
         false,
-        false,
+        true,
         false,
         None,
     )

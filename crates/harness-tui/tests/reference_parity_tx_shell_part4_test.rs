@@ -306,6 +306,7 @@ fn tx_diff_tool_details_project_removed_and_added_versions() {
     }
     app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
     app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+    app.toggle_tool_output_for_test("tc_diff_lines");
     let rendered = render(&app);
 
     // assert — details on; both versions project inline, no legacy rail

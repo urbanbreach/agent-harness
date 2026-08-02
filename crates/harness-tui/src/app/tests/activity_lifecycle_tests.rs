@@ -208,7 +208,11 @@ pub(super) fn provider_request_finished_keeps_activity_streaming_until_turn_task
             request_id: "provider_req_turn_task".into(),
             finish_reason: "done".to_string(),
             output_digest: Some("digest-turn-task-finished".to_string()),
-            usage: None,
+            usage: Some(CompletionUsage {
+                prompt_tokens: 1_400,
+                completion_tokens: 30,
+                total_tokens: 1_430,
+            }),
             metadata: None,
         }),
     ));
@@ -216,6 +220,11 @@ pub(super) fn provider_request_finished_keeps_activity_streaming_until_turn_task
     let activity = app.activities.back().unwrap_or_abort();
     assert_eq!(activity.status, ActivityStatus::Streaming);
     assert!(app.active_turn_in_progress());
+    assert_eq!(
+        app.active_context_usage(),
+        Some(ActiveContextUsage::estimate(1_400)),
+        "provider context usage remains visible while the enclosing turn task is active"
+    );
 
     app.ingest_event(envelope(
         5,

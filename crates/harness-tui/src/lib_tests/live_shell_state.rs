@@ -40,7 +40,7 @@ pub(super) fn live_shell_footer_is_shortcuts_only() {
     let replay_footer_row = find_last_line_containing(&replay_lines, "q quit")
         .map(|row| replay_lines[row].trim_end().to_string())
         .unwrap_or_abort();
-    assert_markers_in_order(&replay_footer_row, &["shortcuts", "tab focus", "q quit"]);
+    assert_markers_in_order(&replay_footer_row, &["shortcuts", "- focus", "ctrl+q quit"]);
     assert!(!replay_footer_row.contains("Replay"));
     assert!(!replay_footer_row.contains("run_fixture"));
     assert!(!replay_footer_row.contains("/tmp/replay-session"));
@@ -60,22 +60,14 @@ pub(super) fn live_post_turn_disclosure_matches_freeze_shortcut_chrome() {
     let lines = rendered.lines().collect::<Vec<_>>();
     let disclosure_row = lines
         .iter()
-        .rposition(|line| line.contains("Shift+Tab") || line.contains("Ctrl+x"))
+        .rposition(|line| line.contains("background task still running"))
         .map(|idx| lines[idx].trim_end().to_string())
-        .unwrap_or_else(|| panic!("freeze shortcut disclosure row missing\n{rendered}"));
+        .unwrap_or_else(|| panic!("active orchestration status row missing\n{rendered}"));
 
-    // Then: freeze chrome (lead-friendly left row), not live-ctx / ? commands cluster
+    // Then: the active orchestration status occupies the single priority strip.
     assert!(
-        disclosure_row.contains("Shift+Tab:mode"),
-        "expected Shift+Tab:mode in disclosure\n{disclosure_row}\n{rendered}"
-    );
-    assert!(
-        disclosure_row.contains("Ctrl+x:shortcuts"),
-        "expected Ctrl+x:shortcuts in disclosure\n{disclosure_row}\n{rendered}"
-    );
-    assert!(
-        disclosure_row.contains('│'),
-        "expected freeze separator │ in disclosure\n{disclosure_row}\n{rendered}"
+        disclosure_row.contains("background task still running"),
+        "expected active orchestration status\n{disclosure_row}\n{rendered}"
     );
     assert!(
         !disclosure_row.contains("live ctx"),
@@ -94,18 +86,12 @@ pub(super) fn live_post_turn_disclosure_matches_freeze_shortcut_chrome() {
     let draft_lines = draft_rendered.lines().collect::<Vec<_>>();
     let draft_disclosure = draft_lines
         .iter()
-        .rposition(|line| line.contains("Shift+Tab") || line.contains("Enter:send"))
+        .rposition(|line| line.contains("background task still running"))
         .map(|idx| draft_lines[idx].trim_end().to_string())
-        .unwrap_or_else(|| {
-            panic!("draft freeze shortcut disclosure row missing\n{draft_rendered}")
-        });
+        .unwrap_or_else(|| panic!("draft orchestration status row missing\n{draft_rendered}"));
     assert!(
-        draft_disclosure.contains("Enter:send"),
-        "draft disclosure must lead with Enter:send\n{draft_disclosure}\n{draft_rendered}"
-    );
-    assert!(
-        draft_disclosure.contains("Shift+Tab:mode") && draft_disclosure.contains("Ctrl+x:shortcuts"),
-        "draft disclosure must keep freeze mode/shortcuts chrome\n{draft_disclosure}\n{draft_rendered}"
+        draft_disclosure.contains("background task still running"),
+        "draft disclosure must preserve the active orchestration status\n{draft_disclosure}\n{draft_rendered}"
     );
     assert!(
         !draft_disclosure.contains("live ctx") && !draft_disclosure.contains("? commands"),

@@ -275,18 +275,16 @@ impl CodexOAuthClient {
                 "device authorization",
             )
             .await?;
-        let mut device = serde_json::from_str::<CodexDeviceAuthorizationResponse>(&response.body)
+        let device = serde_json::from_str::<CodexDeviceAuthorizationResponse>(&response.body)
             .map_err(|source| CodexOAuthError::Json {
-            operation: "device authorization",
-            message: source.to_string(),
-        })?;
-        if device.interval == 0 {
-            device.interval = 5;
-        }
+                operation: "device authorization",
+                message: source.to_string(),
+            })?;
+        let interval_seconds = device.interval.parse::<u64>().unwrap_or(5).max(1);
         Ok(CodexDeviceAuthorization {
             device_auth_id: device.device_auth_id,
             user_code: device.user_code,
-            interval_seconds: device.interval.max(1),
+            interval_seconds,
             verification_uri: format!("{}/codex/device", self.issuer.trim_end_matches('/')),
         })
     }
@@ -522,7 +520,7 @@ struct CodexDeviceAuthorizationResponse {
     device_auth_id: String,
     user_code: String,
     #[serde(default)]
-    interval: u64,
+    interval: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -625,14 +623,26 @@ pub fn extract_account_id_from_claims(claims: &Value) -> Option<String> {
 }
 
 fn form_headers() -> BTreeMap<String, String> {
-    BTreeMap::from([(
-        "Content-Type".to_string(),
-        "application/x-www-form-urlencoded".to_string(),
-    )])
+    BTreeMap::from([
+        (
+            "Content-Type".to_string(),
+            "application/x-www-form-urlencoded".to_string(),
+        ),
+        (
+            "User-Agent".to_string(),
+            concat!("opencode/", env!("CARGO_PKG_VERSION")).to_string(),
+        ),
+    ])
 }
 
 fn json_headers() -> BTreeMap<String, String> {
-    BTreeMap::from([("Content-Type".to_string(), "application/json".to_string())])
+    BTreeMap::from([
+        ("Content-Type".to_string(), "application/json".to_string()),
+        (
+            "User-Agent".to_string(),
+            concat!("opencode/", env!("CARGO_PKG_VERSION")).to_string(),
+        ),
+    ])
 }
 
 fn parse_query(url: &str) -> BTreeMap<String, String> {

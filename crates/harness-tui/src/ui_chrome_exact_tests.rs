@@ -6,6 +6,58 @@
 use super::*;
 use crate::UnwrapOrAbort;
 
+#[test]
+fn active_footer_omits_send_now_hint() {
+    // Given: an active turn with a queued draft in the composer.
+    let mut app = AppState::new_live(None, false, None);
+    app.focus = crate::app::Focus::Prompt;
+    app.composer.prompt_buffer = "follow-up".to_string();
+    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
+    app.ingest_event(harness_core::event::EventEnvelopeV1 {
+        schema_version: harness_core::event::SCHEMA_VERSION,
+        event_id: "evt_footer_active_turn".to_string(),
+        seq: 1,
+        run_id: "run_footer_active_turn".into(),
+        mono_ms: 1,
+        ts: None,
+        actor: harness_core::event::EventActor::new(
+            harness_core::event::ActorKind::System,
+            Some("ui-test".to_string()),
+        ),
+        correlation_id: Some("req_footer_active_turn".to_string()),
+        causation_id: None,
+        stream_key: Some("run:run_footer_active_turn".to_string()),
+        payload: harness_core::event::EventV1::TaskScheduled(
+            harness_core::event::TaskScheduledEvent {
+                task_id: "task_footer_active_turn".to_string().into(),
+                state: harness_core::event::TaskScheduleState::Started,
+                queue_key: Some("provider_model:default:model-1".to_string()),
+            },
+        ),
+    });
+
+    let width = 120;
+    let height = 40;
+    let backend = ratatui::backend::TestBackend::new(width, height);
+    let mut terminal = ratatui::Terminal::new(backend).unwrap_or_abort();
+    terminal
+        .draw(|frame| super::render_app(frame, &app))
+        .unwrap_or_abort();
+    let shell_rendered = terminal
+        .backend()
+        .buffer()
+        .content
+        .chunks(width as usize)
+        .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(shell_rendered.to_ascii_lowercase().contains("ctrl+c"));
+    assert!(
+        !shell_rendered.contains("Ctrl+Enter:send now"),
+        "{shell_rendered}"
+    );
+}
+
 #[cfg(test)]
 pub(crate) fn exact_test_subagent_footer_matches_harness_layout() {
     use ratatui::{backend::TestBackend, Terminal};
@@ -216,9 +268,9 @@ pub(crate) fn exact_test_live_control_dock_renders_shared_surface() {
     let dock = plan.dock.unwrap_or_abort();
     let composer = dock.composer;
 
-    assert_eq!(dock.status, None);
-    assert_eq!(dock.shell.height, composer.height.saturating_add(2));
-    assert_eq!(dock.shell.y, composer.y);
+    assert_eq!(dock.status, Some(Rect::new(2, 22, 96, 1)));
+    assert_eq!(dock.shell.height, composer.height.saturating_add(5));
+    assert_eq!(dock.shell.y.saturating_add(2), composer.y);
     assert_eq!(dock.disclosure, Some(Rect::new(2, 28, 96, 1)));
 
     let backend = TestBackend::new(width, height);
@@ -239,7 +291,7 @@ pub(crate) fn exact_test_live_control_dock_renders_shared_surface() {
     assert!(
         matches!(
             buffer[(right_edge, dock.shell.y)].symbol(),
-            "╮" | "│" | "╯" | " "
+            "╮" | "│" | "╯" | "]" | " "
         ),
         "bordered live composer uses rounded chrome, got {:?}",
         buffer[(right_edge, dock.shell.y)].symbol()
@@ -484,14 +536,11 @@ pub(crate) fn exact_test_live_composer_disclosure_summarizes_compaction_metrics(
         })
         .collect::<Vec<_>>();
 
-    assert!(candidates
-        .iter()
-        .any(|candidate| candidate.contains("live ctx 120 est")));
-    assert!(candidates
-        .iter()
-        .any(|candidate| candidate.contains("compactions 1")
-            && candidate.contains("summary 80 tok")
-            && candidate.contains("saved 380 tok")));
+    assert_eq!(
+        candidates,
+        vec![String::new()],
+        "live composer footer must reserve context metrics for the top header"
+    );
 }
 
 #[cfg(test)]
@@ -509,9 +558,7 @@ pub(crate) fn exact_test_live_composer_disclosure_none_context_shows_est_zero() 
         })
         .collect::<Vec<_>>();
 
-    assert!(candidates
-        .iter()
-        .any(|candidate| candidate.contains("live ctx 0 est")));
+    assert_eq!(candidates, vec![String::new()]);
 }
 
 #[cfg(test)]
@@ -551,11 +598,26 @@ pub(crate) fn exact_test_live_composer_disclosure_none_context_shows_percent_whe
         })
         .collect::<Vec<_>>();
 
+    assert_eq!(candidates, vec![String::new()]);
+
+    let width = 120;
+    let height = 32;
+    let backend = ratatui::backend::TestBackend::new(width, height);
+    let mut terminal = ratatui::Terminal::new(backend).unwrap_or_abort();
+    terminal
+        .draw(|frame| super::render_app(frame, &app))
+        .unwrap_or_abort();
+    let rendered = terminal
+        .backend()
+        .buffer()
+        .content
+        .chunks(width as usize)
+        .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n");
     assert!(
-        candidates
-            .iter()
-            .any(|candidate| candidate.contains("live ctx 0 est") && candidate.contains("(0%)")),
-        "context indicator should always show percentage when limit is known, even without usage data: {candidates:?}"
+        !rendered.contains("live ctx"),
+        "live dock must leave context usage to the top header:\n{rendered}"
     );
 }
 
@@ -718,4 +780,89 @@ pub(crate) fn exact_test_footer_status_cluster_empty_when_no_activity() {
 
     let data = crate::ui::ui_secondary::footer_status_cluster_data(&app);
     assert_eq!(data.pending_permissions, 0);
+}
+
+#[test]
+fn live_footer_shortcuts_stay_left_anchored_when_status_is_present() {
+    use ratatui::{backend::TestBackend, Terminal};
+
+    // Given: a live footer with a secondary status fact and shortcut hints.
+    let backend = TestBackend::new(100, 1);
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
+
+    // When: the combined live footer row renders.
+    terminal
+        .draw(|frame| {
+            super::render_live_footer_row(
+                frame,
+                Rect::new(0, 0, 100, 1),
+                Style::default(),
+                vec!["Streaming".to_string()],
+                Line::from("Shift+Tab:mode  │  Ctrl+x:shortcuts"),
+            );
+        })
+        .unwrap_or_abort();
+
+    // Then: the shortcuts retain the shell's left anchor instead of becoming a right group.
+    let row = terminal
+        .backend()
+        .buffer()
+        .content
+        .iter()
+        .map(|cell| cell.symbol())
+        .collect::<String>();
+    assert_eq!(row.find("Shift+Tab:mode"), Some(0), "{row}");
+}
+
+#[test]
+fn live_disclosure_shortcuts_stay_left_anchored_with_context_metadata() {
+    // Given: a live shell where known context metadata selects the disclosure fallback path.
+    let mut app = AppState::new_live(None, false, None);
+    let mut events = crate::lib_tests::session_view_events();
+    events.pop();
+    for event in events {
+        app.ingest_event(event);
+    }
+    app.set_launch_metadata(crate::app::LaunchMetadata::from_model_option(
+        &crate::app::ModelOption {
+            profile: "build".to_string(),
+            provider: "test".to_string(),
+            provider_display_label: None,
+            provider_backend_label: None,
+            model: "test-model".to_string(),
+            model_display_label: None,
+            variant: None,
+            variant_display_label: None,
+            display_label: None,
+            token_window_label: None,
+            context_window_tokens: Some(262_144),
+            max_input_tokens: None,
+            max_output_tokens: None,
+            description: None,
+            profile_description: None,
+            reasoning_effort: None,
+            text_verbosity: None,
+            thinking: None,
+            recommended_for: None,
+        },
+    ));
+    let width = 120;
+    let backend = ratatui::backend::TestBackend::new(width, 40);
+    let mut terminal = ratatui::Terminal::new(backend).unwrap_or_abort();
+
+    // When: the full live shell paints the composer disclosure.
+    terminal
+        .draw(|frame| super::render_app(frame, &app))
+        .unwrap_or_abort();
+
+    // Then: shortcuts retain the two-cell shell inset rather than forming a right group.
+    let row = terminal
+        .backend()
+        .buffer()
+        .content
+        .chunks(width as usize)
+        .map(|cells| cells.iter().map(|cell| cell.symbol()).collect::<String>())
+        .find(|row| row.contains("Shift+Tab:mode"))
+        .unwrap_or_abort();
+    assert_eq!(row.find("Shift+Tab:mode"), Some(2), "{row}");
 }

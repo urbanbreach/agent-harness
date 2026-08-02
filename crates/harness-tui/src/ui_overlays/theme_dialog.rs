@@ -16,7 +16,7 @@ pub(super) fn render_theme_dialog_overlay(
     let dialog_area = Rect::new(dialog_x, dialog_y, dialog_width, dialog_height);
 
     render_overlay_dim_backdrop(frame, root);
-    if !paint_command_palette_panel(frame, theme, dialog_area) {
+    if !super::paint_command_palette_panel_titled(frame, theme, dialog_area, "Themes") {
         return;
     }
 
@@ -78,14 +78,14 @@ fn render_theme_dialog_body(frame: &mut Frame, app: &AppState, theme: &Theme, ar
         let prefix = "  ";
         let marker = if is_current { "● " } else { "  " };
         let label: &'static str = match *name {
-            "default" => "Harness Dark",
+            "default" => "Harness Chat",
             "high-contrast" => "High Contrast",
             _ => name,
         };
         let fg = if is_selected {
             theme.text.inverse
         } else {
-            theme.text.primary
+            ui_chrome::command_palette_title(theme)
         };
         let bg = row_style.bg.unwrap_or(surface);
         frame.render_widget(
@@ -103,7 +103,9 @@ fn render_theme_dialog_body(frame: &mut Frame, app: &AppState, theme: &Theme, ar
         chunks[2],
     );
 
-    let muted_style = Style::default().fg(theme.text.secondary).bg(surface);
+    let muted_style = Style::default()
+        .fg(ui_chrome::command_palette_muted(theme))
+        .bg(surface);
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
             "enter apply · esc close",

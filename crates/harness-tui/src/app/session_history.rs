@@ -566,6 +566,9 @@ impl AppState {
     }
 
     pub(in crate::app) fn begin_session_history_picker(&mut self, action: StartupLauncherAction) {
+        if self.lineage_browser_visible || self.fork_selector_visible {
+            self.close_lineage_surfaces();
+        }
         self.startup_launcher_action = action;
         self.continue_disabled_banner = None;
         self.palette_visible = true;

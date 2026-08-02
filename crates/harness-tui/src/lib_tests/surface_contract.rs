@@ -205,8 +205,22 @@ pub(super) fn live_run_shell_places_under_input_controls_above_the_status_strip(
         app.ingest_event(event);
     }
 
-    assert_live_shell_document_composer_contract(&app, 100, 30, None, None, "Shift+Tab:mode");
-    assert_live_shell_document_composer_contract(&app, 80, 24, None, None, "Shift+Tab:mode");
+    assert_live_shell_document_composer_contract(
+        &app,
+        100,
+        30,
+        None,
+        None,
+        "background task still running",
+    );
+    assert_live_shell_document_composer_contract(
+        &app,
+        80,
+        24,
+        None,
+        None,
+        "background task still running",
+    );
 
     let dense = render_live_lines(&app, 60, 18);
     assert!(!dense.contains("↑/↓ history"));
@@ -280,22 +294,23 @@ pub(super) fn compact_geometry_uses_overlay_sidebar_and_minimal_footer() {
     assert!(!dense_render.contains("No MCP integrations configured"));
 }
 
-pub(super) fn focus_order_cycles_transcript_sidebar_composer() {
+pub(super) fn tab_toggles_prompt_and_details() {
     let mut app = app::AppState::new_live(None, false, None);
     app.focus = app::Focus::Details;
     app.active_tab = app::Tab::Run;
     app.live_details_drawer_open = true;
 
-    app.handle_key(focus_cycle_key());
-    assert_eq!(app.focus, app::Focus::List);
-    assert!(app.details_drawer_open());
-
+    // Tab toggles focus between Prompt and Details, closing the drawer each press.
     app.handle_key(focus_cycle_key());
     assert_eq!(app.focus, app::Focus::Prompt);
     assert!(!app.details_drawer_open());
 
     app.handle_key(focus_cycle_key());
     assert_eq!(app.focus, app::Focus::Details);
+    assert!(!app.details_drawer_open());
+
+    app.handle_key(focus_cycle_key());
+    assert_eq!(app.focus, app::Focus::Prompt);
     assert!(!app.details_drawer_open());
 }
 

@@ -52,8 +52,11 @@ pub(super) fn spawn_tui_auth_backend_task(
             stdin.unwrap_or_default(),
             Some(live_update_tx.clone()),
         );
-        let _ = live_update_tx.send(LiveUpdate::OperatorNotice { message, level });
-        let _ = live_update_tx.send(LiveUpdate::AuthBackendResult { success });
+        let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
+            message: message.clone(),
+            level,
+        });
+        let _ = live_update_tx.send(LiveUpdate::AuthBackendResult { success, message });
         if success {
             match refreshed_launch_metadata_after_auth(
                 normalized_args.first().map(String::as_str),
@@ -342,8 +345,10 @@ fn format_tui_auth_backend_output(args: &[String], output: &harness::AuthBackend
         }
         (_, true, true) => {
             format!(
-                "auth backend failed (exit {}): harness auth {command}",
-                output.code
+                "auth backend failed (exit {}): harness auth {command}\n\
+                 no diagnostic output; verify the Codex OAuth callback at \
+                 localhost:1455 is reachable and not already in use",
+                output.code,
             )
         }
     }

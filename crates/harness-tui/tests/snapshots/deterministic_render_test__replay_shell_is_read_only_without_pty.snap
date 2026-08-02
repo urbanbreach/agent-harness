@@ -1,5 +1,6 @@
 ---
 source: crates/harness-tui/tests/deterministic_render_test.rs
+assertion_line: 290
 expression: rendered.as_str()
 ---
 Replay · read-only · run run_fixture · 2 ev                                                         
@@ -21,7 +22,7 @@ Replay · read-only · run run_fixture · 2 ev
                                                                                                     
                                                                                                     
                                                                                                     
-▎ Replay is read-only.                                                                              
-  h shortcuts  ·  tab focus  ·  ctrl+q quit                                                         
+ ▎ Replay is read-only.                                                                             
+   h shortcuts  ·  - focus  ·  ctrl+q quit                                                          
                                                                                                     
                                                            HARNESS 0.1.0

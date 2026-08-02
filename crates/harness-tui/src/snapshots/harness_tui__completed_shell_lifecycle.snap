@@ -5,7 +5,6 @@ expression: "completed_shell_render.lines().map(str::trim_end).collect::<Vec<_>>
 
              test-workspace /workspace/agent-harness
 
-            Waiting for first turn…
 
 
 
@@ -24,4 +23,5 @@ expression: "completed_shell_render.lines().map(str::trim_end).collect::<Vec<_>>
             ╭──────────────────────────────────────────────────────────────────────────╮
             │ ❯ keep this draft                                                        │
             ╰──────────────────────────────────────────────────────────────── unknown ─╯
+
             ready for first turn                Tab focus  ·  ? commands  ·  Ctrl+q quit

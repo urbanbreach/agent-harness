@@ -1,0 +1,1824 @@
+{
+  "schema_version": "harness-scope-removal-ledger-v1",
+  "document_id": "scope-removal-ledger",
+  "description": "Ledger of every removed feature from the Grok Build parity scope. Removed features leave the required product inventories and must not be re-exposed as public commands, network paths, or compatibility shims.",
+  "source_crosswalk": ".omo/evidence/grok-build-parity-next/attempt-2/task-2/reference-crosswalk.json",
+  "plan_reference": "grok-build-parity-parallel-execution.md §1.2 (Scope OUT), §1.4 (Removal compatibility matrix)",
+  "total_removed_items": 132,
+  "retired_families": [
+    {
+      "family_id": "voice-dictation",
+      "owning_task": "Task 8",
+      "plan_reference": "§1.2 voice/dictation removed; §1.4 removal compatibility matrix",
+      "persisted_records_to_audit": [
+        "voice settings (voice_capture_mode, voice_stt_language)",
+        "voice actions (EnableVoiceMode, VoiceToggle, VoiceStop, SetVoiceCaptureMode, SetVoiceSttLanguage)",
+        "voice events",
+        "audio/model metadata"
+      ],
+      "required_retained_behavior": "new config/action rejected; old session replay is side-effect-free retired/no-op or actionable unsupported-version",
+      "removed_items": [
+        {
+          "grok_family": "slash-command",
+          "grok_symbol": "builtin_commands::VoiceCommand",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/mod.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/mod.rs",
+              "symbol": "builtin_commands"
+            },
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/docs/user-guide/04-slash-commands.md",
+              "symbol": "voice"
+            },
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/voice.rs",
+              "symbol": "VoiceCommand"
+            }
+          ],
+          "notes": "Plan 1.2: voice/dictation removed"
+        },
+        {
+          "grok_family": "setting",
+          "grok_symbol": "default_settings::voice_capture_mode",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/settings/defs.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/settings/defs.rs",
+              "symbol": "default_settings"
+            },
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/docs/user-guide/05-configuration.md",
+              "symbol": "voice_capture_mode"
+            }
+          ],
+          "notes": "Setting [Voice] voice_capture_mode - remove (Plan 1.2: voice removed)"
+        },
+        {
+          "grok_family": "setting",
+          "grok_symbol": "default_settings::voice_stt_language",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/settings/defs.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/settings/defs.rs",
+              "symbol": "default_settings"
+            },
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/docs/user-guide/05-configuration.md",
+              "symbol": "voice_stt_language"
+            }
+          ],
+          "notes": "Setting [Voice] voice_stt_language - remove (Plan 1.2: voice removed)"
+        },
+        {
+          "grok_family": "action-id",
+          "grok_symbol": "Action::EnableVoiceMode",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+              "symbol": "Action"
+            }
+          ],
+          "notes": "Action EnableVoiceMode - voice removed (Plan 1.2)"
+        },
+        {
+          "grok_family": "action-id",
+          "grok_symbol": "Action::VoiceToggle",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+              "symbol": "Action"
+            }
+          ],
+          "notes": "Action VoiceToggle - voice removed (Plan 1.2)"
+        },
+        {
+          "grok_family": "action-id",
+          "grok_symbol": "Action::VoiceStop",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+              "symbol": "Action"
+            }
+          ],
+          "notes": "Action VoiceStop - voice removed (Plan 1.2)"
+        },
+        {
+          "grok_family": "action-id",
+          "grok_symbol": "Action::SetVoiceCaptureMode",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+              "symbol": "Action"
+            }
+          ],
+          "notes": "Action SetVoiceCaptureMode - voice removed (Plan 1.2)"
+        },
+        {
+          "grok_family": "action-id",
+          "grok_symbol": "Action::SetVoiceSttLanguage",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+              "symbol": "Action"
+            }
+          ],
+          "notes": "Action SetVoiceSttLanguage - voice removed (Plan 1.2)"
+        },
+        {
+          "grok_family": "integration",
+          "grok_symbol": "VoiceCapture",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-voice/src/lib.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-voice/src/lib.rs",
+              "symbol": "VoiceCapture"
+            }
+          ],
+          "notes": "Plan 1.2: voice removed"
+        },
+        {
+          "grok_family": "integration",
+          "grok_symbol": "VoiceStt",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-voice/src/stt/mod.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-voice/src/stt/mod.rs",
+              "symbol": "VoiceStt"
+            }
+          ],
+          "notes": "Plan 1.2: voice removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:VoiceCommand",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/voice.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/voice.rs",
+              "symbol": "VoiceCommand"
+            }
+          ],
+          "notes": "Plan 1.2: voice removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:VoiceCapture",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-voice/src/audio/capture.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-voice/src/audio/capture.rs",
+              "symbol": "VoiceCapture"
+            }
+          ],
+          "notes": "Plan 1.2: voice removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:LinuxCapture",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-voice/src/audio/capture_linux.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-voice/src/audio/capture_linux.rs",
+              "symbol": "LinuxCapture"
+            }
+          ],
+          "notes": "Plan 1.2: voice removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:StreamingStt",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-voice/src/stt/streaming.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-voice/src/stt/streaming.rs",
+              "symbol": "StreamingStt"
+            }
+          ],
+          "notes": "Plan 1.2: voice removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:SttTypes",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-voice/src/stt/types.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-voice/src/stt/types.rs",
+              "symbol": "SttTypes"
+            }
+          ],
+          "notes": "Plan 1.2: voice removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:VoicePipeline",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-voice/src/pipeline.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-voice/src/pipeline.rs",
+              "symbol": "VoicePipeline"
+            }
+          ],
+          "notes": "Plan 1.2: voice removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:VoiceLanguage",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-voice/src/language.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-voice/src/language.rs",
+              "symbol": "VoiceLanguage"
+            }
+          ],
+          "notes": "Plan 1.2: voice removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:VoiceConfig",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-voice/src/config.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-voice/src/config.rs",
+              "symbol": "VoiceConfig"
+            }
+          ],
+          "notes": "Plan 1.2: voice removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:VoiceAuth",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-voice/src/auth.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-voice/src/auth.rs",
+              "symbol": "VoiceAuth"
+            }
+          ],
+          "notes": "Plan 1.2: voice removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:VoiceProbe",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-voice/src/probe.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-voice/src/probe.rs",
+              "symbol": "VoiceProbe"
+            }
+          ],
+          "notes": "Plan 1.2: voice removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:VoiceEvent",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-voice/src/event.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-voice/src/event.rs",
+              "symbol": "VoiceEvent"
+            }
+          ],
+          "notes": "Plan 1.2: voice removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:VoiceError",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-voice/src/error.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-voice/src/error.rs",
+              "symbol": "VoiceError"
+            }
+          ],
+          "notes": "Plan 1.2: voice removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:VOICE_CAPTURE_MODE_CHOICES",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/settings/defs.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/settings/defs.rs",
+              "symbol": "VOICE_CAPTURE_MODE_CHOICES"
+            }
+          ],
+          "notes": "Plan 1.2: voice removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:VOICE_STT_LANGUAGE_CHOICES",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/settings/defs.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/settings/defs.rs",
+              "symbol": "VOICE_STT_LANGUAGE_CHOICES"
+            }
+          ],
+          "notes": "Plan 1.2: voice removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:Action::EnableVoiceMode",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+              "symbol": "Action::EnableVoiceMode"
+            }
+          ],
+          "notes": "Plan 1.2: voice removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:Action::VoiceToggle",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+              "symbol": "Action::VoiceToggle"
+            }
+          ],
+          "notes": "Plan 1.2: voice removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:Action::VoiceStop",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+              "symbol": "Action::VoiceStop"
+            }
+          ],
+          "notes": "Plan 1.2: voice removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:Action::SetVoiceCaptureMode",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+              "symbol": "Action::SetVoiceCaptureMode"
+            }
+          ],
+          "notes": "Plan 1.2: voice removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:Action::SetVoiceSttLanguage",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+              "symbol": "Action::SetVoiceSttLanguage"
+            }
+          ],
+          "notes": "Plan 1.2: voice removed"
+        }
+      ],
+      "item_count": 29
+    },
+    {
+      "family_id": "enterprise-oidc",
+      "owning_task": "Task 9",
+      "plan_reference": "§1.2 Enterprise SSO, generic browser OIDC, Copilot Enterprise removed; §1.4 removal compatibility matrix",
+      "persisted_records_to_audit": [
+        "enterprise URL",
+        "OIDC state/tokens",
+        "auth events/status",
+        "browser_oidc and browser_oidc_local product surfaces",
+        "CopilotDeployment::Enterprise"
+      ],
+      "required_retained_behavior": "public auth remains usable; retired credentials atomically removed; old sessions replay safely",
+      "removed_items": [
+        {
+          "grok_family": "cli-command",
+          "grok_symbol": "Command::Setup",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/cli.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/cli.rs",
+              "symbol": "Command"
+            },
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/docs/user-guide/14-headless-mode.md",
+              "symbol": "setup"
+            }
+          ],
+          "notes": "Plan 1.2: hosted/enterprise removed"
+        },
+        {
+          "grok_family": "cli-flag",
+          "grok_symbol": "PagerArgs::devbox",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/cli.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/cli.rs",
+              "symbol": "PagerArgs"
+            }
+          ],
+          "notes": "CLI flag --devbox - remove (Plan 1.2)"
+        },
+        {
+          "grok_family": "cli-flag",
+          "grok_symbol": "PagerArgs::enterprise",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/cli.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/cli.rs",
+              "symbol": "PagerArgs"
+            }
+          ],
+          "notes": "CLI flag --enterprise - remove (Plan 1.2)"
+        },
+        {
+          "grok_family": "runtime-subsystem",
+          "grok_symbol": "BrowserOidc",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-auth/src/lib.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-auth/src/lib.rs",
+              "symbol": "BrowserOidc"
+            }
+          ],
+          "notes": "Plan 1.2: enterprise/OIDC removed"
+        },
+        {
+          "grok_family": "runtime-subsystem",
+          "grok_symbol": "CopilotEnterprise",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-auth/src/lib.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-auth/src/lib.rs",
+              "symbol": "CopilotEnterprise"
+            }
+          ],
+          "notes": "Plan 1.2: enterprise removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:BrowserOidc",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-auth/src/lib.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-auth/src/lib.rs",
+              "symbol": "BrowserOidc"
+            }
+          ],
+          "notes": "Plan 1.2: enterprise/OIDC removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:BrowserOidcLocal",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-auth/src/lib.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-auth/src/lib.rs",
+              "symbol": "BrowserOidcLocal"
+            }
+          ],
+          "notes": "Plan 1.2: enterprise/OIDC removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:CopilotEnterprise",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-auth/src/lib.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-auth/src/lib.rs",
+              "symbol": "CopilotEnterprise"
+            }
+          ],
+          "notes": "Plan 1.2: enterprise removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:EnterpriseUrlConfig",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-config/src/lib.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-config/src/lib.rs",
+              "symbol": "EnterpriseUrlConfig"
+            }
+          ],
+          "notes": "Plan 1.2: enterprise removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:Command::Update::enterprise",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/cli.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/cli.rs",
+              "symbol": "Command::Update::enterprise"
+            }
+          ],
+          "notes": "Plan 1.2: enterprise removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:Command::Login::devbox",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/cli.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/cli.rs",
+              "symbol": "Command::Login::devbox"
+            }
+          ],
+          "notes": "Plan 1.2: enterprise removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:Command::Setup",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/cli.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/cli.rs",
+              "symbol": "Command::Setup"
+            }
+          ],
+          "notes": "Plan 1.2: enterprise removed"
+        }
+      ],
+      "item_count": 12
+    },
+    {
+      "family_id": "remote-workspace-hub",
+      "owning_task": "Task 10",
+      "plan_reference": "§1.2 remote workspace hub removed; §1.4 removal compatibility matrix",
+      "persisted_records_to_audit": [
+        "endpoint",
+        "binding",
+        "upload/recovery status and events",
+        "workspace hub client state"
+      ],
+      "required_retained_behavior": "local workspace/session replay remains usable; remote records are retired or actionable unsupported-version",
+      "removed_items": [
+        {
+          "grok_family": "cli-command",
+          "grok_symbol": "Command::Workspace",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/cli.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/cli.rs",
+              "symbol": "Command"
+            },
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/docs/user-guide/14-headless-mode.md",
+              "symbol": "workspace"
+            }
+          ],
+          "notes": "Plan 1.2: remote workspace hub removed"
+        },
+        {
+          "grok_family": "cli-flag",
+          "grok_symbol": "PagerArgs::grok_ws_origin",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/cli.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/cli.rs",
+              "symbol": "PagerArgs"
+            }
+          ],
+          "notes": "CLI flag --grok-ws-origin - remove (Plan 1.2)"
+        },
+        {
+          "grok_family": "cli-flag",
+          "grok_symbol": "PagerArgs::grok_ws_url",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/cli.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/cli.rs",
+              "symbol": "PagerArgs"
+            }
+          ],
+          "notes": "CLI flag --grok-ws-url - remove (Plan 1.2)"
+        },
+        {
+          "grok_family": "cli-flag",
+          "grok_symbol": "PagerArgs::cli_chat_proxy_base_url",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/cli.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/cli.rs",
+              "symbol": "PagerArgs"
+            }
+          ],
+          "notes": "CLI flag --cli-chat-proxy-base-url - remove (Plan 1.2)"
+        },
+        {
+          "grok_family": "runtime-subsystem",
+          "grok_symbol": "WorkspaceClient",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-workspace-client/src/lib.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-workspace-client/src/lib.rs",
+              "symbol": "WorkspaceClient"
+            }
+          ],
+          "notes": "Plan 1.2: remote workspace hub removed"
+        },
+        {
+          "grok_family": "integration",
+          "grok_symbol": "WorkspaceHubClient",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-workspace-client/src/lib.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-workspace-client/src/lib.rs",
+              "symbol": "WorkspaceHubClient"
+            }
+          ],
+          "notes": "Plan 1.2: remote workspace hub removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:WorkspaceHubClient",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-workspace-client/src/lib.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-workspace-client/src/lib.rs",
+              "symbol": "WorkspaceHubClient"
+            }
+          ],
+          "notes": "Plan 1.2: remote workspace hub removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:Command::Workspace",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/cli.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/cli.rs",
+              "symbol": "Command::Workspace"
+            }
+          ],
+          "notes": "Plan 1.2: remote workspace hub removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:WorkspaceMgmtCommand::Start",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/cli.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/cli.rs",
+              "symbol": "WorkspaceMgmtCommand::Start"
+            }
+          ],
+          "notes": "Plan 1.2: remote workspace hub removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:WorkspaceMgmtCommand::Pause",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/cli.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/cli.rs",
+              "symbol": "WorkspaceMgmtCommand::Pause"
+            }
+          ],
+          "notes": "Plan 1.2: remote workspace hub removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:WorkspaceMgmtCommand::Resume",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/cli.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/cli.rs",
+              "symbol": "WorkspaceMgmtCommand::Resume"
+            }
+          ],
+          "notes": "Plan 1.2: remote workspace hub removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:WorkspaceMgmtCommand::Stop",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/cli.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/cli.rs",
+              "symbol": "WorkspaceMgmtCommand::Stop"
+            }
+          ],
+          "notes": "Plan 1.2: remote workspace hub removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:WorkspaceMgmtCommand::Restart",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/cli.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/cli.rs",
+              "symbol": "WorkspaceMgmtCommand::Restart"
+            }
+          ],
+          "notes": "Plan 1.2: remote workspace hub removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:WorkspaceMgmtCommand::Status",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/cli.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/cli.rs",
+              "symbol": "WorkspaceMgmtCommand::Status"
+            }
+          ],
+          "notes": "Plan 1.2: remote workspace hub removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:HeadlessArgs::grok_ws_origin",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/cli.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/cli.rs",
+              "symbol": "HeadlessArgs::grok_ws_origin"
+            }
+          ],
+          "notes": "Plan 1.2: remote workspace hub removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:HeadlessArgs::grok_ws_url",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/cli.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/cli.rs",
+              "symbol": "HeadlessArgs::grok_ws_url"
+            }
+          ],
+          "notes": "Plan 1.2: remote workspace hub removed"
+        }
+      ],
+      "item_count": 16
+    },
+    {
+      "family_id": "remote-mcp-oauth",
+      "owning_task": "Task 11",
+      "plan_reference": "§1.2 remote MCP OAuth removed; §1.4 removal compatibility matrix",
+      "persisted_records_to_audit": [
+        "OAuth state/token/redirect/provider fields",
+        "MCP OAuth discovery/PKCE/browser consent/token exchange/token refresh"
+      ],
+      "required_retained_behavior": "local MCP remains usable; old remote auth data is never sent or refreshed",
+      "removed_items": [
+        {
+          "grok_family": "action-id",
+          "grok_symbol": "Action::McpAuthTrigger",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+              "symbol": "Action"
+            }
+          ],
+          "notes": "Action McpAuthTrigger - remote MCP OAuth removed (Plan 1.2)"
+        },
+        {
+          "grok_family": "runtime-subsystem",
+          "grok_symbol": "McpOAuth",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-mcp/src/lib.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-mcp/src/lib.rs",
+              "symbol": "McpOAuth"
+            }
+          ],
+          "notes": "Plan 1.2: remote MCP OAuth removed"
+        },
+        {
+          "grok_family": "integration",
+          "grok_symbol": "McpOAuthIntegration",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-mcp/src/lib.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-mcp/src/lib.rs",
+              "symbol": "McpOAuthIntegration"
+            }
+          ],
+          "notes": "Plan 1.2: remote MCP OAuth removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:McpOAuthDiscovery",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-mcp/src/lib.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-mcp/src/lib.rs",
+              "symbol": "McpOAuthDiscovery"
+            }
+          ],
+          "notes": "Plan 1.2: remote MCP OAuth removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:McpOAuthPkce",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-mcp/src/lib.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-mcp/src/lib.rs",
+              "symbol": "McpOAuthPkce"
+            }
+          ],
+          "notes": "Plan 1.2: remote MCP OAuth removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:McpOAuthBrowserConsent",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-mcp/src/lib.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-mcp/src/lib.rs",
+              "symbol": "McpOAuthBrowserConsent"
+            }
+          ],
+          "notes": "Plan 1.2: remote MCP OAuth removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:McpOAuthTokenExchange",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-mcp/src/lib.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-mcp/src/lib.rs",
+              "symbol": "McpOAuthTokenExchange"
+            }
+          ],
+          "notes": "Plan 1.2: remote MCP OAuth removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:McpOAuthTokenRefresh",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-mcp/src/lib.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-mcp/src/lib.rs",
+              "symbol": "McpOAuthTokenRefresh"
+            }
+          ],
+          "notes": "Plan 1.2: remote MCP OAuth removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:Action::McpAuthTrigger",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+              "symbol": "Action::McpAuthTrigger"
+            }
+          ],
+          "notes": "Plan 1.2: remote MCP OAuth removed"
+        }
+      ],
+      "item_count": 9
+    },
+    {
+      "family_id": "marketplace-hosted-share-media",
+      "owning_task": "Task 12",
+      "plan_reference": "§1.2 marketplace, hosted share/upload, hosted image/video gen removed; §1.4 removal compatibility matrix",
+      "persisted_records_to_audit": [
+        "catalog/install/share/upload/media URLs and events",
+        "marketplace catalog/scanner/installer/index/git",
+        "hosted image/video generation commands"
+      ],
+      "required_retained_behavior": "local plugin/export/inline-media data remains readable; hosted actions are absent",
+      "removed_items": [
+        {
+          "grok_family": "slash-command",
+          "grok_symbol": "builtin_commands::MarketplaceCommand",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/mod.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/mod.rs",
+              "symbol": "builtin_commands"
+            },
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/docs/user-guide/04-slash-commands.md",
+              "symbol": "marketplace"
+            },
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/plugin.rs",
+              "symbol": "MarketplaceCommand"
+            }
+          ],
+          "notes": "Plan 1.2: remote marketplace removed"
+        },
+        {
+          "grok_family": "slash-command",
+          "grok_symbol": "builtin_commands::ShareCommand",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/mod.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/mod.rs",
+              "symbol": "builtin_commands"
+            },
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/docs/user-guide/04-slash-commands.md",
+              "symbol": "share"
+            },
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/share.rs",
+              "symbol": "ShareCommand"
+            }
+          ],
+          "notes": "Plan 1.2: hosted share/upload removed"
+        },
+        {
+          "grok_family": "slash-command",
+          "grok_symbol": "builtin_commands::FeedbackCommand",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/mod.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/mod.rs",
+              "symbol": "builtin_commands"
+            },
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/docs/user-guide/04-slash-commands.md",
+              "symbol": "feedback"
+            },
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/feedback.rs",
+              "symbol": "FeedbackCommand"
+            }
+          ],
+          "notes": "Plan 1.2: telemetry removed"
+        },
+        {
+          "grok_family": "slash-command",
+          "grok_symbol": "builtin_commands::AnnouncementsCommand",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/mod.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/mod.rs",
+              "symbol": "builtin_commands"
+            },
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/docs/user-guide/04-slash-commands.md",
+              "symbol": "announcements"
+            },
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/announcements.rs",
+              "symbol": "AnnouncementsCommand"
+            }
+          ],
+          "notes": "Plan 1.2: hosted announcements removed"
+        },
+        {
+          "grok_family": "slash-command",
+          "grok_symbol": "builtin_commands::ImagineCommand",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/mod.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/mod.rs",
+              "symbol": "builtin_commands"
+            },
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/docs/user-guide/04-slash-commands.md",
+              "symbol": "imagine"
+            },
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/imagine.rs",
+              "symbol": "ImagineCommand"
+            }
+          ],
+          "notes": "Plan 1.2: hosted image/video gen removed"
+        },
+        {
+          "grok_family": "slash-command",
+          "grok_symbol": "builtin_commands::ImagineVideoCommand",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/mod.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/mod.rs",
+              "symbol": "builtin_commands"
+            },
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/docs/user-guide/04-slash-commands.md",
+              "symbol": "imagine-video"
+            },
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/imagine_video.rs",
+              "symbol": "ImagineVideoCommand"
+            }
+          ],
+          "notes": "Plan 1.2: hosted image/video gen removed"
+        },
+        {
+          "grok_family": "slash-command",
+          "grok_symbol": "builtin_commands::UsageCommand",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/mod.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/mod.rs",
+              "symbol": "builtin_commands"
+            },
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/docs/user-guide/04-slash-commands.md",
+              "symbol": "usage"
+            },
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/usage.rs",
+              "symbol": "UsageCommand"
+            }
+          ],
+          "notes": "Plan 1.2: telemetry/billing removed"
+        },
+        {
+          "grok_family": "slash-command",
+          "grok_symbol": "builtin_commands::ReleaseNotesCommand",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/mod.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/mod.rs",
+              "symbol": "builtin_commands"
+            },
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/docs/user-guide/04-slash-commands.md",
+              "symbol": "release-notes"
+            },
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/release_notes.rs",
+              "symbol": "ReleaseNotesCommand"
+            }
+          ],
+          "notes": "Plan 1.2: hosted announcements removed"
+        },
+        {
+          "grok_family": "cli-command",
+          "grok_symbol": "Command::Share",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/cli.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/cli.rs",
+              "symbol": "Command"
+            },
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/docs/user-guide/14-headless-mode.md",
+              "symbol": "share"
+            }
+          ],
+          "notes": "Plan 1.2: hosted share/upload removed"
+        },
+        {
+          "grok_family": "view",
+          "grok_symbol": "AnnouncementsBanner",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/views/announcements.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/views/announcements.rs",
+              "symbol": "AnnouncementsBanner"
+            },
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/views/mod.rs",
+              "symbol": "views"
+            }
+          ],
+          "notes": "View: announcements - remove (Plan 1.2: hosted announcements removed)"
+        },
+        {
+          "grok_family": "view",
+          "grok_symbol": "CreditBar",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/views/credit_bar.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/views/credit_bar.rs",
+              "symbol": "CreditBar"
+            },
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/views/mod.rs",
+              "symbol": "views"
+            }
+          ],
+          "notes": "View: credit_bar - remove (Plan 1.2: billing removed)"
+        },
+        {
+          "grok_family": "action-id",
+          "grok_symbol": "Action::OpenSupergrokUrl",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+              "symbol": "Action"
+            }
+          ],
+          "notes": "Action OpenSupergrokUrl - hosted/billing removed (Plan 1.2)"
+        },
+        {
+          "grok_family": "action-id",
+          "grok_symbol": "Action::CheckSubscription",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+              "symbol": "Action"
+            }
+          ],
+          "notes": "Action CheckSubscription - hosted/billing removed (Plan 1.2)"
+        },
+        {
+          "grok_family": "action-id",
+          "grok_symbol": "Action::OpenManagedConnectors",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+              "symbol": "Action"
+            }
+          ],
+          "notes": "Action OpenManagedConnectors - hosted/billing removed (Plan 1.2)"
+        },
+        {
+          "grok_family": "action-id",
+          "grok_symbol": "Action::ExecuteMarketplaceAction",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+              "symbol": "Action"
+            }
+          ],
+          "notes": "Action ExecuteMarketplaceAction - marketplace removed (Plan 1.2)"
+        },
+        {
+          "grok_family": "action-id",
+          "grok_symbol": "Action::AnnouncementsHide",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+              "symbol": "Action"
+            }
+          ],
+          "notes": "Action AnnouncementsHide - hosted/billing removed (Plan 1.2)"
+        },
+        {
+          "grok_family": "action-id",
+          "grok_symbol": "Action::AnnouncementsShow",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+              "symbol": "Action"
+            }
+          ],
+          "notes": "Action AnnouncementsShow - hosted/billing removed (Plan 1.2)"
+        },
+        {
+          "grok_family": "action-id",
+          "grok_symbol": "Action::AnnouncementsOpenCta",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+              "symbol": "Action"
+            }
+          ],
+          "notes": "Action AnnouncementsOpenCta - hosted/billing removed (Plan 1.2)"
+        },
+        {
+          "grok_family": "action-id",
+          "grok_symbol": "Action::ShareSession",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+              "symbol": "Action"
+            }
+          ],
+          "notes": "Action ShareSession - hosted/billing removed (Plan 1.2)"
+        },
+        {
+          "grok_family": "action-id",
+          "grok_symbol": "Action::ShowUsage",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+              "symbol": "Action"
+            }
+          ],
+          "notes": "Action ShowUsage - hosted/billing removed (Plan 1.2)"
+        },
+        {
+          "grok_family": "integration",
+          "grok_symbol": "PluginMarketplace",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-plugin-marketplace/src/lib.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-plugin-marketplace/src/lib.rs",
+              "symbol": "PluginMarketplace"
+            }
+          ],
+          "notes": "Plan 1.2: marketplace removed"
+        },
+        {
+          "grok_family": "integration",
+          "grok_symbol": "TelemetrySystem",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-telemetry/src/lib.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-telemetry/src/lib.rs",
+              "symbol": "TelemetrySystem"
+            }
+          ],
+          "notes": "Plan 1.2: telemetry removed"
+        },
+        {
+          "grok_family": "integration",
+          "grok_symbol": "AnnouncementsFeed",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-announcements/src/lib.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-announcements/src/lib.rs",
+              "symbol": "AnnouncementsFeed"
+            }
+          ],
+          "notes": "Plan 1.2: hosted announcements removed"
+        },
+        {
+          "grok_family": "integration",
+          "grok_symbol": "ShareCommand",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/share_cmd.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/share_cmd.rs",
+              "symbol": "ShareCommand"
+            }
+          ],
+          "notes": "Plan 1.2: hosted share/upload removed"
+        },
+        {
+          "grok_family": "integration",
+          "grok_symbol": "ImagineCommand",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/imagine.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/imagine.rs",
+              "symbol": "ImagineCommand"
+            }
+          ],
+          "notes": "Plan 1.2: hosted image/video gen removed"
+        },
+        {
+          "grok_family": "integration",
+          "grok_symbol": "ImagineVideoCommand",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/imagine_video.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/imagine_video.rs",
+              "symbol": "ImagineVideoCommand"
+            }
+          ],
+          "notes": "Plan 1.2: hosted image/video gen removed"
+        },
+        {
+          "grok_family": "integration",
+          "grok_symbol": "ShareCmd",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/share_cmd.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/share_cmd.rs",
+              "symbol": "ShareCmd"
+            }
+          ],
+          "notes": "Plan 1.2: hosted share removed"
+        },
+        {
+          "grok_family": "documented-journey",
+          "grok_symbol": "MonitoringUsage",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/docs/user-guide/24-monitoring-usage.md",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/docs/user-guide/24-monitoring-usage.md",
+              "symbol": "MonitoringUsage"
+            }
+          ],
+          "notes": "Plan 1.2: telemetry/billing removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:MarketplaceCatalog",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-plugin-marketplace/src/catalog.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-plugin-marketplace/src/catalog.rs",
+              "symbol": "MarketplaceCatalog"
+            }
+          ],
+          "notes": "Plan 1.2: marketplace removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:MarketplaceScanner",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-plugin-marketplace/src/scanner.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-plugin-marketplace/src/scanner.rs",
+              "symbol": "MarketplaceScanner"
+            }
+          ],
+          "notes": "Plan 1.2: marketplace removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:MarketplaceInstaller",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-plugin-marketplace/src/installer.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-plugin-marketplace/src/installer.rs",
+              "symbol": "MarketplaceInstaller"
+            }
+          ],
+          "notes": "Plan 1.2: marketplace removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:MarketplaceIndex",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-plugin-marketplace/src/index.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-plugin-marketplace/src/index.rs",
+              "symbol": "MarketplaceIndex"
+            }
+          ],
+          "notes": "Plan 1.2: marketplace removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:MarketplaceGit",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-plugin-marketplace/src/git.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-plugin-marketplace/src/git.rs",
+              "symbol": "MarketplaceGit"
+            }
+          ],
+          "notes": "Plan 1.2: marketplace removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:builtin_commands::MarketplaceCommand",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/mod.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/mod.rs",
+              "symbol": "builtin_commands::MarketplaceCommand"
+            }
+          ],
+          "notes": "Plan 1.2: marketplace removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:builtin_commands::ShareCommand",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/mod.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/mod.rs",
+              "symbol": "builtin_commands::ShareCommand"
+            }
+          ],
+          "notes": "Plan 1.2: hosted share removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:ShareCmd",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/share_cmd.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/share_cmd.rs",
+              "symbol": "ShareCmd"
+            }
+          ],
+          "notes": "Plan 1.2: hosted share removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:builtin_commands::ImagineCommand",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/mod.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/mod.rs",
+              "symbol": "builtin_commands::ImagineCommand"
+            }
+          ],
+          "notes": "Plan 1.2: hosted image gen removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:builtin_commands::ImagineVideoCommand",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/mod.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/mod.rs",
+              "symbol": "builtin_commands::ImagineVideoCommand"
+            }
+          ],
+          "notes": "Plan 1.2: hosted video gen removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:builtin_commands::UsageCommand",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/mod.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/mod.rs",
+              "symbol": "builtin_commands::UsageCommand"
+            }
+          ],
+          "notes": "Plan 1.2: billing removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:builtin_commands::FeedbackCommand",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/mod.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/mod.rs",
+              "symbol": "builtin_commands::FeedbackCommand"
+            }
+          ],
+          "notes": "Plan 1.2: telemetry removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:builtin_commands::AnnouncementsCommand",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/mod.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/mod.rs",
+              "symbol": "builtin_commands::AnnouncementsCommand"
+            }
+          ],
+          "notes": "Plan 1.2: hosted announcements removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:builtin_commands::ReleaseNotesCommand",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/mod.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/mod.rs",
+              "symbol": "builtin_commands::ReleaseNotesCommand"
+            }
+          ],
+          "notes": "Plan 1.2: hosted announcements removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:TelemetrySystem",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-telemetry/src/lib.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-telemetry/src/lib.rs",
+              "symbol": "TelemetrySystem"
+            }
+          ],
+          "notes": "Plan 1.2: telemetry removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:TelemetryClient",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-telemetry/src/client.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-telemetry/src/client.rs",
+              "symbol": "TelemetryClient"
+            }
+          ],
+          "notes": "Plan 1.2: telemetry removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:TelemetryEvents",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-telemetry/src/events.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-telemetry/src/events.rs",
+              "symbol": "TelemetryEvents"
+            }
+          ],
+          "notes": "Plan 1.2: telemetry removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:TelemetryHttp",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-telemetry/src/http.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-telemetry/src/http.rs",
+              "symbol": "TelemetryHttp"
+            }
+          ],
+          "notes": "Plan 1.2: telemetry removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:AnnouncementsFeed",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-announcements/src/lib.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-announcements/src/lib.rs",
+              "symbol": "AnnouncementsFeed"
+            }
+          ],
+          "notes": "Plan 1.2: hosted announcements removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:Action::OpenSupergrokUrl",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+              "symbol": "Action::OpenSupergrokUrl"
+            }
+          ],
+          "notes": "Plan 1.2: billing/paywall removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:Action::CheckSubscription",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+              "symbol": "Action::CheckSubscription"
+            }
+          ],
+          "notes": "Plan 1.2: billing/paywall removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:Effect::FetchBilling",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+              "symbol": "Effect::FetchBilling"
+            }
+          ],
+          "notes": "Plan 1.2: billing removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:Action::OpenManagedConnectors",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+              "symbol": "Action::OpenManagedConnectors"
+            }
+          ],
+          "notes": "Plan 1.2: hosted removed"
+        }
+      ],
+      "item_count": 51
+    },
+    {
+      "family_id": "telemetry-announcements",
+      "owning_task": "Task 12",
+      "plan_reference": "§1.2 telemetry, hosted announcements, billing removed; §1.4 removal compatibility matrix",
+      "persisted_records_to_audit": [
+        "analytics IDs",
+        "remote-feed cursors",
+        "tracking events",
+        "telemetry client/http/events",
+        "announcements feed",
+        "billing/subscription state"
+      ],
+      "required_retained_behavior": "no network call; local logs/replay remain redacted and readable",
+      "removed_items": [
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:Command::Setup",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/cli.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/cli.rs",
+              "symbol": "Command::Setup"
+            }
+          ],
+          "notes": "Plan 1.2: enterprise removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:HeadlessArgs::grok_ws_origin",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/cli.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/cli.rs",
+              "symbol": "HeadlessArgs::grok_ws_origin"
+            }
+          ],
+          "notes": "Plan 1.2: remote workspace hub removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:HeadlessArgs::grok_ws_url",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/cli.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/cli.rs",
+              "symbol": "HeadlessArgs::grok_ws_url"
+            }
+          ],
+          "notes": "Plan 1.2: remote workspace hub removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:Action::McpAuthTrigger",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+              "symbol": "Action::McpAuthTrigger"
+            }
+          ],
+          "notes": "Plan 1.2: remote MCP OAuth removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:builtin_commands::FeedbackCommand",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/mod.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/mod.rs",
+              "symbol": "builtin_commands::FeedbackCommand"
+            }
+          ],
+          "notes": "Plan 1.2: telemetry removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:builtin_commands::ReleaseNotesCommand",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/mod.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/mod.rs",
+              "symbol": "builtin_commands::ReleaseNotesCommand"
+            }
+          ],
+          "notes": "Plan 1.2: hosted announcements removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:Action::OpenSupergrokUrl",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+              "symbol": "Action::OpenSupergrokUrl"
+            }
+          ],
+          "notes": "Plan 1.2: billing/paywall removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:Action::CheckSubscription",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+              "symbol": "Action::CheckSubscription"
+            }
+          ],
+          "notes": "Plan 1.2: billing/paywall removed"
+        },
+        {
+          "grok_family": "removal-crosswalk",
+          "grok_symbol": "removal:Action::OpenManagedConnectors",
+          "grok_path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+          "reference_source": [
+            {
+              "path": "inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs",
+              "symbol": "Action::OpenManagedConnectors"
+            }
+          ],
+          "notes": "Plan 1.2: hosted removed"
+        }
+      ],
+      "item_count": 9
+    },
+    {
+      "family_id": "reference-divergent-tui-tool-diff",
+      "owning_task": "Task 41",
+      "plan_reference": "grok-build-clean-room-parity.md §T41.1 (exclude TX-TOOL/TX-DIFF)",
+      "persisted_records_to_audit": [
+        "tui-reference-parity-manifest row TX-TOOL",
+        "tui-reference-parity-manifest row TX-DIFF"
+      ],
+      "required_retained_behavior": "Transcript tool/diff rows are accepted as excluded from parity; no runtime command or compatibility shim reintroduces the removed reference chip presentation as a public TUI mode.",
+      "removed_items": [
+        {
+          "grok_family": "tui-transcript-row",
+          "grok_symbol": "TX-TOOL",
+          "reference_source": [
+            {
+              "path": "docs/tui-reference-parity-manifest.v1.json",
+              "symbol": "TX-TOOL"
+            }
+          ],
+          "notes": "Reference shows collapsed tool chip; Harness shows expanded bash card. Divergence is intentional product chrome."
+        },
+        {
+          "grok_family": "tui-transcript-row",
+          "grok_symbol": "TX-DIFF",
+          "reference_source": [
+            {
+              "path": "docs/tui-reference-parity-manifest.v1.json",
+              "symbol": "TX-DIFF"
+            }
+          ],
+          "notes": "Reference shows collapsed diff chip; Harness shows inline unified diff. Divergence is intentional product chrome."
+        }
+      ]
+    },
+    {
+      "family_id": "subpixel-aa-overlay-session-picker",
+      "owning_task": "Task 41",
+      "plan_reference": "grok-build-clean-room-parity.md §T41.1 (exclude OVL-PALETTE/OVL-SESSION)",
+      "persisted_records_to_audit": [
+        "tui-reference-parity-manifest row OVL-PALETTE",
+        "tui-reference-parity-manifest row OVL-SESSION"
+      ],
+      "required_retained_behavior": "Palette/session overlay rows are accepted as excluded from parity until deterministic capture scaffolding exists; no public command exposes them as completed parity rows.",
+      "removed_items": [
+        {
+          "grok_family": "tui-overlay-row",
+          "grok_symbol": "OVL-PALETTE",
+          "reference_source": [
+            {
+              "path": "docs/tui-reference-parity-manifest.v1.json",
+              "symbol": "OVL-PALETTE"
+            }
+          ],
+          "notes": "Subpixel anti-aliasing prevents zero-difference capture."
+        },
+        {
+          "grok_family": "tui-overlay-row",
+          "grok_symbol": "OVL-SESSION",
+          "reference_source": [
+            {
+              "path": "docs/tui-reference-parity-manifest.v1.json",
+              "symbol": "OVL-SESSION"
+            }
+          ],
+          "notes": "Real session history makes capture nondeterministic."
+        }
+      ]
+    },
+    {
+      "family_id": "windows-sandboxing-seatbelt",
+      "owning_task": "Task 41",
+      "plan_reference": "grok-build-clean-room-parity.md §T41.1 (exclude sandbox.seatbelt_windows)",
+      "persisted_records_to_audit": [
+        "capability-inventory row sandbox.seatbelt_windows"
+      ],
+      "required_retained_behavior": "Windows seatbelt sandboxing remains excluded from V1 self-hosted scope; no public command reintroduces it as a supported capability.",
+      "removed_items": [
+        {
+          "grok_family": "capability",
+          "grok_symbol": "sandbox.seatbelt_windows",
+          "reference_source": [
+            {
+              "path": "docs/capability-inventory.v1.json",
+              "symbol": "sandbox.seatbelt_windows"
+            }
+          ],
+          "notes": "Windows-specific seatbelt sandboxing not available on Linux/self-hosted target."
+        }
+      ]
+    },
+    {
+      "family_id": "provider-live-proof-external",
+      "owning_task": "Task 41",
+      "plan_reference": "grok-build-clean-room-parity.md §T41.1 (exclude provider.non_openai_live_proof)",
+      "persisted_records_to_audit": [
+        "capability-inventory row provider.non_openai_live_proof"
+      ],
+      "required_retained_behavior": "Non-OpenAI live provider proof remains excluded from V1 scope; OpenAI-compatible transport is proven, per-provider live proof is post-V1.",
+      "removed_items": [
+        {
+          "grok_family": "capability",
+          "grok_symbol": "provider.non_openai_live_proof",
+          "reference_source": [
+            {
+              "path": "docs/capability-inventory.v1.json",
+              "symbol": "provider.non_openai_live_proof"
+            }
+          ],
+          "notes": "Live proof for non-OpenAI providers requires external credentials and provider accounts not in V1 self-hosted scope."
+        }
+      ]
+    }
+  ]
+}
