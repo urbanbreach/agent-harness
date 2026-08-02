@@ -25,8 +25,8 @@ pub(super) fn startup_surface_renders_primary_actions() {
     assert!(!rendered.contains("Launch: worker · model-1"));
     assert!(!rendered.contains("Provider mock"));
     assert!(
-        rendered.contains("model-1") || rendered.contains("Worker") || rendered.contains("Demo"),
-        "startup shell keeps the selected model badge before typing\n{rendered}"
+        !rendered.contains("model-1") && !rendered.contains("Worker") && !rendered.contains("Demo"),
+        "freeze bare startup hides model badge when prompt is empty\n{rendered}"
     );
     assert!(rendered.contains('❯'));
     assert!(!rendered.contains("Enter select"));
@@ -213,7 +213,7 @@ pub(super) fn post_run_handoff_disables_prompt_submission() {
     assert!(!app.should_quit);
 }
 
-pub(super) fn escape_interrupts_active_live_turn_immediately() {
+pub(super) fn double_escape_does_not_interrupt_active_live_turn() {
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let intent_sink = {
         let intents = Arc::clone(&intents);
@@ -254,17 +254,13 @@ pub(super) fn escape_interrupts_active_live_turn_immediately() {
     assert!(app.interrupt_hint_visible());
     assert!(render_live_lines(&app, 100, 24).contains("ctrl+c interrupt"));
 
-    // Esc interrupts immediately on a single press, emitting InterruptSession
-    // for every active task (no double-press gate).
+    app.handle_key(key(crossterm::event::KeyCode::Esc));
     app.handle_key(key(crossterm::event::KeyCode::Esc));
 
     assert!(!app.interrupt_confirmation_pending());
-    assert_eq!(
-        intents.lock().unwrap_or_abort().as_slice(),
-        &[UiIntent::InterruptSession {
-            task_ids: vec!["task_active".to_string(), "task_sibling".to_string()],
-        }],
-        "Esc must cancel the running turn immediately"
+    assert!(
+        intents.lock().unwrap_or_abort().is_empty(),
+        "Esc must not cancel a running turn (simple-mode: Ctrl+C cancels)"
     );
 }
 
@@ -538,10 +534,6 @@ pub(super) fn lifecycle_shell_snapshots_preserve_startup_and_handoff_contracts()
     ));
 
     let completed_shell_render = render_live_lines(&completed_shell, 100, 24);
-    let completed_shell_render = completed_shell_render.replace(
-        "ui-ux-experiments ~/Projects/agent-harness/crates/harness-tui",
-        "test-workspace /workspace/agent-harness",
-    );
     assert!(completed_shell_render.contains("keep this draft"));
     assert!(!completed_shell_render.contains("Composer"));
     assert!(!completed_shell_render.contains("Next action"));
@@ -566,10 +558,7 @@ pub(super) fn lifecycle_shell_snapshots_preserve_startup_and_handoff_contracts()
         }),
     ));
 
-    let fallback_render = render_live_lines(&fallback, 100, 24).replace(
-        "ui-ux-experiments ~/Projects/agent-harness/crates/harness-tui",
-        "test-workspace /workspace/agent-harness",
-    );
+    let fallback_render = render_live_lines(&fallback, 100, 24);
     assert!(!fallback_render.contains("Run complete"));
     assert!(fallback_render.contains("q quit"));
     assert!(!fallback_render.contains("Composer"));

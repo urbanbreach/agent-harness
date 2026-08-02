@@ -5,8 +5,7 @@ use harness_tui::UnwrapOrAbort;
 use serde_json::Value;
 use std::collections::BTreeSet;
 
-const DISPOSITION: &str =
-    include_str!("../../../docs/reference/tui-reference-module-disposition.v1.json");
+const DISPOSITION: &str = include_str!("../../../docs/reference/tui-reference-module-disposition.v1.json");
 
 const ALLOWED: &[&str] = &[
     "replace",

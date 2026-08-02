@@ -233,7 +233,7 @@ fn help_and_toggles_surfaces_open_harness_safe() {
         "P0-HELP-01: toggles must not advertise OOS plugin marketplace\n{toggles_render}"
     );
 
-    // act — theme dialog (Harness chat is the clean-room parity default)
+    // act — theme dialog (Harness-safe theme names)
     let mut theme_app = AppState::new_live(None, false, None);
     theme_app.handle_key(key_with_modifiers(
         KeyCode::Char('x'),
@@ -241,7 +241,7 @@ fn help_and_toggles_surfaces_open_harness_safe() {
     ));
     theme_app.handle_key(key(KeyCode::Char('t')));
     let theme_render = render_text(&theme_app, 120, 40);
-    // assert — theme surface opens with the parity palette selected
+    // assert — theme surface opens without reference branding
     assert!(
         theme_app.theme_dialog_visible
             || theme_render.to_ascii_lowercase().contains("theme")
@@ -253,9 +253,9 @@ fn help_and_toggles_surfaces_open_harness_safe() {
         theme_app.theme_dialog_visible
     );
     assert!(
-        theme_render.contains("Harness Chat")
+        !theme_render.to_ascii_lowercase().contains("grok")
             && !theme_render.to_ascii_lowercase().contains("spacex"),
-        "P0-HELP-01: theme surface must expose the Harness chat parity palette without unrelated branding\n{theme_render}"
+        "P0-HELP-01: theme surface must be Harness-safe\n{theme_render}"
     );
 
     // assert — keybind remapping surface remains reachable via defaults

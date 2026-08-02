@@ -267,23 +267,23 @@ fn keymap_binds_shift_enter_to_insert_newline() {
 }
 
 #[test]
-fn keymap_binds_ctrl_j_to_scroll_down() {
+fn keymap_binds_ctrl_j_to_insert_newline() {
     // arrange
     // act
     // assert
     let keymap = KeyMap::with_defaults();
     let event = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::CONTROL);
-    assert_eq!(keymap.get_action(&event), Some(Action::ScrollDown));
+    assert_eq!(keymap.get_action(&event), Some(Action::InsertNewline));
 }
 
 #[test]
-fn keymap_binds_ctrl_enter_to_interject_prompt() {
+fn keymap_binds_ctrl_enter_to_insert_newline() {
     // arrange
     // act
     // assert
     let keymap = KeyMap::with_defaults();
     let event = KeyEvent::new(KeyCode::Enter, KeyModifiers::CONTROL);
-    assert_eq!(keymap.get_action(&event), Some(Action::InterjectPrompt));
+    assert_eq!(keymap.get_action(&event), Some(Action::InsertNewline));
 }
 
 #[test]
@@ -533,7 +533,7 @@ fn keymap_accepts_leader_sequence_overrides() {
 }
 
 #[test]
-fn keymap_binds_tab_to_focus_and_shift_tab_to_session_mode_cycle_by_default() {
+fn keymap_binds_tab_to_focus_and_shift_tab_to_variant_cycle_by_default() {
     // arrange
     // act
     // assert
@@ -541,11 +541,11 @@ fn keymap_binds_tab_to_focus_and_shift_tab_to_session_mode_cycle_by_default() {
 
     assert_eq!(
         keymap.get_action(&KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE)),
-        Some(Action::TogglePromptFocus)
+        Some(Action::FocusNext)
     );
     assert_eq!(
         keymap.get_action(&KeyEvent::new(KeyCode::BackTab, KeyModifiers::NONE)),
-        Some(Action::CycleMode)
+        Some(Action::VariantCycle)
     );
     assert_eq!(
         keymap.get_action(&KeyEvent::new(KeyCode::Tab, KeyModifiers::CONTROL)),
@@ -579,7 +579,7 @@ fn keymap_keeps_focus_prev_on_control_shift_tab() {
 }
 
 #[test]
-fn keymap_binds_shift_tab_to_session_mode_and_ctrl_t_to_variant_cycle() {
+fn keymap_binds_shift_tab_and_ctrl_t_to_variant_cycle() {
     // arrange
     // act
     // assert
@@ -587,15 +587,17 @@ fn keymap_binds_shift_tab_to_session_mode_and_ctrl_t_to_variant_cycle() {
 
     assert_eq!(
         keymap.get_action(&KeyEvent::new(KeyCode::BackTab, KeyModifiers::NONE)),
-        Some(Action::CycleMode)
+        Some(Action::VariantCycle)
     );
     assert_eq!(
         keymap.get_action(&KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL)),
         Some(Action::VariantCycle)
     );
     let bindings = keymap.get_binding_strs(Action::VariantCycle);
-    assert!(bindings.iter().any(|binding| binding == "Ctrl+t"));
-    assert_eq!(keymap.get_binding_str(Action::CycleMode), "Shift+Tab");
+    assert!(
+        bindings.iter().any(|b| b == "Shift+Tab" || b == "Ctrl+t"),
+        "variant cycle bindings present: {bindings:?}"
+    );
 }
 
 #[test]
@@ -826,8 +828,8 @@ fn simple_mode_defaults_open_model_switcher_on_leader_m() {
     );
     assert_eq!(
         keymap.get_action(&KeyEvent::new(KeyCode::Char('m'), KeyModifiers::CONTROL)),
-        Some(Action::ToggleMultiline),
-        "Ctrl+M toggles persistent multiline composer mode"
+        None,
+        "Ctrl+M is not a direct KeyMap binding; model switcher is leader+m rematerialization"
     );
 }
 

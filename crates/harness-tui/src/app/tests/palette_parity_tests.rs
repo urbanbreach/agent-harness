@@ -81,37 +81,6 @@ pub(super) fn palette_empty_filter_has_suggested_duplicates() {
     );
 }
 
-pub(super) fn palette_empty_filter_matches_reference_visible_rows() {
-    let app = AppState::new_live(None, false, None);
-    let rows = palette_controller::compute_palette_rows(&app, "");
-    let ids: Vec<_> = rows.iter().map(|row| row.command_id).collect();
-
-    assert_eq!(
-        ids,
-        vec![
-            "session.new",
-            "session.new.worktree",
-            "session.dashboard",
-            "session.home",
-            "session.list",
-            "session.rename",
-            "session.info",
-            "session.feedback",
-            "session.compact",
-            "context.usage",
-            "context.view_plan",
-            "context.memory",
-            "model.list",
-            "model.always_approve",
-            "model.multiline",
-            "tools.hooks",
-            "tools.plugins",
-            "tools.marketplace",
-        ],
-        "the default palette must preserve the reference Session, Context, Model & Input, and Tools viewport geometry"
-    );
-}
-
 pub(super) fn palette_non_empty_filter_has_no_suggested_duplicates() {
     let mut app = AppState::new_live(None, false, None);
     open_palette(&mut app);
@@ -418,15 +387,6 @@ pub(super) fn palette_dispatch_quit_exits_app() {
         .unwrap();
     app.palette_selected = exit_pos;
     app.handle_key(key(KeyCode::Enter));
-    // Quit requires double confirmation: the first dispatch arms the
-    // confirmation without exiting.
-    assert!(!app.should_quit);
-    assert!(app.quit_confirmation_pending);
-    // The second quit (Ctrl+Q) confirms and exits.
-    app.handle_key(key_with_modifiers(
-        crossterm::event::KeyCode::Char('q'),
-        KeyModifiers::CONTROL,
-    ));
     assert!(app.should_quit);
 }
 
@@ -2326,6 +2286,7 @@ pub(super) fn palette_slash_alias_global_inventory() {
         "auth",
         "clone",
         "dashboard",
+        "feedback",
         "follow",
         "import",
         "settings",

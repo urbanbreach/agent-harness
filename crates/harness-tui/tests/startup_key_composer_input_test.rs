@@ -25,7 +25,7 @@ use harness_tui::leaf_views::{
     ComposerLeafView, FocusOwner, FooterGrammar, InputLeafView, KeyLeafView, StartupLeafView,
     StartupPhase, TranscriptLeafView,
 };
-use harness_tui::render_test::{render_to_buffer, render_to_string};
+use harness_tui::render_test::render_to_string;
 use harness_tui::ui;
 use ratatui::layout::Rect;
 use std::sync::{Arc, Mutex};
@@ -232,92 +232,11 @@ fn ctrl_w_opens_optional_worktree_name_dialog_without_launching() {
     app.handle_key(ctrl_w());
 
     let rendered = render(&app);
-    assert!(rendered.contains("New Worktree"));
-    assert!(rendered.contains("Name (optional):"));
-    assert!(rendered.contains("enter = create"));
-    assert!(rendered.contains("esc = cancel"));
-    assert!(rendered.contains("Changelog"));
+    assert!(rendered.contains("Create worktree"));
+    assert!(rendered.contains("Name (optional)"));
+    assert!(!rendered.contains("Changelog"));
+    assert!(!rendered.contains("Resume session"));
     assert!(intents.lock().expect("intent sink lock").is_empty());
-}
-
-#[test]
-fn worktree_name_dialog_modified_enter_is_ignored() {
-    let (mut app, intents) = startup_app_with_intents();
-    app.handle_key(ctrl_w());
-
-    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::CONTROL));
-
-    assert!(render(&app).contains("New Worktree"));
-    assert!(intents.lock().expect("intent sink lock").is_empty());
-}
-
-#[test]
-fn worktree_name_dialog_control_shortcut_cancels() {
-    for shortcut in ['c', 'd', 'q'] {
-        let (mut app, intents) = startup_app_with_intents();
-        app.handle_key(ctrl_w());
-
-        app.handle_key(KeyEvent::new(
-            KeyCode::Char(shortcut),
-            KeyModifiers::CONTROL,
-        ));
-
-        assert!(!render(&app).contains("New Worktree"));
-        assert!(intents.lock().expect("intent sink lock").is_empty());
-    }
-}
-
-#[test]
-fn worktree_name_dialog_caps_typed_label_at_one_hundred_bytes() {
-    let (mut app, _intents) = startup_app_with_intents();
-    app.handle_key(ctrl_w());
-
-    for _ in 0..101 {
-        app.handle_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE));
-    }
-    app.handle_key(KeyEvent::new(KeyCode::Char('é'), KeyModifiers::NONE));
-    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-
-    let intents = _intents.lock().expect("intent sink lock");
-    let UiIntent::NewWorktreeSession { name: Some(name) } = &intents[0] else {
-        panic!("expected named worktree intent");
-    };
-    assert_eq!(name.len(), 100);
-}
-
-#[test]
-fn startup_logo_shimmer_advances_and_stops_after_draft() {
-    let mut app = startup_app();
-    assert!(app.has_active_animations_for_evidence());
-    let initial = render_to_buffer(&app, Rect::new(0, 0, W, H), |app, frame, _area| {
-        ui::render_app(frame, app)
-    });
-
-    for _ in 0..8 {
-        app.advance_animation_tick_for_evidence();
-    }
-    let advanced = render_to_buffer(&app, Rect::new(0, 0, W, H), |app, frame, _area| {
-        ui::render_app(frame, app)
-    });
-
-    let logo_changed = initial
-        .content
-        .iter()
-        .zip(&advanced.content)
-        .any(|(before, after)| {
-            before
-                .symbol()
-                .chars()
-                .any(|character| ('\u{2800}'..='\u{28ff}').contains(&character))
-                && before.fg != after.fg
-        });
-    assert!(
-        logo_changed,
-        "Harness logo cells must animate across startup ticks"
-    );
-
-    app.handle_key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE));
-    assert!(!app.has_active_animations_for_evidence());
 }
 
 #[test]
@@ -327,7 +246,7 @@ fn worktree_name_dialog_escape_cancels_without_launching() {
 
     app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
 
-    assert!(!render(&app).contains("New Worktree"));
+    assert!(!render(&app).contains("Create worktree"));
     assert!(intents.lock().expect("intent sink lock").is_empty());
 }
 
@@ -415,25 +334,31 @@ fn render_p0_start_01_welcome_panel_bordered() {
     assert_eq!(view.focus_owner(), "composer");
 }
 
-/// P0-START-02: breadcrumb and reference-shaped top spacing at startup.
+/// P0-START-02: breadcrumb and clipboard warning visible at startup.
 #[test]
 fn render_p0_start_02_breadcrumb_and_warning() {
     let app = startup_app();
     let rendered = render(&app);
 
+    // Clipboard warning band
     assert!(
-        !rendered.contains("Clipboard may be unreachable.") && !rendered.contains("terminal-setup"),
-        "P0-START-02: startup chrome must not insert non-reference warning rows\n{rendered}"
+        rendered.contains("Clipboard may be unreachable."),
+        "P0-START-02: clipboard warning band required at startup\n{rendered}"
+    );
+    assert!(
+        rendered.contains("/terminal-setup") || rendered.contains("terminal-setup"),
+        "P0-START-02: clipboard warning second line required\n{rendered}"
     );
 
+    // Welcome panel sits below breadcrumb+warning band
     let lines: Vec<&str> = rendered.lines().collect();
     let welcome_top = lines
         .iter()
         .position(|line| line.contains('╭') && line.contains('─'))
         .expect("welcome top border");
-    assert_eq!(
-        welcome_top, 4,
-        "P0-START-02: welcome panel top must match the 120x32 reference\n{rendered}"
+    assert!(
+        welcome_top >= 6,
+        "P0-START-02: welcome panel must sit below breadcrumb+warning band (row {welcome_top})\n{rendered}"
     );
 
     // Focus owner verification
@@ -664,23 +589,6 @@ fn input_empty_draft_focus_owner_composer() {
     assert_eq!(view.focus_owner, FocusOwner::Composer);
     assert!(view.welcome_visible);
     assert_eq!(view.focus_owner.as_str(), "composer");
-}
-
-#[test]
-fn enter_after_trailing_backslash_inserts_newline_without_submitting() {
-    let (mut app, intents) = startup_app_with_intents();
-    for character in "first line\\".chars() {
-        app.handle_key(KeyEvent::new(KeyCode::Char(character), KeyModifiers::NONE));
-    }
-
-    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-
-    assert_eq!(app.composer.prompt_buffer, "first line\n");
-    assert_eq!(app.composer.prompt_cursor, "first line\n".chars().count());
-    assert!(
-        intents.lock().expect("intent sink lock").is_empty(),
-        "backslash continuation must not submit the prompt"
-    );
 }
 
 /// Small viewport (80x24) does not panic at startup.

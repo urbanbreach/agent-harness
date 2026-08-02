@@ -49,10 +49,7 @@ pub(super) fn run_finished_keeps_transcript_and_ready_composer() {
     ));
 
     insta::with_settings!({ prepend_module_to_snapshot => false, snapshot_path => "../snapshots" }, {
-        insta::assert_snapshot!(
-            "harness_tui__live_shell_finished_state",
-            normalize_workspace_identity(&render_live_lines(&app, 80, 24))
-        );
+        insta::assert_snapshot!("harness_tui__live_shell_finished_state", render_live_lines(&app, 80, 24));
     });
 }
 
@@ -147,20 +144,12 @@ pub(super) fn transcript_scrollbar_matches_session_shape() {
         "mid-list scroll must paint more-below affordance\n{rendered}"
     );
 
-    let rendered = normalize_workspace_identity(&rendered);
     insta::with_settings!({ prepend_module_to_snapshot => false, snapshot_path => "../snapshots" }, {
         insta::assert_snapshot!(
             "harness_tui__live_transcript_scrollbar",
             rendered
         );
     });
-}
-
-fn normalize_workspace_identity(rendered: &str) -> String {
-    rendered.replace(
-        "ui-ux-experiments ~/Projects/agent-harness/crates/harness-tui",
-        "test-workspace /workspace/agent-harness",
-    )
 }
 
 pub(super) fn transcript_page_down_reaches_response_tail_after_scrolling_up() {
@@ -408,7 +397,7 @@ pub(super) fn transcript_tool_rows_keep_status_but_not_raw_json_dump() {
     ));
 
     let transcript = render_live_lines(&app, 120, 36);
-    assert!(transcript.contains("Read src/lib.rs"));
+    assert!(transcript.contains("Read 1 file"));
     assert!(!transcript.contains(r#"{"path":"src/lib.rs","start_line":42,"limit":20}"#));
     assert!(!transcript.contains("args {"));
 }
@@ -418,8 +407,7 @@ pub(super) fn transcript_shell_renders_bubbleless_document_flow() {
 }
 
 pub(super) fn transcript_shell_remains_scannable_without_bubble_cards() {
-    let mut app = rich_transcript_fixture_app();
-    app.activities[0].status = app::ActivityStatus::Streaming;
+    let app = rich_transcript_fixture_app();
 
     let rendered = render_live_lines(&app, 120, 30);
     let lines = rendered.lines().collect::<Vec<_>>();
@@ -427,8 +415,8 @@ pub(super) fn transcript_shell_remains_scannable_without_bubble_cards() {
     let thinking_row =
         find_line_containing_all_from(&lines, prompt_row + 1, &["Drafting a document-like plan"])
             .unwrap_or_abort();
-    let tool_row = find_line_containing_all_from(&lines, thinking_row + 1, &["Read src/ui.rs"])
-        .unwrap_or_abort();
+    let tool_row =
+        find_line_containing_all_from(&lines, thinking_row + 1, &["Read 1 file"]).unwrap_or_abort();
     let body_row = find_line_containing_from(
         &lines,
         tool_row + 1,
@@ -464,7 +452,7 @@ pub(super) fn transcript_status_metadata_is_inline_not_chrome() {
 
     assert!(!rendered.contains("req_rich_shell"));
     assert!(rendered.contains("model-1"));
-    assert!(rendered.contains("Read src/ui.rs"));
+    assert!(rendered.contains("Read 1 file"));
     assert!(!rendered.contains("user ("));
     assert!(!rendered.contains("assistant ("));
     assert!(!rendered.contains("(tool fs.read · succeeded)"));
@@ -502,7 +490,6 @@ pub(super) fn transcript_turn_spacing_collapses_without_losing_actor_boundaries(
 
 pub(super) fn nested_transcript_rows_preserve_prefix_on_wrapped_continuations() {
     let mut app = rich_transcript_fixture_app();
-    app.activities[0].status = app::ActivityStatus::Streaming;
     app.activities[0].thinking_text = "Drafting a document-like plan with enough extra detail to force a wrapped continuation so the nested rail stays visible on every continued row.".to_string();
 
     // Scroll to top so wrapped thinking first-line + body both stay visible under breadcrumb chrome.
@@ -539,7 +526,6 @@ pub(super) fn nested_transcript_rows_preserve_prefix_on_wrapped_continuations() 
 
 pub(super) fn thinking_visibility_toggle_hides_and_restores_inline_thinking_rows() {
     let mut app = rich_transcript_fixture_app();
-    app.activities[0].status = app::ActivityStatus::Streaming;
 
     let initial = render_live_lines(&app, 120, 30);
     assert!(initial.contains("Drafting a document-like plan"));
@@ -558,15 +544,15 @@ pub(super) fn tool_details_toggle_collapses_successful_tool_payloads() {
     let mut app = rich_transcript_fixture_app();
 
     let shown = render_live_lines(&app, 120, 30);
-    assert!(shown.contains("Read src/ui.rs"));
+    assert!(shown.contains("Read 1 file"));
 
     run_palette_command(&mut app, "hide tool details");
     let hidden = render_live_lines(&app, 120, 30);
-    assert!(!hidden.contains("Read src/ui.rs"));
+    assert!(!hidden.contains("Read 1 file"));
 
     run_palette_command(&mut app, "show tool details");
     let restored = render_live_lines(&app, 120, 30);
-    assert!(restored.contains("Read src/ui.rs"));
+    assert!(restored.contains("Read 1 file"));
 }
 
 pub(super) fn failed_tool_rows_still_surface_error_summary() {
@@ -624,8 +610,8 @@ pub(super) fn failed_tool_rows_still_surface_error_summary() {
     let transcript = render_live_lines(&app, 120, 36);
     assert!(transcript.contains("false"));
     assert!(
-        transcript.contains("exit code: 1") && !transcript.contains("stderr: permission denied"),
-        "collapsed failed tool rows must show only a one-line error summary\n{transcript}"
+        transcript.contains("exit code: 1") && transcript.contains("stderr: permission denied"),
+        "failed tool rows must still surface the error summary\n{transcript}"
     );
     assert!(!transcript.contains(r#"{"cmd":"false","cwd":"/tmp/demo"}"#));
     assert!(!transcript.contains("args {"));

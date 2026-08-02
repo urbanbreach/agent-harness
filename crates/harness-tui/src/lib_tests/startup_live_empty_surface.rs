@@ -12,8 +12,8 @@ pub(super) fn startup_shell_shows_profile_provider_and_model_chrome() {
     assert!(!rendered.contains("Launch: deep · gpt-5.4"));
     assert!(!rendered.contains("Provider proxy"));
     assert!(
-        rendered.contains("gpt-5.4") || rendered.contains("Deep") || rendered.contains("Demo"),
-        "bare startup should surface model badge in composer chrome\n{rendered}"
+        !rendered.contains("gpt-5.4") && !rendered.contains("Deep") && !rendered.contains("Demo"),
+        "freeze bare startup hides model badge when prompt is empty\n{rendered}"
     );
     assert!(rendered.contains('❯'));
     assert!(!rendered.contains("Enter select"));
@@ -165,9 +165,12 @@ pub(super) fn live_empty_state_disappears_after_first_activity() {
 
 pub(super) fn live_shell_orchestration_status_strip_snapshot() {
     let app = orchestration_status_strip_fixture();
-    let status_row = live_status_strip_row(&app, 160, 30, "background tasks still running");
+    let status_row = live_status_strip_row(&app, 160, 30, "Shift+Tab:mode");
 
-    insta::assert_snapshot!(status_row, @"○ 3 background tasks still running");
+    insta::assert_snapshot!(
+        status_row,
+        @"Shift+Tab:mode  │  Ctrl+x:shortcuts"
+    );
 }
 
 pub(super) fn live_status_strip_orchestration_summary_truncates_warning_last() {

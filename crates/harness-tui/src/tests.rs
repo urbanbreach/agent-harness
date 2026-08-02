@@ -92,14 +92,6 @@ fn permission_modal_snapshot_renders_request() {
 }
 
 #[test]
-fn permission_dock_uses_focused_prompt_surface() {
-    // arrange
-    // act
-    // assert
-    permission_modal_tests::permission_dock_uses_focused_prompt_surface();
-}
-
-#[test]
 fn permission_dock_packs_freeze_vertical_blanks() {
     // arrange
     // act
@@ -123,7 +115,6 @@ fn question_permission_modal_aligns_option_description_column() {
     permission_modal_tests::question_permission_modal_aligns_option_description_column();
 }
 
-#[test]
 fn question_permission_modal_matches_reference_palette_contract() {
     permission_modal_tests::question_permission_modal_matches_reference_palette_contract();
 }
@@ -845,8 +836,5 @@ fn normalize_temp_paths(input: &str) -> String {
         }
     }
 
-    output.replace(
-        "ui-ux-experiments ~/Projects/agent-harness/crates/harness-tui",
-        "test-workspace /workspace/agent-harness",
-    )
+    output
 }

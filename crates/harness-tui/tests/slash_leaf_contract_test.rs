@@ -73,7 +73,7 @@ fn canonical_order_matches_specification() {
         "settings",
         "view-plan",
         "dashboard",
-        "import",
+        "feedback",
     ];
     let actual: Vec<&str> = all_commands().iter().map(|l| l.id).collect();
     assert_eq!(actual, expected);

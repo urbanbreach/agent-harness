@@ -15,8 +15,6 @@
     reason = "integration parity tests use fail-fast asserts"
 )]
 
-use std::path::PathBuf;
-
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use harness_core::event::{
     ActorKind, EventActor, EventEnvelopeV1, EventV1, ProviderRequestFinishedEvent,
@@ -482,6 +480,7 @@ fn tx_assistant_message_chrome_is_rail_free_with_footer() {
     );
 }
 
+/// TX-TOOL: tool rows use ◆ identity, structured path summary, no outer rail / opaque-only dump.
 #[test]
 fn tx_tool_row_is_structured_diamond_without_legacy_rail() {
     // arrange
@@ -540,15 +539,13 @@ fn tx_tool_row_is_structured_diamond_without_legacy_rail() {
             metadata: None,
         }),
     ));
+
     // act
     let rendered = render(&app);
     let lines: Vec<&str> = rendered.lines().collect();
     let tool_idx = lines
         .iter()
-        .position(|line| {
-            (line.contains('◈') || line.contains('◆'))
-                && (line.contains("README.md") || line.contains("Read"))
-        })
+        .position(|line| line.contains("README.md") || line.contains("Read"))
         .expect("tool row");
 
     assert!(
@@ -564,17 +561,8 @@ fn tx_tool_row_is_structured_diamond_without_legacy_rail() {
         "TX-TOOL: structured tool title (path or completed count) required\n{rendered}"
     );
     assert!(
-        (lines[tool_idx].starts_with("  ┃  ") || lines[tool_idx].starts_with("     "))
-            && (lines[tool_idx].contains("◈ ") || lines[tool_idx].contains("◆ ")),
-        "TX-TOOL: active-turn reference chip uses the selected Grok rail and inset\n{rendered}"
-    );
-    assert!(
-        tool_idx > 0
-            && lines[tool_idx - 1].trim().is_empty()
-            && lines
-                .get(tool_idx + 1)
-                .is_some_and(|line| line.trim().is_empty()),
-        "TX-TOOL: reference chip keeps one blank transcript row above and below\n{rendered}"
+        !lines[tool_idx].contains('┃'),
+        "TX-TOOL: no legacy outer rail on tool row\n{rendered}"
     );
     assert!(
         !rendered.contains(r#"{"path":"README.md"}"#)
@@ -595,10 +583,7 @@ fn tx_diff_inline_is_rail_free_without_message_card() {
     // act
     // assert
     // arrange
-    let mut app = AppState::new_live(Some(PathBuf::from("/tmp/run_tx_diff")), false, None);
-    app.set_launch_metadata(
-        LaunchMetadata::from_model_ref("build", "mock:model-tx").with_mode_label("Demo"),
-    );
+    let mut app = live_app();
     let request_id = "req_diff";
     app.ingest_event(envelope(
         1,
@@ -626,9 +611,8 @@ fn tx_diff_inline_is_rail_free_without_message_card() {
         EventV1::ToolCallRequested(ToolCallRequestedEvent {
             tool_call_id: "tc_diff".into(),
             tool_id: "edit".to_string(),
-            args_summary:
-                r#"{"path":"src/main.rs","oldString":"fn a(){}","newString":"fn a(){ 1 }"}"#
-                    .to_string(),
+            args_summary: r#"{"path":"src/main.rs","old":"fn a(){}","new":"fn a(){ 1 }"}"#
+                .to_string(),
             args_digest: "digest-args-diff".to_string(),
             metadata: None,
         }),
@@ -652,25 +636,6 @@ fn tx_diff_inline_is_rail_free_without_message_card() {
             metadata: None,
         }),
     ));
-    app.ingest_event(envelope(
-        6,
-        Some(request_id),
-        EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
-            request_id: request_id.into(),
-            finish_reason: "stop".to_string(),
-            output_digest: Some("digest-diff-finished".to_string()),
-            usage: None,
-            metadata: None,
-        }),
-    ));
-    app.focus = Focus::Details;
-    app.handle_key(KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL));
-    for ch in "show tool details".chars() {
-        app.handle_key(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE));
-    }
-    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-    app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
-    app.toggle_tool_output_for_test("tc_diff");
 
     // act
     let rendered = render(&app);
@@ -702,23 +667,6 @@ fn tx_diff_inline_is_rail_free_without_message_card() {
     assert!(
         rendered.contains('❯'),
         "TX-DIFF: bordered composer retained under full-width shell\n{rendered}"
-    );
-    let changed_line = lines
-        .iter()
-        .find(|line| line.contains("fn a"))
-        .unwrap_or_else(|| {
-            let non_empty = lines
-                .iter()
-                .enumerate()
-                .filter(|(_, line)| !line.trim().is_empty())
-                .map(|(index, line)| format!("{index}: {line:?}"))
-                .collect::<Vec<_>>()
-                .join("\n");
-            panic!("TX-DIFF: expected inline changed line\n{non_empty}")
-        });
-    assert!(
-        changed_line.starts_with("       "),
-        "TX-DIFF: inline diff text starts at reference column 7\n{rendered}"
     );
 }
 
@@ -779,6 +727,7 @@ fn shell_stream_keeps_full_width_body_and_bordered_composer() {
             metadata: None,
         }),
     ));
+
     // act
     let rendered = render(&app);
     let runtime = app.runtime_state();

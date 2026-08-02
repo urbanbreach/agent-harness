@@ -5,19 +5,17 @@ use crate::UnwrapOrAbort;
 mod session_navigation_parent_child_tests;
 pub(super) use session_navigation_parent_child_tests::parent_transcript_hides_child_prompt_before_task_tool_finishes as parent_child_parent_transcript_hides_child_prompt_before_task_tool_finishes;
 
-pub(super) fn replay_mode_tab_toggles_focus_but_blocks_draft_edits() {
+pub(super) fn replay_mode_focus_cycle_skips_prompt_and_blocks_draft_edits() {
     let mut app = AppState::new_replay(PathBuf::from("/tmp/replay-session"), Vec::new());
 
     assert_eq!(app.focus, Focus::Details);
 
-    // Tab toggles Prompt/Details even in replay mode.
     app.handle_key(key(KeyCode::Tab));
-    assert_eq!(app.focus, Focus::Prompt);
+    assert_eq!(app.focus, Focus::Details);
 
     app.handle_key(key(KeyCode::Tab));
     assert_eq!(app.focus, Focus::Details);
 
-    // Draft edits remain blocked in replay mode even with prompt focus.
     app.focus = Focus::Prompt;
     app.handle_key(key(KeyCode::Char('x')));
     assert!(app.composer.prompt_buffer.is_empty());
@@ -572,10 +570,8 @@ pub(super) fn live_parent_events_update_parent_snapshot_while_inline_child_is_se
     assert!(!app.replay_mode);
     let parent_render = render_debug(&app, 140, 40);
     assert!(parent_render.contains("parent response after child opened"));
-    let parent_activity = app
-        .activities
-        .iter()
-        .find(|activity| activity.request_id == "req_parent")
-        .expect("parent activity after returning from child view");
-    assert_eq!(parent_activity.model_id, "model-parent");
+    assert!(
+        parent_render.contains("model-parent"),
+        "parent footer should keep the parent model after returning from child view\n{parent_render}"
+    );
 }

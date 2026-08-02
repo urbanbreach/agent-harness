@@ -3,6 +3,10 @@
 //! Contract: `docs/grok-build-tui-implementation-prompt.md` +
 //! `crates/harness-tui/DESIGN.md` §3 / §8.
 //!
+//! Permission/question freezes are TBD. These tests lock DESIGN-observable density:
+//! full-width shell, draft preserved, radio choice chrome, no legacy rail, and
+//! question must not render edit-permission allow chrome.
+
 #![allow(
     clippy::expect_used,
     clippy::panic,
@@ -214,7 +218,7 @@ fn shell_perm_preempts_composer_preserves_draft_full_width() {
             transcript.width, plan.shell.width,
             "SHELL-PERM: transcript full width under permission"
         );
-        let composer_inset: u16 = if plan.shell.width <= 60 { 1 } else { 2 };
+        let composer_inset: u16 = if plan.shell.width <= 60 { 0 } else { 2 };
         assert_eq!(
             composer.x,
             plan.shell.x.saturating_add(composer_inset),

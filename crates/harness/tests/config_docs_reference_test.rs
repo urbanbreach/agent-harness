@@ -277,8 +277,7 @@ fn config_docs_capture_v1_skill_contract_and_authoring_guide() {
     // arrange
     let root = repo_root();
     let doc = std::fs::read_to_string(root.join("docs/configuration/config.md")).unwrap_or_abort();
-    let starter = std::fs::read_to_string(root.join("docs/configuration/starter-skills.md"))
-        .unwrap_or_abort();
+    let starter = std::fs::read_to_string(root.join("docs/configuration/starter-skills.md")).unwrap_or_abort();
     let readme = std::fs::read_to_string(root.join("README.md")).unwrap_or_abort();
     let runtime_schema = harness_schema_pretty_json().unwrap_or_abort();
     let runtime_schema: serde_json::Value =

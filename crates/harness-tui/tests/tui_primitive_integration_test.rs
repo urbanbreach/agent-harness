@@ -37,9 +37,7 @@ use harness_tui::layout::{session_responsive_mode, FrameLayoutPlan, SessionRespo
 use harness_tui::overlay::{OverlayController, OverlayKind, OverlayStack};
 use harness_tui::render_test::render_to_string;
 use harness_tui::responsive::{ViewportClassification, ViewportId, ViewportPlan};
-use harness_tui::terminal::{
-    decode_all, CursorShape, CursorState, FrameClock, TerminalInputEvent, DEFAULT_FRAME_TICK_MS,
-};
+use harness_tui::terminal::{decode_all, CursorShape, CursorState, FrameClock, TerminalInputEvent};
 use harness_tui::theme::ShellGeometryTarget;
 use harness_tui::ui;
 use ratatui::layout::Rect;
@@ -664,19 +662,11 @@ fn frame_clock_cursor_and_writer_pipeline() {
     assert_eq!(clock.phase().get(), 0);
 
     clock.tick();
-    assert_eq!(
-        clock.mono_ms(),
-        DEFAULT_FRAME_TICK_MS,
-        "default tick is the 30 Hz frame step"
-    );
+    assert_eq!(clock.mono_ms(), 100, "default tick is 100ms");
     assert_eq!(clock.phase().get(), 1);
 
     clock.tick_n(4);
-    assert_eq!(
-        clock.mono_ms(),
-        5 * DEFAULT_FRAME_TICK_MS,
-        "5 total ticks at 30 Hz"
-    );
+    assert_eq!(clock.mono_ms(), 500, "5 total ticks × 100ms = 500ms");
     assert_eq!(clock.phase().get(), 5);
 
     // --- T10: CursorState ---

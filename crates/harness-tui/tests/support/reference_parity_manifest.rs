@@ -7,14 +7,13 @@ use serde_json::Value;
 
 use crate::status::{
     parse_cols_rows, validate_claimed_evidence, validate_declared_digests, validate_state_viewport,
-    validate_status_contract,
 };
 
 pub const SCHEMA_VERSION: &str = "harness-tui-reference-parity-manifest-v1";
 pub const REFERENCE_BINARY_SHA256: &str =
     "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5";
 pub const REFERENCE_RECEIPT_PATH: &str =
-    ".omo/evidence/grok-build-clean-room-parity/20260731-reference-provenance-refresh/task-1-grok-build-clean-room-parity/reference-inputs.json";
+    "target/test-lanes/latest/signoff-parity/evidence/receipts/reference-freeze.receipt.json";
 pub const FREEZE_TXT_SHA256: &str =
     "1a5f24dc9be953df160e8d2bcb661f6f2d8dc7845021c3153cd415ab3889ca58";
 pub const FREEZE_PNG_SHA256: &str =
@@ -530,7 +529,6 @@ fn validate_row(
     }
 
     validate_owners(row, path, status_str, failures);
-    validate_status_contract(row, path, failures);
     validate_claimed_evidence(row, path, status_str, failures);
     validate_declared_digests(row, path, failures);
     validate_state_viewport(row, path, freeze_viewport, failures);

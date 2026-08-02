@@ -20,7 +20,7 @@ use harness_core::event::{
 use harness_tui::animation_evidence::{
     assert_sequences_equal, capture_fixed_tick_sequence, read_sequence_artifact,
     spinner_glyphs_in_cells, write_sequence_artifact, AnimationEvidenceError,
-    AnimationFrameSequence, FixedTickPlan, ANIMATION_FRAME_SEQUENCE_SCHEMA, DEFAULT_TICK_MS,
+    AnimationFrameSequence, FixedTickPlan, ANIMATION_FRAME_SEQUENCE_SCHEMA,
 };
 use harness_tui::app::AppState;
 use tempfile::tempdir;
@@ -186,15 +186,10 @@ fn startup_idle_app() -> AppState {
         "startup idle fixture must paint the startup shell"
     );
     assert!(
-        app.has_active_animations_for_evidence(),
-        "empty startup shell must request ticks for the welcome-logo shimmer"
+        !app.has_active_animations_for_evidence(),
+        "startup idle has no phase-driven motion (no welcome shimmer / cursor blink in cells)"
     );
     app
-}
-
-#[test]
-fn default_animation_tick_matches_reference_thirty_fps() {
-    assert_eq!(DEFAULT_TICK_MS, 1_000 / 30);
 }
 
 fn capture_pair(
@@ -218,7 +213,7 @@ fn streaming_wait_spinner_fixed_tick_sequence_is_deterministic() {
     // act
     // assert
     // Given: functionally complete streaming wait indicator surface
-    let plan = FixedTickPlan::new("streaming-wait-spinner", 100, 24, 6);
+    let plan = FixedTickPlan::new("streaming-wait-spinner", 100, 24, 6).with_tick_ms(100);
 
     // When: two independent fixed-tick captures
     let (sequence_a, sequence_b, clock_a) = capture_pair(&plan, streaming_wait_app);
@@ -228,8 +223,8 @@ fn streaming_wait_spinner_fixed_tick_sequence_is_deterministic() {
     assert_eq!(sequence_a.frames.len(), 6);
     assert_eq!(sequence_a.frames[0].animation_phase, 0);
     assert_eq!(sequence_a.frames[5].animation_phase, 5);
-    assert_eq!(sequence_a.frames[5].mono_ms, 5 * (1_000 / 30));
-    assert_eq!(clock_a.mono_ms(), 5 * (1_000 / 30));
+    assert_eq!(sequence_a.frames[5].mono_ms, 500);
+    assert_eq!(clock_a.mono_ms(), 500);
 
     let phase_glyphs: Vec<char> = sequence_a
         .frames
@@ -241,10 +236,9 @@ fn streaming_wait_spinner_fixed_tick_sequence_is_deterministic() {
                 .expect("each streaming frame paints a spinner glyph")
         })
         .collect();
-    assert_eq!(phase_glyphs[0], phase_glyphs[3]);
     assert_ne!(
-        phase_glyphs[3], phase_glyphs[4],
-        "spinner glyph must advance after four 30 Hz ticks: {phase_glyphs:?}"
+        phase_glyphs[0], phase_glyphs[1],
+        "spinner glyph must change across fixed ticks: {phase_glyphs:?}"
     );
 
     assert_sequences_equal(&sequence_a, &sequence_b)
@@ -264,7 +258,7 @@ fn tool_running_spinner_fixed_tick_sequence_is_deterministic() {
     // act
     // assert
     // Given: running read tool paints a braille spinner distinct from pure streaming wait
-    let plan = FixedTickPlan::new("tool-running-spinner", 100, 24, 6);
+    let plan = FixedTickPlan::new("tool-running-spinner", 100, 24, 6).with_tick_ms(100);
 
     // When: two independent fixed-tick captures
     let (sequence_a, sequence_b, clock_a) = capture_pair(&plan, tool_running_app);
@@ -275,8 +269,8 @@ fn tool_running_spinner_fixed_tick_sequence_is_deterministic() {
     assert_eq!(sequence_a.frames.len(), 6);
     assert_eq!(sequence_a.frames[0].animation_phase, 0);
     assert_eq!(sequence_a.frames[5].animation_phase, 5);
-    assert_eq!(sequence_a.frames[5].mono_ms, 5 * (1_000 / 30));
-    assert_eq!(clock_a.mono_ms(), 5 * (1_000 / 30));
+    assert_eq!(sequence_a.frames[5].mono_ms, 500);
+    assert_eq!(clock_a.mono_ms(), 500);
 
     assert!(
         sequence_a.frames[0].cells.contains("Read")
@@ -295,10 +289,9 @@ fn tool_running_spinner_fixed_tick_sequence_is_deterministic() {
                 .expect("each tool-running frame paints a spinner glyph")
         })
         .collect();
-    assert_eq!(phase_glyphs[0], phase_glyphs[3]);
     assert_ne!(
-        phase_glyphs[3], phase_glyphs[4],
-        "tool-running spinner must advance after four 30 Hz ticks: {phase_glyphs:?}"
+        phase_glyphs[0], phase_glyphs[1],
+        "tool-running spinner glyph must change across fixed ticks: {phase_glyphs:?}"
     );
 
     assert_sequences_equal(&sequence_a, &sequence_b)
@@ -312,39 +305,43 @@ fn tool_running_spinner_fixed_tick_sequence_is_deterministic() {
 }
 
 #[test]
-fn startup_shimmer_fixed_tick_sequence_is_deterministic() {
+fn startup_idle_fixed_tick_sequence_is_deterministic() {
     // arrange
     // act
     // assert
-    // Given: startup shell with the reference welcome-logo shimmer
-    let plan = FixedTickPlan::new("startup-shimmer", 100, 30, 4);
+    // Given: startup shell with no phase-driven motion (no shimmer / cell cursor blink)
+    let plan = FixedTickPlan::new("startup-idle", 100, 30, 4).with_tick_ms(100);
 
-    // When: two independent fixed-tick captures advance the shimmer
+    // When: two independent fixed-tick captures force phase advance anyway
     let (sequence_a, sequence_b, clock_a) = capture_pair(&plan, startup_idle_app);
 
-    // Then: deterministic, FakeClock advanced, and shimmer cells move
+    // Then: deterministic, FakeClock advanced, frames stable (idle residual, not motion)
     assert_eq!(sequence_a.schema_version, ANIMATION_FRAME_SEQUENCE_SCHEMA);
-    assert_eq!(sequence_a.surface_id, "startup-shimmer");
+    assert_eq!(sequence_a.surface_id, "startup-idle");
     assert_eq!(sequence_a.frames.len(), 4);
     assert_eq!(sequence_a.frames[0].animation_phase, 0);
     assert_eq!(sequence_a.frames[3].animation_phase, 3);
-    assert_eq!(sequence_a.frames[3].mono_ms, 3 * (1_000 / 30));
-    assert_eq!(clock_a.mono_ms(), 3 * (1_000 / 30));
+    assert_eq!(sequence_a.frames[3].mono_ms, 300);
+    assert_eq!(clock_a.mono_ms(), 300);
 
     for frame in &sequence_a.frames {
         assert!(
             spinner_glyphs_in_cells(&frame.cells).is_empty(),
-            "startup shimmer must not paint a braille status spinner\n{}",
+            "startup idle must not paint braille spinner motion\n{}",
             frame.cells
         );
     }
     assert_eq!(
+        sequence_a.frames[0].cells, sequence_a.frames[1].cells,
+        "startup idle cells must stay stable when phase advances without active motion"
+    );
+    assert_eq!(
         sequence_a.frames[0].cells, sequence_a.frames[3].cells,
-        "text-only evidence stays stable because the startup shimmer changes color, not glyphs"
+        "startup idle must remain stable across the full fixed-tick plan"
     );
 
     assert_sequences_equal(&sequence_a, &sequence_b)
-        .expect("independent startup-shimmer captures must be byte-stable");
+        .expect("independent startup-idle captures must be byte-stable");
 }
 
 #[test]
@@ -354,19 +351,19 @@ fn permission_wait_fixed_tick_sequence_is_deterministic() {
     // assert
     // Given: permission dock open during an active turn (spinner stays static while waiting).
     // Modal/waiting chrome is static under phase ticks; capture is still fail-closed deterministic.
-    let plan = FixedTickPlan::new("permission-wait", 100, 28, 6);
+    let plan = FixedTickPlan::new("permission-wait", 100, 28, 6).with_tick_ms(100);
 
     // When: two independent fixed-tick captures
     let (sequence_a, sequence_b, clock_a) = capture_pair(&plan, permission_wait_app);
 
-    // Then: schema, clock, permission chrome, active-stream spinner, equality
+    // Then: schema, clock, permission chrome, stable cells, equality
     assert_eq!(sequence_a.schema_version, ANIMATION_FRAME_SEQUENCE_SCHEMA);
     assert_eq!(sequence_a.surface_id, "permission-wait");
     assert_eq!(sequence_a.frames.len(), 6);
     assert_eq!(sequence_a.frames[0].animation_phase, 0);
     assert_eq!(sequence_a.frames[5].animation_phase, 5);
-    assert_eq!(sequence_a.frames[5].mono_ms, 5 * (1_000 / 30));
-    assert_eq!(clock_a.mono_ms(), 5 * (1_000 / 30));
+    assert_eq!(sequence_a.frames[5].mono_ms, 500);
+    assert_eq!(clock_a.mono_ms(), 500);
 
     let first = &sequence_a.frames[0].cells;
     assert!(
@@ -374,20 +371,20 @@ fn permission_wait_fixed_tick_sequence_is_deterministic() {
         "permission-wait surface must paint permission dock chrome\n{first}"
     );
 
-    let phase_glyphs: Vec<char> = sequence_a
-        .frames
-        .iter()
-        .map(|frame| {
-            spinner_glyphs_in_cells(&frame.cells)
-                .into_iter()
-                .next()
-                .expect("permission-wait keeps the active stream spinner visible")
-        })
-        .collect();
-    assert_eq!(phase_glyphs[0], phase_glyphs[3]);
-    assert_ne!(
-        phase_glyphs[3], phase_glyphs[4],
-        "permission-wait spinner must continue advancing: {phase_glyphs:?}"
+    for frame in &sequence_a.frames {
+        assert!(
+            spinner_glyphs_in_cells(&frame.cells).is_empty(),
+            "permission-wait freezes braille spinner motion\n{}",
+            frame.cells
+        );
+    }
+    assert_eq!(
+        sequence_a.frames[0].cells, sequence_a.frames[1].cells,
+        "permission-wait cells stay stable across phase ticks (no dedicated wait animation yet)"
+    );
+    assert_eq!(
+        sequence_a.frames[0].cells, sequence_a.frames[5].cells,
+        "permission-wait must remain stable for the full fixed-tick plan"
     );
 
     assert_sequences_equal(&sequence_a, &sequence_b)
@@ -412,17 +409,18 @@ fn empty_fixed_tick_plan_fails_closed() {
     assert_eq!(err, AnimationEvidenceError::EmptyPlan);
 }
 
-/// Trace ordering: fixed-tick frame traces must be strictly ordered while
-/// respecting the reference four-tick spinner dwell.
+/// Trace ordering: fixed-tick frame traces must be strictly ordered and
+/// duplicate-free (monotonic mono_ms and animation phase, every consecutive
+/// frame differs from its predecessor).
 #[test]
-fn fixed_tick_trace_frames_are_ordered_with_reference_spinner_dwell() {
+fn fixed_tick_trace_frames_are_strictly_ordered_and_unique() {
     // arrange — fixed-tick plan for an animated spinner surface
-    let plan = FixedTickPlan::new("trace-ordering", 100, 24, 8);
+    let plan = FixedTickPlan::new("trace-ordering", 100, 24, 8).with_tick_ms(100);
 
     // act
     let (sequence, _second, _clock) = capture_pair(&plan, streaming_wait_app);
 
-    // assert — strictly increasing clock + phase
+    // assert — strictly increasing clock + phase; no duplicate frames
     assert_eq!(sequence.frames.len(), 8);
     for pair in sequence.frames.windows(2) {
         assert!(
@@ -437,8 +435,9 @@ fn fixed_tick_trace_frames_are_ordered_with_reference_spinner_dwell() {
             pair[0].animation_phase,
             pair[1].animation_phase
         );
+        assert_ne!(
+            pair[0].cells, pair[1].cells,
+            "consecutive fixed-tick frames must differ (animation must advance)"
+        );
     }
-    assert_eq!(sequence.frames[0].cells, sequence.frames[3].cells);
-    assert_ne!(sequence.frames[3].cells, sequence.frames[4].cells);
-    assert_eq!(sequence.frames[4].cells, sequence.frames[7].cells);
 }

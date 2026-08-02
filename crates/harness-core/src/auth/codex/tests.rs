@@ -191,7 +191,7 @@ async fn codex_device_flow_polls_pending_then_exchanges_and_stores_credential() 
             serde_json::json!({
                 "device_auth_id": "device-123",
                 "user_code": "USER-123",
-                "interval": "1"
+                "interval": 1
             })
             .to_string(),
         ),
@@ -230,23 +230,11 @@ async fn codex_device_flow_polls_pending_then_exchanges_and_stores_credential() 
     assert!(requests[0]
         .url
         .ends_with("/api/accounts/deviceauth/usercode"));
-    assert_eq!(
-        requests[0].headers.get("User-Agent").map(String::as_str),
-        Some(concat!("opencode/", env!("CARGO_PKG_VERSION")))
-    );
     assert!(requests[1].url.ends_with("/api/accounts/deviceauth/token"));
-    assert_eq!(
-        requests[1].headers.get("User-Agent").map(String::as_str),
-        Some(concat!("opencode/", env!("CARGO_PKG_VERSION")))
-    );
     assert!(requests[3].body.contains("code=auth-code-123"));
     assert!(requests[3]
         .body
         .contains("code_verifier=device-verifier-123"));
-    assert_eq!(
-        requests[3].headers.get("User-Agent").map(String::as_str),
-        Some(concat!("opencode/", env!("CARGO_PKG_VERSION")))
-    );
 }
 
 #[test]

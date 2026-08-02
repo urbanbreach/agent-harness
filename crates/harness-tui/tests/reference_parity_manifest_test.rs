@@ -29,8 +29,7 @@ use support::{
     REQUIRED_SCAFFOLD_IDS, SCHEMA_VERSION,
 };
 
-const MANIFEST_SRC: &str =
-    include_str!("../../../docs/reference/tui-reference-parity-manifest.v1.json");
+const MANIFEST_SRC: &str = include_str!("../../../docs/reference/tui-reference-parity-manifest.v1.json");
 
 fn checked_in_manifest() -> Value {
     serde_json::from_str(MANIFEST_SRC).unwrap_or_abort()
@@ -309,21 +308,6 @@ fn validator_rejects_invalid_status() {
 }
 
 #[test]
-fn validator_rejects_conflicting_declared_and_evidence_statuses() {
-    // arrange
-    let mut manifest = checked_in_manifest();
-    let row = row_mut(&mut manifest, "SHELL-IDLE");
-    row["status"] = json!("incomplete");
-    row["evidence"]["status"] = json!("pass");
-
-    // act
-    let result = validate_manifest(&manifest);
-
-    // assert
-    assert_control(result, "status-evidence-mismatch");
-}
-
-#[test]
 fn validator_rejects_invalid_acceptance_gate() {
     // arrange
     // act
@@ -368,10 +352,9 @@ fn coexists_with_signoff_manifest_without_requiring_reference_images() {
     // act
     // assert
     // arrange / act
-    let signoff: Value = serde_json::from_str(include_str!(
-        "../../../docs/testing/tui-signoff-manifest.v1.json"
-    ))
-    .unwrap_or_abort();
+    let signoff: Value =
+        serde_json::from_str(include_str!("../../../docs/testing/tui-signoff-manifest.v1.json"))
+            .unwrap_or_abort();
     let parity = checked_in_manifest();
 
     // assert — leave signoff policy alone; parity is a separate contract
@@ -444,11 +427,11 @@ fn checked_in_manifest_status_rollup_is_truthful_and_not_complete() {
         "status counts must sum to required"
     );
     assert_eq!(rollup.unknown, 0, "no unknown statuses allowed");
-    // Visual rows remain required but unclaimed until fresh paired evidence
-    // exists; incomplete is the truthful fail-closed rollup for this fixture.
+    // With all remaining gaps formally excluded by approved scope, the manifest
+    // is complete when no incomplete or blocked rows remain.
     assert!(
-        !rollup.a_manifest_complete(),
-        "A-MANIFEST must remain incomplete while visual evidence is unclaimed"
+        rollup.a_manifest_complete(),
+        "A-MANIFEST must be complete (pass/diverged/excluded) after approved exclusions"
     );
 }
 

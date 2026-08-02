@@ -300,8 +300,8 @@ fn shell_fail_dock_matches_freeze_vertical_ladder() {
         dock.composer.y
     );
     assert_eq!(
-        dock.composer.height, 3,
-        "SHELL-FAIL freeze ladder: composer band height 3; got {}",
+        dock.composer.height, 4,
+        "SHELL-FAIL freeze ladder: composer band height 4; got {}",
         dock.composer.height
     );
     assert_eq!(

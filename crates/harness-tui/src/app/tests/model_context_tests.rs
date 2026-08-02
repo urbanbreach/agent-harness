@@ -398,7 +398,13 @@ pub(super) fn switching_agent_after_submit_keeps_existing_turn_footer_agent() {
     app.handle_key(key_with_modifiers(KeyCode::Tab, KeyModifiers::CONTROL));
 
     assert_eq!(app.active_profile(), "plan");
-    let submitted_turn = app.activities.back().expect("submitted turn");
-    assert_eq!(submitted_turn.profile_label, "build");
-    assert_ne!(submitted_turn.profile_label, app.active_profile());
+    let rendered = render_debug(&app, 100, 32);
+    assert!(
+        rendered.contains("Build"),
+        "submitted turn footer should keep its original agent after switching\n{rendered}"
+    );
+    assert!(
+        !rendered.contains("Plan"),
+        "submitted turn footer must not follow the newly selected agent\n{rendered}"
+    );
 }

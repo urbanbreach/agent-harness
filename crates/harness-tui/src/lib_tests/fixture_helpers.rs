@@ -293,8 +293,8 @@ pub(super) fn assert_session_view_state(app: &app::AppState) {
     assert_eq!(activity.provider_id, "openai");
     assert_eq!(activity.model_id, "gpt-5-codex");
     assert_eq!(activity.status, app::ActivityStatus::Done);
-    assert_eq!(activity.thinking_text, "");
-    assert_eq!(activity.transcript_text, "Working through the steps.");
+    assert_eq!(activity.thinking_text, "Working through the steps.");
+    assert_eq!(activity.transcript_text, "");
     assert_eq!(
         activity
             .user_message

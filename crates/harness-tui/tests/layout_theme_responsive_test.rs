@@ -298,11 +298,11 @@ fn composer_inset_follows_narrow_viewport_breakpoint() {
     let wide = plan_at(&app, 120, 40).composer.unwrap_or_abort();
 
     // assert
-    // Dense viewports (width <= DENSE_SESSION_MAX_WIDTH) use a 1-column
+    // Dense viewports (width <= DENSE_SESSION_MAX_WIDTH) use a 0-column
     // composer inset; see composer_horizontal_inset + reference fixtures.
     assert_eq!(
-        narrow.x, 1,
-        "dense viewports (<=60 cols) use a 1-column composer inset"
+        narrow.x, 0,
+        "dense viewports (<=60 cols) use a 0-column composer inset"
     );
     assert_eq!(wide.x, 2, "wide viewports use a 2-column composer inset");
 }
@@ -317,7 +317,7 @@ fn theme_switching_resolves_documented_names_only() {
     // arrange
     // act
     // assert
-    assert_eq!(Theme::by_name("default"), Some(Theme::harness_chat()));
+    assert_eq!(Theme::by_name("default"), Some(Theme::harness_dark()));
     assert_eq!(Theme::by_name("harness-dark"), Some(Theme::harness_dark()));
     assert_eq!(
         Theme::by_name("harness-light"),

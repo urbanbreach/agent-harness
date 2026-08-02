@@ -1,14 +1,6 @@
 use super::*;
 
 #[test]
-fn harness_chat_question_tokens_match_groknight() {
-    let theme = Theme::harness_chat();
-
-    assert_eq!(theme.question_prompt.accent, rgb(0xC8, 0xC8, 0xC8));
-    assert_eq!(theme.question_prompt.secondary, rgb(0x6C, 0x6C, 0x6C));
-}
-
-#[test]
 fn harness_dark_theme_matches_palette_contract() {
     // arrange
     // act
@@ -143,19 +135,19 @@ fn semantic_theme_families_preserve_default_contracts() {
 }
 
 #[test]
-fn default_theme_matches_harness_chat_contract() {
+fn default_theme_matches_harness_dark_contract() {
     // arrange
     // act
     // assert
     let default = Theme::default();
-    let harness_chat = Theme::harness_chat();
+    let harness_dark = Theme::harness_dark();
 
-    assert_eq!(default, harness_chat);
-    assert_eq!(default.token_families(), harness_chat.token_families());
+    assert_eq!(default, harness_dark);
+    assert_eq!(default.token_families(), harness_dark.token_families());
 }
 
 #[test]
-fn semantic_chrome_tokens_map_to_harness_chat_defaults() {
+fn semantic_chrome_tokens_map_to_harness_dark_defaults() {
     // arrange
     // act
     // assert

@@ -102,9 +102,6 @@ pub(crate) fn exact_test_transcript_section_model_keeps_nested_tool_and_error_bl
                 text: "command failed".to_string(),
                 tone: TranscriptToolCallDetailTone::Error,
             }],
-            details_collapsed_by_default: true,
-            details_preview_visible: false,
-            animation_phase: 0,
             expanded: false,
         }
     );
@@ -115,7 +112,7 @@ pub(crate) fn exact_test_transcript_reasoning_precedes_answer_and_tool_rows() {
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
         "request-answer-first",
-        ActivityStatus::Streaming,
+        ActivityStatus::Done,
         "assistant answer",
     );
     entry.thinking_text = "working through the plan".to_string();
@@ -169,7 +166,7 @@ pub(crate) fn exact_test_transcript_reasoning_precedes_answer_and_tool_rows() {
         .iter()
         .enumerate()
         .skip(answer_row + 1)
-        .find_map(|(index, line)| line.contains("Read src/ui.rs").then_some(index))
+        .find_map(|(index, line)| line.contains("Read 1 file").then_some(index))
         .unwrap_or_abort();
 
     assert!(reasoning_row < answer_row);
@@ -184,7 +181,7 @@ pub(crate) fn exact_test_transcript_user_and_reasoning_match_reference_entry_bod
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
         "request-entry-body",
-        ActivityStatus::Streaming,
+        ActivityStatus::Done,
         "assistant answer",
     );
     entry.user_message = Some(harness_core::event::UserMessageSubmittedEvent {
@@ -268,7 +265,7 @@ pub(crate) fn exact_test_latest_assistant_footer_stays_after_trailing_tool_rows(
         .unwrap_or_abort();
     let tool_row = lines
         .iter()
-        .position(|line| line.contains("Read src/ui.rs"))
+        .position(|line| line.contains("Read 1 file"))
         .unwrap_or_abort();
     let footer_row = lines
         .iter()
@@ -426,15 +423,15 @@ pub(crate) fn exact_test_transcript_tool_rows_follow_chronological_turn_order() 
     let opening_row = lines
         .iter()
         .position(|line| line.contains("I’ll inspect the MCP result first."))
-        .unwrap_or_else(|| panic!("missing opening prose\n{lines:#?}"));
+        .unwrap_or_abort();
     let tool_row = lines
         .iter()
         .position(|line| line.contains("docs-rs_search") && line.contains("ratatui"))
-        .unwrap_or_else(|| panic!("missing MCP tool row\n{lines:#?}"));
+        .unwrap_or_abort();
     let closing_row = lines
         .iter()
         .position(|line| line.contains("It returns the crate metadata inline afterward."))
-        .unwrap_or_else(|| panic!("missing closing prose\n{lines:#?}"));
+        .unwrap_or_abort();
 
     assert!(
         opening_row < tool_row,
@@ -572,7 +569,6 @@ fn reasoning_after_tool_renders_in_new_block_below_tool() {
             },
         ),
     ));
-    app.activities[0].status = ActivityStatus::Streaming;
 
     let sections = build_transcript_sections(&app);
     assert_eq!(sections.len(), 1);
@@ -1067,7 +1063,7 @@ fn surface_line_text(surface: &MeasuredTranscriptSurface) -> String {
 }
 
 #[cfg(test)]
-pub(crate) fn exact_test_completed_tool_turn_has_no_selected_rail() {
+pub(crate) fn exact_test_selected_rail_prefers_last_tool_over_thought() {
     // Given: a selected completed turn with Thought chrome and a succeeded tool
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
@@ -1090,19 +1086,42 @@ pub(crate) fn exact_test_completed_tool_turn_has_no_selected_rail() {
     let layout = build_measured_transcript_layout_for_width(&app, &Theme::default(), 120);
     assert_eq!(layout.sections.len(), 1);
     let surfaces = &layout.sections[0].surfaces;
-    // Then: completed turns return focus to the composer and paint no selection rail.
+    let selected: Vec<_> = surfaces
+        .iter()
+        .filter(|surface| surface.selected_rail)
+        .map(surface_line_text)
+        .collect();
+    let thought_selected = surfaces
+        .iter()
+        .any(|surface| surface.selected_rail && surface_line_text(surface).contains("Thought for"));
+    let tool_selected = surfaces.iter().any(|surface| {
+        surface.selected_rail
+            && (surface_line_text(surface).contains("Listed")
+                || surface_line_text(surface).contains("list")
+                || surface_line_text(surface).contains("◈"))
+    });
+
+    // Then: selected rail prefers the last tool surface, not Thought
+    assert!(
+        tool_selected,
+        "selected completed tool turns must paint ❙ on the last tool surface\nselected={selected:#?}"
+    );
+    assert!(
+        !thought_selected,
+        "Thought must not keep selected rail when a tool surface exists\nselected={selected:#?}"
+    );
     assert_eq!(
         surfaces
             .iter()
             .filter(|surface| surface.selected_rail)
             .count(),
-        0,
-        "completed tool turns must not retain a transcript selection rail\n{surfaces:#?}"
+        1,
+        "exactly one surface should carry selected rail\nselected={selected:#?}"
     );
 }
 
 #[cfg(test)]
-pub(crate) fn exact_test_completed_thought_turn_has_no_selected_rail() {
+pub(crate) fn exact_test_selected_rail_falls_back_to_thought_without_tools() {
     // Given: a selected completed turn with Thought chrome and no tools
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
@@ -1118,19 +1137,32 @@ pub(crate) fn exact_test_completed_thought_turn_has_no_selected_rail() {
     let layout = build_measured_transcript_layout_for_width(&app, &Theme::default(), 120);
     assert_eq!(layout.sections.len(), 1);
     let surfaces = &layout.sections[0].surfaces;
-    // Then: completed turns return focus to the composer and paint no selection rail.
+    let selected: Vec<_> = surfaces
+        .iter()
+        .filter(|surface| surface.selected_rail)
+        .map(surface_line_text)
+        .collect();
+    let thought_selected = surfaces
+        .iter()
+        .any(|surface| surface.selected_rail && surface_line_text(surface).contains("Thought for"));
+
+    // Then: selected rail falls back to Thought when no tool surfaces exist
+    assert!(
+        thought_selected,
+        "selected completed turns without tools must paint ❙ on Thought\nselected={selected:#?}"
+    );
     assert_eq!(
         surfaces
             .iter()
             .filter(|surface| surface.selected_rail)
             .count(),
-        0,
-        "completed thought turns must not retain a transcript selection rail\n{surfaces:#?}"
+        1,
+        "exactly one surface should carry selected rail\nselected={selected:#?}"
     );
 }
 
 #[cfg(test)]
-pub(crate) fn exact_test_done_body_after_tool_packs_wall_clock_on_response_row() {
+pub(crate) fn exact_test_done_body_after_tool_keeps_separate_wall_clock_row() {
     // Given: a completed tool turn with single-line DONE body + footer wall clock
     // Tool seq must precede body (last_seq) so assistant_parts order is Tool → Body
     // (matches the reference diff / live_diff event order).
@@ -1164,22 +1196,22 @@ pub(crate) fn exact_test_done_body_after_tool_packs_wall_clock_on_response_row()
         })
         .collect();
 
-    // Then: Grok keeps the wall clock on the response row even when tools precede it.
+    // Then: the reference diff state keeps wall clock on its own row between the tool and DONE body.
     let done_line = lines
         .iter()
         .find(|line| line.contains("DONE"))
         .unwrap_or_else(|| panic!("missing DONE body line\n{lines:#?}"));
     assert!(
-        done_line.contains("12:00 PM"),
-        "DONE after tools must pack the wall clock on the response row\n{done_line:?}\nall={lines:#?}"
+        !done_line.contains("12:00 PM"),
+        "DONE after tools must keep wall clock on a separate row\n{done_line:?}\nall={lines:#?}"
     );
     let clock_only = lines.iter().any(|line| {
         let trimmed = line.trim();
         trimmed == "12:00 PM" || (trimmed.ends_with("12:00 PM") && !trimmed.contains("DONE"))
     });
     assert!(
-        !clock_only,
-        "Tool→Body single-line must not insert a dedicated clock-only row\nall={lines:#?}"
+        clock_only,
+        "Tool→Body single-line must keep a dedicated clock-only row\nall={lines:#?}"
     );
 }
 
@@ -1353,8 +1385,8 @@ pub(crate) fn exact_test_pending_question_has_no_selected_rail() {
         "Ask chrome must still render\n{rendered}"
     );
     assert!(
-        !rendered.contains("Waiting on answers"),
-        "interactive Ask chrome replaces the legacy waiting footer\n{rendered}"
+        rendered.contains("Waiting on answers"),
+        "Waiting chrome must still render\n{rendered}"
     );
 }
 
@@ -1401,8 +1433,8 @@ pub(crate) fn exact_test_pending_edit_permission_has_no_selected_rail() {
         "Creating chrome must still render\n{rendered}"
     );
     assert!(
-        !rendered.contains("Run Write"),
-        "compact permission chrome must not duplicate the write row\n{rendered}"
+        rendered.contains("Run Write `demo.txt`"),
+        "Run Write chrome must still render\n{rendered}"
     );
 }
 
@@ -1437,19 +1469,24 @@ pub(crate) fn exact_test_pending_edit_permission_packs_dual_run_write_duration()
         120,
     ));
     let rendered = lines.join("\n");
-    let creating_line = lines
+    let run_line = lines
         .iter()
-        .find(|line| line.contains("Creating demo.txt"))
+        .find(|line| line.contains("Run Write"))
         .cloned()
         .unwrap_or_default();
 
-    // Then: compact permission chrome keeps one creation row without duplicated duration metadata
+    // Then: freeze packs inline 19s after path and right-meta 19s
     assert!(
-        creating_line.contains("Creating demo.txt"),
-        "permission row must keep the target path\n{creating_line}\n{rendered}"
+        run_line.contains("Run Write `demo.txt` 19s"),
+        "Run Write left must pack inline duration 19s\n{run_line}\n{rendered}"
     );
     assert!(
-        !rendered.contains("Run Write") && !creating_line.contains("19s"),
-        "permission chrome must not duplicate write or duration metadata\n{creating_line}\n{rendered}"
+        run_line.contains("19s") && run_line.contains("⇣10.1k") && run_line.contains("[stop]"),
+        "Run Write right meta must keep 19s ⇣10.1k [stop]\n{run_line}\n{rendered}"
+    );
+    let nineteen_count = run_line.matches("19s").count();
+    assert!(
+        nineteen_count >= 2,
+        "freeze dual-duration packing needs 19s on both left and right\n{run_line}"
     );
 }

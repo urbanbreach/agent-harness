@@ -365,21 +365,11 @@ fn layout_plan_boundary_viewports_have_valid_composer_and_disclosure() {
 
     let app = idle_shell_app();
     let boundaries: &[(u16, u16)] = &[
-        (59, 20),
-        (60, 20),
-        (61, 20),
-        (79, 24),
-        (80, 24),
-        (81, 24),
-        (99, 30),
-        (100, 30),
-        (101, 30),
-        (119, 32),
-        (120, 32),
-        (121, 32),
-        (120, 40),
-        (120, 50),
-        (140, 40),
+        (59, 20), (60, 20), (61, 20),
+        (79, 24), (80, 24), (81, 24),
+        (99, 30), (100, 30), (101, 30),
+        (119, 32), (120, 32), (121, 32),
+        (120, 40), (120, 50), (140, 40),
     ];
 
     for &(w, h) in boundaries {
@@ -433,7 +423,7 @@ fn characterization_current_live_shell_geometry_is_full_width_and_bottom_safe() 
         let composer = plan
             .composer
             .unwrap_or_else(|| panic!("composer at {width}x{height}"));
-        let inset = if width <= 60 { 1 } else { 2 };
+        let inset = if width <= 60 { 0 } else { 2 };
 
         assert_eq!(transcript.x, plan.shell.x);
         assert_eq!(transcript.width, plan.shell.width);

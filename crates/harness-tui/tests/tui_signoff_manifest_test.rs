@@ -1,8 +1,7 @@
 use harness_tui::UnwrapOrAbort;
 use serde_json::Value;
 
-const TUI_SIGNOFF_MANIFEST: &str =
-    include_str!("../../../docs/testing/tui-signoff-manifest.v1.json");
+const TUI_SIGNOFF_MANIFEST: &str = include_str!("../../../docs/testing/tui-signoff-manifest.v1.json");
 
 #[test]
 #[allow(clippy::panic, reason = "test code must panic gracefully")]
@@ -212,7 +211,7 @@ const REFERENCE_PARITY_MANIFEST: &str =
 const PINNED_REFERENCE_SHA256: &str =
     "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5";
 const PINNED_REFERENCE_VERSION: &str = "grok 0.1.220-alpha.4 (c1b5909) [stable]";
-const PINNED_SOURCE_REVISION: &str = "500129c714ad1b10e6095481f4a8387a2ec52649";
+const PINNED_SOURCE_REVISION: &str = "c1b5909ec707c069f1d21a93917af044e71da0d7";
 
 const VISUAL_SURFACES: &[&str] = &[
     "startup",
@@ -371,13 +370,9 @@ fn validate_reference_parity_manifest(manifest: &Value, crate_dir: &Path) -> Vec
             let cells_path = resolve_under_crate(crate_dir, cells_rel);
             match SemanticFrame::read_cells_json(&cells_path) {
                 Ok(frame_obj) => {
-                    let expected_cols =
-                        u16::try_from(cf["viewport"]["cols"].as_u64().unwrap_or_default())
-                            .unwrap_or_default();
-                    let expected_rows =
-                        u16::try_from(cf["viewport"]["rows"].as_u64().unwrap_or_default())
-                            .unwrap_or_default();
-                    if frame_obj.cols != expected_cols || frame_obj.rows != expected_rows {
+                    if frame_obj.cols != cf["viewport"]["cols"].as_u64().unwrap_or(0) as u16
+                        || frame_obj.rows != cf["viewport"]["rows"].as_u64().unwrap_or(0) as u16
+                    {
                         errs.push(format!("core frame {frame}: cells.json viewport mismatch"));
                     }
                 }
@@ -493,7 +488,8 @@ fn validate_reference_parity_manifest(manifest: &Value, crate_dir: &Path) -> Vec
 }
 
 fn parse_reference_parity_manifest() -> Value {
-    serde_json::from_str(REFERENCE_PARITY_MANIFEST).unwrap_or_abort()
+    serde_json::from_str(REFERENCE_PARITY_MANIFEST)
+        .expect("docs/tui-reference-parity-manifest.v1.json must be valid JSON")
 }
 
 #[test]

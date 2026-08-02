@@ -169,10 +169,7 @@ pub(super) fn live_shell_status_strip_has_single_priority_order() {
 
     let rendered = render_live_lines(&app, 140, 40);
 
-    assert!(
-        rendered.contains("background task still running"),
-        "active orchestration status should occupy the single priority strip\n{rendered}"
-    );
+    assert!(rendered.contains("Shift+Tab:mode") || rendered.contains("Ctrl+x:shortcuts"));
     assert!(!rendered.contains("Enter send"));
     assert!(!rendered.contains("tool finished"));
     assert!(!rendered.contains("turn 1"));
@@ -234,16 +231,18 @@ pub(super) fn slash_overlay_uses_input_width_aligned_rows_and_accent_selection()
     let rendered = render_live_lines(&app, 100, 24);
     let lines = rendered.lines().collect::<Vec<_>>();
     assert!(!rendered.contains("/events"));
-    let row = find_line_containing_all(&lines, &["/fork", "Fork session"])
-        .unwrap_or_else(|| panic!("slash /fork row\n{rendered}"));
-    let fork_description = lines[row].find("Fork session").unwrap_or_abort();
+    let row = find_line_containing_all(&lines, &["/feedback", "Show shortcuts and TUI controls"])
+        .unwrap_or_else(|| panic!("slash /feedback row\n{rendered}"));
+    let feedback_description = lines[row]
+        .find("Show shortcuts and TUI controls")
+        .unwrap_or_abort();
     let exit_row = find_line_containing_all(&lines, &["/exit", "Quit the application"])
         .unwrap_or_else(|| panic!("slash /exit row\n{rendered}"));
     let exit_description = lines[exit_row]
         .find("Quit the application")
         .unwrap_or_abort();
 
-    assert_eq!(fork_description, exit_description);
+    assert_eq!(feedback_description, exit_description);
     assert!(!lines[row].contains('┃'));
     assert!(
         !lines[row].contains('╭') && !lines[row].contains('╰'),
@@ -349,17 +348,18 @@ pub(super) fn overlays_share_elevated_card_language() {
     let start = row[..start_byte].chars().count();
     let end = start + "Resume Session".chars().count();
     assert!(
-        bgs[start..end].iter().all(|color| {
-            *color == Theme::default().surface.canvas || *color == Theme::default().text.accent
-        }),
-        "selected palette row uses the Harness chat base or selection surface\n{row}"
+        bgs[start..end]
+            .iter()
+            .all(|color| *color == ratatui::style::Color::Indexed(0)
+                || *color == ratatui::style::Color::Indexed(7)),
+        "selected palette row uses freeze Indexed(0) or Indexed(7) surface, not inverse card fill\n{row}"
     );
     assert!(
         fgs[start..end]
             .iter()
-            .all(|color| *color == Theme::default().text.primary
+            .all(|color| *color == ratatui::style::Color::Indexed(0)
                 || *color == ratatui::style::Color::Indexed(15)),
-        "selected palette row keeps legible primary text on the Harness chat surface\n{row}"
+        "selected palette row keeps primary text on Indexed(0) surface\n{row}"
     );
 
     let mut sessions = app::AppState::new_startup(
@@ -398,13 +398,7 @@ pub(super) fn overlays_share_elevated_card_language() {
                 || *color == ratatui::style::Color::Indexed(7)
                 || *color == ratatui::style::Color::Rgb(0xD9, 0x84, 0xD9)
                 || *color == ratatui::style::Color::Rgb(0x0B, 0x0E, 0x14)
-                || *color == ratatui::style::Color::Rgb(0x12, 0x16, 0x1E)
-                || *color == ratatui::style::Color::Rgb(0xBB, 0x9A, 0xF7)
-                || *color == ratatui::style::Color::Rgb(0x14, 0x14, 0x14)
-                || *color == ratatui::style::Color::Rgb(0x1C, 0x1C, 0x1C)
-                || *color == ratatui::style::Color::Rgb(0x12, 0x12, 0x12)
-                || *color == ratatui::style::Color::Rgb(0x26, 0x26, 0x26)
-                || *color == ratatui::style::Color::Rgb(0x55, 0x57, 0x53)),
+                || *color == ratatui::style::Color::Rgb(0x12, 0x16, 0x1E)),
         "session history selected row uses freeze surface chrome\n{sessions_row}"
     );
     assert!(
@@ -414,11 +408,7 @@ pub(super) fn overlays_share_elevated_card_language() {
                 || *color == ratatui::style::Color::Indexed(15)
                 || *color == ratatui::style::Color::Indexed(7)
                 || *color == ratatui::style::Color::Rgb(0xD7, 0xDA, 0xE0)
-                || *color == ratatui::style::Color::Rgb(0x0B, 0x0E, 0x14)
-                || *color == ratatui::style::Color::Rgb(0xE1, 0xE1, 0xE1)
-                || *color == ratatui::style::Color::Rgb(0xC8, 0xC8, 0xC8)
-                || *color == ratatui::style::Color::Rgb(0x6C, 0x6C, 0x6C)
-                || *color == ratatui::style::Color::Rgb(0x14, 0x14, 0x14)),
+                || *color == ratatui::style::Color::Rgb(0x0B, 0x0E, 0x14)),
         "session history selected row keeps readable text chrome\n{sessions_row}"
     );
 }
@@ -443,14 +433,14 @@ pub(super) fn quiet_overlay_helper_rows_use_semantic_chrome_palette() {
     assert!(
         commands_bgs[commands_start..commands_end]
             .iter()
-            .all(|color| *color == Theme::default().surface.canvas),
-        "Commands title uses the Harness chat base surface\n{commands_row}"
+            .all(|color| *color == ratatui::style::Color::Indexed(7)),
+        "Commands title uses freeze Indexed(7) surface\n{commands_row}"
     );
     assert!(
         commands_fgs[commands_start..commands_end]
             .iter()
-            .all(|color| *color == Theme::default().text.primary),
-        "Commands title uses primary text on the Harness chat base surface\n{commands_row}"
+            .all(|color| *color == ratatui::style::Color::Indexed(0)),
+        "Commands title uses Indexed(0) text on Indexed(7) surface\n{commands_row}"
     );
 
     let mut sessions = app::AppState::new_startup(
@@ -487,14 +477,14 @@ pub(super) fn quiet_overlay_helper_rows_use_semantic_chrome_palette() {
     assert!(
         title_bgs[title_start..title_end]
             .iter()
-            .all(|color| *color == Theme::default().surface.canvas),
-        "session history title uses the Harness chat base surface\n{title_row}"
+            .all(|color| *color == ratatui::style::Color::Indexed(7)),
+        "session history title uses freeze Indexed(7) surface\n{title_row}"
     );
     assert!(
         title_fgs[title_start..title_end]
             .iter()
-            .all(|color| *color == Theme::default().text.primary),
-        "session history title uses primary text on the Harness chat base surface\n{title_row}"
+            .all(|color| *color == ratatui::style::Color::Indexed(0)),
+        "session history title uses Indexed(0) text on Indexed(7) surface\n{title_row}"
     );
 }
 
@@ -535,15 +525,15 @@ pub(super) fn live_shell_redesign_preserves_replay_overlay_and_permission_parity
             });
     let user_row = find_line_containing(&replay_lines, "Explain the refactor")
         .unwrap_or_else(|| panic!("replay shell should preserve the user turn\n{replay_render}"));
-    let response_row =
-        find_line_containing_from(&replay_lines, user_row + 1, "Working through the steps.")
+    let thinking_row =
+        find_line_containing_all_from(&replay_lines, user_row + 1, &["Working through the steps."])
             .unwrap_or_else(|| {
-                panic!("replay shell should preserve assistant response prose\n{replay_render}")
+                panic!("replay shell should preserve visible thinking text\n{replay_render}")
             });
 
     assert!(replay_header_row < replay_disabled_row && replay_disabled_row < replay_shortcuts_row);
     assert!(
-        user_row < response_row,
+        user_row < thinking_row,
         "replay transcript should preserve turn order\n{replay_render}"
     );
     assert_alphanumeric_row_palette(
@@ -631,16 +621,18 @@ pub(super) fn permission_modal_remains_visually_dominant_and_fail_closed() {
             || rendered.contains("esc:cancel")
     );
     assert!(!rendered.contains("Commands"));
+    // Waiting state: selected option is distinguished by the filled marker only, with the same
+    // card-surface background and primary text as unselected options.
     assert!(
         bgs[start..end]
             .iter()
-            .all(|color| *color == theme.text.accent),
-        "selected allow option should use the accent selection background\n{row}"
+            .all(|color| *color == theme.surface.card),
+        "selected allow option should use the card surface background\n{row}"
     );
     assert!(
         fgs[start..end]
             .iter()
-            .all(|color| *color == theme.text.inverse),
-        "selected allow option should use inverse text color\n{row}"
+            .all(|color| *color == theme.text.primary),
+        "selected allow option should use primary text color\n{row}"
     );
 }

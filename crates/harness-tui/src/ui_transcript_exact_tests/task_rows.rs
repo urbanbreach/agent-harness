@@ -143,7 +143,7 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
         running_row.as_ref(),
         true,
         false,
-        true,
+        false,
         false,
         None,
     );
@@ -203,7 +203,7 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
         retry_row.as_ref(),
         true,
         false,
-        true,
+        false,
         false,
         None,
     );
@@ -263,7 +263,7 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
         detached_active_row.as_ref(),
         true,
         false,
-        true,
+        false,
         false,
         None,
     );
@@ -368,11 +368,7 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
     }
     let completed_text = transcript_test_line_texts(completed_lines).join("\n");
     assert!(completed_text.contains("Researcher Task (background) — audit transcript parity"));
-    assert_eq!(
-        completed_section.header.disclosure_state,
-        Some(TranscriptToolCallDisclosureState::Collapsed)
-    );
-    assert!(!completed_text.contains("↳ 2 toolcalls · 1.6s"));
+    assert!(completed_text.contains("↳ 2 toolcalls · 1.6s"));
     assert!(!completed_text.contains("background_output("));
     assert!(!completed_text.contains("task(task_id=\"agent_worker\")"));
     assert!(!completed_text.contains("Found the inline transcript path."));
@@ -409,7 +405,7 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
     assert!(
         parent_transcript_text.contains("Researcher Task (background) — audit transcript parity")
     );
-    assert!(!parent_transcript_text.contains("↳ 2 toolcalls · 1.6s"));
+    assert!(parent_transcript_text.contains("↳ 2 toolcalls · 1.6s"));
     assert!(!parent_transcript_text.contains("background_output("));
     assert!(!parent_transcript_text.contains("task(task_id=\"agent_worker\")"));
     assert!(!parent_transcript_text.contains("view subagents"));

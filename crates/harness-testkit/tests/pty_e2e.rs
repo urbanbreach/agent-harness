@@ -4,8 +4,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-const TUI_SIGNOFF_MANIFEST: &str =
-    include_str!("../../../docs/testing/tui-signoff-manifest.v1.json");
+const TUI_SIGNOFF_MANIFEST: &str = include_str!("../../../docs/testing/tui-signoff-manifest.v1.json");
 
 #[test]
 fn pty_signoff_lane_is_explicit_single_threaded_smoke() {

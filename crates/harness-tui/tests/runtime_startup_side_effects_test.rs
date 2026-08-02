@@ -17,10 +17,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 
-use harness_core::event::{
-    ActorKind, EventActor, EventEnvelopeV1, EventV1, RunFinishedEvent, SCHEMA_VERSION,
-};
-use harness_tui::{run_tui_with_options, LiveUpdate, TuiMode, TuiOptions};
+use harness_tui::{run_tui_with_options, TuiMode, TuiOptions};
 use tempfile::TempDir;
 
 /// Probe artifacts that `seed_operator_host_probes` writes to the workspace root.
@@ -43,27 +40,6 @@ fn dir_is_empty(dir: &Path) -> bool {
         .unwrap_or(true)
 }
 
-fn completed_live_update() -> LiveUpdate {
-    LiveUpdate::Event(Box::new(EventEnvelopeV1 {
-        schema_version: SCHEMA_VERSION,
-        event_id: "evt-runtime-side-effect-finished".to_string(),
-        seq: 1,
-        run_id: "run-runtime-side-effect".into(),
-        mono_ms: 1,
-        ts: None,
-        actor: EventActor::new(
-            ActorKind::System,
-            Some("runtime-side-effect-test".to_string()),
-        ),
-        correlation_id: None,
-        causation_id: None,
-        stream_key: Some("run:run-runtime-side-effect".to_string()),
-        payload: EventV1::RunFinished(RunFinishedEvent {
-            summary: "test complete".to_string(),
-        }),
-    }))
-}
-
 /// Given an empty temp workspace, when production TUI startup runs, then no
 /// synthetic operator-host probe artifacts are written to the workspace.
 #[test]
@@ -73,8 +49,7 @@ fn production_tui_startup_does_not_write_synthetic_probe_artifacts() {
     let workspace_root = workspace.path();
 
     // act
-    let (tx, rx) = mpsc::channel();
-    drop(tx);
+    let (_tx, rx) = mpsc::channel();
     let _ = run_tui_with_options(TuiOptions {
         mode: TuiMode::Startup {
             session_history_entries: Vec::new(),
@@ -107,10 +82,7 @@ fn production_tui_live_init_does_not_write_synthetic_probe_artifacts() {
     let run_dir = TempDir::new().expect("create temp run dir");
 
     // act
-    let (tx, rx) = mpsc::channel();
-    tx.send(completed_live_update())
-        .expect("queue completed live update");
-    drop(tx);
+    let (_tx, rx) = mpsc::channel();
     let _ = run_tui_with_options(TuiOptions {
         mode: TuiMode::Live {
             run_dir: run_dir.path().to_path_buf(),
@@ -199,8 +171,7 @@ fn production_tui_startup_preserves_existing_files_and_symlinks() {
     let before = collect_file_snapshot(workspace_root);
 
     // act
-    let (tx, rx) = mpsc::channel();
-    drop(tx);
+    let (_tx, rx) = mpsc::channel();
     let _ = run_tui_with_options(TuiOptions {
         mode: TuiMode::Startup {
             session_history_entries: Vec::new(),
@@ -256,10 +227,7 @@ fn production_tui_live_init_preserves_existing_workspace_files() {
     let before = collect_file_snapshot(workspace_root);
 
     // act
-    let (tx, rx) = mpsc::channel();
-    tx.send(completed_live_update())
-        .expect("queue completed live update");
-    drop(tx);
+    let (_tx, rx) = mpsc::channel();
     let _ = run_tui_with_options(TuiOptions {
         mode: TuiMode::Live {
             run_dir: run_dir.path().to_path_buf(),

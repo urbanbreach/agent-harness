@@ -7,9 +7,7 @@
 // ANSI-to-HTML path, which degraded color and never rendered a real terminal.
 
 import { createRequire } from "node:module";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { createHash } from "node:crypto";
-import { execFileSync } from "node:child_process";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { captureLive } from "./xterm-live-terminal.mjs";
 import { BUILT_IN_REDACTION_RULE_COUNT, compileRedactions, redactEvidence } from "./web-terminal-redaction.mjs";
@@ -27,22 +25,17 @@ Usage:
   node scripts/tui-parity/web-terminal-visual-qa.mjs --title "TUI" --command "my-tui" --input "{Down}" --input "{Down}" --input "{Enter}" --evidence-dir artifacts/qa-evidence/run
   node scripts/tui-parity/web-terminal-visual-qa.mjs --title "Replay" --from-file pane.ansi --evidence-dir artifacts/qa-evidence/run
   node scripts/tui-parity/web-terminal-visual-qa.mjs --self-test
-  node scripts/tui-parity/web-terminal-visual-qa.mjs --browser-redaction-self-test --chrome-bin /path/to/chrome
 
 Inputs:
   --command <command>    Run in a real node-pty and render live in xterm.js. The color path is xterm.js - NEVER tmux.
   --from-file <path>     Render an existing raw terminal byte stream through xterm.js (replay; no interaction).
   --input <token>        Scripted interaction, repeatable, applied in order THROUGH the browser terminal.
                          Literal text is typed; {Enter} {Tab} {Escape} {ArrowDown} {Ctrl+C} etc. are pressed as keys.
-                         {Click:column,row} clicks a 0-based terminal cell.
   --cwd <path>           Working directory for --command. Default: current directory.
   --cols <n> / --rows <n>  Terminal geometry. Default: 120 x 32.
   --font-size <n>        xterm.js fontSize in CSS px. Default: 15 (freeze receipt may note 14).
-  --font-family <css>    xterm.js fontFamily CSS. Default: JetBrainsMono Nerd Font Mono with monospace fallbacks.
-  --terminal-background <css>  xterm.js canvas and palette-black background. Default: #141414.
+  --font-family <css>    xterm.js fontFamily CSS. Default: Menlo, DejaVu Sans Mono, Noto Sans Mono CJK KR, monospace.
   --dwell-ms <n>         Milliseconds to let the TUI settle after input before capture. Default: 1500.
-  --frame-ms <n>         Capture a frame at this elapsed time from --phase-origin-ms. Repeatable; overrides --dwell-ms.
-  --phase-origin-ms <n>  Required with --frame-ms: equivalent reference visual phase measured from PTY start.
   --key-delay-ms <n>     Pause between --input tokens. Default: 120.
   --evidence-dir <path>  Directory for terminal.png, terminal.txt, terminal-ansi.txt, metadata.json.
   --chrome-bin <path>    Chrome/Chromium executable (else auto-detect or CHROME_BIN).
@@ -63,12 +56,11 @@ function parsePositiveInt(name, value) {
 }
 
 function parseArgs(argv) {
-  const args = { cols: 120, rows: 32, fontSize: 15, fontFamily: undefined, terminalBackground: "#141414", dwellMs: 1500, frameMs: [], phaseOriginMs: undefined, keyDelayMs: 120, preDwellMs: 400, cwd: process.cwd(), browser: true, redactions: [], redactRegexes: [], inputs: [] };
+  const args = { cols: 120, rows: 32, fontSize: 15, fontFamily: undefined, dwellMs: 1500, keyDelayMs: 120, preDwellMs: 400, cwd: process.cwd(), browser: true, redactions: [], redactRegexes: [], inputs: [] };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "--help" || arg === "-h") return { ...args, help: true };
     if (arg === "--self-test") return { ...args, selfTest: true };
-    if (arg === "--browser-redaction-self-test") { args.browserRedactionSelfTest = true; continue; }
     if (arg === "--no-browser") { args.browser = false; continue; }
     const next = argv[i + 1];
     if (!next) throw new Error(`missing value for ${arg}`);
@@ -87,10 +79,7 @@ function parseArgs(argv) {
     else if (arg === "--rows") args.rows = parsePositiveInt(arg, next);
     else if (arg === "--font-size") args.fontSize = parsePositiveInt(arg, next);
     else if (arg === "--font-family") args.fontFamily = next;
-    else if (arg === "--terminal-background") args.terminalBackground = next;
     else if (arg === "--dwell-ms") args.dwellMs = parsePositiveInt(arg, next);
-    else if (arg === "--frame-ms") args.frameMs.push(parsePositiveInt(arg, next));
-    else if (arg === "--phase-origin-ms") args.phaseOriginMs = parsePositiveInt(arg, next);
     else if (arg === "--key-delay-ms") args.keyDelayMs = parsePositiveInt(arg, next);
     else if (arg === "--pre-dwell-ms") args.preDwellMs = parsePositiveInt(arg, next);
     else throw new Error(`unknown argument: ${arg}`);
@@ -103,56 +92,11 @@ function requireArgs(args) {
   if (!args.title) throw new Error("--title is required");
   if (args.fromFile && args.command) throw new Error("choose exactly one of --from-file or --command");
   if (!args.fromFile && !args.command) throw new Error("choose --from-file or --command");
-  if (args.frameMs.length > 0 && args.phaseOriginMs === undefined) {
-    throw new Error("--frame-ms requires --phase-origin-ms from the equivalent reference visual phase");
-  }
-}
-
-function currentSourceHead(cwd) {
-  const sourceHead = execFileSync("git", ["-C", cwd, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
-  if (!/^[0-9a-f]{40}$/i.test(sourceHead)) throw new Error("current product source hash is not a git commit SHA");
-  return sourceHead;
-}
-
-function currentProductSourceHash(cwd) {
-  const files = execFileSync("git", ["-C", cwd, "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", "crates/harness-tui", "scripts/tui-parity", "Cargo.toml", "Cargo.lock", "rust-toolchain.toml"], { encoding: "buffer" })
-    .toString("utf8")
-    .split("\0")
-    .filter(Boolean);
-  const hash = createHash("sha256");
-  for (const file of files) {
-    hash.update(file, "utf8");
-    hash.update("\0");
-    const sourcePath = join(cwd, file);
-    hash.update(existsSync(sourcePath) ? readFileSync(sourcePath) : Buffer.from("<deleted>"));
-    hash.update("\0");
-  }
-  return hash.digest("hex");
-}
-
-function sha256File(path) {
-  return createHash("sha256").update(readFileSync(path)).digest("hex");
-}
-
-function pngDimensions(buffer) {
-  if (buffer.length < 24 || buffer.toString("ascii", 1, 4) !== "PNG") throw new Error("capture did not produce a valid PNG");
-  return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
 }
 
 function sourceMetadata(args) {
   if (args.fromFile) return { kind: "file-replay", path: resolve(args.fromFile) };
   return { kind: "command", label: args.sourceLabel || "redacted command" };
-}
-
-function redactMetadataValue(value, redactStream) {
-  if (typeof value === "string") return redactStream(value);
-  if (Array.isArray(value)) return value.map((item) => redactMetadataValue(item, redactStream));
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [key, redactMetadataValue(item, redactStream)]),
-    );
-  }
-  return value;
 }
 
 // Chrome-less path: run the command in a real pty and keep the raw stream only.
@@ -202,24 +146,6 @@ async function run(args) {
   else if (fromFile !== undefined) cap = captureFileRaw(fromFile);
   else cap = await captureRawPty(args);
 
-  if (cap.frames?.length) {
-    for (const capturedFrame of cap.frames) {
-      const safeFrameAnsi = redactStream(capturedFrame.rawStream);
-      if (safeFrameAnsi !== capturedFrame.rawStream) {
-        throw new Error("timed frame capture aborted because evidence required redaction");
-      }
-      const frameDir = join(evidenceDir, `frame-${capturedFrame.elapsedMs}ms`);
-      mkdirSync(frameDir, { recursive: true });
-      writeFileSync(join(frameDir, "terminal.png"), capturedFrame.pngBuffer);
-      writeFileSync(
-        join(frameDir, "terminal.txt"),
-        capturedFrame.screenText.endsWith("\n") ? capturedFrame.screenText : `${capturedFrame.screenText}\n`,
-        "utf8",
-      );
-      writeFileSync(join(frameDir, "terminal-ansi.txt"), safeFrameAnsi, "utf8");
-    }
-  }
-
   const safeText = redactStream(cap.screenText);
   const safeAnsi = redactStream(cap.rawStream);
   const textPath = join(evidenceDir, "terminal.txt");
@@ -229,25 +155,14 @@ async function run(args) {
   writeFileSync(textPath, safeText.endsWith("\n") ? safeText : `${safeText}\n`, "utf8");
   writeFileSync(ansiPath, safeAnsi, "utf8");
   if (cap.pngBuffer) writeFileSync(pngPath, cap.pngBuffer);
-  const artifactSha256 = {
-    text: sha256File(textPath),
-    ansi: sha256File(ansiPath),
-    ...(cap.pngBuffer ? { png: sha256File(pngPath) } : {}),
-  };
 
-  const metadata = redactMetadataValue({
+  const metadata = {
     title: args.title,
     connector: cap.connector,
     colorPath: "xterm.js (true color; not tmux)",
     browserCapture: cap.pngBuffer ? "captured" : "skipped",
     source: sourceMetadata(args),
     interaction: args.inputs,
-    timedFramesMs: args.frameMs,
-    ...(args.frameMs.length > 0 ? { visual_phase: { origin: "pty_start", originMs: args.phaseOriginMs, reference_synchronized: true } } : {}),
-    source_head: currentSourceHead(args.cwd),
-    product_source_sha256: currentProductSourceHash(args.cwd),
-    artifact_sha256: artifactSha256,
-    ...(cap.pngBuffer ? { png_dimensions: pngDimensions(cap.pngBuffer) } : {}),
     redaction: { builtInRules: BUILT_IN_REDACTION_RULE_COUNT, literalRules: args.redactions.length, regexRules: args.redactRegexes.length },
     dimensions: {
       cols: args.cols,
@@ -257,7 +172,7 @@ async function run(args) {
     },
     cleanup: cap.cleanup,
     files: { png: cap.pngBuffer ? pngPath : null, text: textPath, ansi: ansiPath, metadata: metadataPath },
-  }, redactStream);
+  };
   writeFileSync(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
   process.stdout.write(`web terminal visual QA evidence (${basename(evidenceDir)}):\n${JSON.stringify(metadata.files, null, 2)}\ncleanup: ${cap.cleanup}\n`);
 }
@@ -270,51 +185,13 @@ async function selfTest() {
   const cap = await captureRawPty({ command: "printf '\\033[31mRED\\033[0m \\033[32mGREEN\\033[0m 한글ABC'", cwd: process.cwd(), cols: 40, rows: 8, dwellMs: 300 });
   if (!/RED/.test(cap.rawStream) || !cap.rawStream.includes("[31m")) throw new Error("pty did not emit expected ANSI");
   if (!cap.rawStream.includes("한글")) throw new Error("pty dropped CJK bytes");
-  const sentinel = "PARITY_METADATA_SECRET_SENTINEL";
-  const sanitized = redactMetadataValue(
-    { title: sentinel, source: { label: sentinel }, interaction: [sentinel] },
-    (value) => value.replaceAll(sentinel, "[REDACTED]"),
-  );
-  if (JSON.stringify(sanitized).includes(sentinel)) throw new Error("metadata redaction leaked a literal secret");
-  process.stdout.write("self-test PASS: xterm assets resolve; node-pty emits true-color ANSI + CJK; metadata is redacted\n");
-}
-
-async function browserRedactionSelfTest(args) {
-  const sentinel = "PARITY_REPLAY_PNG_SECRET_SENTINEL";
-  const masked = "[REDACTED]";
-  const replay = `\u001b[31m${sentinel}\u001b[0m`;
-  const cap = await captureLive({
-    command: undefined,
-    cwd: process.cwd(),
-    cols: 48,
-    rows: 8,
-    inputs: [],
-    dwellMs: 300,
-    frameMs: [],
-    keyDelayMs: 120,
-    preDwellMs: 100,
-    chromeBin: args.chromeBin,
-    fromFile: replay,
-    redactStream: (value) => value.replaceAll(sentinel, masked),
-    fontSize: 15,
-    fontFamily: undefined,
-    terminalBackground: "#141414",
-  });
-  if (cap.rawStream !== replay) {
-    throw new Error("browser redaction self-test did not preserve the raw replay stream for caller-side masking");
-  }
-  if (cap.screenText.includes(sentinel) || !cap.screenText.includes(masked)) {
-    throw new Error("browser redaction self-test left the replay sentinel on the screenshotted terminal surface");
-  }
-  if (!cap.pngBuffer?.length) throw new Error("browser redaction self-test did not produce a PNG");
-  process.stdout.write("browser redaction self-test PASS: replay surface was masked before PNG capture\n");
+  process.stdout.write("self-test PASS: xterm assets resolve; node-pty emits true-color ANSI + CJK\n");
 }
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.help) { process.stdout.write(HELP); return; }
   if (args.selfTest) { await selfTest(); return; }
-  if (args.browserRedactionSelfTest) { await browserRedactionSelfTest(args); return; }
   requireArgs(args);
   await run(args);
 }

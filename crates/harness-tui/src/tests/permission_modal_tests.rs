@@ -17,34 +17,6 @@ pub(super) fn permission_modal_snapshot_renders_request() {
     );
 }
 
-pub(super) fn permission_dock_uses_focused_prompt_surface() {
-    let mut app = AppState::new_live(None, false, None);
-    app.ingest_event(permission_requested_event(
-        1,
-        "perm_surface",
-        "tool_call_surface",
-    ));
-
-    let width = 100;
-    let height = 30;
-    let backend = TestBackend::new(width, height);
-    let mut terminal = Terminal::new(backend).unwrap_or_abort();
-    terminal
-        .draw(|frame| ui::render_app(frame, &app))
-        .unwrap_or_abort();
-
-    let dock = FrameLayoutPlan::for_app(&app, ratatui::layout::Rect::new(0, 0, width, height))
-        .dock
-        .unwrap_or_abort();
-    let body_x = dock.composer.x.saturating_add(1);
-    let body_y = dock.composer.y;
-    assert_eq!(
-        terminal.backend().buffer()[(body_x, body_y)].bg,
-        app.theme().surface.panel_elevated,
-        "permission dock should use the focused prompt surface, not an alert card"
-    );
-}
-
 pub(super) fn permission_dock_packs_freeze_vertical_blanks() {
     // Given: decision-stage permission dock with empty draft (freeze PERM packing)
     let mut app = AppState::new_live(None, false, None);
@@ -234,13 +206,13 @@ pub(super) fn question_permission_modal_matches_reference_palette_contract() {
     let tab_end = tab_start + "Choice".chars().count();
     assert!(tab_bgs[tab_start..tab_end]
         .iter()
-        .all(|color| *color == app.theme().question_prompt.surface));
+        .all(|color| *color == Color::Rgb(0xD9, 0x84, 0xD9)));
     assert!(tab_fgs[tab_start..tab_end]
         .iter()
-        .all(|color| *color == app.theme().question_prompt.accent));
+        .all(|color| *color == Color::Rgb(0x0B, 0x0E, 0x14)));
 
     let (option_row, option_fgs, option_bgs) =
-        row_text_and_palette(&buffer, 100, "1 (○) A").unwrap_or_abort();
+        row_text_and_palette(&buffer, 100, "A").unwrap_or_abort();
     let marker_start = option_row
         .find('●')
         .or_else(|| option_row.find('○'))
@@ -249,13 +221,9 @@ pub(super) fn question_permission_modal_matches_reference_palette_contract() {
     let label_start = option_row[..option_row.find("A").unwrap_or_abort()]
         .chars()
         .count();
-    assert_eq!(option_bgs[marker_col], app.theme().question_prompt.selected);
-    assert_eq!(
-        option_bgs[label_start],
-        app.theme().question_prompt.selected
-    );
-    assert_eq!(option_fgs[marker_col], app.theme().question_prompt.accent);
-    assert_eq!(option_fgs[label_start], app.theme().question_prompt.primary);
+    assert_eq!(option_bgs[marker_col], Color::Rgb(0x12, 0x16, 0x1E));
+    assert_eq!(option_bgs[label_start], Color::Rgb(0x12, 0x16, 0x1E));
+    assert_eq!(option_fgs[label_start], Color::Rgb(0x5C, 0x9C, 0xF5));
 }
 
 pub(super) fn answered_questions_render_in_completed_tool_row() {

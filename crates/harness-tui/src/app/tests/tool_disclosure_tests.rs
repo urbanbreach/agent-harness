@@ -31,7 +31,7 @@ pub(super) fn mouse_click_toggles_transcript_tool_disclosure() {
         "req_tool_toggle",
         EventV1::ToolCallFinished(ToolCallFinishedEvent {
             tool_call_id: "tc_shell_toggle".into(),
-            status: ToolCallStatus::Succeeded,
+            status: ToolCallStatus::Failed,
             output_summary: Some("exit code: 1\nstderr: nope".to_string()),
             output_digest: None,
             output_json: None,
@@ -39,7 +39,7 @@ pub(super) fn mouse_click_toggles_transcript_tool_disclosure() {
         }),
     ));
 
-    let (column, row) = transcript_click_position(&app, "$ false");
+    let (column, row) = transcript_click_position(&app, "false");
     app.handle_mouse(
         MouseEvent {
             kind: MouseEventKind::Down(MouseButton::Left),
@@ -139,24 +139,7 @@ pub(super) fn mouse_click_toggles_apply_patch_file_disclosure() {
         }),
     ));
 
-    assert!(!app.patch_file_output_expanded("tc_patch_toggle", "notes/a.md"));
-    let (column, row) = transcript_click_position(&app, "Patch");
-    app.handle_mouse(
-        MouseEvent {
-            kind: MouseEventKind::Down(MouseButton::Left),
-            column,
-            row,
-            modifiers: KeyModifiers::NONE,
-        },
-        TEST_FRAME_AREA,
-        None,
-        None,
-        None,
-    );
-    assert!(app
-        .transcript_view
-        .expanded_tool_outputs
-        .contains("tc_patch_toggle"));
+    assert!(app.patch_file_output_expanded("tc_patch_toggle", "notes/a.md"));
     let (column, row) = transcript_click_position(&app, "a.md · notes");
     app.handle_mouse(
         MouseEvent {
@@ -170,7 +153,7 @@ pub(super) fn mouse_click_toggles_apply_patch_file_disclosure() {
         None,
         None,
     );
-    assert!(app.patch_file_output_expanded("tc_patch_toggle", "notes/a.md"));
+    assert!(!app.patch_file_output_expanded("tc_patch_toggle", "notes/a.md"));
 
     app.handle_mouse(
         MouseEvent {
@@ -184,10 +167,10 @@ pub(super) fn mouse_click_toggles_apply_patch_file_disclosure() {
         None,
         None,
     );
-    assert!(!app.patch_file_output_expanded("tc_patch_toggle", "notes/a.md"));
+    assert!(app.patch_file_output_expanded("tc_patch_toggle", "notes/a.md"));
 }
 
-pub(super) fn apply_patch_files_start_collapsed() {
+pub(super) fn apply_patch_default_expansion_skips_deleted_files() {
     let mut app = AppState::new_live(None, false, None);
     app.ingest_event(envelope(
         1,
@@ -241,6 +224,6 @@ pub(super) fn apply_patch_files_start_collapsed() {
         }),
     ));
 
-    assert!(!app.patch_file_output_expanded("tc_patch_defaults", "notes/a.md"));
+    assert!(app.patch_file_output_expanded("tc_patch_defaults", "notes/a.md"));
     assert!(!app.patch_file_output_expanded("tc_patch_defaults", "notes/old.md"));
 }

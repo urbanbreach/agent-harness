@@ -22,11 +22,14 @@ fn composer_multiline_history_and_cursor_basics() {
     app.focus = Focus::Prompt;
     app.composer.prompt_history = vec!["older prompt".to_string()];
 
-    // act — multiline via the explicit Alt+Enter newline binding
+    // act — multiline via InsertNewline (Ctrl+J)
     for ch in "alpha".chars() {
         app.handle_key(key(KeyCode::Char(ch)));
     }
-    app.handle_key(key_with_modifiers(KeyCode::Enter, KeyModifiers::ALT));
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char('j'),
+        KeyModifiers::CONTROL,
+    ));
     for ch in "beta".chars() {
         app.handle_key(key(KeyCode::Char(ch)));
     }

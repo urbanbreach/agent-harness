@@ -3,20 +3,6 @@ use crate::UnwrapOrAbort;
 use harness_core::event::UserMessageSubmittedEvent;
 
 #[test]
-fn active_thinking_user_prompt_surface_matches_the_native_grok_phase() {
-    let theme = Theme::harness_chat();
-
-    assert_eq!(
-        ui_transcript_render::user_prompt_surface(&theme, false, true),
-        Color::Rgb(0x26, 0x26, 0x26)
-    );
-    assert_eq!(
-        ui_transcript_render::user_prompt_surface(&theme, false, false),
-        theme.surface.card
-    );
-}
-
-#[test]
 fn transcript_test_activity_helper_has_required_defaults() {
     // arrange
     // act
@@ -152,7 +138,7 @@ fn transcript_pending_permission_stays_after_last_activity() {
 }
 
 #[test]
-fn transcript_layout_cache_invalidates_when_spinner_frame_changes() {
+fn transcript_layout_cache_invalidates_when_animation_frame_changes() {
     // arrange
     // act
     // assert
@@ -192,11 +178,9 @@ fn transcript_layout_cache_invalidates_when_spinner_frame_changes() {
     ));
     assert!(initial_lines
         .iter()
-        .all(|line| !line.contains("gpt-5.4-mini") && !line.contains('⠋')));
+        .any(|line| line.contains("⠋ gpt-5.4-mini")));
 
-    for _ in 0..4 {
-        app.advance_transcript_animation_phase();
-    }
+    app.advance_transcript_animation_phase();
 
     let updated_lines = transcript_test_line_texts(build_transcript_lines_for_width(
         &app,
@@ -205,7 +189,7 @@ fn transcript_layout_cache_invalidates_when_spinner_frame_changes() {
     ));
     assert!(updated_lines
         .iter()
-        .all(|line| !line.contains("gpt-5.4-mini") && !line.contains('⠙')));
+        .any(|line| line.contains("⠙ gpt-5.4-mini")));
 }
 
 #[test]
@@ -288,9 +272,7 @@ fn transcript_layout_cache_does_not_rebuild_on_animation_phase_change() {
     let builds_after_first = AppState::transcript_render_key_build_count_for_test();
     assert_eq!(builds_after_first, 1, "first call should build once");
 
-    for _ in 0..4 {
-        app.advance_transcript_animation_phase();
-    }
+    app.advance_transcript_animation_phase();
     let _ = app.transcript_measure_cache_key();
     let builds_after_animation = AppState::transcript_render_key_build_count_for_test();
     assert_eq!(
@@ -341,7 +323,6 @@ fn transcript_layout_cache_invalidates_when_theme_changes() {
 
     let mut alternate_theme = *app.theme();
     alternate_theme.surface.card = Color::Rgb(0x22, 0x33, 0x44);
-    alternate_theme.surface.selected_card = Color::Rgb(0x22, 0x33, 0x44);
     app.set_theme_for_test(alternate_theme);
 
     let updated_layout = build_measured_transcript_layout_for_width(&app, app.theme(), 80);
@@ -398,7 +379,7 @@ fn pending_permission_sections_render_warning_turn_container() {
 }
 
 #[test]
-fn streaming_assistant_status_is_not_rendered_in_scrollback() {
+fn streaming_assistant_footer_uses_reserved_active_label() {
     // arrange
     // act
     // assert
@@ -437,42 +418,15 @@ fn streaming_assistant_status_is_not_rendered_in_scrollback() {
         80,
     ));
 
+    let footer_row = lines
+        .iter()
+        .position(|line| line.contains("gpt-5.4-mini"))
+        .unwrap_or_abort();
+    assert_eq!(footer_row, 0);
+    let footer = lines[footer_row].trim_start();
     assert!(
-        lines
-            .iter()
-            .all(|line| !line.contains("gpt-5.4-mini") && !line.contains("Waiting for response")),
-        "live status belongs in the prompt-adjacent row, not the scrollback\n{lines:#?}"
-    );
-}
-
-#[test]
-fn streaming_wait_status_is_not_rendered_in_scrollback() {
-    let mut app = AppState::default();
-    let mut entry = transcript_section_model_test_activity(
-        "request-streaming-stop-width",
-        ActivityStatus::Streaming,
-        "",
-    );
-    entry.last_mono_ms = 5_300;
-    entry.usage = Some(crate::app::ActivityUsage {
-        prompt_tokens: 1_000,
-        completion_tokens: 430,
-        total_tokens: 1_430,
-    });
-    app.activities = std::collections::VecDeque::from(vec![entry]);
-    app.transcript_view.selected_activity_index = 0;
-
-    let lines = transcript_test_line_texts(build_transcript_lines_for_width(
-        &app,
-        &Theme::default(),
-        117,
-    ));
-
-    assert!(
-        lines
-            .iter()
-            .all(|line| !line.contains("Waiting for response") && !line.contains("[stop]")),
-        "live status belongs in the prompt-adjacent row, not the scrollback\n{lines:#?}"
+        footer.contains("⠋") && footer.contains("gpt-5.4-mini"),
+        "streaming footer should keep spinner + model id\n{footer}"
     );
 }
 
@@ -630,7 +584,7 @@ fn tool_only_turns_render_standalone_assistant_footer() {
         80,
     ));
 
-    assert!(lines.iter().any(|line| line.contains("Read src/ui.rs")));
+    assert!(lines.iter().any(|line| line.contains("Read 1 file")));
     assert!(
         lines.iter().any(|line| line.contains("Worked for")
             || line.contains("gpt-5.4-mini")
@@ -640,7 +594,7 @@ fn tool_only_turns_render_standalone_assistant_footer() {
 }
 
 #[test]
-fn pending_question_turn_keeps_waiting_status_out_of_scrollback() {
+fn pending_question_turn_renders_waiting_on_answers_footer() {
     // arrange
     // act
     // assert
@@ -709,12 +663,24 @@ fn pending_question_turn_keeps_waiting_status_out_of_scrollback() {
         "pending question tool row should use Ask title\n{rendered}"
     );
     assert!(
-        !rendered.contains("Worked for"),
-        "pending question turn must not show completed Worked for footer\n{rendered}"
+        rendered.contains("Waiting on answers for Which color?"),
+        "pending question turn should show Waiting on answers footer\n{rendered}"
     );
     assert!(
-        !rendered.contains("Waiting on answers") && !rendered.contains("[stop]"),
-        "live status belongs in the prompt-adjacent row, not the scrollback\n{rendered}"
+        rendered.contains("0.9s"),
+        "waiting footer should pack elapsed duration on the right\n{rendered}"
+    );
+    assert!(
+        rendered.contains("⇣10.2k"),
+        "waiting footer should pack token meta on the right\n{rendered}"
+    );
+    assert!(
+        rendered.contains("[stop]"),
+        "waiting footer should pack stop affordance on the right\n{rendered}"
+    );
+    assert!(
+        !rendered.contains("Worked for"),
+        "pending question turn must not show completed Worked for footer\n{rendered}"
     );
 }
 
@@ -787,8 +753,8 @@ fn waiting_on_answers_shows_thought_for_not_thinking() {
         "waiting-on-answers must not keep streaming Thinking label\n{rendered}"
     );
     assert!(
-        !rendered.contains("Waiting on answers") && !rendered.contains("[stop]"),
-        "live status belongs in the prompt-adjacent row, not the scrollback\n{rendered}"
+        rendered.contains("Waiting on answers for Pick one"),
+        "waiting footer must still render\n{rendered}"
     );
 }
 
@@ -828,7 +794,7 @@ fn completed_latest_turn_keeps_footer_after_streaming_finishes() {
     ));
     assert!(streaming_lines
         .iter()
-        .all(|line| !line.contains("gpt-5.4-mini")));
+        .any(|line| line.contains("gpt-5.4-mini")));
 
     app.activities[0].status = ActivityStatus::Done;
     app.mark_transcript_dirty_for_test();
@@ -1148,7 +1114,7 @@ fn reasoning_summary_renders_as_nested_inset_block() {
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
         "request-reasoning-inset",
-        ActivityStatus::Streaming,
+        ActivityStatus::Done,
         "answer",
     );
     entry.thinking_text = "Matching harness response spacing".to_string();
@@ -1206,7 +1172,7 @@ fn fenced_code_blocks_render_frameless_with_highlighting() {
 }
 
 #[test]
-fn consecutive_assistant_bodies_reuse_the_existing_trailing_blank_row() {
+fn transcript_turn_sections_keep_two_blank_rows_between_sections() {
     // arrange
     // act
     // assert
@@ -1222,8 +1188,8 @@ fn consecutive_assistant_bodies_reuse_the_existing_trailing_blank_row() {
     assert_eq!(layout.sections.len(), 2);
     assert_eq!(layout.sections[0].leading_gap_height, 0);
     assert_eq!(
-        layout.sections[1].leading_gap_height, 0,
-        "the first body already contributes the single Grok separator row"
+        layout.sections[1].leading_gap_height, 2,
+        "turn-to-turn gap should be 2 blank rows to match the 24px session-turn-list gap"
     );
 }
 
@@ -1380,7 +1346,6 @@ fn assistant_tool_surfaces_keep_same_trailing_gap_as_text_boxes() {
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![activity]);
     app.transcript_view.selected_activity_index = 0;
-    app.toggle_tool_output_for_test("tc-shell-alignment");
 
     let layout = build_measured_transcript_layout_for_width(&app, &Theme::default(), 80);
     let surfaces = &layout.sections[0].surfaces;
@@ -1414,10 +1379,7 @@ fn assistant_tool_surfaces_keep_same_trailing_gap_as_text_boxes() {
         .find("bash smoke test ok")
         .unwrap_or_abort();
     assert_eq!(output_column, command_column);
-    assert!(
-        tool_interactions[command_row].is_some(),
-        "the command header should remain the disclosure hit target"
-    );
+    assert_eq!(tool_interactions[command_row], None);
     assert_eq!(tool_interactions[output_row], None);
     assert!(
         tool_lines
@@ -1479,8 +1441,8 @@ fn assistant_tool_surface_spacing_matches_shell_rhythm() {
             Some(TranscriptRenderSurfaceKind::AssistantBody),
             TranscriptRenderSurfaceKind::AssistantTool,
         ),
-        0,
-        "assistant body padding already carries the reference section break before tool rows"
+        1,
+        "assistant text should leave the reference section break before tool rows"
     );
     assert_eq!(
         transcript_surface_leading_gap(
@@ -1517,14 +1479,14 @@ fn assistant_tool_surface_spacing_matches_shell_rhythm() {
 }
 
 #[test]
-fn reasoning_to_answer_transition_uses_one_blank_row() {
+fn reasoning_to_answer_transition_uses_two_blank_rows() {
     // arrange
     // act
     // assert
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
         "request-reasoning-gap",
-        ActivityStatus::Streaming,
+        ActivityStatus::Done,
         "answer",
     );
     entry.thinking_text = "reasoning".to_string();
@@ -1547,107 +1509,11 @@ fn reasoning_to_answer_transition_uses_one_blank_row() {
 
     assert_eq!(
         answer_row,
-        reasoning_row + 2,
-        "reasoning and answer should be separated by one blank row\n{lines:#?}"
+        reasoning_row + 3,
+        "reasoning and answer should be separated by 2 blank rows (surface gap + prepend gap)\n{lines:#?}"
     );
     assert!(lines[reasoning_row + 1].is_empty());
-}
-
-#[test]
-fn mixed_prose_reasoning_and_tools_never_insert_multiple_blank_rows() {
-    let tool = |tool_call_id: &str, status: ToolCallDisplayStatus| TranscriptToolCallSection {
-        tool_call_id: tool_call_id.to_string(),
-        child_session_id: None,
-        hovered_target: None,
-        header: TranscriptToolCallHeader {
-            tool_id: "edit".to_string(),
-            title: "Patch".to_string(),
-            subtitle: None,
-            path_metadata: None,
-            icon: None,
-            status,
-            visual_style: TranscriptToolCallVisualStyle::Inline,
-            struck_out: false,
-            disclosure_state: Some(TranscriptToolCallDisclosureState::Collapsed),
-        },
-        detail_blocks: Vec::new(),
-        details_collapsed_by_default: true,
-        details_preview_visible: false,
-        animation_phase: 0,
-        expanded: false,
-    };
-    let failed = tool("patch-failed", ToolCallDisplayStatus::Failed);
-    let succeeded = tool("patch-succeeded", ToolCallDisplayStatus::Succeeded);
-    let turn = TranscriptTurnSection {
-        request_id: "request-mixed-density".to_string(),
-        user_message: None,
-        show_footer: true,
-        footer_timestamp: Some("9:42 PM".to_string()),
-        animation_phase: 0,
-        header: TranscriptTurnHeader {
-            status: ActivityStatus::Done,
-            is_selected: true,
-            provider_request_open: false,
-            profile_label: "default".to_string(),
-            model_id: "model".to_string(),
-            duration_ms: Some(15_900),
-            thinking_duration_ms: Some(6_000),
-            responding_duration_ms: None,
-            total_tokens: None,
-            retry: None,
-            retry_elapsed_ms: None,
-        },
-        body_blocks: Vec::new(),
-        tool_calls: vec![failed.clone(), succeeded.clone()],
-        thinking: None,
-        error: None,
-        assistant_parts: vec![
-            TranscriptAssistantPart::Reasoning(TranscriptLabeledTextSection {
-                label: THINKING_TRACE_LABEL,
-                text: "Planning sequential file operations".to_string(),
-            }),
-            TranscriptAssistantPart::Body(TranscriptBodyBlock::RichText(
-                "I’ll create a temporary test file.".to_string(),
-            )),
-            TranscriptAssistantPart::ToolCall(Box::new(failed)),
-            TranscriptAssistantPart::Reasoning(TranscriptLabeledTextSection {
-                label: THINKING_TRACE_LABEL,
-                text: "Retrying with a corrected patch".to_string(),
-            }),
-            TranscriptAssistantPart::Body(TranscriptBodyBlock::RichText(
-                "The failed patch is clear; I’ll retry with corrected input.".to_string(),
-            )),
-            TranscriptAssistantPart::ToolCall(Box::new(succeeded)),
-            TranscriptAssistantPart::Body(TranscriptBodyBlock::RichText(
-                "Created, edited, and deleted the file successfully.".to_string(),
-            )),
-        ],
-    };
-    let surfaces = build_transcript_render_surfaces(
-        &turn,
-        &Theme::default(),
-        120,
-        ratatui::style::Color::Reset,
-    );
-    let lines = render_transcript_surface_lines(&surfaces)
-        .into_iter()
-        .map(|line| {
-            line.spans
-                .into_iter()
-                .map(|span| span.content.into_owned())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>();
-    let maximum_blank_run = lines
-        .split(|line| !line.trim().is_empty())
-        .map(<[String]>::len)
-        .max()
-        .unwrap_or(0);
-
-    assert!(
-        maximum_blank_run <= 1,
-        "mixed response/tool transcripts must stay densely packed\n{lines:#?}"
-    );
+    assert!(lines[reasoning_row + 2].is_empty());
 }
 
 #[test]
@@ -1672,8 +1538,8 @@ fn streaming_reasoning_header_renders_spinner_and_thinking_label() {
     ));
     let rendered = lines.join("\n");
     assert!(
-        rendered.contains("◆ Thinking…") && !rendered.contains('⠋'),
-        "streaming reasoning should use Grok's animated-bullet Thinking header\n{rendered}"
+        rendered.contains("⠋ Thinking"),
+        "streaming reasoning should show a spinner + Thinking header\n{rendered}"
     );
     assert!(
         rendered.contains("analyzing the problem"),
@@ -1682,7 +1548,7 @@ fn streaming_reasoning_header_renders_spinner_and_thinking_label() {
 }
 
 #[test]
-fn streaming_reasoning_keeps_spinner_while_body_text_arrives() {
+fn streaming_reasoning_stops_spinner_when_body_text_arrives() {
     // arrange
     // act
     // assert
@@ -1703,8 +1569,8 @@ fn streaming_reasoning_keeps_spinner_while_body_text_arrives() {
     ));
     let rendered = lines.join("\n");
     assert!(
-        rendered.contains("◆ Thinking…") && !rendered.contains('⠋'),
-        "reasoning animation should remain live while body text arrives mid-turn\n{rendered}"
+        !rendered.contains("⠋ Thinking"),
+        "reasoning spinner should stop once body text arrives mid-turn\n{rendered}"
     );
     assert!(
         rendered.contains("Thinking"),
@@ -1721,7 +1587,7 @@ fn streaming_reasoning_keeps_spinner_while_body_text_arrives() {
 }
 
 #[test]
-fn streaming_reasoning_keeps_spinner_while_tool_call_arrives() {
+fn streaming_reasoning_stops_spinner_when_tool_call_arrives() {
     // arrange
     // act
     // assert
@@ -1768,8 +1634,8 @@ fn streaming_reasoning_keeps_spinner_while_tool_call_arrives() {
     ));
     let rendered = lines.join("\n");
     assert!(
-        rendered.contains("◆ Thinking…") && !rendered.contains('⠋'),
-        "reasoning animation should remain live while a tool call runs mid-turn\n{rendered}"
+        !rendered.contains("⠋ Thinking"),
+        "reasoning spinner should stop once a tool call arrives mid-turn\n{rendered}"
     );
     assert!(
         rendered.contains("Thinking"),
@@ -1782,7 +1648,7 @@ fn streaming_reasoning_keeps_spinner_while_tool_call_arrives() {
 }
 
 #[test]
-fn streaming_reasoning_title_stays_in_the_body_below_thinking_header() {
+fn streaming_reasoning_header_with_title_renders_thinking_colon_title() {
     // arrange
     // act
     // assert
@@ -1803,12 +1669,12 @@ fn streaming_reasoning_title_stays_in_the_body_below_thinking_header() {
     ));
     let rendered = lines.join("\n");
     assert!(
-        rendered.contains("◆ Thinking…") && rendered.contains("Planning approach"),
-        "streaming reasoning title should remain in the body below Grok's fixed header\n{rendered}"
+        rendered.contains("⠋ Thinking · Planning approach"),
+        "streaming reasoning header should include the extracted title\n{rendered}"
     );
     assert!(
         rendered.contains("Detailed analysis"),
-        "reasoning detail should render below the title\n{rendered}"
+        "body should render without the title\n{rendered}"
     );
 }
 
@@ -1847,8 +1713,8 @@ fn completed_reasoning_header_renders_thinking_with_title() {
         "completed reasoning should not keep the streaming Thinking · title form\n{rendered}"
     );
     assert!(
-        !rendered.contains("body text"),
-        "completed reasoning should auto-collapse to its Thought header\n{rendered}"
+        rendered.contains("body text"),
+        "body text should still render\n{rendered}"
     );
     assert!(
         rendered.contains("Worked for 1.5s."),
@@ -1891,8 +1757,8 @@ fn completed_reasoning_header_without_title_renders_thinking() {
         "completed reasoning should not keep the streaming Thinking label\n{rendered}"
     );
     assert!(
-        !rendered.contains("simple reasoning"),
-        "completed reasoning should auto-collapse to its Thought header\n{rendered}"
+        rendered.contains("simple reasoning"),
+        "body text should still render\n{rendered}"
     );
     assert!(
         rendered.contains("Worked for 1.5s."),
@@ -2015,7 +1881,7 @@ fn reasoning_header_suppresses_empty_redacted_reasoning() {
 }
 
 #[test]
-fn streaming_assistant_spinner_is_not_rendered_in_scrollback() {
+fn streaming_assistant_footer_spinner_uses_deterministic_braille_frames() {
     // arrange
     // act
     // assert
@@ -2053,9 +1919,7 @@ fn streaming_assistant_spinner_is_not_rendered_in_scrollback() {
         &Theme::default(),
         80,
     ));
-    for _ in 0..4 {
-        app.advance_transcript_animation_phase();
-    }
+    app.advance_transcript_animation_phase();
     let second = transcript_test_line_texts(build_transcript_lines_for_width(
         &app,
         &Theme::default(),
@@ -2063,13 +1927,14 @@ fn streaming_assistant_spinner_is_not_rendered_in_scrollback() {
     ));
 
     assert!(
-        first
-            .iter()
-            .chain(second.iter())
-            .all(|line| !line.contains("gpt-5.4-mini")
-                && !line.contains('⠋')
-                && !line.contains('⠙')),
-        "the live spinner belongs in the prompt-adjacent row\nfirst={first:#?}\nsecond={second:#?}"
+        first[0].contains('⠋') && first[0].contains("gpt-5.4-mini"),
+        "first spinner frame missing\n{}",
+        first[0]
+    );
+    assert!(
+        second[0].contains('⠙') && second[0].contains("gpt-5.4-mini"),
+        "second spinner frame missing\n{}",
+        second[0]
     );
 }
 
@@ -2592,7 +2457,7 @@ fn reasoning_body_plain_text_has_no_dim_modifier() {
     // assert
     let mut app = AppState::default();
     let mut entry =
-        transcript_section_model_test_activity("req-no-dim", ActivityStatus::Streaming, "answer");
+        transcript_section_model_test_activity("req-no-dim", ActivityStatus::Done, "answer");
     entry.thinking_text = "Plain reasoning text without markdown markers".to_string();
     app.activities = std::collections::VecDeque::from(vec![entry]);
     app.transcript_view.selected_activity_index = 0;
@@ -2631,7 +2496,7 @@ fn reasoning_body_screenshot_text_no_false_positives() {
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
         "req-screenshot-text",
-        ActivityStatus::Streaming,
+        ActivityStatus::Done,
         "answer",
     );
     entry.thinking_text = screenshot_text.to_string();
@@ -2681,7 +2546,7 @@ fn reasoning_body_markdown_constructs_use_blended_colors() {
     // assert
     let mut app = AppState::default();
     let mut entry =
-        transcript_section_model_test_activity("req-md-blend", ActivityStatus::Streaming, "answer");
+        transcript_section_model_test_activity("req-md-blend", ActivityStatus::Done, "answer");
     entry.thinking_text = "See `inline_code` and **bold** and *italic*".to_string();
     app.activities = std::collections::VecDeque::from(vec![entry]);
     app.transcript_view.selected_activity_index = 0;

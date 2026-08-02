@@ -1,6 +1,6 @@
 ---
 source: crates/harness-tui/src/lib_tests/transcript_flow.rs
-expression: "normalize_workspace_identity(&render_live_lines(&app, 80, 24))"
+expression: "render_live_lines(&app, 80, 24)"
 ---
                                                                                 
    test-workspace /workspace/agent-harness                                     
@@ -20,8 +20,8 @@ expression: "normalize_workspace_identity(&render_live_lines(&app, 80, 24))"
                                                                                 
                                                                                 
                                                                                 
+                                                                                
   ╭──────────────────────────────────────────────────────────────────────────╮  
   │ ❯                                                                        │  
   ╰──────────────────────────────────────────────────────────── gpt-5-codex ─╯  
-                                                                                
   turn 1 · ready for next turn        Tab focus  ·  ? commands  ·  Ctrl+q quit
