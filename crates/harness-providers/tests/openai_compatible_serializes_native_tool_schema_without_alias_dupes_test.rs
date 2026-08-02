@@ -65,6 +65,9 @@ impl OpenAiHttpTransport for FakeOpenAiTransport {
 
 #[tokio::test]
 async fn openai_compatible_serializes_native_tool_schema_without_alias_dupes() {
+    // arrange
+    // act
+    // assert
     let http = Arc::new(FakeHttpClient::new([ScriptedHttpCall::new(
         "POST",
         "http://127.0.0.1/v1/responses",
@@ -94,11 +97,11 @@ async fn openai_compatible_serializes_native_tool_schema_without_alias_dupes() {
         vec![
             ProviderStreamEvent::Started { metadata: None },
             ProviderStreamEvent::DoneWithMetadata {
-                usage: CompletionUsage {
+                usage: Some(CompletionUsage {
                     prompt_tokens: 1,
                     completion_tokens: 1,
                     total_tokens: 2,
-                },
+                }),
                 metadata: Some(ProviderStreamFinishedMetadata {
                     provider_stop_reason: Some("response.completed".to_string()),
                     ..ProviderStreamFinishedMetadata::default()

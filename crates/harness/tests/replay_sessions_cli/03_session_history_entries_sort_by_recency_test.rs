@@ -1,6 +1,9 @@
 use harness::UnwrapOrAbort;
 #[test]
 fn session_history_entries_sort_by_recency() {
+    // arrange
+    // act
+    // assert
     let session_dir = tempdir().unwrap_or_abort();
     let older_dir = session_dir.path().join("alpha_session");
     std::fs::create_dir_all(&older_dir).unwrap_or_abort();
@@ -134,6 +137,9 @@ fn session_history_marks_corrupt_runs_without_hiding_them() {
 }
 #[test]
 fn session_history_excludes_scenario_fixture_runs_by_default() {
+    // arrange
+    // act
+    // assert
     let session_dir = tempdir().unwrap_or_abort();
     let interactive_dir = session_dir.path().join("interactive_run");
     let scenario_dir = session_dir.path().join("scenario_run");
@@ -202,6 +208,9 @@ fn session_history_excludes_scenario_fixture_runs_by_default() {
 }
 #[test]
 fn session_history_exposes_profile_and_model_labels() {
+    // arrange
+    // act
+    // assert
     let session_dir = tempdir().unwrap_or_abort();
     let run_dir = session_dir.path().join("run_profile_model");
     std::fs::create_dir_all(&run_dir).unwrap_or_abort();
@@ -266,6 +275,9 @@ fn session_history_exposes_profile_and_model_labels() {
 }
 #[test]
 fn session_history_flags_non_resumable_sessions_with_reason() {
+    // arrange
+    // act
+    // assert
     let session_dir = tempdir().unwrap_or_abort();
     let prompt_run_dir = session_dir.path().join("prompt_run");
     std::fs::create_dir_all(&prompt_run_dir).unwrap_or_abort();
@@ -310,6 +322,9 @@ fn session_history_flags_non_resumable_sessions_with_reason() {
 }
 #[test]
 fn sessions_list_surfaces_artifact_and_lineage_columns() {
+    // arrange
+    // act
+    // assert
     let session_dir = tempdir().unwrap_or_abort();
     let run_dir = session_dir.path().join("run_context");
     std::fs::create_dir_all(&run_dir).unwrap_or_abort();
@@ -338,6 +353,9 @@ fn sessions_list_surfaces_artifact_and_lineage_columns() {
 }
 #[test]
 fn sessions_help_lists_lifecycle_subcommands() {
+    // arrange
+    // act
+    // assert
     let output = run_harness(["sessions", "--help"]);
 
     assert!(
@@ -356,6 +374,9 @@ fn sessions_help_lists_lifecycle_subcommands() {
 }
 #[test]
 fn sessions_lineage_help_is_harness_branded() {
+    // arrange
+    // act
+    // assert
     let forbidden_terms = forbidden_brand_terms();
     let sessions_help = run_harness_help(&["sessions", "--help"]);
     assert_harness_branded("harness sessions --help", &sessions_help, &forbidden_terms);

@@ -3,6 +3,9 @@ use harness::UnwrapOrAbort;
 
 #[test]
 fn live_coordinator_config_warmup_reuses_interactive_config() {
+    // arrange
+    // act
+    // assert
     let config = load_config_from_str(
         r#"
         {

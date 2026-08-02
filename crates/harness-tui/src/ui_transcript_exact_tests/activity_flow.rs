@@ -166,7 +166,7 @@ pub(crate) fn exact_test_transcript_reasoning_precedes_answer_and_tool_rows() {
         .iter()
         .enumerate()
         .skip(answer_row + 1)
-        .find_map(|(index, line)| line.contains("Read src/ui.rs").then_some(index))
+        .find_map(|(index, line)| line.contains("Read 1 file").then_some(index))
         .unwrap_or_abort();
 
     assert!(reasoning_row < answer_row);
@@ -198,9 +198,9 @@ pub(crate) fn exact_test_transcript_user_and_reasoning_match_reference_entry_bod
     ));
     let rendered = lines.join("\n");
 
-    assert!(rendered.contains("┃  Explain transcript parity"));
+    assert!(rendered.contains("❯ Explain transcript parity"));
     assert!(!rendered.contains("█Explain transcript parity"));
-    assert!(!rendered.contains("› Explain transcript parity"));
+    assert!(!rendered.contains("┃  Explain transcript parity"));
     assert!(rendered.contains("Thinking: comparing reference entry body"));
     assert!(
         !rendered.contains("Thinking: Thinking:"),
@@ -265,11 +265,11 @@ pub(crate) fn exact_test_latest_assistant_footer_stays_after_trailing_tool_rows(
         .unwrap_or_abort();
     let tool_row = lines
         .iter()
-        .position(|line| line.contains("Read src/ui.rs"))
+        .position(|line| line.contains("Read 1 file"))
         .unwrap_or_abort();
     let footer_row = lines
         .iter()
-        .position(|line| line.contains("Assistant · gpt-5.4-mini"))
+        .position(|line| line.contains("Worked for") || line.contains("gpt-5.4-mini"))
         .unwrap_or_abort();
 
     assert!(
@@ -281,8 +281,7 @@ pub(crate) fn exact_test_latest_assistant_footer_stays_after_trailing_tool_rows(
         "assistant footer should stay pinned after trailing tool rows\n{lines:#?}"
     );
     assert!(
-        lines[tool_row.saturating_sub(1)].trim().is_empty()
-            || lines[tool_row.saturating_sub(1)].trim() == "┃",
+        lines[tool_row.saturating_sub(1)].trim().is_empty(),
         "reference separator rows insert one blank row for assistant block text followed by inline tool rows\n{lines:#?}"
     );
     if std::env::var_os("HARNESS_TUI_SPACING_RENDER_CAPTURE").is_some() {
@@ -446,6 +445,9 @@ pub(crate) fn exact_test_transcript_tool_rows_follow_chronological_turn_order() 
 
 #[test]
 fn reasoning_after_tool_renders_in_new_block_below_tool() {
+    // arrange
+    // act
+    // assert
     fn event(
         seq: u64,
         correlation_id: &str,
@@ -609,15 +611,17 @@ fn reasoning_after_tool_renders_in_new_block_below_tool() {
     assert!(second_reasoning_row < answer_row);
     let line_before_second_reasoning = &lines[second_reasoning_row.saturating_sub(1)];
     assert!(
-        line_before_second_reasoning.contains("Thought")
-            || line_before_second_reasoning.trim().is_empty()
-            || line_before_second_reasoning.trim() == "┃",
+        line_before_second_reasoning.contains("Thinking")
+            || line_before_second_reasoning.trim().is_empty(),
         "reasoning block should start with a header or a separator; got: {line_before_second_reasoning:?}"
     );
 }
 
 #[test]
 fn task_completion_summary_does_not_duplicate_streamed_assistant_text() {
+    // arrange
+    // act
+    // assert
     fn event(
         seq: u64,
         correlation_id: &str,
@@ -720,6 +724,9 @@ fn task_completion_summary_does_not_duplicate_streamed_assistant_text() {
 
 #[test]
 fn tool_task_completion_summary_does_not_render_as_assistant_body() {
+    // arrange
+    // act
+    // assert
     fn event(
         seq: u64,
         correlation_id: &str,
@@ -968,6 +975,9 @@ fn task_row_title_uses_partial_args_or_child_prompt_before_terminal_output() {
 
 #[test]
 fn background_output_tool_row_confirms_checked_child_result() {
+    // arrange
+    // act
+    // assert
     let mut tool_call =
         transcript_section_model_test_tool_call("tc-background-output", "background_output");
     tool_call.status = ToolCallDisplayStatus::Succeeded;
@@ -1017,6 +1027,9 @@ fn background_output_tool_row_confirms_checked_child_result() {
 
 #[test]
 fn inline_metadata_collapse_removes_terminal_controls() {
+    // arrange
+    // act
+    // assert
     assert_eq!(
         collapse_inline_whitespace("researcher\u{1b}]0;owned\u{7} task\nsummary"),
         "researcher ]0;owned task summary"
@@ -1025,9 +1038,455 @@ fn inline_metadata_collapse_removes_terminal_controls() {
 
 #[test]
 fn task_row_profile_label_matches_harness_titlecase() {
+    // arrange
+    // act
+    // assert
     assert_eq!(subagent_profile_label(""), "General");
     assert_eq!(subagent_profile_label("general"), "General");
     assert_eq!(subagent_profile_label("foo-bar"), "Foo-Bar");
     assert_eq!(subagent_profile_label("foo_bar"), "Foo_bar");
     assert_eq!(subagent_profile_label("gPT worker"), "GPT Worker");
+}
+
+fn surface_line_text(surface: &MeasuredTranscriptSurface) -> String {
+    surface
+        .lines
+        .iter()
+        .map(|line| {
+            line.spans
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_selected_rail_prefers_last_tool_over_thought() {
+    // Given: a selected completed turn with Thought chrome and a succeeded tool
+    let mut app = AppState::default();
+    let mut entry = transcript_section_model_test_activity(
+        "request-tool-selected",
+        ActivityStatus::Done,
+        "DONE",
+    );
+    entry.thinking_text = "planning".to_string();
+    let mut tool = transcript_section_model_test_tool_call("call-list-1", "list");
+    tool.status = ToolCallDisplayStatus::Succeeded;
+    tool.lifecycle_state = Some(harness_core::event::ToolCallLifecycleState::Completed);
+    tool.args_summary = r#"{"path":"."}"#.to_string();
+    tool.output_json = Some(serde_json::json!({ "entry_count": 1 }));
+    tool.output_summary = Some("Listed 1 dir".to_string());
+    entry.tool_calls.push(tool);
+    app.activities = std::collections::VecDeque::from(vec![entry]);
+    app.transcript_view.selected_activity_index = 0;
+
+    // When: measuring the selected turn surfaces
+    let layout = build_measured_transcript_layout_for_width(&app, &Theme::default(), 120);
+    assert_eq!(layout.sections.len(), 1);
+    let surfaces = &layout.sections[0].surfaces;
+    let selected: Vec<_> = surfaces
+        .iter()
+        .filter(|surface| surface.selected_rail)
+        .map(surface_line_text)
+        .collect();
+    let thought_selected = surfaces
+        .iter()
+        .any(|surface| surface.selected_rail && surface_line_text(surface).contains("Thought for"));
+    let tool_selected = surfaces.iter().any(|surface| {
+        surface.selected_rail
+            && (surface_line_text(surface).contains("Listed")
+                || surface_line_text(surface).contains("list")
+                || surface_line_text(surface).contains("◈"))
+    });
+
+    // Then: selected rail prefers the last tool surface, not Thought
+    assert!(
+        tool_selected,
+        "selected completed tool turns must paint ❙ on the last tool surface\nselected={selected:#?}"
+    );
+    assert!(
+        !thought_selected,
+        "Thought must not keep selected rail when a tool surface exists\nselected={selected:#?}"
+    );
+    assert_eq!(
+        surfaces
+            .iter()
+            .filter(|surface| surface.selected_rail)
+            .count(),
+        1,
+        "exactly one surface should carry selected rail\nselected={selected:#?}"
+    );
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_selected_rail_falls_back_to_thought_without_tools() {
+    // Given: a selected completed turn with Thought chrome and no tools
+    let mut app = AppState::default();
+    let mut entry = transcript_section_model_test_activity(
+        "request-thought-selected",
+        ActivityStatus::Done,
+        "HELLO_PARITY_OK",
+    );
+    entry.thinking_text = "planning".to_string();
+    app.activities = std::collections::VecDeque::from(vec![entry]);
+    app.transcript_view.selected_activity_index = 0;
+
+    // When: measuring the selected turn surfaces
+    let layout = build_measured_transcript_layout_for_width(&app, &Theme::default(), 120);
+    assert_eq!(layout.sections.len(), 1);
+    let surfaces = &layout.sections[0].surfaces;
+    let selected: Vec<_> = surfaces
+        .iter()
+        .filter(|surface| surface.selected_rail)
+        .map(surface_line_text)
+        .collect();
+    let thought_selected = surfaces
+        .iter()
+        .any(|surface| surface.selected_rail && surface_line_text(surface).contains("Thought for"));
+
+    // Then: selected rail falls back to Thought when no tool surfaces exist
+    assert!(
+        thought_selected,
+        "selected completed turns without tools must paint ❙ on Thought\nselected={selected:#?}"
+    );
+    assert_eq!(
+        surfaces
+            .iter()
+            .filter(|surface| surface.selected_rail)
+            .count(),
+        1,
+        "exactly one surface should carry selected rail\nselected={selected:#?}"
+    );
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_done_body_after_tool_keeps_separate_wall_clock_row() {
+    // Given: a completed tool turn with single-line DONE body + footer wall clock
+    // Tool seq must precede body (last_seq) so assistant_parts order is Tool → Body
+    // (matches the reference diff / live_diff event order).
+    let mut app = AppState::default();
+    let mut entry =
+        transcript_section_model_test_activity("request-done-clock", ActivityStatus::Done, "DONE");
+    entry.thinking_text = "planning".to_string();
+    entry.user_timestamp = Some("2026-03-19T12:00:00Z".to_string());
+    entry.first_seq = 1;
+    entry.last_seq = 30;
+    let mut tool = transcript_section_model_test_tool_call("call-list-done", "list");
+    tool.status = ToolCallDisplayStatus::Succeeded;
+    tool.lifecycle_state = Some(harness_core::event::ToolCallLifecycleState::Completed);
+    tool.args_summary = r#"{"path":"."}"#.to_string();
+    tool.output_json = Some(serde_json::json!({ "entry_count": 1 }));
+    tool.output_summary = Some("Listed 1 dir".to_string());
+    tool.first_seq = 10;
+    entry.tool_calls.push(tool);
+    app.activities = std::collections::VecDeque::from(vec![entry]);
+
+    // When: measuring transcript surfaces
+    let layout = build_measured_transcript_layout_for_width(&app, &Theme::default(), 120);
+    let lines: Vec<String> = layout.sections[0]
+        .surfaces
+        .iter()
+        .flat_map(|surface| {
+            surface_line_text(surface)
+                .lines()
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+        .collect();
+
+    // Then: the reference diff state keeps wall clock on its own row between the tool and DONE body.
+    let done_line = lines
+        .iter()
+        .find(|line| line.contains("DONE"))
+        .unwrap_or_else(|| panic!("missing DONE body line\n{lines:#?}"));
+    assert!(
+        !done_line.contains("12:00 PM"),
+        "DONE after tools must keep wall clock on a separate row\n{done_line:?}\nall={lines:#?}"
+    );
+    let clock_only = lines.iter().any(|line| {
+        let trimmed = line.trim();
+        trimmed == "12:00 PM" || (trimmed.ends_with("12:00 PM") && !trimmed.contains("DONE"))
+    });
+    assert!(
+        clock_only,
+        "Tool→Body single-line must keep a dedicated clock-only row\nall={lines:#?}"
+    );
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_body_after_thought_packs_wall_clock_on_same_line() {
+    // Given: a completed no-tool turn (Thought → body) with footer wall clock
+    let mut app = AppState::default();
+    let mut entry = transcript_section_model_test_activity(
+        "request-hello-clock",
+        ActivityStatus::Done,
+        "HELLO_PARITY_OK",
+    );
+    entry.thinking_text = "planning".to_string();
+    entry.user_timestamp = Some("2026-03-19T12:00:00Z".to_string());
+    app.activities = std::collections::VecDeque::from(vec![entry]);
+
+    // When: measuring transcript surfaces
+    let layout = build_measured_transcript_layout_for_width(&app, &Theme::default(), 120);
+    let lines: Vec<String> = layout.sections[0]
+        .surfaces
+        .iter()
+        .flat_map(|surface| {
+            surface_line_text(surface)
+                .lines()
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+        .collect();
+
+    // Then: the reference completed state packs wall clock on the single-line body row.
+    let hello_idx = lines
+        .iter()
+        .position(|line| line.contains("HELLO_PARITY_OK"))
+        .unwrap_or_else(|| panic!("missing HELLO body line\n{lines:#?}"));
+    let hello_line = &lines[hello_idx];
+    assert!(
+        hello_line.contains("12:00 PM"),
+        "Thought→Body must pack wall clock onto the body line\n{hello_line:?}\nall={lines:#?}"
+    );
+    let clock_only = lines.iter().any(|line| {
+        let trimmed = line.trim();
+        (trimmed == "12:00 PM" || trimmed.ends_with("12:00 PM")) && !trimmed.contains("HELLO")
+    });
+    assert!(
+        !clock_only,
+        "No-tool single-line body must not keep a dedicated clock-only row\nall={lines:#?}"
+    );
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_tool_turn_without_thinking_omits_thought() {
+    // Given: a completed tool turn with empty thinking text (reference tool state)
+    let mut app = AppState::default();
+    let mut entry = transcript_section_model_test_activity(
+        "request-tool-no-thought",
+        ActivityStatus::Done,
+        "COUNT=2",
+    );
+    entry.thinking_text.clear();
+    let mut tool = transcript_section_model_test_tool_call("call-list-no-thought", "list");
+    tool.status = ToolCallDisplayStatus::Succeeded;
+    tool.lifecycle_state = Some(harness_core::event::ToolCallLifecycleState::Completed);
+    tool.args_summary = r#"{"path":"."}"#.to_string();
+    tool.output_json = Some(serde_json::json!({ "entry_count": 1 }));
+    tool.output_summary = Some("Listed 1 dir".to_string());
+    entry.tool_calls.push(tool);
+    app.activities = std::collections::VecDeque::from(vec![entry]);
+
+    // When: measuring transcript surfaces
+    let layout = build_measured_transcript_layout_for_width(&app, &Theme::default(), 120);
+    let rendered = layout.sections[0]
+        .surfaces
+        .iter()
+        .map(surface_line_text)
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // Then: the reference tool state omits Thought when there was no reasoning.
+    assert!(
+        !rendered.contains("Thought for"),
+        "completed tool turns without thinking must omit Thought chrome\n{rendered}"
+    );
+    assert!(
+        rendered.contains("Listed") || rendered.contains("◈"),
+        "tool surface must still render\n{rendered}"
+    );
+    assert!(
+        rendered.contains("COUNT=2"),
+        "assistant body must still render\n{rendered}"
+    );
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_no_tool_turn_without_thinking_keeps_thought() {
+    // Given: a completed answer-only turn with empty thinking
+    let mut app = AppState::default();
+    let mut entry = transcript_section_model_test_activity(
+        "request-complete-no-thought",
+        ActivityStatus::Done,
+        "HELLO_PARITY_OK",
+    );
+    entry.thinking_text.clear();
+    app.activities = std::collections::VecDeque::from(vec![entry]);
+
+    // When: measuring transcript surfaces
+    let layout = build_measured_transcript_layout_for_width(&app, &Theme::default(), 120);
+    let rendered = layout.sections[0]
+        .surfaces
+        .iter()
+        .map(surface_line_text)
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // Then: no Thought chrome for turns without reasoning (pinned reference freeze)
+    assert!(
+        !rendered.contains("Thought for"),
+        "completed no-tool turns without reasoning must not show Thought chrome\n{rendered}"
+    );
+    assert!(
+        rendered.contains("HELLO_PARITY_OK"),
+        "body must still render\n{rendered}"
+    );
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_pending_question_has_no_selected_rail() {
+    // Given: a selected streaming turn with pending question tool (Waiting on answers)
+    let mut app = AppState::default();
+    let mut entry = transcript_section_model_test_activity(
+        "request-question-no-rail",
+        ActivityStatus::Streaming,
+        "",
+    );
+    entry.thinking_text = "**plan**".to_string();
+    let mut tool =
+        transcript_section_model_test_tool_call("call-question-no-rail", "user.question");
+    tool.status = ToolCallDisplayStatus::PendingPermission;
+    tool.args_summary = serde_json::json!({
+        "questions": [{
+            "question": "Pick one",
+            "header": "Choice",
+            "options": [{"label": "A", "description": "Option A"}]
+        }]
+    })
+    .to_string();
+    entry.tool_calls.push(tool);
+    app.activities = std::collections::VecDeque::from(vec![entry]);
+    app.transcript_view.selected_activity_index = 0;
+
+    // When: measuring transcript surfaces
+    let layout = build_measured_transcript_layout_for_width(&app, &Theme::default(), 120);
+    let surfaces = &layout.sections[0].surfaces;
+    let selected: Vec<_> = surfaces
+        .iter()
+        .filter(|surface| surface.selected_rail)
+        .map(surface_line_text)
+        .collect();
+    let rendered = surfaces
+        .iter()
+        .map(surface_line_text)
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // Then: the reference question state paints no ❙ while Waiting on answers.
+    assert!(
+        selected.is_empty(),
+        "pending question turns must not paint selected rail\nselected={selected:#?}\n{rendered}"
+    );
+    assert!(
+        rendered.contains("Ask Pick one") || rendered.contains("Ask "),
+        "Ask chrome must still render\n{rendered}"
+    );
+    assert!(
+        rendered.contains("Waiting on answers"),
+        "Waiting chrome must still render\n{rendered}"
+    );
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_pending_edit_permission_has_no_selected_rail() {
+    // Given: selected streaming turn with pending write under permission (Creating demo.txt)
+    let mut app = AppState::default();
+    let mut entry = transcript_section_model_test_activity(
+        "request-perm-no-rail",
+        ActivityStatus::Streaming,
+        "",
+    );
+    entry.thinking_text = "**plan**".to_string();
+    entry.first_mono_ms = 0;
+    entry.last_mono_ms = 19_000;
+    let mut tool = transcript_section_model_test_tool_call("call-write-perm-no-rail", "fs.write");
+    tool.status = ToolCallDisplayStatus::PendingPermission;
+    tool.args_summary = r#"{"path":"demo.txt","content":"parity-ok\n"}"#.to_string();
+    entry.tool_calls.push(tool);
+    app.activities = std::collections::VecDeque::from(vec![entry]);
+    app.transcript_view.selected_activity_index = 0;
+
+    // When: measuring transcript surfaces
+    let layout = build_measured_transcript_layout_for_width(&app, &Theme::default(), 120);
+    let surfaces = &layout.sections[0].surfaces;
+    let selected: Vec<_> = surfaces
+        .iter()
+        .filter(|surface| surface.selected_rail)
+        .map(surface_line_text)
+        .collect();
+    let rendered = surfaces
+        .iter()
+        .map(surface_line_text)
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // Then: freeze PERM paints no ❙ on Creating while Allow Edit dock is open
+    assert!(
+        selected.is_empty(),
+        "pending edit permission turns must not paint selected rail\nselected={selected:#?}\n{rendered}"
+    );
+    assert!(
+        rendered.contains("Creating demo.txt"),
+        "Creating chrome must still render\n{rendered}"
+    );
+    assert!(
+        rendered.contains("Run Write `demo.txt`"),
+        "Run Write chrome must still render\n{rendered}"
+    );
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_pending_edit_permission_packs_dual_run_write_duration() {
+    // Given: pending write permission turn with 19s elapsed
+    let mut app = AppState::default();
+    let mut entry = transcript_section_model_test_activity(
+        "request-perm-dual-19s",
+        ActivityStatus::Streaming,
+        "",
+    );
+    entry.thinking_text = "**plan**".to_string();
+    entry.first_mono_ms = 0;
+    entry.last_mono_ms = 19_000;
+    entry.usage = Some(crate::app::ActivityUsage {
+        prompt_tokens: 8_000,
+        completion_tokens: 2_100,
+        total_tokens: 10_100,
+    });
+    let mut tool = transcript_section_model_test_tool_call("call-write-dual-19s", "fs.write");
+    tool.status = ToolCallDisplayStatus::PendingPermission;
+    tool.args_summary = r#"{"path":"demo.txt","content":"parity-ok\n"}"#.to_string();
+    entry.tool_calls.push(tool);
+    app.activities = std::collections::VecDeque::from(vec![entry]);
+    app.transcript_view.selected_activity_index = 0;
+
+    // When: rendering transcript lines
+    let lines = transcript_test_line_texts(build_transcript_lines_for_width(
+        &app,
+        &Theme::default(),
+        120,
+    ));
+    let rendered = lines.join("\n");
+    let run_line = lines
+        .iter()
+        .find(|line| line.contains("Run Write"))
+        .cloned()
+        .unwrap_or_default();
+
+    // Then: freeze packs inline 19s after path and right-meta 19s
+    assert!(
+        run_line.contains("Run Write `demo.txt` 19s"),
+        "Run Write left must pack inline duration 19s\n{run_line}\n{rendered}"
+    );
+    assert!(
+        run_line.contains("19s") && run_line.contains("⇣10.1k") && run_line.contains("[stop]"),
+        "Run Write right meta must keep 19s ⇣10.1k [stop]\n{run_line}\n{rendered}"
+    );
+    let nineteen_count = run_line.matches("19s").count();
+    assert!(
+        nineteen_count >= 2,
+        "freeze dual-duration packing needs 19s on both left and right\n{run_line}"
+    );
 }

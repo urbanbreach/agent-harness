@@ -174,15 +174,24 @@
 
   "default_agent": "build",
 
-  // One scalar applies to all supported tool permissions; switch to an object
-  // when a project needs per-tool rules. For shell, you can use command patterns
-  // such as "cargo test*" and "git status" plus a shell_allowlist mode.
-  "permission": "ask",
+  // Harness-aligned allow-by-default. A scalar applies to all supported tool
+  // permissions; switch to an object for per-tool rules (ruleset-compatible
+  // shapes). Last matching pattern wins; catch-all deny (pattern "*") hides that
+  // tool from the model tool list. When permission is omitted, ordinary tools
+  // still default to allow while external_directory / doom_loop stay ask and
+  // read keeps .env pattern asks.
+  "permission": "allow",
   // "permission": {
+  //   "edit": "allow",
   //   "bash": {
-  //     "git status": "allow",
+  //     "git *": "allow",
   //     "cargo test*": "ask",
   //     "*": "deny"
+  //   },
+  //   "webfetch": "allow",
+  //   "task": {
+  //     "general": "deny",
+  //     "*": "allow"
   //   },
   //   "shell_allowlist": {
   //     "mode": "permission_patterns",

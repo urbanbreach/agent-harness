@@ -83,6 +83,10 @@ impl AppState {
     }
 
     pub(in crate::app) fn handle_navigation_overlay_key(&mut self, key: &KeyEvent) -> bool {
+        if self.foreign_import_picker.visible {
+            return self.handle_foreign_import_picker_key(key);
+        }
+
         if self.lineage_browser_visible {
             return self.handle_lineage_browser_key(key);
         }
@@ -204,8 +208,8 @@ impl AppState {
 
     fn slash_command_available(&self, command: &str) -> bool {
         match command {
-            "new" | "status" | "toggles" | "auth" | "connect" | "help" | "exit" | "mcps"
-            | "timestamps" | "thinking" => true,
+            "new" | "status" | "dashboard" | "toggles" | "auth" | "connect" | "help" | "exit"
+            | "mcps" | "timestamps" | "thinking" | "settings" | "view-plan" | "feedback" => true,
             "sessions" | "replay" => !self.replay_mode,
             "fork" => !self.startup_mode && !self.replay_mode,
             "clone" => !self.startup_mode && self.lineage_write_blocked_reason().is_none(),
@@ -217,6 +221,7 @@ impl AppState {
             "compact" => self.compact_session_supported,
             "rename" => !self.replay_mode && !self.startup_mode,
             "copy" | "export" => !self.startup_mode,
+            "import" => !self.startup_mode && !self.replay_mode,
             _ => false,
         }
     }
@@ -264,7 +269,7 @@ impl AppState {
         self.submitted_permission_id = None;
         self.permission_prompt.permission_id = None;
         self.permission_prompt.stage = PermissionModalStage::Decision;
-        self.permission_prompt.selection = PermissionModalSelection::AllowOnce;
+        self.permission_prompt.selection = PermissionModalSelection::AllowAlways;
         self.permission_prompt.confirm_selection = PermissionConfirmSelection::Confirm;
         self.question_prompt.tab = 0;
         self.question_prompt.selection = 0;
@@ -318,9 +323,9 @@ impl AppState {
                 self.restore_slash_draft(preserved_draft);
                 self.open_connect_dialog();
             }
-            "status" => {
+            "status" | "dashboard" => {
                 self.restore_slash_draft(preserved_draft);
-                self.status_dialog_visible = true;
+                self.secondary_surfaces.open_status_dialog();
             }
             "help" => {
                 self.restore_slash_draft(preserved_draft);
@@ -377,6 +382,15 @@ impl AppState {
                 self.restore_slash_draft(preserved_draft);
                 self.execute_action(Action::ExportSession);
             }
+            "import" => {
+                self.restore_slash_draft(preserved_draft);
+                let scan_root = self
+                    .session_path
+                    .clone()
+                    .or_else(|| self.file_mention_workspace_root_opt())
+                    .unwrap_or_else(|| std::path::PathBuf::from("."));
+                self.open_foreign_import_picker(scan_root);
+            }
             "timestamps" => {
                 self.restore_slash_draft(preserved_draft);
                 self.transcript_view.show_transcript_timestamps =
@@ -386,6 +400,18 @@ impl AppState {
                 self.restore_slash_draft(preserved_draft);
                 self.transcript_view.show_transcript_thinking =
                     !self.transcript_view.show_transcript_thinking;
+            }
+            "settings" => {
+                self.restore_slash_draft(preserved_draft);
+                self.open_settings_editor();
+            }
+            "view-plan" => {
+                self.restore_slash_draft(preserved_draft);
+                self.open_plan_view();
+            }
+            "feedback" => {
+                self.restore_slash_draft(preserved_draft);
+                self.execute_action(Action::Help);
             }
             "exit" => self.execute_action(Action::Quit),
             _ => {}
@@ -773,6 +799,14 @@ impl AppState {
     }
 
     pub(in crate::app) fn apply_new_session_launcher_selection(&mut self) {
+        self.apply_fresh_session_launcher_selection(UiIntent::NewSession);
+    }
+
+    pub(in crate::app) fn request_new_worktree_session(&mut self) {
+        self.open_new_worktree_dialog();
+    }
+
+    pub(in crate::app) fn apply_fresh_session_launcher_selection(&mut self, intent: UiIntent) {
         let lifecycle_exit = self.startup_mode
             || self.post_run_handoff_visible()
             || self.completed_session_shell_active();
@@ -792,7 +826,7 @@ impl AppState {
         self.submitted_permission_id = None;
         self.permission_prompt.permission_id = None;
         self.permission_prompt.stage = PermissionModalStage::Decision;
-        self.permission_prompt.selection = PermissionModalSelection::AllowOnce;
+        self.permission_prompt.selection = PermissionModalSelection::AllowAlways;
         self.permission_prompt.confirm_selection = PermissionConfirmSelection::Confirm;
         self.question_prompt.tab = 0;
         self.question_prompt.selection = 0;
@@ -814,7 +848,7 @@ impl AppState {
             prompt_cursor.min(self.composer.prompt_buffer.chars().count());
 
         self.close_session_history();
-        self.emit_ui_intent(UiIntent::NewSession);
+        self.emit_ui_intent(intent);
         if lifecycle_exit {
             self.should_quit = true;
         }
@@ -913,5 +947,127 @@ impl AppState {
                 self.emit_ui_intent(UiIntent::QuitRequested);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use harness_core::event::{EventEnvelopeV1, EventV1};
+    use std::path::PathBuf;
+
+    fn actor(
+        kind: harness_core::event::ActorKind,
+        agent_id: &str,
+    ) -> harness_core::event::EventActor {
+        harness_core::event::EventActor::new(kind, Some(agent_id.to_string()))
+    }
+
+    fn event(
+        seq: u64,
+        correlation_id: Option<&str>,
+        actor: harness_core::event::EventActor,
+        payload: EventV1,
+    ) -> EventEnvelopeV1 {
+        EventEnvelopeV1 {
+            schema_version: harness_core::event::SCHEMA_VERSION,
+            event_id: format!("evt_writer_lock_{seq:04}"),
+            seq,
+            run_id: "run_dash_parity".into(),
+            mono_ms: seq,
+            ts: None,
+            actor,
+            correlation_id: correlation_id.map(str::to_string),
+            causation_id: None,
+            stream_key: Some("run:run_dash_parity".to_string()),
+            payload,
+        }
+    }
+
+    fn user_message(seq: u64, req_id: &str, text: &str) -> EventEnvelopeV1 {
+        event(
+            seq,
+            Some(req_id),
+            actor(harness_core::event::ActorKind::User, "interactive-user"),
+            EventV1::UserMessageSubmitted(harness_core::event::UserMessageSubmittedEvent {
+                request_id: req_id.into(),
+                text: text.to_string(),
+            }),
+        )
+    }
+
+    fn provider_started(seq: u64, req_id: &str) -> EventEnvelopeV1 {
+        event(
+            seq,
+            Some(req_id),
+            actor(harness_core::event::ActorKind::Worker, "agent_parent"),
+            EventV1::ProviderRequestStarted(harness_core::event::ProviderRequestStartedEvent {
+                request_id: req_id.into(),
+                provider_id: "openai".to_string(),
+                model_id: "gpt-5-codex".to_string(),
+                prompt_summary: "prompt".to_string(),
+                request_digest: format!("digest-{req_id}"),
+                metadata: None,
+            }),
+        )
+    }
+
+    fn run_started(seq: u64, run_name: &str) -> EventEnvelopeV1 {
+        event(
+            seq,
+            None,
+            actor(harness_core::event::ActorKind::System, "dash-parity"),
+            EventV1::RunStarted(harness_core::event::RunStartedEvent {
+                run_name: run_name.into(),
+                workspace_root: "/workspace".to_string(),
+            }),
+        )
+    }
+
+    // -----------------------------------------------------------------------
+    // Relocated from dashboard_queue_worktree_parity_test.rs (private API).
+    // These scenarios exercise private `lineage_write_blocked_reason` and
+    // pub(crate) `active_turn_in_progress` state.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn active_writer_lock_blocks_fork_during_active_turn() {
+        let mut app = AppState::new_live(None, false, None);
+        app.session_path = Some(PathBuf::from("/tmp/harness-dash-parity/parent_run"));
+        app.ingest_event(user_message(1, "req_active", "active turn"));
+        app.ingest_event(provider_started(2, "req_active"));
+        assert!(
+            app.active_turn_in_progress(),
+            "active turn must be in progress after provider started"
+        );
+        let blocked = app.lineage_write_blocked_reason();
+        assert_eq!(
+            blocked,
+            Some("active"),
+            "fork must be blocked during active turn"
+        );
+    }
+
+    #[test]
+    fn active_writer_lock_allows_fork_when_idle() {
+        let mut app = AppState::new_live(None, false, None);
+        app.session_path = Some(PathBuf::from("/tmp/harness-dash-parity/parent_run"));
+        assert!(!app.active_turn_in_progress(), "no active turn when idle");
+        let blocked = app.lineage_write_blocked_reason();
+        assert!(blocked.is_none(), "fork must not be blocked when idle");
+    }
+
+    #[test]
+    fn active_writer_lock_blocks_clone_in_replay_mode() {
+        let app = AppState::new_replay(
+            PathBuf::from("/tmp/harness-dash-parity/replay_run"),
+            vec![run_started(1, "replay_run")],
+        );
+        let blocked = app.lineage_write_blocked_reason();
+        assert_eq!(
+            blocked,
+            Some("replay"),
+            "clone must be blocked in replay mode"
+        );
     }
 }

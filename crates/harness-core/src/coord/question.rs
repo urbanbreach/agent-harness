@@ -96,7 +96,14 @@ fn validate_question_prompts(
 pub(super) fn question_request_timeout_ms(permission_policy: &PermissionPolicy) -> u64 {
     match permission_policy.evaluate(None, PermissionKind::Question) {
         PolicyDecision::Ask { timeout_ms, .. } => timeout_ms,
-        PolicyDecision::Allow | PolicyDecision::Deny => DEFAULT_QUESTION_TIMEOUT_MS,
+        PolicyDecision::Allow | PolicyDecision::Deny => {
+            let configured = permission_policy.ask_timeout_ms();
+            if configured > 0 {
+                configured
+            } else {
+                DEFAULT_QUESTION_TIMEOUT_MS
+            }
+        }
     }
 }
 

@@ -1,6 +1,9 @@
 use harness::UnwrapOrAbort;
 #[test]
 fn sessions_fork_and_clone_create_child_sessions() {
+    // arrange
+    // act
+    // assert
     let session_dir = tempdir().unwrap_or_abort();
     let source_dir = session_dir.path().join("source_session");
     std::fs::create_dir_all(&source_dir).unwrap_or_abort();
@@ -82,6 +85,9 @@ fn sessions_fork_and_clone_create_child_sessions() {
 }
 #[test]
 fn sessions_fork_clone_child_replays() {
+    // arrange
+    // act
+    // assert
     let session_dir = tempdir().unwrap_or_abort();
     let source_dir = session_dir.path().join("replay_source");
     std::fs::create_dir_all(&source_dir).unwrap_or_abort();
@@ -193,6 +199,9 @@ fn sessions_fork_clone_child_replays() {
 }
 #[test]
 fn sessions_fork_clone_reject_active_or_writer_locked_source() {
+    // arrange
+    // act
+    // assert
     let session_dir = tempdir().unwrap_or_abort();
     let active_dir = session_dir.path().join("active_source");
     std::fs::create_dir_all(&active_dir).unwrap_or_abort();
@@ -274,6 +283,9 @@ fn sessions_fork_clone_reject_active_or_writer_locked_source() {
 }
 #[test]
 fn sessions_child_replay_and_continue_readiness_survive_parent_movement() {
+    // arrange
+    // act
+    // assert
     let session_dir = tempdir().unwrap_or_abort();
     let source_dir = session_dir.path().join("movable_source");
     std::fs::create_dir_all(&source_dir).unwrap_or_abort();
@@ -338,8 +350,9 @@ fn sessions_child_replay_and_continue_readiness_survive_parent_movement() {
         "stderr:\n{}",
         String::from_utf8_lossy(&reopen_output.stderr)
     );
-    let recovery: serde_json::Value =
+    let response: serde_json::Value =
         serde_json::from_slice(&reopen_output.stdout).unwrap_or_abort();
+    let recovery = &response["summary"];
     assert_eq!(recovery["run_id"], child_run_id);
     assert_eq!(recovery["resumable"], true);
     assert!(recovery["continue_hint"]
@@ -368,6 +381,9 @@ fn sessions_child_replay_and_continue_readiness_survive_parent_movement() {
 }
 #[test]
 fn sessions_tree_renders_deep_lineage_deterministically() {
+    // arrange
+    // act
+    // assert
     let session_dir = tempdir().unwrap_or_abort();
     let chain = [
         ("run_deep_root", None),

@@ -750,6 +750,9 @@ mod tests {
 
     #[tokio::test]
     async fn stdio_mcp_session_start_can_use_injected_process_starter_without_spawning() {
+        // arrange
+        // act
+        // assert
         let starter = FakeStdioMcpStarter::new();
         let command = vec!["fake-mcp".to_string(), "--stdio".to_string()];
         let env = BTreeMap::from([("TOKEN".to_string(), "redacted".to_string())]);

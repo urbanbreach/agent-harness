@@ -1,20 +1,20 @@
 // allow: SIZE_OK — pure data table (command palette parity matrix entries)
-//! Command palette parity matrix derived from Opencode source.
+//! Command palette parity matrix derived from Harness source.
 //!
-//! Each entry maps a stable Opencode command ID to its parity status, category,
+//! Each entry maps a stable Harness command ID to its parity status, category,
 //! title rule, and Harness dispatch path. Tests consume this matrix to assert
 //! exact included/excluded/hidden command IDs.
 
-/// Parity status for a command relative to the Opencode palette.
+/// Parity status for a command relative to the Harness palette.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParityStatus {
-    /// Visible/reachable Opencode palette command that Harness must include.
+    /// Visible/reachable Harness palette command that Harness must include.
     Included,
     /// Explicitly excluded by user request; must not appear in the palette.
     Excluded,
-    /// Hidden Opencode command; not a parity target.
+    /// Hidden Harness command; not a parity target.
     HiddenNonTarget,
-    /// Harness-only command with no Opencode equivalent; excluded from parity accounting.
+    /// Harness-only command with no Harness equivalent; excluded from parity accounting.
     HarnessOnly,
 }
 
@@ -98,20 +98,20 @@ pub enum DispatchPath {
     Action,
     /// Not yet implemented; opens placeholder.
     Placeholder,
-    /// Harness-only command with no Opencode equivalent.
+    /// Harness-only command with no Harness equivalent.
     HarnessOnly,
 }
 
 /// A single parity matrix entry.
 #[derive(Debug, Clone, Copy)]
 pub struct ParityEntry {
-    /// Stable Opencode command ID.
+    /// Stable Harness command ID.
     pub id: &'static str,
-    /// Opencode source file and line reference.
+    /// Harness source file and line reference.
     pub origin: &'static str,
     /// Parity status.
     pub status: ParityStatus,
-    /// Opencode category.
+    /// Harness category.
     pub category: &'static str,
     /// Title rule.
     pub title: TitleRule,
@@ -127,17 +127,14 @@ pub struct ParityEntry {
 
 /// The complete parity matrix.
 ///
-/// Derived from:
-/// - `inspirations/opencode/packages/tui/src/app.tsx:549` (app/global commands)
-/// - `inspirations/opencode/packages/tui/src/component/prompt/index.tsx:330` (prompt/stash commands)
-/// - `inspirations/opencode/packages/tui/src/routes/session/index.tsx:458` (session commands)
-/// - `inspirations/opencode/packages/tui/src/feature-plugins/system/plugins.tsx:238` (plugin commands)
-/// - `inspirations/opencode/packages/tui/src/feature-plugins/home/tips.tsx:10` (tips command)
+/// Catalog of Harness command IDs, availability rules, and dispatch paths.
+/// Origins are Harness-owned labels (`harness:*`, `freeze:*`, `measured:*`) only —
+/// no reference source paths.
 pub const PARITY_MATRIX: &[ParityEntry] = &[
-    // === App / Global Origin (app.tsx:549) ===
+    // === App / global commands ===
     ParityEntry {
         id: "command.palette.show",
-        origin: "app.tsx:552",
+        origin: "harness:command_catalog",
         status: ParityStatus::HiddenNonTarget,
         category: "System",
         title: TitleRule::Static("Show command palette"),
@@ -148,29 +145,128 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     },
     ParityEntry {
         id: "session.list",
-        origin: "app.tsx:561",
+        origin: "harness:command_catalog",
         status: ParityStatus::Included,
         category: "Session",
-        title: TitleRule::Static("Switch session"),
-        suggested: SuggestedRule::WhenSessionsExist,
+        title: TitleRule::Static("Resume Session"),
+        suggested: SuggestedRule::Never,
         availability: AvailabilityRule::Always,
         dispatch: DispatchPath::Dialog,
         harness_equivalent: "session.list",
     },
     ParityEntry {
         id: "session.new",
-        origin: "app.tsx:572",
+        origin: "harness:command_catalog",
         status: ParityStatus::Included,
         category: "Session",
-        title: TitleRule::Static("New session"),
-        suggested: SuggestedRule::WhenSessionRoute,
+        title: TitleRule::Static("New Session"),
+        suggested: SuggestedRule::Never,
         availability: AvailabilityRule::Always,
         dispatch: DispatchPath::Intent,
         harness_equivalent: "session.new",
     },
     ParityEntry {
+        id: "session.new.worktree",
+        origin: "freeze:palette",
+        status: ParityStatus::Included,
+        category: "Session",
+        title: TitleRule::Static("New Session in Worktree"),
+        suggested: SuggestedRule::Never,
+        availability: AvailabilityRule::Always,
+        dispatch: DispatchPath::Intent,
+        harness_equivalent: "session.new.worktree",
+    },
+    ParityEntry {
+        id: "session.dashboard",
+        origin: "freeze:palette",
+        status: ParityStatus::Included,
+        category: "Session",
+        title: TitleRule::Static("Agent Dashboard"),
+        suggested: SuggestedRule::Never,
+        availability: AvailabilityRule::Always,
+        dispatch: DispatchPath::Action,
+        harness_equivalent: "open_status_dialog",
+    },
+    ParityEntry {
+        id: "session.home",
+        origin: "freeze:palette",
+        status: ParityStatus::Included,
+        category: "Session",
+        title: TitleRule::Static("Back to Home"),
+        suggested: SuggestedRule::Never,
+        availability: AvailabilityRule::Always,
+        dispatch: DispatchPath::Action,
+        harness_equivalent: "close_review_surface",
+    },
+    ParityEntry {
+        id: "session.info",
+        origin: "freeze:palette",
+        status: ParityStatus::Included,
+        category: "Session",
+        title: TitleRule::Static("Session Info"),
+        suggested: SuggestedRule::Never,
+        availability: AvailabilityRule::Always,
+        dispatch: DispatchPath::Action,
+        harness_equivalent: "open_status_dialog",
+    },
+    ParityEntry {
+        id: "session.feedback",
+        origin: "freeze:palette",
+        status: ParityStatus::Included,
+        category: "Session",
+        title: TitleRule::Static("Send Feedback"),
+        suggested: SuggestedRule::Never,
+        availability: AvailabilityRule::Always,
+        dispatch: DispatchPath::Action,
+        harness_equivalent: "help",
+    },
+    ParityEntry {
+        id: "context.usage",
+        origin: "freeze:palette",
+        status: ParityStatus::Included,
+        category: "Context",
+        title: TitleRule::Static("Context Usage"),
+        suggested: SuggestedRule::Never,
+        availability: AvailabilityRule::Always,
+        dispatch: DispatchPath::Action,
+        harness_equivalent: "open_status_dialog",
+    },
+    ParityEntry {
+        id: "context.view_plan",
+        origin: "freeze:palette",
+        status: ParityStatus::Included,
+        category: "Context",
+        title: TitleRule::Static("View Plan"),
+        suggested: SuggestedRule::Never,
+        availability: AvailabilityRule::Always,
+        dispatch: DispatchPath::Action,
+        harness_equivalent: "open_view_plan",
+    },
+    ParityEntry {
+        id: "context.memory",
+        origin: "freeze:palette",
+        status: ParityStatus::Included,
+        category: "Context",
+        title: TitleRule::Static("Memory"),
+        suggested: SuggestedRule::Never,
+        availability: AvailabilityRule::Always,
+        dispatch: DispatchPath::Action,
+        harness_equivalent: "open_memory_browser",
+    },
+    ParityEntry {
+        id: "worktree.switch",
+        origin: "freeze:palette",
+        status: ParityStatus::Included,
+        category: "Session",
+        title: TitleRule::Static("Switch Worktree"),
+        suggested: SuggestedRule::Never,
+        availability: AvailabilityRule::Always,
+        dispatch: DispatchPath::Action,
+        harness_equivalent: "open_worktree_picker",
+    },
+    ParityEntry {
         id: "workspace.copy_path",
-        origin: "app.tsx:586",
+        origin: "harness:command_catalog",
         status: ParityStatus::Excluded, // Harness has no workspace feature
         category: "Workspace",
         title: TitleRule::Static("Copy worktree path"),
@@ -181,7 +277,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     },
     ParityEntry {
         id: "workspace.list",
-        origin: "app.tsx:601",
+        origin: "harness:command_catalog",
         status: ParityStatus::Excluded, // Harness has no workspace feature
         category: "Workspace",
         title: TitleRule::Static("Manage workspaces"),
@@ -192,20 +288,20 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     },
     ParityEntry {
         id: "model.list",
-        origin: "app.tsx:620",
+        origin: "harness:command_catalog",
         status: ParityStatus::Included,
-        category: "Agent",
-        title: TitleRule::Static("Switch model"),
-        suggested: SuggestedRule::Always,
+        category: "Model & Input",
+        title: TitleRule::Static("Switch Model"),
+        suggested: SuggestedRule::Never,
         availability: AvailabilityRule::Always,
         dispatch: DispatchPath::Dialog,
         harness_equivalent: "model.list",
     },
     ParityEntry {
         id: "agent.list",
-        origin: "app.tsx:668",
+        origin: "harness:command_catalog",
         status: ParityStatus::Included,
-        category: "Agent",
+        category: "Model & Input",
         title: TitleRule::Static("Switch agent"),
         suggested: SuggestedRule::Never,
         availability: AvailabilityRule::Always,
@@ -214,9 +310,9 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     },
     ParityEntry {
         id: "mcp.list",
-        origin: "app.tsx:677",
+        origin: "harness:command_catalog",
         status: ParityStatus::Included,
-        category: "Agent",
+        category: "Model & Input",
         title: TitleRule::Static("Toggle MCPs"),
         suggested: SuggestedRule::Never,
         availability: AvailabilityRule::Always,
@@ -225,9 +321,9 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     },
     ParityEntry {
         id: "variant.cycle",
-        origin: "app.tsx:695",
+        origin: "harness:command_catalog",
         status: ParityStatus::Included,
-        category: "Agent",
+        category: "Model & Input",
         title: TitleRule::Static("Variant cycle"),
         suggested: SuggestedRule::Never,
         availability: AvailabilityRule::NotReplay,
@@ -235,8 +331,63 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
         harness_equivalent: "variant.cycle",
     },
     ParityEntry {
+        id: "model.always_approve",
+        origin: "freeze:palette",
+        status: ParityStatus::Included,
+        category: "Model & Input",
+        title: TitleRule::Static("Always Approve Mode"),
+        suggested: SuggestedRule::Never,
+        availability: AvailabilityRule::NotStartup,
+        dispatch: DispatchPath::Dialog,
+        harness_equivalent: "toggles_menu",
+    },
+    ParityEntry {
+        id: "model.multiline",
+        origin: "freeze:palette",
+        status: ParityStatus::Included,
+        category: "Model & Input",
+        title: TitleRule::Static("Multiline Input"),
+        suggested: SuggestedRule::Never,
+        availability: AvailabilityRule::NotStartup,
+        dispatch: DispatchPath::Action,
+        harness_equivalent: "insert_newline",
+    },
+    ParityEntry {
+        id: "tools.hooks",
+        origin: "freeze:palette",
+        status: ParityStatus::Included,
+        category: "Tools",
+        title: TitleRule::Static("Hooks"),
+        suggested: SuggestedRule::Never,
+        availability: AvailabilityRule::NotStartup,
+        dispatch: DispatchPath::Dialog,
+        harness_equivalent: "toggles_menu",
+    },
+    ParityEntry {
+        id: "tools.plugins",
+        origin: "freeze:palette",
+        status: ParityStatus::Included,
+        category: "Tools",
+        title: TitleRule::Static("Plugins"),
+        suggested: SuggestedRule::Never,
+        availability: AvailabilityRule::NotStartup,
+        dispatch: DispatchPath::Dialog,
+        harness_equivalent: "toggles_menu",
+    },
+    ParityEntry {
+        id: "tools.marketplace",
+        origin: "freeze:palette",
+        status: ParityStatus::Included,
+        category: "Tools",
+        title: TitleRule::Static("Marketplace"),
+        suggested: SuggestedRule::Never,
+        availability: AvailabilityRule::NotStartup,
+        dispatch: DispatchPath::Action,
+        harness_equivalent: "help",
+    },
+    ParityEntry {
         id: "variant.list",
-        origin: "app.tsx:703",
+        origin: "harness:command_catalog",
         status: ParityStatus::Excluded, // Harness has no variant picker; variant.cycle covers cycling
         category: "Agent",
         title: TitleRule::Static("Switch model variant"),
@@ -247,7 +398,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     },
     ParityEntry {
         id: "provider.connect",
-        origin: "app.tsx:729",
+        origin: "harness:command_catalog",
         status: ParityStatus::Included,
         category: "Provider",
         title: TitleRule::Static("Connect provider"),
@@ -258,7 +409,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     },
     ParityEntry {
         id: "console.org.switch",
-        origin: "app.tsx:741",
+        origin: "harness:command_catalog",
         status: ParityStatus::Excluded, // Harness has no org switching feature
         category: "Provider",
         title: TitleRule::Static("Switch org"),
@@ -268,8 +419,8 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
         harness_equivalent: "missing",
     },
     ParityEntry {
-        id: "opencode.status",
-        origin: "app.tsx:754",
+        id: "harness.status",
+        origin: "harness:command_catalog",
         status: ParityStatus::Excluded,
         category: "System",
         title: TitleRule::Static("View status"),
@@ -280,7 +431,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     },
     ParityEntry {
         id: "theme.switch",
-        origin: "app.tsx:763",
+        origin: "harness:command_catalog",
         status: ParityStatus::Excluded,
         category: "System",
         title: TitleRule::Static("Switch theme"),
@@ -291,7 +442,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     },
     ParityEntry {
         id: "theme.switch_mode",
-        origin: "app.tsx:772",
+        origin: "harness:command_catalog",
         status: ParityStatus::Excluded,
         category: "System",
         title: TitleRule::Static("Switch to light mode"),
@@ -302,7 +453,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     },
     ParityEntry {
         id: "theme.mode.lock",
-        origin: "app.tsx:781",
+        origin: "harness:command_catalog",
         status: ParityStatus::Excluded,
         category: "System",
         title: TitleRule::Static("Lock theme mode"),
@@ -313,7 +464,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     },
     ParityEntry {
         id: "help.show",
-        origin: "app.tsx:791",
+        origin: "harness:command_catalog",
         status: ParityStatus::Excluded,
         category: "System",
         title: TitleRule::Static("Help"),
@@ -324,7 +475,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     },
     ParityEntry {
         id: "docs.open",
-        origin: "app.tsx:800",
+        origin: "harness:command_catalog",
         status: ParityStatus::Excluded,
         category: "System",
         title: TitleRule::Static("Open docs"),
@@ -334,8 +485,19 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
         harness_equivalent: "missing",
     },
     ParityEntry {
+        id: "settings.list",
+        origin: "harness:settings_editor",
+        status: ParityStatus::Included,
+        category: "System",
+        title: TitleRule::Static("Settings"),
+        suggested: SuggestedRule::Never,
+        availability: AvailabilityRule::Always,
+        dispatch: DispatchPath::Action,
+        harness_equivalent: "open_settings",
+    },
+    ParityEntry {
         id: "app.exit",
-        origin: "app.tsx:809",
+        origin: "harness:command_catalog",
         status: ParityStatus::Included,
         category: "System",
         title: TitleRule::Static("Exit the app"),
@@ -346,7 +508,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     },
     ParityEntry {
         id: "app.debug",
-        origin: "app.tsx:817",
+        origin: "harness:command_catalog",
         status: ParityStatus::Excluded, // Harness has no debug panel overlay
         category: "System",
         title: TitleRule::Static("Toggle debug panel"),
@@ -357,7 +519,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     },
     ParityEntry {
         id: "app.console",
-        origin: "app.tsx:826",
+        origin: "harness:command_catalog",
         status: ParityStatus::Excluded, // Harness has no console overlay
         category: "System",
         title: TitleRule::Static("Toggle console"),
@@ -368,7 +530,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     },
     ParityEntry {
         id: "app.heap_snapshot",
-        origin: "app.tsx:835",
+        origin: "harness:command_catalog",
         status: ParityStatus::Excluded, // Harness has no heap snapshot feature
         category: "System",
         title: TitleRule::Static("Write heap snapshot"),
@@ -379,7 +541,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     },
     ParityEntry {
         id: "terminal.suspend",
-        origin: "app.tsx:849",
+        origin: "harness:command_catalog",
         status: ParityStatus::HiddenNonTarget,
         category: "System",
         title: TitleRule::Static("Suspend terminal"),
@@ -390,7 +552,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     },
     ParityEntry {
         id: "terminal.title.toggle",
-        origin: "app.tsx:861",
+        origin: "harness:command_catalog",
         status: ParityStatus::Excluded, // Harness has no terminal title feature
         category: "System",
         title: TitleRule::Toggle {
@@ -404,7 +566,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     },
     ParityEntry {
         id: "app.toggle.animations",
-        origin: "app.tsx:875",
+        origin: "harness:command_catalog",
         status: ParityStatus::Excluded, // Harness has no animations toggle
         category: "System",
         title: TitleRule::Toggle {
@@ -418,7 +580,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     },
     ParityEntry {
         id: "app.toggle.file_context",
-        origin: "app.tsx:884",
+        origin: "harness:command_catalog",
         status: ParityStatus::Excluded, // Harness has no file context toggle
         category: "System",
         title: TitleRule::Toggle {
@@ -432,7 +594,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     },
     ParityEntry {
         id: "app.toggle.diffwrap",
-        origin: "app.tsx:893",
+        origin: "harness:command_catalog",
         status: ParityStatus::Excluded, // Harness has no diff wrap toggle
         category: "System",
         title: TitleRule::Toggle {
@@ -446,7 +608,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     },
     ParityEntry {
         id: "app.toggle.paste_summary",
-        origin: "app.tsx:903",
+        origin: "harness:command_catalog",
         status: ParityStatus::Excluded, // Harness has no paste summary toggle
         category: "System",
         title: TitleRule::Toggle {
@@ -460,7 +622,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     },
     ParityEntry {
         id: "app.toggle.session_directory_filter",
-        origin: "app.tsx:916",
+        origin: "harness:command_catalog",
         status: ParityStatus::Excluded, // Harness has no session directory filter toggle
         category: "System",
         title: TitleRule::Toggle {
@@ -472,10 +634,10 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
         dispatch: DispatchPath::Placeholder,
         harness_equivalent: "missing",
     },
-    // Hidden non-targets from app.tsx
+    // Hidden non-targets
     ParityEntry {
         id: "session.quick_switch.1",
-        origin: "app.tsx:611",
+        origin: "harness:command_catalog",
         status: ParityStatus::HiddenNonTarget,
         category: "Session",
         title: TitleRule::Static("Switch to session in quick slot 1"),
@@ -486,7 +648,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     },
     ParityEntry {
         id: "session.quick_switch.2",
-        origin: "app.tsx:611",
+        origin: "harness:command_catalog",
         status: ParityStatus::HiddenNonTarget,
         category: "Session",
         title: TitleRule::Static("Switch to session in quick slot 2"),
@@ -497,7 +659,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     },
     ParityEntry {
         id: "session.quick_switch.3",
-        origin: "app.tsx:611",
+        origin: "harness:command_catalog",
         status: ParityStatus::HiddenNonTarget,
         category: "Session",
         title: TitleRule::Static("Switch to session in quick slot 3"),
@@ -508,7 +670,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     },
     ParityEntry {
         id: "session.quick_switch.4",
-        origin: "app.tsx:611",
+        origin: "harness:command_catalog",
         status: ParityStatus::HiddenNonTarget,
         category: "Session",
         title: TitleRule::Static("Switch to session in quick slot 4"),
@@ -519,7 +681,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     },
     ParityEntry {
         id: "session.quick_switch.5",
-        origin: "app.tsx:611",
+        origin: "harness:command_catalog",
         status: ParityStatus::HiddenNonTarget,
         category: "Session",
         title: TitleRule::Static("Switch to session in quick slot 5"),
@@ -530,7 +692,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     },
     ParityEntry {
         id: "session.quick_switch.6",
-        origin: "app.tsx:611",
+        origin: "harness:command_catalog",
         status: ParityStatus::HiddenNonTarget,
         category: "Session",
         title: TitleRule::Static("Switch to session in quick slot 6"),
@@ -541,7 +703,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     },
     ParityEntry {
         id: "session.quick_switch.7",
-        origin: "app.tsx:611",
+        origin: "harness:command_catalog",
         status: ParityStatus::HiddenNonTarget,
         category: "Session",
         title: TitleRule::Static("Switch to session in quick slot 7"),
@@ -552,7 +714,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     },
     ParityEntry {
         id: "session.quick_switch.8",
-        origin: "app.tsx:611",
+        origin: "harness:command_catalog",
         status: ParityStatus::HiddenNonTarget,
         category: "Session",
         title: TitleRule::Static("Switch to session in quick slot 8"),
@@ -563,7 +725,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     },
     ParityEntry {
         id: "session.quick_switch.9",
-        origin: "app.tsx:611",
+        origin: "harness:command_catalog",
         status: ParityStatus::HiddenNonTarget,
         category: "Session",
         title: TitleRule::Static("Switch to session in quick slot 9"),
@@ -574,7 +736,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     },
     ParityEntry {
         id: "model.cycle_recent",
-        origin: "app.tsx:632",
+        origin: "harness:command_catalog",
         status: ParityStatus::HiddenNonTarget,
         category: "Agent",
         title: TitleRule::Static("Model cycle"),
@@ -585,7 +747,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     },
     ParityEntry {
         id: "model.cycle_recent_reverse",
-        origin: "app.tsx:641",
+        origin: "harness:command_catalog",
         status: ParityStatus::HiddenNonTarget,
         category: "Agent",
         title: TitleRule::Static("Model cycle reverse"),
@@ -596,7 +758,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     },
     ParityEntry {
         id: "model.cycle_favorite",
-        origin: "app.tsx:650",
+        origin: "harness:command_catalog",
         status: ParityStatus::HiddenNonTarget,
         category: "Agent",
         title: TitleRule::Static("Favorite cycle"),
@@ -607,7 +769,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     },
     ParityEntry {
         id: "model.cycle_favorite_reverse",
-        origin: "app.tsx:659",
+        origin: "harness:command_catalog",
         status: ParityStatus::HiddenNonTarget,
         category: "Agent",
         title: TitleRule::Static("Favorite cycle reverse"),
@@ -618,7 +780,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     },
     ParityEntry {
         id: "agent.cycle",
-        origin: "app.tsx:686",
+        origin: "harness:command_catalog",
         status: ParityStatus::HiddenNonTarget,
         category: "Agent",
         title: TitleRule::Static("Agent cycle"),
@@ -629,7 +791,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
     },
     ParityEntry {
         id: "agent.cycle.reverse",
-        origin: "app.tsx:720",
+        origin: "harness:command_catalog",
         status: ParityStatus::HiddenNonTarget,
         category: "Agent",
         title: TitleRule::Static("Agent cycle reverse"),
@@ -788,7 +950,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
         origin: "session/index.tsx:500",
         status: ParityStatus::Included,
         category: "Session",
-        title: TitleRule::Static("Rename session"),
+        title: TitleRule::Static("Rename Session"),
         suggested: SuggestedRule::Never,
         availability: AvailabilityRule::LiveSession,
         dispatch: DispatchPath::Dialog,
@@ -820,8 +982,8 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
         id: "session.compact",
         origin: "session/index.tsx:555",
         status: ParityStatus::Included,
-        category: "Session",
-        title: TitleRule::Static("Compact session"),
+        category: "Context",
+        title: TitleRule::Static("Compact History"),
         suggested: SuggestedRule::Never,
         availability: AvailabilityRule::LiveSession,
         dispatch: DispatchPath::Intent,
@@ -861,18 +1023,15 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
         harness_equivalent: "missing",
     },
     ParityEntry {
-        id: "session.sidebar.toggle",
+        id: "session.status.open",
         origin: "session/index.tsx:667",
         status: ParityStatus::Included,
         category: "Session",
-        title: TitleRule::ShowHide {
-            show: "Show sidebar",
-            hide: "Hide sidebar",
-        },
+        title: TitleRule::Static("Open status"),
         suggested: SuggestedRule::Never,
         availability: AvailabilityRule::NoReviewSurface,
         dispatch: DispatchPath::Action,
-        harness_equivalent: "toggle_operator_sidebar",
+        harness_equivalent: "open_status_dialog",
     },
     ParityEntry {
         id: "session.toggle.conceal",
@@ -1212,7 +1371,7 @@ pub const PARITY_MATRIX: &[ParityEntry] = &[
         dispatch: DispatchPath::Placeholder,
         harness_equivalent: "harness.session_child_cycle_reverse",
     },
-    // === Harness-only commands (no Opencode equivalent) ===
+    // === Harness-only commands (no Harness equivalent) ===
     ParityEntry {
         id: "harness.close_review_surface",
         origin: "harness",
@@ -1469,7 +1628,7 @@ pub fn exclusion_rationale(id: &str) -> Option<&'static str> {
         ),
         ("tips.toggle", "Harness has no tips overlay"),
         (
-            "opencode.status",
+            "harness.status",
             "Harness has no status command; doctor covers readiness checks",
         ),
         (
@@ -1523,6 +1682,9 @@ mod tests {
 
     #[test]
     fn matrix_has_no_duplicate_ids() {
+        // arrange
+        // act
+        // assert
         let ids: HashSet<&str> = PARITY_MATRIX.iter().map(|e| e.id).collect();
         assert_eq!(
             ids.len(),
@@ -1533,6 +1695,9 @@ mod tests {
 
     #[test]
     fn matrix_includes_all_seed_included_commands() {
+        // arrange
+        // act
+        // assert
         let included: HashSet<&str> = included_ids().into_iter().collect();
         let required = [
             "session.list",
@@ -1549,7 +1714,7 @@ mod tests {
             "session.rename",
             "session.fork",
             "session.compact",
-            "session.sidebar.toggle",
+            "session.status.open",
             "session.toggle.timestamps",
             "session.toggle.thinking",
             "session.toggle.actions",
@@ -1569,6 +1734,9 @@ mod tests {
 
     #[test]
     fn matrix_includes_all_excluded_commands() {
+        // arrange
+        // act
+        // assert
         let excluded: HashSet<&str> = excluded_ids().into_iter().collect();
         let required = [
             "session.share",
@@ -1579,7 +1747,7 @@ mod tests {
             "help.show",
             "docs.open",
             "diff.open",
-            "opencode.status",
+            "harness.status",
             "plugins.list",
             "plugins.install",
             // Excluded with source-backed rationale (PRD Milestone 2):
@@ -1617,6 +1785,9 @@ mod tests {
 
     #[test]
     fn matrix_includes_hidden_non_targets() {
+        // arrange
+        // act
+        // assert
         let hidden: HashSet<&str> = hidden_non_target_ids().into_iter().collect();
         let required = [
             "command.palette.show",
@@ -1659,6 +1830,9 @@ mod tests {
 
     #[test]
     fn excluded_and_included_are_disjoint() {
+        // arrange
+        // act
+        // assert
         let included: HashSet<&str> = included_ids().into_iter().collect();
         let excluded: HashSet<&str> = excluded_ids().into_iter().collect();
         let overlap: Vec<&str> = included.intersection(&excluded).copied().collect();
@@ -1666,5 +1840,47 @@ mod tests {
             overlap.is_empty(),
             "included and excluded sets overlap: {overlap:?}"
         );
+    }
+
+    #[test]
+    fn production_statuses_never_use_placeholder_dispatch() {
+        // arrange
+        // act
+        // assert
+        let production_placeholders: Vec<&str> = PARITY_MATRIX
+            .iter()
+            .filter(|entry| {
+                matches!(
+                    entry.status,
+                    ParityStatus::Included | ParityStatus::HarnessOnly
+                ) && entry.dispatch == DispatchPath::Placeholder
+            })
+            .map(|entry| entry.id)
+            .collect();
+        assert!(
+            production_placeholders.is_empty(),
+            "production parity rows must not use Placeholder dispatch: {production_placeholders:?}"
+        );
+    }
+
+    #[test]
+    fn placeholder_dispatch_only_on_non_production_statuses() {
+        // arrange
+        // act
+        // assert
+        for entry in PARITY_MATRIX {
+            if entry.dispatch != DispatchPath::Placeholder {
+                continue;
+            }
+            assert!(
+                matches!(
+                    entry.status,
+                    ParityStatus::Excluded | ParityStatus::HiddenNonTarget
+                ),
+                "Placeholder dispatch for '{}' must be Excluded or HiddenNonTarget, got {:?}",
+                entry.id,
+                entry.status
+            );
+        }
     }
 }

@@ -49,6 +49,7 @@ pub struct SessionProjection {
     seen_seqs: BTreeSet<u64>,
     pub(crate) pending_permissions: BTreeMap<String, PendingPermission>,
     pub(crate) run_terminal_seen: bool,
+    pub(crate) pending_status_notice: Option<String>,
 }
 
 impl SessionProjection {
@@ -67,6 +68,7 @@ impl SessionProjection {
         self.run_terminal_seen = false;
         self.events_trimmed_count = 0;
         self.transcript_trimmed_count = 0;
+        self.pending_status_notice = None;
     }
 
     pub(crate) fn set_fallback_profile_label(&mut self, profile: impl Into<String>) {
@@ -143,6 +145,15 @@ impl SessionProjection {
             }
         }
         None
+    }
+
+    fn has_tool_call(&self, tool_call_id: &str) -> bool {
+        self.activities.iter().any(|activity| {
+            activity
+                .tool_calls
+                .iter()
+                .any(|tool_call| tool_call.tool_call_id == tool_call_id)
+        })
     }
 
     fn activity_index_for_request(&self, request_id: &str) -> Option<usize> {
@@ -335,6 +346,30 @@ impl SessionProjection {
                 tool_entry.sync_display_status();
                 return;
             }
+            if is_question_permission_kind(&permission_entry.kind) {
+                let activity_index = event
+                    .correlation_id
+                    .as_deref()
+                    .and_then(|request_id| {
+                        self.activities
+                            .iter()
+                            .position(|activity| activity.request_id == request_id)
+                    })
+                    .or_else(|| self.activities.len().checked_sub(1));
+                if let Some(activity_index) = activity_index {
+                    if self.push_orphan_question_tool_call(
+                        activity_index,
+                        tool_call_id,
+                        permission_entry,
+                        event.seq,
+                        event.mono_ms,
+                        event.ts.clone(),
+                    ) {
+                        return;
+                    }
+                }
+                return;
+            }
         }
 
         let found_by_correlation = event.correlation_id.as_deref().and_then(|request_id| {
@@ -352,6 +387,134 @@ impl SessionProjection {
             activity.permissions.push(permission_entry);
             activity.last_seq = event.seq;
         }
+    }
+
+    fn ensure_orphan_question_tool_calls(&mut self) {
+        let Some(latest_index) = self.activities.len().checked_sub(1) else {
+            return;
+        };
+
+        let pending: Vec<(String, super::PermissionEntry)> = self
+            .pending_permissions
+            .iter()
+            .filter(|(_, pending)| is_question_permission_kind(&pending.kind))
+            .filter_map(|(permission_id, pending)| {
+                let tool_call_id = pending.tool_call_id.as_deref()?;
+                Some((
+                    tool_call_id.to_string(),
+                    super::PermissionEntry {
+                        permission_id: permission_id.clone(),
+                        kind: pending.kind.clone(),
+                        tool_call_id: Some(tool_call_id.to_string()),
+                        summary: pending.summary.clone(),
+                        request_digest: pending.request_digest.clone(),
+                        timeout_ms: pending.timeout_ms,
+                        default_decision: pending.default_decision,
+                        resolved_decision: None,
+                        resolution_reason: None,
+                        first_seq: pending.seq,
+                        last_seq: pending.seq,
+                    },
+                ))
+            })
+            .collect();
+
+        for (tool_call_id, permission_entry) in pending {
+            if self.activities.get(latest_index).is_some_and(|activity| {
+                activity
+                    .tool_calls
+                    .iter()
+                    .any(|tool_call| tool_call.tool_call_id == tool_call_id)
+            }) {
+                continue;
+            }
+
+            let mut relocated: Option<ToolCallEntry> = None;
+            for (index, activity) in self.activities.iter_mut().enumerate() {
+                if index == latest_index {
+                    continue;
+                }
+                if let Some(pos) = activity
+                    .tool_calls
+                    .iter()
+                    .position(|tool_call| tool_call.tool_call_id == tool_call_id)
+                {
+                    relocated = Some(activity.tool_calls.remove(pos));
+                    break;
+                }
+            }
+
+            if let Some(tool_entry) = relocated {
+                if let Some(activity) = self.activities.get_mut(latest_index) {
+                    activity.tool_calls.push(tool_entry);
+                    activity.last_seq = activity.last_seq.max(permission_entry.last_seq);
+                }
+                continue;
+            }
+
+            let seq = permission_entry.first_seq;
+            let _ = self.push_orphan_question_tool_call(
+                latest_index,
+                &tool_call_id,
+                permission_entry,
+                seq,
+                0,
+                None,
+            );
+        }
+    }
+
+    fn push_orphan_question_tool_call(
+        &mut self,
+        activity_index: usize,
+        tool_call_id: &str,
+        permission_entry: super::PermissionEntry,
+        seq: u64,
+        mono_ms: u64,
+        timestamp: Option<String>,
+    ) -> bool {
+        if self.has_tool_call(tool_call_id) {
+            return false;
+        }
+        let Some(activity) = self.activities.get_mut(activity_index) else {
+            return false;
+        };
+
+        let mut tool_entry = ToolCallEntry {
+            tool_call_id: tool_call_id.to_string(),
+            tool_id: "user.question".to_string(),
+            canonical_tool_id: Some("user.question".to_string()),
+            alias_source_tool_id: None,
+            resolved_tool_identity: None,
+            args_summary: permission_entry.summary.clone(),
+            args_digest: permission_entry.request_digest.clone(),
+            lifecycle_state: Some(harness_core::event::ToolCallLifecycleState::Pending),
+            status: ToolCallDisplayStatus::PendingPermission,
+            output_summary: None,
+            output_digest: None,
+            output_json: None,
+            truncated_output: None,
+            edit: None,
+            lineage: None,
+            artifact_refs: Vec::new(),
+            timing_elapsed_ms: None,
+            permissions: vec![permission_entry],
+            first_seq: seq,
+            last_seq: seq,
+            first_mono_ms: mono_ms,
+            last_mono_ms: mono_ms,
+            first_timestamp: timestamp.clone(),
+            last_timestamp: timestamp,
+        };
+        tool_entry.sync_display_status();
+        activity.tool_calls.push(tool_entry);
+        activity.last_seq = activity.last_seq.max(seq);
+        // Advance turn mono so Waiting footer can pack elapsed duration.
+        if activity.first_mono_ms == 0 {
+            activity.first_mono_ms = mono_ms;
+        }
+        activity.last_mono_ms = activity.last_mono_ms.max(mono_ms);
+        true
     }
 
     fn update_permission_resolution(
@@ -784,6 +947,12 @@ fn titlecase_word(value: &str) -> String {
     label
 }
 
+fn is_question_permission_kind(kind: &str) -> bool {
+    kind.eq_ignore_ascii_case("question")
+        || kind.eq_ignore_ascii_case("ask")
+        || kind.eq_ignore_ascii_case("ask_user")
+}
+
 impl AppState {
     pub fn runtime_context_primary_summary(&self) -> String {
         self.control_dock_view_model().primary_summary
@@ -980,7 +1149,10 @@ mod tests {
                 }),
             }),
             thinking_text: String::new(),
+            thinking_first_mono_ms: None,
+            thinking_last_mono_ms: None,
             transcript_text: String::new(),
+            first_delta_mono_ms: None,
             usage: None,
             cache_usage: None,
             error_message: None,
@@ -990,6 +1162,7 @@ mod tests {
             last_seq: 1,
             first_mono_ms: 1,
             last_mono_ms: 1,
+            request_started_mono_ms: None,
             revision: 0,
         });
 
@@ -1031,7 +1204,10 @@ mod tests {
                 }),
             }),
             thinking_text: String::new(),
+            thinking_first_mono_ms: None,
+            thinking_last_mono_ms: None,
             transcript_text: String::new(),
+            first_delta_mono_ms: None,
             usage: None,
             cache_usage: None,
             error_message: None,
@@ -1041,6 +1217,7 @@ mod tests {
             last_seq: 1,
             first_mono_ms: 1,
             last_mono_ms: 1,
+            request_started_mono_ms: None,
             revision: 0,
         });
 

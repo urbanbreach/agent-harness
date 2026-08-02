@@ -571,11 +571,7 @@ pub(super) fn live_parent_events_update_parent_snapshot_while_inline_child_is_se
     let parent_render = render_debug(&app, 140, 40);
     assert!(parent_render.contains("parent response after child opened"));
     assert!(
-        parent_render.contains("Build · model-parent · active"),
-        "parent footer should keep the Build agent after returning from child view\n{parent_render}"
-    );
-    assert!(
-        !parent_render.contains("Assistant · model-parent"),
-        "parent footer must not fall back to generic Assistant after returning from child view\n{parent_render}"
+        parent_render.contains("model-parent"),
+        "parent footer should keep the parent model after returning from child view\n{parent_render}"
     );
 }

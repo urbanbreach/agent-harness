@@ -708,6 +708,10 @@ fn status_label(status: RunStatus) -> &'static str {
     }
 }
 
+#[allow(
+    deprecated,
+    reason = "deprecated event variants kept for backward compatibility with existing session logs"
+)]
 fn event_kind_label(event: &EventV1) -> &'static str {
     match event {
         EventV1::RunStarted(_) => "run_started",
@@ -746,5 +750,7 @@ fn event_kind_label(event: &EventV1) -> &'static str {
         EventV1::WorkspaceSnapshot(_) => "workspace_snapshot",
         EventV1::WorkspaceReverted(_) => "workspace_reverted",
         EventV1::UiIntentReceived(_) => "ui_intent_received",
+        EventV1::SessionCompaction(_) => "session_compaction",
+        EventV1::BranchSummary(_) => "branch_summary",
     }
 }

@@ -160,7 +160,7 @@ impl AppState {
         if self.permission_modal_is_active(permission_id) {
             self.permission_prompt.selection
         } else {
-            PermissionModalSelection::AllowOnce
+            PermissionModalSelection::AllowAlways
         }
     }
 
@@ -254,7 +254,7 @@ impl AppState {
         if self.permission_modal_is_active(permission_id) {
             self.permission_prompt.permission_id = None;
             self.permission_prompt.stage = PermissionModalStage::Decision;
-            self.permission_prompt.selection = PermissionModalSelection::AllowOnce;
+            self.permission_prompt.selection = PermissionModalSelection::AllowAlways;
             self.permission_prompt.confirm_selection = PermissionConfirmSelection::Confirm;
         }
     }
@@ -373,6 +373,7 @@ impl AppState {
                         if self.permission_modal_confirm_selection(&permission.permission_id)
                             == PermissionConfirmSelection::Confirm
                         {
+                            self.enable_always_approve_mode();
                             self.clear_permission_modal_selection(&permission.permission_id);
                             self.send_permission_intent(
                                 permission.permission_id.clone(),
@@ -408,6 +409,18 @@ impl AppState {
                         PermissionModalSelection::AllowOnce => {
                             self.execute_action(Action::AllowPermission);
                         }
+                        PermissionModalSelection::AllowSession => {
+                            // Product-honest session grant (freeze option 2).
+                            // Scope=Session records a durable grant for this request's
+                            // kind/tool/matcher for the remainder of the session.
+                            self.clear_permission_modal_selection(&permission.permission_id);
+                            self.send_permission_intent(
+                                permission.permission_id.clone(),
+                                PermissionDecision::Allow,
+                                None,
+                                Some(PermissionGrantScope::Session),
+                            );
+                        }
                         PermissionModalSelection::AllowAlways => {
                             self.open_permission_allow_always_confirm(&permission.permission_id);
                         }
@@ -418,6 +431,11 @@ impl AppState {
                     self.maybe_auto_exit();
                     return;
                 }
+                KeyCode::Esc => {
+                    self.execute_action(Action::DismissModal);
+                    self.maybe_auto_exit();
+                    return;
+                }
                 _ => {}
             }
         }
@@ -425,7 +443,10 @@ impl AppState {
         if let Some(action) = self.keymap.get_action(&key) {
             if matches!(
                 action,
-                Action::AllowPermission | Action::DenyPermission | Action::DismissModal
+                Action::AllowPermission
+                    | Action::AlwaysApprovePermission
+                    | Action::DenyPermission
+                    | Action::DismissModal
             ) {
                 self.execute_action(action);
                 self.maybe_auto_exit();
@@ -574,7 +595,10 @@ impl AppState {
         if let Some(action) = self.keymap.get_action(&key) {
             if matches!(
                 action,
-                Action::AllowPermission | Action::DenyPermission | Action::DismissModal
+                Action::AllowPermission
+                    | Action::AlwaysApprovePermission
+                    | Action::DenyPermission
+                    | Action::DismissModal
             ) {
                 self.execute_action(action);
                 self.maybe_auto_exit();
@@ -599,6 +623,10 @@ impl AppState {
                 }
                 self.clear_permission_modal_selection(&permission_id);
                 self.send_permission_intent(permission_id, PermissionDecision::Allow, reason, None);
+                true
+            }
+            Action::AlwaysApprovePermission => {
+                self.open_permission_allow_always_confirm(&permission_id);
                 true
             }
             Action::DenyPermission => {
@@ -958,5 +986,27 @@ impl AppState {
             grant_scope,
         });
         self.submitted_permission_id = Some(permission_id);
+    }
+
+    pub(super) fn maybe_auto_allow_active_permission(&mut self) {
+        if !self.always_approve_mode() {
+            return;
+        }
+        let Some(permission) = self.active_permission_view() else {
+            return;
+        };
+        if permission.question_prompts.is_some() {
+            return;
+        }
+        if self.submitted_permission_is_active(&permission.permission_id) {
+            return;
+        }
+        self.clear_permission_modal_selection(&permission.permission_id);
+        self.send_permission_intent(
+            permission.permission_id,
+            PermissionDecision::Allow,
+            None,
+            Some(PermissionGrantScope::Run),
+        );
     }
 }

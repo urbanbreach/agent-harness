@@ -40,6 +40,11 @@ mod part_03_config_validate_cli_loads_separate_tui_test {
     include!("config_schema_cli/03_config_validate_cli_loads_separate_tui_test.rs");
 }
 
+mod part_02g_doctor_cli_redacts_provider_credentials_test {
+    use super::*;
+    include!("config_schema_cli/02g_doctor_cli_redacts_provider_credentials_test.rs");
+}
+
 mod part_04_public_runtime_config_accepts_compaction_settings_test {
     use super::*;
     include!("config_schema_cli/04_public_runtime_config_accepts_compaction_settings_test.rs");

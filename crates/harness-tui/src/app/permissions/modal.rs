@@ -1,15 +1,24 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) enum PermissionModalSelection {
     #[default]
-    AllowOnce,
     AllowAlways,
+    /// Session-scoped grant for the current permission request (freeze option 2).
+    AllowSession,
+    AllowOnce,
     Reject,
 }
 
 impl PermissionModalSelection {
     pub(super) fn cycle(self, forward: bool, allow_always: bool) -> Self {
         let options = if allow_always {
-            [Self::AllowOnce, Self::AllowAlways, Self::Reject].as_slice()
+            // Permission order: always-approve, session edits, yes, reject.
+            [
+                Self::AllowAlways,
+                Self::AllowSession,
+                Self::AllowOnce,
+                Self::Reject,
+            ]
+            .as_slice()
         } else {
             [Self::AllowOnce, Self::Reject].as_slice()
         };

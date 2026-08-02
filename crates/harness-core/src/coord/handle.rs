@@ -404,6 +404,30 @@ impl CoordinatorHandle {
             .await
     }
 
+    /// Demote one foreground-blocking child task by child request id.
+    ///
+    /// On accept, the child continues as background under the same request id
+    /// (usable with `background_output`). Parent wait is released via the
+    /// existing mark-backgrounded journey.
+    pub async fn demote_foreground_child_task(
+        &self,
+        handle_id: impl Into<String>,
+    ) -> Result<crate::foreground_demote::DemoteToBackgroundResult, CoordinatorError> {
+        self.request(|respond_to| Command::DemoteForegroundChildTask {
+            handle_id: handle_id.into(),
+            respond_to,
+        })
+        .await
+    }
+
+    /// Demote every foreground-blocking child task; returns per-handle results.
+    pub async fn demote_all_foreground_child_tasks(
+        &self,
+    ) -> Result<Vec<crate::foreground_demote::DemoteToBackgroundResult>, CoordinatorError> {
+        self.request(|respond_to| Command::DemoteAllForegroundChildTasks { respond_to })
+            .await
+    }
+
     pub async fn wait_background_request_terminal(
         &self,
         request_id: impl Into<String>,
@@ -412,9 +436,68 @@ impl CoordinatorHandle {
     ) -> Result<bool, CoordinatorError> {
         let request_id = request_id.into();
         let scheduler_task_id = scheduler_task_id.as_ref().to_string();
+        let outcome = self
+            .wait_background_requests_terminal(
+                &[(request_id, scheduler_task_id)],
+                BackgroundWaitMode::All,
+                &[],
+                timeout_ms,
+            )
+            .await?;
+        Ok(outcome.satisfied)
+    }
+
+    /// Wait until wait-any / wait-all is satisfied for background targets.
+    ///
+    /// Targets are `(request_id, scheduler_task_id)`. `already_terminal` seeds ids known
+    /// terminal before the wait so already-satisfied waits return without re-emitted events.
+    pub async fn wait_background_requests_terminal(
+        &self,
+        targets: &[(String, String)],
+        mode: BackgroundWaitMode,
+        already_terminal: &[String],
+        timeout_ms: u64,
+    ) -> Result<BackgroundWaitOutcome, CoordinatorError> {
+        use std::collections::{BTreeMap, BTreeSet};
+
+        let mut terminal: BTreeSet<String> = already_terminal.iter().cloned().collect();
+        if targets.is_empty() {
+            let seeded: Vec<(String, bool)> = already_terminal
+                .iter()
+                .map(|request_id| (request_id.clone(), true))
+                .collect();
+            return Ok(BackgroundWaitOutcome {
+                satisfied: background_wait_condition_satisfied(mode, &seeded),
+                first_terminal_request_id: first_terminal_request_id(&seeded),
+            });
+        }
+
+        let scheduler_by_request: BTreeMap<&str, &str> = targets
+            .iter()
+            .map(|(request_id, scheduler_task_id)| {
+                (request_id.as_str(), scheduler_task_id.as_str())
+            })
+            .collect();
+        let mut ordered: Vec<(String, bool)> = already_terminal
+            .iter()
+            .map(|request_id| (request_id.clone(), true))
+            .collect();
+        ordered.extend(
+            targets
+                .iter()
+                .map(|(request_id, _)| (request_id.clone(), terminal.contains(request_id))),
+        );
+        if background_wait_condition_satisfied(mode, &ordered) {
+            return Ok(BackgroundWaitOutcome {
+                satisfied: true,
+                first_terminal_request_id: first_terminal_request_id(&ordered),
+            });
+        }
+
         let store = self.event_store().await?;
         let mut stream = store.subscribe(1)?;
         let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+        let mut first_seen_terminal: Option<String> = first_terminal_request_id(&ordered);
 
         while Instant::now() < deadline {
             let remaining = deadline.saturating_duration_since(Instant::now());
@@ -423,10 +506,33 @@ impl CoordinatorHandle {
                     .await;
             match next {
                 Ok(Some(Ok(event))) => {
-                    if event.correlation_id.as_deref() == Some(request_id.as_str())
-                        && background_terminal_event_matches_task(&event, &scheduler_task_id)
-                    {
-                        return Ok(true);
+                    let Some(request_id) = event.correlation_id.as_deref() else {
+                        continue;
+                    };
+                    let Some(scheduler_task_id) = scheduler_by_request.get(request_id) else {
+                        continue;
+                    };
+                    if !background_terminal_event_matches_task(&event, scheduler_task_id) {
+                        continue;
+                    }
+                    if terminal.insert(request_id.to_string()) && first_seen_terminal.is_none() {
+                        first_seen_terminal = Some(request_id.to_string());
+                    }
+                    let mut snapshot: Vec<(String, bool)> = already_terminal
+                        .iter()
+                        .map(|id| (id.clone(), true))
+                        .collect();
+                    snapshot.extend(
+                        targets
+                            .iter()
+                            .map(|(id, _)| (id.clone(), terminal.contains(id))),
+                    );
+                    if background_wait_condition_satisfied(mode, &snapshot) {
+                        return Ok(BackgroundWaitOutcome {
+                            satisfied: true,
+                            first_terminal_request_id: first_seen_terminal
+                                .or_else(|| first_terminal_request_id(&snapshot)),
+                        });
                     }
                 }
                 Ok(Some(Err(err))) => return Err(CoordinatorError::EventStore(err)),
@@ -434,7 +540,10 @@ impl CoordinatorHandle {
             }
         }
 
-        Ok(false)
+        Ok(BackgroundWaitOutcome {
+            satisfied: false,
+            first_terminal_request_id: first_seen_terminal,
+        })
     }
 
     pub async fn job_finished(
@@ -469,5 +578,12 @@ impl CoordinatorHandle {
             respond_to,
         })
         .await
+    }
+
+    pub async fn plugin_lifecycle_summary(
+        &self,
+    ) -> Result<crate::integrations::PluginLifecycleSummary, CoordinatorError> {
+        self.request(|respond_to| Command::GetPluginLifecycleSummary { respond_to })
+            .await
     }
 }

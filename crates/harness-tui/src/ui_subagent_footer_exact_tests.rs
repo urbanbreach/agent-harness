@@ -143,11 +143,11 @@ pub(crate) fn exact_test_subagent_footer_body_keeps_ordered_transcript_tool_rows
     let rendered = rows.join("\n");
     assert!(
         rendered.contains("Researcher (1 of 1)"),
-        "subagent footer should show the Opencode label/count row\n{rendered}"
+        "subagent footer should show the Harness label/count row\n{rendered}"
     );
     assert!(
         rendered.contains("Parent ↑") && rendered.contains("Prev ←") && rendered.contains("Next →"),
-        "subagent footer should show Opencode navigation controls\n{rendered}"
+        "subagent footer should show Harness navigation controls\n{rendered}"
     );
     assert!(
         !rendered.contains("First markdown answer.")
@@ -184,7 +184,7 @@ pub(crate) fn exact_test_subagent_footer_status_uses_running_and_cancelled_icons
     );
     assert!(
         !running_rows.contains("⠋") && !running_rows.contains("audit transcript parity"),
-        "Opencode subagent footer should omit the old Harness status/title row\n{running_rows}"
+        "Harness subagent footer should omit the old Harness status/title row\n{running_rows}"
     );
 
     let cancelled_app = AppState::new_replay(
@@ -212,6 +212,6 @@ pub(crate) fn exact_test_subagent_footer_status_uses_running_and_cancelled_icons
     );
     assert!(
         !cancelled_rows.contains("○") && !cancelled_rows.contains("audit transcript parity"),
-        "Opencode subagent footer should omit old Harness cancelled/title row\n{cancelled_rows}"
+        "Harness subagent footer should omit old Harness cancelled/title row\n{cancelled_rows}"
     );
 }

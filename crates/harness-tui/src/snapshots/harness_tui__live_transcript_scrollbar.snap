@@ -1,28 +1,27 @@
 ---
 source: crates/harness-tui/src/lib_tests/transcript_flow.rs
-expression: "render_live_lines(&app, 80,\n24).lines().map(str::trim_end).collect::<Vec<_>>().join(\"\\n\")"
+expression: rendered
 ---
 
-    ┃  question 10
-    ┃
-
-       reply 10 keeps wrapping through the transcript viewport so the
-       scrollbar thumb has real room to move
+   test-workspace /workspace/agent-harness
 
 
 
-    ┃
-    ┃  question 11
-    ┃
-                                                                           █
-       reply 11 keeps wrapping through the transcript viewport so the      █
-       scrollbar thumb has real room to move                               █
+     reply 10 keeps wrapping through the transcript viewport so the scrollbar
+     thumb has real room to move
 
 
 
-  ┃
-  ┃
-  ┃
-  ┃  gpt-5.4-mini openai
-  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
-                                                       live 0  Ctrl+p commands
+
+     ❯ question 11
+
+
+     reply 11 keeps wrapping through the transcript viewport so the scrollbar█
+     thumb has real room to move                                             █
+                                                                             █
+                                       ▼
+
+  ╭──────────────────────────────────────────────────────────────────────────╮
+  │ ❯                                                                        │
+  ╰─────────────────────────────────────────────────────────── gpt-5.4-mini ─╯
+  Shift+Tab:mode  │  Ctrl+x:shortcuts

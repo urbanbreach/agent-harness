@@ -1,6 +1,9 @@
 use harness_core::UnwrapOrAbort;
 #[test]
 fn resume_plan_uses_latest_lifecycle_segment_instead_of_any_terminal_event() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_dir = temp_dir.path().join("run_latest_segment");
     write_events(
@@ -83,6 +86,9 @@ fn resume_plan_uses_latest_lifecycle_segment_instead_of_any_terminal_event() {
 }
 #[test]
 fn resume_plan_keeps_provider_model_after_open_and_quit_resumed_segment() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_dir = temp_dir.path().join("run_open_quit_latest_segment");
     write_events(
@@ -163,6 +169,9 @@ fn resume_plan_keeps_provider_model_after_open_and_quit_resumed_segment() {
 }
 #[test]
 fn resume_plan_preserves_child_session_lineage_across_open_and_quit_resumed_segment() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_dir = temp_dir.path().join("run_child_lineage_open_quit");
     let lineage = TaskLineageMetadata {
@@ -283,6 +292,9 @@ fn resume_plan_preserves_child_session_lineage_across_open_and_quit_resumed_segm
 }
 #[test]
 fn session_catalog_counts_checkpoint_artifacts_alongside_tool_artifacts() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_dir = temp_dir.path().join("run_resume_checkpoint_artifacts");
 

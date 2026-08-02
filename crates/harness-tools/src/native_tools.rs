@@ -576,7 +576,7 @@ impl Tool for TaskTool {
 impl Tool for BackgroundOutputTool {
     tool_metadata!(
         "background_output",
-        "Provides durable retrieval of the current status or terminal result for a child task scheduled with task(run_in_background=true). Use it for interim status checks before completion, and for final result retrieval only after the coordinator/system completion notification. Prefer request_id from the task result; task_id/session_id resolve to the latest child request for compatibility. Set cancel=true anytime to request coordinator cancellation for a non-terminal child task.",
+        "Provides durable retrieval of the current status or terminal result for a child task scheduled with task(run_in_background=true). Use it for interim status checks before completion, and for final result retrieval only after the coordinator/system completion notification. Prefer request_id from the task result; task_id/session_id resolve to the latest child request for compatibility. Set cancel=true anytime to request coordinator cancellation for a non-terminal child task. For multi-wait, pass request_ids with wait_mode=`any` (first terminal) or `all` (every terminal) and block=true.",
         ToolCapability::SpawnAgent,
         super::json_schema_for::<BackgroundOutputArgs>()
     );
@@ -590,6 +590,8 @@ impl Tool for BackgroundOutputTool {
                     task_id: args.task_id,
                     session_id: args.session_id,
                     request_id: args.request_id,
+                    request_ids: args.request_ids,
+                    wait_mode: args.wait_mode,
                     block: args.block,
                     timeout_ms: args.timeout,
                     cancel: args.cancel,

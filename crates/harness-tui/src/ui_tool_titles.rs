@@ -106,9 +106,20 @@ pub(super) fn batch_tool_title(tool_call: &ToolCallEntry) -> String {
 }
 
 pub(super) fn write_tool_title(tool_call: &ToolCallEntry) -> String {
-    tool_summary_string(&tool_call.args_summary, &["filePath", "path"])
-        .map(|path| format!("Write {path}"))
-        .unwrap_or_else(|| "Write".to_string())
+    let path = tool_summary_string(&tool_call.args_summary, &["filePath", "path"]);
+    match tool_call.status {
+        crate::app::ToolCallDisplayStatus::Succeeded => path
+            .map(|path| format!("Created {path}"))
+            .unwrap_or_else(|| "Created".to_string()),
+        crate::app::ToolCallDisplayStatus::Failed => path
+            .map(|path| format!("Write {path}"))
+            .unwrap_or_else(|| "Write".to_string()),
+        crate::app::ToolCallDisplayStatus::PendingPermission
+        | crate::app::ToolCallDisplayStatus::Queued
+        | crate::app::ToolCallDisplayStatus::Running => path
+            .map(|path| format!("Creating {path}"))
+            .unwrap_or_else(|| "Creating file...".to_string()),
+    }
 }
 
 pub(super) fn edit_tool_title(tool_call: &ToolCallEntry) -> String {

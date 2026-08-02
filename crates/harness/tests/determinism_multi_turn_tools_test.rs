@@ -9,13 +9,16 @@ use common::CliHarness;
 
 #[test]
 fn deterministic_multi_turn_tools_twice_produces_identical_sha256_digest() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let session_dir = temp_dir.path().join("sessions");
     let output_a = temp_dir.path().join("run-a.jsonl");
     let output_b = temp_dir.path().join("run-b.jsonl");
 
-    run_scenario(session_dir.as_path(), output_a.as_path());
-    run_scenario(session_dir.as_path(), output_b.as_path());
+    run_scenario(session_dir.as_path(), output_a.as_path(), temp_dir.path());
+    run_scenario(session_dir.as_path(), output_b.as_path(), temp_dir.path());
 
     let bytes_a = fs::read(&output_a).unwrap_or_abort();
     let bytes_b = fs::read(&output_b).unwrap_or_abort();
@@ -25,8 +28,13 @@ fn deterministic_multi_turn_tools_twice_produces_identical_sha256_digest() {
     assert!(has_event_type(&bytes_a, "tool_call_finished"));
 }
 
-fn run_scenario(session_dir: &std::path::Path, out_path: &std::path::Path) {
+fn run_scenario(
+    session_dir: &std::path::Path,
+    out_path: &std::path::Path,
+    current_dir: &std::path::Path,
+) {
     let output = CliHarness::new()
+        .current_dir(current_dir)
         .args([
             "run".into(),
             "--scenario".into(),

@@ -25,10 +25,13 @@ async fn provider_tool_payload_snapshots_match_real_registry_profiles() -> Resul
     let expected: Snapshot = serde_json::from_str(&expected)?;
 
     // act
-    let result = generated == expected;
+    let comparison = (generated, expected);
 
     // assert
-    assert!(result, "snapshot mismatch");
+    assert_eq!(
+        comparison.0, comparison.1,
+        "provider tool payload snapshot mismatch"
+    );
     Ok(())
 }
 

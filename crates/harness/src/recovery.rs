@@ -4,6 +4,10 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use harness_core::crash_recovery::{
+    inspect_previous_crash, resolve_crash_recovery_action, CrashRecoveryAction,
+    CrashRecoveryApplyResult, PreviousCrashReport,
+};
 use harness_core::event::{ActorKind, EventEnvelopeV1, EventV1};
 use harness_core::proj::{
     inspect_resume_plan, project_run_summary, ResumePlan, RunStatus, SessionModeSource,
@@ -117,6 +121,32 @@ pub struct SessionRecoverySummary {
     pub artifacts: Vec<RecoveryArtifactEntry>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub continue_hint: Option<String>,
+    pub previous_crash_detected: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub previous_crash: Option<PreviousCrashReport>,
+    /// Human-readable recovery guidance when a previous crash was detected.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recovery_message: Option<String>,
+    /// Structured recovery action for CLI/TUI operators when a previous crash was detected.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recovery_action: Option<CrashRecoveryAction>,
+    /// Operator-facing command/hint for the structured recovery action.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recovery_action_hint: Option<String>,
+}
+
+/// Canonical `harness sessions reopen --json` response (Packet 3.4).
+///
+/// Exactly one typed envelope: the recovery summary nests under `summary` and
+/// crash-recovery details (when present) under `crash_recovery`. The legacy
+/// shape duplicated every summary field at the top level next to `summary`;
+/// that duplication is removed — consumers read `summary.*` and the optional
+/// `crash_recovery` object only.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SessionReopenJsonResponse {
+    pub summary: SessionRecoverySummary,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub crash_recovery: Option<CrashRecoveryApplyResult>,
 }
 
 pub fn resolve_session_run_dir(
@@ -174,6 +204,11 @@ pub fn inspect_session_recovery(run_dir: &Path) -> Result<SessionRecoverySummary
     } else {
         None
     };
+    let previous_crash = inspect_previous_crash(run_dir);
+    let previous_crash_detected = previous_crash.previous_crash_detected;
+    let recovery_action =
+        previous_crash_detected.then(|| resolve_crash_recovery_action(catalog.is_resumable));
+    let recovery_action_hint = recovery_action.map(|action| action.operator_hint(&catalog.run_id));
 
     Ok(SessionRecoverySummary {
         run_id: catalog.run_id.clone(),
@@ -200,6 +235,11 @@ pub fn inspect_session_recovery(run_dir: &Path) -> Result<SessionRecoverySummary
                 catalog.run_id
             )
         }),
+        previous_crash_detected,
+        recovery_message: previous_crash.recovery_message.clone(),
+        previous_crash: previous_crash_detected.then_some(previous_crash),
+        recovery_action,
+        recovery_action_hint,
     })
 }
 
@@ -464,6 +504,9 @@ mod tests {
 
     #[test]
     fn test_inspect_session_recovery_happy_path() {
+        // arrange
+        // act
+        // assert
         let root = tempdir().unwrap();
         // create a sessions directory so that run_dir.parent() works and inspect_session_catalog can find it
         let sessions_dir = root.path().join("sessions");
@@ -516,10 +559,140 @@ mod tests {
         assert!(summary.resumable);
         assert_eq!(summary.resume_agent_id, Some("agent-1".to_string()));
         assert_eq!(summary.total_events, 4);
+        assert!(!summary.previous_crash_detected);
+        assert!(summary.previous_crash.is_none());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_inspect_session_recovery_recovery_action_hint_when_resumable() {
+        // arrange
+        // act
+        // assert
+        // Given: resumable session (spawn + provider request + finish) with stale lock
+        let root = tempdir().unwrap();
+        let sessions_dir = root.path().join("sessions");
+        fs::create_dir_all(&sessions_dir).unwrap();
+        let run_dir = setup_session_dir(&sessions_dir, "test-run");
+        let events = vec![
+            envelope(
+                1,
+                None,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "interactive".into(),
+                    workspace_root: "/tmp".to_string(),
+                }),
+            ),
+            envelope(
+                2,
+                Some("agent-1"),
+                EventV1::AgentSpawned(AgentSpawnedEvent {
+                    agent_id: "agent-1".to_string(),
+                    profile: "default".to_string(),
+                    parent_agent_id: None,
+                }),
+            ),
+            envelope(
+                3,
+                Some("agent-1"),
+                EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                    request_id: "req_1".into(),
+                    provider_id: "mock".to_string(),
+                    model_id: "model-1".to_string(),
+                    prompt_summary: "hello".to_string(),
+                    request_digest: "digest".to_string(),
+                    metadata: None,
+                }),
+            ),
+            envelope(
+                4,
+                None,
+                EventV1::RunFinished(RunFinishedEvent {
+                    summary: "done".to_string(),
+                }),
+            ),
+        ];
+        write_events(&run_dir, &events);
+        fs::write(run_dir.join(".writer.lock"), "pid=999999999\ntoken=1\n").unwrap();
+
+        // When
+        let summary = inspect_session_recovery(&run_dir).unwrap();
+
+        // Then: recovery_message + structured recovery_action are present and actionable
+        let message = summary.recovery_message.expect("recovery_message");
+        assert!(summary.previous_crash_detected);
+        assert!(summary.resumable, "fixture must remain catalog-resumable");
+        assert!(message.contains("Previous crash detected"));
+        assert!(message.contains("sessions inspect"));
+        assert!(message.contains("Stale writer lock"));
+        assert_eq!(
+            summary.recovery_action,
+            Some(CrashRecoveryAction::ResumeWithPrompt)
+        );
+        let hint = summary
+            .recovery_action_hint
+            .as_deref()
+            .expect("recovery_action_hint");
+        assert!(hint.contains("harness prompt --resume"));
+        assert!(hint.contains("test-run"));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_inspect_session_recovery_reports_previous_crash_from_stale_lock() {
+        // arrange
+        // act
+        // assert
+        let root = tempdir().unwrap();
+        let sessions_dir = root.path().join("sessions");
+        fs::create_dir_all(&sessions_dir).unwrap();
+        let run_dir = setup_session_dir(&sessions_dir, "test-run");
+
+        let events = vec![
+            envelope(
+                1,
+                None,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "interactive".into(),
+                    workspace_root: "/tmp".to_string(),
+                }),
+            ),
+            envelope(
+                2,
+                Some("agent-1"),
+                EventV1::AgentSpawned(AgentSpawnedEvent {
+                    agent_id: "agent-1".to_string(),
+                    profile: "default".to_string(),
+                    parent_agent_id: None,
+                }),
+            ),
+            envelope(
+                3,
+                None,
+                EventV1::RunFinished(RunFinishedEvent {
+                    summary: "done".to_string(),
+                }),
+            ),
+        ];
+        write_events(&run_dir, &events);
+        fs::write(run_dir.join(".writer.lock"), "pid=999999999\ntoken=1\n").unwrap();
+
+        let summary = inspect_session_recovery(&run_dir).unwrap();
+        assert!(summary.previous_crash_detected);
+        let report = summary.previous_crash.expect("crash report");
+        assert!(report.stale_writer_lock);
+        let message = summary.recovery_message.expect("recovery_message");
+        assert!(message.contains("Previous crash detected"));
+        assert!(message.contains("Stale writer lock"));
+        assert!(summary.recovery_action.is_some());
+        assert!(summary.recovery_action_hint.is_some());
     }
 
     #[test]
     fn test_inspect_session_recovery_no_events() {
+        // arrange
+        // act
+        // assert
         let root = tempdir().unwrap();
         let run_dir = setup_session_dir(root.path(), "test-run");
         write_events(&run_dir, &[]);
@@ -530,6 +703,9 @@ mod tests {
 
     #[test]
     fn test_inspect_session_recovery_missing_events_file() {
+        // arrange
+        // act
+        // assert
         let root = tempdir().unwrap();
         let run_dir = setup_session_dir(root.path(), "test-run");
         // Don't write events file
@@ -540,6 +716,9 @@ mod tests {
 
     #[test]
     fn test_inspect_session_recovery_not_resumable() {
+        // arrange
+        // act
+        // assert
         let root = tempdir().unwrap();
         let sessions_dir = root.path().join("sessions");
         fs::create_dir_all(&sessions_dir).unwrap();
@@ -572,12 +751,18 @@ mod tests {
 
     #[test]
     fn test_latest_run_name_empty() {
+        // arrange
+        // act
+        // assert
         let events = vec![];
         assert_eq!(latest_run_name(&events), None);
     }
 
     #[test]
     fn test_latest_run_name_unrelated_events() {
+        // arrange
+        // act
+        // assert
         let events = vec![envelope(
             1,
             None,
@@ -590,6 +775,9 @@ mod tests {
 
     #[test]
     fn test_latest_run_name_run_started() {
+        // arrange
+        // act
+        // assert
         let events = vec![envelope(
             1,
             None,
@@ -603,6 +791,9 @@ mod tests {
 
     #[test]
     fn test_latest_run_name_session_title_updated() {
+        // arrange
+        // act
+        // assert
         let events = vec![envelope(
             1,
             None,
@@ -615,6 +806,9 @@ mod tests {
 
     #[test]
     fn test_latest_run_name_multiple_events() {
+        // arrange
+        // act
+        // assert
         let events = vec![
             envelope(
                 1,
@@ -647,6 +841,9 @@ mod tests {
 
     #[test]
     fn test_latest_run_name_uses_last_matching_event_kind() {
+        // arrange
+        // act
+        // assert
         let events = vec![
             envelope(
                 1,
@@ -669,6 +866,9 @@ mod tests {
 
     #[test]
     fn test_inspect_session_recovery_multiple_agents() {
+        // arrange
+        // act
+        // assert
         let root = tempdir().unwrap();
         let sessions_dir = root.path().join("sessions");
         fs::create_dir_all(&sessions_dir).unwrap();

@@ -1,6 +1,9 @@
 use harness_core::UnwrapOrAbort;
 #[tokio::test]
 async fn running_agent_turn_cancellation_emits_single_owner_aware_terminal_event() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let coordinator = test_agent_coordinator(temp_dir.path(), Duration::from_millis(100));
 
@@ -84,6 +87,9 @@ async fn running_agent_turn_cancellation_emits_single_owner_aware_terminal_event
 }
 #[tokio::test]
 async fn coord_agent_turn_provider_events_have_isolated_correlation_ids() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let coordinator = test_agent_coordinator(temp_dir.path(), Duration::from_millis(5));
 
@@ -187,6 +193,7 @@ async fn provider_single_call_returns_tool_intents_without_executing_tools() {
         max_iters: Some(12),
         tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
         toolset: vec!["shell.run".to_string()],
+        permission_ruleset: Vec::new(),
     };
     let request = AgentRequest {
         agent_id: "agent_1".to_string(),
@@ -245,11 +252,11 @@ async fn provider_single_call_returns_tool_intents_without_executing_tools() {
                 arguments_json: r#"{"cmd":"two"}"#.to_string(),
             },
             ProviderStreamEvent::Done {
-                usage: CompletionUsage {
+                usage: Some(CompletionUsage {
                     prompt_tokens: 2,
                     completion_tokens: 3,
                     total_tokens: 5,
-                },
+                }),
             },
         ],
     );
@@ -336,6 +343,9 @@ async fn provider_single_call_returns_tool_intents_without_executing_tools() {
 }
 #[tokio::test]
 async fn provider_calls_in_one_turn_have_unique_request_ids() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![
         vec![
@@ -346,22 +356,22 @@ async fn provider_calls_in_one_turn_have_unique_request_ids() {
                 arguments_json: "{}".to_string(),
             },
             ProviderStreamEvent::Done {
-                usage: CompletionUsage {
+                usage: Some(CompletionUsage {
                     prompt_tokens: 2,
                     completion_tokens: 1,
                     total_tokens: 3,
-                },
+                }),
             },
         ],
         vec![
             ProviderStreamEvent::Start,
             ProviderStreamEvent::TextDelta("final answer".to_string()),
             ProviderStreamEvent::Done {
-                usage: CompletionUsage {
+                usage: Some(CompletionUsage {
                     prompt_tokens: 3,
                     completion_tokens: 2,
                     total_tokens: 5,
-                },
+                }),
             },
         ],
     ]);

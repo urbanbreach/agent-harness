@@ -224,6 +224,11 @@ const COMMAND_METADATA: &[CommandMetadata] = &[
         description: "Allow permission",
     },
     CommandMetadata {
+        id: "always_approve_permission",
+        label: "Always approve permission",
+        description: "Open always-approve confirm for the active permission",
+    },
+    CommandMetadata {
         id: "deny_permission",
         label: "Deny permission",
         description: "Deny permission",
@@ -419,9 +424,34 @@ const COMMAND_METADATA: &[CommandMetadata] = &[
         description: "Open the prompt stash dialog to browse stashed prompts",
     },
     CommandMetadata {
+        id: "open_settings",
+        label: "Settings",
+        description: "Browse typed settings registry entries (read-only)",
+    },
+    CommandMetadata {
+        id: "open_view_plan",
+        label: "View Plan",
+        description: "View plan files for this workspace/session",
+    },
+    CommandMetadata {
+        id: "open_status_dialog",
+        label: "Status dialog",
+        description: "Open the status dialog",
+    },
+    CommandMetadata {
         id: "open_lineage_browser",
         label: "Session tree",
         description: "Open the Harness session lineage browser",
+    },
+    CommandMetadata {
+        id: "open_memory_browser",
+        label: "Memory",
+        description: "Open the durable memory browser",
+    },
+    CommandMetadata {
+        id: "open_worktree_picker",
+        label: "Switch worktree",
+        description: "Switch the active session worktree",
     },
     CommandMetadata {
         id: "session_child_first",
@@ -473,13 +503,18 @@ const COMMAND_METADATA: &[CommandMetadata] = &[
         label: "Toggle thinking",
         description: "Toggle inline thinking rows",
     },
+    CommandMetadata {
+        id: "slash_import",
+        label: "Import foreign session",
+        description: "Discover and import a foreign session as replay-only",
+    },
 ];
 
 pub(super) fn command_metadata(id: &str) -> Option<&'static CommandMetadata> {
     COMMAND_METADATA.iter().find(|entry| entry.id == id)
 }
 
-const SLASH_COMMANDS: [SlashCommand; 21] = [
+const SLASH_COMMANDS: [SlashCommand; 26] = [
     SlashCommand {
         id: "new",
         metadata_id: "slash_new",
@@ -584,6 +619,31 @@ const SLASH_COMMANDS: [SlashCommand; 21] = [
         id: "thinking",
         metadata_id: "slash_thinking",
         aliases: &["toggle-thinking"],
+    },
+    SlashCommand {
+        id: "settings",
+        metadata_id: "open_settings",
+        aliases: &[],
+    },
+    SlashCommand {
+        id: "view-plan",
+        metadata_id: "open_view_plan",
+        aliases: &["view_plan"],
+    },
+    SlashCommand {
+        id: "dashboard",
+        metadata_id: "open_status_dialog",
+        aliases: &[],
+    },
+    SlashCommand {
+        id: "feedback",
+        metadata_id: "help",
+        aliases: &[],
+    },
+    SlashCommand {
+        id: "import",
+        metadata_id: "slash_import",
+        aliases: &["import-session"],
     },
 ];
 
@@ -763,6 +823,18 @@ const PALETTE_COMMANDS: &[PaletteCommand] = &[
         metadata_id: "help",
         shortcut: "?",
         section: PaletteCommandSection::System,
+    },
+    PaletteCommand {
+        id: "open_settings",
+        metadata_id: "open_settings",
+        shortcut: "",
+        section: PaletteCommandSection::System,
+    },
+    PaletteCommand {
+        id: "open_view_plan",
+        metadata_id: "open_view_plan",
+        shortcut: "",
+        section: PaletteCommandSection::Session,
     },
     PaletteCommand {
         id: "quit",

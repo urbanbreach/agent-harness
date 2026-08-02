@@ -1,18 +1,21 @@
 // allow: SIZE_OK — keybinding data and command registry (palette entries)
-//! Opencode-compatible palette command model.
+//! ruleset-compatible palette command model.
 //!
-//! Each entry uses a stable Opencode command ID as the contract key.
+//! Each entry uses a stable Harness command ID as the contract key.
 //! Dynamic toggle commands use one command ID with a `DynamicTitle` rule
 //! instead of split show/hide entries. Harness-only commands are marked
-//! explicitly and excluded from Opencode parity accounting.
+//! explicitly and excluded from Harness parity accounting.
 
 use crate::keybindings::Action;
 
-/// Opencode-compatible palette command section (category).
+/// ruleset-compatible palette command section (category).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum PaletteCategory {
     Suggested,
     Session,
+    Context,
+    ModelInput,
+    Tools,
     Agent,
     System,
     Workspace,
@@ -25,6 +28,9 @@ impl PaletteCategory {
         match self {
             Self::Suggested => "Suggested",
             Self::Session => "Session",
+            Self::Context => "Context",
+            Self::ModelInput => "Model & Input",
+            Self::Tools => "Tools",
             Self::Agent => "Agent",
             Self::System => "System",
             Self::Workspace => "Workspace",
@@ -85,6 +91,7 @@ pub enum PaletteDispatch {
     OpenConnectDialog,
     /// Emit a UiIntent.
     NewSession,
+    NewWorktreeSession,
     CompactSession,
     /// Copy the full session transcript to clipboard.
     CopySessionTranscript,
@@ -92,10 +99,37 @@ pub enum PaletteDispatch {
     Placeholder,
 }
 
-/// A single Opencode-compatible palette command entry.
+impl PaletteCommandEntry {
+    pub fn freeze_shortcut(&self) -> &'static str {
+        match self.id {
+            "session.new" => "Ctrl+N",
+            "session.new.worktree" => "Ctrl+P \u{2192} worktree",
+            "session.dashboard" => "/dashboard",
+            "session.home" => "/home",
+            "session.list" => "/resume",
+            "session.rename" => "/rename",
+            "session.info" => "/session-info",
+            "session.feedback" => "/feedback",
+            "session.compact" => "/compact",
+            "context.usage" => "/context",
+            "context.view_plan" => "/view-plan",
+            "context.memory" => "/memory",
+            "worktree.switch" => "/worktree",
+            "model.list" => "/model",
+            "model.always_approve" => "/always-approve",
+            "model.multiline" => "/multiline",
+            "tools.hooks" => "/hooks",
+            "tools.plugins" => "/plugins",
+            "tools.marketplace" => "/marketplace",
+            _ => "",
+        }
+    }
+}
+
+/// A single ruleset-compatible palette command entry.
 #[derive(Debug, Clone, Copy)]
 pub struct PaletteCommandEntry {
-    /// Stable Opencode command ID (e.g., "session.new").
+    /// Stable Harness command ID (e.g., "session.new").
     pub id: &'static str,
     /// Category for grouping.
     pub category: PaletteCategory,
@@ -105,45 +139,89 @@ pub struct PaletteCommandEntry {
     pub description: &'static str,
     /// Suggested rule.
     pub suggested: SuggestedRule,
-    /// True if this is a Harness-only command with no Opencode equivalent.
+    /// True if this is a Harness-only command with no Harness equivalent.
     pub harness_only: bool,
     /// Dispatch target.
     pub dispatch: PaletteDispatch,
 }
 
-/// The complete Opencode-compatible palette command registry.
+/// The complete ruleset-compatible palette command registry.
 ///
 /// Derived from the parity matrix in `parity_matrix.rs`.
 /// Only `Included` commands appear here; excluded and hidden non-target
 /// commands are absent by construction.
 pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
-    // === Session ===
-    PaletteCommandEntry {
-        id: "session.list",
-        category: PaletteCategory::Session,
-        title: DynamicTitle::Static("Switch session"),
-        description: "Continue a prior session when resumable",
-        suggested: SuggestedRule::WhenSessionsExist,
-        harness_only: false,
-        dispatch: PaletteDispatch::OpenSessionHistory,
-    },
     PaletteCommandEntry {
         id: "session.new",
         category: PaletteCategory::Session,
-        title: DynamicTitle::Static("New session"),
+        title: DynamicTitle::Static("New Session"),
         description: "Start a fresh live session",
-        suggested: SuggestedRule::WhenSessionRoute,
+        suggested: SuggestedRule::Never,
         harness_only: false,
         dispatch: PaletteDispatch::NewSession,
     },
     PaletteCommandEntry {
+        id: "session.new.worktree",
+        category: PaletteCategory::Session,
+        title: DynamicTitle::Static("New Session in Worktree"),
+        description: "Create a git worktree and start a fresh session rooted in it",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::NewWorktreeSession,
+    },
+    PaletteCommandEntry {
+        id: "session.dashboard",
+        category: PaletteCategory::Session,
+        title: DynamicTitle::Static("Agent Dashboard"),
+        description: "Open the agent dashboard",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Action(Action::OpenStatusDialog),
+    },
+    PaletteCommandEntry {
+        id: "session.home",
+        category: PaletteCategory::Session,
+        title: DynamicTitle::Static("Back to Home"),
+        description: "Return to the home shell",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Action(Action::CloseReviewSurface),
+    },
+    PaletteCommandEntry {
+        id: "session.list",
+        category: PaletteCategory::Session,
+        title: DynamicTitle::Static("Resume Session"),
+        description: "Continue a prior session when resumable",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::OpenSessionHistory,
+    },
+    PaletteCommandEntry {
         id: "session.rename",
         category: PaletteCategory::Session,
-        title: DynamicTitle::Static("Rename session"),
+        title: DynamicTitle::Static("Rename Session"),
         description: "Rename the current session",
         suggested: SuggestedRule::Never,
         harness_only: false,
         dispatch: PaletteDispatch::OpenSessionRename,
+    },
+    PaletteCommandEntry {
+        id: "session.info",
+        category: PaletteCategory::Session,
+        title: DynamicTitle::Static("Session Info"),
+        description: "Open status and session details",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Action(Action::OpenStatusDialog),
+    },
+    PaletteCommandEntry {
+        id: "session.feedback",
+        category: PaletteCategory::Session,
+        title: DynamicTitle::Static("Send Feedback"),
+        description: "Open help (feedback action maps to help surface)",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Action(Action::Help),
     },
     PaletteCommandEntry {
         id: "session.fork",
@@ -156,24 +234,57 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
     },
     PaletteCommandEntry {
         id: "session.compact",
-        category: PaletteCategory::Session,
-        title: DynamicTitle::Static("Compact session"),
+        category: PaletteCategory::Context,
+        title: DynamicTitle::Static("Compact History"),
         description: "Write a manual context checkpoint",
         suggested: SuggestedRule::Never,
         harness_only: false,
         dispatch: PaletteDispatch::CompactSession,
     },
     PaletteCommandEntry {
-        id: "session.sidebar.toggle",
-        category: PaletteCategory::Session,
-        title: DynamicTitle::ShowHide {
-            show: "Show sidebar",
-            hide: "Hide sidebar",
-        },
-        description: "Toggle the operator sidebar",
+        id: "context.usage",
+        category: PaletteCategory::Context,
+        title: DynamicTitle::Static("Context Usage"),
+        description: "Show context usage",
         suggested: SuggestedRule::Never,
         harness_only: false,
-        dispatch: PaletteDispatch::Action(Action::ToggleOperatorSidebar),
+        dispatch: PaletteDispatch::Action(Action::OpenStatusDialog),
+    },
+    PaletteCommandEntry {
+        id: "context.view_plan",
+        category: PaletteCategory::Context,
+        title: DynamicTitle::Static("View Plan"),
+        description: "View plan files for this workspace/session",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Action(Action::OpenViewPlan),
+    },
+    PaletteCommandEntry {
+        id: "context.memory",
+        category: PaletteCategory::Context,
+        title: DynamicTitle::Static("Memory"),
+        description: "Open the durable memory browser",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Action(Action::OpenMemoryBrowser),
+    },
+    PaletteCommandEntry {
+        id: "worktree.switch",
+        category: PaletteCategory::Session,
+        title: DynamicTitle::Static("Switch Worktree"),
+        description: "Switch the active session worktree",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Action(Action::OpenWorktreePicker),
+    },
+    PaletteCommandEntry {
+        id: "session.status.open",
+        category: PaletteCategory::Session,
+        title: DynamicTitle::Static("Open status"),
+        description: "Open status and session details",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Action(Action::OpenStatusDialog),
     },
     PaletteCommandEntry {
         id: "session.toggle.timestamps",
@@ -262,16 +373,16 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
     // === Agent ===
     PaletteCommandEntry {
         id: "model.list",
-        category: PaletteCategory::Agent,
-        title: DynamicTitle::Static("Switch model"),
+        category: PaletteCategory::ModelInput,
+        title: DynamicTitle::Static("Switch Model"),
         description: "Browse available provider/model options",
-        suggested: SuggestedRule::Always,
+        suggested: SuggestedRule::Never,
         harness_only: false,
         dispatch: PaletteDispatch::OpenModelSwitcher,
     },
     PaletteCommandEntry {
         id: "agent.list",
-        category: PaletteCategory::Agent,
+        category: PaletteCategory::ModelInput,
         title: DynamicTitle::Static("Switch agent"),
         description: "Switch the active agent profile",
         suggested: SuggestedRule::Never,
@@ -280,7 +391,7 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
     },
     PaletteCommandEntry {
         id: "mcp.list",
-        category: PaletteCategory::Agent,
+        category: PaletteCategory::ModelInput,
         title: DynamicTitle::Static("Toggle MCPs"),
         description: "Toggle MCP server registrations",
         suggested: SuggestedRule::Never,
@@ -289,12 +400,58 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
     },
     PaletteCommandEntry {
         id: "variant.cycle",
-        category: PaletteCategory::Agent,
+        category: PaletteCategory::ModelInput,
         title: DynamicTitle::Static("Variant cycle"),
         description: "Cycle the configured model variant/reasoning preset",
         suggested: SuggestedRule::Never,
         harness_only: false,
         dispatch: PaletteDispatch::Action(Action::VariantCycle),
+    },
+    PaletteCommandEntry {
+        id: "model.always_approve",
+        category: PaletteCategory::ModelInput,
+        title: DynamicTitle::Static("Always Approve Mode"),
+        description: "Toggle always-approve (YOLO) mode for tool permissions",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::OpenTogglesMenu,
+    },
+    PaletteCommandEntry {
+        id: "model.multiline",
+        category: PaletteCategory::ModelInput,
+        title: DynamicTitle::Static("Multiline Input"),
+        description: "Toggle multiline input mode in the composer",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Action(Action::InsertNewline),
+    },
+    // === Tools ===
+    PaletteCommandEntry {
+        id: "tools.hooks",
+        category: PaletteCategory::Tools,
+        title: DynamicTitle::Static("Hooks"),
+        description: "Manage hooks configuration",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::OpenTogglesMenu,
+    },
+    PaletteCommandEntry {
+        id: "tools.plugins",
+        category: PaletteCategory::Tools,
+        title: DynamicTitle::Static("Plugins"),
+        description: "Manage plugins",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::OpenTogglesMenu,
+    },
+    PaletteCommandEntry {
+        id: "tools.marketplace",
+        category: PaletteCategory::Tools,
+        title: DynamicTitle::Static("Marketplace"),
+        description: "Browse the plugin marketplace",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Action(Action::Help),
     },
     // === Workspace ===
     // === Provider ===
@@ -337,6 +494,15 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
     },
     // === System ===
     PaletteCommandEntry {
+        id: "settings.list",
+        category: PaletteCategory::System,
+        title: DynamicTitle::Static("Settings"),
+        description: "Browse typed settings registry entries (read-only)",
+        suggested: SuggestedRule::Never,
+        harness_only: false,
+        dispatch: PaletteDispatch::Action(Action::OpenSettings),
+    },
+    PaletteCommandEntry {
         id: "app.exit",
         category: PaletteCategory::System,
         title: DynamicTitle::Static("Exit the app"),
@@ -345,7 +511,7 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         harness_only: false,
         dispatch: PaletteDispatch::Action(Action::Quit),
     },
-    // === Harness-only commands (no Opencode equivalent) ===
+    // === Harness-only commands (no Harness equivalent) ===
     PaletteCommandEntry {
         id: "harness.close_review_surface",
         category: PaletteCategory::Session,
@@ -489,7 +655,7 @@ pub fn all_ids() -> Vec<&'static str> {
     PALETTE_COMMAND_ENTRIES.iter().map(|e| e.id).collect()
 }
 
-/// Get all Opencode-parity command IDs (excluding harness-only).
+/// Get all Harness-parity command IDs (excluding harness-only).
 pub fn parity_ids() -> Vec<&'static str> {
     PALETTE_COMMAND_ENTRIES
         .iter()
@@ -514,6 +680,9 @@ mod tests {
 
     #[test]
     fn entries_have_no_duplicate_ids() {
+        // arrange
+        // act
+        // assert
         let ids: HashSet<&str> = PALETTE_COMMAND_ENTRIES.iter().map(|e| e.id).collect();
         assert_eq!(
             ids.len(),
@@ -523,7 +692,26 @@ mod tests {
     }
 
     #[test]
+    fn production_palette_entries_have_no_placeholder_dispatch() {
+        // arrange
+        // act
+        // assert
+        let placeholders: Vec<&str> = PALETTE_COMMAND_ENTRIES
+            .iter()
+            .filter(|entry| matches!(entry.dispatch, PaletteDispatch::Placeholder))
+            .map(|entry| entry.id)
+            .collect();
+        assert!(
+            placeholders.is_empty(),
+            "production palette must not advertise Placeholder dispatches: {placeholders:?}"
+        );
+    }
+
+    #[test]
     fn all_parity_matrix_included_ids_have_entries() {
+        // arrange
+        // act
+        // assert
         let entry_ids: HashSet<&str> = all_ids().into_iter().collect();
         for id in crate::keybindings::parity_matrix::included_ids() {
             assert!(
@@ -535,6 +723,9 @@ mod tests {
 
     #[test]
     fn no_excluded_ids_in_registry() {
+        // arrange
+        // act
+        // assert
         let entry_ids: HashSet<&str> = all_ids().into_iter().collect();
         for id in crate::keybindings::parity_matrix::excluded_ids() {
             assert!(
@@ -546,6 +737,9 @@ mod tests {
 
     #[test]
     fn no_hidden_non_target_ids_in_registry() {
+        // arrange
+        // act
+        // assert
         let entry_ids: HashSet<&str> = all_ids().into_iter().collect();
         for id in crate::keybindings::parity_matrix::hidden_non_target_ids() {
             assert!(
@@ -557,6 +751,9 @@ mod tests {
 
     #[test]
     fn harness_only_ids_are_prefixed() {
+        // arrange
+        // act
+        // assert
         for id in harness_only_ids() {
             assert!(
                 id.starts_with("harness."),

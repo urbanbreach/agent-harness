@@ -4,6 +4,9 @@ use crate::UnwrapOrAbort;
 #[tokio::test]
 #[ignore = "requires HARNESS_LIVE_PROXY=1 and local proxy access"]
 async fn openai_compatible_live_proxy_config_file_smoke() {
+    // arrange
+    // act
+    // assert
     if env::var("HARNESS_LIVE_PROXY").as_deref() != Ok("1") {
         return;
     }
@@ -75,6 +78,9 @@ async fn openai_compatible_live_proxy_config_file_smoke() {
 
 #[test]
 fn live_smoke_env_reference_supports_default_fallback_syntax() {
+    // arrange
+    // act
+    // assert
     assert_eq!(
         resolve_env_reference_with("${HARNESS_PROVIDER_TEST_API_KEY:-fallback-key}", |_| None),
         "fallback-key"

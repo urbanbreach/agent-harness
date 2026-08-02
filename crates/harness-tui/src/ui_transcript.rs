@@ -38,8 +38,8 @@ use super::ui_tool_question_todo::{
     todo_items_from_tool_call, TranscriptTodoItem,
 };
 use super::ui_tool_style::{
-    block_tool_color, block_tool_rail_color, generic_tool_visual_style, inline_tool_color,
-    task_inline_tool_color, tool_call_header_style, TranscriptToolCallVisualStyle,
+    block_tool_color, generic_tool_visual_style, inline_tool_color, task_inline_tool_color,
+    tool_call_header_style, TranscriptToolCallVisualStyle,
 };
 use super::ui_tool_titles::{
     background_output_tool_subtitle, background_output_tool_title, batch_tool_title,
@@ -75,9 +75,9 @@ use super::ui_transcript_layout::{
     MeasuredTranscriptSurface,
 };
 use super::ui_transcript_scrollbar::{
-    current_transcript_scroll_top, render_transcript_scrollbar, transcript_scroll_offset,
-    transcript_scrollbar_geometry, transcript_scrollbar_needed, transcript_viewport_layout,
-    TranscriptScrollbarHit,
+    current_transcript_scroll_top, render_transcript_more_below_affordance,
+    render_transcript_scrollbar, transcript_scroll_offset, transcript_scrollbar_geometry,
+    transcript_scrollbar_needed, transcript_viewport_layout, TranscriptScrollbarHit,
 };
 use super::ui_transcript_selection::{
     blank_selection_row, compact_selection_row, lifecycle_selection_snapshot,
@@ -96,8 +96,10 @@ use super::ui_transcript_style::{
 use super::ui_transcript_surface::{
     append_nested_surface_row, append_prebuilt_nested_surface_lines, append_prebuilt_surface_lines,
     append_prefixed_wrapped_spans_line, append_surface_row, append_user_surface_text_block,
-    nested_surface_prefix_width, surface_prefix_width, transcript_surface_content_width,
-    transcript_surface_render_width, user_surface_line, TRANSCRIPT_RAIL_GLYPH,
+    append_user_surface_text_block_with_first_line_reserve, nested_surface_prefix_width,
+    render_empty_scrollback_indicator, surface_prefix_width, surface_span,
+    transcript_surface_content_width, transcript_surface_render_width, user_surface_line,
+    wrap_surface_spans, TRANSCRIPT_RAIL_GLYPH,
 };
 #[path = "ui_transcript_types.rs"]
 mod ui_transcript_types;
@@ -116,6 +118,9 @@ mod ui_transcript_tool_sections;
 
 #[path = "ui_transcript_sections.rs"]
 mod ui_transcript_sections;
+
+#[path = "ui_transcript_compaction.rs"]
+mod ui_transcript_compaction;
 
 use ui_transcript_render::build_transcript_render_surfaces;
 use ui_transcript_sections::build_transcript_sections;
@@ -185,6 +190,7 @@ pub(super) fn render_transcript_pane(frame: &mut Frame, app: &AppState, area: Re
 
         if live_empty_state_visible(app) {
             render_live_empty_state(frame, app, inner_area, theme);
+            render_empty_scrollback_indicator(frame, inner_area, theme);
             let selection_snapshot = app.transcript_selection().and_then(|_| {
                 app.last_frame_area().and_then(|frame_area| {
                     with_transcript_selection_snapshot(app, frame_area, Clone::clone)
@@ -240,17 +246,19 @@ fn transcript_pane_context<'a>(
     theme: &'a Theme,
 ) -> TranscriptPaneContext<'a> {
     if !app.replay_mode {
-        let vertical_gutter = if app.startup_shell_visible() || live_empty_state_visible(app) {
+        let startup_or_empty = app.startup_shell_visible() || live_empty_state_visible(app);
+        let horizontal_gutter = if startup_or_empty {
+            0
+        } else {
+            theme.live_shell.rhythm.transcript_gutter_x
+        };
+        let vertical_gutter = if startup_or_empty {
             0
         } else {
             theme.live_shell.rhythm.transcript_gutter_y
         };
         return TranscriptPaneContext {
-            inner_area: inset_rect(
-                area,
-                theme.live_shell.rhythm.transcript_gutter_x,
-                vertical_gutter,
-            ),
+            inner_area: inset_rect(area, horizontal_gutter, vertical_gutter),
             base_surface: theme.surface.shell,
             block: None,
         };
@@ -347,15 +355,19 @@ fn render_measured_transcript_pane(
                     return;
                 }
 
-                frame.render_widget(
-                    Paragraph::new(Text::from(vec![Line::from(Span::styled(
-                        "Waiting for first turn…",
-                        Style::default().fg(theme.text.secondary),
-                    ))]))
-                    .style(panel_style(empty_surface, theme.text.primary))
-                    .wrap(Wrap { trim: false }),
-                    viewport.content,
-                );
+                if app.replay_mode {
+                    frame.render_widget(
+                        Paragraph::new(Text::from(vec![Line::from(Span::styled(
+                            "Waiting for first turn…",
+                            Style::default().fg(theme.text.secondary),
+                        ))]))
+                        .style(panel_style(empty_surface, theme.text.primary))
+                        .wrap(Wrap { trim: false }),
+                        viewport.content,
+                    );
+                } else {
+                    render_empty_scrollback_indicator(frame, viewport.content, theme);
+                }
                 render_transcript_scrollbar(
                     frame,
                     viewport,
@@ -374,10 +386,24 @@ fn render_measured_transcript_pane(
                 layout.total_height,
                 viewport.content.height,
             );
+            let max_scroll = layout
+                .total_height
+                .saturating_sub(usize::from(viewport.content.height));
+            let more_below = max_scroll > 0 && transcript_scroll < max_scroll;
+            let surface_area = if more_below {
+                Rect::new(
+                    viewport.content.x,
+                    viewport.content.y,
+                    viewport.content.width,
+                    viewport.content.height.saturating_sub(1),
+                )
+            } else {
+                viewport.content
+            };
             render_transcript_layout_surfaces(
                 frame,
                 layout,
-                viewport.content,
+                surface_area,
                 transcript_scroll,
                 theme,
             );
@@ -385,19 +411,25 @@ fn render_measured_transcript_pane(
                 frame,
                 app.transcript_selection(),
                 selection_snapshot.as_ref(),
-                viewport.content,
+                surface_area,
                 theme,
             );
             render_transcript_scrollbar(
                 frame,
                 viewport,
                 transcript_scroll,
-                layout
-                    .total_height
-                    .saturating_sub(usize::from(viewport.content.height)),
+                max_scroll,
                 theme,
                 empty_surface,
                 app.transcript_scrollbar_dragging(),
+            );
+            render_transcript_more_below_affordance(
+                frame,
+                viewport.content,
+                transcript_scroll,
+                max_scroll,
+                theme,
+                empty_surface,
             );
         },
     );
@@ -407,7 +439,7 @@ fn build_transcript_selection_snapshot(
     app: &AppState,
     area: Rect,
 ) -> Option<TranscriptSelectionSnapshot> {
-    let transcript_area = FrameLayoutPlan::for_app(app, area).transcript?;
+    let transcript_area = resolved_transcript_area(app, area)?;
     let context = transcript_pane_context(app, transcript_area, app.theme());
     if app.startup_shell_visible() {
         return lifecycle_selection_snapshot(
@@ -473,7 +505,7 @@ fn with_transcript_selection_snapshot<R>(
     render: impl FnOnce(&TranscriptSelectionSnapshot) -> R,
 ) -> Option<R> {
     let theme = *app.theme();
-    let transcript_area = FrameLayoutPlan::for_app(app, area).transcript?;
+    let transcript_area = resolved_transcript_area(app, area)?;
     let context = transcript_pane_context(app, transcript_area, &theme);
     let show_scrollbar = with_measured_transcript_layout_for_width_on_surface(
         app,
@@ -713,11 +745,7 @@ pub(crate) fn transcript_scrollbar_hit(
     column: u16,
     row: u16,
 ) -> Option<TranscriptScrollbarHit> {
-    let context = transcript_pane_context(
-        app,
-        FrameLayoutPlan::for_app(app, area).transcript?,
-        app.theme(),
-    );
+    let context = transcript_pane_context(app, resolved_transcript_area(app, area)?, app.theme());
     let max_scroll = app.transcript_view.last_transcript_max_scroll.get();
     if max_scroll == 0 {
         return None;
@@ -744,7 +772,7 @@ pub(crate) fn transcript_selection_cell(
 
 pub(crate) fn transcript_diff_hunk_rows(app: &AppState, area: Rect) -> Vec<usize> {
     let theme = *app.theme();
-    let Some(transcript_area) = FrameLayoutPlan::for_app(app, area).transcript else {
+    let Some(transcript_area) = resolved_transcript_area(app, area) else {
         return Vec::new();
     };
     let context = transcript_pane_context(app, transcript_area, &theme);
@@ -773,6 +801,20 @@ pub(crate) fn transcript_diff_hunk_rows(app: &AppState, area: Rect) -> Vec<usize
     )
 }
 
+/// Resolve the transcript pane area used for paint and hit-testing.
+/// Live run shell paints breadcrumb inside `plan.transcript` and shrinks the
+/// remaining pane; interaction paths must use the same shrink or hitboxes
+/// land two rows above painted content.
+fn resolved_transcript_area(app: &AppState, area: Rect) -> Option<Rect> {
+    let transcript_area = FrameLayoutPlan::for_app(app, area).transcript?;
+    if app.replay_mode || app.startup_shell_visible() {
+        return Some(transcript_area);
+    }
+    Some(super::ui_lifecycle::live_transcript_area_with_breadcrumb(
+        transcript_area,
+    ))
+}
+
 pub(crate) fn transcript_mouse_target(
     app: &AppState,
     area: Rect,
@@ -780,7 +822,7 @@ pub(crate) fn transcript_mouse_target(
     row: u16,
 ) -> Option<TranscriptMouseTarget> {
     let theme = *app.theme();
-    let transcript_area = FrameLayoutPlan::for_app(app, area).transcript?;
+    let transcript_area = resolved_transcript_area(app, area)?;
     let context = transcript_pane_context(app, transcript_area, &theme);
     if app.startup_shell_visible() || live_empty_state_visible(app) {
         return None;

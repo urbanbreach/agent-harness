@@ -241,10 +241,25 @@ impl AppState {
         }
     }
 
+    /// Public fixed-tick advance for A-ANIMATION evidence capture (no wall clock).
+    pub fn advance_animation_tick_for_evidence(&mut self) {
+        self.advance_transcript_animation_phase();
+    }
+
+    /// Current transcript animation phase for evidence metadata.
+    pub fn animation_phase_for_evidence(&self) -> usize {
+        self.transcript_animation_phase()
+    }
+
     pub(crate) fn has_active_animations(&self) -> bool {
         self.active_turn_in_progress()
             || self.toast.is_some()
             || self.interrupt_confirmation_pending()
+    }
+
+    /// Whether the shell currently requests animation ticks (evidence / tests).
+    pub fn has_active_animations_for_evidence(&self) -> bool {
+        self.has_active_animations()
     }
 
     pub(in crate::app) fn bump_transcript_render_epoch(&mut self) {
@@ -611,4 +626,38 @@ impl AppState {
             self.transcript_view.follow_mode = true;
         }
     }
+
+    pub fn transcript_interaction_snapshot(&self) -> TranscriptInteractionSnapshot {
+        TranscriptInteractionSnapshot {
+            scroll: self.transcript_view.transcript_scroll,
+            follow_mode: self.transcript_view.follow_mode,
+            selected_activity_index: self.transcript_view.selected_activity_index,
+            show_tool_details: self.transcript_view.show_tool_details,
+            expanded_tool_call_ids: self
+                .transcript_view
+                .expanded_tool_outputs
+                .iter()
+                .cloned()
+                .collect(),
+        }
+    }
+
+    pub fn set_transcript_scroll_for_test(&mut self, scroll: usize) {
+        self.transcript_view.transcript_scroll = scroll;
+        self.transcript_view.follow_mode = scroll == 0;
+    }
+
+    pub fn set_selected_activity_index_for_test(&mut self, index: usize) {
+        self.transcript_view.selected_activity_index = index;
+        self.transcript_view.follow_mode = false;
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TranscriptInteractionSnapshot {
+    pub scroll: usize,
+    pub follow_mode: bool,
+    pub selected_activity_index: usize,
+    pub show_tool_details: bool,
+    pub expanded_tool_call_ids: Vec<String>,
 }

@@ -20,13 +20,13 @@ impl AppState {
         anchor: OperatorSidebarSelectionCell,
         focus: OperatorSidebarSelectionCell,
     ) {
-        self.operator_sidebar.selection = Some(OperatorSidebarSelection { anchor, focus });
+        self.secondary_surfaces.selection = Some(OperatorSidebarSelection { anchor, focus });
     }
 
     pub(in crate::app) fn clear_operator_sidebar_selection(&mut self) {
-        self.operator_sidebar.selection = None;
-        self.operator_sidebar.selection_dragging = false;
-        self.operator_sidebar.pending_click = None;
+        self.secondary_surfaces.selection = None;
+        self.secondary_surfaces.selection_dragging = false;
+        self.secondary_surfaces.pending_click = None;
     }
 
     fn copy_transcript_selection(&mut self, frame_area: Rect) -> bool {
@@ -47,7 +47,7 @@ impl AppState {
     }
 
     fn copy_operator_sidebar_selection(&mut self, frame_area: Rect) -> bool {
-        let Some(selection) = self.operator_sidebar.selection else {
+        let Some(selection) = self.secondary_surfaces.selection else {
             return false;
         };
         let Some(text) = ui::operator_sidebar_selection_text(self, frame_area, selection) else {
@@ -80,14 +80,14 @@ impl AppState {
     }
 
     fn operator_sidebar_selection_has_text(&self, frame_area: Rect) -> bool {
-        self.operator_sidebar
+        self.secondary_surfaces
             .selection
             .and_then(|selection| ui::operator_sidebar_selection_text(self, frame_area, selection))
             .is_some()
     }
 
     fn activate_operator_sidebar_pending_click(&mut self) -> bool {
-        let Some(target) = self.operator_sidebar.pending_click.take() else {
+        let Some(target) = self.secondary_surfaces.pending_click.take() else {
             return false;
         };
         match target {
@@ -131,33 +131,33 @@ impl AppState {
     ) -> Option<OperatorSidebarKeyboardTargetKind> {
         let targets = self.operator_sidebar_keyboard_targets();
         if targets.is_empty() {
-            self.operator_sidebar.keyboard_index = None;
+            self.secondary_surfaces.keyboard_index = None;
             return None;
         }
 
         let index = self
-            .operator_sidebar
+            .secondary_surfaces
             .keyboard_index
             .unwrap_or(0)
             .min(targets.len().saturating_sub(1));
-        self.operator_sidebar.keyboard_index = Some(index);
+        self.secondary_surfaces.keyboard_index = Some(index);
         targets.get(index).map(|target| target.kind.clone())
     }
 
     fn move_operator_sidebar_keyboard_selection(&mut self, reverse: bool) -> bool {
         let targets = self.operator_sidebar_keyboard_targets();
         if targets.is_empty() {
-            self.operator_sidebar.keyboard_index = None;
+            self.secondary_surfaces.keyboard_index = None;
             return false;
         }
 
-        let next = match self.operator_sidebar.keyboard_index {
+        let next = match self.secondary_surfaces.keyboard_index {
             Some(index) if reverse => index.saturating_sub(1),
             Some(index) => (index + 1).min(targets.len().saturating_sub(1)),
             None if reverse => targets.len().saturating_sub(1),
             None => 0,
         };
-        self.operator_sidebar.keyboard_index = Some(next);
+        self.secondary_surfaces.keyboard_index = Some(next);
         self.details_scroll =
             u16::try_from(targets[next].top_row.min(usize::from(u16::MAX))).unwrap_or(u16::MAX);
         true
@@ -242,7 +242,7 @@ impl AppState {
                 || self.transcript_view.hovered_transcript_target.is_some()
                 || self.hovered_subagent_footer_target.is_some()
                 || self.transcript_view.transcript_selection.is_some()
-                || self.operator_sidebar.selection.is_some();
+                || self.secondary_surfaces.selection.is_some();
             self.transcript_view.transcript_scrollbar_drag = None;
             self.transcript_view.hovered_transcript_target = None;
             self.hovered_subagent_footer_target = None;
@@ -305,6 +305,61 @@ impl AppState {
                 }
 
                 self.transcript_view.transcript_scrollbar_drag = None;
+
+                let plan = crate::layout::FrameLayoutPlan::for_app(self, frame_area);
+                let operator_surface = plan.operator_sidebar.or(plan.details_overlay);
+                let in_operator_surface = operator_surface
+                    .is_some_and(|area| rect_contains(area, mouse.column, mouse.row));
+                if in_operator_surface {
+                    self.clear_transcript_selection();
+                    let operator_sidebar_session = ui::operator_sidebar_subagent_session_hit_target(
+                        self,
+                        frame_area,
+                        mouse.column,
+                        mouse.row,
+                    );
+                    let operator_sidebar_group = ui::operator_sidebar_subagent_group_hit_target(
+                        self,
+                        frame_area,
+                        mouse.column,
+                        mouse.row,
+                    );
+                    let operator_sidebar_cell = ui::operator_sidebar_selection_cell(
+                        self,
+                        frame_area,
+                        mouse.column,
+                        mouse.row,
+                    );
+                    if let Some(cell) = operator_sidebar_cell {
+                        self.set_operator_sidebar_selection(cell, cell);
+                        self.secondary_surfaces.selection_dragging = true;
+                        self.secondary_surfaces.pending_click = operator_sidebar_session
+                            .map(OperatorSidebarPendingClick::SubagentSession)
+                            .or(operator_sidebar_group
+                                .map(OperatorSidebarPendingClick::SubagentGroup))
+                            .or(clicked_operator_sidebar_section
+                                .map(OperatorSidebarPendingClick::Section));
+                        return true;
+                    }
+                    if let Some(agent_name) = operator_sidebar_group {
+                        self.clear_operator_sidebar_selection();
+                        self.toggle_operator_sidebar_subagent_group(agent_name);
+                        return true;
+                    }
+                    if let Some(section) = clicked_operator_sidebar_section {
+                        self.clear_operator_sidebar_selection();
+                        self.toggle_operator_sidebar_section(section);
+                    }
+                    return true;
+                }
+
+                if let Some(section) = clicked_operator_sidebar_section {
+                    self.clear_transcript_selection();
+                    self.clear_operator_sidebar_selection();
+                    self.toggle_operator_sidebar_section(section);
+                    return true;
+                }
+
                 if let Some(target) =
                     ui::transcript_mouse_target(self, frame_area, mouse.column, mouse.row)
                 {
@@ -324,39 +379,7 @@ impl AppState {
                 }
 
                 self.clear_transcript_selection();
-                let operator_sidebar_session = ui::operator_sidebar_subagent_session_hit_target(
-                    self,
-                    frame_area,
-                    mouse.column,
-                    mouse.row,
-                );
-                let operator_sidebar_group = ui::operator_sidebar_subagent_group_hit_target(
-                    self,
-                    frame_area,
-                    mouse.column,
-                    mouse.row,
-                );
-                let operator_sidebar_cell =
-                    ui::operator_sidebar_selection_cell(self, frame_area, mouse.column, mouse.row);
-                if let Some(cell) = operator_sidebar_cell {
-                    self.set_operator_sidebar_selection(cell, cell);
-                    self.operator_sidebar.selection_dragging = true;
-                    self.operator_sidebar.pending_click = operator_sidebar_session
-                        .map(OperatorSidebarPendingClick::SubagentSession)
-                        .or(operator_sidebar_group.map(OperatorSidebarPendingClick::SubagentGroup))
-                        .or(clicked_operator_sidebar_section
-                            .map(OperatorSidebarPendingClick::Section));
-                    return true;
-                }
-                if let Some(agent_name) = operator_sidebar_group {
-                    self.clear_operator_sidebar_selection();
-                    self.toggle_operator_sidebar_subagent_group(agent_name);
-                    return true;
-                }
-                if let Some(section) = clicked_operator_sidebar_section {
-                    self.clear_operator_sidebar_selection();
-                    self.toggle_operator_sidebar_section(section);
-                }
+                self.clear_operator_sidebar_selection();
                 true
             }
             MouseEventKind::Drag(MouseButton::Left) => {
@@ -374,7 +397,7 @@ impl AppState {
                         }
                     }
                     true
-                } else if self.operator_sidebar.selection_dragging {
+                } else if self.secondary_surfaces.selection_dragging {
                     let sidebar_hit = ui::operator_sidebar_selection_cell(
                         self,
                         frame_area,
@@ -382,7 +405,7 @@ impl AppState {
                         mouse.row,
                     );
                     if let Some(cell) = sidebar_hit {
-                        if let Some(selection) = self.operator_sidebar.selection {
+                        if let Some(selection) = self.secondary_surfaces.selection {
                             self.set_operator_sidebar_selection(selection.anchor, cell);
                         }
                     }
@@ -417,8 +440,8 @@ impl AppState {
                     self.transcript_view.transcript_click_activated_on_down = false;
                     return true;
                 }
-                let operator_sidebar_was_dragging = self.operator_sidebar.selection_dragging;
-                if self.operator_sidebar.selection_dragging {
+                let operator_sidebar_was_dragging = self.secondary_surfaces.selection_dragging;
+                if self.secondary_surfaces.selection_dragging {
                     let sidebar_hit = ui::operator_sidebar_selection_cell(
                         self,
                         frame_area,
@@ -426,15 +449,15 @@ impl AppState {
                         mouse.row,
                     );
                     if let Some(cell) = sidebar_hit {
-                        if let Some(selection) = self.operator_sidebar.selection {
+                        if let Some(selection) = self.secondary_surfaces.selection {
                             self.set_operator_sidebar_selection(selection.anchor, cell);
                         }
                     }
-                    self.operator_sidebar.selection_dragging = false;
+                    self.secondary_surfaces.selection_dragging = false;
                     let copy_on_select_disabled = clipboard::copy_on_select_disabled();
                     if copy_on_select_disabled {
                         if self.operator_sidebar_selection_has_text(frame_area) {
-                            self.operator_sidebar.pending_click = None;
+                            self.secondary_surfaces.pending_click = None;
                         } else {
                             self.activate_operator_sidebar_pending_click();
                             self.clear_operator_sidebar_selection();
@@ -528,11 +551,13 @@ impl AppState {
         &self,
         section: OperatorSidebarSection,
     ) -> bool {
-        self.operator_sidebar.collapsed_sections.contains(&section)
+        self.secondary_surfaces
+            .collapsed_sections
+            .contains(&section)
     }
 
     pub(crate) fn operator_sidebar_subagent_group_expanded(&self, agent_name: &str) -> bool {
-        self.operator_sidebar
+        self.secondary_surfaces
             .expanded_subagent_groups
             .contains(agent_name)
     }
@@ -546,32 +571,32 @@ impl AppState {
     }
 
     pub(crate) fn operator_sidebar_selection(&self) -> Option<OperatorSidebarSelection> {
-        self.operator_sidebar.selection
+        self.secondary_surfaces.selection
     }
 
     pub(crate) fn selected_operator_sidebar_keyboard_index(&self) -> Option<usize> {
-        self.operator_sidebar.keyboard_index
+        self.secondary_surfaces.keyboard_index
     }
 
     #[cfg(test)]
     pub(crate) fn selected_operator_sidebar_keyboard_index_for_test(&self) -> Option<usize> {
-        self.operator_sidebar.keyboard_index
+        self.secondary_surfaces.keyboard_index
     }
 
     fn toggle_operator_sidebar_section(&mut self, section: OperatorSidebarSection) {
-        if !self.operator_sidebar.collapsed_sections.insert(section) {
-            self.operator_sidebar.collapsed_sections.remove(&section);
+        if !self.secondary_surfaces.collapsed_sections.insert(section) {
+            self.secondary_surfaces.collapsed_sections.remove(&section);
         }
         self.details_scroll = 0;
     }
 
     fn toggle_operator_sidebar_subagent_group(&mut self, agent_name: String) {
         if !self
-            .operator_sidebar
+            .secondary_surfaces
             .expanded_subagent_groups
             .insert(agent_name.clone())
         {
-            self.operator_sidebar
+            self.secondary_surfaces
                 .expanded_subagent_groups
                 .remove(&agent_name);
         }

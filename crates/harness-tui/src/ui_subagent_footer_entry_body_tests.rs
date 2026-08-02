@@ -4,6 +4,9 @@ use super::ui_subagent_footer_exact_tests::{footer_event, render_footer_rows};
 
 #[test]
 fn subagent_footer_body_sticks_to_latest_activity() {
+    // arrange
+    // act
+    // assert
     let worker = harness_core::event::EventActor::new(
         harness_core::event::ActorKind::Worker,
         Some("agent_child".to_string()),
@@ -48,16 +51,19 @@ fn subagent_footer_body_sticks_to_latest_activity() {
     assert!(rendered.contains("Researcher (1 of 1)"), "{rendered}");
     assert!(
         !rendered.contains("child activity line 01"),
-        "Opencode subagent footer should not embed child transcript body\n{rendered}"
+        "Harness subagent footer should not embed child transcript body\n{rendered}"
     );
     assert!(
         !rendered.contains("child activity line 24"),
-        "Opencode subagent footer should not embed child transcript body\n{rendered}"
+        "Harness subagent footer should not embed child transcript body\n{rendered}"
     );
 }
 
 #[test]
 fn subagent_footer_body_renders_child_user_commit_without_assistant_summary() {
+    // arrange
+    // act
+    // assert
     let worker = harness_core::event::EventActor::new(
         harness_core::event::ActorKind::Worker,
         Some("agent_child".to_string()),
@@ -108,7 +114,7 @@ fn subagent_footer_body_renders_child_user_commit_without_assistant_summary() {
     let rendered = render_footer_rows(&app).join("\n");
     assert!(rendered.contains("Researcher (1 of 1)"), "{rendered}");
     assert!(!rendered.contains("child body line"), "{rendered}");
-    assert!(!rendered.contains("› Inspect footer parity"), "{rendered}");
+    assert!(!rendered.contains("❯ Inspect footer parity"), "{rendered}");
     assert!(
         !rendered.contains("Assistant · model-1"),
         "reference entry body suppresses summary commits; footer body should not spend a row on Harness assistant footer chrome\n{rendered}"
@@ -117,6 +123,9 @@ fn subagent_footer_body_renders_child_user_commit_without_assistant_summary() {
 
 #[test]
 fn subagent_footer_body_preserves_child_text_matching_parent_label() {
+    // arrange
+    // act
+    // assert
     let worker = harness_core::event::EventActor::new(
         harness_core::event::ActorKind::Worker,
         Some("agent_child".to_string()),

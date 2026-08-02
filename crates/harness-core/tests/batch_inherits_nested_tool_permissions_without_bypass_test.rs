@@ -82,6 +82,9 @@ impl Tool for TestBatchTool {
 
 #[tokio::test]
 async fn batch_inherits_nested_tool_permissions_without_bypass() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let coordinator = test_coordinator(temp_dir.path());
 

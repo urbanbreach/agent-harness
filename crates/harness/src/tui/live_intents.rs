@@ -139,15 +139,15 @@ pub(super) async fn handle_ui_intents(
                     .compact_agent_context(agent_id, through_request_id, "manual")
                     .await
                 {
-                    Ok(ManualCompactionOutcome::CheckpointWritten {
-                        checkpoint_id,
-                        tokens_before_estimate,
-                        tokens_after_estimate,
+                    Ok(ManualCompactionOutcome::Compacted {
+                        tokens_before,
+                        tokens_after,
+                        summary_preview,
                     }) => (
                         manual_compaction_success_message(
-                            &checkpoint_id,
-                            tokens_before_estimate,
-                            tokens_after_estimate,
+                            &summary_preview,
+                            tokens_before,
+                            tokens_after,
                         ),
                         OperatorNoticeLevel::Info,
                     ),
@@ -163,13 +163,66 @@ pub(super) async fn handle_ui_intents(
                 let _ = live_update_tx.send(LiveUpdate::OperatorNotice { message, level });
             }
             UiIntent::BackgroundForegroundSubagents => {
-                let (message, level) = match coordinator.background_foreground_child_tasks().await {
-                    Ok(count) => (
-                        foreground_background_success_message(count),
-                        OperatorNoticeLevel::Info,
-                    ),
+                let (message, level) = match coordinator.demote_all_foreground_child_tasks().await {
+                    Ok(results) => {
+                        let summary =
+                            harness_core::foreground_demote::summarize_demote_outcomes(&results);
+                        if summary.demoted == 0 {
+                            (
+                                "no foreground subagent is currently blocking this session"
+                                    .to_string(),
+                                OperatorNoticeLevel::Error,
+                            )
+                        } else {
+                            (
+                                format!(
+                                    "{}; {}",
+                                    foreground_background_success_message(summary.demoted),
+                                    summary.one_line()
+                                ),
+                                OperatorNoticeLevel::Info,
+                            )
+                        }
+                    }
                     Err(err) => (
                         format!("foreground subagent backgrounding failed: {err}"),
+                        OperatorNoticeLevel::Error,
+                    ),
+                };
+                let _ = live_update_tx.send(LiveUpdate::OperatorNotice { message, level });
+            }
+            UiIntent::DemoteForegroundChildTask { handle_id } => {
+                let (message, level) = match coordinator
+                    .demote_foreground_child_task(handle_id.clone())
+                    .await
+                {
+                    Ok(result) => match result {
+                        harness_core::foreground_demote::DemoteToBackgroundResult::Demoted {
+                            background_id,
+                            ..
+                        } => (
+                            format!(
+                                "foreground subagent demoted to background ({background_id})"
+                            ),
+                            OperatorNoticeLevel::Info,
+                        ),
+                        harness_core::foreground_demote::DemoteToBackgroundResult::Rejected {
+                            reason,
+                            ..
+                        } => (
+                            format!("foreground subagent demote rejected: {reason}"),
+                            OperatorNoticeLevel::Error,
+                        ),
+                        harness_core::foreground_demote::DemoteToBackgroundResult::Unavailable {
+                            reason,
+                            ..
+                        } => (
+                            format!("foreground subagent demote unavailable: {reason}"),
+                            OperatorNoticeLevel::Error,
+                        ),
+                    },
+                    Err(err) => (
+                        format!("foreground subagent demote failed: {err}"),
                         OperatorNoticeLevel::Error,
                     ),
                 };
@@ -240,6 +293,8 @@ pub(super) async fn handle_ui_intents(
                 target.last_request_id = None;
             }
             UiIntent::NewSession
+            | UiIntent::NewWorktreeSession { .. }
+            | UiIntent::SwitchWorktree { .. }
             | UiIntent::ReplaySession { .. }
             | UiIntent::ContinueSession { .. } => {}
             UiIntent::QuitRequested => {
@@ -297,6 +352,30 @@ pub(super) async fn handle_ui_intents(
                 let _ = live_update_tx.send(LiveUpdate::OperatorNotice { message, level });
             }
             UiIntent::ExportSession => {}
+            UiIntent::ImportForeignSession {
+                source_path,
+                dest_session_dir,
+            } => {
+                let (message, level) =
+                    match harness_core::foreign_session::import_foreign_session_as_replay(
+                        &source_path,
+                        &dest_session_dir,
+                    ) {
+                        Ok(result) => (
+                            format!(
+                                "imported {} events from {}",
+                                result.event_count,
+                                result.source_path.display()
+                            ),
+                            OperatorNoticeLevel::Info,
+                        ),
+                        Err(err) => (
+                            format!("foreign import failed: {err}"),
+                            OperatorNoticeLevel::Error,
+                        ),
+                    };
+                let _ = live_update_tx.send(LiveUpdate::OperatorNotice { message, level });
+            }
             UiIntent::DeleteSession { run_id, run_dir } => {
                 let (message, level) = match delete_session_dir(&run_dir) {
                     Ok(trash_dir) => (
@@ -349,20 +428,26 @@ pub(super) fn foreground_background_success_message(count: usize) -> String {
 }
 
 pub(super) fn manual_compaction_success_message(
-    checkpoint_id: &str,
-    tokens_before_estimate: Option<u32>,
-    tokens_after_estimate: Option<u32>,
+    summary_preview: &str,
+    tokens_before: u32,
+    tokens_after: u32,
 ) -> String {
-    let prefix = format!("manual compaction checkpoint written: {checkpoint_id}");
-    match (tokens_before_estimate, tokens_after_estimate) {
-        (Some(before), Some(after)) if before != after => format!(
-            "{prefix} · active ctx {} → {} est",
-            compact_token_estimate(before),
-            compact_token_estimate(after)
-        ),
-        (Some(_), Some(_)) => format!("{prefix} · active ctx estimate unchanged"),
-        _ => prefix,
-    }
+    let prefix = "manual compaction applied".to_string();
+    let token_info = if tokens_before != tokens_after {
+        format!(
+            " · ctx {} → {} est",
+            compact_token_estimate(tokens_before),
+            compact_token_estimate(tokens_after)
+        )
+    } else {
+        " · ctx estimate unchanged".to_string()
+    };
+    let preview = if summary_preview.is_empty() {
+        String::new()
+    } else {
+        format!(" · {summary_preview}")
+    };
+    format!("{prefix}{token_info}{preview}")
 }
 
 fn compact_token_estimate(value: u32) -> String {

@@ -87,6 +87,9 @@ mod tests {
 
     #[test]
     fn applying_same_jsonl_twice_yields_identical_run_summary() {
+        // arrange
+        // act
+        // assert
         let jsonl = fixture_jsonl();
         let first: Vec<EventEnvelopeV1> = jsonl
             .lines()
@@ -108,6 +111,9 @@ mod tests {
 
     #[test]
     fn projections_ignore_side_effects_during_replay() {
+        // arrange
+        // act
+        // assert
         let events = [
             envelope(
                 1,
@@ -193,6 +199,9 @@ mod tests {
 
     #[test]
     fn projections_require_strict_seq_order() {
+        // arrange
+        // act
+        // assert
         let events = [
             envelope(
                 2,
@@ -223,6 +232,9 @@ mod tests {
 
     #[test]
     fn background_projection_resolves_lineage_and_terminal_result_from_events() {
+        // arrange
+        // act
+        // assert
         let parent_actor = EventActor::new(ActorKind::Worker, Some("agent_parent".to_string()));
         let child_actor = EventActor::new(ActorKind::Worker, Some("agent_child".to_string()));
         let events = [
@@ -310,6 +322,9 @@ mod tests {
 
     #[test]
     fn background_notification_projects_failed_resume_and_request_state() {
+        // arrange
+        // act
+        // assert
         let parent_actor = EventActor::new(ActorKind::Worker, Some("agent_parent".to_string()));
         let child_actor = EventActor::new(ActorKind::Worker, Some("agent_child".to_string()));
         let events = [
@@ -397,6 +412,9 @@ mod tests {
 
     #[test]
     fn background_projection_denies_requests_outside_worker_lineage() {
+        // arrange
+        // act
+        // assert
         let other_actor = EventActor::new(ActorKind::Worker, Some("agent_other".to_string()));
         let events = [
             envelope(
@@ -428,6 +446,9 @@ mod tests {
 
     #[test]
     fn background_request_resolution_prefers_explicit_request_id_over_session_hint() {
+        // arrange
+        // act
+        // assert
         let actor = EventActor::new(ActorKind::Worker, Some("agent_parent".to_string()));
         let child_actor = EventActor::new(ActorKind::Worker, Some("agent_child".to_string()));
         let events = [
@@ -475,6 +496,9 @@ mod tests {
 
     #[test]
     fn background_projection_preserves_cancelled_late_result_state() {
+        // arrange
+        // act
+        // assert
         let parent_actor = EventActor::new(ActorKind::Worker, Some("agent_parent".to_string()));
         let child_actor = EventActor::new(ActorKind::Worker, Some("agent_child".to_string()));
         let events = [
@@ -538,6 +562,9 @@ mod tests {
 
     #[test]
     fn background_projection_ignores_correlated_tool_task_terminal_events() {
+        // arrange
+        // act
+        // assert
         let parent_actor = EventActor::new(ActorKind::Worker, Some("agent_parent".to_string()));
         let child_actor = EventActor::new(ActorKind::Worker, Some("agent_child".to_string()));
         let events = [

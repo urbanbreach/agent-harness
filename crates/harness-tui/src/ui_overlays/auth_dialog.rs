@@ -19,6 +19,8 @@ mod provider_rows;
 #[path = "auth_dialog/select.rs"]
 mod select;
 
+pub(super) use prompt_panel::PromptPanel;
+
 pub(super) fn render_auth_dialog_overlay(
     frame: &mut Frame,
     app: &AppState,

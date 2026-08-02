@@ -88,6 +88,7 @@ pub(crate) fn exact_test_transcript_scroll_offset_preserves_large_overflow() {
 #[cfg(test)]
 pub(crate) fn exact_test_visible_surface_lines_support_large_offsets() {
     let surface = MeasuredTranscriptSurface {
+        kind: TranscriptRenderSurfaceKind::AssistantBody,
         top_offset: 0,
         height: usize::from(u16::MAX) + 1024,
         width: 24,
@@ -101,6 +102,7 @@ pub(crate) fn exact_test_visible_surface_lines_support_large_offsets() {
         interaction_rows: None,
         selection_rows: None,
         diff_hunk_offsets: Vec::new(),
+        selected_rail: false,
     };
 
     let visible = visible_surface_lines(&surface, usize::from(u16::MAX) + 7, 3)

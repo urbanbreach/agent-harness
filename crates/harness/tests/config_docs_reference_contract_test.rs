@@ -6,7 +6,7 @@ use harness::UnwrapOrAbort;
 #[test]
 fn config_docs_capture_harness_contract_and_migration_boundary() {
     // arrange
-    let doc_path = repo_root().join("docs/config.md");
+    let doc_path = repo_root().join("docs/configuration/config.md");
 
     // act
     let doc = std::fs::read_to_string(&doc_path).unwrap_or_abort();
@@ -30,7 +30,7 @@ fn config_docs_capture_plan_operator_workflow_and_guardrails() {
     let root = repo_root();
 
     // act
-    let doc = std::fs::read_to_string(root.join("docs/config.md")).unwrap_or_abort();
+    let doc = std::fs::read_to_string(root.join("docs/configuration/config.md")).unwrap_or_abort();
     let example =
         std::fs::read_to_string(root.join("configs/harness.example.jsonc")).unwrap_or_abort();
 

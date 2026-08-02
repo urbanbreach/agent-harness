@@ -3,6 +3,9 @@ use harness::UnwrapOrAbort;
 
 #[test]
 fn no_config_tui_without_credentials_enters_connect_state() {
+    // arrange
+    // act
+    // assert
     let temp = tempfile::tempdir().unwrap_or_abort();
 
     let settings = resolve_live_settings_for_test(
@@ -28,6 +31,9 @@ fn no_config_tui_without_credentials_enters_connect_state() {
 
 #[test]
 fn no_config_tui_with_stored_codex_launches_connected_catalog() {
+    // arrange
+    // act
+    // assert
     let temp = tempfile::tempdir().unwrap_or_abort();
     let data_home = temp.path().join("data");
     let store = CredentialStore::new(data_home.join("harness"));
@@ -65,6 +71,9 @@ fn no_config_tui_with_stored_codex_launches_connected_catalog() {
 
 #[test]
 fn auth_refresh_reloads_no_config_builtin_catalog_after_login() {
+    // arrange
+    // act
+    // assert
     let temp = tempfile::tempdir().unwrap_or_abort();
     let data_home = temp.path().join("data");
     let store = CredentialStore::new(data_home.join("harness"));
@@ -102,6 +111,9 @@ fn auth_refresh_reloads_no_config_builtin_catalog_after_login() {
 
 #[test]
 fn no_config_tui_ignores_legacy_builtin_model_selection() {
+    // arrange
+    // act
+    // assert
     let temp = tempfile::tempdir().unwrap_or_abort();
     let data_home = temp.path().join("data");
     let state_path = temp.path().join("model.json");
@@ -140,6 +152,9 @@ fn no_config_tui_ignores_legacy_builtin_model_selection() {
 
 #[test]
 fn project_config_tui_ignores_legacy_model_selection() {
+    // arrange
+    // act
+    // assert
     let temp = tempfile::tempdir().unwrap_or_abort();
     let config_path = temp.path().join("harness.jsonc");
     let state_path = temp.path().join("model.json");
@@ -197,6 +212,9 @@ fn project_config_tui_ignores_legacy_model_selection() {
 
 #[test]
 fn mock_mode_ignores_discovered_cwd_config() {
+    // arrange
+    // act
+    // assert
     let _guard = mock_mode_cwd_test_lock().lock().unwrap_or_abort();
     let temp = tempfile::tempdir().unwrap_or_abort();
     std::fs::write(
@@ -261,6 +279,9 @@ fn mock_mode_ignores_discovered_cwd_config() {
             session_dir: None,
             exit_on_finish: false,
             profile: None,
+            no_alt_screen: false,
+            minimal: false,
+            fullscreen: false,
         },
         None,
         None,
@@ -279,6 +300,9 @@ fn mock_mode_ignores_discovered_cwd_config() {
 
 #[test]
 fn live_new_session_uses_current_workspace_instead_of_seeded_demo_workspace() {
+    // arrange
+    // act
+    // assert
     let _guard = mock_mode_cwd_test_lock().lock().unwrap_or_abort();
     let temp = tempfile::tempdir().unwrap_or_abort();
     let config_path = temp.path().join("harness.jsonc");
@@ -344,6 +368,9 @@ fn live_new_session_uses_current_workspace_instead_of_seeded_demo_workspace() {
             session_dir: None,
             exit_on_finish: false,
             profile: None,
+            no_alt_screen: false,
+            minimal: false,
+            fullscreen: false,
         },
         Some(config_path.clone()),
         None,
@@ -367,6 +394,9 @@ fn live_new_session_uses_current_workspace_instead_of_seeded_demo_workspace() {
 
 #[test]
 fn continue_selects_most_recent_conversational_agent_not_first_key() {
+    // arrange
+    // act
+    // assert
     let mut known_agents = BTreeMap::new();
     known_agents.insert("agent_000001".to_string(), "alpha".to_string());
     known_agents.insert("agent_000002".to_string(), "beta".to_string());
@@ -454,6 +484,9 @@ fn continue_selects_most_recent_conversational_agent_not_first_key() {
 
 #[test]
 fn continue_metadata_uses_selected_agent_history_in_multi_agent_session() {
+    // arrange
+    // act
+    // assert
     let historical_events = vec![
         EventEnvelopeV1 {
             schema_version: 1,
@@ -543,4 +576,61 @@ fn continue_metadata_uses_selected_agent_history_in_multi_agent_session() {
     assert_eq!(metadata.provider(), "provider-alpha");
     assert_eq!(metadata.model(), Some("model-alpha"));
     assert_eq!(metadata.mode_label(), Some("Continued"));
+}
+
+#[test]
+fn continue_mode_uses_session_workspace_root_not_process_cwd() {
+    // arrange
+    // act
+    // assert
+    let process_cwd = tempfile::tempdir().unwrap_or_abort();
+    let session_workspace = tempfile::tempdir().unwrap_or_abort();
+    let session_dir = tempfile::tempdir().unwrap_or_abort();
+    let run_dir = session_dir.path().join("run_continue_ws");
+    std::fs::create_dir_all(&run_dir).unwrap_or_abort();
+
+    let session_root = session_workspace.path().display().to_string();
+    let event = format!(
+        r#"{{"schema_version":1,"event_id":"evt-0001","seq":1,"run_id":"run_continue_ws","mono_ms":1,"actor":{{"kind":"system","agent_id":"coordinator"}},"stream_key":"run:run_continue_ws","payload":{{"event_type":"run_started","data":{{"run_name":"continued","workspace_root":"{session_root}"}}}}}}
+{{"schema_version":1,"event_id":"evt-0002","seq":2,"run_id":"run_continue_ws","mono_ms":2,"actor":{{"kind":"system","agent_id":"coordinator"}},"stream_key":"run:run_continue_ws","payload":{{"event_type":"run_finished","data":{{"status":"completed","summary":"done"}}}}}}
+"#
+    );
+    std::fs::write(run_dir.join("events.jsonl"), event).unwrap_or_abort();
+
+    let mode = resolve_tui_mode(
+        &TuiCommand {
+            replay: None,
+            continue_session: Some(run_dir.clone()),
+            scenario: None,
+            mock: true,
+            deterministic: true,
+            session_dir: Some(session_dir.path().to_path_buf()),
+            exit_on_finish: false,
+            profile: None,
+            no_alt_screen: false,
+            minimal: false,
+            fullscreen: false,
+        },
+        None,
+        None,
+        process_cwd.path().to_path_buf(),
+        &harness_core::config::ConfigLoadContext::from_env()
+            .with_current_dir(process_cwd.path().to_path_buf()),
+    )
+    .unwrap_or_abort();
+
+    let ResolvedTuiMode::Continue {
+        settings,
+        run_dir: resolved_run_dir,
+    } = mode
+    else {
+        panic!("expected Continue mode");
+    };
+    assert_eq!(resolved_run_dir, run_dir);
+    assert_eq!(
+        settings.workspace_root,
+        session_workspace.path(),
+        "continue must prefer session RunStarted.workspace_root over process cwd"
+    );
+    assert_ne!(settings.workspace_root, process_cwd.path());
 }

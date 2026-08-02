@@ -249,7 +249,9 @@ pub(super) fn check_provider_credentials(
     let mut credential_errors = Vec::new();
 
     for (id, provider) in &config.providers {
-        let ProviderConfig::OpenAiCompatible(provider) = provider;
+        let ProviderConfig::OpenAiCompatible(provider) = provider else {
+            continue;
+        };
         let stored = match (provider.auth_provider.clone(), credential_store.as_ref()) {
             (Some(auth_provider), Some(store)) => match store.load(&auth_provider) {
                 Ok(stored) => stored,
@@ -338,7 +340,9 @@ pub(super) fn check_provider_catalog(config: &HarnessConfig) -> DoctorCheck {
         .providers
         .iter()
         .filter_map(|(id, provider)| {
-            let ProviderConfig::OpenAiCompatible(provider) = provider;
+            let ProviderConfig::OpenAiCompatible(provider) = provider else {
+                return None;
+            };
             provider.models.is_empty().then_some(id.as_str())
         })
         .collect::<Vec<_>>();
@@ -358,7 +362,9 @@ pub(super) fn check_provider_catalog(config: &HarnessConfig) -> DoctorCheck {
         .providers
         .values()
         .map(|provider| {
-            let ProviderConfig::OpenAiCompatible(provider) = provider;
+            let ProviderConfig::OpenAiCompatible(provider) = provider else {
+                return 0;
+            };
             provider.models.len()
         })
         .sum::<usize>();

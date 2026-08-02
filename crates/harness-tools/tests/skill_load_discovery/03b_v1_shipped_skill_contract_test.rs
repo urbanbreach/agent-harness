@@ -20,6 +20,7 @@ async fn shipped_v1_builtin_skills_load_and_disable_by_stable_id() {
         ("git-master", "Use git with atomic, reviewable intent"),
         ("review-work", "Run a structured post-implementation review"),
         ("frontend-ui-ux", "Improve visible UI surfaces"),
+        ("harness-qa", "Run offline agent dogfood"),
     ] {
         // act
         let loaded = skill_tool
@@ -53,12 +54,13 @@ async fn shipped_v1_builtin_skills_load_and_disable_by_stable_id() {
             "skill:project:git-master".to_string(),
             "skill:project:review-work".to_string(),
             "skill:project:frontend-ui-ux".to_string(),
+            "skill:project:harness-qa".to_string(),
         ],
         ..SkillsConfig::default()
     });
     let catalog = discover_skill_catalog(&root).unwrap_or_abort();
 
-    for name in ["git-master", "review-work", "frontend-ui-ux"] {
+    for name in ["git-master", "review-work", "frontend-ui-ux", "harness-qa"] {
         let entry = catalog
             .active_entry(name)
             .unwrap_or_else(|| panic!("catalog missing disabled built-in {name}"));
@@ -98,7 +100,7 @@ fn shipped_builtin_skill_ids_win_over_global_and_imported_duplicates() {
     });
     let root = repo_root();
 
-    for name in ["git-master", "review-work", "frontend-ui-ux"] {
+    for name in ["git-master", "review-work", "frontend-ui-ux", "harness-qa"] {
         write_skill(
             &home.join(".agents/skills"),
             name,
@@ -117,7 +119,7 @@ fn shipped_builtin_skill_ids_win_over_global_and_imported_duplicates() {
     let catalog = discover_skill_catalog(&root).unwrap_or_abort();
 
     // assert
-    for name in ["git-master", "review-work", "frontend-ui-ux"] {
+    for name in ["git-master", "review-work", "frontend-ui-ux", "harness-qa"] {
         let active = catalog
             .active_entry(name)
             .unwrap_or_else(|| panic!("catalog missing shipped skill {name}"));
@@ -150,7 +152,7 @@ fn shipped_v1_builtin_skills_have_quality_contract_and_catalog_metadata() {
     let skill_root = root.join(".agent-harness/skills");
     let catalog = discover_skill_catalog(&root).unwrap_or_abort();
 
-    for name in ["git-master", "review-work", "frontend-ui-ux"] {
+    for name in ["git-master", "review-work", "frontend-ui-ux", "harness-qa"] {
         let skill_path = skill_root.join(name).join("SKILL.md");
         let body = fs::read_to_string(&skill_path)
             .unwrap_or_else(|err| panic!("read shipped skill {}: {err}", skill_path.display()));

@@ -30,6 +30,7 @@ pub(super) fn render_structured_diff_model(
     prefix: &str,
     width: u16,
     force_stacked: bool,
+    plain_numbered: bool,
     highlight_syntax: bool,
     show_file_header: bool,
     show_hunk_header: bool,
@@ -37,7 +38,9 @@ pub(super) fn render_structured_diff_model(
 ) -> (Vec<Line<'static>>, Vec<usize>) {
     let prefix_width = display_width(prefix);
     let content_width = usize::from(width).saturating_sub(prefix_width).max(1);
-    let wide = !force_stacked && content_width >= usize::from(DIFF_SIDE_BY_SIDE_MIN_WIDTH);
+    let wide = !force_stacked
+        && !plain_numbered
+        && content_width >= usize::from(DIFF_SIDE_BY_SIDE_MIN_WIDTH);
     let mut lines = Vec::new();
     let mut hunk_offsets = Vec::new();
 
@@ -46,7 +49,12 @@ pub(super) fn render_structured_diff_model(
             lines.push(Line::from(""));
         }
 
-        let line_number_width = structured_diff_line_number_width(file);
+        let line_number_width = if plain_numbered {
+            // Reference plain form uses natural digit width (no dual-gutter min-4 pad).
+            structured_diff_plain_line_number_width(file)
+        } else {
+            structured_diff_line_number_width(file)
+        };
 
         for row in &file.rows {
             let syntax_path = file
@@ -140,6 +148,7 @@ pub(super) fn render_structured_diff_model(
                                 line_number_width,
                                 syntax_path,
                                 highlight_syntax,
+                                plain_numbered,
                                 theme,
                             ));
                         }
@@ -151,6 +160,7 @@ pub(super) fn render_structured_diff_model(
                                 line_number_width,
                                 syntax_path,
                                 highlight_syntax,
+                                plain_numbered,
                                 theme,
                             ));
                         }
@@ -475,8 +485,18 @@ fn render_stacked_diff_cell_lines(
     line_number_width: usize,
     syntax_path: Option<&str>,
     highlight_syntax: bool,
+    plain_numbered: bool,
     theme: &Theme,
 ) -> Vec<Line<'static>> {
+    if plain_numbered {
+        return render_plain_numbered_diff_cell_lines(
+            prefix,
+            cell,
+            width,
+            line_number_width,
+            theme,
+        );
+    }
     let accent_kind = if cell.marker == '-' {
         DiffSegmentKind::Removed
     } else {
@@ -539,6 +559,36 @@ fn render_stacked_diff_cell_lines(
         )
     })
     .collect()
+}
+
+fn render_plain_numbered_diff_cell_lines(
+    prefix: &str,
+    cell: &DiffCell,
+    width: usize,
+    line_number_width: usize,
+    theme: &Theme,
+) -> Vec<Line<'static>> {
+    let number_width = line_number_width.saturating_add(1);
+    let text_width = width.saturating_sub(number_width + 1).max(1);
+    wrap_plain_text_lines(&cell.text, text_width)
+        .into_iter()
+        .enumerate()
+        .map(|(index, chunk)| {
+            Line::from(vec![
+                Span::styled(prefix.to_string(), transcript_prefix_style(theme)),
+                Span::styled(
+                    if index == 0 {
+                        format_line_number(cell.line_number, line_number_width)
+                    } else {
+                        " ".repeat(number_width)
+                    },
+                    Style::default().fg(theme.text.secondary),
+                ),
+                Span::raw(" "),
+                Span::styled(chunk, Style::default().fg(theme.text.primary)),
+            ])
+        })
+        .collect()
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -747,8 +797,8 @@ fn pad_diff_row_to_width_with_background(
     Line::from(spans)
 }
 
-fn structured_diff_line_number_width(file: &StructuredDiffFile) -> usize {
-    let max_line = file.rows.iter().fold(0usize, |current, row| match row {
+fn structured_diff_max_line_number(file: &StructuredDiffFile) -> usize {
+    file.rows.iter().fold(0usize, |current, row| match row {
         StructuredDiffDisplayRow::Context {
             before_line,
             after_line,
@@ -770,8 +820,15 @@ fn structured_diff_line_number_width(file: &StructuredDiffFile) -> usize {
                     .unwrap_or(0),
             ),
         _ => current,
-    });
-    max(4, max_line.to_string().len())
+    })
+}
+
+fn structured_diff_line_number_width(file: &StructuredDiffFile) -> usize {
+    max(4, structured_diff_max_line_number(file).to_string().len())
+}
+
+fn structured_diff_plain_line_number_width(file: &StructuredDiffFile) -> usize {
+    max(1, structured_diff_max_line_number(file).to_string().len())
 }
 
 fn split_diff_path(path: &str) -> (&str, &str) {

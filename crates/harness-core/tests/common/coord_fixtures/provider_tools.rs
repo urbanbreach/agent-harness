@@ -173,11 +173,11 @@ impl Provider for CapturingProvider {
             ProviderStreamEvent::Start,
             ProviderStreamEvent::TextDelta(response),
             ProviderStreamEvent::Done {
-                usage: CompletionUsage {
+                usage: Some(CompletionUsage {
                     prompt_tokens: 3,
                     completion_tokens: 3,
                     total_tokens: 6,
-                },
+                }),
             },
         ]))
     }
@@ -245,10 +245,18 @@ impl SequentialScriptedProvider {
 #[async_trait]
 impl Provider for SequentialScriptedProvider {
     async fn stream_completion(&self, req: CompletionRequest) -> ProviderEventStream {
+        // Keep the original request for the fallback closure while recording a clone.
+        let fallback_text = req
+            .messages
+            .iter()
+            .filter(|m| matches!(m.role, harness_providers::MessageRole::User))
+            .map(|m| m.content.as_str())
+            .collect::<Vec<_>>()
+            .join("\n\n");
         self.captured_requests
             .lock()
             .unwrap_or_abort()
-            .push(req);
+            .push(req.clone());
 
         let mut next_call_index = self
             .next_call_index
@@ -257,16 +265,24 @@ impl Provider for SequentialScriptedProvider {
         let call_index = *next_call_index;
         *next_call_index += 1;
 
-        Box::pin(tokio_stream::iter(
-            self.scripted_events
-                .get(call_index)
-                .cloned()
-                .unwrap_or_else(|| {
-                    vec![ProviderStreamEvent::error(format!(
-                        "unexpected stream_completion call index {call_index}"
-                    ))]
-                }),
-        ))
+        let events = self.scripted_events.get(call_index).cloned().unwrap_or_else(|| {
+            // Out-of-scripted-range calls (e.g., LLM summarization during compaction)
+            // echo the request's user messages so tests can still assert on captured
+            // content without pre-allocating an exact number of scripted responses.
+            vec![
+                ProviderStreamEvent::Start,
+                ProviderStreamEvent::TextDelta(fallback_text),
+                ProviderStreamEvent::Done {
+                    usage: Some(CompletionUsage {
+                        prompt_tokens: 100,
+                        completion_tokens: 100,
+                        total_tokens: 200,
+                    }),
+                },
+            ]
+        });
+
+        Box::pin(tokio_stream::iter(events))
     }
 }
 pub(super) fn provider_text_events(text: &str) -> Vec<ProviderStreamEvent> {
@@ -274,11 +290,11 @@ pub(super) fn provider_text_events(text: &str) -> Vec<ProviderStreamEvent> {
         ProviderStreamEvent::Start,
         ProviderStreamEvent::TextDelta(text.to_string()),
         ProviderStreamEvent::Done {
-            usage: CompletionUsage {
+            usage: Some(CompletionUsage {
                 prompt_tokens: 100,
                 completion_tokens: 100,
                 total_tokens: 200,
-            },
+            }),
         },
     ]
 }
@@ -324,11 +340,11 @@ pub(super) fn test_mock_provider() -> MockProvider {
                 ProviderStreamEvent::Start,
                 ProviderStreamEvent::TextDelta(format!("{prompt}-delta")),
                 ProviderStreamEvent::Done {
-                    usage: CompletionUsage {
+                    usage: Some(CompletionUsage {
                         prompt_tokens: 2,
                         completion_tokens: 1,
                         total_tokens: 3,
-                    },
+                    }),
                 },
             ],
         );
@@ -387,11 +403,11 @@ impl Provider for PromptScriptedProvider {
                 ProviderStreamEvent::Start,
                 ProviderStreamEvent::TextDelta("ok".to_string()),
                 ProviderStreamEvent::Done {
-                    usage: CompletionUsage {
+                    usage: Some(CompletionUsage {
                         prompt_tokens: 1,
                         completion_tokens: 1,
                         total_tokens: 2,
-                    },
+                    }),
                 },
             ]
         });

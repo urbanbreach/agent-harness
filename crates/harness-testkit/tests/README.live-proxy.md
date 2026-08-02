@@ -2,7 +2,7 @@
 
 This lane retains env-gated live proxy signoff entrypoint names after T5 slimming. The current
 wrappers verify live prerequisites and documented provider/model selection; provider/tool-flow
-behavior is owned by deterministic tests listed in `docs/testing.md` unless a human explicitly runs
+behavior is owned by deterministic tests listed in `docs/testing/testing.md` unless a human explicitly runs
 and records separate live evidence.
 
 ## Preflight
@@ -39,7 +39,7 @@ Minimal portable baseline:
 
 ## Batch 1 parity signoff
 
-When the change is tied to the canonical signoff map from `docs/testing.md`, prefer the composed
+When the change is tied to the canonical signoff map from `docs/testing/testing.md`, prefer the composed
 Batch 1 parity wrappers first:
 
 ```bash
@@ -70,13 +70,28 @@ they do not write live manifests or summarize provider-turn behavior.
 
 The previous prompt chat/native-tool/TUI tool-flow matrix was retired during T5 slimming. Its
 behavioral assertions are now owned by deterministic provider cassette, harness-tools native parity,
-and harness-tui render/view-model tests listed in `docs/testing.md`. T5 retains only the explicit
+and harness-tui render/view-model tests listed in `docs/testing/testing.md`. T5 retains only the explicit
 env-gated live signoff names above.
 
 ## Artifact layout
 
-The slim live proxy wrappers do not currently write artifacts. The layout below is retained for
-historic full live visual runs and for any future explicit live evidence capture.
+The slim live proxy wrappers (`live_proxy_preflight_requires_live_env`,
+`live_proxy_prompt_parity_signoff`, `live_proxy_e2e_tui_parity_signoff`) do **not** produce live
+artifact trees (no `run-*` directories, no `manifest.json` / `run_summary.*` from T5 preflight/parity
+wrappers). That is intentional: this lane is slim signoff names only and does **not** own the
+native tool behavioral matrix.
+
+A **budgeted live smoke pack** with redacted evidence is available separately via
+`scripts/harness-qa-live-smoke.sh` (residual PRD WS-L1) and the `harness-qa` skill live channel
+(WS-L2). Evidence lands under gitignored
+`artifacts/qa-evidence/<YYYYMMDD>-live-<slug>/` (README, commands.log, isolation-receipt,
+budget-receipt, events-excerpt, secret-scan, lane-or-run-summary). Fail-closed without live env:
+`bash scripts/harness-qa-live-smoke.sh --self-test-fail-closed` exits non-zero. Live smoke proves
+transport/auth/fixed short prompts only; optional tool smoke (`HARNESS_LIVE_SMOKE_TOOL=1`) is not
+matrix ownership.
+
+The layout below is retained for historic full live visual runs and lane-stage artifacts under
+`target/test-lanes/` / `target/pty-visual-artifacts/`.
 
 Artifacts are written under:
 

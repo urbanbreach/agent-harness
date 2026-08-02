@@ -165,11 +165,15 @@ fn harness_binary_supports_operator_first_run_smoke() {
         "stdout:\n{stdout}\nstderr:\n{stderr}"
     );
     assert!(
-        stdout.contains("ctrl+p"),
+        stdout.contains("Harness"),
         "stdout:\n{stdout}\nstderr:\n{stderr}"
     );
     assert!(
-        stdout.contains("commands"),
+        stdout.contains("New worktree") || stdout.contains("Resume session"),
+        "stdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        stdout.contains("ctrl+w") || stdout.contains("ctrl+s") || stdout.contains("ctrl+q"),
         "stdout:\n{stdout}\nstderr:\n{stderr}"
     );
     assert!(
@@ -324,7 +328,7 @@ fn drain_pty_output(parser: &mut Parser, output_rx: &Receiver<Vec<u8>>, output: 
 
 fn capture_startup_screen(parser: &Parser, startup_screen: &mut Option<String>) {
     let screen = parser.screen().contents();
-    if screen.contains("ctrl+p") && screen.contains("commands") {
+    if screen.contains("Harness") && screen.contains("New worktree") {
         *startup_screen = Some(screen);
     }
 }

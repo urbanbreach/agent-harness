@@ -8,7 +8,9 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::collections::{BTreeMap, HashMap};
 use std::str::FromStr;
 
+pub mod action_dispatch;
 mod command_registry;
+pub mod focus;
 pub mod palette_model;
 pub mod parity_matrix;
 
@@ -31,7 +33,8 @@ pub enum Action {
     Palette,
     /// Open/close the help tab
     Help,
-    ToggleOperatorSidebar,
+    /// Open the status dialog (operator status surface)
+    OpenStatusDialog,
     ToggleTerminalPanel,
     /// Toggle follow mode
     ToggleFollow,
@@ -62,6 +65,8 @@ pub enum Action {
     AgentCycleReverse,
     VariantCycle,
     AllowPermission,
+    /// Open always-approve confirm for the active permission modal
+    AlwaysApprovePermission,
     /// Deny permission in modal
     DenyPermission,
     /// Dismiss modal
@@ -115,6 +120,11 @@ pub enum Action {
     PromptStashList,
     OpenLineageBrowser,
     SessionBackground,
+    OpenSessionHistory,
+    OpenSettings,
+    OpenViewPlan,
+    OpenMemoryBrowser,
+    OpenWorktreePicker,
 }
 
 impl Action {
@@ -125,7 +135,7 @@ impl Action {
             Action::FocusPrev => Some("focus_prev"),
             Action::Palette => None,
             Action::Help => Some("help"),
-            Action::ToggleOperatorSidebar => None,
+            Action::OpenStatusDialog => Some("open_status_dialog"),
             Action::ToggleTerminalPanel => Some("toggle_terminal_panel"),
             Action::ToggleFollow => Some("toggle_follow"),
             Action::SubmitPrompt => Some("submit_prompt"),
@@ -148,6 +158,7 @@ impl Action {
             Action::AgentCycleReverse => Some("agent_cycle_reverse"),
             Action::VariantCycle => Some("cycle_variant"),
             Action::AllowPermission => Some("allow_permission"),
+            Action::AlwaysApprovePermission => Some("always_approve_permission"),
             Action::DenyPermission => Some("deny_permission"),
             Action::DismissModal => Some("dismiss_modal"),
             Action::HistoryUp => Some("history_up"),
@@ -192,6 +203,11 @@ impl Action {
             Action::PromptStashList => Some("prompt_stash_list"),
             Action::OpenLineageBrowser => Some("open_lineage_browser"),
             Action::SessionBackground => Some("session_background"),
+            Action::OpenSessionHistory => Some("open_session_history"),
+            Action::OpenSettings => Some("open_settings"),
+            Action::OpenViewPlan => Some("open_view_plan"),
+            Action::OpenMemoryBrowser => Some("open_memory_browser"),
+            Action::OpenWorktreePicker => Some("open_worktree_picker"),
         }
     }
 
@@ -221,7 +237,7 @@ impl Action {
             Action::FocusPrev => "focus_prev",
             Action::Palette => "palette",
             Action::Help => "help",
-            Action::ToggleOperatorSidebar => "toggle_operator_sidebar",
+            Action::OpenStatusDialog => "open_status_dialog",
             Action::ToggleTerminalPanel => "toggle_terminal_panel",
             Action::ToggleFollow => "toggle_follow",
             Action::SubmitPrompt => "submit_prompt",
@@ -244,6 +260,7 @@ impl Action {
             Action::AgentCycleReverse => "agent_cycle_reverse",
             Action::VariantCycle => "variant_cycle",
             Action::AllowPermission => "allow_permission",
+            Action::AlwaysApprovePermission => "always_approve_permission",
             Action::DenyPermission => "deny_permission",
             Action::DismissModal => "dismiss_modal",
             Action::HistoryUp => "history_up",
@@ -288,6 +305,11 @@ impl Action {
             Action::PromptStashList => "prompt_stash_list",
             Action::OpenLineageBrowser => "open_lineage_browser",
             Action::SessionBackground => "session_background",
+            Action::OpenSessionHistory => "open_session_history",
+            Action::OpenSettings => "open_settings",
+            Action::OpenViewPlan => "open_view_plan",
+            Action::OpenMemoryBrowser => "open_memory_browser",
+            Action::OpenWorktreePicker => "open_worktree_picker",
         }
     }
 
@@ -341,7 +363,7 @@ impl FromStr for Action {
             "focus_prev" => Ok(Action::FocusPrev),
             "palette" => Ok(Action::Palette),
             "help" => Ok(Action::Help),
-            "toggle_operator_sidebar" => Ok(Action::ToggleOperatorSidebar),
+            "open_status_dialog" | "toggle_operator_sidebar" => Ok(Action::OpenStatusDialog),
             "toggle_terminal_panel" => Ok(Action::ToggleTerminalPanel),
             "toggle_follow" => Ok(Action::ToggleFollow),
             "submit_prompt" => Ok(Action::SubmitPrompt),
@@ -364,6 +386,7 @@ impl FromStr for Action {
             "agent_cycle_reverse" => Ok(Action::AgentCycleReverse),
             "variant_cycle" => Ok(Action::VariantCycle),
             "allow_permission" => Ok(Action::AllowPermission),
+            "always_approve_permission" => Ok(Action::AlwaysApprovePermission),
             "deny_permission" => Ok(Action::DenyPermission),
             "dismiss_modal" => Ok(Action::DismissModal),
             "history_up" => Ok(Action::HistoryUp),
@@ -407,6 +430,13 @@ impl FromStr for Action {
             "prompt_stash_list" => Ok(Action::PromptStashList),
             "open_lineage_browser" => Ok(Action::OpenLineageBrowser),
             "session_background" => Ok(Action::SessionBackground),
+            "open_session_history" | "resume_session" => Ok(Action::OpenSessionHistory),
+            "open_settings" | "settings" => Ok(Action::OpenSettings),
+            "open_view_plan" | "view_plan" | "view-plan" => Ok(Action::OpenViewPlan),
+            "open_memory_browser" | "memory" => Ok(Action::OpenMemoryBrowser),
+            "open_worktree_picker" | "worktree" | "switch_worktree" => {
+                Ok(Action::OpenWorktreePicker)
+            }
             _ => Err(format!("unknown action: {s}")),
         }
     }
@@ -551,20 +581,22 @@ impl KeyMap {
 
         keymap.bind(
             KeyBinding::new(KeyCode::Tab, KeyModifiers::NONE),
-            Action::AgentCycle,
-        );
-        keymap.bind(
-            KeyBinding::new(KeyCode::BackTab, KeyModifiers::NONE),
-            Action::AgentCycleReverse,
-        );
-
-        // Focus cycling remains available on explicit control chords.
-        keymap.bind(
-            KeyBinding::new(KeyCode::Tab, KeyModifiers::CONTROL),
             Action::FocusNext,
         );
         keymap.bind(
+            KeyBinding::new(KeyCode::BackTab, KeyModifiers::NONE),
+            Action::VariantCycle,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Tab, KeyModifiers::CONTROL),
+            Action::AgentCycle,
+        );
+        keymap.bind(
             KeyBinding::new(KeyCode::BackTab, KeyModifiers::CONTROL),
+            Action::AgentCycleReverse,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Tab, KeyModifiers::CONTROL | KeyModifiers::SHIFT),
             Action::FocusPrev,
         );
 
@@ -573,20 +605,18 @@ impl KeyMap {
             Action::CloseReviewSurface,
         );
         keymap.bind(
-            KeyBinding::new(KeyCode::Char('2'), KeyModifiers::NONE),
-            Action::ToggleOperatorSidebar,
-        );
-        keymap.bind(
             KeyBinding::new(KeyCode::Char('4'), KeyModifiers::NONE),
             Action::ToggleTerminalPanel,
         );
 
         keymap.bind(
-            KeyBinding::new(KeyCode::Char('i'), KeyModifiers::NONE),
-            Action::ToggleOperatorSidebar,
+            KeyBinding::new(KeyCode::Char('q'), KeyModifiers::CONTROL),
+            Action::Quit,
         );
-
-        // Actions
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('d'), KeyModifiers::CONTROL),
+            Action::Quit,
+        );
         keymap.bind(
             KeyBinding::new(KeyCode::Char('q'), KeyModifiers::NONE),
             Action::Quit,
@@ -633,21 +663,51 @@ impl KeyMap {
         );
         keymap.bind(
             KeyBinding::new(KeyCode::Char('?'), KeyModifiers::NONE),
-            Action::Help,
+            Action::Palette,
         );
         keymap.bind(
             KeyBinding::new(KeyCode::Char('h'), KeyModifiers::NONE),
             Action::Help,
         );
-
-        // Palette (Ctrl+P)
+        keymap.bind(
+            KeyBinding::new(KeyCode::F(1), KeyModifiers::NONE),
+            Action::Help,
+        );
         keymap.bind(
             KeyBinding::new(KeyCode::Char('p'), KeyModifiers::CONTROL),
             Action::Palette,
         );
         keymap.bind(
+            KeyBinding::new(KeyCode::Char('s'), KeyModifiers::CONTROL),
+            Action::OpenSessionHistory,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('x'), KeyModifiers::CONTROL),
+            Action::Help,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('.'), KeyModifiers::CONTROL),
+            Action::Help,
+        );
+        keymap.bind(
             KeyBinding::new(KeyCode::Char('t'), KeyModifiers::CONTROL),
             Action::VariantCycle,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('c'), KeyModifiers::CONTROL),
+            Action::DismissModal,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::F(2), KeyModifiers::NONE),
+            Action::OpenStatusDialog,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char(','), KeyModifiers::CONTROL),
+            Action::OpenStatusDialog,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char(','), KeyModifiers::SUPER),
+            Action::OpenStatusDialog,
         );
 
         // Prompt navigation (when in prompt focus)
@@ -841,6 +901,10 @@ impl KeyMap {
             Action::AllowPermission,
         );
         keymap.bind(
+            KeyBinding::new(KeyCode::Char('o'), KeyModifiers::CONTROL),
+            Action::AlwaysApprovePermission,
+        );
+        keymap.bind(
             KeyBinding::new(KeyCode::Char('n'), KeyModifiers::CONTROL),
             Action::DenyPermission,
         );
@@ -1016,7 +1080,7 @@ impl KeyMap {
         );
         self.bind_sequence(
             KeyBinding::new(KeyCode::Char('s'), KeyModifiers::NONE),
-            Action::ToggleScrollbar,
+            Action::OpenStatusDialog,
         );
         self.bind_sequence(
             KeyBinding::new(KeyCode::Char('g'), KeyModifiers::NONE),
@@ -1104,7 +1168,7 @@ fn format_key_binding(binding: &KeyBinding) -> String {
     let key_str = match binding.code {
         KeyCode::Char(c) => c.to_string(),
         KeyCode::Tab => "Tab".to_string(),
-        KeyCode::BackTab => "Shift-Tab".to_string(),
+        KeyCode::BackTab => "Shift+Tab".to_string(),
         KeyCode::Enter => "Enter".to_string(),
         KeyCode::Esc => "Esc".to_string(),
         KeyCode::Up => "↑".to_string(),

@@ -19,7 +19,6 @@ pub(super) fn render_prompt_stash_list_overlay(
     let overlay = Rect::new(overlay_x, overlay_y, overlay_width, overlay_height);
 
     let surface = ui_chrome::command_palette_surface(theme);
-    let border_style = Style::default().fg(theme.border.strong).bg(surface);
     let title_style = Style::default()
         .fg(theme.text.primary)
         .bg(surface)
@@ -29,25 +28,28 @@ pub(super) fn render_prompt_stash_list_overlay(
     let muted_style = Style::default().fg(theme.text.secondary).bg(surface);
     let text_style = Style::default().fg(theme.text.primary).bg(surface);
 
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(border_style)
-        .style(Style::default().bg(surface));
-    let inner = block.inner(overlay);
-    frame.render_widget(Clear, overlay);
-    frame.render_widget(block, overlay);
-
+    if !paint_command_palette_panel(frame, theme, overlay) {
+        return;
+    }
+    let inner = inset_rect(overlay, 1.min(overlay.width.saturating_sub(1)), 1);
     if inner.width == 0 || inner.height == 0 {
         return;
     }
 
-    let title_area = Rect::new(overlay.x + 1, overlay.y, overlay.width.saturating_sub(2), 1);
+    let title_area = Rect::new(inner.x, inner.y, inner.width, 1);
     frame.render_widget(
-        Paragraph::new(Line::from(Span::styled(" Prompt stash", title_style))),
+        Paragraph::new(Line::from(vec![
+            Span::styled("Prompt stash", title_style),
+            Span::styled(
+                " ".repeat(usize::from(inner.width).saturating_sub("Prompt stash".len() + 3)),
+                Style::default().bg(surface),
+            ),
+            Span::styled("esc", muted_style),
+        ])),
         title_area,
     );
 
-    let list_y = inner.y;
+    let list_y = inner.y.saturating_add(1);
     let list_width = usize::from(inner.width);
 
     if app.prompt_stash.entries.is_empty() {
@@ -103,8 +105,9 @@ pub(super) fn render_prompt_stash_list_overlay(
                 muted_style
             };
 
+            let prefix = "  ";
             let line = Line::from(vec![
-                Span::styled(" ".to_string(), style),
+                Span::styled(prefix, style),
                 Span::styled(preview, preview_style),
                 Span::styled(" ".to_string(), style),
                 Span::styled(timestamp, timestamp_style),

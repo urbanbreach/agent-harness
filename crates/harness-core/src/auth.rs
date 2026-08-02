@@ -747,6 +747,45 @@ impl ProviderCredentialManager {
         self
     }
 
+    /// Proactive OAuth refresh for sleep/wake near-expiry paths.
+    ///
+    /// Forces a single-flight refresh when stored OAuth credentials exist and are
+    /// expired or within `leeway` of expiry. Fresh tokens short-circuit without a
+    /// network call. Missing refresh token or refresher yields
+    /// [`CredentialResolveError::RefreshUnavailable`].
+    pub async fn refresh_oauth_if_near_expiry(
+        &self,
+        leeway: Duration,
+    ) -> Result<ResolvedCredential, CredentialResolveError> {
+        let _guard = self.refresh_lock.lock().await;
+        let Some(current) = self.store.load(&self.provider)? else {
+            return Err(CredentialResolveError::Missing {
+                provider: self.provider.clone(),
+            });
+        };
+        if current.kind != StoredCredentialKind::Oauth {
+            return Err(CredentialResolveError::Missing {
+                provider: self.provider.clone(),
+            });
+        }
+        if current
+            .access_token
+            .as_deref()
+            .and_then(non_empty)
+            .is_some()
+            && !self.oauth_is_near_expiry(&current, leeway)
+        {
+            return Ok(ResolvedCredential {
+                token: current.access_token.unwrap_or_default(),
+                source: ResolvedCredentialSource::StoredOauth,
+                expires_at: current.expires_at,
+                account_id: current.account_id,
+                enterprise_url: current.enterprise_url,
+            });
+        }
+        self.perform_oauth_refresh(&current).await
+    }
+
     pub async fn resolve(&self) -> Result<ResolvedCredential, CredentialResolveError> {
         if let Some(credential) = self.store.load(&self.provider)? {
             if let Some(resolved) = self.resolve_stored(&credential).await? {
@@ -868,7 +907,14 @@ impl ProviderCredentialManager {
                 enterprise_url: current.enterprise_url,
             });
         }
+        self.perform_oauth_refresh(&current).await
+    }
 
+    /// Caller must hold `refresh_lock`. Always contacts the refresher when OAuth has a refresh token.
+    async fn perform_oauth_refresh(
+        &self,
+        current: &StoredCredential,
+    ) -> Result<ResolvedCredential, CredentialResolveError> {
         let refresher =
             self.refresher
                 .as_ref()
@@ -887,7 +933,7 @@ impl ProviderCredentialManager {
         }
 
         let outcome = refresher
-            .refresh(&self.provider, &current)
+            .refresh(&self.provider, current)
             .await
             .map_err(|err| CredentialResolveError::RefreshFailed {
                 provider: self.provider.clone(),
@@ -900,15 +946,15 @@ impl ProviderCredentialManager {
             access_token.clone(),
             outcome
                 .refresh_token
-                .or(current.refresh_token)
+                .or_else(|| current.refresh_token.clone())
                 .unwrap_or_default(),
             outcome.expires_at.clone(),
             self.clock.now_rfc3339(),
         );
-        refreshed.account_id = outcome.account_id.or(current.account_id);
-        refreshed.enterprise_url = current.enterprise_url;
+        refreshed.account_id = outcome.account_id.or_else(|| current.account_id.clone());
+        refreshed.enterprise_url = current.enterprise_url.clone();
         refreshed.scopes = if outcome.scopes.is_empty() {
-            current.scopes
+            current.scopes.clone()
         } else {
             outcome.scopes
         };
@@ -924,13 +970,18 @@ impl ProviderCredentialManager {
     }
 
     fn oauth_is_expired(&self, credential: &StoredCredential) -> bool {
+        self.oauth_is_near_expiry(credential, Duration::from_secs(0))
+    }
+
+    fn oauth_is_near_expiry(&self, credential: &StoredCredential, leeway: Duration) -> bool {
         let Some(expires_at) = credential.expires_at.as_deref().and_then(non_empty) else {
             return false;
         };
         let Ok(expires_at) = humantime::parse_rfc3339(expires_at) else {
             return true;
         };
-        expires_at <= self.clock.now()
+        let threshold = self.clock.now() + leeway;
+        expires_at <= threshold
     }
 
     fn first_env_api_key(&self) -> Option<(String, String)> {

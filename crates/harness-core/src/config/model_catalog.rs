@@ -337,6 +337,7 @@ fn resolve_model_catalog_metadata(
 fn provider_backend_label(provider: &ProviderConfig) -> Option<&'static str> {
     match provider {
         ProviderConfig::OpenAiCompatible(_) => Some("OpenAI"),
+        ProviderConfig::Anthropic(_) => Some("Anthropic"),
     }
 }
 

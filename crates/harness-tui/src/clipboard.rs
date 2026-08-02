@@ -190,6 +190,17 @@ pub(crate) fn copy(text: &str) -> io::Result<()> {
     copy_impl(text, write_osc52, native_copy)
 }
 
+/// Build an OSC 8 hyperlink sequence (open + label + close).
+///
+/// Terminals that ignore OSC 8 still render `label` as plain text. Empty `uri`
+/// or `label` yields plain label text without escape sequences.
+pub(crate) fn format_osc8_hyperlink(uri: &str, label: &str) -> String {
+    if uri.is_empty() || label.is_empty() {
+        return label.to_string();
+    }
+    format!("\x1b]8;;{uri}\x1b\\{label}\x1b]8;;\x1b\\")
+}
+
 #[cfg(test)]
 pub(crate) fn set_copy_override(copy: Option<CopyHook>) {
     COPY_OVERRIDE.with(|cell| {
@@ -212,12 +223,18 @@ mod tests {
 
     #[test]
     fn copy_on_select_env_defaults_to_windows_only() {
+        // arrange
+        // act
+        // assert
         assert!(!copy_on_select_disabled_from_env(None, false));
         assert!(copy_on_select_disabled_from_env(None, true));
     }
 
     #[test]
     fn copy_on_select_env_treats_truthy_values_as_disabled() {
+        // arrange
+        // act
+        // assert
         assert!(copy_on_select_disabled_from_env(
             Some(OsStr::new("1")),
             false
@@ -234,6 +251,9 @@ mod tests {
 
     #[test]
     fn copy_on_select_env_treats_other_values_as_enabled() {
+        // arrange
+        // act
+        // assert
         assert!(!copy_on_select_disabled_from_env(
             Some(OsStr::new("0")),
             true
@@ -250,6 +270,9 @@ mod tests {
 
     #[test]
     fn copy_falls_back_to_native_after_osc52_error() {
+        // arrange
+        // act
+        // assert
         let calls = Arc::new(Mutex::new(Vec::new()));
         let osc52_calls = Arc::clone(&calls);
         let native_calls = Arc::clone(&calls);
@@ -281,8 +304,28 @@ mod tests {
 
     #[test]
     fn copy_errors_when_no_clipboard_path_is_available() {
+        // arrange
+        // act
+        // assert
         let err = copy_impl("unhandled", |_| Ok(false), |_| Ok(false)).expect_err("copy fails");
         assert_eq!(err.kind(), io::ErrorKind::NotFound);
         assert_eq!(err.to_string(), "no clipboard integration available");
+    }
+
+    #[test]
+    fn osc8_hyperlink_wraps_label_and_falls_back_on_empty() {
+        // arrange
+        // act
+        // assert
+        use super::format_osc8_hyperlink;
+
+        let linked = format_osc8_hyperlink("https://example.com/path", "path");
+        assert!(linked.contains("https://example.com/path"));
+        assert!(linked.contains("path"));
+        assert!(linked.starts_with("\x1b]8;;"));
+        assert!(linked.ends_with("\x1b]8;;\x1b\\"));
+
+        assert_eq!(format_osc8_hyperlink("", "plain"), "plain");
+        assert_eq!(format_osc8_hyperlink("https://x", ""), "");
     }
 }

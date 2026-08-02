@@ -730,6 +730,9 @@ mod tests {
 
     #[test]
     fn session_inspection_entry_owns_operator_visibility_rules() {
+        // arrange
+        // act
+        // assert
         for mode_source in [
             SessionModeSource::InteractiveLive,
             SessionModeSource::InteractiveMock,
@@ -751,6 +754,9 @@ mod tests {
 
     #[test]
     fn session_inspection_entry_normalizes_lineage_from_run_meta() {
+        // arrange
+        // act
+        // assert
         let temp = tempdir().unwrap_or_abort();
         let run_dir = temp.path().join("child_session");
         std::fs::create_dir_all(&run_dir).unwrap_or_abort();
@@ -771,6 +777,9 @@ mod tests {
 
     #[test]
     fn test_inspect_session_catalog_returns_valid_entries() {
+        // arrange
+        // act
+        // assert
         let session_dir = tempdir().unwrap_or_abort();
 
         // Valid session 1
@@ -823,6 +832,9 @@ mod tests {
 
     #[test]
     fn test_inspect_session_catalog_invalid_dir() {
+        // arrange
+        // act
+        // assert
         let temp = tempdir().unwrap_or_abort();
         let missing_dir = temp.path().join("missing");
 

@@ -1,6 +1,9 @@
 use harness_core::UnwrapOrAbort;
 #[tokio::test]
 async fn tool_task_lifecycle_events_preserve_owner_actor() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let clock = Arc::new(FakeClock::new());
     let coordinator = test_tool_lifecycle_coordinator(
@@ -108,6 +111,9 @@ async fn tool_task_lifecycle_events_preserve_owner_actor() {
 }
 #[tokio::test]
 async fn stale_tool_task_late_result_preserves_owner_actor() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let clock = Arc::new(FakeClock::new());
     let coordinator = test_tool_lifecycle_coordinator(
@@ -205,6 +211,9 @@ async fn stale_tool_task_late_result_preserves_owner_actor() {
 }
 #[tokio::test]
 async fn critical_hook_failure_fails_closed_and_records_metadata() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let hook_output_path = temp_dir.path().join("hook-finish.txt");
     let hook_runtime_config = HookRuntimeConfig {
@@ -359,6 +368,9 @@ async fn critical_hook_failure_fails_closed_and_records_metadata() {
 }
 #[tokio::test]
 async fn noncritical_hook_failure_records_metadata_without_cancelling_task() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let hook_output_path = temp_dir.path().join("hook-finish-noncritical.txt");
     let hook_runtime_config = HookRuntimeConfig {
@@ -490,6 +502,9 @@ async fn noncritical_hook_failure_records_metadata_without_cancelling_task() {
 }
 #[test]
 fn hook_runner_blocks_critical_and_reports_noncritical_failures() {
+    // arrange
+    // act
+    // assert
     critical_hook_failure_fails_closed_and_records_metadata();
     noncritical_hook_failure_records_metadata_without_cancelling_task();
 }

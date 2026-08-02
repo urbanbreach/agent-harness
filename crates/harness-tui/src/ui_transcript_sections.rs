@@ -39,22 +39,64 @@ pub(super) fn build_transcript_sections(app: &AppState) -> Vec<TranscriptTurnSec
         let original_activity_index = visible_activities[latest_assistant_footer_index].0;
         if let Some(turn) = turn_sections.get_mut(latest_assistant_footer_index) {
             turn.show_footer = true;
-            turn.footer_timestamp = app
-                .transcript_timestamps_visible()
-                .then_some(
-                    app.activities[original_activity_index]
-                        .user_timestamp
-                        .as_deref(),
-                )
-                .flatten()
-                .map(short_time_or_trimmed);
+            turn.footer_timestamp = app.activities[original_activity_index]
+                .user_timestamp
+                .as_deref()
+                .map(crate::time_format::wall_clock_12h);
         }
     }
+
+    inject_compaction_events(app, &visible_activities, &mut turn_sections);
 
     turn_sections
 }
 
+fn inject_compaction_events(
+    app: &AppState,
+    visible_activities: &[(usize, &ActivityEntry)],
+    turn_sections: &mut Vec<TranscriptTurnSection>,
+) {
+    for event in &app.events {
+        let compaction_section = match &event.payload {
+            harness_core::event::EventV1::SessionCompaction(data) => TranscriptCompactionSection {
+                kind: TranscriptCompactionKind::SessionCompaction,
+                summary: data.summary.clone(),
+                tokens_before: Some(data.tokens_before),
+                read_files: data.read_files.clone(),
+                modified_files: data.modified_files.clone(),
+            },
+            harness_core::event::EventV1::BranchSummary(data) => TranscriptCompactionSection {
+                kind: TranscriptCompactionKind::BranchSummary,
+                summary: data.summary.clone(),
+                tokens_before: None,
+                read_files: data.read_files.clone(),
+                modified_files: data.modified_files.clone(),
+            },
+            _ => continue,
+        };
+
+        let target_turn_index = visible_activities
+            .iter()
+            .enumerate()
+            .filter(|(_, (_, activity))| activity.last_seq <= event.seq)
+            .map(|(turn_idx, _)| turn_idx)
+            .next_back()
+            .or_else(|| (!visible_activities.is_empty()).then_some(0));
+
+        if let Some(turn_index) = target_turn_index {
+            if let Some(turn) = turn_sections.get_mut(turn_index) {
+                turn.assistant_parts
+                    .push(TranscriptAssistantPart::Compaction(compaction_section));
+            }
+        }
+    }
+}
+
 fn turn_supports_assistant_footer(turn: &TranscriptTurnSection) -> bool {
+    // Freeze h1-stream-probe: fail chrome is flat `Retry failed:` only — no ✗ model footer.
+    if matches!(turn.header.status, ActivityStatus::Error) {
+        return false;
+    }
     !turn.assistant_parts.is_empty() || activity_status_supports_footer_only(turn.header.status)
 }
 
@@ -80,14 +122,26 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
             .map(|user_msg| TranscriptUserMessageSection {
                 text: user_msg.text.clone(),
                 queued: queued_user_message,
+                wall_clock: activity
+                    .user_timestamp
+                    .as_deref()
+                    .map(crate::time_format::wall_clock_12h),
             });
 
-    let thinking = (thinking_visible && activity_has_thinking_text(activity)).then(|| {
-        TranscriptLabeledTextSection {
-            label: THINKING_TRACE_LABEL,
-            text: activity.thinking_text.clone(),
-        }
-    });
+    let thinking = thinking_visible
+        .then(|| {
+            if !activity.thinking_text.trim().is_empty()
+                || activity.thinking_duration_ms().is_some()
+            {
+                Some(TranscriptLabeledTextSection {
+                    label: THINKING_TRACE_LABEL,
+                    text: activity.thinking_text.clone(),
+                })
+            } else {
+                None
+            }
+        })
+        .flatten();
 
     let mut body_blocks = Vec::new();
     if !activity.transcript_text.is_empty() {
@@ -124,7 +178,10 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
     let error = activity
         .error_message
         .as_ref()
-        .map(|text| TranscriptErrorSection { text: text.clone() });
+        .map(|text| TranscriptErrorSection {
+            text: cancel_error_display_text(text, activity.duration_ms())
+                .unwrap_or_else(|| text.clone()),
+        });
     let assistant_parts = build_ordered_assistant_parts(
         activity,
         app,
@@ -138,11 +195,11 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
     TranscriptTurnSection {
         request_id: activity.request_id.clone(),
         user_message,
-        show_footer: is_latest,
-        footer_timestamp: (is_latest && timestamps_visible)
-            .then_some(activity.user_timestamp.as_deref())
-            .flatten()
-            .map(short_time_or_trimmed),
+        show_footer: is_latest && !matches!(activity.status, ActivityStatus::Error),
+        footer_timestamp: activity
+            .user_timestamp
+            .as_deref()
+            .map(crate::time_format::wall_clock_12h),
         animation_phase: app.transcript_animation_phase(),
         header: TranscriptTurnHeader {
             status: activity.status,
@@ -150,6 +207,18 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
             profile_label: activity.profile_label.clone(),
             model_id: activity.model_id.clone(),
             duration_ms: activity.duration_ms(),
+            thinking_duration_ms: activity.thinking_duration_ms(),
+            responding_duration_ms: activity.responding_duration_ms(),
+            total_tokens: activity.usage.map(|usage| usage.total_tokens),
+            retry: activity
+                .request_data
+                .as_ref()
+                .and_then(|data| data.metadata.as_ref())
+                .and_then(|metadata| metadata.retry),
+            retry_elapsed_ms: activity
+                .request_started_mono_ms
+                .zip(activity.duration_ms())
+                .map(|(started, _)| activity.last_mono_ms.saturating_sub(started)),
         },
         body_blocks,
         tool_calls,
@@ -192,10 +261,48 @@ fn build_ordered_assistant_parts(
     }
 
     sync_reasoning_parts_with_activity(&mut event_parts, activity, thinking_visible);
+    ensure_completed_thought_header(&mut event_parts, activity, thinking_visible);
     if let Some(error) = error {
         event_parts.push(TranscriptAssistantPart::Error(error));
     }
     event_parts
+}
+
+fn ensure_completed_thought_header(
+    parts: &mut Vec<TranscriptAssistantPart>,
+    activity: &ActivityEntry,
+    thinking_visible: bool,
+) {
+    if !thinking_visible {
+        return;
+    }
+    // Pinned reference freeze (run1-shell-complete-pinned-v1) does NOT show
+    // Thought for completed turns without reasoning deltas. Only add Thought
+    // when reasoning events were received or thinking text exists.
+    let has_reasoning =
+        !activity.thinking_text.trim().is_empty() || activity.thinking_duration_ms().is_some();
+    let complete_with_reasoning = matches!(activity.status, ActivityStatus::Done) && has_reasoning;
+    let error_with_reasoning = matches!(activity.status, ActivityStatus::Error) && has_reasoning;
+    if !complete_with_reasoning && !error_with_reasoning {
+        return;
+    }
+    // Reference tool state omits Thought when there was no reasoning.
+    if !activity.tool_calls.is_empty() && !activity_has_thinking_text(activity) {
+        return;
+    }
+    if parts
+        .iter()
+        .any(|part| matches!(part, TranscriptAssistantPart::Reasoning(_)))
+    {
+        return;
+    }
+    parts.insert(
+        0,
+        TranscriptAssistantPart::Reasoning(TranscriptLabeledTextSection {
+            label: THINKING_TRACE_LABEL,
+            text: activity.thinking_text.clone(),
+        }),
+    );
 }
 
 fn sync_reasoning_parts_with_activity(
@@ -208,7 +315,11 @@ fn sync_reasoning_parts_with_activity(
         return;
     }
 
-    if !activity_has_thinking_text(activity) {
+    let has_reasoning =
+        !activity.thinking_text.trim().is_empty() || activity.thinking_duration_ms().is_some();
+    if !has_reasoning {
+        // No reasoning events or thinking text — remove reasoning parts
+        // (pinned reference freeze does not show Thought for turns without reasoning).
         parts.retain(|part| !matches!(part, TranscriptAssistantPart::Reasoning(_)));
         return;
     }
@@ -532,4 +643,26 @@ fn push_sequenced_text_part(
         part,
     });
     *next_index += 1;
+}
+
+fn cancel_error_display_text(raw: &str, duration_ms: Option<u64>) -> Option<String> {
+    let lower = raw.to_ascii_lowercase();
+    let is_cancel = lower.contains("interrupted")
+        || lower.contains("cancelled")
+        || lower.contains("canceled")
+        || lower.contains("user cancel");
+    if !is_cancel {
+        return None;
+    }
+    let duration = match duration_ms {
+        Some(ms) if ms >= 60_000 => format_duration_ms(ms),
+        Some(ms) => {
+            format!(
+                "{:.1}s",
+                f64::from(u32::try_from(ms).unwrap_or(u32::MAX)) / 1_000.0
+            )
+        }
+        None => "0.0s".to_string(),
+    };
+    Some(format!("Turn cancelled by user in {duration}."))
 }

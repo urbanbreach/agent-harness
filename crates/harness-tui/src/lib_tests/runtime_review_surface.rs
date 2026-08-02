@@ -40,8 +40,8 @@ pub(super) fn runtime_state_overlay_never_stacks_over_permission_modal() {
     let rendered = render_live_lines(&app, 80, 24);
 
     assert!(ui::runtime_overlay_text_for_test(&app, 72).is_none());
-    assert!(rendered.contains("Permission required"));
-    assert!(rendered.contains("Allow once"));
+    assert!(rendered.contains("Allow Edit"));
+    assert!(rendered.contains("always-approve"));
     assert!(!rendered.contains("Recovery in progress"));
 }
 
@@ -75,30 +75,12 @@ pub(super) fn failure_overlay_is_specific_without_visual_noise() {
         "runtime error: exit code 1\nstderr permission denied".to_string(),
     ));
 
-    let overlay = runtime_overlay_text(&app, 72);
+    // Freeze-aligned: Failure does not paint an elevated Review required card.
+    assert!(ui::runtime_overlay_text_for_test(&app, 72).is_none());
     let rendered = render_live_lines(&app, 80, 24);
-
-    assert_eq!(overlay.badge, "Failure");
-    assert_eq!(overlay.title, "Review required");
-    assert_eq!(
-        overlay.summary,
-        "Review the latest failure before continuing."
-    );
-    assert_eq!(
-        overlay.detail.as_deref(),
-        Some("runtime error: exit code 1 stderr permission denied")
-    );
-    assert_eq!(
-        overlay.guidance,
-        "Review the failure, then retry or continue."
-    );
-    assert!(!overlay.summary.contains("request_digest="));
-    assert!(!overlay
-        .detail
-        .as_deref()
-        .unwrap_or_default()
-        .contains("request_digest="));
+    assert!(!rendered.contains("Review required"));
     assert!(!rendered.contains("Turn attention required"));
+    assert_eq!(app.runtime_state().kind, app::RuntimeStateKind::Failure);
 }
 
 pub(super) fn details_drawer_toggles_without_leaving_live_surface() {
@@ -110,15 +92,14 @@ pub(super) fn details_drawer_toggles_without_leaving_live_surface() {
     assert_eq!(app.active_tab, app::Tab::Run);
     assert!(!app.details_drawer_open());
 
-    app.handle_key(focus_cycle_key());
-    app.handle_key(key(crossterm::event::KeyCode::Char('i')));
+    app.live_details_drawer_open = true;
 
     assert_eq!(app.active_tab, app::Tab::Run);
     assert!(app.details_drawer_open());
     let open_debug = render_live_buffer(&app, 80, 24);
     assert!(open_debug.contains("▼ MCP"));
 
-    app.handle_key(key(crossterm::event::KeyCode::Char('i')));
+    app.live_details_drawer_open = false;
 
     assert_eq!(app.active_tab, app::Tab::Run);
     assert!(!app.details_drawer_open());
@@ -162,7 +143,7 @@ pub(super) fn operator_sidebar_uses_secondary_quiet_chrome() {
     assert!(!row[..row.find(title).unwrap_or_abort()].contains('│'));
     assert!(bg[start..end]
         .iter()
-        .all(|color| *color == theme.surface.panel));
+        .all(|color| *color == theme.surface.shell));
     assert!(!rendered.contains('┌'));
     assert!(!rendered.contains('┐'));
     assert!(!rendered.contains('└'));
@@ -230,6 +211,7 @@ pub(super) fn live_shell_no_longer_renders_debug_inspector_labels() {
     for event in session_view_events() {
         app.ingest_event(event);
     }
+    app.live_details_drawer_open = true;
 
     let rendered = render_live_lines(&app, 160, 48);
     assert!(!rendered.contains("Request ID"));
@@ -261,10 +243,11 @@ pub(super) fn review_surfaces_are_command_driven_without_tab_contract() {
         .any(|c| c == "harness.open_event_log"));
     live.handle_key(key(crossterm::event::KeyCode::Esc));
 
-    live.handle_key(key(crossterm::event::KeyCode::Char('?')));
+    live.handle_key(key(crossterm::event::KeyCode::Char('h')));
     assert_eq!(live.review_surface(), Some(app::ReviewSurface::Help));
     let live_help_debug = render_live_buffer(&live, 80, 24);
-    assert!(live_help_debug.contains("Live shell:"));
+    assert!(live_help_debug.contains("Keyboard Shortcuts"));
+    assert!(live_help_debug.contains("Essentials"));
 
     live.handle_key(key(crossterm::event::KeyCode::Esc));
     assert_eq!(live.review_surface(), None);
@@ -288,12 +271,12 @@ pub(super) fn review_surfaces_are_command_driven_without_tab_contract() {
         .any(|c| c == "harness.open_event_log"));
     replay.handle_key(key(crossterm::event::KeyCode::Esc));
 
-    replay.handle_key(key(crossterm::event::KeyCode::Char('?')));
+    replay.handle_key(key(crossterm::event::KeyCode::Char('h')));
     assert_eq!(replay.review_surface(), Some(app::ReviewSurface::Help));
     let replay_help_debug = render_live_buffer(&replay, 80, 24);
-    assert!(replay_help_debug.contains("Replay shell:"));
-    assert!(!replay_help_debug.contains("Commands"));
-    assert!(!replay_help_debug.contains("Permission required"));
+    assert!(replay_help_debug.contains("Keyboard Shortcuts"));
+    assert!(replay_help_debug.contains("Essentials"));
+    assert!(!replay_help_debug.contains("Allow Edit"));
 
     replay.handle_key(key(crossterm::event::KeyCode::Esc));
     assert_eq!(replay.review_surface(), None);
@@ -306,8 +289,11 @@ pub(super) fn review_surfaces_restore_panel_chrome() {
     }
     live.focus = app::Focus::List;
 
-    live.handle_key(key(crossterm::event::KeyCode::Char('?')));
+    live.handle_key(key(crossterm::event::KeyCode::Char('h')));
     let help_rendered = render_live_lines(&live, 100, 30);
-    assert!(!help_rendered.contains('┌'));
-    assert!(help_rendered.contains("Help"));
+    assert!(
+        help_rendered.contains("Keyboard Shortcuts") || help_rendered.contains("Essentials"),
+        "help surface restores freeze-aligned keyboard shortcuts chrome\n{help_rendered}"
+    );
+    assert!(!help_rendered.contains("Allow Edit"));
 }

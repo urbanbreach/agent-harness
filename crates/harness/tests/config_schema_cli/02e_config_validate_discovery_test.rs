@@ -35,7 +35,9 @@ fn config_validate_cli_accepts_provider_catalog_reference_config_by_explicit_pat
     let ProviderConfig::OpenAiCompatible(provider) = parsed
         .providers
         .get("openai-codex")
-        .unwrap_or_abort();
+        .unwrap_or_abort() else {
+        panic!("expected openai-codex provider to be OpenAiCompatible")
+    };
     assert!(provider.models.len() > 1);
 }
 #[test]

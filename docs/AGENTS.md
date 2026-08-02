@@ -8,17 +8,15 @@ Read root `AGENTS.md` first. Config-specific schema guidance lives in `../config
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |------|----------|-------|
-| Architecture/events | `architecture.md`, `sessions-and-replay.md` | Event schema, replay boundaries, session inspection, support export. |
-| Config contract | `config.md`, `provider-support.md`, `starter-skills.md` | Public config keys, provider catalogs, skill discovery. |
-| Tool contract | `native-tool-catalog.md`, `ast-grep-replace-safety-gate.md` | Native ids, permissions, mutation/replay/artifact behavior. |
-| Permissions/privacy | `permissions.md`, `privacy-and-local-data.md` | Approval limits, local data, redaction, support bundles. |
-| Testing/evidence | `testing.md`, `budgets.md`, `claim-evidence-matrix.md`, `release-blockers.md` | Lane semantics, perf/coverage, evidence status. |
-| Simulation/TUI manifests | `simulation-matrix.json`, `tui-signoff-manifest.v1.json` | Machine-read validation inputs. |
-| PRDs/progress | `*-prd.md`, `*-progress.md`, `roadmap-v1.md` | Historical claims; keep evidence rows honest and dated. |
-| Agents/troubleshooting | `agents-and-subagents.md`, `troubleshooting.md` | Agent routing, local troubleshooting. |
-| Extensions/migration | `extension-strategy.md`, `migration-notes.md`, `desktop-distribution-surface-map.md` | Extension strategy, migration history, desktop surfaces. |
-| Config restructure | `config-restructure-prompt.md`, `config-restructure-spec.md` | Historical config restructure specs. |
-| Static gate baseline | `test-suite-conventions-baseline.json` | Machine-read debt baseline for test-suite gates. |
+| Architecture/events | `architecture/architecture.md`, `architecture/sessions-and-replay.md` | Event schema, replay boundaries, session inspection, support export. |
+| Config contract | `configuration/config.md`, `configuration/provider-support.md`, `configuration/starter-skills.md` | Public config keys, provider catalogs, skill discovery. |
+| Tool contract | `tools/native-tool-catalog.md`, `tools/ast-grep-replace-safety-gate.md` | Native ids, permissions, mutation/replay/artifact behavior. |
+| Permissions/privacy | `permissions/permissions.md`, `permissions/privacy-and-local-data.md` | Approval limits, local data, redaction, support bundles. |
+| Testing/evidence | `testing/testing.md`, `testing/budgets.md` | Lane semantics, perf/coverage, evidence policy. |
+| Simulation/TUI manifests | `testing/simulation-matrix.json`, `testing/tui-signoff-manifest.v1.json` | Machine-read validation inputs. |
+| Agents/troubleshooting | `operations/agents-and-subagents.md`, `operations/troubleshooting.md` | Agent routing, local troubleshooting. |
+| Extensions/migration | `operations/extension-strategy.md`, `operations/migration-notes.md` | Extension strategy and migration history. |
+| Static gate baseline | `testing/test-suite-conventions-baseline.json` | Machine-read debt baseline for test-suite gates. |
 
 ## CONVENTIONS
 - Every release/readiness claim needs concrete evidence: test name, lane artifact, or explicit unchecked/post-V1 status.
@@ -26,7 +24,7 @@ Read root `AGENTS.md` first. Config-specific schema guidance lives in `../config
 - Keep docs branding-safe and source-term-safe; `scripts/check-forbidden-branding.py` is part of quality gates.
 - Do not use docs to advertise behavior that runtime/config/tool catalog tests do not prove.
 - JSON manifests in this directory are source inputs for validators; update validators and tests with schema/shape changes.
-- Historical progress docs should not be rewritten to hide old limitations; add dated superseding notes instead.
+- Do not reintroduce PRD, progress, plan, roadmap, or claim-ledger markdown into this tree.
 
 ## UPDATE TOGETHER
 | Change | Also update |
@@ -49,7 +47,7 @@ scripts/test-lanes.sh quality-gates
 ```
 
 ## ANTI-PATTERNS
-- Do not check roadmap/progress boxes without a matching evidence row.
+- Do not reintroduce PRD/progress/plan/roadmap/claim-ledger docs.
 - Do not claim PTY/live/native visual evidence without artifact provenance.
 - Do not broaden descriptor-only extension seams into runtime plugin claims.
 - Do not edit baseline debt files to bypass static gates without explaining the debt change.

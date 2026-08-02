@@ -1,0 +1,33 @@
+---
+source: crates/harness-tui/tests/deterministic_render_test.rs
+expression: trim_trailing_snapshot_whitespace(&rendered)
+---
+
+   test-workspace /workspace/agent-harness
+
+
+     ❯ Inspect deterministic sidebar
+
+
+     ◆ Thought for 0.0s
+
+     Assistant verified the rendered shell.
+     ◈ Web Search "harness sidebar"
+
+  ❙  ◈ LSP goto_definition src/ui_secondary.rs
+
+     Worked for 0.0s.
+
+
+
+
+
+
+
+
+
+
+  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ ❯                                                                                                                                                        │
+  ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── gpt-5.4-mini ─╯
+  Shift+Tab:mode  │  Ctrl+x:shortcuts

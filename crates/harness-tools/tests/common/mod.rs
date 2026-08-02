@@ -40,11 +40,7 @@ pub fn anonymous_supervisor_actor() -> EventActor {
 }
 
 pub fn allow_all_permission_policy() -> PermissionPolicy {
-    PermissionPolicy::new(
-        PermissionMode::Allow,
-        PermissionMode::Allow,
-        PermissionMode::Allow,
-    )
+    PermissionPolicy::allow_all()
 }
 
 pub fn edit_only_permission_policy() -> PermissionPolicy {

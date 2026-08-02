@@ -506,6 +506,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "clap_complete"
+version = "4.6.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "db8b397918185f0161ff3d6fcaa9e4bfc09b8367caf6e1d4a2848e5477ed027b"
+dependencies = [
+ "clap",
+]
+
+[[package]]
 name = "clap_derive"
 version = "4.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1014,6 +1023,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "filetime"
+version = "0.2.29"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c287a33c7f0a620c38e641e7f60827713987b3c0f26e8ddc9462cc69cf75759"
+dependencies = [
+ "cfg-if",
+ "libc",
+]
+
+[[package]]
 name = "find-msvc-tools"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1288,8 +1307,10 @@ dependencies = [
  "async-trait",
  "blake3",
  "clap",
+ "clap_complete",
  "crossterm",
  "dotenvy",
+ "flate2",
  "harness-core",
  "harness-providers",
  "harness-testkit",
@@ -1297,13 +1318,16 @@ dependencies = [
  "harness-tui",
  "json5",
  "portable-pty",
+ "ratatui",
  "reqwest",
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "tar",
  "tempfile",
  "tokio",
  "tokio-stream",
+ "tokio-util",
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
@@ -1322,6 +1346,7 @@ dependencies = [
  "humantime",
  "insta",
  "json5",
+ "landlock",
  "proptest",
  "regex",
  "reqwest",
@@ -1337,6 +1362,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "which",
+ "zbus",
 ]
 
 [[package]]
@@ -1376,6 +1402,7 @@ dependencies = [
  "portable-pty",
  "regex",
  "reqwest",
+ "serde",
  "serde_json",
  "tempfile",
  "time",
@@ -1420,6 +1447,7 @@ dependencies = [
  "fuzzy-matcher",
  "harness-core",
  "harness-providers",
+ "harness-testkit",
  "image",
  "imara-diff",
  "insta",
@@ -1427,8 +1455,10 @@ dependencies = [
  "ratatui",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
  "syntect",
  "tempfile",
+ "unicode-width",
  "vt100",
 ]
 
@@ -1898,6 +1928,17 @@ name = "lab"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bf36173d4167ed999940f804952e6b08197cae5ad5d572eb4db150ce8ad5d58f"
+
+[[package]]
+name = "landlock"
+version = "0.4.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "635839550ae8b90d9fd2571460a6645dc0aec070225956ca7a2831ed31d2795d"
+dependencies = [
+ "enumflags2",
+ "libc",
+ "thiserror 2.0.18",
+]
 
 [[package]]
 name = "lazy_static"
@@ -3407,6 +3448,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "tar"
+version = "0.4.46"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f6221d9a6003c78398e3b239969f352578258df48c8eb051caadae0015bc840"
+dependencies = [
+ "filetime",
+ "libc",
+ "xattr",
+]
+
+[[package]]
 name = "tempfile"
 version = "3.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4432,6 +4484,16 @@ name = "writeable"
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ffae5123b2d3fc086436f8834ae3ab053a283cfac8fe0a0b8eaae044768a4c4"
+
+[[package]]
+name = "xattr"
+version = "1.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32e45ad4206f6d2479085147f02bc2ef834ac85886624a23575ae137c8aa8156"
+dependencies = [
+ "libc",
+ "rustix",
+]
 
 [[package]]
 name = "yaml-rust"

@@ -76,6 +76,9 @@ fn load_stored(data_home: &Path, provider: AuthProviderId) -> StoredCredential {
 
 #[test]
 fn onboarding_required_only_when_configured_auth_provider_has_no_usable_fallback() {
+    // arrange
+    // act
+    // assert
     let missing = codex_config("");
     assert!(onboarding_required_for_config(
         Some(&missing),
@@ -117,6 +120,9 @@ fn onboarding_required_only_when_configured_auth_provider_has_no_usable_fallback
 
 #[test]
 fn interactive_auth_login_provider_picker_cancels_without_stacktrace() {
+    // arrange
+    // act
+    // assert
     let temp = tempdir().unwrap_or_abort();
     let args = auth_args(&["login"]);
 
@@ -136,6 +142,9 @@ fn interactive_auth_login_provider_picker_cancels_without_stacktrace() {
 
 #[test]
 fn interactive_codex_api_key_stores_without_echoing_secret() {
+    // arrange
+    // act
+    // assert
     let temp = tempdir().unwrap_or_abort();
     let secret = "sk-interactive-auth-secret-value";
     let args = auth_args(&["login"]);
@@ -159,6 +168,9 @@ fn interactive_codex_api_key_stores_without_echoing_secret() {
 
 #[test]
 fn interactive_codex_browser_and_device_resolve_to_mockable_oauth_paths() {
+    // arrange
+    // act
+    // assert
     for (stdin, expected_label) in [
         ("\n\n", "ChatGPT Pro/Plus (browser)"),
         ("\n\x1b[B\n", "ChatGPT Pro/Plus (headless)"),
@@ -192,6 +204,9 @@ fn interactive_codex_browser_and_device_resolve_to_mockable_oauth_paths() {
 
 #[test]
 fn interactive_github_copilot_resolves_to_mockable_device_flow() {
+    // arrange
+    // act
+    // assert
     let temp = tempdir().unwrap_or_abort();
     let token = "copilot-interactive-secret";
     let args = auth_args(&["login", "--mock-token", token]);
@@ -216,6 +231,9 @@ fn interactive_github_copilot_resolves_to_mockable_device_flow() {
 
 #[test]
 fn explicit_auth_login_args_bypass_interactive_picker() {
+    // arrange
+    // act
+    // assert
     let temp = tempdir().unwrap_or_abort();
     let secret = "sk-explicit-auth-secret-value";
     let args = auth_args(&[
@@ -249,6 +267,9 @@ fn explicit_auth_login_args_bypass_interactive_picker() {
 
 #[test]
 fn supported_method_labels_parse_for_supported_providers() {
+    // arrange
+    // act
+    // assert
     assert_eq!(
         super::parse_login_method_arg("ChatGPT Pro/Plus (browser)"),
         Ok(super::AuthLoginMethod::Browser)
@@ -269,6 +290,9 @@ fn supported_method_labels_parse_for_supported_providers() {
 
 #[test]
 fn explicit_auth_logout_rejects_control_provider_without_echoing_it() {
+    // arrange
+    // act
+    // assert
     let temp = tempdir().unwrap_or_abort();
     let provider = "codex\u{1b}]52;c;SGFja2Vk\u{7}";
     let args = auth_args(&["logout", provider]);
@@ -283,6 +307,9 @@ fn explicit_auth_logout_rejects_control_provider_without_echoing_it() {
 
 #[test]
 fn explicit_auth_login_rejects_control_provider_without_echoing_it() {
+    // arrange
+    // act
+    // assert
     let provider = "codex\u{1b}]52;c;SGFja2Vk\u{7}";
 
     assert_explicit_auth_login_rejects_provider(provider);
@@ -290,6 +317,9 @@ fn explicit_auth_login_rejects_control_provider_without_echoing_it() {
 
 #[test]
 fn explicit_auth_login_rejects_leading_newline_codex_alias_without_echoing_it() {
+    // arrange
+    // act
+    // assert
     let provider = "\ncodex";
 
     assert_explicit_auth_login_rejects_provider(provider);
@@ -297,6 +327,9 @@ fn explicit_auth_login_rejects_leading_newline_codex_alias_without_echoing_it() 
 
 #[test]
 fn explicit_auth_login_rejects_trailing_newline_codex_alias_without_echoing_it() {
+    // arrange
+    // act
+    // assert
     let provider = "codex\n";
 
     assert_explicit_auth_login_rejects_provider(provider);
@@ -304,6 +337,9 @@ fn explicit_auth_login_rejects_trailing_newline_codex_alias_without_echoing_it()
 
 #[test]
 fn explicit_auth_login_rejects_leading_newline_openai_alias_without_echoing_it() {
+    // arrange
+    // act
+    // assert
     let provider = "\nopenai";
 
     assert_explicit_auth_login_rejects_provider(provider);
@@ -311,6 +347,9 @@ fn explicit_auth_login_rejects_leading_newline_openai_alias_without_echoing_it()
 
 #[test]
 fn explicit_auth_login_rejects_leading_newline_copilot_alias_without_echoing_it() {
+    // arrange
+    // act
+    // assert
     let provider = "\ngithub-copilot";
 
     assert_explicit_auth_login_rejects_provider(provider);
@@ -318,6 +357,9 @@ fn explicit_auth_login_rejects_leading_newline_copilot_alias_without_echoing_it(
 
 #[test]
 fn auth_list_sanitizes_control_provider_key_config_error_without_echoing_it() {
+    // arrange
+    // act
+    // assert
     let temp = tempdir().unwrap_or_abort();
     let config_path = temp.path().join("harness.jsonc");
     std::fs::write(
@@ -360,6 +402,9 @@ fn auth_list_sanitizes_control_provider_key_config_error_without_echoing_it() {
 
 #[test]
 fn auth_list_reports_arbitrary_configured_auth_provider() {
+    // arrange
+    // act
+    // assert
     let temp = tempdir().unwrap_or_abort();
     let config_path = temp.path().join("harness.jsonc");
     std::fs::write(
@@ -450,6 +495,9 @@ impl MockCodexAuthHttpClient {
 
 #[tokio::test]
 async fn codex_browser_login_accepts_pasted_localhost_callback_url() {
+    // arrange
+    // act
+    // assert
     let http = MockCodexAuthHttpClient::new(AuthHttpResponse {
         status: 200,
         body: serde_json::json!({
@@ -508,6 +556,9 @@ async fn codex_browser_login_accepts_pasted_localhost_callback_url() {
 
 #[tokio::test]
 async fn codex_browser_login_loopback_uses_cli_listener_and_stores_credential() {
+    // arrange
+    // act
+    // assert
     let http = MockCodexAuthHttpClient::new(AuthHttpResponse {
         status: 200,
         body: serde_json::json!({
@@ -613,6 +664,9 @@ fn config_with_arbitrary_auth_provider_parses() {
                 Some("anthropic")
             );
         }
+        harness_core::config::ProviderConfig::Anthropic(_) => {
+            panic!("unexpected Anthropic provider in auth_provider_from_options test")
+        }
     }
 }
 
@@ -684,6 +738,9 @@ fn config_with_codex_auth_provider_backward_compat() {
                 Some("codex")
             );
         }
+        harness_core::config::ProviderConfig::Anthropic(_) => {
+            panic!("unexpected Anthropic provider in config_with_codex_auth_provider_succeeds test")
+        }
     }
 }
 
@@ -718,5 +775,183 @@ fn config_with_null_auth_provider_passes() {
         harness_core::config::ProviderConfig::OpenAiCompatible(opts) => {
             assert!(opts.auth_provider.is_none());
         }
+        harness_core::config::ProviderConfig::Anthropic(_) => {
+            panic!("unexpected Anthropic provider in config_with_null_auth_provider_passes test")
+        }
     }
+}
+
+fn run_sleep_wake_cli(data_home: &std::path::Path, args: &[&str]) -> (i32, String, String) {
+    let mut stdin = std::io::Cursor::new(Vec::<u8>::new());
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let mut io = crate::CliIo::new(&mut stdin, &mut stdout, &mut stderr);
+    let deps = auth_deps(data_home);
+    let mut argv: Vec<String> = vec![
+        "harness".to_string(),
+        "auth".to_string(),
+        "sleep-wake-simulate".to_string(),
+    ];
+    for arg in args {
+        argv.push((*arg).to_string());
+    }
+    let outcome = crate::run(argv, &mut io, deps);
+    (
+        outcome.code,
+        String::from_utf8_lossy(&stdout).to_string(),
+        String::from_utf8_lossy(&stderr).to_string(),
+    )
+}
+
+#[test]
+fn sleep_wake_simulate_skip_on_sleep_without_expiry() {
+    // arrange
+    let dir = tempdir().unwrap_or_abort();
+
+    // act
+    let (code, stdout, stderr) = run_sleep_wake_cli(dir.path(), &["--event", "sleep"]);
+
+    // assert — sleep events never trigger refresh evaluation
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert!(stdout.contains("\"event\": \"sleep\""), "stdout: {stdout}");
+    assert!(
+        stdout.contains("\"decision\": \"skip\""),
+        "stdout: {stdout}"
+    );
+    assert!(
+        stdout.contains("does not evaluate credential refresh"),
+        "stdout: {stdout}"
+    );
+    assert!(
+        !stdout.contains("\"execution\""),
+        "no execution without --execute"
+    );
+}
+
+#[test]
+fn sleep_wake_simulate_refresh_on_wake_near_expiry() {
+    // arrange
+    let dir = tempdir().unwrap_or_abort();
+    let now: i64 = 1_700_000_000_000;
+    let expires_at: i64 = now + 120_000; // 2 minutes left, within 5-min leeway
+
+    // act
+    let (code, stdout, stderr) = run_sleep_wake_cli(
+        dir.path(),
+        &[
+            "--event",
+            "wake",
+            "--expires-at-ms",
+            &expires_at.to_string(),
+            "--now-ms",
+            &now.to_string(),
+        ],
+    );
+
+    // assert — wake + near-expiry recommends refresh
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert!(stdout.contains("\"event\": \"wake\""), "stdout: {stdout}");
+    assert!(
+        stdout.contains("\"decision\": \"refresh\""),
+        "stdout: {stdout}"
+    );
+    assert!(
+        stdout.contains("\"remaining_ms\": 120000"),
+        "stdout: {stdout}"
+    );
+}
+
+#[test]
+fn sleep_wake_simulate_skip_on_wake_fresh_credentials() {
+    // arrange
+    let dir = tempdir().unwrap_or_abort();
+    let now: i64 = 1_700_000_000_000;
+    let expires_at: i64 = now + 3_600_000; // 1 hour left, fresh
+
+    // act
+    let (code, stdout, stderr) = run_sleep_wake_cli(
+        dir.path(),
+        &[
+            "--event",
+            "wake",
+            "--expires-at-ms",
+            &expires_at.to_string(),
+            "--now-ms",
+            &now.to_string(),
+        ],
+    );
+
+    // assert — wake but credentials still fresh
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert!(
+        stdout.contains("\"decision\": \"skip\""),
+        "stdout: {stdout}"
+    );
+    assert!(stdout.contains("still fresh"), "stdout: {stdout}");
+}
+
+#[test]
+fn sleep_wake_simulate_execute_skips_for_sleep_event() {
+    // arrange — --execute runs the full pipeline; skip decisions produce Skipped execution
+    let dir = tempdir().unwrap_or_abort();
+
+    // act
+    let (code, stdout, stderr) = run_sleep_wake_cli(dir.path(), &["--event", "sleep", "--execute"]);
+
+    // assert — execution ran and reported skipped
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert!(
+        stdout.contains("\"decision\": \"skip\""),
+        "stdout: {stdout}"
+    );
+    assert!(
+        stdout.contains("\"execution\": \"sleep/wake execute: skipped"),
+        "stdout: {stdout}"
+    );
+}
+
+#[test]
+fn sleep_wake_simulate_execute_fails_gracefully_for_refresh_without_credentials() {
+    // arrange — no credentials stored; execute attempts refresh and fails gracefully
+    let dir = tempdir().unwrap_or_abort();
+    let now: i64 = 1_700_000_000_000;
+    let expires_at: i64 = now + 120_000;
+
+    // act
+    let (code, stdout, stderr) = run_sleep_wake_cli(
+        dir.path(),
+        &[
+            "--event",
+            "wake",
+            "--expires-at-ms",
+            &expires_at.to_string(),
+            "--now-ms",
+            &now.to_string(),
+            "--execute",
+        ],
+    );
+
+    // assert — refresh decision made, execution attempted but fails (no credentials/refresher)
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert!(
+        stdout.contains("\"decision\": \"refresh\""),
+        "stdout: {stdout}"
+    );
+    assert!(
+        stdout.contains("sleep/wake execute: failed"),
+        "execute reports failure gracefully without a refresher: {stdout}"
+    );
+}
+
+#[test]
+fn sleep_wake_simulate_rejects_invalid_event() {
+    // arrange
+    let dir = tempdir().unwrap_or_abort();
+
+    // act
+    let (code, _stdout, stderr) = run_sleep_wake_cli(dir.path(), &["--event", "hibernate"]);
+
+    // assert — invalid event rejected
+    assert_eq!(code, 2);
+    assert!(stderr.contains("invalid event"), "stderr: {stderr}");
 }

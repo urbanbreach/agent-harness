@@ -15,10 +15,8 @@ use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
 
 use crate::agent::{
-    AgentModelSettings, AgentProfile, ProviderCompactionFacts, ProviderCompactionSummarySource,
-    ProviderCompactionTailBoundary, ProviderContext, ProviderContextCheckpoint,
-    ProviderContextCheckpointMetadata, ProviderConversationTurn, ProviderConversationTurnStatus,
-    ProviderFileOperationFact,
+    AgentModelSettings, AgentProfile, ProviderContext, ProviderConversationTurn,
+    ProviderConversationTurnStatus,
 };
 use crate::clock::{FakeClock, RealClock};
 use crate::config::{
@@ -32,12 +30,12 @@ use crate::conversation::{
 };
 use crate::event::{
     ActorKind, AgentSpawnedEvent, ArtifactWrittenEvent, BackgroundTaskNotificationStatus,
-    CompactionAppliedEvent, CompactionWrittenEvent, EditAppliedEvent, EventActor, EventArtifactRef,
-    EventEnvelopeV1, EventV1, HookExecutionMetadata, HookExecutionStatus,
-    ProviderRequestFinishedEvent, ProviderRequestStartedEvent, ProviderStreamDeltaEvent,
-    RunFinishedEvent, RunStartedEvent, TaskCancelledEvent, TaskCompletedEvent, TaskScheduleState,
-    TaskScheduledEvent, ToolCallFinishedEvent, ToolCallMetadata, ToolCallRequestedEvent,
-    ToolCallStatus, ToolIdentityMetadata, UserMessageSubmittedEvent, SCHEMA_VERSION,
+    EditAppliedEvent, EventActor, EventArtifactRef, EventEnvelopeV1, EventV1,
+    HookExecutionMetadata, HookExecutionStatus, ProviderRequestFinishedEvent,
+    ProviderRequestStartedEvent, ProviderStreamDeltaEvent, RunFinishedEvent, RunStartedEvent,
+    TaskCancelledEvent, TaskCompletedEvent, TaskScheduleState, TaskScheduledEvent,
+    ToolCallFinishedEvent, ToolCallMetadata, ToolCallRequestedEvent, ToolCallStatus,
+    ToolIdentityMetadata, UserMessageSubmittedEvent, SCHEMA_VERSION,
 };
 use crate::perm::{
     PermissionDecision, PermissionGrant, PermissionGrantMatcher, PermissionGrantScope,
@@ -55,29 +53,25 @@ use crate::tool::{
 use super::{
     append_artifact_written_event, append_background_task_notification_and_schedule,
     append_edit_applied_event, append_edit_proposed_event, append_edit_rejected_event,
-    append_payload_event_with_correlation, append_permission_grant_recorded_event,
-    append_permission_requested_event, append_tool_call_finished_event,
-    append_tool_call_requested_event, append_tool_call_started_event,
-    build_model_compaction_prompt, build_provider_context_summary, compact_provider_context,
-    completion_messages_to_conversation_messages, permission_rule_request_selectors,
-    plan_mode_shell_boundary_denial, provider_context_summary_required_headings,
+    append_payload_event, append_payload_event_with_correlation,
+    append_permission_grant_recorded_event, append_permission_requested_event,
+    append_tool_call_finished_event, append_tool_call_requested_event,
+    append_tool_call_started_event, compact_session, completion_messages_to_conversation_messages,
+    permission_rule_request_selectors, plan_mode_shell_boundary_denial,
     provider_tool_message_status, restore_provider_context_from_history,
     schedule_pending_agent_wakeups_for_idle_agent, spawn_coordinator, summarize_hook_output,
-    validate_model_compaction_summary, ChildTaskTurnState, Coordinator, CoordinatorConfig,
+    system_actor, AppliedCompaction, ChildTaskTurnState, Coordinator, CoordinatorConfig,
     CoordinatorError, EditAppliedEventArgs, FailedTerminalCompactionRequest, HashlineEditMetadata,
     HookExecutionBatch, HookInvocationContext, JobOutcome, JobProgressKind,
     PendingPermissionResolution, PendingPermissionState, PermissionRequestedEventArgs,
-    ProviderCompactionTrigger, ProviderContextCompactionPlan, QueuedAgentTurn, RunInfo, RunState,
-    RunningAgentTurn, TaskExecutionState, TaskState, TokioLifecycleHookCommandExecutor,
-    ToolCallFinishedEventArgs, ToolCallRequestedEventArgs,
+    ProviderCompactionTrigger, QueuedAgentTurn, RunInfo, RunState, RunningAgentTurn,
+    TaskExecutionState, TaskState, TokioLifecycleHookCommandExecutor, ToolCallFinishedEventArgs,
+    ToolCallRequestedEventArgs,
 };
 use harness_providers::{CompletionMessage, MessageRole};
 
 use super::hooks::{
     LifecycleHookCommandExecutor, LifecycleHookCommandInvocation, LifecycleHookCommandOutput,
-};
-use super::provider_context::{
-    compaction_summary_override_from_hooks, ProviderContextCompactionRequest,
 };
 
 macro_rules! delegate_test {
@@ -140,6 +134,9 @@ fn success_exit_status() -> ExitStatus {
 
 #[tokio::test]
 async fn lifecycle_hooks_use_injected_executor_without_spawning() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let executor = FakeLifecycleHookCommandExecutor::new();
     let runtime = HookRuntimeConfig {
@@ -219,8 +216,71 @@ async fn lifecycle_hooks_use_injected_executor_without_spawning() {
     );
 }
 
+#[tokio::test]
+async fn lifecycle_hooks_scoped_to_declared_event_invoke_nothing_else() {
+    // arrange — one hook declared for run_started only
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
+    let executor = FakeLifecycleHookCommandExecutor::new();
+    let runtime = HookRuntimeConfig {
+        hooks: HooksConfig {
+            lifecycle: vec![LifecycleHookConfig {
+                id: Some("scoped-hook".to_string()),
+                event: HookLifecycleEvent::RunStarted,
+                command: vec!["fake-hook-bin".to_string()],
+                cwd: None,
+                timeout_ms: 100,
+                critical: true,
+                env: BTreeMap::new(),
+            }],
+        },
+        shell_allowlist: ShellAllowlist {
+            executables: vec!["fake-hook-bin".to_string()],
+            cwd_roots: Vec::new(),
+            ..ShellAllowlist::default()
+        },
+        suppress_execution: false,
+    };
+    let clock = FakeClock::new();
+
+    // act — fire a different lifecycle event
+    let batch = super::hooks::run_lifecycle_hooks(
+        &clock,
+        &executor,
+        &runtime,
+        HookInvocationContext {
+            event: HookLifecycleEvent::ToolCallStarted,
+            run_id: "run_scoped".into(),
+            workspace_root: temp_dir.path().to_path_buf(),
+            artifacts_dir: temp_dir.path().join("artifacts"),
+            actor: Some(EventActor::new(ActorKind::System, None)),
+            agent_id: None,
+            request_id: None,
+            permission_id: None,
+            task_id: None,
+            tool_call_id: None,
+            tool_id: None,
+            provider_id: None,
+            model_id: None,
+            parent_agent_id: None,
+            category: None,
+            outcome: None,
+            output_summary: None,
+            failure_reason: None,
+        },
+    )
+    .await;
+
+    // assert — discovery is event-scoped: nothing runs, nothing is recorded
+    assert_eq!(batch.hook_executions.len(), 0);
+    assert_eq!(batch.critical_failure, None);
+    assert!(executor.invocations.lock().unwrap_or_abort().is_empty());
+}
+
 #[test]
 fn summarize_hook_output_preserves_existing_summary_contract() {
+    // arrange
+    // act
+    // assert
     assert_eq!(summarize_hook_output("  stdout only  ", ""), "stdout only");
     assert_eq!(summarize_hook_output("", "\nstderr only\n"), "stderr only");
     assert_eq!(
@@ -232,6 +292,9 @@ fn summarize_hook_output_preserves_existing_summary_contract() {
 
 #[test]
 fn summarize_hook_output_truncates_long_single_stream_output() {
+    // arrange
+    // act
+    // assert
     let summary = summarize_hook_output(&"x".repeat(161), "");
 
     assert_eq!(summary.chars().count(), 161);
@@ -241,6 +304,9 @@ fn summarize_hook_output_truncates_long_single_stream_output() {
 
 #[test]
 fn plan_mode_shell_boundary_allows_only_read_only_inspection_commands() {
+    // arrange
+    // act
+    // assert
     assert_eq!(
         plan_mode_shell_boundary_denial(
             Some(crate::plan::PLAN_AGENT_NAME),
@@ -488,11 +554,15 @@ fn test_agent_profile(name: &str) -> AgentProfile {
         temperature: None,
         tool_failure_mode: crate::config::ToolFailureMode::FailTurn,
         toolset: Vec::new(),
+        permission_ruleset: Vec::new(),
     }
 }
 
 #[tokio::test]
 async fn fresh_run_agent_ids_skip_existing_child_session_directories() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     fs::create_dir_all(temp_dir.path().join("agent_000001")).unwrap_or_abort();
     let stale_child_dir = temp_dir.path().join("agent_000002");
@@ -565,65 +635,17 @@ delegate_tokio_test!(perm_timeout_path_denies_deterministically => permission_fl
 delegate_tokio_test!(malformed_question_answer_does_not_resolve_permission => permission_flow_tests::malformed_question_answer_does_not_resolve_permission);
 
 #[cfg(test)]
-#[path = "tests/operational_memory_tests.rs"]
-mod operational_memory_tests;
-
-delegate_test!(operational_memory_records_read_and_modified_files_from_events => operational_memory_tests::context_operational_memory_records_read_and_modified_files_from_events);
-delegate_test!(compaction_preserves_file_tool_skill_todo_and_plan_context => operational_memory_tests::context_compaction_preserves_file_tool_skill_todo_and_plan_context);
-delegate_test!(operational_memory_redacts_secret_shaped_facts => operational_memory_tests::operational_memory_redacts_secret_shaped_facts);
-delegate_test!(operational_memory_dedupes_sorts_and_caps_paths => operational_memory_tests::operational_memory_dedupes_sorts_and_caps_paths);
-delegate_test!(operational_memory_ignores_freeform_path_like_output => operational_memory_tests::operational_memory_ignores_freeform_path_like_output);
-delegate_test!(operational_memory_preserves_touched_files_legacy_union => operational_memory_tests::operational_memory_preserves_touched_files_legacy_union);
-delegate_test!(operational_memory_resume_loads_checkpoint_facts_without_filesystem_scan => operational_memory_tests::operational_memory_resume_loads_checkpoint_facts_without_filesystem_scan);
-
-#[cfg(test)]
 #[path = "tests/mcp_identity_tests.rs"]
 mod mcp_identity_tests;
 
 delegate_tokio_test!(mcp_effective_identity_persists_for_direct_and_wrapper_calls => mcp_identity_tests::mcp_effective_identity_persists_for_direct_and_wrapper_calls);
 delegate_test!(mcp_effective_identity_uses_registered_first_class_ids_for_reserved_wrapper_names => mcp_identity_tests::mcp_effective_identity_uses_registered_first_class_ids_for_reserved_wrapper_names);
 
-#[cfg(test)]
-#[path = "tests/oversized_turn_tests.rs"]
-mod oversized_turn_tests;
-
-delegate_test!(split_oversized_turn_pre_prompt_preserves_suffix_and_prefix_summary => oversized_turn_tests::split_oversized_turn_pre_prompt_preserves_suffix_and_prefix_summary);
-delegate_test!(split_oversized_failed_provider_error_preserves_incomplete_suffix => oversized_turn_tests::split_oversized_failed_provider_error_preserves_incomplete_suffix);
-delegate_test!(split_oversized_turn_refuses_tool_failure_to_avoid_orphan_tools => oversized_turn_tests::split_oversized_turn_refuses_tool_failure_to_avoid_orphan_tools);
-delegate_test!(split_oversized_turn_refuses_artifact_backed_turn => oversized_turn_tests::split_oversized_turn_refuses_artifact_backed_turn);
-delegate_test!(split_oversized_turn_refuses_provider_neutral_tool_messages => oversized_turn_tests::split_oversized_turn_refuses_provider_neutral_tool_messages);
-delegate_test!(split_oversized_turn_prefix_summary_in_checkpoint_facts => oversized_turn_tests::split_oversized_turn_prefix_summary_in_checkpoint_facts);
-
-#[cfg(test)]
-#[path = "tests/compaction_planning_tests.rs"]
-mod compaction_planning_tests;
-
-delegate_test!(proactive_compaction_writes_checkpoint_artifact_and_updates_provider_context => compaction_planning_tests::checkpoint_proactive_compaction_writes_checkpoint_artifact_and_updates_provider_context);
-delegate_test!(provider_context_compaction_request_returns_none_for_single_turn_manual_context => compaction_planning_tests::provider_context_compaction_request_returns_none_for_single_turn_manual_context);
-delegate_test!(provider_context_compaction_request_builds_checkpoint_decision_without_appending_events => compaction_planning_tests::provider_context_compaction_request_builds_checkpoint_decision_without_appending_events);
-delegate_test!(compaction_trigger_pre_prompt_uses_estimate_without_provider_usage => compaction_planning_tests::compaction_trigger_pre_prompt_uses_estimate_without_provider_usage);
-delegate_test!(compaction_trigger_uses_fallback_budget_without_model_metadata => compaction_planning_tests::compaction_trigger_uses_fallback_budget_without_model_metadata);
-delegate_test!(compaction_trigger_noops_below_estimated_threshold => compaction_planning_tests::compaction_trigger_noops_below_estimated_threshold);
-delegate_test!(structured_summary_contract_can_be_disabled_for_legacy_headings => compaction_planning_tests::structured_summary_contract_can_be_disabled_for_legacy_headings);
-delegate_test!(deterministic_summary_uses_required_harness_sections => compaction_planning_tests::deterministic_summary_uses_required_harness_sections);
-delegate_test!(model_summary_validation_rejects_missing_required_harness_section => compaction_planning_tests::model_summary_validation_rejects_missing_required_harness_section);
-delegate_test!(proactive_compaction_records_pruned_tool_artifacts_for_compacted_turns => compaction_planning_tests::checkpoint_proactive_compaction_records_pruned_tool_artifacts_for_compacted_turns);
-delegate_test!(repeated_compaction_updates_existing_summary_without_legacy_append_format => compaction_planning_tests::repeated_compaction_updates_existing_summary_without_legacy_append_format);
-delegate_test!(compaction_summary_override_uses_explicit_hook_prefix_only => compaction_planning_tests::compaction_summary_override_uses_explicit_hook_prefix_only);
-
-#[cfg(test)]
-#[path = "tests/provider_context_checkpoint_tests.rs"]
-mod provider_context_checkpoint_tests;
-
-delegate_test!(replay_equivalence_after_failed_turn_pre_prompt_compaction_resume => provider_context_checkpoint_tests::replay_replay_equivalence_after_failed_turn_pre_prompt_compaction_resume);
-delegate_test!(legacy_provider_context_checkpoint_deserializes => provider_context_checkpoint_tests::legacy_provider_context_checkpoint_deserializes);
-delegate_test!(provider_neutral_reconstruction_marks_continue_as_tool_message_failures => provider_context_checkpoint_tests::provider_neutral_reconstruction_marks_continue_as_tool_message_failures);
-delegate_test!(provider_context_checkpoint_legacy_round_trips_with_new_defaults => provider_context_checkpoint_tests::provider_context_checkpoint_legacy_round_trips_with_new_defaults);
-delegate_test!(failed_turn_status_defaults_to_completed_for_legacy_checkpoint => provider_context_checkpoint_tests::failed_turn_status_defaults_to_completed_for_legacy_checkpoint);
-delegate_test!(compaction_turn_facts_include_failed_turn_status => provider_context_checkpoint_tests::compaction_turn_facts_include_failed_turn_status);
-
 #[test]
 fn stale_tool_task_late_result_preserves_owner_actor() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let mut config = test_config(temp_dir.path());
     config.stale_timeout_ms = 20;
@@ -714,6 +736,9 @@ fn stale_tool_task_late_result_preserves_owner_actor() {
 
 #[tokio::test]
 async fn background_foreground_child_tasks_releases_parent_task_and_keeps_child_running() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let config = test_config(temp_dir.path());
     let clock = Arc::new(FakeClock::new());
@@ -855,16 +880,321 @@ async fn background_foreground_child_tasks_releases_parent_task_and_keeps_child_
     }));
 }
 
-#[cfg(test)]
-#[path = "tests/provider_context_restore_tests.rs"]
-mod provider_context_restore_tests;
+#[tokio::test]
+async fn demote_foreground_child_task_releases_parent_for_single_handle() {
+    // arrange
+    // act
+    // assert
+    // Given: one foreground-blocking child and a waiting parent task
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
+    let config = test_config(temp_dir.path());
+    let clock = Arc::new(FakeClock::new());
+    let redactor = Arc::new(DefaultRedactor::default());
+    let (_command_tx, command_rx) = mpsc::channel(1);
+    let (job_tx, job_rx) = mpsc::channel(1);
+    let mut coordinator = Coordinator::new(config, clock, redactor, command_rx, job_tx, job_rx);
 
-delegate_test!(restore_provider_context_uses_task_completed_summary_for_iterative_history => provider_context_restore_tests::restore_provider_context_uses_task_completed_summary_for_iterative_history);
-delegate_test!(failed_response_compaction_does_not_double_compact_same_request => provider_context_restore_tests::failed_response_compaction_does_not_double_compact_same_request);
-delegate_test!(restore_provider_context_from_history_uses_checkpoint_then_replays_post_checkpoint_turns => provider_context_restore_tests::checkpoint_restore_provider_context_from_history_uses_checkpoint_then_replays_post_checkpoint_turns);
-delegate_test!(failed_turn_context_resume_reconstructs_failed_turn_after_checkpoint => provider_context_restore_tests::checkpoint_failed_turn_context_resume_reconstructs_failed_turn_after_checkpoint);
-delegate_test!(failed_turn_context_does_not_duplicate_completed_turns => provider_context_restore_tests::failed_turn_context_does_not_duplicate_completed_turns);
-delegate_test!(restore_provider_context_from_history_rejects_checkpoint_metadata_mismatch => provider_context_restore_tests::restore_provider_context_from_history_rejects_checkpoint_metadata_mismatch);
+    let run = coordinator
+        .start_run_internal_async(
+            "foreground_demote_one".to_string(),
+            temp_dir.path().to_path_buf(),
+        )
+        .await
+        .unwrap_or_abort();
+    let parent_task_id = "task_parent_demote".to_string();
+    let parent_tool_call_id = "toolcall_parent_demote".to_string();
+    let parent_request_id = "req_parent_demote".to_string();
+    let child_task_id = "task_child_demote".to_string();
+    let child_request_id = "req_child_demote".to_string();
+    let child_session_id = "agent_child_demote".to_string();
+    let queue_key = ConcurrencyKey::Tool {
+        tool_id: "task".to_string(),
+    };
+    let (respond_to, response_rx) = oneshot::channel();
+
+    {
+        let run_state = coordinator.run_state.as_mut().unwrap_or_abort();
+        assert!(matches!(
+            run_state
+                .scheduler
+                .schedule(parent_task_id.clone(), queue_key.clone()),
+            ScheduleDecision::Started(_)
+        ));
+        run_state.tasks.insert(
+            parent_task_id.clone(),
+            TaskState {
+                tool_call_id: parent_tool_call_id.clone(),
+                tool_metadata: None,
+                owner_actor: EventActor::new(ActorKind::Worker, Some("agent_parent".to_string())),
+                request_correlation_id: Some(parent_request_id.clone()),
+                queue_key: queue_key.clone(),
+                state: TaskExecutionState::Running,
+                cancellation_token: CancellationToken::new(),
+                started_mono_ms: 0,
+                last_progress_mono_ms: 0,
+                last_progress_kind: JobProgressKind::Heartbeat,
+                hashline_edit: None,
+                respond_to: Some(respond_to),
+            },
+        );
+        run_state.running_agent_turns.insert(
+            child_task_id.clone(),
+            RunningAgentTurn {
+                agent_id: child_session_id.clone(),
+                request_id: child_request_id.clone(),
+                request_prompt: "work in child".to_string(),
+                profile_name: "alpha".to_string(),
+                model_ref: "mock:model-1".to_string(),
+                model_settings: AgentModelSettings {
+                    variant: None,
+                    reasoning_effort: None,
+                    text_verbosity: None,
+                    reasoning_summary: None,
+                    thinking: None,
+                },
+                category: Some("alpha".to_string()),
+                queue_key: ConcurrencyKey::ProviderModel {
+                    provider_id: "mock".to_string(),
+                    model_id: "model-1".to_string(),
+                },
+                cancellation_token: CancellationToken::new(),
+                started_mono_ms: 0,
+                hook_executions: Vec::new(),
+                latest_provider_usage: None,
+                latest_provider_request_id: None,
+                latest_assistant_output: None,
+                latest_provider_id: None,
+                latest_model_id: None,
+                child_task: Some(ChildTaskTurnState {
+                    parent_tool_call_id: parent_tool_call_id.clone(),
+                    parent_session_id: run.run_id.as_str().into(),
+                    parent_agent_id: Some("agent_parent".to_string()),
+                    child_session_id: child_session_id.into(),
+                    child_request_id: child_request_id.clone(),
+                    task_id: child_task_id.clone(),
+                    description: "Long child work".to_string(),
+                    run_in_background: false,
+                }),
+            },
+        );
+    }
+
+    // When: demote the single child handle
+    let result = coordinator
+        .demote_foreground_child_task_internal(child_request_id.clone())
+        .await
+        .unwrap_or_abort();
+
+    // Then: demoted under same request id; parent released; child stays running as background
+    match result {
+        crate::foreground_demote::DemoteToBackgroundResult::Demoted {
+            handle_id,
+            background_id,
+            kind,
+        } => {
+            assert_eq!(handle_id, child_request_id);
+            assert_eq!(background_id, child_request_id);
+            assert_eq!(kind, crate::foreground_demote::ForegroundKind::Task);
+        }
+        other => panic!("expected Demoted, got {other:?}"),
+    }
+
+    let response = response_rx.await.unwrap_or_abort().unwrap_or_abort();
+    assert!(response
+        .display_text
+        .contains("Foreground subagent moved to background"));
+    assert_eq!(
+        response
+            .structured_json
+            .as_ref()
+            .and_then(|json| json.get("background"))
+            .and_then(serde_json::Value::as_bool),
+        Some(true)
+    );
+
+    let run_state = coordinator.run_state.as_ref().unwrap_or_abort();
+    assert!(!run_state.tasks.contains_key(&parent_task_id));
+    let child = run_state
+        .running_agent_turns
+        .get(&child_task_id)
+        .and_then(|running| running.child_task.as_ref())
+        .unwrap_or_abort();
+    assert!(child.run_in_background);
+    assert_eq!(child.child_request_id, child_request_id);
+
+    // When: unknown handle is rejected without side effects
+    let rejected = coordinator
+        .demote_foreground_child_task_internal("missing-handle".to_string())
+        .await
+        .unwrap_or_abort();
+    assert!(matches!(
+        rejected,
+        crate::foreground_demote::DemoteToBackgroundResult::Rejected { .. }
+    ));
+}
+
+#[tokio::test]
+async fn demote_all_foreground_child_tasks_releases_multiple_parents() {
+    // arrange
+    // act
+    // assert
+    // Given: two foreground-blocking children with distinct parents
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
+    let config = test_config(temp_dir.path());
+    let clock = Arc::new(FakeClock::new());
+    let redactor = Arc::new(DefaultRedactor::default());
+    let (_command_tx, command_rx) = mpsc::channel(1);
+    let (job_tx, job_rx) = mpsc::channel(1);
+    let mut coordinator = Coordinator::new(config, clock, redactor, command_rx, job_tx, job_rx);
+
+    let run = coordinator
+        .start_run_internal_async(
+            "foreground_demote_all".to_string(),
+            temp_dir.path().to_path_buf(),
+        )
+        .await
+        .unwrap_or_abort();
+    let (respond_a, response_a) = oneshot::channel();
+    let (respond_b, response_b) = oneshot::channel();
+
+    {
+        let run_state = coordinator.run_state.as_mut().unwrap_or_abort();
+        for (parent_task_id, parent_tool_call_id, parent_request_id, respond_to, tool_id) in [
+            (
+                "task_parent_a",
+                "toolcall_parent_a",
+                "req_parent_a",
+                respond_a,
+                "task-a",
+            ),
+            (
+                "task_parent_b",
+                "toolcall_parent_b",
+                "req_parent_b",
+                respond_b,
+                "task-b",
+            ),
+        ] {
+            let queue_key = ConcurrencyKey::Tool {
+                tool_id: tool_id.to_string(),
+            };
+            assert!(matches!(
+                run_state
+                    .scheduler
+                    .schedule(parent_task_id.to_string(), queue_key.clone()),
+                ScheduleDecision::Started(_)
+            ));
+            run_state.tasks.insert(
+                parent_task_id.to_string(),
+                TaskState {
+                    tool_call_id: parent_tool_call_id.to_string(),
+                    tool_metadata: None,
+                    owner_actor: EventActor::new(
+                        ActorKind::Worker,
+                        Some("agent_parent".to_string()),
+                    ),
+                    request_correlation_id: Some(parent_request_id.to_string()),
+                    queue_key,
+                    state: TaskExecutionState::Running,
+                    cancellation_token: CancellationToken::new(),
+                    started_mono_ms: 0,
+                    last_progress_mono_ms: 0,
+                    last_progress_kind: JobProgressKind::Heartbeat,
+                    hashline_edit: None,
+                    respond_to: Some(respond_to),
+                },
+            );
+        }
+
+        for (child_task_id, child_request_id, child_session_id, parent_tool_call_id) in [
+            (
+                "task_child_a",
+                "req_child_a",
+                "agent_child_a",
+                "toolcall_parent_a",
+            ),
+            (
+                "task_child_b",
+                "req_child_b",
+                "agent_child_b",
+                "toolcall_parent_b",
+            ),
+        ] {
+            run_state.running_agent_turns.insert(
+                child_task_id.to_string(),
+                RunningAgentTurn {
+                    agent_id: child_session_id.to_string(),
+                    request_id: child_request_id.to_string(),
+                    request_prompt: "work in child".to_string(),
+                    profile_name: "alpha".to_string(),
+                    model_ref: "mock:model-1".to_string(),
+                    model_settings: AgentModelSettings {
+                        variant: None,
+                        reasoning_effort: None,
+                        text_verbosity: None,
+                        reasoning_summary: None,
+                        thinking: None,
+                    },
+                    category: Some("alpha".to_string()),
+                    queue_key: ConcurrencyKey::ProviderModel {
+                        provider_id: "mock".to_string(),
+                        model_id: "model-1".to_string(),
+                    },
+                    cancellation_token: CancellationToken::new(),
+                    started_mono_ms: 0,
+                    hook_executions: Vec::new(),
+                    latest_provider_usage: None,
+                    latest_provider_request_id: None,
+                    latest_assistant_output: None,
+                    latest_provider_id: None,
+                    latest_model_id: None,
+                    child_task: Some(ChildTaskTurnState {
+                        parent_tool_call_id: parent_tool_call_id.to_string(),
+                        parent_session_id: run.run_id.as_str().into(),
+                        parent_agent_id: Some("agent_parent".to_string()),
+                        child_session_id: child_session_id.into(),
+                        child_request_id: child_request_id.to_string(),
+                        task_id: child_task_id.to_string(),
+                        description: "Long child work".to_string(),
+                        run_in_background: false,
+                    }),
+                },
+            );
+        }
+    }
+
+    // When
+    let results = coordinator
+        .demote_all_foreground_child_tasks_internal()
+        .await
+        .unwrap_or_abort();
+    let summary = crate::foreground_demote::summarize_demote_outcomes(&results);
+
+    // Then: both demoted; parents released; children stay running as background
+    assert_eq!(summary.demoted, 2);
+    assert_eq!(summary.total, 2);
+    assert!(results.iter().all(|r| r.is_demoted()));
+    let _ = response_a.await.unwrap_or_abort().unwrap_or_abort();
+    let _ = response_b.await.unwrap_or_abort().unwrap_or_abort();
+    let run_state = coordinator.run_state.as_ref().unwrap_or_abort();
+    assert!(!run_state.tasks.contains_key("task_parent_a"));
+    assert!(!run_state.tasks.contains_key("task_parent_b"));
+    for child_task_id in ["task_child_a", "task_child_b"] {
+        let child = run_state
+            .running_agent_turns
+            .get(child_task_id)
+            .and_then(|running| running.child_task.as_ref())
+            .unwrap_or_abort();
+        assert!(child.run_in_background);
+    }
+
+    // When: second bulk demote finds nothing demotable
+    let empty = coordinator
+        .demote_all_foreground_child_tasks_internal()
+        .await
+        .unwrap_or_abort();
+    assert!(empty.is_empty());
+}
 
 fn compaction_profile_config() -> crate::config::HarnessConfig {
     load_config_from_str(
@@ -948,6 +1278,18 @@ mod run_state_method_tests;
 delegate_test!(run_state_turn_queue_methods_own_agent_turn_lifecycle_state => run_state_method_tests::run_state_turn_queue_methods_own_agent_turn_lifecycle_state);
 delegate_test!(run_state_permission_methods_own_pending_and_grant_state => run_state_method_tests::run_state_permission_methods_own_pending_and_grant_state);
 delegate_test!(run_state_compaction_methods_own_overflow_retry_attempt_state => run_state_method_tests::run_state_compaction_methods_own_overflow_retry_attempt_state);
+
+#[path = "tests/session_compaction_disabled_tests.rs"]
+mod session_compaction_disabled_tests;
+#[cfg(test)]
+#[path = "tests/session_compaction_tests.rs"]
+mod session_compaction_tests;
+
+#[cfg(test)]
+#[path = "tests/operational_memory_context_tests.rs"]
+mod operational_memory_context_tests;
+
+delegate_tokio_test!(operational_memory_records_read_and_modified_files_from_events => operational_memory_context_tests::operational_memory_records_read_and_modified_files_from_events);
 
 mod workspace_snapshot_secret_tests;
 
@@ -1043,6 +1385,17 @@ fn test_run_state(session_dir: &Path, run_id: &str) -> RunState {
         allow_initial_runtime_context_recording: false,
         shutdown_token: CancellationToken::new(),
         tool_state: ToolRunState::default(),
+        last_identical_tool_key: None,
+        identical_tool_call_streak: 0,
+        doom_loop_always_granted: false,
+        edit_attribution: crate::edit_attribution::EditAttributionJournal::empty(Path::new(
+            "/workspace/project",
+        )),
+        team_registry: crate::team_registry::TeamRegistry::new(),
+        cron_schedules: crate::cron_schedule::CronScheduleRegistry::new(),
+        plugin_lifecycle: crate::integrations::PluginRuntimeContract::new(Path::new(
+            "/workspace/project",
+        )),
     }
 }
 

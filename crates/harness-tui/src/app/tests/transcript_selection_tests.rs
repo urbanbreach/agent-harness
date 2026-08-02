@@ -40,7 +40,7 @@ pub(super) fn mouse_drag_copy_on_select_copies_shell_card_text() {
     let (column, row, width) = transcript_selection_text_bounds(&app, "copy target output");
     drag_transcript_selection_range(
         &mut app,
-        (column.saturating_sub(2), row),
+        (column, row),
         (column + width.saturating_sub(1), row),
     );
 
@@ -303,8 +303,8 @@ pub(super) fn transcript_selection_snapshot_uses_transcript_rail_for_user_rows()
         .unwrap_or_abort();
 
     assert!(
-        user_row.trim_start().starts_with("┃  Select this"),
-        "user selection row should preserve the transcript rail and padding\n{:#?}",
+        user_row.trim_start().starts_with("❯ Select this"),
+        "user selection row should preserve the transcript marker and padding\n{:#?}",
         snapshot.rows
     );
     assert!(

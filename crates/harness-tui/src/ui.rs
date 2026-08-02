@@ -107,7 +107,10 @@ pub(crate) use ui_chrome::{
 };
 pub(crate) use ui_chrome::{subagent_footer_target_at, SubagentFooterTarget};
 pub(super) use ui_lifecycle::render_startup_lifecycle_surface;
-use ui_lifecycle::{live_empty_state_visible, render_live_empty_state, startup_shell_visible};
+use ui_lifecycle::{
+    live_empty_state_visible, live_transcript_area_with_breadcrumb, render_live_breadcrumb,
+    render_live_empty_state, startup_shell_visible,
+};
 use ui_overlays::render_overlays;
 pub(crate) use ui_secondary::{
     operator_sidebar_keyboard_targets, operator_sidebar_section_hit_target,
@@ -142,6 +145,8 @@ pub(crate) use ui_chrome::{
     exact_test_composer_viewport_wraps_by_display_width,
     exact_test_footer_status_cluster_empty_when_no_activity,
     exact_test_footer_status_cluster_shows_pending_permission_count,
+    exact_test_live_composer_disclosure_none_context_shows_est_zero,
+    exact_test_live_composer_disclosure_none_context_shows_percent_when_limit_known,
     exact_test_live_composer_disclosure_summarizes_compaction_metrics,
     exact_test_live_composer_metadata_omits_success_without_variant,
     exact_test_live_composer_reserves_right_gap,
@@ -201,6 +206,8 @@ use ui_transcript::build_transcript_lines;
 #[cfg(test)]
 pub(crate) use ui_transcript::{
     exact_test_block_tool_cards_skip_empty_subtitle_rows,
+    exact_test_body_after_thought_packs_wall_clock_on_same_line,
+    exact_test_done_body_after_tool_keeps_separate_wall_clock_row,
     exact_test_file_search_rows_match_reference_title_description_shape,
     exact_test_generic_tool_successful_output_prefers_inline_background_rows,
     exact_test_inline_tool_rows_wrap_long_subtitles_cleanly,
@@ -212,10 +219,17 @@ pub(crate) use ui_transcript::{
     exact_test_markdown_tables_render_inline_links_code_alignment_and_cjk_width,
     exact_test_mcp_tool_transcript_rows_use_effective_identity_without_generic_fallback,
     exact_test_native_tool_transcript_rows_show_reference_timestamps_and_task_metadata,
+    exact_test_no_tool_turn_without_thinking_keeps_thought,
+    exact_test_pending_edit_permission_has_no_selected_rail,
+    exact_test_pending_edit_permission_packs_dual_run_write_duration,
+    exact_test_pending_question_has_no_selected_rail,
     exact_test_redacted_only_reasoning_matches_reference_empty_body,
+    exact_test_selected_rail_falls_back_to_thought_without_tools,
+    exact_test_selected_rail_prefers_last_tool_over_thought,
     exact_test_skill_tool_rows_match_reference_title_and_icon,
     exact_test_todo_write_rows_render_open_checklist,
     exact_test_todo_write_running_renders_inline_updating_indicator,
+    exact_test_tool_turn_without_thinking_omits_thought,
     exact_test_transcript_applied_edit_missing_diff_surfaces_fallback,
     exact_test_transcript_apply_patch_multifile_uses_output_edit_paths,
     exact_test_transcript_apply_patch_surfaces_rename_and_wrapped_inline_diffs,
@@ -236,6 +250,9 @@ pub(crate) use ui_transcript::{
     exact_test_transcript_tool_rows_follow_chronological_turn_order,
     exact_test_transcript_user_and_reasoning_match_reference_entry_body,
     exact_test_visible_surface_lines_support_large_offsets,
+    exact_test_write_tool_hides_redundant_patched_file_header,
+    exact_test_write_tool_renders_plain_numbered_dual_line_body,
+    exact_test_write_tool_title_matches_thought_lead,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -245,13 +262,17 @@ pub enum WheelTarget {
     Inspector,
 }
 
+/// Compose the full frame from `app` without mutating state or emitting intents.
+///
+/// Orchestration-only: layout plan → chrome/content/footer/overlays/toast.
+/// Event ingestion, key/mouse handlers, and UiIntent emission stay outside this path.
 pub fn render_app(frame: &mut Frame, app: &AppState) {
     let theme = app.theme();
     let area = frame.area();
     let plan = FrameLayoutPlan::for_app(app, area);
 
     frame.render_widget(
-        Block::default().style(Style::default().bg(theme.surface.canvas)),
+        Block::default().style(Style::default().bg(ratatui::style::Color::Reset)),
         area,
     );
 
@@ -305,13 +326,9 @@ fn render_review_surface(
     plan: &FrameLayoutPlan,
     surface: ReviewSurface,
 ) {
-    let Some(transcript_area) = plan.transcript else {
-        return;
-    };
-
     match surface {
         ReviewSurface::Events | ReviewSurface::Help => {
-            render_help_tab(frame, app, transcript_area, theme);
+            render_help_tab(frame, app, plan.root, plan.content, plan.composer, theme);
         }
     }
 }
@@ -329,7 +346,7 @@ fn render_replay_session_surface(
         return;
     };
 
-    frame.render_widget(live_transcript_shell_section(theme), plan.shell);
+    frame.render_widget(live_transcript_shell_section(Color::Reset), plan.shell);
     render_transcript_pane(frame, app, transcript_area, theme);
     if let Some(terminal_panel) = plan.terminal_panel {
         render_terminal_panel(frame, app, terminal_panel, theme);
@@ -368,7 +385,7 @@ fn render_startup_session_surface(
         return;
     };
 
-    frame.render_widget(live_transcript_shell_section(theme), plan.shell);
+    frame.render_widget(live_transcript_shell_section(Color::Reset), plan.shell);
     render_transcript_pane(frame, app, transcript_area, theme);
     render_unified_bottom_dock(frame, app, dock, theme);
 }
@@ -381,14 +398,17 @@ fn render_live_run_shell(frame: &mut Frame, app: &AppState, theme: &Theme, plan:
         return;
     };
 
-    frame.render_widget(live_transcript_shell_section(theme), plan.shell);
+    frame.render_widget(live_transcript_shell_section(Color::Reset), plan.shell);
+    render_live_breadcrumb(frame, app, transcript_area, theme);
+    let transcript_area = live_transcript_area_with_breadcrumb(transcript_area);
     render_transcript_pane(frame, app, transcript_area, theme);
     if let Some(terminal_panel) = plan.terminal_panel {
         render_terminal_panel(frame, app, terminal_panel, theme);
     }
-    if let Some(operator_sidebar) = plan.operator_sidebar {
-        render_operator_sidebar(frame, app, operator_sidebar, theme);
-    }
+    debug_assert!(
+        plan.operator_sidebar.is_none(),
+        "live run shell must not reserve a primary operator sidebar rect"
+    );
     render_runtime_state_surface(frame, app, transcript_area, theme);
     render_live_details_overlay(frame, app, theme, plan.details_overlay);
     render_unified_bottom_dock(frame, app, dock, theme);
@@ -609,15 +629,9 @@ fn runtime_state_surface_copy(
             "Reopen the TUI, then continue from the transcript.",
             app.theme().status.error,
         )),
-        RuntimeStateKind::Failure => Some((
-            "Review required",
-            if state.composer_disabled {
-                "inspect transcript, then use commands to adjust the draft or recover."
-            } else {
-                "Review the failure, then retry or continue."
-            },
-            app.theme().status.error,
-        )),
+        // Freeze h1-stream-probe: fail chrome is flat transcript `Retry failed: …`,
+        // not an elevated Failure / Review required card over the body.
+        RuntimeStateKind::Failure => None,
         _ => None,
     }
 }

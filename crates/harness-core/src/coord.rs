@@ -22,7 +22,7 @@ use crate::agent::{
 };
 use crate::clock::Clock;
 use crate::config::{
-    registered_hook_runtime_config, CompactionRuntimeConfig, FormatterConfig, HookLifecycleEvent,
+    registered_hook_runtime_config, CompactionSettings, FormatterConfig, HookLifecycleEvent,
     HookRuntimeConfig, LifecycleHookConfig, ProviderRetryRuntimeConfig, ShellAllowlist,
     ToolFailureMode,
 };
@@ -75,10 +75,13 @@ mod agent_turn_runtime;
 mod background_notifications;
 mod child_session;
 mod command_loop;
+mod compaction;
+mod compaction_support;
 mod event_helpers;
 mod formatter;
 mod handle;
 mod hooks;
+mod session_compaction;
 
 pub use formatter::{
     formatter_status, run_formatter_for_path, FormatterStatus, RealFormatterDiscovery,
@@ -96,8 +99,6 @@ mod task_lifecycle;
 mod tool_execution;
 mod tool_metadata;
 
-#[cfg(test)]
-pub(in crate::coord) use self::agent_turn_completion::compact_provider_context;
 pub(in crate::coord) use self::agent_turn_completion::{
     CompactAgentContextResult, FailedTerminalCompactionRequest,
 };
@@ -118,6 +119,10 @@ use self::background_notifications::{
     background_projection_error_to_coordinator_error, background_terminal_event_matches_task,
     schedule_pending_agent_wakeups_for_idle_agent, terminal_event_summary,
 };
+pub use self::background_notifications::{
+    background_wait_condition_satisfied, first_terminal_request_id, BackgroundWaitMode,
+    BackgroundWaitOutcome,
+};
 use self::child_session::{
     create_child_session_mirror, finish_child_session_mirrors, mirror_event_to_child_session,
     restore_child_session_mirrors, ChildSessionMirror,
@@ -132,12 +137,17 @@ pub(in crate::coord) use self::event_helpers::{
     append_tool_call_started_event, system_actor,
 };
 pub use self::handle::CoordinatorHandle;
+pub(in crate::coord) use self::session_compaction::{compact_session, AppliedCompaction};
 
 use self::permission::{
-    evaluate_permission_rule_requests, event_permission_decision, permission_grant_request,
+    call_scoped_external_allow_prefixes, collect_external_directory_paths,
+    evaluate_permission_rule_requests, event_permission_decision,
+    external_directory_grants_authorize, external_directory_summary, permission_grant_request,
     permission_request_digest, permission_rule_request_selectors, permission_summary,
     plan_mode_edit_boundary_denial, plan_mode_shell_boundary_denial,
+    record_external_directory_always_grants,
 };
+use crate::perm::PermissionRuleRequest;
 
 #[cfg(test)]
 use self::hooks::summarize_hook_output;
@@ -153,13 +163,11 @@ pub use self::task_category::{
     TASK_CATEGORY_FALLBACK_PROFILE,
 };
 
-use self::provider_context::{
-    approximate_provider_context_tokens, approximate_text_tokens, compaction_summary_model_ref,
-    compaction_summary_override_from_hooks, is_provider_context_overflow_reason,
-    model_backed_compaction_summary_for, restore_provider_context_from_history,
-    serialize_provider_context_checkpoint, truncated_failure_reason, CompactionSummaryDecision,
-    ModelBackedCompactionSummary, ProviderCompactionTrigger, ProviderContextCompactionRequest,
+use self::compaction_support::{
+    approximate_provider_context_tokens, approximate_text_tokens,
+    is_provider_context_overflow_reason, truncated_failure_reason, ProviderCompactionTrigger,
 };
+use self::provider_context::restore_provider_context_from_history;
 use self::question::QuestionPromptSpec;
 use self::run_lifecycle::write_run_metadata;
 
@@ -180,14 +188,6 @@ use self::tool_metadata::{
     requested_tool_call_metadata, stable_tool_output_json, tool_call_metadata,
     tool_identity_metadata, tool_task_lineage_metadata, AppliedToolEditMetadata,
     HashlineEditMetadata,
-};
-
-#[cfg(test)]
-use self::provider_context::{
-    build_model_compaction_prompt, build_provider_context_summary,
-    provider_context_summary_required_headings, validate_model_compaction_summary,
-    ProviderContextCompactionPlan, PROVIDER_CONTEXT_COMPACTION_TURN_EXCERPT_MAX_CHARS,
-    PROVIDER_CONTEXT_SUMMARY_CONTRACT_VERSION,
 };
 
 const DEFAULT_COMMAND_BUFFER: usize = 64;
@@ -235,9 +235,14 @@ pub struct CoordinatorConfig {
     pub tool_registry: Arc<ToolRegistry>,
     pub provider: Arc<dyn Provider>,
     pub agent_profiles: BTreeMap<String, AgentProfile>,
+    /// Remaining model-ref fallback chain keyed by agent profile name.
+    ///
+    /// Populated at bootstrap from `model_profile.fallback` after the primary is
+    /// resolved onto the agent. Empty means no model auto-fallback for that agent.
+    pub agent_model_fallbacks: BTreeMap<String, Vec<String>>,
     pub hook_runtime_config: HookRuntimeConfig,
     pub hook_command_executor: Arc<dyn LifecycleHookCommandExecutor + Send + Sync>,
-    pub compaction: CompactionRuntimeConfig,
+    pub compaction: CompactionSettings,
     pub provider_retry: ProviderRetryRuntimeConfig,
     pub formatter: FormatterConfig,
     pub config_digest: String,
@@ -261,9 +266,10 @@ impl CoordinatorConfig {
             tool_registry: Arc::new(ToolRegistry::new()),
             provider: default_provider(),
             agent_profiles: BTreeMap::new(),
+            agent_model_fallbacks: BTreeMap::new(),
             hook_runtime_config: registered_hook_runtime_config(),
             hook_command_executor: Arc::new(TokioLifecycleHookCommandExecutor),
-            compaction: CompactionRuntimeConfig::default(),
+            compaction: CompactionSettings::default(),
             provider_retry: ProviderRetryRuntimeConfig::default(),
             formatter: FormatterConfig::default(),
             config_digest: "none".to_string(),
@@ -442,6 +448,17 @@ pub enum Command {
     BackgroundForegroundChildTasks {
         respond_to: oneshot::Sender<Result<usize, CoordinatorError>>,
     },
+    DemoteForegroundChildTask {
+        handle_id: String,
+        respond_to: oneshot::Sender<
+            Result<crate::foreground_demote::DemoteToBackgroundResult, CoordinatorError>,
+        >,
+    },
+    DemoteAllForegroundChildTasks {
+        respond_to: oneshot::Sender<
+            Result<Vec<crate::foreground_demote::DemoteToBackgroundResult>, CoordinatorError>,
+        >,
+    },
     JobFinished {
         task_id: String,
         outcome: JobOutcome,
@@ -511,6 +528,10 @@ pub enum Command {
     RevertWorkspace {
         snapshot_request_id: String,
         respond_to: oneshot::Sender<Result<WorkspaceRevertSummary, CoordinatorError>>,
+    },
+    GetPluginLifecycleSummary {
+        respond_to:
+            oneshot::Sender<Result<crate::integrations::PluginLifecycleSummary, CoordinatorError>>,
     },
 }
 
@@ -596,10 +617,25 @@ pub enum CoordinatorError {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ManualCompactionOutcome {
-    CheckpointWritten {
-        checkpoint_id: String,
-        tokens_before_estimate: Option<u32>,
-        tokens_after_estimate: Option<u32>,
+    Compacted {
+        tokens_before: u32,
+        tokens_after: u32,
+        summary_preview: String,
+    },
+    NoOp,
+}
+
+/// Outcome of a branch summarization request.
+///
+/// Returned by [`Coordinator::summarize_session_branch`] when navigating
+/// away from a session branch. The summary is persisted as a `BranchSummary`
+/// event so it can be injected into context when returning to the branch.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BranchSummaryOutcome {
+    Generated {
+        summary_preview: String,
+        read_files: Vec<String>,
+        modified_files: Vec<String>,
     },
     NoOp,
 }

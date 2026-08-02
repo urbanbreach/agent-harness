@@ -1,6 +1,29 @@
 use super::*;
 use crate::UnwrapOrAbort;
 
+pub(super) fn space_on_transcript_focus_focuses_prompt_for_typing() {
+    let mut app = AppState::new_live(None, false, None);
+    app.focus = Focus::Details;
+    assert!(app.composer.prompt_buffer.is_empty());
+
+    app.handle_key(key(KeyCode::Char(' ')));
+
+    assert_eq!(app.focus, Focus::Prompt);
+    assert_eq!(app.composer.prompt_buffer, " ");
+    assert_eq!(app.composer.prompt_cursor, 1);
+}
+
+pub(super) fn letter_on_transcript_focus_focuses_prompt_and_inserts_char() {
+    let mut app = AppState::new_live(None, false, None);
+    app.focus = Focus::Details;
+
+    app.handle_key(key(KeyCode::Char('h')));
+
+    assert_eq!(app.focus, Focus::Prompt);
+    assert_eq!(app.composer.prompt_buffer, "h");
+    assert_eq!(app.composer.prompt_cursor, 1);
+}
+
 pub(super) fn focus_returns_after_palette_close() {
     let mut app = AppState::new_live(None, false, None);
     app.focus = Focus::Details;
@@ -66,7 +89,7 @@ pub(super) fn details_drawer_toggles_without_stealing_transcript_state() {
     app.transcript_view.selected_activity_index = 0;
     app.details_scroll = 7;
 
-    app.handle_key(key(KeyCode::Char('i')));
+    app.live_details_drawer_open = true;
     assert!(app.details_drawer_open());
     assert_eq!(app.active_tab, Tab::Run);
     assert_eq!(app.focus, Focus::Details);
@@ -74,7 +97,7 @@ pub(super) fn details_drawer_toggles_without_stealing_transcript_state() {
     assert_eq!(app.transcript_view.selected_activity_index, 0);
     assert_eq!(app.details_scroll, 7);
 
-    app.handle_key(key(KeyCode::Char('i')));
+    app.live_details_drawer_open = false;
     assert!(!app.details_drawer_open());
     assert_eq!(app.active_tab, Tab::Run);
     assert_eq!(app.focus, Focus::Details);
@@ -144,6 +167,129 @@ pub(super) fn transcript_navigation_keys_match_scroll_expectations() {
     app.handle_key(key(KeyCode::End));
     assert_eq!(app.transcript_view.transcript_scroll, 0);
     assert!(app.transcript_view.follow_mode);
+}
+
+pub(super) fn shift_right_left_on_details_focus_navigates_user_turns() {
+    let mut app = AppState::new_live(None, false, None);
+    app.ingest_event(envelope(
+        1,
+        "req_a",
+        EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+            request_id: "req_a".into(),
+            text: "First turn".to_string(),
+        }),
+    ));
+    app.ingest_event(envelope(
+        2,
+        "req_a",
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "req_a".into(),
+            provider_id: "openai".to_string(),
+            model_id: "gpt-5-codex".to_string(),
+            prompt_summary: "First turn".to_string(),
+            request_digest: "digest-a".to_string(),
+            metadata: None,
+        }),
+    ));
+    app.ingest_event(envelope(
+        3,
+        "req_b",
+        EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+            request_id: "req_b".into(),
+            text: "Second turn".to_string(),
+        }),
+    ));
+    app.ingest_event(envelope(
+        4,
+        "req_b",
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "req_b".into(),
+            provider_id: "openai".to_string(),
+            model_id: "gpt-5-codex".to_string(),
+            prompt_summary: "Second turn".to_string(),
+            request_digest: "digest-b".to_string(),
+            metadata: None,
+        }),
+    ));
+
+    assert!(
+        app.activities.len() >= 2,
+        "fixture must produce at least two user turns, got {}",
+        app.activities.len()
+    );
+
+    app.focus = Focus::Details;
+    app.transcript_view.selected_activity_index = 0;
+    app.transcript_view.follow_mode = false;
+
+    app.handle_key(key_with_modifiers(KeyCode::Right, KeyModifiers::SHIFT));
+    assert_eq!(
+        app.transcript_view.selected_activity_index, 1,
+        "Shift+Right on transcript focus must advance to the next user turn"
+    );
+    assert_eq!(app.focus, Focus::Details);
+
+    app.handle_key(key_with_modifiers(KeyCode::Left, KeyModifiers::SHIFT));
+    assert_eq!(
+        app.transcript_view.selected_activity_index, 0,
+        "Shift+Left on transcript focus must return to the previous user turn"
+    );
+    assert_eq!(app.focus, Focus::Details);
+}
+
+pub(super) fn page_up_down_with_prompt_focus_scrolls_transcript_without_clearing_draft() {
+    let mut app = AppState::new_live(None, false, None);
+    app.focus = Focus::Prompt;
+    app.composer.prompt_buffer = "draft text".to_string();
+    app.composer.prompt_cursor = 10;
+
+    app.handle_key(key(KeyCode::PageUp));
+    assert_eq!(app.transcript_view.transcript_scroll, 10);
+    assert!(!app.transcript_view.follow_mode);
+    assert_eq!(app.focus, Focus::Prompt);
+    assert_eq!(app.composer.prompt_buffer, "draft text");
+    assert_eq!(app.composer.prompt_cursor, 10);
+
+    app.handle_key(key(KeyCode::PageDown));
+    assert_eq!(app.transcript_view.transcript_scroll, 0);
+    assert!(app.transcript_view.follow_mode);
+    assert_eq!(app.focus, Focus::Prompt);
+    assert_eq!(app.composer.prompt_buffer, "draft text");
+    assert_eq!(app.composer.prompt_cursor, 10);
+}
+
+pub(super) fn ctrl_up_down_with_prompt_focus_scrolls_transcript_by_one_row() {
+    let mut app = AppState::new_live(None, false, None);
+    app.focus = Focus::Prompt;
+    app.composer.prompt_buffer = "draft text".to_string();
+    app.composer.prompt_cursor = 10;
+
+    app.handle_key(key_with_modifiers(KeyCode::Up, KeyModifiers::CONTROL));
+    assert_eq!(app.transcript_view.transcript_scroll, 1);
+    assert!(!app.transcript_view.follow_mode);
+    assert_eq!(app.composer.prompt_buffer, "draft text");
+
+    app.handle_key(key_with_modifiers(KeyCode::Up, KeyModifiers::CONTROL));
+    assert_eq!(app.transcript_view.transcript_scroll, 2);
+
+    app.handle_key(key_with_modifiers(KeyCode::Down, KeyModifiers::CONTROL));
+    assert_eq!(app.transcript_view.transcript_scroll, 1);
+    assert_eq!(app.focus, Focus::Prompt);
+}
+
+pub(super) fn shift_left_on_prompt_focus_still_selects_chars() {
+    let mut app = AppState::new_live(None, false, None);
+    app.focus = Focus::Prompt;
+    app.composer.prompt_buffer = "hello".to_string();
+    app.composer.prompt_cursor = 5;
+
+    app.handle_key(key_with_modifiers(KeyCode::Left, KeyModifiers::SHIFT));
+
+    assert_eq!(app.focus, Focus::Prompt);
+    assert_eq!(app.composer.prompt_buffer, "hello");
+    assert_eq!(app.composer.prompt_cursor, 4);
+    assert_eq!(app.composer.selection_anchor, Some(5));
+    assert_eq!(app.transcript_view.selected_activity_index, 0);
 }
 
 pub(super) fn mouse_wheel_scrolls_inspector_when_hovered() {

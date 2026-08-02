@@ -304,6 +304,9 @@ fn resequence_events(events: &mut [EventEnvelopeV1]) {
 
 #[test]
 fn lineage_tree_navigation_filters_and_folds() {
+    // arrange
+    // act
+    // assert
     let mut app = AppState::new_live(Some(PathBuf::from("/runs/child-new")), false, None);
     app.set_session_history_entries(vec![
         history_entry("child-old", Some("root"), "2026-05-03T00:01:00Z"),
@@ -369,6 +372,9 @@ fn lineage_tree_navigation_filters_and_folds() {
 
 #[test]
 fn fork_selector_lists_user_messages_like_reference_selector() {
+    // arrange
+    // act
+    // assert
     let mut app = AppState::new_live(Some(PathBuf::from("/runs/source")), false, None);
     for event in fork_source_events() {
         app.ingest_event(event);
@@ -427,6 +433,9 @@ fn fork_selector_lists_user_messages_like_reference_selector() {
 
 #[test]
 fn fork_selector_keeps_later_messages_after_completed_native_edit() {
+    // arrange
+    // act
+    // assert
     let mut app = AppState::new_live(Some(PathBuf::from("/runs/source")), false, None);
     for event in fork_source_events_with_completed_native_edit() {
         app.ingest_event(event);
@@ -453,6 +462,9 @@ fn fork_selector_keeps_later_messages_after_completed_native_edit() {
 
 #[test]
 fn fork_selector_keeps_later_messages_after_lingering_native_edit_state() {
+    // arrange
+    // act
+    // assert
     let mut app = AppState::new_live(Some(PathBuf::from("/runs/source")), false, None);
     for event in fork_source_events_with_lingering_native_edit_state() {
         app.ingest_event(event);
@@ -479,6 +491,9 @@ fn fork_selector_keeps_later_messages_after_lingering_native_edit_state() {
 
 #[test]
 fn lineage_view_model_empty_and_single_tree_states_are_deterministic() {
+    // arrange
+    // act
+    // assert
     let mut empty = AppState::new_live(None, false, None);
     empty.open_lineage_browser();
     let empty_vm = empty.lineage_browser_view_model();
@@ -498,6 +513,9 @@ fn lineage_view_model_empty_and_single_tree_states_are_deterministic() {
 
 #[test]
 fn resumed_live_lineage_browser_uses_preloaded_session_history() {
+    // arrange
+    // act
+    // assert
     let mut app = AppState::new_live_with_session_history(
         Some(PathBuf::from("/runs/child")),
         false,

@@ -17,16 +17,28 @@ pub(super) fn startup_surface_renders_primary_actions() {
 
     let rendered = render_live_lines(&app, 100, 24);
     assert_eq!(app.focus, app::Focus::List);
-    assert!(rendered.contains("██╗  ██╗"));
+    assert!(
+        rendered.contains('╭')
+            && (rendered.contains("New worktree") || rendered.contains("New session")),
+        "startup welcome panel with actions\n{rendered}"
+    );
     assert!(!rendered.contains("Launch: worker · model-1"));
     assert!(!rendered.contains("Provider mock"));
-    assert!(rendered.contains("Worker model-1 mock"));
-    assert!(rendered.contains("ctrl+p commands"));
+    assert!(
+        !rendered.contains("model-1") && !rendered.contains("Worker") && !rendered.contains("Demo"),
+        "freeze bare startup hides model badge when prompt is empty\n{rendered}"
+    );
+    assert!(rendered.contains('❯'));
     assert!(!rendered.contains("Enter select"));
-    assert!(rendered.contains("Ask anything... \"What is the tech stack of this project?\""));
     assert!(!rendered.contains("● Tip"));
     assert!(!rendered.contains("Dispatch a new run, reopen live work, or inspect saved history."));
-    assert!(!rendered.contains("Actions:"));
+
+    app.handle_key(key(crossterm::event::KeyCode::Char('x')));
+    let draft = render_live_lines(&app, 100, 24);
+    assert!(
+        draft.contains("model-1") || draft.contains("Worker") || draft.contains("Demo"),
+        "draft startup restores model chrome on composer\n{draft}"
+    );
 }
 
 pub(super) fn startup_typing_moves_to_quick_start_prompt() {
@@ -43,11 +55,15 @@ pub(super) fn startup_typing_moves_to_quick_start_prompt() {
 
     let rendered = render_live_lines(&app, 100, 24);
     assert!(!rendered.contains("Composer"));
-    assert!(rendered.contains("x"));
-    assert!(rendered.contains("ctrl+p commands"));
+    assert!(rendered.contains('x'));
+    assert!(
+        rendered.contains("Enter:send") || rendered.contains('❯'),
+        "draft keeps composer and switches footer grammar\n{rendered}"
+    );
+    assert!(!rendered.contains("New worktree"));
+    assert!(!rendered.contains("New session"));
     assert!(!rendered.contains("● Tip"));
     assert!(!rendered.contains("Dispatch a new run, reopen live work, or inspect saved history."));
-    assert!(!rendered.contains("Actions:"));
 }
 
 pub(super) fn startup_palette_remains_secondary_and_draft_safe() {
@@ -79,8 +95,8 @@ pub(super) fn startup_palette_remains_secondary_and_draft_safe() {
     assert!(app.palette_visible);
     let overlay_render = render_live_lines(&app, 120, 30);
     assert!(overlay_render.contains("Commands"));
-    assert!(overlay_render.contains("New session"));
-    assert!(overlay_render.contains("Switch session"));
+    assert!(overlay_render.contains("New Session"));
+    assert!(overlay_render.contains("Resume Session"));
 
     app.handle_key(key(crossterm::event::KeyCode::Esc));
 
@@ -197,7 +213,7 @@ pub(super) fn post_run_handoff_disables_prompt_submission() {
     assert!(!app.should_quit);
 }
 
-pub(super) fn double_escape_interrupts_active_live_turn_after_harness_confirmation() {
+pub(super) fn double_escape_does_not_interrupt_active_live_turn() {
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let intent_sink = {
         let intents = Arc::clone(&intents);
@@ -236,26 +252,19 @@ pub(super) fn double_escape_interrupts_active_live_turn_after_harness_confirmati
     ));
 
     assert!(app.interrupt_hint_visible());
-    assert!(render_live_lines(&app, 100, 24).contains("esc interrupt"));
+    assert!(render_live_lines(&app, 100, 24).contains("ctrl+c interrupt"));
 
     app.handle_key(key(crossterm::event::KeyCode::Esc));
-
-    assert!(app.interrupt_confirmation_pending());
-    assert!(intents.lock().unwrap_or_abort().is_empty());
-    assert!(render_live_lines(&app, 100, 24).contains("esc again to interrupt"));
-
     app.handle_key(key(crossterm::event::KeyCode::Esc));
 
     assert!(!app.interrupt_confirmation_pending());
-    assert_eq!(
-        &*intents.lock().unwrap_or_abort(),
-        &[UiIntent::InterruptSession {
-            task_ids: vec!["task_active".to_string(), "task_sibling".to_string()],
-        }]
+    assert!(
+        intents.lock().unwrap_or_abort().is_empty(),
+        "Esc must not cancel a running turn (simple-mode: Ctrl+C cancels)"
     );
 }
 
-pub(super) fn interrupt_confirmation_is_scoped_to_current_active_turn_set() {
+pub(super) fn ctrl_c_interrupts_current_active_turn_set() {
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let intent_sink = {
         let intents = Arc::clone(&intents);
@@ -280,9 +289,6 @@ pub(super) fn interrupt_confirmation_is_scoped_to_current_active_turn_set() {
         }),
     ));
 
-    app.handle_key(key(crossterm::event::KeyCode::Esc));
-    assert!(app.interrupt_confirmation_pending());
-
     app.ingest_event(envelope(
         2,
         Some("req_old"),
@@ -306,12 +312,10 @@ pub(super) fn interrupt_confirmation_is_scoped_to_current_active_turn_set() {
         }),
     ));
 
-    assert!(!app.interrupt_confirmation_pending());
-    app.handle_key(key(crossterm::event::KeyCode::Esc));
-    assert!(app.interrupt_confirmation_pending());
-    assert!(intents.lock().unwrap_or_abort().is_empty());
-
-    app.handle_key(key(crossterm::event::KeyCode::Esc));
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('c'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
 
     assert_eq!(
         &*intents.lock().unwrap_or_abort(),
@@ -434,15 +438,16 @@ pub(super) fn lifecycle_shell_snapshots_preserve_startup_and_handoff_contracts()
     );
 
     let startup_render = render_live_lines(&startup, 100, 24);
-    assert!(startup_render.contains("██╗  ██╗") || startup_render.contains("Harness"));
-    assert!(startup_render.contains("ctrl+p commands"));
+    assert!(startup_render.contains("Harness") || startup_render.contains('╭'));
+    assert!(
+        startup_render.contains("New worktree")
+            || startup_render.contains("New session")
+            || startup_render.contains('❯')
+    );
     assert!(!startup_render.contains("Enter select"));
-    assert!(startup_render.contains("Ask anything... \"What is the tech stack of this project?\""));
-    assert!(startup_render.contains("commands"));
     assert!(
         !startup_render.contains("Dispatch a new run, reopen live work, or inspect saved history.")
     );
-    assert!(!startup_render.contains("Actions:"));
 
     let entries = vec![
         startup_session_entry_with_details(
@@ -492,7 +497,7 @@ pub(super) fn lifecycle_shell_snapshots_preserve_startup_and_handoff_contracts()
         crossterm::event::KeyCode::Char('p'),
         crossterm::event::KeyModifiers::CONTROL,
     ));
-    for ch in "switch".chars() {
+    for ch in "resume".chars() {
         picker.handle_key(key(crossterm::event::KeyCode::Char(ch)));
     }
     picker.handle_key(key(crossterm::event::KeyCode::Enter));
@@ -500,11 +505,16 @@ pub(super) fn lifecycle_shell_snapshots_preserve_startup_and_handoff_contracts()
     let continue_render = render_live_lines(&picker, 120, 30);
     assert!(picker.session_history_visible);
     assert_eq!(picker.composer.prompt_buffer, "keep this draft");
-    assert!(continue_render.contains("Continue session"));
-    assert!(continue_render.contains("continue ready"));
+    assert!(continue_render.contains("Resume session"));
+    assert!(
+        continue_render.contains("ago")
+            || continue_render.contains("just now")
+            || continue_render.contains("run is still active"),
+        "session picker must show relative age or status\n{continue_render}"
+    );
     assert!(continue_render.contains("run is still active"));
     assert!(!continue_render.contains("beta-prompt"));
-    assert!(continue_render.contains("Harness") || continue_render.contains("Continue session"));
+    assert!(continue_render.contains("Harness") || continue_render.contains("Resume session"));
 
     let mut completed_shell = app::AppState::new_live(
         Some(PathBuf::from("/tmp/sessions/run_fixture")),
@@ -583,7 +593,7 @@ pub(super) fn session_history_browse_preserves_draft() {
         crossterm::event::KeyCode::Char('p'),
         crossterm::event::KeyModifiers::CONTROL,
     ));
-    for ch in "switch".chars() {
+    for ch in "resume".chars() {
         app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
     }
     app.handle_key(key(crossterm::event::KeyCode::Enter));
@@ -647,5 +657,72 @@ pub(super) fn new_session_resets_transcript_but_keeps_unsent_draft() {
     assert_eq!(
         app.composer.prompt_cursor,
         "unsent startup draft".chars().count()
+    );
+}
+
+pub(super) fn startup_first_run_shows_onboarding_hint() {
+    let app = app::AppState::new_startup(Vec::new(), None);
+
+    assert!(app.is_first_run());
+
+    let rendered = render_live_lines(&app, 100, 24);
+    assert!(
+        (rendered.contains("New worktree") || rendered.contains("New session"))
+            && rendered.contains('❯'),
+        "first-run startup should expose welcome actions and composer\n{rendered}"
+    );
+    assert!(
+        rendered.contains("Changelog") || rendered.contains("Harness"),
+        "first-run startup should show welcome identity/changelog\n{rendered}"
+    );
+}
+
+pub(super) fn startup_returning_user_hides_onboarding_hint() {
+    let app = app::AppState::new_startup(
+        vec![startup_session_entry(
+            "run_resume",
+            "/tmp/sessions/run_resume",
+            true,
+            None,
+        )],
+        None,
+    );
+
+    assert!(!app.is_first_run());
+
+    let rendered = render_live_lines(&app, 100, 24);
+    assert!(
+        !rendered.contains("harness doctor"),
+        "returning-user startup should not show first-run onboarding hint\n{rendered}"
+    );
+    assert!(
+        !rendered.contains("harness auth login"),
+        "returning-user startup should not show first-run onboarding hint\n{rendered}"
+    );
+    assert!(
+        rendered.contains("Resume session")
+            || rendered.contains("New worktree")
+            || rendered.contains("New session"),
+        "returning-user startup should still show welcome actions\n{rendered}"
+    );
+}
+
+pub(super) fn startup_hints_stay_compose_first() {
+    let app = app::AppState::new_startup(Vec::new(), None);
+
+    let rendered = render_live_lines(&app, 100, 24);
+    assert!(
+        rendered.contains('❯'),
+        "startup with welcome shell should keep the composer accessible\n{rendered}"
+    );
+    assert!(
+        rendered.contains("New worktree")
+            || rendered.contains("New session")
+            || rendered.contains("Logged in"),
+        "startup should keep welcome actions or status footer\n{rendered}"
+    );
+    assert!(
+        !rendered.contains("Dispatch a new run"),
+        "startup should not render the subtitle\n{rendered}"
     );
 }

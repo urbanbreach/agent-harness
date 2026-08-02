@@ -264,6 +264,9 @@ mod tests {
 
     #[test]
     fn mcp_error_normalization_marks_rate_limited_non_json_errors() {
+        // arrange
+        // act
+        // assert
         let message = normalize_mcp_error_message(
             "Unexpected token 'T', \"Too Many R\"... is not valid JSON",
         );
@@ -275,6 +278,9 @@ mod tests {
 
     #[test]
     fn mcp_http_parse_error_uses_body_context_for_non_json_responses() {
+        // arrange
+        // act
+        // assert
         let err = serde_json::from_str::<Value>("Too Many Requests")
             .expect_err("plain text should not parse as json");
         let message = render_mcp_http_parse_error("Too Many Requests", &err);
@@ -284,11 +290,17 @@ mod tests {
 
     #[test]
     fn mcp_non_json_description_ignores_normal_text() {
+        // arrange
+        // act
+        // assert
         assert!(describe_upstream_non_json_response("transient upstream issue").is_none());
     }
 
     #[test]
     fn mcp_http_status_error_extracts_jsonrpc_body_message() {
+        // arrange
+        // act
+        // assert
         let message = render_mcp_http_status_error(
             StatusCode::BAD_GATEWAY,
             &HeaderMap::new(),
@@ -301,6 +313,9 @@ mod tests {
 
     #[test]
     fn mcp_http_status_error_marks_rate_limits_and_retry_after() {
+        // arrange
+        // act
+        // assert
         let mut headers = HeaderMap::new();
         headers.insert(reqwest::header::RETRY_AFTER, "12".parse().unwrap_or_abort());
 

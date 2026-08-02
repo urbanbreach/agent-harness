@@ -1,226 +1,400 @@
 use super::*;
+use crate::config::CompactionSettings;
+use crate::event::ToolCallStatus;
+use crate::event::{
+    AssistantMessageFinishedEvent, EditAppliedEvent, ProviderRequestStartedEvent,
+    ToolCallFinishedEvent, ToolCallRequestedEvent,
+};
+use crate::ids::RequestId;
+use crate::proj::RecordedRuntimeContext;
 use crate::UnwrapOrAbort;
+use async_trait::async_trait;
+use harness_providers::{CompletionRequest, Provider, ProviderEventStream, ProviderStreamEvent};
+use serde_json::json;
+use std::sync::Arc;
+use tokio_stream;
 
-pub(crate) fn operational_memory_records_read_and_modified_files_from_events() {
-    let temp_dir = tempfile::tempdir().unwrap_or_abort();
-    let clock = FakeClock::new();
-    let redactor = DefaultRedactor::default();
-    let first_answer = 'A'.to_string().repeat(6_000);
-    let second_answer = 'B'.to_string().repeat(6_000);
-    write_restore_history_fixture(
-        temp_dir.path(),
-        "run_operational_memory_records",
-        &operational_memory_history_events(
-            "run_operational_memory_records",
-            &first_answer,
-            &second_answer,
-            vec![EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                tool_call_id: "toolcall_read".into(),
-                tool_id: "read".to_string(),
-                args_summary: "read src/lib.rs".to_string(),
-                args_digest: "digest-read".to_string(),
-                metadata: Some(tool_metadata("read")),
-            })],
-            vec![
-                EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                    tool_call_id: "toolcall_read".into(),
-                    status: ToolCallStatus::Succeeded,
-                    output_summary: Some("read completed".to_string()),
-                    output_digest: Some("digest-read-output".to_string()),
-                    output_json: Some(json!({ "path": "src/lib.rs" })),
-                    metadata: Some(tool_metadata("read")),
-                }),
-                EventV1::EditApplied(EditAppliedEvent {
-                    edit_id: "edit_000001".to_string(),
-                    path: "src/lib.rs".to_string(),
-                    new_file_digest: "digest-new".to_string(),
-                    diff_rel_path: None,
-                    diff_digest: None,
-                }),
-                EventV1::ArtifactWritten(ArtifactWrittenEvent {
-                    path: "artifacts/toolcalls/toolcall_edit/result.json".to_string(),
-                    digest: "digest-artifact".to_string(),
-                    bytes: 42,
-                    tool_call_id: Some("toolcall_edit".into()),
-                    tool_metadata: Some(ToolIdentityMetadata {
-                        canonical_tool_id: Some("edit".to_string()),
-                        alias_source_tool_id: None,
-                    }),
-                    metadata: std::collections::BTreeMap::from([(
-                        "path".to_string(),
-                        "src/generated.rs".to_string(),
-                    )]),
-                }),
-            ],
-        ),
-    );
-    let checkpoint = compact_operational_memory_fixture(
-        temp_dir.path(),
-        "run_operational_memory_records",
-        &first_answer,
-        &second_answer,
-        &clock,
-        &redactor,
-    );
+// ---------------------------------------------------------------------------
+// Mock provider
+// ---------------------------------------------------------------------------
 
-    assert_eq!(checkpoint.facts.read_files.len(), 1);
-    assert_eq!(checkpoint.facts.read_files[0].path, "src/lib.rs");
-    assert_eq!(checkpoint.facts.read_files[0].operation, "read");
-    assert_eq!(checkpoint.facts.read_files[0].first_seq, Some(5));
-    assert_eq!(checkpoint.facts.read_files[0].last_seq, Some(5));
-    assert_eq!(
-        checkpoint.facts.read_files[0].sources,
-        vec!["tool:toolcall_read"]
-    );
-    assert_eq!(checkpoint.facts.modified_files.len(), 2);
-    assert!(checkpoint.facts.modified_files.iter().any(|fact| {
-        fact.path == "src/generated.rs" && fact.sources == vec!["artifact:toolcall_edit"]
-    }));
-    assert!(checkpoint
-        .facts
-        .modified_files
-        .iter()
-        .any(|fact| { fact.path == "src/lib.rs" && fact.sources == vec!["edit:edit_000001"] }));
-    assert_eq!(
-        checkpoint.facts.touched_files,
-        vec!["src/generated.rs".to_string(), "src/lib.rs".to_string()]
-    );
-    assert!(checkpoint.summary.contains("## Operational Memory"));
-    assert!(checkpoint.summary.contains("Read files:"));
-    assert!(checkpoint.summary.contains("Modified files:"));
-    assert!(checkpoint.summary.contains("src/generated.rs"));
+struct SummaryMockProvider {
+    summary: String,
 }
 
-pub(crate) fn compaction_preserves_file_tool_skill_todo_and_plan_context() {
-    // arrange
+#[async_trait]
+impl Provider for SummaryMockProvider {
+    async fn stream_completion(&self, _req: CompletionRequest) -> ProviderEventStream {
+        let summary = self.summary.clone();
+        Box::pin(tokio_stream::iter(vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::TextDelta(summary),
+            ProviderStreamEvent::Done { usage: None },
+        ]))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Event helpers
+// ---------------------------------------------------------------------------
+
+fn append_user_message(
+    clock: &FakeClock,
+    redactor: &DefaultRedactor,
+    run_state: &mut RunState,
+    agent_id: &str,
+    request_id: &str,
+    text: &str,
+) {
+    let actor = EventActor::new(ActorKind::Worker, Some(agent_id.to_string()));
+    append_payload_event(
+        clock,
+        redactor,
+        run_state,
+        actor,
+        Some(format!("agent:{agent_id}")),
+        EventV1::UserMessageSubmitted(crate::event::UserMessageSubmittedEvent {
+            request_id: RequestId::new(request_id),
+            text: text.to_string(),
+        }),
+    )
+    .unwrap_or_abort();
+}
+
+fn append_provider_started(
+    clock: &FakeClock,
+    redactor: &DefaultRedactor,
+    run_state: &mut RunState,
+    agent_id: &str,
+    request_id: &str,
+) {
+    let actor = EventActor::new(ActorKind::Worker, Some(agent_id.to_string()));
+    append_payload_event(
+        clock,
+        redactor,
+        run_state,
+        actor,
+        Some(format!("agent:{agent_id}")),
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: RequestId::new(request_id),
+            provider_id: "mock".to_string(),
+            model_id: "model-1".to_string(),
+            prompt_summary: "prompt".to_string(),
+            request_digest: "digest".to_string(),
+            metadata: None,
+        }),
+    )
+    .unwrap_or_abort();
+}
+
+fn append_stream_delta(
+    clock: &FakeClock,
+    redactor: &DefaultRedactor,
+    run_state: &mut RunState,
+    agent_id: &str,
+    request_id: &str,
+    delta: &str,
+) {
+    let actor = EventActor::new(ActorKind::Worker, Some(agent_id.to_string()));
+    append_payload_event(
+        clock,
+        redactor,
+        run_state,
+        actor,
+        Some(format!("agent:{agent_id}")),
+        EventV1::ProviderStreamDelta(crate::event::ProviderStreamDeltaEvent {
+            request_id: RequestId::new(request_id),
+            delta: delta.to_string(),
+        }),
+    )
+    .unwrap_or_abort();
+}
+
+fn append_assistant_finished(
+    clock: &FakeClock,
+    redactor: &DefaultRedactor,
+    run_state: &mut RunState,
+    agent_id: &str,
+    request_id: &str,
+) {
+    let actor = EventActor::new(ActorKind::Worker, Some(agent_id.to_string()));
+    append_payload_event(
+        clock,
+        redactor,
+        run_state,
+        actor,
+        Some(format!("agent:{agent_id}")),
+        EventV1::AssistantMessageFinished(AssistantMessageFinishedEvent {
+            request_id: RequestId::new(request_id),
+            tool_call_count: 2,
+            assistant_message: None,
+        }),
+    )
+    .unwrap_or_abort();
+}
+
+fn append_tool_call_requested(
+    clock: &FakeClock,
+    redactor: &DefaultRedactor,
+    run_state: &mut RunState,
+    agent_id: &str,
+    request_id: &str,
+    tool_call_id: &str,
+    tool_id: &str,
+    args_summary: &str,
+) {
+    let actor = EventActor::new(ActorKind::Worker, Some(agent_id.to_string()));
+    append_payload_event_with_correlation(
+        clock,
+        redactor,
+        run_state,
+        actor,
+        Some(format!("agent:{agent_id}")),
+        Some(request_id.to_string()),
+        EventV1::ToolCallRequested(ToolCallRequestedEvent {
+            tool_call_id: tool_call_id.into(),
+            tool_id: tool_id.to_string(),
+            args_summary: args_summary.to_string(),
+            args_digest: "digest".to_string(),
+            metadata: Some(tool_metadata(tool_id)),
+        }),
+    )
+    .unwrap_or_abort();
+}
+
+fn append_tool_call_finished(
+    clock: &FakeClock,
+    redactor: &DefaultRedactor,
+    run_state: &mut RunState,
+    agent_id: &str,
+    request_id: &str,
+    tool_call_id: &str,
+) {
+    let actor = EventActor::new(ActorKind::Worker, Some(agent_id.to_string()));
+    append_payload_event_with_correlation(
+        clock,
+        redactor,
+        run_state,
+        actor,
+        Some(format!("agent:{agent_id}")),
+        Some(request_id.to_string()),
+        EventV1::ToolCallFinished(ToolCallFinishedEvent {
+            tool_call_id: tool_call_id.into(),
+            status: ToolCallStatus::Succeeded,
+            output_summary: Some("done".to_string()),
+            output_digest: Some("digest-out".to_string()),
+            output_json: None,
+            metadata: Some(tool_metadata("read")),
+        }),
+    )
+    .unwrap_or_abort();
+}
+
+fn append_edit_applied(
+    clock: &FakeClock,
+    redactor: &DefaultRedactor,
+    run_state: &mut RunState,
+    agent_id: &str,
+    edit_id: &str,
+    path: &str,
+) {
+    let actor = EventActor::new(ActorKind::Worker, Some(agent_id.to_string()));
+    append_payload_event(
+        clock,
+        redactor,
+        run_state,
+        actor,
+        Some(format!("agent:{agent_id}")),
+        EventV1::EditApplied(EditAppliedEvent {
+            edit_id: edit_id.to_string(),
+            path: path.to_string(),
+            new_file_digest: "digest-new".to_string(),
+            diff_rel_path: None,
+            diff_digest: None,
+        }),
+    )
+    .unwrap_or_abort();
+}
+
+fn small_context_runtime_context(window: u32) -> RecordedRuntimeContext {
+    RecordedRuntimeContext {
+        profile: "alpha".to_string(),
+        provider: "mock".to_string(),
+        model: "model-1".to_string(),
+        display_label: "Mock Model 1".to_string(),
+        context_window_tokens: Some(window),
+        ..Default::default()
+    }
+}
+
+fn settings(enabled: bool, reserve_tokens: u32, keep_recent_tokens: u32) -> CompactionSettings {
+    CompactionSettings {
+        enabled,
+        reserve_tokens,
+        keep_recent_tokens,
+        ..Default::default()
+    }
+}
+
+fn setup_agent(run_state: &mut RunState, agent_id: &str) {
+    run_state
+        .agents
+        .insert(agent_id.to_string(), test_agent_profile("alpha"));
+}
+
+fn large_text(fill: char, count: usize) -> String {
+    fill.to_string().repeat(count)
+}
+
+fn last_session_compaction_event(
+    events: &[EventEnvelopeV1],
+) -> &crate::event::SessionCompactionEvent {
+    events
+        .iter()
+        .rev()
+        .find_map(|e| match &e.payload {
+            EventV1::SessionCompaction(event) => Some(event),
+            _ => None,
+        })
+        .expect("at least one SessionCompaction event")
+}
+
+// ---------------------------------------------------------------------------
+// Test cases
+// ---------------------------------------------------------------------------
+
+pub async fn operational_memory_records_read_and_modified_files_from_events() {
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let clock = FakeClock::new();
     let redactor = DefaultRedactor::default();
-    let run_id = "run_compaction_preserves_context_kinds";
-    let first_answer = 'A'.to_string().repeat(6_000);
-    let second_answer = 'B'.to_string().repeat(6_000);
-    write_restore_history_fixture(
-        temp_dir.path(),
-        run_id,
-        &operational_memory_history_events(
-            run_id,
-            &first_answer,
-            &second_answer,
-            vec![
-                EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                    tool_call_id: "toolcall_read".into(),
-                    tool_id: "read".to_string(),
-                    args_summary: "read src/lib.rs".to_string(),
-                    args_digest: "digest-read".to_string(),
-                    metadata: Some(tool_metadata("read")),
-                }),
-                EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                    tool_call_id: "toolcall_read".into(),
-                    status: ToolCallStatus::Succeeded,
-                    output_summary: Some("read current library surface".to_string()),
-                    output_digest: Some("digest-read-output".to_string()),
-                    output_json: Some(json!({ "path": "src/lib.rs" })),
-                    metadata: Some(tool_metadata("read")),
-                }),
-                EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                    tool_call_id: "toolcall_bash".into(),
-                    tool_id: "bash".to_string(),
-                    args_summary: "run focused compaction verification".to_string(),
-                    args_digest: "digest-bash".to_string(),
-                    metadata: Some(tool_metadata("bash")),
-                }),
-                EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                    tool_call_id: "toolcall_bash".into(),
-                    status: ToolCallStatus::Succeeded,
-                    output_summary: Some("focused compaction verification passed".to_string()),
-                    output_digest: Some("digest-bash-output".to_string()),
-                    output_json: None,
-                    metadata: Some(tool_metadata("bash")),
-                }),
-                EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                    tool_call_id: "toolcall_skill".into(),
-                    tool_id: "skill".to_string(),
-                    args_summary: "load karpathy-guidelines".to_string(),
-                    args_digest: "digest-skill".to_string(),
-                    metadata: Some(tool_metadata("skill")),
-                }),
-                EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                    tool_call_id: "toolcall_skill".into(),
-                    status: ToolCallStatus::Succeeded,
-                    output_summary: Some("loaded skill karpathy-guidelines".to_string()),
-                    output_digest: Some("digest-skill-output".to_string()),
-                    output_json: None,
-                    metadata: Some(tool_metadata("skill")),
-                }),
-                EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                    tool_call_id: "toolcall_todo".into(),
-                    tool_id: "todowrite".to_string(),
-                    args_summary: "record preservation checklist".to_string(),
-                    args_digest: "digest-todo".to_string(),
-                    metadata: Some(tool_metadata("todowrite")),
-                }),
-                EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                    tool_call_id: "toolcall_todo".into(),
-                    status: ToolCallStatus::Succeeded,
-                    output_summary: Some("todo checklist keeps compaction preservation pending".to_string()),
-                    output_digest: Some("digest-todo-output".to_string()),
-                    output_json: None,
-                    metadata: Some(tool_metadata("todowrite")),
-                }),
-                EventV1::ToolCallRequested(ToolCallRequestedEvent {
-                    tool_call_id: "toolcall_plan".into(),
-                    tool_id: "plan_exit".to_string(),
-                    args_summary: "handoff .agent-harness/plans/run_compaction_preservation.md".to_string(),
-                    args_digest: "digest-plan".to_string(),
-                    metadata: Some(tool_metadata("plan_exit")),
-                }),
-                EventV1::ToolCallFinished(ToolCallFinishedEvent {
-                    tool_call_id: "toolcall_plan".into(),
-                    status: ToolCallStatus::Succeeded,
-                    output_summary: Some(
-                        "plan handoff references .agent-harness/plans/run_compaction_preservation.md"
-                            .to_string(),
-                    ),
-                    output_digest: Some("digest-plan-output".to_string()),
-                    output_json: None,
-                    metadata: Some(tool_metadata("plan_exit")),
-                }),
-            ],
-            Vec::new(),
-        ),
-    );
+    let mut run_state = test_run_state(temp_dir.path(), "run_operational_memory");
+    run_state.recorded_runtime_context = Some(small_context_runtime_context(3000));
+    let agent_id = "agent_000001";
+    setup_agent(&mut run_state, agent_id);
 
-    let checkpoint = compact_operational_memory_fixture(
-        temp_dir.path(),
-        run_id,
-        &first_answer,
-        &second_answer,
+    // Turn 1: user asks a question, assistant answers and uses read + edit tools.
+    append_user_message(
         &clock,
         &redactor,
-        // act
+        &mut run_state,
+        agent_id,
+        "req_1",
+        "First question",
     );
+    append_provider_started(&clock, &redactor, &mut run_state, agent_id, "req_1");
+    append_stream_delta(
+        &clock,
+        &redactor,
+        &mut run_state,
+        agent_id,
+        "req_1",
+        &large_text('A', 4000),
+    );
+    append_tool_call_requested(
+        &clock,
+        &redactor,
+        &mut run_state,
+        agent_id,
+        "req_1",
+        "toolcall_read",
+        "read",
+        r#"{"path": "src/lib.rs"}"#,
+    );
+    append_tool_call_finished(
+        &clock,
+        &redactor,
+        &mut run_state,
+        agent_id,
+        "req_1",
+        "toolcall_read",
+    );
+    append_tool_call_requested(
+        &clock,
+        &redactor,
+        &mut run_state,
+        agent_id,
+        "req_1",
+        "toolcall_edit",
+        "edit",
+        r#"{"path": "src/main.rs"}"#,
+    );
+    append_tool_call_finished(
+        &clock,
+        &redactor,
+        &mut run_state,
+        agent_id,
+        "req_1",
+        "toolcall_edit",
+    );
+    append_edit_applied(
+        &clock,
+        &redactor,
+        &mut run_state,
+        agent_id,
+        "edit_000001",
+        "src/main.rs",
+    );
+    append_assistant_finished(&clock, &redactor, &mut run_state, agent_id, "req_1");
 
-    // assert
-    assert!(checkpoint
-        .facts
-        .read_files
-        .iter()
-        .any(|fact| fact.path == "src/lib.rs"));
-    let operation_facts = checkpoint.facts.operation_facts.join("\n");
-    assert!(operation_facts.contains("tool bash"));
-    assert!(operation_facts.contains("skill"));
-    assert!(operation_facts.contains("karpathy-guidelines"));
-    assert!(operation_facts.contains("todowrite"));
-    assert!(operation_facts.contains("todo checklist"));
-    assert!(operation_facts.contains("plan_exit"));
-    assert!(operation_facts.contains("run_compaction_preservation.md"));
-    assert!(checkpoint.summary.contains("src/lib.rs"));
-    assert!(checkpoint.summary.contains("tool bash"));
-    assert!(checkpoint.summary.contains("karpathy-guidelines"));
-    assert!(checkpoint.summary.contains("todo checklist"));
-    assert!(checkpoint
+    // Turn 2: keep recent so turn 1 is summarized.
+    append_user_message(
+        &clock,
+        &redactor,
+        &mut run_state,
+        agent_id,
+        "req_2",
+        "Second question",
+    );
+    append_provider_started(&clock, &redactor, &mut run_state, agent_id, "req_2");
+    append_stream_delta(
+        &clock,
+        &redactor,
+        &mut run_state,
+        agent_id,
+        "req_2",
+        &large_text('B', 4000),
+    );
+    append_assistant_finished(&clock, &redactor, &mut run_state, agent_id, "req_2");
+
+    let provider = Arc::new(SummaryMockProvider {
+        summary: "## Goal\nOperational memory summary".to_string(),
+    });
+
+    let result = compact_session(
+        &clock,
+        &redactor,
+        &mut run_state,
+        provider,
+        agent_id,
+        "manual",
+        &settings(true, 0, 500),
+        None,
+    )
+    .await
+    .unwrap_or_abort();
+
+    assert!(result.is_some(), "compaction should produce a result");
+
+    let events = read_events(&run_state.info.events_path);
+    let compaction_event = last_session_compaction_event(&events);
+    assert_eq!(compaction_event.agent_id, agent_id);
+    assert!(
+        compaction_event
+            .read_files
+            .iter()
+            .any(|p| p == "src/lib.rs"),
+        "read_files should contain src/lib.rs: {:?}",
+        compaction_event.read_files
+    );
+    assert!(
+        compaction_event
+            .modified_files
+            .iter()
+            .any(|p| p == "src/main.rs"),
+        "modified_files should contain src/main.rs: {:?}",
+        compaction_event.modified_files
+    );
+    assert!(compaction_event
         .summary
-        .contains("run_compaction_preservation.md"));
-    assert_eq!(checkpoint.recent_turns.len(), 1);
-    assert_eq!(checkpoint.recent_turns[0].user_prompt, "second question");
+        .contains("Operational memory summary"));
 }

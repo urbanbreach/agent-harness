@@ -3,7 +3,7 @@ use harness::UnwrapOrAbort;
 fn first_run_provider_auth_docs_do_not_assume_loopback_only() {
     // arrange
     let readme = read_doc("README.md");
-    let config = read_doc("docs/config.md");
+    let config = read_doc("docs/configuration/config.md");
 
     // act
     let readme_anchors = [
@@ -42,7 +42,7 @@ fn first_run_provider_auth_docs_do_not_assume_loopback_only() {
 #[test]
 fn model_prompt_tuning_stance_is_documented_for_v1() {
     // arrange
-    let config = read_doc("docs/config.md");
+    let config = read_doc("docs/configuration/config.md");
 
     // act
     let expected_anchors = [
@@ -66,7 +66,7 @@ fn model_prompt_tuning_stance_is_documented_for_v1() {
 #[test]
 fn reference_prompt_patterns_map_to_harness_seams() {
     // arrange
-    let architecture = read_doc("docs/architecture.md");
+    let architecture = read_doc("docs/architecture/architecture.md");
     let mut section = architecture
         .split("### Prompt reference seam map\n")
         .nth(1)
@@ -141,7 +141,7 @@ fn reference_prompt_patterns_map_to_harness_seams() {
 #[test]
 fn built_in_capability_order_and_state_policy_are_documented_and_guarded() {
     // arrange
-    let extension = read_doc("docs/extension-strategy.md");
+    let extension = read_doc("docs/operations/extension-strategy.md");
     let capability_section = extension
         .split("## Core runtime behavior vs disableable built-in capabilities\n")
         .nth(1)
@@ -199,9 +199,9 @@ fn built_in_capability_order_and_state_policy_are_documented_and_guarded() {
         "schema_version",
         "migration policy",
         "replay behavior",
-        "event logs in `docs/architecture.md` and `docs/sessions-and-replay.md`",
-        "simulation artifacts in `docs/testing.md`",
-        "perf/PTY artifacts in `docs/budgets.md` and `docs/testing.md`",
+        "event logs in `docs/architecture/architecture.md` and `docs/architecture/sessions-and-replay.md`",
+        "simulation artifacts in `docs/testing/testing.md`",
+        "perf/PTY artifacts in `docs/testing/budgets.md` and `docs/testing/testing.md`",
     ] {
         assert!(
             extension.contains(anchor),
@@ -213,10 +213,10 @@ fn built_in_capability_order_and_state_policy_are_documented_and_guarded() {
 #[test]
 fn thin_v1_docs_cover_their_source_surfaces() {
     // arrange
-    let agents = read_doc("docs/agents-and-subagents.md");
-    let sessions = read_doc("docs/sessions-and-replay.md");
-    let native = read_doc("docs/native-tool-catalog.md");
-    let troubleshooting = read_doc("docs/troubleshooting.md");
+    let agents = read_doc("docs/operations/agents-and-subagents.md");
+    let sessions = read_doc("docs/architecture/sessions-and-replay.md");
+    let native = read_doc("docs/tools/native-tool-catalog.md");
+    let troubleshooting = read_doc("docs/operations/troubleshooting.md");
 
     // act
     let profiles = V1_PROMPT_PROFILES

@@ -1,6 +1,9 @@
 use harness_tools::UnwrapOrAbort;
 #[tokio::test]
 async fn native_execution_surface_tools_execute_through_native_ids() {
+    // arrange
+    // act
+    // assert
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
@@ -67,6 +70,9 @@ async fn native_execution_surface_tools_execute_through_native_ids() {
 }
 #[tokio::test]
 async fn native_todowrite_accepts_legacy_text_shape_and_defaults_priority() {
+    // arrange
+    // act
+    // assert
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
@@ -108,6 +114,9 @@ async fn native_todowrite_accepts_legacy_text_shape_and_defaults_priority() {
 }
 #[tokio::test]
 async fn native_todowrite_accepts_state_alias_from_model_tool_call() {
+    // arrange
+    // act
+    // assert
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
@@ -140,6 +149,9 @@ async fn native_todowrite_accepts_state_alias_from_model_tool_call() {
 }
 #[tokio::test]
 async fn native_todowrite_accepts_done_shape_and_schema_advertises_it() {
+    // arrange
+    // act
+    // assert
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
@@ -180,6 +192,9 @@ async fn native_todowrite_accepts_done_shape_and_schema_advertises_it() {
 }
 #[tokio::test]
 async fn native_todowrite_rejects_unknown_status_values() {
+    // arrange
+    // act
+    // assert
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
@@ -255,6 +270,9 @@ async fn native_public_edit_schema_uses_exact_surface_and_runtime_accepts_hashli
 }
 #[tokio::test]
 async fn native_public_edit_accepts_start_alias_for_pos() {
+    // arrange
+    // act
+    // assert
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
@@ -287,6 +305,9 @@ async fn native_public_edit_accepts_start_alias_for_pos() {
 }
 #[tokio::test]
 async fn native_public_edit_accepts_opless_anchored_delete_shape() {
+    // arrange
+    // act
+    // assert
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
@@ -318,6 +339,9 @@ async fn native_public_edit_accepts_opless_anchored_delete_shape() {
 }
 #[tokio::test]
 async fn native_public_edit_rejects_delete_flag_with_edit_payload() {
+    // arrange
+    // act
+    // assert
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
@@ -363,6 +387,9 @@ async fn native_public_edit_rejects_delete_flag_with_edit_payload() {
 }
 #[tokio::test]
 async fn native_public_edit_rejects_opless_anchored_non_delete_shape() {
+    // arrange
+    // act
+    // assert
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
@@ -393,6 +420,9 @@ async fn native_public_edit_rejects_opless_anchored_non_delete_shape() {
 }
 #[tokio::test]
 async fn native_public_edit_rejects_opless_anchorless_shape() {
+    // arrange
+    // act
+    // assert
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());
@@ -422,6 +452,9 @@ async fn native_public_edit_rejects_opless_anchorless_shape() {
 }
 #[tokio::test]
 async fn native_public_edit_accepts_quoted_refresh_snippet_anchor() {
+    // arrange
+    // act
+    // assert
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
     let registry = coordinator_registry(ShellAllowlist::default());

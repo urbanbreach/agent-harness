@@ -12,6 +12,7 @@ const TRANSCRIPT_SCROLLBAR_TRACK_WIDTH: u16 = 1;
 const TRANSCRIPT_SCROLLBAR_THUMB_WIDTH: u16 = 1;
 const TRANSCRIPT_SCROLLBAR_MIN_THUMB_HEIGHT: usize = 3;
 const TRANSCRIPT_SCROLLBAR_THUMB_GLYPH: &str = "█";
+const TRANSCRIPT_MORE_BELOW_GLYPH: &str = "▼";
 
 #[derive(Debug, Clone, Copy)]
 pub(super) struct TranscriptViewportLayout {
@@ -70,6 +71,30 @@ pub(super) fn render_transcript_scrollbar(
             cell.set_bg(theme.scrollbar.track);
         }
     }
+}
+
+pub(super) fn render_transcript_more_below_affordance(
+    frame: &mut Frame,
+    content: Rect,
+    scroll_top: usize,
+    max_scroll: usize,
+    theme: &Theme,
+    base_surface: Color,
+) {
+    if max_scroll == 0 || scroll_top >= max_scroll || content.width == 0 || content.height == 0 {
+        return;
+    }
+
+    let glyph = TRANSCRIPT_MORE_BELOW_GLYPH;
+    let glyph_width = 1_u16;
+    let x = content
+        .x
+        .saturating_add(content.width.saturating_sub(glyph_width) / 2);
+    let y = content.bottom().saturating_sub(1);
+    let cell = &mut frame.buffer_mut()[(x, y)];
+    cell.set_symbol(glyph);
+    cell.set_fg(theme.text.secondary);
+    cell.set_bg(base_surface);
 }
 
 pub(super) fn transcript_scrollbar_geometry(
@@ -205,13 +230,85 @@ pub(super) fn transcript_scroll_offset(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ratatui::{backend::TestBackend, Terminal};
 
     #[test]
     fn transcript_scrollbar_layout_matches_shell_lane_width() {
+        // arrange
+        // act
+        // assert
         let viewport = transcript_viewport_layout(Rect::new(4, 2, 20, 12), true);
 
         assert_eq!(viewport.content, Rect::new(4, 2, 19, 12));
         assert_eq!(viewport.scrollbar_chrome, Some(Rect::new(23, 2, 1, 12)));
         assert_eq!(viewport.scrollbar_lane, Some(Rect::new(23, 2, 1, 12)));
+    }
+
+    #[test]
+    fn more_below_affordance_paints_centered_glyph_when_not_at_bottom() {
+        // arrange
+        // act
+        // assert
+        let backend = TestBackend::new(20, 6);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        let theme = Theme::default();
+        let content = Rect::new(0, 0, 20, 6);
+        let center_x = content.x + (content.width - 1) / 2;
+        let bottom_y = content.bottom().saturating_sub(1);
+
+        terminal
+            .draw(|frame| {
+                render_transcript_more_below_affordance(
+                    frame,
+                    content,
+                    0,
+                    10,
+                    &theme,
+                    Color::Black,
+                );
+            })
+            .expect("draw");
+
+        let buffer = terminal.backend().buffer();
+        let cell = &buffer[(center_x, bottom_y)];
+        assert_eq!(
+            cell.symbol(),
+            TRANSCRIPT_MORE_BELOW_GLYPH,
+            "mid-scroll viewport must paint centered more-below affordance at ({center_x},{bottom_y})"
+        );
+    }
+
+    #[test]
+    fn more_below_affordance_hidden_when_pinned_to_bottom() {
+        // arrange
+        // act
+        // assert
+        let backend = TestBackend::new(20, 6);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        let theme = Theme::default();
+        let content = Rect::new(0, 0, 20, 6);
+        let center_x = content.x + (content.width - 1) / 2;
+        let bottom_y = content.bottom().saturating_sub(1);
+
+        terminal
+            .draw(|frame| {
+                render_transcript_more_below_affordance(
+                    frame,
+                    content,
+                    10,
+                    10,
+                    &theme,
+                    Color::Black,
+                );
+            })
+            .expect("draw");
+
+        let buffer = terminal.backend().buffer();
+        let cell = &buffer[(center_x, bottom_y)];
+        assert_ne!(
+            cell.symbol(),
+            TRANSCRIPT_MORE_BELOW_GLYPH,
+            "bottom-pinned viewport must not paint more-below affordance"
+        );
     }
 }

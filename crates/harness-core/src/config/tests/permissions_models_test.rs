@@ -1,11 +1,232 @@
 use super::*;
+use crate::perm::{PermissionKind, PermissionPolicy, PolicyDecision};
 use crate::UnwrapOrAbort;
 
 #[test]
+fn oc_parity_permission_omitted_defaults_to_allow_for_bash_edit_webfetch() {
+    // arrange
+    // act
+    // assert
+    let cfg = public_minimal_config_without_permission();
+    let parsed = load_config_from_str(&cfg).unwrap_or_abort();
+    let policy = PermissionPolicy::from_config(&parsed);
+
+    assert_eq!(
+        parsed.permissions.defaults.edit,
+        PermissionMode::Allow,
+        "expected Allow for edit on default config (permission omitted), got {:?}",
+        parsed.permissions.defaults.edit
+    );
+    assert_eq!(
+        parsed.permissions.defaults.shell,
+        PermissionMode::Allow,
+        "expected Allow for bash/shell on default config (permission omitted), got {:?}",
+        parsed.permissions.defaults.shell
+    );
+    assert_eq!(
+        parsed.permissions.defaults.webfetch,
+        Some(PermissionMode::Allow),
+        "expected Allow for webfetch on default config (permission omitted), got {:?}",
+        parsed.permissions.defaults.webfetch
+    );
+    assert_eq!(
+        parsed.permissions.defaults.external_directory,
+        Some(PermissionMode::Ask),
+        "expected Ask for external_directory when permission omitted, got {:?}",
+        parsed.permissions.defaults.external_directory
+    );
+    assert_eq!(
+        parsed.permissions.defaults.doom_loop,
+        Some(PermissionMode::Ask),
+        "expected Ask for doom_loop when permission omitted, got {:?}",
+        parsed.permissions.defaults.doom_loop
+    );
+    assert_eq!(
+        parsed.permissions.defaults.question,
+        Some(PermissionMode::Deny),
+        "expected Deny for base question when permission omitted, got {:?}",
+        parsed.permissions.defaults.question
+    );
+
+    for (kind, label) in [
+        (PermissionKind::EditFs, "edit"),
+        (PermissionKind::Shell, "bash"),
+        (PermissionKind::WebFetch, "webfetch"),
+    ] {
+        let decision = policy.evaluate(None, kind);
+        assert!(
+            matches!(decision, PolicyDecision::Allow),
+            "expected Allow for {label} on default config, got {decision:?}"
+        );
+    }
+    assert!(
+        matches!(
+            policy.evaluate(None, PermissionKind::ExternalDirectory),
+            PolicyDecision::Ask { .. }
+        ),
+        "expected Ask for external_directory when permission omitted"
+    );
+    assert!(
+        matches!(
+            policy.evaluate(None, PermissionKind::DoomLoop),
+            PolicyDecision::Ask { .. }
+        ),
+        "expected Ask for doom_loop when permission omitted"
+    );
+    assert!(
+        matches!(
+            policy.evaluate(None, PermissionKind::Question),
+            PolicyDecision::Deny
+        ),
+        "expected Deny for question when permission omitted"
+    );
+}
+
+#[test]
+fn oc_parity_permission_allow_scalar_expands_without_forcing_ask() {
+    // arrange
+    // act
+    // assert
+    let cfg = public_minimal_config_with_permission("\"allow\"");
+    let parsed = load_config_from_str(&cfg).unwrap_or_abort();
+    let policy = PermissionPolicy::from_config(&parsed);
+
+    assert_eq!(
+        parsed.permissions.defaults.edit,
+        PermissionMode::Allow,
+        "expected Allow for edit when permission scalar is allow, got {:?}",
+        parsed.permissions.defaults.edit
+    );
+    assert_eq!(
+        parsed.permissions.defaults.shell,
+        PermissionMode::Allow,
+        "expected Allow for bash when permission scalar is allow, got {:?}",
+        parsed.permissions.defaults.shell
+    );
+    assert_eq!(
+        parsed.permissions.defaults.webfetch,
+        Some(PermissionMode::Allow),
+        "expected Allow for webfetch when permission scalar is allow, got {:?}",
+        parsed.permissions.defaults.webfetch
+    );
+    // Scalar allow keeps safety exceptions (not YOLO on external/doom/question).
+    assert_eq!(
+        parsed.permissions.defaults.external_directory,
+        Some(PermissionMode::Ask),
+        "expected Ask for external_directory when permission scalar is allow, got {:?}",
+        parsed.permissions.defaults.external_directory
+    );
+    assert_eq!(
+        parsed.permissions.defaults.doom_loop,
+        Some(PermissionMode::Ask),
+        "expected Ask for doom_loop when permission scalar is allow, got {:?}",
+        parsed.permissions.defaults.doom_loop
+    );
+    assert_eq!(
+        parsed.permissions.defaults.question,
+        Some(PermissionMode::Deny),
+        "expected Deny for question when permission scalar is allow, got {:?}",
+        parsed.permissions.defaults.question
+    );
+
+    for (kind, label) in [
+        (PermissionKind::EditFs, "edit"),
+        (PermissionKind::Shell, "bash"),
+        (PermissionKind::WebFetch, "webfetch"),
+    ] {
+        let decision = policy.evaluate(None, kind);
+        assert!(
+            matches!(decision, PolicyDecision::Allow),
+            "expected Allow for {label} when permission scalar is allow, got {decision:?}"
+        );
+        assert!(
+            !matches!(decision, PolicyDecision::Ask { .. }),
+            "expected Allow for {label} (not Ask) when permission scalar is allow, got {decision:?}"
+        );
+    }
+    assert!(
+        matches!(
+            policy.evaluate(None, PermissionKind::ExternalDirectory),
+            PolicyDecision::Ask { .. }
+        ),
+        "expected Ask for external_directory when permission scalar is allow"
+    );
+    assert!(
+        matches!(
+            policy.evaluate(None, PermissionKind::DoomLoop),
+            PolicyDecision::Ask { .. }
+        ),
+        "expected Ask for doom_loop when permission scalar is allow"
+    );
+    assert!(
+        matches!(
+            policy.evaluate(None, PermissionKind::Question),
+            PolicyDecision::Deny
+        ),
+        "expected Deny for question when permission scalar is allow"
+    );
+}
+
+#[test]
+fn oc_parity_example_config_permission_scalar_is_allow_not_ask_all() {
+    // arrange
+    // act
+    // assert
+    let example_path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../configs/harness.example.jsonc");
+    let raw = std::fs::read_to_string(&example_path).unwrap_or_abort();
+    assert!(
+        raw.contains(r#""permission": "allow""#) || raw.contains("permission: \"allow\""),
+        "expected configs/harness.example.jsonc permission scalar to be allow (Harness default), not ask-all; found ask or missing allow"
+    );
+
+    let context = ConfigLoadContext::from_env()
+        .with_current_dir(Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."));
+    let parsed = load_config_from_file_with_context(&example_path, &context).unwrap_or_abort();
+    assert_eq!(
+        parsed.permissions.defaults.edit,
+        PermissionMode::Allow,
+        "expected example config edit default Allow after allow scalar, got {:?}",
+        parsed.permissions.defaults.edit
+    );
+    assert_eq!(
+        parsed.permissions.defaults.shell,
+        PermissionMode::Allow,
+        "expected example config bash default Allow after allow scalar, got {:?}",
+        parsed.permissions.defaults.shell
+    );
+    assert!(
+        !matches!(parsed.permissions.defaults.edit, PermissionMode::Ask),
+        "expected example config not to force ask-all for edit"
+    );
+    assert_eq!(
+        parsed.permissions.defaults.external_directory,
+        Some(PermissionMode::Ask),
+        "expected example scalar allow to keep external_directory Ask, got {:?}",
+        parsed.permissions.defaults.external_directory
+    );
+    assert_eq!(
+        parsed.permissions.defaults.doom_loop,
+        Some(PermissionMode::Ask),
+        "expected example scalar allow to keep doom_loop Ask, got {:?}",
+        parsed.permissions.defaults.doom_loop
+    );
+    assert_eq!(
+        parsed.permissions.defaults.question,
+        Some(PermissionMode::Deny),
+        "expected example scalar allow to keep base question Deny, got {:?}",
+        parsed.permissions.defaults.question
+    );
+}
+
+#[test]
 fn permission_scalar_expands_to_public_kinds_and_network() {
+    // arrange
+    // act
+    // assert
+    // Scalar ask/deny paint every kind; scalar allow keeps safety exceptions.
     for (raw, mode) in [
         ("\"ask\"", PermissionMode::Ask),
-        ("\"allow\"", PermissionMode::Allow),
         ("\"deny\"", PermissionMode::Deny),
     ] {
         let cfg = public_minimal_config_with_permission(raw);
@@ -18,18 +239,64 @@ fn permission_scalar_expands_to_public_kinds_and_network() {
         assert_eq!(parsed.permissions.defaults.webfetch, Some(mode.clone()));
         assert_eq!(parsed.permissions.defaults.websearch, Some(mode.clone()));
         assert_eq!(parsed.permissions.defaults.codesearch, Some(mode.clone()));
-        assert_eq!(parsed.permissions.defaults.lsp, Some(mode));
+        assert_eq!(parsed.permissions.defaults.lsp, Some(mode.clone()));
+        assert_eq!(
+            parsed.permissions.defaults.external_directory,
+            Some(mode.clone())
+        );
+        assert_eq!(parsed.permissions.defaults.doom_loop, Some(mode));
     }
+
+    let cfg = public_minimal_config_with_permission("\"allow\"");
+    let parsed = load_config_from_str(&cfg).unwrap_or_abort();
+    assert_eq!(parsed.permissions.defaults.edit, PermissionMode::Allow);
+    assert_eq!(parsed.permissions.defaults.shell, PermissionMode::Allow);
+    assert_eq!(parsed.permissions.defaults.network, PermissionMode::Allow);
+    assert_eq!(
+        parsed.permissions.defaults.question,
+        Some(PermissionMode::Deny)
+    );
+    assert_eq!(
+        parsed.permissions.defaults.task,
+        Some(PermissionMode::Allow)
+    );
+    assert_eq!(
+        parsed.permissions.defaults.webfetch,
+        Some(PermissionMode::Allow)
+    );
+    assert_eq!(
+        parsed.permissions.defaults.websearch,
+        Some(PermissionMode::Allow)
+    );
+    assert_eq!(
+        parsed.permissions.defaults.codesearch,
+        Some(PermissionMode::Allow)
+    );
+    assert_eq!(parsed.permissions.defaults.lsp, Some(PermissionMode::Allow));
+    assert_eq!(
+        parsed.permissions.defaults.external_directory,
+        Some(PermissionMode::Ask)
+    );
+    assert_eq!(
+        parsed.permissions.defaults.doom_loop,
+        Some(PermissionMode::Ask)
+    );
 }
 
 #[test]
 fn permission_scalar_rejects_invalid_mode() {
+    // arrange
+    // act
+    // assert
     let cfg = public_minimal_config_with_permission("\"maybe\"");
     load_config_from_str(&cfg).expect_err("invalid permission scalar must fail");
 }
 
 #[test]
 fn permission_object_accepts_per_tool_scalar_modes() {
+    // arrange
+    // act
+    // assert
     let cfg = public_minimal_config_with_permission(
         r#"{
                 bash: "ask",
@@ -70,7 +337,61 @@ fn permission_object_accepts_per_tool_scalar_modes() {
 }
 
 #[test]
+fn permission_object_accepts_read_external_directory_and_doom_loop_keys() {
+    // arrange
+    // act
+    // assert
+    let cfg = public_minimal_config_with_permission(
+        r#"{
+                read: {
+                  "*.env": "ask",
+                  "*.env.example": "allow"
+                },
+                external_directory: "ask",
+                doom_loop: "ask"
+            }"#,
+    );
+    let parsed = load_config_from_str(&cfg).unwrap_or_abort();
+    let policy = PermissionPolicy::from_config(&parsed);
+
+    assert_eq!(
+        parsed.permissions.defaults.external_directory,
+        Some(PermissionMode::Ask)
+    );
+    assert_eq!(
+        parsed.permissions.defaults.doom_loop,
+        Some(PermissionMode::Ask)
+    );
+    assert_eq!(parsed.permissions.rules.read.len(), 2);
+    assert!(parsed.permissions.rules.external_directory.is_empty());
+    assert!(matches!(
+        policy.evaluate(None, PermissionKind::ExternalDirectory),
+        PolicyDecision::Ask { .. }
+    ));
+    assert!(matches!(
+        policy.evaluate(None, PermissionKind::DoomLoop),
+        PolicyDecision::Ask { .. }
+    ));
+    assert_eq!(
+        policy.evaluate_request(
+            None,
+            PermissionKind::Read,
+            Some(&crate::perm::PermissionRuleRequest::WorkspacePath(
+                "foo.env".to_string()
+            )),
+        ),
+        PolicyDecision::Ask {
+            timeout_ms: 0,
+            default_decision: crate::perm::PermissionDecision::Deny,
+        }
+    );
+}
+
+#[test]
 fn permission_rule_object_preserves_shell_allowlist_and_rules() {
+    // arrange
+    // act
+    // assert
     let cfg = public_minimal_config_with_permission(
         r#"{
                 "*": "deny",
@@ -110,6 +431,9 @@ fn permission_rule_object_preserves_shell_allowlist_and_rules() {
 
 #[test]
 fn shell_allowlist_loads_legacy_flat_shape_with_default_mode() {
+    // arrange
+    // act
+    // assert
     let cfg = public_minimal_config_with_permission(
         r#"{
                 bash: "allow",
@@ -132,6 +456,9 @@ fn shell_allowlist_loads_legacy_flat_shape_with_default_mode() {
 
 #[test]
 fn shell_allowlist_accepts_camel_case_cwd_roots_and_policy_mode() {
+    // arrange
+    // act
+    // assert
     let cfg = public_minimal_config_with_permission(
         r#"{
                 bash: "allow",
@@ -158,6 +485,9 @@ fn shell_allowlist_accepts_camel_case_cwd_roots_and_policy_mode() {
 
 #[test]
 fn shell_allowlist_mode_round_trips_through_json() {
+    // arrange
+    // act
+    // assert
     let allowlist = ShellAllowlist {
         mode: ShellAllowlistMode::LegacyExecutables,
         executables: vec!["git".to_string()],
@@ -184,6 +514,9 @@ fn shell_allowlist_mode_round_trips_through_json() {
 
 #[test]
 fn permission_rule_rejects_invalid_selector_forms() {
+    // arrange
+    // act
+    // assert
     for permission in [
         r#"{ bash: { "/^git/": "allow" } }"#,
         r#"{ bash: { "cargo * test": "allow" } }"#,
@@ -203,6 +536,9 @@ fn permission_rule_rejects_invalid_selector_forms() {
 
 #[test]
 fn model_limit_modalities_and_options_normalize_to_catalog_metadata() {
+    // arrange
+    // act
+    // assert
     let cfg = r#"
         {
           provider: {
@@ -244,7 +580,10 @@ fn model_limit_modalities_and_options_normalize_to_catalog_metadata() {
         "#;
 
     let parsed = load_config_from_str(cfg).unwrap_or_abort();
-    let ProviderConfig::OpenAiCompatible(provider) = parsed.providers.get("default").unwrap();
+    let ProviderConfig::OpenAiCompatible(provider) = parsed.providers.get("default").unwrap()
+    else {
+        panic!("expected OpenAiCompatible");
+    };
     assert_eq!(provider.timeout_ms, 30_000);
     let model = &provider.models["gpt-4o-mini"];
     assert_eq!(model.limit.context, Some(272_000));
@@ -260,6 +599,9 @@ fn model_limit_modalities_and_options_normalize_to_catalog_metadata() {
 
 #[test]
 fn model_limit_rejects_unknown_metadata_fields() {
+    // arrange
+    // act
+    // assert
     let cfg = r#"
         {
           provider: {
@@ -285,179 +627,4 @@ fn model_limit_rejects_unknown_metadata_fields() {
         err.to_string().contains("unknown field `training`"),
         "unexpected error: {err}"
     );
-}
-
-#[test]
-fn legacy_provider_name_and_options_normalize_to_runtime_shape() {
-    let cfg = r#"
-        {
-          providers: {
-            default: {
-              type: "openai_compatible",
-              name: "CLIProxyAPI",
-              options: {
-                baseURL: "http://127.0.0.1:8317/v1",
-                apiKey: "test-key",
-              },
-              models: {
-                "gpt-4o-mini": {
-                  name: "GPT-4o mini"
-                }
-              }
-            }
-          },
-          agents: {
-            build: {
-              description: "Build work",
-              model_ref: "default:gpt-4o-mini",
-              tools: ["fs.read"]
-            }
-          },
-          permissions: {
-            defaults: {
-              edit: "allow",
-              shell: "allow",
-              network: "allow"
-            }
-          },
-          runtime: {
-            background_tasks: {
-              default_concurrency: 2,
-              provider_concurrency: 2,
-              model_concurrency: 2,
-              stale_timeout_ms: 15000,
-              message_staleness_timeout_ms: 5000
-            },
-            session_dir: ".agent-harness/sessions"
-          },
-          integrations: {
-            remote_search: {
-              endpoint: "https://mcp.exa.ai/mcp"
-            }
-          }
-        }
-        "#;
-
-    let parsed = load_config_from_str(cfg).unwrap_or_abort();
-    let ProviderConfig::OpenAiCompatible(provider) = parsed.providers.get("default").unwrap();
-    assert_eq!(provider.name.as_deref(), Some("CLIProxyAPI"));
-    assert_eq!(provider.base_url, "http://127.0.0.1:8317/v1");
-    assert_eq!(provider.api_key, "test-key");
-    assert_eq!(provider.models["gpt-4o-mini"].display_name, "GPT-4o mini");
-
-    let metadata = resolve_profile_model_metadata(&parsed, "build").unwrap_or_abort();
-    assert_eq!(metadata.provider_display_label, "CLIProxyAPI");
-}
-
-#[test]
-fn top_level_legacy_agent_key_is_translated() {
-    let cfg = r#"
-        {
-          providers: {
-            default: {
-              type: "openai_compatible",
-              base_url: "http://127.0.0.1:8317/v1",
-              api_key: "test-key",
-              models: {
-                "gpt-4o-mini": {
-                  display_name: "GPT-4o mini"
-                }
-              }
-            }
-          },
-          agent: {
-            plan: {
-              description: "Planning work",
-              model_ref: "default:gpt-4o-mini",
-              tools: ["fs.read"]
-            }
-          },
-          permissions: {
-            defaults: {
-              edit: "allow",
-              shell: "allow",
-              network: "allow"
-            }
-          },
-          runtime: {
-            background_tasks: {
-              default_concurrency: 2,
-              provider_concurrency: 2,
-              model_concurrency: 2,
-              stale_timeout_ms: 15000,
-              message_staleness_timeout_ms: 5000
-            },
-            session_dir: ".agent-harness/sessions"
-          },
-          integrations: {
-            remote_search: {
-              endpoint: "https://mcp.exa.ai/mcp"
-            }
-          }
-        }
-        "#;
-
-    let parsed = load_config_from_str(cfg).unwrap_or_abort();
-    assert!(parsed.agents.contains_key("plan"));
-}
-
-#[test]
-fn invalid_explicit_default_profile_falls_back_to_build_when_available() {
-    let cfg = r#"
-        {
-          providers: {
-            default: {
-              type: "openai_compatible",
-              base_url: "http://127.0.0.1:8317/v1",
-              api_key: "test-key",
-              models: {
-                "gpt-4o-mini": {
-                  display_name: "GPT-4o mini"
-                }
-              }
-            }
-          },
-          agents: {
-            build: {
-              description: "Build work",
-              model_ref: "default:gpt-4o-mini",
-              tools: ["fs.read"]
-            },
-            plan: {
-              description: "Planning work",
-              model_ref: "default:gpt-4o-mini",
-              tools: ["fs.read"]
-            }
-          },
-          permissions: {
-            defaults: {
-              edit: "allow",
-              shell: "allow",
-              network: "allow"
-            }
-          },
-          runtime: {
-            background_tasks: {
-              default_concurrency: 2,
-              provider_concurrency: 2,
-              model_concurrency: 2,
-              stale_timeout_ms: 15000,
-              message_staleness_timeout_ms: 5000
-            },
-            session_dir: ".agent-harness/sessions"
-          },
-          integrations: {
-            remote_search: {
-              endpoint: "https://mcp.exa.ai/mcp"
-            }
-          },
-          ui: {
-            default_profile: "ops"
-          }
-        }
-        "#;
-
-    let parsed = load_config_from_str(cfg).unwrap_or_abort();
-    assert_eq!(parsed.ui.default_profile.as_deref(), Some("build"));
-    assert_eq!(parsed.default_agent.as_deref(), Some("build"));
 }

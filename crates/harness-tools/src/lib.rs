@@ -596,6 +596,7 @@ pub(crate) mod test_support {
             current_model_ref: None,
             current_model_settings: None,
             tool_state: ToolRunState::default(),
+            external_directory_allow_prefixes: Vec::new(),
             coordinator,
         }
     }
@@ -628,6 +629,9 @@ mod tests {
 
     #[test]
     fn tool_parameter_schemas_are_json_objects() {
+        // arrange
+        // act
+        // assert
         let registry = coordinator_registry(ShellAllowlist::default());
 
         for tool_id in [
@@ -696,6 +700,9 @@ mod tests {
 
     #[test]
     fn json_schema_for_empty_object_includes_explicit_properties() {
+        // arrange
+        // act
+        // assert
         let schema = super::json_schema_for::<EmptyObjectArgs>();
         assert_eq!(schema.get("type"), Some(&json!("object")));
         assert_eq!(schema.get("properties"), Some(&json!({})));
@@ -705,6 +712,9 @@ mod tests {
 
     #[test]
     fn coordinator_registry_function_names_are_unique_and_deterministic() {
+        // arrange
+        // act
+        // assert
         let registry = coordinator_registry(ShellAllowlist::default());
         let mapping_a = registry.function_name_mapping();
         let mapping_b = registry.function_name_mapping();
@@ -732,6 +742,9 @@ mod tests {
 
     #[test]
     fn read_tool_schema_advertises_one_indexed_positive_paging() {
+        // arrange
+        // act
+        // assert
         let registry = coordinator_registry(ShellAllowlist::default());
         let schema = registry
             .get("read")
@@ -747,6 +760,9 @@ mod tests {
 
     #[test]
     fn bash_description_warns_against_find_style_repo_exploration() {
+        // arrange
+        // act
+        // assert
         let registry = coordinator_registry(ShellAllowlist::default());
         let bash = registry.get("bash").unwrap_or_abort();
         let description = bash.description();

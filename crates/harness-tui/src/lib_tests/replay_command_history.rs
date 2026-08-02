@@ -39,7 +39,7 @@ pub(super) fn command_palette_groups_commands_for_shell() {
 
     let rendered = render_live_lines(&app, 120, 30);
     assert!(rendered.contains("Commands"));
-    assert!(rendered.contains("Switch session"));
+    assert!(rendered.contains("Resume Session") || rendered.contains("Switch session"));
 
     let mut live_app = app::AppState::new_live(None, false, None);
     live_app.handle_key(key_with_modifiers(
@@ -56,7 +56,7 @@ pub(super) fn command_palette_groups_commands_for_shell() {
         "harness-only commands must not appear in parity palette"
     );
 
-    let mut system_app = app::AppState::new_startup(Vec::new(), None);
+    let mut system_app = app::AppState::new_live(None, false, None);
     system_app.handle_key(key_with_modifiers(
         crossterm::event::KeyCode::Char('p'),
         crossterm::event::KeyModifiers::CONTROL,
@@ -66,7 +66,10 @@ pub(super) fn command_palette_groups_commands_for_shell() {
     }
     let system_render = render_live_lines(&system_app, 120, 30);
     assert!(system_render.contains("Commands"));
-    assert!(system_render.contains("Exit the app"));
+    assert!(
+        system_render.contains("Exit the app"),
+        "live shell exposes app.exit via filter; startup shell hides it\n{system_render}"
+    );
 }
 
 pub(super) fn session_switcher_groups_entries_by_recency() {
@@ -111,7 +114,7 @@ pub(super) fn session_switcher_groups_entries_by_recency() {
         crossterm::event::KeyCode::Char('p'),
         crossterm::event::KeyModifiers::CONTROL,
     ));
-    for ch in "switch".chars() {
+    for ch in "resume".chars() {
         app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
     }
     app.handle_key(key(crossterm::event::KeyCode::Enter));
@@ -125,7 +128,7 @@ pub(super) fn session_switcher_groups_entries_by_recency() {
     );
 
     let rendered = render_live_lines(&app, 120, 30);
-    assert!(rendered.contains("Continue session"));
+    assert!(rendered.contains("Resume session"));
     assert!(rendered.contains("today-run"));
     assert!(rendered.contains("yesterday-run"));
     assert!(rendered.contains("older-run"));

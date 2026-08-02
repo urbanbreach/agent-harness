@@ -38,6 +38,9 @@ mod tests {
 
     #[test]
     fn workspace_selector_paths_normalize_relative_components() {
+        // arrange
+        // act
+        // assert
         assert_eq!(
             normalize_workspace_relative_path(Path::new("./src/./lib.rs")),
             Some("src/lib.rs".to_string())
@@ -48,6 +51,9 @@ mod tests {
 
     #[test]
     fn workspace_selector_paths_accept_absolute_inside_workspace_only_when_requested() {
+        // arrange
+        // act
+        // assert
         let workspace = Path::new("/workspace/project");
 
         assert_eq!(
@@ -66,6 +72,26 @@ mod tests {
         );
         assert_eq!(
             normalize_workspace_relative_path(Path::new("/workspace/project/src/main.rs")),
+            None
+        );
+    }
+
+    #[test]
+    fn workspace_selector_rejects_parent_traversal_inside_absolute_path() {
+        // arrange — a workspace prefix that an escaping path could match
+        let workspace = Path::new("/workspace/project");
+
+        // act — resolution of paths that escape the prefix
+        // assert — prefix matches must not smuggle `..` components through
+        assert_eq!(
+            workspace_relative_path_from_maybe_absolute(
+                workspace,
+                Path::new("/workspace/project/../evil/x")
+            ),
+            None
+        );
+        assert_eq!(
+            normalize_workspace_relative_path(Path::new("src/../../x")),
             None
         );
     }

@@ -1,6 +1,6 @@
 use tokio::sync::mpsc;
 
-use crate::{ProviderStreamEvent, ProviderStreamStartMetadata};
+use crate::{CompletionUsage, ProviderStreamEvent, ProviderStreamStartMetadata};
 
 use super::super::sse::next_sse_event;
 use super::super::stream_event::{
@@ -12,9 +12,7 @@ use super::super::tool_call::{
     consume_tool_call_deltas, emit_tool_call_completions, ChatToolCallState,
 };
 use super::super::transport::OpenAiHttpResponse;
-use super::{
-    non_empty_string, warn_stream_processing_failure, warn_stream_send_failure, zero_usage,
-};
+use super::{non_empty_string, warn_stream_processing_failure, warn_stream_send_failure};
 
 pub(super) async fn consume_chat_sse_stream(
     response: OpenAiHttpResponse,
@@ -32,7 +30,7 @@ pub(super) async fn consume_chat_sse_stream(
         return;
     }
 
-    let mut usage = zero_usage();
+    let mut usage: Option<CompletionUsage> = None;
     let mut finished_metadata = provider_stream_finished_metadata_from_start(start_metadata);
     let mut done_emitted = false;
     let mut tool_call_state = ChatToolCallState::default();
@@ -63,14 +61,13 @@ pub(super) async fn consume_chat_sse_stream(
                 return;
             }
 
-            if !done_emitted
-                && tx
-                    .send(ProviderStreamEvent::DoneWithMetadata {
-                        usage,
-                        metadata: non_empty_finished_metadata(finished_metadata),
-                    })
-                    .await
-                    .is_err()
+            if tx
+                .send(ProviderStreamEvent::DoneWithMetadata {
+                    usage,
+                    metadata: non_empty_finished_metadata(finished_metadata),
+                })
+                .await
+                .is_err()
             {
                 warn_stream_send_failure("chat.done");
             }
@@ -104,8 +101,17 @@ pub(super) async fn consume_chat_sse_stream(
         }
 
         if let Some(chunk_usage) = chunk.usage {
-            usage = chunk_usage.completion_usage();
+            usage = Some(chunk_usage.completion_usage());
             chunk_usage.merge_finished_metadata(&mut finished_metadata);
+        } else {
+            // Some OpenAI-compatible providers (e.g. GLM / Zhipu) emit usage
+            // inside the choice object instead of the top-level chunk.
+            for choice in &chunk.choices {
+                if let Some(choice_usage) = &choice.usage {
+                    usage = Some(choice_usage.completion_usage());
+                    choice_usage.merge_finished_metadata(&mut finished_metadata);
+                }
+            }
         }
 
         let mut finish_seen = false;
@@ -155,17 +161,6 @@ pub(super) async fn consume_chat_sse_stream(
             }
 
             done_emitted = true;
-            if tx
-                .send(ProviderStreamEvent::DoneWithMetadata {
-                    usage: usage.clone(),
-                    metadata: non_empty_finished_metadata(finished_metadata.clone()),
-                })
-                .await
-                .is_err()
-            {
-                warn_stream_send_failure("chat.done_after_finish_reason");
-                return;
-            }
         }
     }
 
@@ -173,14 +168,13 @@ pub(super) async fn consume_chat_sse_stream(
         return;
     }
 
-    if !done_emitted
-        && tx
-            .send(ProviderStreamEvent::DoneWithMetadata {
-                usage,
-                metadata: non_empty_finished_metadata(finished_metadata),
-            })
-            .await
-            .is_err()
+    if tx
+        .send(ProviderStreamEvent::DoneWithMetadata {
+            usage,
+            metadata: non_empty_finished_metadata(finished_metadata),
+        })
+        .await
+        .is_err()
     {
         warn_stream_send_failure("chat.done_after_stream_end");
     }

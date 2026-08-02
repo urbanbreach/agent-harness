@@ -19,15 +19,18 @@ imara-diff = "0.2"
 serde.workspace = true
 serde_json.workspace = true
 syntect = { version = "5.3", default-features = false, features = ["default-fancy"] }
+unicode-width = "0.2"
 
 [dev-dependencies]
 font8x8 = "0.3"
 fontdue = "0.9"
 harness-providers = { path = "../harness-providers" }
+harness-testkit = { path = "../harness-testkit" }
 image = { version = "0.25", default-features = false, features = ["png"] }
 insta = { version = "1.39", features = ["json"] }
 tempfile.workspace = true
 portable-pty = "0.9"
+sha2 = "0.11"
 vt100 = "0.16"
 
 [lints]

@@ -82,6 +82,9 @@ mod tests {
 
     #[test]
     fn parses_plain_and_fenced_code_blocks() {
+        // arrange
+        // act
+        // assert
         assert_eq!(
             parse_fenced_text_blocks("Before\n```rust\nfn main() {}\n```\nAfter"),
             Some(vec![
@@ -98,6 +101,9 @@ mod tests {
 
     #[test]
     fn parses_fence_without_language_and_normalizes_crlf() {
+        // arrange
+        // act
+        // assert
         assert_eq!(
             parse_fenced_text_blocks("```\r\nline\r\n```\r"),
             Some(vec![ParsedTextBlock::Code {
@@ -110,6 +116,9 @@ mod tests {
 
     #[test]
     fn returns_none_for_unclosed_fence() {
+        // arrange
+        // act
+        // assert
         assert_eq!(
             parse_fenced_text_blocks("Before\n```rust\nfn main() {}"),
             None
@@ -118,6 +127,9 @@ mod tests {
 
     #[test]
     fn indented_fences_are_recognized() {
+        // arrange
+        // act
+        // assert
         assert_eq!(
             parse_fenced_text_blocks("  ```diff\n+added\n  ```"),
             Some(vec![ParsedTextBlock::Code {

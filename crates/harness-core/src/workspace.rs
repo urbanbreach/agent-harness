@@ -155,6 +155,9 @@ mod tests {
 
     #[test]
     fn non_git_directory_uses_working_directory_as_workspace_root() {
+        // arrange
+        // act
+        // assert
         let temp_dir = tempfile::tempdir().unwrap_or_abort();
         let git_probe = FakeWorkspaceGitProbe::default();
         let environment =
@@ -168,6 +171,9 @@ mod tests {
 
     #[test]
     fn git_marker_ancestor_becomes_workspace_root_without_git_binary() {
+        // arrange
+        // act
+        // assert
         let temp_dir = tempfile::tempdir().unwrap_or_abort();
         let nested = temp_dir.path().join("crates").join("harness");
         std::fs::create_dir_all(&nested).unwrap_or_abort();
@@ -183,6 +189,9 @@ mod tests {
 
     #[test]
     fn git_probe_reports_workspace_root_and_branch_without_spawning() {
+        // arrange
+        // act
+        // assert
         let working_directory = PathBuf::from("/workspace/project/crates/harness");
         let git_probe = FakeWorkspaceGitProbe::default()
             .with_response(
@@ -218,6 +227,9 @@ mod tests {
 
     #[test]
     fn labels_append_branch_when_available() {
+        // arrange
+        // act
+        // assert
         let environment = WorkspaceEnvironment {
             working_directory: PathBuf::from("/workspace/project"),
             workspace_root: PathBuf::from("/workspace"),

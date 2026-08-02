@@ -79,6 +79,7 @@ impl Coordinator {
             &selected_tags.resources,
         );
 
+        let skip_profile_fallback = model_ref_override.is_some();
         let request = AgentRequest {
             agent_id,
             prompt,
@@ -124,6 +125,16 @@ impl Coordinator {
             .as_mut()
             .ok_or(CoordinatorError::RunNotStarted)?;
 
+        let model_fallback_chain = if skip_profile_fallback {
+            Vec::new()
+        } else {
+            self.config
+                .agent_model_fallbacks
+                .get(&profile.name)
+                .cloned()
+                .unwrap_or_default()
+        };
+
         schedule_agent_turn(
             self.clock.as_ref(),
             self.redactor.as_ref(),
@@ -140,6 +151,7 @@ impl Coordinator {
                 request,
                 request_id: request_id.clone(),
                 child_task,
+                model_fallback_chain,
             },
         )
         .await?;
@@ -245,6 +257,7 @@ pub(in crate::coord) struct ScheduleAgentTurnArgs {
     pub(in crate::coord) request: AgentRequest,
     pub(in crate::coord) request_id: String,
     pub(in crate::coord) child_task: Option<ChildTaskTurnState>,
+    pub(in crate::coord) model_fallback_chain: Vec<String>,
 }
 
 struct TurnStartPhaseResult {
@@ -289,7 +302,7 @@ pub(in crate::coord) async fn schedule_agent_turn<C, R>(
     job_tx: mpsc::Sender<Command>,
     run_state: &mut RunState,
     hook_runtime_config: HookRuntimeConfig,
-    compaction_config: CompactionRuntimeConfig,
+    compaction_config: CompactionSettings,
     provider_retry_config: ProviderRetryRuntimeConfig,
     args: ScheduleAgentTurnArgs,
 ) -> Result<(), CoordinatorError>
@@ -304,6 +317,7 @@ where
         request,
         request_id,
         child_task,
+        model_fallback_chain,
     } = args;
     let model = crate::agent::AgentModelRef::parse(&request.model_ref);
     let agent_id = request.agent_id.clone();
@@ -349,6 +363,7 @@ where
             queue_key,
             scheduler_queued: false,
             child_task,
+            model_fallback_chain,
         });
 
         return Ok(());
@@ -393,6 +408,7 @@ where
                     queue_key,
                     scheduler_queued: false,
                     child_task,
+                    model_fallback_chain,
                 },
             )
             .await?;
@@ -421,6 +437,7 @@ where
                 queue_key,
                 scheduler_queued: true,
                 child_task,
+                model_fallback_chain,
             });
         }
     }
@@ -586,7 +603,7 @@ pub(in crate::coord) async fn start_agent_turn_execution<C, R>(
     job_tx: mpsc::Sender<Command>,
     run_state: &mut RunState,
     hook_runtime_config: HookRuntimeConfig,
-    compaction_config: CompactionRuntimeConfig,
+    compaction_config: CompactionSettings,
     provider_retry_config: ProviderRetryRuntimeConfig,
     provider: Arc<dyn Provider>,
     tool_registry: Arc<ToolRegistry>,
@@ -681,6 +698,7 @@ where
                 if let Some(reason) = pre_prompt_critical_failure {
                     AgentTurnOutcome::failed(reason)
                 } else {
+                    let mut task = task;
                     loop {
                     let outcome = run_agent_turn_phase_loop(AgentTurnPhaseLoopRequest {
                         provider: Arc::clone(&provider),
@@ -695,14 +713,15 @@ where
 
                     match &outcome {
                         AgentTurnOutcome::Failed { reason, memory }
-                            if compaction_config.auto_retry_overflow
+                            if compaction_config.enabled
+                                && compaction_config.auto_retry_overflow
                                 && !overflow_retry_attempted
                                 && is_provider_context_overflow_reason(reason) =>
                         {
                             match request_agent_context_compaction(
                                 &job_tx,
                                 &task,
-                                "overflow_retry",
+                                "overflow",
                                 None,
                             )
                             .await
@@ -748,6 +767,32 @@ where
                                 memory: Some(memory),
                             };
                         }
+                        AgentTurnOutcome::Failed { reason, memory }
+                            if memory.as_ref().is_some_and(|m| {
+                                crate::auto_fallback::is_provider_failure_fallback_eligible(
+                                    &m.failure_stage,
+                                )
+                            }) =>
+                        {
+                            if let Some(next_model) =
+                                crate::auto_fallback::take_next_fallback_model_ref(
+                                    &mut task.model_fallback_chain,
+                                )
+                            {
+                                let failed_model = task.request.model_ref.clone();
+                                task.request.model_ref = next_model.clone();
+                                tracing::warn!(
+                                    agent_id = %task.agent_id,
+                                    request_id = %task.request_id,
+                                    failed_model = %failed_model,
+                                    next_model = %next_model,
+                                    error = %reason,
+                                    "provider failure; switching to model fallback"
+                                );
+                                continue;
+                            }
+                            break outcome;
+                        }
                         _ => break outcome,
                     }
                     }
@@ -767,9 +812,9 @@ where
                     },
                 };
                 warn_command_send_failure(job_tx.send(Command::AgentTurnFinished {
-                    task_id: task.task_id,
-                    agent_id: task.agent_id,
-                    request_id: task.request_id,
+                    task_id,
+                    agent_id,
+                    request_id,
                     outcome,
                 }).await, "agent_turn_finished");
             }

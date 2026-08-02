@@ -1,6 +1,9 @@
 use harness_tools::UnwrapOrAbort;
 #[tokio::test]
 async fn foreground_task_waits_for_child_agent_turn_after_child_tool_result() {
+    // arrange
+    // act
+    // assert
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     write_fixture(&workspace);
@@ -111,6 +114,9 @@ async fn foreground_task_waits_for_child_agent_turn_after_child_tool_result() {
 }
 #[tokio::test]
 async fn task_subagent_inherits_parent_turn_model_when_profile_model_is_defaulted() {
+    // arrange
+    // act
+    // assert
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let session_dir = workspace.join("sessions");
@@ -182,6 +188,9 @@ async fn task_subagent_inherits_parent_turn_model_when_profile_model_is_defaulte
 }
 #[tokio::test]
 async fn task_subagent_keeps_explicit_profile_model_over_parent_turn_model() {
+    // arrange
+    // act
+    // assert
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let session_dir = workspace.join("sessions");
@@ -253,6 +262,9 @@ async fn task_subagent_keeps_explicit_profile_model_over_parent_turn_model() {
 }
 #[tokio::test]
 async fn native_plan_exit_switches_to_build_agent_after_approval() {
+    // arrange
+    // act
+    // assert
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let session_dir = workspace.join("sessions");
@@ -330,6 +342,9 @@ async fn native_plan_exit_switches_to_build_agent_after_approval() {
 }
 #[tokio::test]
 async fn native_plan_exit_decline_leaves_plan_agent_active_without_spawning_build() {
+    // arrange
+    // act
+    // assert
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let session_dir = workspace.join("sessions");
@@ -396,6 +411,9 @@ async fn native_plan_exit_decline_leaves_plan_agent_active_without_spawning_buil
 }
 #[tokio::test]
 async fn native_plan_enter_switches_to_plan_agent_after_approval() {
+    // arrange
+    // act
+    // assert
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let session_dir = workspace.join("sessions");

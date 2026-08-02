@@ -9,8 +9,9 @@ Read `../../AGENTS.md` first. Rendering stays in `ui*.rs`; layout/theme math sta
 | Area | Location | Role |
 |------|----------|------|
 | Aggregate state | `../app.rs` | `AppState`, event ingestion, overlay stack, Deref onto `SessionProjection`. |
+| Local secondary UI | `secondary_surfaces.rs` | `SecondarySurfaceState`: status dialog open, selected section, focus, and former sidebar presentation toggles only — never event data. |
 | Lifecycle | `lifecycle.rs` | `Focus`, `ShellKind`, `ReviewSurface`, `UiIntent`, startup/post-run actions. |
-| Projection | `session_projection.rs`, `session_projection/` | Events → activities, pending permissions, compaction state, memory caps. |
+| Projection | `session_projection.rs`, `session_projection/` | Events → activities, pending permissions, compaction state, memory caps. Sole event-derived truth. |
 | Activity/tool rows | `activity.rs`, `tool_call.rs`, `tool_output.rs` | Task/tool/message state shown by transcript and sidebar renderers. |
 | Permissions/questions | `permissions.rs`, `permissions/`, `permission_prompt.rs`, `question_prompt.rs` | Pending → decision/confirm → resolved modal lifecycle. |
 | Session navigation | `session_stack.rs`, `session_navigation.rs`, `session_history.rs`, `lineage.rs` | Parent/child stack, saved sessions, lineage browser, fork/clone state. |

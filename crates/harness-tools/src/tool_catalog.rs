@@ -1,6 +1,6 @@
 use crate::UnwrapOrAbort;
 use harness_core::event::ActorKind;
-use harness_core::perm::{permission_kind_for_tool_call, PermissionKind};
+use harness_core::perm::{permission_kind_for_tool, PermissionKind};
 use harness_core::tool::{ToolCapability, ToolRegistry};
 use serde::Serialize;
 
@@ -45,8 +45,7 @@ pub fn native_tool_catalog_entries(registry: &ToolRegistry) -> Vec<NativeToolCat
             .collect::<Vec<_>>();
             let supervisor_only = actor_availability == [ActorKind::Supervisor];
             let description_summary = summarize_description(tool.description());
-            let permission_kind =
-                permission_kind_for_tool_call(&tool_id, capability).map(canonical_permission_name);
+            let permission_kind = permission_kind_for_tool(&tool_id).map(canonical_permission_name);
 
             Some(NativeToolCatalogEntry {
                 provider_function_name: mapping
@@ -85,6 +84,9 @@ pub fn canonical_permission_name(kind: PermissionKind) -> String {
         PermissionKind::WebSearch => "websearch",
         PermissionKind::CodeSearch => "codesearch",
         PermissionKind::Lsp => "lsp",
+        PermissionKind::Read => "read",
+        PermissionKind::ExternalDirectory => "external_directory",
+        PermissionKind::DoomLoop => "doom_loop",
     }
     .to_string()
 }
@@ -183,6 +185,9 @@ mod tests {
 
     #[test]
     fn catalog_includes_registered_tool_ids_with_permission_metadata() {
+        // arrange
+        // act
+        // assert
         let registry = coordinator_registry(ShellAllowlist::default());
         let catalog = native_tool_catalog_entries(&registry);
         let ids = catalog

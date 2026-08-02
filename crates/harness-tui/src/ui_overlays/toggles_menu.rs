@@ -48,7 +48,12 @@ pub(super) fn render_toggles_menu_list(
             }
             TogglesOverlayRow::Section(section) => {
                 frame.render_widget(
-                    Paragraph::new(command_palette_section_row(section, theme, row_area.width)),
+                    Paragraph::new(command_palette_section_row(
+                        section,
+                        theme,
+                        row_area.width,
+                        false,
+                    )),
                     row_area,
                 );
             }
@@ -109,7 +114,8 @@ fn toggle_menu_row(toggle: &crate::app::ToggleMenuRow, theme: &Theme, width: u16
     };
     let state = if toggle.enabled { "●" } else { "○" };
     let state_label = if toggle.enabled { "on" } else { "off" };
-    let label = format!(" {state} {}", sanitize_toggle_text(&toggle.label));
+    let prefix = "  ";
+    let label = format!("{prefix}{state} {}", sanitize_toggle_text(&toggle.label));
     let meta = format!(
         "{} · {state_label}",
         sanitize_toggle_text(&toggle.description)
@@ -168,26 +174,39 @@ pub(super) fn render_yolo_warning_popup(frame: &mut Frame, theme: &Theme, overla
         width,
         height,
     );
-    frame.render_widget(Clear, area);
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title(" Confirm YOLO mode ")
-        .style(
+    if !paint_command_palette_panel(frame, theme, area) {
+        return;
+    }
+    let surface = ui_chrome::command_palette_surface(theme);
+    let inner = inset_rect(area, 2.min(area.width.saturating_sub(1)), 1);
+    if inner.width == 0 || inner.height == 0 {
+        return;
+    }
+    let text = Text::from(vec![
+        Line::from(Span::styled(
+            "Confirm YOLO mode",
             Style::default()
                 .fg(theme.status.warning)
-                .bg(ui_chrome::command_palette_surface(theme)),
-        );
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-    let text = Text::from(vec![
-        Line::from("YOLO marks every menu entry on."),
-        Line::from("Coordinator permissions still apply."),
-        Line::from(""),
-        Line::from("Enter confirm   Esc cancel"),
+                .bg(surface)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(Span::styled(
+            "YOLO marks every menu entry on.",
+            Style::default().fg(theme.text.primary).bg(surface),
+        )),
+        Line::from(Span::styled(
+            "Coordinator permissions still apply.",
+            Style::default().fg(theme.text.secondary).bg(surface),
+        )),
+        Line::default(),
+        Line::from(Span::styled(
+            "Enter confirm   Esc cancel",
+            Style::default().fg(theme.text.secondary).bg(surface),
+        )),
     ]);
     frame.render_widget(
         Paragraph::new(text)
-            .style(Style::default().bg(ui_chrome::command_palette_surface(theme)))
+            .style(Style::default().bg(surface))
             .wrap(Wrap { trim: true }),
         inner,
     );

@@ -1,3 +1,8 @@
+#![allow(
+    deprecated,
+    reason = "deprecated compaction event variants kept for backward compatibility tests"
+)]
+
 use super::*;
 use crate::layout::FrameLayoutPlan;
 use crate::overlay::OverlayKind;
@@ -260,6 +265,91 @@ fn session_background_emits_intent_from_default_prompt_focus() {
     ));
 }
 
+#[test]
+fn session_background_demotes_selected_activity_child_handle() {
+    // arrange
+    // act
+    // assert
+    // Given: live parent with a selected activity that spawned a child task
+    let intents = Arc::new(Mutex::new(Vec::new()));
+    let captured_intents = Arc::clone(&intents);
+    let mut app = AppState::new_live(
+        None,
+        false,
+        Some(Arc::new(move |intent| {
+            captured_intents.lock().unwrap_or_abort().push(intent);
+        })),
+    );
+    app.apply_keybindings(default_navigation_keybindings());
+    app.ingest_event(agent_spawned(1, "parent", "build"));
+    app.ingest_event(envelope(
+        2,
+        "req_parent",
+        EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+            request_id: "req_parent".into(),
+            text: "Start parent work".to_string(),
+        }),
+    ));
+    app.ingest_event(provider_started(3, "req_parent", "default", "model-parent"));
+    app.ingest_event(child_task_requested(
+        4,
+        "req_parent",
+        "tc_child_demote",
+        "agent_child",
+        "req_child_demote",
+    ));
+    app.transcript_view.selected_activity_index = 0;
+    assert_eq!(
+        app.focused_demote_handle_id().as_deref(),
+        Some("req_child_demote")
+    );
+
+    // When: Ctrl+B from prompt focus
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char('b'),
+        KeyModifiers::CONTROL,
+    ));
+
+    // Then: single-handle demote intent is emitted
+    assert_eq!(
+        app.status_banner.as_deref(),
+        Some("foreground subagent demote requested (req_child_demote)")
+    );
+    assert!(matches!(
+        intents.lock().unwrap_or_abort().as_slice(),
+        [UiIntent::DemoteForegroundChildTask { handle_id }] if handle_id == "req_child_demote"
+    ));
+}
+
+#[test]
+fn provider_model_change_sets_fallback_status_banner() {
+    // arrange
+    // act
+    // assert
+    // Given: streaming activity for a request with model A
+    let mut app = AppState::new_live(None, false, None);
+    app.ingest_event(agent_spawned(1, "parent", "build"));
+    app.ingest_event(envelope(
+        2,
+        "req_turn",
+        EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+            request_id: "req_turn".into(),
+            text: "hello".to_string(),
+        }),
+    ));
+    app.ingest_event(provider_started(3, "req_turn", "default", "model-a"));
+    assert!(app.status_banner.is_none());
+
+    // When: same request restarts with a different model id (fallback switch)
+    app.ingest_event(provider_started(4, "req_turn", "default", "model-b"));
+
+    // Then: operator banner reports the model switch
+    assert_eq!(
+        app.status_banner.as_deref(),
+        Some("provider fallback: model-a → model-b")
+    );
+}
+
 #[cfg(test)]
 #[path = "tests/tool_disclosure_tests.rs"]
 mod tool_disclosure_tests;
@@ -292,8 +382,8 @@ delegate_test!(subagent_footer_scrollbar_drag_release_does_not_navigate => subag
 delegate_test!(subagent_footer_up_only_release_does_not_activate => subagent_footer_navigation_tests::subagent_footer_up_only_release_does_not_activate);
 
 #[cfg(test)]
-#[path = "tests/opencode_subagent_parity_apps_test.rs"]
-mod opencode_subagent_parity_apps;
+#[path = "tests/subagent_footer_parity_apps_test.rs"]
+mod subagent_footer_parity_apps;
 
 fn write_events_jsonl(run_dir: &Path, events: &[EventEnvelopeV1]) {
     fs::create_dir_all(run_dir).unwrap_or_abort();
@@ -320,7 +410,10 @@ fn transcript_selection_test_app_with_text(transcript_text: &str) -> AppState {
         user_timestamp: None,
         request_data: None,
         thinking_text: String::new(),
+        thinking_first_mono_ms: None,
+        thinking_last_mono_ms: None,
         transcript_text: transcript_text.to_string(),
+        first_delta_mono_ms: None,
         usage: None,
         cache_usage: None,
         error_message: None,
@@ -330,6 +423,7 @@ fn transcript_selection_test_app_with_text(transcript_text: &str) -> AppState {
         last_seq: 2,
         first_mono_ms: 1,
         last_mono_ms: 2,
+        request_started_mono_ms: None,
         revision: 0,
     }]);
     app.transcript_view.selected_activity_index = 0;
@@ -407,6 +501,7 @@ fn shell_card_selection_test_app() -> AppState {
 
 fn operator_sidebar_selection_test_app() -> AppState {
     let mut app = AppState::new_live(None, false, None);
+    app.live_details_drawer_open = true;
     app.ingest_event(envelope(
         1,
         "req_sidebar_copy",
@@ -480,8 +575,10 @@ fn operator_sidebar_text_bounds(app: &AppState, needle: &str) -> (u16, u16, u16)
         .draw(|frame| render_app(frame, app))
         .unwrap_or_abort();
     let buffer = terminal.backend().buffer();
-    let sidebar = FrameLayoutPlan::for_app(app, TEST_FRAME_AREA)
+    let plan = FrameLayoutPlan::for_app(app, TEST_FRAME_AREA);
+    let sidebar = plan
         .operator_sidebar
+        .or(plan.details_overlay)
         .unwrap_or_abort();
 
     for y in sidebar.y..sidebar.bottom() {
@@ -839,6 +936,10 @@ delegate_test!(question_modal_ignores_digits_past_visible_choices => permission_
 delegate_test!(question_modal_multi_custom_selection_toggles_saved_custom_answer => permission_modal_tests::question_modal_multi_custom_selection_toggles_saved_custom_answer);
 delegate_test!(question_modal_submit_allows_unanswered_questions_on_confirm => permission_modal_tests::question_modal_submit_allows_unanswered_questions_on_confirm);
 delegate_test!(permission_modal_allow_always_requests_durable_run_grant => permission_modal_tests::permission_modal_allow_always_requests_durable_run_grant);
+delegate_test!(always_approve_mode_auto_allows_subsequent_non_question_permission => permission_modal_tests::always_approve_mode_auto_allows_subsequent_non_question_permission);
+delegate_test!(always_approve_mode_appends_composer_badge_suffix => permission_modal_tests::always_approve_mode_appends_composer_badge_suffix);
+delegate_test!(permission_modal_ctrl_o_opens_always_approve_confirm => permission_modal_tests::permission_modal_ctrl_o_opens_always_approve_confirm);
+delegate_test!(permission_modal_allow_session_requests_session_grant => permission_modal_tests::permission_modal_allow_session_requests_session_grant);
 
 #[cfg(test)]
 #[path = "tests/model_context_tests.rs"]
@@ -851,11 +952,34 @@ delegate_test!(live_switch_model_labels_next_turn_only => model_context_tests::l
 delegate_test!(tab_cycles_build_and_plan_primary_agents => model_context_tests::tab_cycles_build_and_plan_primary_agents);
 delegate_test!(agent_cycle_preserves_user_selected_provider_model_across_profiles => model_context_tests::agent_cycle_preserves_user_selected_provider_model_across_profiles);
 delegate_test!(switching_agent_after_submit_keeps_existing_turn_footer_agent => model_context_tests::switching_agent_after_submit_keeps_existing_turn_footer_agent);
+delegate_test!(current_context_window_tokens_uses_runtime_context_after_model_switch => model_context_tests::current_context_window_tokens_uses_runtime_context_after_model_switch);
 
 #[cfg(test)]
 #[path = "tests/interaction_tests.rs"]
 mod interaction_tests;
 
+#[cfg(test)]
+#[path = "tests/secondary_surface_ownership_tests.rs"]
+mod secondary_surface_ownership_tests;
+
+delegate_test!(secondary_surface_toggle_does_not_mutate_session_projection => secondary_surface_ownership_tests::secondary_surface_toggle_does_not_mutate_session_projection);
+delegate_test!(replay_activities_unchanged_when_opening_closing_status_dialog => secondary_surface_ownership_tests::replay_activities_unchanged_when_opening_closing_status_dialog);
+delegate_test!(status_dialog_visibility_is_owned_by_secondary_surface_state => secondary_surface_ownership_tests::status_dialog_visibility_is_owned_by_secondary_surface_state);
+delegate_test!(status_dashboard_opens_via_action_and_palette_dispatch => secondary_surface_ownership_tests::status_dashboard_opens_via_action_and_palette_dispatch);
+delegate_test!(status_dashboard_opens_via_dashboard_slash => secondary_surface_ownership_tests::status_dashboard_opens_via_dashboard_slash);
+delegate_test!(status_dashboard_renders_empty_sections_from_app_state => secondary_surface_ownership_tests::status_dashboard_renders_empty_sections_from_app_state);
+delegate_test!(status_dashboard_renders_populated_sections_from_app_state => secondary_surface_ownership_tests::status_dashboard_renders_populated_sections_from_app_state);
+
+#[cfg(test)]
+#[path = "tests/render_purity_tests.rs"]
+mod render_purity_tests;
+
+delegate_test!(repeated_projection_and_render_leaves_intent_queue_empty_and_projection_unchanged => render_purity_tests::repeated_projection_and_render_leaves_intent_queue_empty_and_projection_unchanged);
+delegate_test!(repeated_replay_projection_and_render_is_side_effect_free => render_purity_tests::repeated_replay_projection_and_render_is_side_effect_free);
+delegate_test!(pure_view_model_adapters_are_deterministic => render_purity_tests::pure_view_model_adapters_are_deterministic);
+
+delegate_test!(space_on_transcript_focus_focuses_prompt_for_typing => interaction_tests::space_on_transcript_focus_focuses_prompt_for_typing);
+delegate_test!(letter_on_transcript_focus_focuses_prompt_and_inserts_char => interaction_tests::letter_on_transcript_focus_focuses_prompt_and_inserts_char);
 delegate_test!(focus_returns_after_palette_close => interaction_tests::focus_returns_after_palette_close);
 
 delegate_test!(details_drawer_toggles_without_stealing_transcript_state => interaction_tests::details_drawer_toggles_without_stealing_transcript_state);
@@ -864,11 +988,26 @@ delegate_test!(details_drawer_toggles_without_stealing_transcript_state => inter
 #[path = "tests/lifecycle_shell_tests.rs"]
 mod lifecycle_shell_tests;
 
-delegate_test!(config_backed_live_launch_starts_in_session_shell_without_details_drawer => lifecycle_shell_tests::config_backed_live_launch_starts_in_session_shell_without_details_drawer);
+#[cfg(test)]
+#[path = "tests/lifecycle_shell_part2_test.rs"]
+mod lifecycle_shell_part2_test;
+
+#[cfg(test)]
+#[path = "tests/lifecycle_shell_part3_test.rs"]
+mod lifecycle_shell_part3_test;
+
+delegate_test!(config_backed_live_launch_starts_in_session_shell_without_details_drawer => lifecycle_shell_part2_test::config_backed_live_launch_starts_in_session_shell_without_details_drawer);
 
 delegate_test!(mouse_wheel_scrolls_transcript_without_stealing_focus => interaction_tests::mouse_wheel_scrolls_transcript_without_stealing_focus);
 
 delegate_test!(transcript_navigation_keys_match_scroll_expectations => interaction_tests::transcript_navigation_keys_match_scroll_expectations);
+
+delegate_test!(shift_right_left_on_details_focus_navigates_user_turns => interaction_tests::shift_right_left_on_details_focus_navigates_user_turns);
+
+delegate_test!(page_up_down_with_prompt_focus_scrolls_transcript_without_clearing_draft => interaction_tests::page_up_down_with_prompt_focus_scrolls_transcript_without_clearing_draft);
+delegate_test!(ctrl_up_down_with_prompt_focus_scrolls_transcript_by_one_row => interaction_tests::ctrl_up_down_with_prompt_focus_scrolls_transcript_by_one_row);
+
+delegate_test!(shift_left_on_prompt_focus_still_selects_chars => interaction_tests::shift_left_on_prompt_focus_still_selects_chars);
 
 delegate_test!(mouse_wheel_scrolls_inspector_when_hovered => interaction_tests::mouse_wheel_scrolls_inspector_when_hovered);
 
@@ -909,21 +1048,29 @@ delegate_test!(transcript_selection_render_stays_aligned_after_large_reasoning_b
 delegate_test!(transcript_render_key_is_cached_across_selection_drag_path => transcript_selection_tests::transcript_render_key_is_cached_across_selection_drag_path);
 delegate_test!(transcript_render_key_reuses_cache_until_marked_dirty => transcript_selection_tests::transcript_render_key_reuses_cache_until_marked_dirty);
 
-delegate_test!(historical_task_completed_marks_turn_done_and_unblocks_first_resumed_submit => lifecycle_shell_tests::historical_task_completed_marks_turn_done_and_unblocks_first_resumed_submit);
+delegate_test!(historical_task_completed_marks_turn_done_and_unblocks_first_resumed_submit => lifecycle_shell_part2_test::historical_task_completed_marks_turn_done_and_unblocks_first_resumed_submit);
 
-delegate_test!(historical_terminal_events_stay_in_session_shell_after_live_finish => lifecycle_shell_tests::historical_terminal_events_stay_in_session_shell_after_live_finish);
+delegate_test!(historical_terminal_events_stay_in_session_shell_after_live_finish => lifecycle_shell_part2_test::historical_terminal_events_stay_in_session_shell_after_live_finish);
 
-delegate_test!(continued_quiescent_bootstrap_stays_in_session_shell_without_handoff => lifecycle_shell_tests::continued_quiescent_bootstrap_stays_in_session_shell_without_handoff);
+delegate_test!(continued_quiescent_bootstrap_stays_in_session_shell_without_handoff => lifecycle_shell_part2_test::continued_quiescent_bootstrap_stays_in_session_shell_without_handoff);
 
-delegate_test!(startup_prompt_enter_echoes_prompt_and_selects_new_session => lifecycle_shell_tests::startup_prompt_enter_echoes_prompt_and_selects_new_session);
+delegate_test!(startup_ctrl_w_empty_composer_requests_new_worktree_session => lifecycle_shell_part2_test::startup_ctrl_w_empty_composer_requests_new_worktree_session);
+delegate_test!(startup_ctrl_w_with_draft_still_deletes_word => lifecycle_shell_part2_test::startup_ctrl_w_with_draft_still_deletes_word);
+delegate_test!(palette_new_worktree_requests_new_worktree_session => lifecycle_shell_part2_test::palette_new_worktree_requests_new_worktree_session);
+delegate_test!(startup_prompt_enter_echoes_prompt_and_selects_new_session => lifecycle_shell_part2_test::startup_prompt_enter_echoes_prompt_and_selects_new_session);
 
-delegate_test!(slash_new_then_submit_bootstraps_fresh_session_instead_of_live_turn_submit => lifecycle_shell_tests::slash_new_then_submit_bootstraps_fresh_session_instead_of_live_turn_submit);
+delegate_test!(slash_new_then_submit_bootstraps_fresh_session_instead_of_live_turn_submit => lifecycle_shell_part2_test::slash_new_then_submit_bootstraps_fresh_session_instead_of_live_turn_submit);
 
 #[cfg(test)]
 #[path = "tests/activity_lifecycle_tests.rs"]
 mod activity_lifecycle_tests;
 
 delegate_test!(provider_reasoning_delta_populates_thinking_stream_without_overwriting_answer_text => activity_lifecycle_tests::provider_reasoning_delta_populates_thinking_stream_without_overwriting_answer_text);
+
+delegate_test!(provider_request_finished_total_tokens_populates_active_context_usage => activity_lifecycle_tests::provider_request_finished_total_tokens_populates_active_context_usage);
+delegate_test!(provider_request_finished_prompt_tokens_prefer_active_context => activity_lifecycle_tests::provider_request_finished_prompt_tokens_prefer_active_context);
+
+delegate_test!(provider_request_finished_without_usage_leaves_active_context_usage_none => activity_lifecycle_tests::provider_request_finished_without_usage_leaves_active_context_usage_none);
 
 delegate_test!(provider_request_finished_keeps_activity_streaming_until_turn_task_completes => activity_lifecycle_tests::provider_request_finished_keeps_activity_streaming_until_turn_task_completes);
 
@@ -953,9 +1100,13 @@ delegate_test!(replay_terminal_only_tool_cancellation_scope_does_not_fail_activi
 #[path = "tests/prompt_input_tests.rs"]
 mod prompt_input_tests;
 
+#[path = "tests/plan_view_tests.rs"]
+mod plan_view_tests;
 #[cfg(test)]
 #[path = "tests/prompt_stash_tests.rs"]
 mod prompt_stash_tests;
+#[path = "tests/settings_editor_tests.rs"]
+mod settings_editor_tests;
 
 delegate_test!(ctrl_j_inserts_newline_without_submitting => prompt_input_tests::ctrl_j_inserts_newline_without_submitting);
 delegate_test!(paste_multiline_text_inserts_newlines_without_submitting => prompt_input_tests::paste_multiline_text_inserts_newlines_without_submitting);
@@ -963,6 +1114,12 @@ delegate_test!(multiline_history_keys_move_cursor_before_recalling_history => pr
 delegate_test!(prompt_history_persists_and_restores_draft_after_recall => prompt_input_tests::prompt_history_persists_and_restores_draft_after_recall);
 delegate_test!(startup_auto_submit_persists_prompt_history_once => prompt_input_tests::startup_auto_submit_persists_prompt_history_once);
 delegate_test!(live_bootstrap_auto_submit_echoes_and_emits_first_prompt => prompt_input_tests::live_bootstrap_auto_submit_echoes_and_emits_first_prompt);
+delegate_test!(first_esc_on_nonempty_idle_prompt_shows_press_again_hint_without_clearing => prompt_input_tests::first_esc_on_nonempty_idle_prompt_shows_press_again_hint_without_clearing);
+delegate_test!(second_esc_within_800ms_clears_prompt_and_saves_history => prompt_input_tests::second_esc_within_800ms_clears_prompt_and_saves_history);
+delegate_test!(second_esc_after_800ms_restarts_clear_gesture_without_clearing => prompt_input_tests::second_esc_after_800ms_restarts_clear_gesture_without_clearing);
+delegate_test!(esc_while_turn_running_does_not_cancel_on_single_press => prompt_input_tests::esc_while_turn_running_does_not_cancel_on_single_press);
+delegate_test!(double_esc_while_turn_running_does_not_emit_interrupt => prompt_input_tests::double_esc_while_turn_running_does_not_emit_interrupt);
+delegate_test!(ctrl_c_clears_draft_then_cancels_running_turn => prompt_input_tests::ctrl_c_clears_draft_then_cancels_running_turn);
 delegate_test!(submit_prompt_while_turn_streams_echoes_as_queued_and_emits_intent => prompt_input_tests::submit_prompt_while_turn_streams_echoes_as_queued_and_emits_intent);
 
 delegate_test!(prompt_stash_push_clears_composer_and_persists_entry => prompt_stash_tests::prompt_stash_push_clears_composer_and_persists_entry);
@@ -973,6 +1130,33 @@ delegate_test!(prompt_stash_list_dialog_opens_and_closes => prompt_stash_tests::
 delegate_test!(prompt_stash_list_dialog_renders_entries => prompt_stash_tests::prompt_stash_list_dialog_renders_entries);
 delegate_test!(prompt_stash_list_delete_removes_selected_entry => prompt_stash_tests::prompt_stash_list_delete_removes_selected_entry);
 delegate_test!(prompt_stash_list_restore_loads_selected_entry_to_composer => prompt_stash_tests::prompt_stash_list_restore_loads_selected_entry_to_composer);
+delegate_test!(settings_editor_opens_and_lists_registry_rows => settings_editor_tests::settings_editor_opens_and_lists_registry_rows);
+delegate_test!(settings_editor_navigates_and_closes_on_esc => settings_editor_tests::settings_editor_navigates_and_closes_on_esc);
+delegate_test!(settings_slash_command_opens_settings_editor => settings_editor_tests::settings_slash_command_opens_settings_editor);
+delegate_test!(settings_editor_toggles_hashline_edit_persists_and_reloads => settings_editor_tests::settings_editor_toggles_hashline_edit_persists_and_reloads);
+delegate_test!(settings_editor_toggles_compaction_enabled_persists_and_reloads => settings_editor_tests::settings_editor_toggles_compaction_enabled_persists_and_reloads);
+delegate_test!(settings_editor_fails_closed_for_secret_setting => settings_editor_tests::settings_editor_fails_closed_for_secret_setting);
+delegate_test!(settings_editor_toggles_compaction_auto_retry_overflow_persists_and_reloads => settings_editor_tests::settings_editor_toggles_compaction_auto_retry_overflow_persists_and_reloads);
+delegate_test!(settings_editor_summary_counts_bound_writable_paths => settings_editor_tests::settings_editor_summary_counts_bound_writable_paths);
+delegate_test!(settings_editor_toggles_deterministic_enabled_persists_and_reloads => settings_editor_tests::settings_editor_toggles_deterministic_enabled_persists_and_reloads);
+delegate_test!(settings_editor_toggles_compaction_structured_summary_contract_persists_and_reloads => settings_editor_tests::settings_editor_toggles_compaction_structured_summary_contract_persists_and_reloads);
+delegate_test!(settings_editor_toggles_compaction_estimated_token_triggers_persists_and_reloads => settings_editor_tests::settings_editor_toggles_compaction_estimated_token_triggers_persists_and_reloads);
+delegate_test!(settings_editor_e2e_open_edit_persist_and_read_effective => settings_editor_tests::settings_editor_e2e_open_edit_persist_and_read_effective);
+delegate_test!(pending_settings_project_config_is_applied_on_new_live => settings_editor_tests::pending_settings_project_config_is_applied_on_new_live);
+delegate_test!(plan_view_opens_from_action => plan_view_tests::plan_view_opens_from_action);
+delegate_test!(plan_view_closes_on_esc => plan_view_tests::plan_view_closes_on_esc);
+delegate_test!(context_view_plan_palette_dispatch_opens_plan_view => plan_view_tests::context_view_plan_palette_dispatch_opens_plan_view);
+delegate_test!(session_feedback_maps_to_help_action => plan_view_tests::session_feedback_maps_to_help_action);
+delegate_test!(plan_view_enter_opens_existing_plan_preview => plan_view_tests::plan_view_enter_opens_existing_plan_preview);
+delegate_test!(plan_view_empty_state_enter_toasts_guidance => plan_view_tests::plan_view_empty_state_enter_toasts_guidance);
+delegate_test!(plan_view_y_key_reports_clipboard_failure_without_dropping_path_banner => plan_view_tests::plan_view_y_key_reports_clipboard_failure_without_dropping_path_banner);
+delegate_test!(plan_view_summary_counts_existing_and_preview => plan_view_tests::plan_view_summary_counts_existing_and_preview);
+delegate_test!(plan_view_c_key_reports_clipboard_failure_for_body => plan_view_tests::plan_view_c_key_reports_clipboard_failure_for_body);
+delegate_test!(plan_view_c_key_copies_plan_body => plan_view_tests::plan_view_c_key_copies_plan_body);
+delegate_test!(plan_view_d_key_deletes_selected_plan => plan_view_tests::plan_view_d_key_deletes_selected_plan);
+delegate_test!(plan_view_d_key_toasts_when_no_plans => plan_view_tests::plan_view_d_key_toasts_when_no_plans);
+delegate_test!(plan_view_rows_and_summary_surface_byte_len => plan_view_tests::plan_view_rows_and_summary_surface_byte_len);
+delegate_test!(plan_view_multi_plan_open_select_activate_product_path => plan_view_tests::plan_view_multi_plan_open_select_activate_product_path);
 delegate_test!(prompt_stash_persists_across_session_restart => prompt_stash_tests::prompt_stash_persists_across_session_restart);
 delegate_test!(queued_prompt_count_tracks_queued_activities => prompt_stash_tests::queued_prompt_count_tracks_queued_activities);
 delegate_test!(queued_prompt_indicator_renders_when_count_positive => prompt_stash_tests::queued_prompt_indicator_renders_when_count_positive);
@@ -1065,17 +1249,19 @@ delegate_test!(rename_slash_command_availability_matches_mode => slash_menu_test
 delegate_test!(rename_slash_command_emits_update_session_title_intent => slash_menu_tests::rename_slash_command_emits_update_session_title_intent);
 delegate_test!(rename_slash_empty_title_emits_error_toast => slash_menu_tests::rename_slash_empty_title_emits_error_toast);
 
-delegate_test!(startup_mode_uses_pending_launch_metadata => lifecycle_shell_tests::startup_mode_uses_pending_launch_metadata);
+delegate_test!(startup_mode_uses_pending_launch_metadata => lifecycle_shell_part2_test::startup_mode_uses_pending_launch_metadata);
 
-delegate_test!(lifecycle_shell_state_transitions => lifecycle_shell_tests::lifecycle_shell_state_transitions);
+delegate_test!(lifecycle_shell_state_transitions => lifecycle_shell_part2_test::lifecycle_shell_state_transitions);
 
-delegate_test!(default_shell_registry_exposes_home_and_session_shell_only => lifecycle_shell_tests::default_shell_registry_exposes_home_and_session_shell_only);
+delegate_test!(default_shell_registry_exposes_home_and_session_shell_only => lifecycle_shell_part2_test::default_shell_registry_exposes_home_and_session_shell_only);
+delegate_test!(seed_operator_host_probes_sets_binary_update_and_jujutsu => lifecycle_shell_tests::seed_operator_host_probes_sets_binary_update_and_jujutsu);
+delegate_test!(seed_operator_host_probes_binds_crash_scan_and_foreign_discover => lifecycle_shell_tests::seed_operator_host_probes_binds_crash_scan_and_foreign_discover);
 
-delegate_test!(post_run_handoff_ignores_completed_turns_without_terminal_event => lifecycle_shell_tests::post_run_handoff_ignores_completed_turns_without_terminal_event);
+delegate_test!(post_run_handoff_ignores_completed_turns_without_terminal_event => lifecycle_shell_part2_test::post_run_handoff_ignores_completed_turns_without_terminal_event);
 
 delegate_test!(tool_task_completion_does_not_copy_tool_output_into_activity_transcript => activity_lifecycle_tests::terminal_tool_task_completion_does_not_copy_tool_output_into_activity_transcript);
 
-delegate_test!(replay_mode_never_reports_lifecycle_shell_actions => lifecycle_shell_tests::replay_mode_never_reports_lifecycle_shell_actions);
+delegate_test!(replay_mode_never_reports_lifecycle_shell_actions => lifecycle_shell_part2_test::replay_mode_never_reports_lifecycle_shell_actions);
 
 #[cfg(test)]
 #[path = "tests/palette_parity_tests.rs"]
@@ -1089,6 +1275,8 @@ delegate_test!(palette_non_empty_filter_has_no_suggested_duplicates => palette_p
 delegate_test!(palette_filter_matches_title_not_id => palette_parity_tests::palette_filter_matches_title_not_id);
 delegate_test!(palette_filter_does_not_match_command_id => palette_parity_tests::palette_filter_does_not_match_command_id);
 delegate_test!(palette_no_results_shows_empty_message => palette_parity_tests::palette_no_results_shows_empty_message);
+delegate_test!(palette_enter_with_no_matches_closes_without_executing => palette_parity_tests::palette_enter_with_no_matches_closes_without_executing);
+delegate_test!(palette_reopen_after_escape_restores_clean_palette => palette_parity_tests::palette_reopen_after_escape_restores_clean_palette);
 delegate_test!(palette_navigation_wraps_around => palette_parity_tests::palette_navigation_wraps_around);
 delegate_test!(palette_home_end_navigation => palette_parity_tests::palette_home_end_navigation);
 delegate_test!(palette_page_navigation => palette_parity_tests::palette_page_navigation);
@@ -1200,11 +1388,14 @@ delegate_test!(palette_golden_ranking_stable_tie_order => palette_parity_tests::
 delegate_test!(palette_inventory_comprehensive_fields => palette_parity_tests::palette_inventory_comprehensive_fields);
 
 #[cfg(test)]
-#[path = "tests/opencode_subagent_parity_evidence_test.rs"]
-mod opencode_subagent_parity_evidence;
+#[path = "tests/subagent_footer_parity_evidence_test.rs"]
+mod subagent_footer_parity_evidence;
 
 #[test]
-#[ignore = "manual evidence export; set HARNESS_TUI_OPENCODE_SUBAGENT_EVIDENCE_DIR"]
-fn opencode_subagent_parity_evidence_export() {
-    opencode_subagent_parity_evidence::opencode_subagent_parity_evidence_export();
+#[ignore = "manual evidence export; set HARNESS_TUI_SUBAGENT_FOOTER_EVIDENCE_DIR"]
+fn subagent_footer_parity_evidence_export() {
+    // arrange
+    // act
+    // assert
+    subagent_footer_parity_evidence::subagent_footer_parity_evidence_export();
 }

@@ -18,7 +18,7 @@ Use Explore for local repository search, code-reading, dependency mapping, and c
 
 ## Do Not Use When
 
-Do not edit files, use bash/shell, call MCP/network tools, redelegate, or perform implementation work unless runtime policy explicitly changes.
+Do not edit files, redelegate via task, or perform implementation work unless runtime policy explicitly changes.
 
 ## Scope Guard
 
@@ -26,11 +26,11 @@ Answer the parent's specific knowledge gap. Avoid broad audits that do not affec
 
 ## Runtime-Enforced Permissions
 
-The shipped runtime denies edit, bash/shell, webfetch, websearch, codesearch, MCP write calls, and task redelegation for Explore; read-only tools and LSP-style inspection remain available by policy.
+The shipped runtime denies edit, codesearch, MCP write calls, and task redelegation for Explore. Read/search tools plus bash, webfetch, and websearch remain available by policy (ruleset-compatible explore defaults).
 
 ## Behavioral Guidance
 
-Use read-only tools only. Search first, then read the most relevant files, follow one layer of ownership or callers when needed, and prefer source-backed claims with paths over speculation.
+Prefer native read-only tools first; use bash for shell idioms when needed. Follow one layer of ownership or callers when needed, and prefer source-backed claims with paths over speculation.
 
 ## Operating Loop
 

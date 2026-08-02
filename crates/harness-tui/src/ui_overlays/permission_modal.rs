@@ -2,34 +2,9 @@
 use super::*;
 
 pub(in crate::ui) fn permission_modal_metadata_line(
-    permission: &crate::app::ActivePermissionView,
+    _permission: &crate::app::ActivePermissionView,
 ) -> String {
-    let subject = permission
-        .tool_label
-        .as_deref()
-        .map(|tool| format!("tool {tool}"))
-        .or_else(|| {
-            permission
-                .tool_call_id
-                .as_deref()
-                .map(|tool_call_id| format!("call {tool_call_id}"))
-        })
-        .unwrap_or_else(|| format!("perm {}", permission.permission_id));
-
-    format!(
-        "{} · scopes once=one-shot always=session · dig {} · timeout {}s countdown",
-        subject,
-        abbreviated_digest(&permission.request_digest),
-        permission.timeout_ms / 1_000,
-    )
-}
-
-fn abbreviated_digest(digest: &str) -> String {
-    let mut short = digest.chars().take(6).collect::<String>();
-    if digest.chars().count() > 6 {
-        short.push('…');
-    }
-    short
+    String::new()
 }
 
 pub(in crate::ui) fn permission_modal_icon(
@@ -76,8 +51,16 @@ pub(in crate::ui) fn permission_modal_subject_line(
         return "Answer operator question".to_string();
     }
 
+    if permission_target_path(permission).is_some() {
+        return String::new();
+    }
+
     let summary = permission.summary.trim();
-    if !summary.is_empty() && !summary.starts_with('{') && !summary.starts_with('[') {
+    if !summary.is_empty()
+        && !summary.starts_with('{')
+        && !summary.starts_with('[')
+        && !summary.starts_with("tool=")
+    {
         return summary.to_string();
     }
 
@@ -90,15 +73,111 @@ pub(in crate::ui) fn permission_modal_subject_line(
 
 pub(in crate::ui) fn permission_modal_title(
     permission: &crate::app::ActivePermissionView,
-) -> &'static str {
+) -> String {
     if permission.kind.eq_ignore_ascii_case("question")
         || permission.kind.eq_ignore_ascii_case("ask")
         || permission.kind.eq_ignore_ascii_case("ask_user")
     {
-        "Question required"
-    } else {
-        "Permission required"
+        return "Question required".to_string();
     }
+
+    let action = permission_action_label(permission);
+    match permission_target_path(permission) {
+        Some(path) => format!("Allow {action} to {path}?"),
+        None => format!("Allow {action}?"),
+    }
+}
+
+fn permission_action_label(permission: &crate::app::ActivePermissionView) -> &'static str {
+    let kind = permission.kind.as_str();
+    if kind.eq_ignore_ascii_case("edit")
+        || kind.eq_ignore_ascii_case("edit_fs")
+        || kind.eq_ignore_ascii_case("write")
+        || kind.eq_ignore_ascii_case("fs.write")
+    {
+        return "Edit";
+    }
+    if kind.eq_ignore_ascii_case("shell") || kind.eq_ignore_ascii_case("bash") {
+        return "Shell";
+    }
+    if kind.eq_ignore_ascii_case("read") || kind.eq_ignore_ascii_case("fs.read") {
+        return "Read";
+    }
+    if kind.eq_ignore_ascii_case("task") {
+        return "Task";
+    }
+    if kind.eq_ignore_ascii_case("webfetch") {
+        return "Webfetch";
+    }
+    if kind.eq_ignore_ascii_case("websearch") {
+        return "Websearch";
+    }
+    if kind.eq_ignore_ascii_case("codesearch") {
+        return "Codesearch";
+    }
+    if kind.eq_ignore_ascii_case("lsp") {
+        return "LSP";
+    }
+    "Permission"
+}
+
+fn permission_target_path(permission: &crate::app::ActivePermissionView) -> Option<String> {
+    let summary = permission.summary.trim();
+    if summary.is_empty() {
+        return None;
+    }
+
+    if let Some(path) = extract_json_string_field(summary, "filePath")
+        .or_else(|| extract_json_string_field(summary, "path"))
+    {
+        return Some(path);
+    }
+
+    for marker in [" to ", " path ", " file "] {
+        if let Some(idx) = summary.rfind(marker) {
+            let tail = summary[idx + marker.len()..].trim();
+            let path = tail
+                .trim_matches(|c: char| c == '?' || c == '.' || c == '"' || c == '\'')
+                .trim();
+            if !path.is_empty()
+                && !path.contains('=')
+                && path
+                    .chars()
+                    .all(|c| !c.is_whitespace() || c == '/' || c == '\\')
+                && path.len() < 240
+            {
+                return Some(path.to_string());
+            }
+        }
+    }
+
+    None
+}
+
+fn extract_json_string_field(source: &str, field: &str) -> Option<String> {
+    let key = format!("\"{field}\"");
+    let key_pos = source.find(&key)?;
+    let after_key = &source[key_pos + key.len()..];
+    let colon = after_key.find(':')?;
+    let mut rest = after_key[colon + 1..].trim_start();
+    if !rest.starts_with('"') {
+        return None;
+    }
+    rest = &rest[1..];
+    let mut out = String::new();
+    let mut chars = rest.chars();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '\\' => {
+                if let Some(escaped) = chars.next() {
+                    out.push(escaped);
+                }
+            }
+            '"' => return Some(out),
+            _ => out.push(ch),
+        }
+    }
+    None
 }
 
 pub(in crate::ui) fn permission_modal_guidance(
@@ -113,7 +192,7 @@ pub(in crate::ui) fn permission_modal_guidance(
     {
         "Safest next step: deny. Answer only after review."
     } else {
-        "Safest next step: deny. Allow once only after review."
+        "Safest next step: deny. Approve only after review."
     }
 }
 
@@ -212,7 +291,10 @@ pub(in crate::ui) fn question_permission_actions_text(
     prompts: &[crate::app::QuestionPromptView],
     theme: &Theme,
     surface: Color,
+    content_width: u16,
 ) -> Text<'static> {
+    use crate::keybindings::Action;
+
     let primary_style = Style::default().fg(theme.text.primary).bg(surface);
     let metadata_style = Style::default().fg(theme.text.secondary).bg(surface);
     let single = prompts.len() == 1 && !prompts[0].multiple;
@@ -229,20 +311,50 @@ pub(in crate::ui) fn question_permission_actions_text(
     } else {
         "confirm"
     };
+    // Reference question state packs "y copy"; prefer bare `y` when bound.
+    let bindings = app.keymap.get_binding_strs(Action::CopyMessage);
+    let copy_key = if bindings.iter().any(|binding| binding == "y") {
+        "y".to_string()
+    } else {
+        app.keymap.get_binding_str(Action::CopyMessage)
+    };
+    let copy_hint = if copy_key == "-" {
+        "y copy".to_string()
+    } else {
+        format!("{copy_key} copy")
+    };
 
-    let mut spans = Vec::new();
+    let mut left = String::new();
     if !single {
-        spans.push(Span::styled("⇆", primary_style));
-        spans.push(Span::styled(" tab  ", metadata_style));
+        left.push_str("tab switch · ");
     }
     if !confirm {
-        spans.push(Span::styled("↑↓", primary_style));
-        spans.push(Span::styled(" select  ", metadata_style));
+        left.push_str("↑/↓ navigate · ");
+        left.push_str(&copy_hint);
+    } else if left.ends_with(" · ") {
+        left.truncate(left.len().saturating_sub(3));
     }
-    spans.push(Span::styled("enter", primary_style));
-    spans.push(Span::styled(format!(" {submit_label}  "), metadata_style));
-    spans.push(Span::styled("esc", primary_style));
-    spans.push(Span::styled(" dismiss", metadata_style));
+    let right = format!("Enter:{submit_label}");
+    let left_width = Line::from(left.as_str()).width();
+    let right_width = Line::from(right.as_str()).width();
+    let target = usize::from(content_width);
+    let gap = target
+        .saturating_sub(left_width)
+        .saturating_sub(right_width)
+        .max(if left.is_empty() || right.is_empty() {
+            0
+        } else {
+            1
+        });
+
+    let mut spans = Vec::new();
+    if !left.is_empty() {
+        spans.push(Span::styled(left, primary_style));
+    }
+    if gap > 0 {
+        spans.push(Span::styled(" ".repeat(gap), metadata_style));
+    }
+    spans.push(Span::styled(right, primary_style));
     Text::from(Line::from(spans))
 }
 
@@ -348,45 +460,66 @@ pub(in crate::ui) fn question_permission_body_text(
         },
         primary_style,
     )]));
+    // Waiting-state layout: two blank rows between title and options.
     lines.push(Line::default());
+    lines.push(Line::default());
+
+    // Label-column packing: pad option labels so descriptions share a column
+    // (e.g. "Red    Choose red" / "Green  Choose green").
+    let label_column_width = prompt
+        .options
+        .iter()
+        .map(|option| display_width(&option.label))
+        .max()
+        .unwrap_or(0);
 
     for (index, option) in prompt.options.iter().enumerate() {
         let picked = current_answers.iter().any(|value| value == &option.label);
         let active = index == selected;
-        let mut row = vec![Span::styled(
-            format!("{}.", index + 1),
-            if active {
-                active_number_style
+        let marker = if prompt.multiple {
+            if picked {
+                "[✓]"
             } else {
-                muted_style
-            },
+                "[ ]"
+            }
+        } else if picked {
+            // Unanswered options use (○); cursor focus uses active styles only.
+            "●"
+        } else {
+            "○"
+        };
+        let row_style = if active {
+            active_label_style
+        } else if picked {
+            success_style
+        } else {
+            primary_style
+        };
+        let number_style = if active {
+            active_number_style
+        } else if picked {
+            success_style
+        } else {
+            muted_style
+        };
+        let mut spans = vec![Span::styled(
+            format!("{} ({marker}) ", index + 1),
+            number_style.bg(if active { active_surface } else { surface }),
         )];
-        row.push(Span::styled(
-            " ",
-            Style::default().bg(if active { active_surface } else { surface }),
-        ));
-        row.push(Span::styled(
-            if prompt.multiple {
-                format!("[{}] {}", if picked { '✓' } else { ' ' }, option.label)
-            } else {
-                option.label.clone()
-            },
-            if active {
-                active_label_style
-            } else if prompt.multiple && picked {
-                success_style
-            } else {
-                primary_style
-            },
-        ));
-        if !prompt.multiple {
-            row.push(Span::styled(if picked { "✓" } else { "" }, success_style));
+        let label = if option.description.is_empty() {
+            option.label.clone()
+        } else {
+            let pad = label_column_width.saturating_sub(display_width(&option.label));
+            format!("{}{}", option.label, " ".repeat(pad))
+        };
+        spans.push(Span::styled(label, row_style));
+        if !option.description.is_empty() {
+            spans.push(Span::styled(
+                format!("  {}", option.description),
+                muted_style,
+            ));
         }
-        lines.push(Line::from(row));
-        lines.push(Line::from(vec![Span::styled(
-            format!("   {}", option.description),
-            muted_style,
-        )]));
+        lines.push(Line::from(spans));
     }
 
     if prompt.custom {
@@ -396,49 +529,52 @@ pub(in crate::ui) fn question_permission_body_text(
         let picked =
             !custom_value.is_empty() && current_answers.iter().any(|value| value == custom_value);
         let active = selected == prompt.options.len();
-        let mut row = vec![Span::styled(
-            format!("{}.", prompt.options.len() + 1),
-            if active {
-                active_number_style
+        let marker = if prompt.multiple {
+            if picked {
+                "[✓]"
             } else {
-                muted_style
-            },
-        )];
-        row.push(Span::styled(
-            " ",
-            Style::default().bg(if active { active_surface } else { surface }),
-        ));
-        row.push(Span::styled(
-            if prompt.multiple {
-                format!("[{}] Type your own answer", if picked { '✓' } else { ' ' })
-            } else {
-                "Type your own answer".to_string()
-            },
-            if active {
-                active_label_style
-            } else if prompt.multiple && picked {
-                success_style
-            } else {
-                primary_style
-            },
-        ));
-        if !prompt.multiple {
-            row.push(Span::styled(if picked { "✓" } else { "" }, success_style));
-        }
-        lines.push(Line::from(row));
+                "[ ]"
+            }
+        } else if picked {
+            // Unanswered options use (○); cursor focus uses active styles only.
+            "●"
+        } else {
+            "○"
+        };
+        let row_style = if active {
+            active_label_style
+        } else if picked {
+            success_style
+        } else {
+            primary_style
+        };
+        let number_style = if active {
+            active_number_style
+        } else if picked {
+            success_style
+        } else {
+            muted_style
+        };
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("z ({marker}) "),
+                number_style.bg(if active { active_surface } else { surface }),
+            ),
+            Span::styled("Type your answer here".to_string(), row_style),
+        ]));
 
         let editing = app.question_prompt_editing(&permission.permission_id) && active;
         if editing {
             let preview = app.question_answer_preview(&permission.permission_id);
             let (text, style) = if preview == "█" {
-                ("Type your own answer".to_string(), muted_style)
+                ("❯ ".to_string(), muted_style)
             } else {
-                (preview, primary_style)
+                (format!("❯ {preview}"), primary_style)
             };
-            lines.push(Line::from(vec![Span::styled(format!("   {text}"), style)]));
+            lines.push(Line::from(vec![Span::styled(format!("    {text}"), style)]));
         } else if !custom_value.is_empty() {
             lines.push(Line::from(vec![Span::styled(
-                format!("   {custom_value}"),
+                format!("    ❯ {custom_value}"),
                 muted_style,
             )]));
         }

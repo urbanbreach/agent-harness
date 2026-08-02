@@ -195,11 +195,11 @@ impl Provider for CapturingInteractiveProvider {
                     ProviderStreamEvent::Start,
                     ProviderStreamEvent::TextDelta("Hello".to_string()),
                     ProviderStreamEvent::Done {
-                        usage: CompletionUsage {
+                        usage: Some(CompletionUsage {
                             prompt_tokens: 5,
                             completion_tokens: 1,
                             total_tokens: 6,
-                        },
+                        }),
                     },
                 ],
             )]));

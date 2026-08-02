@@ -154,6 +154,7 @@ fn queued_agent_turn_fixture(
         },
         scheduler_queued,
         child_task: None,
+        model_fallback_chain: Vec::new(),
     }
 }
 

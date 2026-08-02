@@ -19,9 +19,31 @@ use super::workflow::{
     InteractiveWorkflow,
 };
 
+/// Derive the workspace root from the first `RunStarted` event in a replayed
+/// event stream.
+///
+/// Returns `None` when no `RunStarted` event is present or the recorded
+/// `workspace_root` is empty. This is the sole authority for the replay
+/// workspace root — it must not fall back to `current_dir()` for write-capable
+/// paths (contract §17, §18).
+pub fn replay_workspace_root_from_events(events: &[EventEnvelopeV1]) -> Option<PathBuf> {
+    events.iter().find_map(|event| match &event.payload {
+        EventV1::RunStarted(data) => {
+            let root = data.workspace_root.trim();
+            if root.is_empty() {
+                None
+            } else {
+                Some(PathBuf::from(root))
+            }
+        }
+        _ => None,
+    })
+}
+
 pub(super) fn execute_replay_mode(
     run_dir: &Path,
     exit_on_finish: bool,
+    skip_alternate_screen: bool,
     stderr: &mut dyn Write,
 ) -> ExitCode {
     let events = match load_events_from_run_dir(run_dir) {
@@ -48,6 +70,7 @@ pub(super) fn execute_replay_mode(
         keybindings: None,
         toggles: None,
         preserve_terminal_on_exit: false,
+        skip_alternate_screen,
     }) {
         let _ = writeln!(stderr, "TUI error: {err}");
         return ExitCode::from(1);
@@ -59,8 +82,10 @@ pub(super) fn execute_replay_mode(
 pub(super) async fn run_replay_tui(
     run_dir: PathBuf,
     exit_on_finish: bool,
+    skip_alternate_screen: bool,
 ) -> Result<InteractiveWorkflow, String> {
     let events = load_events_from_run_dir(&run_dir).map_err(|err| err.to_string())?;
+    // Replay workspace authority is derived exclusively from RunStarted events during ingestion.
     set_pending_replay_launch_metadata(Some(replay_launch_metadata_for_run(&run_dir, &events)));
     let selected_workflow = Arc::new(Mutex::new(None::<InteractiveWorkflow>));
     let selected_workflow_sink = Arc::clone(&selected_workflow);
@@ -78,6 +103,7 @@ pub(super) async fn run_replay_tui(
             keybindings: None,
             toggles: None,
             preserve_terminal_on_exit: true,
+            skip_alternate_screen,
         })
     })
     .await

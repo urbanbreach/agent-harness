@@ -328,7 +328,7 @@ where
                         request_id: request_id.clone().into(),
                         finish_reason: "done".to_string(),
                         output_digest: Some(digest12(output.as_bytes())),
-                        usage: Some(usage),
+                        usage,
                         metadata: Some(provider_finished_metadata(
                             &request_id,
                             &request_id,
@@ -355,7 +355,7 @@ where
                         request_id: request_id.clone().into(),
                         finish_reason: "done".to_string(),
                         output_digest: Some(digest12(output.as_bytes())),
-                        usage: Some(usage),
+                        usage,
                         metadata: Some(provider_finished_metadata(
                             &request_id,
                             &request_id,
@@ -566,7 +566,7 @@ where
                 usage: finished_usage,
             } => {
                 stop_reason = "done".to_string();
-                usage = Some(finished_usage);
+                usage = finished_usage;
                 break;
             }
             ProviderStreamEvent::DoneWithMetadata {
@@ -574,7 +574,7 @@ where
                 metadata,
             } => {
                 stop_reason = "done".to_string();
-                usage = Some(finished_usage);
+                usage = finished_usage;
                 finished_provider_metadata = metadata;
                 break;
             }

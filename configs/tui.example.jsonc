@@ -7,7 +7,6 @@
     "resume_session": "<leader>l",
     "switch_model": "<leader>m",
     "open_status_dialog": "<leader>s",
-    "toggle_operator_sidebar": "<leader>b, 2",
     "open_lineage_browser": "<leader>g",
     "compact_session": "<leader>c",
     "agent_cycle": "tab",

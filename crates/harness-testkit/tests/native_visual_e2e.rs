@@ -4,11 +4,17 @@ use std::path::PathBuf;
 #[test]
 #[ignore = "requires HARNESS_NATIVE_VISUAL=1; runs inside a managed nested KWin/XWayland session"]
 fn native_visual_ghostty_smoke() {
+    // arrange
+    // act
+    // assert
     assert_native_visual_env().unwrap_or_abort();
 }
 
 #[test]
 fn native_visual_fails_closed_without_env() {
+    // arrange
+    // act
+    // assert
     if std::env::var("HARNESS_NATIVE_VISUAL").as_deref() == Ok("1") {
         return;
     }
@@ -17,6 +23,9 @@ fn native_visual_fails_closed_without_env() {
 
 #[test]
 fn native_visual_summary_preserves_grid_metadata() {
+    // arrange
+    // act
+    // assert
     let metadata = native_visual_metadata("ghostty", 160, 48);
     assert_eq!(metadata.backend, "ghostty");
     assert_eq!(metadata.cols, 160);

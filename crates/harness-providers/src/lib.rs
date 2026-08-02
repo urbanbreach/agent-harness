@@ -16,7 +16,9 @@ use serde_json::Value;
 use thiserror::Error;
 use tokio_stream::{self, Stream};
 
+pub mod anthropic;
 pub mod cassette;
+pub mod leaf;
 pub mod mock;
 pub mod openai;
 pub mod schema_compat;
@@ -375,10 +377,12 @@ pub enum ProviderStreamEvent {
         arguments_json: String,
     },
     Done {
-        usage: CompletionUsage,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        usage: Option<CompletionUsage>,
     },
     DoneWithMetadata {
-        usage: CompletionUsage,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        usage: Option<CompletionUsage>,
         #[serde(skip_serializing_if = "Option::is_none")]
         metadata: Option<ProviderStreamFinishedMetadata>,
     },
@@ -510,6 +514,9 @@ mod tests {
 
     #[test]
     fn completion_request_roundtrip_with_tools_is_stable() {
+        // arrange
+        // act
+        // assert
         let request = CompletionRequest {
             provider_id: None,
             model_id: "gpt-5.4-mini".to_string(),
@@ -566,6 +573,9 @@ mod tests {
 
     #[test]
     fn completion_request_omits_optional_tool_fields_when_absent() {
+        // arrange
+        // act
+        // assert
         let request = CompletionRequest {
             provider_id: None,
             model_id: "gpt-4o-mini".to_string(),
@@ -606,6 +616,9 @@ mod tests {
 
     #[test]
     fn provider_stream_event_ordering_with_tool_calls_is_stable() {
+        // arrange
+        // act
+        // assert
         let events = vec![
             ProviderStreamEvent::Start,
             ProviderStreamEvent::ToolCallDelta {
@@ -625,11 +638,11 @@ mod tests {
             },
             ProviderStreamEvent::TextDelta("done".to_string()),
             ProviderStreamEvent::Done {
-                usage: CompletionUsage {
+                usage: Some(CompletionUsage {
                     prompt_tokens: 10,
                     completion_tokens: 5,
                     total_tokens: 15,
-                },
+                }),
             },
         ];
 

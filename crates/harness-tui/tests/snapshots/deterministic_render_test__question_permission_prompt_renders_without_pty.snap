@@ -2,8 +2,8 @@
 source: crates/harness-tui/tests/deterministic_render_test.rs
 expression: rendered.as_str()
 ---
-            run run_fixture · default/local · -                                                     
                                                                                                     
+             test-workspace /workspace/agent-harness                                               
                                                                                                     
                                                                                                     
                                                                                                     
@@ -19,14 +19,13 @@ expression: rendered.as_str()
             ┃                                                                                       
             ┃  Pick one                                                                             
             ┃                                                                                       
-            ┃  1. A                                                                                 
-            ┃     Option A                                                                          
-            ┃  2. Type your own answer                                                              
+            ┃                                                                                       
+            ┃  1 (○) A  Option A                                                                    
+            ┃  z (○) Type your answer here                                                          
+            ┃                                                                                       
+            ┃  ↑/↓ navigate · y copy                                       Enter:submit             
             ┃                                                                                       
             ┃                                                                                       
             ┃                                                                                       
-            ┃                                                                                       
-            ┃                                                                                       
-            ┃                                                                                       
-            ┃  ↑↓ select  enter submit  esc dismiss                                                 
-            ┃
+                                                                                                    
+            Esc:unselect  │  Tab:scrollback  │  Ctrl+c:dismiss

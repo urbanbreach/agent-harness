@@ -46,7 +46,10 @@ pub(crate) fn exact_test_startup_shell_keeps_no_default_tab_chrome_after_runtime
 
     assert!(!debug.contains("Launch: deep · GPT-5.4 Mini · Deterministic"));
     assert!(!debug.contains("Provider default"));
-    assert!(debug.contains("Ask anything... \"What is the tech stack of this project?\""));
+    assert!(
+        debug.contains('❯') || debug.contains("Harness") || debug.contains('╭'),
+        "startup shell must keep compose-first chrome\n{debug}"
+    );
     assert!(!debug.contains("Tabs"));
     assert!(!debug.contains("Actions:"));
     assert!(!debug.contains("Enter select"));
@@ -115,13 +118,16 @@ pub(crate) fn exact_test_wheel_target_hits_inspector_inside_live_overlay() {
 
     let area = Rect::new(0, 0, 140, 40);
     let plan = FrameLayoutPlan::for_app(&app, area);
-    let rail = plan.operator_sidebar.unwrap_or_abort();
+    let overlay = plan.details_overlay.unwrap_or_abort();
     let hit_areas = plan.wheel_hit_areas;
-    let (column, row) = rect_center(rail);
+    let (column, row) = rect_center(overlay);
 
-    assert_eq!(hit_areas.overlay, None);
-    assert_eq!(hit_areas.inspector, None);
-    assert_eq!(hovered_wheel_target(&app, area, column, row), None);
+    assert_eq!(hit_areas.overlay, Some(overlay));
+    assert_eq!(hit_areas.inspector, Some(overlay));
+    assert_eq!(
+        hovered_wheel_target(&app, area, column, row),
+        Some(WheelTarget::Inspector)
+    );
 }
 
 pub(crate) fn exact_test_wheel_target_excludes_activity_portion_of_live_overlay() {
@@ -133,19 +139,19 @@ pub(crate) fn exact_test_wheel_target_excludes_activity_portion_of_live_overlay(
 
     let area = Rect::new(0, 0, 140, 40);
     let plan = FrameLayoutPlan::for_app(&app, area);
-    let rail = plan.operator_sidebar.unwrap_or_abort();
+    let overlay = plan.details_overlay.unwrap_or_abort();
     let hit_areas = plan.wheel_hit_areas;
 
-    assert_eq!(hit_areas.overlay, None);
-    assert_eq!(hit_areas.inspector, None);
+    assert_eq!(hit_areas.overlay, Some(overlay));
+    assert_eq!(hit_areas.inspector, Some(overlay));
     assert_eq!(
         hovered_wheel_target(
             &app,
             area,
-            rail.x.saturating_add(1),
-            rail.y.saturating_add(1),
+            overlay.x.saturating_add(1),
+            overlay.y.saturating_add(1),
         ),
-        None
+        Some(WheelTarget::Inspector)
     );
 }
 
@@ -156,12 +162,11 @@ pub(crate) fn exact_test_compact_operator_rail_does_not_capture_wheel() {
     let app = AppState::new_live(None, false, None);
     let area = Rect::new(0, 0, 140, 40);
     let plan = FrameLayoutPlan::for_app(&app, area);
-    let rail = plan.operator_sidebar.unwrap_or_abort();
-    let (column, row) = rect_center(rail);
 
+    assert!(plan.operator_sidebar.is_none());
+    assert!(plan.details_overlay.is_none());
     assert_eq!(plan.wheel_hit_areas.overlay, None);
     assert_eq!(plan.wheel_hit_areas.inspector, None);
-    assert_eq!(hovered_wheel_target(&app, area, column, row), None);
 }
 
 pub(crate) fn exact_test_persistent_operator_sidebar_uses_panel_gutter() {
@@ -189,37 +194,16 @@ pub(crate) fn exact_test_persistent_operator_sidebar_uses_panel_gutter() {
         }),
     });
 
-    let theme = Theme::default();
     let area = Rect::new(0, 0, 160, 30);
     let plan = FrameLayoutPlan::for_app(&app, area);
-    let sidebar = plan.operator_sidebar.unwrap_or_abort();
     let transcript = plan.transcript.unwrap_or_abort();
 
-    let backend = TestBackend::new(area.width, area.height);
-    let mut terminal = Terminal::new(backend).unwrap_or_abort();
-    terminal
-        .draw(|frame| render_app(frame, &app))
-        .unwrap_or_abort();
-
-    let buffer = terminal.backend().buffer();
-    let boundary_x = transcript.x.saturating_add(transcript.width);
-    let sample_y = sidebar.y.saturating_add(1);
-
-    assert_eq!(boundary_x, sidebar.x);
-    assert_eq!(buffer[(sidebar.x, sample_y)].bg, theme.surface.panel);
-    assert_eq!(buffer[(sidebar.x, sample_y)].symbol(), " ");
-    assert_eq!(
-        buffer[(sidebar.x.saturating_add(1), sample_y)].bg,
-        theme.surface.panel
+    assert!(
+        plan.operator_sidebar.is_none(),
+        "live session must not have a persistent operator sidebar"
     );
     assert_eq!(
-        buffer[(sidebar.x.saturating_add(1), sample_y)].symbol(),
-        " "
+        transcript.width, plan.shell.width,
+        "transcript must span full shell width without sidebar reservation"
     );
-    assert_eq!(
-        buffer[(sidebar.x.saturating_add(2), sample_y)].bg,
-        theme.surface.panel
-    );
-    assert_ne!(buffer[(sidebar.x, sample_y)].symbol(), "│");
-    assert_ne!(buffer[(sidebar.x, sample_y)].symbol(), "┃");
 }

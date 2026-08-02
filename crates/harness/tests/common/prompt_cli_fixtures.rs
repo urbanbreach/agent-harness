@@ -118,7 +118,7 @@ fn text_events(text: &str) -> Vec<ProviderStreamEvent> {
         ProviderStreamEvent::Start,
         ProviderStreamEvent::TextDelta(text.to_string()),
         ProviderStreamEvent::Done {
-            usage: usage(5, 1),
+            usage: Some(usage(5, 1)),
         },
     ]
 }
@@ -129,7 +129,7 @@ fn reasoning_events() -> Vec<ProviderStreamEvent> {
         ProviderStreamEvent::ReasoningDelta("Drafting a careful answer.".to_string()),
         ProviderStreamEvent::TextDelta("Hello".to_string()),
         ProviderStreamEvent::TextDelta(" world".to_string()),
-        ProviderStreamEvent::Done { usage: usage(5, 2) },
+        ProviderStreamEvent::Done { usage: Some(usage(5, 2)) },
     ]
 }
 
@@ -139,7 +139,7 @@ fn late_reasoning_duplicate_body_events() -> Vec<ProviderStreamEvent> {
         ProviderStreamEvent::TextDelta("Hi! How can I help?".to_string()),
         ProviderStreamEvent::ReasoningDelta("Responding to greetings".to_string()),
         ProviderStreamEvent::TextDelta("\nHi! How can I help? ".to_string()),
-        ProviderStreamEvent::Done { usage: usage(5, 2) },
+        ProviderStreamEvent::Done { usage: Some(usage(5, 2)) },
     ]
 }
 
@@ -149,7 +149,7 @@ fn repeated_body_chunks_before_reasoning_events() -> Vec<ProviderStreamEvent> {
         ProviderStreamEvent::TextDelta("ha".to_string()),
         ProviderStreamEvent::TextDelta(" ha".to_string()),
         ProviderStreamEvent::ReasoningDelta("Done planning.".to_string()),
-        ProviderStreamEvent::Done { usage: usage(5, 2) },
+        ProviderStreamEvent::Done { usage: Some(usage(5, 2)) },
     ]
 }
 
@@ -165,7 +165,7 @@ fn tool_call_events(
             function_name: function_name.to_string(),
             arguments_json: arguments.to_string(),
         },
-        ProviderStreamEvent::Done { usage: usage(12, 3) },
+        ProviderStreamEvent::Done { usage: Some(usage(12, 3)) },
     ]
 }
 

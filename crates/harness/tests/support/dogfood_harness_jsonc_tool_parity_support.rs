@@ -166,7 +166,7 @@ fn tool_def<'a>(request: &'a CompletionRequest, tool_id: &str) -> Option<&'a Too
 fn tool_call_events(
     tool_call_id: &str,
     function_name: &str,
-    arguments: Value,
+    arguments: serde_json::Value,
 ) -> Vec<ProviderStreamEvent> {
     vec![
         ProviderStreamEvent::Start,
@@ -175,7 +175,9 @@ fn tool_call_events(
             function_name: function_name.to_string(),
             arguments_json: arguments.to_string(),
         },
-        ProviderStreamEvent::Done { usage: usage() },
+        ProviderStreamEvent::Done {
+            usage: Some(usage()),
+        },
     ]
 }
 
@@ -183,7 +185,9 @@ fn text_events(text: &str) -> Vec<ProviderStreamEvent> {
     vec![
         ProviderStreamEvent::Start,
         ProviderStreamEvent::TextDelta(text.to_string()),
-        ProviderStreamEvent::Done { usage: usage() },
+        ProviderStreamEvent::Done {
+            usage: Some(usage()),
+        },
     ]
 }
 

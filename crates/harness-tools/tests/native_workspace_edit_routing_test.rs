@@ -23,6 +23,9 @@ use harness_tools::{coordinator_registry_with_mcp_and_editing, EditingToolSurfac
 
 #[tokio::test]
 async fn native_edit_create_routes_through_hashline_and_emits_edit_events() {
+    // arrange
+    // act
+    // assert
     let workspace = setup_workspace_fixture();
 
     let handle = test_coordinator(
@@ -97,6 +100,9 @@ async fn native_edit_create_routes_through_hashline_and_emits_edit_events() {
 
 #[tokio::test]
 async fn native_edit_create_accepts_bof_and_eof_boundary_positions() {
+    // arrange
+    // act
+    // assert
     let workspace = setup_workspace_fixture();
 
     let handle = test_coordinator(
@@ -171,6 +177,9 @@ async fn native_edit_create_accepts_bof_and_eof_boundary_positions() {
 #[cfg(unix)]
 #[tokio::test]
 async fn native_edit_create_rejects_symlink_parent_escape() {
+    // arrange
+    // act
+    // assert
     let workspace = setup_workspace_fixture();
     let outside = workspace.temp_dir().join("outside");
     fs::create_dir_all(&outside).unwrap_or_abort();
@@ -223,6 +232,9 @@ async fn native_edit_create_rejects_symlink_parent_escape() {
 #[cfg(unix)]
 #[tokio::test]
 async fn native_edit_rejects_symlink_file_escape() {
+    // arrange
+    // act
+    // assert
     let workspace = setup_workspace_fixture();
     let outside = workspace.temp_dir().join("outside");
     fs::create_dir_all(&outside).unwrap_or_abort();
@@ -280,6 +292,9 @@ async fn native_edit_rejects_symlink_file_escape() {
 
 #[tokio::test]
 async fn native_edit_delete_with_absolute_path_emits_applied_event_without_rejection() {
+    // arrange
+    // act
+    // assert
     let workspace = setup_workspace_fixture();
     let file_path = workspace.workspace().join("demo.txt");
     fs::write(&file_path, "alpha\n").unwrap_or_abort();
@@ -334,6 +349,9 @@ async fn native_edit_delete_with_absolute_path_emits_applied_event_without_rejec
 
 #[tokio::test]
 async fn native_edit_rename_only_moves_existing_file() {
+    // arrange
+    // act
+    // assert
     let workspace = setup_workspace_fixture();
     fs::write(workspace.workspace().join("old.txt"), "alpha\n").unwrap_or_abort();
 
@@ -384,6 +402,9 @@ async fn native_edit_rename_only_moves_existing_file() {
 
 #[tokio::test]
 async fn native_edit_rename_failure_does_not_apply_content_edit() {
+    // arrange
+    // act
+    // assert
     let workspace = setup_workspace_fixture();
     fs::write(workspace.workspace().join("old.txt"), "alpha\n").unwrap_or_abort();
     fs::write(workspace.workspace().join("new.txt"), "occupied\n").unwrap_or_abort();
@@ -472,6 +493,7 @@ fn test_coordinator(
             temperature: Some(0.0),
             tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
             toolset,
+            permission_ruleset: Vec::new(),
         },
     );
 

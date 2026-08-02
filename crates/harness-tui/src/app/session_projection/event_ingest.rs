@@ -2,6 +2,10 @@
 use super::*;
 
 impl SessionProjection {
+    #[allow(
+        deprecated,
+        reason = "deprecated event variants kept for backward compatibility with existing session logs"
+    )]
     pub(super) fn update_derived_state_for_event(
         &mut self,
         event: &EventEnvelopeV1,
@@ -102,6 +106,7 @@ impl SessionProjection {
                         entry.status = status;
                     }
                 }
+                self.ensure_orphan_question_tool_calls();
             }
             EventV1::ProviderRequestStarted(data) => {
                 self.note_child_agent_request(event, data.request_id.as_str());
@@ -133,9 +138,16 @@ impl SessionProjection {
                         if entry.profile_label.is_empty() {
                             entry.profile_label = profile_label;
                         }
+                        if !entry.model_id.is_empty() && entry.model_id != data.model_id {
+                            self.pending_status_notice = Some(format!(
+                                "provider fallback: {} → {}",
+                                entry.model_id, data.model_id
+                            ));
+                        }
                         entry.model_id = data.model_id.clone();
                         entry.provider_id = data.provider_id.clone();
                         entry.request_data = Some(data.clone());
+                        entry.request_started_mono_ms = Some(event.mono_ms);
                         mark_activity_event(entry, event.seq, event.mono_ms);
                     }
                 } else {
@@ -153,7 +165,11 @@ impl SessionProjection {
                             first_mono_ms: event.mono_ms,
                         },
                     ));
+                    if let Some(entry) = self.activities.back_mut() {
+                        entry.request_started_mono_ms = Some(event.mono_ms);
+                    }
                 }
+                self.ensure_orphan_question_tool_calls();
             }
             EventV1::ProviderStreamDelta(data) => {
                 self.note_child_agent_request(event, data.request_id.as_str());
@@ -164,6 +180,9 @@ impl SessionProjection {
                 {
                     if let Some(entry) = self.activities.get_mut(index) {
                         entry.status = ActivityStatus::Streaming;
+                        if entry.first_delta_mono_ms.is_none() {
+                            entry.first_delta_mono_ms = Some(event.mono_ms);
+                        }
                         entry.transcript_text.push_str(&data.delta);
                         entry.bump_revision();
                         mark_activity_event(entry, event.seq, event.mono_ms);
@@ -196,6 +215,7 @@ impl SessionProjection {
                     if let Some(entry) = self.activities.get_mut(index) {
                         entry.status = ActivityStatus::Streaming;
                         entry.thinking_text.push_str(&data.delta);
+                        entry.note_thinking_mono(event.mono_ms);
                         entry.bump_revision();
                         mark_activity_event(entry, event.seq, event.mono_ms);
                     }
@@ -216,6 +236,7 @@ impl SessionProjection {
                     ));
                     if let Some(entry) = self.activities.back_mut() {
                         entry.thinking_text = data.delta.clone();
+                        entry.note_thinking_mono(event.mono_ms);
                         entry.bump_revision();
                     }
                 }
@@ -259,9 +280,20 @@ impl SessionProjection {
                             }
                         });
                         if let Some(usage) = data.usage.as_ref() {
-                            self.active_context_usage = Some(ActiveContextUsage::estimate(
-                                usage.prompt_tokens.saturating_add(usage.completion_tokens),
-                            ));
+                            // Context breadcrumb uses prompt/context fill when reported;
+                            // turn footer (⇣Nk) uses activity.usage.total_tokens separately.
+                            // Skip active_context_usage when the activity stays Streaming
+                            // (TaskScheduled keeps it alive) so the standard footer hints
+                            // are not replaced by the live-ctx status strip.
+                            if should_mark_done {
+                                let context_tokens = if usage.prompt_tokens > 0 {
+                                    usage.prompt_tokens
+                                } else {
+                                    usage.total_tokens
+                                };
+                                self.active_context_usage =
+                                    Some(ActiveContextUsage::estimate(context_tokens));
+                            }
                         }
                         entry.last_seq = event.seq;
                         entry.last_mono_ms = event.mono_ms;
@@ -337,6 +369,33 @@ impl SessionProjection {
                     trigger_reason: data.trigger_reason.clone(),
                     state: CompactionState::Failed,
                     message: format!("compaction failed · {}", data.reason),
+                });
+            }
+            EventV1::SessionCompaction(data) => {
+                self.compaction_usage_metrics.completed_count = self
+                    .compaction_usage_metrics
+                    .completed_count
+                    .saturating_add(1);
+                self.compaction_usage_metrics.last_tokens_before_estimate =
+                    Some(data.tokens_before);
+                self.compaction_status = Some(CompactionStatus {
+                    agent_id: data.agent_id.clone(),
+                    checkpoint_id: None,
+                    trigger_reason: data.trigger_reason.clone(),
+                    state: CompactionState::Applied,
+                    message: format!(
+                        "session compacted · {} tokens before · {}",
+                        data.tokens_before, data.trigger_reason
+                    ),
+                });
+            }
+            EventV1::BranchSummary(data) => {
+                self.compaction_status = Some(CompactionStatus {
+                    agent_id: data.agent_id.clone(),
+                    checkpoint_id: None,
+                    trigger_reason: "branch_summary".to_string(),
+                    state: CompactionState::Applied,
+                    message: "branch summary generated".to_string(),
                 });
             }
             EventV1::TaskCompleted(data) => {

@@ -10,6 +10,11 @@ const TRANSCRIPT_BRAILLE_SPINNER_FRAMES: [&str; 10] =
     ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 pub(super) fn transcript_streaming_spinner_frame(animation_phase: usize) -> &'static str {
+    // Freeze the spinner glyph when animations are disabled so PTY/signoff
+    // captures are reproducible across runs.
+    if std::env::var_os("HARNESS_DISABLE_ANIMATIONS").is_some() {
+        return TRANSCRIPT_BRAILLE_SPINNER_FRAMES[0];
+    }
     TRANSCRIPT_BRAILLE_SPINNER_FRAMES[animation_phase % TRANSCRIPT_BRAILLE_SPINNER_FRAMES.len()]
 }
 
@@ -123,12 +128,18 @@ mod tests {
 
     #[test]
     fn blend_color_interpolates_rgb() {
+        // arrange
+        // act
+        // assert
         let blended = blend_color(Color::Rgb(0, 0, 0), Color::Rgb(100, 100, 100), 0.5);
         assert_eq!(blended, Color::Rgb(50, 50, 50));
     }
 
     #[test]
     fn blend_color_alpha_zero_returns_base() {
+        // arrange
+        // act
+        // assert
         assert_eq!(
             blend_color(Color::Rgb(10, 20, 30), Color::Rgb(100, 100, 100), 0.0),
             Color::Rgb(10, 20, 30)
@@ -137,6 +148,9 @@ mod tests {
 
     #[test]
     fn blend_color_alpha_one_returns_overlay() {
+        // arrange
+        // act
+        // assert
         assert_eq!(
             blend_color(Color::Rgb(10, 20, 30), Color::Rgb(100, 100, 100), 1.0),
             Color::Rgb(100, 100, 100)
@@ -145,6 +159,9 @@ mod tests {
 
     #[test]
     fn blend_color_clamps_to_byte_range() {
+        // arrange
+        // act
+        // assert
         assert_eq!(
             blend_color(Color::Rgb(255, 255, 255), Color::Rgb(0, 0, 0), 2.0),
             Color::Rgb(0, 0, 0)
@@ -157,6 +174,9 @@ mod tests {
 
     #[test]
     fn thinking_header_color_blends_warning_toward_surface() {
+        // arrange
+        // act
+        // assert
         let theme = Theme::default();
         let Color::Rgb(r, g, b) = thinking_header_color(&theme, theme.surface.shell) else {
             panic!("expected an RGB color")

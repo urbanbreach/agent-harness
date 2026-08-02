@@ -5,6 +5,7 @@ use super::ui_transcript_tool_render::{
     tool_call_is_todo,
 };
 use super::*;
+use harness_core::event::ProviderRequestRetryMetadata;
 
 pub(super) fn build_transcript_render_surfaces(
     section: &TranscriptTurnSection,
@@ -45,27 +46,102 @@ fn build_user_render_surface(
     user_msg: &TranscriptUserMessageSection,
     theme: &Theme,
     width: u16,
-    base_surface: Color,
+    _base_surface: Color,
 ) -> TranscriptRenderSurface {
-    let surface = transcript_emphasized_surface(theme, base_surface);
+    let surface = theme.surface.card;
     let render_width = transcript_surface_render_width(width, TranscriptRenderSurfaceKind::User);
-    let content_width = transcript_surface_content_width(render_width, true);
+    let content_width = transcript_surface_content_width(render_width, false);
+    let agent_accent = theme.agent_accent(&turn.header.profile_label);
+    let body_style = Style::default().fg(theme.text.primary);
+    let lines = build_user_surface_lines(
+        user_msg,
+        theme,
+        content_width,
+        surface,
+        agent_accent,
+        body_style,
+    );
+
+    TranscriptRenderSurface {
+        kind: TranscriptRenderSurfaceKind::User,
+        show_outer_rail: false,
+        rail_glyph: TRANSCRIPT_RAIL_GLYPH,
+        rail_color: agent_accent,
+        surface,
+        lines,
+        interaction_rows: None,
+        selection_rows: None,
+        diff_hunk_offsets: Vec::new(),
+        selected_rail: false,
+    }
+}
+
+/// Reference scroll state packs max text on the first user row, then right-aligns the
+/// wall clock into remaining space. Prefer full-width wrap + pack; only re-wrap
+/// with a first-line reserve when the clock cannot fit on the first content row.
+fn build_user_surface_lines(
+    user_msg: &TranscriptUserMessageSection,
+    theme: &Theme,
+    content_width: u16,
+    surface: Color,
+    agent_accent: Color,
+    body_style: Style,
+) -> Vec<Line<'static>> {
+    let clock = user_msg.wall_clock.as_deref();
+    let reserve = clock
+        .map(|value| display_width(value).saturating_add(1))
+        .unwrap_or(0);
+    let mut lines = assemble_user_surface_lines(
+        user_msg,
+        theme,
+        content_width,
+        surface,
+        agent_accent,
+        body_style,
+        0,
+    );
+    if let Some(clock) = clock {
+        if user_row_has_wall_clock(&lines, clock) {
+            return lines;
+        }
+        lines = assemble_user_surface_lines(
+            user_msg,
+            theme,
+            content_width,
+            surface,
+            agent_accent,
+            body_style,
+            reserve,
+        );
+    }
+    lines
+}
+
+fn assemble_user_surface_lines(
+    user_msg: &TranscriptUserMessageSection,
+    theme: &Theme,
+    content_width: u16,
+    surface: Color,
+    agent_accent: Color,
+    body_style: Style,
+    first_line_reserve: usize,
+) -> Vec<Line<'static>> {
     let mut lines = vec![user_surface_line(
         TRANSCRIPT_USER_BODY_PREFIX,
         Vec::new(),
-        Style::default().fg(theme.text.primary),
+        body_style,
         surface,
     )];
-    append_user_surface_text_block(
+    append_user_surface_text_block_with_first_line_reserve(
         &mut lines,
         &user_msg.text,
         theme.text.primary,
         TRANSCRIPT_USER_BODY_PREFIX,
         content_width,
         surface,
+        first_line_reserve,
     );
     if user_msg.queued {
-        let agent_accent = theme.agent_accent(&turn.header.profile_label);
         lines.push(user_surface_line(
             TRANSCRIPT_USER_BODY_PREFIX,
             vec![Span::styled(
@@ -82,21 +158,76 @@ fn build_user_render_surface(
     lines.push(user_surface_line(
         TRANSCRIPT_USER_BODY_PREFIX,
         Vec::new(),
-        Style::default().fg(theme.text.primary),
+        body_style,
         surface,
     ));
 
-    TranscriptRenderSurface {
-        kind: TranscriptRenderSurfaceKind::User,
-        show_outer_rail: true,
-        rail_glyph: TRANSCRIPT_RAIL_GLYPH,
-        rail_color: theme.agent_accent(&turn.header.profile_label),
-        surface,
-        lines,
-        interaction_rows: None,
-        selection_rows: None,
-        diff_hunk_offsets: Vec::new(),
+    if lines.len() > 1 {
+        let marker_prefix = format!("   {} ", theme.live_shell.transcript_glyphs.user_marker);
+        lines[1].spans[0] = surface_span(
+            marker_prefix,
+            Style::default().fg(theme.text.primary),
+            surface,
+        );
+        if let Some(clock) = user_msg.wall_clock.as_deref() {
+            append_user_row_wall_clock(&mut lines[1], clock, content_width, theme, surface);
+        }
     }
+    lines
+}
+
+fn user_row_has_wall_clock(lines: &[Line<'static>], clock: &str) -> bool {
+    lines
+        .get(1)
+        .is_some_and(|line| line.spans.iter().any(|span| span.content.as_ref() == clock))
+}
+
+fn append_user_row_wall_clock(
+    line: &mut Line<'static>,
+    clock: &str,
+    content_width: u16,
+    theme: &Theme,
+    surface: Color,
+) {
+    let used = line
+        .spans
+        .iter()
+        .map(|span| display_width(span.content.as_ref()))
+        .sum::<usize>();
+    let clock_width = display_width(clock);
+    // content_width is the full user-surface content band (includes prefix).
+    let target = usize::from(content_width);
+    if clock_width == 0 || used.saturating_add(clock_width) > target {
+        return;
+    }
+    let pad = target.saturating_sub(used).saturating_sub(clock_width);
+    if pad > 0 {
+        line.spans
+            .push(surface_span(" ".repeat(pad), Style::default(), surface));
+    }
+    line.spans.push(surface_span(
+        clock.to_string(),
+        Style::default().fg(theme.text.secondary),
+        surface,
+    ));
+}
+
+fn right_aligned_wall_clock_line(clock: &str, content_width: u16, theme: &Theme) -> Line<'static> {
+    let mut line = Line::default();
+    let clock_width = display_width(clock);
+    let target = usize::from(content_width);
+    if clock_width == 0 || clock_width > target {
+        return line;
+    }
+    let pad = target.saturating_sub(clock_width);
+    if pad > 0 {
+        line.spans.push(Span::raw(" ".repeat(pad)));
+    }
+    line.spans.push(Span::styled(
+        clock.to_string(),
+        Style::default().fg(theme.text.secondary),
+    ));
+    line
 }
 
 fn build_assistant_render_surfaces(
@@ -113,7 +244,7 @@ fn build_assistant_render_surfaces(
             agent_accent,
             "active",
         ),
-        ActivityStatus::Done => ("▪", agent_accent, "done"),
+        ActivityStatus::Done => ("", agent_accent, "done"),
         ActivityStatus::Error => (theme.live_shell.glyphs.error, theme.status.error, "error"),
     };
 
@@ -181,12 +312,44 @@ fn build_assistant_render_surfaces(
             turn,
             theme,
             base_surface,
+            width,
             assistant_icon,
             assistant_color,
             assistant_status,
         ));
     }
+    let paint_selected = turn.header.is_selected
+        && waiting_on_answers_label(turn).is_none()
+        && pending_permission_tool_waiting(turn).is_none()
+        && !matches!(turn.header.status, ActivityStatus::Error);
+    apply_preferred_selected_rail(&mut surfaces, paint_selected);
     surfaces
+}
+
+fn apply_preferred_selected_rail(surfaces: &mut [TranscriptRenderSurface], is_selected: bool) {
+    for surface in surfaces.iter_mut() {
+        surface.selected_rail = false;
+    }
+    if !is_selected {
+        return;
+    }
+    let preferred = surfaces
+        .iter()
+        .rposition(|surface| {
+            matches!(
+                surface.kind,
+                TranscriptRenderSurfaceKind::AssistantTool
+                    | TranscriptRenderSurfaceKind::AssistantCommandTool
+            )
+        })
+        .or_else(|| {
+            surfaces
+                .iter()
+                .position(|surface| surface.kind == TranscriptRenderSurfaceKind::AssistantReasoning)
+        });
+    if let Some(idx) = preferred {
+        surfaces[idx].selected_rail = true;
+    }
 }
 
 fn assistant_footer_target_index(turn: &TranscriptTurnSection) -> Option<usize> {
@@ -199,6 +362,27 @@ fn assistant_footer_target_index(turn: &TranscriptTurnSection) -> Option<usize> 
         .then_some(0);
     }
 
+    // Reference permission/question state: Run Write / Waiting on answers is a separate footer surface.
+    // (not glued to the tool body) so layout can pin it just above the dock.
+    if pending_permission_tool_waiting(turn).is_some() || waiting_on_answers_label(turn).is_some() {
+        return Some(turn.assistant_parts.len());
+    }
+
+    // Reference failure/recovery state: auto-retry spinner is a separate footer surface.
+    // pinned just above the dock (matching the "Waiting for response…" layout).
+    if turn.header.retry.is_some() {
+        return Some(turn.assistant_parts.len());
+    }
+
+    // Reference scroll state: streaming with body text and token usage shows
+    // "Responding…" as a separate footer surface pinned just above the dock.
+    if matches!(turn.header.status, ActivityStatus::Streaming)
+        && !turn.assistant_parts.is_empty()
+        && turn.header.total_tokens.is_some_and(|tokens| tokens > 0)
+    {
+        return Some(turn.assistant_parts.len());
+    }
+
     Some(turn.assistant_parts.len() - 1)
 }
 
@@ -206,22 +390,52 @@ fn assistant_part_needs_leading_gap(
     previous: Option<&TranscriptAssistantPart>,
     current: &TranscriptAssistantPart,
 ) -> bool {
-    matches!(
-        (previous, current),
-        (
-            Some(TranscriptAssistantPart::Reasoning(_)),
-            TranscriptAssistantPart::Body(_)
-        ) | (
-            Some(TranscriptAssistantPart::ToolCall(_)),
-            TranscriptAssistantPart::Reasoning(_)
-        ) | (
-            Some(TranscriptAssistantPart::ToolCall(_)),
-            TranscriptAssistantPart::Body(_)
-        ) | (
-            Some(TranscriptAssistantPart::Body(_)),
-            TranscriptAssistantPart::Body(_)
-        )
-    )
+    match (previous, current) {
+        (Some(TranscriptAssistantPart::Reasoning(_)), TranscriptAssistantPart::Body(_))
+        | (Some(TranscriptAssistantPart::ToolCall(_)), TranscriptAssistantPart::Reasoning(_))
+        | (Some(TranscriptAssistantPart::ToolCall(_)), TranscriptAssistantPart::Body(_))
+        | (Some(TranscriptAssistantPart::Body(_)), TranscriptAssistantPart::Body(_)) => true,
+        (Some(_), TranscriptAssistantPart::Compaction(_))
+        | (Some(TranscriptAssistantPart::Compaction(_)), _) => true,
+        _ => false,
+    }
+}
+
+fn turn_has_tool_parts(turn: &TranscriptTurnSection) -> bool {
+    turn.assistant_parts
+        .iter()
+        .any(|part| matches!(part, TranscriptAssistantPart::ToolCall(_)))
+        || !turn.tool_calls.is_empty()
+}
+
+fn body_is_single_line_plain(text: &str) -> bool {
+    !text.contains("```") && !text.contains('\n') && !text.trim().is_empty()
+}
+
+fn pack_wall_clock_on_line(
+    line: &mut Line<'static>,
+    clock: &str,
+    content_width: u16,
+    theme: &Theme,
+) {
+    let used = line
+        .spans
+        .iter()
+        .map(|span| display_width(span.content.as_ref()))
+        .sum::<usize>();
+    let clock_width = display_width(clock);
+    let target = usize::from(content_width);
+    if clock_width == 0 || used.saturating_add(clock_width) > target {
+        return;
+    }
+    let pad = target.saturating_sub(used).saturating_sub(clock_width);
+    if pad > 0 {
+        line.spans.push(Span::raw(" ".repeat(pad)));
+    }
+    line.spans.push(Span::styled(
+        clock.to_string(),
+        Style::default().fg(theme.text.secondary),
+    ));
 }
 
 fn context_tool_group_len(parts: &[TranscriptAssistantPart]) -> usize {
@@ -264,6 +478,9 @@ fn build_assistant_part_render_surface(
     assistant_status: &str,
 ) -> TranscriptRenderSurface {
     let mut lines = Vec::new();
+    // Rows prepended before part content (selection/interaction pad must match).
+    // Body after Thought with a separate wall clock uses 2 (clock + blank).
+    let mut leading_pad_rows = usize::from(prepend_gap);
     let (
         kind,
         show_outer_rail,
@@ -282,10 +499,18 @@ fn build_assistant_part_render_surface(
                 thinking,
                 theme,
                 transcript_surface_content_width(width, false),
-                turn.header.status == ActivityStatus::Streaming,
+                turn.header.status,
+                turn.header.status == ActivityStatus::Streaming
+                    && turn.body_blocks.is_empty()
+                    && turn.tool_calls.is_empty(),
                 turn.animation_phase,
-                turn.header.duration_ms,
                 base_surface,
+                // Reasoning-only span for Thought for (0.1s Thought vs 0.9s Waiting).
+                turn.header.thinking_duration_ms,
+                turn.header.is_selected,
+                // Waiting on answers / pending edit permission ⇒ Thought for.
+                waiting_on_answers_label(turn).is_some()
+                    || pending_permission_tool_waiting(turn).is_some(),
             );
             (
                 TranscriptRenderSurfaceKind::AssistantReasoning,
@@ -298,30 +523,61 @@ fn build_assistant_part_render_surface(
             )
         }
         TranscriptAssistantPart::Body(block) => {
-            if prepend_gap {
-                lines.push(Line::default());
-            }
-            let selection_rows = match block {
-                TranscriptBodyBlock::RichText(text) if !text.contains("```") => {
-                    Some(selection_rows_for_markdownish_text_block(
-                        text,
-                        theme.text.primary,
-                        TRANSCRIPT_ASSISTANT_BODY_PREFIX,
-                        theme,
-                        transcript_surface_content_width(width, false),
-                    ))
-                }
-                _ => None,
-            };
+            let content_width = transcript_surface_content_width(width, false);
             let TranscriptBodyBlock::RichText(text) = block;
+            // Reference completed/cancellation state: pack wall clock on a single-line plain body row.
+            // Reference diff/tool state: keep wall clock on its own row when tools are present.
+            let pack_clock_on_body = !turn_has_tool_parts(turn)
+                && body_is_single_line_plain(text)
+                && turn.footer_timestamp.as_ref().is_some_and(|clock| {
+                    let text_width = display_width(text.trim());
+                    let clock_width = display_width(clock);
+                    text_width.saturating_add(clock_width) < usize::from(content_width)
+                });
+            // Reference completed state: Thought → blank (inter-surface gap) → body+clock.
+            // Reference diff state: Thought → blank → wall-clock row → blank → body.
+            if prepend_gap {
+                if let Some(clock) = turn.footer_timestamp.as_deref() {
+                    if pack_clock_on_body {
+                        // The inter-surface gap already provides the blank separator.
+                        leading_pad_rows = 0;
+                    } else {
+                        lines.push(right_aligned_wall_clock_line(clock, content_width, theme));
+                        lines.push(Line::default());
+                        leading_pad_rows = 2;
+                    }
+                } else {
+                    lines.push(Line::default());
+                    leading_pad_rows = 1;
+                }
+            }
+            let selection_rows = if !text.contains("```") {
+                Some(selection_rows_for_markdownish_text_block(
+                    text,
+                    theme.text.primary,
+                    TRANSCRIPT_ASSISTANT_BODY_PREFIX,
+                    theme,
+                    content_width,
+                ))
+            } else {
+                None
+            };
+            let body_start = lines.len();
             append_rich_text_block(
                 &mut lines,
                 text,
                 theme.text.primary,
                 TRANSCRIPT_ASSISTANT_BODY_PREFIX,
                 theme,
-                transcript_surface_content_width(width, false),
+                content_width,
             );
+            if pack_clock_on_body {
+                if let Some(clock) = turn.footer_timestamp.as_deref() {
+                    if let Some(line) = lines.get_mut(body_start) {
+                        pack_wall_clock_on_line(line, clock, content_width, theme);
+                    }
+                }
+            }
             (
                 TranscriptRenderSurfaceKind::AssistantBody,
                 false,
@@ -370,19 +626,37 @@ fn build_assistant_part_render_surface(
                 Vec::new(),
             )
         }
+        TranscriptAssistantPart::Compaction(compaction) => {
+            let surface = super::ui_transcript_compaction::build_compaction_render_surface(
+                compaction,
+                theme,
+                width,
+                base_surface,
+            );
+            lines = surface.lines;
+            (
+                surface.kind,
+                surface.show_outer_rail,
+                surface.rail_color,
+                surface.surface,
+                surface.interaction_rows,
+                surface.selection_rows,
+                surface.diff_hunk_offsets,
+            )
+        }
     };
 
     let mut interaction_rows = interaction_rows;
     let mut selection_rows = selection_rows;
 
     if let Some(rows) = interaction_rows.as_mut() {
-        if prepend_gap {
+        for _ in 0..leading_pad_rows {
             rows.insert(0, None);
         }
     }
 
     if let Some(rows) = selection_rows.as_mut() {
-        if prepend_gap {
+        for _ in 0..leading_pad_rows {
             rows.insert(0, blank_selection_row(width));
         }
     }
@@ -403,6 +677,7 @@ fn build_assistant_part_render_surface(
             assistant_color,
             assistant_status,
             theme,
+            transcript_surface_content_width(width, false),
         );
         if let Some(rows) = selection_rows.as_mut() {
             rows.extend(selection_rows_for_rendered_line(&footer_line, width));
@@ -423,6 +698,7 @@ fn build_assistant_part_render_surface(
         interaction_rows,
         selection_rows,
         diff_hunk_offsets,
+        selected_rail: false,
     }
 }
 
@@ -430,6 +706,7 @@ fn build_footer_only_render_surface(
     turn: &TranscriptTurnSection,
     theme: &Theme,
     base_surface: Color,
+    width: u16,
     assistant_icon: &str,
     assistant_color: Color,
     assistant_status: &str,
@@ -450,10 +727,12 @@ fn build_footer_only_render_surface(
             assistant_color,
             assistant_status,
             theme,
+            transcript_surface_content_width(width, false),
         )],
         interaction_rows: None,
         selection_rows: None,
         diff_hunk_offsets: Vec::new(),
+        selected_rail: false,
     }
 }
 
@@ -462,59 +741,58 @@ pub(super) fn append_reasoning_block(
     thinking: &TranscriptLabeledTextSection,
     theme: &Theme,
     width: u16,
-    is_streaming: bool,
+    status: ActivityStatus,
+    spinner_active: bool,
     animation_phase: usize,
-    duration_ms: Option<u64>,
     surface: Color,
+    duration_ms: Option<u64>,
+    selected: bool,
+    force_completed: bool,
 ) {
     let header_color = thinking_header_color(theme, surface);
     let header_style = Style::default().fg(header_color);
 
     let (title, body) = reasoning_summary(&thinking.text);
-    if title.is_none() && body.trim().is_empty() {
+    // Reference question state shows Thought for while Waiting on answers (thinking phase done).
+    let completed =
+        force_completed || !matches!(status, ActivityStatus::Streaming | ActivityStatus::Queued);
+    if title.is_none() && body.trim().is_empty() && !completed {
         return;
     }
 
-    let header_text = if is_streaming {
+    let marker = theme.live_shell.transcript_glyphs.tool_marker;
+    let header_core = if completed {
+        format!(
+            "{marker} Thought for {}",
+            format_thought_duration_ms(duration_ms.unwrap_or(0))
+        )
+    } else if spinner_active {
         let spinner = transcript_streaming_spinner_frame(animation_phase);
         match title {
-            Some(title) => format!("{spinner} Thinking: {title}"),
+            Some(title) => format!("{spinner} Thinking · {title}"),
             None => format!("{spinner} Thinking"),
         }
     } else {
-        let mut text = "Thought".to_string();
-        if title.is_some() || duration_ms.is_some() {
-            text.push(':');
+        match title {
+            Some(title) => format!("{marker} Thinking · {title}"),
+            None => format!("{marker} Thinking"),
         }
-        if let Some(ref title) = title {
-            text.push(' ');
-            text.push_str(title);
-        }
-        if let Some(duration_ms) = duration_ms {
-            if title.is_some() {
-                text.push_str(" · ");
-            } else {
-                text.push(' ');
-            }
-            text.push_str(&format_duration_ms(duration_ms));
-        }
-        text
     };
-
+    let _ = selected;
     append_prefixed_wrapped_spans_line(
         lines,
-        TRANSCRIPT_REASONING_BODY_PREFIX,
+        TRANSCRIPT_REASONING_HEADER_PREFIX,
         header_style,
-        vec![Span::styled(header_text, header_style)],
+        vec![Span::styled(header_core, header_style)],
         width,
     );
-    lines.push(Line::default());
 
     let body = reference_reasoning_body_text(&body);
     if body.trim().is_empty() {
         return;
     }
 
+    lines.push(Line::default());
     super::ui_reasoning_markdown::append_reasoning_body_lines(lines, &body, theme, surface, width);
 }
 
@@ -674,6 +952,7 @@ fn build_context_tool_group_render_surface(
             assistant_color,
             assistant_status,
             theme,
+            transcript_surface_content_width(width, false),
         ));
     }
 
@@ -699,6 +978,7 @@ fn build_context_tool_group_render_surface(
         interaction_rows: Some(interaction_rows),
         selection_rows: None,
         diff_hunk_offsets: Vec::new(),
+        selected_rail: false,
     }
 }
 
@@ -706,49 +986,366 @@ fn build_assistant_footer_line(
     turn: &TranscriptTurnSection,
     assistant_icon: &str,
     assistant_color: Color,
-    assistant_status: &str,
+    _assistant_status: &str,
     theme: &Theme,
+    content_width: u16,
 ) -> Line<'static> {
     let mut spans = vec![Span::raw(TRANSCRIPT_ASSISTANT_BODY_PREFIX.to_string())];
-    spans.push(Span::styled(
-        format!("{} ", assistant_icon),
-        Style::default().fg(assistant_color),
-    ));
-    spans.push(Span::styled(
-        assistant_footer_label(&turn.header.profile_label),
-        Style::default().fg(assistant_primary_label_color(turn.header.status, theme)),
-    ));
-    if has_trimmed_content(&turn.header.model_id) {
-        spans.push(Span::styled(" · ", muted_meta_style(theme)));
+
+    if let Some(waiting) = waiting_on_answers_label(turn) {
+        return pack_waiting_on_answers_footer_line(turn, &waiting, theme, content_width);
+    }
+    // Reference permission state: ◆ Run Write `path` … right meta while Allow Edit dock is open.
+    if let Some(waiting) = pending_permission_tool_waiting(turn) {
+        return pack_waiting_on_answers_footer_line(turn, &waiting, theme, content_width);
+    }
+
+    // Auto-retry chrome: streaming with retry metadata shows
+    // "⠸ Retrying (attempt N)… <retry-elapsed>" with total duration + tokens + [stop] right meta.
+    if matches!(turn.header.status, ActivityStatus::Streaming) {
+        if let Some(retry) = turn.header.retry.as_ref() {
+            return pack_retrying_footer_line(
+                turn,
+                retry,
+                assistant_icon,
+                assistant_color,
+                theme,
+                content_width,
+            );
+        }
+    }
+
+    // Reference streaming state: streaming with no body text but with token usage
+    // (ProviderRequestFinished seeded total_tokens) shows "Waiting for response…"
+    // with elapsed time + download counter + [stop] right meta.
+    if matches!(turn.header.status, ActivityStatus::Streaming)
+        && turn.assistant_parts.is_empty()
+        && turn.body_blocks.is_empty()
+        && turn.tool_calls.is_empty()
+        && turn.header.total_tokens.is_some_and(|tokens| tokens > 0)
+    {
+        return pack_waiting_for_response_footer_line(
+            turn,
+            assistant_icon,
+            assistant_color,
+            theme,
+            content_width,
+        );
+    }
+
+    // Reference scroll state: streaming with body text and token usage
+    // shows "Responding…" with responding-elapsed (time since first delta)
+    // + total duration + download counter + [stop] right meta.
+    if matches!(turn.header.status, ActivityStatus::Streaming)
+        && !turn.assistant_parts.is_empty()
+        && turn.header.total_tokens.is_some_and(|tokens| tokens > 0)
+    {
+        return pack_responding_footer_line(
+            turn,
+            assistant_icon,
+            assistant_color,
+            theme,
+            content_width,
+        );
+    }
+
+    if !assistant_icon.is_empty() {
         spans.push(Span::styled(
-            turn.header.model_id.clone(),
-            muted_meta_style(theme),
+            format!("{assistant_icon} "),
+            Style::default().fg(assistant_color),
         ));
     }
+
     if matches!(
         turn.header.status,
         ActivityStatus::Done | ActivityStatus::Error
     ) {
         if let Some(duration_ms) = turn.header.duration_ms {
-            spans.push(Span::styled(" · ", muted_meta_style(theme)));
             spans.push(Span::styled(
-                format_duration_ms(duration_ms),
+                format!("Worked for {}.", format_thought_duration_ms(duration_ms)),
                 muted_meta_style(theme),
             ));
+            return Line::from(spans);
         }
     }
-    if turn.header.status != ActivityStatus::Done {
-        spans.push(Span::styled(" · ", muted_meta_style(theme)));
+
+    if has_trimmed_content(&turn.header.model_id) {
         spans.push(Span::styled(
-            assistant_status.to_string(),
-            Style::default().fg(assistant_color),
+            turn.header.model_id.clone(),
+            muted_meta_style(theme),
+        ));
+    } else {
+        spans.push(Span::styled(
+            assistant_footer_label(&turn.header.profile_label),
+            Style::default().fg(assistant_primary_label_color(turn.header.status, theme)),
         ));
     }
-    if let Some(timestamp) = turn.footer_timestamp.as_deref() {
-        spans.push(Span::styled(" · ", muted_meta_style(theme)));
-        spans.push(Span::styled(timestamp.to_string(), muted_meta_style(theme)));
+    Line::from(spans)
+}
+
+fn pack_waiting_for_response_footer_line(
+    turn: &TranscriptTurnSection,
+    assistant_icon: &str,
+    assistant_color: Color,
+    theme: &Theme,
+    content_width: u16,
+) -> Line<'static> {
+    let mut left_text = String::new();
+    if !assistant_icon.is_empty() {
+        left_text.push_str(assistant_icon);
+        left_text.push(' ');
+    }
+    left_text.push_str("Waiting for response…");
+    if let Some(duration_ms) = turn.header.duration_ms {
+        left_text.push(' ');
+        left_text.push_str(&format_thought_duration_ms(duration_ms));
+    }
+    let right = waiting_status_right_meta(turn);
+    let target = usize::from(content_width);
+    let left_width = display_width(&left_text);
+    let right_width = display_width(&right);
+    let gap = target
+        .saturating_sub(left_width)
+        .saturating_sub(right_width)
+        .max(if right.is_empty() { 0 } else { 1 });
+
+    let mut spans = vec![
+        Span::raw(TRANSCRIPT_ASSISTANT_BODY_PREFIX.to_string()),
+        Span::styled(left_text, Style::default().fg(assistant_color)),
+    ];
+    if gap > 0 {
+        spans.push(Span::raw(" ".repeat(gap)));
+    }
+    if !right.is_empty() {
+        spans.push(Span::styled(right, muted_meta_style(theme)));
     }
     Line::from(spans)
+}
+
+fn pack_responding_footer_line(
+    turn: &TranscriptTurnSection,
+    assistant_icon: &str,
+    assistant_color: Color,
+    theme: &Theme,
+    content_width: u16,
+) -> Line<'static> {
+    let mut left_text = String::new();
+    if !assistant_icon.is_empty() {
+        left_text.push_str(assistant_icon);
+        left_text.push(' ');
+    }
+    left_text.push_str("Responding…");
+    if let Some(duration_ms) = turn.header.responding_duration_ms {
+        left_text.push(' ');
+        left_text.push_str(&format_thought_duration_ms(duration_ms));
+    }
+    let right = waiting_status_right_meta(turn);
+    let target = usize::from(content_width);
+    let left_width = display_width(&left_text);
+    let right_width = display_width(&right);
+    let gap = target
+        .saturating_sub(left_width)
+        .saturating_sub(right_width)
+        .max(if right.is_empty() { 0 } else { 1 });
+
+    let mut spans = vec![
+        Span::raw(TRANSCRIPT_ASSISTANT_BODY_PREFIX.to_string()),
+        Span::styled(left_text, Style::default().fg(assistant_color)),
+    ];
+    if gap > 0 {
+        spans.push(Span::raw(" ".repeat(gap)));
+    }
+    if !right.is_empty() {
+        spans.push(Span::styled(right, muted_meta_style(theme)));
+    }
+    Line::from(spans)
+}
+
+fn pack_retrying_footer_line(
+    turn: &TranscriptTurnSection,
+    retry: &ProviderRequestRetryMetadata,
+    assistant_icon: &str,
+    assistant_color: Color,
+    theme: &Theme,
+    content_width: u16,
+) -> Line<'static> {
+    let mut left_text = String::new();
+    if !assistant_icon.is_empty() {
+        left_text.push_str(assistant_icon);
+        left_text.push(' ');
+    }
+    left_text.push_str(&format!("Retrying (attempt {})…", retry.attempt));
+    if let Some(elapsed_ms) = turn.header.retry_elapsed_ms {
+        left_text.push(' ');
+        left_text.push_str(&format_thought_duration_ms(elapsed_ms));
+    }
+    let right = waiting_status_right_meta(turn);
+    let target = usize::from(content_width);
+    let left_width = display_width(&left_text);
+    let right_width = display_width(&right);
+    let gap = target
+        .saturating_sub(left_width)
+        .saturating_sub(right_width)
+        .max(if right.is_empty() { 0 } else { 1 });
+
+    let mut spans = vec![
+        Span::raw(TRANSCRIPT_ASSISTANT_BODY_PREFIX.to_string()),
+        Span::styled(left_text, Style::default().fg(assistant_color)),
+    ];
+    if gap > 0 {
+        spans.push(Span::raw(" ".repeat(gap)));
+    }
+    if !right.is_empty() {
+        spans.push(Span::styled(right, muted_meta_style(theme)));
+    }
+    Line::from(spans)
+}
+
+fn pack_waiting_on_answers_footer_line(
+    turn: &TranscriptTurnSection,
+    waiting: &str,
+    theme: &Theme,
+    content_width: u16,
+) -> Line<'static> {
+    let marker = theme.live_shell.transcript_glyphs.tool_marker;
+    let left = if waiting.starts_with("Run ") {
+        match turn.header.duration_ms {
+            Some(duration_ms) => format!(
+                "{marker} {waiting} {}",
+                format_thought_duration_ms(duration_ms)
+            ),
+            None => format!("{marker} {waiting}"),
+        }
+    } else {
+        format!("{marker} {waiting}")
+    };
+    let right = waiting_status_right_meta(turn);
+    let target = usize::from(content_width);
+    let left_width = display_width(&left);
+    let right_width = display_width(&right);
+    let gap = target
+        .saturating_sub(left_width)
+        .saturating_sub(right_width)
+        .max(if right.is_empty() { 0 } else { 1 });
+
+    let mut spans = vec![
+        Span::raw(TRANSCRIPT_ASSISTANT_BODY_PREFIX.to_string()),
+        Span::styled(left, muted_meta_style(theme)),
+    ];
+    if gap > 0 {
+        spans.push(Span::raw(" ".repeat(gap)));
+    }
+    if !right.is_empty() {
+        spans.push(Span::styled(right, muted_meta_style(theme)));
+    }
+    Line::from(spans)
+}
+
+fn waiting_status_right_meta(turn: &TranscriptTurnSection) -> String {
+    let mut parts = Vec::new();
+    if let Some(duration_ms) = turn.header.duration_ms {
+        parts.push(format_thought_duration_ms(duration_ms));
+    }
+    if let Some(total_tokens) = turn.header.total_tokens.filter(|tokens| *tokens > 0) {
+        parts.push(format!("⇣{}", format_waiting_token_count(total_tokens)));
+    }
+    parts.push("[stop]".to_string());
+    parts.join(" ")
+}
+
+fn format_waiting_token_count(count: u32) -> String {
+    if count < 1000 {
+        return count.to_string();
+    }
+    if count < 1_000_000 {
+        let thousands = f64::from(count) / 1000.0;
+        if count.is_multiple_of(1000) {
+            return format!("{}k", count / 1000);
+        }
+        if count < 10_000 {
+            return format!("{thousands:.2}k");
+        }
+        return format!("{thousands:.1}k");
+    }
+    format!("{:.1}M", f64::from(count) / 1_000_000.0)
+}
+
+/// Pending write/edit tool under permission — reference permission state packs completed Thought for.
+fn pending_permission_tool_waiting(turn: &TranscriptTurnSection) -> Option<String> {
+    for part in &turn.assistant_parts {
+        let TranscriptAssistantPart::ToolCall(tool) = part else {
+            continue;
+        };
+        if is_question_tool_id(&tool.header.tool_id) {
+            continue;
+        }
+        if !matches!(
+            tool.header.status,
+            crate::app::ToolCallDisplayStatus::PendingPermission
+        ) {
+            continue;
+        }
+        // Reference permission state: "Run Write `path`" while Allow Edit dock is open.
+        let title = tool.header.title.trim();
+        let label = if let Some(path) = title.strip_prefix("Creating ") {
+            format!("Write `{path}`")
+        } else if title.is_empty() {
+            "tool".to_string()
+        } else {
+            title.to_string()
+        };
+        return Some(format!("Run {label}"));
+    }
+    None
+}
+
+fn waiting_on_answers_label(turn: &TranscriptTurnSection) -> Option<String> {
+    for part in &turn.assistant_parts {
+        let TranscriptAssistantPart::ToolCall(tool) = part else {
+            continue;
+        };
+        if !is_question_tool_id(&tool.header.tool_id) {
+            continue;
+        }
+        if !matches!(
+            tool.header.status,
+            crate::app::ToolCallDisplayStatus::PendingPermission
+                | crate::app::ToolCallDisplayStatus::Queued
+                | crate::app::ToolCallDisplayStatus::Running
+        ) {
+            continue;
+        }
+        let detail = tool
+            .header
+            .title
+            .strip_prefix("Ask ")
+            .unwrap_or(tool.header.title.as_str())
+            .trim();
+        if detail.is_empty() {
+            return Some("Waiting on answers".to_string());
+        }
+        return Some(format!("Waiting on answers for {detail}"));
+    }
+    None
+}
+
+fn is_question_tool_id(tool_id: &str) -> bool {
+    tool_id == "user.question" || tool_id == "question"
+}
+
+fn format_thought_duration_ms(duration_ms: u64) -> String {
+    if duration_ms >= 60_000 {
+        format_duration_ms(duration_ms)
+    } else if duration_ms == 0 {
+        "0.0s".to_string()
+    } else if duration_ms.is_multiple_of(1_000) {
+        format!("{}s", duration_ms / 1_000)
+    } else {
+        format!(
+            "{:.1}s",
+            f64::from(u32::try_from(duration_ms).unwrap_or(u32::MAX)) / 1_000.0
+        )
+    }
 }
 
 #[cfg(test)]
@@ -757,6 +1354,9 @@ mod tests {
 
     #[test]
     fn reasoning_summary_extracts_title_and_body() {
+        // arrange
+        // act
+        // assert
         let (title, body) = reasoning_summary(
             "**Continuing Quality Review**\n\nDetails.\n\n**Next section**\n\nMore.",
         );
@@ -766,6 +1366,9 @@ mod tests {
 
     #[test]
     fn reasoning_summary_extracts_title_without_body() {
+        // arrange
+        // act
+        // assert
         let (title, body) = reasoning_summary("**Continuing Quality Review**");
         assert_eq!(title.as_deref(), Some("Continuing Quality Review"));
         assert!(body.is_empty());
@@ -773,6 +1376,9 @@ mod tests {
 
     #[test]
     fn reasoning_summary_preserves_indented_body() {
+        // arrange
+        // act
+        // assert
         let (title, body) =
             reasoning_summary("**Continuing Quality Review**\n\n    const value = true\n");
         assert_eq!(title.as_deref(), Some("Continuing Quality Review"));
@@ -781,6 +1387,9 @@ mod tests {
 
     #[test]
     fn reasoning_summary_rejects_inline_bold_title() {
+        // arrange
+        // act
+        // assert
         let (title, body) = reasoning_summary("**Important:** keep this in the body.");
         assert!(title.is_none());
         assert_eq!(body, "**Important:** keep this in the body.");
@@ -788,6 +1397,9 @@ mod tests {
 
     #[test]
     fn reasoning_summary_passes_through_plain_text() {
+        // arrange
+        // act
+        // assert
         let (title, body) = reasoning_summary("Details only.");
         assert!(title.is_none());
         assert_eq!(body, "Details only.");
@@ -795,6 +1407,9 @@ mod tests {
 
     #[test]
     fn reasoning_summary_strips_redacted_placeholder() {
+        // arrange
+        // act
+        // assert
         let (title, body) = reasoning_summary("[REDACTED]");
         assert!(title.is_none());
         assert!(body.is_empty());
@@ -802,6 +1417,9 @@ mod tests {
 
     #[test]
     fn reasoning_summary_strips_redacted_and_extracts_title() {
+        // arrange
+        // act
+        // assert
         let (title, body) = reasoning_summary("[REDACTED]**Title**\n\nbody");
         assert_eq!(title.as_deref(), Some("Title"));
         assert_eq!(body, "body");

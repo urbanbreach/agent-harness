@@ -533,6 +533,9 @@ fn cap_file_operation_facts(
     )
 }
 
+/// Build compaction facts so that `compaction_preserves_file_tool_skill_todo_and_plan_context`:
+/// read-file facts, modified-file facts, generic tool operation facts, skill loads, todo
+/// updates, and plan handoff/edit references from compacted turns are all captured.
 pub(super) fn build_provider_compaction_facts(
     run_state: &RunState,
     trigger: &ProviderCompactionTrigger,

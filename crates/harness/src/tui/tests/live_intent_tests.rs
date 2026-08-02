@@ -3,6 +3,9 @@ use harness::UnwrapOrAbort;
 
 #[test]
 fn plan_handoff_updates_live_agent_target_to_spawned_build_agent() {
+    // arrange
+    // act
+    // assert
     let target = Arc::new(Mutex::new(LiveAgentTarget {
         agent_id: Some("agent_plan".to_string()),
         profile: "plan".to_string(),
@@ -27,6 +30,9 @@ fn plan_handoff_updates_live_agent_target_to_spawned_build_agent() {
 
 #[tokio::test]
 async fn compact_intent_reports_noop_status_for_idle_live_agent() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let mut config = CoordinatorConfig::new(temp_dir.path().to_path_buf());
     config.deterministic_store = true;
@@ -86,18 +92,24 @@ async fn compact_intent_reports_noop_status_for_idle_live_agent() {
 
 #[test]
 fn manual_compaction_success_message_reports_active_context_delta() {
+    // arrange
+    // act
+    // assert
     assert_eq!(
-        manual_compaction_success_message("checkpoint_000123", Some(18_200), Some(4_100)),
-        "manual compaction checkpoint written: checkpoint_000123 · active ctx 18.2K → 4.1K est"
+        manual_compaction_success_message("summary preview", 18_200, 4_100),
+        "manual compaction applied · ctx 18.2K → 4.1K est · summary preview"
     );
     assert_eq!(
-        manual_compaction_success_message("checkpoint_000124", Some(4_100), Some(4_100)),
-        "manual compaction checkpoint written: checkpoint_000124 · active ctx estimate unchanged"
+        manual_compaction_success_message("summary preview", 4_100, 4_100),
+        "manual compaction applied · ctx estimate unchanged · summary preview"
     );
 }
 
 #[test]
 fn foreground_background_success_message_reports_single_and_multiple_counts() {
+    // arrange
+    // act
+    // assert
     assert_eq!(
         foreground_background_success_message(1),
         "foreground subagent moved to background"
@@ -153,6 +165,9 @@ async fn event_forwarder_stops_after_terminal_event_when_requested() {
 
 #[tokio::test]
 async fn event_forwarder_updates_live_agent_target_on_plan_handoff() {
+    // arrange
+    // act
+    // assert
     let store = Arc::new(InMemoryEventStore::new());
     store
         .append(forwarder_event_draft(
@@ -199,6 +214,9 @@ async fn event_forwarder_updates_live_agent_target_on_plan_handoff() {
 
 #[tokio::test]
 async fn compact_intent_reports_unavailable_when_no_live_agent_target_exists() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let mut config = CoordinatorConfig::new(temp_dir.path().to_path_buf());
     config.deterministic_store = true;
@@ -249,6 +267,9 @@ async fn compact_intent_reports_unavailable_when_no_live_agent_target_exists() {
 
 #[test]
 fn live_ui_router_forwards_compact_intent_without_switching_workflow() {
+    // arrange
+    // act
+    // assert
     let (intent_tx, mut intent_rx) = mpsc::unbounded_channel::<UiIntent>();
     let launch_selection = Arc::new(Mutex::new(LaunchMetadata::default()));
     let (selected_workflow, sink) = build_live_ui_intent_router(
@@ -266,6 +287,9 @@ fn live_ui_router_forwards_compact_intent_without_switching_workflow() {
 
 #[test]
 fn live_ui_router_forwards_interrupt_intent_without_switching_workflow() {
+    // arrange
+    // act
+    // assert
     let (intent_tx, mut intent_rx) = mpsc::unbounded_channel::<UiIntent>();
     let launch_selection = Arc::new(Mutex::new(LaunchMetadata::default()));
     let (selected_workflow, sink) = build_live_ui_intent_router(
@@ -290,6 +314,9 @@ fn live_ui_router_forwards_interrupt_intent_without_switching_workflow() {
 
 #[test]
 fn live_ui_router_forwards_foreground_background_intent_without_switching_workflow() {
+    // arrange
+    // act
+    // assert
     let (intent_tx, mut intent_rx) = mpsc::unbounded_channel::<UiIntent>();
     let launch_selection = Arc::new(Mutex::new(LaunchMetadata::default()));
     let (selected_workflow, sink) = build_live_ui_intent_router(
@@ -309,7 +336,37 @@ fn live_ui_router_forwards_foreground_background_intent_without_switching_workfl
 }
 
 #[test]
+fn live_ui_router_forwards_single_handle_demote_intent_without_switching_workflow() {
+    // arrange
+    // act
+    // assert
+    let (intent_tx, mut intent_rx) = mpsc::unbounded_channel::<UiIntent>();
+    let launch_selection = Arc::new(Mutex::new(LaunchMetadata::default()));
+    let (selected_workflow, sink) = build_live_ui_intent_router(
+        intent_tx,
+        Arc::clone(&launch_selection),
+        false,
+        "test-digest".to_string(),
+    );
+
+    sink(UiIntent::DemoteForegroundChildTask {
+        handle_id: "req_child_demote".to_string(),
+    });
+
+    assert!(recover_mutex_lock(&selected_workflow).is_none());
+    assert_eq!(
+        intent_rx.try_recv().ok(),
+        Some(UiIntent::DemoteForegroundChildTask {
+            handle_id: "req_child_demote".to_string(),
+        })
+    );
+}
+
+#[test]
 fn live_ui_router_records_model_switch_without_switching_workflow() {
+    // arrange
+    // act
+    // assert
     let (intent_tx, mut intent_rx) = mpsc::unbounded_channel::<UiIntent>();
     let launch_selection = Arc::new(Mutex::new(LaunchMetadata::default()));
     let (selected_workflow, sink) = build_live_ui_intent_router(

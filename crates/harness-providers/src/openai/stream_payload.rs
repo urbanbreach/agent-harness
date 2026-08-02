@@ -97,6 +97,7 @@ impl OpenAiResponsesUsage {
         let completion_tokens = self.completion_tokens.or(self.output_tokens).unwrap_or(0);
         let total_tokens = self
             .total_tokens
+            .filter(|&total| total > 0)
             .unwrap_or(prompt_tokens.saturating_add(completion_tokens));
 
         CompletionUsage {
@@ -168,6 +169,8 @@ pub(super) struct OpenAiChatChoiceChunk {
     pub(super) delta: OpenAiChatDeltaChunk,
     #[serde(default)]
     pub(super) finish_reason: Option<String>,
+    #[serde(default)]
+    pub(super) usage: Option<OpenAiResponsesUsage>,
 }
 
 #[derive(Debug, Default, Deserialize)]

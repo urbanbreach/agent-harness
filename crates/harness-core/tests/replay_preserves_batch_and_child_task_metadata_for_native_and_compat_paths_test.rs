@@ -113,6 +113,9 @@ impl Tool for BatchMetadataTool {
 
 #[tokio::test]
 async fn replay_preserves_batch_and_child_task_metadata_for_native_and_compat_paths() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let workspace_root = temp_dir.path().join("workspace");
     fs::create_dir_all(&workspace_root).unwrap_or_abort();

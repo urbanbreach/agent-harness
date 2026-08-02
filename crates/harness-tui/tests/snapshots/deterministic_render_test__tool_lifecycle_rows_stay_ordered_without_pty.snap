@@ -3,38 +3,37 @@ source: crates/harness-tui/tests/deterministic_render_test.rs
 expression: trim_trailing_snapshot_whitespace(&rendered)
 ---
 
-  ┃                                                                                                                                         Inspect tool activity
-  ┃  Inspect tool activity
-  ┃                                                                                                                                         ▼ Subagents
-                                                                                                                                            • ✓ Researcher Task
-     → Read src/ui.rs [offset=1, limit=24]
-                                                                                                                                            ▼ MCP
-     ┃ ← Patch · ui.rs  ▸                                                                                                                   • No MCP servers configured
-     ┃ crates/harness-tui/src
-     ┃ Remove diff review surface · Diff preview unavailable (artifacts/tool-lifecycle-inline.diff)                                         ▼ LSP
-                                                                                                                                            • No active LSP servers
-     ✓ Researcher Task — audit tool lifecycle parity
-      Found the whole-tool parity path.                                                                                                     ▼ Modified Files
-                                                                                                                                            • crates/harness-tui/src/ui.rs
+   test-workspace /workspace/agent-harness
 
-     $ cargo test -p harness-tui  ▸
-      exit code: 1
-      stderr: snapshot mismatch
+
+     ❯ Inspect tool activity
+
+
+     ◈ Read 1 file
+
+     ◈ Patch · ui.rs  ▸
+         crates/harness-tui/src
+         Remove diff review surface · Diff preview unavailable (artifacts/tool-lifecycle-inline.diff)
+
+       · Researcher Task — audit tool lifecycle parity
+         Found the whole-tool parity path.
+
+
+  ❙  ◆ cargo test -p harness-tui  ▸
+         exit code: 1
+         stderr: snapshot mismatch
 
 
      Tool summaries are now easier to scan, and edits stay inline.
 
-     ▪ Assistant · model-1 · 17ms
+     Worked for 0.0s.
 
 
 
 
 
+  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ ❯                                                                                                                                                                            │
+  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── model-1 ─╯
 
-
-┃
-┃
-┃
-┃  model-1 mock
-╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    HARNESS 0.1.0
-                                                                                                                 live 0  Ctrl+p commands
+  Shift+Tab:mode  │  Ctrl+x:shortcuts

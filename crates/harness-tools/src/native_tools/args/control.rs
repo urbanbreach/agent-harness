@@ -79,6 +79,16 @@ pub(in crate::native_tools) struct BackgroundOutputArgs {
     #[serde(default)]
     pub(in crate::native_tools) request_id: Option<String>,
     #[schemars(
+        description = "Optional list of background request_ids for multi-wait. When two or more ids are provided, wait_mode is required (any|all) and block waits until the wait condition is satisfied or timeout expires."
+    )]
+    #[serde(default)]
+    pub(in crate::native_tools) request_ids: Vec<String>,
+    #[schemars(
+        description = "Multi-wait mode when request_ids has two or more entries: `any` returns when the first watched request is terminal; `all` returns when every watched request is terminal. Cancelled and completed both count as terminal."
+    )]
+    #[serde(default)]
+    pub(in crate::native_tools) wait_mode: Option<String>,
+    #[schemars(
         description = "When true, wait until the background request reaches a terminal state or timeout expires. Use only for interim status checks unless the coordinator/system completion notification has arrived."
     )]
     #[serde(default)]

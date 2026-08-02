@@ -6,14 +6,14 @@ use std::sync::Arc;
 
 use clap::Args;
 use harness_core::clock::Determinism;
-use harness_core::config::{HarnessConfig, ShellAllowlist};
+use harness_core::config::{ConfigLoadContext, HarnessConfig, ShellAllowlist};
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig};
 use harness_core::event::ToolCallStatus;
 use harness_core::perm::PermissionDecision;
 use harness_core::redact::DefaultRedactor;
 use harness_tools::coordinator_registry;
 
-use crate::cli_config::{apply_runtime_metadata, load_optional_config_with_digest};
+use crate::cli_config::{apply_runtime_metadata, load_optional_config_with_digest_context};
 use crate::logging;
 use crate::scenarios::{
     create_workspace, default_permission_policy, deterministic_run_id, golden_path_edit_args,
@@ -74,14 +74,102 @@ pub struct RunCommand {
     #[arg(long, default_value_t = false)]
     pub thinking: bool,
 
-    #[arg(long, value_enum, default_value_t = PromptOutputFormat::Default)]
+    #[arg(long, alias = "output-format", value_enum, default_value_t = PromptOutputFormat::Default)]
     pub format: PromptOutputFormat,
 
     #[arg(long = "file", short = 'f', value_name = "PATH")]
     pub files: Vec<PathBuf>,
 
-    #[arg(long = "dangerously-skip-permissions", default_value_t = false)]
+    #[arg(
+        long = "dangerously-skip-permissions",
+        alias = "always-approve",
+        default_value_t = false
+    )]
     pub dangerously_skip_permissions: bool,
+
+    #[arg(long, value_name = "N")]
+    pub max_turns: Option<u32>,
+
+    #[arg(long, default_value_t = false)]
+    pub no_subagents: bool,
+
+    #[arg(long, default_value_t = false)]
+    pub no_plan: bool,
+
+    #[arg(long, value_name = "RULES")]
+    pub rules: Option<String>,
+
+    #[arg(long, value_name = "EFFORT")]
+    pub reasoning_effort: Option<String>,
+
+    /// Built-in tools to allow (comma-separated).
+    #[arg(long, value_name = "TOOLS", value_delimiter = ',')]
+    pub tools: Vec<String>,
+
+    /// Built-in tools to remove (comma-separated).
+    #[arg(long, value_name = "TOOLS", value_delimiter = ',')]
+    pub disallowed_tools: Vec<String>,
+
+    /// Disable web search and web fetch tools.
+    #[arg(long, default_value_t = false)]
+    pub disable_web_search: bool,
+
+    /// Permission mode (default, plan, auto).
+    #[arg(long, value_name = "MODE")]
+    pub permission_mode: Option<String>,
+
+    /// Permission allow rule (repeatable).
+    #[arg(long, value_name = "RULE", value_delimiter = ',')]
+    pub allow: Vec<String>,
+
+    /// Permission deny rule (repeatable).
+    #[arg(long, value_name = "RULE", value_delimiter = ',')]
+    pub deny: Vec<String>,
+
+    /// Override the agent's system prompt.
+    #[arg(long, value_name = "PROMPT")]
+    pub system_prompt_override: Option<String>,
+
+    /// Read prompt text from a file.
+    #[arg(long, value_name = "PATH")]
+    pub prompt_file: Option<PathBuf>,
+
+    /// Disable cross-session memory for this session.
+    #[arg(long, default_value_t = false)]
+    pub no_memory: bool,
+
+    /// Send the prompt exactly as given.
+    #[arg(long, default_value_t = false)]
+    pub verbatim: bool,
+
+    /// Sandbox profile for filesystem and network access.
+    #[arg(long, value_name = "PROFILE")]
+    pub sandbox: Option<String>,
+
+    /// Run the task N ways in parallel and pick the best.
+    #[arg(long, value_name = "N", conflicts_with = "no_subagents")]
+    pub best_of_n: Option<u32>,
+
+    /// Append a self-verification loop to the prompt.
+    #[arg(
+        long,
+        alias = "self-verify",
+        default_value_t = false,
+        conflicts_with = "no_subagents"
+    )]
+    pub check: bool,
+
+    /// Use a specific session ID for a new conversation.
+    #[arg(long, value_name = "SESSION_ID")]
+    pub session_id: Option<String>,
+
+    /// When resuming, create a new session ID instead of reusing the original.
+    #[arg(long, default_value_t = false)]
+    pub fork_session: bool,
+
+    /// Check out the original session's commit when resuming.
+    #[arg(long, default_value_t = false)]
+    pub restore_code: bool,
 
     #[arg(long, short = 'i', default_value_t = false)]
     pub interactive: bool,
@@ -113,7 +201,14 @@ pub fn execute_with_io(
         return execute_prompt_run(cmd, config_path, global_session_dir, io, deps);
     }
 
-    let settings = match resolve_settings(&cmd, config_path, global_session_dir) {
+    let config_context = match deps.config_load_context() {
+        Ok(context) => context,
+        Err(err) => {
+            let _ = writeln!(io.stderr, "run setup failed: {err}");
+            return 2;
+        }
+    };
+    let settings = match resolve_settings(&cmd, config_path, global_session_dir, &config_context) {
         Ok(settings) => settings,
         Err(err) => {
             let _ = writeln!(io.stderr, "run setup failed: {err}");
@@ -191,8 +286,21 @@ fn execute_prompt_run(
         }
     };
 
+    let config_context = match deps.config_load_context() {
+        Ok(context) => context,
+        Err(err) => {
+            let _ = writeln!(io.stderr, "run setup failed: {err}");
+            return 2;
+        }
+    };
+
     let resume = if cmd.continue_session {
-        match latest_resumable_session(&cmd, config_path.as_deref(), global_session_dir.clone()) {
+        match latest_resumable_session(
+            &cmd,
+            config_path.as_deref(),
+            global_session_dir.clone(),
+            &config_context,
+        ) {
             Ok(session) => Some(session),
             Err(err) => {
                 let _ = writeln!(io.stderr, "run setup failed: {err}");
@@ -215,6 +323,25 @@ fn execute_prompt_run(
         resume,
         out: cmd.out.clone(),
         print_run_dir: cmd.print_run_dir,
+        max_turns: cmd.max_turns,
+        no_subagents: cmd.no_subagents,
+        no_plan: cmd.no_plan,
+        tools: cmd.tools.clone(),
+        disallowed_tools: cmd.disallowed_tools.clone(),
+        disable_web_search: cmd.disable_web_search,
+        no_memory: cmd.no_memory,
+        prompt_file: None,
+        verbatim: cmd.verbatim,
+        system_prompt_override: cmd.system_prompt_override.clone(),
+        dangerously_skip_permissions: cmd.dangerously_skip_permissions,
+        permission_mode: cmd.permission_mode.clone(),
+        session_id: cmd.session_id.clone(),
+        rules: cmd.rules.clone(),
+        reasoning_effort: cmd.reasoning_effort.clone(),
+        allow: cmd.allow.clone(),
+        deny: cmd.deny.clone(),
+        fork_session: cmd.fork_session,
+        sandbox: cmd.sandbox.clone(),
         format: cmd.format,
     };
 
@@ -250,8 +377,33 @@ fn resolve_run_prompt_text(
         }
     }
 
+    if let Some(ref prompt_file) = cmd.prompt_file {
+        let resolved = if prompt_file.is_absolute() {
+            prompt_file.clone()
+        } else {
+            deps.current_dir()
+                .map_err(|err| format!("failed to resolve current working directory: {err}"))?
+                .join(prompt_file)
+        };
+        if !resolved.exists() {
+            return Err(format!(
+                "--prompt-file path does not exist: {}",
+                prompt_file.display()
+            ));
+        }
+        let content = std::fs::read_to_string(&resolved)
+            .map_err(|err| format!("failed to read --prompt-file: {err}"))?;
+        let trimmed = content.trim_end_matches(['\r', '\n']);
+        if !trimmed.is_empty() {
+            parts.push(trimmed.to_string());
+        }
+    }
+
     if parts.is_empty() {
-        return Err("no prompt text provided; pass a positional message or pipe stdin".to_string());
+        return Err(
+            "no prompt text provided; pass a positional message, pipe stdin, or use --prompt-file"
+                .to_string(),
+        );
     }
 
     let current_dir = deps
@@ -280,13 +432,14 @@ fn latest_resumable_session(
     cmd: &RunCommand,
     config_path: Option<&Path>,
     global_session_dir: Option<PathBuf>,
+    config_context: &ConfigLoadContext,
 ) -> Result<String, String> {
     let session_dir = cmd
         .session_dir
         .clone()
         .or(global_session_dir)
         .or_else(|| {
-            load_optional_config_with_digest(config_path)
+            load_optional_config_with_digest_context(config_path, config_context)
                 .ok()
                 .flatten()
                 .map(|loaded| loaded.config.paths.session_dir)
@@ -333,6 +486,7 @@ fn resolve_settings(
     cmd: &RunCommand,
     config_path: Option<PathBuf>,
     global_session_dir: Option<PathBuf>,
+    config_context: &ConfigLoadContext,
 ) -> Result<RunSettings, String> {
     let mut shell_allowlist = ShellAllowlist::default();
     let mut config_session_dir = PathBuf::from(DEFAULT_SESSION_DIR);
@@ -341,7 +495,9 @@ fn resolve_settings(
     let mut config_digest = "none".to_string();
     let mut loaded_config = None;
 
-    if let Some(loaded) = load_optional_config_with_digest(config_path.as_deref())? {
+    if let Some(loaded) =
+        load_optional_config_with_digest_context(config_path.as_deref(), config_context)?
+    {
         let config = loaded.config;
         config_digest = loaded.digest;
         shell_allowlist = config.permissions.shell_allowlist.clone();
@@ -557,6 +713,27 @@ mod tests {
             format: crate::prompt::PromptOutputFormat::Default,
             files: Vec::new(),
             dangerously_skip_permissions: false,
+            max_turns: None,
+            no_subagents: false,
+            no_plan: false,
+            rules: None,
+            reasoning_effort: None,
+            tools: Vec::new(),
+            disallowed_tools: Vec::new(),
+            disable_web_search: false,
+            permission_mode: None,
+            allow: Vec::new(),
+            deny: Vec::new(),
+            system_prompt_override: None,
+            prompt_file: None,
+            no_memory: false,
+            verbatim: false,
+            sandbox: None,
+            best_of_n: None,
+            check: false,
+            session_id: None,
+            fork_session: false,
+            restore_code: false,
             interactive: false,
             command: None,
             message: Vec::new(),
@@ -565,6 +742,9 @@ mod tests {
 
     #[tokio::test]
     async fn deterministic_golden_path_twice_produces_identical_sha256_digest() {
+        // arrange
+        // act
+        // assert
         let temp_dir = tempfile::tempdir().unwrap_or_abort();
         let settings = RunSettings {
             config: None,
@@ -594,6 +774,9 @@ mod tests {
 
     #[test]
     fn deterministic_run_id_is_stable_for_seed_and_scenario() {
+        // arrange
+        // act
+        // assert
         let a = deterministic_run_id(7, ScenarioName::GoldenPath);
         let b = deterministic_run_id(7, ScenarioName::GoldenPath);
         let c = deterministic_run_id(8, ScenarioName::GoldenPath);
@@ -606,6 +789,9 @@ mod tests {
 
     #[tokio::test]
     async fn deterministic_run_writes_stable_meta_json_with_null_created_at() {
+        // arrange
+        // act
+        // assert
         let temp_dir = tempfile::tempdir().unwrap_or_abort();
         let settings = RunSettings {
             config: None,
@@ -638,6 +824,9 @@ mod tests {
 
     #[tokio::test]
     async fn replay_summary_matches_expected_values_for_golden_path() {
+        // arrange
+        // act
+        // assert
         let temp_dir = tempfile::tempdir().unwrap_or_abort();
         let settings = RunSettings {
             config: None,
@@ -666,6 +855,9 @@ mod tests {
 
     #[tokio::test]
     async fn edit_applied_diff_refs_match_artifact_written() {
+        // arrange
+        // act
+        // assert
         let temp_dir = tempfile::tempdir().unwrap_or_abort();
         let settings = RunSettings {
             config: None,

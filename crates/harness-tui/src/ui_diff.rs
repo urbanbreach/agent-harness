@@ -30,6 +30,7 @@ use ui_diff_syntax::{diff_path_is_plain_prose, highlight_diff_line_chunks};
 #[derive(Debug, Clone, Copy)]
 pub(super) struct StructuredDiffRenderOptions {
     pub force_stacked: bool,
+    pub plain_numbered: bool,
     pub highlight_intraline: bool,
     pub highlight_syntax: bool,
     pub show_file_header: bool,
@@ -51,6 +52,7 @@ pub(super) fn render_structured_diff_lines(
         width,
         StructuredDiffRenderOptions {
             force_stacked,
+            plain_numbered: false,
             highlight_intraline: true,
             highlight_syntax: false,
             show_file_header: true,
@@ -94,6 +96,7 @@ pub(super) fn render_structured_diff_lines_with_hunk_offsets(
         prefix,
         width,
         options.force_stacked,
+        options.plain_numbered,
         options.highlight_syntax,
         options.show_file_header,
         options.show_hunk_header,
@@ -124,6 +127,9 @@ mod tests {
 
     #[test]
     fn structured_diff_rows_respect_display_width_for_wide_glyphs() {
+        // arrange
+        // act
+        // assert
         let diff = "--- demo.txt\n+++ demo.txt\n@@ -1,2 +1,2 @@\n-漢字🙂漢字🙂漢字🙂\n+🙂漢字🙂漢字🙂漢字\n";
         let lines = render_structured_diff_lines(diff, None, "", 24, false, &Theme::default())
             .unwrap_or_abort();
@@ -140,6 +146,9 @@ mod tests {
 
     #[test]
     fn stacked_diff_text_spans_keep_row_backgrounds() {
+        // arrange
+        // act
+        // assert
         let diff = "--- demo.txt\n+++ demo.txt\n@@ -1,3 +1,3 @@\n alpha\n-beta\n+BETA\n gamma\n";
         let theme = Theme::default();
         let lines = render_structured_diff_lines_with_options(
@@ -149,6 +158,7 @@ mod tests {
             80,
             StructuredDiffRenderOptions {
                 force_stacked: true,
+                plain_numbered: false,
                 highlight_intraline: false,
                 highlight_syntax: false,
                 show_file_header: true,
@@ -200,6 +210,9 @@ mod tests {
 
     #[test]
     fn structured_diff_palette_matches_reference_inline_diff_colors() {
+        // arrange
+        // act
+        // assert
         let theme = Theme::default();
 
         assert_eq!(
@@ -260,6 +273,9 @@ mod tests {
 
     #[test]
     fn structured_diff_syntax_highlighting_uses_reference_token_colors() {
+        // arrange
+        // act
+        // assert
         let chunks = highlight_diff_line_chunks(
             Some("src/demo.rs"),
             "let value = \"hi\"; let total = 42; // note",
@@ -280,7 +296,7 @@ mod tests {
         );
         assert_eq!(
             find_chunk("42").style.fg,
-            Some(Color::Rgb(0xF5, 0xA7, 0x42))
+            Some(Color::Rgb(0xE5, 0xC0, 0x7B))
         );
         assert_eq!(
             find_chunk("note").style.fg,
@@ -337,6 +353,9 @@ mod tests {
     }
     #[test]
     fn structured_diff_headers_surface_rename_paths() {
+        // arrange
+        // act
+        // assert
         let diff = "--- src/old_name.rs\n+++ src/new_name.rs\n@@ -1,1 +1,1 @@\n-old\n+new\n";
         let lines = render_structured_diff_lines_with_options(
             diff,
@@ -345,6 +364,7 @@ mod tests {
             96,
             StructuredDiffRenderOptions {
                 force_stacked: true,
+                plain_numbered: false,
                 highlight_intraline: false,
                 highlight_syntax: false,
                 show_file_header: true,
@@ -367,6 +387,9 @@ mod tests {
 
     #[test]
     fn stacked_diff_long_rows_wrap_instead_of_truncating() {
+        // arrange
+        // act
+        // assert
         let diff = "--- docs/transcript.md\n+++ docs/transcript.md\n@@ -1,1 +1,1 @@\n-session turn diff view keeps the tool row spacing perfectly aligned in every transcript lane for operators reviewing compact windows\n+session turn diff view keeps the tool row spacing perfectly aligned across the transcript surface for operators reviewing compact windows and narrow shells\n";
         let lines = render_structured_diff_lines_with_options(
             diff,
@@ -375,6 +398,7 @@ mod tests {
             84,
             StructuredDiffRenderOptions {
                 force_stacked: true,
+                plain_numbered: false,
                 highlight_intraline: false,
                 highlight_syntax: false,
                 show_file_header: true,

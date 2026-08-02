@@ -2,7 +2,7 @@ use harness::UnwrapOrAbort;
 #[test]
 fn sessions_docs_cover_lineage_source_cutoff_summary_and_artifact_semantics() {
     // arrange
-    let sessions = read_doc("docs/sessions-and-replay.md");
+    let sessions = read_doc("docs/architecture/sessions-and-replay.md");
     let lineage_source = [
         read_doc("crates/harness-core/src/session_lineage.rs"),
         read_doc("crates/harness-core/src/session_lineage/materialization.rs"),
@@ -47,7 +47,7 @@ fn sessions_docs_cover_lineage_source_cutoff_summary_and_artifact_semantics() {
 #[test]
 fn sessions_docs_cover_resume_acceptance_realistic_interrupted_session() {
     // arrange
-    let sessions = read_doc("docs/sessions-and-replay.md");
+    let sessions = read_doc("docs/architecture/sessions-and-replay.md");
     let resume_test = [
         read_doc("crates/harness-core/tests/coord/12_resume_existing_run_persists_bindings_for_test.rs"),
         read_doc("crates/harness-core/tests/coord/12b_resume_acceptance_restores_realistic_interrupted_session_test.rs"),
@@ -91,7 +91,7 @@ fn sessions_docs_cover_resume_acceptance_realistic_interrupted_session() {
 #[test]
 fn architecture_docs_cover_compaction_contracts_and_preservation_context() {
     // arrange
-    let architecture = read_doc("docs/architecture.md");
+    let architecture = read_doc("docs/architecture/architecture.md");
     let provider_context = [
         read_doc("crates/harness-core/src/coord/provider_context.rs"),
         read_doc("crates/harness-core/src/coord/provider_context/operational_memory.rs"),
@@ -144,25 +144,44 @@ fn docs_do_not_reference_broken_local_markdown_targets_or_deleted_prd_artifacts(
         "docs/v1-agent-catalog-workspace-intelligence-prd.md",
         "docs/legacy-parity-spec.md",
         "docs/v1-skill-contract-capability-governance-prd.md",
+        "docs/v1-release-readiness-slice-prd.md",
+        "docs/v1-release-readiness-slice-progress.md",
+        "docs/pre-v1-enhancements-prd.md",
+        "docs/pre-v1-enhancements-progress.md",
+        "docs/roadmap-v1.md",
+        "docs/claim-evidence-matrix.md",
+        "docs/release-blockers.md",
+        "docs/harness-live-agent-testing-prd.md",
+        "docs/harness-live-agent-testing-progress.md",
+        "docs/harness-testing-enhancement-prd.md",
+        "docs/harness-testing-enhancement-progress.md",
+        "docs/tools-parity-prd.md",
+        "docs/tools-parity-progress.md",
+        "docs/auth-model-parity-prd.md",
+        "docs/auth-model-parity-progress.md",
+        "docs/permissions-ruleset-parity-progress.md",
+        "docs/agent_harness_ui_backend_prd.md",
+        "docs/agent_harness_ui_backend_prd_missing_specs.md",
+        "docs/onboarding-terminal-migration-prd.md",
+        "docs/ctrl-p-command-palette-parity-plan.md",
+        "docs/chat-rendering-parity.md",
+        "docs/tui-parity.md",
+        "docs/config-restructure-prompt.md",
+        "docs/config-restructure-spec.md",
+        "docs/desktop-distribution-surface-map.md",
+        "docs/parity-gaps/tui-parity-gaps.md",
+        "docs/refactoring-progress.json",
+        "docs/test-suite-prd.md",
+        "PERMISSIONS_RULESET_PARITY_PRD.md",
+        "refactoring-prd.md",
+        "tool_coverage_test.md",
         "skills-lock.json",
     ];
 
+    // act
     for markdown in markdown_files(&root.join("docs")) {
-        let relative = markdown
-            .strip_prefix(&root)
-            .unwrap_or_abort()
-            .to_string_lossy()
-            .replace('\\', "/");
-        if matches!(
-            relative.as_str(),
-            "docs/v1-release-readiness-slice-prd.md"
-                | "docs/v1-release-readiness-slice-progress.md"
-        ) {
-            continue;
-        }
         let body = std::fs::read_to_string(&markdown)
             .unwrap_or_else(|_| panic!("abort"));
-        // act
         for deleted_target in deleted {
             // assert
             assert!(
@@ -183,6 +202,7 @@ fn docs_do_not_reference_broken_local_markdown_targets_or_deleted_prd_artifacts(
                 continue;
             }
             let candidate = markdown.parent().unwrap_or_abort().join(path_part);
+            // assert
             assert!(
                 candidate.exists(),
                 "{} references missing local markdown target {}",
@@ -194,46 +214,48 @@ fn docs_do_not_reference_broken_local_markdown_targets_or_deleted_prd_artifacts(
 }
 
 #[test]
-fn readiness_closeout_docs_are_current_and_back_roadmap_claims() {
+fn planning_and_progress_docs_are_not_checked_in() {
     // arrange
     let root = repo_root();
-    let roadmap = read_doc("docs/roadmap-v1.md");
-    let claim_matrix = read_doc("docs/claim-evidence-matrix.md");
-    // act
-    let active_prd = std::fs::read_dir(root.join("docs"))
-        .unwrap_or_abort()
-        .filter_map(|entry| entry.ok().map(|e| e.path()))
-        .find(|path| {
-            path.file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| {
-                    name.starts_with("agent_harness_") && name.ends_with("_ui_pi_backend_prd.md")
-                })
-        })
-        .unwrap_or_abort();
-
-    // assert
-    assert!(active_prd.exists(), "active implementation PRD must exist");
-    let retired_docs = [
-        "docs/v1-release-readiness-slice-prd.md",
-        "docs/v1-release-readiness-slice-progress.md",
-        "docs/pre-v1-enhancements-prd.md",
-        "docs/pre-v1-enhancements-progress.md",
+    let forbidden_names = [
+        "roadmap-v1.md",
+        "claim-evidence-matrix.md",
+        "release-blockers.md",
+        "PERMISSIONS_RULESET_PARITY_PRD.md",
+        "TOOLS_PARITY_PRD.md",
+        "refactoring-prd.md",
     ];
-    for retired_target in retired_docs {
+
+    // act
+    for name in forbidden_names {
+        // assert
         assert!(
-            !roadmap.contains(retired_target),
-            "roadmap must not reference deleted {retired_target}"
+            !root.join(name).is_file(),
+            "planning artifact must stay deleted: {name}"
         );
     }
-    assert!(
-        claim_matrix.contains("Strict V1 roadmap closeout readiness evidence is restored"),
-        "claim matrix must include the restored readiness closeout evidence row"
-    );
-    assert!(
-        roadmap.contains("## V1 release blockers"),
-        "roadmap must keep a release blockers section"
-    );
+
+    // act
+    let docs = root.join("docs");
+    for entry in std::fs::read_dir(&docs).unwrap_or_abort() {
+        let path = entry.unwrap_or_abort().path();
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        let lower = name.to_ascii_lowercase();
+        // assert
+        assert!(
+            !(lower.ends_with("-prd.md")
+                || lower.ends_with("_prd.md")
+                || lower.ends_with("-progress.md")
+                || lower.ends_with("-progress.json")
+                || lower.ends_with("-plan.md")
+                || lower == "roadmap-v1.md"
+                || lower == "claim-evidence-matrix.md"
+                || lower == "release-blockers.md"),
+            "planning/progress artifact must stay deleted: docs/{name}"
+        );
+    }
 }
 
 #[allow(clippy::panic, reason = "test code must panic gracefully")]

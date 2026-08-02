@@ -208,6 +208,9 @@ fn continued_runtime_model_options() -> Vec<ModelOption> {
 
 #[test]
 fn child_session_navigation_keybinds_follow_default_contract() {
+    // arrange
+    // act
+    // assert
     let run_dir = tempfile::tempdir().unwrap_or_abort();
     let (parent_dir, child_a_dir, child_b_dir, parent_events) = session_fixture(run_dir.path());
 
@@ -297,6 +300,9 @@ fn child_session_navigation_keybinds_follow_default_contract() {
 
 #[test]
 fn replay_child_navigation_does_not_emit_live_intents() {
+    // arrange
+    // act
+    // assert
     let run_dir = tempfile::tempdir().unwrap_or_abort();
     let (parent_dir, _child_a_dir, _child_b_dir, parent_events) = session_fixture(run_dir.path());
 
@@ -333,6 +339,9 @@ fn replay_child_navigation_does_not_emit_live_intents() {
 
 #[test]
 fn continued_runtime_stays_primary_until_variant_cycle_sets_next_turns() {
+    // arrange
+    // act
+    // assert
     let variant_cycle_overrides =
         BTreeMap::from([("variant_cycle".to_string(), "tab".to_string())]);
     let options = continued_runtime_model_options();

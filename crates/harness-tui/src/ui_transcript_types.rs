@@ -1,4 +1,5 @@
 use super::*;
+use harness_core::event::ProviderRequestRetryMetadata;
 
 #[derive(Debug, Clone, Copy)]
 pub(super) struct TranscriptToolCardShell {
@@ -31,6 +32,7 @@ pub(in crate::ui) struct TranscriptRenderSurface {
     pub(in crate::ui) interaction_rows: Option<Vec<Option<TranscriptInteractionRow>>>,
     pub(in crate::ui) selection_rows: Option<Vec<TranscriptSelectionRow>>,
     pub(in crate::ui) diff_hunk_offsets: Vec<usize>,
+    pub(in crate::ui) selected_rail: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,6 +44,7 @@ pub(in crate::ui) enum TranscriptRenderSurfaceKind {
     AssistantCommandTool,
     AssistantError,
     AssistantFooter,
+    Compaction,
 }
 
 #[derive(Debug, Clone)]
@@ -91,6 +94,7 @@ pub(super) struct TranscriptTurnSection {
 pub(super) struct TranscriptUserMessageSection {
     pub(super) text: String,
     pub(super) queued: bool,
+    pub(super) wall_clock: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -100,6 +104,13 @@ pub(super) struct TranscriptTurnHeader {
     pub(super) profile_label: String,
     pub(super) model_id: String,
     pub(super) duration_ms: Option<u64>,
+    /// Reasoning-only mono span for "Thought for" (waiting-state packing).
+    pub(super) thinking_duration_ms: Option<u64>,
+    /// Elapsed time since first stream delta for "Responding…" (waiting-state packing).
+    pub(super) responding_duration_ms: Option<u64>,
+    pub(super) total_tokens: Option<u32>,
+    pub(super) retry: Option<ProviderRequestRetryMetadata>,
+    pub(super) retry_elapsed_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -159,6 +170,7 @@ pub(in crate::ui) enum TranscriptToolCallDetailBlock {
         diff_content: String,
         fallback_path: Option<String>,
         force_stacked: bool,
+        plain_numbered: bool,
         show_file_header: bool,
     },
     FileSection(TranscriptToolCallFileSection),
@@ -186,16 +198,34 @@ pub(super) struct TranscriptErrorSection {
     pub(super) text: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum TranscriptCompactionKind {
+    SessionCompaction,
+    BranchSummary,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct TranscriptCompactionSection {
+    pub(super) kind: TranscriptCompactionKind,
+    pub(super) summary: String,
+    pub(super) tokens_before: Option<u32>,
+    pub(super) read_files: Vec<String>,
+    pub(super) modified_files: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum TranscriptAssistantPart {
     Reasoning(TranscriptLabeledTextSection),
     Body(TranscriptBodyBlock),
     ToolCall(Box<TranscriptToolCallSection>),
     Error(TranscriptErrorSection),
+    Compaction(TranscriptCompactionSection),
 }
 
 pub(super) const TRANSCRIPT_ASSISTANT_BODY_PREFIX: &str = "   ";
-pub(super) const TRANSCRIPT_USER_BODY_PREFIX: &str = "  ";
+pub(super) const TRANSCRIPT_USER_BODY_PREFIX: &str = "     ";
 pub(super) const TRANSCRIPT_REASONING_BODY_PREFIX: &str = "   ";
-pub(super) const TRANSCRIPT_NESTED_INDENT: &str = "  ";
-pub(super) const TRANSCRIPT_OPCODE_EDIT_INDENT: &str = "    ";
+pub(super) const TRANSCRIPT_REASONING_HEADER_PREFIX: &str = "   ";
+pub(super) const TRANSCRIPT_SELECTED_RAIL_GLYPH: &str = "❙";
+pub(super) const TRANSCRIPT_NESTED_INDENT: &str = "     ";
+pub(super) const TRANSCRIPT_OPCODE_EDIT_INDENT: &str = "       ";

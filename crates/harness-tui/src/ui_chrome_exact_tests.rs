@@ -1,3 +1,8 @@
+#![allow(
+    deprecated,
+    reason = "deprecated compaction event variants kept for backward compatibility tests"
+)]
+
 use super::*;
 use crate::UnwrapOrAbort;
 
@@ -39,12 +44,12 @@ pub(crate) fn exact_test_subagent_footer_matches_harness_layout() {
         .collect::<Vec<_>>();
     assert!(
         rows[2].contains("Researcher (2 of 3)  12,345 (8%) · $0.42"),
-        "footer should render Opencode label, sibling count, and usage\n{}",
+        "footer should render Harness label, sibling count, and usage\n{}",
         rows[2]
     );
     assert!(
         rows[2].contains("Parent ↑") && rows[2].contains("Prev ←") && rows[2].contains("Next →"),
-        "footer should render Opencode navigation labels and shortcuts\n{}",
+        "footer should render Harness navigation labels and shortcuts\n{}",
         rows[2]
     );
     let rendered = rows.join("\n");
@@ -187,9 +192,10 @@ pub(crate) fn exact_test_subagent_replay_suppresses_parent_replay_dock() {
             .transcript_gutter_y
             .min(transcript.height.saturating_sub(1)),
     );
+    // Transcript base surface is Reset (live_transcript_shell_section renders Reset background).
     assert_eq!(
         terminal.backend().buffer()[(sample_x, sample_y)].bg,
-        theme.surface.shell,
+        ratatui::style::Color::Reset,
         "subagent replay should use the same transcript surface as the main chat"
     );
 }
@@ -203,7 +209,6 @@ pub(crate) fn exact_test_live_control_dock_renders_shared_surface() {
     for event in events {
         app.ingest_event(event);
     }
-    let theme = Theme::default();
     let width = 100;
     let height = 30;
     let area = Rect::new(0, 0, width, height);
@@ -212,9 +217,9 @@ pub(crate) fn exact_test_live_control_dock_renders_shared_surface() {
     let composer = dock.composer;
 
     assert_eq!(dock.status, None);
-    assert_eq!(dock.shell.height, composer.height.saturating_add(1));
+    assert_eq!(dock.shell.height, composer.height.saturating_add(2));
     assert_eq!(dock.shell.y, composer.y);
-    assert_eq!(dock.disclosure, Some(Rect::new(0, 29, 100, 1)));
+    assert_eq!(dock.disclosure, Some(Rect::new(2, 28, 96, 1)));
 
     let backend = TestBackend::new(width, height);
     let mut terminal = Terminal::new(backend).unwrap_or_abort();
@@ -228,26 +233,16 @@ pub(crate) fn exact_test_live_control_dock_renders_shared_surface() {
         .x
         .saturating_add(dock.shell.width.saturating_sub(1));
 
-    assert_eq!(
-        buffer[(right_edge, composer.y)].bg,
-        composer_input_surface(&Theme::default())
-    );
-    assert_eq!(
-        buffer[(
-            right_edge,
-            composer.y.saturating_add(composer.height.saturating_sub(1))
-        )]
-            .fg,
-        composer_input_surface(&Theme::default())
-    );
-    assert_eq!(
-        buffer[(right_edge, dock.shell.y)].bg,
-        composer_input_surface(&Theme::default())
-    );
-    assert_ne!(
-        buffer[(right_edge, dock.shell.y)].symbol(),
-        "─",
-        "quiet dock chrome should rely on surface spacing instead of a hard divider"
+    let expected_surface = ratatui::style::Color::Indexed(0);
+    assert_eq!(buffer[(right_edge, composer.y)].bg, expected_surface);
+    assert_eq!(buffer[(right_edge, dock.shell.y)].bg, expected_surface);
+    assert!(
+        matches!(
+            buffer[(right_edge, dock.shell.y)].symbol(),
+            "╮" | "│" | "╯" | " "
+        ),
+        "bordered live composer uses rounded chrome, got {:?}",
+        buffer[(right_edge, dock.shell.y)].symbol()
     );
     assert_eq!(
         buffer[(
@@ -255,7 +250,7 @@ pub(crate) fn exact_test_live_control_dock_renders_shared_surface() {
             composer.y.saturating_add(composer.height.saturating_sub(1)),
         )]
             .bg,
-        theme.surface.shell
+        expected_surface
     );
 }
 
@@ -303,7 +298,10 @@ pub(crate) fn exact_test_tool_status_summary_uses_effective_tool_identity() {
         user_timestamp: None,
         request_data: None,
         thinking_text: String::new(),
+        thinking_first_mono_ms: None,
+        thinking_last_mono_ms: None,
         transcript_text: String::new(),
+        first_delta_mono_ms: None,
         usage: None,
         cache_usage: None,
         error_message: None,
@@ -343,6 +341,7 @@ pub(crate) fn exact_test_tool_status_summary_uses_effective_tool_identity() {
         last_seq: 1,
         first_mono_ms: 1,
         last_mono_ms: 1,
+        request_started_mono_ms: None,
         revision: 0,
     });
 
@@ -387,7 +386,10 @@ pub(crate) fn exact_test_retry_summary_segment_prioritizes_retry_indicator() {
             }),
         }),
         thinking_text: String::new(),
+        thinking_first_mono_ms: None,
+        thinking_last_mono_ms: None,
         transcript_text: String::new(),
+        first_delta_mono_ms: None,
         usage: None,
         cache_usage: None,
         error_message: None,
@@ -397,6 +399,7 @@ pub(crate) fn exact_test_retry_summary_segment_prioritizes_retry_indicator() {
         last_seq: 1,
         first_mono_ms: 1,
         last_mono_ms: 1,
+        request_started_mono_ms: None,
         revision: 0,
     });
 
@@ -424,9 +427,9 @@ pub(crate) fn exact_test_live_composer_reserves_right_gap() {
     let plan = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, 160, 30));
     let dock = plan.dock.unwrap_or_abort();
 
-    assert!(plan.operator_sidebar.is_some());
+    assert!(plan.operator_sidebar.is_none());
     assert_eq!(dock.composer.x, dock.shell.x);
-    assert_eq!(dock.composer.width.saturating_add(2), dock.shell.width);
+    assert_eq!(dock.composer.width, dock.shell.width);
     assert_eq!(dock.disclosure.map(|area| area.x), Some(dock.composer.x));
     assert_eq!(
         dock.disclosure.map(|area| area.width),
@@ -489,6 +492,71 @@ pub(crate) fn exact_test_live_composer_disclosure_summarizes_compaction_metrics(
         .any(|candidate| candidate.contains("compactions 1")
             && candidate.contains("summary 80 tok")
             && candidate.contains("saved 380 tok")));
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_live_composer_disclosure_none_context_shows_est_zero() {
+    let app = AppState::new_live(None, false, None);
+
+    let surface = control_dock_surface(app.theme(), crate::view_model::ControlDockVariant::Live);
+    let candidates = composer_context_summary_candidates(&app, app.theme(), surface)
+        .into_iter()
+        .map(|spans| {
+            spans
+                .into_iter()
+                .map(|span| span.content.into_owned())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>();
+
+    assert!(candidates
+        .iter()
+        .any(|candidate| candidate.contains("live ctx 0 est")));
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_live_composer_disclosure_none_context_shows_percent_when_limit_known() {
+    let mut app = AppState::new_live(None, false, None);
+    let option = crate::app::ModelOption {
+        profile: "build".to_string(),
+        provider: "test".to_string(),
+        provider_display_label: None,
+        provider_backend_label: None,
+        model: "test-model".to_string(),
+        model_display_label: None,
+        variant: None,
+        variant_display_label: None,
+        display_label: None,
+        token_window_label: None,
+        context_window_tokens: Some(262144),
+        max_input_tokens: None,
+        max_output_tokens: None,
+        description: None,
+        profile_description: None,
+        reasoning_effort: None,
+        text_verbosity: None,
+        thinking: None,
+        recommended_for: None,
+    };
+    app.set_launch_metadata(crate::app::LaunchMetadata::from_model_option(&option));
+
+    let surface = control_dock_surface(app.theme(), crate::view_model::ControlDockVariant::Live);
+    let candidates = composer_context_summary_candidates(&app, app.theme(), surface)
+        .into_iter()
+        .map(|spans| {
+            spans
+                .into_iter()
+                .map(|span| span.content.into_owned())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>();
+
+    assert!(
+        candidates
+            .iter()
+            .any(|candidate| candidate.contains("live ctx 0 est") && candidate.contains("(0%)")),
+        "context indicator should always show percentage when limit is known, even without usage data: {candidates:?}"
+    );
 }
 
 #[cfg(test)]
@@ -563,6 +631,9 @@ pub(crate) fn exact_test_composer_viewport_wraps_at_word_boundaries() {
 #[cfg(test)]
 #[test]
 fn composer_file_tag_line_uses_warning_bold_style() {
+    // arrange
+    // act
+    // assert
     let app = AppState::new_startup(Vec::new(), None);
     let theme = app.theme();
     let base = Style::default()

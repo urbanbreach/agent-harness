@@ -482,7 +482,6 @@ pub(super) fn permission_modal_allow_always_requests_durable_run_grant() {
         }),
     ));
 
-    app.handle_key(key(KeyCode::Right));
     assert_eq!(
         app.permission_modal_selection("perm_modal_allow_always_1"),
         PermissionModalSelection::AllowAlways
@@ -496,6 +495,10 @@ pub(super) fn permission_modal_allow_always_requests_durable_run_grant() {
 
     app.handle_key(key(KeyCode::Enter));
 
+    assert!(
+        app.always_approve_mode(),
+        "confirming always-approve must engage session always-approve mode"
+    );
     assert_eq!(
         intents.lock().unwrap_or_abort().as_slice(),
         &[UiIntent::ResolvePermission {
@@ -503,6 +506,194 @@ pub(super) fn permission_modal_allow_always_requests_durable_run_grant() {
             decision: PermissionDecision::Allow,
             reason: None,
             grant_scope: Some(harness_core::perm::PermissionGrantScope::Run),
+        }]
+    );
+}
+
+pub(super) fn always_approve_mode_auto_allows_subsequent_non_question_permission() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let intent_sink = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().unwrap_or_abort().push(intent);
+        })
+    };
+
+    let mut app = AppState::new_live(None, false, Some(intent_sink));
+    app.ingest_event(envelope(
+        1,
+        "req_always_mode_1",
+        EventV1::PermissionRequested(PermissionRequestedEvent {
+            permission_id: "perm_always_mode_1".to_string(),
+            kind: "edit_fs".to_string(),
+            tool_call_id: Some("tc_always_mode_1".into()),
+            summary: "first permission".to_string(),
+            request_digest: "digest-always-mode-1".to_string(),
+            timeout_ms: 30_000,
+            default_decision: harness_core::event::PermissionDecision::Deny,
+        }),
+    ));
+
+    app.handle_key(key(KeyCode::Enter));
+    app.handle_key(key(KeyCode::Enter));
+    assert!(app.always_approve_mode());
+
+    app.ingest_event(envelope(
+        2,
+        "req_always_mode_1",
+        EventV1::PermissionResolved(PermissionResolvedEvent {
+            permission_id: "perm_always_mode_1".to_string(),
+            decision: harness_core::event::PermissionDecision::Allow,
+            reason: None,
+        }),
+    ));
+    intents.lock().unwrap_or_abort().clear();
+
+    app.ingest_event(envelope(
+        3,
+        "req_always_mode_2",
+        EventV1::PermissionRequested(PermissionRequestedEvent {
+            permission_id: "perm_always_mode_2".to_string(),
+            kind: "bash".to_string(),
+            tool_call_id: Some("tc_always_mode_2".into()),
+            summary: "second permission".to_string(),
+            request_digest: "digest-always-mode-2".to_string(),
+            timeout_ms: 30_000,
+            default_decision: harness_core::event::PermissionDecision::Deny,
+        }),
+    ));
+
+    assert_eq!(
+        intents.lock().unwrap_or_abort().as_slice(),
+        &[UiIntent::ResolvePermission {
+            permission_id: "perm_always_mode_2".to_string(),
+            decision: PermissionDecision::Allow,
+            reason: None,
+            grant_scope: Some(harness_core::perm::PermissionGrantScope::Run),
+        }],
+        "always-approve mode must auto-allow subsequent non-question permissions"
+    );
+}
+
+pub(super) fn always_approve_mode_appends_composer_badge_suffix() {
+    let mut app = AppState::new_live(None, false, None);
+    app.set_launch_metadata(crate::app::LaunchMetadata::new(
+        "build",
+        "test-provider",
+        Some("model-tx".to_string()),
+    ));
+    app.ingest_event(envelope(
+        1,
+        "req_always_badge_1",
+        EventV1::PermissionRequested(PermissionRequestedEvent {
+            permission_id: "perm_always_badge_1".to_string(),
+            kind: "edit_fs".to_string(),
+            tool_call_id: Some("tc_always_badge_1".into()),
+            summary: "permission summary".to_string(),
+            request_digest: "digest-always-badge".to_string(),
+            timeout_ms: 30_000,
+            default_decision: harness_core::event::PermissionDecision::Deny,
+        }),
+    ));
+    app.handle_key(key(KeyCode::Enter));
+    app.handle_key(key(KeyCode::Enter));
+    assert!(app.always_approve_mode());
+
+    app.ingest_event(envelope(
+        2,
+        "req_always_badge_1",
+        EventV1::PermissionResolved(PermissionResolvedEvent {
+            permission_id: "perm_always_badge_1".to_string(),
+            decision: harness_core::event::PermissionDecision::Allow,
+            reason: None,
+        }),
+    ));
+    assert!(app.active_permission_view().is_none());
+
+    let mut terminal = Terminal::new(TestBackend::new(120, 30)).unwrap_or_abort();
+    terminal
+        .draw(|frame| render_app(frame, &app))
+        .unwrap_or_abort();
+    let debug = format!("{:?}", terminal.backend().buffer());
+    assert!(
+        debug.contains("always-approve"),
+        "composer badge must show · always-approve when mode is engaged\n{debug}"
+    );
+}
+
+pub(super) fn permission_modal_ctrl_o_opens_always_approve_confirm() {
+    let mut app = AppState::new_live(None, false, None);
+    app.ingest_event(envelope(
+        1,
+        "req_modal_ctrl_o_always_1",
+        EventV1::PermissionRequested(PermissionRequestedEvent {
+            permission_id: "perm_modal_ctrl_o_always_1".to_string(),
+            kind: "edit_fs".to_string(),
+            tool_call_id: Some("tc_modal_ctrl_o_always_1".into()),
+            summary: "permission summary".to_string(),
+            request_digest: "digest-modal-ctrl-o-always".to_string(),
+            timeout_ms: 30_000,
+            default_decision: harness_core::event::PermissionDecision::Deny,
+        }),
+    ));
+
+    app.handle_key(key(KeyCode::Right));
+    app.handle_key(key(KeyCode::Right));
+    assert_eq!(
+        app.permission_modal_selection("perm_modal_ctrl_o_always_1"),
+        PermissionModalSelection::AllowOnce
+    );
+
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char('o'),
+        KeyModifiers::CONTROL,
+    ));
+    assert_eq!(
+        app.permission_modal_stage("perm_modal_ctrl_o_always_1"),
+        PermissionModalStage::AlwaysConfirm
+    );
+}
+
+pub(super) fn permission_modal_allow_session_requests_session_grant() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let intent_sink = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().unwrap_or_abort().push(intent);
+        })
+    };
+
+    let mut app = AppState::new_live(None, false, Some(intent_sink));
+    app.ingest_event(envelope(
+        1,
+        "req_modal_allow_session_1",
+        EventV1::PermissionRequested(PermissionRequestedEvent {
+            permission_id: "perm_modal_allow_session_1".to_string(),
+            kind: "edit_fs".to_string(),
+            tool_call_id: Some("tc_modal_allow_session_1".into()),
+            summary: "permission summary".to_string(),
+            request_digest: "digest-modal-allow-session".to_string(),
+            timeout_ms: 30_000,
+            default_decision: harness_core::event::PermissionDecision::Deny,
+        }),
+    ));
+
+    // Default selection is AllowAlways; cycle once to AllowSession (freeze option 2).
+    app.handle_key(key(KeyCode::Right));
+    assert_eq!(
+        app.permission_modal_selection("perm_modal_allow_session_1"),
+        PermissionModalSelection::AllowSession
+    );
+
+    app.handle_key(key(KeyCode::Enter));
+
+    assert_eq!(
+        intents.lock().unwrap_or_abort().as_slice(),
+        &[UiIntent::ResolvePermission {
+            permission_id: "perm_modal_allow_session_1".to_string(),
+            decision: PermissionDecision::Allow,
+            reason: None,
+            grant_scope: Some(harness_core::perm::PermissionGrantScope::Session),
         }]
     );
 }

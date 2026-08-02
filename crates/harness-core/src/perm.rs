@@ -3,13 +3,24 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+use std::path::{Path, PathBuf};
+
 use crate::config::{
+    default_permission_rule_set_with_read_env, default_read_env_permission_rules,
     CategoryPermissions, HarnessConfig, PermissionMode, PermissionRuleSet, PermissionSelector,
     PermissionSelectorRule,
 };
 use crate::tool::{canonical_tool_id_for, ToolCapability};
 
+pub mod ruleset;
 pub mod shell;
+
+pub use ruleset::{
+    denied_task_agents, derive_subagent_session_permission, disabled_tools,
+    evaluate as evaluate_ruleset, from_profile_permissions, is_tool_disabled,
+    merge as merge_rulesets, tool_permission_name, visible_tools, ConfigPermissionValue,
+    PermissionAction, PermissionRule, PermissionRuleset,
+};
 
 const DEFAULT_ASK_TIMEOUT_MS: u64 = 0;
 
@@ -25,6 +36,9 @@ pub enum PermissionKind {
     WebSearch,
     CodeSearch,
     Lsp,
+    Read,
+    ExternalDirectory,
+    DoomLoop,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -70,6 +84,12 @@ pub enum PermissionGrantMatcher {
         path: String,
         request_digest: String,
     },
+    /// Outside-workspace path grant. Once matches `request_digest`; always matches
+    /// when the requested path is under `path_prefix` (parent dir of the approved path).
+    ExternalPath {
+        path_prefix: String,
+        request_digest: String,
+    },
 }
 
 impl PermissionGrantMatcher {
@@ -107,6 +127,19 @@ impl PermissionGrantMatcher {
                 },
             ) => granted == requested || granted_request == request_digest,
             (
+                Self::ExternalPath {
+                    path_prefix: granted_prefix,
+                    request_digest: granted_request,
+                },
+                Self::ExternalPath {
+                    path_prefix: requested_path,
+                    request_digest,
+                },
+            ) => {
+                granted_request == request_digest
+                    || external_path_prefix_covers(granted_prefix, requested_path)
+            }
+            (
                 Self::RequestDigest {
                     request_digest: granted,
                 },
@@ -123,8 +156,31 @@ impl PermissionGrantMatcher {
         match self {
             Self::RequestDigest { request_digest }
             | Self::ShellCommand { request_digest, .. }
-            | Self::WorkspacePath { request_digest, .. } => request_digest,
+            | Self::WorkspacePath { request_digest, .. }
+            | Self::ExternalPath { request_digest, .. } => request_digest,
         }
+    }
+}
+
+/// True when `requested` equals `prefix` or is a proper descendant (path-component boundary).
+pub fn external_path_prefix_covers(prefix: &str, requested: &str) -> bool {
+    let prefix = Path::new(prefix);
+    let requested = Path::new(requested);
+    requested == prefix || requested.starts_with(prefix)
+}
+
+/// Always-allow prefix for an approved absolute path: parent directory, never bare `/`.
+pub fn always_external_path_prefix(approved_path: &Path) -> PathBuf {
+    match approved_path.parent() {
+        Some(parent)
+            if parent.as_os_str().is_empty()
+                || parent == Path::new("/")
+                || parent == Path::new("\\") =>
+        {
+            approved_path.to_path_buf()
+        }
+        Some(parent) => parent.to_path_buf(),
+        None => approved_path.to_path_buf(),
     }
 }
 
@@ -206,6 +262,9 @@ impl PermissionKind {
             Self::WebSearch => "websearch",
             Self::CodeSearch => "codesearch",
             Self::Lsp => "lsp",
+            Self::Read => "read",
+            Self::ExternalDirectory => "external_directory",
+            Self::DoomLoop => "doom_loop",
         }
     }
 }
@@ -252,6 +311,9 @@ struct DefaultPermissionModes {
     websearch: PermissionMode,
     codesearch: PermissionMode,
     lsp: PermissionMode,
+    read: PermissionMode,
+    external_directory: PermissionMode,
+    doom_loop: PermissionMode,
 }
 
 impl DefaultPermissionModes {
@@ -266,7 +328,7 @@ impl DefaultPermissionModes {
                 .permissions
                 .question
                 .clone()
-                .unwrap_or(PermissionMode::Ask),
+                .unwrap_or(PermissionMode::Deny),
             task: config
                 .permissions
                 .task
@@ -292,6 +354,21 @@ impl DefaultPermissionModes {
                 .lsp
                 .clone()
                 .unwrap_or(PermissionMode::Allow),
+            read: config
+                .permissions
+                .read
+                .clone()
+                .unwrap_or(PermissionMode::Allow),
+            external_directory: config
+                .permissions
+                .external_directory
+                .clone()
+                .unwrap_or(PermissionMode::Ask),
+            doom_loop: config
+                .permissions
+                .doom_loop
+                .clone()
+                .unwrap_or(PermissionMode::Ask),
         }
     }
 
@@ -304,12 +381,15 @@ impl DefaultPermissionModes {
             edit,
             shell,
             network: network.clone(),
-            question: PermissionMode::Ask,
+            question: PermissionMode::Deny,
             task: PermissionMode::Allow,
             webfetch: network.clone(),
             websearch: network.clone(),
             codesearch: network,
             lsp: PermissionMode::Allow,
+            read: PermissionMode::Allow,
+            external_directory: PermissionMode::Ask,
+            doom_loop: PermissionMode::Ask,
         }
     }
 }
@@ -327,9 +407,14 @@ impl PermissionPolicy {
             })
             .collect();
 
+        let mut default_rules = config.permissions.rules.clone();
+        if default_rules.read.is_empty() {
+            default_rules.read = default_read_env_permission_rules();
+        }
+
         Self {
             defaults: DefaultPermissionModes::from_config(config),
-            default_rules: config.permissions.rules.clone(),
+            default_rules,
             profile_overrides,
             ask_timeout_ms: DEFAULT_ASK_TIMEOUT_MS,
         }
@@ -338,6 +423,28 @@ impl PermissionPolicy {
     pub fn new(edit: PermissionMode, shell: PermissionMode, network: PermissionMode) -> Self {
         Self {
             defaults: DefaultPermissionModes::from_legacy_defaults(edit, shell, network),
+            default_rules: default_permission_rule_set_with_read_env(),
+            profile_overrides: BTreeMap::new(),
+            ask_timeout_ms: DEFAULT_ASK_TIMEOUT_MS,
+        }
+    }
+
+    pub fn allow_all() -> Self {
+        Self {
+            defaults: DefaultPermissionModes {
+                edit: PermissionMode::Allow,
+                shell: PermissionMode::Allow,
+                network: PermissionMode::Allow,
+                question: PermissionMode::Allow,
+                task: PermissionMode::Allow,
+                webfetch: PermissionMode::Allow,
+                websearch: PermissionMode::Allow,
+                codesearch: PermissionMode::Allow,
+                lsp: PermissionMode::Allow,
+                read: PermissionMode::Allow,
+                external_directory: PermissionMode::Allow,
+                doom_loop: PermissionMode::Allow,
+            },
             default_rules: PermissionRuleSet::default(),
             profile_overrides: BTreeMap::new(),
             ask_timeout_ms: DEFAULT_ASK_TIMEOUT_MS,
@@ -347,6 +454,74 @@ impl PermissionPolicy {
     pub fn with_ask_timeout_ms(mut self, ask_timeout_ms: u64) -> Self {
         self.ask_timeout_ms = ask_timeout_ms;
         self
+    }
+
+    /// Overlays default modes from another policy, preserving this policy's
+    /// rules, profile overrides, and ask_timeout_ms.
+    pub fn overlay_defaults_from(&mut self, other: &PermissionPolicy) {
+        self.defaults = other.defaults.clone();
+    }
+
+    pub fn from_sandbox_profile(profile: &str) -> Option<Self> {
+        match profile {
+            "readonly" | "read-only" => Some(Self::new(
+                PermissionMode::Deny,
+                PermissionMode::Deny,
+                PermissionMode::Deny,
+            )),
+            "workspace" => Some(Self::new(
+                PermissionMode::Ask,
+                PermissionMode::Ask,
+                PermissionMode::Deny,
+            )),
+            "danger" | "full" => Some(Self::allow_all()),
+            _ => None,
+        }
+    }
+
+    pub fn apply_tool_overrides(
+        &mut self,
+        allow: &[String],
+        deny: &[String],
+    ) -> Result<(), String> {
+        fn set_mode(
+            defaults: &mut DefaultPermissionModes,
+            tool: &str,
+            mode: PermissionMode,
+        ) -> Result<(), String> {
+            match tool {
+                "bash" | "shell" => defaults.shell = mode,
+                "edit" => defaults.edit = mode,
+                "question" => defaults.question = mode,
+                "task" => defaults.task = mode,
+                "webfetch" => defaults.webfetch = mode,
+                "websearch" => defaults.websearch = mode,
+                "codesearch" => defaults.codesearch = mode,
+                "lsp" => defaults.lsp = mode,
+                "read" => defaults.read = mode,
+                "network" => defaults.network = mode,
+                "external_directory" | "external" => defaults.external_directory = mode,
+                "doom_loop" | "doom" => defaults.doom_loop = mode,
+                _ => {
+                    return Err(format!(
+                        "unknown permission kind `{tool}`; expected one of: bash, edit, question, task, webfetch, websearch, codesearch, lsp, read, network, external_directory, doom_loop"
+                    ));
+                }
+            }
+            Ok(())
+        }
+
+        for tool in allow {
+            set_mode(&mut self.defaults, tool, PermissionMode::Allow)?;
+        }
+        for tool in deny {
+            set_mode(&mut self.defaults, tool, PermissionMode::Deny)?;
+        }
+        Ok(())
+    }
+
+    pub fn ask_timeout_ms(&self) -> u64 {
+        self.ask_timeout_ms
     }
 
     pub fn with_category_override(
@@ -395,6 +570,9 @@ impl PermissionPolicy {
             PermissionKind::WebSearch => &self.defaults.websearch,
             PermissionKind::CodeSearch => &self.defaults.codesearch,
             PermissionKind::Lsp => &self.defaults.lsp,
+            PermissionKind::Read => &self.defaults.read,
+            PermissionKind::ExternalDirectory => &self.defaults.external_directory,
+            PermissionKind::DoomLoop => &self.defaults.doom_loop,
         }
     }
 }
@@ -432,6 +610,22 @@ fn rule_mode_for_kind<'a>(
                 | PermissionRuleRequest::TaskAgent(_) => None,
             }),
         ),
+        PermissionKind::Read => selector_rule_mode(
+            &rules.read,
+            selector.and_then(|selector| match selector {
+                PermissionRuleRequest::WorkspacePath(path) => Some(path.as_str()),
+                PermissionRuleRequest::ShellCommand { .. }
+                | PermissionRuleRequest::TaskAgent(_) => None,
+            }),
+        ),
+        PermissionKind::ExternalDirectory => selector_rule_mode(
+            &rules.external_directory,
+            selector.and_then(|selector| match selector {
+                PermissionRuleRequest::WorkspacePath(path) => Some(path.as_str()),
+                PermissionRuleRequest::ShellCommand { .. }
+                | PermissionRuleRequest::TaskAgent(_) => None,
+            }),
+        ),
         PermissionKind::Task => selector_rule_mode(
             &rules.task,
             selector.and_then(|selector| match selector {
@@ -445,7 +639,8 @@ fn rule_mode_for_kind<'a>(
         | PermissionKind::WebFetch
         | PermissionKind::WebSearch
         | PermissionKind::CodeSearch
-        | PermissionKind::Lsp => None,
+        | PermissionKind::Lsp
+        | PermissionKind::DoomLoop => None,
     }
 }
 
@@ -470,40 +665,17 @@ fn permission_selector_matches(selector: &PermissionSelector, value: &str) -> bo
     match selector {
         PermissionSelector::Exact(selector) => selector == value,
         PermissionSelector::Prefix(prefix) => value.starts_with(prefix),
-        PermissionSelector::Glob(pattern) => glob_matches(pattern, value),
+        PermissionSelector::Glob(pattern) => {
+            if ruleset::wildcard_match(value, pattern) {
+                return true;
+            }
+            Path::new(value)
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|base| base != value && ruleset::wildcard_match(base, pattern))
+        }
         PermissionSelector::CatchAll => true,
     }
-}
-
-fn glob_matches(pattern: &str, value: &str) -> bool {
-    if pattern == "*" {
-        return true;
-    }
-    let mut remainder = value;
-    let mut parts = pattern.split('*').peekable();
-    let mut anchored_start = !pattern.starts_with('*');
-    while let Some(part) = parts.next() {
-        if part.is_empty() {
-            anchored_start = false;
-            continue;
-        }
-        if anchored_start {
-            let Some(next) = remainder.strip_prefix(part) else {
-                return false;
-            };
-            remainder = next;
-            anchored_start = false;
-            continue;
-        }
-        let Some(index) = remainder.find(part) else {
-            return false;
-        };
-        remainder = &remainder[index + part.len()..];
-        if parts.peek().is_none() && !pattern.ends_with('*') {
-            return remainder.is_empty();
-        }
-    }
-    pattern.ends_with('*') || remainder.is_empty()
 }
 
 impl Default for PermissionPolicy {
@@ -523,7 +695,7 @@ pub fn permission_kind_for_tool(tool_id: &str) -> Option<PermissionKind> {
         "question" => Some(PermissionKind::Question),
         "plan_enter" | "plan_exit" => Some(PermissionKind::Question),
         "task" | "skill" => Some(PermissionKind::Task),
-        "background_cancel" => Some(PermissionKind::Task),
+        "background_cancel" | "background_output" => Some(PermissionKind::Task),
         "todoread" | "todowrite" => Some(PermissionKind::Task),
         "webfetch" => Some(PermissionKind::WebFetch),
         "websearch" => Some(PermissionKind::WebSearch),
@@ -532,12 +704,16 @@ pub fn permission_kind_for_tool(tool_id: &str) -> Option<PermissionKind> {
         "ast_grep_replace" => Some(PermissionKind::EditFs),
         "lsp" => Some(PermissionKind::Lsp),
         "lsp.rename" => Some(PermissionKind::EditFs),
-        "bash" => Some(PermissionKind::Shell),
+        "bash" | "shell.run" => Some(PermissionKind::Shell),
+        "read" => Some(PermissionKind::Read),
+        "edit" | "write" | "apply_patch" => Some(PermissionKind::EditFs),
+        "github.issue" | "github.pull_request" => Some(PermissionKind::Network),
         _ if canonical_tool_id.starts_with("edit.") => Some(PermissionKind::EditFs),
         _ if canonical_tool_id.starts_with("shell.") => Some(PermissionKind::Shell),
         _ if canonical_tool_id.starts_with("network.") || canonical_tool_id.starts_with("net.") => {
             Some(PermissionKind::Network)
         }
+        _ if canonical_tool_id.starts_with("github.") => Some(PermissionKind::Network),
         _ => None,
     }
 }
@@ -546,6 +722,10 @@ pub fn permission_kind_for_tool_call(
     tool_id: &str,
     capability: ToolCapability,
 ) -> Option<PermissionKind> {
+    let canonical_tool_id = canonical_tool_id_for(tool_id).unwrap_or(tool_id);
+    if matches!(canonical_tool_id, "batch" | "invalid") {
+        return None;
+    }
     permission_kind_for_tool(tool_id).or_else(|| permission_kind_for_capability(capability))
 }
 
@@ -555,7 +735,7 @@ pub fn permission_kind_for_capability(capability: ToolCapability) -> Option<Perm
         ToolCapability::Shell => Some(PermissionKind::Shell),
         ToolCapability::Network => Some(PermissionKind::Network),
         ToolCapability::SpawnAgent => Some(PermissionKind::Task),
-        ToolCapability::ReadFs => None,
+        ToolCapability::ReadFs => Some(PermissionKind::Read),
     }
 }
 
@@ -582,6 +762,9 @@ fn mode_for_kind(
             .as_ref()
             .or(permissions.network.as_ref()),
         PermissionKind::Lsp => permissions.lsp.as_ref(),
+        PermissionKind::Read => permissions.read.as_ref(),
+        PermissionKind::ExternalDirectory => permissions.external_directory.as_ref(),
+        PermissionKind::DoomLoop => permissions.doom_loop.as_ref(),
     }
 }
 

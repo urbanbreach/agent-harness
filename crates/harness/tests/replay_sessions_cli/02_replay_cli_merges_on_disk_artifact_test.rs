@@ -1,6 +1,9 @@
 use harness::UnwrapOrAbort;
 #[test]
 fn replay_cli_merges_on_disk_artifact_discovery_with_recovery_metadata() {
+    // arrange
+    // act
+    // assert
     let run_dir = tempdir().unwrap_or_abort();
     std::fs::create_dir_all(run_dir.path().join("artifacts/notes")).unwrap_or_abort();
     std::fs::write(
@@ -147,6 +150,9 @@ fn replay_cli_merges_on_disk_artifact_discovery_with_recovery_metadata() {
 }
 #[test]
 fn sessions_list_cli_prints_finished_and_failed_runs() {
+    // arrange
+    // act
+    // assert
     let session_dir = tempdir().unwrap_or_abort();
     let finished_dir = session_dir.path().join("run_a");
     let failed_dir = session_dir.path().join("run_b");
@@ -237,6 +243,9 @@ fn sessions_list_cli_prints_finished_and_failed_runs() {
 }
 #[test]
 fn sessions_list_cli_surfaces_recovery_counts_run_path_and_parent() {
+    // arrange
+    // act
+    // assert
     let session_dir = tempdir().unwrap_or_abort();
     let run_dir = session_dir.path().join("run_recovery");
     std::fs::create_dir_all(&run_dir).unwrap_or_abort();
@@ -269,6 +278,9 @@ fn sessions_list_cli_surfaces_recovery_counts_run_path_and_parent() {
 }
 #[test]
 fn sessions_inspect_cli_surfaces_recovery_details() {
+    // arrange
+    // act
+    // assert
     let session_dir = tempdir().unwrap_or_abort();
     let run_dir = session_dir.path().join("run_recovery_inspect");
     std::fs::create_dir_all(run_dir.join("artifacts/notes")).unwrap_or_abort();

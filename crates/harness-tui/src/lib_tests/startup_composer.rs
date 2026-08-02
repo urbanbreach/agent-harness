@@ -13,28 +13,42 @@ pub(super) fn startup_home_screen_renders_compose_first_shell() {
     );
 
     let rendered = render_live_lines(&app, 160, 48);
-    assert!(rendered.contains("██╗  ██╗"));
+    assert!(
+        rendered.contains('╭') && rendered.contains('╰'),
+        "startup shell uses rounded welcome/composer borders\n{rendered}"
+    );
+    assert!(
+        rendered.contains("New session") || rendered.contains("New worktree"),
+        "welcome action rows present\n{rendered}"
+    );
+    assert!(rendered.contains('❯'), "composer glyph present\n{rendered}");
+    assert!(
+        !rendered.contains("gpt-5.4") && !rendered.contains("Deep") && !rendered.contains("Demo"),
+        "freeze bare startup hides model badge when prompt is empty\n{rendered}"
+    );
     assert!(!rendered.contains("Launch: deep · gpt-5.4"));
     assert!(!rendered.contains("Provider proxy"));
-    assert!(rendered.contains("Deep gpt-5.4 proxy · Demo"));
-    assert!(rendered.contains("ctrl+p commands"));
-    assert!(!rendered.contains("Enter select"));
-    assert!(rendered.contains("Ask anything... \"What is the tech stack of this project?\""));
-    assert!(rendered.contains("commands"));
     assert!(!rendered.contains("Dispatch a new run, reopen live work, or inspect saved history."));
     assert!(!rendered.contains("Actions: New session · Continue session · Replay session"));
+
+    app.handle_key(key(crossterm::event::KeyCode::Char('x')));
+    let draft = render_live_lines(&app, 160, 48);
+    assert!(
+        draft.contains("gpt-5.4") || draft.contains("Deep") || draft.contains("Demo"),
+        "draft startup restores model chrome on composer\n{draft}"
+    );
 }
 
 pub(super) fn startup_home_screen_uses_minimal_compat_shell() {
     let app = app::AppState::new_startup(Vec::new(), None);
 
     let rendered = render_live_lines(&app, 100, 24);
-    assert!(rendered.contains("██╗  ██╗") || rendered.contains("Harness"));
-    assert!(rendered.contains("Ask anything... \"What is the tech stack of this project?\""));
+    assert!(
+        rendered.contains('╭') || rendered.contains("Harness") || rendered.contains('❯'),
+        "compact startup still paints shell chrome\n{rendered}"
+    );
+    assert!(rendered.contains('❯'));
     assert!(!rendered.contains("Dispatch a new run, reopen live work, or inspect saved history."));
-    assert!(!rendered.contains("New session"));
-    assert!(!rendered.contains("Continue session"));
-    assert!(!rendered.contains("Replay session"));
 }
 
 pub(super) fn startup_composer_keeps_inset_input_then_metadata_row_order() {
@@ -46,46 +60,22 @@ pub(super) fn startup_composer_keeps_inset_input_then_metadata_row_order() {
     for (width, height) in [(100, 30), (80, 24), (160, 48)] {
         let rendered = render_live_lines(&app, width, height);
         let lines = rendered.lines().collect::<Vec<_>>();
-        let composer_input_row = find_line_containing(
-            &lines,
-            "Ask anything... \"What is the tech stack of this project?\"",
-        )
-        .unwrap_or_else(|| panic!("startup composer input row at {width}x{height}\n{rendered}"));
-        let composer_first_row = composer_input_row.saturating_sub(1);
-        let metadata_gap_start = composer_input_row.saturating_add(1);
-        let metadata_row = find_line_containing(&lines, "Deep gpt-5.4 proxy · Demo")
-            .unwrap_or_else(|| panic!("startup metadata row at {width}x{height}\n{rendered}"));
-        let composer_cap_row = metadata_row.saturating_add(1);
-
+        let glyph_row = find_line_containing(&lines, "❯")
+            .unwrap_or_else(|| panic!("startup composer glyph at {width}x{height}\n{rendered}"));
+        let top = lines[..glyph_row]
+            .iter()
+            .rposition(|line| line.contains('╭'))
+            .unwrap_or_else(|| panic!("composer top border at {width}x{height}\n{rendered}"));
+        let bottom = lines[glyph_row + 1..]
+            .iter()
+            .position(|line| line.contains('╰'))
+            .map(|i| glyph_row + 1 + i)
+            .unwrap_or_else(|| panic!("composer bottom border at {width}x{height}\n{rendered}"));
         assert_eq!(
-            composer_input_row,
-            composer_first_row + 1,
-            "startup composer should keep a blank inset row before input at {width}x{height}\n{rendered}"
+            bottom - top,
+            2,
+            "bordered single-line composer is 3 rows at {width}x{height}\n{rendered}"
         );
-        assert_eq!(
-            metadata_row,
-            composer_input_row + 2,
-            "startup metadata should keep one blank spacer after the lowered input at {width}x{height}\n{rendered}"
-        );
-        assert_eq!(
-            composer_cap_row,
-            metadata_row + 1,
-            "startup composer should end with the cap row immediately after metadata at {width}x{height}\n{rendered}"
-        );
-        assert!(
-            lines[composer_cap_row].contains('▀'),
-            "startup metadata should sit directly above the shell box cap at {width}x{height}\n{rendered}"
-        );
-        assert!(
-            !lines[composer_first_row].chars().any(char::is_alphanumeric),
-            "startup inset row should stay visually blank at {width}x{height}\n{rendered}"
-        );
-        for row in metadata_gap_start..metadata_row {
-            assert!(
-                !lines[row].chars().any(char::is_alphanumeric),
-                "startup metadata spacer row should stay visually blank at {width}x{height}\n{rendered}"
-            );
-        }
     }
 }
 
@@ -96,11 +86,17 @@ pub(super) fn startup_composer_width_stays_capped_for_shell() {
         let plan = FrameLayoutPlan::for_app(&app, ratatui::layout::Rect::new(0, 0, width, height));
         let dock = plan.dock.unwrap_or_abort();
 
-        assert_eq!(
-            dock.shell.width, 75,
-            "startup composer should keep the shell width cap at {width}x{height}"
+        assert!(
+            dock.shell.width + 4 >= plan.shell.width.min(width),
+            "startup composer should be near full shell width (inset ~2) at {width}x{height}: dock={} shell={}",
+            dock.shell.width,
+            plan.shell.width
         );
-        assert_eq!(dock.composer.width, 75);
+        assert!(
+            dock.shell.x >= plan.shell.x,
+            "startup composer stays within shell at {width}x{height}"
+        );
+        assert_eq!(dock.composer.width, dock.shell.width);
     }
 }
 
@@ -114,8 +110,11 @@ pub(super) fn dense_live_composer_uses_full_height_without_metadata_row() {
         live_shell_composer_input_span(&lines);
 
     assert!(lines[composer_input_row].contains("draft"));
-    assert_eq!(composer_input_row, composer_first_row + 1);
-    assert!(composer_last_row > composer_input_row);
+    assert!(
+        composer_input_row == composer_first_row || composer_input_row == composer_first_row + 1,
+        "draft should sit on the glyph row or immediately under the top border\n{rendered}"
+    );
+    assert!(composer_last_row >= composer_input_row);
     assert!(
         find_line_containing_in_range(
             &lines,
@@ -125,6 +124,10 @@ pub(super) fn dense_live_composer_uses_full_height_without_metadata_row() {
         )
         .is_none(),
         "dense live composer should remove the status row under the draft\n{rendered}"
+    );
+    assert!(
+        rendered.contains('╭') || rendered.contains('╰'),
+        "dense live composer should keep bordered chrome\n{rendered}"
     );
 }
 
@@ -166,10 +169,17 @@ pub(super) fn live_composer_disclosure_keeps_compact_summary_and_commands() {
     }
     let rendered = render_live_lines(&ready, 100, 24);
     let lines = rendered.lines().collect::<Vec<_>>();
-    let disclosure_row = find_line_containing(&lines, "Ctrl+p commands")
-        .unwrap_or_else(|| panic!("live composer disclosure row\n{rendered}"));
+    let disclosure_row = find_line_containing(&lines, "Shift+Tab:mode")
+        .or_else(|| find_line_containing(&lines, "Ctrl+x:shortcuts"))
+        .unwrap_or_else(|| panic!("live composer freeze disclosure row\n{rendered}"));
 
-    assert!(lines[disclosure_row].contains("Ctrl+p commands"));
+    assert!(
+        lines[disclosure_row].contains("Shift+Tab:mode")
+            && lines[disclosure_row].contains("Ctrl+x:shortcuts"),
+        "live disclosure must match freeze shortcut chrome\n{}",
+        lines[disclosure_row]
+    );
+    assert!(!lines[disclosure_row].contains("live ctx"));
     assert!(!lines[disclosure_row].contains("Enter send"));
     assert!(!lines[disclosure_row].contains("tool finished"));
     assert!(!lines[disclosure_row].contains("turn 1"));

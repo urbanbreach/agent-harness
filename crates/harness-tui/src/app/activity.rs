@@ -11,7 +11,12 @@ pub struct ActivityEntry {
     pub user_timestamp: Option<String>,
     pub request_data: Option<ProviderRequestStartedEvent>,
     pub thinking_text: String,
+    pub thinking_first_mono_ms: Option<u64>,
+    pub thinking_last_mono_ms: Option<u64>,
     pub transcript_text: String,
+    /// Mono timestamp of the first `ProviderStreamDelta` for this activity.
+    /// Used to compute the "Responding…" elapsed time (time since first delta).
+    pub first_delta_mono_ms: Option<u64>,
     pub usage: Option<ActivityUsage>,
     pub cache_usage: Option<ActivityCacheUsage>,
     pub error_message: Option<String>,
@@ -21,6 +26,9 @@ pub struct ActivityEntry {
     pub last_seq: u64,
     pub first_mono_ms: u64,
     pub last_mono_ms: u64,
+    /// Mono timestamp of the most recent `ProviderRequestStarted` event.
+    /// Used to compute retry-elapsed time for auto-retry chrome.
+    pub request_started_mono_ms: Option<u64>,
     pub revision: u64,
 }
 
@@ -114,6 +122,7 @@ pub(in crate::app) fn new_streaming_activity_entry(
         first_seq,
         first_mono_ms,
     } = args;
+    let has_delta = !transcript_text.is_empty();
     ActivityEntry {
         request_id,
         profile_label,
@@ -124,7 +133,10 @@ pub(in crate::app) fn new_streaming_activity_entry(
         user_timestamp,
         request_data,
         thinking_text: String::new(),
+        thinking_first_mono_ms: None,
+        thinking_last_mono_ms: None,
         transcript_text,
+        first_delta_mono_ms: has_delta.then_some(first_mono_ms),
         usage: None,
         cache_usage: None,
         error_message: None,
@@ -134,6 +146,7 @@ pub(in crate::app) fn new_streaming_activity_entry(
         last_seq: first_seq,
         first_mono_ms,
         last_mono_ms: first_mono_ms,
+        request_started_mono_ms: None,
         revision: 0,
     }
 }
@@ -142,6 +155,28 @@ impl ActivityEntry {
     pub fn duration_ms(&self) -> Option<u64> {
         (self.last_mono_ms >= self.first_mono_ms)
             .then_some(self.last_mono_ms.saturating_sub(self.first_mono_ms))
+    }
+
+    /// Mono span of reasoning deltas only — reference "Thought for" duration.
+    pub fn thinking_duration_ms(&self) -> Option<u64> {
+        match (self.thinking_first_mono_ms, self.thinking_last_mono_ms) {
+            (Some(first), Some(last)) if last >= first => Some(last.saturating_sub(first)),
+            _ => None,
+        }
+    }
+
+    /// Elapsed time since the first `ProviderStreamDelta` — reference "Responding…" duration.
+    pub fn responding_duration_ms(&self) -> Option<u64> {
+        self.first_delta_mono_ms
+            .filter(|_| self.last_mono_ms >= self.first_mono_ms)
+            .map(|first_delta| self.last_mono_ms.saturating_sub(first_delta))
+    }
+
+    pub(in crate::app) fn note_thinking_mono(&mut self, mono_ms: u64) {
+        if self.thinking_first_mono_ms.is_none() {
+            self.thinking_first_mono_ms = Some(mono_ms);
+        }
+        self.thinking_last_mono_ms = Some(mono_ms);
     }
 
     pub(in crate::app) fn bump_revision(&mut self) {

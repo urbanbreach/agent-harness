@@ -10,6 +10,56 @@
       ],
       "type": "string"
     },
+    "AnthropicProviderOptions": {
+      "additionalProperties": false,
+      "properties": {
+        "apiKey": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "apiKeyEnv": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "baseURL": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "headers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "name": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "timeoutMs": {
+          "default": null,
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
     "CacheRetention": {
       "enum": [
         "none",
@@ -18,10 +68,14 @@
       ],
       "type": "string"
     },
-    "CompactionRuntimeConfig": {
+    "CompactionSettings": {
       "additionalProperties": false,
       "properties": {
         "auto_retry_overflow": {
+          "default": true,
+          "type": "boolean"
+        },
+        "enabled": {
           "default": true,
           "type": "boolean"
         },
@@ -35,16 +89,17 @@
           "minimum": 0,
           "type": "integer"
         },
-        "model_backed": {
-          "default": false,
-          "type": "boolean"
+        "keep_recent_tokens": {
+          "default": 20000,
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
         },
-        "model_ref": {
-          "default": null,
-          "type": [
-            "string",
-            "null"
-          ]
+        "reserve_tokens": {
+          "default": 16384,
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
         },
         "split_oversized_turns": {
           "default": false,
@@ -845,6 +900,77 @@
             "type"
           ],
           "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Configuration for an Anthropic Messages API provider.\n\nUses `x-api-key` authentication and the Anthropic `/v1/messages` endpoint.\nThe Anthropic transport is implemented in `harness_providers::anthropic`.",
+          "properties": {
+            "apiKey": {
+              "default": "",
+              "type": "string"
+            },
+            "apiKeyEnv": {
+              "default": [],
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "baseURL": {
+              "default": "https://api.anthropic.com",
+              "type": "string"
+            },
+            "headers": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "default": {},
+              "type": "object"
+            },
+            "models": {
+              "additionalProperties": {
+                "$ref": "#/definitions/ModelConfig"
+              },
+              "default": {},
+              "type": "object"
+            },
+            "name": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "options": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/AnthropicProviderOptions"
+                }
+              ],
+              "default": {
+                "apiKey": null,
+                "apiKeyEnv": [],
+                "baseURL": null,
+                "headers": {},
+                "name": null,
+                "timeoutMs": null
+              }
+            },
+            "timeoutMs": {
+              "default": 60000,
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "anthropic_messages",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -1242,7 +1368,29 @@
           ],
           "default": null
         },
+        "doom_loop": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "edit": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicRulePermissionValue"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "external_directory": {
           "anyOf": [
             {
               "$ref": "#/definitions/PublicRulePermissionValue"
@@ -1268,6 +1416,17 @@
           "anyOf": [
             {
               "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "read": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicRulePermissionValue"
             },
             {
               "type": "null"
@@ -1368,7 +1527,29 @@
           ],
           "default": null
         },
+        "doom_loop": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "edit": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicRulePermissionValue"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "external_directory": {
           "anyOf": [
             {
               "$ref": "#/definitions/PublicRulePermissionValue"
@@ -1394,6 +1575,17 @@
           "anyOf": [
             {
               "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "read": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicRulePermissionValue"
             },
             {
               "type": "null"
@@ -1456,15 +1648,16 @@
         "compaction": {
           "allOf": [
             {
-              "$ref": "#/definitions/CompactionRuntimeConfig"
+              "$ref": "#/definitions/CompactionSettings"
             }
           ],
           "default": {
             "auto_retry_overflow": true,
+            "enabled": true,
             "estimated_token_triggers": true,
             "fallback_input_tokens": 32768,
-            "model_backed": false,
-            "model_ref": null,
+            "keep_recent_tokens": 20000,
+            "reserve_tokens": 16384,
             "split_oversized_turns": false,
             "structured_summary_contract": true
           }
@@ -1729,9 +1922,12 @@
         "*": null,
         "bash": null,
         "codesearch": null,
+        "doom_loop": null,
         "edit": null,
+        "external_directory": null,
         "lsp": null,
         "question": null,
+        "read": null,
         "shell_allowlist": null,
         "task": null,
         "webfetch": null,
@@ -1754,10 +1950,11 @@
       "default": {
         "compaction": {
           "auto_retry_overflow": true,
+          "enabled": true,
           "estimated_token_triggers": true,
           "fallback_input_tokens": 32768,
-          "model_backed": false,
-          "model_ref": null,
+          "keep_recent_tokens": 20000,
+          "reserve_tokens": 16384,
           "split_oversized_turns": false,
           "structured_summary_contract": true
         },

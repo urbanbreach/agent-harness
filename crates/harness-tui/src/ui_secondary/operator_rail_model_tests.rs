@@ -1,3 +1,8 @@
+#![allow(
+    deprecated,
+    reason = "deprecated compaction event variants kept for backward compatibility tests"
+)]
+
 use super::operator_rail_test_fixtures::*;
 use super::*;
 use crate::app::{ActiveContextUsage, ActivityUsage};
@@ -38,7 +43,10 @@ pub(crate) fn exact_test_compaction_applied_updates_active_context_usage_estimat
         user_timestamp: None,
         request_data: None,
         thinking_text: String::new(),
+        thinking_first_mono_ms: None,
+        thinking_last_mono_ms: None,
         transcript_text: String::new(),
+        first_delta_mono_ms: None,
         usage: Some(ActivityUsage {
             prompt_tokens: 400,
             completion_tokens: 100,
@@ -52,6 +60,7 @@ pub(crate) fn exact_test_compaction_applied_updates_active_context_usage_estimat
         last_seq: 2,
         first_mono_ms: 10,
         last_mono_ms: 20,
+        request_started_mono_ms: None,
         revision: 0,
     });
     assert_eq!(
@@ -755,6 +764,7 @@ pub(crate) fn exact_test_operator_rail_collapses_modified_files_section_body() {
 #[cfg(test)]
 pub(crate) fn exact_test_operator_sidebar_hit_target_maps_section_headers() {
     let mut app = operator_rail_test_app();
+    app.live_details_drawer_open = true;
     app.ingest_event(operator_rail_test_event(
         50,
         harness_core::event::EventActor::new(harness_core::event::ActorKind::System, None),
@@ -769,15 +779,9 @@ pub(crate) fn exact_test_operator_sidebar_hit_target_maps_section_headers() {
 
     let frame_area = Rect::new(0, 0, 160, 30);
     let sidebar_area = crate::layout::FrameLayoutPlan::for_app(&app, frame_area)
-        .operator_sidebar
+        .details_overlay
         .unwrap_or_abort();
-    let inner = operator_sidebar_inner_area(
-        &app,
-        sidebar_area,
-        app.theme(),
-        OperatorSidebarChrome::Persistent,
-    )
-    .unwrap_or_abort();
+    let inner = operator_sidebar_inner_area(&app, sidebar_area, app.theme()).unwrap_or_abort();
     let column = inner.x.saturating_add(1);
     let hits = (inner.y..inner.y.saturating_add(inner.height))
         .filter_map(|row| operator_sidebar_section_hit_target(&app, frame_area, column, row))

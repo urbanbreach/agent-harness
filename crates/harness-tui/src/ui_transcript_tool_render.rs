@@ -5,7 +5,7 @@ use super::*;
 // message box rail). One leading content space offsets the nested rail glyph
 // and its trailing gap so todo text starts at column 3, matching user-message
 // and assistant-body text.
-const TRANSCRIPT_TODO_BLOCK_INDENT: &str = "";
+const TRANSCRIPT_TODO_BLOCK_INDENT: &str = "   ";
 const TRANSCRIPT_TODO_BLOCK_CONTENT_LEADING: &str = " ";
 
 fn build_tool_header_spans(
@@ -14,9 +14,9 @@ fn build_tool_header_spans(
     title_style: Style,
 ) -> Vec<Span<'static>> {
     let mut spans = Vec::new();
-    if let Some(icon) = header.icon {
-        spans.push(Span::styled(format!("{icon} "), title_style));
-    }
+    let marker = completed_tool_marker(header.status, theme);
+    spans.push(Span::styled(format!("{marker} "), title_style));
+    let _ = header.icon;
     spans.push(Span::styled(header.title.clone(), title_style));
     if let Some(subtitle) = header.subtitle.as_deref() {
         spans.push(Span::styled(" · ", muted_meta_style(theme)));
@@ -27,6 +27,18 @@ fn build_tool_header_spans(
         spans.push(Span::styled(disclosure, muted_meta_style(theme)));
     }
     spans
+}
+
+fn completed_tool_marker(status: crate::app::ToolCallDisplayStatus, theme: &Theme) -> &'static str {
+    match status {
+        crate::app::ToolCallDisplayStatus::Succeeded => "◈",
+        crate::app::ToolCallDisplayStatus::PendingPermission
+        | crate::app::ToolCallDisplayStatus::Queued
+        | crate::app::ToolCallDisplayStatus::Running
+        | crate::app::ToolCallDisplayStatus::Failed => {
+            theme.live_shell.transcript_glyphs.tool_marker
+        }
+    }
 }
 
 #[expect(
@@ -195,10 +207,8 @@ fn append_task_inline_tool_section_lines(
     let style = tool_call_header_style(tool_call.header.struck_out, fg);
     let surface = base_surface;
     let mut spans = Vec::new();
-    if let Some(icon) = tool_call.header.icon {
-        spans.push(Span::styled(icon.to_string(), style));
-        spans.push(Span::raw(" "));
-    }
+    spans.push(Span::styled("· ", muted_meta_style(theme)));
+    let _ = tool_call.header.icon;
     spans.push(Span::styled(tool_call.header.title.clone(), style));
     if let Some(subtitle) = tool_call.header.subtitle.as_deref() {
         spans.push(Span::styled(" · ", muted_meta_style(theme)));
@@ -209,7 +219,7 @@ fn append_task_inline_tool_section_lines(
         &mut render.lines,
         &mut render.interaction_rows,
         target.clone(),
-        TRANSCRIPT_ASSISTANT_BODY_PREFIX,
+        "     ",
         surface,
         spans,
         transcript_surface_content_width(width, false),
@@ -294,24 +304,19 @@ fn append_block_tool_section_lines(
     } else {
         base_surface
     };
-    let card_shell = Some(TranscriptToolCardShell {
-        indent: if is_todo_block {
-            TRANSCRIPT_TODO_BLOCK_INDENT
-        } else {
-            TRANSCRIPT_ASSISTANT_BODY_PREFIX
-        },
-        rail_color: if is_todo_block {
-            theme.surface.shell
-        } else {
-            block_tool_rail_color(tool_call.header.status, theme)
-        },
-        surface,
-        content_leading_spaces: if is_todo_block {
-            TRANSCRIPT_TODO_BLOCK_CONTENT_LEADING
-        } else {
-            ""
-        },
-    });
+    // Nested card shell is only for todo checklist cards. Non-todo Block tools
+    // (write/edit with diffs) must stay flat like Thought / inline tools so
+    // Creating titles share reference lead=5, not nested-rail lead=7.
+    let card_shell = if is_todo_block {
+        Some(TranscriptToolCardShell {
+            indent: TRANSCRIPT_TODO_BLOCK_INDENT,
+            rail_color: theme.surface.shell,
+            surface,
+            content_leading_spaces: TRANSCRIPT_TODO_BLOCK_CONTENT_LEADING,
+        })
+    } else {
+        None
+    };
     let title_style = tool_call_header_style(
         tool_call.header.struck_out,
         if is_todo_block {
@@ -407,6 +412,26 @@ fn append_shell_tool_harness_card(
     theme: &Theme,
     width: u16,
 ) {
+    let title_style = tool_call_header_style(
+        tool_call.header.struck_out,
+        block_tool_color(tool_call.header.status, theme),
+    );
+    let title_spans = build_tool_header_spans(&tool_call.header, theme, title_style);
+    let header_target = tool_header_target(
+        &tool_call.tool_call_id,
+        tool_call.header.disclosure_state.is_some(),
+    );
+    append_card_surface_row_with_target(
+        &mut render.lines,
+        &mut render.interaction_rows,
+        header_target,
+        None,
+        TRANSCRIPT_ASSISTANT_BODY_PREFIX,
+        theme.surface.shell,
+        title_spans,
+        transcript_surface_content_width(width, false),
+    );
+
     for detail_block in &tool_call.detail_blocks {
         let start = render.lines.len();
         match detail_block {
@@ -545,6 +570,7 @@ fn append_tool_call_detail_blocks(
                 diff_content,
                 fallback_path,
                 force_stacked,
+                plain_numbered,
                 show_file_header,
             } => {
                 append_tool_call_diff_block(
@@ -552,6 +578,7 @@ fn append_tool_call_detail_blocks(
                     diff_content,
                     fallback_path.as_deref(),
                     *force_stacked,
+                    *plain_numbered,
                     *show_file_header,
                     theme,
                     width,
@@ -673,26 +700,87 @@ fn append_tool_call_message_block(
     }
 }
 
+fn format_assistant_error_display(text: &str) -> String {
+    let trimmed = text.trim_end();
+    let body = trimmed.trim_start();
+    if body.starts_with("Retry failed:") || is_cancel_error_message(body) {
+        trimmed.to_string()
+    } else {
+        format!("Retry failed: {body}")
+    }
+}
+
+fn is_cancel_error_message(text: &str) -> bool {
+    let lower = text.to_ascii_lowercase();
+    lower.contains("interrupted")
+        || lower.contains("cancelled")
+        || lower.contains("canceled")
+        || lower.contains("user cancel")
+}
+
 pub(super) fn append_assistant_error_box(
     lines: &mut Vec<Line<'static>>,
     text: &str,
-    theme: &Theme,
+    _theme: &Theme,
     width: u16,
     base_surface: Color,
 ) {
     let surface = base_surface;
-    append_nested_surface_row(
-        lines,
-        TRANSCRIPT_NESTED_INDENT,
-        theme.status.error,
-        surface,
-        "",
-        vec![Span::styled(
-            text.trim().to_string(),
-            Style::default().fg(theme.text.secondary),
-        )],
-        width,
-    );
+    let style = Style::default().fg(Color::Rgb(113, 116, 122));
+    let trimmed = text.trim_end();
+    let display = format_assistant_error_display(trimmed);
+    for row in display.lines() {
+        let content = row.trim_start_matches(' ');
+        let indent = " ".repeat(row.len().saturating_sub(content.len()));
+        if content.is_empty() {
+            append_surface_row(lines, "", surface, Vec::new(), width);
+            continue;
+        }
+        let first_w = usize::from(width)
+            .saturating_sub(surface_prefix_width(&indent))
+            .max(1);
+        let wrapped = wrap_surface_spans(vec![Span::styled(content.to_string(), style)], first_w);
+        match wrapped.as_slice() {
+            [] => append_surface_row(lines, &indent, surface, Vec::new(), width),
+            [first] => {
+                let first_text: String = first.iter().map(|s| s.content.to_string()).collect();
+                append_surface_row(
+                    lines,
+                    &indent,
+                    surface,
+                    vec![Span::styled(first_text, style)],
+                    width,
+                );
+            }
+            [first, rest @ ..] => {
+                let first_text: String = first.iter().map(|s| s.content.to_string()).collect();
+                append_surface_row(
+                    lines,
+                    &indent,
+                    surface,
+                    vec![Span::styled(first_text, style)],
+                    width,
+                );
+                let rest_text = rest
+                    .iter()
+                    .map(|visual| {
+                        visual
+                            .iter()
+                            .map(|s| s.content.as_ref())
+                            .collect::<String>()
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                append_surface_row(
+                    lines,
+                    "",
+                    surface,
+                    vec![Span::styled(rest_text, style)],
+                    width,
+                );
+            }
+        }
+    }
 }
 
 fn append_tool_call_todo_list(
@@ -736,6 +824,7 @@ fn append_tool_call_diff_block(
     diff_content: &str,
     fallback_path: Option<&str>,
     force_stacked: bool,
+    plain_numbered: bool,
     show_file_header: bool,
     theme: &Theme,
     width: u16,
@@ -743,6 +832,11 @@ fn append_tool_call_diff_block(
     card_shell: Option<TranscriptToolCardShell>,
 ) {
     let nested_width = transcript_surface_content_width(width, false);
+    let body_indent = if plain_numbered {
+        "     "
+    } else {
+        TRANSCRIPT_OPCODE_EDIT_INDENT
+    };
     let content_width = card_shell
         .map(|shell| {
             nested_width.saturating_sub(
@@ -751,8 +845,7 @@ fn append_tool_call_diff_block(
         })
         .unwrap_or_else(|| {
             nested_width.saturating_sub(
-                u16::try_from(surface_prefix_width(TRANSCRIPT_OPCODE_EDIT_INDENT))
-                    .unwrap_or(u16::MAX),
+                u16::try_from(surface_prefix_width(body_indent)).unwrap_or(u16::MAX),
             )
         })
         .max(1);
@@ -763,18 +856,25 @@ fn append_tool_call_diff_block(
         content_width,
         StructuredDiffRenderOptions {
             force_stacked,
+            plain_numbered,
             highlight_intraline: false,
-            highlight_syntax: true,
+            highlight_syntax: !plain_numbered,
             show_file_header,
             show_hunk_header: false,
         },
         theme,
     ) {
+        // Reference permission state: blank packing row between Creating title and plain numbered body.
+        // interaction_rows are padded by the caller via append_noninteractive_rows.
+        let blank_before = plain_numbered && !diff_lines.is_empty();
+        if blank_before {
+            render.lines.push(Line::default());
+        }
         let start = render.lines.len();
         append_card_prebuilt_surface_lines(
             &mut render.lines,
             card_shell,
-            TRANSCRIPT_OPCODE_EDIT_INDENT,
+            body_indent,
             base_surface,
             diff_lines,
             nested_width,

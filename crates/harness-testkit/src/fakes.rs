@@ -397,6 +397,9 @@ mod tests {
 
     #[test]
     fn fake_runner_replays_scripted_commands_in_order_and_records_calls() {
+        // arrange
+        // act
+        // assert
         let runner = FakeCommandRunner::new([
             ScriptedCommand::new(
                 "git",
@@ -423,6 +426,9 @@ mod tests {
 
     #[test]
     fn fake_runner_reports_mismatches_without_spawning() {
+        // arrange
+        // act
+        // assert
         let runner = FakeCommandRunner::new([ScriptedCommand::new(
             "cargo",
             ["check"],
@@ -439,6 +445,9 @@ mod tests {
 
     #[test]
     fn fake_http_client_replays_scripted_calls_in_order_and_records_calls() {
+        // arrange
+        // act
+        // assert
         let client = FakeHttpClient::new([
             ScriptedHttpCall::new(
                 "GET",
@@ -476,6 +485,9 @@ mod tests {
 
     #[test]
     fn fake_http_client_reports_mismatches_without_network() {
+        // arrange
+        // act
+        // assert
         let client = FakeHttpClient::new([ScriptedHttpCall::new(
             "GET",
             "https://example.test/expected",
@@ -492,6 +504,9 @@ mod tests {
 
     #[test]
     fn fake_id_source_generates_seeded_stable_ids() {
+        // arrange
+        // act
+        // assert
         let ids = FakeIdSource::new(42);
 
         assert_eq!(ids.seed(), 42);
@@ -504,6 +519,9 @@ mod tests {
 
     #[test]
     fn fake_id_source_counter_is_manual_and_monotonic() {
+        // arrange
+        // act
+        // assert
         let ids = FakeIdSource::new(7);
 
         assert_eq!(ids.next_counter(), 1);

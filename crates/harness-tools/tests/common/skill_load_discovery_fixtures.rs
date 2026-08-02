@@ -50,6 +50,7 @@ fn tool_context(workspace_root: &Path, tool_call_id: &str) -> ToolContext {
         current_model_ref: None,
         current_model_settings: None,
         tool_state: ToolRunState::default(),
+        external_directory_allow_prefixes: Vec::new(),
         coordinator,
     }
 }
@@ -138,6 +139,7 @@ fn worker_profile(name: &str, toolset: &[&str]) -> AgentProfile {
         max_iters: Some(12),
         tool_failure_mode: ToolFailureMode::FailTurn,
         toolset: toolset.iter().map(|tool| (*tool).to_string()).collect(),
+        permission_ruleset: Vec::new(),
     }
 }
 

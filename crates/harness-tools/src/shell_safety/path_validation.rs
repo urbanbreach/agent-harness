@@ -60,6 +60,15 @@ pub(super) fn validate_shell_path_arguments(
     cwd: &Path,
     workspace_root: &Path,
 ) -> Result<(), ToolError> {
+    validate_shell_path_arguments_with_grants(command, cwd, workspace_root, &[])
+}
+
+pub(super) fn validate_shell_path_arguments_with_grants(
+    command: &ShellSegmentCommand,
+    cwd: &Path,
+    workspace_root: &Path,
+    allow_prefixes: &[PathBuf],
+) -> Result<(), ToolError> {
     for (index, token) in command.args.iter().enumerate() {
         let candidate = if token.starts_with('-') {
             if let Some((_, value)) = token.split_once('=') {
@@ -77,13 +86,8 @@ pub(super) fn validate_shell_path_arguments(
             ));
         }
 
-        if contains_shell_glob_metachar(candidate)
-            && should_block_glob_path_argument(command, index, candidate, cwd)
-        {
-            return Err(ToolError::CommandBlocked(
-                "shell glob path expansion is not allowed in bash; use the glob tool instead"
-                    .to_string(),
-            ));
+        if is_safe_shell_device_path(candidate) {
+            continue;
         }
 
         let mut extracted_path = candidate;
@@ -102,7 +106,12 @@ pub(super) fn validate_shell_path_arguments(
             || extracted_path.contains('/')
             || should_validate_bare_path_argument(command, index, extracted_path, cwd)
         {
-            let _ = normalize_shell_workspace_path(extracted_path, cwd, workspace_root)?;
+            let _ = normalize_shell_workspace_path_with_grants(
+                extracted_path,
+                cwd,
+                workspace_root,
+                allow_prefixes,
+            )?;
         }
     }
 
@@ -122,23 +131,6 @@ pub(super) fn should_validate_bare_path_argument(
         return false;
     }
     cwd.join(path).exists()
-}
-
-pub(super) fn should_block_glob_path_argument(
-    command: &ShellSegmentCommand,
-    index: usize,
-    candidate: &str,
-    cwd: &Path,
-) -> bool {
-    if is_grep_pattern_argument(&command.executable, &command.args, index) {
-        return false;
-    }
-    candidate.starts_with('/')
-        || candidate.starts_with("./")
-        || candidate.starts_with("../")
-        || candidate.contains('/')
-        || tracks_shell_bare_path_arguments(&command.executable)
-        || cwd.join(candidate).exists()
 }
 
 pub(super) fn tracks_shell_bare_path_arguments(executable: &str) -> bool {
@@ -185,8 +177,17 @@ pub(super) fn validate_scanned_command_paths(
     cwd: &Path,
     workspace_root: &Path,
 ) -> Result<(), ToolError> {
+    validate_scanned_command_paths_with_grants(command, cwd, workspace_root, &[])
+}
+
+pub(super) fn validate_scanned_command_paths_with_grants(
+    command: &ScannedShellCommand,
+    cwd: &Path,
+    workspace_root: &Path,
+    allow_prefixes: &[PathBuf],
+) -> Result<(), ToolError> {
     for pattern in &command.path_patterns {
-        validate_scanned_path_pattern(pattern, cwd, workspace_root)?;
+        validate_scanned_path_pattern_with_grants(pattern, cwd, workspace_root, allow_prefixes)?;
     }
 
     Ok(())
@@ -197,25 +198,48 @@ pub(super) fn validate_scanned_path_pattern(
     cwd: &Path,
     workspace_root: &Path,
 ) -> Result<(), ToolError> {
+    validate_scanned_path_pattern_with_grants(pattern, cwd, workspace_root, &[])
+}
+
+pub(super) fn validate_scanned_path_pattern_with_grants(
+    pattern: &ShellPathPattern,
+    cwd: &Path,
+    workspace_root: &Path,
+    allow_prefixes: &[PathBuf],
+) -> Result<(), ToolError> {
     if pattern.path.contains('$') || pattern.path.starts_with('~') {
         return Err(ToolError::CommandBlocked(
             "shell path expansion is not allowed in bash".to_string(),
         ));
     }
 
-    if contains_shell_glob_metachar(&pattern.path) {
-        return Err(ToolError::CommandBlocked(
-            "shell glob path expansion is not allowed in bash; use the glob tool instead"
-                .to_string(),
-        ));
+    if is_safe_shell_device_path(&pattern.path) {
+        return Ok(());
     }
 
-    let _ = normalize_shell_workspace_path(&pattern.path, cwd, workspace_root)?;
+    let path_for_check = match pattern.path.find(['*', '?', '[']) {
+        Some(0) => return Ok(()),
+        Some(prefix_end) => &pattern.path[..prefix_end],
+        None => pattern.path.as_str(),
+    };
+    if path_for_check.is_empty() {
+        return Ok(());
+    }
+
+    let _ = normalize_shell_workspace_path_with_grants(
+        path_for_check,
+        cwd,
+        workspace_root,
+        allow_prefixes,
+    )?;
     Ok(())
 }
 
-pub(super) fn contains_shell_glob_metachar(path: &str) -> bool {
-    path.contains('*') || path.contains('?') || path.contains('[')
+pub(super) fn is_safe_shell_device_path(path: &str) -> bool {
+    matches!(
+        path,
+        "/dev/null" | "/dev/zero" | "/dev/urandom" | "/dev/random" | "NUL" | "nul"
+    )
 }
 
 pub(super) fn normalize_shell_workspace_path(
@@ -223,6 +247,19 @@ pub(super) fn normalize_shell_workspace_path(
     cwd: &Path,
     workspace_root: &Path,
 ) -> Result<PathBuf, ToolError> {
+    normalize_shell_workspace_path_with_grants(token, cwd, workspace_root, &[])
+}
+
+pub(super) fn normalize_shell_workspace_path_with_grants(
+    token: &str,
+    cwd: &Path,
+    workspace_root: &Path,
+    allow_prefixes: &[PathBuf],
+) -> Result<PathBuf, ToolError> {
+    if is_safe_shell_device_path(token) {
+        return Ok(PathBuf::from(token));
+    }
+
     let workspace = workspace_root
         .canonicalize()
         .unwrap_or_else(|_| workspace_root.to_path_buf());
@@ -231,14 +268,46 @@ pub(super) fn normalize_shell_workspace_path(
     } else {
         cwd.join(token)
     };
-    let normalized = normalize_workspace_target_path(&workspace, &candidate)?;
-    ensure_existing_shell_path_stays_in_workspace(&normalized, &workspace)?;
-    Ok(normalized)
+    match normalize_workspace_target_path(&workspace, &candidate) {
+        Ok(normalized) => {
+            ensure_existing_shell_path_stays_in_workspace_with_grants(
+                &normalized,
+                &workspace,
+                allow_prefixes,
+            )?;
+            Ok(normalized)
+        }
+        Err(ToolError::PathEscapesWorkspace { path, .. }) => {
+            let external = PathBuf::from(&path);
+            if external_shell_path_authorized(&external, allow_prefixes) {
+                ensure_existing_shell_path_stays_in_workspace_with_grants(
+                    &external,
+                    &workspace,
+                    allow_prefixes,
+                )?;
+                Ok(external)
+            } else {
+                Err(ToolError::PathEscapesWorkspace {
+                    workspace_root: workspace.display().to_string(),
+                    path,
+                })
+            }
+        }
+        Err(err) => Err(err),
+    }
 }
 
 pub(super) fn ensure_existing_shell_path_stays_in_workspace(
     candidate: &Path,
     workspace: &Path,
+) -> Result<(), ToolError> {
+    ensure_existing_shell_path_stays_in_workspace_with_grants(candidate, workspace, &[])
+}
+
+pub(super) fn ensure_existing_shell_path_stays_in_workspace_with_grants(
+    candidate: &Path,
+    workspace: &Path,
+    allow_prefixes: &[PathBuf],
 ) -> Result<(), ToolError> {
     let Some(existing) = deepest_existing_ancestor(candidate) else {
         return Ok(());
@@ -247,7 +316,9 @@ pub(super) fn ensure_existing_shell_path_stays_in_workspace(
     let canonical = existing
         .canonicalize()
         .tool_err("failed to resolve shell path")?;
-    if canonical.starts_with(workspace) {
+    if canonical.starts_with(workspace)
+        || external_shell_path_authorized(&canonical, allow_prefixes)
+    {
         Ok(())
     } else {
         Err(ToolError::PathEscapesWorkspace {
@@ -255,6 +326,13 @@ pub(super) fn ensure_existing_shell_path_stays_in_workspace(
             path: canonical.display().to_string(),
         })
     }
+}
+
+fn external_shell_path_authorized(path: &Path, allow_prefixes: &[PathBuf]) -> bool {
+    !allow_prefixes.is_empty()
+        && allow_prefixes
+            .iter()
+            .any(|prefix| path == prefix.as_path() || path.starts_with(prefix))
 }
 
 pub(super) fn deepest_existing_ancestor(path: &Path) -> Option<&Path> {

@@ -49,3 +49,23 @@ mod part_09_sessions_export_support_scan_test {
     use super::*;
     include!("replay_sessions_cli/09_sessions_export_support_scan_test.rs");
 }
+
+mod part_10_sessions_crash_and_foreign_import_test {
+    use super::*;
+    include!("replay_sessions_cli/10_sessions_crash_and_foreign_import_test.rs");
+}
+
+mod part_11_replay_cli_fails_closed_for_missing_events_test {
+    use super::*;
+    include!("replay_sessions_cli/11_replay_cli_fails_closed_for_missing_events_test.rs");
+}
+
+mod part_12_sessions_export_fails_closed_for_missing_session_test {
+    use super::*;
+    include!("replay_sessions_cli/12_sessions_export_fails_closed_for_missing_session_test.rs");
+}
+
+mod part_13_sessions_reopen_json_single_summary_shape_test {
+    use super::*;
+    include!("replay_sessions_cli/13_sessions_reopen_json_single_summary_shape_test.rs");
+}

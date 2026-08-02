@@ -8,6 +8,8 @@ use std::sync::MutexGuard;
 #[cfg(not(test))]
 use std::sync::OnceLock;
 
+use std::path::PathBuf;
+
 use super::{ConnectProviderOption, LaunchMetadata};
 use crate::text::has_trimmed_content;
 
@@ -21,6 +23,9 @@ static PENDING_LIVE_PROMPT_AUTO_SUBMIT: OnceLock<Mutex<bool>> = OnceLock::new();
 static PENDING_LIVE_PROMPT_ENV_CONSUMED: OnceLock<Mutex<bool>> = OnceLock::new();
 #[cfg(not(test))]
 static PENDING_CONNECT_PROVIDERS: OnceLock<Mutex<Vec<ConnectProviderOption>>> = OnceLock::new();
+#[cfg(not(test))]
+static PENDING_SETTINGS_PROJECT_CONFIG: OnceLock<Mutex<Option<PendingSettingsProjectConfig>>> =
+    OnceLock::new();
 
 #[cfg(not(test))]
 const PENDING_LIVE_PROMPT_DRAFT_ENV: &str = "HARNESS_TUI_PENDING_LIVE_PROMPT_DRAFT";
@@ -32,6 +37,20 @@ thread_local! {
     static PENDING_LIVE_LAUNCH_METADATA: RefCell<Option<LaunchMetadata>> = const { RefCell::new(None) };
     static PENDING_LIVE_PROMPT_DRAFT: RefCell<Option<String>> = const { RefCell::new(None) };
     static PENDING_LIVE_PROMPT_AUTO_SUBMIT: RefCell<bool> = const { RefCell::new(false) };
+    static PENDING_SETTINGS_PROJECT_CONFIG: RefCell<Option<PendingSettingsProjectConfig>> =
+        const { RefCell::new(None) };
+}
+
+/// Project runtime config binding for the settings editor write path.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingSettingsProjectConfig {
+    pub path: PathBuf,
+    pub hashline_edit: bool,
+    pub compaction_enabled: bool,
+    pub compaction_auto_retry_overflow: bool,
+    pub compaction_structured_summary_contract: bool,
+    pub compaction_estimated_token_triggers: bool,
+    pub deterministic_enabled: bool,
 }
 
 pub(super) struct PendingLivePrompt {
@@ -155,6 +174,50 @@ impl PendingLiveState {
 
 pub fn set_pending_live_launch_metadata(metadata: LaunchMetadata) {
     PendingLiveState::set_launch_metadata(metadata);
+}
+
+/// Stage project runtime config for the next live AppState so settings editor can persist.
+pub fn set_pending_settings_project_config(
+    path: PathBuf,
+    hashline_edit: bool,
+    compaction_enabled: bool,
+    compaction_auto_retry_overflow: bool,
+    compaction_structured_summary_contract: bool,
+    compaction_estimated_token_triggers: bool,
+    deterministic_enabled: bool,
+) {
+    let pending = PendingSettingsProjectConfig {
+        path,
+        hashline_edit,
+        compaction_enabled,
+        compaction_auto_retry_overflow,
+        compaction_structured_summary_contract,
+        compaction_estimated_token_triggers,
+        deterministic_enabled,
+    };
+    #[cfg(test)]
+    {
+        PENDING_SETTINGS_PROJECT_CONFIG.with(|slot| {
+            *slot.borrow_mut() = Some(pending);
+        });
+    }
+    #[cfg(not(test))]
+    {
+        let lock = PENDING_SETTINGS_PROJECT_CONFIG.get_or_init(|| Mutex::new(None));
+        *lock.lock().unwrap_or_abort() = Some(pending);
+    }
+}
+
+pub(super) fn take_pending_settings_project_config() -> Option<PendingSettingsProjectConfig> {
+    #[cfg(test)]
+    {
+        PENDING_SETTINGS_PROJECT_CONFIG.with(|slot| slot.borrow_mut().take())
+    }
+    #[cfg(not(test))]
+    {
+        let lock = PENDING_SETTINGS_PROJECT_CONFIG.get_or_init(|| Mutex::new(None));
+        lock.lock().unwrap_or_abort().take()
+    }
 }
 
 pub fn set_pending_connect_providers(providers: Vec<ConnectProviderOption>) {

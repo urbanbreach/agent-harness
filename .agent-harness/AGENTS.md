@@ -25,7 +25,7 @@ Read root `AGENTS.md` first. This file is about runtime assets, not project codi
 | Family prompt fragments | `prompt-families/anthropic.md`, `prompt-families/gemini.md`, `prompt-families/kimi.md`, `prompt-families/trinity.md` | Loaded by model-family prompt composition and drift-tested against snapshots. |
 | Config-defined profile metadata | `../configs/harness.example.jsonc`, `../harness.jsonc` | Model, variant, hidden flag, tools, permissions, skill policy. |
 | Shipped skills | `skills/*/SKILL.md` | Runtime-loadable skill packages with V1 frontmatter. |
-| Skill docs | `../docs/starter-skills.md` | Discovery order, allowed metadata, malformed/disabled behavior. |
+| Skill docs | `../docs/configuration/starter-skills.md` | Discovery order, allowed metadata, malformed/disabled behavior. |
 | Generated state | `sessions/`, `sessions/tui/prompt-history.json` | Runtime output; do not edit as source. |
 
 ## CONVENTIONS

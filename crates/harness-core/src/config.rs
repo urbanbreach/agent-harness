@@ -21,6 +21,8 @@ mod model_types;
 mod provider;
 mod public;
 mod registries;
+mod settings_registry;
+mod settings_write;
 mod validation;
 
 use self::defaults::{
@@ -28,9 +30,11 @@ use self::defaults::{
     default_background_task_message_staleness_timeout_ms,
     default_background_task_model_concurrency, default_background_task_provider_concurrency,
     default_background_task_stale_timeout_ms, default_compaction_auto_retry_overflow,
-    default_compaction_estimated_token_triggers, default_compaction_fallback_input_tokens,
-    default_compaction_structured_summary_contract, default_hashline_edit, default_hook_timeout_ms,
-    default_logging_level, default_max_events_in_memory, default_max_transcript_chars_in_memory,
+    default_compaction_enabled, default_compaction_estimated_token_triggers,
+    default_compaction_fallback_input_tokens, default_compaction_keep_recent_tokens,
+    default_compaction_reserve_tokens, default_compaction_structured_summary_contract,
+    default_hashline_edit, default_hook_timeout_ms, default_logging_level,
+    default_max_events_in_memory, default_max_transcript_chars_in_memory,
     default_prompt_wait_timeout_ms, default_provider_retry_base_delay_ms,
     default_provider_retry_max_delay_ms, default_provider_retry_max_retries,
     default_runtime_ask_timeout_ms, default_runtime_tool_failure_mode, default_session_dir,
@@ -67,7 +71,8 @@ pub use self::model_types::{
     ResolvedProfileModelMetadata,
 };
 pub use self::provider::{
-    OpenAiApiMode, OpenAiCompatibleProviderConfig, OpenAiCompatibleProviderOptions, ProviderConfig,
+    AnthropicProviderConfig, OpenAiApiMode, OpenAiCompatibleProviderConfig,
+    OpenAiCompatibleProviderOptions, ProviderConfig,
 };
 pub use self::public::{
     harness_schema_pretty_json, harness_tui_schema_pretty_json, public_config_contract,
@@ -89,6 +94,26 @@ pub use self::registries::{
     registered_skills_config, set_registered_formatter_config, set_registered_hook_runtime_config,
     set_registered_integrations_config, set_registered_lsp_config,
     set_registered_mcp_server_connection_states, set_registered_mcp_server_first_class_tool_ids,
+};
+pub use self::settings_registry::{
+    explain_setting, is_metadata_only_setting, resolve_setting_id, setting_definition,
+    settings_compat_migrations, settings_registry, settings_registry_json,
+    summarize_settings_registry, SchemaId, SettingCompatMigration, SettingDefinition, SettingId,
+    SettingMergeStrategy, SettingMutability, SettingScope, SettingSensitivity,
+    SettingSourceExplanation, SettingSurface, SettingsRegistrySummary,
+};
+pub use self::settings_write::{
+    read_effective_compaction_auto_retry_overflow, read_effective_compaction_enabled,
+    read_effective_compaction_estimated_token_triggers,
+    read_effective_compaction_structured_summary_contract, read_effective_deterministic_enabled,
+    read_effective_hashline_edit, reset_project_compaction_auto_retry_overflow,
+    reset_project_compaction_enabled, reset_project_compaction_estimated_token_triggers,
+    reset_project_compaction_structured_summary_contract, reset_project_deterministic_enabled,
+    reset_project_hashline_edit, reset_project_setting_to_default,
+    write_project_compaction_auto_retry_overflow, write_project_compaction_enabled,
+    write_project_compaction_estimated_token_triggers,
+    write_project_compaction_structured_summary_contract, write_project_deterministic_enabled,
+    write_project_hashline_edit, write_project_setting_bool, SettingWriteError,
 };
 use self::validation::{
     is_blank_config_value, validate_hook_definitions, validate_lsp_overrides, validate_mcp_servers,
@@ -504,7 +529,7 @@ pub struct RuntimeConfig {
     #[serde(default)]
     pub deterministic: DeterministicConfig,
     #[serde(default)]
-    pub compaction: CompactionRuntimeConfig,
+    pub compaction: CompactionSettings,
     #[serde(default, alias = "providerRetry")]
     pub provider_retry: ProviderRetryRuntimeConfig,
 }
@@ -534,49 +559,54 @@ impl Default for ProviderRetryRuntimeConfig {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct CompactionRuntimeConfig {
-    #[serde(default, alias = "modelBacked")]
-    pub model_backed: bool,
-    #[serde(default, alias = "modelRef", alias = "model")]
-    pub model_ref: Option<String>,
-    #[serde(default, alias = "splitOversizedTurns")]
-    pub split_oversized_turns: bool,
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub struct CompactionSettings {
+    #[serde(default = "default_compaction_enabled")]
+    pub enabled: bool,
+    #[serde(default = "default_compaction_reserve_tokens", alias = "reserveTokens")]
+    pub reserve_tokens: u32,
     #[serde(
-        default = "default_compaction_auto_retry_overflow",
-        alias = "autoRetryOverflow"
+        default = "default_compaction_keep_recent_tokens",
+        alias = "keepRecentTokens"
     )]
+    pub keep_recent_tokens: u32,
+    #[serde(default = "default_compaction_auto_retry_overflow")]
     pub auto_retry_overflow: bool,
     #[serde(
         default = "default_compaction_structured_summary_contract",
         alias = "structuredSummaryContract"
     )]
     pub structured_summary_contract: bool,
-    #[serde(
-        default = "default_compaction_estimated_token_triggers",
-        alias = "estimatedTokenTriggers"
-    )]
+    #[serde(default = "default_compaction_estimated_token_triggers")]
     pub estimated_token_triggers: bool,
     #[serde(
         default = "default_compaction_fallback_input_tokens",
         alias = "fallbackInputTokens"
     )]
     pub fallback_input_tokens: u32,
+    #[serde(default)]
+    pub split_oversized_turns: bool,
+    #[serde(default)]
+    pub suppress_auto_compaction: bool,
 }
 
-impl Default for CompactionRuntimeConfig {
+impl Default for CompactionSettings {
     fn default() -> Self {
         Self {
-            model_backed: false,
-            model_ref: None,
-            split_oversized_turns: false,
+            enabled: default_compaction_enabled(),
+            reserve_tokens: default_compaction_reserve_tokens(),
+            keep_recent_tokens: default_compaction_keep_recent_tokens(),
             auto_retry_overflow: default_compaction_auto_retry_overflow(),
             structured_summary_contract: default_compaction_structured_summary_contract(),
             estimated_token_triggers: default_compaction_estimated_token_triggers(),
             fallback_input_tokens: default_compaction_fallback_input_tokens(),
+            split_oversized_turns: false,
+            suppress_auto_compaction: false,
         }
     }
 }
+
+pub type CompactionRuntimeConfig = CompactionSettings;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -823,6 +853,9 @@ pub struct ProfilePermissions {
     pub question: Option<PermissionMode>,
     #[serde(default)]
     pub task: Option<PermissionMode>,
+    /// Independent of `task` (reference policy allows task but denies todowrite).
+    #[serde(default)]
+    pub todowrite: Option<PermissionMode>,
     #[serde(default, alias = "webFetch")]
     pub webfetch: Option<PermissionMode>,
     #[serde(default, alias = "webSearch")]
@@ -831,6 +864,12 @@ pub struct ProfilePermissions {
     pub codesearch: Option<PermissionMode>,
     #[serde(default, alias = "codeLsp")]
     pub lsp: Option<PermissionMode>,
+    #[serde(default)]
+    pub read: Option<PermissionMode>,
+    #[serde(default)]
+    pub external_directory: Option<PermissionMode>,
+    #[serde(default)]
+    pub doom_loop: Option<PermissionMode>,
     #[serde(default)]
     pub rules: PermissionRuleSet,
 }
@@ -898,6 +937,12 @@ pub struct PermissionDefaultsConfig {
     pub codesearch: Option<PermissionMode>,
     #[serde(default, alias = "codeLsp")]
     pub lsp: Option<PermissionMode>,
+    #[serde(default)]
+    pub read: Option<PermissionMode>,
+    #[serde(default)]
+    pub external_directory: Option<PermissionMode>,
+    #[serde(default)]
+    pub doom_loop: Option<PermissionMode>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Default)]
@@ -909,6 +954,41 @@ pub struct PermissionRuleSet {
     pub edit: Vec<PermissionSelectorRule>,
     #[serde(default)]
     pub task: Vec<PermissionSelectorRule>,
+    #[serde(default)]
+    pub read: Vec<PermissionSelectorRule>,
+    #[serde(default)]
+    pub external_directory: Vec<PermissionSelectorRule>,
+}
+
+// Last-match-wins OC defaults: * allow, *.env ask, *.env.* ask, *.env.example allow.
+#[must_use]
+pub fn default_read_env_permission_rules() -> Vec<PermissionSelectorRule> {
+    vec![
+        PermissionSelectorRule {
+            selector: PermissionSelector::CatchAll,
+            mode: PermissionMode::Allow,
+        },
+        PermissionSelectorRule {
+            selector: PermissionSelector::Glob("*.env".to_string()),
+            mode: PermissionMode::Ask,
+        },
+        PermissionSelectorRule {
+            selector: PermissionSelector::Glob("*.env.*".to_string()),
+            mode: PermissionMode::Ask,
+        },
+        PermissionSelectorRule {
+            selector: PermissionSelector::Glob("*.env.example".to_string()),
+            mode: PermissionMode::Allow,
+        },
+    ]
+}
+
+#[must_use]
+pub fn default_permission_rule_set_with_read_env() -> PermissionRuleSet {
+    PermissionRuleSet {
+        read: default_read_env_permission_rules(),
+        ..PermissionRuleSet::default()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

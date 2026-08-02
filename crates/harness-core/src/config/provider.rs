@@ -14,12 +14,15 @@ use super::{ConfigError, ModelConfig};
 pub enum ProviderConfig {
     #[serde(rename = "openai_compatible")]
     OpenAiCompatible(OpenAiCompatibleProviderConfig),
+    #[serde(rename = "anthropic_messages")]
+    Anthropic(AnthropicProviderConfig),
 }
 
 impl ProviderConfig {
     pub(super) fn models(&self) -> &BTreeMap<String, ModelConfig> {
         match self {
             Self::OpenAiCompatible(config) => &config.models,
+            Self::Anthropic(config) => &config.models,
         }
     }
 
@@ -32,12 +35,20 @@ impl ProviderConfig {
                 .filter(|value| !value.is_empty())
                 .unwrap_or(provider_name)
                 .to_string(),
+            Self::Anthropic(config) => config
+                .name
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .unwrap_or(provider_name)
+                .to_string(),
         }
     }
 
     pub(super) fn normalize_public_config_aliases(&mut self) -> Result<(), ConfigError> {
         match self {
             Self::OpenAiCompatible(config) => config.normalize_public_config_aliases(),
+            Self::Anthropic(config) => config.normalize_public_config_aliases(),
         }
     }
 }
@@ -189,4 +200,115 @@ pub enum OpenAiApiMode {
     ChatCompletions,
     #[default]
     Auto,
+}
+
+/// Configuration for an Anthropic Messages API provider.
+///
+/// Uses `x-api-key` authentication and the Anthropic `/v1/messages` endpoint.
+/// The Anthropic transport is implemented in `harness_providers::anthropic`.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AnthropicProviderConfig {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(
+        rename = "baseURL",
+        default = "default_anthropic_base_url",
+        alias = "base_url",
+        alias = "baseUrl"
+    )]
+    pub base_url: String,
+    #[serde(rename = "apiKey", default, alias = "api_key")]
+    pub api_key: String,
+    #[serde(
+        rename = "apiKeyEnv",
+        default,
+        alias = "api_key_env",
+        alias = "apiKeyEnvironment"
+    )]
+    pub api_key_env: Vec<String>,
+    #[serde(
+        rename = "timeoutMs",
+        default = "default_provider_timeout_ms",
+        alias = "timeout_ms"
+    )]
+    pub timeout_ms: u64,
+    #[serde(default)]
+    pub headers: BTreeMap<String, String>,
+    #[serde(default)]
+    pub options: AnthropicProviderOptions,
+    #[serde(default)]
+    pub models: BTreeMap<String, ModelConfig>,
+}
+
+impl AnthropicProviderConfig {
+    fn normalize_public_config_aliases(&mut self) -> Result<(), ConfigError> {
+        merge_string_alias(
+            &mut self.base_url,
+            self.options.base_url.take(),
+            "provider anthropic_messages.base_url",
+            "provider anthropic_messages.options.baseURL",
+        )?;
+        merge_string_alias(
+            &mut self.api_key,
+            self.options.api_key.take(),
+            "provider anthropic_messages.api_key",
+            "provider anthropic_messages.options.apiKey",
+        )?;
+        merge_vec_alias(
+            &mut self.api_key_env,
+            std::mem::take(&mut self.options.api_key_env),
+            "provider anthropic_messages.api_key_env",
+            "provider anthropic_messages.options.apiKeyEnv",
+        )?;
+        merge_string_alias(
+            &mut self.name,
+            self.options.name.take(),
+            "provider anthropic_messages.name",
+            "provider anthropic_messages.options.name",
+        )?;
+        merge_map_alias(
+            &mut self.headers,
+            std::mem::take(&mut self.options.headers),
+            "provider anthropic_messages.headers",
+            "provider anthropic_messages.options.headers",
+        )?;
+        if let Some(timeout_ms) = self.options.timeout_ms.take() {
+            if self.timeout_ms == default_provider_timeout_ms() {
+                self.timeout_ms = timeout_ms;
+            } else if self.timeout_ms != timeout_ms {
+                return Err(ConfigError::InvalidReference(
+                    "provider anthropic_messages.timeout_ms conflicts with provider anthropic_messages.options.timeoutMs; use one value"
+                        .to_string(),
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
+fn default_anthropic_base_url() -> String {
+    "https://api.anthropic.com".to_string()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
+pub struct AnthropicProviderOptions {
+    #[serde(rename = "baseURL", default, alias = "base_url", alias = "baseUrl")]
+    pub base_url: Option<String>,
+    #[serde(rename = "apiKey", default, alias = "api_key")]
+    pub api_key: Option<String>,
+    #[serde(
+        rename = "apiKeyEnv",
+        default,
+        alias = "api_key_env",
+        alias = "apiKeyEnvironment"
+    )]
+    pub api_key_env: Vec<String>,
+    #[serde(rename = "timeoutMs", default, alias = "timeout_ms")]
+    pub timeout_ms: Option<u64>,
+    #[serde(default)]
+    pub headers: BTreeMap<String, String>,
+    #[serde(default)]
+    pub name: Option<String>,
 }

@@ -32,6 +32,7 @@ fn profile(name: &str, category: &str, toolset: &[&str]) -> AgentProfile {
         temperature: Some(0.0),
         tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
         toolset: toolset.iter().map(|tool| (*tool).to_string()).collect(),
+        permission_ruleset: Vec::new(),
     }
 }
 
@@ -94,6 +95,9 @@ async fn spawn_run(workspace: &Path) -> (CoordinatorHandle, RunInfo, String) {
 
 #[tokio::test]
 async fn agent_spawn_returns_child_session_status_duration_and_counts() {
+    // arrange
+    // act
+    // assert
     let workspace = setup_workspace_fixture();
 
     let (handle, run, worker_id) = spawn_run(workspace.workspace()).await;
@@ -236,6 +240,9 @@ async fn agent_spawn_returns_child_session_status_duration_and_counts() {
 
 #[tokio::test]
 async fn child_session_permission_inheritance_isolated_by_task() {
+    // arrange
+    // act
+    // assert
     let workspace = setup_workspace_fixture();
 
     let (handle, run, worker_id) = spawn_run(workspace.workspace()).await;

@@ -5,6 +5,14 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::{Args, Subcommand};
+use harness_core::crash_recovery::{
+    apply_crash_recovery, inspect_previous_crash, scan_previous_crashes, summarize_crash_reports,
+    CrashRecoveryApplyResult, PreviousCrashReport,
+};
+use harness_core::foreign_session::{
+    discover_foreign_sessions, import_foreign_session_as_replay, summarize_discover_candidates,
+    ForeignSessionCandidate,
+};
 use harness_core::proj::{RunStatus, SessionCatalogEntry, SessionModeSource};
 #[cfg(test)]
 use harness_core::redact::{DefaultRedactor, Redactor};
@@ -12,7 +20,10 @@ use serde::Serialize;
 use serde_json::json;
 
 use crate::defaults::DEFAULT_SESSION_DIR;
-use crate::recovery::{inspect_session_recovery, resolve_session_run_dir, SessionRecoverySummary};
+use crate::recovery::{
+    inspect_session_recovery, resolve_session_run_dir, SessionRecoverySummary,
+    SessionReopenJsonResponse,
+};
 #[cfg(test)]
 use crate::replay::ReplaySummary;
 #[cfg(test)]
@@ -26,6 +37,7 @@ use crate::CliDeps;
 mod export;
 mod lineage;
 mod list;
+mod rewind;
 #[cfg(test)]
 use export::{
     write_redacted_export_output_with_redactor, SessionExportBundle, SessionExportSupport,
@@ -55,6 +67,45 @@ pub enum SessionsCommand {
     Fork(ForkSessionCommand),
     /// Create a Harness child session from the latest stable prefix.
     Clone(CloneSessionCommand),
+    /// Import a foreign session as a new read-only replay session.
+    Import(ImportSessionCommand),
+    /// Discover foreign session candidates under a scan root (read-only).
+    Discover(DiscoverSessionCommand),
+    /// Scan session run directories for previous-crash markers (read-only).
+    CrashScan(CrashScanSessionCommand),
+    /// Atomically rewind conversation and workspace files to a cutoff (events stay append-only).
+    Rewind(rewind::RewindSessionCommand),
+}
+
+#[derive(Debug, Args, Clone)]
+pub struct ImportSessionCommand {
+    /// Foreign session directory (must contain supported events.jsonl marker).
+    #[arg(long = "from", value_name = "PATH")]
+    pub from: PathBuf,
+
+    #[arg(long, default_value_t = false)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args, Clone)]
+pub struct DiscoverSessionCommand {
+    /// Directory whose immediate children are scanned for foreign session markers.
+    #[arg(long = "from", value_name = "PATH")]
+    pub from: PathBuf,
+
+    #[arg(long, default_value_t = false)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args, Clone)]
+pub struct CrashScanSessionCommand {
+    /// Sessions root whose immediate children are scanned for previous-crash markers.
+    /// Defaults to the global/default session directory when omitted.
+    #[arg(long = "from", value_name = "PATH")]
+    pub from: Option<PathBuf>,
+
+    #[arg(long, default_value_t = false)]
+    pub json: bool,
 }
 
 #[derive(Debug, Args, Clone, Default)]
@@ -180,6 +231,16 @@ pub fn execute_with_io(
         SessionsCommand::Clone(command) => {
             lineage::clone_session(command, global_session_dir, stdout, stderr)
         }
+        SessionsCommand::Import(command) => {
+            import_session(command, global_session_dir, stdout, stderr)
+        }
+        SessionsCommand::Discover(command) => discover_sessions(command, stdout, stderr),
+        SessionsCommand::CrashScan(command) => {
+            crash_scan_sessions(command, global_session_dir, stdout, stderr)
+        }
+        SessionsCommand::Rewind(command) => {
+            rewind::rewind_session(command, global_session_dir, stdout, stderr)
+        }
     }
 }
 
@@ -205,6 +266,13 @@ fn reopen_session(
             return 1;
         }
     };
+
+    let crash_recovery = apply_reopen_crash_recovery(&run_dir, stderr);
+    let crash_recovery = match crash_recovery {
+        Ok(result) => result,
+        Err(code) => return code,
+    };
+
     let summary = match inspect_session_recovery(&run_dir) {
         Ok(summary) => summary,
         Err(err) => {
@@ -214,23 +282,58 @@ fn reopen_session(
     };
 
     if command.json {
-        match serde_json::to_string_pretty(&summary) {
-            Ok(body) => {
-                let _ = writeln!(stdout, "{body}");
-            }
+        let response = SessionReopenJsonResponse {
+            summary,
+            crash_recovery,
+        };
+        return match serde_json::to_value(&response) {
+            Ok(value) => write_json_output(&value, None, stdout, stderr),
             Err(err) => {
-                let _ = writeln!(
-                    stderr,
-                    "session reopen failed: failed to serialize recovery summary: {err}"
-                );
-                return 1;
+                let _ = writeln!(stderr, "failed to serialize session reopen response: {err}");
+                1
             }
-        }
-    } else {
-        print_recovery_summary(&summary, stdout);
+        };
     }
 
+    if let Some(recovery) = &crash_recovery {
+        let _ = writeln!(stdout, "crash_recovery: {}", recovery.one_line());
+    }
+    print_recovery_summary(&summary, stdout);
+
     0
+}
+
+fn apply_reopen_crash_recovery(
+    run_dir: &std::path::Path,
+    stderr: &mut dyn std::io::Write,
+) -> Result<Option<CrashRecoveryApplyResult>, i32> {
+    let before = inspect_previous_crash(run_dir);
+    if !before.previous_crash_detected {
+        return Ok(None);
+    }
+    let Some(parent) = run_dir.parent() else {
+        let _ = writeln!(
+            stderr,
+            "session reopen failed: cannot resolve sessions parent for {}",
+            run_dir.display()
+        );
+        return Err(1);
+    };
+    let Some(run_id) = run_dir.file_name().and_then(|name| name.to_str()) else {
+        let _ = writeln!(
+            stderr,
+            "session reopen failed: cannot resolve run id for {}",
+            run_dir.display()
+        );
+        return Err(1);
+    };
+    match apply_crash_recovery(parent, run_id, false) {
+        Ok(result) => Ok(Some(result)),
+        Err(err) => {
+            let _ = writeln!(stderr, "session reopen failed: crash recovery: {err}");
+            Err(1)
+        }
+    }
 }
 
 fn inspect_session(
@@ -263,6 +366,12 @@ fn inspect_session(
             return 1;
         }
     };
+    let previous_crash = inspect_previous_crash(&session.run_dir);
+    let recovery_action = previous_crash.previous_crash_detected.then(|| {
+        harness_core::crash_recovery::resolve_crash_recovery_action(session.catalog.is_resumable)
+    });
+    let recovery_action_hint =
+        recovery_action.map(|action| action.operator_hint(session.catalog.run_id.as_str()));
 
     if command.json {
         return write_json_output(
@@ -270,6 +379,12 @@ fn inspect_session(
                 "run_dir": session.run_dir.display().to_string(),
                 "catalog": session.catalog,
                 "replay": summary,
+                "previous_crash_detected": previous_crash.previous_crash_detected,
+                "recovery_message": previous_crash.recovery_message,
+                "recovery_action": recovery_action.map(|action| action.as_str()),
+                "recovery_action_hint": recovery_action_hint,
+                "previous_crash": previous_crash.previous_crash_detected
+                    .then_some(&previous_crash),
             }),
             None,
             stdout,
@@ -290,8 +405,198 @@ fn inspect_session(
     if let Some(reason) = session.catalog.resume_disabled_reason.as_deref() {
         let _ = writeln!(stdout, "resume_reason: {reason}");
     }
+    let _ = writeln!(
+        stdout,
+        "previous_crash_detected: {}",
+        previous_crash.previous_crash_detected
+    );
+    if let Some(message) = previous_crash.recovery_message.as_deref() {
+        let _ = writeln!(stdout, "recovery_message: {message}");
+    }
+    if let Some(action) = recovery_action {
+        let _ = writeln!(stdout, "recovery_action: {}", action.as_str());
+        if let Some(hint) = recovery_action_hint.as_deref() {
+            let _ = writeln!(stdout, "recovery_action_hint: {hint}");
+        }
+    }
     print_human_summary(&summary, stdout);
     0
+}
+
+fn import_session(
+    command: ImportSessionCommand,
+    global_session_dir: Option<PathBuf>,
+    stdout: &mut dyn std::io::Write,
+    stderr: &mut dyn std::io::Write,
+) -> i32 {
+    let session_dir = session_dir(global_session_dir);
+    match import_foreign_session_as_replay(&command.from, &session_dir) {
+        Ok(result) => {
+            if command.json {
+                return write_json_output(&result, None, stdout, stderr);
+            }
+            let _ = writeln!(
+                stdout,
+                "foreign session imported as replay-only harness session"
+            );
+            let _ = writeln!(stdout, "run_id: {}", result.run_id);
+            let _ = writeln!(stdout, "run_dir: {}", result.run_dir.display());
+            let _ = writeln!(stdout, "events: {}", result.event_count);
+            let _ = writeln!(stdout, "format: {}", result.format);
+            let _ = writeln!(stdout, "source_path: {}", result.source_path.display());
+            let _ = writeln!(
+                stdout,
+                "next: harness sessions inspect {}  # then sessions replay {}",
+                result.run_id, result.run_id
+            );
+            0
+        }
+        Err(err) => {
+            let _ = writeln!(stderr, "session import failed: {err}");
+            1
+        }
+    }
+}
+
+fn discover_sessions(
+    command: DiscoverSessionCommand,
+    stdout: &mut dyn std::io::Write,
+    stderr: &mut dyn std::io::Write,
+) -> i32 {
+    match discover_foreign_sessions(&command.from) {
+        Ok(candidates) => {
+            if command.json {
+                return write_json_output(
+                    &json!({
+                        "scan_root": command.from.display().to_string(),
+                        "count": candidates.len(),
+                        "candidates": candidates,
+                    }),
+                    None,
+                    stdout,
+                    stderr,
+                );
+            }
+            if candidates.is_empty() {
+                let _ = writeln!(
+                    stdout,
+                    "no foreign session candidates under {}",
+                    command.from.display()
+                );
+                return 0;
+            }
+            let _ = writeln!(
+                stdout,
+                "foreign session candidates under {}:",
+                command.from.display()
+            );
+            for candidate in &candidates {
+                let _ = writeln!(stdout, "{}", format_discover_candidate(candidate));
+            }
+            let summary = summarize_discover_candidates(&candidates);
+            let _ = writeln!(stdout, "summary: {}", summary.one_line());
+            let _ = writeln!(
+                stdout,
+                "next: harness sessions import --from <path>  # events.jsonl marker only"
+            );
+            0
+        }
+        Err(err) => {
+            let _ = writeln!(stderr, "session discover failed: {err}");
+            1
+        }
+    }
+}
+
+fn crash_scan_sessions(
+    command: CrashScanSessionCommand,
+    global_session_dir: Option<PathBuf>,
+    stdout: &mut dyn std::io::Write,
+    stderr: &mut dyn std::io::Write,
+) -> i32 {
+    let scan_root = command
+        .from
+        .unwrap_or_else(|| session_dir(global_session_dir));
+    if !scan_root.is_dir() {
+        let _ = writeln!(
+            stderr,
+            "session crash-scan failed: scan root is not a directory: {}",
+            scan_root.display()
+        );
+        return 1;
+    }
+
+    let reports = scan_previous_crashes(&scan_root);
+    let summary = summarize_crash_reports(&reports);
+
+    if command.json {
+        return write_json_output(
+            &json!({
+                "scan_root": scan_root.display().to_string(),
+                "summary": summary,
+                "reports": reports,
+            }),
+            None,
+            stdout,
+            stderr,
+        );
+    }
+
+    if reports.is_empty() {
+        let _ = writeln!(
+            stdout,
+            "no session run directories under {}",
+            scan_root.display()
+        );
+        return 0;
+    }
+
+    let _ = writeln!(stdout, "previous-crash scan under {}:", scan_root.display());
+    for report in &reports {
+        let _ = writeln!(stdout, "{}", format_crash_scan_report(report));
+    }
+    let _ = writeln!(stdout, "summary: {}", summary.one_line());
+    if summary.has_previous_crash() {
+        let _ = writeln!(
+            stdout,
+            "next: harness sessions inspect <run>  # then sessions reopen <run> when needed"
+        );
+    }
+    0
+}
+
+fn format_crash_scan_report(report: &PreviousCrashReport) -> String {
+    report.one_line()
+}
+
+fn format_discover_candidate(candidate: &ForeignSessionCandidate) -> String {
+    match candidate {
+        ForeignSessionCandidate::Discoverable { kind, path, marker } => {
+            let importable = if candidate.is_importable() {
+                "importable"
+            } else {
+                "not-importable-yet"
+            };
+            format!(
+                "discoverable  kind={}  marker={}  import={}  path={}",
+                kind.as_str(),
+                marker,
+                importable,
+                path.display()
+            )
+        }
+        ForeignSessionCandidate::Corrupt { kind, path, reason } => {
+            format!(
+                "corrupt       kind={}  path={}  reason={}",
+                kind.as_str(),
+                path.display(),
+                reason
+            )
+        }
+        ForeignSessionCandidate::Rejected { path, reason } => {
+            format!("rejected      path={}  reason={}", path.display(), reason)
+        }
+    }
 }
 
 fn replay_session(
@@ -352,6 +657,9 @@ fn continue_session(
             session_dir: None,
             exit_on_finish: command.exit_on_finish,
             profile: None,
+            no_alt_screen: false,
+            minimal: false,
+            fullscreen: false,
         },
         config_path,
         Some(session_dir),
@@ -548,6 +856,19 @@ fn print_recovery_summary(summary: &SessionRecoverySummary, out: &mut dyn std::i
     }
     if let Some(continue_hint) = &summary.continue_hint {
         line!("continue_hint: {continue_hint}");
+    }
+    line!(
+        "previous_crash_detected: {}",
+        summary.previous_crash_detected
+    );
+    if let Some(message) = &summary.recovery_message {
+        line!("recovery_message: {message}");
+    }
+    if let Some(action) = summary.recovery_action {
+        line!("recovery_action: {}", action.as_str());
+    }
+    if let Some(hint) = &summary.recovery_action_hint {
+        line!("recovery_action_hint: {hint}");
     }
     line!("total_events: {}", summary.total_events);
 
@@ -838,6 +1159,9 @@ mod tests {
 
     #[test]
     fn collect_list_entries_applies_filters_and_hides_non_operator_modes() {
+        // arrange
+        // act
+        // assert
         let entries = vec![
             sample_entry(
                 "run-running",
@@ -888,6 +1212,9 @@ mod tests {
 
     #[test]
     fn collect_list_entries_supports_machine_sorting() {
+        // arrange
+        // act
+        // assert
         let entries = vec![
             sample_entry(
                 "run-b",
@@ -940,6 +1267,9 @@ mod tests {
 
     #[test]
     fn render_json_session_list_emits_machine_readable_fields() {
+        // arrange
+        // act
+        // assert
         let entries = vec![sample_entry(
             "run-json",
             42,
@@ -980,6 +1310,9 @@ mod tests {
 
     #[test]
     fn render_human_session_table_keeps_operator_facing_default() {
+        // arrange
+        // act
+        // assert
         let entries = vec![sample_entry(
             "run-human",
             42,
@@ -1031,6 +1364,311 @@ mod tests {
         assert!(
             !rendered.contains("<unavailable>"),
             "a titled session should not degrade to only run id/path: {rendered}"
+        );
+    }
+
+    #[test]
+    fn discover_sessions_json_lists_discoverable_foreign_candidate() {
+        // arrange: immediate child with a valid Codex session.json marker
+        let root = tempfile::tempdir().unwrap();
+        let foreign = root.path().join("codex-session");
+        std::fs::create_dir_all(&foreign).unwrap();
+        std::fs::write(
+            foreign.join("session.json"),
+            r#"{"id":"abc","title":"demo"}"#,
+        )
+        .unwrap();
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+
+        // act
+        let code = discover_sessions(
+            DiscoverSessionCommand {
+                from: root.path().to_path_buf(),
+                json: true,
+            },
+            &mut stdout,
+            &mut stderr,
+        );
+
+        // assert
+        assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+        assert!(
+            stderr.is_empty(),
+            "stderr={}",
+            String::from_utf8_lossy(&stderr)
+        );
+        let parsed: serde_json::Value =
+            serde_json::from_slice(&stdout).expect("discover json stdout");
+        assert_eq!(parsed["count"], 1);
+        assert_eq!(parsed["candidates"][0]["status"], "discoverable");
+        assert_eq!(parsed["candidates"][0]["kind"], "codex");
+        assert_eq!(parsed["candidates"][0]["marker"], "session.json");
+        assert_eq!(
+            parsed["candidates"][0]["path"].as_str().unwrap(),
+            foreign.display().to_string()
+        );
+    }
+
+    #[test]
+    fn discover_sessions_human_summarizes_empty_scan_root() {
+        // arrange: empty directory under scan root
+        let root = tempfile::tempdir().unwrap();
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+
+        // act
+        let code = discover_sessions(
+            DiscoverSessionCommand {
+                from: root.path().to_path_buf(),
+                json: false,
+            },
+            &mut stdout,
+            &mut stderr,
+        );
+
+        // assert
+        assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+        let rendered = String::from_utf8_lossy(&stdout);
+        assert!(
+            rendered.contains("no foreign session candidates under"),
+            "unexpected human output: {rendered}"
+        );
+    }
+
+    #[test]
+    fn execute_with_io_dispatches_discover_command() {
+        // arrange
+        let root = tempfile::tempdir().unwrap();
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+
+        // act
+        let code = execute_with_io(
+            SessionsCommand::Discover(DiscoverSessionCommand {
+                from: root.path().to_path_buf(),
+                json: false,
+            }),
+            None,
+            None,
+            &mut stdout,
+            &mut stderr,
+            &CliDeps::default(),
+        );
+
+        // assert
+        assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+        let rendered = String::from_utf8_lossy(&stdout);
+        assert!(
+            rendered.contains("no foreign session candidates under"),
+            "unexpected dispatch output: {rendered}"
+        );
+    }
+
+    #[test]
+    fn crash_scan_sessions_json_summarizes_mixed_session_root() {
+        // arrange
+        // act
+        // assert
+        // Given: sessions root with one clean run and one recovery-marker crash
+        let root = tempfile::tempdir().unwrap();
+        let clean = root.path().join("run_clean");
+        let crashed = root.path().join("run_crashed");
+        std::fs::create_dir_all(&clean).unwrap();
+        std::fs::create_dir_all(&crashed).unwrap();
+        std::fs::write(clean.join("events.jsonl"), "").unwrap();
+        std::fs::write(crashed.join("events.jsonl"), "").unwrap();
+        std::fs::write(crashed.join(".writer.lock.recovering"), "pid=1\n").unwrap();
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+
+        // When
+        let code = crash_scan_sessions(
+            CrashScanSessionCommand {
+                from: Some(root.path().to_path_buf()),
+                json: true,
+            },
+            None,
+            &mut stdout,
+            &mut stderr,
+        );
+
+        // Then
+        assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+        assert!(
+            stderr.is_empty(),
+            "stderr={}",
+            String::from_utf8_lossy(&stderr)
+        );
+        let parsed: serde_json::Value =
+            serde_json::from_slice(&stdout).expect("crash-scan json stdout");
+        assert_eq!(parsed["summary"]["scanned"], 2);
+        assert_eq!(parsed["summary"]["previous_crash"], 1);
+        assert_eq!(parsed["summary"]["clean"], 1);
+        assert_eq!(parsed["summary"]["recovery_marker"], 1);
+        assert_eq!(parsed["reports"].as_array().map(|rows| rows.len()), Some(2));
+    }
+
+    #[test]
+    fn reopen_session_applies_crash_recovery_for_marker_then_summarizes() {
+        // arrange
+        // act
+        // assert
+        // Given: finished prompt session with recovery marker under sessions root
+        use harness_core::event::{
+            ActorKind, EventActor, EventEnvelopeV1, EventV1, RunFinishedEvent, RunStartedEvent,
+            SCHEMA_VERSION,
+        };
+
+        let sessions = tempfile::tempdir().unwrap();
+        let run_id = "run_reopen_recover";
+        let run_dir = sessions.path().join(run_id);
+        std::fs::create_dir_all(&run_dir).unwrap();
+        let events = [
+            EventEnvelopeV1 {
+                schema_version: SCHEMA_VERSION,
+                event_id: "evt-1".into(),
+                seq: 1,
+                run_id: run_id.into(),
+                mono_ms: 1,
+                ts: None,
+                actor: EventActor::new(ActorKind::System, None),
+                correlation_id: None,
+                causation_id: None,
+                stream_key: None,
+                payload: EventV1::RunStarted(RunStartedEvent {
+                    run_name: "prompt".into(),
+                    workspace_root: "/tmp".into(),
+                }),
+            },
+            EventEnvelopeV1 {
+                schema_version: SCHEMA_VERSION,
+                event_id: "evt-2".into(),
+                seq: 2,
+                run_id: run_id.into(),
+                mono_ms: 2,
+                ts: None,
+                actor: EventActor::new(ActorKind::System, None),
+                correlation_id: None,
+                causation_id: None,
+                stream_key: None,
+                payload: EventV1::RunFinished(RunFinishedEvent {
+                    summary: "done".into(),
+                }),
+            },
+        ];
+        let mut body = String::new();
+        for event in &events {
+            body.push_str(&serde_json::to_string(event).unwrap());
+            body.push('\n');
+        }
+        std::fs::write(run_dir.join("events.jsonl"), body).unwrap();
+        std::fs::write(run_dir.join(".writer.lock.recovering"), "pid=1\n").unwrap();
+        assert!(run_dir.join(".writer.lock.recovering").exists());
+
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+
+        // When: reopen applies exclusive-open recovery then prints summary
+        let code = reopen_session(
+            ReopenCommand {
+                session: run_id.to_string(),
+                json: true,
+            },
+            Some(sessions.path().to_path_buf()),
+            &mut stdout,
+            &mut stderr,
+        );
+
+        // Then: recovery applied + marker cleared + summary present
+        assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+        let parsed: serde_json::Value =
+            serde_json::from_slice(&stdout).expect("reopen json stdout");
+        assert_eq!(parsed["crash_recovery"]["applied"], true);
+        assert_eq!(parsed["crash_recovery"]["recovered"], true);
+        assert_eq!(parsed["crash_recovery"]["recovery_marker_cleared"], true);
+        assert_eq!(parsed["summary"]["run_id"], run_id);
+        assert!(!run_dir.join(".writer.lock.recovering").exists());
+        assert!(!parsed["summary"]["previous_crash_detected"]
+            .as_bool()
+            .unwrap_or(true));
+    }
+
+    #[test]
+    fn crash_scan_sessions_human_lists_previous_crash_and_summary() {
+        // arrange
+        // act
+        // assert
+        // Given: sessions root with recovery marker
+        let root = tempfile::tempdir().unwrap();
+        let crashed = root.path().join("run_crashed");
+        std::fs::create_dir_all(&crashed).unwrap();
+        std::fs::write(crashed.join("events.jsonl"), "").unwrap();
+        std::fs::write(crashed.join(".writer.lock.recovering"), "pid=1\n").unwrap();
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+
+        // When
+        let code = crash_scan_sessions(
+            CrashScanSessionCommand {
+                from: Some(root.path().to_path_buf()),
+                json: false,
+            },
+            None,
+            &mut stdout,
+            &mut stderr,
+        );
+
+        // Then
+        assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+        let rendered = String::from_utf8_lossy(&stdout);
+        assert!(
+            rendered.contains("previous-crash scan under"),
+            "unexpected human output: {rendered}"
+        );
+        assert!(
+            rendered.contains("previous-crash:"),
+            "expected previous-crash line: {rendered}"
+        );
+        assert!(
+            rendered.contains("summary: crash scan:"),
+            "expected summary line: {rendered}"
+        );
+        assert!(
+            rendered.contains("next: harness sessions inspect"),
+            "expected next-step guidance: {rendered}"
+        );
+    }
+
+    #[test]
+    fn execute_with_io_dispatches_crash_scan_command() {
+        // arrange
+        // act
+        // assert
+        // Given: empty sessions root
+        let root = tempfile::tempdir().unwrap();
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+
+        // When
+        let code = execute_with_io(
+            SessionsCommand::CrashScan(CrashScanSessionCommand {
+                from: Some(root.path().to_path_buf()),
+                json: false,
+            }),
+            None,
+            None,
+            &mut stdout,
+            &mut stderr,
+            &CliDeps::default(),
+        );
+
+        // Then
+        assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+        let rendered = String::from_utf8_lossy(&stdout);
+        assert!(
+            rendered.contains("no session run directories under"),
+            "unexpected dispatch output: {rendered}"
         );
     }
 }

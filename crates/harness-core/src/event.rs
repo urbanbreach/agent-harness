@@ -116,10 +116,28 @@ pub enum EventV1 {
     ProviderReasoningDelta(ProviderReasoningDeltaEvent),
     ProviderRequestFinished(ProviderRequestFinishedEvent),
     AssistantMessageFinished(AssistantMessageFinishedEvent),
+    /// Deprecated: replaced by [`EventV1::SessionCompaction`].
+    #[deprecated(
+        note = "replaced by `SessionCompaction`; will be removed after compaction migration"
+    )]
     CompactionRequested(CompactionRequestedEvent),
+    /// Deprecated: replaced by [`EventV1::SessionCompaction`].
+    #[deprecated(
+        note = "replaced by `SessionCompaction`; will be removed after compaction migration"
+    )]
     CompactionWritten(CompactionWrittenEvent),
+    /// Deprecated: replaced by [`EventV1::SessionCompaction`].
+    #[deprecated(
+        note = "replaced by `SessionCompaction`; will be removed after compaction migration"
+    )]
     CompactionApplied(CompactionAppliedEvent),
+    /// Deprecated: replaced by [`EventV1::SessionCompaction`].
+    #[deprecated(
+        note = "replaced by `SessionCompaction`; will be removed after compaction migration"
+    )]
     CompactionFailed(CompactionFailedEvent),
+    SessionCompaction(SessionCompactionEvent),
+    BranchSummary(BranchSummaryEvent),
     ToolCallRequested(ToolCallRequestedEvent),
     ToolCallStarted(ToolCallStartedEvent),
     ToolCallFinished(ToolCallFinishedEvent),
@@ -635,6 +653,34 @@ pub struct CompactionFailedEvent {
     pub through_seq: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub through_request_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionCompactionEvent {
+    pub agent_id: String,
+    pub summary: String,
+    pub first_kept_event_seq: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_kept_request_id: Option<String>,
+    pub tokens_before: u32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub read_files: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub modified_files: Vec<String>,
+    pub trigger_reason: String,
+    pub from_hook: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BranchSummaryEvent {
+    pub agent_id: String,
+    pub summary: String,
+    pub from_event_seq: u64,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub read_files: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub modified_files: Vec<String>,
+    pub from_hook: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

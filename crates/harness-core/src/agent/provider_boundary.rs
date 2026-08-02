@@ -6,6 +6,11 @@ use harness_providers::{
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+use super::{
+    AgentModelRef, AgentModelSettings, AgentProfile, ProviderContext,
+    ProviderContextCheckpointMetadata, ProviderConversationTurn,
+    PROVIDER_TURN_FAILURE_REASON_MAX_CHARS,
+};
 use crate::conversation::{
     ConversationAssistantMessage, ConversationCheckpointMessage, ConversationMessage,
     ConversationToolResultMessage, ConversationUserMessage,
@@ -14,12 +19,6 @@ use crate::provider_args::provider_tool_arguments_json;
 use crate::text::{non_empty_trimmed, truncate_with_ellipsis};
 use crate::tool::{
     build_tool_function_name_mapping, sanitize_tool_function_name, ToolRegistry, ToolResult,
-};
-
-use super::{
-    AgentModelRef, AgentModelSettings, AgentProfile, ProviderContext,
-    ProviderContextCheckpointMetadata, ProviderConversationTurn,
-    PROVIDER_TURN_FAILURE_REASON_MAX_CHARS,
 };
 
 #[derive(Debug, Clone)]
@@ -398,6 +397,10 @@ fn provider_visible_tool_ids<'a>(profile: &'a AgentProfile, model_ref: &str) -> 
             "apply_patch" => use_patch,
             "edit" | "write" => !use_patch,
             _ => true,
+        })
+        .filter(|tool_id| {
+            profile.permission_ruleset.is_empty()
+                || !crate::perm::is_tool_disabled(tool_id, &profile.permission_ruleset)
         })
         .collect()
 }

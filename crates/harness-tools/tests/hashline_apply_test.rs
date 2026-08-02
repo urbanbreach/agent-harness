@@ -21,6 +21,9 @@ use harness_tools::coordinator_registry_with_internal_hashline_tools;
 
 #[tokio::test]
 async fn hashline_apply_success_writes_file_and_emits_applied_event() {
+    // arrange
+    // act
+    // assert
     let workspace = setup_workspace_fixture();
 
     let file_path = workspace.workspace().join("demo.txt");
@@ -96,6 +99,9 @@ async fn hashline_apply_success_writes_file_and_emits_applied_event() {
 
 #[tokio::test]
 async fn hashline_apply_mismatch_leaves_file_unchanged() {
+    // arrange
+    // act
+    // assert
     let workspace = setup_workspace_fixture();
 
     let file_path = workspace.workspace().join("demo.txt");
@@ -162,6 +168,9 @@ async fn hashline_apply_mismatch_leaves_file_unchanged() {
 
 #[tokio::test]
 async fn hashline_apply_overlap_rejection_explains_recovery() {
+    // arrange
+    // act
+    // assert
     let workspace = setup_workspace_fixture();
 
     let file_path = workspace.workspace().join("demo.txt");
@@ -248,6 +257,9 @@ async fn hashline_apply_overlap_rejection_explains_recovery() {
 
 #[tokio::test]
 async fn hashline_apply_permission_ask_blocks_until_resolved() {
+    // arrange
+    // act
+    // assert
     let workspace = setup_workspace_fixture();
 
     let file_path = workspace.workspace().join("demo.txt");
@@ -391,6 +403,7 @@ fn test_coordinator(session_dir: &Path, permission_policy: PermissionPolicy) -> 
             temperature: Some(0.0),
             tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
             toolset: vec!["edit.hashline_apply".to_string()],
+            permission_ruleset: Vec::new(),
         },
     );
 

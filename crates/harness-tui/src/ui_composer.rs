@@ -1,10 +1,9 @@
 // allow: SIZE_OK — TUI rendering (indivisible view model)
 use super::*;
 use crate::UnwrapOrAbort;
+use ratatui::widgets::BorderType;
 
-pub(super) const COMPOSER_RAIL_GLYPH: &str = "┃";
-pub(super) const COMPOSER_RAIL_CAP_GLYPH: &str = "╹";
-pub(super) const COMPOSER_SEPARATOR_GLYPH: &str = "▀";
+pub(super) const COMPOSER_PROMPT_GLYPH: &str = "❯";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct ComposerViewport {
@@ -29,10 +28,16 @@ pub(super) fn render_document_composer_content(
     theme: &Theme,
     context: DocumentComposerRenderContext<'_>,
 ) {
-    let startup_composer = matches!(
+    let bordered_composer = matches!(
         context.dock.variant,
         crate::view_model::ControlDockVariant::Startup
-    );
+            | crate::view_model::ControlDockVariant::Live
+    ) && app.active_permission_view().is_none()
+        && app.transcript_pending_permissions().is_empty();
+    if bordered_composer {
+        render_bordered_composer(frame, app, area, theme, context);
+        return;
+    }
     let surface = control_dock_surface(theme, context.dock.variant);
     let composer_surface = composer_input_surface(theme);
     let prompt_area = area;
@@ -61,7 +66,6 @@ pub(super) fn render_document_composer_content(
             .split(body_area)
     };
     let composer_body_area = shell_rows[0];
-    let composer_cap_area = shell_rows[1];
 
     frame.render_widget(
         Block::default().style(Style::default().bg(composer_surface)),
@@ -112,8 +116,8 @@ pub(super) fn render_document_composer_content(
         .saturating_sub(metadata_gap)
         .saturating_sub(metadata_height);
 
-    let pre_input_fill = if startup_composer { trailing_fill } else { 0 };
-    let post_metadata_fill = if startup_composer { 0 } else { trailing_fill };
+    let pre_input_fill = 0;
+    let post_metadata_fill = trailing_fill;
 
     let rows = Layout::default()
         .direction(Direction::Vertical)
@@ -143,66 +147,50 @@ pub(super) fn render_document_composer_content(
     let body_color = if context.dock.composer_disabled {
         theme.status.disabled
     } else if placeholder_visible {
-        composer_input_muted(theme)
+        Color::Reset
     } else if shell_mode_active {
         theme.status.warning
     } else {
-        composer_input_text(theme)
+        Color::Reset
     };
-    let rail_color = if context.dock.composer_disabled {
-        theme.status.disabled
+    let glyph_style = if context.dock.composer_disabled {
+        Style::default().fg(theme.status.disabled).bg(surface)
     } else if shell_mode_active {
-        theme.status.warning
+        Style::default().fg(theme.status.warning).bg(surface)
     } else {
-        composer_agent_accent(theme, app)
+        Style::default().fg(Color::Reset).bg(surface)
     };
 
-    if rail_area.height > 0 {
-        let body_rows = usize::from(rail_area.height.saturating_sub(composer_cap_area.height));
-        let mut rail_lines = vec![
-            Line::from(Span::styled(
-                COMPOSER_RAIL_GLYPH,
-                Style::default().fg(rail_color).bg(surface),
-            ));
-            body_rows
-        ];
-        if composer_cap_area.height > 0 {
-            rail_lines.push(Line::from(Span::styled(
-                COMPOSER_RAIL_CAP_GLYPH,
-                Style::default().fg(rail_color).bg(surface),
-            )));
-        }
-        if rail_lines.is_empty() {
-            rail_lines.push(Line::from(Span::styled(
-                COMPOSER_RAIL_GLYPH,
-                Style::default().fg(rail_color).bg(surface),
-            )));
+    if rail_area.height > 0 && rail_area.width > 0 {
+        let height = usize::from(rail_area.height);
+        let mut rail_lines = Vec::with_capacity(height.max(1));
+        if height > 0 {
+            rail_lines.push(Line::from(Span::styled(COMPOSER_PROMPT_GLYPH, glyph_style)));
+            rail_lines.extend(
+                std::iter::repeat_with(|| Line::from(Span::styled(" ", glyph_style)))
+                    .take(height.saturating_sub(1)),
+            );
         }
         frame.render_widget(
             Paragraph::new(rail_lines).style(Style::default().bg(surface)),
             rail_area,
         );
     }
-    if composer_cap_area.height > 0 && composer_cap_area.width > 0 {
-        frame.render_widget(
-            Paragraph::new(COMPOSER_SEPARATOR_GLYPH.repeat(usize::from(composer_cap_area.width)))
-                .style(Style::default().fg(composer_surface).bg(surface)),
-            composer_cap_area,
-        );
-    }
 
+    let show_cursor = !context.dock.composer_disabled
+        && !footer_suppressed_by_overlay(app)
+        && (placeholder_visible || context.dock.composer_focused);
     let mut viewport = composer_viewport(
         body,
         input_width,
         usize::from(input_area.height.max(1)),
-        (placeholder_visible || (context.dock.composer_focused && !context.dock.composer_disabled))
-            .then_some(if placeholder_visible {
-                0
-            } else {
-                app.composer.prompt_cursor
-            }),
+        show_cursor.then_some(if placeholder_visible {
+            0
+        } else {
+            app.composer.prompt_cursor
+        }),
     );
-    if !context.dock.composer_focused || context.dock.composer_disabled {
+    if !show_cursor {
         viewport.cursor = None;
     }
     let base_style = Style::default().fg(body_color).bg(composer_surface);
@@ -257,6 +245,180 @@ pub(super) fn render_document_composer_content(
             .style(Style::default().bg(composer_surface)),
             rows[3],
         );
+    }
+}
+
+fn composer_model_badge(app: &AppState) -> String {
+    if app.startup_shell_visible() && app.composer.prompt_buffer.is_empty() {
+        return String::new();
+    }
+    let model = app.current_model_base_label();
+    let mut badge = if model.is_empty() || model == "-" {
+        "unknown".to_string()
+    } else {
+        model.to_string()
+    };
+    if let Some(reasoning) = app.current_model_reasoning_label() {
+        if !reasoning.is_empty()
+            && !reasoning.eq_ignore_ascii_case(badge.as_str())
+            && !badge.contains(reasoning)
+        {
+            badge = format!("{badge} · {reasoning}");
+        }
+    }
+    if app.always_approve_mode() {
+        badge = format!("{badge} · always-approve");
+    }
+    if app.queued_prompt_count > 0 {
+        let queue = format!("queued {}", app.queued_prompt_count);
+        badge = format!("{badge} · {queue}");
+    }
+    badge
+}
+
+fn render_bordered_composer(
+    frame: &mut Frame,
+    app: &AppState,
+    area: Rect,
+    theme: &Theme,
+    context: DocumentComposerRenderContext<'_>,
+) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+
+    let surface = if context.dock.variant == crate::view_model::ControlDockVariant::Live {
+        Color::Indexed(0)
+    } else {
+        Color::Reset
+    };
+    let composer_surface = surface;
+    // Reference idle composer border uses 256-color palette color 15 (bright
+    // white). The startup variant uses default foreground (Color::Reset) to
+    // match the reference startup freeze.
+    let border_fg = if context.dock.variant == crate::view_model::ControlDockVariant::Live {
+        Color::Indexed(15)
+    } else {
+        Color::Reset
+    };
+    let border_style = Style::default().fg(border_fg).bg(surface);
+    let badge = composer_model_badge(app);
+    let content_lines = context.composer_lines.max(1);
+    let strip_height = area
+        .height
+        .min(content_lines.saturating_add(2))
+        .max(3.min(area.height).max(1));
+    let strip = Rect {
+        x: area.x,
+        y: area.y,
+        width: area.width,
+        height: strip_height,
+    };
+    let mut block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(border_style)
+        .style(Style::default().bg(surface));
+    let (badge_title, badge_style) = if badge.is_empty() {
+        ("  ─".to_string(), border_style)
+    } else {
+        (format!(" {badge} ─"), border_style)
+    };
+    block = block.title_bottom(Line::from(Span::styled(badge_title, badge_style)).right_aligned());
+
+    let inner = block.inner(strip);
+    frame.render_widget(block, strip);
+    if inner.width == 0 || inner.height == 0 {
+        return;
+    }
+
+    let shell_mode_active = app.shell_mode() && !context.dock.composer_disabled;
+    let placeholder_visible = app.composer.prompt_buffer.is_empty();
+    let body = if placeholder_visible {
+        ""
+    } else {
+        app.composer.prompt_buffer.as_str()
+    };
+    let body_color = if context.dock.composer_disabled {
+        theme.status.disabled
+    } else if shell_mode_active {
+        theme.status.warning
+    } else {
+        Color::Reset
+    };
+    let glyph_style = if context.dock.composer_disabled {
+        Style::default()
+            .fg(theme.status.disabled)
+            .bg(composer_surface)
+    } else if shell_mode_active {
+        Style::default()
+            .fg(theme.status.warning)
+            .bg(composer_surface)
+    } else {
+        Style::default().fg(Color::Reset).bg(composer_surface)
+    };
+
+    let glyph_prefix = format!(" {COMPOSER_PROMPT_GLYPH} ");
+    let glyph_cols = display_width(&glyph_prefix);
+    let draft_width = usize::from(inner.width).saturating_sub(glyph_cols).max(1);
+    let max_visible = usize::from(inner.height.min(content_lines).max(1));
+    let show_cursor = !context.dock.composer_disabled
+        && !footer_suppressed_by_overlay(app)
+        && (placeholder_visible || context.dock.composer_focused);
+    let mut viewport = composer_viewport(
+        body,
+        draft_width,
+        max_visible,
+        show_cursor.then_some(if placeholder_visible {
+            0
+        } else {
+            app.composer.prompt_cursor
+        }),
+    );
+    if !show_cursor {
+        viewport.cursor = None;
+    }
+
+    let base_style = if matches!(body_color, Color::Reset | Color::Rgb(215, 218, 224)) {
+        Style::default().bg(composer_surface)
+    } else {
+        Style::default().fg(body_color).bg(composer_surface)
+    };
+    let body_lines = viewport
+        .lines
+        .iter()
+        .enumerate()
+        .map(|(row, line)| {
+            if row == 0 {
+                Line::from(vec![
+                    Span::styled(glyph_prefix.clone(), glyph_style),
+                    Span::styled(line.clone(), base_style),
+                ])
+            } else {
+                Line::from(vec![
+                    Span::styled(" ".repeat(glyph_cols), base_style),
+                    Span::styled(line.clone(), base_style),
+                ])
+            }
+        })
+        .collect::<Vec<_>>();
+    frame.render_widget(
+        Paragraph::new(body_lines).style(Style::default().bg(composer_surface)),
+        inner,
+    );
+
+    if let Some((cursor_row, cursor_col)) = viewport.cursor {
+        let cursor_x = inner
+            .x
+            .saturating_add(
+                u16::try_from(glyph_cols.saturating_add(cursor_col)).unwrap_or(u16::MAX),
+            )
+            .min(inner.x.saturating_add(inner.width.saturating_sub(1)));
+        let cursor_y = inner
+            .y
+            .saturating_add(u16::try_from(cursor_row).unwrap_or(u16::MAX))
+            .min(inner.y.saturating_add(inner.height.saturating_sub(1)));
+        frame.set_cursor_position((cursor_x, cursor_y));
     }
 }
 

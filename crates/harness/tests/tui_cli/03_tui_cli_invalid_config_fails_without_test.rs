@@ -1,6 +1,9 @@
 use harness::UnwrapOrAbort;
 #[test]
 fn tui_cli_invalid_config_fails_without_mock_fallback() {
+    // arrange
+    // act
+    // assert
     let temp = tempdir().unwrap_or_abort();
     let missing_config = temp.path().join("does-not-exist.jsonc");
     let output = run_harness_in(temp.path(), [

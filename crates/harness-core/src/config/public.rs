@@ -89,13 +89,17 @@ pub struct PublicRuntimeConfig {
 #[serde(deny_unknown_fields)]
 pub struct PublicRuntimeSettingsConfig {
     #[serde(default)]
-    pub compaction: CompactionRuntimeConfig,
+    pub compaction: CompactionSettings,
     #[serde(default, alias = "providerRetry")]
     pub provider_retry: ProviderRetryRuntimeConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "untagged serde permission config must stay unboxed for schema parity"
+)]
 pub enum PublicPermissionValue {
     Mode(PermissionMode),
     Config(PublicPermissionConfig),
@@ -135,6 +139,12 @@ pub struct PublicPermissionConfig {
     pub codesearch: Option<PermissionMode>,
     #[serde(default, alias = "codeLsp")]
     pub lsp: Option<PermissionMode>,
+    #[serde(default)]
+    pub read: Option<PublicRulePermissionValue>,
+    #[serde(default)]
+    pub external_directory: Option<PublicRulePermissionValue>,
+    #[serde(default)]
+    pub doom_loop: Option<PermissionMode>,
     #[serde(default, skip_serializing)]
     #[schemars(skip)]
     pub network: Option<PermissionMode>,
@@ -163,6 +173,12 @@ pub struct PublicProfilePermissions {
     pub codesearch: Option<PermissionMode>,
     #[serde(default, alias = "codeLsp")]
     pub lsp: Option<PermissionMode>,
+    #[serde(default)]
+    pub read: Option<PublicRulePermissionValue>,
+    #[serde(default)]
+    pub external_directory: Option<PublicRulePermissionValue>,
+    #[serde(default)]
+    pub doom_loop: Option<PermissionMode>,
     #[serde(default, skip_serializing)]
     #[schemars(skip)]
     pub network: Option<PermissionMode>,
@@ -248,20 +264,26 @@ pub(super) fn validate_public_root_config_object(
 }
 
 fn default_internal_permissions_config() -> PermissionsConfig {
+    // Harness-aligned allow-by-default for ordinary tool kinds. Safety kinds stay
+    // Ask: external_directory, doom_loop. Base question is Deny (build/plan re-allow).
+    // Read stays Allow with .env pattern rules.
     PermissionsConfig {
         defaults: PermissionDefaultsConfig {
-            edit: PermissionMode::Ask,
-            shell: PermissionMode::Ask,
-            network: PermissionMode::Ask,
-            question: Some(PermissionMode::Ask),
-            task: Some(PermissionMode::Ask),
-            webfetch: Some(PermissionMode::Ask),
-            websearch: Some(PermissionMode::Ask),
-            codesearch: Some(PermissionMode::Ask),
-            lsp: Some(PermissionMode::Ask),
+            edit: PermissionMode::Allow,
+            shell: PermissionMode::Allow,
+            network: PermissionMode::Allow,
+            question: Some(PermissionMode::Deny),
+            task: Some(PermissionMode::Allow),
+            webfetch: Some(PermissionMode::Allow),
+            websearch: Some(PermissionMode::Allow),
+            codesearch: Some(PermissionMode::Allow),
+            lsp: Some(PermissionMode::Allow),
+            read: Some(PermissionMode::Allow),
+            external_directory: Some(PermissionMode::Ask),
+            doom_loop: Some(PermissionMode::Ask),
         },
         fallback: None,
-        rules: PermissionRuleSet::default(),
+        rules: crate::config::default_permission_rule_set_with_read_env(),
         shell_allowlist: ShellAllowlist::default(),
     }
 }
@@ -299,8 +321,10 @@ fn public_permission_selector(
         "bash" => public_bash_selector(selector),
         "edit" => public_edit_selector(selector),
         "task" => public_task_selector(selector),
+        "read" => public_read_selector(selector),
+        "external_directory" => public_external_directory_selector(selector),
         _ => Err(ConfigError::InvalidReference(format!(
-            "permission selector rules are only supported for `bash`, `edit`, and `task`, not `{kind}`"
+            "permission selector rules are only supported for `bash`, `edit`, `task`, `read`, and `external_directory`, not `{kind}`"
         ))),
     }
 }
@@ -371,6 +395,43 @@ fn public_edit_selector(selector: &str) -> Result<PermissionSelector, ConfigErro
         ))
     })?;
     Ok(PermissionSelector::Exact(normalized))
+}
+
+fn public_read_selector(selector: &str) -> Result<PermissionSelector, ConfigError> {
+    let trimmed = selector.trim();
+    if trimmed == "*" {
+        return Ok(PermissionSelector::CatchAll);
+    }
+    if trimmed.is_empty() {
+        return Err(ConfigError::InvalidReference(format!(
+            "invalid read permission selector `{selector}`; use a basename glob (e.g. `*.env`), workspace-relative path, or `*`"
+        )));
+    }
+    if trimmed.contains('*') {
+        return Ok(PermissionSelector::Glob(trimmed.to_string()));
+    }
+    let normalized = normalize_public_workspace_selector(trimmed).ok_or_else(|| {
+        ConfigError::InvalidReference(format!(
+            "invalid read permission selector `{selector}`; use a basename glob (e.g. `*.env`), workspace-relative path, or `*`"
+        ))
+    })?;
+    Ok(PermissionSelector::Exact(normalized))
+}
+
+fn public_external_directory_selector(selector: &str) -> Result<PermissionSelector, ConfigError> {
+    let trimmed = selector.trim();
+    if trimmed == "*" {
+        return Ok(PermissionSelector::CatchAll);
+    }
+    if trimmed.is_empty() {
+        return Err(ConfigError::InvalidReference(format!(
+            "invalid external_directory permission selector `{selector}`; use an absolute path, glob pattern, or `*`"
+        )));
+    }
+    if trimmed.contains('*') {
+        return Ok(PermissionSelector::Glob(trimmed.to_string()));
+    }
+    Ok(PermissionSelector::Exact(trimmed.to_string()))
 }
 
 fn normalize_public_workspace_selector(selector: &str) -> Option<String> {
@@ -551,12 +612,14 @@ pub(super) fn translate_public_runtime_root(
             "seed": 42,
         },
         "compaction": {
-            "model_backed": false,
-            "split_oversized_turns": false,
+            "enabled": true,
+            "reserve_tokens": 16384,
+            "keep_recent_tokens": 20000,
             "auto_retry_overflow": true,
             "structured_summary_contract": true,
             "estimated_token_triggers": true,
             "fallback_input_tokens": 32768,
+            "split_oversized_turns": false,
         },
     });
     if let Some(value) = object.get("runtime") {

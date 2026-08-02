@@ -9,15 +9,29 @@ pub(super) fn live_shell_footer_is_shortcuts_only() {
 
     let primary_render = render_live_lines(&live, 100, 30);
     assert!(!primary_render.contains("q quit"));
-    assert!(primary_render.contains("Ctrl+p commands"));
+    // Freeze post-turn disclosure: Shift+Tab:mode │ Ctrl+x:shortcuts (not live-ctx cluster)
+    assert!(
+        primary_render.contains("Shift+Tab:mode") && primary_render.contains("Ctrl+x:shortcuts"),
+        "live disclosure must match freeze shortcut chrome\n{primary_render}"
+    );
+    assert!(
+        !primary_render.contains("live ctx"),
+        "live idle disclosure must not show live-ctx cluster\n{primary_render}"
+    );
 
     let reduced_render = render_live_lines(&live, 80, 24);
     assert!(!reduced_render.contains("q quit"));
-    assert!(reduced_render.contains("Ctrl+p commands"));
+    assert!(
+        reduced_render.contains("Shift+Tab:mode") && reduced_render.contains("Ctrl+x:shortcuts"),
+        "live disclosure must match freeze shortcut chrome at reduced width\n{reduced_render}"
+    );
 
     let minimal_render = render_live_lines(&live, 60, 18);
     assert!(!minimal_render.contains("q quit"));
-    assert!(minimal_render.contains("Ctrl+p commands"));
+    assert!(
+        minimal_render.contains("Shift+Tab:mode") || minimal_render.contains("Ctrl+x:shortcuts"),
+        "live disclosure keeps freeze shortcut chrome at dense width\n{minimal_render}"
+    );
 
     let replay =
         app::AppState::new_replay(PathBuf::from("/tmp/replay-session"), session_view_events());
@@ -26,11 +40,77 @@ pub(super) fn live_shell_footer_is_shortcuts_only() {
     let replay_footer_row = find_last_line_containing(&replay_lines, "q quit")
         .map(|row| replay_lines[row].trim_end().to_string())
         .unwrap_or_abort();
-    assert_markers_in_order(&replay_footer_row, &["? shortcuts", "tab focus", "q quit"]);
+    assert_markers_in_order(&replay_footer_row, &["shortcuts", "tab focus", "q quit"]);
     assert!(!replay_footer_row.contains("Replay"));
     assert!(!replay_footer_row.contains("run_fixture"));
     assert!(!replay_footer_row.contains("/tmp/replay-session"));
     assert!(!replay_footer_row.contains("/status"));
+}
+
+pub(super) fn live_post_turn_disclosure_matches_freeze_shortcut_chrome() {
+    // Given: live post-turn shell (not startup), empty draft — freeze run1-stream-probe footer
+    let mut app = app::AppState::new_live(None, false, None);
+    for event in session_view_events() {
+        app.ingest_event(event);
+    }
+    assert!(!app.startup_shell_visible());
+
+    // When: shell is rendered at freeze-primary geometry
+    let rendered = render_live_lines(&app, 120, 40);
+    let lines = rendered.lines().collect::<Vec<_>>();
+    let disclosure_row = lines
+        .iter()
+        .rposition(|line| line.contains("Shift+Tab") || line.contains("Ctrl+x"))
+        .map(|idx| lines[idx].trim_end().to_string())
+        .unwrap_or_else(|| panic!("freeze shortcut disclosure row missing\n{rendered}"));
+
+    // Then: freeze chrome (lead-friendly left row), not live-ctx / ? commands cluster
+    assert!(
+        disclosure_row.contains("Shift+Tab:mode"),
+        "expected Shift+Tab:mode in disclosure\n{disclosure_row}\n{rendered}"
+    );
+    assert!(
+        disclosure_row.contains("Ctrl+x:shortcuts"),
+        "expected Ctrl+x:shortcuts in disclosure\n{disclosure_row}\n{rendered}"
+    );
+    assert!(
+        disclosure_row.contains('│'),
+        "expected freeze separator │ in disclosure\n{disclosure_row}\n{rendered}"
+    );
+    assert!(
+        !disclosure_row.contains("live ctx"),
+        "post-turn disclosure must not show live-ctx cluster\n{disclosure_row}\n{rendered}"
+    );
+    assert!(
+        !disclosure_row.contains("? commands"),
+        "post-turn disclosure must not show ? commands cluster\n{disclosure_row}\n{rendered}"
+    );
+
+    // Given: same shell with a non-empty draft — freeze run1-draft footer
+    for ch in "Browser QA draft".chars() {
+        app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
+    }
+    let draft_rendered = render_live_lines(&app, 120, 40);
+    let draft_lines = draft_rendered.lines().collect::<Vec<_>>();
+    let draft_disclosure = draft_lines
+        .iter()
+        .rposition(|line| line.contains("Shift+Tab") || line.contains("Enter:send"))
+        .map(|idx| draft_lines[idx].trim_end().to_string())
+        .unwrap_or_else(|| {
+            panic!("draft freeze shortcut disclosure row missing\n{draft_rendered}")
+        });
+    assert!(
+        draft_disclosure.contains("Enter:send"),
+        "draft disclosure must lead with Enter:send\n{draft_disclosure}\n{draft_rendered}"
+    );
+    assert!(
+        draft_disclosure.contains("Shift+Tab:mode") && draft_disclosure.contains("Ctrl+x:shortcuts"),
+        "draft disclosure must keep freeze mode/shortcuts chrome\n{draft_disclosure}\n{draft_rendered}"
+    );
+    assert!(
+        !draft_disclosure.contains("live ctx") && !draft_disclosure.contains("? commands"),
+        "draft disclosure must not show live-ctx / ? commands cluster\n{draft_disclosure}\n{draft_rendered}"
+    );
 }
 
 pub(super) fn primary_and_wide_live_shells_hide_metadata_header() {
@@ -96,13 +176,13 @@ pub(super) fn completed_shell_bottom_rows_do_not_duplicate_command_help_footers(
         1,
         "completed shell should keep a single footer hint row\n{rendered}"
     );
-    assert!(lines[footer_row].contains("Ctrl+p commands"));
+    assert!(lines[footer_row].contains("? commands"));
     assert!(lines[footer_row].contains("q quit"));
 }
 
 pub(super) fn live_state_matrix_preserves_shell_structure() {
     let mut ready = app::AppState::new_live(None, false, None);
-    assert_live_shell_document_composer_contract(&ready, 100, 24, None, None, "Ctrl+p commands");
+    assert_live_shell_document_composer_contract(&ready, 100, 24, None, None, "Shift+Tab:mode");
 
     for ch in "draft next turn".chars() {
         ready.handle_key(key(crossterm::event::KeyCode::Char(ch)));
@@ -113,7 +193,7 @@ pub(super) fn live_state_matrix_preserves_shell_structure() {
         24,
         Some("draft next turn"),
         None,
-        "Ctrl+p commands",
+        "Shift+Tab:mode",
     );
 
     let mut multiline = app::AppState::new_live(None, false, None);
@@ -133,7 +213,7 @@ pub(super) fn live_state_matrix_preserves_shell_structure() {
         24,
         Some("draft"),
         None,
-        "Ctrl+p commands",
+        "Shift+Tab:mode",
     );
 
     let mut streaming = app::AppState::new_live(None, false, None);
@@ -161,14 +241,7 @@ pub(super) fn live_state_matrix_preserves_shell_structure() {
             },
         ),
     ));
-    assert_live_shell_document_composer_contract(
-        &streaming,
-        100,
-        24,
-        None,
-        None,
-        "Ctrl+p commands",
-    );
+    assert_live_shell_document_composer_contract(&streaming, 100, 24, None, None, "Shift+Tab:mode");
 
     let mut degraded = app::AppState::new_live(None, false, None);
     degraded.set_status_banner(Some(

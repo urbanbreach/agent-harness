@@ -448,6 +448,7 @@ fn parent_agent_profile() -> AgentProfile {
         temperature: None,
         tool_failure_mode: crate::config::ToolFailureMode::FailTurn,
         toolset: vec!["background_output".to_string()],
+        permission_ruleset: Vec::new(),
     }
 }
 
@@ -463,6 +464,7 @@ fn child_agent_profile() -> AgentProfile {
         temperature: None,
         tool_failure_mode: crate::config::ToolFailureMode::FailTurn,
         toolset: vec!["read".to_string()],
+        permission_ruleset: Vec::new(),
     }
 }
 

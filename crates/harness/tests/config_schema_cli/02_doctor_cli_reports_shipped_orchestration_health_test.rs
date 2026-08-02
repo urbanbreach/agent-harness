@@ -1,6 +1,9 @@
 use harness::UnwrapOrAbort;
 #[test]
 fn doctor_cli_reports_shipped_orchestration_health() {
+    // arrange
+    // act
+    // assert
     let repo_root = repo_root();
     let config_path = repo_root.join("configs").join("harness.example.jsonc");
 
@@ -35,6 +38,9 @@ fn doctor_cli_reports_shipped_orchestration_health() {
 }
 #[test]
 fn doctor_cli_emits_json_report() {
+    // arrange
+    // act
+    // assert
     let repo_root = repo_root();
     let config_path = repo_root.join("configs").join("harness.example.jsonc");
 
@@ -231,7 +237,7 @@ fn doctor_cli_json_reports_resolved_route_metadata() {
     );
     assert_eq!(
         route_check["details"]["skills"]["readiness"]["loadable_count"],
-        5
+        6
     );
     let skill_entries = route_check["details"]["skills"]["catalog"]["entries"]
         .as_array()
@@ -243,7 +249,7 @@ fn doctor_cli_json_reports_resolved_route_metadata() {
             && entry["source_scope"] == "project"
             && entry["body_loaded"] == false
     }));
-    for builtin in ["git-master", "review-work", "frontend-ui-ux"] {
+    for builtin in ["git-master", "review-work", "frontend-ui-ux", "harness-qa"] {
         assert!(skill_entries.iter().any(|entry| {
             entry["name"] == builtin
                 && entry["stable_id"] == format!("skill:project:{builtin}")
@@ -287,6 +293,9 @@ fn doctor_cli_json_reports_resolved_route_metadata() {
 
 #[test]
 fn doctor_cli_json_reports_prompt_family_asset_fallback_warning() {
+    // arrange
+    // act
+    // assert
     let temp = tempdir().unwrap_or_abort();
     fs::create_dir_all(temp.path().join(".agent-harness")).unwrap_or_abort();
     let config_path = temp.path().join("harness.jsonc");

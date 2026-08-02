@@ -13,8 +13,8 @@ use crate::conversation::{
     ConversationToolResultMessage, ConversationUserMessage,
 };
 use crate::event::{
-    EventArtifactRef, EventEnvelopeV1, EventV1, TaskCancelledEvent, TaskCompletedEvent,
-    TaskTerminalScope,
+    EventArtifactRef, EventEnvelopeV1, EventV1, SessionCompactionEvent, TaskCancelledEvent,
+    TaskCompletedEvent, TaskTerminalScope,
 };
 use crate::provider_args::provider_tool_arguments_json;
 use crate::session_paths::EVENTS_FILE_NAME;
@@ -279,6 +279,12 @@ struct AppliedCheckpointRecord {
 }
 
 #[derive(Debug, Clone)]
+enum AppliedCheckpoint {
+    File(AppliedCheckpointRecord),
+    Inline(SessionCompactionEvent),
+}
+
+#[derive(Debug, Clone)]
 pub(super) struct HistoricalCompletedAgentTurn {
     pub(super) request_id: String,
     pub(super) user_prompt: String,
@@ -363,65 +369,88 @@ pub(in crate::coord) fn restore_provider_context_from_history(
     let applied_checkpoints = discover_applied_checkpoints(run_id, &run_dir, &historical_events)?;
     let checkpoint_boundaries = applied_checkpoints
         .iter()
-        .map(|(agent_id, checkpoint)| (agent_id.clone(), checkpoint.through_seq))
+        .map(|(agent_id, checkpoint)| {
+            let boundary = match checkpoint {
+                AppliedCheckpoint::File(record) => record.through_seq,
+                AppliedCheckpoint::Inline(compaction) => {
+                    compaction.first_kept_event_seq.saturating_sub(1)
+                }
+            };
+            (agent_id.clone(), boundary)
+        })
         .collect::<BTreeMap<_, _>>();
 
     let mut histories = BTreeMap::new();
     for (agent_id, checkpoint) in &applied_checkpoints {
-        let checkpoint_artifact = load_provider_context_checkpoint(run_id, &run_dir, checkpoint)?;
-        if checkpoint_artifact.metadata.run_id.as_str() != run_id {
-            return Err(CoordinatorError::ResumeRestoreFailed {
-                run_id: run_id.to_string(),
-                reason: format!(
-                    "checkpoint `{}` run mismatch: expected `{run_id}`, got `{}`",
-                    checkpoint.checkpoint_id, checkpoint_artifact.metadata.run_id
-                ),
-            });
+        match checkpoint {
+            AppliedCheckpoint::File(record) => {
+                let checkpoint_artifact =
+                    load_provider_context_checkpoint(run_id, &run_dir, record)?;
+                if checkpoint_artifact.metadata.run_id.as_str() != run_id {
+                    return Err(CoordinatorError::ResumeRestoreFailed {
+                        run_id: run_id.to_string(),
+                        reason: format!(
+                            "checkpoint `{}` run mismatch: expected `{run_id}`, got `{}`",
+                            record.checkpoint_id, checkpoint_artifact.metadata.run_id
+                        ),
+                    });
+                }
+                if checkpoint_artifact.metadata.checkpoint_id != record.checkpoint_id {
+                    return Err(CoordinatorError::ResumeRestoreFailed {
+                        run_id: run_id.to_string(),
+                        reason: format!(
+                            "checkpoint artifact id mismatch for agent `{agent_id}`: expected `{}`, got `{}`",
+                            record.checkpoint_id, checkpoint_artifact.metadata.checkpoint_id
+                        ),
+                    });
+                }
+                if checkpoint_artifact.metadata.agent_id != *agent_id {
+                    return Err(CoordinatorError::ResumeRestoreFailed {
+                        run_id: run_id.to_string(),
+                        reason: format!(
+                            "checkpoint `{}` agent mismatch: expected `{agent_id}`, got `{}`",
+                            record.checkpoint_id, checkpoint_artifact.metadata.agent_id
+                        ),
+                    });
+                }
+                if checkpoint_artifact.metadata.through_seq != record.through_seq {
+                    return Err(CoordinatorError::ResumeRestoreFailed {
+                        run_id: run_id.to_string(),
+                        reason: format!(
+                            "checkpoint `{}` through_seq mismatch: expected `{}`, got `{}`",
+                            record.checkpoint_id,
+                            record.through_seq,
+                            checkpoint_artifact.metadata.through_seq
+                        ),
+                    });
+                }
+                if checkpoint_artifact.metadata.through_request_id != record.through_request_id {
+                    return Err(CoordinatorError::ResumeRestoreFailed {
+                        run_id: run_id.to_string(),
+                        reason: format!(
+                            "checkpoint `{}` through_request_id mismatch: expected `{:?}`, got `{:?}`",
+                            record.checkpoint_id,
+                            record.through_request_id,
+                            checkpoint_artifact.metadata.through_request_id
+                        ),
+                    });
+                }
+                histories.insert(
+                    agent_id.clone(),
+                    ProviderContext::from_checkpoint(checkpoint_artifact),
+                );
+            }
+            AppliedCheckpoint::Inline(compaction) => {
+                histories.insert(
+                    agent_id.clone(),
+                    ProviderContext {
+                        compacted_summary: Some(compaction.summary.clone()),
+                        preserved_turns: Vec::new(),
+                        checkpoint: None,
+                    },
+                );
+            }
         }
-        if checkpoint_artifact.metadata.checkpoint_id != checkpoint.checkpoint_id {
-            return Err(CoordinatorError::ResumeRestoreFailed {
-                run_id: run_id.to_string(),
-                reason: format!(
-                    "checkpoint artifact id mismatch for agent `{agent_id}`: expected `{}`, got `{}`",
-                    checkpoint.checkpoint_id, checkpoint_artifact.metadata.checkpoint_id
-                ),
-            });
-        }
-        if checkpoint_artifact.metadata.agent_id != *agent_id {
-            return Err(CoordinatorError::ResumeRestoreFailed {
-                run_id: run_id.to_string(),
-                reason: format!(
-                    "checkpoint `{}` agent mismatch: expected `{agent_id}`, got `{}`",
-                    checkpoint.checkpoint_id, checkpoint_artifact.metadata.agent_id
-                ),
-            });
-        }
-        if checkpoint_artifact.metadata.through_seq != checkpoint.through_seq {
-            return Err(CoordinatorError::ResumeRestoreFailed {
-                run_id: run_id.to_string(),
-                reason: format!(
-                    "checkpoint `{}` through_seq mismatch: expected `{}`, got `{}`",
-                    checkpoint.checkpoint_id,
-                    checkpoint.through_seq,
-                    checkpoint_artifact.metadata.through_seq
-                ),
-            });
-        }
-        if checkpoint_artifact.metadata.through_request_id != checkpoint.through_request_id {
-            return Err(CoordinatorError::ResumeRestoreFailed {
-                run_id: run_id.to_string(),
-                reason: format!(
-                    "checkpoint `{}` through_request_id mismatch: expected `{:?}`, got `{:?}`",
-                    checkpoint.checkpoint_id,
-                    checkpoint.through_request_id,
-                    checkpoint_artifact.metadata.through_request_id
-                ),
-            });
-        }
-        histories.insert(
-            agent_id.clone(),
-            ProviderContext::from_checkpoint(checkpoint_artifact),
-        );
     }
 
     let mut requests: BTreeMap<String, HistoricalRequestState> = BTreeMap::new();
@@ -814,13 +843,19 @@ fn should_replay_agent_scoped_event(
     seq > checkpoint_boundaries.get(agent_id).copied().unwrap_or(0)
 }
 
+#[allow(
+    deprecated,
+    reason = "deprecated event variants kept for backward compatibility with existing session logs"
+)]
 fn discover_applied_checkpoints(
     run_id: &str,
     run_dir: &Path,
     events: &[EventEnvelopeV1],
-) -> Result<BTreeMap<String, AppliedCheckpointRecord>, CoordinatorError> {
+) -> Result<BTreeMap<String, AppliedCheckpoint>, CoordinatorError> {
     let mut written_by_id = BTreeMap::new();
     let mut latest_applied_by_agent: BTreeMap<String, (u64, String)> = BTreeMap::new();
+    let mut latest_session_compaction_by_agent: BTreeMap<String, (u64, SessionCompactionEvent)> =
+        BTreeMap::new();
 
     for event in events {
         match &event.payload {
@@ -832,6 +867,10 @@ fn discover_applied_checkpoints(
                     payload.agent_id.clone(),
                     (event.seq, payload.checkpoint_id.clone()),
                 );
+            }
+            EventV1::SessionCompaction(payload) => {
+                latest_session_compaction_by_agent
+                    .insert(payload.agent_id.clone(), (event.seq, payload.clone()));
             }
             _ => {}
         }
@@ -859,14 +898,20 @@ fn discover_applied_checkpoints(
         }
 
         applied.insert(
-            agent_id,
-            AppliedCheckpointRecord {
+            agent_id.clone(),
+            AppliedCheckpoint::File(AppliedCheckpointRecord {
                 checkpoint_id: checkpoint_id.clone(),
                 artifact_path: written.artifact_path.clone(),
                 through_seq: written.through_seq,
                 through_request_id: written.through_request_id.clone(),
-            },
+            }),
         );
+    }
+
+    for (agent_id, (_, compaction)) in latest_session_compaction_by_agent {
+        // Inline session compaction always wins over a legacy file checkpoint
+        // because it represents the most recent compaction event.
+        applied.insert(agent_id, AppliedCheckpoint::Inline(compaction));
     }
 
     let _ = run_dir;

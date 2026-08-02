@@ -124,6 +124,20 @@ impl Coordinator {
             allow_initial_runtime_context_recording: true,
             shutdown_token: CancellationToken::new(),
             tool_state: ToolRunState::default(),
+            last_identical_tool_key: None,
+            identical_tool_call_streak: 0,
+            doom_loop_always_granted: false,
+            edit_attribution: crate::edit_attribution::EditAttributionJournal::open(
+                workspace_root.clone(),
+            )
+            .unwrap_or_else(|_| {
+                crate::edit_attribution::EditAttributionJournal::empty(workspace_root.clone())
+            }),
+            team_registry: crate::team_registry::TeamRegistry::new(),
+            cron_schedules: crate::cron_schedule::CronScheduleRegistry::new(),
+            plugin_lifecycle: crate::integrations::PluginRuntimeContract::new(
+                workspace_root.clone(),
+            ),
         };
 
         append_payload_event(
@@ -344,6 +358,20 @@ impl Coordinator {
             allow_initial_runtime_context_recording: false,
             shutdown_token: CancellationToken::new(),
             tool_state: ToolRunState::default(),
+            last_identical_tool_key: None,
+            identical_tool_call_streak: 0,
+            doom_loop_always_granted: false,
+            edit_attribution: crate::edit_attribution::EditAttributionJournal::open(
+                workspace_root.clone(),
+            )
+            .unwrap_or_else(|_| {
+                crate::edit_attribution::EditAttributionJournal::empty(workspace_root.clone())
+            }),
+            team_registry: crate::team_registry::TeamRegistry::new(),
+            cron_schedules: crate::cron_schedule::CronScheduleRegistry::new(),
+            plugin_lifecycle: crate::integrations::PluginRuntimeContract::new(
+                workspace_root.clone(),
+            ),
         };
 
         restore_child_session_mirrors(
@@ -561,12 +589,49 @@ impl Coordinator {
             ));
         }
 
-        let profile_cfg = self
+        let mut profile_cfg = self
             .config
             .agent_profiles
             .get(&profile)
             .cloned()
             .ok_or_else(|| CoordinatorError::UnknownAgent(profile.clone()))?;
+
+        if let Some(parent_id) = parent_agent_id.as_ref() {
+            if let Some(parent_profile) = run_state.agents.get(parent_id) {
+                let mut child_permission = profile_cfg.permission_ruleset.clone();
+                if profile_cfg.toolset.iter().any(|tool| tool == "task")
+                    && !child_permission
+                        .iter()
+                        .any(|rule| rule.permission == "task")
+                {
+                    child_permission.push(crate::perm::PermissionRule {
+                        permission: "task".to_string(),
+                        pattern: "*".to_string(),
+                        action: crate::perm::PermissionAction::Allow,
+                    });
+                }
+                if profile_cfg.toolset.iter().any(|tool| tool == "todowrite")
+                    && !child_permission
+                        .iter()
+                        .any(|rule| rule.permission == "todowrite")
+                {
+                    child_permission.push(crate::perm::PermissionRule {
+                        permission: "todowrite".to_string(),
+                        pattern: "*".to_string(),
+                        action: crate::perm::PermissionAction::Allow,
+                    });
+                }
+                let derived = crate::perm::derive_subagent_session_permission(
+                    &parent_profile.permission_ruleset,
+                    &child_permission,
+                );
+                profile_cfg.permission_ruleset =
+                    crate::perm::merge_rulesets([child_permission, derived]);
+                profile_cfg.toolset.retain(|tool_id| {
+                    !crate::perm::is_tool_disabled(tool_id, &profile_cfg.permission_ruleset)
+                });
+            }
+        }
 
         let agent_id = format!("agent_{:06}", run_state.next_agent_id);
         run_state.next_agent_id += 1;
@@ -681,6 +746,12 @@ impl Coordinator {
                 model_settings: default_model_settings_for_profile(&profile_cfg.name),
             };
 
+            let model_fallback_chain = self
+                .config
+                .agent_model_fallbacks
+                .get(&profile_cfg.name)
+                .cloned()
+                .unwrap_or_default();
             schedule_agent_turn(
                 self.clock.as_ref(),
                 self.redactor.as_ref(),
@@ -697,6 +768,7 @@ impl Coordinator {
                     request,
                     request_id,
                     child_task: None,
+                    model_fallback_chain,
                 },
             )
             .await?;

@@ -1,20 +1,17 @@
 ---
 source: crates/harness-tui/tests/deterministic_render_test.rs
-assertion_line: 217
 expression: rendered.as_str()
 ---
 Replay · read-only · run run_fixture · 2 ev                                                                                                                                         
                                                                                                                                                                                     
-  Waiting for first turn…                                                                                                                   ▼ MCP                                   
-                                                                                                                                            • No MCP servers configured             
+  Waiting for first turn…                                                                                                                                                           
+                                                                                                                                           ▼ MCP                                    
+                                                                                                                                           • No MCP servers configured              
                                                                                                                                                                                     
-                                                                                                                                            ▼ LSP                                   
-                                                                                                                                            • No active LSP servers                 
+                                                                                                                                           ▼ LSP                                    
+                                                                                                                                           • No active LSP servers                  
                                                                                                                                                                                     
-                                                                                                                                            ▶ Modified Files                        
-                                                                                                                                                                                    
-                                                                                                                                                                                    
-                                                                                                                                                                                    
+                                                                                                                                           ▶ Modified Files                         
                                                                                                                                                                                     
                                                                                                                                                                                     
                                                                                                                                                                                     
@@ -22,6 +19,9 @@ Replay · read-only · run run_fixture · 2 ev
                                                                                                                                                                                     
                                                                                                                                                                                     
                                                                                                                                                                                     
-▎ Replay is read-only · run failed · inspect transcript · session shell preserved · provider stream ended before final message                                                      
-  ? shortcuts  ·  ctrl+tab focus  ·  q quit                                                                                                                                         
-                                                                                                                                            HARNESS 0.1.0
+                                                                                                                                                                                    
+                                                                                                                                                                                    
+  ▎ Replay is read-only · run failed · inspect transcript · session shell preserved · provider stream ended before final message                                                    
+    h shortcuts  ·  tab focus  ·  ctrl+q quit                                                                                                                                       
+                                                                                                                                                                                    
+                                                                                                                                           HARNESS 0.1.0

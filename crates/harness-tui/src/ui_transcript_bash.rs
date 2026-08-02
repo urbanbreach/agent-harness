@@ -20,15 +20,10 @@ use super::ui_transcript_surface::{
     transcript_surface_content_width,
 };
 
-pub(super) const TRANSCRIPT_COMMAND_TOOL_INDENT: &str = "";
+pub(super) const TRANSCRIPT_COMMAND_TOOL_INDENT: &str = "   ";
 pub(super) const HARNESS_BASH_OUTPUT_LINE_CLAMP: usize = 15;
-const HARNESS_BLOCK_TOOL_MARGIN_TOP: usize = 1;
-const HARNESS_BLOCK_TOOL_PADDING_TOP: usize = 1;
-const HARNESS_BLOCK_TOOL_PADDING_BOTTOM: usize = 1;
 const HARNESS_BLOCK_TOOL_PADDING_LEFT: usize = 2;
 const HARNESS_BLOCK_TOOL_GAP: usize = 1;
-pub(super) const HARNESS_SPLIT_RAIL_GLYPH: &str = "┃";
-const HARNESS_SPLIT_RAIL_WIDTH: usize = 1;
 
 pub(super) struct HarnessBashPanel<'a> {
     pub(super) command: &'a str,
@@ -48,10 +43,7 @@ pub(super) fn append_harness_bash_panel(
     let prefix_width = surface_prefix_width(TRANSCRIPT_COMMAND_TOOL_INDENT);
     let panel_width = usize::from(available_width)
         .saturating_sub(prefix_width)
-        .max(HARNESS_SPLIT_RAIL_WIDTH + HARNESS_BLOCK_TOOL_PADDING_LEFT + 1);
-    for _ in 0..HARNESS_BLOCK_TOOL_MARGIN_TOP {
-        lines.push(Line::default());
-    }
+        .max(HARNESS_BLOCK_TOOL_PADDING_LEFT + 1);
     let card_lines = harness_bash_card_lines(
         panel.command,
         panel.output,
@@ -194,9 +186,6 @@ fn harness_bash_card_lines(
     panel_width: usize,
 ) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
-    for _ in 0..HARNESS_BLOCK_TOOL_PADDING_TOP {
-        lines.push(harness_bash_padding_line(theme));
-    }
 
     if let Some(title) = harness_bash_title(description) {
         append_harness_bash_rows(
@@ -252,9 +241,6 @@ fn harness_bash_card_lines(
         );
     }
 
-    for _ in 0..HARNESS_BLOCK_TOOL_PADDING_BOTTOM {
-        lines.push(harness_bash_padding_line(theme));
-    }
     lines
 }
 
@@ -281,10 +267,7 @@ fn append_harness_bash_rows(
     panel_width: usize,
     padding_left: usize,
 ) {
-    let content_width = panel_width
-        .saturating_sub(HARNESS_SPLIT_RAIL_WIDTH)
-        .saturating_sub(padding_left)
-        .max(1);
+    let content_width = panel_width.saturating_sub(padding_left).max(1);
     let rows = if text.is_empty() {
         vec![String::new()]
     } else {
@@ -315,7 +298,6 @@ fn harness_bash_content_line(
     let remaining = content_width.saturating_sub(display_width(&content));
     harness_bash_line(
         vec![
-            harness_split_rail_span(theme),
             Span::styled(" ".repeat(padding_left), Style::default()),
             Span::styled(content, style),
             Span::styled(" ".repeat(remaining), Style::default()),
@@ -325,14 +307,7 @@ fn harness_bash_content_line(
 }
 
 fn harness_bash_padding_line(theme: &Theme) -> Line<'static> {
-    harness_bash_line(vec![harness_split_rail_span(theme)], theme.surface.panel)
-}
-
-fn harness_split_rail_span(theme: &Theme) -> Span<'static> {
-    Span::styled(
-        HARNESS_SPLIT_RAIL_GLYPH.to_string(),
-        Style::default().fg(theme.surface.shell),
-    )
+    harness_bash_line(Vec::new(), theme.surface.panel)
 }
 
 fn harness_bash_line(spans: Vec<Span<'static>>, surface: Color) -> Line<'static> {

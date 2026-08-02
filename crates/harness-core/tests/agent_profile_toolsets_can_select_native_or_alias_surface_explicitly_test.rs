@@ -28,6 +28,9 @@ impl Tool for StaticTool {
 
 #[test]
 fn agent_profile_toolsets_are_exported_as_single_surface_provider_defs() {
+    // arrange
+    // act
+    // assert
     let registry = test_tool_registry();
 
     let defs = build_provider_tool_defs(&test_profile(), &registry).unwrap_or_abort();
@@ -65,6 +68,7 @@ fn test_profile() -> AgentProfile {
         temperature: Some(0.0),
         tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
         toolset: vec!["read".to_string(), "bash".to_string(), "list".to_string()],
+        permission_ruleset: Vec::new(),
     }
 }
 

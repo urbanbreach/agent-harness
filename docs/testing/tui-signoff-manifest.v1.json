@@ -1,0 +1,144 @@
+{
+  "schema_version": "harness-tui-signoff-manifest-v1",
+  "description": "Strict-V1 TUI signoff manifest. It names deterministic render owners, PTY provenance stages, and the env-gated native visual gap for release-facing TUI flows; reference-image comparison is not required. Live shell topology is transcript-first full-width scrollback above a bottom composer (Grok-shaped); no persistent right-hand operator sidebar as primary chrome \u2014 operator facts stay on secondary surfaces (status dialog, details overlay, palette, slash).",
+  "native_visual_policy": {
+    "lane": "signoff-native",
+    "stage": "native_visual_e2e_ignored",
+    "required_env": [
+      "HARNESS_NATIVE_VISUAL=1",
+      "DISPLAY=<display>"
+    ],
+    "missing_env_status": "documented_gap",
+    "gap_note": "native visual screenshots remain local opt-in signoff until signoff-native evidence is produced"
+  },
+  "flows": [
+    {
+      "id": "shell_topology",
+      "release_class": "normal_prompt_flow",
+      "deterministic_tests": [
+        "cargo nextest run -p harness-tui --test shell_topology_contract_test",
+        "cargo nextest run -p harness-tui --test p0_parity_contract_test shell_start_perm::canonical_viewports",
+        "cargo nextest run -p harness-tui --test deterministic_render_test live_transcript_and_composer_shell_render_without_pty"
+      ],
+      "pty_stages": [
+        "scripts/test-lanes.sh signoff-pty :: pty_status_dialog_opens_without_sidebar_copy",
+        "scripts/test-lanes.sh signoff-pty :: pty_smoke_starts_accepts_input_resizes_and_exits"
+      ],
+      "required_markers": [
+        "ctrl+p commands",
+        "\u276f",
+        "Status"
+      ]
+    },
+    {
+      "id": "startup",
+      "release_class": "normal_prompt_flow",
+      "deterministic_tests": [
+        "cargo nextest run -p harness-tui --test deterministic_render_test startup_shell_is_compose_first_without_pty",
+        "cargo nextest run -p harness-tui --test p0_parity_contract_test shell_start_perm::startup_welcome_is_compose_first_with_harness_branding_no_reference_identity"
+      ],
+      "pty_stages": [
+        "scripts/test-lanes.sh signoff-pty :: pty_smoke_starts_accepts_input_resizes_and_exits"
+      ],
+      "required_markers": [
+        "ctrl+p commands",
+        "Ask anything",
+        "\u276f"
+      ]
+    },
+    {
+      "id": "command_palette",
+      "release_class": "operator_navigation_flow",
+      "deterministic_tests": [
+        "cargo nextest run -p harness-tui --test deterministic_render_test command_palette_renders_without_pty",
+        "cargo nextest run -p harness-tui --test p0_parity_contract_test shell_start_perm::command_palette_opens_filters_and_dismisses_without_sidebar"
+      ],
+      "pty_stages": [
+        "scripts/test-lanes.sh signoff-pty :: pty_status_dialog_opens_without_sidebar_copy"
+      ],
+      "required_markers": [
+        "Commands",
+        "Open status",
+        "Status"
+      ]
+    },
+    {
+      "id": "session_picker_resume",
+      "release_class": "resume_flow",
+      "deterministic_tests": [
+        "cargo nextest run -p harness-tui --test deterministic_render_test startup_session_history_picker_renders_without_pty",
+        "cargo nextest run -p harness-tui --test p0_parity_contract_test pickers_help_life::session_picker_opens_with_searchable_history"
+      ],
+      "pty_stages": [
+        "scripts/test-lanes.sh signoff-pty :: pty_smoke_starts_accepts_input_resizes_and_exits"
+      ],
+      "required_markers": [
+        "Continue session",
+        "Search"
+      ]
+    },
+    {
+      "id": "permission_question",
+      "release_class": "permission_question_flow",
+      "deterministic_tests": [
+        "cargo nextest run -p harness-tui --test deterministic_render_test permission_modal_preserves_draft_without_pty",
+        "cargo nextest run -p harness-tui --test deterministic_render_test question_permission_prompt_renders_without_pty",
+        "cargo nextest run -p harness-tui --test p0_parity_contract_test shell_start_perm::permission_overlay_preempts_palette_and_slash"
+      ],
+      "pty_stages": [
+        "scripts/test-lanes.sh signoff-pty :: pty_permission_overlay_resolves_and_preserves_draft"
+      ],
+      "required_markers": [
+        "Permission required",
+        "Allow once",
+        "\u25cf"
+      ]
+    },
+    {
+      "id": "provider_tool_failure",
+      "release_class": "provider_tool_failure_flow",
+      "deterministic_tests": [
+        "cargo nextest run -p harness-tui --test deterministic_render_test tool_lifecycle_rows_stay_ordered_without_pty",
+        "cargo nextest run -p harness-tui --test deterministic_render_test replay_failure_state_renders_without_pty",
+        "cargo nextest run -p harness-tui --test p0_parity_contract_test transcript::transcript_activity_lifecycle_streaming_done_failed_and_cancelled"
+      ],
+      "pty_stages": [
+        "scripts/test-lanes.sh signoff-pty :: pty_smoke_starts_accepts_input_resizes_and_exits"
+      ],
+      "required_markers": [
+        "\u25c6",
+        "run failed"
+      ]
+    },
+    {
+      "id": "diff_review",
+      "release_class": "diff_review_flow",
+      "deterministic_tests": [
+        "cargo nextest run -p harness-tui --test deterministic_render_test tool_lifecycle_rows_stay_ordered_without_pty",
+        "cargo nextest run -p harness-tui transcript_apply_patch_surfaces_rename_and_wrapped_inline_diffs",
+        "cargo nextest run -p harness-tui diff_hunk_navigation_advances_and_retreats_between_hunks"
+      ],
+      "pty_stages": [
+        "scripts/test-lanes.sh signoff-pty :: pty_smoke_starts_accepts_input_resizes_and_exits"
+      ],
+      "required_markers": [
+        "edit",
+        "\u25c6"
+      ]
+    },
+    {
+      "id": "file_mention",
+      "release_class": "operator_navigation_flow",
+      "deterministic_tests": [
+        "cargo nextest run -p harness-tui --test p0_parity_contract_test composer_slash_file::file_mention_at_opens_picker_and_inserts_real_workspace_file"
+      ],
+      "pty_stages": [
+        "scripts/test-lanes.sh signoff-pty :: pty_smoke_starts_accepts_input_resizes_and_exits"
+      ],
+      "required_markers": [
+        "@src/main.rs"
+      ]
+    }
+  ],
+  "reference_image_policy": "not_required"
+}

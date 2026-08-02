@@ -1,4 +1,6 @@
 // allow: SIZE_OK — TUI view model state (session projection mapping + composer state + display formatting)
+// Pure presentation adapters (AppState/SessionProjection → immutable view models).
+// Must not mutate app state, append events, or emit UiIntent.
 use crate::UnwrapOrAbort;
 use harness_core::event::EventV1;
 
@@ -780,7 +782,10 @@ fn runtime_tool_identity_fixture(status: ToolCallDisplayStatus) -> ActivityEntry
         user_timestamp: None,
         request_data: None,
         thinking_text: String::new(),
+        thinking_first_mono_ms: None,
+        thinking_last_mono_ms: None,
         transcript_text: String::new(),
+        first_delta_mono_ms: None,
         usage: None,
         cache_usage: None,
         error_message: None,
@@ -831,6 +836,7 @@ fn runtime_tool_identity_fixture(status: ToolCallDisplayStatus) -> ActivityEntry
         last_seq: 1,
         first_mono_ms: 1,
         last_mono_ms: 1,
+        request_started_mono_ms: None,
         revision: 0,
     }
 }

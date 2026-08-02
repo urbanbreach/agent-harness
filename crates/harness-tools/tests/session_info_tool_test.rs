@@ -25,7 +25,7 @@ const SESSION_TOOL_IDS: [&str; 4] = [
 fn sessions_replay_docs_name_session_tools_and_no_side_effect_contract() {
     // arrange
     let docs = fs::read_to_string(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/sessions-and-replay.md"),
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/architecture/sessions-and-replay.md"),
     )
     .unwrap_or_abort();
 

@@ -1,6 +1,9 @@
 use harness::UnwrapOrAbort;
 #[tokio::test]
 async fn prompt_cli_executes_fs_grep_and_completes_turn() {
+    // arrange
+    // act
+    // assert
     let provider = ScriptedPromptProvider::sequence(vec![
         tool_call_events(
             "call_grep",
@@ -34,6 +37,9 @@ async fn prompt_cli_executes_fs_grep_and_completes_turn() {
 }
 #[tokio::test]
 async fn prompt_cli_reads_absolute_workspace_path_and_completes_turn() {
+    // arrange
+    // act
+    // assert
     let temp = tempdir().unwrap_or_abort();
     let absolute_target = temp.path().join("tool-target.txt");
     fs::write(&absolute_target, "alpha\nbeta\ngamma\n").unwrap_or_abort();

@@ -15,13 +15,13 @@ pub(crate) fn exact_test_startup_slash_commands_execute_without_menu() {
             "agents".to_string(),
             "auth".to_string(),
             "connect".to_string(),
+            "dashboard".to_string(),
             "exit".to_string(),
+            "feedback".to_string(),
             "help".to_string(),
             "mcps".to_string(),
             "models".to_string(),
             "new".to_string(),
-            "sessions".to_string(),
-            "thinking".to_string(),
         ]
     );
 }
@@ -724,42 +724,47 @@ pub(crate) fn exact_test_compact_operator_rail_skips_focus_cycle() {
     assert_eq!(live.focus, Focus::Prompt);
     assert!(!live.details_drawer_open());
 
-    live.handle_key(KeyEvent::new(KeyCode::Char('2'), KeyModifiers::NONE));
-    assert_eq!(live.focus, Focus::Details);
-    assert!(live.details_drawer_open());
-
-    live.handle_key(KeyEvent::new(KeyCode::Char('2'), KeyModifiers::NONE));
+    live.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
     assert_eq!(live.focus, Focus::Details);
     assert!(!live.details_drawer_open());
 
-    live.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::CONTROL));
+    live.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
     assert_eq!(live.focus, Focus::Prompt);
     assert!(!live.details_drawer_open());
 
-    live.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::CONTROL));
+    live.handle_key(KeyEvent::new(
+        KeyCode::Tab,
+        KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+    ));
     assert_eq!(live.focus, Focus::Details);
     assert!(!live.details_drawer_open());
 
-    live.handle_key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::CONTROL));
+    live.handle_key(KeyEvent::new(
+        KeyCode::Tab,
+        KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+    ));
     assert_eq!(live.focus, Focus::Prompt);
     assert!(!live.details_drawer_open());
 
     let mut live_overlay = AppState::new_live(None, false, None);
     live_overlay.focus = Focus::Details;
-    live_overlay.handle_key(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE));
+    live_overlay.live_details_drawer_open = true;
     assert!(live_overlay.details_drawer_open());
 
-    live_overlay.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::CONTROL));
+    live_overlay.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
     assert_eq!(live_overlay.focus, Focus::List);
     assert!(live_overlay.details_drawer_open());
 
     let mut replay = AppState::new_replay(PathBuf::from("/tmp/replay-session"), Vec::new());
     assert_eq!(replay.focus, Focus::Details);
 
-    replay.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::CONTROL));
+    replay.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
     assert_eq!(replay.focus, Focus::Details);
 
-    replay.handle_key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::CONTROL));
+    replay.handle_key(KeyEvent::new(
+        KeyCode::Tab,
+        KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+    ));
     assert_eq!(replay.focus, Focus::Details);
 }
 
@@ -987,4 +992,28 @@ pub(crate) fn exact_test_any_key_closes_dialog_on_success() {
         app.connect_dialog.toast.is_none(),
         "toast should be cleared after closing"
     );
+}
+
+#[cfg(test)]
+pub(crate) fn exact_test_replay_mode_blocks_composer_input_and_submit() {
+    // arrange — replay app with composer focus forced
+    let mut app = AppState::new_replay(PathBuf::from("/tmp/replay"), Vec::new());
+    app.focus = Focus::Prompt;
+
+    // act — typing + submit attempts in replay mode
+    app.handle_key(KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE));
+    app.handle_key(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE));
+    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+    // assert — composer stays disabled: no input accepted, no live submit workflow
+    assert!(app.replay_mode);
+    assert!(
+        app.composer_disabled(),
+        "composer must be disabled in replay"
+    );
+    assert!(
+        app.composer.prompt_buffer.is_empty(),
+        "replay must not accept composer input"
+    );
+    assert_eq!(app.overlay_stack().top(), None);
 }

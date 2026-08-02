@@ -125,8 +125,7 @@ pub(super) fn live_details_drawer_orchestration_warning_fallback() {
     for event in session_view_events() {
         app.ingest_event(event);
     }
-    app.handle_key(focus_cycle_key());
-    app.handle_key(key(crossterm::event::KeyCode::Char('i')));
+    app.live_details_drawer_open = true;
 
     let card_body = orchestration_details_drawer_card_body(&app, 7, 76);
     assert!(card_body.contains("watch · none"));
@@ -139,57 +138,55 @@ pub(super) fn layout_plan_primary_geometry_docks_live_details_sidebar() {
     for event in session_view_events() {
         app.ingest_event(event);
     }
-    app.handle_key(focus_cycle_key());
-    app.handle_key(key(crossterm::event::KeyCode::Char('i')));
+    app.live_details_drawer_open = true;
 
     let plan = layout::FrameLayoutPlan::for_app(&app, ratatui::layout::Rect::new(0, 0, 100, 30));
 
     assert_eq!(plan.shell, ratatui::layout::Rect::new(0, 0, 100, 30));
     assert_eq!(
         plan.transcript,
-        Some(ratatui::layout::Rect::new(0, 0, 100, 24))
+        Some(ratatui::layout::Rect::new(0, 0, 100, 25))
     );
     assert_eq!(plan.operator_sidebar, None);
     assert_eq!(
         plan.details_overlay,
-        Some(ratatui::layout::Rect::new(58, 0, 42, 24))
+        Some(ratatui::layout::Rect::new(58, 0, 42, 25))
     );
     assert_eq!(plan.status, None);
     assert_eq!(
         plan.composer,
-        Some(ratatui::layout::Rect::new(0, 24, 100, 5))
+        Some(ratatui::layout::Rect::new(2, 25, 96, 3))
     );
     assert_eq!(
         plan.disclosure,
-        Some(ratatui::layout::Rect::new(0, 29, 100, 1))
+        Some(ratatui::layout::Rect::new(2, 28, 96, 1))
     );
 }
 
 pub(super) fn layout_plan_minimum_geometry_stacks_live_details_drawer() {
     let mut app = app::AppState::new_live(None, false, None);
     app.active_tab = app::Tab::Run;
-    app.handle_key(focus_cycle_key());
-    app.handle_key(key(crossterm::event::KeyCode::Char('i')));
+    app.live_details_drawer_open = true;
 
     let plan = layout::FrameLayoutPlan::for_app(&app, ratatui::layout::Rect::new(0, 0, 80, 24));
 
-    assert_eq!(plan.shell, ratatui::layout::Rect::new(2, 0, 76, 24));
+    assert_eq!(plan.shell, ratatui::layout::Rect::new(0, 0, 80, 24));
     assert_eq!(
         plan.transcript,
-        Some(ratatui::layout::Rect::new(2, 0, 76, 18))
+        Some(ratatui::layout::Rect::new(0, 0, 80, 19))
     );
     assert_eq!(
         plan.details_overlay,
-        Some(ratatui::layout::Rect::new(36, 0, 42, 18))
+        Some(ratatui::layout::Rect::new(38, 0, 42, 19))
     );
     assert_eq!(plan.status, None);
     assert_eq!(
         plan.composer,
-        Some(ratatui::layout::Rect::new(2, 18, 76, 5))
+        Some(ratatui::layout::Rect::new(2, 19, 76, 3))
     );
     assert_eq!(
         plan.disclosure,
-        Some(ratatui::layout::Rect::new(2, 23, 76, 1))
+        Some(ratatui::layout::Rect::new(2, 22, 76, 1))
     );
 }
 
@@ -202,12 +199,9 @@ pub(super) fn live_session_shell_removes_tab_chrome_and_debug_drawer() {
     let plan = layout::FrameLayoutPlan::for_app(&app, ratatui::layout::Rect::new(0, 0, 160, 48));
     let rendered = render_live_lines(&app, 160, 48);
 
-    assert!(plan.operator_sidebar.is_some());
+    assert!(plan.operator_sidebar.is_none());
     assert!(plan.details_overlay.is_none());
     assert!(!rendered.contains("Tabs"));
-    assert!(rendered.contains("Explain the refactor"));
-    assert!(rendered.contains("▼ MCP"));
-    assert!(rendered.contains("▶ Modified Files"));
 }
 
 pub(super) fn wide_shell_hides_header_when_sidebar_is_visible() {
@@ -222,16 +216,18 @@ pub(super) fn wide_shell_hides_header_when_sidebar_is_visible() {
     let first_line = lines.first().copied().unwrap_or_default().to_string();
 
     assert_eq!(plan.header.height, 0);
-    assert!(plan.operator_sidebar.is_some());
+    assert!(plan.operator_sidebar.is_none());
     assert!(plan.live_anchor.is_none());
     assert!(!first_line.contains("run run_fixture"));
     assert!(
-        lines.iter().take(4).any(|line| {
+        lines.iter().take(8).any(|line| {
             line.contains("Explain the refactor")
                 || line.contains("Working through the steps.")
+                || line.contains("Read 1 file")
                 || line.contains("Read src/ui.rs")
+                || line.contains("Read src/app.rs")
         }),
-        "wide shell transcript content should begin immediately at the top of the shell\n{rendered}"
+        "wide shell shows freeze breadcrumb then transcript content near the top\n{rendered}"
     );
 }
 
@@ -257,7 +253,7 @@ pub(super) fn replay_read_only_composer_matches_quiet_contract() {
     let app =
         app::AppState::new_replay(PathBuf::from("/tmp/replay-session"), session_view_events());
 
-    assert_replay_read_only_composer_contract(&app, 100, 24, "Replay · read-only", "? shortcuts");
+    assert_replay_read_only_composer_contract(&app, 100, 24, "Replay · read-only", "h shortcuts");
 
     let rendered = render_live_lines(&app, 100, 24);
     assert!(!rendered.contains("Replay archive · read-only"));
@@ -268,9 +264,9 @@ pub(super) fn replay_read_only_quiet_contract_survives_primary_compact_and_dense
     let app =
         app::AppState::new_replay(PathBuf::from("/tmp/replay-session"), session_view_events());
 
-    assert_replay_read_only_composer_contract(&app, 100, 30, "Replay · read-only", "? shortcuts");
-    assert_replay_read_only_composer_contract(&app, 90, 36, "Replay · read-only", "? shortcuts");
-    assert_replay_read_only_composer_contract(&app, 80, 24, "Replay · read-only", "? shortcuts");
+    assert_replay_read_only_composer_contract(&app, 100, 30, "Replay · read-only", "h shortcuts");
+    assert_replay_read_only_composer_contract(&app, 90, 36, "Replay · read-only", "h shortcuts");
+    assert_replay_read_only_composer_contract(&app, 80, 24, "Replay · read-only", "h shortcuts");
     assert_replay_read_only_composer_contract(&app, 60, 18, "Replay · read-only", "q quit");
 }
 

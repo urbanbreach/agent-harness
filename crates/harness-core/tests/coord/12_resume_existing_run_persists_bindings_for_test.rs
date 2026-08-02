@@ -1,6 +1,9 @@
 use harness_core::UnwrapOrAbort;
 #[tokio::test]
 async fn resume_existing_run_persists_bindings_for_future_reresume() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_resume_reresume";
     write_resume_fixture(
@@ -92,6 +95,9 @@ async fn resume_existing_run_persists_bindings_for_future_reresume() {
 }
 #[tokio::test]
 async fn resume_existing_run_remains_resumable_after_open_and_quit_without_prompt() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_resume_open_quit";
     write_resume_fixture(
@@ -178,6 +184,9 @@ async fn resume_existing_run_remains_resumable_after_open_and_quit_without_promp
 }
 #[tokio::test]
 async fn resume_existing_run_rejects_missing_historical_profile_binding() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_resume_missing_profile";
     let events_path = write_resume_fixture(
@@ -250,6 +259,9 @@ async fn resume_existing_run_rejects_missing_historical_profile_binding() {
 }
 #[tokio::test]
 async fn resume_existing_run_rejects_second_writer_lock() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let first = test_resume_coordinator(temp_dir.path());
     let run = first
@@ -272,6 +284,9 @@ async fn resume_existing_run_rejects_second_writer_lock() {
 }
 #[tokio::test]
 async fn resume_existing_run_does_not_append_on_restore_failure() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_resume_invalid_agent";
     let events_path = write_resume_fixture(
@@ -335,6 +350,9 @@ async fn resume_existing_run_does_not_append_on_restore_failure() {
 }
 #[tokio::test]
 async fn resume_restores_interactive_provider_context() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_resume_context";
     write_resumable_history_fixture(temp_dir.path(), run_id);
@@ -374,6 +392,9 @@ async fn resume_restores_interactive_provider_context() {
 }
 #[tokio::test]
 async fn resumed_turn_matches_uninterrupted_conversation_request_shape() {
+    // arrange
+    // act
+    // assert
     let uninterrupted_dir = tempfile::tempdir().unwrap_or_abort();
     let uninterrupted_provider = CapturingProvider::new(vec!["first answer", "second answer"]);
     let uninterrupted = test_resume_coordinator_with_provider(
@@ -449,6 +470,9 @@ async fn resumed_turn_matches_uninterrupted_conversation_request_shape() {
 }
 #[tokio::test]
 async fn resume_restores_multi_turn_historical_context_with_final_task_output() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_resume_multi_turn_context";
     write_resumable_multi_turn_history_fixture(temp_dir.path(), run_id);

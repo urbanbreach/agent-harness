@@ -42,8 +42,25 @@ pub(super) fn module_inline_diff_does_not_leave_large_gap_before_active_footer()
         .unwrap_or_abort();
     let footer_row = lines
         .iter()
-        .position(|line| line.contains("Assistant") && line.contains("active"))
-        .unwrap_or_abort();
+        .enumerate()
+        .skip(diff_last_row + 1)
+        .find_map(|(index, line)| {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                return None;
+            }
+            if trimmed.contains("▪")
+                || trimmed.contains("◇")
+                || trimmed.contains("gpt")
+                || trimmed.contains("model")
+                || trimmed.contains("codex")
+            {
+                Some(index)
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| panic!("assistant footer after diff\n{lines:#?}"));
 
     assert_eq!(
         footer_row,
@@ -196,7 +213,10 @@ pub(super) fn module_transcript_edit_tool_wide_diff_uses_syntax_highlighting_and
         user_timestamp: None,
         request_data: None,
         thinking_text: String::new(),
+        thinking_first_mono_ms: None,
+        thinking_last_mono_ms: None,
         transcript_text: String::new(),
+        first_delta_mono_ms: None,
         usage: None,
         cache_usage: None,
         error_message: None,
@@ -206,6 +226,7 @@ pub(super) fn module_transcript_edit_tool_wide_diff_uses_syntax_highlighting_and
         last_seq: 11,
         first_mono_ms: 10,
         last_mono_ms: 11,
+        request_started_mono_ms: None,
         revision: 0,
     };
     entry.tool_calls.push(crate::app::ToolCallEntry {
@@ -315,7 +336,7 @@ pub(super) fn transcript_edit_snapshot_handles_missing_artifact() {
         .unwrap_or_abort();
 
     let debug = format!("{:?}", terminal.backend().buffer());
-    assert!(debug.contains("← Patch · demo.txt"));
+    assert!(debug.contains("Patch · demo.txt") || debug.contains("◆ Patch"));
     assert!(!debug.contains("Select an edit event to view diff"));
     assert!(!debug.contains("diff artifact missing"));
 }

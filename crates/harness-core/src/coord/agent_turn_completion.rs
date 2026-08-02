@@ -1,4 +1,7 @@
 // allow: SIZE_OK — coordinator turn completion state machine (lifecycle phases)
+use super::compaction::{
+    collect_entries_for_branch_summary, generate_branch_summary, GenerateBranchSummaryOptions,
+};
 use super::*;
 
 impl Coordinator {
@@ -122,47 +125,26 @@ impl Coordinator {
             )?;
             return Err(CoordinatorError::LifecycleHookFailed(reason));
         }
-        let summary_override =
-            compaction_summary_override_from_hooks(&requested_hook_batch.hook_executions);
-        let summary_decision = if let Some(summary) = summary_override {
-            CompactionSummaryDecision::hook(summary)
-        } else if self.config.compaction.model_backed {
-            match self.model_backed_compaction_summary(&trigger).await {
-                Ok(summary) => CompactionSummaryDecision::model(
-                    compaction_summary_model_ref(&self.config.compaction, &trigger),
-                    summary.summary,
-                    false,
-                    summary.split_prefix_summary,
-                ),
-                Err(reason) => {
-                    tracing::warn!(%reason, agent_id = %trigger.agent_id, "model-backed compaction summary fell back to deterministic summary");
-                    CompactionSummaryDecision::model(
-                        compaction_summary_model_ref(&self.config.compaction, &trigger),
-                        String::new(),
-                        true,
-                        None,
-                    )
-                }
-            }
-        } else {
-            CompactionSummaryDecision::deterministic(&trigger)
-        };
-
         let Some(run_state) = self.run_state.as_mut() else {
             return Err(CoordinatorError::RunNotStarted);
         };
 
-        let updated_context = match compact_provider_context(
+        let prompt_estimate = trigger.prompt_tokens_estimate;
+        let applied = match compact_session(
             self.clock.as_ref(),
             self.redactor.as_ref(),
             run_state,
-            &trigger,
+            Arc::clone(&self.config.provider),
+            agent_id,
+            trigger_reason,
             &self.config.compaction,
-            &summary_decision,
-        ) {
-            Ok(Some(compaction)) => compaction,
-            Ok(None) if trigger.trigger_reason == "overflow_retry" => {
-                let reason = "overflow retry requested compaction, but no checkpoint reduced the active provider context"
+            prompt_estimate,
+        )
+        .await
+        {
+            Ok(Some(applied)) => applied,
+            Ok(None) if trigger_reason == "overflow" => {
+                let reason = "overflow requested compaction, but no cut point reduced the active session context"
                     .to_string();
                 append_compaction_failed_event(
                     self.clock.as_ref(),
@@ -178,7 +160,7 @@ impl Coordinator {
             Ok(None) => {
                 return Ok(CompactAgentContextResult::NoOp {
                     context: existing_context,
-                })
+                });
             }
             Err(err) => {
                 let reason = err.to_string();
@@ -195,24 +177,30 @@ impl Coordinator {
             }
         };
 
-        if let ("overflow_retry", Some(task_id), Some(request_id)) = (
-            trigger.trigger_reason.as_str(),
-            task_id,
-            trigger.through_request_id.as_deref(),
-        ) {
-            run_state.record_overflow_retry_compacted_context(
-                task_id,
-                request_id,
-                updated_context.updated_context.clone(),
-            );
+        let Some(run_state) = self.run_state.as_mut() else {
+            return Err(CoordinatorError::RunNotStarted);
+        };
+
+        if trigger_reason == "overflow" {
+            if let (Some(task_id), Some(request_id)) =
+                (task_id, trigger.through_request_id.as_deref())
+            {
+                let context = run_state
+                    .provider_context_by_agent
+                    .get(agent_id)
+                    .cloned()
+                    .unwrap_or_default();
+                run_state.record_overflow_retry_compacted_context(task_id, request_id, context);
+            }
         }
 
-        Ok(CompactAgentContextResult::CheckpointWritten {
-            context: updated_context.updated_context,
-            checkpoint_id: updated_context.checkpoint_id,
-            tokens_before_estimate: updated_context.tokens_before_estimate,
-            tokens_after_estimate: updated_context.tokens_after_estimate,
-        })
+        let context = run_state
+            .provider_context_by_agent
+            .get(agent_id)
+            .cloned()
+            .unwrap_or_default();
+
+        Ok(CompactAgentContextResult::Compacted { context, applied })
     }
 
     pub(in crate::coord) async fn compact_failed_terminal_agent_context(
@@ -239,7 +227,7 @@ impl Coordinator {
             )
             .await
         {
-            Ok(CompactAgentContextResult::CheckpointWritten { .. })
+            Ok(CompactAgentContextResult::Compacted { .. })
             | Ok(CompactAgentContextResult::NoOp { .. }) => {}
             Err(err) => {
                 tracing::warn!(
@@ -254,22 +242,93 @@ impl Coordinator {
         }
     }
 
-    pub(in crate::coord) async fn model_backed_compaction_summary(
-        &self,
-        trigger: &ProviderCompactionTrigger,
-    ) -> Result<ModelBackedCompactionSummary, String> {
-        let run_state = self
+    pub(in crate::coord) async fn summarize_session_branch(
+        &mut self,
+        agent_id: &str,
+        old_leaf_seq: u64,
+        target_seq: u64,
+    ) -> Result<BranchSummaryOutcome, CoordinatorError> {
+        let (events, model_ref) = {
+            let Some(run_state) = self.run_state.as_ref() else {
+                return Err(CoordinatorError::RunNotStarted);
+            };
+            let stream = run_state.event_store.replay(1)?;
+            let mut events = Vec::new();
+            let mut stream = std::pin::pin!(stream);
+            while let Some(result) = stream.next().await {
+                events.push(result?);
+            }
+            let model_ref = run_state
+                .running_agent_turns
+                .values()
+                .find(|r| r.agent_id == agent_id)
+                .map(|r| r.model_ref.clone())
+                .or_else(|| run_state.agents.get(agent_id).map(|p| p.model_ref.clone()))
+                .unwrap_or_else(|| "default:default".to_string());
+            (events, model_ref)
+        };
+
+        let collected = collect_entries_for_branch_summary(
+            &events,
+            agent_id,
+            Some(target_seq.min(old_leaf_seq)),
+        );
+        if collected.entries.is_empty() {
+            return Ok(BranchSummaryOutcome::NoOp);
+        }
+
+        let model = crate::agent::AgentModelRef::parse(&model_ref);
+        let context_window = self
             .run_state
             .as_ref()
-            .ok_or_else(|| "run is not started".to_string())?;
-        model_backed_compaction_summary_for(
-            Arc::clone(&self.config.provider),
-            &self.config.compaction,
-            run_state,
-            trigger,
+            .and_then(|rs| rs.recorded_runtime_context.as_ref())
+            .and_then(|ctx| ctx.context_window_tokens)
+            .unwrap_or(128_000);
+
+        let options = GenerateBranchSummaryOptions {
+            provider_id: model.provider_id.clone(),
+            model_id: model.model_id.clone(),
+            context_window,
+            ..Default::default()
+        };
+
+        let result =
+            generate_branch_summary(self.config.provider.as_ref(), &collected.entries, &options)
+                .await;
+
+        if result.aborted || result.summary.is_none() {
+            if let Some(err) = result.error {
+                tracing::warn!(%err, %agent_id, "branch summary generation failed");
+            }
+            return Ok(BranchSummaryOutcome::NoOp);
+        }
+
+        let summary = result.summary.unwrap_or_default();
+        let Some(run_state) = self.run_state.as_mut() else {
+            return Err(CoordinatorError::RunNotStarted);
+        };
+
+        append_payload_event(
+            self.clock.as_ref(),
             self.redactor.as_ref(),
-        )
-        .await
+            run_state,
+            system_actor(),
+            Some(format!("branch-summary:{agent_id}")),
+            EventV1::BranchSummary(crate::event::BranchSummaryEvent {
+                agent_id: agent_id.to_string(),
+                summary: summary.clone(),
+                from_event_seq: old_leaf_seq,
+                read_files: result.read_files.clone(),
+                modified_files: result.modified_files.clone(),
+                from_hook: false,
+            }),
+        )?;
+
+        Ok(BranchSummaryOutcome::Generated {
+            summary_preview: summary_preview(&summary),
+            read_files: result.read_files,
+            modified_files: result.modified_files,
+        })
     }
 
     pub(in crate::coord) async fn promote_next_agent_blocked_turn(
@@ -563,68 +622,22 @@ impl Coordinator {
                             )
                             .await?;
 
-                            let proactive_trigger = ProviderCompactionTrigger {
-                                agent_id: running.agent_id.clone(),
-                                profile_name: running.profile_name.clone(),
-                                model_ref: running.model_ref.clone(),
-                                provider_id: running.latest_provider_id.clone(),
-                                model_id: running.latest_model_id.clone(),
-                                through_request_id: Some(request_id.clone()),
-                                trigger_reason: "proactive".to_string(),
-                                tokens_before: running
-                                    .latest_provider_usage
-                                    .as_ref()
-                                    .map(|usage| usage.prompt_tokens),
-                                prompt_tokens_estimate: None,
-                                estimate_source: None,
-                            };
-                            let summary_decision = if self.config.compaction.model_backed {
-                                match model_backed_compaction_summary_for(
-                                    Arc::clone(&self.config.provider),
-                                    &self.config.compaction,
-                                    run_state,
-                                    &proactive_trigger,
-                                    self.redactor.as_ref(),
-                                )
-                                .await
-                                {
-                                    Ok(summary) => CompactionSummaryDecision::model(
-                                        compaction_summary_model_ref(
-                                            &self.config.compaction,
-                                            &proactive_trigger,
-                                        ),
-                                        summary.summary,
-                                        false,
-                                        summary.split_prefix_summary,
-                                    ),
-                                    Err(reason) => {
-                                        tracing::warn!(%reason, agent_id = %running.agent_id, "model-backed proactive compaction summary fell back to deterministic summary");
-                                        CompactionSummaryDecision::model(
-                                            compaction_summary_model_ref(
-                                                &self.config.compaction,
-                                                &proactive_trigger,
-                                            ),
-                                            String::new(),
-                                            true,
-                                            None,
-                                        )
-                                    }
-                                }
-                            } else {
-                                CompactionSummaryDecision::deterministic(&proactive_trigger)
-                            };
-                            if let Err(err) = compact_provider_context(
+                            if let Err(err) = compact_session(
                                 self.clock.as_ref(),
                                 self.redactor.as_ref(),
                                 run_state,
-                                &proactive_trigger,
+                                Arc::clone(&self.config.provider),
+                                &running.agent_id,
+                                "proactive",
                                 &self.config.compaction,
-                                &summary_decision,
-                            ) {
+                                None,
+                            )
+                            .await
+                            {
                                 tracing::warn!(
                                     agent_id = %running.agent_id,
                                     error = %err,
-                                    "provider context compaction failed after successful agent turn"
+                                    "proactive session compaction failed after successful agent turn"
                                 );
                             }
                         }
@@ -776,7 +789,7 @@ impl Coordinator {
 }
 
 #[derive(Debug, Clone)]
-pub(in crate::coord) struct AppliedCompaction {
+pub(in crate::coord) struct ProviderContextCompaction {
     pub(in crate::coord) updated_context: ProviderContext,
     checkpoint_id: String,
     tokens_before_estimate: Option<u32>,
@@ -785,11 +798,9 @@ pub(in crate::coord) struct AppliedCompaction {
 
 #[derive(Debug, Clone)]
 pub(in crate::coord) enum CompactAgentContextResult {
-    CheckpointWritten {
+    Compacted {
         context: ProviderContext,
-        checkpoint_id: String,
-        tokens_before_estimate: Option<u32>,
-        tokens_after_estimate: Option<u32>,
+        applied: AppliedCompaction,
     },
     NoOp {
         context: ProviderContext,
@@ -799,24 +810,31 @@ pub(in crate::coord) enum CompactAgentContextResult {
 impl CompactAgentContextResult {
     pub(in crate::coord) fn into_context(self) -> ProviderContext {
         match self {
-            Self::CheckpointWritten { context, .. } | Self::NoOp { context } => context,
+            Self::Compacted { context, .. } | Self::NoOp { context } => context,
         }
     }
 
     pub(in crate::coord) fn into_manual_outcome(self) -> ManualCompactionOutcome {
         match self {
-            Self::CheckpointWritten {
-                checkpoint_id,
-                tokens_before_estimate,
-                tokens_after_estimate,
-                ..
-            } => ManualCompactionOutcome::CheckpointWritten {
-                checkpoint_id,
-                tokens_before_estimate,
-                tokens_after_estimate,
+            Self::Compacted { applied, .. } => ManualCompactionOutcome::Compacted {
+                tokens_before: applied.tokens_before,
+                tokens_after: applied.tokens_after,
+                summary_preview: summary_preview(&applied.summary),
             },
             Self::NoOp { .. } => ManualCompactionOutcome::NoOp,
         }
+    }
+}
+
+fn summary_preview(summary: &str) -> String {
+    const PREVIEW_MAX: usize = 200;
+    if summary.len() <= PREVIEW_MAX {
+        return summary.to_string();
+    }
+    let truncated = &summary[..PREVIEW_MAX];
+    match truncated.rfind('\n') {
+        Some(idx) if idx > PREVIEW_MAX / 2 => format!("{}…", &truncated[..idx]),
+        _ => format!("{truncated}…"),
     }
 }
 
@@ -846,161 +864,4 @@ impl FailedTerminalCompactionRequest {
     pub(in crate::coord) fn attempt_key(&self) -> (String, String) {
         (self.task_id.clone(), self.request_id.clone())
     }
-}
-
-pub(in crate::coord) fn compact_provider_context<C, R>(
-    clock: &C,
-    redactor: &R,
-    run_state: &mut RunState,
-    trigger: &ProviderCompactionTrigger,
-    compaction_config: &CompactionRuntimeConfig,
-    summary_decision: &CompactionSummaryDecision,
-) -> Result<Option<AppliedCompaction>, CoordinatorError>
-where
-    C: Clock + ?Sized,
-    R: Redactor + ?Sized,
-{
-    let Some(decision) = ProviderContextCompactionRequest::new(
-        run_state,
-        trigger.clone(),
-        compaction_config,
-        summary_decision,
-    )
-    .plan(redactor) else {
-        return Ok(None);
-    };
-    let trigger = decision.trigger;
-    let checkpoint = decision.checkpoint;
-    let checkpoint_id = checkpoint.metadata.checkpoint_id.clone();
-    let updated_context = decision.updated_context;
-    let tokens_before_estimate = decision.tokens_before_estimate;
-    let updated_tokens = decision.tokens_after_estimate;
-
-    if trigger.trigger_reason != "manual" && updated_tokens >= tokens_before_estimate {
-        if matches!(
-            trigger.trigger_reason.as_str(),
-            "pre_prompt" | "failed_response"
-        ) {
-            let reason = if trigger.trigger_reason == "pre_prompt" {
-                format!(
-                    "pre-prompt compaction did not reduce estimated provider context: before={tokens_before_estimate}, after={updated_tokens}"
-                )
-            } else {
-                format!(
-                    "failed-response compaction did not reduce estimated provider context: before={tokens_before_estimate}, after={updated_tokens}"
-                )
-            };
-            append_compaction_failed_event(
-                clock,
-                redactor,
-                run_state,
-                &trigger,
-                &reason,
-                Some(checkpoint.metadata.checkpoint_id.clone()),
-                Some(checkpoint.metadata.through_seq),
-            )?;
-        }
-        return Ok(None);
-    }
-
-    append_payload_event(
-        clock,
-        redactor,
-        run_state,
-        system_actor(),
-        Some(format!("compaction:{}", trigger.agent_id)),
-        EventV1::CompactionRequested(CompactionRequestedEvent {
-            checkpoint_id: checkpoint.metadata.checkpoint_id.clone(),
-            agent_id: checkpoint.metadata.agent_id.clone(),
-            trigger_reason: trigger.trigger_reason.clone(),
-            through_seq: checkpoint.metadata.through_seq,
-            through_request_id: checkpoint.metadata.through_request_id.clone(),
-            provider_id: checkpoint.metadata.provider_id.clone(),
-            model_id: checkpoint.metadata.model_id.clone(),
-            tokens_before: checkpoint.metadata.tokens_before,
-            tokens_before_estimate: checkpoint.metadata.tokens_before_estimate,
-            estimate_source: trigger.estimate_source.clone(),
-        }),
-    )?;
-
-    let body =
-        serialize_provider_context_checkpoint(&checkpoint, trigger.estimate_source.as_deref())?;
-    let artifact_store = crate::tool::ArtifactStore::new(run_state.info.artifacts_dir.clone())
-        .map_err(|err| CoordinatorError::ResumeRestoreFailed {
-            run_id: run_state.info.run_id.to_string(),
-            reason: format!("failed to open compaction artifact store: {err}"),
-        })?;
-    let artifact_name = format!(
-        "compactions/{}/{}.json",
-        trigger.agent_id, checkpoint.metadata.checkpoint_id
-    );
-    let artifact = artifact_store
-        .write_text(&artifact_name, &body)
-        .map_err(|err| CoordinatorError::ResumeRestoreFailed {
-            run_id: run_state.info.run_id.to_string(),
-            reason: format!("failed to write compaction checkpoint artifact: {err}"),
-        })?;
-    append_compaction_artifact_written_event(clock, redactor, run_state, &checkpoint, &artifact)?;
-    append_payload_event(
-        clock,
-        redactor,
-        run_state,
-        system_actor(),
-        Some(format!("compaction:{}", trigger.agent_id)),
-        EventV1::CompactionWritten(CompactionWrittenEvent {
-            checkpoint_id: checkpoint.metadata.checkpoint_id.clone(),
-            agent_id: checkpoint.metadata.agent_id.clone(),
-            artifact_path: artifact.path.clone(),
-            artifact_digest: artifact.digest.clone(),
-            artifact_bytes: u64::try_from(body.len()).unwrap_or(0),
-            trigger_reason: trigger.trigger_reason.clone(),
-            through_seq: checkpoint.metadata.through_seq,
-            through_request_id: checkpoint.metadata.through_request_id.clone(),
-            provider_id: checkpoint.metadata.provider_id.clone(),
-            model_id: checkpoint.metadata.model_id.clone(),
-            tokens_before: checkpoint.metadata.tokens_before,
-            tokens_before_estimate: checkpoint.metadata.tokens_before_estimate,
-            tokens_after_estimate: checkpoint.metadata.tokens_after_estimate,
-            summary_tokens_estimate: checkpoint.metadata.summary_tokens_estimate,
-            compacted_turns: checkpoint.metadata.compacted_turns,
-            reduction_tokens_estimate: checkpoint.metadata.reduction_tokens_estimate,
-            reduction_percent_estimate: checkpoint.metadata.reduction_percent_estimate,
-            estimate_source: trigger.estimate_source.clone(),
-            summary_source: checkpoint.summary_source.clone(),
-            preserved_turns: u32::try_from(checkpoint.recent_turns.len()).unwrap_or(u32::MAX),
-        }),
-    )?;
-
-    append_payload_event(
-        clock,
-        redactor,
-        run_state,
-        system_actor(),
-        Some(format!("compaction:{}", trigger.agent_id)),
-        EventV1::CompactionApplied(CompactionAppliedEvent {
-            checkpoint_id: checkpoint.metadata.checkpoint_id.clone(),
-            agent_id: trigger.agent_id.clone(),
-            through_seq: checkpoint.metadata.through_seq,
-            through_request_id: checkpoint.metadata.through_request_id.clone(),
-            tokens_before_estimate: checkpoint.metadata.tokens_before_estimate,
-            tokens_after_estimate: checkpoint.metadata.tokens_after_estimate,
-            summary_tokens_estimate: checkpoint.metadata.summary_tokens_estimate,
-            compacted_turns: checkpoint.metadata.compacted_turns,
-            preserved_turns: checkpoint.metadata.preserved_turns,
-            reduction_tokens_estimate: checkpoint.metadata.reduction_tokens_estimate,
-            reduction_percent_estimate: checkpoint.metadata.reduction_percent_estimate,
-            estimate_source: trigger.estimate_source.clone(),
-        }),
-    )?;
-
-    run_state
-        .provider_context_by_agent
-        .insert(trigger.agent_id.clone(), updated_context.clone());
-
-    Ok(Some(AppliedCompaction {
-        updated_context,
-        checkpoint_id,
-        tokens_before_estimate: checkpoint.metadata.tokens_before_estimate,
-        tokens_after_estimate: checkpoint.metadata.tokens_after_estimate,
-    }))
 }

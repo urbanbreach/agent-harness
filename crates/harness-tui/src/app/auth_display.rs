@@ -58,6 +58,9 @@ mod tests {
 
     #[test]
     fn auth_status_banner_preserves_non_secret_args() {
+        // arrange
+        // act
+        // assert
         let banner = auth_status_banner(&auth_args(&["login", "codex"]));
 
         assert_eq!(banner, "auth backend requested: harness auth login codex");
@@ -65,6 +68,9 @@ mod tests {
 
     #[test]
     fn auth_status_banner_redacts_inline_secret_args() {
+        // arrange
+        // act
+        // assert
         let banner = auth_status_banner(&auth_args(&[
             "login",
             "codex",
@@ -80,6 +86,9 @@ mod tests {
 
     #[test]
     fn auth_status_banner_redacts_next_arg_after_secret_flags() {
+        // arrange
+        // act
+        // assert
         let banner = auth_status_banner(&auth_args(&[
             "login",
             "--enterprise-url",

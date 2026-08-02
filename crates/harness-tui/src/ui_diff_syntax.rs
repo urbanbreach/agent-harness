@@ -304,11 +304,11 @@ fn reference_syntax_comment() -> SyntectColor {
 }
 
 fn reference_syntax_keyword() -> SyntectColor {
-    syntect_rgb(0x9D, 0x7C, 0xD8)
+    syntect_rgb(0xD9, 0x84, 0xD9)
 }
 
 fn reference_syntax_function() -> SyntectColor {
-    syntect_rgb(0xFA, 0xB2, 0x83)
+    syntect_rgb(0xE8, 0xA0, 0xE8)
 }
 
 fn reference_syntax_variable() -> SyntectColor {
@@ -320,7 +320,7 @@ fn reference_syntax_string() -> SyntectColor {
 }
 
 fn reference_syntax_number() -> SyntectColor {
-    syntect_rgb(0xF5, 0xA7, 0x42)
+    syntect_rgb(0xE5, 0xC0, 0x7B)
 }
 
 fn reference_syntax_type() -> SyntectColor {

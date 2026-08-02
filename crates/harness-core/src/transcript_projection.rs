@@ -13,10 +13,14 @@ use helpers::{
     apply_assistant_message_metadata, artifact_from_written, artifacts_from_tool_metadata,
     ensure_assistant_message, ensure_strict_seq_order, lineage_projection, permission_part_mut,
     placeholder_tool_call_part, provider_turn_request_id, push_unique_artifact,
-    push_unique_lineage, tool_call_part_mut, update_tool_permission_resolution,
-    upsert_compaction_checkpoint, AssistantTextKind, PartLocation, RequestLocations,
+    push_unique_lineage, tool_call_part_mut, update_tool_permission_resolution, AssistantTextKind,
+    PartLocation, RequestLocations,
 };
 
+#[allow(
+    deprecated,
+    reason = "deprecated event variants kept for backward compatibility with existing session logs"
+)]
 pub fn project_transcript(
     events: &[EventEnvelopeV1],
 ) -> Result<TranscriptProjection, TranscriptProjectionError> {
@@ -26,7 +30,6 @@ pub fn project_transcript(
     let mut request_locations = BTreeMap::<String, RequestLocations>::new();
     let mut tool_locations = BTreeMap::<String, PartLocation>::new();
     let mut permission_locations = BTreeMap::<String, PartLocation>::new();
-    let mut compaction_locations = BTreeMap::<String, usize>::new();
 
     for event in events {
         projection
@@ -306,133 +309,48 @@ pub fn project_transcript(
                 }
                 message.provenance.extend(event);
             }
-            EventV1::CompactionRequested(payload) => {
-                let checkpoint = CompactionCheckpointProjection {
-                    checkpoint_id: Some(payload.checkpoint_id.clone()),
-                    agent_id: payload.agent_id.clone(),
-                    status: CompactionCheckpointStatus::Requested,
-                    trigger_reason: Some(payload.trigger_reason.clone()),
-                    reason: None,
-                    through_seq: Some(payload.through_seq),
-                    through_request_id: payload.through_request_id.clone(),
-                    provider_id: payload.provider_id.clone(),
-                    model_id: payload.model_id.clone(),
-                    tokens_before: payload.tokens_before,
-                    tokens_before_estimate: payload.tokens_before_estimate,
-                    tokens_after_estimate: None,
-                    summary_tokens_estimate: None,
-                    compacted_turns: None,
-                    reduction_tokens_estimate: None,
-                    reduction_percent_estimate: None,
-                    preserved_turns: None,
-                    artifact: None,
-                    provenance: ProvenanceRange::from_event(event),
-                };
-                upsert_compaction_checkpoint(
+            EventV1::SessionCompaction(payload) => {
+                append_system_part(
                     &mut projection,
-                    &mut compaction_locations,
                     event,
-                    checkpoint,
+                    ProjectedPart::Compaction(ProjectedCompactionPart {
+                        checkpoint_id: None,
+                        agent_id: payload.agent_id.clone(),
+                        status: CompactionCheckpointStatus::SessionCompacted,
+                        trigger_reason: Some(payload.trigger_reason.clone()),
+                        reason: None,
+                        through_seq: Some(payload.first_kept_event_seq),
+                        through_request_id: payload.first_kept_request_id.clone(),
+                        artifact: None,
+                        summary: Some(payload.summary.clone()),
+                        tokens_before: Some(payload.tokens_before),
+                        read_files: payload.read_files.clone(),
+                        modified_files: payload.modified_files.clone(),
+                        from_hook: Some(payload.from_hook),
+                        provenance: ProvenanceRange::from_event(event),
+                    }),
                 );
             }
-            EventV1::CompactionWritten(payload) => {
-                let artifact = TranscriptArtifactRef {
-                    path: payload.artifact_path.clone(),
-                    digest: payload.artifact_digest.clone(),
-                    bytes: Some(payload.artifact_bytes),
-                    tool_call_id: None,
-                    source: ArtifactProjectionSource::CompactionWritten,
-                    metadata: BTreeMap::from([
-                        ("checkpoint_id".to_string(), payload.checkpoint_id.clone()),
-                        ("agent_id".to_string(), payload.agent_id.clone()),
-                    ]),
-                    provenance: ProvenanceRange::from_event(event),
-                };
-                push_unique_artifact(&mut projection.artifacts, artifact.clone());
-                let checkpoint = CompactionCheckpointProjection {
-                    checkpoint_id: Some(payload.checkpoint_id.clone()),
-                    agent_id: payload.agent_id.clone(),
-                    status: CompactionCheckpointStatus::Written,
-                    trigger_reason: Some(payload.trigger_reason.clone()),
-                    reason: None,
-                    through_seq: Some(payload.through_seq),
-                    through_request_id: payload.through_request_id.clone(),
-                    provider_id: payload.provider_id.clone(),
-                    model_id: payload.model_id.clone(),
-                    tokens_before: payload.tokens_before,
-                    tokens_before_estimate: payload.tokens_before_estimate,
-                    tokens_after_estimate: payload.tokens_after_estimate,
-                    summary_tokens_estimate: payload.summary_tokens_estimate,
-                    compacted_turns: payload.compacted_turns,
-                    reduction_tokens_estimate: payload.reduction_tokens_estimate,
-                    reduction_percent_estimate: payload.reduction_percent_estimate,
-                    preserved_turns: Some(payload.preserved_turns),
-                    artifact: Some(artifact),
-                    provenance: ProvenanceRange::from_event(event),
-                };
-                upsert_compaction_checkpoint(
+            EventV1::BranchSummary(payload) => {
+                append_system_part(
                     &mut projection,
-                    &mut compaction_locations,
                     event,
-                    checkpoint,
-                );
-            }
-            EventV1::CompactionApplied(payload) => {
-                let checkpoint = CompactionCheckpointProjection {
-                    checkpoint_id: Some(payload.checkpoint_id.clone()),
-                    agent_id: payload.agent_id.clone(),
-                    status: CompactionCheckpointStatus::Applied,
-                    trigger_reason: None,
-                    reason: None,
-                    through_seq: Some(payload.through_seq),
-                    through_request_id: payload.through_request_id.clone(),
-                    provider_id: None,
-                    model_id: None,
-                    tokens_before: None,
-                    tokens_before_estimate: payload.tokens_before_estimate,
-                    tokens_after_estimate: payload.tokens_after_estimate,
-                    summary_tokens_estimate: payload.summary_tokens_estimate,
-                    compacted_turns: payload.compacted_turns,
-                    reduction_tokens_estimate: payload.reduction_tokens_estimate,
-                    reduction_percent_estimate: payload.reduction_percent_estimate,
-                    preserved_turns: payload.preserved_turns,
-                    artifact: None,
-                    provenance: ProvenanceRange::from_event(event),
-                };
-                upsert_compaction_checkpoint(
-                    &mut projection,
-                    &mut compaction_locations,
-                    event,
-                    checkpoint,
-                );
-            }
-            EventV1::CompactionFailed(payload) => {
-                let checkpoint = CompactionCheckpointProjection {
-                    checkpoint_id: payload.checkpoint_id.clone(),
-                    agent_id: payload.agent_id.clone(),
-                    status: CompactionCheckpointStatus::Failed,
-                    trigger_reason: Some(payload.trigger_reason.clone()),
-                    reason: Some(payload.reason.clone()),
-                    through_seq: payload.through_seq,
-                    through_request_id: payload.through_request_id.clone(),
-                    provider_id: None,
-                    model_id: None,
-                    tokens_before: None,
-                    tokens_before_estimate: None,
-                    tokens_after_estimate: None,
-                    summary_tokens_estimate: None,
-                    compacted_turns: None,
-                    reduction_tokens_estimate: None,
-                    reduction_percent_estimate: None,
-                    preserved_turns: None,
-                    artifact: None,
-                    provenance: ProvenanceRange::from_event(event),
-                };
-                upsert_compaction_checkpoint(
-                    &mut projection,
-                    &mut compaction_locations,
-                    event,
-                    checkpoint,
+                    ProjectedPart::Compaction(ProjectedCompactionPart {
+                        checkpoint_id: None,
+                        agent_id: payload.agent_id.clone(),
+                        status: CompactionCheckpointStatus::BranchSummary,
+                        trigger_reason: None,
+                        reason: None,
+                        through_seq: Some(payload.from_event_seq),
+                        through_request_id: None,
+                        artifact: None,
+                        summary: Some(payload.summary.clone()),
+                        tokens_before: None,
+                        read_files: payload.read_files.clone(),
+                        modified_files: payload.modified_files.clone(),
+                        from_hook: Some(payload.from_hook),
+                        provenance: ProvenanceRange::from_event(event),
+                    }),
                 );
             }
             EventV1::ToolCallRequested(payload) => {
@@ -735,7 +653,11 @@ pub fn project_transcript(
             | EventV1::EditApplied(_)
             | EventV1::EditRejected(_)
             | EventV1::WorkspaceSnapshot(_)
-            | EventV1::WorkspaceReverted(_) => {}
+            | EventV1::WorkspaceReverted(_)
+            | EventV1::CompactionRequested(_)
+            | EventV1::CompactionWritten(_)
+            | EventV1::CompactionApplied(_)
+            | EventV1::CompactionFailed(_) => {}
         }
     }
 

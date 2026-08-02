@@ -114,6 +114,18 @@ pub(in crate::coord) struct RunState {
     pub(in crate::coord) allow_initial_runtime_context_recording: bool,
     pub(in crate::coord) shutdown_token: CancellationToken,
     pub(in crate::coord) tool_state: ToolRunState,
+    // (tool_id, permission_request_digest) for consecutive-identical doom_loop streak.
+    pub(in crate::coord) last_identical_tool_key: Option<(String, String)>,
+    pub(in crate::coord) identical_tool_call_streak: u32,
+    pub(in crate::coord) doom_loop_always_granted: bool,
+    /// Workspace-durable agent vs external edit attribution journal.
+    pub(in crate::coord) edit_attribution: crate::edit_attribution::EditAttributionJournal,
+    /// Session-local multi-agent team registry + in-memory mailbox (not Team Mode product).
+    pub(in crate::coord) team_registry: crate::team_registry::TeamRegistry,
+    /// Session-local cron schedule definitions only (`executor_available() == false`).
+    pub(in crate::coord) cron_schedules: crate::cron_schedule::CronScheduleRegistry,
+    /// Coordinator-owned plugin runtime contract (lifecycle + execution surface + event recording).
+    pub(in crate::coord) plugin_lifecycle: crate::integrations::PluginRuntimeContract,
 }
 
 impl RunState {
@@ -218,6 +230,30 @@ impl RunState {
         self.active_permission_grants.authorizes(grant_request)
     }
 
+    pub(in crate::coord) fn note_identical_tool_call(
+        &mut self,
+        tool_id: &str,
+        args_digest: &str,
+    ) -> u32 {
+        match &self.last_identical_tool_key {
+            Some((prev_tool, prev_digest))
+                if prev_tool == tool_id && prev_digest == args_digest =>
+            {
+                self.identical_tool_call_streak = self.identical_tool_call_streak.saturating_add(1);
+            }
+            _ => {
+                self.last_identical_tool_key = Some((tool_id.to_string(), args_digest.to_string()));
+                self.identical_tool_call_streak = 1;
+            }
+        }
+        self.identical_tool_call_streak
+    }
+
+    pub(in crate::coord) fn reset_identical_tool_call_streak(&mut self) {
+        self.last_identical_tool_key = None;
+        self.identical_tool_call_streak = 0;
+    }
+
     pub(in crate::coord) fn record_overflow_retry_compacted_context(
         &mut self,
         task_id: &str,
@@ -263,6 +299,8 @@ pub(in crate::coord) struct QueuedAgentTurn {
     pub(in crate::coord) queue_key: ConcurrencyKey,
     pub(in crate::coord) scheduler_queued: bool,
     pub(in crate::coord) child_task: Option<ChildTaskTurnState>,
+    /// Remaining model refs to try after the current `request.model_ref` fails.
+    pub(in crate::coord) model_fallback_chain: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -512,6 +550,7 @@ pub(in crate::coord) struct ToolCallExecutionArgs {
     pub(in crate::coord) tool_registry: Arc<ToolRegistry>,
     pub(in crate::coord) request_correlation_id: Option<String>,
     pub(in crate::coord) respond_to: Option<oneshot::Sender<Result<ToolResult, String>>>,
+    pub(in crate::coord) external_directory_allow_prefixes: Vec<PathBuf>,
 }
 
 pub(in crate::coord) struct PermissionRequestedEventArgs<'a> {

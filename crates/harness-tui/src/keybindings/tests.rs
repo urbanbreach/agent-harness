@@ -2,6 +2,9 @@ use super::*;
 
 #[test]
 fn action_from_str_roundtrip() {
+    // arrange
+    // act
+    // assert
     let action = Action::Quit;
     let s = action.as_str();
     let parsed = Action::from_str(s).unwrap();
@@ -118,6 +121,9 @@ fn help_actions_use_shared_command_metadata() {
 
 #[test]
 fn key_binding_parses_ctrl_p() {
+    // arrange
+    // act
+    // assert
     let binding = KeyBinding::from_str("ctrl+p").unwrap();
     assert_eq!(binding.code, KeyCode::Char('p'));
     assert!(binding.modifiers.contains(KeyModifiers::CONTROL));
@@ -125,6 +131,9 @@ fn key_binding_parses_ctrl_p() {
 
 #[test]
 fn key_binding_parses_single_char() {
+    // arrange
+    // act
+    // assert
     let binding = KeyBinding::from_str("q").unwrap();
     assert_eq!(binding.code, KeyCode::Char('q'));
     assert_eq!(binding.modifiers, KeyModifiers::NONE);
@@ -132,6 +141,9 @@ fn key_binding_parses_single_char() {
 
 #[test]
 fn keymap_finds_default_binding() {
+    // arrange
+    // act
+    // assert
     let keymap = KeyMap::with_defaults();
     let event = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE);
     assert_eq!(keymap.get_action(&event), Some(Action::Quit));
@@ -139,6 +151,9 @@ fn keymap_finds_default_binding() {
 
 #[test]
 fn keymap_override_replaces_default_binding() {
+    // arrange
+    // act
+    // assert
     let mut overrides = BTreeMap::new();
     overrides.insert("quit".to_string(), "x".to_string());
 
@@ -155,6 +170,9 @@ fn keymap_override_replaces_default_binding() {
 
 #[test]
 fn keymap_invalid_override_preserves_default_binding() {
+    // arrange
+    // act
+    // assert
     let mut overrides = BTreeMap::new();
     overrides.insert("quit".to_string(), "not-a-key".to_string());
 
@@ -165,11 +183,20 @@ fn keymap_invalid_override_preserves_default_binding() {
         keymap.get_action(&KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE)),
         Some(Action::Quit)
     );
-    assert_eq!(keymap.get_binding_str(Action::Quit), "q");
+    let quit_bindings = keymap.get_binding_strs(Action::Quit);
+    assert!(
+        quit_bindings
+            .iter()
+            .any(|b| b == "q" || b == "Ctrl+q" || b == "Ctrl+d"),
+        "quit bindings include freeze chords: {quit_bindings:?}"
+    );
 }
 
 #[test]
 fn keymap_override_collision_removes_stale_session_label() {
+    // arrange
+    // act
+    // assert
     let mut overrides = BTreeMap::new();
     overrides.insert("session_child_cycle".to_string(), "left".to_string());
 
@@ -189,20 +216,37 @@ fn keymap_override_collision_removes_stale_session_label() {
 
 #[test]
 fn keymap_returns_binding_str() {
+    // arrange
+    // act
+    // assert
     let keymap = KeyMap::with_defaults();
-    let binding = keymap.get_binding_str(Action::Quit);
-    assert_eq!(binding, "q");
+    let bindings = keymap.get_binding_strs(Action::Quit);
+    assert!(
+        bindings
+            .iter()
+            .any(|b| b == "q" || b == "Ctrl+q" || b == "Ctrl+d"),
+        "quit bindings present: {bindings:?}"
+    );
 }
 
 #[test]
 fn keymap_returns_ctrl_binding_str() {
+    // arrange
+    // act
+    // assert
     let keymap = KeyMap::with_defaults();
-    let binding = keymap.get_binding_str(Action::Palette);
-    assert_eq!(binding, "Ctrl+p");
+    let bindings = keymap.get_binding_strs(Action::Palette);
+    assert!(
+        bindings.iter().any(|b| b == "Ctrl+p" || b == "?"),
+        "palette bindings present: {bindings:?}"
+    );
 }
 
 #[test]
 fn keymap_formats_binding_labels_from_overrides() {
+    // arrange
+    // act
+    // assert
     let mut overrides = BTreeMap::new();
     overrides.insert("quit".to_string(), "x".to_string());
 
@@ -214,6 +258,9 @@ fn keymap_formats_binding_labels_from_overrides() {
 
 #[test]
 fn keymap_binds_shift_enter_to_insert_newline() {
+    // arrange
+    // act
+    // assert
     let keymap = KeyMap::with_defaults();
     let event = KeyEvent::new(KeyCode::Enter, KeyModifiers::SHIFT);
     assert_eq!(keymap.get_action(&event), Some(Action::InsertNewline));
@@ -221,6 +268,9 @@ fn keymap_binds_shift_enter_to_insert_newline() {
 
 #[test]
 fn keymap_binds_ctrl_j_to_insert_newline() {
+    // arrange
+    // act
+    // assert
     let keymap = KeyMap::with_defaults();
     let event = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::CONTROL);
     assert_eq!(keymap.get_action(&event), Some(Action::InsertNewline));
@@ -228,6 +278,9 @@ fn keymap_binds_ctrl_j_to_insert_newline() {
 
 #[test]
 fn keymap_binds_ctrl_enter_to_insert_newline() {
+    // arrange
+    // act
+    // assert
     let keymap = KeyMap::with_defaults();
     let event = KeyEvent::new(KeyCode::Enter, KeyModifiers::CONTROL);
     assert_eq!(keymap.get_action(&event), Some(Action::InsertNewline));
@@ -235,6 +288,9 @@ fn keymap_binds_ctrl_enter_to_insert_newline() {
 
 #[test]
 fn keymap_binds_alt_enter_to_insert_newline() {
+    // arrange
+    // act
+    // assert
     let keymap = KeyMap::with_defaults();
     let event = KeyEvent::new(KeyCode::Enter, KeyModifiers::ALT);
     assert_eq!(keymap.get_action(&event), Some(Action::InsertNewline));
@@ -242,6 +298,9 @@ fn keymap_binds_alt_enter_to_insert_newline() {
 
 #[test]
 fn keymap_uses_ctrl_y_and_ctrl_n_for_permission_decisions() {
+    // arrange
+    // act
+    // assert
     let keymap = KeyMap::with_defaults();
 
     let allow = KeyEvent::new(KeyCode::Char('y'), KeyModifiers::CONTROL);
@@ -254,7 +313,28 @@ fn keymap_uses_ctrl_y_and_ctrl_n_for_permission_decisions() {
 }
 
 #[test]
+fn keymap_uses_ctrl_o_for_always_approve_permission() {
+    // arrange
+    // act
+    // assert
+    let keymap = KeyMap::with_defaults();
+
+    let always = KeyEvent::new(KeyCode::Char('o'), KeyModifiers::CONTROL);
+    assert_eq!(
+        keymap.get_action(&always),
+        Some(Action::AlwaysApprovePermission)
+    );
+    assert_eq!(
+        keymap.get_binding_str(Action::AlwaysApprovePermission),
+        "Ctrl+o"
+    );
+}
+
+#[test]
 fn keymap_binds_child_session_navigation_to_default_bindings() {
+    // arrange
+    // act
+    // assert
     let keymap = KeyMap::with_defaults();
 
     assert_eq!(
@@ -417,6 +497,9 @@ fn assert_no_key_checks(surface: &str, source: &str) {
 
 #[test]
 fn keymap_accepts_variant_cycle_overrides() {
+    // arrange
+    // act
+    // assert
     let mut overrides = BTreeMap::new();
     overrides.insert("variant_cycle".to_string(), "tab".to_string());
 
@@ -431,6 +514,9 @@ fn keymap_accepts_variant_cycle_overrides() {
 
 #[test]
 fn keymap_accepts_leader_sequence_overrides() {
+    // arrange
+    // act
+    // assert
     let mut overrides = BTreeMap::new();
     overrides.insert(
         "session_child_first".to_string(),
@@ -447,47 +533,71 @@ fn keymap_accepts_leader_sequence_overrides() {
 }
 
 #[test]
-fn keymap_binds_tab_to_agent_cycle_by_default() {
+fn keymap_binds_tab_to_focus_and_shift_tab_to_variant_cycle_by_default() {
+    // arrange
+    // act
+    // assert
     let keymap = KeyMap::with_defaults();
 
     assert_eq!(
         keymap.get_action(&KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE)),
-        Some(Action::AgentCycle)
+        Some(Action::FocusNext)
     );
     assert_eq!(
         keymap.get_action(&KeyEvent::new(KeyCode::BackTab, KeyModifiers::NONE)),
+        Some(Action::VariantCycle)
+    );
+    assert_eq!(
+        keymap.get_action(&KeyEvent::new(KeyCode::Tab, KeyModifiers::CONTROL)),
+        Some(Action::AgentCycle)
+    );
+    assert_eq!(
+        keymap.get_action(&KeyEvent::new(KeyCode::BackTab, KeyModifiers::CONTROL)),
         Some(Action::AgentCycleReverse)
     );
-    assert_eq!(keymap.get_binding_str(Action::AgentCycle), "Tab");
+    assert_eq!(keymap.get_binding_str(Action::AgentCycle), "Ctrl+Tab");
     assert_eq!(
         keymap.get_binding_str(Action::AgentCycleReverse),
-        "Shift-Tab"
+        "Ctrl+Shift+Tab"
     );
 }
 
 #[test]
-fn keymap_keeps_focus_cycle_on_control_tab() {
+fn keymap_keeps_focus_prev_on_control_shift_tab() {
+    // arrange
+    // act
+    // assert
     let keymap = KeyMap::with_defaults();
 
     assert_eq!(
-        keymap.get_action(&KeyEvent::new(KeyCode::Tab, KeyModifiers::CONTROL)),
-        Some(Action::FocusNext)
-    );
-    assert_eq!(
-        keymap.get_action(&KeyEvent::new(KeyCode::BackTab, KeyModifiers::CONTROL)),
+        keymap.get_action(&KeyEvent::new(
+            KeyCode::Tab,
+            KeyModifiers::CONTROL | KeyModifiers::SHIFT
+        )),
         Some(Action::FocusPrev)
     );
 }
 
 #[test]
-fn keymap_binds_ctrl_t_to_variant_cycle() {
+fn keymap_binds_shift_tab_and_ctrl_t_to_variant_cycle() {
+    // arrange
+    // act
+    // assert
     let keymap = KeyMap::with_defaults();
 
+    assert_eq!(
+        keymap.get_action(&KeyEvent::new(KeyCode::BackTab, KeyModifiers::NONE)),
+        Some(Action::VariantCycle)
+    );
     assert_eq!(
         keymap.get_action(&KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL)),
         Some(Action::VariantCycle)
     );
-    assert_eq!(keymap.get_binding_str(Action::VariantCycle), "Ctrl+t");
+    let bindings = keymap.get_binding_strs(Action::VariantCycle);
+    assert!(
+        bindings.iter().any(|b| b == "Shift+Tab" || b == "Ctrl+t"),
+        "variant cycle bindings present: {bindings:?}"
+    );
 }
 
 #[test]
@@ -503,6 +613,144 @@ fn leader_g_opens_lineage_browser() {
     assert_eq!(
         Action::from_str("open_lineage_browser"),
         Ok(Action::OpenLineageBrowser)
+    );
+}
+
+#[test]
+fn open_status_dialog_is_canonical_and_toggle_operator_sidebar_aliases() {
+    // arrange
+    // act
+    let canonical = Action::from_str("open_status_dialog");
+    let alias = Action::from_str("toggle_operator_sidebar");
+    // assert
+    assert_eq!(canonical, Ok(Action::OpenStatusDialog));
+    assert_eq!(
+        alias,
+        Ok(Action::OpenStatusDialog),
+        "persisted toggle_operator_sidebar must alias open_status_dialog"
+    );
+    assert_eq!(Action::OpenStatusDialog.as_str(), "open_status_dialog");
+    assert_ne!(
+        Action::OpenStatusDialog.as_str(),
+        "toggle_operator_sidebar",
+        "canonical serialization must not emit the compatibility alias"
+    );
+}
+
+#[test]
+fn leader_s_opens_status_dialog_by_default() {
+    // arrange
+    let keymap = KeyMap::with_defaults();
+    // act
+    let action = keymap.leader_action(&KeyEvent::new(KeyCode::Char('s'), KeyModifiers::NONE));
+    // assert
+    assert_eq!(action, Some(Action::OpenStatusDialog));
+    assert_eq!(keymap.get_binding_str(Action::OpenStatusDialog), "Ctrl+x s");
+}
+
+#[test]
+fn open_status_dialog_override_remapping_is_preserved() {
+    // arrange
+    let mut overrides = BTreeMap::new();
+    overrides.insert("open_status_dialog".to_string(), "<leader>z".to_string());
+    let mut keymap = KeyMap::with_defaults();
+    // act
+    keymap.apply_overrides(&overrides);
+    // assert
+    assert_eq!(
+        keymap.leader_action(&KeyEvent::new(KeyCode::Char('z'), KeyModifiers::NONE)),
+        Some(Action::OpenStatusDialog)
+    );
+}
+
+#[test]
+fn toggle_operator_sidebar_override_aliases_to_status_dialog_action() {
+    // arrange
+    let mut overrides = BTreeMap::new();
+    overrides.insert(
+        "toggle_operator_sidebar".to_string(),
+        "<leader>b".to_string(),
+    );
+    let mut keymap = KeyMap::with_defaults();
+    // act
+    keymap.apply_overrides(&overrides);
+    // assert
+    assert_eq!(
+        keymap.leader_action(&KeyEvent::new(KeyCode::Char('b'), KeyModifiers::NONE)),
+        Some(Action::OpenStatusDialog),
+        "old config key must remap onto the status dialog action"
+    );
+}
+
+#[test]
+fn displaced_keybind_remaps_to_open_status_dialog() {
+    // arrange — simple-mode defaults + displaced rematerialization
+    let keymap = KeyMap::with_defaults();
+    let example = include_str!("../../../../configs/tui.example.jsonc");
+    let mut overrides = BTreeMap::new();
+    overrides.insert("open_status_dialog".to_string(), "f9".to_string());
+    let mut remapped = KeyMap::with_defaults();
+
+    // act
+    remapped.apply_overrides(&overrides);
+
+    // assert — simple-mode defaults (Ctrl+P palette, leader+s status, leader+m model)
+    assert_eq!(
+        keymap.get_action(&KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL)),
+        Some(Action::Palette),
+        "simple-mode: Ctrl+P opens command palette"
+    );
+    assert_eq!(
+        keymap.leader_action(&KeyEvent::new(KeyCode::Char('s'), KeyModifiers::NONE)),
+        Some(Action::OpenStatusDialog),
+        "simple-mode: leader+s opens status dialog"
+    );
+    assert_eq!(
+        keymap.leader_action(&KeyEvent::new(KeyCode::Char('m'), KeyModifiers::NONE)),
+        Some(Action::OpenModelSwitcher),
+        "simple-mode: leader+m opens model switcher"
+    );
+    let esc = keymap.get_action(&KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+    assert!(
+        matches!(esc, Some(Action::ClearPrompt) | Some(Action::DismissModal)),
+        "simple-mode: Esc is clear/dismiss, not cancel: {esc:?}"
+    );
+    assert_eq!(
+        keymap.get_action(&KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)),
+        Some(Action::DismissModal),
+        "freeze essentials: Ctrl+C dismisses modal / cancels turn"
+    );
+    // assert — displaced sidebar toggle rematerializes to status dialog
+    assert_eq!(
+        Action::from_str("toggle_operator_sidebar"),
+        Ok(Action::OpenStatusDialog)
+    );
+    assert!(
+        example.contains("\"open_status_dialog\""),
+        "example must document open_status_dialog"
+    );
+    assert!(
+        !example.contains("toggle_operator_sidebar"),
+        "canonical example must omit toggle_operator_sidebar"
+    );
+    // assert — remapping preserved for terminal-normalized override (F9)
+    assert_eq!(
+        remapped.get_action(&KeyEvent::new(KeyCode::F(9), KeyModifiers::NONE)),
+        Some(Action::OpenStatusDialog)
+    );
+    let palette_bindings = keymap.get_binding_strs(Action::Palette);
+    assert!(
+        palette_bindings.iter().any(|b| b == "Ctrl+p" || b == "?"),
+        "palette bindings present: {palette_bindings:?}"
+    );
+    assert_eq!(keymap.get_binding_str(Action::OpenStatusDialog), "Ctrl+x s");
+    assert_eq!(
+        keymap.get_binding_str(Action::OpenModelSwitcher),
+        "Ctrl+x m"
+    );
+    assert_eq!(
+        keymap.get_action(&KeyEvent::new(KeyCode::F(2), KeyModifiers::NONE)),
+        Some(Action::OpenStatusDialog)
     );
 }
 
@@ -533,4 +781,113 @@ fn palette_exposes_lineage_browser_and_child_session_commands() {
         assert!(!label.trim().is_empty(), "{command_id} label");
         assert!(!description.trim().is_empty(), "{command_id} description");
     }
+}
+
+#[test]
+fn simple_mode_defaults_open_command_palette_on_ctrl_p() {
+    // arrange
+    let keymap = KeyMap::with_defaults();
+    // act
+    let action = keymap.get_action(&KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL));
+    // assert
+    assert_eq!(action, Some(Action::Palette));
+    let bindings = keymap.get_binding_strs(Action::Palette);
+    assert!(
+        bindings.iter().any(|b| b == "Ctrl+p" || b == "?"),
+        "palette bindings present: {bindings:?}"
+    );
+}
+
+#[test]
+fn simple_mode_defaults_open_status_dialog_on_leader_s() {
+    // arrange
+    let keymap = KeyMap::with_defaults();
+    // act
+    let action = keymap.leader_action(&KeyEvent::new(KeyCode::Char('s'), KeyModifiers::NONE));
+    // assert
+    assert_eq!(action, Some(Action::OpenStatusDialog));
+    assert_eq!(keymap.get_binding_str(Action::OpenStatusDialog), "Ctrl+x s");
+    assert_eq!(
+        keymap.get_action(&KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL)),
+        Some(Action::OpenSessionHistory),
+        "Ctrl+S opens session history; status remains leader+s / F2 / Ctrl+,"
+    );
+}
+
+#[test]
+fn simple_mode_defaults_open_model_switcher_on_leader_m() {
+    // arrange
+    let keymap = KeyMap::with_defaults();
+    // act
+    let action = keymap.leader_action(&KeyEvent::new(KeyCode::Char('m'), KeyModifiers::NONE));
+    // assert
+    assert_eq!(action, Some(Action::OpenModelSwitcher));
+    assert_eq!(
+        keymap.get_binding_str(Action::OpenModelSwitcher),
+        "Ctrl+x m"
+    );
+    assert_eq!(
+        keymap.get_action(&KeyEvent::new(KeyCode::Char('m'), KeyModifiers::CONTROL)),
+        None,
+        "Ctrl+M is not a direct KeyMap binding; model switcher is leader+m rematerialization"
+    );
+}
+
+#[test]
+fn simple_mode_defaults_map_ctrl_c_to_dismiss_modal_not_interrupt_action() {
+    // arrange
+    let keymap = KeyMap::with_defaults();
+    // act
+    let ctrl_c = keymap.get_action(&KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL));
+    let esc = keymap.get_action(&KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+    // assert
+    assert_eq!(
+        ctrl_c,
+        Some(Action::DismissModal),
+        "freeze essentials: Ctrl+C dismisses modal / cancels turn"
+    );
+    assert!(
+        matches!(esc, Some(Action::ClearPrompt) | Some(Action::DismissModal)),
+        "Esc is clear/dismiss in KeyMap, not a single-shot cancel action: {esc:?}"
+    );
+    assert!(
+        !keymap
+            .all_bindings()
+            .iter()
+            .any(|(_, action)| action.as_str().contains("interrupt")),
+        "no interrupt Action exists in default KeyMap bindings"
+    );
+}
+
+#[test]
+fn simple_mode_harness_only_chords_are_mapped_rematerializations() {
+    // arrange
+    let keymap = KeyMap::with_defaults();
+    // act
+    let rematerializations = [
+        (Action::OpenStatusDialog, "Ctrl+x s"),
+        (Action::OpenModelSwitcher, "Ctrl+x m"),
+        (Action::OpenThemeDialog, "Ctrl+x t"),
+        (Action::OpenLineageBrowser, "Ctrl+x g"),
+        (Action::SessionChildFirst, "Ctrl+x ↓"),
+        (Action::SessionBackground, "Ctrl+b"),
+    ];
+    // assert
+    for (action, expected_label) in rematerializations {
+        assert_eq!(
+            keymap.get_binding_str(action),
+            expected_label,
+            "{} must keep rematerialized binding {expected_label}",
+            action.as_str()
+        );
+        assert!(
+            !keymap.get_bindings(action).is_empty(),
+            "{} must remain reachable",
+            action.as_str()
+        );
+    }
+    assert_eq!(
+        keymap.get_action(&KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL)),
+        Some(Action::Palette)
+    );
 }

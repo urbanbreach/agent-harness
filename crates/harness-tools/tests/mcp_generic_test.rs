@@ -80,6 +80,9 @@ fn assert_wrapped_tool_result_contract(
 
 #[tokio::test]
 async fn generic_mcp_registry_exposes_server_scoped_tools() {
+    // arrange
+    // act
+    // assert
     let temp_dir = setup_workspace();
     let script_path = temp_dir.path().join("fake_mcp_server.py");
     install_fake_mcp_server(&script_path);
@@ -104,6 +107,9 @@ async fn generic_mcp_registry_exposes_server_scoped_tools() {
 
 #[tokio::test]
 async fn stdio_mcp_tool_calls_preserve_stateful_sessions_across_calls() {
+    // arrange
+    // act
+    // assert
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let script_path = temp_dir.path().join("stateful_terminal_mcp_server.py");
@@ -135,6 +141,9 @@ async fn stdio_mcp_tool_calls_preserve_stateful_sessions_across_calls() {
 
 #[tokio::test]
 async fn generic_mcp_registry_exposes_first_class_remote_tools() {
+    // arrange
+    // act
+    // assert
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let script_path = temp_dir.path().join("fake_mcp_server.py");
@@ -158,6 +167,9 @@ async fn generic_mcp_registry_exposes_first_class_remote_tools() {
 
 #[tokio::test]
 async fn generic_mcp_stdio_server_supports_tools_resources_and_prompts() {
+    // arrange
+    // act
+    // assert
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let script_path = temp_dir.path().join("fake_mcp_server.py");
@@ -249,6 +261,9 @@ async fn generic_mcp_stdio_server_supports_tools_resources_and_prompts() {
 
 #[tokio::test]
 async fn generic_mcp_registry_reserves_wrapper_ids_for_colliding_first_class_tools() {
+    // arrange
+    // act
+    // assert
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let script_path = temp_dir.path().join("fake_mcp_server.py");

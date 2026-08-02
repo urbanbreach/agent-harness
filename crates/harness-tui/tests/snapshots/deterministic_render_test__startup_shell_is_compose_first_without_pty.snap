@@ -1,28 +1,27 @@
 ---
 source: crates/harness-tui/tests/deterministic_render_test.rs
-expression: trim_trailing_snapshot_whitespace(&rendered)
+expression: normalize_volatile_branch(&trim_trailing_snapshot_whitespace(&rendered))
 ---
 
+             test-workspace ~
 
 
 
 
 
 
-                     ██╗  ██╗ █████╗ ██████╗ ███╗   ██╗███████╗███████╗███████╗
-                     ██║  ██║██╔══██╗██╔══██║████╗  ██║██╔════╝██╔════╝██╔════╝
-                     ███████║███████║██████╔╝██╔██╗ ██║█████╗  ███████╗███████╗
-                     ██╔══██║██╔══██║██╔══██║██║╚██╗██║██╔══╝  ╚════██║╚════██║
-                     ██║  ██║██║  ██║██║  ██║██║ ╚████║███████╗███████╗███████║
-                     ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝╚══════╝╚══════╝╚══════╝
 
 
-            ┃
-            ┃  Explain deterministic TUI tests
-            ┃
-            ┃  Worker model-1 mock · Demo
-            ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
-                                           ctrl+t variants  tab agents  ctrl+p commands
 
 
-            ~/Projects/agent-harness/crates/harness-tui:dev          Ctrl+p open  q quit
+
+
+
+
+
+
+            ╭──────────────────────────────────────────────────────────────────────────╮
+            │ ❯ Explain deterministic TUI tests                                        │
+            ╰───────────────────────────────────────────────────────── model-1 · Demo ─╯
+
+            Enter:send  │  Shift+Tab:mode  │  Ctrl+x:shortcuts

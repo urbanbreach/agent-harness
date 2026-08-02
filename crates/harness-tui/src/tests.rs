@@ -33,31 +33,49 @@ mod snapshot_render_tests;
 
 #[test]
 pub(super) fn module_replay_mode_snapshot_renders_two_pane_layout() {
+    // arrange
+    // act
+    // assert
     snapshot_render_tests::module_replay_mode_snapshot_renders_two_pane_layout();
 }
 
 #[test]
 fn replay_mode_r_key_reports_removed_reload() {
+    // arrange
+    // act
+    // assert
     snapshot_render_tests::replay_mode_r_key_reports_removed_reload();
 }
 
 #[test]
 fn live_mode_snapshot_renders_grouped_streams() {
+    // arrange
+    // act
+    // assert
     snapshot_render_tests::live_mode_snapshot_renders_grouped_streams();
 }
 
 #[test]
 fn slash_commands_snapshot_renders_reference_style_popup() {
+    // arrange
+    // act
+    // assert
     snapshot_render_tests::slash_commands_snapshot_renders_reference_style_popup();
 }
 
 #[test]
 fn tool_spacing_parity_snapshot_renders_grouped_context_and_output_transition() {
+    // arrange
+    // act
+    // assert
     snapshot_render_tests::tool_spacing_parity_snapshot_renders_grouped_context_and_output_transition();
 }
 
 #[test]
 fn live_mode_renders_activity_and_transcript() {
+    // arrange
+    // act
+    // assert
     snapshot_render_tests::live_mode_renders_activity_and_transcript();
 }
 
@@ -67,26 +85,53 @@ mod permission_modal_tests;
 
 #[test]
 fn permission_modal_snapshot_renders_request() {
+    // arrange
+    // act
+    // assert
     permission_modal_tests::permission_modal_snapshot_renders_request();
 }
 
 #[test]
+fn permission_dock_packs_freeze_vertical_blanks() {
+    // arrange
+    // act
+    // assert
+    permission_modal_tests::permission_dock_packs_freeze_vertical_blanks();
+}
+
+#[test]
 fn question_permission_modal_renders_questions_and_answer_input() {
+    // arrange
+    // act
+    // assert
     permission_modal_tests::question_permission_modal_renders_questions_and_answer_input();
 }
 
 #[test]
+fn question_permission_modal_aligns_option_description_column() {
+    // arrange
+    // act
+    // assert
+    permission_modal_tests::question_permission_modal_aligns_option_description_column();
+}
+
 fn question_permission_modal_matches_reference_palette_contract() {
     permission_modal_tests::question_permission_modal_matches_reference_palette_contract();
 }
 
 #[test]
 fn answered_questions_render_in_completed_tool_row() {
+    // arrange
+    // act
+    // assert
     permission_modal_tests::answered_questions_render_in_completed_tool_row();
 }
 
 #[test]
 fn permission_modal_ctrl_y_emits_resolve_intent_and_closes_on_resolved() {
+    // arrange
+    // act
+    // assert
     permission_modal_tests::permission_modal_ctrl_y_emits_resolve_intent_and_closes_on_resolved();
 }
 
@@ -96,11 +141,17 @@ mod transcript_render_tests;
 
 #[test]
 pub(super) fn module_transcript_edit_snapshot_renders_inline_diff() {
+    // arrange
+    // act
+    // assert
     transcript_render_tests::module_transcript_edit_snapshot_renders_inline_diff();
 }
 
 #[test]
 pub(super) fn module_inline_diff_does_not_leave_large_gap_before_active_footer() {
+    // arrange
+    // act
+    // assert
     transcript_render_tests::module_inline_diff_does_not_leave_large_gap_before_active_footer();
 }
 
@@ -123,6 +174,9 @@ pub(super) fn module_wide_diff_renderer_pairs_before_and_after_columns() {
 
 #[test]
 pub(super) fn module_diff_renderer_switches_to_side_by_side_at_primary_widths() {
+    // arrange
+    // act
+    // assert
     transcript_render_tests::module_diff_renderer_switches_to_side_by_side_at_primary_widths();
 }
 
@@ -132,6 +186,9 @@ pub(super) fn module_transcript_edit_tool_wide_diff_uses_syntax_highlighting_and
 
 #[test]
 fn transcript_edit_snapshot_handles_missing_artifact() {
+    // arrange
+    // act
+    // assert
     transcript_render_tests::transcript_edit_snapshot_handles_missing_artifact();
 }
 
@@ -141,66 +198,105 @@ mod activity_projection_tests;
 
 #[test]
 fn prompt_focus_enter_emits_submit_intent() {
+    // arrange
+    // act
+    // assert
     activity_projection_tests::prompt_focus_enter_emits_submit_intent();
 }
 
 #[test]
 fn activity_groups_by_request_id() {
+    // arrange
+    // act
+    // assert
     activity_projection_tests::activity_groups_by_request_id();
 }
 
 #[test]
 fn transcript_accumulates_stream_deltas() {
+    // arrange
+    // act
+    // assert
     activity_projection_tests::transcript_accumulates_stream_deltas();
 }
 
 #[test]
 fn activity_status_done_on_request_finished() {
+    // arrange
+    // act
+    // assert
     activity_projection_tests::activity_status_done_on_request_finished();
 }
 
 #[test]
 fn activity_status_error_on_run_failed() {
+    // arrange
+    // act
+    // assert
     activity_projection_tests::activity_status_error_on_run_failed();
 }
 
 #[test]
 fn memory_cap_enforces_max_events() {
+    // arrange
+    // act
+    // assert
     activity_projection_tests::memory_cap_enforces_max_events();
 }
 
 #[test]
 fn memory_cap_enforces_max_transcript_chars() {
+    // arrange
+    // act
+    // assert
     activity_projection_tests::memory_cap_enforces_max_transcript_chars();
 }
 
 #[test]
 fn run_workspace_renders_activity_with_compact_format() {
+    // arrange
+    // act
+    // assert
     activity_projection_tests::run_workspace_renders_activity_with_compact_format();
 }
 
 #[test]
 fn tool_call_requested_renders_pending_status() {
+    // arrange
+    // act
+    // assert
     activity_projection_tests::tool_call_requested_renders_pending_status();
 }
 
 #[test]
 fn tool_call_started_renders_running_status() {
+    // arrange
+    // act
+    // assert
     activity_projection_tests::tool_call_started_renders_running_status();
 }
 
 #[test]
 fn tool_call_finished_renders_truncated_output() {
+    // arrange
+    // act
+    // assert
     activity_projection_tests::tool_call_finished_renders_truncated_output();
 }
 
 #[test]
 fn tool_call_failed_renders_error() {
+    // arrange
+    // act
+    // assert
     activity_projection_tests::tool_call_failed_renders_error();
 }
 
 #[test]
 fn assistant_markdown_renders_headings_lists_and_quotes() {
+    // arrange
+    // act
+    // assert
     transcript_render_tests::assistant_markdown_renders_headings_lists_and_quotes();
 }
 
@@ -214,16 +310,25 @@ fn assistant_markdown_tables_match_reference_top_level_columns() {
 
 #[test]
 fn block_style_tool_rows_render_titles_and_argument_blocks() {
+    // arrange
+    // act
+    // assert
     transcript_render_tests::block_style_tool_rows_render_titles_and_argument_blocks();
 }
 
 #[test]
 fn generic_tool_output_toggle_reveals_block_payload() {
+    // arrange
+    // act
+    // assert
     transcript_render_tests::generic_tool_output_toggle_reveals_block_payload();
 }
 
 #[test]
 fn task_scheduled_queued_does_not_reuse_tool_call_id_as_task_id() {
+    // arrange
+    // act
+    // assert
     activity_projection_tests::task_scheduled_queued_does_not_reuse_tool_call_id_as_task_id();
 }
 

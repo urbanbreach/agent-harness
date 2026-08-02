@@ -29,6 +29,8 @@ pub enum ScenarioName {
     GoldenPath,
     #[value(name = "golden_path_interactive")]
     GoldenPathInteractive,
+    #[value(name = "question_interactive")]
+    QuestionInteractive,
 }
 
 impl ScenarioName {
@@ -36,12 +38,31 @@ impl ScenarioName {
         match self {
             Self::GoldenPath => "golden_path",
             Self::GoldenPathInteractive => "golden_path_interactive",
+            Self::QuestionInteractive => "question_interactive",
         }
     }
 
     pub fn interactive_permissions(self) -> bool {
-        matches!(self, Self::GoldenPathInteractive)
+        matches!(
+            self,
+            Self::GoldenPathInteractive | Self::QuestionInteractive
+        )
     }
+
+    pub fn is_question(self) -> bool {
+        matches!(self, Self::QuestionInteractive)
+    }
+}
+
+pub fn question_interactive_request_json() -> Value {
+    json!({
+        "questions": [{
+            "question": "Pick one",
+            "header": "Choice",
+            "options": [{"label": "A", "description": "Option A"}],
+            "multiple": false,
+        }]
+    })
 }
 
 pub fn deterministic_run_id(seed: u64, scenario: ScenarioName) -> String {
@@ -168,11 +189,11 @@ pub fn golden_path_provider() -> MockProvider {
                 ProviderStreamEvent::Start,
                 ProviderStreamEvent::TextDelta(format!("{prompt}-delta")),
                 ProviderStreamEvent::Done {
-                    usage: CompletionUsage {
+                    usage: Some(CompletionUsage {
                         prompt_tokens: 2,
                         completion_tokens: 1,
                         total_tokens: 3,
-                    },
+                    }),
                 },
             ],
         );
@@ -201,11 +222,11 @@ pub fn golden_path_provider() -> MockProvider {
                     ProviderStreamEvent::Start,
                     ProviderStreamEvent::TextDelta(format!("{prompt}-delta")),
                     ProviderStreamEvent::Done {
-                        usage: CompletionUsage {
+                        usage: Some(CompletionUsage {
                             prompt_tokens: 2,
                             completion_tokens: 1,
                             total_tokens: 3,
-                        },
+                        }),
                     },
                 ],
             );
@@ -251,11 +272,11 @@ pub fn golden_path_provider() -> MockProvider {
             ProviderStreamEvent::TextDelta("Hello".to_string()),
             ProviderStreamEvent::TextDelta(" world".to_string()),
             ProviderStreamEvent::Done {
-                usage: CompletionUsage {
+                usage: Some(CompletionUsage {
                     prompt_tokens: 4,
                     completion_tokens: 2,
                     total_tokens: 6,
-                },
+                }),
             },
         ],
     );
@@ -284,11 +305,11 @@ pub fn golden_path_provider() -> MockProvider {
             ProviderStreamEvent::TextDelta("Hello".to_string()),
             ProviderStreamEvent::TextDelta(" world".to_string()),
             ProviderStreamEvent::Done {
-                usage: CompletionUsage {
+                usage: Some(CompletionUsage {
                     prompt_tokens: 4,
                     completion_tokens: 2,
                     total_tokens: 6,
-                },
+                }),
             },
         ],
     );
@@ -336,11 +357,11 @@ pub fn golden_path_provider() -> MockProvider {
             ProviderStreamEvent::TextDelta("Shell parity".to_string()),
             ProviderStreamEvent::TextDelta(" looks good.".to_string()),
             ProviderStreamEvent::Done {
-                usage: CompletionUsage {
+                usage: Some(CompletionUsage {
                     prompt_tokens: 10,
                     completion_tokens: 4,
                     total_tokens: 14,
-                },
+                }),
             },
         ],
     );
@@ -396,11 +417,11 @@ fn insert_worker_text_response(
             ProviderStreamEvent::Start,
             ProviderStreamEvent::TextDelta(response.to_string()),
             ProviderStreamEvent::Done {
-                usage: CompletionUsage {
+                usage: Some(CompletionUsage {
                     prompt_tokens: 4,
                     completion_tokens: 2,
                     total_tokens: 6,
-                },
+                }),
             },
         ],
     );
@@ -438,6 +459,7 @@ pub fn golden_path_profiles() -> BTreeMap<String, AgentProfile> {
             temperature: Some(0.0),
             tool_failure_mode: harness_core::config::ToolFailureMode::ContinueAsToolMessage,
             toolset: vec![],
+            permission_ruleset: Vec::new(),
         },
     );
     profiles.insert(
@@ -453,6 +475,7 @@ pub fn golden_path_profiles() -> BTreeMap<String, AgentProfile> {
             temperature: Some(0.0),
             tool_failure_mode: harness_core::config::ToolFailureMode::ContinueAsToolMessage,
             toolset: vec!["edit".to_string()],
+            permission_ruleset: Vec::new(),
         },
     );
     profiles
@@ -482,7 +505,13 @@ mod tests {
 
     #[test]
     fn scenario_name_reports_interactive_permission_mode() {
+        // arrange
+        // act
+        // assert
         assert!(!ScenarioName::GoldenPath.interactive_permissions());
         assert!(ScenarioName::GoldenPathInteractive.interactive_permissions());
+        assert!(ScenarioName::QuestionInteractive.interactive_permissions());
+        assert!(ScenarioName::QuestionInteractive.is_question());
+        assert!(!ScenarioName::GoldenPath.is_question());
     }
 }

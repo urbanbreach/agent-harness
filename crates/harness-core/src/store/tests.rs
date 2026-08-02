@@ -14,6 +14,9 @@ use tokio_stream::StreamExt;
 
 #[test]
 fn in_memory_append_assigns_monotonic_sequence_numbers() {
+    // arrange
+    // act
+    // assert
     let store = InMemoryEventStore::new();
 
     let first = store
@@ -29,6 +32,9 @@ fn in_memory_append_assigns_monotonic_sequence_numbers() {
 
 #[test]
 fn jsonl_append_assigns_monotonic_sequence_numbers() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let store = JsonlFileEventStore::open(temp_dir.path(), "run_file", false).unwrap_or_abort();
 
@@ -45,6 +51,9 @@ fn jsonl_append_assigns_monotonic_sequence_numbers() {
 
 #[test]
 fn jsonl_open_scans_existing_file_to_resume_sequence() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
 
     {
@@ -69,6 +78,9 @@ fn jsonl_open_scans_existing_file_to_resume_sequence() {
 #[cfg(target_os = "linux")]
 #[test]
 fn jsonl_open_recovers_dead_pid_writer_lock() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_dir = temp_dir.path().join("run_stale_pid_lock");
     fs::create_dir_all(&run_dir).unwrap_or_abort();
@@ -85,6 +97,9 @@ fn jsonl_open_recovers_dead_pid_writer_lock() {
 #[cfg(target_os = "linux")]
 #[test]
 fn jsonl_open_serializes_concurrent_dead_pid_writer_lock_recovery() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_concurrent_stale_pid_lock";
     let run_dir = temp_dir.path().join(run_id);
@@ -96,6 +111,9 @@ fn jsonl_open_serializes_concurrent_dead_pid_writer_lock_recovery() {
 
 #[test]
 fn jsonl_open_recovers_legacy_empty_writer_lock_before_log_exists() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_dir = temp_dir.path().join("run_legacy_empty_lock");
     fs::create_dir_all(&run_dir).unwrap_or_abort();
@@ -109,6 +127,9 @@ fn jsonl_open_recovers_legacy_empty_writer_lock_before_log_exists() {
 
 #[test]
 fn jsonl_open_recovers_legacy_text_writer_lock_for_unborn_run_dir() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_dir = temp_dir.path().join("run_legacy_text_lock");
     fs::create_dir_all(&run_dir).unwrap_or_abort();
@@ -122,6 +143,9 @@ fn jsonl_open_recovers_legacy_text_writer_lock_for_unborn_run_dir() {
 
 #[test]
 fn jsonl_open_serializes_concurrent_legacy_empty_writer_lock_recovery() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_concurrent_legacy_empty_lock";
     let run_dir = temp_dir.path().join(run_id);
@@ -133,6 +157,9 @@ fn jsonl_open_serializes_concurrent_legacy_empty_writer_lock_recovery() {
 
 #[test]
 fn jsonl_open_serializes_concurrent_legacy_text_writer_lock_recovery() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_concurrent_legacy_text_lock";
     let run_dir = temp_dir.path().join(run_id);
@@ -144,6 +171,9 @@ fn jsonl_open_serializes_concurrent_legacy_text_writer_lock_recovery() {
 
 #[test]
 fn jsonl_open_rejects_legacy_empty_writer_lock_when_log_exists() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_dir = temp_dir.path().join("run_locked_existing_log");
     fs::create_dir_all(&run_dir).unwrap_or_abort();
@@ -158,6 +188,9 @@ fn jsonl_open_rejects_legacy_empty_writer_lock_when_log_exists() {
 
 #[test]
 fn jsonl_open_rejects_legacy_text_writer_lock_when_log_exists() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_dir = temp_dir.path().join("run_locked_text_existing_log");
     fs::create_dir_all(&run_dir).unwrap_or_abort();
@@ -172,6 +205,9 @@ fn jsonl_open_rejects_legacy_text_writer_lock_when_log_exists() {
 
 #[test]
 fn jsonl_open_rejects_legacy_text_writer_lock_when_meta_exists() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_dir = temp_dir.path().join("run_locked_text_existing_meta");
     fs::create_dir_all(&run_dir).unwrap_or_abort();
@@ -186,6 +222,9 @@ fn jsonl_open_rejects_legacy_text_writer_lock_when_meta_exists() {
 
 #[test]
 fn jsonl_open_rejects_legacy_text_writer_lock_when_artifacts_exist() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_dir = temp_dir.path().join("run_locked_text_existing_artifacts");
     fs::create_dir_all(run_dir.join("artifacts")).unwrap_or_abort();
@@ -200,6 +239,9 @@ fn jsonl_open_rejects_legacy_text_writer_lock_when_artifacts_exist() {
 
 #[test]
 fn jsonl_writer_lock_drop_preserves_replaced_lock_file() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_dir = temp_dir.path().join("run_replaced_lock");
     let lock_path = run_dir.join(".writer.lock");
@@ -254,6 +296,9 @@ fn assert_single_concurrent_writer(session_dir: &Path, run_id: &str) {
 
 #[tokio::test]
 async fn replay_from_seq_returns_expected_suffix() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let store = JsonlFileEventStore::open(temp_dir.path(), "run_replay", false).unwrap_or_abort();
 
@@ -270,6 +315,9 @@ async fn replay_from_seq_returns_expected_suffix() {
 
 #[tokio::test]
 async fn subscribe_replays_then_streams_live_events() {
+    // arrange
+    // act
+    // assert
     let store = InMemoryEventStore::new();
     store
         .append(run_started_draft("run_subscribe", 1))
@@ -301,6 +349,9 @@ async fn subscribe_replays_then_streams_live_events() {
 
 #[tokio::test]
 async fn jsonl_subscribe_replays_high_sequence_suffix_then_live_events() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let store =
         JsonlFileEventStore::open(temp_dir.path(), "run_file_subscribe", false).unwrap_or_abort();
@@ -333,6 +384,9 @@ async fn jsonl_subscribe_replays_high_sequence_suffix_then_live_events() {
 
 #[tokio::test]
 async fn jsonl_replay_index_handles_crlf_logs() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_crlf_replay";
     let file_path = {
@@ -399,6 +453,9 @@ async fn jsonl_open_repairs_truncated_final_jsonl_line_and_preserves_complete_ev
 
 #[test]
 fn replay_reports_invalid_json_lines_deterministically() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let store = JsonlFileEventStore::open(temp_dir.path(), "run_corrupt", true).unwrap_or_abort();
 
@@ -424,6 +481,9 @@ fn replay_reports_invalid_json_lines_deterministically() {
 
 #[test]
 fn deterministic_mode_writes_byte_identical_jsonl() {
+    // arrange
+    // act
+    // assert
     let temp_dir_a = tempfile::tempdir().unwrap_or_abort();
     let temp_dir_b = tempfile::tempdir().unwrap_or_abort();
 

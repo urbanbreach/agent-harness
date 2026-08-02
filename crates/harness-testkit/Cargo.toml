@@ -12,8 +12,10 @@ categories.workspace = true
 [dependencies]
 image = { version = "0.25", default-features = false, features = ["png"] }
 regex = "1"
+serde.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
+vt100 = "0.16"
 zbus = "5.14"
 harness-core = { path = "../harness-core" }
 
@@ -28,7 +30,6 @@ portable-pty = "0.9"
 reqwest = { version = "0.13", default-features = false, features = ["json", "stream", "rustls", "webpki-roots"] }
 time = { version = "0.3", features = ["formatting", "macros"] }
 tokio.workspace = true
-vt100 = "0.16"
 wiremock = "0.6"
 
 [[test]]

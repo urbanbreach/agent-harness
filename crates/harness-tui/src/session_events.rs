@@ -74,6 +74,9 @@ mod tests {
 
     #[test]
     fn session_event_loader_skips_blank_lines_and_trims_events() {
+        // arrange
+        // act
+        // assert
         let run_dir = tempfile::tempdir().unwrap_or_abort();
         write_events(run_dir.path(), &[event(1), event(2)], "\n\n  \n");
 

@@ -21,35 +21,39 @@ ALLOWED_DIRS: Final[set[str]] = {".git", ".sisyphus", "inspirations", "target"}
 # Files and PRDs that intentionally reference the upstream terminal product
 # while implementing command-palette/provider parity.
 ALLOWED_PARITY_PATHS: Final[set[Path]] = {
-    Path("crates/harness-tui/src/keybindings/parity_matrix.rs"),
-    Path("crates/harness-core/src/coord/formatter/real_discovery.rs"),
-    Path("crates/harness-core/src/coord/formatter/real_discovery/support.rs"),
-    Path("crates/harness-core/src/coord/formatter/real_discovery/rule_tests.rs"),
-    Path("crates/harness-core/src/coord/formatter/real_discovery/tests.rs"),
-    Path("crates/harness-core/src/coord/formatter/registry.rs"),
-    Path("crates/harness-core/src/coord/formatter/resolver.rs"),
-    Path("crates/harness-core/src/coord/task_lifecycle.rs"),
+    # External provider catalog keys still named after third-party products.
     Path("crates/harness-tui/src/app/auth_dialog/provider_menu.rs"),
-    Path("crates/harness-tui/src/app/auth_dialog/tests.rs"),
-    Path("crates/harness-tui/src/app/palette_controller.rs"),
-    Path("crates/harness-tui/src/app/tests.rs"),
-    Path("crates/harness-tui/src/app/tests/palette_parity_tests.rs"),
-    Path("crates/harness-tui/src/app/tests/opencode_subagent_parity_apps_test.rs"),
-    Path("crates/harness-tui/src/app/tests/opencode_subagent_parity_event_helpers_test.rs"),
-    Path("crates/harness-tui/src/app/tests/opencode_subagent_parity_events_test.rs"),
-    Path("crates/harness-tui/src/app/tests/opencode_subagent_parity_evidence_test.rs"),
-    Path("crates/harness-tui/src/app/tests/subagent_footer_navigation_tests.rs"),
-    Path("crates/harness-tui/src/keybindings/palette_model.rs"),
-    Path("crates/harness-tui/src/keybindings/paritymatrix.rs"),
-    Path("crates/harness-tui/src/layout.rs"),
-    Path("crates/harness-tui/src/ui_chrome_exact_tests.rs"),
-    Path("crates/harness-tui/src/ui_subagent_footer_entry_body_tests.rs"),
-    Path("crates/harness-tui/src/ui_subagent_footer_exact_tests.rs"),
-    Path("crates/harness-tui/src/ui_transcript_exact_tests/task_rows.rs"),
-    Path("docs/chat-rendering-parity.md"),
-    Path("docs/ctrl-p-command-palette-parity-plan.md"),
-    Path("docs/onboarding-terminal-migration-prd.md"),
-    Path("docs/parity-gaps/opencode-parity-gaps.md"),
+    # Compaction ports still cite the upstream reference agent in comments.
+    Path("crates/harness-core/src/coord/compaction.rs"),
+    Path("crates/harness-core/src/coord/compaction/branch_summary.rs"),
+    Path("crates/harness-core/src/coord/compaction/context_projection.rs"),
+    Path("crates/harness-core/src/coord/compaction/cut_point.rs"),
+    Path("crates/harness-core/src/coord/compaction/file_ops.rs"),
+    Path("crates/harness-core/src/coord/compaction/summary.rs"),
+    Path("crates/harness-core/src/coord/compaction/tests.rs"),
+    Path("crates/harness-core/src/coord/compaction/tokens.rs"),
+    Path("crates/harness-core/src/coord/session_compaction.rs"),
+    Path("crates/harness-tui/src/ui_transcript_compaction.rs"),
+    Path("crates/harness-core/tests/fixtures/permission_ruleset_parity/opencode_agent_ts_matrix.json"),
+    Path("crates/harness-core/tests/permission_ruleset_parity_inventory_test.rs"),
+    Path("crates/harness/tests/bootstrap_profiles/oc_parity_permission_matrices_test.rs"),
+    Path("crates/harness-core/src/config.rs"),
+    Path("crates/harness-core/src/config/public.rs"),
+    Path("crates/harness-core/src/config/tests/permissions_models_test.rs"),
+    Path("crates/harness-core/src/perm/tests.rs"),
+    Path("crates/harness/tests/bootstrap_profiles_test.rs"),
+    Path("configs/harness.example.jsonc"),
+    Path("docs/configuration/config.md"),
+    Path("docs/permissions/permissions.md"),
+    Path("crates/harness-core/src/foreign_session.rs"),
+    Path("crates/harness-core/src/foreign_session/discover.rs"),
+    Path("crates/harness-core/src/foreign_session/import.rs"),
+    Path("crates/harness-core/tests/foreign_session_test.rs"),
+    Path("docs/reference/grok-build-tui-implementation-prompt.md"),
+    Path("docs/reference/tui-reference-module-disposition.v1.json"),
+    Path("crates/harness-tui/DESIGN.md"),
+    Path("grok-build-clean-room-parity.md"),
+    Path("scripts/tui-parity/generate-evidence-layers.py"),
 }
 ALLOWED_MATCH_LINES: Final[dict[Path, set[int]]] = {
     Path("scripts/check-forbidden-branding.py"): set(),
@@ -64,33 +68,17 @@ ALLOWED_MATCH_LINES: Final[dict[Path, set[int]]] = {
     Path("crates/harness-core/src/coord/formatter/resolver.rs"): {17},
     Path("crates/harness-tui/src/keybindings.rs"): {595},
     Path("crates/harness/src/models.rs"): {17},
-    Path("crates/harness/tests/config_docs_reference_test.rs"): {95},
     Path(
         "crates/harness/tests/config_schema_cli/"
         "03_config_validate_cli_loads_separate_tui_test.rs"
     ): {202, 203, 212, 244, 277, 299},
-    Path("docs/config.md"): {
+    Path("docs/configuration/config.md"): {
         73, 89, 100, 118, 134, 135, 136, 137, 139, 140,
         141, 142, 143, 145, 146, 147, 149, 153, 156, 157,
         158, 160, 162, 163, 164, 165, 262, 282, 413, 414,
     },
-    Path("docs/test-suite-prd.md"): {
-        7, 139, 154, 157, 427, 433, 456, 487,
-        648, 871, 873, 874,
-    },
 }
-ALLOWED_MATCH_TEXT: Final[dict[Path, set[str]]] = {
-    Path("docs/test-suite-prd.md"): {
-        "- `inspirations/"
-        "open"
-        "code"
-        "/packages/http-recorder/README.md` + `src/*` + `test/record-replay.test.ts`,",
-        "`packages/"
-        "open"
-        "code"
-        "/test/cli/cmd/tui/attention.test.ts`,",
-    },
-}
+ALLOWED_MATCH_TEXT: Final[dict[Path, set[str]]] = {}
 SOURCE_PREFIX: Final[str] = "p" + "i"
 FORBIDDEN_PATTERNS: Final[list[re.Pattern[str]]] = [
     re.compile(pattern, re.IGNORECASE)
@@ -150,26 +138,6 @@ def is_allowed(path: Path) -> bool:
         return True
     name = path.name
     oc = "open" + "code"
-    if path.parent.name == "docs":
-        if name.startswith(oc + "-tools-parity"):
-            return True
-        vendor_ui_backend_suffix = "_ui_" + "p" + "i" + "_backend_prd.md"
-        if (
-            name.startswith("agent_harness_")
-            and name.endswith(vendor_ui_backend_suffix)
-        ):
-            return True
-        if name in (
-            "roadmap-v1.md",
-            oc + "-tui-parity.md",
-            oc + "-visual-tool-parity-prd.md",
-            "hyperplan-desktop-app-" + oc + "-feel.md",
-            "agent_harness_" + oc + "_ui_" + "p" + "i"
-            + "_backend_prd_missing_specs.md",
-            "config-restructure-prompt.md",
-            "config-restructure-spec.md",
-        ):
-            return True
     return name.startswith(oc + "_tools_parity_inventory") and name.endswith(
         ".v1.json"
     )

@@ -22,6 +22,8 @@ pub(crate) use ui_chrome_exact_tests::{
     exact_test_composer_viewport_wraps_by_display_width,
     exact_test_footer_status_cluster_empty_when_no_activity,
     exact_test_footer_status_cluster_shows_pending_permission_count,
+    exact_test_live_composer_disclosure_none_context_shows_est_zero,
+    exact_test_live_composer_disclosure_none_context_shows_percent_when_limit_known,
     exact_test_live_composer_disclosure_summarizes_compaction_metrics,
     exact_test_live_composer_metadata_omits_success_without_variant,
     exact_test_live_composer_reserves_right_gap,
@@ -60,7 +62,7 @@ use self::ui_control_dock_disclosure::{
 #[path = "ui_composer.rs"]
 mod ui_composer;
 use self::ui_composer::render_document_composer_content;
-use self::ui_composer::COMPOSER_RAIL_GLYPH;
+use self::ui_composer::COMPOSER_PROMPT_GLYPH;
 #[cfg(test)]
 use self::ui_composer::{
     composer_line_with_file_tags, composer_metadata_candidates, composer_viewport,
@@ -79,15 +81,16 @@ struct DocumentComposerRenderContext<'a> {
 const QUIET_SURFACE_PADDING_X: u16 = 1;
 const QUIET_SURFACE_PADDING_TOP: u16 = 1;
 const fn command_palette_accent() -> Color {
-    Color::Rgb(0x9D, 0x7C, 0xD8)
+    Color::Rgb(0xD9, 0x84, 0xD9)
 }
 
 const fn reference_primary() -> Color {
-    Color::Rgb(0xFA, 0xB2, 0x83)
+    Color::Rgb(0xE8, 0xA0, 0xE8)
 }
 
 pub(super) const fn composer_input_surface(theme: &Theme) -> Color {
-    theme.surface.panel_elevated
+    let _ = theme;
+    Color::Reset
 }
 
 pub(super) const fn composer_input_text(theme: &Theme) -> Color {
@@ -107,7 +110,8 @@ pub(super) fn composer_agent_accent(theme: &Theme, app: &AppState) -> Color {
 }
 
 pub(super) const fn command_palette_surface(theme: &Theme) -> Color {
-    theme.surface.panel
+    let _ = theme;
+    Color::Indexed(7)
 }
 
 pub(super) const fn slash_command_surface(theme: &Theme) -> Color {
@@ -123,11 +127,13 @@ pub(super) const fn slash_command_selection_fg(theme: &Theme) -> Color {
 }
 
 pub(super) const fn command_palette_title(theme: &Theme) -> Color {
-    composer_input_text(theme)
+    let _ = theme;
+    Color::Indexed(0)
 }
 
 pub(super) const fn command_palette_muted(theme: &Theme) -> Color {
-    composer_input_muted(theme)
+    let _ = theme;
+    Color::Indexed(8)
 }
 
 pub(super) const fn command_palette_section() -> Color {
@@ -143,7 +149,8 @@ pub(super) const fn command_palette_selection_fg(theme: &Theme) -> Color {
 }
 
 pub(super) const fn command_palette_cursor(theme: &Theme) -> Color {
-    theme.text.accent
+    let _ = theme;
+    Color::Indexed(0)
 }
 
 pub(super) const fn fork_selector_selection_bg() -> Color {
@@ -222,8 +229,38 @@ pub(super) fn render_footer(
         return;
     }
 
-    let separator = " ".repeat(theme.live_shell.rhythm.status_separator as usize);
+    if footer_suppressed_by_overlay(app) {
+        frame.render_widget(
+            Block::default().style(Style::default().bg(Color::Reset)),
+            area,
+        );
+        return;
+    }
+
+    if app.startup_shell_visible() {
+        render_startup_reference_footer(frame, app, text_area, theme);
+        return;
+    }
+
     let mut footer_hints = app.footer_hints_view_model();
+    // Reference idle footer shows VariantCycle/:mode and Help/:shortcuts when
+    // the prompt buffer is empty (matching the pinned reference freeze).
+    if !app.replay_mode
+        && !app.startup_shell_visible()
+        && app.composer.prompt_buffer.is_empty()
+        && !app.completed_session_shell_active()
+    {
+        footer_hints.hints = vec![
+            crate::view_model::FooterHint {
+                action: crate::keybindings::Action::VariantCycle,
+                label: ":mode",
+            },
+            crate::view_model::FooterHint {
+                action: crate::keybindings::Action::Help,
+                label: ":shortcuts",
+            },
+        ];
+    }
     match plan.session_contract.footer_mode {
         SessionFooterMode::Standard => {}
         SessionFooterMode::Reduced => {
@@ -234,41 +271,142 @@ pub(super) fn render_footer(
             footer_hints.prefix = None;
         }
     }
-    let hint_text = footer_hints
-        .hints
+    let key_style = Style::default()
+        .fg(Color::Indexed(15))
+        .add_modifier(Modifier::BOLD);
+    let label_style = Style::default().fg(Color::Indexed(7));
+    let dim_style = Style::default()
+        .fg(Color::Indexed(7))
+        .add_modifier(Modifier::DIM);
+
+    let mut hint_spans: Vec<Span<'static>> = Vec::new();
+    for (i, hint) in footer_hints.hints.iter().enumerate() {
+        if i > 0 {
+            hint_spans.push(Span::styled("  │  ", dim_style));
+        }
+        let key_str = app.keymap.get_binding_str(hint.action);
+        if key_str != "-" {
+            hint_spans.push(Span::styled(key_str, key_style));
+            hint_spans.push(Span::styled(hint.label.to_string(), label_style));
+        }
+    }
+    let hint_width: usize = hint_spans
         .iter()
-        .map(|hint| app.keymap.get_binding_label(hint.action, hint.label))
-        .collect::<Vec<_>>()
-        .join(&separator);
-    let style = Style::default().fg(theme.text.tertiary);
-    let hint_text = truncate_plain_text(&hint_text, usize::from(text_area.width));
+        .map(|span| display_width(span.content.as_ref()))
+        .sum();
+    if hint_width > usize::from(text_area.width) {
+        let joined: String = hint_spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect::<Vec<_>>()
+            .join("");
+        let truncated = truncate_plain_text(&joined, usize::from(text_area.width));
+        hint_spans = vec![Span::styled(truncated, label_style)];
+    }
+
+    let style = label_style;
 
     if app.replay_mode {
         let replay_style = style.bg(theme.surface.shell);
         frame.render_widget(Block::default().style(replay_style), area);
-        frame.render_widget(Paragraph::new(hint_text).style(replay_style), text_area);
-    } else {
-        let status_candidates = if app.startup_shell_visible() {
-            vec![app.startup_directory_branch_label()]
-        } else {
-            live_footer_status_candidates(app, usize::from(text_area.width), theme)
-        };
-        let cluster_text = footer_status_cluster_text(app, theme);
-        let hint_with_cluster = if cluster_text.is_empty() {
-            hint_text
-        } else {
-            format!("{cluster_text}  {hint_text}")
-        };
-        let hint_with_cluster =
-            truncate_plain_text(&hint_with_cluster, usize::from(text_area.width));
-        render_live_footer_row(
-            frame,
+        frame.render_widget(
+            Paragraph::new(Line::from(hint_spans.clone())).style(replay_style),
             text_area,
-            style,
-            status_candidates,
-            hint_with_cluster,
         );
+    } else {
+        let status_candidates =
+            live_footer_status_candidates(app, usize::from(text_area.width), theme);
+        let cluster_spans = footer_status_cluster_text(app, theme);
+
+        if cluster_spans.is_empty() {
+            frame.render_widget(
+                Paragraph::new(Line::from(hint_spans)).style(style),
+                text_area,
+            );
+        } else {
+            let cluster_width: usize = cluster_spans
+                .iter()
+                .map(|span| display_width(span.content.as_ref()))
+                .sum::<usize>()
+                .saturating_add(2);
+            let available_hint_width = usize::from(text_area.width).saturating_sub(cluster_width);
+            if hint_width > available_hint_width {
+                let joined: String = hint_spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<Vec<_>>()
+                    .join("");
+                let truncated = truncate_plain_text(&joined, available_hint_width);
+                hint_spans = vec![Span::styled(truncated, label_style)];
+            }
+            let mut spans = cluster_spans;
+            if !hint_spans.is_empty() {
+                spans.push(Span::styled("  ", dim_style));
+                spans.extend(hint_spans);
+            }
+            render_live_footer_row(
+                frame,
+                text_area,
+                style,
+                status_candidates,
+                Line::from(spans),
+            );
+        }
     }
+}
+
+pub(super) fn footer_suppressed_by_overlay(app: &AppState) -> bool {
+    app.review_surface().is_some()
+        || app.overlay_state().command_palette_channel_visible()
+        || app.overlay_state().permission_pending
+}
+
+fn render_startup_reference_footer(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+    let _ = theme;
+    let area = Rect {
+        x: area.x,
+        y: area.y,
+        width: area.width.saturating_sub(2).max(1),
+        height: area.height,
+    };
+    let bold = Style::default().add_modifier(Modifier::BOLD);
+    let normal = Style::default();
+    let dim = Style::default().add_modifier(Modifier::DIM);
+    if !app.composer.prompt_buffer.is_empty() {
+        let line = Line::from(vec![
+            Span::styled("  ", normal),
+            Span::styled("Enter", bold),
+            Span::styled(":send", normal),
+            Span::styled("  │  ", dim),
+            Span::styled("Shift+Tab", bold),
+            Span::styled(":mode", normal),
+            Span::styled("  │  ", dim),
+            Span::styled("Ctrl+x", bold),
+            Span::styled(":shortcuts", normal),
+        ]);
+        frame.render_widget(Paragraph::new(line), area);
+        return;
+    }
+
+    let mode = app
+        .launch_mode_label()
+        .map(str::trim)
+        .filter(|label| {
+            !label.is_empty()
+                && !label.eq_ignore_ascii_case("live")
+                && !label.eq_ignore_ascii_case("demo")
+                && !label.eq_ignore_ascii_case("mock")
+        })
+        .unwrap_or("Beta");
+    let line = Line::from(vec![
+        Span::styled("Logged in with API key", normal),
+        Span::styled("  │  ", dim),
+        Span::styled(mode.to_string(), normal),
+    ]);
+    frame.render_widget(Paragraph::new(line).alignment(Alignment::Right), area);
 }
 
 fn render_live_footer_row(
@@ -276,14 +414,14 @@ fn render_live_footer_row(
     area: Rect,
     style: Style,
     status_candidates: Vec<String>,
-    hint_text: String,
+    hint_line: Line<'static>,
 ) {
     if area.width == 0 || area.height == 0 {
         return;
     }
 
     let max_width = usize::from(area.width);
-    let hint_width = hint_text.chars().count();
+    let hint_width = hint_line.width();
     let status_gap = usize::from(hint_width > 0 && !status_candidates.is_empty()) * 2;
     let status_width = max_width.saturating_sub(hint_width.saturating_add(status_gap));
     let status_text = if status_width == 0 {
@@ -308,11 +446,9 @@ fn render_live_footer_row(
     if !status_text.is_empty() && columns[0].width > 0 {
         frame.render_widget(Paragraph::new(status_text).style(style), columns[0]);
     }
-    if !hint_text.is_empty() && columns[1].width > 0 {
+    if hint_width > 0 && columns[1].width > 0 {
         frame.render_widget(
-            Paragraph::new(hint_text)
-                .style(style)
-                .alignment(Alignment::Right),
+            Paragraph::new(Text::from(hint_line)).alignment(Alignment::Right),
             columns[1],
         );
     }
@@ -387,39 +523,85 @@ fn live_footer_status_candidates(app: &AppState, max_width: usize, theme: &Theme
     options
 }
 
-fn footer_status_cluster_text(app: &AppState, theme: &Theme) -> String {
+fn footer_status_cluster_text(app: &AppState, theme: &Theme) -> Vec<Span<'static>> {
     if app.replay_mode || app.startup_shell_visible() {
-        return String::new();
+        return Vec::new();
     }
 
     let data = crate::ui::ui_secondary::footer_status_cluster_data(app);
-    let mut items: Vec<String> = Vec::new();
+    let mut spans: Vec<Span<'static>> = Vec::new();
+
+    if let Some(ctx_span) = footer_context_usage_span(app, theme) {
+        spans.push(ctx_span);
+    }
+
+    let mut text_items: Vec<String> = Vec::new();
 
     if data.pending_permissions > 0 {
-        items.push(format!("△{}", data.pending_permissions));
+        text_items.push(format!("△{}", data.pending_permissions));
     }
 
     if data.lsp_count > 0 {
-        let dot_color = if data.lsp_has_error {
+        let _dot_color = if data.lsp_has_error {
             theme.status.error
         } else if data.lsp_count > 1 {
             theme.status.warning
         } else {
             theme.status.success
         };
-        let _ = dot_color;
-        items.push(format!("•{}", data.lsp_count));
+        text_items.push(format!("•{}", data.lsp_count));
     }
 
     if data.mcp_count > 0 {
-        items.push(format!("⊙{}", data.mcp_count));
+        text_items.push(format!("⊙{}", data.mcp_count));
     }
 
-    if !items.is_empty() {
-        items.push("/status".to_string());
+    if !text_items.is_empty() {
+        text_items.push("/status".to_string());
     }
 
-    items.join(" ")
+    if !text_items.is_empty() {
+        if !spans.is_empty() {
+            spans.push(Span::raw("  "));
+        }
+        spans.push(Span::styled(
+            text_items.join(" "),
+            Style::default().fg(theme.text.tertiary),
+        ));
+    }
+
+    spans
+}
+
+fn footer_context_usage_span(app: &AppState, theme: &Theme) -> Option<Span<'static>> {
+    let active_context = app.active_context_usage()?;
+    if active_context.compacted_pending_refresh {
+        return Some(Span::styled(
+            "ctx compacted".to_string(),
+            Style::default().fg(theme.status.warning),
+        ));
+    }
+
+    let total = active_context.tokens.unwrap_or(0);
+    let limit = app.current_context_window_tokens()?;
+
+    if limit == 0 {
+        return None;
+    }
+
+    let percent = ((f64::from(total) / f64::from(limit)) * 100.0).clamp(0.0, 999.0);
+    let color = if percent > 80.0 {
+        theme.status.error
+    } else if percent >= 50.0 {
+        theme.status.warning
+    } else {
+        theme.status.success
+    };
+
+    Some(Span::styled(
+        format!("ctx: {:.0}%", percent),
+        Style::default().fg(color),
+    ))
 }
 
 fn header_identity_text(app: &AppState, header_mode: SessionHeaderMode) -> String {
@@ -511,18 +693,20 @@ pub(super) fn render_unified_bottom_dock(
     }
 
     let dock = build_control_dock_view_model(app, theme);
-    frame.render_widget(control_dock_section(theme, dock.variant), dock_layout.shell);
-    render_control_dock_top_divider(
-        frame,
-        Rect::new(
-            dock_layout.shell.x,
-            dock_layout.shell.y,
-            dock_layout.shell.width,
-            1,
-        ),
-        theme,
-        dock.variant,
-    );
+    if dock.variant != crate::view_model::ControlDockVariant::Startup {
+        frame.render_widget(control_dock_section(theme, dock.variant), dock_layout.shell);
+        render_control_dock_top_divider(
+            frame,
+            Rect::new(
+                dock_layout.shell.x,
+                dock_layout.shell.y,
+                dock_layout.shell.width,
+                1,
+            ),
+            theme,
+            dock.variant,
+        );
+    }
 
     if dock.variant == crate::view_model::ControlDockVariant::ReplayReadOnly {
         render_replay_read_only_composer_content(frame, dock_layout.composer, theme, &dock);
@@ -530,7 +714,17 @@ pub(super) fn render_unified_bottom_dock(
     }
 
     if let Some(permission) = app.active_permission_view() {
-        render_inline_permission_dock(frame, app, dock_layout.composer, theme, &permission);
+        if permission.question_prompts.is_some() {
+            render_question_permission_with_shell_footer(
+                frame,
+                app,
+                dock_layout.composer,
+                theme,
+                &permission,
+            );
+        } else {
+            render_inline_permission_dock(frame, app, dock_layout.composer, theme, &permission);
+        }
         return;
     }
 
@@ -558,6 +752,95 @@ pub(super) fn render_unified_bottom_dock(
             disclosure_visible: dock_layout.disclosure.is_some(),
         },
     );
+}
+
+fn render_question_permission_with_shell_footer(
+    frame: &mut Frame,
+    app: &AppState,
+    area: Rect,
+    theme: &Theme,
+    permission: &crate::app::ActivePermissionView,
+) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+
+    // Reference question state: dock (11) + blank + Esc footer + trailing blank.
+    const FOOTER_ROWS: u16 = 3;
+    if area.height <= FOOTER_ROWS {
+        render_inline_permission_dock(frame, app, area, theme, permission);
+        return;
+    }
+
+    let dock_height = area.height.saturating_sub(FOOTER_ROWS);
+    let dock_area = Rect {
+        x: area.x,
+        y: area.y,
+        width: area.width,
+        height: dock_height,
+    };
+    let footer_area = Rect {
+        x: area.x,
+        y: area.y.saturating_add(dock_height).saturating_add(1),
+        width: area.width,
+        height: 1,
+    };
+
+    render_inline_permission_dock(frame, app, dock_area, theme, permission);
+
+    if footer_area.width == 0 || footer_area.height == 0 {
+        return;
+    }
+
+    let surface = live_control_dock_surface(theme);
+    let bold = Style::default()
+        .fg(theme.text.primary)
+        .bg(surface)
+        .add_modifier(Modifier::BOLD);
+    let normal = Style::default().fg(theme.text.primary).bg(surface);
+    let dim = Style::default()
+        .fg(theme.text.tertiary)
+        .bg(surface)
+        .add_modifier(Modifier::DIM);
+
+    // Reference question-state outer shell:
+    //   Esc:unselect │ Tab:scrollback │ Shift+x:dismiss
+    // Harness product-honest keys (no invented Shift+x):
+    //   Esc / Ctrl+c both DismissModal; Tab is FocusNext ("scrollback" elsewhere).
+    let esc = preferred_binding(app, crate::keybindings::Action::DismissModal, "Esc");
+    let tab = preferred_binding(app, crate::keybindings::Action::FocusNext, "Tab");
+    let dismiss = preferred_binding(app, crate::keybindings::Action::DismissModal, "Ctrl+c");
+
+    let spans = vec![
+        Span::styled(esc, bold),
+        Span::styled(":unselect", normal),
+        Span::styled("  │  ", dim),
+        Span::styled(tab, bold),
+        Span::styled(":scrollback", normal),
+        Span::styled("  │  ", dim),
+        Span::styled(dismiss, bold),
+        Span::styled(":dismiss", normal),
+    ];
+    frame.render_widget(
+        Paragraph::new(Line::from(spans)).style(Style::default().bg(surface)),
+        footer_area,
+    );
+}
+
+fn preferred_binding(
+    app: &AppState,
+    action: crate::keybindings::Action,
+    preferred: &str,
+) -> String {
+    let bindings = app.keymap.get_binding_strs(action);
+    if bindings.iter().any(|binding| binding == preferred) {
+        return preferred.to_string();
+    }
+    bindings
+        .into_iter()
+        .next()
+        .filter(|binding| binding != "-")
+        .unwrap_or_else(|| preferred.to_string())
 }
 
 pub(super) fn panel_style(surface: Color, foreground: Color) -> Style {
@@ -613,8 +896,8 @@ fn divided_surface_block<'a>(
         .title_style(panel_style(surface, title_color))
 }
 
-pub(super) fn live_transcript_shell_surface(theme: &Theme) -> Color {
-    semantic_surface(theme, ChromeMode::Chromeless)
+pub(super) fn live_transcript_shell_surface(_theme: &Theme) -> Color {
+    Color::Reset
 }
 
 pub(super) fn live_anchor_panel_surface(theme: &Theme) -> Color {
@@ -626,17 +909,19 @@ pub(super) fn divided_shell_surface(theme: &Theme) -> Color {
 }
 
 pub(super) fn live_control_dock_surface(theme: &Theme) -> Color {
-    theme.surface.shell
+    let _ = theme;
+    Color::Reset
 }
 
 pub(super) fn control_dock_surface(
     theme: &Theme,
     variant: crate::view_model::ControlDockVariant,
 ) -> Color {
+    let _ = theme;
     match variant {
-        crate::view_model::ControlDockVariant::Startup => live_transcript_shell_surface(theme),
-        crate::view_model::ControlDockVariant::Live => live_control_dock_surface(theme),
-        crate::view_model::ControlDockVariant::ReplayReadOnly => live_control_dock_surface(theme),
+        crate::view_model::ControlDockVariant::Startup => Color::Reset,
+        crate::view_model::ControlDockVariant::Live => Color::Indexed(0),
+        crate::view_model::ControlDockVariant::ReplayReadOnly => Color::Reset,
     }
 }
 
@@ -661,8 +946,8 @@ pub(super) fn slash_command_row_style(theme: &Theme, is_selected: bool) -> Style
     }
 }
 
-pub(super) fn open_canvas(theme: &Theme) -> Block<'static> {
-    Block::default().style(Style::default().bg(live_transcript_shell_surface(theme)))
+pub(super) fn open_canvas(surface: Color) -> Block<'static> {
+    Block::default().style(Style::default().bg(surface))
 }
 
 pub(super) fn quiet_rail<'a>(
@@ -728,8 +1013,8 @@ pub(super) fn modal_card<'a>(
     )
 }
 
-pub(super) fn live_transcript_shell_section(theme: &Theme) -> Block<'static> {
-    open_canvas(theme)
+pub(super) fn live_transcript_shell_section(surface: Color) -> Block<'static> {
+    open_canvas(surface)
 }
 
 pub(super) fn control_dock_section(

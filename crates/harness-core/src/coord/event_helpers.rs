@@ -566,6 +566,10 @@ where
     )
 }
 
+#[allow(
+    deprecated,
+    reason = "deprecated event variants kept for backward compatibility with existing session logs"
+)]
 pub(in crate::coord) fn append_compaction_failed_event<C, R>(
     clock: &C,
     redactor: &R,

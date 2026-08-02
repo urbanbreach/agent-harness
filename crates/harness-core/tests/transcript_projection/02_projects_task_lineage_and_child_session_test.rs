@@ -1,6 +1,9 @@
 use harness_core::UnwrapOrAbort;
 #[test]
 fn projects_task_lineage_and_child_session_metadata() {
+    // arrange
+    // act
+    // assert
     let lineage = TaskLineageMetadata {
         parent_tool_call_id: Some("toolcall_000777".to_string()),
         parent_task_id: Some("task_000777".to_string()),
@@ -129,6 +132,9 @@ fn projects_task_lineage_and_child_session_metadata() {
 }
 #[test]
 fn tolerates_old_minimal_metadata_and_projects_incomplete_or_failed_states() {
+    // arrange
+    // act
+    // assert
     let events = vec![
         envelope(
             1,
@@ -310,6 +316,9 @@ fn tolerates_old_minimal_metadata_and_projects_incomplete_or_failed_states() {
 }
 #[test]
 fn rejects_out_of_order_seq_without_panic() {
+    // arrange
+    // act
+    // assert
     let events = vec![
         envelope(
             2,

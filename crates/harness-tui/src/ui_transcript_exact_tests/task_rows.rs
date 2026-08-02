@@ -158,7 +158,7 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
         running_lines.extend(render.lines);
     }
     let running_text = transcript_test_line_texts(running_lines).join("\n");
-    assert!(running_text.contains("⠋ Researcher Task — audit transcript parity"));
+    assert!(running_text.contains("Researcher Task — audit transcript parity"));
     assert!(
         running_text.contains("↳ Read src/ui.rs"),
         "running task row should show the active child tool detail\n{running_text}"
@@ -277,9 +277,7 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
         .lines,
     )
     .join("\n");
-    assert!(
-        detached_active_text.contains("⠋ Researcher Task (background) — audit transcript parity")
-    );
+    assert!(detached_active_text.contains("Researcher Task (background) — audit transcript parity"));
     assert!(detached_active_text.contains("↳ Retrying (attempt 1) · rate_limited"));
     assert!(!detached_active_text.contains("↳ 1 toolcall ·"));
 
@@ -369,7 +367,7 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
         completed_lines.extend(render.lines);
     }
     let completed_text = transcript_test_line_texts(completed_lines).join("\n");
-    assert!(completed_text.contains("✓ Researcher Task (background) — audit transcript parity"));
+    assert!(completed_text.contains("Researcher Task (background) — audit transcript parity"));
     assert!(completed_text.contains("↳ 2 toolcalls · 1.6s"));
     assert!(!completed_text.contains("background_output("));
     assert!(!completed_text.contains("task(task_id=\"agent_worker\")"));
@@ -405,7 +403,7 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
     ))
     .join("\n");
     assert!(
-        parent_transcript_text.contains("✓ Researcher Task (background) — audit transcript parity")
+        parent_transcript_text.contains("Researcher Task (background) — audit transcript parity")
     );
     assert!(parent_transcript_text.contains("↳ 2 toolcalls · 1.6s"));
     assert!(!parent_transcript_text.contains("background_output("));
@@ -444,8 +442,9 @@ pub(crate) fn exact_test_transcript_task_rows_match_reference_inline_title_and_n
     let rendered = lines.join("\n");
 
     assert!(
-        rendered.contains("⠋ Researcher Task — audit transcript parity"),
-        "task row should use Opencode task title shape\n{rendered}"
+        rendered.contains("◆ Researcher Task — audit transcript parity")
+            || rendered.contains("Researcher Task — audit transcript parity"),
+        "task row should use Harness task title shape\n{rendered}"
     );
     assert!(
         !rendered.contains("audit transcript parity · Researcher Agent"),

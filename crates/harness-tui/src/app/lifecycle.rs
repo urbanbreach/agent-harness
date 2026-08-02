@@ -106,6 +106,12 @@ pub enum UiIntent {
         launch_metadata: LaunchMetadata,
     },
     NewSession,
+    NewWorktreeSession {
+        name: Option<String>,
+    },
+    SwitchWorktree {
+        worktree_path: PathBuf,
+    },
     ReplaySession {
         run_id: String,
         run_dir: PathBuf,
@@ -123,6 +129,9 @@ pub enum UiIntent {
     },
     CompactSession,
     BackgroundForegroundSubagents,
+    DemoteForegroundChildTask {
+        handle_id: String,
+    },
     OpenAuthManager {
         args: Vec<String>,
         stdin: Option<String>,
@@ -152,6 +161,10 @@ pub enum UiIntent {
         run_dir: PathBuf,
     },
     ExportSession,
+    ImportForeignSession {
+        source_path: PathBuf,
+        dest_session_dir: PathBuf,
+    },
     RunShellCommand {
         command: String,
     },
@@ -332,6 +345,17 @@ impl AppState {
         }
         if let Some(pending_prompt) = take_pending_live_prompt() {
             state.apply_pending_live_prompt(pending_prompt);
+        }
+        if let Some(settings_config) = take_pending_settings_project_config() {
+            state.bind_settings_project_config(
+                settings_config.path,
+                settings_config.hashline_edit,
+                settings_config.compaction_enabled,
+                settings_config.compaction_auto_retry_overflow,
+                settings_config.compaction_structured_summary_contract,
+                settings_config.compaction_estimated_token_triggers,
+                settings_config.deterministic_enabled,
+            );
         }
         state
     }
@@ -596,6 +620,10 @@ impl AppState {
         matches!(self.lifecycle_shell_state(), LifecycleShellState::Startup)
     }
 
+    pub(crate) fn is_first_run(&self) -> bool {
+        self.startup_mode && self.session_history_entries.is_empty()
+    }
+
     pub fn post_run_handoff_visible(&self) -> bool {
         matches!(self.lifecycle_shell_state(), LifecycleShellState::PostRun)
     }
@@ -673,7 +701,7 @@ impl AppState {
             slash_visible: self.slash_overlay_should_render(),
             file_mention_visible: self.file_mention_overlay_should_render(),
             palette_visible: self.palette_visible,
-            status_dialog_visible: self.status_dialog_visible,
+            status_dialog_visible: self.secondary_surfaces.status_dialog_visible(),
             subagent_actions_visible: self.subagent_actions_session_id.is_some(),
             session_history_visible: self.session_history_visible,
             model_switcher_visible: self.model_switcher_visible,
@@ -685,6 +713,13 @@ impl AppState {
             error_details_visible: self.error_details_visible,
             prompt_stash_list_visible: self.prompt_stash.list_visible,
             auth_dialog_visible: self.connect_dialog.visible,
+            settings_editor_visible: self.settings_editor_visible,
+            plan_view_visible: self.plan_view_visible,
+            memory_browser_visible: self.memory_browser.visible,
+            worktree_picker_visible: self.worktree_picker.visible,
+            new_worktree_dialog_visible: self.new_worktree_dialog.visible,
+            foreign_import_picker_visible: self.foreign_import_picker.visible,
+            trust_folder_prompt_visible: self.trust_folder_prompt_visible,
         }
     }
 
@@ -728,7 +763,7 @@ impl AppState {
         self.delegated_child_request_ids_for_parent_view(self.current_session_id())
     }
 
-    pub(in crate::app) fn active_turn_in_progress(&self) -> bool {
+    pub(crate) fn active_turn_in_progress(&self) -> bool {
         let hidden_child_request_ids = self.hidden_delegated_child_request_ids_in_current_view();
         self.activities
             .iter()
@@ -754,6 +789,11 @@ impl AppState {
             && !self.composer_disabled()
             && !self.slash_visible
             && self.active_interrupt_task_id().is_some()
+            && !self
+                .activities
+                .iter()
+                .rev()
+                .any(|a| a.status == ActivityStatus::Streaming && a.usage.is_some())
     }
 
     pub(crate) fn interrupt_confirmation_pending(&self) -> bool {
@@ -763,7 +803,7 @@ impl AppState {
 
     fn interrupt_confirmation_pending_for(&self, active_task_ids: &BTreeSet<String>) -> bool {
         self.interrupt_confirm_deadline
-            .is_some_and(|deadline| Instant::now() < deadline)
+            .is_some_and(|deadline| self.now() < deadline)
             && !active_task_ids.is_empty()
             && self.interrupt_confirm_task_ids == *active_task_ids
     }
@@ -771,7 +811,7 @@ impl AppState {
     pub(in crate::app) fn clear_expired_interrupt_confirmation(&mut self) {
         if self
             .interrupt_confirm_deadline
-            .is_some_and(|deadline| Instant::now() >= deadline)
+            .is_some_and(|deadline| self.now() >= deadline)
         {
             self.reset_interrupt_confirmation();
         }
@@ -789,17 +829,44 @@ impl AppState {
             return false;
         }
 
-        if !self.interrupt_confirmation_pending_for(&active_task_ids) {
-            self.interrupt_confirm_deadline = Some(Instant::now() + INTERRUPT_CONFIRM_TIMEOUT);
-            self.interrupt_confirm_task_ids = active_task_ids;
+        self.reset_interrupt_confirmation();
+        true
+    }
+
+    pub(in crate::app) fn handle_ctrl_c_clear_or_cancel(&mut self) -> bool {
+        if !self.composer_disabled() && !self.composer.prompt_buffer.is_empty() {
+            self.composer.push_undo();
+            self.clear_prompt_input();
+            if self.composer.shell_mode {
+                self.composer.shell_mode = false;
+            }
             return true;
         }
 
-        let task_ids = active_task_ids.into_iter().collect();
+        let active_task_ids = self.active_interrupt_task_ids();
+        if !self.interrupt_hint_visible() || active_task_ids.is_empty() {
+            self.reset_interrupt_confirmation();
+            return false;
+        }
 
+        let task_ids = active_task_ids.into_iter().collect();
         self.emit_ui_intent(UiIntent::InterruptSession { task_ids });
         self.reset_interrupt_confirmation();
         true
+    }
+
+    pub(in crate::app) fn now(&self) -> Instant {
+        (self.now_fn)()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_now_fn_for_test(&mut self, now_fn: Arc<dyn Fn() -> Instant + Send + Sync>) {
+        self.now_fn = now_fn;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn clear_prompt_hint_for_test() -> &'static str {
+        CLEAR_PROMPT_HINT
     }
 
     fn runtime_state_activity(&self) -> Option<&ActivityEntry> {

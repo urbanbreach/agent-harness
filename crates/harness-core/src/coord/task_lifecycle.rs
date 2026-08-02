@@ -5,32 +5,59 @@ impl Coordinator {
     pub(in crate::coord) async fn background_foreground_child_tasks_internal(
         &mut self,
     ) -> Result<usize, CoordinatorError> {
-        let detachments = {
+        let results = self.demote_all_foreground_child_tasks_internal().await?;
+        let demoted = results.iter().filter(|r| r.is_demoted()).count();
+        if demoted == 0 {
+            return Err(CoordinatorError::UnknownTask(
+                "no foreground subagent is currently blocking this session".to_string(),
+            ));
+        }
+        Ok(demoted)
+    }
+
+    /// Demote every foreground-blocking child task; returns per-handle results.
+    pub(in crate::coord) async fn demote_all_foreground_child_tasks_internal(
+        &mut self,
+    ) -> Result<Vec<crate::foreground_demote::DemoteToBackgroundResult>, CoordinatorError> {
+        use crate::foreground_demote::{
+            demote_task_handles_against_registry, DemoteToBackgroundResult,
+        };
+
+        let (decisions, detachments) = {
             let Some(run_state) = self.run_state.as_mut() else {
                 return Err(CoordinatorError::RunNotStarted);
             };
             let parent_session_id = run_state.info.run_id.to_string();
             let foreground_children = foreground_child_tasks(run_state, &parent_session_id);
-            let mut detachments = Vec::new();
-
-            for child in foreground_children {
-                let Some(parent_task_id) = parent_task_id_for_child(run_state, &child) else {
-                    continue;
-                };
-                mark_child_task_backgrounded(run_state, &child.child_request_id);
-                detachments.push((parent_task_id, child));
+            if foreground_children.is_empty() {
+                return Ok(Vec::new());
             }
+            let demotable: Vec<&str> = foreground_children
+                .iter()
+                .map(|child| child.child_request_id.as_str())
+                .collect();
+            let handle_ids = demotable.clone();
+            let decisions = demote_task_handles_against_registry(&handle_ids, &demotable)
+                .map_err(|err| CoordinatorError::UnknownTask(err.to_string()))?;
 
-            detachments
+            let mut detachments = Vec::new();
+            for decision in &decisions {
+                if let DemoteToBackgroundResult::Demoted { handle_id, .. } = decision {
+                    if let Some(child) = foreground_children
+                        .iter()
+                        .find(|child| child.child_request_id == *handle_id)
+                        .cloned()
+                    {
+                        if let Some(parent_task_id) = parent_task_id_for_child(run_state, &child) {
+                            mark_child_task_backgrounded(run_state, &child.child_request_id);
+                            detachments.push((parent_task_id, child));
+                        }
+                    }
+                }
+            }
+            (decisions, detachments)
         };
 
-        if detachments.is_empty() {
-            return Err(CoordinatorError::UnknownTask(
-                "no foreground subagent is currently blocking this session".to_string(),
-            ));
-        }
-
-        let count = detachments.len();
         for (parent_task_id, child) in detachments {
             self.job_finished_internal_async(
                 parent_task_id,
@@ -41,7 +68,66 @@ impl Coordinator {
             .await?;
         }
 
-        Ok(count)
+        Ok(decisions)
+    }
+
+    /// Demote one foreground-blocking child task by child request id.
+    ///
+    /// Uses [`crate::foreground_demote::demote_task_handle_against_registry`] for the
+    /// product policy, then applies the existing mark-backgrounded journey.
+    pub(in crate::coord) async fn demote_foreground_child_task_internal(
+        &mut self,
+        handle_id: String,
+    ) -> Result<crate::foreground_demote::DemoteToBackgroundResult, CoordinatorError> {
+        use crate::foreground_demote::{
+            demote_task_handle_against_registry, DemoteToBackgroundResult,
+        };
+
+        let (decision, detachment) = {
+            let Some(run_state) = self.run_state.as_mut() else {
+                return Err(CoordinatorError::RunNotStarted);
+            };
+            let parent_session_id = run_state.info.run_id.to_string();
+            let foreground_children = foreground_child_tasks(run_state, &parent_session_id);
+            let demotable: Vec<&str> = foreground_children
+                .iter()
+                .map(|child| child.child_request_id.as_str())
+                .collect();
+            let decision = demote_task_handle_against_registry(&handle_id, &demotable)
+                .map_err(|err| CoordinatorError::UnknownTask(err.to_string()))?;
+
+            let detachment = match &decision {
+                DemoteToBackgroundResult::Demoted { handle_id, .. } => {
+                    let child = foreground_children
+                        .into_iter()
+                        .find(|child| child.child_request_id == *handle_id);
+                    match child {
+                        Some(child) => {
+                            let parent_task_id = parent_task_id_for_child(run_state, &child);
+                            parent_task_id.map(|parent_task_id| {
+                                mark_child_task_backgrounded(run_state, &child.child_request_id);
+                                (parent_task_id, child)
+                            })
+                        }
+                        None => None,
+                    }
+                }
+                _ => None,
+            };
+            (decision, detachment)
+        };
+
+        if let Some((parent_task_id, child)) = detachment {
+            self.job_finished_internal_async(
+                parent_task_id,
+                JobOutcome::Succeeded {
+                    result: backgrounded_child_tool_result(&child),
+                },
+            )
+            .await?;
+        }
+
+        Ok(decision)
     }
 
     pub(in crate::coord) fn job_progress_internal(
@@ -394,7 +480,7 @@ impl Coordinator {
 
                 // Run formatters BEFORE computing digests so that the stored
                 // digest and EditApplied event reflect the post-format file
-                // content, matching OpenCode's behavior of re-reading the file
+                // content, re-reading the file
                 // after formatting.
                 let mut formatter_warnings = Vec::new();
                 let mut formatted_paths = std::collections::BTreeSet::new();
@@ -421,7 +507,7 @@ impl Coordinator {
                 }
 
                 // Regenerate diff artifacts to reflect post-format content,
-                // matching OpenCode's behavior of re-reading the file after
+                // re-reading the file after
                 // formatting and regenerating the diff from the original
                 // pre-edit content vs the formatted file.
                 for applied_edit in &mut applied_edits {
@@ -523,6 +609,7 @@ impl Coordinator {
                             request_correlation_id: request_correlation_id.as_deref(),
                         },
                     )?;
+                    record_agent_tool_edit_attribution(run_state, metadata, *deleted);
                 }
 
                 let mut result_summary = result.display_text.clone();
@@ -890,6 +977,22 @@ fn mark_child_task_backgrounded(run_state: &mut RunState, child_request_id: &str
     }
 }
 
+fn record_agent_tool_edit_attribution(
+    run_state: &mut RunState,
+    metadata: &HashlineEditMetadata,
+    deleted: bool,
+) {
+    let content = if deleted {
+        Vec::new()
+    } else {
+        let path = run_state.info.workspace_root.join(&metadata.path);
+        std::fs::read(&path).unwrap_or_default()
+    };
+    let _ = run_state
+        .edit_attribution
+        .record_agent_tool_edit(&metadata.path, &content, None);
+}
+
 fn backgrounded_child_tool_result(child: &ChildTaskTurnState) -> ToolResult {
     let display_text = format!(
         "task_id: {} (for resuming to continue this task if needed)\nrequest_id: {}\n\n<task_result>Foreground subagent moved to background.</task_result>",
@@ -981,6 +1084,9 @@ mod diff_helper_tests {
 
     #[test]
     fn strip_bom_removes_bom_prefix() {
+        // arrange
+        // act
+        // assert
         assert_eq!(strip_bom("\u{feff}hello"), "hello");
         assert_eq!(strip_bom("hello"), "hello");
         assert_eq!(strip_bom(""), "");
@@ -988,6 +1094,9 @@ mod diff_helper_tests {
 
     #[test]
     fn normalize_for_diff_strips_bom_and_crlf() {
+        // arrange
+        // act
+        // assert
         assert_eq!(normalize_for_diff("\u{feff}\r\nhello\r\n"), "\nhello\n");
         assert_eq!(normalize_for_diff("hello\n"), "hello\n");
         assert_eq!(normalize_for_diff("\r\n\r\n"), "\n\n");
@@ -995,6 +1104,9 @@ mod diff_helper_tests {
 
     #[test]
     fn trim_diff_strips_common_indent() {
+        // arrange
+        // act
+        // assert
         let diff = "--- a\n+++ b\n@@ -1,2 +1,2 @@\n     line1\n-    old\n+    new\n";
         let trimmed = trim_diff(diff);
         assert!(
@@ -1010,12 +1122,18 @@ mod diff_helper_tests {
 
     #[test]
     fn trim_diff_preserves_no_indent_diffs() {
+        // arrange
+        // act
+        // assert
         let diff = "--- a\n+++ b\n@@ -1,2 +1,2 @@\n line1\n-old\n+new\n";
         assert_eq!(trim_diff(diff), diff);
     }
 
     #[test]
     fn trim_diff_skips_empty_content_lines_for_indent_calc() {
+        // arrange
+        // act
+        // assert
         let diff = "--- a\n+++ b\n@@ -1,3 +1,3 @@\n     line1\n     \n-    old\n+    new\n";
         let trimmed = trim_diff(diff);
         assert!(trimmed.contains("-old"));

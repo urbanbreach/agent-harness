@@ -5,6 +5,9 @@ use harness_tools::UnwrapOrAbort;
     reason = "the global test lock intentionally serializes LSP registry mutations across awaits"
 )]
 async fn native_code_lsp_supports_direct_file_and_workspace_diagnostics() {
+    // arrange
+    // act
+    // assert
     let _lock = test_lock().lock().unwrap_or_abort();
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
@@ -115,6 +118,9 @@ async fn native_code_lsp_supports_direct_file_and_workspace_diagnostics() {
     reason = "the global test lock intentionally serializes LSP registry mutations across awaits"
 )]
 async fn native_code_lsp_reports_empty_direct_diagnostics_cleanly() {
+    // arrange
+    // act
+    // assert
     let _lock = test_lock().lock().unwrap_or_abort();
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
@@ -179,6 +185,9 @@ async fn native_code_lsp_reports_empty_direct_diagnostics_cleanly() {
     reason = "the global test lock intentionally serializes LSP registry mutations across awaits"
 )]
 async fn native_code_lsp_rejects_disabled_or_unsupported_servers() {
+    // arrange
+    // act
+    // assert
     let _lock = test_lock().lock().unwrap_or_abort();
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
@@ -264,10 +273,16 @@ async fn native_code_lsp_rejects_disabled_or_unsupported_servers() {
 }
 #[test]
 fn native_code_lsp_rejects_disabled_or_unsupported_server_requests() {
+    // arrange
+    // act
+    // assert
     native_code_lsp_rejects_disabled_or_unsupported_servers();
 }
 #[tokio::test]
 async fn native_code_lsp_validates_inputs_by_operation_shape() {
+    // arrange
+    // act
+    // assert
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let registry = coordinator_registry(ShellAllowlist::default());
@@ -303,6 +318,9 @@ async fn native_code_lsp_validates_inputs_by_operation_shape() {
     reason = "the global test lock intentionally serializes LSP registry mutations across awaits"
 )]
 async fn native_code_lsp_supports_non_position_operations_without_cursor_placeholders() {
+    // arrange
+    // act
+    // assert
     let _lock = test_lock().lock().unwrap_or_abort();
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
@@ -383,6 +401,9 @@ async fn native_code_lsp_supports_non_position_operations_without_cursor_placeho
 }
 #[tokio::test]
 async fn native_code_lsp_rejects_unsupported_operation_cleanly() {
+    // arrange
+    // act
+    // assert
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let registry = coordinator_registry(ShellAllowlist::default());

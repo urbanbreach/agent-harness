@@ -14,6 +14,13 @@ pub enum OverlayKind {
     ErrorDetails,
     PromptStashList,
     AuthDialog,
+    NewWorktreeDialog,
+    SettingsEditor,
+    PlanView,
+    MemoryBrowser,
+    WorktreePicker,
+    ForeignImportPicker,
+    TrustFolderPrompt,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -34,6 +41,13 @@ pub struct OverlayState {
     pub error_details_visible: bool,
     pub prompt_stash_list_visible: bool,
     pub auth_dialog_visible: bool,
+    pub new_worktree_dialog_visible: bool,
+    pub settings_editor_visible: bool,
+    pub plan_view_visible: bool,
+    pub memory_browser_visible: bool,
+    pub worktree_picker_visible: bool,
+    pub foreign_import_picker_visible: bool,
+    pub trust_folder_prompt_visible: bool,
 }
 
 impl OverlayState {
@@ -96,6 +110,27 @@ impl OverlayStack {
         if state.auth_dialog_visible {
             overlays.push(OverlayKind::AuthDialog);
         }
+        if state.new_worktree_dialog_visible && !state.permission_pending {
+            overlays.push(OverlayKind::NewWorktreeDialog);
+        }
+        if state.settings_editor_visible && !state.permission_pending {
+            overlays.push(OverlayKind::SettingsEditor);
+        }
+        if state.plan_view_visible && !state.permission_pending {
+            overlays.push(OverlayKind::PlanView);
+        }
+        if state.memory_browser_visible && !state.permission_pending {
+            overlays.push(OverlayKind::MemoryBrowser);
+        }
+        if state.worktree_picker_visible && !state.permission_pending {
+            overlays.push(OverlayKind::WorktreePicker);
+        }
+        if state.foreign_import_picker_visible && !state.permission_pending {
+            overlays.push(OverlayKind::ForeignImportPicker);
+        }
+        if state.trust_folder_prompt_visible {
+            overlays.push(OverlayKind::TrustFolderPrompt);
+        }
         Self { overlays }
     }
 
@@ -123,7 +158,13 @@ impl OverlayStack {
                     | OverlayKind::ThemeDialog
                     | OverlayKind::ErrorDetails
                     | OverlayKind::PromptStashList
-                    | OverlayKind::AuthDialog,
+                    | OverlayKind::AuthDialog
+                    | OverlayKind::NewWorktreeDialog
+                    | OverlayKind::SettingsEditor
+                    | OverlayKind::PlanView
+                    | OverlayKind::MemoryBrowser
+                    | OverlayKind::WorktreePicker
+                    | OverlayKind::ForeignImportPicker,
             )
         )
     }
@@ -135,6 +176,72 @@ impl<'a> IntoIterator for &'a OverlayStack {
 
     fn into_iter(self) -> Self::IntoIter {
         self.overlays.iter().copied()
+    }
+}
+
+/// Mutable overlay controller for tests and integration scenarios.
+///
+/// Provides push/pop/escape/close semantics over an ordered overlay stack.
+/// Re-pushing an already-open overlay is a no-op (no duplicate entries).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct OverlayController {
+    overlays: Vec<OverlayKind>,
+}
+
+impl OverlayController {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn is_open(&self) -> bool {
+        !self.overlays.is_empty()
+    }
+
+    pub fn top(&self) -> Option<OverlayKind> {
+        self.overlays.last().copied()
+    }
+
+    pub fn depth(&self) -> usize {
+        self.overlays.len()
+    }
+
+    pub fn contains(&self, kind: OverlayKind) -> bool {
+        self.overlays.contains(&kind)
+    }
+
+    /// Push an overlay. If it is already open, this is a no-op.
+    pub fn push(&mut self, kind: OverlayKind) {
+        if !self.contains(kind) {
+            self.overlays.push(kind);
+        }
+    }
+
+    pub fn pop(&mut self) -> Option<OverlayKind> {
+        self.overlays.pop()
+    }
+
+    /// Close the top overlay and return it, or `None` if the stack is empty.
+    pub fn escape(&mut self) -> Option<OverlayKind> {
+        self.overlays.pop()
+    }
+
+    /// Close a specific overlay by kind. Returns `true` if it was found and removed.
+    pub fn close(&mut self, kind: OverlayKind) -> bool {
+        let idx = self.overlays.iter().position(|&k| k == kind);
+        if let Some(i) = idx {
+            self.overlays.remove(i);
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn close_all(&mut self) {
+        self.overlays.clear();
+    }
+
+    pub fn ordered(&self) -> &[OverlayKind] {
+        &self.overlays
     }
 }
 

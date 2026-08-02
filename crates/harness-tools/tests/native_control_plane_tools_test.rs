@@ -30,6 +30,7 @@ fn worker_profile(name: &str, toolset: &[&str]) -> AgentProfile {
         temperature: Some(0.0),
         tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
         toolset: toolset.iter().map(|tool| (*tool).to_string()).collect(),
+        permission_ruleset: Vec::new(),
     }
 }
 
@@ -86,6 +87,9 @@ fn write_skill_fixture(workspace: &Path, name: &str) {
 
 #[tokio::test]
 async fn native_control_plane_tools_cover_invalid_todo_and_skill() {
+    // arrange
+    // act
+    // assert
     let workspace = setup_workspace_fixture();
     write_skill_fixture(workspace.workspace(), "rust-best-practices");
 
@@ -153,6 +157,9 @@ async fn native_control_plane_tools_cover_invalid_todo_and_skill() {
 
 #[tokio::test]
 async fn native_todo_write_rejects_multiple_in_progress_items() {
+    // arrange
+    // act
+    // assert
     let workspace = setup_workspace_fixture();
 
     let agent_profiles = BTreeMap::from([(

@@ -18,11 +18,11 @@ impl Provider for ReasoningProvider {
             ProviderStreamEvent::ReasoningDelta(" The answer is straightforward.".to_string()),
             ProviderStreamEvent::TextDelta("reasoning child result".to_string()),
             ProviderStreamEvent::Done {
-                usage: CompletionUsage {
+                usage: Some(CompletionUsage {
                     prompt_tokens: 1,
                     completion_tokens: 1,
                     total_tokens: 2,
-                },
+                }),
             },
         ]))
     }
@@ -30,6 +30,9 @@ impl Provider for ReasoningProvider {
 
 #[tokio::test]
 async fn background_output_full_session_and_thinking_return_event_stream_and_artifact() {
+    // arrange
+    // act
+    // assert
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
 
@@ -129,6 +132,9 @@ async fn background_output_full_session_and_thinking_return_event_stream_and_art
 
 #[tokio::test]
 async fn background_output_default_behavior_unchanged_without_new_params() {
+    // arrange
+    // act
+    // assert
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
 

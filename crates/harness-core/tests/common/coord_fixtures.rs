@@ -185,6 +185,7 @@ fn overflow_checkpoint(run: &RunInfo, events: &[EventEnvelopeV1]) -> ProviderCon
     checkpoint_for_trigger(run, events, "overflow_retry")
 }
 
+#[allow(deprecated, reason = "deprecated compaction event variants kept for backward compatibility tests")]
 fn checkpoint_for_trigger(
     run: &RunInfo,
     events: &[EventEnvelopeV1],
@@ -265,11 +266,7 @@ fn test_agent_coordinator_with_provider_compaction_and_hooks(
 }
 
 fn allow_all_permission_policy() -> PermissionPolicy {
-    PermissionPolicy::new(
-        PermissionMode::Allow,
-        PermissionMode::Allow,
-        PermissionMode::Allow,
-    )
+    PermissionPolicy::allow_all()
 }
 
 fn shell_only_permission_policy() -> PermissionPolicy {
@@ -840,6 +837,7 @@ fn agent_profiles() -> BTreeMap<String, AgentProfile> {
             temperature: Some(0.0),
             tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
             toolset: vec![],
+            permission_ruleset: Vec::new(),
         },
     );
     profiles.insert(
@@ -855,6 +853,7 @@ fn agent_profiles() -> BTreeMap<String, AgentProfile> {
             temperature: Some(0.0),
             tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
             toolset: vec![],
+            permission_ruleset: Vec::new(),
         },
     );
     profiles
@@ -875,6 +874,7 @@ fn agent_profiles_with_title_agent() -> BTreeMap<String, AgentProfile> {
             temperature: Some(harness_core::session_title::TITLE_AGENT_TEMPERATURE),
             tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
             toolset: vec![],
+            permission_ruleset: Vec::new(),
         },
     );
     profiles

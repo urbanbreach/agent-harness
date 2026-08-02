@@ -20,7 +20,7 @@ pub(super) fn toggles_slash_command_opens_command_styled_menu() {
     assert!(app.toggles_menu_visible);
     assert_eq!(app.overlay_stack().top(), Some(OverlayKind::TogglesMenu));
     let rendered = render_debug(&app, 100, 40);
-    assert!(rendered.contains("Built-in dynamic prompts"));
+    assert!(rendered.contains("Built-in dynamic"));
     assert!(rendered.contains("YOLO mode"));
     assert!(rendered.contains("build"));
     assert!(rendered.contains("explore"));

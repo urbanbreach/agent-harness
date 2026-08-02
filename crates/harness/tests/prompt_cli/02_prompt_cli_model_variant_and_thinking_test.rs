@@ -2,6 +2,9 @@ use harness::UnwrapOrAbort;
 #[allow(clippy::clone_on_ref_ptr, reason = "trait object coercion requires .clone() not Arc::clone")]
 #[tokio::test]
 async fn prompt_cli_model_variant_and_thinking_flags_stream_reasoning_output() {
+    // arrange
+    // act
+    // assert
     let provider = ScriptedPromptProvider::fixed(reasoning_events());
 
     let temp = tempdir().unwrap_or_abort();
@@ -154,6 +157,9 @@ async fn prompt_cli_model_override_records_selected_model_in_run_metadata() {
 }
 #[tokio::test]
 async fn prompt_cli_thinking_prints_late_reasoning_before_one_assistant_body() {
+    // arrange
+    // act
+    // assert
     let provider = ScriptedPromptProvider::fixed(late_reasoning_duplicate_body_events());
 
     let temp = tempdir().unwrap_or_abort();
@@ -196,6 +202,9 @@ async fn prompt_cli_thinking_prints_late_reasoning_before_one_assistant_body() {
 }
 #[tokio::test]
 async fn prompt_cli_thinking_preserves_repeated_body_chunks_before_reasoning() {
+    // arrange
+    // act
+    // assert
     let provider = ScriptedPromptProvider::fixed(repeated_body_chunks_before_reasoning_events());
 
     let temp = tempdir().unwrap_or_abort();
@@ -231,6 +240,9 @@ async fn prompt_cli_thinking_preserves_repeated_body_chunks_before_reasoning() {
 }
 #[test]
 fn models_cli_lists_configured_variants() {
+    // arrange
+    // act
+    // assert
     let temp = tempdir().unwrap_or_abort();
     let config_path = temp.path().join("harness.models.jsonc");
     let session_dir = temp.path().join("sessions");
@@ -260,6 +272,9 @@ fn models_cli_lists_configured_variants() {
 }
 #[test]
 fn prompt_cli_mock_mode_runs_without_config() {
+    // arrange
+    // act
+    // assert
     let temp = tempdir().unwrap_or_abort();
     let out_path = temp.path().join("events.jsonl");
 
@@ -291,6 +306,9 @@ fn prompt_cli_mock_mode_runs_without_config() {
 }
 #[test]
 fn prompt_cli_mock_mode_accepts_positional_text() {
+    // arrange
+    // act
+    // assert
     let temp = tempdir().unwrap_or_abort();
     let out_path = temp.path().join("events-positional.jsonl");
 
@@ -313,6 +331,9 @@ fn prompt_cli_mock_mode_accepts_positional_text() {
 }
 #[test]
 fn prompt_cli_mock_mode_accepts_stdin_text() {
+    // arrange
+    // act
+    // assert
     let temp = tempdir().unwrap_or_abort();
     let out_path = temp.path().join("events-stdin.jsonl");
 
@@ -339,6 +360,9 @@ fn prompt_cli_mock_mode_accepts_stdin_text() {
 #[allow(clippy::clone_on_ref_ptr, reason = "trait object coercion requires .clone() not Arc::clone")]
 #[tokio::test]
 async fn prompt_cli_uses_merged_xdg_and_local_config_without_explicit_path() {
+    // arrange
+    // act
+    // assert
     let provider = ScriptedPromptProvider::fixed(text_events("Hello"));
 
     let temp = tempdir().unwrap_or_abort();
@@ -426,6 +450,9 @@ async fn prompt_cli_uses_merged_xdg_and_local_config_without_explicit_path() {
 #[allow(clippy::clone_on_ref_ptr, reason = "trait object coercion requires .clone() not Arc::clone")]
 #[tokio::test]
 async fn prompt_cli_resume_flag_continues_existing_session() {
+    // arrange
+    // act
+    // assert
     let provider = ScriptedPromptProvider::fixed(text_events("Hello"));
 
     let temp = tempdir().unwrap_or_abort();

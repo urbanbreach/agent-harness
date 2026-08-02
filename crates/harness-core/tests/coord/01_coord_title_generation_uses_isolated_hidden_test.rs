@@ -1,6 +1,9 @@
 use harness_core::UnwrapOrAbort;
 #[tokio::test]
 async fn coord_title_generation_uses_isolated_hidden_title_agent_request() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = CapturingProvider::new(vec![
         "<think>hidden</think>\n\nDebugging production 500 errors\nignored",
@@ -74,6 +77,9 @@ async fn coord_title_generation_uses_isolated_hidden_title_agent_request() {
 }
 #[tokio::test]
 async fn coord_supervisor_first_turn_does_not_generate_session_title() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = CapturingProvider::new(vec!["main response"]);
     let mut config = CoordinatorConfig::new(temp_dir.path());
@@ -115,6 +121,9 @@ async fn coord_supervisor_first_turn_does_not_generate_session_title() {
 }
 #[tokio::test]
 async fn coord_plan_mode_prompt_includes_workflow_and_plan_file_lifecycle() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp_dir.path().join("workspace");
     fs::create_dir_all(&workspace).unwrap_or_abort();
@@ -134,6 +143,7 @@ async fn coord_plan_mode_prompt_includes_workflow_and_plan_file_lifecycle() {
             temperature: Some(0.0),
             tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
             toolset: vec![],
+            permission_ruleset: Vec::new(),
         },
     )]);
 
@@ -208,6 +218,9 @@ async fn coord_plan_mode_prompt_includes_workflow_and_plan_file_lifecycle() {
 }
 #[tokio::test]
 async fn coord_start_run_appends_run_started() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let coordinator = test_coordinator(temp_dir.path());
 
@@ -232,6 +245,9 @@ async fn coord_start_run_appends_run_started() {
 }
 #[tokio::test]
 async fn coord_spawn_agent_appends_agent_spawned() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let coordinator = test_agent_coordinator(temp_dir.path(), Duration::from_millis(0));
 
@@ -258,6 +274,9 @@ async fn coord_spawn_agent_appends_agent_spawned() {
 }
 #[tokio::test]
 async fn coord_stop_run_appends_run_finished() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let coordinator = test_coordinator(temp_dir.path());
 
@@ -279,6 +298,9 @@ async fn coord_stop_run_appends_run_finished() {
 }
 #[tokio::test]
 async fn coord_event_store_subscribe_emits_live_events() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let coordinator = test_coordinator(temp_dir.path());
 
@@ -302,6 +324,9 @@ async fn coord_event_store_subscribe_emits_live_events() {
 }
 #[tokio::test]
 async fn coord_worker_spawn_attempt_records_policy_violation_and_returns_error() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let coordinator = test_agent_coordinator(temp_dir.path(), Duration::from_millis(0));
 
@@ -328,6 +353,9 @@ async fn coord_worker_spawn_attempt_records_policy_violation_and_returns_error()
 }
 #[tokio::test]
 async fn coord_spawn_two_agents_respects_provider_concurrency_and_queues() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let coordinator = test_agent_coordinator(temp_dir.path(), Duration::from_millis(25));
 
@@ -384,6 +412,9 @@ async fn coord_spawn_two_agents_respects_provider_concurrency_and_queues() {
 }
 #[tokio::test]
 async fn coord_spawn_unknown_profile_returns_error() {
+    // arrange
+    // act
+    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let coordinator = test_coordinator(temp_dir.path());
 

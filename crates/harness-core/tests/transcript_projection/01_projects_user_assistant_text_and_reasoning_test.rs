@@ -1,6 +1,9 @@
 use harness_core::UnwrapOrAbort;
 #[test]
 fn projects_user_assistant_text_and_reasoning_parts() {
+    // arrange
+    // act
+    // assert
     let events = vec![
         envelope(
             1,
@@ -144,6 +147,9 @@ fn projects_user_assistant_text_and_reasoning_parts() {
 }
 #[test]
 fn keeps_tool_results_on_source_ordered_tool_parts_when_finishes_arrive_out_of_order() {
+    // arrange
+    // act
+    // assert
     let events = vec![
         envelope(
             1,
@@ -229,125 +235,102 @@ fn keeps_tool_results_on_source_ordered_tool_parts_when_finishes_arrive_out_of_o
     assert_eq!(tool_parts[1].finished_seq, Some(4));
 }
 #[test]
-fn projects_compaction_checkpoint_requested_written_applied_and_failed_state() {
+fn projects_session_compaction_event_as_compaction_activity() {
+    // arrange
+    // act
+    // assert
     let events = vec![
         envelope(
             1,
             system(),
             None,
-            EventV1::CompactionRequested(CompactionRequestedEvent {
-                checkpoint_id: "checkpoint_000001".to_string(),
+            EventV1::SessionCompaction(SessionCompactionEvent {
                 agent_id: "agent_000001".to_string(),
-                trigger_reason: "manual".to_string(),
-                through_seq: 10,
-                through_request_id: Some("req_000001".to_string()),
-                provider_id: Some("default".to_string()),
-                model_id: Some("gpt-5".to_string()),
-                tokens_before: Some(1000),
-                tokens_before_estimate: Some(980),
-                estimate_source: Some("provider_usage".to_string()),
-            }),
-        ),
-        envelope(
-            2,
-            system(),
-            None,
-            EventV1::CompactionWritten(CompactionWrittenEvent {
-                checkpoint_id: "checkpoint_000001".to_string(),
-                agent_id: "agent_000001".to_string(),
-                artifact_path: "artifacts/compactions/agent_000001/checkpoint_000001.json"
-                    .to_string(),
-                artifact_digest: Some("digest-checkpoint".to_string()),
-                artifact_bytes: 123,
-                trigger_reason: "manual".to_string(),
-                through_seq: 10,
-                through_request_id: Some("req_000001".to_string()),
-                provider_id: Some("default".to_string()),
-                model_id: Some("gpt-5".to_string()),
-                tokens_before: Some(1000),
-                tokens_before_estimate: Some(980),
-                tokens_after_estimate: Some(400),
-                summary_tokens_estimate: Some(80),
-                compacted_turns: Some(3),
-                reduction_tokens_estimate: Some(580),
-                reduction_percent_estimate: Some(59),
-                estimate_source: Some("provider_usage".to_string()),
-                summary_source: None,
-                preserved_turns: 1,
-            }),
-        ),
-        envelope(
-            3,
-            system(),
-            None,
-            EventV1::CompactionApplied(CompactionAppliedEvent {
-                checkpoint_id: "checkpoint_000001".to_string(),
-                agent_id: "agent_000001".to_string(),
-                through_seq: 10,
-                through_request_id: Some("req_000001".to_string()),
-                tokens_before_estimate: Some(980),
-                tokens_after_estimate: Some(400),
-                summary_tokens_estimate: Some(80),
-                compacted_turns: Some(3),
-                preserved_turns: Some(1),
-                reduction_tokens_estimate: Some(580),
-                reduction_percent_estimate: Some(59),
-                estimate_source: Some("provider_usage".to_string()),
-            }),
-        ),
-        envelope(
-            4,
-            system(),
-            None,
-            EventV1::CompactionFailed(CompactionFailedEvent {
-                agent_id: "agent_000001".to_string(),
-                trigger_reason: "overflow_retry".to_string(),
-                reason: "checkpoint did not reduce context".to_string(),
-                checkpoint_id: Some("checkpoint_000002".to_string()),
-                through_seq: Some(20),
-                through_request_id: Some("req_000002".to_string()),
+                summary: "## Goal\nDo the thing.\n## Progress\nDid it.".to_string(),
+                first_kept_event_seq: 10,
+                first_kept_request_id: Some("req_000001".to_string()),
+                tokens_before: 5000,
+                read_files: vec!["src/main.rs".to_string()],
+                modified_files: vec!["src/lib.rs".to_string()],
+                trigger_reason: "overflow".to_string(),
+                from_hook: false,
             }),
         ),
     ];
 
     let projection = project_transcript(&events).unwrap_or_abort();
 
-    assert_eq!(projection.compaction_checkpoints.len(), 2);
-    let applied = projection
-        .compaction_checkpoints
-        .iter()
-        .find(|checkpoint| checkpoint.checkpoint_id.as_deref() == Some("checkpoint_000001"))
-        .unwrap_or_abort();
-    assert_eq!(applied.status, CompactionCheckpointStatus::Applied);
-    assert_eq!(applied.trigger_reason.as_deref(), Some("manual"));
-    assert_eq!(
-        applied.artifact.as_ref().map(|artifact| artifact.bytes),
-        Some(Some(123))
-    );
-    assert_eq!(applied.provenance.first_seq, 1);
-    assert_eq!(applied.provenance.last_seq, 3);
-
-    let failed = projection
-        .compaction_checkpoints
-        .iter()
-        .find(|checkpoint| checkpoint.checkpoint_id.as_deref() == Some("checkpoint_000002"))
-        .unwrap_or_abort();
-    assert_eq!(failed.status, CompactionCheckpointStatus::Failed);
-    assert_eq!(
-        failed.reason.as_deref(),
-        Some("checkpoint did not reduce context")
-    );
-
-    let compaction_parts = projection
+    let compaction_parts: Vec<_> = projection
         .messages
         .iter()
         .flat_map(|message| message.parts.iter())
-        .filter(|part| matches!(part, ProjectedPart::Compaction(_)))
-        .count();
-    assert_eq!(compaction_parts, 4);
+        .filter_map(|part| match part {
+            ProjectedPart::Compaction(compaction) => Some(compaction),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(compaction_parts.len(), 1);
+
+    let part = &compaction_parts[0];
+    assert_eq!(part.agent_id, "agent_000001");
+    assert_eq!(part.status, CompactionCheckpointStatus::SessionCompacted);
+    assert_eq!(part.trigger_reason.as_deref(), Some("overflow"));
+    assert_eq!(part.through_seq, Some(10));
+    assert_eq!(part.through_request_id.as_deref(), Some("req_000001"));
+    assert_eq!(part.tokens_before, Some(5000));
+    assert_eq!(part.read_files, vec!["src/main.rs".to_string()]);
+    assert_eq!(part.modified_files, vec!["src/lib.rs".to_string()]);
+    assert_eq!(part.from_hook, Some(false));
+    assert!(part.summary.as_deref().unwrap_or("").contains("## Goal"));
+}
+#[test]
+fn projects_branch_summary_event_as_compaction_activity() {
+    // arrange
+    // act
+    // assert
+    let events = vec![
+        envelope(
+            1,
+            system(),
+            None,
+            EventV1::BranchSummary(BranchSummaryEvent {
+                agent_id: "agent_000001".to_string(),
+                summary: "Branch explored authentication flow.".to_string(),
+                from_event_seq: 5,
+                read_files: vec!["src/auth.rs".to_string()],
+                modified_files: vec![],
+                from_hook: true,
+            }),
+        ),
+    ];
+
+    let projection = project_transcript(&events).unwrap_or_abort();
+
+    let compaction_parts: Vec<_> = projection
+        .messages
+        .iter()
+        .flat_map(|message| message.parts.iter())
+        .filter_map(|part| match part {
+            ProjectedPart::Compaction(compaction) => Some(compaction),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(compaction_parts.len(), 1);
+
+    let part = &compaction_parts[0];
+    assert_eq!(part.agent_id, "agent_000001");
+    assert_eq!(part.status, CompactionCheckpointStatus::BranchSummary);
+    assert_eq!(part.through_seq, Some(5));
+    assert_eq!(part.summary.as_deref(), Some("Branch explored authentication flow."));
+    assert_eq!(part.read_files, vec!["src/auth.rs".to_string()]);
+    assert_eq!(part.from_hook, Some(true));
+    assert!(part.trigger_reason.is_none());
 }
 #[test]
 fn projects_artifact_metadata_without_reading_artifact_contents() {
+    // arrange
+    // act
+    // assert
     let metadata = Some(ToolCallMetadata {
         canonical_tool_id: Some("read".to_string()),
         alias_source_tool_id: None,

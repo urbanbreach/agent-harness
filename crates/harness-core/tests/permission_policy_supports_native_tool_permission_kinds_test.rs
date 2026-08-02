@@ -19,6 +19,9 @@ fn deny_default_ask_decision() -> PolicyDecision {
 
 #[test]
 fn permission_policy_supports_native_tool_permission_kinds() {
+    // arrange
+    // act
+    // assert
     let config = load_config_from_str(
         r#"
         {
@@ -82,29 +85,30 @@ fn permission_policy_supports_native_tool_permission_kinds() {
 
     let policy = PermissionPolicy::from_config(&config).with_ask_timeout_ms(ASK_TIMEOUT_MS);
 
+    // Ordinary kinds allow when omitted; base question stays deny (build/plan re-allow).
     assert_eq!(
         policy.evaluate(None, PermissionKind::Question),
-        deny_default_ask_decision()
+        PolicyDecision::Deny
     );
     assert_eq!(
         policy.evaluate(None, PermissionKind::Task),
-        deny_default_ask_decision()
+        PolicyDecision::Allow
     );
     assert_eq!(
         policy.evaluate(None, PermissionKind::WebFetch),
-        deny_default_ask_decision()
+        PolicyDecision::Allow
     );
     assert_eq!(
         policy.evaluate(None, PermissionKind::WebSearch),
-        deny_default_ask_decision()
+        PolicyDecision::Allow
     );
     assert_eq!(
         policy.evaluate(None, PermissionKind::CodeSearch),
-        deny_default_ask_decision()
+        PolicyDecision::Allow
     );
     assert_eq!(
         policy.evaluate(None, PermissionKind::Lsp),
-        deny_default_ask_decision()
+        PolicyDecision::Allow
     );
 
     assert_eq!(
@@ -113,7 +117,7 @@ fn permission_policy_supports_native_tool_permission_kinds() {
     );
     assert_eq!(
         policy.evaluate(Some("deep"), PermissionKind::WebFetch),
-        deny_default_ask_decision()
+        PolicyDecision::Allow
     );
     assert_eq!(
         policy.evaluate(Some("deep"), PermissionKind::WebSearch),
@@ -175,7 +179,7 @@ fn permission_policy_supports_native_tool_permission_kinds() {
 fn permissions_docs_state_file_workspace_and_network_implications() {
     // arrange
     let docs = fs::read_to_string(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/permissions.md"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/permissions/permissions.md"),
     )
     .unwrap_or_abort();
 

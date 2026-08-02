@@ -8,12 +8,18 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use clap::{Args, ValueEnum};
 use harness_core::agent::{default_model_settings_for_profile, AgentModelSettings};
 use harness_core::clock::Determinism;
+use harness_core::config::PermissionMode;
 use harness_core::config::{resolve_configured_model_metadata, ShellAllowlist};
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig};
 use harness_core::event::{ActorKind, EventActor};
 use harness_core::perm::PermissionPolicy;
 use harness_core::proj::{inspect_resume_plan, SessionModeSource};
 use harness_core::redact::DefaultRedactor;
+use harness_core::session_lineage::{
+    latest_clone_stable_prefix, materialize_child_session,
+    materialize_child_session_with_child_run_id_source, ChildRunIdSource,
+    ChildSessionMaterializationRequest, ChildSessionMaterializationSourceKind,
+};
 use harness_core::session_title::create_default_title;
 use harness_tools::coordinator_registry;
 use uuid::Uuid;
@@ -74,7 +80,84 @@ pub struct PromptCommand {
     #[arg(long, default_value_t = false)]
     pub print_run_dir: bool,
 
-    #[arg(long, value_enum, default_value_t = PromptOutputFormat::Default)]
+    #[arg(long, value_name = "N")]
+    pub max_turns: Option<u32>,
+
+    #[arg(long, default_value_t = false)]
+    pub no_subagents: bool,
+
+    #[arg(long, default_value_t = false)]
+    pub no_plan: bool,
+
+    /// Built-in tools to allow (comma-separated).
+    #[arg(long, value_name = "TOOLS", value_delimiter = ',')]
+    pub tools: Vec<String>,
+
+    /// Built-in tools to remove (comma-separated).
+    #[arg(long, value_name = "TOOLS", value_delimiter = ',')]
+    pub disallowed_tools: Vec<String>,
+
+    /// Disable web search and web fetch tools.
+    #[arg(long, default_value_t = false)]
+    pub disable_web_search: bool,
+
+    /// Disable cross-session memory for this session.
+    #[arg(long, default_value_t = false)]
+    pub no_memory: bool,
+
+    /// Read prompt text from a file.
+    #[arg(long, value_name = "PATH")]
+    pub prompt_file: Option<PathBuf>,
+
+    /// Send the prompt exactly as given.
+    #[arg(long, default_value_t = false)]
+    pub verbatim: bool,
+
+    /// Sandbox profile: readonly, workspace, or danger.
+    #[arg(long, value_name = "PROFILE")]
+    pub sandbox: Option<String>,
+
+    /// Override the agent's system prompt.
+    #[arg(long, value_name = "PROMPT")]
+    pub system_prompt_override: Option<String>,
+
+    /// Skip all permission prompts (alias: --always-approve).
+    #[arg(
+        long = "dangerously-skip-permissions",
+        alias = "always-approve",
+        default_value_t = false
+    )]
+    pub dangerously_skip_permissions: bool,
+
+    /// Permission mode (default, plan, bypassPermissions, acceptEdits, dontAsk).
+    #[arg(long, value_name = "MODE")]
+    pub permission_mode: Option<String>,
+
+    /// Use a specific session ID for a new conversation.
+    #[arg(long, value_name = "SESSION_ID")]
+    pub session_id: Option<String>,
+
+    /// Extra rules to append to the system prompt.
+    #[arg(long, value_name = "RULES")]
+    pub rules: Option<String>,
+
+    /// Override reasoning effort for the model (e.g. low, medium, high).
+    #[arg(long, value_name = "EFFORT")]
+    pub reasoning_effort: Option<String>,
+
+    /// Permission allow rule (repeatable).
+    #[arg(long, value_name = "RULE", value_delimiter = ',')]
+    pub allow: Vec<String>,
+
+    /// Permission deny rule (repeatable).
+    #[arg(long, value_name = "RULE", value_delimiter = ',')]
+    pub deny: Vec<String>,
+
+    /// When resuming, create a forked child session instead of reusing the original.
+    #[arg(long, default_value_t = false)]
+    pub fork_session: bool,
+
+    #[arg(long, alias = "output-format", value_enum, default_value_t = PromptOutputFormat::Default)]
     pub format: PromptOutputFormat,
 }
 
@@ -82,6 +165,7 @@ pub struct PromptCommand {
 pub enum PromptOutputFormat {
     Default,
     Json,
+    StreamingJson,
 }
 
 pub fn execute_with_io(
@@ -307,12 +391,12 @@ async fn run_prompt(
     }
 
     let mut coordinator_config = settings.coordinator_config.clone();
-    coordinator_config.session_mode_source = Some(SessionModeSource::Prompt);
-    apply_runtime_metadata(
+    apply_prompt_command_config(
+        cmd,
         &mut coordinator_config,
         settings.deterministic,
         &settings.config_digest,
-    );
+    )?;
 
     coordinator_config.run_id_override = Some(if settings.deterministic {
         format!("prompt_{:016x}", settings.deterministic_seed)
@@ -331,9 +415,21 @@ async fn run_prompt(
         )
     });
 
+    if let Some(ref session_id) = cmd.session_id {
+        Uuid::parse_str(session_id)
+            .map_err(|_| format!("invalid session-id `{session_id}`: must be a valid UUID"))?;
+        coordinator_config.run_id_override = Some(session_id.clone());
+    }
+
     if let Some(run_id) = &coordinator_config.run_id_override {
         let stale_run_dir = coordinator_config.session_dir.join(run_id);
         if stale_run_dir.exists() {
+            if cmd.session_id.is_some() {
+                return Err(format!(
+                    "session-id `{run_id}` already has a run directory at {}; use a different id or remove the existing directory",
+                    stale_run_dir.display()
+                ));
+            }
             fs::remove_dir_all(&stale_run_dir)
                 .map_err(|err| format!("failed to reset deterministic run dir: {err}"))?;
         }
@@ -423,13 +519,20 @@ async fn run_resumed_prompt(
     stdout: &mut dyn Write,
 ) -> Result<PromptOutcome, String> {
     let mut coordinator_config = settings.coordinator_config.clone();
-    coordinator_config.session_mode_source = Some(SessionModeSource::Prompt);
-    apply_runtime_metadata(
+    apply_prompt_command_config(
+        cmd,
         &mut coordinator_config,
         settings.deterministic,
         &settings.config_digest,
-    );
-    coordinator_config.run_id_override = None;
+    )?;
+
+    if let Some(ref session_id) = cmd.session_id {
+        if !cmd.fork_session {
+            return Err("--session-id requires --fork-session when resuming a session".to_string());
+        }
+        Uuid::parse_str(session_id)
+            .map_err(|_| format!("invalid session-id `{session_id}`: must be a valid UUID"))?;
+    }
 
     let run_dir = resolve_session_run_dir(selector, &coordinator_config.session_dir)?;
     let recovery = inspect_session_recovery(&run_dir)?;
@@ -446,8 +549,56 @@ async fn run_resumed_prompt(
 
     let resume_plan = inspect_resume_plan(&run_dir);
     let historical_events = load_events_from_run_dir(&run_dir).map_err(|err| err.to_string())?;
-    let resume_agent_id =
-        select_resume_agent_id(&resume_plan, &historical_events, &recovery.run_id)?;
+
+    let (fork_run_dir, fork_run_id) = if cmd.fork_session {
+        let stable_prefix =
+            latest_clone_stable_prefix(&historical_events).map_err(|err| err.to_string())?;
+        let request = ChildSessionMaterializationRequest {
+            source_run_dir: &run_dir,
+            events: &historical_events,
+            stable_prefix: &stable_prefix,
+            source_kind: ChildSessionMaterializationSourceKind::DiskRunDirectory,
+        };
+        let result = if let Some(ref session_id) = cmd.session_id {
+            let dest = coordinator_config.session_dir.join(session_id);
+            if dest.exists() {
+                return Err(format!(
+                    "session-id `{session_id}` already has a run directory at {}",
+                    dest.display()
+                ));
+            }
+            let temp_prefix = format!(".{session_id}.tmp-");
+            let entries = std::fs::read_dir(&coordinator_config.session_dir)
+                .map_err(|err| format!("failed to read session directory: {err}"))?;
+            for entry in entries {
+                let entry = entry
+                    .map_err(|err| format!("failed to read directory entry in session directory: {err}"))?;
+                if entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(&temp_prefix)
+                {
+                    return Err(format!(
+                        "session-id `{session_id}` has a stale temporary directory at {}; remove it and retry",
+                        entry.path().display()
+                    ));
+                }
+            }
+            materialize_child_session_with_child_run_id_source(
+                request,
+                &FixedChildRunIdSource(session_id.clone()),
+                1,
+            )
+        } else {
+            materialize_child_session(request)
+        }
+        .map_err(|err| err.to_string())?;
+        (result.child_run_dir, result.child_run_id)
+    } else {
+        (run_dir.clone(), recovery.run_id.clone())
+    };
+
+    let resume_agent_id = select_resume_agent_id(&resume_plan, &historical_events, &fork_run_id)?;
     let resume_profile = resume_plan
         .known_agents
         .get(&resume_agent_id)
@@ -459,10 +610,10 @@ async fn run_resumed_prompt(
         .or_else(|| latest_run_name(&historical_events))
         .unwrap_or_else(|| DEFAULT_INTERACTIVE_RUN_NAME.to_string());
 
-    let session_dir = run_dir.parent().ok_or_else(|| {
+    let session_dir = fork_run_dir.parent().ok_or_else(|| {
         format!(
             "failed to resolve parent session directory for {}",
-            run_dir.display()
+            fork_run_dir.display()
         )
     })?;
     fs::create_dir_all(session_dir)
@@ -478,7 +629,7 @@ async fn run_resumed_prompt(
     );
 
     let run = coordinator
-        .resume_run(recovery.run_id.clone(), run_name)
+        .resume_run(fork_run_id, run_name)
         .await
         .map_err(|err| err.to_string())?;
 
@@ -540,6 +691,15 @@ fn resolve_prompt_text<R: Read + ?Sized>(
     cmd: &PromptCommand,
     stdin_reader: &mut R,
 ) -> Result<String, String> {
+    if let Some(ref path) = cmd.prompt_file {
+        let text = std::fs::read_to_string(path)
+            .map_err(|err| format!("failed to read prompt file {}: {err}", path.display()))?;
+        if text.trim().is_empty() {
+            return Err(format!("prompt file {} is empty", path.display()));
+        }
+        return Ok(text);
+    }
+
     if let Some(text) = cmd.text.clone() {
         return Ok(text);
     }
@@ -587,7 +747,11 @@ fn resolve_prompt_model_override(
     settings: &PromptSettings,
     profile_name: &str,
 ) -> Result<Option<PromptModelOverride>, String> {
-    if cmd.model.is_none() && cmd.variant.is_none() && !cmd.thinking {
+    if cmd.model.is_none()
+        && cmd.variant.is_none()
+        && !cmd.thinking
+        && cmd.reasoning_effort.is_none()
+    {
         return Ok(None);
     }
 
@@ -643,6 +807,10 @@ fn resolve_prompt_model_override(
         }
     }
 
+    if let Some(ref effort) = cmd.reasoning_effort {
+        model_settings.reasoning_effort = Some(effort.clone());
+    }
+
     Ok(Some(PromptModelOverride {
         model_ref: model_ref_override,
         model_settings,
@@ -669,4 +837,175 @@ fn parse_cli_model_ref(model_ref: &str) -> Result<(String, String), String> {
     }
 
     Ok((provider.to_string(), model.to_string()))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum PermissionModeResolution {
+    AllowAll,
+    ResetToDefault,
+    AcceptEdits,
+    DenyByDefault,
+    NoChange,
+}
+
+struct FixedChildRunIdSource(String);
+
+impl ChildRunIdSource for FixedChildRunIdSource {
+    fn next_child_run_id(&self) -> String {
+        self.0.clone()
+    }
+}
+
+pub(super) fn resolve_permission_mode(
+    mode: Option<&str>,
+    dangerously_skip: bool,
+) -> Result<PermissionModeResolution, String> {
+    if dangerously_skip || mode.is_some_and(|m| matches!(m, "yolo" | "bypassPermissions")) {
+        Ok(PermissionModeResolution::AllowAll)
+    } else if let Some(m) = mode {
+        match m {
+            "default" => Ok(PermissionModeResolution::ResetToDefault),
+            "acceptEdits" => Ok(PermissionModeResolution::AcceptEdits),
+            "dontAsk" => Ok(PermissionModeResolution::DenyByDefault),
+            "plan" => Ok(PermissionModeResolution::NoChange),
+            "auto" => Err(
+                "permission mode `auto` is recognized but not supported (requires classifier); use bypassPermissions or default"
+                    .to_string(),
+            ),
+            _ => Err(format!(
+                "unknown permission mode `{m}`; expected default, plan, bypassPermissions, acceptEdits, or dontAsk"
+            )),
+        }
+    } else {
+        Ok(PermissionModeResolution::NoChange)
+    }
+}
+
+pub(super) fn permission_policy_for_resolution(
+    resolution: PermissionModeResolution,
+) -> Option<PermissionPolicy> {
+    match resolution {
+        PermissionModeResolution::AllowAll => Some(PermissionPolicy::allow_all()),
+        PermissionModeResolution::ResetToDefault => Some(PermissionPolicy::new(
+            PermissionMode::Ask,
+            PermissionMode::Ask,
+            PermissionMode::Ask,
+        )),
+        PermissionModeResolution::AcceptEdits => Some(PermissionPolicy::new(
+            PermissionMode::Allow,
+            PermissionMode::Ask,
+            PermissionMode::Ask,
+        )),
+        PermissionModeResolution::DenyByDefault => Some(PermissionPolicy::new(
+            PermissionMode::Deny,
+            PermissionMode::Deny,
+            PermissionMode::Deny,
+        )),
+        PermissionModeResolution::NoChange => None,
+    }
+}
+
+pub(super) fn resolve_effective_permission_policy(
+    cmd: &PromptCommand,
+    base_policy: PermissionPolicy,
+) -> Result<PermissionPolicy, String> {
+    let mut policy = base_policy;
+
+    if let Some(ref sandbox) = cmd.sandbox {
+        match PermissionPolicy::from_sandbox_profile(sandbox) {
+            Some(p) => policy.overlay_defaults_from(&p),
+            None => {
+                return Err(format!(
+                    "unknown sandbox profile `{sandbox}`; expected readonly, workspace, or danger"
+                ));
+            }
+        }
+    }
+
+    if let Some(p) = permission_policy_for_resolution(resolve_permission_mode(
+        cmd.permission_mode.as_deref(),
+        cmd.dangerously_skip_permissions,
+    )?) {
+        policy.overlay_defaults_from(&p);
+    }
+
+    if !cmd.allow.is_empty() || !cmd.deny.is_empty() {
+        policy.apply_tool_overrides(&cmd.allow, &cmd.deny)?;
+    }
+
+    Ok(policy)
+}
+
+pub(super) fn apply_prompt_command_config(
+    cmd: &PromptCommand,
+    coordinator_config: &mut CoordinatorConfig,
+    deterministic: bool,
+    config_digest: &str,
+) -> Result<(), String> {
+    coordinator_config.session_mode_source = Some(SessionModeSource::Prompt);
+    apply_runtime_metadata(coordinator_config, deterministic, config_digest);
+
+    if let Some(max_turns) = cmd.max_turns {
+        for profile in coordinator_config.agent_profiles.values_mut() {
+            profile.max_iters = Some(max_turns as usize);
+        }
+    }
+
+    if cmd.no_subagents {
+        for profile in coordinator_config.agent_profiles.values_mut() {
+            profile.toolset.retain(|t| t != "task");
+        }
+    }
+
+    if cmd.no_plan {
+        coordinator_config.agent_profiles.remove("plan");
+    }
+
+    if !cmd.tools.is_empty() {
+        let allowed: std::collections::HashSet<&str> =
+            cmd.tools.iter().map(|s| s.as_str()).collect();
+        for profile in coordinator_config.agent_profiles.values_mut() {
+            profile.toolset.retain(|t| allowed.contains(t.as_str()));
+        }
+    }
+
+    for tool in &cmd.disallowed_tools {
+        for profile in coordinator_config.agent_profiles.values_mut() {
+            profile.toolset.retain(|t| t != tool);
+        }
+    }
+
+    if cmd.disable_web_search {
+        for profile in coordinator_config.agent_profiles.values_mut() {
+            profile
+                .toolset
+                .retain(|t| t != "websearch" && t != "webfetch");
+        }
+    }
+
+    if cmd.no_memory {
+        for profile in coordinator_config.agent_profiles.values_mut() {
+            profile.toolset.retain(|t| t != "memory");
+        }
+    }
+
+    if !cmd.verbatim {
+        if let Some(ref override_prompt) = cmd.system_prompt_override {
+            for profile in coordinator_config.agent_profiles.values_mut() {
+                profile.system_prompt = override_prompt.clone();
+            }
+        }
+
+        if let Some(ref rules) = cmd.rules {
+            for profile in coordinator_config.agent_profiles.values_mut() {
+                profile.system_prompt.push_str("\n\n");
+                profile.system_prompt.push_str(rules);
+            }
+        }
+    }
+
+    coordinator_config.permission_policy =
+        resolve_effective_permission_policy(cmd, coordinator_config.permission_policy.clone())?;
+
+    Ok(())
 }

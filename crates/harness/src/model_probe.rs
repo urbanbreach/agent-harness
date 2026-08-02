@@ -676,6 +676,9 @@ mod tests {
 
     #[test]
     fn test_execute_generated_with_output_file() {
+        // arrange
+        // act
+        // assert
         let temp_file = NamedTempFile::new().unwrap();
         let path = temp_file.path().to_path_buf();
         let command = GeneratedModelCatalogCommand {
@@ -697,6 +700,9 @@ mod tests {
 
     #[test]
     fn test_execute_generated_with_stdout() {
+        // arrange
+        // act
+        // assert
         let command = GeneratedModelCatalogCommand { output: None };
 
         let mut stdout = Vec::new();

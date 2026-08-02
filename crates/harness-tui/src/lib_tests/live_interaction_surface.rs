@@ -20,6 +20,8 @@ pub(super) fn permission_modal_preempts_prompt_submission() {
         "tool_call_block_submit",
     ));
 
+    app.handle_key(key(crossterm::event::KeyCode::Right));
+    app.handle_key(key(crossterm::event::KeyCode::Right));
     app.handle_key(key(crossterm::event::KeyCode::Enter));
 
     let intents = intents.lock().unwrap_or_abort();
@@ -66,7 +68,7 @@ pub(super) fn continue_disabled_session_shows_reason_banner() {
         crossterm::event::KeyCode::Char('p'),
         crossterm::event::KeyModifiers::CONTROL,
     ));
-    for ch in "switch".chars() {
+    for ch in "resume".chars() {
         app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
     }
     app.handle_key(key(crossterm::event::KeyCode::Enter));
@@ -223,13 +225,13 @@ pub(super) fn replay_secondary_surfaces_remain_reachable_after_live_shell_refact
         .any(|c| c == "harness.open_event_log"));
     replay.handle_key(key(crossterm::event::KeyCode::Esc));
 
-    replay.handle_key(key(crossterm::event::KeyCode::Char('?')));
+    replay.handle_key(key(crossterm::event::KeyCode::Char('h')));
     assert_eq!(replay.review_surface(), Some(app::ReviewSurface::Help));
     let replay_help_debug = render_live_buffer(&replay, 80, 24);
     assert!(!replay_help_debug.contains("Tabs"));
     assert!(replay_help_debug.contains("Replay · read-only"));
     assert!(replay_help_debug.contains("read-only"));
-    assert!(replay_help_debug.contains("Keyboard Shortcuts:"));
+    assert!(replay_help_debug.contains("Keyboard Shortcuts"));
 
     replay.handle_key(key(crossterm::event::KeyCode::Esc));
     assert_eq!(replay.review_surface(), None);

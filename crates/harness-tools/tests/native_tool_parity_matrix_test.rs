@@ -16,6 +16,9 @@ struct DocumentedToolRow {
 
 #[test]
 fn coordinator_registry_exposes_single_native_tool_surface() {
+    // arrange
+    // act
+    // assert
     let registry = coordinator_registry(ShellAllowlist::default());
 
     for tool_id in [
@@ -102,12 +105,12 @@ fn coordinator_registry_exposes_single_native_tool_surface() {
 
     let doc_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
-        .join("docs/native-tool-catalog.md");
+        .join("docs/tools/native-tool-catalog.md");
     let doc = std::fs::read_to_string(&doc_path).unwrap_or_abort();
     let doc_ids = documented_tool_ids(&doc);
     assert_eq!(
         doc_ids, registry_ids,
-        "docs/native-tool-catalog.md must list every registered native tool id exactly once"
+        "docs/tools/native-tool-catalog.md must list every registered native tool id exactly once"
     );
 }
 
@@ -116,7 +119,7 @@ fn native_tool_catalog_rows_include_permission_alias_and_replay_metadata() {
     // arrange
     let registry = coordinator_registry(ShellAllowlist::default());
     let catalog = native_tool_catalog_entries(&registry);
-    let doc_path = repo_path("docs/native-tool-catalog.md");
+    let doc_path = repo_path("docs/tools/native-tool-catalog.md");
     let doc = std::fs::read_to_string(&doc_path).unwrap_or_abort();
     let rows = documented_tool_rows(&doc);
 
@@ -181,14 +184,12 @@ fn bash_safety_guidance_and_ast_grep_replace_catalog_match_runtime_sources() {
         harness_core::tool::ToolCapability::EditFs
     );
 
-    let doc = std::fs::read_to_string(repo_path("docs/native-tool-catalog.md")).unwrap_or_abort();
+    let doc = std::fs::read_to_string(repo_path("docs/tools/native-tool-catalog.md")).unwrap_or_abort();
     let doctor = [
         std::fs::read_to_string(repo_path("crates/harness/src/doctor.rs")).unwrap_or_abort(),
         std::fs::read_to_string(repo_path("crates/harness/src/doctor/checks.rs")).unwrap_or_abort(),
     ]
     .join("\n");
-    let claims =
-        std::fs::read_to_string(repo_path("docs/claim-evidence-matrix.md")).unwrap_or_abort();
     let shell_run = std::fs::read_to_string(repo_path("crates/harness-tools/src/shell_run.rs"))
         .unwrap_or_abort();
     let shell_safety =
@@ -222,7 +223,7 @@ fn bash_safety_guidance_and_ast_grep_replace_catalog_match_runtime_sources() {
     assert!(doc.contains("Defaults to dry-run"));
     assert!(documented_tool_ids(&doc).contains("ast_grep_replace"));
     assert!(doctor.contains("\"ast_grep_replace\": \"shipped_edit_safe\""));
-    assert!(claims.contains("`ast_grep_replace` ships behind edit permission"));
+    assert!(doc.contains("`ast_grep_replace` maps to `edit`"));
 }
 
 #[test]
@@ -230,7 +231,7 @@ fn changed_tool_schemas_and_docs_reflect_parity_params() {
     // arrange
     // act
     let registry = coordinator_registry(ShellAllowlist::default());
-    let doc = std::fs::read_to_string(repo_path("docs/native-tool-catalog.md")).unwrap_or_abort();
+    let doc = std::fs::read_to_string(repo_path("docs/tools/native-tool-catalog.md")).unwrap_or_abort();
 
     // assert
     let grep_schema = registry
@@ -306,6 +307,8 @@ fn changed_tool_schemas_and_docs_reflect_parity_params() {
         "include_tool_results",
         "thinking_max_chars",
         "from_end",
+        "request_ids",
+        "wait_mode",
     ] {
         assert!(
             bg_output_props.get(field).is_some(),
@@ -315,6 +318,10 @@ fn changed_tool_schemas_and_docs_reflect_parity_params() {
     assert!(
         doc.contains("full_session") && doc.contains("include_thinking"),
         "docs missing background_output rich retrieval params"
+    );
+    assert!(
+        doc.contains("wait_mode") && doc.contains("request_ids"),
+        "docs missing background_output wait-any/wait-all params"
     );
 
     let sr_schema = registry

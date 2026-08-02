@@ -1,6 +1,9 @@
 use harness::UnwrapOrAbort;
 #[test]
 fn config_validate_cli_loads_separate_tui_config() {
+    // arrange
+    // act
+    // assert
     let temp = tempdir().unwrap_or_abort();
     write_config(
         &temp.path().join("harness.jsonc"),
@@ -32,6 +35,9 @@ fn config_validate_cli_loads_separate_tui_config() {
 }
 #[test]
 fn config_validate_cli_accepts_harness_config_env_path() {
+    // arrange
+    // act
+    // assert
     let temp = tempdir().unwrap_or_abort();
     let env_config_path = temp.path().join("env/custom-harness.jsonc");
     fs::create_dir_all(env_config_path.parent().unwrap_or_abort())
@@ -56,6 +62,9 @@ fn config_validate_cli_accepts_harness_config_env_path() {
 }
 #[test]
 fn config_validate_cli_applies_harness_config_content_last() {
+    // arrange
+    // act
+    // assert
     let temp = tempdir().unwrap_or_abort();
     write_config(
         &temp.path().join("harness.jsonc"),
@@ -81,6 +90,9 @@ fn config_validate_cli_applies_harness_config_content_last() {
 }
 #[test]
 fn config_validate_cli_explicit_path_bypasses_discovery_layers() {
+    // arrange
+    // act
+    // assert
     let temp = tempdir().unwrap_or_abort();
     let xdg_root = temp.path().join("xdg");
     let explicit_path = temp.path().join("explicit.jsonc");
@@ -127,6 +139,9 @@ fn config_validate_cli_explicit_path_bypasses_discovery_layers() {
 }
 #[test]
 fn config_validate_cli_rejects_unknown_top_level_keys() {
+    // arrange
+    // act
+    // assert
     let temp = tempdir().unwrap_or_abort();
     let config_path = temp.path().join("harness.jsonc");
     let mut config = canonical_runtime_config();
@@ -146,6 +161,9 @@ fn config_validate_cli_rejects_unknown_top_level_keys() {
 }
 #[test]
 fn config_validate_cli_rejects_unknown_provider_reference() {
+    // arrange
+    // act
+    // assert
     let temp = tempdir().unwrap_or_abort();
     let config_path = temp.path().join("harness.jsonc");
     let mut config = canonical_runtime_config();
@@ -171,6 +189,9 @@ fn config_validate_cli_rejects_unknown_provider_reference() {
 }
 #[test]
 fn config_validate_cli_rejects_unsupported_upstream_top_level_keys() {
+    // arrange
+    // act
+    // assert
     for key in [
         "server",
         "command",
@@ -210,6 +231,9 @@ fn config_validate_cli_rejects_unsupported_upstream_top_level_keys() {
 }
 #[test]
 fn compatibility_config_shape_accepts_subagents_and_safe_inert_keys() {
+    // arrange
+    // act
+    // assert
     let parsed = load_config_from_str(
         r#"
         {
@@ -306,6 +330,9 @@ fn compatibility_config_shape_accepts_subagents_and_safe_inert_keys() {
 }
 #[test]
 fn shipped_example_config_uses_codex_oauth_provider_without_openai_api_key() {
+    // arrange
+    // act
+    // assert
     let repo_root = repo_root();
     let config_path = repo_root.join("configs").join("harness.example.jsonc");
 
@@ -314,7 +341,9 @@ fn shipped_example_config_uses_codex_oauth_provider_without_openai_api_key() {
     let ProviderConfig::OpenAiCompatible(provider) = parsed
         .providers
         .get("openai-codex")
-        .unwrap_or_abort();
+        .unwrap_or_abort() else {
+        panic!("expected openai-codex provider to be OpenAiCompatible")
+    };
 
     assert_eq!(provider.name.as_deref(), Some("OpenAI Codex"));
     assert_eq!(provider.base_url, "https://api.openai.com/v1");
@@ -329,6 +358,9 @@ fn shipped_example_config_uses_codex_oauth_provider_without_openai_api_key() {
 }
 #[test]
 fn shipped_example_config_keeps_codex_oauth_provider_even_when_openai_api_key_is_set() {
+    // arrange
+    // act
+    // assert
     let repo_root = repo_root();
     let config_path = repo_root.join("configs").join("harness.example.jsonc");
 
@@ -337,7 +369,9 @@ fn shipped_example_config_keeps_codex_oauth_provider_even_when_openai_api_key_is
     let ProviderConfig::OpenAiCompatible(provider) = parsed
         .providers
         .get("openai-codex")
-        .unwrap_or_abort();
+        .unwrap_or_abort() else {
+        panic!("expected openai-codex provider to be OpenAiCompatible")
+    };
 
     assert_eq!(provider.name.as_deref(), Some("OpenAI Codex"));
     assert_eq!(provider.base_url, "https://api.openai.com/v1");
@@ -352,6 +386,9 @@ fn shipped_example_config_keeps_codex_oauth_provider_even_when_openai_api_key_is
 }
 #[test]
 fn checked_in_tui_schema_matches_generated_schema() {
+    // arrange
+    // act
+    // assert
     let generated = harness_tui_schema_pretty_json().unwrap_or_abort();
     let checked_in = fs::read_to_string(repo_root().join("configs").join("tui.json"))
         .unwrap_or_abort();
@@ -360,6 +397,9 @@ fn checked_in_tui_schema_matches_generated_schema() {
 }
 #[test]
 fn checked_in_runtime_schema_matches_generated_schema() {
+    // arrange
+    // act
+    // assert
     let generated = harness_schema_pretty_json().unwrap_or_abort();
     let checked_in = fs::read_to_string(repo_root().join("configs").join("config.json"))
         .unwrap_or_abort();
@@ -368,6 +408,9 @@ fn checked_in_runtime_schema_matches_generated_schema() {
 }
 #[test]
 fn shipped_tui_example_parses_as_public_tui_config() {
+    // arrange
+    // act
+    // assert
     let shipped = fs::read_to_string(repo_root().join("configs").join("tui.example.jsonc"))
         .unwrap_or_abort();
 
@@ -384,6 +427,9 @@ fn shipped_tui_example_parses_as_public_tui_config() {
 }
 #[test]
 fn shipped_runtime_example_parses_as_public_runtime_config() {
+    // arrange
+    // act
+    // assert
     let shipped = fs::read_to_string(repo_root().join("configs").join("harness.example.jsonc"))
         .unwrap_or_abort();
 
@@ -398,7 +444,9 @@ fn shipped_runtime_example_parses_as_public_runtime_config() {
     let ProviderConfig::OpenAiCompatible(provider) = parsed
         .provider
         .get("openai-codex")
-        .unwrap_or_abort();
+        .unwrap_or_abort() else {
+        panic!("expected openai-codex provider to be OpenAiCompatible")
+    };
     assert_eq!(provider.models.len(), 2);
     assert!(provider.models.contains_key("gpt-5.5"));
     assert!(provider.models.contains_key("gpt-5.4-mini"));
@@ -447,6 +495,9 @@ fn shipped_runtime_example_parses_as_public_runtime_config() {
 }
 #[test]
 fn public_runtime_config_accepts_top_level_skills() {
+    // arrange
+    // act
+    // assert
     let parsed: PublicRuntimeConfig = json5::from_str(
         r#"
         {

@@ -7,23 +7,35 @@ const DEFAULT_MODEL: &str = "umans-kimi-k2.7";
 #[test]
 #[ignore = "requires HARNESS_LIVE_PROXY=1 and local CLIproxyAPI access"]
 fn live_proxy_preflight_requires_live_env() {
+    // arrange
+    // act
+    // assert
     assert_live_proxy_env().unwrap_or_abort();
 }
 
 #[test]
 #[ignore = "requires HARNESS_LIVE_PROXY=1 and local CLIproxyAPI access"]
 fn live_proxy_prompt_parity_signoff() {
+    // arrange
+    // act
+    // assert
     assert_live_proxy_env().unwrap_or_abort();
 }
 
 #[test]
 #[ignore = "requires HARNESS_LIVE_PROXY=1 and local CLIproxyAPI access"]
 fn live_proxy_e2e_tui_parity_signoff() {
+    // arrange
+    // act
+    // assert
     assert_live_proxy_env().unwrap_or_abort();
 }
 
 #[test]
 fn live_proxy_preflight_fails_closed_without_env() {
+    // arrange
+    // act
+    // assert
     if std::env::var("HARNESS_LIVE_PROXY").as_deref() == Ok("1") {
         return;
     }
@@ -32,12 +44,18 @@ fn live_proxy_preflight_fails_closed_without_env() {
 
 #[test]
 fn live_proxy_defaults_match_documented_signoff_model() {
+    // arrange
+    // act
+    // assert
     assert_eq!(default_provider(), DEFAULT_PROVIDER);
     assert_eq!(default_model(), DEFAULT_MODEL);
 }
 
 #[test]
 fn live_proxy_config_path_defaults_to_workspace_config() {
+    // arrange
+    // act
+    // assert
     assert!(default_config_path().ends_with(Path::new("harness.jsonc")));
 }
 

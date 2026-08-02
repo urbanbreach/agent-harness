@@ -11,6 +11,7 @@ use harness_tui::app::{LaunchMetadata, TogglesConfig};
 
 use crate::bootstrap;
 use crate::cli_config::load_optional_config_with_digest_context;
+use crate::cli_io::load_events_from_run_dir;
 use crate::defaults::{DEFAULT_MOCK_PROFILE, DEFAULT_SESSION_DIR};
 use crate::scenarios::{
     create_workspace, default_permission_policy, golden_path_profiles, golden_path_provider,
@@ -45,6 +46,7 @@ pub(super) struct LiveSettings {
 pub(super) enum ResolvedTuiMode {
     Replay {
         run_dir: PathBuf,
+        workspace_root: Option<PathBuf>,
     },
     Continue {
         settings: LiveSettings,
@@ -76,8 +78,27 @@ pub(super) fn resolve_tui_mode(
     config_context: &harness_core::config::ConfigLoadContext,
 ) -> Result<ResolvedTuiMode, String> {
     if let Some(run_dir) = &cmd.replay {
+        let workspace_root = load_events_from_run_dir(run_dir)
+            .ok()
+            .and_then(|events| super::replay::replay_workspace_root_from_events(&events));
         return Ok(ResolvedTuiMode::Replay {
             run_dir: run_dir.clone(),
+            workspace_root,
+        });
+    }
+
+    if let Some(run_dir) = &cmd.continue_session {
+        let (settings, owned_run_dir) = resolve_continue_live_settings(
+            cmd,
+            config_path,
+            global_session_dir,
+            workspace_root,
+            config_context,
+            run_dir,
+        )?;
+        return Ok(ResolvedTuiMode::Continue {
+            settings,
+            run_dir: owned_run_dir,
         });
     }
 
@@ -89,13 +110,6 @@ pub(super) fn resolve_tui_mode(
         config_context,
     )?;
 
-    if let Some(run_dir) = &cmd.continue_session {
-        return Ok(ResolvedTuiMode::Continue {
-            settings,
-            run_dir: run_dir.clone(),
-        });
-    }
-
     if let Some(scenario) = cmd.scenario {
         return Ok(ResolvedTuiMode::Scenario { settings, scenario });
     }
@@ -105,6 +119,39 @@ pub(super) fn resolve_tui_mode(
     }
 
     Ok(ResolvedTuiMode::Interactive { settings })
+}
+
+fn resolve_continue_live_settings(
+    cmd: &TuiCommand,
+    config_path: Option<PathBuf>,
+    global_session_dir: Option<PathBuf>,
+    process_workspace_root: PathBuf,
+    config_context: &harness_core::config::ConfigLoadContext,
+    run_dir: &Path,
+) -> Result<(LiveSettings, PathBuf), String> {
+    let session_workspace_root =
+        session_workspace_root_from_run_dir(run_dir).unwrap_or(process_workspace_root);
+    let continue_context = config_context
+        .clone()
+        .with_current_dir(session_workspace_root.clone());
+    let settings = resolve_live_settings(
+        cmd,
+        config_path,
+        global_session_dir,
+        session_workspace_root,
+        &continue_context,
+    )?;
+    Ok((settings, run_dir.to_path_buf()))
+}
+
+fn session_workspace_root_from_run_dir(run_dir: &Path) -> Option<PathBuf> {
+    let plan = harness_core::proj::inspect_resume_plan(run_dir);
+    let raw = plan.workspace_root.as_deref()?.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    let path = PathBuf::from(raw);
+    path.is_dir().then_some(path)
 }
 
 pub(super) fn resolve_live_settings(

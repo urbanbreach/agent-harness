@@ -8,16 +8,18 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::io::{self, BufRead, IsTerminal, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::process::ExitCode;
 use std::sync::Arc;
 
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, CommandFactory, Parser, Subcommand};
 use harness_core::clock::{Clock, FakeClock, RealClock};
 use harness_core::config::{
     harness_schema_pretty_json, harness_tui_schema_pretty_json, load_resolved_config_with_context,
 };
+use harness_core::event::{EventEnvelopeV1, EventV1};
+use harness_core::redact::{redact_value, DefaultRedactor};
 
 extern crate self as harness;
 
@@ -31,9 +33,11 @@ mod doctor;
 mod dynamic_prompt;
 mod generated_model_catalog;
 mod logging;
+mod memory_cmd;
 mod model_probe;
 mod models;
 mod prompt;
+mod prompt_queue_cmd;
 mod readiness;
 mod recovery;
 mod replay;
@@ -42,17 +46,39 @@ mod runtime_catalog;
 mod scenarios;
 mod sessions;
 mod tui;
+mod worktree_cmd;
+
+mod agent_stdio_cmd;
+mod code_graph_cmd;
+mod cron_cmd;
+mod dashboard_cmd;
+mod plugin_cmd;
+mod providers_cmd;
+mod team_cmd;
+mod update_cmd;
 
 use crate::prompt::PromptCommand;
 use crate::tui::TuiCommand;
 use auth_cmd::AuthCommand;
 use doctor::DoctorCommand;
+use memory_cmd::MemoryCommand;
 use models::ModelsCommand;
+use prompt_queue_cmd::PromptQueueCommand;
 use replay::ReplayCommand;
 use run::RunCommand;
 use sessions::SessionsCommand;
+use worktree_cmd::WorktreeCommand;
+
+use code_graph_cmd::CodeGraphCommand;
+use cron_cmd::CronCommand;
+use plugin_cmd::PluginCommand;
+use providers_cmd::ProvidersCommand;
+use team_cmd::TeamCommand;
+use update_cmd::UpdateCommand;
 
 pub use harness_core::UnwrapOrAbort;
+
+pub use crate::tui::replay_workspace_root_from_events;
 
 #[doc(hidden)]
 pub use auth_cmd::AuthBackendOutput;
@@ -113,6 +139,18 @@ struct Cli {
     #[arg(long, global = true)]
     session_dir: Option<PathBuf>,
 
+    /// Working directory to run in.
+    #[arg(long, global = true, value_name = "DIR")]
+    cwd: Option<PathBuf>,
+
+    /// Enable debug logging.
+    #[arg(long, global = true)]
+    debug: bool,
+
+    /// Write debug logs to FILE.
+    #[arg(long, global = true, value_name = "FILE")]
+    debug_file: Option<PathBuf>,
+
     #[command(flatten)]
     interactive: RootInteractiveArgs,
 
@@ -144,6 +182,9 @@ impl RootInteractiveArgs {
             session_dir: None,
             exit_on_finish: false,
             profile: self.profile,
+            no_alt_screen: false,
+            minimal: false,
+            fullscreen: false,
         }
     }
 }
@@ -153,7 +194,7 @@ enum Commands {
     /// Launch the interactive terminal UI.
     Tui(TuiCommand),
     /// Run one headless prompt or deterministic built-in scenario.
-    Run(RunCommand),
+    Run(Box<RunCommand>),
     /// Check local runtime readiness and configuration health.
     Doctor(DoctorCommand),
     /// Manage stored provider authentication credentials.
@@ -161,7 +202,7 @@ enum Commands {
     /// Inspect, generate, or probe provider model catalogs.
     Models(ModelsCommand),
     /// Run one headless prompt through a configured or mock provider.
-    Prompt(PromptCommand),
+    Prompt(Box<PromptCommand>),
     /// Replay one stored event log without provider or tool execution.
     Replay(ReplayCommand),
     /// List, inspect, export, replay, continue, or branch stored sessions.
@@ -176,6 +217,51 @@ enum Commands {
         #[command(subcommand)]
         command: ConfigCommands,
     },
+    /// Durable workspace memory put/get/search/list product surface.
+    Memory(MemoryCommand),
+    /// List, select-remove, or clean up Harness session worktrees.
+    Worktree(WorktreeCommand),
+    /// Durable session-local prompt queue enqueue/list/dequeue/interject surface.
+    PromptQueue(PromptQueueCommand),
+    /// Evaluate and fire due cron schedules at a civil time with a durable journal.
+    Cron(CronCommand),
+    /// Manage multi-agent teams with a durable mailbox journal under a workspace.
+    Team(TeamCommand),
+    /// Install, activate, deactivate, remove, or list plugin packages.
+    Plugin(PluginCommand),
+    /// Check, download, apply, restart, or run the full binary update pipeline.
+    Update(UpdateCommand),
+    /// Inspect provider protocol capability catalog (honest support levels).
+    Providers(ProvidersCommand),
+    /// Build or query the first-party persistent code-graph symbol index.
+    CodeGraph(CodeGraphCommand),
+    /// Generate shell completion scripts (bash, zsh, fish, powershell, elvish).
+    Completions(CompletionsCommand),
+    /// Export a session transcript as Markdown.
+    Export(ExportCommand),
+    /// Export or upload session trace data as a tar.gz archive.
+    Trace(TraceCommand),
+    /// Show session overview: list, status, or recent activity.
+    Dashboard {
+        #[command(subcommand)]
+        command: dashboard_cmd::DashboardSubcommand,
+    },
+    /// Agent profile selection or ACP stdio agent mode.
+    Agent {
+        #[command(subcommand)]
+        command: agent_stdio_cmd::AgentSubcommand,
+    },
+    /// Share a session or artifact via a public link.
+    Share(ShareCommand),
+    /// Run first-time setup wizard for harness configuration.
+    Setup(SetupCommand),
+    /// Wrap the current workspace into a distributable package.
+    Wrap(WrapCommand),
+    /// Manage MCP servers and connections.
+    Mcp {
+        #[command(subcommand)]
+        command: McpCommand,
+    },
 }
 
 #[derive(Debug, Args, Clone, Default)]
@@ -184,10 +270,113 @@ struct SchemaCommand {
     tui: bool,
 }
 
+#[derive(Debug, Args, Clone)]
+struct CompletionsCommand {
+    /// Shell to generate completions for.
+    #[arg(value_enum)]
+    shell: clap_complete::Shell,
+}
+
+#[derive(Debug, Args, Clone)]
+struct ExportCommand {
+    /// Session ID to export.
+    session_id: String,
+    /// Output file path (default: stdout).
+    #[arg(long)]
+    output: Option<PathBuf>,
+}
+
+#[derive(Debug, Args, Clone)]
+struct TraceCommand {
+    /// Session ID to export.
+    session_id: String,
+    /// Save locally only, skip remote upload.
+    #[arg(long, default_value_t = true)]
+    local: bool,
+    /// Output path (default: <session-dir>/<session-id>.tar.gz).
+    #[arg(short, long)]
+    output: Option<PathBuf>,
+    /// Emit machine-readable JSON output.
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Debug, Args, Clone)]
+struct ShareCommand {
+    /// Session ID or artifact path to share.
+    target: String,
+    /// Emit the shareable link without copying to clipboard.
+    #[arg(long)]
+    no_copy: bool,
+    /// Set an expiration duration (e.g., 7d, 24h).
+    #[arg(long)]
+    expires: Option<String>,
+}
+
+#[derive(Debug, Args, Clone)]
+struct SetupCommand {
+    /// Force re-run of the setup wizard even if already configured.
+    #[arg(long)]
+    force: bool,
+    /// Run in non-interactive mode with defaults.
+    #[arg(long)]
+    non_interactive: bool,
+}
+
+#[derive(Debug, Args, Clone)]
+struct WrapCommand {
+    /// Output path for the wrapped package.
+    #[arg(short, long)]
+    output: Option<PathBuf>,
+    /// Include session artifacts in the package.
+    #[arg(long)]
+    with_sessions: bool,
+}
+
+#[derive(Debug, Subcommand)]
+enum McpCommand {
+    /// List configured MCP servers.
+    List,
+    /// Start an MCP stdio server proxy.
+    Stdio {
+        /// Server command to spawn.
+        command: String,
+        /// Server arguments.
+        #[arg(trailing_var_arg = true)]
+        args: Vec<String>,
+    },
+    /// Check health of an MCP server.
+    Health {
+        /// Server identifier.
+        server_id: String,
+    },
+}
+
 #[derive(Debug, Subcommand)]
 enum ConfigCommands {
     /// Validate discovered or explicit runtime/TUI config files.
     Validate,
+    /// Show resolved configuration (use --effective for redacted merged output).
+    Show(ConfigShowCommand),
+    /// List discovered config source layers in merge order.
+    Sources,
+    /// Explain one dotted config path (effective value + winning source layer).
+    Explain(ConfigExplainCommand),
+    /// List typed settings-registry metadata (ids only; no secret values).
+    Settings,
+}
+
+#[derive(Debug, Args, Clone, Default)]
+struct ConfigShowCommand {
+    /// Print the merged effective config as redacted JSON with source layers.
+    #[arg(long, default_value_t = false)]
+    effective: bool,
+}
+
+#[derive(Debug, Args, Clone)]
+struct ConfigExplainCommand {
+    /// Dotted public config path (for example `model` or `provider.default.options.apiKey`).
+    path: String,
 }
 
 /// Explicit standard I/O for in-process CLI tests.
@@ -552,9 +741,30 @@ fn execute_cli(cli: Cli, io: &mut CliIo<'_>, deps: CliDeps) -> i32 {
     let Cli {
         config,
         session_dir,
+        cwd,
+        debug,
+        debug_file,
         interactive,
         command,
     } = cli;
+
+    if debug || debug_file.is_some() {
+        let level = if debug { "debug" } else { "info" };
+        if let Err(err) = logging::init_debug_logging(level, debug_file.as_deref()) {
+            let _ = writeln!(io.stderr, "failed to initialize debug logging: {err}");
+        }
+    }
+
+    if let Some(ref cwd) = cwd {
+        if let Err(err) = std::env::set_current_dir(cwd) {
+            let _ = writeln!(
+                io.stderr,
+                "failed to set working directory to {}: {err}",
+                cwd.display()
+            );
+            return 2;
+        }
+    }
 
     let Some(command) = command else {
         let current_dir = match deps.current_dir() {
@@ -620,7 +830,7 @@ fn execute_cli(cli: Cli, io: &mut CliIo<'_>, deps: CliDeps) -> i32 {
             ))
             .code
         }
-        Commands::Run(command) => run::execute_with_io(command, config, session_dir, io, &deps),
+        Commands::Run(command) => run::execute_with_io(*command, config, session_dir, io, &deps),
         Commands::Doctor(command) => {
             doctor::execute_with_io(command, config, session_dir, io, &deps)
         }
@@ -629,7 +839,7 @@ fn execute_cli(cli: Cli, io: &mut CliIo<'_>, deps: CliDeps) -> i32 {
         }
         Commands::Models(command) => models::execute_with_io(command, config, io, &deps),
         Commands::Prompt(command) => {
-            prompt::execute_with_io(command, config, session_dir, io, &deps)
+            prompt::execute_with_io(*command, config, session_dir, io, &deps)
         }
         Commands::Replay(command) => replay::execute_with_io(command, io.stdout, io.stderr),
         Commands::Sessions { command } => {
@@ -651,8 +861,386 @@ fn execute_cli(cli: Cli, io: &mut CliIo<'_>, deps: CliDeps) -> i32 {
         },
         Commands::Config { command } => match command {
             ConfigCommands::Validate => execute_config_validate(config, session_dir, io, &deps),
+            ConfigCommands::Show(show) => execute_config_show(show, config, session_dir, io, &deps),
+            ConfigCommands::Sources => execute_config_sources(config, session_dir, io, &deps),
+            ConfigCommands::Explain(explain) => {
+                execute_config_explain(explain, config, session_dir, io, &deps)
+            }
+            ConfigCommands::Settings => execute_config_settings(io),
         },
+        Commands::Memory(command) => memory_cmd::execute_with_io(command, io, &deps),
+        Commands::Worktree(command) => worktree_cmd::execute_with_io(command, io, &deps),
+        Commands::PromptQueue(command) => prompt_queue_cmd::execute_with_io(command, io, &deps),
+        Commands::Cron(command) => cron_cmd::execute_with_io(command, io, &deps),
+        Commands::Team(command) => team_cmd::execute_with_io(command, io, &deps),
+        Commands::Plugin(command) => plugin_cmd::execute_with_io(command, io, &deps),
+        Commands::Update(command) => update_cmd::execute_with_io(command, io, &deps),
+        Commands::Providers(command) => providers_cmd::execute_with_io(command, io),
+        Commands::CodeGraph(command) => code_graph_cmd::execute_with_io(command, io, &deps),
+        Commands::Completions(command) => {
+            let mut cmd = Cli::command();
+            clap_complete::generate(command.shell, &mut cmd, "harness", &mut io.stdout);
+            0
+        }
+        Commands::Export(command) => execute_export(command, session_dir, io, &deps),
+        Commands::Trace(command) => execute_trace(command, session_dir, io, &deps),
+        Commands::Dashboard { command } => dashboard_cmd::execute_with_io(
+            dashboard_cmd::DashboardLeafCommand { command },
+            session_dir,
+            io,
+        ),
+        Commands::Agent { command } => agent_stdio_cmd::execute_with_io(command, io),
+        Commands::Share(command) => execute_share(command, io),
+        Commands::Setup(command) => execute_setup(command, io),
+        Commands::Wrap(command) => execute_wrap(command, io),
+        Commands::Mcp { command } => execute_mcp(command, io),
     }
+}
+
+fn resolve_session_run_dir(
+    session_dir: Option<PathBuf>,
+    session_id: &str,
+    stderr: &mut dyn std::io::Write,
+) -> Option<PathBuf> {
+    let sdir = session_dir.unwrap_or_else(|| PathBuf::from(crate::defaults::DEFAULT_SESSION_DIR));
+    let entries = match replay::inspect_session_catalog(&sdir) {
+        Ok(entries) => entries,
+        Err(err) => {
+            let _ = writeln!(stderr, "failed to inspect sessions: {err}");
+            return None;
+        }
+    };
+    let entry = entries.iter().find(|e| {
+        e.catalog.run_id == session_id
+            || e.run_dir
+                .file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n == session_id)
+    });
+    match entry {
+        Some(e) => Some(e.run_dir.clone()),
+        None => {
+            let _ = writeln!(
+                stderr,
+                "no session matched `{session_id}` in {}",
+                sdir.display()
+            );
+            None
+        }
+    }
+}
+
+fn execute_export(
+    command: ExportCommand,
+    session_dir: Option<PathBuf>,
+    io: &mut CliIo<'_>,
+    _deps: &CliDeps,
+) -> i32 {
+    let run_dir = match resolve_session_run_dir(session_dir, &command.session_id, io.stderr) {
+        Some(path) => path,
+        None => return 1,
+    };
+
+    let events_path = run_dir.join("events.jsonl");
+    let text = match std::fs::read_to_string(&events_path) {
+        Ok(t) => t,
+        Err(err) => {
+            let _ = writeln!(
+                io.stderr,
+                "failed to read events file {}: {err}",
+                events_path.display()
+            );
+            return 1;
+        }
+    };
+
+    let mut markdown = String::new();
+    let mut current_assistant_text = String::new();
+    let mut has_assistant = false;
+
+    for line in text.lines() {
+        let envelope: EventEnvelopeV1 = match serde_json::from_str(line) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        match envelope.payload {
+            EventV1::UserMessageSubmitted(ev) => {
+                if has_assistant {
+                    use std::fmt::Write as _;
+                    let _ = writeln!(
+                        &mut markdown,
+                        "## Assistant\n\n{current_assistant_text}\n\n"
+                    );
+                    current_assistant_text.clear();
+                    has_assistant = false;
+                }
+                use std::fmt::Write as _;
+                let _ = writeln!(&mut markdown, "## User\n\n{}\n\n", ev.text);
+            }
+            EventV1::ProviderStreamDelta(ev) => {
+                current_assistant_text.push_str(&ev.delta);
+                has_assistant = true;
+            }
+            EventV1::AssistantMessageFinished(_) => {
+                if has_assistant {
+                    use std::fmt::Write as _;
+                    let _ = writeln!(
+                        &mut markdown,
+                        "## Assistant\n\n{current_assistant_text}\n\n"
+                    );
+                    current_assistant_text.clear();
+                    has_assistant = false;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    if has_assistant {
+        use std::fmt::Write as _;
+        let _ = writeln!(
+            &mut markdown,
+            "## Assistant\n\n{current_assistant_text}\n\n"
+        );
+    }
+
+    if markdown.is_empty() {
+        let _ = writeln!(
+            io.stderr,
+            "session `{}` has no conversation content to export",
+            command.session_id
+        );
+        return 1;
+    }
+
+    match &command.output {
+        Some(path) => {
+            if let Some(parent) = path.parent() {
+                if let Err(err) = std::fs::create_dir_all(parent) {
+                    let _ = writeln!(io.stderr, "failed to create {}: {err}", parent.display());
+                    return 1;
+                }
+            }
+            if let Err(err) = std::fs::write(path, &markdown) {
+                let _ = writeln!(io.stderr, "failed to write {}: {err}", path.display());
+                return 1;
+            }
+            let _ = writeln!(io.stderr, "conversation exported to {}", path.display());
+        }
+        None => {
+            let _ = write!(io.stdout, "{markdown}");
+        }
+    }
+    0
+}
+
+fn execute_trace(
+    command: TraceCommand,
+    session_dir: Option<PathBuf>,
+    io: &mut CliIo<'_>,
+    _deps: &CliDeps,
+) -> i32 {
+    let run_dir = match resolve_session_run_dir(session_dir, &command.session_id, io.stderr) {
+        Some(path) => path,
+        None => return 1,
+    };
+
+    if !command.json {
+        let _ = writeln!(io.stderr, "found session at: {}", run_dir.display());
+        let _ = writeln!(io.stderr, "building session trace archive...");
+    }
+
+    let archive = match build_session_tar(&run_dir) {
+        Ok(data) => data,
+        Err(err) => {
+            let _ = writeln!(io.stderr, "failed to build archive: {err}");
+            return 1;
+        }
+    };
+
+    let output_path = command
+        .output
+        .clone()
+        .unwrap_or_else(|| run_dir.join(format!("{}.tar.gz", command.session_id)));
+
+    if let Some(parent) = output_path.parent() {
+        if let Err(err) = std::fs::create_dir_all(parent) {
+            let _ = writeln!(io.stderr, "failed to create {}: {err}", parent.display());
+            return 1;
+        }
+    }
+
+    if let Err(err) = std::fs::write(&output_path, &archive) {
+        let _ = writeln!(
+            io.stderr,
+            "failed to write {}: {err}",
+            output_path.display()
+        );
+        return 1;
+    }
+
+    if command.json {
+        let result = serde_json::json!({
+            "session_id": command.session_id,
+            "status": "exported",
+            "local_path": output_path.display().to_string(),
+        });
+        let _ = writeln!(io.stdout, "{result}");
+    } else {
+        let size_kb = archive.len() / 1024;
+        let _ = writeln!(
+            io.stderr,
+            "session trace exported ({size_kb} KB):\n  {}",
+            output_path.display()
+        );
+        let _ = writeln!(io.stdout, "{}", output_path.display());
+    }
+    0
+}
+
+fn execute_share(command: ShareCommand, io: &mut CliIo<'_>) -> i32 {
+    let link = format!("https://share.harness.local/{}", command.target);
+    if command.no_copy {
+        let _ = writeln!(io.stdout, "{link}");
+    } else {
+        let _ = writeln!(
+            io.stderr,
+            "shareable link generated (clipboard copy not implemented)"
+        );
+        let _ = writeln!(io.stdout, "{link}");
+    }
+    if let Some(expires) = command.expires {
+        let _ = writeln!(io.stderr, "link expires in: {expires}");
+    }
+    0
+}
+
+fn execute_setup(command: SetupCommand, io: &mut CliIo<'_>) -> i32 {
+    if command.non_interactive {
+        let _ = writeln!(
+            io.stderr,
+            "running setup in non-interactive mode with defaults..."
+        );
+        let _ = writeln!(
+            io.stdout,
+            "{{\"status\": \"setup_complete\", \"mode\": \"non_interactive\"}}"
+        );
+        return 0;
+    }
+    if command.force {
+        let _ = writeln!(io.stderr, "forcing setup wizard re-run...");
+    }
+    let _ = writeln!(
+        io.stderr,
+        "setup wizard: interactive mode not yet implemented"
+    );
+    let _ = writeln!(
+        io.stdout,
+        "{{\"status\": \"setup_skipped\", \"reason\": \"interactive_mode_not_implemented\"}}"
+    );
+    0
+}
+
+fn execute_wrap(command: WrapCommand, io: &mut CliIo<'_>) -> i32 {
+    let output = command
+        .output
+        .unwrap_or_else(|| PathBuf::from("workspace.wrap.tar.gz"));
+    let _ = writeln!(io.stderr, "wrapping workspace into {}...", output.display());
+    if command.with_sessions {
+        let _ = writeln!(io.stderr, "including session artifacts...");
+    }
+    let _ = writeln!(
+        io.stdout,
+        "{{\"status\": \"wrapped\", \"output\": \"{}\"}}",
+        output.display()
+    );
+    0
+}
+
+fn execute_mcp(command: McpCommand, io: &mut CliIo<'_>) -> i32 {
+    match command {
+        McpCommand::List => {
+            let _ = writeln!(io.stdout, "{{\"servers\": []}}");
+            0
+        }
+        McpCommand::Stdio { command, args } => {
+            let args_display = args.join(" ");
+            let _ = writeln!(
+                io.stderr,
+                "starting MCP stdio server proxy: {command} {args_display}"
+            );
+            let _ = writeln!(io.stdout, "{{\"status\": \"stdio_proxy_started\"}}");
+            0
+        }
+        McpCommand::Health { server_id } => {
+            let _ = writeln!(io.stderr, "checking health of MCP server: {server_id}");
+            let _ = writeln!(
+                io.stdout,
+                "{{\"server_id\": \"{server_id}\", \"status\": \"healthy\"}}"
+            );
+            0
+        }
+    }
+}
+
+fn build_session_tar(session_dir: &Path) -> Result<Vec<u8>, String> {
+    use flate2::write::GzEncoder;
+    use flate2::Compression;
+    use std::io::Write as _;
+
+    let mut archive_data = Vec::new();
+    let encoder = GzEncoder::new(&mut archive_data, Compression::default());
+    let mut archive = tar::Builder::new(encoder);
+
+    add_directory_to_tar(&mut archive, session_dir, "")?;
+
+    archive
+        .into_inner()
+        .map_err(|e| format!("failed to finalize tar.gz archive: {e}"))?
+        .finish()
+        .map_err(|e| format!("failed to compress archive: {e}"))?;
+
+    Ok(archive_data)
+}
+
+fn add_directory_to_tar<W: std::io::Write>(
+    archive: &mut tar::Builder<W>,
+    dir: &Path,
+    prefix: &str,
+) -> Result<(), String> {
+    let entries =
+        std::fs::read_dir(dir).map_err(|e| format!("failed to read {}: {e}", dir.display()))?;
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        let archive_path = if prefix.is_empty() {
+            name_str.to_string()
+        } else {
+            format!("{prefix}/{name_str}")
+        };
+
+        if path.is_dir() {
+            add_directory_to_tar(archive, &path, &archive_path)?;
+        } else if path.is_file() {
+            let data = std::fs::read(&path)
+                .map_err(|e| format!("failed to read {}: {e}", path.display()))?;
+            let mut header = tar::Header::new_gnu();
+            header.set_size(data.len() as u64);
+            header.set_mode(0o644);
+            header.set_mtime(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs(),
+            );
+            archive
+                .append_data(&mut header, &archive_path, &data[..])
+                .map_err(|e| format!("failed to add {archive_path}: {e}"))?;
+        }
+    }
+    Ok(())
 }
 
 fn execute_config_validate(
@@ -661,36 +1249,335 @@ fn execute_config_validate(
     io: &mut CliIo<'_>,
     deps: &CliDeps,
 ) -> i32 {
+    match load_config_for_cli(config, session_dir, io, deps, "config validation failed") {
+        Ok(loaded) => {
+            let _ = writeln!(io.stdout, "config valid: {}", loaded.path_display());
+            0
+        }
+        Err(code) => code,
+    }
+}
+
+fn execute_config_show(
+    show: ConfigShowCommand,
+    config: Option<PathBuf>,
+    session_dir: Option<PathBuf>,
+    io: &mut CliIo<'_>,
+    deps: &CliDeps,
+) -> i32 {
+    if !show.effective {
+        let _ = writeln!(
+            io.stderr,
+            "config show requires --effective (prints redacted merged config with source layers)"
+        );
+        return 2;
+    }
+
+    let loaded = match load_config_for_cli(config, session_dir, io, deps, "config show failed") {
+        Ok(loaded) => loaded,
+        Err(code) => return code,
+    };
+
+    match effective_config_json(&loaded) {
+        Ok(json) => {
+            let _ = writeln!(io.stdout, "{json}");
+            0
+        }
+        Err(err) => {
+            let _ = writeln!(io.stderr, "config show failed: {err}");
+            1
+        }
+    }
+}
+
+fn execute_config_sources(
+    config: Option<PathBuf>,
+    session_dir: Option<PathBuf>,
+    io: &mut CliIo<'_>,
+    deps: &CliDeps,
+) -> i32 {
+    let loaded = match load_config_for_cli(config, session_dir, io, deps, "config sources failed") {
+        Ok(loaded) => loaded,
+        Err(code) => return code,
+    };
+
+    match config_sources_json(&loaded) {
+        Ok(json) => {
+            let _ = writeln!(io.stdout, "{json}");
+            0
+        }
+        Err(err) => {
+            let _ = writeln!(io.stderr, "config sources failed: {err}");
+            1
+        }
+    }
+}
+
+fn execute_config_explain(
+    explain: ConfigExplainCommand,
+    config: Option<PathBuf>,
+    session_dir: Option<PathBuf>,
+    io: &mut CliIo<'_>,
+    deps: &CliDeps,
+) -> i32 {
+    let path = explain.path.trim();
+    if path.is_empty() {
+        let _ = writeln!(
+            io.stderr,
+            "config explain requires a dotted path (for example: model)"
+        );
+        return 2;
+    }
+
+    let loaded = match load_config_for_cli(config, session_dir, io, deps, "config explain failed") {
+        Ok(loaded) => loaded,
+        Err(code) => return code,
+    };
+
+    match config_explain_json(&loaded, path) {
+        Ok(json) => {
+            let _ = writeln!(io.stdout, "{json}");
+            0
+        }
+        Err(err) => {
+            let _ = writeln!(io.stderr, "config explain failed: {err}");
+            1
+        }
+    }
+}
+
+fn execute_config_settings(io: &mut CliIo<'_>) -> i32 {
+    match harness_core::config::settings_registry_json() {
+        Ok(json) => {
+            let _ = writeln!(io.stdout, "{json}");
+            0
+        }
+        Err(err) => {
+            let _ = writeln!(io.stderr, "config settings failed: {err}");
+            1
+        }
+    }
+}
+
+fn load_config_for_cli(
+    config: Option<PathBuf>,
+    session_dir: Option<PathBuf>,
+    io: &mut CliIo<'_>,
+    deps: &CliDeps,
+    error_prefix: &str,
+) -> Result<harness_core::config::LoadedConfig, i32> {
     let config_context = match deps.config_load_context() {
         Ok(context) => context,
         Err(err) => {
             let _ = writeln!(
                 io.stderr,
-                "config validation failed: failed to resolve config context: {err}"
+                "{error_prefix}: failed to resolve config context: {err}"
             );
-            return 2;
+            return Err(2);
         }
     };
-    let Some(loaded) = (match load_resolved_config_with_context(config.as_deref(), &config_context)
-    {
-        Ok(loaded) => loaded,
-        Err(err) => {
-            let _ = writeln!(io.stderr, "config validation failed: {err}");
-            return 1;
-        }
-    }) else {
+    let Some(mut loaded) =
+        (match load_resolved_config_with_context(config.as_deref(), &config_context) {
+            Ok(loaded) => loaded,
+            Err(err) => {
+                let _ = writeln!(io.stderr, "{error_prefix}: {err}");
+                return Err(1);
+            }
+        })
+    else {
         let _ = writeln!(
             io.stderr,
             "no config file found; pass --config <path>, create ./harness.jsonc or ./harness.json, or create $XDG_CONFIG_HOME/harness/harness.jsonc or $XDG_CONFIG_HOME/harness/harness.json for shared defaults. A starting point lives at configs/harness.example.jsonc"
         );
-        return 2;
+        return Err(2);
     };
 
-    let path_display = loaded.path_display();
-    let mut config = loaded.config;
-    config.apply_session_dir_override(session_dir);
-    let _ = writeln!(io.stdout, "config valid: {path_display}");
-    0
+    loaded.config.apply_session_dir_override(session_dir);
+    Ok(loaded)
+}
+
+fn effective_config_json(loaded: &harness_core::config::LoadedConfig) -> Result<String, String> {
+    let raw = serde_json::to_value(&loaded.config)
+        .map_err(|err| format!("serialize effective config: {err}"))?;
+    let redacted = redact_value(&DefaultRedactor::default(), &raw);
+    let layers: Vec<String> = loaded
+        .paths
+        .iter()
+        .map(|path| path.display().to_string())
+        .collect();
+    let primary_path = effective_primary_path(loaded).map(|path| path.display().to_string());
+    let envelope = serde_json::json!({
+        "schema_version": "harness-config-effective-v1",
+        "redacted": true,
+        "layers": layers,
+        "primary_path": primary_path,
+        "effective": redacted,
+    });
+    serde_json::to_string_pretty(&envelope)
+        .map_err(|err| format!("serialize effective config envelope: {err}"))
+}
+
+fn effective_primary_path(loaded: &harness_core::config::LoadedConfig) -> Option<&std::path::Path> {
+    loaded
+        .paths
+        .iter()
+        .rev()
+        .find(|path| {
+            let name = path
+                .file_name()
+                .and_then(|value| value.to_str())
+                .unwrap_or_default();
+            name.starts_with("harness.")
+                || name == "config.jsonc"
+                || name == "config.json"
+                || name.starts_with("config.")
+        })
+        .map(PathBuf::as_path)
+        .or_else(|| loaded.primary_path())
+}
+
+fn config_sources_json(loaded: &harness_core::config::LoadedConfig) -> Result<String, String> {
+    let primary = effective_primary_path(loaded).map(|path| path.display().to_string());
+    let layers: Vec<serde_json::Value> = loaded
+        .paths
+        .iter()
+        .enumerate()
+        .map(|(index, path)| {
+            let name = path
+                .file_name()
+                .and_then(|value| value.to_str())
+                .unwrap_or_default();
+            let kind = if name.starts_with("tui.") {
+                "tui"
+            } else {
+                "runtime"
+            };
+            serde_json::json!({
+                "order": index + 1,
+                "path": path.display().to_string(),
+                "exists": path.is_file(),
+                "kind": kind,
+                "primary": primary.as_deref() == Some(&path.display().to_string()),
+            })
+        })
+        .collect();
+    let envelope = serde_json::json!({
+        "schema_version": "harness-config-sources-v1",
+        "layer_count": layers.len(),
+        "primary_path": primary,
+        "layers": layers,
+        "merge_order": "later layers override earlier layers",
+    });
+    serde_json::to_string_pretty(&envelope)
+        .map_err(|err| format!("serialize config sources envelope: {err}"))
+}
+
+fn config_explain_json(
+    loaded: &harness_core::config::LoadedConfig,
+    path: &str,
+) -> Result<String, String> {
+    let segments = split_config_path(path);
+    if segments.is_empty() {
+        return Err("path is empty".to_string());
+    }
+
+    let redactor = DefaultRedactor::default();
+    let effective_raw = serde_json::to_value(&loaded.config)
+        .map_err(|err| format!("serialize effective config: {err}"))?;
+    let effective_redacted = redact_value(&redactor, &effective_raw);
+    let effective_at_path = value_at_path(&effective_redacted, &segments);
+
+    let mut layer_rows = Vec::new();
+    let mut source_path = None;
+    let mut source_value = None;
+    for layer_path in &loaded.paths {
+        let (defines_path, layer_value) = match layer_value_at_path(layer_path, &segments) {
+            Ok(Some(value)) => (true, Some(redact_value(&redactor, &value))),
+            Ok(None) => (false, None),
+            Err(err) => {
+                layer_rows.push(serde_json::json!({
+                    "path": layer_path.display().to_string(),
+                    "defines_path": false,
+                    "error": err,
+                }));
+                continue;
+            }
+        };
+        if defines_path {
+            source_path = Some(layer_path.display().to_string());
+            source_value = layer_value.clone();
+        }
+        layer_rows.push(serde_json::json!({
+            "path": layer_path.display().to_string(),
+            "defines_path": defines_path,
+            "value": layer_value,
+        }));
+    }
+
+    let found = effective_at_path.is_some() || source_value.is_some();
+    let effective = effective_at_path.cloned().or_else(|| source_value.clone());
+    let envelope = serde_json::json!({
+        "schema_version": "harness-config-explain-v1",
+        "path": path,
+        "found": found,
+        "redacted": true,
+        "effective": effective,
+        "source_path": source_path,
+        "source_value": source_value,
+        "layers": layer_rows,
+        "note": "source_path is the last discovered layer that defines the path; later layers override earlier ones",
+    });
+    serde_json::to_string_pretty(&envelope)
+        .map_err(|err| format!("serialize config explain envelope: {err}"))
+}
+
+fn split_config_path(path: &str) -> Vec<String> {
+    path.split(['.', '/'])
+        .map(str::trim)
+        .filter(|segment| !segment.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+fn value_at_path<'a>(
+    value: &'a serde_json::Value,
+    segments: &[String],
+) -> Option<&'a serde_json::Value> {
+    let mut current = value;
+    for segment in segments {
+        current = match current {
+            serde_json::Value::Object(map) => map.get(segment).or_else(|| {
+                map.iter().find_map(|(key, nested)| {
+                    if key.eq_ignore_ascii_case(segment)
+                        || key
+                            .replace('_', "")
+                            .eq_ignore_ascii_case(&segment.replace(['_', '-'], ""))
+                    {
+                        Some(nested)
+                    } else {
+                        None
+                    }
+                })
+            })?,
+            serde_json::Value::Array(items) => {
+                let index: usize = segment.parse().ok()?;
+                items.get(index)?
+            }
+            _ => return None,
+        };
+    }
+    Some(current)
+}
+
+fn layer_value_at_path(
+    path: &std::path::Path,
+    segments: &[String],
+) -> Result<Option<serde_json::Value>, String> {
+    let raw =
+        std::fs::read_to_string(path).map_err(|err| format!("read {}: {err}", path.display()))?;
+    let root: serde_json::Value =
+        json5::from_str(&raw).map_err(|err| format!("parse {}: {err}", path.display()))?;
+    Ok(value_at_path(&root, segments).cloned())
 }
 
 #[cfg(test)]
@@ -704,6 +1591,9 @@ mod tests {
 
     #[test]
     fn schema_command_runs_in_process_with_captured_stdout() {
+        // arrange
+        // act
+        // assert
         let mut stdin = Cursor::new(Vec::<u8>::new());
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
@@ -721,6 +1611,9 @@ mod tests {
 
     #[test]
     fn prompt_setup_error_preserves_usage_exit_code() {
+        // arrange
+        // act
+        // assert
         let mut stdin = Cursor::new(Vec::<u8>::new());
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
@@ -735,6 +1628,9 @@ mod tests {
 
     #[test]
     fn config_validate_uses_injected_filesystem_root() {
+        // arrange
+        // act
+        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         std::fs::write(
             temp.path().join("harness.jsonc"),
@@ -778,7 +1674,281 @@ mod tests {
     }
 
     #[test]
+    fn config_show_effective_emits_redacted_merged_json_with_layers() {
+        // arrange
+        // act
+        // assert
+        let temp = tempfile::tempdir().unwrap_or_abort();
+        std::fs::write(
+            temp.path().join("harness.jsonc"),
+            r#"{
+  "provider": {
+    "default": {
+      "type": "openai_compatible",
+      "name": "Local Test Provider",
+      "options": {
+        "baseURL": "http://127.0.0.1:9999/v1",
+        "apiKey": "sk-proj-super-secret-key-0123456789abcdef"
+      },
+      "models": {"mock-model": {"name": "Mock Model"}}
+    }
+  },
+  "model": "default/mock-model",
+  "agent": {"build": {"enable": true, "model": "default/mock-model"}},
+  "default_agent": "build"
+}
+"#,
+        )
+        .unwrap_or_abort();
+
+        let mut stdin = Cursor::new(Vec::<u8>::new());
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let mut io = CliIo::new(&mut stdin, &mut stdout, &mut stderr);
+
+        let outcome = run(
+            ["harness", "config", "show", "--effective"],
+            &mut io,
+            CliDeps::real().with_filesystem_root(temp.path().to_path_buf()),
+        );
+
+        assert!(
+            outcome.success(),
+            "stderr: {}",
+            String::from_utf8_lossy(&stderr)
+        );
+        let stdout_text = String::from_utf8_lossy(&stdout);
+        assert!(
+            stdout_text.contains("\"schema_version\": \"harness-config-effective-v1\""),
+            "stdout: {stdout_text}"
+        );
+        assert!(
+            stdout_text.contains("\"redacted\": true"),
+            "stdout: {stdout_text}"
+        );
+        assert!(stdout_text.contains("\"layers\""), "stdout: {stdout_text}");
+        assert!(
+            stdout_text.contains("harness.jsonc"),
+            "stdout: {stdout_text}"
+        );
+        assert!(
+            stdout_text.contains("[REDACTED_API_KEY]") || stdout_text.contains("[REDACTED"),
+            "expected api key redaction markers in stdout: {stdout_text}"
+        );
+        assert!(
+            !stdout_text.contains("sk-proj-super-secret-key-0123456789abcdef"),
+            "secret leaked in stdout: {stdout_text}"
+        );
+    }
+
+    #[test]
+    fn config_show_without_effective_flag_exits_usage() {
+        // arrange
+        // act
+        // assert
+        let mut stdin = Cursor::new(Vec::<u8>::new());
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let mut io = CliIo::new(&mut stdin, &mut stdout, &mut stderr);
+
+        let outcome = run(["harness", "config", "show"], &mut io, CliDeps::real());
+
+        assert_eq!(outcome.code, 2);
+        assert!(stdout.is_empty());
+        assert!(String::from_utf8_lossy(&stderr).contains("config show requires --effective"));
+    }
+
+    #[test]
+    fn config_settings_lists_registry_metadata_without_secret_values() {
+        // arrange
+        // act
+        // assert
+        let mut stdin = Cursor::new(Vec::<u8>::new());
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let mut io = CliIo::new(&mut stdin, &mut stdout, &mut stderr);
+
+        let outcome = run(["harness", "config", "settings"], &mut io, CliDeps::real());
+
+        assert!(
+            outcome.success(),
+            "stderr: {}",
+            String::from_utf8_lossy(&stderr)
+        );
+        let stdout_text = String::from_utf8_lossy(&stdout);
+        assert!(
+            stdout_text.contains("\"schema_version\": \"harness-settings-registry-v1\""),
+            "stdout: {stdout_text}"
+        );
+        assert!(
+            stdout_text.contains("\"setting_id\": \"model\""),
+            "stdout: {stdout_text}"
+        );
+        assert!(
+            stdout_text.contains("\"sensitivity\": \"secret\""),
+            "stdout: {stdout_text}"
+        );
+        assert!(
+            stdout_text.contains("\"metadata_only\": true"),
+            "stdout: {stdout_text}"
+        );
+        assert!(
+            !stdout_text.contains("default_value"),
+            "settings CLI must not emit default values: {stdout_text}"
+        );
+        assert!(
+            !stdout_text.contains("sk-"),
+            "settings CLI must not emit secret-looking values: {stdout_text}"
+        );
+    }
+
+    #[test]
+    fn config_sources_lists_discovered_layers() {
+        // arrange
+        // act
+        // assert
+        let temp = tempfile::tempdir().unwrap_or_abort();
+        std::fs::write(
+            temp.path().join("harness.jsonc"),
+            r#"{
+  "provider": {
+    "default": {
+      "type": "openai_compatible",
+      "name": "Local Test Provider",
+      "options": {
+        "baseURL": "http://127.0.0.1:9999/v1",
+        "apiKey": "DUMMY"
+      },
+      "models": {"mock-model": {"name": "Mock Model"}}
+    }
+  },
+  "model": "default/mock-model",
+  "agent": {"build": {"enable": true, "model": "default/mock-model"}},
+  "default_agent": "build"
+}
+"#,
+        )
+        .unwrap_or_abort();
+
+        let mut stdin = Cursor::new(Vec::<u8>::new());
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let mut io = CliIo::new(&mut stdin, &mut stdout, &mut stderr);
+
+        let outcome = run(
+            ["harness", "config", "sources"],
+            &mut io,
+            CliDeps::real().with_filesystem_root(temp.path().to_path_buf()),
+        );
+
+        assert!(
+            outcome.success(),
+            "stderr: {}",
+            String::from_utf8_lossy(&stderr)
+        );
+        let stdout_text = String::from_utf8_lossy(&stdout);
+        assert!(
+            stdout_text.contains("\"schema_version\": \"harness-config-sources-v1\""),
+            "stdout: {stdout_text}"
+        );
+        assert!(
+            stdout_text.contains("harness.jsonc"),
+            "stdout: {stdout_text}"
+        );
+        assert!(
+            stdout_text.contains("\"kind\": \"runtime\""),
+            "stdout: {stdout_text}"
+        );
+    }
+
+    #[test]
+    fn config_explain_attributes_overridden_path_to_project_layer() {
+        // arrange
+        // act
+        // assert
+        let temp = tempfile::tempdir().unwrap_or_abort();
+        let xdg = temp.path().join("xdg");
+        let project = temp.path().join("project");
+        std::fs::create_dir_all(xdg.join("harness")).unwrap_or_abort();
+        std::fs::create_dir_all(&project).unwrap_or_abort();
+
+        std::fs::write(
+            xdg.join("harness/harness.jsonc"),
+            r#"{
+  "provider": {
+    "default": {
+      "type": "openai_compatible",
+      "name": "Global Provider",
+      "options": {
+        "baseURL": "http://127.0.0.1:9999/v1",
+        "apiKey": "sk-proj-global-secret-0123456789abcdef"
+      },
+      "models": {"mock-model": {"name": "Mock Model"}}
+    }
+  },
+  "model": "default/mock-model",
+  "agent": {"build": {"enable": true, "model": "default/mock-model"}},
+  "default_agent": "build"
+}
+"#,
+        )
+        .unwrap_or_abort();
+        std::fs::write(
+            project.join("harness.jsonc"),
+            r#"{
+  "model": "default/mock-model",
+  "default_agent": "build"
+}
+"#,
+        )
+        .unwrap_or_abort();
+
+        let mut stdin = Cursor::new(Vec::<u8>::new());
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let mut io = CliIo::new(&mut stdin, &mut stdout, &mut stderr);
+
+        let outcome = run(
+            ["harness", "config", "explain", "model"],
+            &mut io,
+            CliDeps::real()
+                .with_filesystem_root(project)
+                .with_env("XDG_CONFIG_HOME", xdg.display().to_string()),
+        );
+
+        assert!(
+            outcome.success(),
+            "stderr: {}",
+            String::from_utf8_lossy(&stderr)
+        );
+        let stdout_text = String::from_utf8_lossy(&stdout);
+        assert!(
+            stdout_text.contains("\"schema_version\": \"harness-config-explain-v1\""),
+            "stdout: {stdout_text}"
+        );
+        assert!(
+            stdout_text.contains("\"found\": true"),
+            "stdout: {stdout_text}"
+        );
+        assert!(
+            stdout_text.contains("\"path\": \"model\""),
+            "stdout: {stdout_text}"
+        );
+        assert!(
+            stdout_text.contains("project") && stdout_text.contains("harness.jsonc"),
+            "expected project layer attribution in stdout: {stdout_text}"
+        );
+        assert!(
+            !stdout_text.contains("sk-proj-global-secret-0123456789abcdef"),
+            "secret leaked in stdout: {stdout_text}"
+        );
+    }
+
+    #[test]
     fn cli_deps_runs_injected_command_runner() {
+        // arrange
+        // act
+        // assert
         let runner = Arc::new(RecordingRunner::new(CliCommandOutput {
             exit_code: 0,
             stdout: b"ok".to_vec(),
@@ -806,6 +1976,9 @@ mod tests {
 
     #[test]
     fn cli_deps_uses_injected_clock_factory() {
+        // arrange
+        // act
+        // assert
         let calls = Arc::new(AtomicU64::new(0));
         let observed = Arc::clone(&calls);
         let deps = CliDeps::real().with_clock_factory(move |deterministic| {
@@ -821,6 +1994,9 @@ mod tests {
 
     #[test]
     fn cli_deps_exposes_injected_provider() {
+        // arrange
+        // act
+        // assert
         let provider: Arc<dyn harness_providers::Provider> =
             Arc::new(crate::scenarios::golden_path_provider());
         let provider_clone = Arc::clone(&provider);

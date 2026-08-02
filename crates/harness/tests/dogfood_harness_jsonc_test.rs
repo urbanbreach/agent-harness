@@ -106,6 +106,9 @@ fn openai_codex_provider_resolves_codex_auth_provider() {
                 "openai-codex provider must have authProvider codex"
             );
         }
+        ProviderConfig::Anthropic(_) => {
+            panic!("unexpected Anthropic provider in openai_codex_provider_has_codex_auth_provider test")
+        }
     }
 }
 
@@ -129,6 +132,9 @@ fn default_provider_has_inline_api_key_without_auth_provider() {
                 !opts.api_key.is_empty(),
                 "default provider must have inline apiKey"
             );
+        }
+        ProviderConfig::Anthropic(_) => {
+            panic!("unexpected Anthropic provider in default_provider_has_inline_api_key_without_auth_provider test")
         }
     }
 }
@@ -162,6 +168,9 @@ fn umans_provider_has_api_key_env_without_auth_provider() {
                     .any(|env| env == "UMANS_AI_CODING_PLAN_API_KEY"),
                 "umans-ai-coding-plan provider must reference UMANS_AI_CODING_PLAN_API_KEY"
             );
+        }
+        ProviderConfig::Anthropic(_) => {
+            panic!("unexpected Anthropic provider in umans_provider_has_api_key_env_without_auth_provider test")
         }
     }
 }
@@ -209,6 +218,9 @@ fn adding_anthropic_auth_provider_to_real_config_works() {
                 Some("anthropic"),
                 "anthropic-test provider must have authProvider anthropic"
             );
+        }
+        ProviderConfig::Anthropic(_) => {
+            panic!("unexpected Anthropic provider in adding_anthropic_auth_provider_to_real_config_works test")
         }
     }
 }

@@ -32,3 +32,21 @@ inspirations/
 # Local environment secrets / credentials
 .env
 *.env
+
+# Test probe directories (created by integration/e2e tests)
+.harness-*-probe*/
+.harness-foreign-probe*/
+
+# Local scratch / probe artifacts
+/check_home.sh
+/harness.json
+/src/
+crates/harness/harness.json
+
+# Local runtime configuration, agent evidence, and task scratch
+/harness.jsonc
+/tui.jsonc
+/.omo/
+/ATTEMPT/
+**/__pycache__/
+scripts/tui-parity/node_modules/
