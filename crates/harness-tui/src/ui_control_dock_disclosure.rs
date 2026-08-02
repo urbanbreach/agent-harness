@@ -136,6 +136,12 @@ pub(super) fn composer_context_summary_candidates(
     theme: &Theme,
     surface: Color,
 ) -> Vec<Vec<Span<'static>>> {
+    // Grok's live composer footer contains shortcuts only; context usage is
+    // owned by the top-right session header and must not shift the hint row.
+    if !app.replay_mode {
+        return vec![Vec::new()];
+    }
+
     let (tokens, percent) = composer_context_usage(app);
     let metrics = app.compaction_usage_metrics();
     let mut primary = vec![disclosure_segment(
@@ -405,8 +411,33 @@ pub(super) fn render_control_dock_disclosure(
     let active_live_composer = !app.startup_shell_visible()
         && !app.completed_session_shell_active()
         && !dock.composer_disabled;
+    let context_summary_visible = app.current_context_window_tokens().is_some()
+        || app.active_context_usage().is_some()
+        || app.compaction_usage_metrics().completed_count > 0;
 
-    if active_live_composer && !app.interrupt_hint_visible() {
+    if active_live_composer && app.starting_session_seed_visible() {
+        let row = starting_session_seed_row(app.transcript_animation_phase(), theme, surface);
+        frame.render_widget(Paragraph::new(Line::from(row)).style(base), area);
+        return;
+    }
+
+    let background_task_count = app.active_background_task_count();
+    if active_live_composer
+        && !app.active_turn_in_progress()
+        && background_task_count > 0
+        && !context_summary_visible
+    {
+        let row = monitor_still_running_row(
+            background_task_count,
+            app.transcript_animation_phase(),
+            theme,
+            surface,
+        );
+        frame.render_widget(Paragraph::new(Line::from(row)).style(base), area);
+        return;
+    }
+
+    if active_live_composer && !app.interrupt_hint_visible() && !context_summary_visible {
         let freeze_row = live_freeze_shortcut_disclosure_row(app, theme, surface);
         if spans_width(&freeze_row) <= usize::from(area.width) {
             let disclosure_area = Rect {
@@ -423,7 +454,16 @@ pub(super) fn render_control_dock_disclosure(
         }
     }
 
-    let mut hint_candidates = composer_disclosure_hint_candidates(app, dock, theme, surface);
+    let mut hint_candidates = if active_live_composer && !app.interrupt_hint_visible() {
+        let freeze_row = live_freeze_shortcut_disclosure_row(app, theme, surface);
+        if spans_width(&freeze_row) <= usize::from(area.width) {
+            vec![freeze_row]
+        } else {
+            composer_disclosure_hint_candidates(app, dock, theme, surface)
+        }
+    } else {
+        composer_disclosure_hint_candidates(app, dock, theme, surface)
+    };
     let summary_candidates = if active_live_composer {
         composer_context_summary_candidates(app, theme, surface)
     } else {
@@ -470,12 +510,7 @@ pub(super) fn render_control_dock_disclosure(
         });
 
         if let Some(spans) = render_spans {
-            frame.render_widget(
-                Paragraph::new(Line::from(spans))
-                    .style(base)
-                    .alignment(Alignment::Right),
-                area,
-            );
+            frame.render_widget(Paragraph::new(Line::from(spans)).style(base), area);
             return;
         }
     }
@@ -638,42 +673,94 @@ fn compose_interrupt_shortcut_row(theme: &Theme, surface: Color) -> Vec<Span<'st
     ]
 }
 
+fn monitor_still_running_row(
+    count: usize,
+    animation_phase: usize,
+    theme: &Theme,
+    surface: Color,
+) -> Vec<Span<'static>> {
+    const FRAMES: [&str; 4] = ["○", "◎", "◉", "◎"];
+    const FRAME_TICK_DIVISOR: usize = 8;
+    let frame = FRAMES[(animation_phase / FRAME_TICK_DIVISOR) % FRAMES.len()];
+    let noun = if count == 1 { "task" } else { "tasks" };
+    vec![
+        Span::styled(
+            format!("{frame} "),
+            Style::default().fg(theme.text.accent).bg(surface),
+        ),
+        Span::styled(
+            format!("{count} background {noun} still running"),
+            Style::default().fg(theme.text.secondary).bg(surface),
+        ),
+    ]
+}
+
+fn starting_session_seed_row(
+    animation_phase: usize,
+    theme: &Theme,
+    surface: Color,
+) -> Vec<Span<'static>> {
+    vec![
+        Span::styled(
+            format!(
+                "{} ",
+                super::ui_transcript_style::transcript_streaming_spinner_frame(animation_phase)
+            ),
+            Style::default().fg(theme.text.accent).bg(surface),
+        ),
+        Span::styled(
+            "Starting session…",
+            Style::default().fg(theme.text.secondary).bg(surface),
+        ),
+    ]
+}
+
 fn live_freeze_shortcut_disclosure_row(
     app: &AppState,
     theme: &Theme,
     surface: Color,
 ) -> Vec<Span<'static>> {
-    let _ = theme;
     // Reference idle footer uses 256-color palette: color 15 (bright white) for
     // bold key bindings, color 7 (normal white) for labels and dim separator.
     let bold = Style::default()
-        .fg(Color::Indexed(15))
+        .fg(theme.reference_terminal.primary)
         .bg(surface)
         .add_modifier(Modifier::BOLD);
-    let normal = Style::default().fg(Color::Indexed(7)).bg(surface);
+    let normal = Style::default()
+        .fg(theme.reference_terminal.secondary)
+        .bg(surface);
     let dim = Style::default()
-        .fg(Color::Indexed(7))
+        .fg(theme.reference_terminal.secondary)
         .bg(surface)
         .add_modifier(Modifier::DIM);
 
-    let mode_key = freeze_preferred_binding(app, Action::VariantCycle, "Shift+Tab");
+    let mode_key = freeze_preferred_binding(app, Action::CycleMode, "Shift+Tab");
     let help_key = freeze_preferred_binding(app, Action::Help, "Ctrl+x");
+    let active_turn = app.active_turn_in_progress();
 
     let mut spans = Vec::new();
     if !app.composer.prompt_buffer.is_empty() {
         let send_key = freeze_preferred_binding(app, Action::SubmitPrompt, "Enter");
         spans.extend([
             Span::styled(send_key, bold),
-            Span::styled(":send", normal),
+            Span::styled(if active_turn { ":queue" } else { ":send" }, normal),
             Span::styled("  │  ", dim),
         ]);
+        if active_turn {
+            let newline_key = freeze_preferred_binding(app, Action::InsertNewline, "Alt+Enter");
+            spans.extend([
+                Span::styled(newline_key, bold),
+                Span::styled(":newline", normal),
+                Span::styled("  │  ", dim),
+            ]);
+        }
     }
     spans.extend([
         Span::styled(mode_key, bold),
         Span::styled(":mode", normal),
         Span::styled("  │  ", dim),
     ]);
-    if app.active_turn_in_progress() {
+    if active_turn {
         spans.extend([
             Span::styled("Ctrl+c", bold),
             Span::styled(":cancel", normal),
@@ -873,4 +960,45 @@ pub(super) fn completed_session_status_summary(
         }
         _ => "run finished · session shell preserved".to_string(),
     })
+}
+
+#[cfg(test)]
+mod monitor_pulse_tests {
+    use super::{monitor_still_running_row, starting_session_seed_row};
+    use crate::theme::Theme;
+    use ratatui::style::Color;
+
+    #[test]
+    fn monitor_indicator_uses_reference_pulse_dwell() {
+        // arrange
+        // act
+        // assert
+        let theme = Theme::default();
+        let text = |tick| {
+            monitor_still_running_row(2, tick, &theme, Color::Reset)
+                .into_iter()
+                .map(|span| span.content.into_owned())
+                .collect::<String>()
+        };
+        assert_eq!(text(0), text(7));
+        assert_ne!(text(7), text(8));
+        assert!(text(16).contains("2 background tasks still running"));
+    }
+
+    #[test]
+    fn starting_session_seed_uses_reference_spinner_dwell() {
+        // arrange
+        // act
+        // assert
+        let theme = Theme::default();
+        let text = |tick| {
+            starting_session_seed_row(tick, &theme, Color::Reset)
+                .into_iter()
+                .map(|span| span.content.into_owned())
+                .collect::<String>()
+        };
+        assert_eq!(text(0), text(3));
+        assert_ne!(text(3), text(4));
+        assert!(text(0).contains("Starting session…"));
+    }
 }

@@ -290,6 +290,7 @@ pub fn compute_palette_rows(app: &AppState, filter: &str) -> Vec<PaletteRow> {
         available
             .into_iter()
             .filter(|entry| EMPTY_FILTER_CATEGORIES.contains(&entry.category))
+            .filter(|entry| entry.id != "worktree.switch")
             .filter(|entry| !entry.freeze_shortcut().is_empty())
             .map(|entry| PaletteRow {
                 value: entry.id.to_string(),

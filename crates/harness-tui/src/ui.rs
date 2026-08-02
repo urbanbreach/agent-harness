@@ -27,6 +27,8 @@ mod ui_diff;
 mod ui_fenced_text;
 #[path = "ui_lifecycle.rs"]
 mod ui_lifecycle;
+#[path = "ui_live_turn_status.rs"]
+mod ui_live_turn_status;
 #[path = "ui_lsp.rs"]
 mod ui_lsp;
 #[path = "ui_markdown.rs"]
@@ -42,6 +44,8 @@ mod ui_secondary_events_tab;
 #[cfg(test)]
 #[path = "ui_shell_exact_tests.rs"]
 mod ui_shell_exact_tests;
+#[path = "ui_startup_logo.rs"]
+mod ui_startup_logo;
 #[path = "ui_syntax_highlight.rs"]
 mod ui_syntax_highlight;
 #[path = "ui_terminal.rs"]
@@ -80,6 +84,10 @@ mod ui_transcript_events;
 mod ui_transcript_interaction;
 #[path = "ui_transcript_layout.rs"]
 mod ui_transcript_layout;
+#[path = "ui_transcript_mermaid.rs"]
+mod ui_transcript_mermaid;
+#[path = "ui_transcript_mermaid_art.rs"]
+mod ui_transcript_mermaid_art;
 #[path = "ui_transcript_scrollbar.rs"]
 mod ui_transcript_scrollbar;
 #[path = "ui_transcript_selection.rs"]
@@ -207,7 +215,9 @@ use ui_transcript::build_transcript_lines;
 pub(crate) use ui_transcript::{
     exact_test_block_tool_cards_skip_empty_subtitle_rows,
     exact_test_body_after_thought_packs_wall_clock_on_same_line,
-    exact_test_done_body_after_tool_keeps_separate_wall_clock_row,
+    exact_test_completed_thought_turn_has_no_selected_rail,
+    exact_test_completed_tool_turn_has_no_selected_rail,
+    exact_test_done_body_after_tool_packs_wall_clock_on_response_row,
     exact_test_file_search_rows_match_reference_title_description_shape,
     exact_test_generic_tool_successful_output_prefers_inline_background_rows,
     exact_test_inline_tool_rows_wrap_long_subtitles_cleanly,
@@ -224,8 +234,6 @@ pub(crate) use ui_transcript::{
     exact_test_pending_edit_permission_packs_dual_run_write_duration,
     exact_test_pending_question_has_no_selected_rail,
     exact_test_redacted_only_reasoning_matches_reference_empty_body,
-    exact_test_selected_rail_falls_back_to_thought_without_tools,
-    exact_test_selected_rail_prefers_last_tool_over_thought,
     exact_test_skill_tool_rows_match_reference_title_and_icon,
     exact_test_todo_write_rows_render_open_checklist,
     exact_test_todo_write_running_renders_inline_updating_indicator,
@@ -515,6 +523,9 @@ fn render_runtime_state_surface(frame: &mut Frame, app: &AppState, area: Rect, t
 }
 
 fn render_toast(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
+    if app.overlay_stack().top().is_some() {
+        return;
+    }
     let Some(toast) = app.toast() else {
         return;
     };
@@ -534,8 +545,12 @@ fn render_toast(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
     let accent = match toast.variant {
         ToastVariant::Info => theme.status.info,
         ToastVariant::Error => theme.status.error,
+        ToastVariant::Mode => theme.text.accent,
     };
     let surface = theme.surface.panel;
+    let accent = ui_transcript_style::blend_color(surface, accent, toast.fade_alpha());
+    let text_color =
+        ui_transcript_style::blend_color(surface, theme.text.primary, toast.fade_alpha());
     let block = Block::default()
         .style(Style::default().bg(surface))
         .borders(Borders::LEFT | Borders::RIGHT)
@@ -556,7 +571,7 @@ fn render_toast(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
             truncate_plain_text(&toast.message, usize::from(inner.width)),
-            Style::default().fg(theme.text.primary).bg(surface),
+            Style::default().fg(text_color).bg(surface),
         ))),
         inner,
     );

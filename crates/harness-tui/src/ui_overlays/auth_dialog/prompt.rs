@@ -112,14 +112,22 @@ pub(super) fn render_waiting_panel(frame: &mut Frame, app: &AppState, theme: &Th
         ),
         2,
     );
-    let lines = vec![
+    let mut lines = vec![
         Line::from(Span::styled(
             format!("Waiting for {provider_label} authorization..."),
             Style::default().fg(theme.text.tertiary),
         )),
         Line::from(""),
-        Line::from(split_hint("c copy", theme)),
     ];
+    if let Some(notice) = dialog.notice.as_deref() {
+        lines.extend(notice.lines().map(|line| {
+            Line::from(Span::styled(
+                line.to_string(),
+                Style::default().fg(theme.text.primary),
+            ))
+        }));
+    }
+    lines.push(Line::from(split_hint("c copy", theme)));
     frame.render_widget(Paragraph::new(lines), body);
 }
 
@@ -143,16 +151,20 @@ pub(super) fn render_result_panel(
         },
     );
 
-    let message = dialog
-        .toast
-        .as_ref()
-        .map(|toast| toast.message.as_str())
-        .or(dialog.error_message.as_deref())
-        .unwrap_or(if success {
-            "Connected successfully"
-        } else {
-            "Authentication failed"
-        });
+    let message = if success {
+        dialog
+            .toast
+            .as_ref()
+            .map(|toast| toast.message.as_str())
+            .or(dialog.error_message.as_deref())
+            .unwrap_or("Connected successfully")
+    } else {
+        dialog
+            .error_message
+            .as_deref()
+            .or_else(|| dialog.toast.as_ref().map(|toast| toast.message.as_str()))
+            .unwrap_or("Authentication failed")
+    };
     let model_info = dialog
         .selected_model
         .and_then(|index| dialog.models.get(index))
@@ -162,10 +174,11 @@ pub(super) fn render_result_panel(
     } else {
         theme.status.error
     };
-    let mut lines = vec![Line::from(Span::styled(
-        message,
-        Style::default().fg(color).add_modifier(Modifier::BOLD),
-    ))];
+    let message_style = Style::default().fg(color).add_modifier(Modifier::BOLD);
+    let mut lines = message
+        .lines()
+        .map(|line| Line::from(Span::styled(line, message_style)))
+        .collect::<Vec<_>>();
     if let Some(model) = model_info {
         lines.push(Line::from(Span::styled(
             model,

@@ -124,8 +124,8 @@ pub(super) fn write_tool_title(tool_call: &ToolCallEntry) -> String {
 
 pub(super) fn edit_tool_title(tool_call: &ToolCallEntry) -> String {
     tool_summary_string(&tool_call.args_summary, &["filePath", "path"])
-        .map(|path| format!("Edit {path}"))
-        .unwrap_or_else(|| "Edit".to_string())
+        .map(|path| format!("edit {path}"))
+        .unwrap_or_else(|| "edit".to_string())
 }
 
 pub(super) fn mcp_tool_title(tool_call: &ToolCallEntry, display_tool_id: &str) -> String {

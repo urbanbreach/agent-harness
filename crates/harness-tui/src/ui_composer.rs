@@ -249,31 +249,34 @@ pub(super) fn render_document_composer_content(
 }
 
 fn composer_model_badge(app: &AppState) -> String {
-    if app.startup_shell_visible() && app.composer.prompt_buffer.is_empty() {
-        return String::new();
-    }
     let model = app.current_model_base_label();
-    let mut badge = if model.is_empty() || model == "-" {
-        "unknown".to_string()
-    } else {
-        model.to_string()
-    };
+    let mut parts = Vec::new();
+    if !model.is_empty() && model != "-" && !model.eq_ignore_ascii_case("unknown") {
+        parts.push(model.to_string());
+    } else if !app.composer.prompt_buffer.is_empty() {
+        parts.push("unknown".to_string());
+    }
     if let Some(reasoning) = app.current_model_reasoning_label() {
         if !reasoning.is_empty()
-            && !reasoning.eq_ignore_ascii_case(badge.as_str())
-            && !badge.contains(reasoning)
+            && !parts
+                .iter()
+                .any(|part| part.eq_ignore_ascii_case(reasoning) || part.contains(reasoning))
         {
-            badge = format!("{badge} · {reasoning}");
+            parts.push(reasoning.to_string());
         }
     }
     if app.always_approve_mode() {
-        badge = format!("{badge} · always-approve");
+        parts.push("always-approve".to_string());
+    } else if app.session_mode() == crate::app::SessionMode::Plan {
+        parts.push("plan".to_string());
     }
     if app.queued_prompt_count > 0 {
-        let queue = format!("queued {}", app.queued_prompt_count);
-        badge = format!("{badge} · {queue}");
+        parts.push(format!("queued {}", app.queued_prompt_count));
     }
-    badge
+    if app.composer.multiline_mode {
+        parts.push("multiline".to_string());
+    }
+    parts.join(" · ")
 }
 
 fn render_bordered_composer(
@@ -288,16 +291,13 @@ fn render_bordered_composer(
     }
 
     let surface = if context.dock.variant == crate::view_model::ControlDockVariant::Live {
-        Color::Indexed(0)
+        theme.reference_terminal.canvas
     } else {
         Color::Reset
     };
     let composer_surface = surface;
-    // Reference idle composer border uses 256-color palette color 15 (bright
-    // white). The startup variant uses default foreground (Color::Reset) to
-    // match the reference startup freeze.
     let border_fg = if context.dock.variant == crate::view_model::ControlDockVariant::Live {
-        Color::Indexed(15)
+        live_composer_border_color(theme)
     } else {
         Color::Reset
     };
@@ -322,7 +322,12 @@ fn render_bordered_composer(
     let (badge_title, badge_style) = if badge.is_empty() {
         ("  ─".to_string(), border_style)
     } else {
-        (format!(" {badge} ─"), border_style)
+        (
+            format!(" {badge} ─"),
+            Style::default()
+                .fg(theme.reference_terminal.secondary)
+                .bg(surface),
+        )
     };
     block = block.title_bottom(Line::from(Span::styled(badge_title, badge_style)).right_aligned());
 
@@ -379,7 +384,7 @@ fn render_bordered_composer(
         viewport.cursor = None;
     }
 
-    let base_style = if matches!(body_color, Color::Reset | Color::Rgb(215, 218, 224)) {
+    let base_style = if body_color == Color::Reset {
         Style::default().bg(composer_surface)
     } else {
         Style::default().fg(body_color).bg(composer_surface)
@@ -419,6 +424,25 @@ fn render_bordered_composer(
             .saturating_add(u16::try_from(cursor_row).unwrap_or(u16::MAX))
             .min(inner.y.saturating_add(inner.height.saturating_sub(1)));
         frame.set_cursor_position((cursor_x, cursor_y));
+    }
+}
+
+const fn live_composer_border_color(theme: &Theme) -> Color {
+    theme.reference_terminal.prompt_border_active
+}
+
+#[cfg(test)]
+mod active_thinking_color_tests {
+    use super::*;
+
+    #[test]
+    fn live_composer_border_matches_the_groknight_active_prompt() {
+        let theme = Theme::harness_chat();
+
+        assert_eq!(
+            live_composer_border_color(&theme),
+            Color::Rgb(0x50, 0x50, 0x58)
+        );
     }
 }
 

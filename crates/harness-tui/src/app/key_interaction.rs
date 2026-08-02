@@ -2,15 +2,23 @@
 use super::*;
 use crate::UnwrapOrAbort;
 
+const QUIT_CONFIRMATION_TTL: Duration = Duration::from_millis(1_000);
+const QUIT_CONFIRMATION_BANNER: &str = "Press Ctrl+Q again to quit";
+
 impl AppState {
     pub fn handle_key(&mut self, key: KeyEvent) {
+        if self.handle_pending_quit_confirmation(&key) {
+            self.maybe_auto_exit();
+            return;
+        }
+
         if self.keymap.leader_pending() {
             self.keymap.set_leader_pending(false);
             if let Some(action) = self.keymap.leader_action(&key) {
                 if self.active_review_surface == Some(ReviewSurface::Help) {
                     self.close_review_surface();
                 }
-                self.execute_action(action);
+                self.execute_action_from_key(action, key);
                 self.maybe_auto_exit();
                 return;
             }
@@ -191,7 +199,23 @@ impl AppState {
             return;
         }
 
-        let mapped_action = self.keymap.get_action(&key);
+        let mapped_action = if self.focus == Focus::Prompt
+            && self.composer.multiline_mode
+            && key.code == KeyCode::Enter
+        {
+            if key.modifiers == KeyModifiers::NONE {
+                Some(Action::InsertNewline)
+            } else if key
+                .modifiers
+                .intersects(KeyModifiers::SHIFT | KeyModifiers::ALT)
+            {
+                Some(Action::SubmitPrompt)
+            } else {
+                self.keymap.get_action(&key)
+            }
+        } else {
+            self.keymap.get_action(&key)
+        };
 
         if self.startup_shell_visible()
             && self.focus != Focus::Prompt
@@ -201,7 +225,7 @@ impl AppState {
             && matches!(key.code, KeyCode::Char(_))
         {
             if mapped_action.is_some_and(|action| action_preempts_text_input(action, key)) {
-                self.execute_action(mapped_action.unwrap_or_abort());
+                self.execute_action_from_key(mapped_action.unwrap_or_abort(), key);
                 self.maybe_auto_exit();
                 return;
             }
@@ -221,6 +245,12 @@ impl AppState {
             && !key.modifiers.contains(KeyModifiers::ALT)
             && matches!(key.code, KeyCode::Char(_))
         {
+            if mapped_action.is_some_and(|action| action_preempts_text_input(action, key)) {
+                self.execute_action_from_key(mapped_action.unwrap_or_abort(), key);
+                self.maybe_auto_exit();
+                return;
+            }
+
             if let KeyCode::Char(c) = key.code {
                 self.focus = Focus::Prompt;
                 self.execute_action(Action::Char(c));
@@ -235,8 +265,10 @@ impl AppState {
             && !key.modifiers.contains(KeyModifiers::ALT)
             && matches!(key.code, KeyCode::Char(_))
         {
-            if mapped_action.is_some_and(|action| action_preempts_text_input(action, key)) {
-                self.execute_action(mapped_action.unwrap_or_abort());
+            if mapped_action.is_some_and(|action| {
+                action != Action::TogglePromptFocus && action_preempts_text_input(action, key)
+            }) {
+                self.execute_action_from_key(mapped_action.unwrap_or_abort(), key);
                 self.maybe_auto_exit();
                 return;
             }
@@ -257,7 +289,7 @@ impl AppState {
             return;
         };
 
-        self.execute_action(action);
+        self.execute_action_from_key(action, key);
         self.maybe_auto_exit();
     }
 
@@ -532,7 +564,76 @@ impl AppState {
         }
     }
 
+    fn execute_action_from_key(&mut self, action: Action, key: KeyEvent) {
+        if action == Action::Quit {
+            self.arm_quit_confirmation(key);
+        } else {
+            self.execute_action(action);
+        }
+    }
+
+    fn clear_quit_confirmation(&mut self) {
+        self.quit_confirmation_pending = false;
+        self.quit_confirmation_shortcut = None;
+        self.quit_confirmation_expires_at = None;
+        if self.status_banner.as_deref() == Some(QUIT_CONFIRMATION_BANNER) {
+            self.status_banner = None;
+        }
+    }
+
+    fn arm_quit_confirmation(&mut self, key: KeyEvent) {
+        self.quit_confirmation_pending = true;
+        self.quit_confirmation_shortcut = Some(KeyBinding::new(key.code, key.modifiers));
+        self.quit_confirmation_expires_at = Some(self.now() + QUIT_CONFIRMATION_TTL);
+        self.status_banner = Some(QUIT_CONFIRMATION_BANNER.to_string());
+    }
+
+    fn handle_pending_quit_confirmation(&mut self, key: &KeyEvent) -> bool {
+        if !self.quit_confirmation_pending {
+            return false;
+        }
+
+        let confirmed = self
+            .quit_confirmation_shortcut
+            .is_some_and(|shortcut| shortcut.matches(key))
+            && self
+                .quit_confirmation_expires_at
+                .is_some_and(|deadline| self.now() < deadline);
+        self.clear_quit_confirmation();
+
+        if confirmed {
+            self.quit_immediately();
+            true
+        } else {
+            false
+        }
+    }
+
+    pub(crate) fn clear_expired_quit_confirmation(&mut self) -> bool {
+        if self.quit_confirmation_pending
+            && self
+                .quit_confirmation_expires_at
+                .is_some_and(|deadline| self.now() >= deadline)
+        {
+            self.clear_quit_confirmation();
+            true
+        } else {
+            false
+        }
+    }
+
+    pub(in crate::app) fn quit_immediately(&mut self) {
+        self.clear_quit_confirmation();
+        self.restore_parent_session_for_quit();
+        self.should_quit = true;
+        self.emit_ui_intent(UiIntent::QuitRequested);
+    }
+
     pub(in crate::app) fn execute_action(&mut self, action: Action) {
+        if action != Action::Quit {
+            self.clear_quit_confirmation();
+        }
+
         if self.execute_permission_action(action) {
             return;
         }
@@ -595,7 +696,9 @@ impl AppState {
             if self.composer_disabled() {
                 match action {
                     Action::SubmitPrompt
+                    | Action::InterjectPrompt
                     | Action::InsertNewline
+                    | Action::ToggleMultiline
                     | Action::ClearPrompt
                     | Action::HistoryUp
                     | Action::HistoryDown
@@ -642,8 +745,21 @@ impl AppState {
                     self.submit_prompt();
                     return;
                 }
+                Action::InterjectPrompt => {
+                    let task_ids: Vec<String> =
+                        self.active_interrupt_task_ids().into_iter().collect();
+                    if !task_ids.is_empty() {
+                        self.emit_ui_intent(UiIntent::InterruptSession { task_ids });
+                    }
+                    self.submit_prompt();
+                    return;
+                }
                 Action::InsertNewline => {
                     self.insert_prompt_char('\n');
+                    return;
+                }
+                Action::ToggleMultiline => {
+                    self.composer.multiline_mode = !self.composer.multiline_mode;
                     return;
                 }
                 Action::ClearPrompt => {
@@ -806,9 +922,45 @@ impl AppState {
         // Handle global actions
         match action {
             Action::Quit => {
-                self.restore_parent_session_for_quit();
-                self.should_quit = true;
-                self.emit_ui_intent(UiIntent::QuitRequested);
+                let default_key = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL);
+                if self.quit_confirmation_pending
+                    && self.handle_pending_quit_confirmation(&default_key)
+                {
+                    return;
+                }
+                self.arm_quit_confirmation(default_key);
+            }
+            Action::HalfPageDown if self.focus == Focus::Details => {
+                let viewport = self
+                    .last_frame_area()
+                    .and_then(|area| crate::layout::FrameLayoutPlan::for_app(self, area).transcript)
+                    .map_or(1, |area| usize::from(area.height));
+                self.scroll_half_page_down(viewport);
+            }
+            Action::ScrollDown if self.focus == Focus::Details => {
+                self.scroll_page_down(1);
+            }
+            Action::CycleMode => {
+                self.cycle_session_mode();
+            }
+            Action::ToggleTasks => {
+                self.live_details_drawer_open = !self.live_details_drawer_open;
+                self.focus = if self.live_details_drawer_open {
+                    Focus::List
+                } else {
+                    Focus::Prompt
+                };
+            }
+            Action::TogglePromptFocus => {
+                self.focus = if self.focus == Focus::Prompt {
+                    Focus::Details
+                } else {
+                    Focus::Prompt
+                };
+                self.live_details_drawer_open = false;
+            }
+            Action::AlwaysApprovePermission => {
+                self.toggle_always_approve_mode();
             }
             Action::Palette => {
                 self.open_palette();
@@ -1329,7 +1481,10 @@ impl AppState {
 fn action_preempts_text_input(action: Action, _key: KeyEvent) -> bool {
     matches!(
         action,
-        Action::SessionChildCycle | Action::SessionChildCycleReverse | Action::ToggleTerminalPanel
+        Action::SessionChildCycle
+            | Action::SessionChildCycleReverse
+            | Action::ToggleTerminalPanel
+            | Action::TogglePromptFocus
     )
 }
 

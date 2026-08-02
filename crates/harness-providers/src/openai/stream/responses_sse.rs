@@ -34,7 +34,6 @@ pub(super) async fn consume_responses_sse_stream(
 
     let mut usage: Option<CompletionUsage> = None;
     let mut finished_metadata = provider_stream_finished_metadata_from_start(start_metadata);
-    let mut done_emitted = false;
     let mut body = response.body;
     let mut sse_buffer = Vec::new();
     let mut tool_calls = ResponsesToolCallState::default();
@@ -62,14 +61,20 @@ pub(super) async fn consume_responses_sse_stream(
             continue;
         }
         if data == "[DONE]" {
-            if !done_emitted
-                && tx
-                    .send(ProviderStreamEvent::DoneWithMetadata {
-                        usage,
-                        metadata: non_empty_finished_metadata(finished_metadata),
-                    })
-                    .await
-                    .is_err()
+            if let Err(message) =
+                emit_pending_responses_tool_call_completions(&tx, &mut tool_calls).await
+            {
+                warn_stream_processing_failure("responses.tool_completion", &message);
+                let _ = tx.send(unsupported_tool_call_error(message)).await;
+                return;
+            }
+            if tx
+                .send(ProviderStreamEvent::DoneWithMetadata {
+                    usage,
+                    metadata: non_empty_finished_metadata(finished_metadata),
+                })
+                .await
+                .is_err()
             {
                 warn_stream_send_failure("responses.done");
             }
@@ -146,29 +151,6 @@ pub(super) async fn consume_responses_sse_stream(
                         usage = Some(completion_usage);
                     }
                 }
-
-                if let Err(message) =
-                    emit_pending_responses_tool_call_completions(&tx, &mut tool_calls).await
-                {
-                    warn_stream_processing_failure("responses.tool_completion", &message);
-                    let _ = tx.send(unsupported_tool_call_error(message)).await;
-                    return;
-                }
-
-                if !done_emitted {
-                    done_emitted = true;
-                    if tx
-                        .send(ProviderStreamEvent::DoneWithMetadata {
-                            usage: usage.clone(),
-                            metadata: non_empty_finished_metadata(finished_metadata.clone()),
-                        })
-                        .await
-                        .is_err()
-                    {
-                        warn_stream_send_failure("responses.done_after_completion");
-                        return;
-                    }
-                }
             }
             "response.error" => {
                 warn_stream_processing_failure(
@@ -186,14 +168,18 @@ pub(super) async fn consume_responses_sse_stream(
         }
     }
 
-    if !done_emitted
-        && tx
-            .send(ProviderStreamEvent::DoneWithMetadata {
-                usage,
-                metadata: non_empty_finished_metadata(finished_metadata),
-            })
-            .await
-            .is_err()
+    if let Err(message) = emit_pending_responses_tool_call_completions(&tx, &mut tool_calls).await {
+        warn_stream_processing_failure("responses.tool_completion", &message);
+        let _ = tx.send(unsupported_tool_call_error(message)).await;
+        return;
+    }
+    if tx
+        .send(ProviderStreamEvent::DoneWithMetadata {
+            usage,
+            metadata: non_empty_finished_metadata(finished_metadata),
+        })
+        .await
+        .is_err()
     {
         warn_stream_send_failure("responses.done_after_stream_end");
     }

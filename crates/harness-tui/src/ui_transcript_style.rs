@@ -6,8 +6,18 @@ use crate::theme::Theme;
 
 use super::ui_chrome::elevated_card_surface;
 
-const TRANSCRIPT_BRAILLE_SPINNER_FRAMES: [&str; 10] =
-    ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+const TRANSCRIPT_BRAILLE_SPINNER_FRAMES: [&str; 8] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧"];
+const TRANSCRIPT_SPINNER_TICK_DIVISOR: usize = 4;
+const TRANSCRIPT_ANIMATION_TICKS_PER_SECOND: u64 = 30;
+const TRANSCRIPT_ACTIVITY_SPINNER_ORIGIN_FRAME: usize = 3;
+const TRANSCRIPT_TOOL_WAVE_SPEED: f32 = 0.15;
+const USER_WAITING_PULSE_SPEED: f32 = 0.08;
+const ANIMATION_PHASE_WRAP: usize = 65_536;
+
+fn animation_phase_f32(animation_phase: usize) -> f32 {
+    let wrapped = animation_phase % ANIMATION_PHASE_WRAP;
+    f32::from(u16::try_from(wrapped).unwrap_or_default())
+}
 
 pub(super) fn transcript_streaming_spinner_frame(animation_phase: usize) -> &'static str {
     // Freeze the spinner glyph when animations are disabled so PTY/signoff
@@ -15,11 +25,39 @@ pub(super) fn transcript_streaming_spinner_frame(animation_phase: usize) -> &'st
     if std::env::var_os("HARNESS_DISABLE_ANIMATIONS").is_some() {
         return TRANSCRIPT_BRAILLE_SPINNER_FRAMES[0];
     }
-    TRANSCRIPT_BRAILLE_SPINNER_FRAMES[animation_phase % TRANSCRIPT_BRAILLE_SPINNER_FRAMES.len()]
+    let frame = animation_phase / TRANSCRIPT_SPINNER_TICK_DIVISOR;
+    TRANSCRIPT_BRAILLE_SPINNER_FRAMES[frame % TRANSCRIPT_BRAILLE_SPINNER_FRAMES.len()]
 }
 
-pub(super) fn thinking_header_color(theme: &Theme, surface: Color) -> Color {
-    blend_color(surface, theme.status.warning, 0.6)
+pub(super) fn transcript_activity_spinner_frame(elapsed_ms: u64) -> &'static str {
+    let elapsed_ticks = elapsed_ms.saturating_mul(TRANSCRIPT_ANIMATION_TICKS_PER_SECOND) / 1_000;
+    let elapsed_ticks = usize::try_from(elapsed_ticks).unwrap_or(usize::MAX);
+    let origin_ticks = TRANSCRIPT_ACTIVITY_SPINNER_ORIGIN_FRAME * TRANSCRIPT_SPINNER_TICK_DIVISOR;
+    transcript_streaming_spinner_frame(origin_ticks.saturating_add(elapsed_ticks))
+}
+
+pub(super) fn thinking_header_color(theme: &Theme, _surface: Color) -> Color {
+    theme.text.tertiary
+}
+
+pub(super) fn transcript_running_tool_marker_color(theme: &Theme, animation_phase: usize) -> Color {
+    if std::env::var_os("HARNESS_DISABLE_ANIMATIONS").is_some() {
+        return theme.text.accent;
+    }
+    let sine = (animation_phase_f32(animation_phase) * TRANSCRIPT_TOOL_WAVE_SPEED).sin();
+    blend_color(theme.surface.canvas, theme.text.accent, sine * sine)
+}
+
+pub(super) fn pending_diamond_color(theme: &Theme, animation_phase: usize) -> Color {
+    if std::env::var_os("HARNESS_DISABLE_ANIMATIONS").is_some() {
+        return blend_color(theme.surface.canvas, theme.text.accent, 0.3);
+    }
+    let sine = (animation_phase_f32(animation_phase) * USER_WAITING_PULSE_SPEED).sin();
+    blend_color(
+        theme.surface.canvas,
+        theme.text.accent,
+        0.3 + sine * sine * 0.7,
+    )
 }
 
 pub(super) fn blend_color(base: Color, overlay: Color, alpha: f32) -> Color {
@@ -77,10 +115,6 @@ pub(super) fn assistant_primary_label_color(status: ActivityStatus, theme: &Them
     }
 }
 
-pub(super) fn activity_status_supports_footer_only(status: ActivityStatus) -> bool {
-    matches!(status, ActivityStatus::Streaming)
-}
-
 pub(super) fn selected_foreground_for_badge(background: Color, theme: &Theme) -> Color {
     match background {
         Color::Rgb(red, green, blue) => {
@@ -123,7 +157,10 @@ pub(super) fn transcript_emphasized_surface(theme: &Theme, base_surface: Color) 
 
 #[cfg(test)]
 mod tests {
-    use super::{blend_color, thinking_header_color, Theme};
+    use super::{
+        blend_color, pending_diamond_color, thinking_header_color,
+        transcript_running_tool_marker_color, Theme,
+    };
     use ratatui::style::Color;
 
     #[test]
@@ -173,16 +210,32 @@ mod tests {
     }
 
     #[test]
-    fn thinking_header_color_blends_warning_toward_surface() {
+    fn thinking_header_color_uses_muted_transcript_text() {
         // arrange
         // act
         // assert
         let theme = Theme::default();
-        let Color::Rgb(r, g, b) = thinking_header_color(&theme, theme.surface.shell) else {
-            panic!("expected an RGB color")
-        };
-        assert!((0..=255).contains(&r));
-        assert!((0..=255).contains(&g));
-        assert!((0..=255).contains(&b));
+        assert_eq!(
+            thinking_header_color(&theme, theme.surface.shell),
+            theme.text.tertiary
+        );
+    }
+
+    #[test]
+    fn running_tool_marker_wave_advances() {
+        let theme = Theme::default();
+        assert_ne!(
+            transcript_running_tool_marker_color(&theme, 0),
+            transcript_running_tool_marker_color(&theme, 10)
+        );
+    }
+
+    #[test]
+    fn pending_diamond_pulse_changes_color_across_ticks() {
+        let theme = Theme::default();
+        assert_ne!(
+            pending_diamond_color(&theme, 0),
+            pending_diamond_color(&theme, 10)
+        );
     }
 }

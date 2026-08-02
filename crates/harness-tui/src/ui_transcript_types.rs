@@ -101,6 +101,7 @@ pub(super) struct TranscriptUserMessageSection {
 pub(super) struct TranscriptTurnHeader {
     pub(super) status: ActivityStatus,
     pub(super) is_selected: bool,
+    pub(super) provider_request_open: bool,
     pub(super) profile_label: String,
     pub(super) model_id: String,
     pub(super) duration_ms: Option<u64>,
@@ -131,7 +132,16 @@ pub(super) struct TranscriptToolCallSection {
     pub(super) hovered_target: Option<TranscriptMouseTarget>,
     pub(super) header: TranscriptToolCallHeader,
     pub(super) detail_blocks: Vec<TranscriptToolCallDetailBlock>,
+    pub(super) details_collapsed_by_default: bool,
+    pub(super) details_preview_visible: bool,
+    pub(super) animation_phase: usize,
     pub(super) expanded: bool,
+}
+
+impl TranscriptToolCallSection {
+    pub(super) fn details_visible(&self) -> bool {
+        !self.details_collapsed_by_default || self.details_preview_visible || self.expanded
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -226,6 +236,6 @@ pub(super) const TRANSCRIPT_ASSISTANT_BODY_PREFIX: &str = "   ";
 pub(super) const TRANSCRIPT_USER_BODY_PREFIX: &str = "     ";
 pub(super) const TRANSCRIPT_REASONING_BODY_PREFIX: &str = "   ";
 pub(super) const TRANSCRIPT_REASONING_HEADER_PREFIX: &str = "   ";
-pub(super) const TRANSCRIPT_SELECTED_RAIL_GLYPH: &str = "❙";
+pub(super) const TRANSCRIPT_SELECTED_RAIL_GLYPH: &str = "┃";
 pub(super) const TRANSCRIPT_NESTED_INDENT: &str = "     ";
 pub(super) const TRANSCRIPT_OPCODE_EDIT_INDENT: &str = "       ";

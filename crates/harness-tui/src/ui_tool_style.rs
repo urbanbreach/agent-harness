@@ -27,11 +27,12 @@ pub(super) fn generic_tool_visual_style(
 
 pub(super) fn inline_tool_color(status: ToolCallDisplayStatus, theme: &Theme) -> Color {
     match status {
-        ToolCallDisplayStatus::PendingPermission => theme.status.warning,
+        ToolCallDisplayStatus::PendingPermission | ToolCallDisplayStatus::Failed => {
+            theme.text.primary
+        }
         ToolCallDisplayStatus::Queued
         | ToolCallDisplayStatus::Running
-        | ToolCallDisplayStatus::Succeeded
-        | ToolCallDisplayStatus::Failed => theme.text.secondary,
+        | ToolCallDisplayStatus::Succeeded => theme.text.secondary,
     }
 }
 

@@ -12,6 +12,7 @@ use super::ui_diff::render_structured_diff_lines;
 use super::ui_fenced_text::{parse_fenced_text_blocks, ParsedTextBlock};
 use super::ui_markdown_table::try_render_markdown_table_block;
 use super::ui_syntax_highlight::render_highlighted_code_block;
+use super::ui_transcript_mermaid::{is_mermaid_language, render_mermaid_diagram};
 use super::ui_transcript_surface::{
     append_prebuilt_plain_lines, append_prefixed_wrapped_spans_line,
 };
@@ -274,6 +275,17 @@ pub(super) fn append_rich_text_block(
                             continue;
                         }
                     }
+                }
+
+                if is_mermaid_language(language.as_deref()) {
+                    if !lines.is_empty() && !lines.last().is_some_and(|line| line.spans.is_empty())
+                    {
+                        lines.push(Line::default());
+                    }
+                    lines.extend(render_mermaid_diagram(&body, prefix, theme, width));
+                    lines.push(Line::default());
+                    lines.push(Line::default());
+                    continue;
                 }
 
                 let highlighted = render_highlighted_code_block(
@@ -619,6 +631,252 @@ mod tests {
                     && span.style.add_modifier.contains(Modifier::BOLD)
             }),
             "heading should use theme.markdown.heading with BOLD, got: {spans:?}"
+        );
+    }
+
+    #[test]
+    fn mermaid_flowchart_renders_unicode_nodes_instead_of_a_placeholder() {
+        let text =
+            render_mermaid_diagram("graph TD\n  A[Start] --> B[End]", "", &Theme::default(), 80)
+                .into_iter()
+                .flat_map(|line| line.spans)
+                .map(|span| span.content.into_owned())
+                .collect::<Vec<_>>()
+                .join("\n");
+
+        assert!(
+            text.contains("┌") && text.contains("Start") && text.contains('▼'),
+            "{text}"
+        );
+        assert!(!text.contains("Mermaid graph"), "{text}");
+    }
+
+    #[test]
+    fn mermaid_flowchart_reuses_labeled_nodes_across_edges() {
+        let text = render_mermaid_diagram(
+            "graph TD\n  A[Start] --> B[Build]\n  B --> C[Done]",
+            "",
+            &Theme::default(),
+            80,
+        )
+        .into_iter()
+        .flat_map(|line| line.spans)
+        .map(|span| span.content.into_owned())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+        assert!(
+            text.contains("Start") && text.contains("Build") && text.contains("Done"),
+            "{text}"
+        );
+        assert!(
+            !text.lines().any(|line| line.contains("│   B   │")),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn mermaid_sequence_renders_lifelines_without_source_syntax() {
+        let text = render_mermaid_diagram(
+            "sequenceDiagram\n  Alice->>Bob: Hello",
+            "",
+            &Theme::default(),
+            80,
+        )
+        .into_iter()
+        .flat_map(|line| line.spans)
+        .map(|span| span.content.into_owned())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+        assert!(
+            text.contains("Alice") && text.contains("Bob") && text.contains('▶'),
+            "{text}"
+        );
+        assert!(
+            !text.contains("sequenceDiagram") && !text.contains("Alice->>Bob"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn mermaid_state_diagram_renders_nodes_without_source_syntax() {
+        let text = render_mermaid_diagram(
+            "stateDiagram-v2\n  [*] --> Active\n  Active --> Done",
+            "",
+            &Theme::default(),
+            80,
+        )
+        .into_iter()
+        .flat_map(|line| line.spans)
+        .map(|span| span.content.into_owned())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+        assert!(
+            text.contains("Active") && text.contains("Done") && text.contains('▼'),
+            "{text}"
+        );
+        assert!(
+            !text.contains("stateDiagram-v2") && !text.contains("[*] -->"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn mermaid_class_diagram_renders_members_without_source_syntax() {
+        let text = render_mermaid_diagram(
+            "classDiagram\nclass Animal {\n  +int age\n  +isMammal() bool\n}\nAnimal <|-- Duck",
+            "",
+            &Theme::default(),
+            80,
+        )
+        .into_iter()
+        .flat_map(|line| line.spans)
+        .map(|span| span.content.into_owned())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+        assert!(
+            text.contains("Animal")
+                && text.contains("Duck")
+                && text.contains("+int age")
+                && text.contains("+isMammal() bool"),
+            "{text}"
+        );
+        assert!(text.contains('├') && text.contains('△'), "{text}");
+        assert!(!text.contains("classDiagram"), "{text}");
+    }
+
+    #[test]
+    fn mermaid_entity_relationship_diagram_renders_cardinality_and_attributes() {
+        let text = render_mermaid_diagram(
+            "erDiagram\nCUSTOMER ||--o{ ORDER : places\nCUSTOMER {\n  string name PK \"full name\"\n}",
+            "",
+            &Theme::default(),
+            80,
+        )
+        .into_iter()
+        .flat_map(|line| line.spans)
+        .map(|span| span.content.into_owned())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+        assert!(
+            text.contains("CUSTOMER")
+                && text.contains("ORDER")
+                && text.contains("string name PK")
+                && text.contains("1 places 0..*"),
+            "{text}"
+        );
+        assert!(
+            !text.contains("erDiagram") && !text.contains("full name"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn mermaid_sequence_renders_declared_participants_and_control_rows() {
+        let text = render_mermaid_diagram(
+            "sequenceDiagram\nparticipant C as Client\nparticipant S as Server\nautonumber\nC->>S: GET /\nNote over C,S: happy path\nloop retry\nS-->>C: ok\nend",
+            "",
+            &Theme::default(),
+            100,
+        )
+        .into_iter()
+        .flat_map(|line| line.spans)
+        .map(|span| span.content.into_owned())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+        assert!(
+            text.contains("Client")
+                && text.contains("Server")
+                && text.contains("1. GET /")
+                && text.contains("happy path")
+                && text.contains("loop retry")
+                && text.contains(" end "),
+            "{text}"
+        );
+        assert!(
+            !text.contains("sequenceDiagram") && !text.contains("C->>S"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn mermaid_flowchart_renders_group_and_relationship_label_without_source_syntax() {
+        let text = render_mermaid_diagram(
+            "flowchart TD\nsubgraph workers [Workers]\nA[Start] -->|dispatch| B[Build]\nend\nB --> C[Done]",
+            "",
+            &Theme::default(),
+            80,
+        )
+        .into_iter()
+        .flat_map(|line| line.spans)
+        .map(|span| span.content.into_owned())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+        assert!(
+            text.contains("Workers")
+                && text.contains("Start")
+                && text.contains("Build")
+                && text.contains("Done")
+                && text.contains("dispatch"),
+            "{text}"
+        );
+        assert!(
+            !text.contains("subgraph") && !text.contains("A[Start]"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn mermaid_state_choice_renders_as_a_diamond_without_source_syntax() {
+        let text = render_mermaid_diagram(
+            "stateDiagram-v2\nstate c <<choice>>\nIdle --> c\nc --> Done: yes",
+            "",
+            &Theme::default(),
+            80,
+        )
+        .into_iter()
+        .flat_map(|line| line.spans)
+        .map(|span| span.content.into_owned())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+        assert!(
+            text.contains('◇') && text.contains("Idle") && text.contains("Done"),
+            "{text}"
+        );
+        assert!(
+            !text.contains("<<choice>>") && !text.contains("state c"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn mermaid_state_alias_uses_its_display_name_and_skips_notes() {
+        let text = render_mermaid_diagram(
+            "stateDiagram-v2\nstate \"Waiting for input\" as W\nW --> Done\nnote right of W: internal detail\nend note",
+            "",
+            &Theme::default(),
+            80,
+        )
+        .into_iter()
+        .flat_map(|line| line.spans)
+        .map(|span| span.content.into_owned())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+        assert!(
+            text.contains("Waiting for input") && text.contains("Done"),
+            "{text}"
+        );
+        assert!(
+            !text.contains("internal detail") && !text.contains(" as W"),
+            "{text}"
         );
     }
 

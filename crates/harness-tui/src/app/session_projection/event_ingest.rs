@@ -265,11 +265,13 @@ impl SessionProjection {
                         } else if should_mark_done {
                             entry.status = ActivityStatus::Done;
                         }
-                        entry.usage = data.usage.as_ref().map(|usage| ActivityUsage {
-                            prompt_tokens: usage.prompt_tokens,
-                            completion_tokens: usage.completion_tokens,
-                            total_tokens: usage.total_tokens,
-                        });
+                        if let Some(usage) = data.usage.as_ref() {
+                            entry.usage = Some(ActivityUsage {
+                                prompt_tokens: usage.prompt_tokens,
+                                completion_tokens: usage.completion_tokens,
+                                total_tokens: usage.total_tokens,
+                            });
+                        }
                         entry.cache_usage = data.metadata.as_ref().and_then(|metadata| {
                             match (metadata.cache_read_tokens, metadata.cache_write_tokens) {
                                 (None, None) => None,
@@ -281,19 +283,16 @@ impl SessionProjection {
                         });
                         if let Some(usage) = data.usage.as_ref() {
                             // Context breadcrumb uses prompt/context fill when reported;
-                            // turn footer (⇣Nk) uses activity.usage.total_tokens separately.
-                            // Skip active_context_usage when the activity stays Streaming
-                            // (TaskScheduled keeps it alive) so the standard footer hints
-                            // are not replaced by the live-ctx status strip.
-                            if should_mark_done {
-                                let context_tokens = if usage.prompt_tokens > 0 {
-                                    usage.prompt_tokens
-                                } else {
-                                    usage.total_tokens
-                                };
-                                self.active_context_usage =
-                                    Some(ActiveContextUsage::estimate(context_tokens));
-                            }
+                            // turn status (⇣Nk) uses activity.usage.total_tokens separately.
+                            // Keep the latest provider usage visible while an enclosing turn
+                            // task remains active, matching Grok's live header behavior.
+                            let context_tokens = if usage.prompt_tokens > 0 {
+                                usage.prompt_tokens
+                            } else {
+                                usage.total_tokens
+                            };
+                            self.active_context_usage =
+                                Some(ActiveContextUsage::estimate(context_tokens));
                         }
                         entry.last_seq = event.seq;
                         entry.last_mono_ms = event.mono_ms;
@@ -554,13 +553,6 @@ impl SessionProjection {
                 };
 
                 if let Some(entry) = entry {
-                    if entry.tool_calls.is_empty()
-                        && entry.thinking_text.is_empty()
-                        && !entry.transcript_text.is_empty()
-                    {
-                        entry.thinking_text = std::mem::take(&mut entry.transcript_text);
-                        entry.bump_revision();
-                    }
                     let tool_entry = ToolCallEntry {
                         tool_call_id: data.tool_call_id.to_string(),
                         tool_id: data.tool_id.clone(),

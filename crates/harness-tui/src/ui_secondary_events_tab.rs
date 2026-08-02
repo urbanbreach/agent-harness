@@ -6,15 +6,14 @@ pub(super) fn render_help_tab(
     frame: &mut Frame,
     app: &AppState,
     root: Rect,
-    content: Rect,
+    _content: Rect,
     composer: Option<Rect>,
     theme: &Theme,
 ) {
-    let Some(overlay) = help_modal_area(root) else {
+    let Some(overlay) = help_modal_area(root, composer) else {
         return;
     };
 
-    paint_help_solid_backdrop(frame, content, composer);
     if !paint_help_modal_panel(frame, theme, overlay) {
         return;
     }
@@ -28,50 +27,35 @@ pub(super) fn render_help_tab(
     render_help_footer(frame, theme, primary_footer, secondary_footer);
 }
 
-fn help_modal_area(root: Rect) -> Option<Rect> {
-    const WIDTH: u16 = 80;
-    const HEIGHT: u16 = 24;
-    let width = WIDTH
-        .min(root.width.saturating_sub(4))
-        .max(40.min(root.width));
-    let height = HEIGHT
-        .min(root.height.saturating_sub(4))
-        .max(12.min(root.height));
-    if width < 32 || height < 10 {
+fn help_modal_area(root: Rect, composer: Option<Rect>) -> Option<Rect> {
+    let tokens = crate::layout::HELP_MODAL_LAYOUT;
+    let max_width = root.width.saturating_sub(4).min(tokens.max_width);
+    let preferred_width = u16::try_from(
+        u32::from(root.width).saturating_mul(tokens.width_numerator) / tokens.width_denominator,
+    )
+    .unwrap_or(u16::MAX);
+    let width = preferred_width
+        .min(max_width)
+        .max(tokens.min_width)
+        .min(root.width);
+    let default_height = root
+        .height
+        .saturating_sub(tokens.vertical_margin.saturating_mul(2));
+    if width < 20 || default_height < 6 {
         return None;
     }
     let x = root.x.saturating_add(root.width.saturating_sub(width) / 2);
-    let max_y = root
+    let y = root
         .y
-        .saturating_add(root.height.saturating_sub(height.max(1)));
-    let y = 4u16.clamp(root.y, max_y.max(root.y));
+        .saturating_add(root.height.saturating_sub(default_height) / 2);
+    let default_bottom = y.saturating_add(default_height.saturating_sub(1));
+    let root_bottom = root.y.saturating_add(root.height.saturating_sub(1));
+    let bottom = composer
+        .map(|area| area.y.saturating_add(1).min(root_bottom))
+        .filter(|bottom| *bottom >= y)
+        .map_or(default_bottom, |bottom| bottom.min(default_bottom));
+    let height = bottom.saturating_sub(y).saturating_add(1);
     Some(Rect::new(x, y, width, height))
-}
-
-fn paint_help_solid_backdrop(frame: &mut Frame, area: Rect, preserve: Option<Rect>) {
-    if area.width == 0 || area.height == 0 {
-        return;
-    }
-    let buffer = frame.buffer_mut();
-    let max_x = area.x.saturating_add(area.width);
-    let max_y = area.y.saturating_add(area.height);
-    let preserve = preserve.filter(|rect| rect.width > 0 && rect.height > 0);
-    for y in area.y..max_y {
-        for x in area.x..max_x {
-            if preserve.is_some_and(|rect| {
-                x >= rect.x
-                    && y >= rect.y
-                    && x < rect.x.saturating_add(rect.width)
-                    && y < rect.y.saturating_add(rect.height)
-            }) {
-                continue;
-            }
-            let cell = &mut buffer[(x, y)];
-            cell.set_symbol(" ");
-            cell.set_fg(Color::Reset);
-            cell.set_bg(Color::Reset);
-        }
-    }
 }
 
 fn paint_help_modal_panel(frame: &mut Frame, theme: &Theme, overlay: Rect) -> bool {
@@ -79,16 +63,17 @@ fn paint_help_modal_panel(frame: &mut Frame, theme: &Theme, overlay: Rect) -> bo
         return false;
     }
 
-    let surface = ui_chrome::command_palette_surface(theme);
-    let border_style = Style::default().bg(surface);
-    let title_style = Style::default().bg(surface).add_modifier(Modifier::BOLD);
+    let colors = theme.reference_terminal;
+    let panel_style = Style::default().fg(colors.primary).bg(colors.canvas);
+    let border_style = panel_style.fg(colors.muted);
+    let title_style = panel_style.add_modifier(Modifier::BOLD);
     let close_style = border_style;
     frame.render_widget(Clear, overlay);
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Plain)
         .border_style(border_style)
-        .style(Style::default().bg(surface))
+        .style(panel_style)
         .title(Line::from(vec![
             Span::styled("─ ", border_style),
             Span::styled("Keyboard Shortcuts", title_style),
@@ -148,11 +133,9 @@ fn render_help_search_row(frame: &mut Frame, theme: &Theme, area: Rect) {
     if area.width == 0 || area.height == 0 {
         return;
     }
-    let surface = ui_chrome::command_palette_surface(theme);
-    let chrome = Style::default().bg(surface);
-    let cursor = Style::default()
-        .fg(ui_chrome::command_palette_cursor(theme))
-        .bg(surface);
+    let colors = theme.reference_terminal;
+    let chrome = Style::default().fg(colors.muted).bg(colors.canvas);
+    let cursor = Style::default().fg(colors.primary).bg(colors.canvas);
     frame.render_widget(
         Paragraph::new(Line::from(vec![
             Span::styled(" / to search", chrome),
@@ -181,38 +164,45 @@ fn render_help_list(frame: &mut Frame, app: &AppState, theme: &Theme, area: Rect
     if area.width == 0 || area.height == 0 {
         return;
     }
-    let surface = ui_chrome::command_palette_surface(theme);
-    frame.render_widget(Block::default().style(Style::default().bg(surface)), area);
+    let colors = theme.reference_terminal;
+    let panel_style = Style::default().fg(colors.primary).bg(colors.canvas);
+    frame.render_widget(Block::default().style(panel_style), area);
 
-    let rows = help_shortcut_rows(app, usize::from(area.width));
+    let rows = help_shortcut_rows(app, theme, usize::from(area.width));
     let visible = usize::from(area.height);
     for (index, row) in rows.into_iter().take(visible).enumerate() {
         let row_y = area
             .y
             .saturating_add(u16::try_from(index).unwrap_or(u16::MAX));
         let row_area = Rect::new(area.x, row_y, area.width, 1);
-        frame.render_widget(
-            Paragraph::new(row).style(Style::default().bg(surface)),
-            row_area,
-        );
+        frame.render_widget(Paragraph::new(row).style(panel_style), row_area);
     }
 }
 
-fn render_help_footer(frame: &mut Frame, _theme: &Theme, primary: Rect, secondary: Rect) {
-    let muted = Style::default();
-    let key = Style::default().add_modifier(Modifier::BOLD);
+fn render_help_footer(frame: &mut Frame, theme: &Theme, primary: Rect, secondary: Rect) {
+    let colors = theme.reference_terminal;
+    let muted = Style::default().fg(colors.muted).bg(colors.canvas);
+    let secondary_text = Style::default().fg(colors.secondary).bg(colors.canvas);
+    let key = Style::default()
+        .fg(colors.primary)
+        .bg(colors.canvas)
+        .add_modifier(Modifier::BOLD);
     if primary.width > 0 && primary.height > 0 {
         let spans = vec![
             Span::styled("↑/↓".to_string(), key),
-            Span::styled(" nav  |  ".to_string(), muted),
+            Span::styled(" nav".to_string(), secondary_text),
+            Span::styled("  |  ".to_string(), muted),
             Span::styled("f".to_string(), key),
-            Span::styled(" filter  |  ".to_string(), muted),
+            Span::styled(" filter".to_string(), secondary_text),
+            Span::styled("  |  ".to_string(), muted),
             Span::styled("e/Space/→".to_string(), key),
-            Span::styled(" expand  |  ".to_string(), muted),
+            Span::styled(" expand".to_string(), secondary_text),
+            Span::styled("  |  ".to_string(), muted),
             Span::styled("←".to_string(), key),
-            Span::styled(" collapse  |  ".to_string(), muted),
+            Span::styled(" collapse".to_string(), secondary_text),
+            Span::styled("  |  ".to_string(), muted),
             Span::styled("Enter".to_string(), key),
-            Span::styled(" details".to_string(), muted),
+            Span::styled(" details".to_string(), secondary_text),
         ];
         frame.render_widget(
             Paragraph::new(Line::from(spans)).alignment(Alignment::Center),
@@ -222,9 +212,10 @@ fn render_help_footer(frame: &mut Frame, _theme: &Theme, primary: Rect, secondar
     if secondary.width > 0 && secondary.height > 0 {
         let spans = vec![
             Span::styled("/".to_string(), key),
-            Span::styled(" search  |  ".to_string(), muted),
+            Span::styled(" search".to_string(), secondary_text),
+            Span::styled("  |  ".to_string(), muted),
             Span::styled("Esc".to_string(), key),
-            Span::styled(" close".to_string(), muted),
+            Span::styled(" close".to_string(), secondary_text),
         ];
         frame.render_widget(
             Paragraph::new(Line::from(spans)).alignment(Alignment::Center),
@@ -233,12 +224,21 @@ fn render_help_footer(frame: &mut Frame, _theme: &Theme, primary: Rect, secondar
     }
 }
 
-fn help_shortcut_rows(app: &AppState, width: usize) -> Vec<Line<'static>> {
+fn help_shortcut_rows(app: &AppState, theme: &Theme, width: usize) -> Vec<Line<'static>> {
     let mut rows = vec![
-        section_row("Essentials"),
-        labeled_shortcut_row(app, Action::SubmitPrompt, "Send", "Enter", width, true),
+        section_row("Essentials", theme),
         labeled_shortcut_row(
             app,
+            theme,
+            Action::SubmitPrompt,
+            "Send",
+            "Enter",
+            width,
+            true,
+        ),
+        labeled_shortcut_row(
+            app,
+            theme,
             Action::FocusNext,
             "Focus scrollback",
             "Tab",
@@ -247,6 +247,7 @@ fn help_shortcut_rows(app: &AppState, width: usize) -> Vec<Line<'static>> {
         ),
         labeled_shortcut_row(
             app,
+            theme,
             Action::DismissModal,
             "Cancel turn",
             "Ctrl+c",
@@ -255,15 +256,25 @@ fn help_shortcut_rows(app: &AppState, width: usize) -> Vec<Line<'static>> {
         ),
         labeled_shortcut_row(
             app,
+            theme,
             Action::VariantCycle,
             "Cycle mode (Normal / Plan / Always-approve)",
             "Shift+Tab",
             width,
             false,
         ),
-        labeled_shortcut_row(app, Action::Quit, "Quit", "Ctrl+q / Ctrl+d", width, false),
         labeled_shortcut_row(
             app,
+            theme,
+            Action::Quit,
+            "Quit",
+            "Ctrl+q / Ctrl+d",
+            width,
+            false,
+        ),
+        labeled_shortcut_row(
+            app,
+            theme,
             Action::Palette,
             "Command palette",
             "Ctrl+p / ?",
@@ -272,6 +283,7 @@ fn help_shortcut_rows(app: &AppState, width: usize) -> Vec<Line<'static>> {
         ),
         labeled_shortcut_row(
             app,
+            theme,
             Action::Help,
             "Keyboard shortcuts",
             "Ctrl+x / Ctrl+.",
@@ -280,18 +292,19 @@ fn help_shortcut_rows(app: &AppState, width: usize) -> Vec<Line<'static>> {
         ),
         labeled_shortcut_row(
             app,
+            theme,
             Action::OpenStatusDialog,
             "Open the settings modal",
             "F2 / Ctrl+, / Super+,",
             width,
             false,
         ),
-        collapsed_section_row("Input", 5),
-        collapsed_section_row("Conversation Navigation", 10),
-        collapsed_section_row("Conversation Actions", 4),
-        collapsed_section_row("Panels", 6),
-        collapsed_section_row("Session", 3),
-        collapsed_section_row("Dashboard", 17),
+        collapsed_section_row("Input", 5, theme),
+        collapsed_section_row("Conversation Navigation", 10, theme),
+        collapsed_section_row("Conversation Actions", 4, theme),
+        collapsed_section_row("Panels", 6, theme),
+        collapsed_section_row("Session", 3, theme),
+        collapsed_section_row("Dashboard", 17, theme),
     ];
     if app.replay_mode {
         rows.insert(
@@ -302,26 +315,41 @@ fn help_shortcut_rows(app: &AppState, width: usize) -> Vec<Line<'static>> {
     rows
 }
 
-fn section_row(title: &str) -> Line<'static> {
-    Line::from(Span::raw(format!("  ◆ {title}")))
+fn section_row(title: &str, theme: &Theme) -> Line<'static> {
+    let colors = theme.reference_terminal;
+    Line::from(vec![
+        Span::styled("  ".to_string(), Style::default().fg(colors.primary)),
+        Span::styled("◆ ".to_string(), Style::default().fg(colors.muted)),
+        Span::styled(title.to_string(), Style::default().fg(colors.primary)),
+    ])
 }
 
-fn collapsed_section_row(title: &str, count: usize) -> Line<'static> {
-    Line::from(Span::raw(format!("  › {title} ({count})")))
+fn collapsed_section_row(title: &str, count: usize, theme: &Theme) -> Line<'static> {
+    let colors = theme.reference_terminal;
+    Line::from(vec![
+        Span::styled("  ".to_string(), Style::default().fg(colors.primary)),
+        Span::styled("› ".to_string(), Style::default().fg(colors.muted)),
+        Span::styled(
+            format!("{title} ({count})"),
+            Style::default().fg(colors.primary),
+        ),
+    ])
 }
 
 fn labeled_shortcut_row(
     _app: &AppState,
+    theme: &Theme,
     _action: Action,
     label: &str,
     freeze_binding: &str,
     width: usize,
     is_selected: bool,
 ) -> Line<'static> {
-    shortcut_row_with_binding(label, freeze_binding, width, is_selected)
+    shortcut_row_with_binding(theme, label, freeze_binding, width, is_selected)
 }
 
 fn shortcut_row_with_binding(
+    theme: &Theme,
     label: &str,
     binding: &str,
     width: usize,
@@ -336,21 +364,111 @@ fn shortcut_row_with_binding(
             .saturating_add(right_width)
             .saturating_add(3),
     );
-    let bold = Style::default().add_modifier(Modifier::BOLD);
-    let normal = Style::default();
+    let colors = theme.reference_terminal;
+    let primary = Style::default().fg(colors.primary);
+    let muted = Style::default().fg(colors.muted);
+    let secondary = Style::default().fg(colors.secondary);
+    let bold = primary.add_modifier(Modifier::BOLD);
     let mut spans = if is_selected {
         vec![
-            Span::raw("  ".to_string()),
+            Span::styled("  ".to_string(), primary),
             Span::styled("  ".to_string(), bold),
-            Span::styled("◆ ".to_string(), normal),
+            Span::styled("◆ ".to_string(), muted),
             Span::styled(label.to_string(), bold),
         ]
     } else {
         vec![
-            Span::raw("    ◆ ".to_string()),
-            Span::raw(label.to_string()),
+            Span::styled("    ".to_string(), primary),
+            Span::styled("◆ ".to_string(), muted),
+            Span::styled(label.to_string(), primary),
         ]
     };
-    spans.push(Span::raw(format!("{}{binding}   ", " ".repeat(gap.max(1)))));
-    Line::from(spans)
+    spans.push(Span::styled(" ".repeat(gap.max(1)), primary));
+    spans.push(Span::styled(binding.to_string(), secondary));
+    spans.push(Span::styled("   ".to_string(), primary));
+    let style = if is_selected {
+        Style::default()
+            .fg(theme.text.primary)
+            .bg(theme.surface.card)
+    } else {
+        Style::default()
+    };
+    Line::from(spans).style(style)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::UnwrapOrAbort;
+    use ratatui::{backend::TestBackend, style::Color, Terminal};
+
+    #[test]
+    fn help_modal_matches_grok_sizing_at_reference_viewports() {
+        assert_eq!(
+            help_modal_area(Rect::new(0, 0, 120, 40), None),
+            Some(Rect::new(20, 4, 80, 32))
+        );
+        assert_eq!(
+            help_modal_area(Rect::new(0, 0, 60, 20), None),
+            Some(Rect::new(8, 4, 44, 12))
+        );
+    }
+
+    #[test]
+    fn selected_help_row_uses_full_width_grok_selection_surface() {
+        let theme = Theme::harness_chat();
+        let line = shortcut_row_with_binding(&theme, "Send", "Enter", 72, true);
+
+        assert_eq!(line.width(), 72);
+        assert_eq!(line.style.fg, Some(theme.text.primary));
+        assert_eq!(line.style.bg, Some(theme.surface.card));
+    }
+
+    #[test]
+    fn help_panel_uses_muted_terminal_chrome() {
+        let theme = Theme::harness_chat();
+        let backend = TestBackend::new(80, 32);
+        let mut terminal = Terminal::new(backend).unwrap_or_abort();
+
+        terminal
+            .draw(|frame| {
+                assert!(paint_help_modal_panel(
+                    frame,
+                    &theme,
+                    Rect::new(0, 0, 80, 32)
+                ));
+            })
+            .unwrap_or_abort();
+
+        let buffer = terminal.backend().buffer();
+        assert_eq!(buffer[(0, 0)].fg, Color::Indexed(8));
+        assert_eq!(buffer[(0, 0)].bg, Color::Indexed(0));
+        assert_eq!(buffer[(3, 0)].fg, Color::Indexed(15));
+        assert_eq!(buffer[(0, 1)].fg, Color::Indexed(8));
+        assert_eq!(buffer[(1, 1)].bg, Color::Indexed(0));
+    }
+
+    #[test]
+    fn help_panel_respects_the_reference_height_cap() {
+        let theme = Theme::harness_chat();
+        let app = AppState::new_live(None, false, None);
+        let backend = TestBackend::new(120, 40);
+        let mut terminal = Terminal::new(backend).unwrap_or_abort();
+        let composer = Rect::new(2, 37, 116, 3);
+
+        terminal
+            .draw(|frame| {
+                render_help_tab(
+                    frame,
+                    &app,
+                    Rect::new(0, 0, 120, 40),
+                    Rect::default(),
+                    Some(composer),
+                    &theme,
+                );
+            })
+            .unwrap_or_abort();
+
+        assert_eq!(terminal.backend().buffer()[(20, 35)].symbol(), "└");
+    }
 }

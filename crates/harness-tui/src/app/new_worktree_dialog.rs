@@ -2,6 +2,8 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::{AppState, UiIntent};
 
+const MAX_WORKTREE_NAME_BYTES: usize = 100;
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct NewWorktreeDialogState {
     pub(crate) visible: bool,
@@ -23,9 +25,18 @@ impl AppState {
     }
 
     pub(in crate::app) fn handle_new_worktree_dialog_key(&mut self, key: KeyEvent) {
+        if key.modifiers.contains(KeyModifiers::CONTROL)
+            && matches!(key.code, KeyCode::Char('c' | 'd' | 'q'))
+        {
+            self.close_new_worktree_dialog();
+            return;
+        }
         match key.code {
             KeyCode::Char(character) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
-                if !character.is_control() {
+                if !character.is_control()
+                    && self.new_worktree_dialog.input.len() + character.len_utf8()
+                        <= MAX_WORKTREE_NAME_BYTES
+                {
                     self.new_worktree_dialog
                         .input
                         .insert(self.new_worktree_dialog.cursor, character);
@@ -75,7 +86,7 @@ impl AppState {
             KeyCode::End => {
                 self.new_worktree_dialog.cursor = self.new_worktree_dialog.input.len();
             }
-            KeyCode::Enter => {
+            KeyCode::Enter if key.modifiers.is_empty() => {
                 let name = self.new_worktree_dialog.input.trim();
                 let name = (!name.is_empty()).then(|| name.to_string());
                 self.close_new_worktree_dialog();
@@ -84,5 +95,22 @@ impl AppState {
             KeyCode::Esc => self.close_new_worktree_dialog(),
             _ => {}
         }
+    }
+
+    pub(in crate::app) fn handle_new_worktree_dialog_paste(&mut self, text: &str) -> bool {
+        if !self.new_worktree_dialog.visible {
+            return false;
+        }
+        for character in text.chars().filter(|character| !character.is_control()) {
+            if self.new_worktree_dialog.input.len() + character.len_utf8() > MAX_WORKTREE_NAME_BYTES
+            {
+                break;
+            }
+            self.new_worktree_dialog
+                .input
+                .insert(self.new_worktree_dialog.cursor, character);
+            self.new_worktree_dialog.cursor += character.len_utf8();
+        }
+        true
     }
 }

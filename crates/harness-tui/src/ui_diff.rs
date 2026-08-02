@@ -217,28 +217,28 @@ mod tests {
 
         assert_eq!(
             diff_row_palette('+', &theme).content_bg,
-            reference_diff_added_bg()
+            reference_diff_added_bg(&theme)
         );
         assert_eq!(
             diff_row_palette('+', &theme).gutter_bg,
-            reference_diff_added_line_number_bg()
+            reference_diff_added_line_number_bg(&theme)
         );
         assert_eq!(
             diff_row_palette('-', &theme).content_bg,
-            reference_diff_removed_bg()
+            reference_diff_removed_bg(&theme)
         );
         assert_eq!(
             diff_row_palette('-', &theme).gutter_bg,
-            reference_diff_removed_line_number_bg()
+            reference_diff_removed_line_number_bg(&theme)
         );
         assert_eq!(diff_hunk_palette(&theme).content_bg, theme.surface.panel);
         assert_eq!(
             diff_marker_style('+', None, &theme).fg,
-            Some(reference_diff_highlight_added())
+            Some(reference_diff_highlight_added(&theme))
         );
         assert_eq!(
             diff_marker_style('-', None, &theme).fg,
-            Some(reference_diff_highlight_removed())
+            Some(reference_diff_highlight_removed(&theme))
         );
         assert_eq!(
             diff_segment_style(
@@ -248,7 +248,7 @@ mod tests {
                 &theme
             )
             .fg,
-            Some(reference_diff_highlight_added())
+            Some(reference_diff_highlight_added(&theme))
         );
         assert_eq!(
             diff_segment_style(
@@ -258,7 +258,7 @@ mod tests {
                 &theme
             )
             .fg,
-            Some(reference_diff_highlight_removed())
+            Some(reference_diff_highlight_removed(&theme))
         );
 
         let hunk_header = render_diff_hunk_header("", "@@ -1,1 +1,1 @@", 48, 2, &theme);
@@ -267,7 +267,7 @@ mod tests {
             .iter()
             .find(|span| span.content.contains("@@ -1,1 +1,1 @@"))
             .unwrap_or_abort();
-        assert_eq!(hunk_span.style.fg, Some(reference_diff_hunk_header()));
+        assert_eq!(hunk_span.style.fg, Some(reference_diff_hunk_header(&theme)));
         assert_eq!(hunk_span.style.bg, Some(theme.surface.panel));
     }
 
@@ -279,7 +279,7 @@ mod tests {
         let chunks = highlight_diff_line_chunks(
             Some("src/demo.rs"),
             "let value = \"hi\"; let total = 42; // note",
-            Some(reference_diff_added_bg()),
+            Some(reference_diff_added_bg(&Theme::default())),
         )
         .unwrap_or_abort();
 
@@ -302,7 +302,10 @@ mod tests {
             find_chunk("note").style.fg,
             Some(Color::Rgb(0x80, 0x80, 0x80))
         );
-        assert_eq!(find_chunk("note").style.bg, Some(reference_diff_added_bg()));
+        assert_eq!(
+            find_chunk("note").style.bg,
+            Some(reference_diff_added_bg(&Theme::default()))
+        );
     }
 
     #[test]
@@ -329,7 +332,7 @@ mod tests {
                 highlight_diff_line_chunks(
                     Some(path),
                     "# heading",
-                    Some(reference_diff_added_bg()),
+                    Some(reference_diff_added_bg(&Theme::default())),
                 )
                 .is_none(),
             )

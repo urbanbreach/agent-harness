@@ -88,18 +88,17 @@ use super::ui_transcript_selection::{
     TranscriptSelectionRow, TranscriptSelectionSnapshot,
 };
 use super::ui_transcript_style::{
-    activity_status_supports_footer_only, assistant_footer_label, assistant_primary_label_color,
-    assistant_primary_rail_color, blend_color, selected_foreground_for_badge,
-    thinking_header_color, transcript_emphasized_surface, transcript_nested_rail_color,
-    transcript_streaming_spinner_frame,
+    assistant_footer_label, assistant_primary_label_color, assistant_primary_rail_color,
+    blend_color, selected_foreground_for_badge, thinking_header_color,
+    transcript_emphasized_surface, transcript_nested_rail_color,
+    transcript_running_tool_marker_color, transcript_streaming_spinner_frame,
 };
 use super::ui_transcript_surface::{
     append_nested_surface_row, append_prebuilt_nested_surface_lines, append_prebuilt_surface_lines,
     append_prefixed_wrapped_spans_line, append_surface_row, append_user_surface_text_block,
     append_user_surface_text_block_with_first_line_reserve, nested_surface_prefix_width,
-    render_empty_scrollback_indicator, surface_prefix_width, surface_span,
-    transcript_surface_content_width, transcript_surface_render_width, user_surface_line,
-    wrap_surface_spans, TRANSCRIPT_RAIL_GLYPH,
+    surface_prefix_width, surface_span, transcript_surface_content_width,
+    transcript_surface_render_width, user_surface_line, wrap_surface_spans, TRANSCRIPT_RAIL_GLYPH,
 };
 #[path = "ui_transcript_types.rs"]
 mod ui_transcript_types;
@@ -137,7 +136,7 @@ pub(super) use ui_transcript_types::{
 };
 
 #[cfg(test)]
-use super::ui_transcript_surface::visible_surface_lines;
+use super::ui_transcript_surface::{render_transcript_surface_lines, visible_surface_lines};
 
 #[cfg(test)]
 use super::ui_transcript_layout::MeasuredTranscriptSection;
@@ -190,7 +189,6 @@ pub(super) fn render_transcript_pane(frame: &mut Frame, app: &AppState, area: Re
 
         if live_empty_state_visible(app) {
             render_live_empty_state(frame, app, inner_area, theme);
-            render_empty_scrollback_indicator(frame, inner_area, theme);
             let selection_snapshot = app.transcript_selection().and_then(|_| {
                 app.last_frame_area().and_then(|frame_area| {
                     with_transcript_selection_snapshot(app, frame_area, Clone::clone)
@@ -365,8 +363,6 @@ fn render_measured_transcript_pane(
                         .wrap(Wrap { trim: false }),
                         viewport.content,
                     );
-                } else {
-                    render_empty_scrollback_indicator(frame, viewport.content, theme);
                 }
                 render_transcript_scrollbar(
                     frame,

@@ -156,6 +156,7 @@ pub enum AnthropicSseEvent {
     MessageStart {
         message_id: String,
         model: String,
+        input_tokens: Option<u32>,
     },
     ContentBlockStart {
         index: u32,
@@ -172,6 +173,7 @@ pub enum AnthropicSseEvent {
     },
     MessageDelta {
         stop_reason: Option<String>,
+        output_tokens: Option<u32>,
     },
     MessageStop,
     Ping,
@@ -205,7 +207,16 @@ pub fn parse_anthropic_sse_event(data: &str) -> Option<AnthropicSseEvent> {
             let msg = value.get("message")?;
             let message_id = msg.get("id")?.as_str()?.to_string();
             let model = msg.get("model")?.as_str()?.to_string();
-            Some(AnthropicSseEvent::MessageStart { message_id, model })
+            let input_tokens = msg
+                .get("usage")
+                .and_then(|usage| usage.get("input_tokens"))
+                .and_then(Value::as_u64)
+                .and_then(|tokens| u32::try_from(tokens).ok());
+            Some(AnthropicSseEvent::MessageStart {
+                message_id,
+                model,
+                input_tokens,
+            })
         }
         "content_block_start" => {
             let index = u32::try_from(value.get("index")?.as_u64()?).ok()?;
@@ -251,7 +262,15 @@ pub fn parse_anthropic_sse_event(data: &str) -> Option<AnthropicSseEvent> {
                 .get("stop_reason")
                 .and_then(|v| v.as_str())
                 .map(String::from);
-            Some(AnthropicSseEvent::MessageDelta { stop_reason })
+            let output_tokens = value
+                .get("usage")
+                .and_then(|usage| usage.get("output_tokens"))
+                .and_then(Value::as_u64)
+                .and_then(|tokens| u32::try_from(tokens).ok());
+            Some(AnthropicSseEvent::MessageDelta {
+                stop_reason,
+                output_tokens,
+            })
         }
         "message_stop" => Some(AnthropicSseEvent::MessageStop),
         "ping" => Some(AnthropicSseEvent::Ping),
@@ -325,7 +344,7 @@ pub fn anthropic_sse_to_provider_event(
             }
             vec![]
         }
-        AnthropicSseEvent::MessageDelta { stop_reason } => {
+        AnthropicSseEvent::MessageDelta { stop_reason, .. } => {
             let _ = stop_reason;
             vec![]
         }
@@ -348,10 +367,55 @@ pub fn anthropic_sse_to_provider_event(
     }
 }
 
+#[derive(Default)]
+struct AnthropicSseStreamState {
+    tool_state: Vec<(u32, String, String, String)>,
+    input_tokens: Option<u32>,
+    output_tokens: Option<u32>,
+    provider_stop_reason: Option<String>,
+}
+
+fn anthropic_sse_to_provider_event_with_usage(
+    event: &AnthropicSseEvent,
+    state: &mut AnthropicSseStreamState,
+) -> Vec<ProviderStreamEvent> {
+    match event {
+        AnthropicSseEvent::MessageStart { input_tokens, .. } => {
+            state.input_tokens = *input_tokens;
+            vec![ProviderStreamEvent::Started { metadata: None }]
+        }
+        AnthropicSseEvent::MessageDelta {
+            stop_reason,
+            output_tokens,
+        } => {
+            state.provider_stop_reason.clone_from(stop_reason);
+            state.output_tokens = *output_tokens;
+            vec![]
+        }
+        AnthropicSseEvent::MessageStop => {
+            let usage = state.input_tokens.zip(state.output_tokens).map(
+                |(prompt_tokens, completion_tokens)| CompletionUsage {
+                    prompt_tokens,
+                    completion_tokens,
+                    total_tokens: prompt_tokens.saturating_add(completion_tokens),
+                },
+            );
+            vec![ProviderStreamEvent::DoneWithMetadata {
+                usage,
+                metadata: Some(ProviderStreamFinishedMetadata {
+                    provider_stop_reason: state.provider_stop_reason.clone(),
+                    ..Default::default()
+                }),
+            }]
+        }
+        _ => anthropic_sse_to_provider_event(event, &mut state.tool_state),
+    }
+}
+
 /// Parse a complete Anthropic SSE stream (multiple `data:` lines) into
 /// [`ProviderStreamEvent`]s.
 pub fn parse_anthropic_sse_stream(raw: &str) -> Vec<ProviderStreamEvent> {
-    let mut tool_state: Vec<(u32, String, String, String)> = Vec::new();
+    let mut state = AnthropicSseStreamState::default();
     let mut events = Vec::new();
     for line in raw.lines() {
         let trimmed = line.trim();
@@ -363,7 +427,9 @@ pub fn parse_anthropic_sse_stream(raw: &str) -> Vec<ProviderStreamEvent> {
             break;
         }
         if let Some(event) = parse_anthropic_sse_event(data) {
-            events.extend(anthropic_sse_to_provider_event(&event, &mut tool_state));
+            events.extend(anthropic_sse_to_provider_event_with_usage(
+                &event, &mut state,
+            ));
         }
     }
     events
@@ -777,6 +843,7 @@ mod tests {
             Some(AnthropicSseEvent::MessageStart {
                 message_id: "msg_1".to_string(),
                 model: "claude-sonnet-4-20250514".to_string(),
+                input_tokens: None,
             })
         );
     }
@@ -849,6 +916,31 @@ mod tests {
         assert!(matches!(
             events.last(),
             Some(ProviderStreamEvent::DoneWithMetadata { .. })
+        ));
+    }
+
+    #[test]
+    fn parse_sse_stream_preserves_terminal_usage() {
+        // arrange
+        let raw = "data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\",\"model\":\"claude\",\"usage\":{\"input_tokens\":8000}}}\n\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":840}}\n\ndata: {\"type\":\"message_stop\"}\n\n";
+
+        // act
+        let events = parse_anthropic_sse_stream(raw);
+
+        // assert
+        assert!(matches!(
+            events.last(),
+            Some(ProviderStreamEvent::DoneWithMetadata {
+                usage: Some(CompletionUsage {
+                    prompt_tokens: 8_000,
+                    completion_tokens: 840,
+                    total_tokens: 8_840,
+                }),
+                metadata: Some(ProviderStreamFinishedMetadata {
+                    provider_stop_reason: Some(stop_reason),
+                    ..
+                }),
+            }) if stop_reason == "end_turn"
         ));
     }
 

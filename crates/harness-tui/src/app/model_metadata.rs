@@ -45,6 +45,7 @@ pub struct LaunchMetadata {
     thinking: Option<Value>,
     recommended_for: Option<String>,
     mode_label: Option<String>,
+    oauth_authenticated: bool,
     available_models: Vec<ModelOption>,
     switchable_profiles: Vec<String>,
     mcp_resources: Vec<McpResourceOption>,
@@ -88,6 +89,7 @@ impl LaunchMetadata {
             thinking: None,
             recommended_for: None,
             mode_label: None,
+            oauth_authenticated: false,
             available_models: Vec::new(),
             switchable_profiles: Vec::new(),
             mcp_resources: Vec::new(),
@@ -124,6 +126,7 @@ impl LaunchMetadata {
             thinking: option.thinking.clone(),
             recommended_for: option.recommended_for.clone(),
             mode_label: None,
+            oauth_authenticated: false,
             available_models: Vec::new(),
             switchable_profiles: Vec::new(),
             mcp_resources: Vec::new(),
@@ -138,6 +141,15 @@ impl LaunchMetadata {
     pub fn without_mode_label(mut self) -> Self {
         self.mode_label = None;
         self
+    }
+
+    pub fn with_oauth_authentication(mut self) -> Self {
+        self.oauth_authenticated = true;
+        self
+    }
+
+    pub fn uses_oauth_authentication(&self) -> bool {
+        self.oauth_authenticated
     }
 
     pub fn with_available_models(mut self, available_models: Vec<ModelOption>) -> Self {

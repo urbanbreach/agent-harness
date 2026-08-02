@@ -41,6 +41,7 @@ pub struct ModelCatalogEntry {
     pub name: String,
     pub context_window: Option<u64>,
     pub supports_tool_calls: Option<bool>,
+    pub supports_reasoning: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -116,14 +117,18 @@ impl ProviderCatalog {
             return Self::from_embedded();
         }
 
-        if let Ok(metadata) = std::fs::metadata(path) {
-            if let Ok(modified) = metadata.modified() {
-                if let Ok(elapsed) = modified.elapsed() {
-                    if elapsed < CACHE_TTL {
-                        return Self::from_path(path).or_else(|_| Self::from_embedded());
-                    }
-                }
+        if let Ok(catalog) = Self::from_path(path) {
+            let fresh = std::fs::metadata(path)
+                .and_then(|metadata| metadata.modified())
+                .and_then(|modified| modified.elapsed().map_err(std::io::Error::other))
+                .is_ok_and(|elapsed| elapsed < CACHE_TTL);
+            if fresh {
+                return Ok(catalog);
             }
+            if let Some(url) = url {
+                Self::refresh_in_background(path, url.to_string());
+            }
+            return Ok(catalog);
         }
 
         if let Some(url) = url {
@@ -146,8 +151,14 @@ impl ProviderCatalog {
     pub fn refresh_in_background(path: &Path, url: String) {
         let path = path.to_path_buf();
         std::thread::spawn(move || {
+            let lock = CacheLock::try_acquire(&path);
+            if !lock.acquired() {
+                return;
+            }
             if let Ok(body) = fetch_raw(&url) {
-                let _ = write_cache_atomic(&path, &body);
+                if parse_catalog(&body).is_ok() {
+                    let _ = write_cache_atomic(&path, &body);
+                }
             }
         });
     }
@@ -170,9 +181,12 @@ fn priority_of(id: &str) -> u8 {
 fn parse_catalog(json: &str) -> Result<ProviderCatalog, CatalogError> {
     let raw: RawCatalog =
         serde_json::from_str(json).map_err(|source| CatalogError::Parse { source })?;
+    let raw_providers = match raw {
+        RawCatalog::Generated { provider } | RawCatalog::ModelsDev(provider) => provider,
+    };
 
     let mut providers = BTreeMap::new();
-    for (id, raw_provider) in raw.provider {
+    for (id, raw_provider) in raw_providers {
         let auth_methods = auth_methods_for_provider(&id);
         let models = raw_provider
             .models
@@ -181,17 +195,20 @@ fn parse_catalog(json: &str) -> Result<ProviderCatalog, CatalogError> {
                 let context_window = raw_model
                     .metadata
                     .as_ref()
-                    .and_then(|m| m.context_window_tokens);
+                    .and_then(|metadata| metadata.context_window_tokens)
+                    .or_else(|| raw_model.limit.as_ref().and_then(|limit| limit.context));
                 let supports_tool_calls = raw_model
                     .metadata
                     .as_ref()
-                    .and_then(|m| m.supports_tool_calls);
+                    .and_then(|metadata| metadata.supports_tool_calls)
+                    .or(Some(raw_model.tool_call));
                 (
-                    model_id,
+                    model_id.clone(),
                     ModelCatalogEntry {
-                        name: raw_model.name,
+                        name: raw_model.name.unwrap_or(model_id),
                         context_window,
                         supports_tool_calls,
+                        supports_reasoning: raw_model.reasoning,
                     },
                 )
             })
@@ -200,10 +217,19 @@ fn parse_catalog(json: &str) -> Result<ProviderCatalog, CatalogError> {
         providers.insert(
             id.clone(),
             ProviderCatalogEntry {
-                id,
-                name: raw_provider.name,
-                base_url: raw_provider.options.base_url,
-                api_key_env: raw_provider.options.api_key_env,
+                id: id.clone(),
+                name: raw_provider.name.unwrap_or_else(|| id.clone()),
+                base_url: raw_provider
+                    .options
+                    .as_ref()
+                    .map(|options| options.base_url.clone())
+                    .or(raw_provider.api)
+                    .unwrap_or_default(),
+                api_key_env: raw_provider
+                    .options
+                    .map(|options| options.api_key_env)
+                    .filter(|env| !env.is_empty())
+                    .unwrap_or(raw_provider.env),
                 models,
                 auth_methods,
             },
@@ -338,14 +364,24 @@ impl Drop for CacheLock {
 }
 
 #[derive(Debug, Deserialize)]
-struct RawCatalog {
-    provider: BTreeMap<String, RawProvider>,
+#[serde(untagged)]
+enum RawCatalog {
+    Generated {
+        provider: BTreeMap<String, RawProvider>,
+    },
+    ModelsDev(BTreeMap<String, RawProvider>),
 }
 
 #[derive(Debug, Deserialize)]
 struct RawProvider {
-    name: String,
-    options: RawProviderOptions,
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    options: Option<RawProviderOptions>,
+    #[serde(default)]
+    api: Option<String>,
+    #[serde(default)]
+    env: Vec<String>,
     #[serde(default)]
     models: BTreeMap<String, RawModel>,
 }
@@ -360,9 +396,16 @@ struct RawProviderOptions {
 
 #[derive(Debug, Deserialize)]
 struct RawModel {
-    name: String,
+    #[serde(default)]
+    name: Option<String>,
     #[serde(default)]
     metadata: Option<RawModelMetadata>,
+    #[serde(default)]
+    reasoning: bool,
+    #[serde(default)]
+    tool_call: bool,
+    #[serde(default)]
+    limit: Option<RawModelLimit>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -371,6 +414,12 @@ struct RawModelMetadata {
     context_window_tokens: Option<u64>,
     #[serde(rename = "supportsToolCalls")]
     supports_tool_calls: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawModelLimit {
+    #[serde(default)]
+    context: Option<u64>,
 }
 
 #[cfg(test)]
@@ -390,6 +439,36 @@ mod tests {
 
         // assert
         assert_eq!(count, 116, "expected 116 providers, found {count}");
+    }
+
+    #[test]
+    fn parses_models_dev_direct_provider_shape() {
+        // arrange
+        let body = r#"{
+          "openai": {
+            "name": "OpenAI",
+            "env": ["OPENAI_API_KEY"],
+            "models": {
+              "gpt-5.6": {
+                "id": "gpt-5.6",
+                "name": "GPT-5.6",
+                "reasoning": true,
+                "tool_call": true,
+                "limit": { "context": 1050000 }
+              }
+            }
+          }
+        }"#;
+
+        // act
+        let catalog = parse_catalog(body).unwrap_or_abort();
+
+        // assert
+        let model = &catalog.provider("openai").unwrap_or_abort().models["gpt-5.6"];
+        assert_eq!(model.name, "GPT-5.6");
+        assert_eq!(model.context_window, Some(1_050_000));
+        assert_eq!(model.supports_tool_calls, Some(true));
+        assert!(model.supports_reasoning);
     }
 
     #[test]

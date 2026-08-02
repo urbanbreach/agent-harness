@@ -8,9 +8,10 @@ use harness_core::auth::copilot::copilot_offline_fallback_models;
 use harness_core::auth::{AuthProviderId, CredentialStore};
 use harness_core::config::{
     load_config_from_str, HarnessConfig, ModelConfig, ModelLimitConfig, ModelMetadataConfig,
-    ModelVariantConfig, ModelVariantMetadataConfig, ModelVariantReasoningEffort, OpenAiApiMode,
-    OpenAiCompatibleProviderConfig, ProviderConfig,
+    ModelModalitiesConfig, ModelVariantConfig, ModelVariantMetadataConfig,
+    ModelVariantReasoningEffort, OpenAiApiMode, OpenAiCompatibleProviderConfig, ProviderConfig,
 };
+use harness_core::provider_catalog::{ModelCatalogEntry, ProviderCatalog};
 use serde_json::Value;
 
 use crate::generated_model_catalog::PROVIDER_CATALOG_JSON;
@@ -52,6 +53,9 @@ pub fn resolve_runtime_catalog(
     };
 
     merge_builtin_providers(&mut config, &connected, no_project_config)?;
+    if let Ok(catalog) = ProviderCatalog::from_env() {
+        merge_live_codex_models(&mut config, &catalog);
+    }
     apply_provider_filters(&mut config);
 
     if base_digest.is_none() {
@@ -150,6 +154,60 @@ fn merge_builtin_providers(
     }
 
     Ok(())
+}
+
+fn merge_live_codex_models(config: &mut HarnessConfig, catalog: &ProviderCatalog) {
+    let Some(source) = catalog.provider("openai") else {
+        return;
+    };
+    let Some(ProviderConfig::OpenAiCompatible(codex)) =
+        config.providers.get_mut(BUILTIN_CODEX_PROVIDER_ID)
+    else {
+        return;
+    };
+    if codex.auth_provider != Some(AuthProviderId::codex()) {
+        return;
+    }
+
+    let discovered = source
+        .models
+        .iter()
+        .filter(|(model_id, _)| codex_oauth_model_allowed(model_id))
+        .filter(|(model_id, _)| !codex.models.contains_key(*model_id))
+        .map(|(model_id, metadata)| {
+            (
+                model_id.clone(),
+                normalize_codex_model_variants(model_id, model_config_from_catalog(metadata)),
+            )
+        })
+        .collect::<Vec<_>>();
+    codex.models.extend(discovered);
+}
+
+fn model_config_from_catalog(metadata: &ModelCatalogEntry) -> ModelConfig {
+    let context = metadata
+        .context_window
+        .and_then(|value| u32::try_from(value).ok());
+    ModelConfig {
+        display_name: metadata.name.clone(),
+        metadata: ModelMetadataConfig {
+            context_window_tokens: context,
+            supports_tool_calls: metadata.supports_tool_calls,
+            ..Default::default()
+        },
+        limit: ModelLimitConfig {
+            context,
+            ..Default::default()
+        },
+        modalities: ModelModalitiesConfig {
+            input: vec!["text".to_string()],
+            output: vec!["text".to_string()],
+        },
+        options: BTreeMap::new(),
+        max_input_tokens: None,
+        max_output_tokens: None,
+        variants: BTreeMap::new(),
+    }
 }
 
 fn apply_provider_filters(config: &mut HarnessConfig) {
@@ -729,6 +787,67 @@ mod tests {
         );
         assert!(codex.api_key.is_empty());
         assert!(copilot.api_key.is_empty());
+    }
+
+    #[test]
+    fn live_models_dev_catalog_adds_new_codex_models_to_explicit_config() {
+        // arrange
+        let dir = tempdir().unwrap_or_abort();
+        let catalog_path = dir.path().join("models.json");
+        std::fs::write(
+            &catalog_path,
+            r#"{
+              "openai": {
+                "name": "OpenAI",
+                "env": ["OPENAI_API_KEY"],
+                "models": {
+                  "gpt-5.6": {
+                    "id": "gpt-5.6",
+                    "name": "GPT-5.6",
+                    "reasoning": true,
+                    "tool_call": true,
+                    "limit": { "context": 1050000 }
+                  }
+                }
+              }
+            }"#,
+        )
+        .unwrap_or_abort();
+        let catalog = ProviderCatalog::from_path(&catalog_path).unwrap_or_abort();
+        let mut config = load_config_from_str(
+            r#"{
+              "provider": {
+                "openai-codex": {
+                  "type": "openai_compatible",
+                  "options": {
+                    "authProvider": "codex",
+                    "baseURL": "https://api.openai.com/v1"
+                  },
+                  "models": {
+                    "gpt-5.5": { "name": "GPT-5.5" }
+                  }
+                }
+              },
+              "model": "openai-codex/gpt-5.5",
+              "permission": { "*": "deny" }
+            }"#,
+        )
+        .unwrap_or_abort();
+
+        // act
+        merge_live_codex_models(&mut config, &catalog);
+
+        // assert
+        let ProviderConfig::OpenAiCompatible(codex) = config
+            .providers
+            .get(BUILTIN_CODEX_PROVIDER_ID)
+            .unwrap_or_abort()
+        else {
+            panic!("expected OpenAI-compatible Codex provider");
+        };
+        assert_eq!(codex.models["gpt-5.6"].display_name, "GPT-5.6");
+        assert_eq!(codex.models["gpt-5.6"].limit.context, Some(1_050_000));
+        assert!(codex.models["gpt-5.6"].variants.contains_key("xhigh"));
     }
 
     #[test]

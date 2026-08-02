@@ -296,47 +296,51 @@ fn syntect_rgb(red: u8, green: u8, blue: u8) -> SyntectColor {
 }
 
 fn reference_diff_context_bg() -> SyntectColor {
-    syntect_rgb(0x14, 0x14, 0x14)
+    syntect_token(crate::theme::Theme::GROK_DIFF_SYNTAX.context_bg)
 }
 
 fn reference_syntax_comment() -> SyntectColor {
-    syntect_rgb(0x80, 0x80, 0x80)
+    syntect_token(crate::theme::Theme::GROK_DIFF_SYNTAX.comment)
 }
 
 fn reference_syntax_keyword() -> SyntectColor {
-    syntect_rgb(0xD9, 0x84, 0xD9)
+    syntect_token(crate::theme::Theme::GROK_DIFF_SYNTAX.keyword)
 }
 
 fn reference_syntax_function() -> SyntectColor {
-    syntect_rgb(0xE8, 0xA0, 0xE8)
+    syntect_token(crate::theme::Theme::GROK_DIFF_SYNTAX.function)
 }
 
 fn reference_syntax_variable() -> SyntectColor {
-    syntect_rgb(0xE0, 0x6C, 0x75)
+    syntect_token(crate::theme::Theme::GROK_DIFF_SYNTAX.variable)
 }
 
 fn reference_syntax_string() -> SyntectColor {
-    syntect_rgb(0x7F, 0xD8, 0x8F)
+    syntect_token(crate::theme::Theme::GROK_DIFF_SYNTAX.string)
 }
 
 fn reference_syntax_number() -> SyntectColor {
-    syntect_rgb(0xE5, 0xC0, 0x7B)
+    syntect_token(crate::theme::Theme::GROK_DIFF_SYNTAX.number)
 }
 
 fn reference_syntax_type() -> SyntectColor {
-    syntect_rgb(0xE5, 0xC0, 0x7B)
+    syntect_token(crate::theme::Theme::GROK_DIFF_SYNTAX.r#type)
 }
 
 fn reference_syntax_operator() -> SyntectColor {
-    syntect_rgb(0x56, 0xB6, 0xC2)
+    syntect_token(crate::theme::Theme::GROK_DIFF_SYNTAX.operator)
 }
 
 fn reference_syntax_punctuation() -> SyntectColor {
-    syntect_rgb(0xEE, 0xEE, 0xEE)
+    syntect_token(crate::theme::Theme::GROK_DIFF_SYNTAX.punctuation)
 }
 
 fn reference_syntax_error() -> SyntectColor {
-    syntect_rgb(0xE0, 0x6C, 0x75)
+    syntect_token(crate::theme::Theme::GROK_DIFF_SYNTAX.error)
+}
+
+fn syntect_token([red, green, blue]: [u8; 3]) -> SyntectColor {
+    syntect_rgb(red, green, blue)
 }
 
 struct DiffSyntaxHighlightAssets {

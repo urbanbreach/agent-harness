@@ -13,10 +13,11 @@
 | Diagnostic startup | `/tmp/opencode/artifacts/harness-xterm-qa/evidence/grok-startup/` | 120×32 | Same shell anatomy; model badge shows `test-model` |
 | Diagnostic draft | `/tmp/opencode/artifacts/harness-xterm-qa/evidence/grok-draft/` | 120×32 | Same draft transition; breadcrumb may show token usage |
 | Freeze receipt | `artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json` | — | Binary SHA-256, font stack, Chromium/xterm versions |
+| Complete chat-shell parity corpus | `artifacts/qa-evidence/20260801-grok-chat-shell-parity-final/` | 60×20 through 140×40 | Lifecycle, tools/diffs, overlays, questions, CJK, responsive, and synchronized motion evidence |
 
 **Measured files per freeze run:** `terminal.txt`, `terminal-ansi.txt`, `terminal.png`, `metadata.json`.
 
-**Not yet captured (mark TBD below):** compact/narrow viewports, overlays/pickers, permission/question modals, transcript/tool blocks, truecolor RGB roles (ANSI dump has intensity only).
+The complete chat-shell corpus supersedes the startup-only interim evidence for compact viewports, overlays, permission/question surfaces, transcript/tool blocks, and source-derived GrokNight color roles.
 
 ---
 
@@ -80,7 +81,7 @@ Canonical order top → bottom (1-based terminal rows from freeze `run1-startup/
 | **120×40** | Measured startup | `run{1,2,3}-startup-120x40` — same welcome+composer anatomy; extra vertical gap between welcome and composer |
 | **100×30** | Measured startup | `run{1,2,3}-startup-100x30` — full bordered welcome retained (narrower box); bordered composer retained |
 | **80×24** | Measured startup + draft | `run{1,2,3}-startup-80x24` / `run{1,2,3}-draft-80x24` |
-| 79×24, 60×20, width ≥ 121, 120×50 | **TBD** | no freeze yet |
+| **79×24, 60×20, 140×40, 120×50** | Measured responsive shell | Final comparison boards `17` through `23` |
 
 ### Compact collapse @ 80×24 (measured)
 
@@ -141,7 +142,7 @@ All columns 0-based character indices in the text grid (freeze startup):
 | Prompt glyph | `❯` (U+276F) immediately inside left border after one space |
 | Draft text | Same row as `❯`, one space after glyph |
 | Height (single line) | Exactly **3** rows (top border, content, bottom border) |
-| Dynamic height | Multi-line draft **TBD** (not in freeze) |
+| Dynamic height | Multi-line drafts wrap inside the border and cap at 6 content rows |
 | Model badge | Embedded in **bottom border row**, right-aligned before the closing `╯`, with `─` padding; examples: `test-model`, `unknown`, or blank spacer `  ─` when empty |
 | Focus | Composer is the edit surface at startup; cursor ends on the draft line after paint |
 
@@ -192,11 +193,11 @@ Labels and shortcuts use bold labels + normal/dim shortcuts (ANSI intensity). Sh
 
 | Topic | Status |
 |---|---|
-| Overlay sizes | **TBD** — no freeze capture of palette, session picker, permission, question, help, model switcher |
-| Z-order | **TBD** — expected later: modal overlays above shell; composer remains under modal dim/stack per future captures |
-| Preemption / dismiss | **TBD** |
+| Overlay sizes | Measured palette, session picker, permission/question, and help surfaces with deterministic bounds |
+| Z-order | Modal overlays render above the shell and restore the composer/draft surface after dismissal |
+| Preemption / dismiss | Keyboard dismissal restores prior focus; permission/question prompts retain transcript and bottom-shell geometry |
 
-Until captured: do not invent overlay geometry from current Harness `ui_overlays*`.
+Evidence owners are final comparison boards `05`, `12`, and `14`–`16`, plus `question-pairs/`.
 
 ---
 
@@ -222,8 +223,8 @@ Until captured: do not invent overlay geometry from current Harness `ui_overlays
 | `` (Powerline branch) | Breadcrumb VCS marker | Startup/draft row 2 |
 | `│` | Box vertical + footer separator | Shell |
 | `─` | Box horizontal + badge rail | Composer bottom |
-| `◆` | Tool header marker (contract/reskin notes; **not** in startup/draft freeze) | **TBD** — capture tool states |
-| `●` / `○` | Permission choice selected/unselected (contract notes; **not** in freeze) | **TBD** — capture permission surface |
+| `◆` | Tool header marker | Final tool/diff capture states |
+| `●` / `○` | Permission/question selected and unselected choices | Final permission/question captures |
 | Braille block art | Welcome logo mass | Welcome panel |
 
 ---
@@ -244,18 +245,25 @@ Until captured: do not invent overlay geometry from current Harness `ui_overlays
 
 | Role | Value | Status |
 |---|---|---|
-| Background | — | **TBD** — sample `terminal.png` under pinned xterm.js pipeline (receipt fonts/DPR) |
-| Foreground default | — | **TBD** |
-| Accent / link / warning / success / error | — | **TBD** — require truecolor cell capture or PNG sampling with provenance |
-| Border color vs text | — | **TBD** |
+| Background | `#141414` (`20,20,20`) | Measured at pixel `(0,0)` in the pinned startup PNG |
+| Selected user-message surface | `#555753` (`85,87,83`) | Measured at pixel `(409,45)` in the normalized frozen failure-state PNG |
+| Elevated composer surface | `#1c1c1c` (`28,28,28`) | Measured at pixel `(339,57)` in the normalized frozen draft PNG |
+| Scrollbar thumb | `#242424` (`36,36,36`) | Measured at pixel `(184,54)` in the normalized frozen draft PNG |
+| Foreground primary / secondary | `#e1e1e1` / `#6c6c6c` | GrokNight source and final truecolor captures |
+| Question accent / selected surface | `#c8c8c8` / `#363636` | GrokNight source and question captures |
+| Focused composer border | `#505058` | GrokNight `prompt_border_active`; native 256-color capture quantizes to xterm 239 |
+| Active-thinking user surface | `#262626` | Native synchronized motion captures |
+| Error / diff roles | Tokenized in `Theme::GROK_TERMINAL_COLORS` | Tool/diff and failure-state captures |
 
-**Do not invent palette values.** When capturing colors, record exact resolved RGB per role into this section and cite the capture path.
+The observation receipt is `crates/harness-tui/tests/fixtures/harness-chat-rgb-observations.json`; the final source inventory records the additional GrokNight roles traced directly from the pinned source and synchronized captures.
 
 Capture paths for future color lock:
 
 ```text
 artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup/terminal.png
 artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startup/terminal-ansi.txt
+artifacts/qa-evidence/20260801-grok-chat-shell-parity-final/reference-pinned/startup-welcome-120x32/terminal.png
+.config/artifacts/qa-evidence/20260801-grok-chat-shell-parity-final/reference-normalized/run1-shell-fail-pinned-v1/terminal.png
 ```
 
 ---
@@ -267,9 +275,9 @@ artifacts/qa-evidence/20260717-tui-reference-parity/reference/freeze/run1-startu
 | Startup focus owner | Composer input (caret on draft line after `❯`) |
 | Cursor visibility | Shown when idle after paint; may hide during synchronized updates |
 | Cursor position empty draft | Content row of composer, first editable cell after `❯ ` |
-| Welcome actions | Visible labels; keyboard shortcuts shown — selection chrome **TBD** (no selected-row capture) |
-| Overlay focus | **TBD** |
-| Mouse | Capture enables mouse modes; hit targets **TBD** |
+| Welcome actions | Visible labels and keyboard shortcuts; compact and primary layouts are captured |
+| Overlay focus | Palette/help/session and question selection transitions are captured and restore prior focus on dismiss |
+| Mouse | Capture enables mouse modes; pointer hit regions follow the rendered overlay and transcript geometry |
 
 ---
 
@@ -306,26 +314,30 @@ Only these fields may differ from the reference while preserving geometry:
 
 ---
 
-## 14. Transcript / live shell (not in freeze; interim)
+## 14. Transcript / live shell
 
-Freeze captures are startup + empty-body draft only. For live sessions the implementation contract still requires:
+The pinned reference set now covers the live shell, lifecycle, transcript tool and
+diff rows, scroll state, permission/question activity, overlays, and responsive
+breakpoints. These captures supersede the earlier startup-only interim contract.
+For live sessions the implementation contract requires:
 
 - Full-width transcript/body above the same bordered bottom composer (no persistent right operator sidebar as primary chrome).
 - Operator facts on secondary surfaces (status dialog, details, palette, slash) — Harness seam language from `crates/harness-tui/AGENTS.md`.
 
-### SHELL-IDLE (interim, structural)
+### SHELL-IDLE
 
 | Region | Contract |
 |--------|----------|
 | Body | Full-width transcript area; empty live shell is **card-free** (no elevated Session/Harness empty-state card, no value_prop / example_prompts body copy) |
 | Composer | Same bordered strip as startup: rounded `╭─╮/╰─╯`, `❯` glyph, model badge on bottom border; multi-line drafts wrap inside the border (capped at 6 content rows) |
 | Queue | When `queued_prompt_count > 0`, badge may append `· queued N` |
-| Disclosure | Bottom control-dock disclosure row retained (e.g. `live ctx … Ctrl+p commands`) |
+| Footer | Left anchored shortcut grammar, beginning at the shell's outer horizontal padding; no right-justified footer group |
+| Idle status | No startup/session-progress row after the live shell has settled |
 | Topology | No persistent right operator sidebar as primary chrome |
 
 Structural owners: `crates/harness-tui/tests/reference_parity_tx_shell_test.rs` (`shell_idle_*`).
 
-### TX-USER / TX-ASSISTANT (interim, structural)
+### TX-USER / TX-ASSISTANT
 
 | Region | Contract |
 |--------|----------|
@@ -335,7 +347,50 @@ Structural owners: `crates/harness-tui/tests/reference_parity_tx_shell_test.rs` 
 
 Structural owners: `crates/harness-tui/tests/reference_parity_tx_shell_test.rs` (`tx_user_*`, `tx_assistant_*`) plus existing exact transcript tests.
 
-Detailed tool `◆` headers, diffs, and streaming chrome remain **TBD pending reference captures**.
+### TX-TOOL / TX-DIFF
+
+| Region | Contract |
+|--------|----------|
+| Group summary | Flat `◈` summary row (`Ran N commands` plus failure suffix); no card border or per-command body expansion |
+| Command row | Flat `◆ Run …` row. Failed rows use the error accent/left accent state, without an extra `command failed` body line in collapsed mode |
+| Edit/diff row | Flat `◆ edit`/path summary in collapsed mode; disclosure is represented by the fold indicator, not an always-expanded inline diff card |
+| Running accent | The active entry has a one-cell animated accent rail; finished siblings retain their settled accent state |
+| Fold state | Collapsed is the default transcript presentation; expansion is an explicit interaction and must preserve scroll/selection anchors |
+
+Measured owners: pinned `run1-tx-tool-pinned-v1` and
+`run1-tx-diff-pinned-v1` captures under the parity reference freeze, plus
+`scrollback/blocks/tool/*`, `scrollback/types.rs`, and
+`scrollback/wrappers/entry_renderer.rs` in the frozen reference source.
+
+### Live lifecycle matrix
+
+The chat shell acceptance run must capture each row at `120x40` through the same
+PTY, xterm.js, font, Chromium binary, DPR, locale, and terminal environment.
+Identity text may differ only inside the declared semantic identity fields.
+
+| State | Required visible contract |
+|-------|---------------------------|
+| idle | Header + empty body + composer + left-anchored shortcuts; no progress row |
+| draft | Startup body cleared on first grapheme; composer cursor and draft remain inside the same border |
+| streaming | User row, active turn-status spinner/elapsed/token segment, cancel hint, composer, shortcuts |
+| tool running/success/failure | Flat grouped tool rows with active accent and collapsed output policy |
+| diff/edit | Flat collapsed edit rows and fold indicators; expanded diff only after disclosure |
+| permission | Permission activity and prompt state preserve transcript, draft, focus, and bottom-shell geometry |
+| question | Question activity and prompt state preserve transcript, draft, focus, and bottom-shell geometry |
+| cancelled | Terminal cancellation state replaces active status without moving the composer |
+| failed | Error state uses error semantics without introducing a card or permanent rail |
+| recovered | Subsequent active state clears the terminal error chrome and resumes normal animation |
+| completed | Assistant body and completion duration settle; active status/cancel hint disappear |
+| scrolled | Follow is disabled, viewport anchor and selection remain stable, and return-to-live affordance is visible when applicable |
+| palette/help/session picker | Modal or prompt-anchored overlay is above the shell, has deterministic bounds, and restores prior focus/draft on dismiss |
+
+Reference capture names: `run4-shell-idle-pinned-v1`,
+`run1-shell-stream-pinned-v1`, `run1-shell-perm-pinned-v1`,
+`run1-shell-question-pinned-v1`, `run1-shell-cancel-pinned-v1`,
+`run1-shell-fail-pinned-v1`, `run1-shell-recover-pinned-v1`,
+`run1-shell-complete-pinned-v1`, `run1-shell-scroll-pinned-v1`,
+`run1-palette-pinned-v1`, `run1-ovl-help-pinned-v1`, and
+`run1-ovl-session-pinned-v1`.
 
 ---
 
@@ -361,14 +416,21 @@ Default for old visual painters: `replace` or `retain-seam-only`. No module is `
 
 ---
 
-## 17. Open measurement backlog
+## 17. Measurement and proof matrix
 
-1. Compact viewports (80×24, 100×30, …) — welcome/composer collapse rules.  
-2. Truecolor RGB roles from cell grid or controlled PNG sampling.  
-3. Overlay sizes, placement, dimming, z-order.  
-4. Permission / question choice glyphs (`●`/`○`) and dock geometry.  
-5. Transcript/tool/markdown/diff block anatomy.  
-6. Multi-line composer growth.  
-7. Live streaming, cancel, and scroll/follow chrome.
+The responsive shell is measured at `120x50`, `120x40`, `100x30`, `80x24`,
+`79x24`, `60x20`, and `140x40`. A release-quality parity run captures all seven
+viewports and every state in the live lifecycle matrix above. Pixel comparison is
+zero-tolerance outside semantic identity regions; cell comparison also checks
+glyph, foreground/background color, modifier, cursor, focus, and z-order.
 
-Until each item is captured, mark implementation rows **blocked** rather than inventing geometry.
+Animation proof is an ordered frame trace, not one settled screenshot: active
+spinner/accent frames run at the measured 30 fps cadence, elapsed text remains
+monotonic, reduced/disabled motion is deterministic, and settled idle requests no
+animation redraws. Tool expansion, permission/question selection, overlay focus,
+multiline composer growth, and scroll/follow each require both the before and
+after frame plus a state-transition assertion.
+
+If a state cannot be produced against both exact binaries, its row remains
+`incomplete`; it cannot be promoted by a structurally similar helper frame or by
+the former tool/diff or overlay divergence exemptions.

@@ -12,33 +12,93 @@ fn build_tool_header_spans(
     header: &TranscriptToolCallHeader,
     theme: &Theme,
     title_style: Style,
+    marker_style: Style,
 ) -> Vec<Span<'static>> {
     let mut spans = Vec::new();
     let marker = completed_tool_marker(header.status, theme);
-    spans.push(Span::styled(format!("{marker} "), title_style));
+    spans.push(Span::styled(format!("{marker} "), marker_style));
     let _ = header.icon;
-    spans.push(Span::styled(header.title.clone(), title_style));
+    let compact_edit = matches!(header.tool_id.as_str(), "fs.write" | "write")
+        && (header.title == "edit" || header.title.starts_with("edit "));
+    let edit_style = title_style.fg(theme.text.primary);
+    if compact_edit {
+        spans.push(Span::styled(
+            "edit",
+            edit_style.add_modifier(Modifier::BOLD),
+        ));
+    } else if let Some(path) = header.title.strip_prefix("edit ") {
+        spans.push(Span::styled(
+            "edit ",
+            edit_style.add_modifier(Modifier::BOLD),
+        ));
+        spans.push(Span::styled(path.to_string(), edit_style));
+    } else if header.title == "edit" {
+        spans.push(Span::styled(
+            header.title.clone(),
+            edit_style.add_modifier(Modifier::BOLD),
+        ));
+    } else {
+        let title_style = if header.status == crate::app::ToolCallDisplayStatus::Failed {
+            title_style.add_modifier(Modifier::BOLD)
+        } else {
+            title_style
+        };
+        spans.push(Span::styled(header.title.clone(), title_style));
+    }
+    if let Some(path_metadata) = header.path_metadata.as_deref() {
+        spans.push(Span::styled(" ", muted_meta_style(theme)));
+        spans.push(Span::styled(
+            path_metadata.to_string(),
+            Style::default().fg(theme.text.accent),
+        ));
+    }
     if let Some(subtitle) = header.subtitle.as_deref() {
         spans.push(Span::styled(" · ", muted_meta_style(theme)));
         spans.push(Span::styled(subtitle.to_string(), muted_meta_style(theme)));
     }
-    if let Some(disclosure) = tool_header_disclosure_glyph(header.disclosure_state) {
-        spans.push(Span::styled("  ", muted_meta_style(theme)));
-        spans.push(Span::styled(disclosure, muted_meta_style(theme)));
+    if !compact_edit {
+        if let Some(disclosure) = tool_header_disclosure_glyph(header.disclosure_state) {
+            spans.push(Span::styled("  ", muted_meta_style(theme)));
+            spans.push(Span::styled(disclosure, muted_meta_style(theme)));
+        }
     }
     spans
 }
 
 fn completed_tool_marker(status: crate::app::ToolCallDisplayStatus, theme: &Theme) -> &'static str {
     match status {
-        crate::app::ToolCallDisplayStatus::Succeeded => "◈",
-        crate::app::ToolCallDisplayStatus::PendingPermission
+        crate::app::ToolCallDisplayStatus::Succeeded
+        | crate::app::ToolCallDisplayStatus::PendingPermission
         | crate::app::ToolCallDisplayStatus::Queued
         | crate::app::ToolCallDisplayStatus::Running
         | crate::app::ToolCallDisplayStatus::Failed => {
             theme.live_shell.transcript_glyphs.tool_marker
         }
     }
+}
+
+fn tool_call_marker_style(
+    tool_call: &TranscriptToolCallSection,
+    theme: &Theme,
+    inactive_color: Color,
+) -> Style {
+    let edit = tool_call.header.title == "edit" || tool_call.header.title.starts_with("edit ");
+    let color = if edit {
+        theme.reference_terminal.error
+    } else {
+        match tool_call.header.status {
+            crate::app::ToolCallDisplayStatus::Running => {
+                transcript_running_tool_marker_color(theme, tool_call.animation_phase)
+            }
+            crate::app::ToolCallDisplayStatus::Failed
+            | crate::app::ToolCallDisplayStatus::PendingPermission => {
+                theme.reference_terminal.error
+            }
+            crate::app::ToolCallDisplayStatus::Succeeded
+            | crate::app::ToolCallDisplayStatus::Queued => inactive_color,
+        }
+    };
+    tool_call_header_style(tool_call.header.struck_out, color)
 }
 
 #[expect(
@@ -172,7 +232,8 @@ fn append_inline_tool_section_lines(
     let fg = inline_tool_color(tool_call.header.status, theme);
     let style = tool_call_header_style(tool_call.header.struck_out, fg);
 
-    let spans = build_tool_header_spans(&tool_call.header, theme, style);
+    let marker_style = tool_call_marker_style(tool_call, theme, fg);
+    let spans = build_tool_header_spans(&tool_call.header, theme, style, marker_style);
 
     append_surface_row_with_target(
         &mut render.lines,
@@ -214,6 +275,10 @@ fn append_task_inline_tool_section_lines(
         spans.push(Span::styled(" · ", muted_meta_style(theme)));
         spans.push(Span::styled(subtitle.to_string(), muted_meta_style(theme)));
     }
+    if let Some(disclosure) = tool_header_disclosure_glyph(tool_call.header.disclosure_state) {
+        spans.push(Span::styled("  ", muted_meta_style(theme)));
+        spans.push(Span::styled(disclosure, muted_meta_style(theme)));
+    }
 
     append_surface_row_with_bounded_target(
         &mut render.lines,
@@ -224,6 +289,11 @@ fn append_task_inline_tool_section_lines(
         spans,
         transcript_surface_content_width(width, false),
     );
+
+    if !tool_call.details_visible() {
+        append_collapsed_tool_error_summaries(render, tool_call, theme, width, base_surface, None);
+        return;
+    }
 
     for detail_block in &tool_call.detail_blocks {
         match detail_block {
@@ -271,6 +341,9 @@ fn append_task_inline_tool_section_lines(
                         hovered_target: tool_call.hovered_target.clone(),
                         header: tool_call.header.clone(),
                         detail_blocks: vec![detail_block.clone()],
+                        details_collapsed_by_default: tool_call.details_collapsed_by_default,
+                        details_preview_visible: tool_call.details_preview_visible,
+                        animation_phase: tool_call.animation_phase,
                         expanded: tool_call.expanded,
                     },
                     theme,
@@ -291,7 +364,7 @@ fn append_block_tool_section_lines(
     base_surface: Color,
 ) {
     if shell_tool_uses_harness_bash_card(tool_call) {
-        append_shell_tool_harness_card(render, tool_call, theme, width);
+        append_shell_tool_harness_card(render, tool_call, theme, width, base_surface);
         return;
     }
 
@@ -299,15 +372,11 @@ fn append_block_tool_section_lines(
         tool_call.header.tool_id.as_str(),
         "todo.write" | "todowrite"
     );
-    let surface = if is_todo_block {
-        theme.surface.panel
-    } else {
-        base_surface
-    };
+    let surface = base_surface;
     // Nested card shell is only for todo checklist cards. Non-todo Block tools
     // (write/edit with diffs) must stay flat like Thought / inline tools so
     // Creating titles share reference lead=5, not nested-rail lead=7.
-    let card_shell = if is_todo_block {
+    let card_shell = if is_todo_block && tool_call.details_visible() {
         Some(TranscriptToolCardShell {
             indent: TRANSCRIPT_TODO_BLOCK_INDENT,
             rail_color: theme.surface.shell,
@@ -330,7 +399,7 @@ fn append_block_tool_section_lines(
         tool_call.header.disclosure_state.is_some(),
     );
 
-    if is_todo_block {
+    if is_todo_block && tool_call.details_visible() {
         append_card_surface_row_with_target(
             &mut render.lines,
             &mut render.interaction_rows,
@@ -343,7 +412,8 @@ fn append_block_tool_section_lines(
         );
     }
 
-    let title_spans = build_tool_header_spans(&tool_call.header, theme, title_style);
+    let marker_style = tool_call_marker_style(tool_call, theme, title_style.fg.unwrap_or_default());
+    let title_spans = build_tool_header_spans(&tool_call.header, theme, title_style, marker_style);
 
     append_card_surface_row_with_target(
         &mut render.lines,
@@ -356,26 +426,9 @@ fn append_block_tool_section_lines(
         transcript_surface_content_width(width, false),
     );
 
-    if let Some(path_metadata) = tool_call.header.path_metadata.as_deref() {
-        let path_spans = vec![Span::styled(
-            path_metadata.to_string(),
-            muted_meta_style(theme),
-        )];
-        append_card_surface_row_with_target(
-            &mut render.lines,
-            &mut render.interaction_rows,
-            header_target,
-            card_shell,
-            TRANSCRIPT_OPCODE_EDIT_INDENT,
-            surface,
-            path_spans,
-            transcript_surface_content_width(width, false),
-        );
-    }
-
     append_tool_call_detail_blocks(render, tool_call, theme, width, base_surface, card_shell);
 
-    if is_todo_block {
+    if is_todo_block && tool_call.details_visible() {
         append_card_surface_row_with_target(
             &mut render.lines,
             &mut render.interaction_rows,
@@ -411,26 +464,50 @@ fn append_shell_tool_harness_card(
     tool_call: &TranscriptToolCallSection,
     theme: &Theme,
     width: u16,
+    base_surface: Color,
 ) {
-    let title_style = tool_call_header_style(
-        tool_call.header.struck_out,
-        block_tool_color(tool_call.header.status, theme),
-    );
-    let title_spans = build_tool_header_spans(&tool_call.header, theme, title_style);
-    let header_target = tool_header_target(
-        &tool_call.tool_call_id,
-        tool_call.header.disclosure_state.is_some(),
-    );
+    let bash_header = tool_call
+        .detail_blocks
+        .iter()
+        .find_map(|detail_block| match detail_block {
+            TranscriptToolCallDetailBlock::BashPanel {
+                command,
+                description,
+                ..
+            } => Some((command.as_str(), description.as_deref())),
+            _ => None,
+        });
+    let mut header = tool_call.header.clone();
+    if let Some((command, description)) = bash_header {
+        let title = description
+            .filter(|value| !value.trim().is_empty())
+            .map(str::to_owned)
+            .unwrap_or_else(|| format!("$ {}", command.trim()));
+        header.title = title;
+        header.subtitle = None;
+    }
+
+    let title_style =
+        tool_call_header_style(header.struck_out, block_tool_color(header.status, theme));
+    let marker_style = tool_call_marker_style(tool_call, theme, title_style.fg.unwrap_or_default());
+    let title_spans = build_tool_header_spans(&header, theme, title_style, marker_style);
+    let header_target =
+        tool_header_target(&tool_call.tool_call_id, header.disclosure_state.is_some());
     append_card_surface_row_with_target(
         &mut render.lines,
         &mut render.interaction_rows,
         header_target,
         None,
         TRANSCRIPT_ASSISTANT_BODY_PREFIX,
-        theme.surface.shell,
+        base_surface,
         title_spans,
         transcript_surface_content_width(width, false),
     );
+
+    if !tool_call.details_visible() {
+        append_collapsed_tool_error_summaries(render, tool_call, theme, width, base_surface, None);
+        return;
+    }
 
     for detail_block in &tool_call.detail_blocks {
         let start = render.lines.len();
@@ -445,14 +522,22 @@ fn append_shell_tool_harness_card(
                 append_harness_bash_panel(
                     &mut render.lines,
                     HarnessBashPanel {
-                        command,
+                        command: if description
+                            .as_deref()
+                            .is_some_and(|value| !value.trim().is_empty())
+                        {
+                            command
+                        } else {
+                            ""
+                        },
                         output,
-                        description: description.as_deref(),
+                        description: None,
                         expand_hint: expand_hint.as_deref(),
                         tone: *tone,
                     },
                     theme,
                     width,
+                    base_surface,
                 );
                 let target = tool_header_target(
                     &tool_call.tool_call_id,
@@ -474,7 +559,7 @@ fn append_shell_tool_harness_card(
                     *tone,
                     theme,
                     width,
-                    theme.surface.panel,
+                    base_surface,
                     None,
                 );
                 append_noninteractive_rows(&render.lines, &mut render.interaction_rows, start);
@@ -488,11 +573,14 @@ fn append_shell_tool_harness_card(
                         hovered_target: tool_call.hovered_target.clone(),
                         header: tool_call.header.clone(),
                         detail_blocks: vec![detail_block.clone()],
+                        details_collapsed_by_default: tool_call.details_collapsed_by_default,
+                        details_preview_visible: tool_call.details_preview_visible,
+                        animation_phase: tool_call.animation_phase,
                         expanded: tool_call.expanded,
                     },
                     theme,
                     width,
-                    theme.surface.panel,
+                    base_surface,
                     None,
                 );
             }
@@ -500,7 +588,7 @@ fn append_shell_tool_harness_card(
     }
 }
 
-fn append_tool_call_detail_blocks(
+pub(super) fn append_tool_call_detail_blocks(
     render: &mut ToolSectionRender,
     tool_call: &TranscriptToolCallSection,
     theme: &Theme,
@@ -508,6 +596,18 @@ fn append_tool_call_detail_blocks(
     base_surface: Color,
     card_shell: Option<TranscriptToolCardShell>,
 ) {
+    if !tool_call.details_visible() {
+        append_collapsed_tool_error_summaries(
+            render,
+            tool_call,
+            theme,
+            width,
+            base_surface,
+            card_shell,
+        );
+        return;
+    }
+
     for detail_block in &tool_call.detail_blocks {
         let start = render.lines.len();
         match detail_block {
@@ -563,6 +663,7 @@ fn append_tool_call_detail_blocks(
                     },
                     theme,
                     width,
+                    base_surface,
                 );
                 append_noninteractive_rows(&render.lines, &mut render.interaction_rows, start);
             }
@@ -655,6 +756,9 @@ fn append_tool_call_file_section(
                 disclosure_state: None,
             },
             detail_blocks: file_section.detail_blocks.clone(),
+            details_collapsed_by_default: false,
+            details_preview_visible: false,
+            animation_phase: 0,
             expanded: true,
         };
         append_tool_call_detail_blocks(
@@ -665,6 +769,45 @@ fn append_tool_call_file_section(
             base_surface,
             card_shell,
         );
+    }
+}
+
+fn append_collapsed_tool_error_summaries(
+    render: &mut ToolSectionRender,
+    tool_call: &TranscriptToolCallSection,
+    theme: &Theme,
+    width: u16,
+    base_surface: Color,
+    card_shell: Option<TranscriptToolCardShell>,
+) {
+    for detail_block in &tool_call.detail_blocks {
+        let text = match detail_block {
+            TranscriptToolCallDetailBlock::Message {
+                text,
+                tone: TranscriptToolCallDetailTone::Error,
+            }
+            | TranscriptToolCallDetailBlock::BashPanel {
+                output: text,
+                tone: TranscriptToolCallDetailTone::Error,
+                ..
+            } => text,
+            _ => continue,
+        };
+        let summary = text.lines().map(str::trim).find(|line| !line.is_empty());
+        let Some(summary) = summary else {
+            continue;
+        };
+        let start = render.lines.len();
+        append_tool_call_message_block(
+            &mut render.lines,
+            summary,
+            TranscriptToolCallDetailTone::Error,
+            theme,
+            width,
+            base_surface,
+            card_shell,
+        );
+        append_noninteractive_rows(&render.lines, &mut render.interaction_rows, start);
     }
 }
 
@@ -721,12 +864,12 @@ fn is_cancel_error_message(text: &str) -> bool {
 pub(super) fn append_assistant_error_box(
     lines: &mut Vec<Line<'static>>,
     text: &str,
-    _theme: &Theme,
+    theme: &Theme,
     width: u16,
     base_surface: Color,
 ) {
     let surface = base_surface;
-    let style = Style::default().fg(Color::Rgb(113, 116, 122));
+    let style = Style::default().fg(theme.reference_terminal.assistant_error);
     let trimmed = text.trim_end();
     let display = format_assistant_error_display(trimmed);
     for row in display.lines() {
@@ -884,5 +1027,38 @@ fn append_tool_call_diff_block(
                 .into_iter()
                 .map(|offset| start.saturating_add(offset)),
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tool_path_metadata_stays_on_the_header_line() {
+        let header = TranscriptToolCallHeader {
+            tool_id: "edit".to_string(),
+            title: "Edit".to_string(),
+            subtitle: None,
+            path_metadata: Some("src/main.rs".to_string()),
+            icon: None,
+            status: ToolCallDisplayStatus::Succeeded,
+            visual_style: TranscriptToolCallVisualStyle::Block,
+            struck_out: false,
+            disclosure_state: None,
+        };
+
+        let spans = build_tool_header_spans(
+            &header,
+            &Theme::default(),
+            Style::default(),
+            Style::default(),
+        );
+        let rendered = spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect::<String>();
+
+        assert!(rendered.contains("Edit src/main.rs"));
     }
 }

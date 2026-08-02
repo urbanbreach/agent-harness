@@ -55,7 +55,6 @@ pub(super) fn tool_call_has_transcript_disclosure(tool_call: &ToolCallEntry) -> 
 
     let shell_output = shell_tool_output(tool_call);
     let output = tool_call.output_summary.as_deref().unwrap_or_default();
-    let output_line_count = output.lines().count();
     !tool_call.artifact_refs.is_empty()
         || match tool_call.effective_tool_id() {
             "shell.run" | "bash" => shell_output
@@ -64,7 +63,7 @@ pub(super) fn tool_call_has_transcript_disclosure(tool_call: &ToolCallEntry) -> 
                 .is_some_and(has_trimmed_content),
             "edit.hashline_apply" => tool_call_has_preview_content(tool_call),
             "agent.spawn" | "task" => true,
-            _ => has_trimmed_content(output) && output_line_count > 3,
+            _ => has_trimmed_content(output),
         }
 }
 
