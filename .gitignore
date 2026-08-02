@@ -50,3 +50,6 @@ crates/harness/harness.json
 /ATTEMPT/
 **/__pycache__/
 scripts/tui-parity/node_modules/
+
+# Generated Pages site output
+/public/
