@@ -3,6 +3,8 @@ use harness_testkit::binary_receipt::{
     ReceiptExpectations, RepeatBuildReceipt,
 };
 use harness_testkit::UnwrapOrAbort;
+use std::path::Path;
+use std::process::Command;
 
 const REFERENCE_REVISION: &str = "500129c714ad1b10e6095481f4a8387a2ec52649";
 const HARNESS_REVISION: &str = "harness-test-revision";
@@ -68,6 +70,48 @@ fn binary_receipt_rejects_mutated_binary_digest() {
     assert!(matches!(
         result,
         Err(BinaryReceiptError::DigestMismatch { field, .. }) if field == "reference.sha256"
+    ));
+}
+
+#[test]
+fn binary_receipt_rejects_mutated_repeat_binary_digest() {
+    // Given
+    let temporary = tempfile::tempdir().unwrap_or_abort();
+    let reference_first = temporary.path().join("reference-first");
+    let reference_second = temporary.path().join("reference-second");
+    let harness_first = temporary.path().join("harness-first");
+    let harness_second = temporary.path().join("harness-second");
+    for path in [
+        &reference_first,
+        &reference_second,
+        &harness_first,
+        &harness_second,
+    ] {
+        std::fs::write(path, b"immutable binary").unwrap_or_abort();
+    }
+    let mut receipt = fixture_receipt();
+    receipt.reference.binary_path = reference_first.display().to_string();
+    receipt.reference.sha256 = sha256sum(&reference_first);
+    receipt.reference_repeat.first_binary_path = reference_first.display().to_string();
+    receipt.reference_repeat.second_binary_path = reference_second.display().to_string();
+    receipt.reference_repeat.first.binary_sha256 = sha256sum(&reference_first);
+    receipt.reference_repeat.second.binary_sha256 = sha256sum(&reference_second);
+    receipt.harness.binary_path = harness_first.display().to_string();
+    receipt.harness.sha256 = sha256sum(&harness_first);
+    receipt.harness_repeat.first_binary_path = harness_first.display().to_string();
+    receipt.harness_repeat.second_binary_path = harness_second.display().to_string();
+    receipt.harness_repeat.first.binary_sha256 = sha256sum(&harness_first);
+    receipt.harness_repeat.second.binary_sha256 = sha256sum(&harness_second);
+    std::fs::write(&reference_second, b"mutated repeat binary").unwrap_or_abort();
+
+    // When
+    let result = receipt.verify_binary_digests();
+
+    // Then
+    assert!(matches!(
+        result,
+        Err(BinaryReceiptError::DigestMismatch { field, .. })
+            if field == "reference_repeat.second.binary_sha256"
     ));
 }
 
@@ -180,4 +224,17 @@ fn fixture_repeat(
 
 fn format_digest(byte: char) -> String {
     byte.to_string().repeat(64)
+}
+
+fn sha256sum(path: &Path) -> String {
+    let output = Command::new("sha256sum")
+        .arg(path)
+        .output()
+        .unwrap_or_abort();
+    assert!(output.status.success());
+    String::from_utf8_lossy(&output.stdout)
+        .split_whitespace()
+        .next()
+        .map(str::to_owned)
+        .unwrap_or_abort()
 }
