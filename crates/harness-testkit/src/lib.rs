@@ -9,6 +9,7 @@ pub mod parity;
 pub mod secret_scanner;
 pub mod simulation;
 pub mod tui_fidelity;
+pub mod tui_fidelity_runner;
 pub mod workspace;
 
 pub use harness_core::UnwrapOrAbort;

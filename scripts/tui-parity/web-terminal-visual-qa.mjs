@@ -170,6 +170,7 @@ async function run(args) {
       fontSize: args.fontSize,
       ...(args.fontFamily ? { fontFamily: args.fontFamily } : {}),
     },
+    ...(cap.capabilities ? { capabilities: cap.capabilities } : {}),
     cleanup: cap.cleanup,
     files: { png: cap.pngBuffer ? pngPath : null, text: textPath, ansi: ansiPath, metadata: metadataPath },
   };

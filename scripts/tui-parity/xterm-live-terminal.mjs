@@ -11,7 +11,11 @@ import { createRequire } from "node:module";
 import { chmodSync, existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-const require = createRequire(import.meta.url);
+const require = createRequire(
+  process.env.TUI_FIDELITY_NODE_MODULES
+    ? join(process.env.TUI_FIDELITY_NODE_MODULES, "package.json")
+    : import.meta.url,
+);
 
 function resolveAsset(spec) {
   const path = require.resolve(spec);
@@ -64,7 +68,9 @@ html,body{margin:0;padding:0;background:#0b0e14}
     // black=palette index 0: Grok live shell fills with 48;5;0; must match canvas or freezes drift to xterm default #2e3436
     theme: { background: '#0b0e14', foreground: '#d7dae0', black: '#0b0e14' },
   });
-  try { const u = new Unicode11Addon.Unicode11Addon(); term.loadAddon(u); term.unicode.activeVersion = '11'; } catch (e) {}
+  const unicode = new Unicode11Addon.Unicode11Addon();
+  term.loadAddon(unicode);
+  term.unicode.activeVersion = '11';
   term.open(document.getElementById('t'));
   window.__writeToTerm = (d) => term.write(d);
   window.__screenText = () => {
@@ -73,6 +79,13 @@ html,body{margin:0;padding:0;background:#0b0e14}
     return lines.join('\\n').replace(/\\n+$/, '\\n');
   };
   window.__resetAndWrite = (d) => { term.reset(); term.write(d); };
+  window.__terminalCapabilities = () => ({
+    unicodeVersion: term.unicode.activeVersion,
+    devicePixelRatio: window.devicePixelRatio,
+    fontLoaded: document.fonts.check('${fontSize}px ${fontFamilyJs}'),
+    color: 'truecolor',
+    graphics: 'sixel-disabled',
+  });
   term.focus();
   term.onData((d) => { if (window.__ptyInput) window.__ptyInput(d); });
 </script></body></html>`;
@@ -118,7 +131,7 @@ function chromeCandidates(explicit) {
 
 async function captureLive({ command, cwd, cols, rows, inputs, dwellMs, keyDelayMs, preDwellMs, chromeBin, fromFile, redactStream, fontSize, fontFamily }) {
   healSpawnHelper();
-  const puppeteer = (await import("puppeteer-core")).default;
+  const puppeteer = require("puppeteer-core");
   const executablePath = chromeCandidates(chromeBin)[0];
   if (!executablePath) throw new Error("no Chrome/Chromium found; set --chrome-bin or CHROME_BIN");
   const resolvedFontSize = Number.isFinite(fontSize) && fontSize > 0 ? fontSize : 15;
@@ -144,6 +157,10 @@ async function captureLive({ command, cwd, cols, rows, inputs, dwellMs, keyDelay
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: "load" });
     await page.evaluate(() => document.fonts && document.fonts.ready);
+    const capabilities = await page.evaluate(() => window.__terminalCapabilities());
+    capabilities.browser = await browser.version();
+    if (capabilities.unicodeVersion !== "11") throw new Error("xterm.js Unicode11 addon is unavailable");
+    if (!capabilities.fontLoaded) throw new Error(`required terminal font is unavailable: ${resolvedFontFamily}`);
 
     if (fromFile) {
       rawStream = fromFile;
@@ -194,7 +211,7 @@ async function captureLive({ command, cwd, cols, rows, inputs, dwellMs, keyDelay
     const screenText = await page.evaluate(() => window.__screenText());
     const el = (await page.$(".xterm")) || page;
     const pngBuffer = await el.screenshot({ type: "png" });
-    return { pngBuffer, screenText, rawStream, connector: fromFile ? "xterm-replay" : "xterm-node-pty", cleanup: cleanupParts.join("; ") };
+    return { pngBuffer, screenText, rawStream, capabilities, connector: fromFile ? "xterm-replay" : "xterm-node-pty", cleanup: cleanupParts.join("; ") };
   } finally {
     try { ptyProc && ptyProc.kill(); } catch {}
     await browser.close();
