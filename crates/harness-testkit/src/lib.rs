@@ -8,6 +8,7 @@ pub mod fakes;
 pub mod parity;
 pub mod secret_scanner;
 pub mod simulation;
+pub mod tui_fidelity;
 pub mod workspace;
 
 pub use harness_core::UnwrapOrAbort;

@@ -1,0 +1,275 @@
+{
+  "schema_version": "tui-fidelity-scenario-v1",
+  "id": "startup-smoke",
+  "adapters": ["grok", "harness"],
+  "viewport": {"cols": 80, "rows": 24},
+  "actions": [
+    {
+      "timed_key": {
+        "at_tick": 1,
+        "key": {
+          "code": {"char": "h"},
+          "modifiers": {"shift": false, "alt": false, "ctrl": false, "meta": false}
+        }
+      }
+    },
+    {"paste": {"at_tick": 2, "text": "arness"}},
+    {
+      "mouse": {
+        "at_tick": 3,
+        "button": "left",
+        "phase": "down",
+        "point": {"col": 2, "row": 3}
+      }
+    },
+    {
+      "drag": {
+        "at_tick": 4,
+        "button": "left",
+        "from": {"col": 2, "row": 3},
+        "to": {"col": 12, "row": 3}
+      }
+    },
+    {
+      "wheel": {
+        "at_tick": 5,
+        "direction": "down",
+        "amount": 1,
+        "point": {"col": 20, "row": 5}
+      }
+    },
+    {"resize": {"at_tick": 6, "viewport": {"cols": 100, "rows": 30}}},
+    {
+      "wait_for_semantic_state": {"at_tick": 7, "state": "prompt_ready"}
+    },
+    {
+      "terminal_reply": {
+        "at_tick": 8,
+        "query": "device_attributes",
+        "response": "\u001b[?1;2c"
+      }
+    }
+  ],
+  "checkpoints": [
+    {
+      "name": "rest",
+      "at_tick": 9,
+      "frame": {
+        "capture_id": "startup-rest",
+        "viewport": {"cols": 100, "rows": 30},
+        "state": "rest"
+      }
+    },
+    {
+      "name": "mid",
+      "at_tick": 10,
+      "frame": {
+        "capture_id": "startup-mid",
+        "viewport": {"cols": 100, "rows": 30},
+        "state": "working"
+      }
+    },
+    {
+      "name": "settled",
+      "at_tick": 11,
+      "frame": {
+        "capture_id": "startup-settled",
+        "viewport": {"cols": 100, "rows": 30},
+        "state": "settled"
+      }
+    }
+  ],
+  "substitutions": [
+    {
+      "checkpoint": "rest",
+      "scope": "product_logo",
+      "rectangle": {"col": 2, "row": 1, "cols": 8, "rows": 1},
+      "source": {
+        "text": "@",
+        "cell_width": 1,
+        "padding_left": 0,
+        "padding_right": 7,
+        "style": {
+          "foreground": {"r": 216, "g": 216, "b": 216},
+          "background": {"r": 18, "g": 18, "b": 18},
+          "bold": true,
+          "dim": false,
+          "italic": false,
+          "underline": false,
+          "inverse": false
+        },
+        "wrapping": "no_wrap"
+      },
+      "target": {
+        "text": "[LOGO]",
+        "cell_width": 6,
+        "padding_left": 0,
+        "padding_right": 2,
+        "style": {
+          "foreground": {"r": 216, "g": 216, "b": 216},
+          "background": {"r": 18, "g": 18, "b": 18},
+          "bold": true,
+          "dim": false,
+          "italic": false,
+          "underline": false,
+          "inverse": false
+        },
+        "wrapping": "no_wrap"
+      }
+    },
+    {
+      "checkpoint": "rest",
+      "scope": "product_title",
+      "rectangle": {"col": 10, "row": 1, "cols": 12, "rows": 1},
+      "source": {
+        "text": "Harness",
+        "cell_width": 7,
+        "padding_left": 0,
+        "padding_right": 5,
+        "style": {
+          "foreground": {"r": 216, "g": 216, "b": 216},
+          "background": {"r": 18, "g": 18, "b": 18},
+          "bold": true,
+          "dim": false,
+          "italic": false,
+          "underline": false,
+          "inverse": false
+        },
+        "wrapping": "no_wrap"
+      },
+      "target": {
+        "text": "[PRODUCT]",
+        "cell_width": 9,
+        "padding_left": 0,
+        "padding_right": 3,
+        "style": {
+          "foreground": {"r": 216, "g": 216, "b": 216},
+          "background": {"r": 18, "g": 18, "b": 18},
+          "bold": true,
+          "dim": false,
+          "italic": false,
+          "underline": false,
+          "inverse": false
+        },
+        "wrapping": "no_wrap"
+      }
+    },
+    {
+      "checkpoint": "mid",
+      "scope": "build_version",
+      "rectangle": {"col": 2, "row": 3, "cols": 12, "rows": 1},
+      "source": {
+        "text": "0.1.0",
+        "cell_width": 5,
+        "padding_left": 0,
+        "padding_right": 7,
+        "style": {
+          "foreground": {"r": 216, "g": 216, "b": 216},
+          "background": {"r": 18, "g": 18, "b": 18},
+          "bold": false,
+          "dim": true,
+          "italic": false,
+          "underline": false,
+          "inverse": false
+        },
+        "wrapping": "no_wrap"
+      },
+      "target": {
+        "text": "[VERSION]",
+        "cell_width": 9,
+        "padding_left": 0,
+        "padding_right": 3,
+        "style": {
+          "foreground": {"r": 216, "g": 216, "b": 216},
+          "background": {"r": 18, "g": 18, "b": 18},
+          "bold": false,
+          "dim": true,
+          "italic": false,
+          "underline": false,
+          "inverse": false
+        },
+        "wrapping": "no_wrap"
+      }
+    },
+    {
+      "checkpoint": "mid",
+      "scope": "provider_name",
+      "rectangle": {"col": 15, "row": 3, "cols": 12, "rows": 1},
+      "source": {
+        "text": "local",
+        "cell_width": 5,
+        "padding_left": 0,
+        "padding_right": 7,
+        "style": {
+          "foreground": {"r": 216, "g": 216, "b": 216},
+          "background": {"r": 18, "g": 18, "b": 18},
+          "bold": false,
+          "dim": false,
+          "italic": true,
+          "underline": false,
+          "inverse": false
+        },
+        "wrapping": "no_wrap"
+      },
+      "target": {
+        "text": "[PROVIDER]",
+        "cell_width": 10,
+        "padding_left": 0,
+        "padding_right": 2,
+        "style": {
+          "foreground": {"r": 216, "g": 216, "b": 216},
+          "background": {"r": 18, "g": 18, "b": 18},
+          "bold": false,
+          "dim": false,
+          "italic": true,
+          "underline": false,
+          "inverse": false
+        },
+        "wrapping": "no_wrap"
+      }
+    },
+    {
+      "checkpoint": "settled",
+      "scope": "account_name",
+      "rectangle": {"col": 2, "row": 5, "cols": 12, "rows": 1},
+      "source": {
+        "text": "operator",
+        "cell_width": 8,
+        "padding_left": 0,
+        "padding_right": 4,
+        "style": {
+          "foreground": {"r": 216, "g": 216, "b": 216},
+          "background": {"r": 18, "g": 18, "b": 18},
+          "bold": false,
+          "dim": false,
+          "italic": false,
+          "underline": false,
+          "inverse": false
+        },
+        "wrapping": "no_wrap"
+      },
+      "target": {
+        "text": "[ACCOUNT]",
+        "cell_width": 9,
+        "padding_left": 0,
+        "padding_right": 3,
+        "style": {
+          "foreground": {"r": 216, "g": 216, "b": 216},
+          "background": {"r": 18, "g": 18, "b": 18},
+          "bold": false,
+          "dim": false,
+          "italic": false,
+          "underline": false,
+          "inverse": false
+        },
+        "wrapping": "no_wrap"
+      }
+    }
+  ],
+  "expected_exit": {"code": 0},
+  "cleanup": {
+    "restore_workspace": true,
+    "preserve_evidence": true,
+    "temporary_paths": ["tmp/tui-fidelity"]
+  }
+}
