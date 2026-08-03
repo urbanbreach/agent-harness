@@ -8,7 +8,8 @@ use std::time::Duration;
 use harness_testkit::binary_receipt::read_receipt;
 use harness_testkit::tui_fidelity::Scenario;
 use harness_testkit::tui_fidelity_runner::{
-    run_compare, RendererConfig, RunnerConfig, RunnerTiming, RuntimeBinary, SourceGuardConfig,
+    record_preflight_failure, run_compare, RendererConfig, RunnerConfig, RunnerError, RunnerTiming,
+    RuntimeBinary, SourceGuardConfig,
 };
 
 const STARTUP_SMOKE: &str = include_str!("../../tests/fixtures/tui_fidelity/startup-smoke.json");
@@ -37,6 +38,18 @@ fn main() -> ExitCode {
 
 fn execute(arguments: Vec<OsString>) -> Result<(), String> {
     let args = parse_compare(arguments)?;
+    let scenario = match args.scenario.as_str() {
+        "startup-smoke" => Scenario::from_json(STARTUP_SMOKE),
+        other => {
+            let error = RunnerError::UnknownScenario {
+                id: other.to_owned(),
+            };
+            record_preflight_failure(&args.evidence_dir, &error)
+                .map_err(|cleanup_error| cleanup_error.to_string())?;
+            return Err(error.to_string());
+        }
+    }
+    .map_err(|error| error.to_string())?;
     let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let receipt_path =
         repo_root.join(".omo/evidence/task-2-grok-build-tui-experiential-parity/receipt.json");
@@ -54,11 +67,6 @@ fn execute(arguments: Vec<OsString>) -> Result<(), String> {
         &receipt.harness.source_revision,
         &receipt.harness.sha256,
     )?;
-    let scenario = match args.scenario.as_str() {
-        "startup-smoke" => Scenario::from_json(STARTUP_SMOKE),
-        other => return Err(format!("unknown scenario: {other}")),
-    }
-    .map_err(|error| error.to_string())?;
     let browser_program = args
         .browser_bin
         .or_else(discover_browser)

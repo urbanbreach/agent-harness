@@ -1,13 +1,13 @@
 use std::fs;
 use std::path::Path;
-use std::process::Command;
 
 use serde::Deserialize;
 
+use super::cleanup::CleanupTracker;
 use super::error::RunnerError;
 use super::process::{CapturedCheckpoint, ProcessCapture};
-use super::types::{ArtifactDigest, BrowserCapabilities, CheckpointReceipt, RendererConfig};
-use super::util::sha256_file;
+use super::renderer_command::{self, RendererInvocation};
+use super::types::{BrowserCapabilities, CheckpointReceipt, RendererConfig, RunnerTiming};
 use crate::parity::semantic_frame_from_vt100_screen;
 use crate::tui_fidelity::{AdapterKind, CheckpointName};
 
@@ -27,26 +27,32 @@ struct RendererDimensions {
     font_family: String,
 }
 
+pub(super) struct RenderContext<'a> {
+    pub config: &'a RendererConfig,
+    pub timing: RunnerTiming,
+    pub evidence_root: &'a Path,
+    pub tracker: &'a mut CleanupTracker,
+}
+
 pub(super) fn render(
     adapter: AdapterKind,
     capture: &ProcessCapture,
-    config: &RendererConfig,
-    evidence_root: &Path,
+    context: &mut RenderContext<'_>,
 ) -> Result<Vec<CheckpointReceipt>, RunnerError> {
-    capture
-        .checkpoints
-        .iter()
-        .map(|checkpoint| render_checkpoint(adapter, checkpoint, config, evidence_root))
-        .collect()
+    let mut receipts = Vec::with_capacity(capture.checkpoints.len());
+    for checkpoint in &capture.checkpoints {
+        receipts.push(render_checkpoint(adapter, checkpoint, context)?);
+    }
+    Ok(receipts)
 }
 
 fn render_checkpoint(
     adapter: AdapterKind,
     checkpoint: &CapturedCheckpoint,
-    config: &RendererConfig,
-    evidence_root: &Path,
+    context: &mut RenderContext<'_>,
 ) -> Result<CheckpointReceipt, RunnerError> {
-    let root = evidence_root
+    let root = context
+        .evidence_root
         .join(adapter_name(adapter))
         .join(checkpoint_name(checkpoint.name));
     fs::create_dir_all(&root).map_err(|error| RunnerError::Io {
@@ -58,9 +64,18 @@ fn render_checkpoint(
         path: input_path.clone(),
         detail: error.to_string(),
     })?;
-    invoke_renderer(config, checkpoint, &input_path, &root)?;
+    renderer_command::invoke(
+        RendererInvocation {
+            config: context.config,
+            timing: context.timing,
+            checkpoint,
+            input_path: &input_path,
+            root: &root,
+        },
+        context.tracker,
+    )?;
     let metadata = read_metadata(adapter, checkpoint.name, &root.join("metadata.json"))?;
-    validate_metadata(checkpoint, config, &metadata)?;
+    validate_metadata(checkpoint, context.config, &metadata)?;
     validate_png(adapter, checkpoint.name, &root.join("terminal.png"))?;
 
     let mut parser = vt100::Parser::new(checkpoint.viewport.rows, checkpoint.viewport.cols, 0);
@@ -88,7 +103,7 @@ fn render_checkpoint(
         "metadata.json",
     ]
     .iter()
-    .map(|name| artifact_digest(&root.join(name)))
+    .map(|name| renderer_command::artifact_digest(&root.join(name), context.tracker))
     .collect::<Result<Vec<_>, _>>()?;
     Ok(CheckpointReceipt {
         name: checkpoint.name,
@@ -97,42 +112,6 @@ fn render_checkpoint(
         capabilities: metadata.capabilities,
         artifacts,
     })
-}
-
-fn invoke_renderer(
-    config: &RendererConfig,
-    checkpoint: &CapturedCheckpoint,
-    input_path: &Path,
-    root: &Path,
-) -> Result<(), RunnerError> {
-    let mut command = Command::new(&config.node_program);
-    command
-        .arg(&config.script)
-        .args(["--title", "TUI fidelity checkpoint", "--from-file"])
-        .arg(input_path)
-        .arg("--evidence-dir")
-        .arg(root)
-        .args(["--cols", &checkpoint.viewport.cols.to_string()])
-        .args(["--rows", &checkpoint.viewport.rows.to_string()])
-        .arg("--chrome-bin")
-        .arg(&config.browser_program)
-        .args(["--font-family", &config.font_family]);
-    if let Some(node_modules) = &config.node_modules {
-        command.env("NODE_PATH", node_modules);
-        command.env("TUI_FIDELITY_NODE_MODULES", node_modules);
-    }
-    let output = command.output().map_err(|error| RunnerError::Renderer {
-        checkpoint: checkpoint.name,
-        detail: error.to_string(),
-    })?;
-    if output.status.success() {
-        Ok(())
-    } else {
-        Err(RunnerError::Renderer {
-            checkpoint: checkpoint.name,
-            detail: String::from_utf8_lossy(&output.stderr).trim().to_owned(),
-        })
-    }
 }
 
 fn read_metadata(
@@ -192,13 +171,6 @@ fn validate_png(
             detail: "checkpoint PNG signature is invalid".to_owned(),
         })
     }
-}
-
-fn artifact_digest(path: &Path) -> Result<ArtifactDigest, RunnerError> {
-    Ok(ArtifactDigest {
-        path: path.display().to_string(),
-        sha256: sha256_file(path)?,
-    })
 }
 
 pub(super) const fn adapter_name(adapter: AdapterKind) -> &'static str {

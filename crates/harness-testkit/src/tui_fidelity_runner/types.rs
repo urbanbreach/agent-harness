@@ -112,4 +112,6 @@ pub struct CleanupReceipt {
     pub forced_termination_observed: bool,
     pub surviving_pids: Vec<u32>,
     pub temporary_paths_removed: Vec<String>,
+    pub cleanup_errors: Vec<String>,
+    pub primary_error: Option<String>,
 }

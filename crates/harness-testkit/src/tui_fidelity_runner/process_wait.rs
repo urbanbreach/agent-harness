@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 
 use super::actions::normal_exit_steps;
 use super::error::RunnerError;
-use super::process_tree::{descendants, terminate_group};
+use super::process_tree::descendants;
 use crate::tui_fidelity::{AdapterKind, Viewport};
 
 type PtyChild = Box<dyn portable_pty::Child + Send + Sync>;
@@ -32,8 +32,6 @@ pub(super) fn wait_until(
         drain(output, stream);
         collect_descendants(pid, observed);
         if adapter == AdapterKind::Grok && String::from_utf8_lossy(stream).contains("Skipped") {
-            terminate_group(pid, Duration::from_millis(100));
-            let _ = child.wait();
             return Err(RunnerError::SkippedReference);
         }
         match child.try_wait() {
@@ -47,8 +45,6 @@ pub(super) fn wait_until(
             Err(error) => return Err(process_error(adapter, "poll child", error)),
         }
         if Instant::now() >= deadline {
-            terminate_group(pid, Duration::from_millis(100));
-            let _ = child.wait();
             return Err(RunnerError::Timeout { adapter });
         }
         if Instant::now() >= target {
@@ -101,8 +97,6 @@ pub(super) fn wait_for_visible_stable_frame(
             }
         }
         if Instant::now() >= deadline {
-            terminate_group(pid, Duration::from_secs(2));
-            let _ = child.wait();
             return Err(RunnerError::Timeout { adapter });
         }
         thread::sleep(Duration::from_millis(25));

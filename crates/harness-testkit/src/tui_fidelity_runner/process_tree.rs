@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -82,7 +82,26 @@ pub(super) fn wait_for_living(pids: &BTreeSet<u32>, timeout: Duration) -> Vec<u3
 }
 
 fn signal(target: &str, signal: &str) {
-    let _ = Command::new("kill").args([signal, "--", target]).status();
+    let Ok(mut child) = Command::new("kill")
+        .args([signal, "--", target])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+    else {
+        return;
+    };
+    let deadline = Instant::now() + Duration::from_millis(250);
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => return,
+            Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(5)),
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return;
+            }
+        }
+    }
 }
 
 fn process_exists(pid: u32) -> bool {

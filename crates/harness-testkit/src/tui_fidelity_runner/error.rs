@@ -24,6 +24,9 @@ pub enum RunnerError {
     MissingFont {
         family: String,
     },
+    UnknownScenario {
+        id: String,
+    },
     DirtyReference {
         detail: String,
     },
@@ -59,6 +62,12 @@ pub enum RunnerError {
         checkpoint: CheckpointName,
         detail: String,
     },
+    RendererTimeout {
+        checkpoint: CheckpointName,
+    },
+    ExternalCommandTimeout {
+        command: String,
+    },
     InvalidRendererMetadata {
         checkpoint: CheckpointName,
         detail: String,
@@ -72,6 +81,10 @@ pub enum RunnerError {
     },
     Io {
         path: PathBuf,
+        detail: String,
+    },
+    Cleanup {
+        primary: Option<Box<RunnerError>>,
         detail: String,
     },
 }
@@ -107,6 +120,7 @@ impl fmt::Display for RunnerError {
             Self::MissingFont { family } => {
                 write!(formatter, "font capability is missing: {family}")
             }
+            Self::UnknownScenario { id } => write!(formatter, "unknown scenario: {id}"),
             Self::DirtyReference { detail } => {
                 write!(formatter, "dirty reference source: {detail}")
             }
@@ -166,6 +180,12 @@ impl fmt::Display for RunnerError {
                     checkpoint.as_str()
                 )
             }
+            Self::RendererTimeout { checkpoint } => {
+                write!(formatter, "renderer timed out for {}", checkpoint.as_str())
+            }
+            Self::ExternalCommandTimeout { command } => {
+                write!(formatter, "external command timed out: {command}")
+            }
             Self::InvalidRendererMetadata { checkpoint, detail } => write!(
                 formatter,
                 "renderer metadata invalid for {}: {detail}",
@@ -180,6 +200,13 @@ impl fmt::Display for RunnerError {
                 write!(formatter, "{} process failed: {detail}", adapter.as_str())
             }
             Self::Io { path, detail } => write!(formatter, "I/O {}: {detail}", path.display()),
+            Self::Cleanup { primary, detail } => {
+                if let Some(primary) = primary {
+                    write!(formatter, "primary: {primary}; cleanup: {detail}")
+                } else {
+                    write!(formatter, "cleanup: {detail}")
+                }
+            }
         }
     }
 }

@@ -74,6 +74,7 @@ fn write_program(root: &Path, name: &str, mode: &str, identity: &str) -> PathBuf
         "skipped" => "stty raw -echo\nprintf 'Skipped\\r\\n'\nwhile :; do sleep 1; done\n",
         "hang" => "stty raw -echo\ntrap '' INT TERM HUP\nprintf 'hanging\\r\\n'\nwhile :; do sleep 1; done\n",
         "survivor" => "trap 'exit 0' INT\nstty raw -echo\nsetsid bash -c 'trap \"\" HUP INT TERM; while :; do sleep 1; done' &\nprintf 'survivor-ready\\r\\n'\nwhile IFS= read -r -n 1 c; do\n  [[ \"$c\" == $'\\003' || \"$c\" == $'\\021' ]] && exit 0\ndone\n",
+        "cleanup-failure" => "trap 'exit 0' INT\nstty raw -echo\nprintf 'cleanup-failure-ready\\r\\n'\nbuffer=''\nwhile IFS= read -r -n 1 c; do\n  buffer=${buffer}${c}\n  if [[ \"$buffer\" == *'/exit' ]]; then\n    target=${TUI_FIDELITY_RUN_ROOT:-$(dirname \"$PWD\")}\n    cd /\n    rm -rf \"$target\"\n    printf 'blocks recursive directory cleanup\\n' >\"$target\"\n    exit 0\n  fi\ndone\n",
         other => panic!("unsupported fixture mode: {other}"),
     };
     write_executable(
@@ -92,6 +93,15 @@ fn write_source_guard(root: &Path) -> PathBuf {
 }
 
 fn write_renderer(root: &Path, mode: &str) -> PathBuf {
+    if mode == "hang" {
+        let path = root.join("renderer.mjs");
+        fs::write(
+            &path,
+            "import fs from 'node:fs';\nimport path from 'node:path';\nconst a=process.argv.slice(2); const get=(n)=>a[a.indexOf(n)+1];\nconst out=get('--evidence-dir'); fs.mkdirSync(out,{recursive:true}); fs.writeFileSync(path.join(out,'renderer.pid'),String(process.pid));\nprocess.on('SIGTERM',()=>{}); setInterval(()=>{},1000);\n",
+        )
+        .expect("write hanging renderer");
+        return path;
+    }
     let script = format!(
         "import fs from 'node:fs';\nimport path from 'node:path';\nconst a=process.argv.slice(2); const get=(n)=>a[a.indexOf(n)+1];\nconst out=get('--evidence-dir'); fs.mkdirSync(out,{{recursive:true}});\nconst ansi=fs.readFileSync(get('--from-file')); fs.writeFileSync(path.join(out,'terminal-ansi.txt'),ansi); fs.writeFileSync(path.join(out,'terminal.txt'),'fixture\\n');\nif ('{mode}' !== 'missing-checkpoint') fs.writeFileSync(path.join(out,'terminal.png'),Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+X8W7WQAAAABJRU5ErkJggg==','base64'));\nfs.writeFileSync(path.join(out,'metadata.json'),JSON.stringify({{browserCapture:'captured',dimensions:{{cols:Number(get('--cols')),rows:Number(get('--rows')),fontFamily:get('--font-family')}},capabilities:{{unicodeVersion:'11',devicePixelRatio:2,browser:'fixture-browser',fontLoaded:true,color:'truecolor',graphics:'sixel-disabled'}}}}));\n"
     );

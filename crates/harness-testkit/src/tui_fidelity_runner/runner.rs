@@ -1,16 +1,12 @@
-use std::fs;
-use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
-use std::process::Command;
-
+use super::cleanup::{CleanupTracker, EvidenceSession};
 use super::error::RunnerError;
+use super::preflight::prepare;
 use super::process::execute;
-use super::renderer::render;
-use super::runtime_workspace::{cleanup_temporary_paths, runtime_dir};
-use super::types::{
-    AdapterReceipt, ArtifactDigest, CleanupReceipt, DualRuntimeReceipt, RunnerConfig, RuntimeBinary,
-};
-use super::util::{sha256_file, write_json};
+use super::renderer::{render, RenderContext};
+use super::runtime_workspace::OwnedRuntimeWorkspace;
+use super::source_guard;
+use super::types::{AdapterReceipt, DualRuntimeReceipt, RunnerConfig, RuntimeBinary};
+use super::util::write_json;
 use super::RUNNER_RECEIPT_SCHEMA;
 use crate::tui_fidelity::{AdapterKind, Scenario};
 
@@ -18,54 +14,87 @@ pub fn run_compare(
     scenario: &Scenario,
     config: &RunnerConfig,
 ) -> Result<DualRuntimeReceipt, RunnerError> {
-    prepare(scenario, config)?;
-    let result = run_inner(scenario, config);
-    let temporary_paths_removed = cleanup_temporary_paths(scenario, config)?;
-    let cleanup = CleanupReceipt {
-        schema_version: "harness.tui-fidelity.cleanup.v1".to_owned(),
-        status: if result.is_ok() { "clean" } else { "error" }.to_owned(),
-        forced_termination_observed: matches!(result, Err(RunnerError::ForcedKillOnly { .. })),
-        surviving_pids: Vec::new(),
-        temporary_paths_removed,
-    };
-    write_json(&config.evidence_dir.join("cleanup.json"), &cleanup)?;
-    result
+    let evidence = EvidenceSession::initialize(&config.evidence_dir)?;
+    let mut tracker = CleanupTracker::default();
+    if evidence.is_stale() {
+        return finish(
+            &evidence,
+            &tracker,
+            Err(RunnerError::StaleEvidence {
+                path: evidence.directory().to_path_buf(),
+            }),
+        );
+    }
+    if let Err(error) = prepare(scenario, config, &mut tracker) {
+        return finish(&evidence, &tracker, Err(error));
+    }
+    let relative_base = scenario
+        .cleanup
+        .temporary_paths
+        .first()
+        .map_or("tmp/tui-fidelity", String::as_str);
+    let mut workspace =
+        match OwnedRuntimeWorkspace::create(&config.repo_root, relative_base, &scenario.id.0) {
+            Ok(workspace) => workspace,
+            Err(error) => {
+                tracker.record_error(error.to_string());
+                return finish(&evidence, &tracker, Err(error));
+            }
+        };
+    let result = run_inner(scenario, config, &workspace, &mut tracker);
+    match workspace.cleanup() {
+        Ok(path) => tracker.record_removed(&path),
+        Err(error) => tracker.record_error(error.to_string()),
+    }
+    finish(&evidence, &tracker, result)
 }
 
 fn run_inner(
     scenario: &Scenario,
     config: &RunnerConfig,
+    workspace: &OwnedRuntimeWorkspace,
+    tracker: &mut CleanupTracker,
 ) -> Result<DualRuntimeReceipt, RunnerError> {
-    let before = run_source_guard(config, "source-guard-before.json")?;
-    let reference_runtime = runtime_dir(scenario, config, AdapterKind::Grok)?;
+    let before = source_guard::run(config, "source-guard-before.json", tracker)?;
+    let reference_runtime = workspace.adapter_dir(AdapterKind::Grok)?;
     let reference_result = execute(
         scenario,
         config.timing,
         AdapterKind::Grok,
         &config.reference,
         &reference_runtime,
+        tracker,
     );
-    let after = run_source_guard(config, "source-guard-after.json")?;
+    let after = source_guard::run(config, "source-guard-after.json", tracker)?;
     let reference_capture = reference_result?;
-    let harness_runtime = runtime_dir(scenario, config, AdapterKind::Harness)?;
+    let harness_runtime = workspace.adapter_dir(AdapterKind::Harness)?;
     let harness_capture = execute(
         scenario,
         config.timing,
         AdapterKind::Harness,
         &config.harness,
         &harness_runtime,
+        tracker,
     )?;
     let reference_checkpoints = render(
         AdapterKind::Grok,
         &reference_capture,
-        &config.renderer,
-        &config.evidence_dir,
+        &mut RenderContext {
+            config: &config.renderer,
+            timing: config.timing,
+            evidence_root: &config.evidence_dir,
+            tracker,
+        },
     )?;
     let harness_checkpoints = render(
         AdapterKind::Harness,
         &harness_capture,
-        &config.renderer,
-        &config.evidence_dir,
+        &mut RenderContext {
+            config: &config.renderer,
+            timing: config.timing,
+            evidence_root: &config.evidence_dir,
+            tracker,
+        },
     )?;
     let receipt = DualRuntimeReceipt {
         schema_version: RUNNER_RECEIPT_SCHEMA.to_owned(),
@@ -92,105 +121,25 @@ fn run_inner(
     Ok(receipt)
 }
 
-fn prepare(scenario: &Scenario, config: &RunnerConfig) -> Result<(), RunnerError> {
-    scenario.validate_for_adapter(AdapterKind::Grok)?;
-    scenario.validate_for_adapter(AdapterKind::Harness)?;
-    if config.evidence_dir.exists()
-        && fs::read_dir(&config.evidence_dir)
-            .map_err(|error| io_error(&config.evidence_dir, error))?
-            .next()
-            .is_some()
-    {
-        return Err(RunnerError::StaleEvidence {
-            path: config.evidence_dir.clone(),
+fn finish<T>(
+    evidence: &EvidenceSession,
+    tracker: &CleanupTracker,
+    result: Result<T, RunnerError>,
+) -> Result<T, RunnerError> {
+    let receipt = tracker.receipt(result.as_ref().err());
+    if let Err(write_error) = evidence.write(&receipt) {
+        return Err(RunnerError::Cleanup {
+            primary: result.err().map(Box::new),
+            detail: format!("cleanup receipt: {write_error}"),
         });
     }
-    fs::create_dir_all(&config.evidence_dir)
-        .map_err(|error| io_error(&config.evidence_dir, error))?;
-    validate_binary(AdapterKind::Grok, &config.reference)?;
-    validate_binary(AdapterKind::Harness, &config.harness)?;
-    if config.reference.sha256 == config.harness.sha256 {
-        return Err(RunnerError::SelfComparison {
-            sha256: config.reference.sha256.clone(),
+    if tracker.has_errors() {
+        return Err(RunnerError::Cleanup {
+            primary: result.err().map(Box::new),
+            detail: tracker.error_detail(),
         });
     }
-    if !is_executable(&config.renderer.browser_program) {
-        return Err(RunnerError::MissingBrowser {
-            path: config.renderer.browser_program.clone(),
-        });
-    }
-    validate_font(&config.renderer.font_family)
-}
-
-fn validate_binary(adapter: AdapterKind, binary: &RuntimeBinary) -> Result<(), RunnerError> {
-    if !is_executable(&binary.path) {
-        return Err(RunnerError::MissingBinary {
-            adapter,
-            path: binary.path.clone(),
-        });
-    }
-    let actual = sha256_file(&binary.path)?;
-    if actual == binary.sha256 {
-        Ok(())
-    } else {
-        Err(RunnerError::BinaryDigest {
-            path: binary.path.clone(),
-            expected: binary.sha256.clone(),
-            actual,
-        })
-    }
-}
-
-fn is_executable(path: &Path) -> bool {
-    path.metadata()
-        .is_ok_and(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
-}
-
-fn validate_font(family: &str) -> Result<(), RunnerError> {
-    let output = Command::new("fc-list")
-        .arg("--format=%{family}\n")
-        .output()
-        .map_err(|error| RunnerError::MissingFont {
-            family: format!("{family}: {error}"),
-        })?;
-    let found = output.status.success()
-        && String::from_utf8_lossy(&output.stdout)
-            .lines()
-            .flat_map(|line| line.split(','))
-            .any(|candidate| candidate.trim() == family);
-    if found {
-        Ok(())
-    } else {
-        Err(RunnerError::MissingFont {
-            family: family.to_owned(),
-        })
-    }
-}
-
-fn run_source_guard(config: &RunnerConfig, name: &str) -> Result<ArtifactDigest, RunnerError> {
-    let path = config.evidence_dir.join(name);
-    let output = Command::new(&config.source_guard.program)
-        .args(["verify", "--reference"])
-        .arg(&config.source_guard.reference_root)
-        .args(["--revision", &config.source_guard.revision, "--receipt"])
-        .arg(&path)
-        .current_dir(&config.repo_root)
-        .output()
-        .map_err(|error| RunnerError::SourceGuard {
-            detail: error.to_string(),
-        })?;
-    if !output.status.success() {
-        let detail = String::from_utf8_lossy(&output.stderr).trim().to_owned();
-        return if detail.contains("dirty reference source") {
-            Err(RunnerError::DirtyReference { detail })
-        } else {
-            Err(RunnerError::SourceGuard { detail })
-        };
-    }
-    Ok(ArtifactDigest {
-        path: path.display().to_string(),
-        sha256: sha256_file(&path)?,
-    })
+    result
 }
 
 fn adapter_receipt(
@@ -209,12 +158,5 @@ fn adapter_receipt(
             .map(std::time::Duration::as_millis)
             .collect(),
         checkpoints,
-    }
-}
-
-fn io_error(path: &Path, error: impl std::fmt::Display) -> RunnerError {
-    RunnerError::Io {
-        path: PathBuf::from(path),
-        detail: error.to_string(),
     }
 }

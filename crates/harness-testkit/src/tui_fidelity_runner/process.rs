@@ -1,4 +1,3 @@
-use std::collections::BTreeSet;
 use std::io::{Read, Write};
 use std::path::Path;
 use std::sync::mpsc::{self, Receiver};
@@ -8,12 +7,13 @@ use std::time::{Duration, Instant};
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 
 use super::actions::apply_action;
+use super::cleanup::CleanupTracker;
 use super::error::RunnerError;
-use super::process_tree::{terminate_group, terminate_pids, wait_for_living};
 use super::process_wait::{
     collect_descendants, drain, process_error, request_normal_exit, wait_for_visible_stable_frame,
     wait_until,
 };
+use super::pty_child::PtyChildGuard;
 use super::types::{RunnerTiming, RuntimeBinary};
 use crate::tui_fidelity::{AdapterKind, CheckpointName, Scenario, Viewport};
 
@@ -36,6 +36,7 @@ pub(super) fn execute(
     adapter: AdapterKind,
     binary: &RuntimeBinary,
     runtime_dir: &Path,
+    tracker: &mut CleanupTracker,
 ) -> Result<ProcessCapture, RunnerError> {
     let pty_system = native_pty_system();
     let pair = pty_system
@@ -43,6 +44,9 @@ pub(super) fn execute(
         .map_err(|error| process_error(adapter, "open PTY", error))?;
     let mut command = CommandBuilder::new(binary.path.as_os_str());
     command.cwd(runtime_dir);
+    if let Some(run_root) = runtime_dir.parent() {
+        command.env("TUI_FIDELITY_RUN_ROOT", run_root);
+    }
     if adapter == AdapterKind::Harness {
         command.args([
             "tui",
@@ -53,7 +57,7 @@ pub(super) fn execute(
         ]);
     }
     configure_environment(&mut command);
-    let mut child = pair
+    let child = pair
         .slave
         .spawn_command(command)
         .map_err(|error| process_error(adapter, "spawn", error))?;
@@ -62,133 +66,140 @@ pub(super) fn execute(
         adapter,
         detail: "spawned child has no process ID".to_owned(),
     })?;
-    let reader = pair
-        .master
-        .try_clone_reader()
-        .map_err(|error| process_error(adapter, "clone reader", error))?;
-    let mut writer = pair
-        .master
-        .take_writer()
-        .map_err(|error| process_error(adapter, "take writer", error))?;
-    let output = spawn_reader(reader);
-    let start = Instant::now();
-    let deadline = start + timing.scenario_timeout;
-    let mut stream = Vec::new();
-    let mut observed = BTreeSet::new();
-    let mut inputs = Vec::new();
-    let mut checkpoints = Vec::new();
+    let mut guard = PtyChildGuard::new(child, pid, timing.cleanup_timeout);
+    let result: Result<ProcessCapture, RunnerError> = (|| {
+        let reader = pair
+            .master
+            .try_clone_reader()
+            .map_err(|error| process_error(adapter, "clone reader", error))?;
+        let mut writer = pair
+            .master
+            .take_writer()
+            .map_err(|error| process_error(adapter, "take writer", error))?;
+        let output = spawn_reader(reader);
+        let start = Instant::now();
+        let deadline = start + timing.scenario_timeout;
+        let mut stream = Vec::new();
+        let mut inputs = Vec::new();
+        let mut checkpoints = Vec::new();
 
-    for action in &scenario.actions {
-        wait_until(
-            action.at_tick().0,
-            timing.tick,
-            start,
-            deadline,
-            adapter,
-            &mut child,
-            &output,
-            &mut stream,
-            &mut observed,
-            pid,
-        )?;
-        if matches!(
-            action,
-            crate::tui_fidelity::ScenarioAction::WaitForSemanticState(_)
-        ) {
-            let viewport = scenario
-                .checkpoints
-                .first()
-                .map_or(scenario.viewport, |checkpoint| checkpoint.frame.viewport);
-            wait_for_visible_stable_frame(
-                viewport,
+        for action in &scenario.actions {
+            let (child, observed) = guard.parts_mut(adapter)?;
+            wait_until(
+                action.at_tick().0,
+                timing.tick,
+                start,
                 deadline,
                 adapter,
-                &mut child,
+                child,
                 &output,
                 &mut stream,
-                &mut observed,
+                observed,
                 pid,
             )?;
-        } else {
-            apply_action(action, adapter, pair.master.as_ref(), writer.as_mut())?;
-        }
-        inputs.push(start.elapsed());
-    }
-    for checkpoint in &scenario.checkpoints {
-        wait_until(
-            checkpoint.at_tick.0,
-            timing.tick,
-            start,
-            deadline,
-            adapter,
-            &mut child,
-            &output,
-            &mut stream,
-            &mut observed,
-            pid,
-        )?;
-        drain(&output, &mut stream);
-        checkpoints.push(CapturedCheckpoint {
-            name: checkpoint.name,
-            viewport: checkpoint.frame.viewport,
-            elapsed: start.elapsed(),
-            stream: stream.clone(),
-        });
-    }
-    if adapter == AdapterKind::Grok && String::from_utf8_lossy(&stream).contains("Skipped") {
-        terminate_group(pid, timing.cleanup_timeout);
-        let _ = child.wait();
-        return Err(RunnerError::SkippedReference);
-    }
-    let exit_deadline = Instant::now() + timing.normal_exit_timeout;
-    let stepped_exit = request_normal_exit(
-        adapter,
-        writer.as_mut(),
-        &mut child,
-        exit_deadline,
-        pid,
-        &mut observed,
-    )?;
-    let exit_code = if let Some(code) = stepped_exit {
-        code
-    } else {
-        loop {
-            collect_descendants(pid, &mut observed);
-            match child.try_wait() {
-                Ok(Some(status)) => break i32::try_from(status.exit_code()).unwrap_or(i32::MAX),
-                Ok(None) if Instant::now() < exit_deadline => {
-                    thread::sleep(Duration::from_millis(5))
-                }
-                Ok(None) => {
-                    terminate_group(pid, timing.cleanup_timeout);
-                    let _ = child.wait();
-                    return Err(RunnerError::ForcedKillOnly { adapter });
-                }
-                Err(error) => return Err(process_error(adapter, "wait for exit", error)),
+            if matches!(
+                action,
+                crate::tui_fidelity::ScenarioAction::WaitForSemanticState(_)
+            ) {
+                let viewport = scenario
+                    .checkpoints
+                    .first()
+                    .map_or(scenario.viewport, |checkpoint| checkpoint.frame.viewport);
+                let (child, observed) = guard.parts_mut(adapter)?;
+                wait_for_visible_stable_frame(
+                    viewport,
+                    deadline,
+                    adapter,
+                    child,
+                    &output,
+                    &mut stream,
+                    observed,
+                    pid,
+                )?;
+            } else {
+                apply_action(action, adapter, pair.master.as_ref(), writer.as_mut())?;
             }
+            inputs.push(start.elapsed());
         }
-    };
-    drain(&output, &mut stream);
-    let surviving = wait_for_living(&observed, timing.cleanup_timeout);
+        for checkpoint in &scenario.checkpoints {
+            let (child, observed) = guard.parts_mut(adapter)?;
+            wait_until(
+                checkpoint.at_tick.0,
+                timing.tick,
+                start,
+                deadline,
+                adapter,
+                child,
+                &output,
+                &mut stream,
+                observed,
+                pid,
+            )?;
+            drain(&output, &mut stream);
+            checkpoints.push(CapturedCheckpoint {
+                name: checkpoint.name,
+                viewport: checkpoint.frame.viewport,
+                elapsed: start.elapsed(),
+                stream: stream.clone(),
+            });
+        }
+        if adapter == AdapterKind::Grok && String::from_utf8_lossy(&stream).contains("Skipped") {
+            return Err(RunnerError::SkippedReference);
+        }
+        let exit_deadline = Instant::now() + timing.normal_exit_timeout;
+        let (child, observed) = guard.parts_mut(adapter)?;
+        let stepped_exit = request_normal_exit(
+            adapter,
+            writer.as_mut(),
+            child,
+            exit_deadline,
+            pid,
+            observed,
+        )?;
+        let exit_code = if let Some(code) = stepped_exit {
+            code
+        } else {
+            loop {
+                let (child, observed) = guard.parts_mut(adapter)?;
+                collect_descendants(pid, observed);
+                match child.try_wait() {
+                    Ok(Some(status)) => {
+                        break i32::try_from(status.exit_code()).unwrap_or(i32::MAX)
+                    }
+                    Ok(None) if Instant::now() < exit_deadline => {
+                        thread::sleep(Duration::from_millis(5))
+                    }
+                    Ok(None) => {
+                        return Err(RunnerError::ForcedKillOnly { adapter });
+                    }
+                    Err(error) => return Err(process_error(adapter, "wait for exit", error)),
+                }
+            }
+        };
+        drain(&output, &mut stream);
+        if exit_code != scenario.expected_exit.code {
+            return Err(RunnerError::UnexpectedExit {
+                adapter,
+                expected: scenario.expected_exit.code,
+                actual: exit_code,
+            });
+        }
+        Ok(ProcessCapture {
+            exit_code,
+            input_timestamps: inputs,
+            checkpoints,
+        })
+    })();
+    let cleanup = guard.cleanup();
+    let surviving = cleanup.surviving_pids.clone();
+    tracker.record_process(cleanup);
     if !surviving.is_empty() {
-        terminate_pids(&surviving);
         return Err(RunnerError::SurvivingChild {
             adapter,
             pids: surviving,
         });
     }
-    if exit_code != scenario.expected_exit.code {
-        return Err(RunnerError::UnexpectedExit {
-            adapter,
-            expected: scenario.expected_exit.code,
-            actual: exit_code,
-        });
-    }
-    Ok(ProcessCapture {
-        exit_code,
-        input_timestamps: inputs,
-        checkpoints,
-    })
+    result
 }
 
 fn configure_environment(command: &mut CommandBuilder) {

@@ -5,6 +5,8 @@
     reason = "owner tests use fail-fast fixture assertions"
 )]
 
+#[path = "support/tui_fidelity_lifecycle_cases.rs"]
+mod lifecycle_cases;
 #[path = "support/tui_fidelity_runner.rs"]
 mod support;
 
@@ -75,18 +77,20 @@ fn compare_rejects_same_binary_self_comparison() {
 
 #[test]
 fn compare_rejects_missing_browser_and_font_capabilities() {
-    let mut fixture = Fixture::new("normal", "normal", "normal");
-    fixture.config.renderer.browser_program = fixture.root().join("missing-browser");
+    let mut missing_browser = Fixture::new("normal", "normal", "normal");
+    missing_browser.config.renderer.browser_program =
+        missing_browser.root().join("missing-browser");
     let scenario = Scenario::from_json(STARTUP_SMOKE).expect("scenario");
     assert!(matches!(
-        run_compare(&scenario, &fixture.config).expect_err("missing browser must fail"),
+        run_compare(&scenario, &missing_browser.config).expect_err("missing browser must fail"),
         RunnerError::MissingBrowser { .. }
     ));
 
-    fixture.config.renderer.browser_program = PathBuf::from("/bin/true");
-    fixture.config.renderer.font_family = "Definitely Missing Fidelity Font".to_owned();
+    let mut missing_font = Fixture::new("normal", "normal", "normal");
+    missing_font.config.renderer.browser_program = PathBuf::from("/bin/true");
+    missing_font.config.renderer.font_family = "Definitely Missing Fidelity Font".to_owned();
     assert!(matches!(
-        run_compare(&scenario, &fixture.config).expect_err("missing font must fail"),
+        run_compare(&scenario, &missing_font.config).expect_err("missing font must fail"),
         RunnerError::MissingFont { .. }
     ));
 }
