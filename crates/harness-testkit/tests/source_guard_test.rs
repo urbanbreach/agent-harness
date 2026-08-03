@@ -139,6 +139,53 @@ fn source_guard_rejects_excluded_target_input() {
 }
 
 #[test]
+fn source_guard_rejects_nested_target_directory_input() {
+    // Given
+    let (_temporary, target) = temporary_input("crates/harness-testkit", "target");
+    std::fs::create_dir_all(&target).unwrap_or_abort();
+
+    // When / Then
+    assert_rejected_input(target);
+}
+
+#[test]
+fn source_guard_rejects_nested_target_generated_file_input() {
+    // Given
+    let (_temporary, generated) =
+        temporary_input("crates/harness-testkit", "target/debug/generated.rs");
+    std::fs::write(&generated, b"generated\n").unwrap_or_abort();
+
+    // When / Then
+    assert_rejected_input(generated);
+}
+
+#[test]
+fn source_guard_rejects_nested_node_modules_input() {
+    // Given
+    let (_temporary, node_modules) = temporary_input("scripts", "tui-parity/node_modules");
+    std::fs::create_dir_all(&node_modules).unwrap_or_abort();
+
+    // When / Then
+    assert_rejected_input(node_modules);
+}
+
+fn temporary_input(root: &str, relative: &str) -> (tempfile::TempDir, PathBuf) {
+    let temporary = tempfile::tempdir_in(repo_root().join(root)).unwrap_or_abort();
+    let input = temporary.path().join(relative);
+    std::fs::create_dir_all(input.parent().unwrap_or_abort()).unwrap_or_abort();
+    (temporary, input)
+}
+
+fn assert_rejected_input(input: PathBuf) {
+    let output = verify(
+        &canonical_reference(),
+        PINNED_REVISION,
+        &["--input-root".into(), input.into()],
+    );
+    assert_failure(&output, "excluded input root");
+}
+
+#[test]
 fn source_guard_rejects_reference_metadata_input() {
     // Given
     let reference = canonical_reference();

@@ -103,12 +103,12 @@ assert_approved_input_root() {
   local allowed_harness="$2"
   local allowed_evidence="$3"
 
-  case "$input" in
-    "$allowed_harness"/target | "$allowed_harness"/target/* | "$allowed_harness"/scripts/tui-parity/node_modules | "$allowed_harness"/scripts/tui-parity/node_modules/*)
+  path_is_within "$input" "$allowed_evidence" && return 0
+  case "/${input#"$allowed_harness"/}/" in
+    */target/* | */node_modules/*)
       fail "excluded input root: $input"
       ;;
   esac
-  path_is_within "$input" "$allowed_evidence" && return 0
   case "$input" in
     "$allowed_harness"/Cargo.toml | "$allowed_harness"/Cargo.lock | "$allowed_harness"/rust-toolchain | "$allowed_harness"/rust-toolchain.toml)
       return 0
