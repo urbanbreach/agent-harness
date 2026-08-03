@@ -3,6 +3,7 @@
 //! Keep runtime-independent testing utilities here; PTY/live workflow code
 //! belongs under `crates/harness-testkit/tests/` with local support modules.
 
+pub mod binary_receipt;
 pub mod fakes;
 pub mod parity;
 pub mod secret_scanner;
