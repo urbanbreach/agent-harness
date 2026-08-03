@@ -1,0 +1,15 @@
+{
+  "schema_version": "tui-fidelity-scenario-v1",
+  "id": "baseline-resize",
+  "adapters": ["grok", "harness"],
+  "viewport": {"cols": 80, "rows": 24},
+  "actions": [{"resize": {"at_tick": 1, "viewport": {"cols": 100, "rows": 30}}}, {"terminal_reply": {"at_tick": 2, "query": "device_attributes", "response": "\u001b[?1;2c"}}],
+  "checkpoints": [
+    {"name": "rest", "at_tick": 3, "frame": {"capture_id": "baseline-resize-rest", "viewport": {"cols": 100, "rows": 30}, "state": "rest"}},
+    {"name": "mid", "at_tick": 4, "frame": {"capture_id": "baseline-resize-mid", "viewport": {"cols": 100, "rows": 30}, "state": "working"}},
+    {"name": "settled", "at_tick": 5, "frame": {"capture_id": "baseline-resize-settled", "viewport": {"cols": 100, "rows": 30}, "state": "settled"}}
+  ],
+  "substitutions": [],
+  "expected_exit": {"code": 0},
+  "cleanup": {"restore_workspace": true, "preserve_evidence": true, "temporary_paths": ["tmp/tui-fidelity"]}
+}

@@ -5,6 +5,9 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Duration;
 
+#[path = "../tui_fidelity_baseline.rs"]
+mod tui_fidelity_baseline;
+
 use harness_testkit::binary_receipt::read_receipt;
 use harness_testkit::tui_fidelity::{AdapterKind, Scenario};
 use harness_testkit::tui_fidelity_runner::{
@@ -88,14 +91,9 @@ fn prepare_compare(
     repo_root: &Path,
 ) -> Result<(Scenario, RuntimeBinary, RuntimeBinary), RunnerError> {
     let scenario = match args.scenario.as_str() {
-        "startup-smoke" => Scenario::from_json(STARTUP_SMOKE),
-        other => {
-            return Err(RunnerError::UnknownScenario {
-                id: other.to_owned(),
-            });
-        }
-    }
-    .map_err(RunnerError::from)?;
+        "startup-smoke" => Scenario::from_json(STARTUP_SMOKE).map_err(RunnerError::from)?,
+        other => tui_fidelity_baseline::load(other, repo_root)?,
+    };
     let receipt_path =
         repo_root.join(".omo/evidence/task-2-grok-build-tui-experiential-parity/receipt.json");
     let receipt = read_receipt(&receipt_path).map_err(|error| RunnerError::BinaryReceipt {

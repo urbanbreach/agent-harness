@@ -1,0 +1,15 @@
+{
+  "schema_version": "tui-fidelity-scenario-v1",
+  "id": "baseline-scroll",
+  "adapters": ["grok", "harness"],
+  "viewport": {"cols": 80, "rows": 24},
+  "actions": [{"paste": {"at_tick": 1, "text": "line one\nline two\nline three\nline four\nline five\nline six"}}, {"timed_key": {"at_tick": 2, "key": {"code": "page_up", "modifiers": {"shift": false, "alt": false, "ctrl": false, "meta": false}}}}, {"timed_key": {"at_tick": 3, "key": {"code": "page_down", "modifiers": {"shift": false, "alt": false, "ctrl": false, "meta": false}}}}, {"terminal_reply": {"at_tick": 4, "query": "device_attributes", "response": "\u001b[?1;2c"}}],
+  "checkpoints": [
+    {"name": "rest", "at_tick": 5, "frame": {"capture_id": "baseline-scroll-rest", "viewport": {"cols": 80, "rows": 24}, "state": "rest"}},
+    {"name": "mid", "at_tick": 6, "frame": {"capture_id": "baseline-scroll-mid", "viewport": {"cols": 80, "rows": 24}, "state": "working"}},
+    {"name": "settled", "at_tick": 7, "frame": {"capture_id": "baseline-scroll-settled", "viewport": {"cols": 80, "rows": 24}, "state": "settled"}}
+  ],
+  "substitutions": [],
+  "expected_exit": {"code": 0},
+  "cleanup": {"restore_workspace": true, "preserve_evidence": true, "temporary_paths": ["tmp/tui-fidelity"]}
+}
