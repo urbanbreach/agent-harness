@@ -93,6 +93,7 @@ mod exact_tests;
 mod file_mentions;
 pub mod footer_state;
 mod foreign_import;
+pub mod interaction_reducer;
 mod key_interaction;
 mod lifecycle;
 mod lineage;

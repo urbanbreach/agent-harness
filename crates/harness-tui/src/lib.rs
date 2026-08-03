@@ -8,6 +8,7 @@ pub mod animation_evidence;
 pub mod app;
 mod clipboard;
 pub mod clipboard_leaf;
+pub mod design_contract;
 pub mod event;
 pub mod keybindings;
 pub mod layout;
