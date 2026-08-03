@@ -114,13 +114,14 @@ impl ChildGuard {
         let detected = wait_for_living(&self.observed, self.cleanup_timeout);
         if !detected.is_empty() {
             terminate_pids(&detected);
-            let _ = wait_for_living(&self.observed, self.cleanup_timeout);
+            let surviving = wait_for_living(&self.observed, self.cleanup_timeout);
             return Err(BoundedFailure {
                 kind: BoundedFailureKind::Survivors,
                 detail: format!("left child PIDs {detected:?}"),
                 cleanup: ProcessCleanup {
                     forced_termination: true,
-                    surviving_pids: detected,
+                    detected_child_pids: detected,
+                    surviving_pids: surviving,
                 },
             });
         }
@@ -141,13 +142,16 @@ impl ChildGuard {
             let _ = child.wait();
         }
         let detected = living(&self.observed);
-        if !detected.is_empty() {
+        let surviving = if detected.is_empty() {
+            Vec::new()
+        } else {
             terminate_pids(&detected);
-            let _ = wait_for_living(&self.observed, self.cleanup_timeout);
-        }
+            wait_for_living(&self.observed, self.cleanup_timeout)
+        };
         ProcessCleanup {
             forced_termination: true,
-            surviving_pids: detected,
+            detected_child_pids: detected,
+            surviving_pids: surviving,
         }
     }
 }

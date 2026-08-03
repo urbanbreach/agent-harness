@@ -164,7 +164,7 @@ pub(super) fn execute(
                 collect_descendants(pid, observed);
                 match child.try_wait() {
                     Ok(Some(status)) => {
-                        break i32::try_from(status.exit_code()).unwrap_or(i32::MAX)
+                        break i32::try_from(status.exit_code()).unwrap_or(i32::MAX);
                     }
                     Ok(None) if Instant::now() < exit_deadline => {
                         thread::sleep(Duration::from_millis(5))
@@ -191,12 +191,12 @@ pub(super) fn execute(
         })
     })();
     let cleanup = guard.cleanup();
-    let surviving = cleanup.surviving_pids.clone();
+    let detected = cleanup.detected_child_pids.clone();
     tracker.record_process(cleanup);
-    if !surviving.is_empty() {
+    if !detected.is_empty() {
         return Err(RunnerError::SurvivingChild {
             adapter,
-            pids: surviving,
+            pids: detected,
         });
     }
     result

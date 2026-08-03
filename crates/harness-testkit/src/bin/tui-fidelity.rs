@@ -6,7 +6,7 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use harness_testkit::binary_receipt::read_receipt;
-use harness_testkit::tui_fidelity::Scenario;
+use harness_testkit::tui_fidelity::{AdapterKind, Scenario};
 use harness_testkit::tui_fidelity_runner::{
     record_preflight_failure, run_compare, RendererConfig, RunnerConfig, RunnerError, RunnerTiming,
     RuntimeBinary, SourceGuardConfig,
@@ -36,37 +36,11 @@ fn main() -> ExitCode {
     }
 }
 
-fn execute(arguments: Vec<OsString>) -> Result<(), String> {
-    let args = parse_compare(arguments)?;
-    let scenario = match args.scenario.as_str() {
-        "startup-smoke" => Scenario::from_json(STARTUP_SMOKE),
-        other => {
-            let error = RunnerError::UnknownScenario {
-                id: other.to_owned(),
-            };
-            record_preflight_failure(&args.evidence_dir, &error)
-                .map_err(|cleanup_error| cleanup_error.to_string())?;
-            return Err(error.to_string());
-        }
-    }
-    .map_err(|error| error.to_string())?;
+fn execute(arguments: Vec<OsString>) -> Result<(), RunnerError> {
+    let args = parse_compare(arguments).map_err(|detail| RunnerError::Arguments { detail })?;
     let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let receipt_path =
-        repo_root.join(".omo/evidence/task-2-grok-build-tui-experiential-parity/receipt.json");
-    let receipt = read_receipt(&receipt_path).map_err(|error| error.to_string())?;
-    receipt
-        .verify_binary_digests()
-        .map_err(|error| error.to_string())?;
-    let reference = checked_binary(
-        &args.reference_bin,
-        &receipt.reference.source_revision,
-        &receipt.reference.sha256,
-    )?;
-    let harness = checked_binary(
-        &args.harness_bin,
-        &receipt.harness.source_revision,
-        &receipt.harness.sha256,
-    )?;
+    let (scenario, reference, harness) = prepare_compare(&args, &repo_root)
+        .map_err(|error| record_cli_preflight_failure(&args.evidence_dir, error))?;
     let browser_program = args
         .browser_bin
         .or_else(discover_browser)
@@ -100,13 +74,53 @@ fn execute(arguments: Vec<OsString>) -> Result<(), String> {
             cleanup_timeout: Duration::from_secs(2),
         },
     };
-    let receipt = run_compare(&scenario, &config).map_err(|error| error.to_string())?;
+    let receipt = run_compare(&scenario, &config)?;
     println!(
         "tui-fidelity compare PASS: {} runtimes, evidence {}",
         receipt.runtimes.len(),
         config.evidence_dir.display()
     );
     Ok(())
+}
+
+fn prepare_compare(
+    args: &CompareArgs,
+    repo_root: &Path,
+) -> Result<(Scenario, RuntimeBinary, RuntimeBinary), RunnerError> {
+    let scenario = match args.scenario.as_str() {
+        "startup-smoke" => Scenario::from_json(STARTUP_SMOKE),
+        other => {
+            return Err(RunnerError::UnknownScenario {
+                id: other.to_owned(),
+            });
+        }
+    }
+    .map_err(RunnerError::from)?;
+    let receipt_path =
+        repo_root.join(".omo/evidence/task-2-grok-build-tui-experiential-parity/receipt.json");
+    let receipt = read_receipt(&receipt_path).map_err(|error| RunnerError::BinaryReceipt {
+        path: receipt_path.clone(),
+        detail: error.to_string(),
+    })?;
+    receipt
+        .verify_binary_digests()
+        .map_err(|error| RunnerError::BinaryReceipt {
+            path: receipt_path,
+            detail: error.to_string(),
+        })?;
+    let reference = checked_binary(ExpectedBinary {
+        adapter: AdapterKind::Grok,
+        path: &args.reference_bin,
+        revision: &receipt.reference.source_revision,
+        sha256: &receipt.reference.sha256,
+    })?;
+    let harness = checked_binary(ExpectedBinary {
+        adapter: AdapterKind::Harness,
+        path: &args.harness_bin,
+        revision: &receipt.harness.source_revision,
+        sha256: &receipt.harness.sha256,
+    })?;
+    Ok((scenario, reference, harness))
 }
 
 fn parse_compare(arguments: Vec<OsString>) -> Result<CompareArgs, String> {
@@ -156,16 +170,39 @@ fn parse_compare(arguments: Vec<OsString>) -> Result<CompareArgs, String> {
     })
 }
 
-fn checked_binary(path: &Path, revision: &str, expected: &str) -> Result<RuntimeBinary, String> {
-    let identity = RuntimeBinary::from_path(path, revision).map_err(|error| error.to_string())?;
-    if identity.sha256 == expected {
+struct ExpectedBinary<'a> {
+    adapter: AdapterKind,
+    path: &'a Path,
+    revision: &'a str,
+    sha256: &'a str,
+}
+
+fn checked_binary(expected: ExpectedBinary<'_>) -> Result<RuntimeBinary, RunnerError> {
+    if !is_executable(expected.path) {
+        return Err(RunnerError::MissingBinary {
+            adapter: expected.adapter,
+            path: expected.path.to_path_buf(),
+        });
+    }
+    let identity = RuntimeBinary::from_path(expected.path, expected.revision)?;
+    if identity.sha256 == expected.sha256 {
         Ok(identity)
     } else {
-        Err(format!(
-            "binary digest mismatch for {}: expected {expected}, got {}",
-            path.display(),
-            identity.sha256
-        ))
+        Err(RunnerError::BinaryDigest {
+            path: expected.path.to_path_buf(),
+            expected: expected.sha256.to_owned(),
+            actual: identity.sha256,
+        })
+    }
+}
+
+fn record_cli_preflight_failure(evidence_dir: &Path, primary: RunnerError) -> RunnerError {
+    match record_preflight_failure(evidence_dir, &primary) {
+        Ok(()) => primary,
+        Err(cleanup) => RunnerError::Cleanup {
+            primary: Some(Box::new(primary)),
+            detail: format!("cleanup receipt: {cleanup}"),
+        },
     }
 }
 

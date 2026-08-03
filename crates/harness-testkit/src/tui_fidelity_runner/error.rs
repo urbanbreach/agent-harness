@@ -5,7 +5,14 @@ use crate::tui_fidelity::{AdapterKind, CheckpointName, ScenarioError};
 
 #[derive(Debug)]
 pub enum RunnerError {
+    Arguments {
+        detail: String,
+    },
     Scenario(ScenarioError),
+    BinaryReceipt {
+        path: PathBuf,
+        detail: String,
+    },
     MissingBinary {
         adapter: AdapterKind,
         path: PathBuf,
@@ -92,7 +99,11 @@ pub enum RunnerError {
 impl fmt::Display for RunnerError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Arguments { detail } => write!(formatter, "arguments: {detail}"),
             Self::Scenario(error) => write!(formatter, "scenario: {error}"),
+            Self::BinaryReceipt { path, detail } => {
+                write!(formatter, "binary receipt {}: {detail}", path.display())
+            }
             Self::MissingBinary { adapter, path } => write!(
                 formatter,
                 "{} binary is missing: {}",
@@ -158,7 +169,7 @@ impl fmt::Display for RunnerError {
                     .join(", ");
                 write!(
                     formatter,
-                    "{} left surviving child PIDs [{pids}]",
+                    "{} left unexpected child PIDs [{pids}]",
                     adapter.as_str()
                 )
             }

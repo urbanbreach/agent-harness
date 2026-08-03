@@ -110,6 +110,9 @@ pub struct CleanupReceipt {
     pub schema_version: String,
     pub status: String,
     pub forced_termination_observed: bool,
+    /// Unexpected child PIDs found alive at the cleanup boundary.
+    pub detected_child_pids: Vec<u32>,
+    /// Child PIDs still alive after termination and the bounded reap wait.
     pub surviving_pids: Vec<u32>,
     pub temporary_paths_removed: Vec<String>,
     pub cleanup_errors: Vec<String>,

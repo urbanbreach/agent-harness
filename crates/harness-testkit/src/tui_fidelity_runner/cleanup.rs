@@ -12,6 +12,7 @@ static ATTEMPT_ID: AtomicU64 = AtomicU64::new(1);
 #[derive(Default)]
 pub(super) struct CleanupTracker {
     forced_termination: bool,
+    detected_child_pids: BTreeSet<u32>,
     surviving_pids: BTreeSet<u32>,
     removed_paths: Vec<String>,
     errors: Vec<String>,
@@ -20,6 +21,7 @@ pub(super) struct CleanupTracker {
 impl CleanupTracker {
     pub fn record_process(&mut self, cleanup: ProcessCleanup) {
         self.forced_termination |= cleanup.forced_termination;
+        self.detected_child_pids.extend(cleanup.detected_child_pids);
         self.surviving_pids.extend(cleanup.surviving_pids);
     }
 
@@ -37,7 +39,7 @@ impl CleanupTracker {
 
     pub fn receipt(&self, primary: Option<&RunnerError>) -> CleanupReceipt {
         CleanupReceipt {
-            schema_version: "harness.tui-fidelity.cleanup.v2".to_owned(),
+            schema_version: "harness.tui-fidelity.cleanup.v3".to_owned(),
             status: if self.has_errors() {
                 "cleanup_error"
             } else if primary.is_some() {
@@ -47,6 +49,7 @@ impl CleanupTracker {
             }
             .to_owned(),
             forced_termination_observed: self.forced_termination,
+            detected_child_pids: self.detected_child_pids.iter().copied().collect(),
             surviving_pids: self.surviving_pids.iter().copied().collect(),
             temporary_paths_removed: self.removed_paths.clone(),
             cleanup_errors: self.errors.clone(),
@@ -62,6 +65,7 @@ impl CleanupTracker {
 #[derive(Default)]
 pub(super) struct ProcessCleanup {
     pub forced_termination: bool,
+    pub detected_child_pids: Vec<u32>,
     pub surviving_pids: Vec<u32>,
 }
 

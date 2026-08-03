@@ -1,5 +1,6 @@
 use std::fs;
-use std::process::Command;
+use std::path::Path;
+use std::process::{Command, Output};
 use std::time::Duration;
 
 use harness_testkit::tui_fidelity::Scenario;
@@ -78,7 +79,7 @@ fn cleanup_failure_retains_primary_error_and_writes_receipt() {
 }
 
 #[test]
-fn surviving_child_pids_are_recorded_and_reaped() {
+fn detected_child_pids_are_recorded_separately_from_survivors() {
     let fixture = Fixture::new("survivor", "normal", "normal");
     let scenario = Scenario::from_json(STARTUP_SMOKE).expect("scenario");
 
@@ -88,15 +89,23 @@ fn surviving_child_pids_are_recorded_and_reaped() {
         &fs::read(fixture.config.evidence_dir.join("cleanup.json")).expect("cleanup receipt"),
     )
     .expect("cleanup json");
-    let pids = cleanup["surviving_pids"]
+    let detected = cleanup["detected_child_pids"]
+        .as_array()
+        .expect("detected child pids");
+    let surviving = cleanup["surviving_pids"]
         .as_array()
         .expect("surviving pids");
-    assert!(!pids.is_empty(), "detected survivor PIDs must be recorded");
-    assert!(pids.iter().all(|pid| !std::path::Path::new(&format!(
-        "/proc/{}",
-        pid.as_u64().expect("pid")
-    ))
-    .exists()));
+    assert!(
+        !detected.is_empty(),
+        "unexpected child PIDs must be recorded"
+    );
+    assert!(
+        surviving.is_empty(),
+        "successfully reaped PIDs did not survive"
+    );
+    assert!(detected.iter().all(|pid| {
+        !std::path::Path::new(&format!("/proc/{}", pid.as_u64().expect("pid"))).exists()
+    }));
 }
 
 #[test]
@@ -116,20 +125,39 @@ fn hanging_renderer_times_out_and_is_reaped_repeatedly() {
 }
 
 #[test]
-fn unknown_scenario_cli_writes_cleanup_receipt() {
+fn cli_preflight_failures_report_typed_errors_and_write_cleanup_receipts() {
     let fixture = Fixture::new("normal", "normal", "normal");
-    let evidence = fixture.root().join("unknown-evidence");
+    let unknown_evidence = fixture.root().join("unknown-evidence");
+    let missing_evidence = fixture.root().join("missing-reference-evidence");
+    let missing = fixture.root().join("missing-reference");
 
-    let status = Command::new(env!("CARGO_BIN_EXE_tui-fidelity"))
-        .args(["compare", "--scenario", "unknown", "--reference-bin"])
-        .arg(&fixture.config.reference.path)
+    let unknown = run_cli(
+        &fixture,
+        "unknown",
+        &fixture.config.reference.path,
+        &unknown_evidence,
+    );
+    let missing = run_cli(&fixture, "startup-smoke", &missing, &missing_evidence);
+
+    let missing_stderr = String::from_utf8_lossy(&missing.stderr);
+    assert!(!unknown.status.success());
+    assert!(unknown_evidence.join("cleanup.json").is_file());
+    assert!(!missing.status.success());
+    assert!(
+        missing_stderr.contains("grok binary is missing"),
+        "stderr: {missing_stderr}"
+    );
+    assert!(missing_evidence.join("cleanup.json").is_file());
+}
+
+fn run_cli(fixture: &Fixture, scenario: &str, reference: &Path, evidence: &Path) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_tui-fidelity"))
+        .args(["compare", "--scenario", scenario, "--reference-bin"])
+        .arg(reference)
         .arg("--harness-bin")
         .arg(&fixture.config.harness.path)
         .arg("--evidence-dir")
-        .arg(&evidence)
-        .status()
-        .expect("run CLI");
-
-    assert!(!status.success());
-    assert!(evidence.join("cleanup.json").is_file());
+        .arg(evidence)
+        .output()
+        .expect("run CLI")
 }

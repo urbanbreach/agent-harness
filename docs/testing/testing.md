@@ -443,6 +443,12 @@ Ownership:
   coverage — that remains with `signoff-pty` / `tui_signoff_manifest_test` and is not a dual-binary
   cells/pixels gate.
 
+The standalone `tui-fidelity compare` runner writes `cleanup.json` with schema
+`harness.tui-fidelity.cleanup.v3`. `detected_child_pids` records unexpected descendants alive at
+the cleanup boundary; `surviving_pids` contains only descendants still alive after termination and
+the bounded reap wait. A detected descendant still fails the comparison even when cleanup later
+reaps it, while the receipt keeps those two facts distinct.
+
 Current fail-closed stages (no `|| true`):
 
 - Prerequisites gate: independent reference-parity manifest path must exist; `cargo` must be on

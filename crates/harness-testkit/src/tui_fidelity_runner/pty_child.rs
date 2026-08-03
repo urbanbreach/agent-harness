@@ -55,14 +55,17 @@ impl PtyChildGuard {
         }
         self.child.take();
         let detected = wait_for_living(&self.observed, self.cleanup_timeout);
-        if !detected.is_empty() {
+        let surviving = if detected.is_empty() {
+            Vec::new()
+        } else {
             forced = true;
             terminate_pids(&detected);
-            let _ = wait_for_living(&self.observed, self.cleanup_timeout);
-        }
+            wait_for_living(&self.observed, self.cleanup_timeout)
+        };
         ProcessCleanup {
             forced_termination: forced,
-            surviving_pids: detected,
+            detected_child_pids: detected,
+            surviving_pids: surviving,
         }
     }
 }
