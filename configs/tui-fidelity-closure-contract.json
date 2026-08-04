@@ -1,0 +1,17 @@
+{
+  "schema_version": "harness.tui-fidelity.closure-contract.v1",
+  "reviewed_plan_sha256": "aff551f4d6538f2e49e76f481c2e8454018943f584e2091dee063e3d337d896e",
+  "requirement_inventory_sha256": "86dde69a77f1638eff364115b3282bbcdb604daab2ebc712aadb430917736cf4",
+  "coverage_manifest_sha256": "427445f536d7c01bf637e9400dacaedf152f958436c6186f85ba373cac4c2d54",
+  "recovery_run_id": "todo58-20260804T161343Z-df97ef093d0318c5-rerun1",
+  "preliminary_reviews": [
+    {
+      "review_id": "inventory-design-review",
+      "receipt_path": ".omo/evidence/recovery-rerun1-20260804T161343Z-df97ef093d0318c5/task-58-grok-build-tui-experiential-parity/preliminary/inventory-design-review.json"
+    },
+    {
+      "review_id": "inventory-scope-review",
+      "receipt_path": ".omo/evidence/recovery-rerun1-20260804T161343Z-df97ef093d0318c5/task-58-grok-build-tui-experiential-parity/preliminary/inventory-scope-review.json"
+    }
+  ]
+}
