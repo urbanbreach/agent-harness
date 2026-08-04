@@ -4,7 +4,7 @@ mod video_viewer;
 use video_viewer::{
     lifecycle::{ViewerError, ViewerPhase, ViewerState},
     progress::{FramePacing, PlaybackProgress},
-    subprocess::{SubprocessDescriptor, SubprocessReceipt, SubprocessSupervisor, sanitize_args},
+    subprocess::{sanitize_args, SubprocessDescriptor, SubprocessReceipt, SubprocessSupervisor},
 };
 
 fn descriptor(binary: &str) -> SubprocessDescriptor {
@@ -97,18 +97,14 @@ fn supervisor_validates_and_simulates_cleanup() {
     assert!(supervisor.is_empty());
     assert_eq!(supervisor.submit(descriptor("ffmpeg")).ok(), Some(0));
     assert_eq!(supervisor.len(), 1);
-    assert!(
-        supervisor
-            .simulate_run(0, Some(0))
-            .ok()
-            .is_some_and(|receipt| receipt.cleanup_complete())
-    );
-    assert!(
-        supervisor
-            .simulate_run(0, Some(1))
-            .ok()
-            .is_some_and(|receipt| !receipt.cleanup_complete())
-    );
+    assert!(supervisor
+        .simulate_run(0, Some(0))
+        .ok()
+        .is_some_and(|receipt| receipt.cleanup_complete()));
+    assert!(supervisor
+        .simulate_run(0, Some(1))
+        .ok()
+        .is_some_and(|receipt| !receipt.cleanup_complete()));
     assert_eq!(
         supervisor.simulate_run(1, Some(0)),
         Err(ViewerError::UnknownRequest)

@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use super::triggers::{TipId, evaluate_triggers};
+use super::triggers::{evaluate_triggers, TipId};
 use super::{priority::TipTrigger, triggers::TipContext};
 
 #[derive(Debug, Clone, PartialEq, Eq)]

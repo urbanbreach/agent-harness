@@ -124,9 +124,7 @@ fn menu_labels_are_harness_native() {
         "Settings",
         "Quit",
     ];
-    assert!(
-        labels
-            .iter()
-            .all(|label| !label.contains("Grok") && !label.contains("xAI"))
-    );
+    assert!(labels
+        .iter()
+        .all(|label| !label.contains("Grok") && !label.contains("xAI")));
 }

@@ -62,11 +62,9 @@ fn matrix_contains_classified_cell_for_every_viewport() {
     let matrix = CapabilityMatrix::new(classifier);
     assert_eq!(matrix.len(), 7);
     assert!(!matrix.is_empty());
-    assert!(
-        matrix
-            .for_viewport(ViewportCapability::Default80x24)
-            .is_some()
-    );
+    assert!(matrix
+        .for_viewport(ViewportCapability::Default80x24)
+        .is_some());
     assert!(matrix.all_classified());
     assert!(matrix.unclassified_combinations().is_empty());
     assert!(matrix.cells().iter().all(|cell| !cell.label().is_empty()));

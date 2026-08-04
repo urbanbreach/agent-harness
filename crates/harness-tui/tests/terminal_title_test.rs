@@ -4,7 +4,7 @@ mod terminal_title;
 use std::io::{self, Write};
 
 use terminal_title::{
-    TitleActivity, TitlePhase, TitleState, TitleWriteError, TitleWriter, sanitize_title,
+    sanitize_title, TitleActivity, TitlePhase, TitleState, TitleWriteError, TitleWriter,
 };
 
 #[test]

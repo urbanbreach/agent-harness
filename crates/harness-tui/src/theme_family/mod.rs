@@ -16,7 +16,7 @@ pub use auto::{AutoDetectError, AutoMode, AutoResolver, SystemPreference};
 pub use fallback::{FallbackError, FallbackLadder, ResolvedColor};
 pub use family::{FamilyColor, ThemeFamily};
 pub use persist::{
-    PersistError, PersistedTheme, ThemeChoice, deserialize_choice, serialize_choice,
+    deserialize_choice, serialize_choice, PersistError, PersistedTheme, ThemeChoice,
 };
 pub use preview::{PreviewError, PreviewState, ThemePreview};
 pub use roles::{BorderRole, ColorRole, FocusRole, GlyphRole, SemanticKind, SemanticRole};

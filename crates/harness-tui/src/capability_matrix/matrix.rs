@@ -1,4 +1,4 @@
-use super::{CapabilityClassifier, axes::*};
+use super::{axes::*, CapabilityClassifier};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

@@ -1,4 +1,4 @@
-use harness_tui::capability_matrix::{CapabilityMatrix, well_known_profiles};
+use harness_tui::capability_matrix::{well_known_profiles, CapabilityMatrix};
 use harness_tui::fidelity_config::*;
 use harness_tui::theme_family::ThemeChoice;
 
