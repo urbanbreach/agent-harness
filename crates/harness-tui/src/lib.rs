@@ -130,6 +130,31 @@ pub mod ui;
     reason = "task 37 requires theme_family/mod.rs as the public facade"
 )]
 pub mod theme_family;
+#[expect(
+    clippy::mod_module_files,
+    reason = "task 38 requires welcome_surface/mod.rs as the public facade"
+)]
+pub mod welcome_surface;
+#[expect(
+    clippy::mod_module_files,
+    reason = "task 39 requires inline_image/mod.rs as the public facade"
+)]
+pub mod inline_image;
+#[expect(
+    clippy::mod_module_files,
+    reason = "task 41 requires mermaid_worker/mod.rs as the public facade"
+)]
+pub mod mermaid_worker;
+#[expect(
+    clippy::mod_module_files,
+    reason = "task 42 requires terminal_title/mod.rs as the public facade"
+)]
+pub mod terminal_title;
+#[expect(
+    clippy::mod_module_files,
+    reason = "task 44 requires contextual_tips/mod.rs as the public facade"
+)]
+pub mod contextual_tips;
 
 pub use harness_core::UnwrapOrAbort;
 
