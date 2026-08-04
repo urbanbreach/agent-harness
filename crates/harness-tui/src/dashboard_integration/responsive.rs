@@ -55,6 +55,25 @@ pub struct DashboardLayout {
     pub details: Option<Rect>,
 }
 
+pub fn dashboard_viewport(root: Rect) -> Option<Rect> {
+    let width = root.width.saturating_sub(4).min(88).max(32.min(root.width));
+    let height = root
+        .height
+        .saturating_sub(2)
+        .min(36)
+        .max(12.min(root.height));
+    if width < 32 || height < 8 {
+        return None;
+    }
+    Some(Rect::new(
+        root.x.saturating_add(root.width.saturating_sub(width) / 2),
+        root.y
+            .saturating_add(root.height.saturating_sub(height) / 2),
+        width,
+        height,
+    ))
+}
+
 impl DashboardLayout {
     pub fn visible_panes(&self) -> Vec<DashboardPane> {
         let all = self.visibility.visible();

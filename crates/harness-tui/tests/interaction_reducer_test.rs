@@ -1,14 +1,17 @@
+use std::fs;
+
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use harness_tui::app::interaction_reducer::{
-    keyboard_intent, mouse_intent, render_purity::RenderPurityProbe, transition_cases,
     FocusDirection, GestureKind, InteractionState, MouseTarget, OverlayTarget, ScreenMode,
-    TransitionOutcome, TransitionTable, UiIntent,
+    TransitionOutcome, TransitionTable, UiIntent, keyboard_intent, mouse_intent,
+    render_purity::RenderPurityProbe, transition_cases,
 };
 use harness_tui::app::{AppState, Focus};
 use harness_tui::keybindings::Action;
 use harness_tui::render_test::render_to_buffer;
 use harness_tui::ui;
 use ratatui::layout::Rect;
+use ratatui::style::Color;
 
 #[test]
 fn every_generated_transition_case_is_checked_by_the_owner() {
@@ -115,6 +118,36 @@ fn render_purity_wraps_the_real_harness_render_path() {
 
     // Then: the probe rejects the observable side effect.
     assert!(rejected.is_err());
+}
+
+#[test]
+fn parity_shell_call_chain_reaches_the_installed_render_owner() {
+    // Given: the shipped crate sources and the real startup AppState.
+    let source_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let read_source = |name: &str| {
+        fs::read_to_string(source_root.join(name))
+            .unwrap_or_else(|error| panic!("read {name}: {error}"))
+    };
+
+    // When: the installed renderer is exercised through the normal TestBackend seam.
+    let app = AppState::new_startup(Vec::new(), None);
+    let buffer = render_to_buffer(&app, Rect::new(0, 0, 100, 30), |app, frame, _| {
+        ui::render_app(frame, app);
+    });
+
+    // Then: source ownership and the rendered design-contract canvas are both reachable.
+    assert!(read_source("app.rs").contains("WelcomeState"));
+    assert!(read_source("app.rs").contains("ThemeChoice"));
+    assert!(read_source("runtime.rs").contains("ui::render_app"));
+    assert!(read_source("runtime.rs").contains("set_color_level"));
+    assert!(read_source("ui.rs").contains("FrameLayoutPlan::for_app"));
+    assert!(read_source("layout.rs").contains("DESIGN_TOKENS"));
+    assert!(read_source("theme.rs").contains("ThemeFamily"));
+    assert!(read_source("theme.rs").contains("FallbackLadder"));
+    assert!(buffer
+        .content
+        .iter()
+        .any(|cell| cell.bg == Color::Rgb(11, 14, 20)));
 }
 
 #[test]

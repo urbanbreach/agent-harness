@@ -136,12 +136,6 @@ pub(super) fn composer_context_summary_candidates(
     theme: &Theme,
     surface: Color,
 ) -> Vec<Vec<Span<'static>>> {
-    // Grok's live composer footer contains shortcuts only; context usage is
-    // owned by the top-right session header and must not shift the hint row.
-    if !app.replay_mode {
-        return vec![Vec::new()];
-    }
-
     let (tokens, percent) = composer_context_usage(app);
     let metrics = app.compaction_usage_metrics();
     let mut primary = vec![disclosure_segment(
@@ -408,8 +402,7 @@ pub(super) fn render_control_dock_disclosure(
         return;
     }
 
-    let active_live_composer = !app.startup_shell_visible()
-        && !app.completed_session_shell_active()
+    let active_live_composer = dock.variant == crate::view_model::ControlDockVariant::Live
         && !dock.composer_disabled;
     let context_summary_visible = app.current_context_window_tokens().is_some()
         || app.active_context_usage().is_some()
@@ -422,6 +415,16 @@ pub(super) fn render_control_dock_disclosure(
     }
 
     let background_task_count = app.active_background_task_count();
+    if active_live_composer
+        && background_task_count > 0
+        && !app.active_turn_in_progress()
+    {
+        let freeze_row = live_freeze_shortcut_disclosure_row(app, theme, surface);
+        if spans_width(&freeze_row) <= usize::from(area.width) {
+            frame.render_widget(Paragraph::new(Line::from(freeze_row)).style(base), area);
+            return;
+        }
+    }
     if active_live_composer
         && !app.active_turn_in_progress()
         && background_task_count > 0
@@ -437,7 +440,10 @@ pub(super) fn render_control_dock_disclosure(
         return;
     }
 
-    if active_live_composer && !app.interrupt_hint_visible() && !context_summary_visible {
+    if active_live_composer
+        && (!app.interrupt_hint_visible() || app.active_turn_in_progress())
+        && (!context_summary_visible || app.active_turn_in_progress())
+    {
         let freeze_row = live_freeze_shortcut_disclosure_row(app, theme, surface);
         if spans_width(&freeze_row) <= usize::from(area.width) {
             let disclosure_area = Rect {
@@ -454,7 +460,9 @@ pub(super) fn render_control_dock_disclosure(
         }
     }
 
-    let mut hint_candidates = if active_live_composer && !app.interrupt_hint_visible() {
+    let mut hint_candidates = if active_live_composer
+        && (!app.interrupt_hint_visible() || app.active_turn_in_progress())
+    {
         let freeze_row = live_freeze_shortcut_disclosure_row(app, theme, surface);
         if spans_width(&freeze_row) <= usize::from(area.width) {
             vec![freeze_row]

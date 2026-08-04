@@ -1,6 +1,7 @@
 use crate::attachment_lifecycle::Attachment;
 use crate::completion_controller::{
     insert_completion, CompletionAcceptance, CompletionItem, CompletionRequest, CompletionTrigger,
+    SelectionDirection,
 };
 use crate::composer_atoms::{AtomId, AttachmentId};
 use crate::composer_editing::{ComposerEditor, DeleteKind};
@@ -9,6 +10,11 @@ use crate::ghost_suggestions::Request as SuggestionRequest;
 use super::slice::{AttachmentEntry, ComposerSlice, ComposerSliceError};
 
 impl ComposerSlice {
+    pub fn replace_text(&mut self, text: &str) -> Result<(), ComposerSliceError> {
+        self.editor = ComposerEditor::from_text(text);
+        self.after_edit()
+    }
+
     pub fn insert_text(&mut self, text: &str) -> Result<(), ComposerSliceError> {
         self.editor.insert_text(text)?;
         self.after_edit()
@@ -102,6 +108,10 @@ impl ComposerSlice {
         self.completion.cancel();
         self.completion_trigger = None;
         self.completion_items.clear();
+    }
+
+    pub fn move_completion(&mut self, direction: SelectionDirection) {
+        self.completion.move_selection(direction);
     }
 
     pub fn accept_completion_keyboard(

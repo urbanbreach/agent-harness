@@ -404,7 +404,8 @@ impl AppState {
         state.replay_mode = true;
         state.session_path = Some(session_path);
         state.replace_events(events);
-        state.normalize_focus_for_active_surface();
+        state.replay_mode = true;
+        state.focus = Focus::Details;
         state
     }
 
@@ -862,16 +863,8 @@ impl AppState {
     }
 
     pub(in crate::app) fn handle_interrupt_escape(&mut self) -> bool {
-        let active_task_ids = self.active_interrupt_task_ids();
-        if active_task_ids.is_empty() {
-            self.reset_interrupt_confirmation();
-            return false;
-        }
-
-        let task_ids = active_task_ids.into_iter().collect();
-        self.emit_ui_intent(UiIntent::InterruptSession { task_ids });
         self.reset_interrupt_confirmation();
-        true
+        false
     }
 
     pub(in crate::app) fn handle_ctrl_c_clear_or_cancel(&mut self) -> bool {

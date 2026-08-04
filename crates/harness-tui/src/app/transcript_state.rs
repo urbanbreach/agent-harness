@@ -1,5 +1,11 @@
 // allow: SIZE_OK — TUI app state (session projection + interaction)
 use crate::UnwrapOrAbort;
+use crate::design_contract::LifecycleState;
+use crate::transcript_blocks::{BlockKind, BlockLifecycle, RawDisclosure};
+use crate::transcript_identity::ReplayTurn;
+use crate::transcript_integration::{BlockSeed, TranscriptComposite, TranscriptEvent, TurnSeed};
+use crate::transcript_timeline::TimelineStatus;
+use crate::prompt_queue_actions::{QueueLifecycle, QueueState};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
@@ -32,6 +38,124 @@ impl ToastState {
 }
 
 impl AppState {
+    pub fn transcript_view_model(&self) -> Option<&TranscriptViewModel> {
+        self.transcript_integration
+            .as_ref()
+            .map(TranscriptComposite::view)
+    }
+
+    pub fn transcript_screen_mode(&self) -> Option<TranscriptScreenMode> {
+        self.transcript_integration
+            .as_ref()
+            .map(|composite| composite.screen().mode())
+    }
+
+    pub(crate) fn transcript_viewer(&self) -> Option<&crate::transcript_block_viewer::ViewerState> {
+        self.transcript_integration
+            .as_ref()
+            .and_then(TranscriptComposite::viewer)
+    }
+
+    pub(crate) fn sync_transcript_integration(&mut self) {
+        let lifecycle = if self.active_turn_in_progress() {
+            QueueLifecycle::Streaming
+        } else {
+            QueueLifecycle::Idle
+        };
+        let state = QueueState::new(lifecycle).with_draft(self.composer.parity_text());
+        let _ = self.composer.slice.set_queue_state(state);
+        let viewport = self
+            .last_frame_area
+            .unwrap_or(ratatui::layout::Rect::new(0, 0, 80, 24));
+        if self.transcript_integration.is_none() {
+            self.transcript_integration = TranscriptComposite::new(viewport).ok();
+        }
+        let events = transcript_events_for_activities(self);
+        if let Some(composite) = self.transcript_integration.as_mut() {
+            let _ = composite.resize(viewport);
+            let _ = composite.replace_events(events);
+        }
+    }
+
+    pub(crate) fn open_selected_transcript_viewer(&mut self) -> bool {
+        let Some(block_id) = self.transcript_integration.as_ref().and_then(|composite| {
+            composite
+                .view()
+                .turns
+                .get(self.transcript_view.selected_activity_index)
+                .map(|turn| turn.replay_turn().block_id(0))
+        }) else {
+            return false;
+        };
+        self.transcript_integration
+            .as_mut()
+            .is_some_and(|composite| composite.open_viewer(block_id).is_ok())
+    }
+
+    pub(crate) fn close_transcript_viewer(&mut self) -> bool {
+        self.transcript_integration
+            .as_mut()
+            .is_some_and(|composite| composite.close_viewer().is_ok())
+    }
+
+    pub(crate) fn handle_transcript_viewer_key(&mut self, key: KeyEvent) -> bool {
+        if self.transcript_screen_mode() != Some(TranscriptScreenMode::SelectedBlockViewer) {
+            return false;
+        }
+        match key.code {
+            KeyCode::Esc => self.close_transcript_viewer(),
+            KeyCode::Char('r') | KeyCode::Char('R') => self
+                .transcript_integration
+                .as_mut()
+                .and_then(TranscriptComposite::viewer_mut)
+                .is_some_and(|viewer| viewer.toggle_mode().is_ok()),
+            KeyCode::Char('n') | KeyCode::Char('N') => self
+                .transcript_integration
+                .as_mut()
+                .and_then(TranscriptComposite::viewer_mut)
+                .is_some_and(|viewer| {
+                    if key.modifiers.contains(KeyModifiers::SHIFT) {
+                        let _ = viewer.search_backward();
+                    } else {
+                        let _ = viewer.search_forward();
+                    }
+                    true
+                }),
+            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                let Some(viewer) = self.transcript_viewer() else {
+                    return false;
+                };
+                let Some(text) = viewer.copy_selection_text().ok() else {
+                    return true;
+                };
+                match clipboard::copy(&text) {
+                    Ok(()) => self.show_toast("Copied to clipboard", ToastVariant::Info),
+                    Err(error) => self.show_toast(
+                        format!("clipboard copy failed: {error}"),
+                        ToastVariant::Error,
+                    ),
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+
+    pub(crate) fn select_transcript_turn(&mut self, turn_id: TurnId) -> bool {
+        self.transcript_integration
+            .as_mut()
+            .is_some_and(|composite| composite.select_turn(turn_id).is_ok())
+    }
+
+    pub(crate) fn handle_transcript_timeline_key(&mut self, key: KeyEvent) -> bool {
+        let Some(jump) = crate::transcript_timeline::navigation::key_jump(key) else {
+            return false;
+        };
+        self.transcript_integration
+            .as_mut()
+            .is_some_and(|composite| composite.jump(jump).is_ok())
+    }
+
     pub(crate) fn transcript_thinking_visible(&self) -> bool {
         self.transcript_view.show_transcript_thinking
     }
@@ -310,12 +434,45 @@ impl AppState {
         self.transcript_view
             .expanded_tool_outputs
             .contains(&tool_call.tool_call_id)
+            || self
+                .transcript_view
+                .expanded_patch_file_outputs
+                .iter()
+                .any(|key| key.starts_with(&format!("{}\u{1f}", tool_call.tool_call_id)))
     }
 
     pub(crate) fn patch_file_output_expanded(&self, tool_call_id: &str, file_path: &str) -> bool {
         self.transcript_view
             .expanded_patch_file_outputs
             .contains(&Self::patch_file_disclosure_key(tool_call_id, file_path))
+    }
+
+    pub(crate) fn seed_patch_file_expansions(&mut self, event: &EventEnvelopeV1) {
+        let EventV1::ToolCallFinished(data) = &event.payload else {
+            return;
+        };
+        if data.status != ToolCallStatus::Succeeded {
+            return;
+        }
+        let Some(edits) = data
+            .output_json
+            .as_ref()
+            .and_then(|output| output.get("edits"))
+            .and_then(serde_json::Value::as_array)
+        else {
+            return;
+        };
+        for edit in edits {
+            if edit.get("deleted").and_then(serde_json::Value::as_bool) == Some(true) {
+                continue;
+            }
+            let Some(path) = edit.get("path").and_then(serde_json::Value::as_str) else {
+                continue;
+            };
+            self.transcript_view
+                .expanded_patch_file_outputs
+                .insert(Self::patch_file_disclosure_key(data.tool_call_id.as_str(), path));
+        }
     }
 
     fn patch_file_disclosure_key(tool_call_id: &str, file_path: &str) -> String {
@@ -484,6 +641,91 @@ impl AppState {
                     .remove(&tool_call_id);
             }
         }
+    }
+}
+
+fn transcript_events_for_activities(app: &AppState) -> Vec<TranscriptEvent> {
+    let mut events = Vec::new();
+    for (activity_index, activity) in app.activities.iter().enumerate() {
+        let mut blocks = Vec::new();
+        if let Some(user_message) = activity.user_message.as_ref() {
+            blocks.push((BlockKind::User, user_message.text.clone(), None));
+        }
+        if !activity.thinking_text.is_empty() {
+            blocks.push((BlockKind::Thinking, activity.thinking_text.clone(), None));
+        }
+        if !activity.transcript_text.is_empty() {
+            blocks.push((BlockKind::Assistant, activity.transcript_text.clone(), None));
+        }
+        for tool in &activity.tool_calls {
+            let content = tool
+                .output_summary
+                .as_deref()
+                .or(Some(tool.args_summary.as_str()))
+                .unwrap_or_default()
+                .to_owned();
+            let raw = tool
+                .output_json
+                .as_ref()
+                .map(RawDisclosure::from_json);
+            blocks.push((BlockKind::Tool, content, raw));
+        }
+        if blocks.is_empty() {
+            blocks.push((BlockKind::System, activity.status.to_string(), None));
+        }
+
+        let turn_index = u64::try_from(activity_index).unwrap_or(u64::MAX);
+        let replay = ReplayTurn::event(
+            activity.first_seq.max(1),
+            turn_index,
+            u64::try_from(blocks.len()).unwrap_or(u64::MAX),
+        );
+        events.push(TranscriptEvent::TurnStarted(TurnSeed::new(
+            replay,
+            timeline_status(activity.status),
+            lifecycle_state(activity),
+        )));
+        for (block_index, (kind, content, raw)) in blocks.into_iter().enumerate() {
+            let block_index = u64::try_from(block_index).unwrap_or(u64::MAX);
+            events.push(TranscriptEvent::BlockCreated(BlockSeed {
+                id: replay.block_id(block_index),
+                turn_id: replay.turn_id(),
+                kind,
+                lifecycle: block_lifecycle(activity.status),
+                content,
+                raw,
+            }));
+        }
+    }
+    events
+}
+
+fn timeline_status(status: ActivityStatus) -> TimelineStatus {
+    match status {
+        ActivityStatus::Queued => TimelineStatus::Queued,
+        ActivityStatus::Streaming => TimelineStatus::Streaming,
+        ActivityStatus::Done => TimelineStatus::Completed,
+        ActivityStatus::Error => TimelineStatus::Failed,
+    }
+}
+
+fn lifecycle_state(activity: &ActivityEntry) -> LifecycleState {
+    match activity.status {
+        ActivityStatus::Queued => LifecycleState::Queued,
+        ActivityStatus::Streaming if !activity.tool_calls.is_empty() => LifecycleState::Tool,
+        ActivityStatus::Streaming if !activity.thinking_text.is_empty() => LifecycleState::Thinking,
+        ActivityStatus::Streaming => LifecycleState::Streaming,
+        ActivityStatus::Done => LifecycleState::Completed,
+        ActivityStatus::Error => LifecycleState::Failed,
+    }
+}
+
+fn block_lifecycle(status: ActivityStatus) -> BlockLifecycle {
+    match status {
+        ActivityStatus::Queued => BlockLifecycle::Waiting,
+        ActivityStatus::Streaming => BlockLifecycle::Streaming,
+        ActivityStatus::Done => BlockLifecycle::Completed,
+        ActivityStatus::Error => BlockLifecycle::Failed,
     }
 }
 

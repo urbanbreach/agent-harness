@@ -13,6 +13,8 @@ pub enum TuiEvent {
     Mouse(MouseEvent),
     Paste(String),
     Resize(u16, u16),
+    FocusGained,
+    FocusLost,
 }
 
 pub fn poll(timeout: Duration) -> Result<Option<TuiEvent>> {
@@ -39,7 +41,8 @@ fn normalize_event(ev: Event) -> Result<Option<TuiEvent>> {
         Event::Paste(text) => Ok(Some(TuiEvent::Paste(text))),
         Event::Resize(w, h) => coalesce_resize_events(w, h),
         Event::Mouse(mouse) => coalesce_mouse_events(mouse),
-        _ => Ok(None),
+        Event::FocusGained => Ok(Some(TuiEvent::FocusGained)),
+        Event::FocusLost => Ok(Some(TuiEvent::FocusLost)),
     }
 }
 

@@ -326,9 +326,9 @@ impl AppState {
             }
             "status" | "dashboard" => {
                 self.restore_slash_draft(preserved_draft);
-                self.secondary_surfaces.open_status_dialog();
+                self.open_status_dashboard();
             }
-            "help" => {
+            "help" | "feedback" => {
                 self.restore_slash_draft(preserved_draft);
                 self.execute_action(Action::Help);
             }

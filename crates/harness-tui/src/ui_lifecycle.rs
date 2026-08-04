@@ -1,6 +1,7 @@
 // allow: SIZE_OK — TUI rendering (indivisible view model)
 use super::*;
 
+use crate::welcome_surface::{WelcomeFocus, WelcomeLayout};
 use ratatui::widgets::{BorderType, Clear};
 
 #[path = "app/first_prompt.rs"]
@@ -140,11 +141,14 @@ pub(crate) fn render_startup_lifecycle_flow(
 
     let surface = Color::Reset;
     frame.render_widget(Block::default().style(Style::default().bg(surface)), area);
+    let welcome_layout = app.welcome_layout(area);
+    let welcome_hit_map = app.welcome_hit_map(area);
+    debug_assert_eq!(welcome_hit_map.layout(), &welcome_layout);
     render_startup_breadcrumb(frame, app, area, theme);
 
     if app.composer.prompt_buffer.is_empty() {
         render_startup_clipboard_warning(frame, app, area, theme);
-        render_welcome_panel(frame, app, area, theme);
+        render_welcome_panel(frame, app, area, theme, &welcome_layout);
     }
 
     // Trust prompt z-order: render on top of the startup content so the
@@ -154,7 +158,7 @@ pub(crate) fn render_startup_lifecycle_flow(
     }
 }
 
-fn render_startup_clipboard_warning(frame: &mut Frame, app: &AppState, area: Rect, _theme: &Theme) {
+fn render_startup_clipboard_warning(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
     if !startup_clipboard_warning_visible(app) || area.width <= 4 || area.height <= 4 {
         return;
     }
@@ -172,7 +176,11 @@ fn render_startup_clipboard_warning(frame: &mut Frame, app: &AppState, area: Rec
         );
         frame.render_widget(
             Paragraph::new(truncate_plain_text(line, usize::from(row.width)))
-                .style(Style::default())
+                .style(
+                    Style::default()
+                        .fg(theme.text.secondary)
+                        .bg(theme.surface.canvas),
+                )
                 .alignment(Alignment::Center),
             row,
         );
@@ -204,7 +212,7 @@ fn live_breadcrumb_text(app: &AppState) -> String {
 
 pub(super) const LIVE_BREADCRUMB_RESERVE_ROWS: u16 = 2;
 
-fn render_startup_breadcrumb(frame: &mut Frame, app: &AppState, area: Rect, _theme: &Theme) {
+fn render_startup_breadcrumb(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
     if area.height < 2 {
         return;
     }
@@ -215,23 +223,22 @@ fn render_startup_breadcrumb(frame: &mut Frame, app: &AppState, area: Rect, _the
         height: 1,
     };
     let text = truncate_plain_text(&startup_breadcrumb_text(app), usize::from(row.width));
+    let dim = Style::default()
+        .fg(theme.text.tertiary)
+        .bg(theme.surface.canvas)
+        .add_modifier(Modifier::DIM);
     let line = if let Some(prefix) = text.strip_suffix(" ~") {
         Line::from(vec![
+            Span::styled(prefix.to_string(), dim),
             Span::styled(
-                prefix.to_string(),
+                " ~",
                 Style::default()
-                    .bg(Color::Reset)
-                    .add_modifier(Modifier::DIM),
+                    .fg(theme.text.primary)
+                    .bg(theme.surface.canvas),
             ),
-            Span::styled(" ~", Style::default().bg(Color::Reset)),
         ])
     } else {
-        Line::from(Span::styled(
-            text,
-            Style::default()
-                .bg(Color::Reset)
-                .add_modifier(Modifier::DIM),
-        ))
+        Line::from(Span::styled(text, dim))
     };
     frame.render_widget(Paragraph::new(line), row);
 }
@@ -257,7 +264,7 @@ pub(super) fn render_live_breadcrumb(frame: &mut Frame, app: &AppState, area: Re
     );
     let dim = Style::default()
         .fg(theme.text.tertiary)
-        .bg(Color::Reset)
+        .bg(theme.surface.canvas)
         .add_modifier(Modifier::DIM);
     let line = context_meta
         .as_deref()
@@ -396,7 +403,11 @@ fn welcome_panel_top_pad(area: Rect, clipboard_warning_visible: bool) -> u16 {
     scaled.min(area.height.saturating_sub(8))
 }
 
-fn welcome_panel_area(area: Rect, clipboard_warning_visible: bool) -> Option<Rect> {
+fn welcome_panel_area(
+    area: Rect,
+    clipboard_warning_visible: bool,
+    layout: &WelcomeLayout,
+) -> Option<Rect> {
     if area.width < 24 || area.height < 8 || !welcome_bordered_panel_fits(area) {
         return None;
     }
@@ -404,7 +415,8 @@ fn welcome_panel_area(area: Rect, clipboard_warning_visible: bool) -> Option<Rec
         .width
         .saturating_sub(WELCOME_PANEL_INSET_X.saturating_mul(2))
         .clamp(20, WELCOME_PANEL_MAX_WIDTH);
-    let top_pad = welcome_panel_top_pad(area, clipboard_warning_visible);
+    let top_pad =
+        welcome_panel_top_pad(area, clipboard_warning_visible).saturating_add(layout.hero_rect.1);
     let height = WELCOME_PANEL_HEIGHT.min(area.height.saturating_sub(top_pad).max(8));
     let x = area.x.saturating_add(area.width.saturating_sub(width) / 2);
     let y = area.y.saturating_add(top_pad);
@@ -425,11 +437,17 @@ fn welcome_text_after_logo(text: &str, inner_width: usize) -> String {
 }
 
 fn welcome_inner_lines(theme: &Theme, inner_width: usize, app: &AppState) -> Vec<Line<'static>> {
-    let surface = Color::Reset;
-    let title_style = Style::default().bg(surface).add_modifier(Modifier::BOLD);
-    let muted = Style::default().bg(surface);
-    let body = Style::default().bg(surface);
-    let dim_style = Style::default().bg(surface).add_modifier(Modifier::DIM);
+    let surface = theme.surface.canvas;
+    let title_style = Style::default()
+        .fg(theme.text.primary)
+        .bg(surface)
+        .add_modifier(Modifier::BOLD);
+    let muted = Style::default().fg(theme.text.secondary).bg(surface);
+    let body = Style::default().fg(theme.text.primary).bg(surface);
+    let dim_style = Style::default()
+        .fg(theme.text.tertiary)
+        .bg(surface)
+        .add_modifier(Modifier::DIM);
     let identity = welcome::welcome_identity(theme.live_shell.startup.title);
     let changelog_bullets = welcome::changelog_bullets();
     let text_col = WELCOME_TEXT_COL;
@@ -571,10 +589,16 @@ fn compact_welcome_lines(
     max_lines: usize,
     app: &AppState,
 ) -> Vec<Line<'static>> {
-    let surface = Color::Reset;
-    let body = Style::default().bg(surface).add_modifier(Modifier::BOLD);
-    let muted = Style::default().bg(surface);
-    let dim_style = Style::default().bg(surface).add_modifier(Modifier::DIM);
+    let surface = _theme.surface.canvas;
+    let body = Style::default()
+        .fg(_theme.text.primary)
+        .bg(surface)
+        .add_modifier(Modifier::BOLD);
+    let muted = Style::default().fg(_theme.text.secondary).bg(surface);
+    let dim_style = Style::default()
+        .fg(_theme.text.tertiary)
+        .bg(surface)
+        .add_modifier(Modifier::DIM);
     let shortcut_width = 8usize;
     let label_width = inner_width
         .saturating_sub(shortcut_width)
@@ -680,7 +704,7 @@ fn render_compact_welcome_body(frame: &mut Frame, app: &AppState, area: Rect, th
     if content.width == 0 || content.height == 0 {
         return;
     }
-    let surface = Color::Reset;
+    let surface = theme.surface.canvas;
     let lines = compact_welcome_lines(
         theme,
         usize::from(content.width),
@@ -693,13 +717,23 @@ fn render_compact_welcome_body(frame: &mut Frame, app: &AppState, area: Rect, th
     );
 }
 
-fn render_welcome_panel(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
-    if let Some(panel) = welcome_panel_area(area, startup_clipboard_warning_visible(app)) {
-        let surface = Color::Reset;
+fn render_welcome_panel(
+    frame: &mut Frame,
+    app: &AppState,
+    area: Rect,
+    theme: &Theme,
+    layout: &WelcomeLayout,
+) {
+    if let Some(panel) = welcome_panel_area(area, startup_clipboard_warning_visible(app), layout) {
+        let surface = theme.surface.canvas;
+        let border_color = match app.welcome_state().focus() {
+            WelcomeFocus::Prompt => theme.border.focus,
+            WelcomeFocus::Menu(_) | WelcomeFocus::StatusBar => theme.border.subtle,
+        };
         let block = Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
-            .border_style(Style::default().bg(surface))
+            .border_style(Style::default().fg(border_color).bg(surface))
             .style(Style::default().bg(surface));
         let inner = block.inner(panel);
         frame.render_widget(block, panel);
@@ -808,7 +842,12 @@ fn startup_lifecycle_flow_selection_surface(
     if area.width == 0 || area.height == 0 || !app.composer.prompt_buffer.is_empty() {
         return None;
     }
-    if let Some(panel) = welcome_panel_area(area, startup_clipboard_warning_visible(app)) {
+    let welcome_layout = app.welcome_layout(area);
+    if let Some(panel) = welcome_panel_area(
+        area,
+        startup_clipboard_warning_visible(app),
+        &welcome_layout,
+    ) {
         let block = Block::default().borders(Borders::ALL);
         let content_area = block.inner(panel);
         if content_area.width == 0 || content_area.height == 0 {
@@ -858,13 +897,13 @@ pub(super) fn render_live_empty_state(
     frame: &mut Frame,
     _app: &AppState,
     area: Rect,
-    _theme: &Theme,
+    theme: &Theme,
 ) {
     if area.width == 0 || area.height == 0 {
         return;
     }
     frame.render_widget(
-        Block::default().style(Style::default().bg(Color::Reset)),
+        Block::default().style(Style::default().bg(theme.surface.canvas)),
         area,
     );
 }

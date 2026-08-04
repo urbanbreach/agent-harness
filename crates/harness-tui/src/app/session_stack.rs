@@ -257,6 +257,9 @@ impl AppState {
         self.session_path = Some(snapshot.session_path);
         self.set_launch_metadata(snapshot.launch_metadata);
         self.replace_events(snapshot.events);
+        let restored_metadata = infer_launch_metadata_from_events(&self.events, &self.launch_metadata);
+        self.launch_metadata = restored_metadata.clone();
+        self.runtime_context_metadata = Some(restored_metadata);
         self.active_review_surface = None;
         self.active_tab = Tab::Run;
         self.focus = if self.replay_mode {

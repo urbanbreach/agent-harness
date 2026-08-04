@@ -6,6 +6,7 @@ use ratatui::{
 };
 
 use crate::app::AppState;
+use crate::design_contract::{DESIGN_TOKENS, ViewportBreakpoint};
 use crate::overlay::OverlayKind;
 use crate::theme::{LiveShellLayout, Theme};
 
@@ -62,8 +63,6 @@ const LIVE_STATUS_COMPOSER_SPACER_ROWS: u16 = 1;
 /// Spacer between the composer bottom border and the disclosure/footer row.
 /// Present at all viewports wider than the dense (60-col) compact cutoff;
 /// suppressed at ultra-compact sizes to maximize transcript space.
-const COMPOSER_FOOTER_SPACER_ROWS: u16 = 1;
-
 /// Measured live dock order, top to bottom: an optional reserved status row,
 /// composer, composer/footer spacer, disclosure, and trailing blank margin.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -78,11 +77,7 @@ struct LiveDockRhythm {
 /// Breadcrumb top-margin rows: 1 at standard/compact viewports (>60 cols),
 /// 0 at ultra-compact (≤60 cols) so the breadcrumb sits on row 1.
 pub(crate) fn breadcrumb_top_margin(width: u16) -> u16 {
-    if width <= DENSE_SESSION_MAX_WIDTH {
-        0
-    } else {
-        1
-    }
+    design_breakpoint(width).breadcrumb_top_margin
 }
 
 /// Total breadcrumb reserve rows (top margin + 1 breadcrumb text row).
@@ -96,17 +91,38 @@ pub(crate) fn composer_footer_spacer_rows(width: u16) -> u16 {
     if width <= DENSE_SESSION_MAX_WIDTH {
         0
     } else {
-        COMPOSER_FOOTER_SPACER_ROWS
+        DESIGN_TOKENS
+            .breakpoints
+            .all
+            .iter()
+            .find(|breakpoint| breakpoint.width > DENSE_SESSION_MAX_WIDTH)
+            .map_or(0, |breakpoint| breakpoint.composer_footer_spacer)
     }
 }
 
 pub(crate) fn composer_horizontal_inset(width: u16) -> u16 {
     let preferred = if width <= DENSE_SESSION_MAX_WIDTH {
-        1
+        0
     } else {
-        STARTUP_COMPOSER_INSET_X
+        DESIGN_TOKENS
+            .breakpoints
+            .all
+            .iter()
+            .find(|breakpoint| breakpoint.width > DENSE_SESSION_MAX_WIDTH)
+            .map_or(0, |breakpoint| breakpoint.composer_inset)
     };
     preferred.min(width.saturating_sub(4) / 2)
+}
+
+fn design_breakpoint(width: u16) -> ViewportBreakpoint {
+    DESIGN_TOKENS
+        .breakpoints
+        .all
+        .iter()
+        .rev()
+        .find(|breakpoint| width >= breakpoint.width)
+        .copied()
+        .unwrap_or(DESIGN_TOKENS.breakpoints.all[0])
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -472,6 +488,7 @@ pub(crate) fn session_shell_layout(
             contract,
             content_column.width,
             shell_tokens.spacing.heights.status,
+            terminal_height,
         );
         live_prompt_block_height(app, content_column, contract, shell, terminal_height)
             .saturating_add(rhythm.status_composer_spacer_rows)
@@ -496,6 +513,7 @@ pub(crate) fn session_shell_layout(
             contract,
             content_column.width,
             shell_tokens.spacing.heights.status,
+            terminal_height,
         );
         let disclosure_height = rhythm
             .disclosure_rows
@@ -514,9 +532,6 @@ pub(crate) fn session_shell_layout(
             };
             control_dock_layout(shell_area, None, composer, None)
         } else {
-            let composer_height =
-                live_prompt_block_height(app, content_column, contract, shell, terminal_height)
-                    .min(shell_area.height);
             let status_rows = rhythm.status_rows.min(shell_area.height);
             let composer_footer_spacer = rhythm
                 .composer_footer_spacer_rows
@@ -524,6 +539,21 @@ pub(crate) fn session_shell_layout(
             let status_composer_spacer = rhythm
                 .status_composer_spacer_rows
                 .min(shell_area.height.saturating_sub(status_rows));
+            let composer_height = live_prompt_block_height(
+                app,
+                content_column,
+                contract,
+                shell,
+                terminal_height,
+            )
+            .saturating_sub(
+                status_rows
+                    .saturating_add(status_composer_spacer)
+                    .saturating_add(composer_footer_spacer)
+                    .saturating_add(disclosure_height)
+                    .saturating_add(rhythm.bottom_margin_rows),
+            )
+            .min(shell_area.height);
             let bottom_margin = rhythm.bottom_margin_rows.min(
                 shell_area.height.saturating_sub(
                     status_rows
@@ -544,9 +574,20 @@ pub(crate) fn session_shell_layout(
                     Constraint::Length(bottom_margin),
                 ])
                 .split(shell_area);
+            let composer_inset = if content_column.width <= DENSE_SESSION_MAX_WIDTH {
+                1
+            } else {
+                0
+            };
+            let composer = Rect::new(
+                rows[2].x.saturating_add(composer_inset),
+                rows[2].y,
+                rows[2].width.saturating_sub(composer_inset.saturating_mul(2)),
+                rows[2].height,
+            );
             let disclosure = (disclosure_height > 0).then_some(rows[4]);
             let status = (status_rows > 0).then_some(rows[0]);
-            control_dock_layout(shell_area, status, rows[2], disclosure)
+            control_dock_layout(shell_area, status, composer, disclosure)
         }
     };
     let dock = if operator_sidebar.is_some() {
@@ -732,29 +773,31 @@ fn live_dock_rhythm(
     contract: SessionGeometryContract,
     width: u16,
     status_row_height: u16,
+    terminal_height: u16,
 ) -> LiveDockRhythm {
     let disclosure_rows = control_dock_disclosure_rows(app, contract);
-    let status_rows = if app.has_live_turn_activity()
+    let status_rows = if app.active_permission_view().is_some()
         || matches!(
             app.runtime_state().kind,
             crate::app::RuntimeStateKind::Sending | crate::app::RuntimeStateKind::Streaming
-        ) {
+        )
+    {
         status_row_height
     } else {
         0
     };
-    let composer_footer_spacer_rows = if disclosure_rows > 0 {
-        composer_footer_spacer_rows(width)
-    } else {
-        0
-    };
+    let composer_footer_spacer_rows = 0;
     let status_composer_spacer_rows = if status_rows > 0 {
         LIVE_STATUS_COMPOSER_SPACER_ROWS
     } else {
         0
     };
-    let bottom_margin_rows = if disclosure_rows > 0 && width > DENSE_SESSION_MAX_WIDTH {
-        LIVE_POST_TURN_BOTTOM_MARGIN_ROWS
+    let bottom_margin_rows = if disclosure_rows > 0 && width < 120 {
+        if terminal_height > 40 {
+            LIVE_POST_TURN_BOTTOM_MARGIN_ROWS.saturating_add(1)
+        } else {
+            LIVE_POST_TURN_BOTTOM_MARGIN_ROWS
+        }
     } else {
         0
     };

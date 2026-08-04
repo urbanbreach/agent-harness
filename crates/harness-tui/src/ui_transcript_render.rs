@@ -629,8 +629,9 @@ fn build_assistant_part_render_surface(
             let TranscriptBodyBlock::RichText(text) = block;
             // Reference completed/cancellation state: pack wall clock on a single-line plain body row.
             // Reference diff/tool state: keep wall clock on its own row when tools are present.
-            let pack_clock_on_body =
-                body_is_single_line_plain(text) && turn.footer_timestamp.is_some();
+            let pack_clock_on_body = body_is_single_line_plain(text)
+                && turn.footer_timestamp.is_some()
+                && turn.tool_calls.is_empty();
             // Reference completed state: Thought → blank (inter-surface gap) → body+clock.
             // Reference diff state: Thought → blank → wall-clock row → blank → body.
             if prepend_gap {
@@ -1575,6 +1576,31 @@ fn waiting_on_answers_label(turn: &TranscriptTurnSection) -> Option<String> {
         }
         return Some(format!("Waiting on answers for {detail}"));
     }
+
+    for tool in &turn.tool_calls {
+        if !(is_question_tool_id(&tool.header.tool_id)
+            || tool.header.title.starts_with("Ask "))
+            || !matches!(
+                tool.header.status,
+                crate::app::ToolCallDisplayStatus::PendingPermission
+                    | crate::app::ToolCallDisplayStatus::Queued
+                    | crate::app::ToolCallDisplayStatus::Running
+            )
+        {
+            continue;
+        }
+        let detail = tool
+            .header
+            .title
+            .strip_prefix("Ask ")
+            .unwrap_or(tool.header.title.as_str())
+            .trim();
+        if detail.is_empty() {
+            return Some("Waiting on answers".to_string());
+        }
+        return Some(format!("Waiting on answers for {detail}"));
+    }
+
     None
 }
 

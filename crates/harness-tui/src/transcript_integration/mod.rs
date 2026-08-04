@@ -39,6 +39,48 @@ use crate::transcript_scroll::{
 use crate::transcript_timeline::{TimelineJump, TimelineNavigationSnapshot};
 
 impl TranscriptComposite {
+    pub fn replace_events(
+        &mut self,
+        events: Vec<TranscriptEvent>,
+    ) -> Result<(), TranscriptIntegrationError> {
+        let previous = std::mem::replace(&mut self.events, events);
+        self.cache.apply(CacheInvalidation::ReplayReset);
+        if let Err(error) = self.rebuild() {
+            self.events = previous;
+            self.cache.apply(CacheInvalidation::ReplayReset);
+            let _ = self.rebuild();
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    pub fn select_turn(
+        &mut self,
+        turn_id: crate::transcript_identity::TurnId,
+    ) -> Result<TimelineNavigationSnapshot, TranscriptIntegrationError> {
+        let snapshot = self.timeline.select_turn(turn_id)?;
+        self.screen = self
+            .screen
+            .with_focus_follow(FocusFollowState::new(TranscriptFocus::Timeline, false));
+        self.scroll_top = f64::from(u32::try_from(snapshot.scroll_top).unwrap_or(u32::MAX));
+        self.follow.scroll_by(
+            self.scroll_top - self.follow.offset(),
+            self.layout
+                .as_ref()
+                .map_or(0.0, TranscriptLayout::max_scroll),
+        )?;
+        self.refresh_view();
+        Ok(snapshot)
+    }
+
+    pub fn is_following(&self) -> bool {
+        self.follow.is_following()
+    }
+
+    pub fn scroll_top(&self) -> f64 {
+        self.scroll_top
+    }
+
     pub fn scroll_by(&mut self, delta: f64) -> Result<ScrollFrame, TranscriptIntegrationError> {
         let max = self
             .layout

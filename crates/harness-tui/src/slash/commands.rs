@@ -1,4 +1,4 @@
-//! Aggregator for all 25 slash command leaf definitions.
+//! Aggregator for all slash command leaf definitions.
 //!
 //! This module collects the leaf definitions from their owner modules. It does
 //! not contain command-specific logic; it only collects.
@@ -12,6 +12,7 @@ pub mod copy;
 pub mod dashboard;
 pub mod exit;
 pub mod export;
+pub mod feedback;
 pub mod follow;
 pub mod fork;
 pub mod help;
@@ -31,7 +32,7 @@ pub mod view_plan;
 
 use crate::slash::SlashCommandLeaf;
 
-/// Return the canonical ordered list of 25 slash command leaf definitions.
+/// Return the canonical ordered list of slash command leaf definitions.
 ///
 /// The order matches `command_registry::SLASH_COMMANDS` exactly so the
 /// integrator can swap the source without changing observable behavior.
@@ -56,6 +57,7 @@ pub fn all_commands() -> &'static [SlashCommandLeaf] {
         rename::LEAF,
         copy::LEAF,
         export::LEAF,
+        feedback::LEAF,
         timestamps::LEAF,
         thinking::LEAF,
         settings::LEAF,

@@ -34,7 +34,21 @@ pub(super) fn render_status_dialog_overlay(
         .constraints([Constraint::Length(1), Constraint::Min(0)])
         .split(content);
     render_status_dialog_header(frame, theme, chunks[0]);
-    render_status_dialog_body(frame, theme, chunks[1], status_dialog_body(app, theme));
+    if let Some(dashboard) = app.status_dashboard() {
+        render_interactive_dashboard(frame, app, theme, overlay);
+        let summary_area = Rect::new(
+            chunks[1].x.saturating_add(1),
+            chunks[1].bottom().saturating_sub(8),
+            chunks[1].width.saturating_sub(2),
+            7,
+        );
+        render_dashboard_summary(frame, app, theme, summary_area);
+        if dashboard.help_visible() {
+            render_dashboard_help(frame, theme, overlay, dashboard);
+        }
+    } else {
+        render_status_dialog_body(frame, theme, chunks[1], status_dialog_body(app, theme));
+    }
 }
 
 fn render_status_dialog_body(frame: &mut Frame, theme: &Theme, area: Rect, body: Text<'static>) {
@@ -47,22 +61,7 @@ fn render_status_dialog_body(frame: &mut Frame, theme: &Theme, area: Rect, body:
 }
 
 fn status_dialog_area(root: Rect) -> Option<Rect> {
-    let width = root.width.saturating_sub(4).min(88).max(32.min(root.width));
-    let height = root
-        .height
-        .saturating_sub(2)
-        .min(36)
-        .max(12.min(root.height));
-    if width < 32 || height < 8 {
-        return None;
-    }
-    Some(Rect::new(
-        root.x.saturating_add(root.width.saturating_sub(width) / 2),
-        root.y
-            .saturating_add(root.height.saturating_sub(height) / 2),
-        width,
-        height,
-    ))
+    crate::dashboard_integration::dashboard_viewport(root)
 }
 
 fn render_status_dialog_header(frame: &mut Frame, theme: &Theme, area: Rect) {
@@ -70,7 +69,7 @@ fn render_status_dialog_header(frame: &mut Frame, theme: &Theme, area: Rect) {
         return;
     }
     let surface = ui_chrome::command_palette_surface(theme);
-    let title = "Status";
+    let title = "Status · Harness dashboard";
     let esc = "esc";
     let title_width = title.chars().count();
     let esc_width = esc.chars().count();
@@ -89,6 +88,217 @@ fn render_status_dialog_header(frame: &mut Frame, theme: &Theme, area: Rect) {
         ])),
         area,
     );
+}
+
+fn render_interactive_dashboard(
+    frame: &mut Frame,
+    app: &AppState,
+    theme: &Theme,
+    overlay: Rect,
+) {
+    let Some(dashboard) = app.status_dashboard() else {
+        return;
+    };
+    let layout = dashboard.layout();
+    render_dashboard_roster(frame, theme, layout.roster, dashboard);
+    render_dashboard_peek(frame, theme, layout.peek, dashboard);
+    render_dashboard_reply(frame, theme, layout.reply, dashboard);
+    if let Some(details) = layout.details {
+        render_dashboard_details(frame, theme, details, dashboard);
+    }
+    let focus = format!("focus: {:?}", dashboard.focus());
+    let footer = Rect::new(
+        overlay.x.saturating_add(2),
+        overlay.bottom().saturating_sub(2),
+        overlay.width.saturating_sub(4),
+        1,
+    );
+    frame.render_widget(
+        Paragraph::new(focus).style(Style::default().fg(theme.text.secondary)),
+        footer,
+    );
+}
+
+fn render_dashboard_roster(
+    frame: &mut Frame,
+    theme: &Theme,
+    area: Rect,
+    dashboard: &crate::dashboard_integration::DashboardIntegration,
+) {
+    let layout = dashboard.roster_layout();
+    let lines = layout
+        .rows
+        .iter()
+        .map(|row| {
+            let data = dashboard
+                .dashboard()
+                .row(row.selection_key.as_str());
+            let status = data.map_or("unknown", |entry| dashboard_status_label(entry.status));
+            let marker = if row.selected { ">" } else { " " };
+            format!("{marker} {status:<9} {}", row.label)
+        })
+        .collect::<Vec<_>>();
+    render_dashboard_pane(frame, theme, area, "Roster", lines);
+}
+
+fn render_dashboard_peek(
+    frame: &mut Frame,
+    theme: &Theme,
+    area: Rect,
+    dashboard: &crate::dashboard_integration::DashboardIntegration,
+) {
+    let lines = match dashboard.peek_view() {
+        Ok(view) => {
+            let mut lines = vec![
+                format!("session: {}", view.session_id.as_str()),
+                format!("tail: {} blocks", view.blocks.len()),
+                format!("unread: {}", view.unread_count),
+                format!("follow: {:?}", view.follow),
+            ];
+            if !view.draft.is_empty() {
+                lines.push(format!("draft: {}", view.draft));
+            }
+            lines.extend(view.blocks.into_iter().map(|block| block.content));
+            lines
+        }
+        Err(error) => vec![error.to_string()],
+    };
+    render_dashboard_pane(frame, theme, area, "Peek / tail", lines);
+}
+
+fn render_dashboard_reply(
+    frame: &mut Frame,
+    theme: &Theme,
+    area: Rect,
+    dashboard: &crate::dashboard_integration::DashboardIntegration,
+) {
+    let visual = dashboard.controls_visual();
+    let mut lines = vec![
+        "reply composer".to_string(),
+        format!("controls: {}", visual.state.label()),
+    ];
+    if let Some(message) = visual.message.as_deref() {
+        lines.push(message.to_string());
+    }
+    if let Ok(view) = dashboard.peek_view() {
+        lines.push(if view.draft.is_empty() {
+            "draft: <empty>".to_string()
+        } else {
+            format!("draft: {}", view.draft)
+        });
+    }
+    render_dashboard_pane(frame, theme, area, "Reply", lines);
+}
+
+fn render_dashboard_details(
+    frame: &mut Frame,
+    theme: &Theme,
+    area: Rect,
+    dashboard: &crate::dashboard_integration::DashboardIntegration,
+) {
+    let lines = match dashboard.details_fields() {
+        Ok(fields) => vec![
+            format!("id: {}", fields.session_id.as_str()),
+            format!("status: {}", dashboard_status_label(fields.status)),
+            format!("title: {}", fields.title.unwrap_or_default()),
+            format!("provider: {}", fields.metadata.provider_model.unwrap_or_default()),
+            format!("parent: {}", fields.parent.map_or_else(|| "none".to_string(), |id| id.as_str().to_string())),
+            format!("children: {}", fields.children.len()),
+        ],
+        Err(error) => vec![error.to_string()],
+    };
+    render_dashboard_pane(frame, theme, area, "Details", lines);
+}
+
+fn render_dashboard_pane(
+    frame: &mut Frame,
+    theme: &Theme,
+    area: Rect,
+    title: &str,
+    lines: Vec<String>,
+) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.border.subtle))
+        .title(title);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    frame.render_widget(
+        Paragraph::new(lines.join("\n"))
+            .style(Style::default().fg(theme.text.primary))
+            .wrap(Wrap { trim: true }),
+        inner,
+    );
+}
+
+fn render_dashboard_summary(frame: &mut Frame, app: &AppState, theme: &Theme, area: Rect) {
+    let plugins = status_dialog_plugin_summary(app);
+    let edits = status_dialog_edit_attribution_summary(app);
+    let operator = status_dialog_operator_summary(app);
+    let mcp = if status_dialog_mcp_rows().is_empty() {
+        "No MCP Servers".to_string()
+    } else {
+        "MCP servers available".to_string()
+    };
+    let plugin_line = format!(
+        "Plugins: {} installed ({} enabled, {} disabled)",
+        plugins.installed, plugins.enabled, plugins.disabled
+    );
+    let edit_line = if edits.total == 0 {
+        "Edit attribution: none yet".to_string()
+    } else {
+        format!("Edit attribution: {} edits", edits.total)
+    };
+    let operator_line = operator.dashboard_one_line();
+    let crash_line = operator
+        .crash_or_recovery
+        .map_or_else(|| "Crash/recovery: none".to_string(), |value| format!("Crash/recovery: {value}"));
+    let fallback_line = operator
+        .fallback_banner
+        .map_or_else(String::new, |value| format!("Fallback banner: {value}"));
+    let mut lines = vec!["Operator".to_string(), mcp, plugin_line, edit_line, operator_line, crash_line];
+    if !fallback_line.is_empty() {
+        lines.push(fallback_line);
+    }
+    frame.render_widget(
+        Paragraph::new(lines.join("\n"))
+            .style(Style::default().fg(theme.text.secondary))
+            .wrap(Wrap { trim: true }),
+        area,
+    );
+}
+
+fn render_dashboard_help(
+    frame: &mut Frame,
+    theme: &Theme,
+    overlay: Rect,
+    dashboard: &crate::dashboard_integration::DashboardIntegration,
+) {
+    let help = dashboard.help(crate::app::Focus::List);
+    let area = Rect::new(
+        overlay.x.saturating_add(4),
+        overlay.y.saturating_add(3),
+        overlay.width.saturating_sub(8),
+        overlay.height.saturating_sub(6),
+    );
+    let lines = help
+        .entries
+        .into_iter()
+        .map(|entry| format!("{}  {}", entry.key, entry.action))
+        .collect::<Vec<_>>();
+    render_dashboard_pane(frame, theme, area, "Dashboard help", lines);
+}
+
+fn dashboard_status_label(status: crate::dashboard::DashboardStatus) -> &'static str {
+    match status {
+        crate::dashboard::DashboardStatus::Running => "working",
+        crate::dashboard::DashboardStatus::Queued => "queued",
+        crate::dashboard::DashboardStatus::Streaming => "streaming",
+        crate::dashboard::DashboardStatus::Completed => "settled",
+        crate::dashboard::DashboardStatus::Failed => "failed",
+        crate::dashboard::DashboardStatus::Cancelled => "stopped",
+        crate::dashboard::DashboardStatus::Stale => "stale",
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

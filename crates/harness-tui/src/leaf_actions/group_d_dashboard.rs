@@ -1,10 +1,5 @@
 //! Leaf action contract for Group D (dashboard/session-status) — Todo 26.
 //!
-//! Names the real backend owner for dashboard capabilities and defines the
-//! typed action surface. Wiring into shared Action/keybinding/slash registries
-//! is reserved for Todo 28; this module is a plain value contract with no
-//! app-state or registry dependency.
-//!
 //! Capabilities covered:
 //! - `cli.dashboard` — CLI dashboard command (deferred to Wave 3 TUI)
 //! - `tui.session_status_dashboard` — TUI session status dashboard
@@ -61,9 +56,10 @@ pub enum DashboardAction {
 pub fn resolve(capability_id: &str) -> Option<LeafActionResolution> {
     let (owner, available) = match capability_id {
         "cli.dashboard" => ("crates/harness/src/lib.rs", ActionAvailability::Unwired),
-        "tui.session_status_dashboard" => {
-            ("crates/harness-tui/src/app.rs", ActionAvailability::Unwired)
-        }
+        "tui.session_status_dashboard" => (
+            "crates/harness-tui/src/app.rs",
+            ActionAvailability::Available,
+        ),
         _ => return None,
     };
     Some(LeafActionResolution {

@@ -163,6 +163,11 @@ thread_local! {
 }
 
 pub(super) fn render_transcript_pane(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
+    if let Some(viewer) = app.transcript_viewer() {
+        let surface = viewer.render_surface(area);
+        crate::transcript_block_viewer::render_to_buffer(frame.buffer_mut(), area, &surface);
+        return;
+    }
     let context = transcript_pane_context(app, area, theme);
 
     if !app.replay_mode {
@@ -403,6 +408,7 @@ fn render_measured_transcript_pane(
                 transcript_scroll,
                 theme,
             );
+            render_integrated_timeline(frame, app, surface_area);
             render_transcript_selection(
                 frame,
                 app.transcript_selection(),
@@ -429,6 +435,46 @@ fn render_measured_transcript_pane(
             );
         },
     );
+}
+
+fn render_integrated_timeline(frame: &mut Frame, app: &AppState, area: Rect) {
+    let Some(view) = app.transcript_view_model() else {
+        return;
+    };
+    for marker in &view.timeline.marker_rects {
+        if marker.rect.x < area.x
+            || marker.rect.y < area.y
+            || marker.rect.right() > area.right()
+            || marker.rect.bottom() > area.bottom()
+        {
+            continue;
+        }
+        let Some(turn) = view.turns.iter().find(|turn| turn.turn_id() == marker.turn_id) else {
+            continue;
+        };
+        let interaction = if view.timeline.scroll_top == view.scroll_top.floor() as usize
+            && view
+                .screen
+                .focus_follow()
+                .focus
+                == crate::transcript_identity::TranscriptFocus::Timeline
+            && view
+                .screen
+                .focus_follow()
+                .follow
+        {
+            crate::transcript_timeline::MarkerInteraction::Active
+        } else {
+            crate::transcript_timeline::MarkerInteraction::Normal
+        };
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                marker.label.clone(),
+                turn.marker.style(interaction).ratatui_style(),
+            ))),
+            marker.rect,
+        );
+    }
 }
 
 fn build_transcript_selection_snapshot(
@@ -858,6 +904,16 @@ pub(crate) fn transcript_mouse_target(
     )
 }
 
+pub(crate) fn transcript_timeline_turn_at(
+    app: &AppState,
+    _area: Rect,
+    column: u16,
+    row: u16,
+) -> Option<crate::transcript_identity::TurnId> {
+    app.transcript_view_model()
+        .and_then(|view| view.hit_map.hit_test(column, row))
+}
+
 pub(crate) fn transcript_selection_text(
     app: &AppState,
     area: Rect,
@@ -888,7 +944,6 @@ pub(crate) fn transcript_selection_row_count(app: &AppState, area: Rect) -> Opti
 mod ui_transcript_exact_tests;
 #[cfg(test)]
 pub(crate) use ui_transcript_exact_tests::*;
-
 #[cfg(test)]
 #[path = "ui_transcript_tests.rs"]
 mod tests;

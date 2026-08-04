@@ -1,0 +1,36 @@
+{
+  "schema_version": "harness.tui.dashboard-coverage.v1",
+  "reference_binary": "inspirations/grok-build/target/debug/xai-grok-pager",
+  "candidate_binary": "target/debug/harness",
+  "comparator": {
+    "identity": "sha256",
+    "layers": ["semantic", "pixel", "motion", "timing", "provenance"],
+    "receipt_required": true
+  },
+  "viewports": [
+    {"cols": 80, "rows": 24},
+    {"cols": 100, "rows": 30},
+    {"cols": 120, "rows": 40},
+    {"cols": 120, "rows": 50},
+    {"cols": 79, "rows": 24},
+    {"cols": 60, "rows": 20},
+    {"cols": 140, "rows": 40}
+  ],
+  "journeys": [
+    {"id": "roster", "action_path": "compare-installed-binaries-dashboard-roster"},
+    {"id": "peek-tail", "action_path": "compare-installed-binaries-dashboard-peek-tail"},
+    {"id": "details", "action_path": "compare-installed-binaries-dashboard-details"},
+    {"id": "reply", "action_path": "compare-installed-binaries-dashboard-reply"},
+    {"id": "rename", "action_path": "compare-installed-binaries-dashboard-rename"},
+    {"id": "stop", "action_path": "compare-installed-binaries-dashboard-stop"},
+    {"id": "permission", "action_path": "compare-installed-binaries-dashboard-permission"},
+    {"id": "question", "action_path": "compare-installed-binaries-dashboard-question"},
+    {"id": "search-help", "action_path": "compare-installed-binaries-dashboard-search-help"},
+    {"id": "stale-target", "action_path": "compare-installed-binaries-dashboard-stale-target"},
+    {"id": "stopped-child", "action_path": "compare-installed-binaries-dashboard-stopped-child"},
+    {"id": "resize", "action_path": "compare-installed-binaries-dashboard-resize"},
+    {"id": "close-reopen", "action_path": "compare-installed-binaries-dashboard-close-reopen"},
+    {"id": "keyboard", "action_path": "compare-installed-binaries-dashboard-keyboard"},
+    {"id": "mouse", "action_path": "compare-installed-binaries-dashboard-mouse"}
+  ]
+}

@@ -61,7 +61,9 @@ pub(super) fn build_transcript_tool_call_section(
     let struck_out = tool_call_denied(tool_call);
     let mut detail_blocks = Vec::new();
     let display_tool_id = tool_call.effective_tool_id();
-    let expanded = tool_output_expanded;
+    let expanded = tool_output_expanded
+        || (matches!(display_tool_id, "shell.run" | "bash")
+            && shell_tool_output(tool_call).is_some());
     let generic_output_visible = show_generic_tool_output || tool_output_expanded;
     let child_session_id = task_tool_child_session_id(tool_call)
         .map(str::to_string)
@@ -138,7 +140,7 @@ pub(super) fn build_transcript_tool_call_section(
         "shell.run" | "bash" => {
             let cmd = shell_tool_command(tool_call).unwrap_or_else(|| "Shell".to_string());
             let shell_output = shell_tool_output(tool_call);
-            if shell_output.is_some() {
+            if shell_output.is_some() && tool_call.status != ToolCallDisplayStatus::Failed {
                 if let Some(output) = shell_output {
                     push_collapsible_bash_panel_block(
                         &mut detail_blocks,
@@ -157,6 +159,12 @@ pub(super) fn build_transcript_tool_call_section(
                     true,
                 )
             } else {
+                if let Some(output) = shell_output {
+                    detail_blocks.push(TranscriptToolCallDetailBlock::Message {
+                        text: output,
+                        tone: TranscriptToolCallDetailTone::Primary,
+                    });
+                }
                 (
                     cmd.clone(),
                     Some("$"),
@@ -556,8 +564,8 @@ pub(super) fn build_transcript_tool_call_section(
     }
     push_truncated_output_artifact_block(&mut detail_blocks, tool_call);
 
-    let details_collapsed_by_default =
-        tool_call_has_transcript_disclosure(tool_call) || !detail_blocks.is_empty();
+    let details_collapsed_by_default = tool_call_has_transcript_disclosure(tool_call)
+        && (show_generic_tool_output || tool_call.status != ToolCallDisplayStatus::Succeeded);
     let details_preview_visible = show_generic_tool_output && uses_generic_output_visibility;
     let disclosure_state = if details_collapsed_by_default {
         Some(if expanded {
@@ -1059,6 +1067,16 @@ fn completed_list_tool_title(tool_call: &crate::app::ToolCallEntry) -> String {
 }
 
 fn completed_read_tool_title(tool_call: &crate::app::ToolCallEntry, path: Option<&str>) -> String {
+    if tool_call.status != ToolCallDisplayStatus::Succeeded {
+        if let Some(path) = path {
+            return format!("Read {path}{}", read_tool_input_suffix(tool_call));
+        }
+    } else {
+        let count = tool_file_count(tool_call).unwrap_or(1);
+        let noun = if count == 1 { "file" } else { "files" };
+        return format!("Read {count} {noun}");
+    }
+
     if let Some(path) = path {
         return format!("Read {path}{}", read_tool_input_suffix(tool_call));
     }

@@ -31,6 +31,12 @@ pub(super) fn tool_call_should_remain_visible_without_tool_details(
         return true;
     }
 
+    if tool_id_matches(tool_call, &["shell.run", "bash"])
+        && shell_tool_output(tool_call).is_some_and(|output| has_trimmed_content(&output))
+    {
+        return true;
+    }
+
     matches!(
         tool_call.effective_tool_id(),
         "edit.hashline_apply" | "fs.write" | "write" | "edit" | "apply_patch"

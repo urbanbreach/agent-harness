@@ -149,7 +149,13 @@ fn home_collapsed_path_display(path: &Path) -> String {
 pub(super) fn shell_tool_output(tool_call: &ToolCallEntry) -> Option<String> {
     let structured = shell_tool_structured_output(tool_call.output_json.as_ref());
     if tool_call.status == ToolCallDisplayStatus::Failed {
-        return structured;
+        return structured.or_else(|| {
+            tool_call
+                .output_summary
+                .as_deref()
+                .map(strip_ansi_escapes)
+                .map(|output| output.trim().to_string())
+        });
     }
     structured.or_else(|| {
         tool_call

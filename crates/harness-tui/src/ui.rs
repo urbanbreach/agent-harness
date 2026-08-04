@@ -133,6 +133,7 @@ use ui_terminal::render_terminal_panel;
 use ui_transcript::render_transcript_pane;
 pub(crate) use ui_transcript::transcript_diff_hunk_rows;
 pub(crate) use ui_transcript::transcript_mouse_target;
+pub(crate) use ui_transcript::transcript_timeline_turn_at;
 pub(crate) use ui_transcript::transcript_scrollbar_hit;
 #[cfg(test)]
 pub(crate) use ui_transcript::transcript_selection_debug_snapshot;
@@ -215,9 +216,7 @@ use ui_transcript::build_transcript_lines;
 pub(crate) use ui_transcript::{
     exact_test_block_tool_cards_skip_empty_subtitle_rows,
     exact_test_body_after_thought_packs_wall_clock_on_same_line,
-    exact_test_completed_thought_turn_has_no_selected_rail,
-    exact_test_completed_tool_turn_has_no_selected_rail,
-    exact_test_done_body_after_tool_packs_wall_clock_on_response_row,
+    exact_test_done_body_after_tool_keeps_separate_wall_clock_row,
     exact_test_file_search_rows_match_reference_title_description_shape,
     exact_test_generic_tool_successful_output_prefers_inline_background_rows,
     exact_test_inline_tool_rows_wrap_long_subtitles_cleanly,
@@ -234,6 +233,8 @@ pub(crate) use ui_transcript::{
     exact_test_pending_edit_permission_packs_dual_run_write_duration,
     exact_test_pending_question_has_no_selected_rail,
     exact_test_redacted_only_reasoning_matches_reference_empty_body,
+    exact_test_selected_rail_falls_back_to_thought_without_tools,
+    exact_test_selected_rail_prefers_last_tool_over_thought,
     exact_test_skill_tool_rows_match_reference_title_and_icon,
     exact_test_todo_write_rows_render_open_checklist,
     exact_test_todo_write_running_renders_inline_updating_indicator,
@@ -280,7 +281,7 @@ pub fn render_app(frame: &mut Frame, app: &AppState) {
     let plan = FrameLayoutPlan::for_app(app, area);
 
     frame.render_widget(
-        Block::default().style(Style::default().bg(ratatui::style::Color::Reset)),
+        Block::default().style(Style::default().bg(theme.surface.canvas)),
         area,
     );
 
@@ -354,7 +355,10 @@ fn render_replay_session_surface(
         return;
     };
 
-    frame.render_widget(live_transcript_shell_section(Color::Reset), plan.shell);
+    frame.render_widget(
+        live_transcript_shell_section(theme.surface.shell),
+        plan.shell,
+    );
     render_transcript_pane(frame, app, transcript_area, theme);
     if let Some(terminal_panel) = plan.terminal_panel {
         render_terminal_panel(frame, app, terminal_panel, theme);
@@ -393,7 +397,10 @@ fn render_startup_session_surface(
         return;
     };
 
-    frame.render_widget(live_transcript_shell_section(Color::Reset), plan.shell);
+    frame.render_widget(
+        live_transcript_shell_section(theme.surface.shell),
+        plan.shell,
+    );
     render_transcript_pane(frame, app, transcript_area, theme);
     render_unified_bottom_dock(frame, app, dock, theme);
 }
@@ -406,7 +413,10 @@ fn render_live_run_shell(frame: &mut Frame, app: &AppState, theme: &Theme, plan:
         return;
     };
 
-    frame.render_widget(live_transcript_shell_section(Color::Reset), plan.shell);
+    frame.render_widget(
+        live_transcript_shell_section(theme.surface.shell),
+        plan.shell,
+    );
     render_live_breadcrumb(frame, app, transcript_area, theme);
     let transcript_area = live_transcript_area_with_breadcrumb(transcript_area);
     render_transcript_pane(frame, app, transcript_area, theme);

@@ -412,7 +412,11 @@ pub fn dispatch_palette_command(app: &mut AppState, value: &str) {
     use crate::keybindings::palette_model::PaletteDispatch;
     match entry.dispatch {
         PaletteDispatch::Action(action) => {
-            app.execute_action(action);
+            if action == crate::keybindings::Action::Quit {
+                app.quit_immediately();
+            } else {
+                app.execute_action(action);
+            }
         }
         PaletteDispatch::ToggleTranscriptThinking => {
             app.transcript_view.show_transcript_thinking =

@@ -22,7 +22,7 @@ pub use overlays::{
     DashboardModal, DashboardModalKind, DashboardOverlayRoute, DashboardOverlayState,
 };
 pub use responsive::{
-    DashboardBreakpoint, DashboardHooks, DashboardLayout, DashboardNotification,
+    dashboard_viewport, DashboardBreakpoint, DashboardHooks, DashboardLayout, DashboardNotification,
     DashboardNotificationKind, DashboardPaneVisibility, layout_for_rect,
 };
 pub use state::{DashboardIntegrationError, DashboardIntegrationParts, DashboardReturnState};
@@ -30,16 +30,17 @@ pub use state::{DashboardIntegrationError, DashboardIntegrationParts, DashboardR
 use crate::app::Focus;
 use crate::dashboard::{DashboardReadModel, SelectionKey};
 use crate::dashboard_controls::{
-    ControlResult, DashboardCommand, DashboardControlError, DashboardControlState, dispatch,
+    ControlResult, DashboardCommand, DashboardControlError, DashboardControlState, DashboardVisual,
+    dispatch,
 };
-use crate::dashboard_details::DashboardDetails;
-use crate::dashboard_peek::DashboardPeek;
+use crate::dashboard_details::{DashboardDetails, DetailsPaneFields};
+use crate::dashboard_peek::{DashboardPeek, DashboardPeekView};
 use crate::dashboard_roster::{
     RosterHitMap, RosterState, layout_for_rect as roster_layout_for_rect,
 };
 use crate::shell_geometry::ShellState;
 use crate::transcript_identity::TranscriptFocus;
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, MouseEvent};
 use ratatui::layout::Rect;
 
 pub struct DashboardIntegration {
@@ -53,6 +54,7 @@ pub struct DashboardIntegration {
     overlays: DashboardOverlayState,
     input: DashboardInputRouter,
     search: SearchState,
+    help_visible: bool,
     hooks: DashboardHooks,
     return_state: Option<DashboardReturnState>,
 }
@@ -79,6 +81,7 @@ impl DashboardIntegration {
             overlays: DashboardOverlayState::new(),
             input: DashboardInputRouter::new(),
             search: SearchState::new(),
+            help_visible: false,
             hooks: DashboardHooks::new(),
             return_state: None,
         };
@@ -114,8 +117,8 @@ impl DashboardIntegration {
                 details.back()?;
                 self.focus.set(DashboardPane::Details);
             }
-            DashboardInput::Help
-            | DashboardInput::ModalAction(_, _)
+            DashboardInput::Help => self.help_visible = !self.help_visible,
+            DashboardInput::ModalAction(_, _)
             | DashboardInput::ChromeAction(_, _)
             | DashboardInput::Unhandled => {}
         }
@@ -145,6 +148,19 @@ impl DashboardIntegration {
         self.handle(input)
     }
 
+    pub fn handle_mouse(&mut self, event: MouseEvent) -> Result<(), DashboardIntegrationError> {
+        let hit_map = self.roster_hit_map();
+        let input = self.input.route_mouse(
+            event,
+            DashboardMouseContext {
+                roster: &hit_map,
+                layout: &self.layout,
+                overlays: &self.overlays,
+            },
+        );
+        self.handle(input)
+    }
+
     pub fn dispatch_control(
         &self,
         command: DashboardCommand,
@@ -158,6 +174,35 @@ impl DashboardIntegration {
         action: DispatchAction,
     ) -> Result<DispatchIntent, DispatchError> {
         dispatch.dispatch(action)
+    }
+
+    pub fn dashboard(&self) -> &DashboardReadModel {
+        &self.dashboard
+    }
+
+    pub fn peek_view(&self) -> Result<DashboardPeekView, DashboardIntegrationError> {
+        self.peek.view().map_err(Into::into)
+    }
+
+    pub fn details_fields(&self) -> Result<DetailsPaneFields, DashboardIntegrationError> {
+        self.details
+            .as_ref()
+            .ok_or(DashboardIntegrationError::DetailsUnavailable)?
+            .fields()
+            .map_err(Into::into)
+    }
+
+    pub fn controls_visual(&self) -> &DashboardVisual {
+        &self.controls.visual
+    }
+
+    pub const fn help_visible(&self) -> bool {
+        self.help_visible
+    }
+
+    pub fn set_focus(&mut self, pane: DashboardPane) {
+        self.focus.set(pane);
+        self.reconcile_focus();
     }
 
     pub fn resize(&mut self, viewport: Rect) -> Result<(), DashboardIntegrationError> {

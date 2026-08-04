@@ -333,7 +333,10 @@ pub(crate) fn pty_helper_connect_auth() {
     let on_ui_intent: Arc<dyn Fn(UiIntent) + Send + Sync> = Arc::new(move |intent| {
         if matches!(intent, UiIntent::OpenAuthManager { .. }) {
             auth_tx
-                .send(LiveUpdate::AuthBackendResult { success: true })
+                .send(LiveUpdate::AuthBackendResult {
+                    success: true,
+                    message: "authenticated".to_string(),
+                })
                 .unwrap_or_abort();
         }
     });

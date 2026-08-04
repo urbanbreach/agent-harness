@@ -134,4 +134,8 @@ impl SubprocessSupervisor {
     pub const fn is_empty(&self) -> bool {
         self.descriptors.is_empty()
     }
+
+    pub fn clear(&mut self) {
+        self.descriptors.clear();
+    }
 }

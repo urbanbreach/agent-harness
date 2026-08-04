@@ -12,6 +12,11 @@ impl AppState {
             return;
         }
 
+        if self.replay_mode && matches!(key.code, KeyCode::Tab | KeyCode::BackTab) {
+            self.focus = Focus::Details;
+            return;
+        }
+
         if self.keymap.leader_pending() {
             self.keymap.set_leader_pending(false);
             if let Some(action) = self.keymap.leader_action(&key) {
@@ -48,9 +53,7 @@ impl AppState {
         }
 
         if self.overlay_stack().top() == Some(OverlayKind::StatusDialog) {
-            if key.code == KeyCode::Esc {
-                self.secondary_surfaces.close_status_dialog();
-            }
+            self.handle_status_dashboard_key(key);
             self.maybe_auto_exit();
             return;
         }
@@ -105,6 +108,34 @@ impl AppState {
 
         if self.overlay_stack().top() == Some(OverlayKind::ForeignImportPicker) {
             self.handle_foreign_import_picker_key(&key);
+            self.maybe_auto_exit();
+            return;
+        }
+
+        if self.composer_completion_active() {
+            match key.code {
+                KeyCode::Esc => self.composer_cancel_completion(),
+                KeyCode::Up => self.composer_move_completion(
+                    crate::completion_controller::SelectionDirection::Previous,
+                ),
+                KeyCode::Down => self.composer_move_completion(
+                    crate::completion_controller::SelectionDirection::Next,
+                ),
+                KeyCode::Enter => {
+                    let _ = self.composer_accept_completion_keyboard();
+                }
+                _ => {}
+            }
+            if matches!(
+                key.code,
+                KeyCode::Esc | KeyCode::Up | KeyCode::Down | KeyCode::Enter
+            ) {
+                self.maybe_auto_exit();
+                return;
+            }
+        }
+
+        if self.handle_transcript_viewer_key(key) {
             self.maybe_auto_exit();
             return;
         }
@@ -190,6 +221,15 @@ impl AppState {
         }
 
         if self.focus == Focus::Prompt && self.handle_prompt_transcript_scroll_key(key) {
+            self.maybe_auto_exit();
+            return;
+        }
+
+        if self.focus == Focus::Prompt
+            && key.modifiers == KeyModifiers::CONTROL
+            && key.code == KeyCode::Char('j')
+        {
+            self.execute_action(Action::InsertNewline);
             self.maybe_auto_exit();
             return;
         }
@@ -428,11 +468,7 @@ impl AppState {
     fn cycle_focus_forward(&mut self) {
         if self.replay_mode {
             if !self.session_shell_operator_rail_interactive() {
-                self.focus = if self.focus == Focus::Details && self.terminal_panel_visible() {
-                    Focus::Terminal
-                } else {
-                    Focus::Details
-                };
+                self.focus = Focus::Details;
                 return;
             }
 
@@ -801,6 +837,12 @@ impl AppState {
                     return;
                 }
                 Action::CursorLeft => {
+                    if self.composer.parity_editing_ready()
+                        && self.composer.parity_move_left().is_ok()
+                    {
+                        self.sync_file_mention_overlay();
+                        return;
+                    }
                     if self.composer.prompt_cursor > 0 {
                         self.composer.prompt_cursor -= 1;
                     }
@@ -809,6 +851,12 @@ impl AppState {
                     return;
                 }
                 Action::CursorRight => {
+                    if self.composer.parity_editing_ready()
+                        && self.composer.parity_move_right().is_ok()
+                    {
+                        self.sync_file_mention_overlay();
+                        return;
+                    }
                     if self.composer.prompt_cursor < self.prompt_char_count() {
                         self.composer.prompt_cursor += 1;
                     }
@@ -982,7 +1030,7 @@ impl AppState {
                 }
             }
             Action::OpenStatusDialog => {
-                self.secondary_surfaces.open_status_dialog();
+                self.open_status_dashboard();
             }
             Action::CloseReviewSurface if self.focus != Focus::Prompt => {
                 self.close_review_surface();
@@ -1072,7 +1120,11 @@ impl AppState {
                 }
             }
             Action::FocusNext => {
-                self.cycle_focus_forward();
+                if self.replay_mode && !self.session_shell_operator_rail_interactive() {
+                    self.focus = Focus::Details;
+                } else {
+                    self.cycle_focus_forward();
+                }
             }
             Action::FocusPrev => {
                 self.cycle_focus_backward();
@@ -1428,6 +1480,13 @@ impl AppState {
             return false;
         }
 
+        if key.modifiers == KeyModifiers::NONE
+            && matches!(key.code, KeyCode::Char('f') | KeyCode::Char('F') | KeyCode::Char('s') | KeyCode::Char('S'))
+            && self.handle_transcript_timeline_key(key)
+        {
+            return true;
+        }
+
         if let Some(action) = self.keymap.get_session_action(&key) {
             self.execute_action(action);
             return true;
@@ -1454,6 +1513,7 @@ impl AppState {
         }
 
         match key.code {
+            KeyCode::Char('v') | KeyCode::Char('V') => self.open_selected_transcript_viewer(),
             KeyCode::PageUp => {
                 self.scroll_transcript_up(10);
                 true
@@ -1485,7 +1545,7 @@ fn action_preempts_text_input(action: Action, _key: KeyEvent) -> bool {
             | Action::SessionChildCycleReverse
             | Action::ToggleTerminalPanel
             | Action::TogglePromptFocus
-    )
+    ) && !matches!(_key.code, KeyCode::Char(' '))
 }
 
 #[cfg(test)]

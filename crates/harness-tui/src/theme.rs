@@ -1,6 +1,9 @@
 // allow: SIZE_OK — TUI theme tokens (color system + shell geometry)
 use ratatui::style::{Color, Modifier, Style};
 
+use crate::design_contract::{ColorRole, DESIGN_TOKENS, GlyphRole};
+use crate::theme_family::{FallbackLadder, ThemeFamily};
+
 pub const DIFF_SIDE_BY_SIDE_MIN_WIDTH: u16 = 96;
 
 const fn rgb(red: u8, green: u8, blue: u8) -> Color {
@@ -1484,13 +1487,103 @@ impl Theme {
 
     pub fn by_name(name: &str) -> Option<Self> {
         match name {
-            "default" | "harness-chat" => Some(Self::harness_chat()),
-            "harness-dark" => Some(Self::harness_dark()),
+            "default" | "harness-dark" => Some(Self::harness_dark()),
+            "harness-chat" => Some(Self::harness_chat()),
             "harness-light" | "light" => Some(Self::harness_light()),
             "high-contrast" => Some(Self::harness_high_contrast()),
             "terminal-native" => Some(Self::terminal_native()),
             _ => None,
         }
+    }
+
+    pub fn from_family(family: ThemeFamily, level: ColorLevel) -> Self {
+        let mut theme = match family {
+            ThemeFamily::Dark => Self::harness_dark(),
+            ThemeFamily::Light => Self::harness_light(),
+        };
+        let palette = crate::theme_family::resolve_palette(family, level);
+        let fallback = FallbackLadder::resolve((0, 0, 0), level);
+        let fallback_color = Color::Rgb(fallback.red, fallback.green, fallback.blue);
+        let color = |role: ColorRole| {
+            palette
+                .iter()
+                .find(|(candidate, _)| *candidate == role)
+                .map(|(_, resolved)| Color::Rgb(resolved.red, resolved.green, resolved.blue))
+                .unwrap_or(fallback_color)
+        };
+
+        theme.surface.canvas = color(ColorRole::Canvas);
+        theme.surface.shell = color(ColorRole::Shell);
+        theme.surface.panel = color(ColorRole::Panel);
+        theme.surface.panel_elevated = color(ColorRole::PanelElevated);
+        theme.surface.overlay = color(ColorRole::Overlay);
+        theme.surface.card = color(ColorRole::Card);
+        theme.surface.selected_card = color(ColorRole::SelectedCard);
+        theme.border.subtle = color(ColorRole::BorderSubtle);
+        theme.border.strong = color(ColorRole::BorderStrong);
+        theme.border.focus = color(ColorRole::BorderFocus);
+        theme.text.primary = color(ColorRole::TextPrimary);
+        theme.text.secondary = color(ColorRole::TextSecondary);
+        theme.text.tertiary = color(ColorRole::TextTertiary);
+        theme.text.accent = color(ColorRole::TextAccent);
+        theme.text.inverse = color(ColorRole::TextInverse);
+        theme.status.success = color(ColorRole::StatusSuccess);
+        theme.status.warning = color(ColorRole::StatusWarning);
+        theme.status.error = color(ColorRole::StatusError);
+        theme.status.info = color(ColorRole::StatusInfo);
+        theme.status.disabled = color(ColorRole::StatusDisabled);
+        theme.question_prompt.surface = color(ColorRole::QuestionSurface);
+        theme.question_prompt.selected = color(ColorRole::QuestionSelected);
+        theme.question_prompt.primary = color(ColorRole::QuestionPrimary);
+        theme.question_prompt.accent = color(ColorRole::QuestionAccent);
+        theme.question_prompt.secondary = color(ColorRole::QuestionSecondary);
+        theme.agents.build = color(ColorRole::AgentBuild);
+        theme.agents.plan = color(ColorRole::AgentPlan);
+        theme.agents.docs = color(ColorRole::AgentDocs);
+        theme.agents.ask = color(ColorRole::AgentAsk);
+        theme.reference_terminal.canvas = color(ColorRole::TerminalPrimary);
+        theme.reference_terminal.primary = color(ColorRole::TerminalPrimary);
+        theme.reference_terminal.secondary = color(ColorRole::TerminalSecondary);
+        theme.reference_terminal.muted = color(ColorRole::TerminalMuted);
+        theme.reference_terminal.error = color(ColorRole::TerminalError);
+        theme.reference_terminal.palette_section = color(ColorRole::TerminalPaletteSection);
+        theme.reference_terminal.fork_accent = color(ColorRole::TerminalForkAccent);
+        theme.reference_terminal.diff_added = color(ColorRole::DiffAdded);
+        theme.reference_terminal.diff_removed = color(ColorRole::DiffRemoved);
+        theme.reference_terminal.diff_added_gutter = color(ColorRole::DiffAddedGutter);
+        theme.reference_terminal.diff_removed_gutter = color(ColorRole::DiffRemovedGutter);
+        theme.reference_terminal.diff_added_highlight = color(ColorRole::DiffAddedHighlight);
+        theme.reference_terminal.diff_removed_highlight = color(ColorRole::DiffRemovedHighlight);
+        theme.reference_terminal.diff_hunk_header = color(ColorRole::DiffHunkHeader);
+
+        let spacing = DESIGN_TOKENS.spacing;
+        theme.live_shell.heights = ShellHeights {
+            header: spacing.header_rows,
+            tabs: spacing.tabs_rows,
+            status: spacing.status_rows,
+            footer: spacing.footer_rows,
+            prompt_input: spacing.prompt_input_rows,
+        };
+        theme.live_shell.rhythm = ShellRhythm {
+            composer_padding_x: spacing.composer_padding_x,
+            sidebar_padding_x: spacing.sidebar_padding_x,
+            sidebar_padding_y: spacing.sidebar_padding_y,
+            footer_prefix_gap: spacing.footer_prefix_gap,
+            transcript_gutter_x: spacing.transcript_gutter_x,
+            transcript_gutter_y: spacing.transcript_gutter_y,
+            status_separator: spacing.status_separator,
+            modal_margin: spacing.modal_margin,
+            surface_margin_x: spacing.surface_margin_x,
+            surface_margin_y: spacing.surface_margin_y,
+            surface_gap: spacing.surface_gap,
+        };
+        theme.live_shell.glyphs = status_glyphs(true);
+        theme.live_shell.transcript_glyphs = transcript_glyphs(true);
+        theme.live_shell.ascii_glyphs = LiveShellGlyphCatalog {
+            status: status_glyphs(false),
+            transcript: transcript_glyphs(false),
+        };
+        theme.for_color_level(level)
     }
 
     pub const fn available_theme_names() -> &'static [&'static str] {
@@ -1902,9 +1995,60 @@ impl Theme {
     }
 }
 
+fn status_glyphs(preferred: bool) -> StatusGlyphs {
+    let glyph = |role: GlyphRole, fallback: &'static str| {
+        DESIGN_TOKENS
+            .glyph_roles
+            .all
+            .iter()
+            .find(|token| token.role == role)
+            .map_or(fallback, |token| {
+                if preferred {
+                    token.preferred
+                } else {
+                    token.ascii
+                }
+            })
+    };
+    StatusGlyphs {
+        streaming: glyph(GlyphRole::Streaming, "◐"),
+        done: glyph(GlyphRole::Done, "●"),
+        error: glyph(GlyphRole::Error, "✗"),
+        pending_permission: glyph(GlyphRole::PendingPermission, "◷"),
+        queued: glyph(GlyphRole::Queued, "◴"),
+        running: glyph(GlyphRole::Running, "◐"),
+        succeeded: glyph(GlyphRole::Succeeded, "●"),
+        failed: glyph(GlyphRole::Failed, "✗"),
+    }
+}
+
+fn transcript_glyphs(preferred: bool) -> TranscriptGlyphs {
+    let glyph = |role: GlyphRole, fallback: &'static str| {
+        DESIGN_TOKENS
+            .glyph_roles
+            .all
+            .iter()
+            .find(|token| token.role == role)
+            .map_or(fallback, |token| {
+                if preferred {
+                    token.preferred
+                } else {
+                    token.ascii
+                }
+            })
+    };
+    TranscriptGlyphs {
+        user_marker: glyph(GlyphRole::UserMarker, "❯"),
+        tool_marker: glyph(GlyphRole::ToolMarker, "◆"),
+        card_top: glyph(GlyphRole::CardTop, "  "),
+        card_mid: glyph(GlyphRole::CardMiddle, " "),
+        card_bottom: glyph(GlyphRole::CardBottom, "  "),
+    }
+}
+
 impl Default for Theme {
     fn default() -> Self {
-        Self::harness_chat()
+        Self::harness_dark()
     }
 }
 
