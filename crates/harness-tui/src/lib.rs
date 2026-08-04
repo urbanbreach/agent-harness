@@ -13,6 +13,11 @@ pub mod clipboard_leaf;
     reason = "task 14 requires composer_atoms/mod.rs as the public facade"
 )]
 pub mod composer_atoms;
+#[expect(
+    clippy::mod_module_files,
+    reason = "task 15 requires composer_editing/mod.rs as the public facade"
+)]
+pub mod composer_editing;
 pub mod design_contract;
 pub mod event;
 pub mod gestures;
@@ -25,6 +30,7 @@ pub mod leaf_views;
 mod lib_tests;
 pub mod mouse;
 pub mod overlay;
+pub mod prompt_queue_actions;
 pub mod render_test;
 pub mod responsive;
 mod runtime;
