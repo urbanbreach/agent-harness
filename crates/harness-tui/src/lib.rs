@@ -125,6 +125,11 @@ pub mod transcript_scroll;
 pub mod transcript_selection;
 pub mod transcript_timeline;
 pub mod ui;
+#[expect(
+    clippy::mod_module_files,
+    reason = "task 37 requires theme_family/mod.rs as the public facade"
+)]
+pub mod theme_family;
 
 pub use harness_core::UnwrapOrAbort;
 
