@@ -1,0 +1,22 @@
+#![allow(
+    clippy::mod_module_files,
+    reason = "Task 23 requires a focused timeline facade with sibling modules"
+)]
+
+pub mod clipping;
+pub mod geometry;
+pub mod hit_map;
+pub mod markers;
+pub mod navigation;
+mod navigation_state;
+
+pub use clipping::{clip_marker_label, marker_display_width, marker_label_width};
+pub use geometry::{
+    TimelineGeometry, TimelineMarkerRect, geometry_for_rect, geometry_for_viewport,
+};
+pub use hit_map::{TimelineHitMap, TimelineHitRegion};
+pub use markers::{
+    MarkerInteraction, TimelineMarker, TimelineMarkerStyle, TimelineStatus, TimelineTurn,
+};
+pub use navigation::{KeyJump, TimelineJump, TimelineNavigation};
+pub use navigation_state::{ScrollAnchor, TimelineNavigationError, TimelineNavigationSnapshot};

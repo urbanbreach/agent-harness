@@ -59,9 +59,26 @@ pub mod theme_leaf;
 mod time_format;
 #[expect(
     clippy::mod_module_files,
+    reason = "task 24 requires transcript_blocks/mod.rs as the public facade"
+)]
+pub mod transcript_blocks;
+#[expect(
+    clippy::mod_module_files,
     reason = "task 22 requires transcript_identity/mod.rs as the public facade"
 )]
 pub mod transcript_identity;
+#[expect(
+    clippy::mod_module_files,
+    reason = "task 26 requires transcript_pager/mod.rs as the public facade"
+)]
+pub mod transcript_pager;
+#[expect(
+    clippy::mod_module_files,
+    reason = "task 28 requires transcript_scroll/mod.rs as the public facade"
+)]
+pub mod transcript_scroll;
+pub mod transcript_selection;
+pub mod transcript_timeline;
 pub mod ui;
 
 pub use harness_core::UnwrapOrAbort;
