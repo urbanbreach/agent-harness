@@ -64,6 +64,11 @@ mod time_format;
 pub mod transcript_blocks;
 #[expect(
     clippy::mod_module_files,
+    reason = "task 25 requires transcript_block_viewer/mod.rs as the public facade"
+)]
+pub mod transcript_block_viewer;
+#[expect(
+    clippy::mod_module_files,
     reason = "task 22 requires transcript_identity/mod.rs as the public facade"
 )]
 pub mod transcript_identity;
