@@ -1,7 +1,7 @@
 {
   "schema_version": "harness.tui-fidelity.coverage-manifest.v1",
-  "reviewed_plan_sha256": "aff551f4d6538f2e49e76f481c2e8454018943f584e2091dee063e3d337d896e",
-  "inventory_sha256": "86dde69a77f1638eff364115b3282bbcdb604daab2ebc712aadb430917736cf4",
+  "reviewed_plan_sha256": "c4a753ab882ab45ff08d38bfba1b409284d0747d654f2b71d2151488f46d71d4",
+  "inventory_sha256": "25abbb558a22ba4378f7c3d0f108b0ec03b9e5757150c689439ccfe3cb6c74aa",
   "rows": [
     {
       "row_id": "coverage-global-design",

@@ -1,8 +1,8 @@
 {
   "schema_version": "harness.tui-fidelity.closure-contract.v1",
-  "reviewed_plan_sha256": "aff551f4d6538f2e49e76f481c2e8454018943f584e2091dee063e3d337d896e",
-  "requirement_inventory_sha256": "86dde69a77f1638eff364115b3282bbcdb604daab2ebc712aadb430917736cf4",
-  "coverage_manifest_sha256": "427445f536d7c01bf637e9400dacaedf152f958436c6186f85ba373cac4c2d54",
+  "reviewed_plan_sha256": "c4a753ab882ab45ff08d38bfba1b409284d0747d654f2b71d2151488f46d71d4",
+  "requirement_inventory_sha256": "a94c8d460d44a656261806ca49bfc30981f295ef0f01364a8e0fe556ead4ed32",
+  "coverage_manifest_sha256": "201a7078df6462c791d9682743de527a2fa28f84f1076e54eaabe9eabd0d05b1",
   "recovery_run_id": "todo58-20260804T161343Z-df97ef093d0318c5-rerun1",
   "preliminary_reviews": [
     {
