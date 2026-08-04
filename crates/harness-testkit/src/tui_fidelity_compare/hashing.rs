@@ -82,6 +82,10 @@ pub fn hash_artifact_paths(paths: &ArtifactPaths) -> Result<ArtifactHashes, Comp
     })
 }
 
+pub fn hash_bytes(bytes: &[u8]) -> Result<String, ComparatorError> {
+    sha256(bytes)
+}
+
 pub fn verify_freshness(
     expected: &ArtifactHashes,
     observed: &ArtifactHashes,

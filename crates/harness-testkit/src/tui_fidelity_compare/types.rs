@@ -5,10 +5,10 @@ pub use super::hashing::{
     ArtifactPaths, StaleArtifact,
 };
 pub use super::motion::{
-    compare_motion, MotionIssue, MotionTimingEvent, MotionTimingKind, MotionTrace,
-    ACTION_BLINK_TICKS, CADENCE_HZ, CADENCE_MAX_GAP_MS, CADENCE_PERIOD_MS, FLUSH_TOLERANCE_MS,
-    FRAME_TIMESTAMP_TOLERANCE_MS, GESTURE_BOUNDARY_MS, PASTE_FIRST_BYTE_MS, PASTE_SETTLED_MS,
-    RESIZE_DEBOUNCE_MS, TITLE_HOLD_TICKS,
+    compare_checkpoint_motion, compare_motion, MotionIssue, MotionTimingEvent, MotionTimingKind,
+    MotionTrace, ACTION_BLINK_TICKS, CADENCE_HZ, CADENCE_MAX_GAP_MS, CADENCE_PERIOD_MS,
+    FLUSH_TOLERANCE_MS, FRAME_TIMESTAMP_TOLERANCE_MS, GESTURE_BOUNDARY_MS, PASTE_FIRST_BYTE_MS,
+    PASTE_SETTLED_MS, RESIZE_DEBOUNCE_MS, TITLE_HOLD_TICKS,
 };
 pub use super::pixels::{
     compare_png, compare_png_bytes, IdentityPixelSpan, PixelDiffRecord, PixelRect,
@@ -20,6 +20,32 @@ pub use super::self_compare::reject_self_comparison;
 pub use super::timing::{compare_timing, LatencyDistribution, TimingDefect, TimingTrace};
 
 pub type CompareResult = Result<(), ComparatorError>;
+
+pub const COMPARISON_RECEIPT_SCHEMA: &str = "harness.tui-fidelity.comparison.v1";
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct GateReceipt {
+    pub passed: bool,
+    pub detail: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ComparisonReceipt {
+    pub schema_version: String,
+    pub capture_succeeded: bool,
+    pub comparison_passed: bool,
+    pub gates: std::collections::BTreeMap<String, GateReceipt>,
+}
+
+impl ComparisonReceipt {
+    pub fn failed_gates(&self) -> Vec<String> {
+        self.gates
+            .iter()
+            .filter(|(_, gate)| !gate.passed)
+            .map(|(name, _)| name.clone())
+            .collect()
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CompareVerdict {

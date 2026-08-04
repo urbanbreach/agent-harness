@@ -59,13 +59,21 @@ pub fn compare_timing(
             observed: candidate.frame_timestamps_ms.len().to_string(),
         });
     } else {
+        let reference_start = reference.frame_timestamps_ms.first().copied();
+        let candidate_start = candidate.frame_timestamps_ms.first().copied();
         for (index, (left, right)) in reference
             .frame_timestamps_ms
             .iter()
             .zip(&candidate.frame_timestamps_ms)
             .enumerate()
         {
-            if left.abs_diff(*right) > super::motion::FRAME_TIMESTAMP_TOLERANCE_MS {
+            let drift = match (reference_start, candidate_start) {
+                (Some(reference_start), Some(candidate_start)) => left
+                    .saturating_sub(reference_start)
+                    .abs_diff(right.saturating_sub(candidate_start)),
+                _ => 0,
+            };
+            if drift > super::motion::FRAME_TIMESTAMP_TOLERANCE_MS {
                 defects.push(TimingDefect {
                     reason: "timestamp_drift".to_owned(),
                     expected: format!("frame {index} within 16ms of {left}"),

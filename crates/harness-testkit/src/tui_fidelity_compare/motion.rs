@@ -3,6 +3,8 @@ use crate::parity::motion::{
 };
 
 use super::error::ComparatorError;
+use crate::tui_fidelity::CheckpointName;
+use crate::tui_fidelity_runner::CheckpointReceipt;
 
 pub const FLUSH_TOLERANCE_MS: u64 = 16;
 pub const GESTURE_BOUNDARY_MS: u64 = 80;
@@ -129,6 +131,60 @@ pub fn compare_motion(
             defects_len,
         })
     }
+}
+
+pub fn compare_checkpoint_motion(
+    reference: &[CheckpointReceipt],
+    candidate: &[CheckpointReceipt],
+) -> Result<(), ComparatorError> {
+    let required = [
+        CheckpointName::Rest,
+        CheckpointName::Mid,
+        CheckpointName::Settled,
+    ];
+    if reference.len() != required.len() || candidate.len() != required.len() {
+        return Err(ComparatorError::Invalid {
+            detail: "motion capture must contain rest, mid, and settled checkpoints".to_owned(),
+        });
+    }
+    let reference_start = reference
+        .first()
+        .map(|checkpoint| checkpoint.captured_at_millis)
+        .ok_or_else(|| ComparatorError::Invalid {
+            detail: "reference motion capture has no rest checkpoint".to_owned(),
+        })?;
+    let candidate_start = candidate
+        .first()
+        .map(|checkpoint| checkpoint.captured_at_millis)
+        .ok_or_else(|| ComparatorError::Invalid {
+            detail: "candidate motion capture has no rest checkpoint".to_owned(),
+        })?;
+    for (index, expected_name) in required.into_iter().enumerate() {
+        let reference_checkpoint = &reference[index];
+        let candidate_checkpoint = &candidate[index];
+        if reference_checkpoint.name != expected_name || candidate_checkpoint.name != expected_name
+        {
+            return Err(ComparatorError::Invalid {
+                detail: "motion checkpoints are missing or out of order".to_owned(),
+            });
+        }
+        let reference_elapsed = reference_checkpoint
+            .captured_at_millis
+            .saturating_sub(reference_start);
+        let candidate_elapsed = candidate_checkpoint
+            .captured_at_millis
+            .saturating_sub(candidate_start);
+        if reference_elapsed.abs_diff(candidate_elapsed) > u128::from(FRAME_TIMESTAMP_TOLERANCE_MS)
+        {
+            return Err(ComparatorError::Invalid {
+                detail: format!(
+                    "{} checkpoint timestamp drift exceeds one frame",
+                    expected_name.as_str()
+                ),
+            });
+        }
+    }
+    Ok(())
 }
 
 fn validate_trace(side: &str, trace: &MotionTrace, defects: &mut Vec<MotionIssue>) {

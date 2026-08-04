@@ -48,6 +48,9 @@ pub enum ComparatorError {
         path: PathBuf,
         detail: String,
     },
+    Gates {
+        failed: Vec<String>,
+    },
 }
 
 impl fmt::Display for ComparatorError {
@@ -89,6 +92,9 @@ impl fmt::Display for ComparatorError {
             Self::Invalid { detail } => write!(formatter, "invalid comparator input: {detail}"),
             Self::Io { path, detail } => {
                 write!(formatter, "I/O error for {}: {detail}", path.display())
+            }
+            Self::Gates { failed } => {
+                write!(formatter, "comparison gates failed: {}", failed.join(", "))
             }
         }
     }
