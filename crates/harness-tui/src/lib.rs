@@ -74,6 +74,11 @@ pub mod transcript_block_viewer;
 pub mod transcript_identity;
 #[expect(
     clippy::mod_module_files,
+    reason = "task 29 requires transcript_integration/mod.rs as the public facade"
+)]
+pub mod transcript_integration;
+#[expect(
+    clippy::mod_module_files,
     reason = "task 26 requires transcript_pager/mod.rs as the public facade"
 )]
 pub mod transcript_pager;
