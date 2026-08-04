@@ -34,6 +34,26 @@ pub mod composer_integration;
     reason = "task 30 requires dashboard/mod.rs as the public facade"
 )]
 pub mod dashboard;
+#[expect(
+    clippy::mod_module_files,
+    reason = "task 35 requires dashboard_controls/mod.rs as the public facade"
+)]
+pub mod dashboard_controls;
+#[expect(
+    clippy::mod_module_files,
+    reason = "task 34 requires dashboard_details/mod.rs as the public facade"
+)]
+pub mod dashboard_details;
+#[expect(
+    clippy::mod_module_files,
+    reason = "task 32 requires dashboard_peek/mod.rs as the public facade"
+)]
+pub mod dashboard_peek;
+#[expect(
+    clippy::mod_module_files,
+    reason = "task 31 requires dashboard_roster/mod.rs as the public facade"
+)]
+pub mod dashboard_roster;
 pub mod design_contract;
 pub mod event;
 pub mod gestures;
