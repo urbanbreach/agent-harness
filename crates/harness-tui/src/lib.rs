@@ -28,6 +28,7 @@ pub mod composer_atoms;
     reason = "task 15 requires composer_editing/mod.rs as the public facade"
 )]
 pub mod composer_editing;
+pub mod composer_integration;
 pub mod design_contract;
 pub mod event;
 pub mod gestures;
