@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use super::error::RunnerError;
 use super::util::sha256_file;
 use crate::tui_fidelity::{AdapterKind, CheckpointName, Viewport};
+use crate::tui_fidelity_compare::ComparisonReceipt;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RuntimeBinary {
@@ -103,6 +104,8 @@ pub struct DualRuntimeReceipt {
     pub runtimes: Vec<AdapterReceipt>,
     pub source_guard_before: ArtifactDigest,
     pub source_guard_after: ArtifactDigest,
+    #[serde(default)]
+    pub comparison: Option<ComparisonReceipt>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

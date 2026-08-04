@@ -26,4 +26,4 @@ pub use types::{
     SourceGuardConfig,
 };
 
-pub const RUNNER_RECEIPT_SCHEMA: &str = "harness.tui-fidelity.runner.v1";
+pub const RUNNER_RECEIPT_SCHEMA: &str = "harness.tui-fidelity.runner.v2";

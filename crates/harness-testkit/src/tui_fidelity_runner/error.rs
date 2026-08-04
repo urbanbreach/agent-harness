@@ -94,6 +94,9 @@ pub enum RunnerError {
         primary: Option<Box<RunnerError>>,
         detail: String,
     },
+    Comparison {
+        detail: String,
+    },
 }
 
 impl fmt::Display for RunnerError {
@@ -218,6 +221,7 @@ impl fmt::Display for RunnerError {
                     write!(formatter, "cleanup: {detail}")
                 }
             }
+            Self::Comparison { detail } => write!(formatter, "comparison: {detail}"),
         }
     }
 }

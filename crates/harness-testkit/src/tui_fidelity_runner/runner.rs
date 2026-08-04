@@ -9,6 +9,7 @@ use super::types::{AdapterReceipt, DualRuntimeReceipt, RunnerConfig, RuntimeBina
 use super::util::write_json;
 use super::RUNNER_RECEIPT_SCHEMA;
 use crate::tui_fidelity::{AdapterKind, Scenario};
+use crate::tui_fidelity_compare::compare_capture;
 
 pub fn run_compare(
     scenario: &Scenario,
@@ -46,6 +47,25 @@ pub fn run_compare(
         Ok(path) => tracker.record_removed(&path),
         Err(error) => tracker.record_error(error.to_string()),
     }
+    let result = result.and_then(|mut receipt| {
+        let cleanup = tracker.receipt(None);
+        let comparison = compare_capture(scenario, &receipt, &cleanup);
+        write_json(&config.evidence_dir.join("comparison.json"), &comparison)?;
+        receipt.comparison = Some(comparison.clone());
+        write_json(&config.evidence_dir.join("receipt.json"), &receipt)?;
+        if comparison.comparison_passed {
+            Ok(receipt)
+        } else {
+            let detail = comparison
+                .gates
+                .iter()
+                .filter(|(_, gate)| !gate.passed)
+                .map(|(name, gate)| format!("{name}: {}", gate.detail))
+                .collect::<Vec<_>>()
+                .join("; ");
+            Err(RunnerError::Comparison { detail })
+        }
+    });
     finish(&evidence, &tracker, result)
 }
 
@@ -116,8 +136,8 @@ fn run_inner(
         ],
         source_guard_before: before,
         source_guard_after: after,
+        comparison: None,
     };
-    write_json(&config.evidence_dir.join("receipt.json"), &receipt)?;
     Ok(receipt)
 }
 

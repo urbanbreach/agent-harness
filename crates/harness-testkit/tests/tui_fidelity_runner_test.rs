@@ -181,3 +181,31 @@ fn compare_writes_dual_runtime_checkpoint_and_cleanup_receipts() {
         }
     }
 }
+
+#[test]
+fn compare_writes_explicit_capture_and_comparison_gate_receipt() {
+    let fixture = Fixture::new("normal", "normal", "normal");
+    let scenario = Scenario::from_json(STARTUP_SMOKE).expect("scenario");
+
+    let receipt = run_compare(&scenario, &fixture.config).expect("dual runtime succeeds");
+    let comparison_path = fixture.config.evidence_dir.join("comparison.json");
+    let comparison: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&comparison_path).expect("comparison receipt"))
+            .expect("comparison receipt JSON");
+
+    assert_eq!(comparison["capture_succeeded"], true);
+    assert_eq!(comparison["comparison_passed"], true);
+    for gate in [
+        "semantic_cell",
+        "pixel",
+        "motion",
+        "timing",
+        "provenance",
+        "checkpoint",
+        "exit",
+        "cleanup",
+    ] {
+        assert_eq!(comparison["gates"][gate]["passed"], true, "gate {gate}");
+    }
+    assert!(receipt.comparison.is_some());
+}
