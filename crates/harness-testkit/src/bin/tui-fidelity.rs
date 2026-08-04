@@ -8,6 +8,9 @@ use std::time::Duration;
 #[path = "../tui_fidelity_baseline.rs"]
 mod tui_fidelity_baseline;
 
+#[path = "tui_fidelity_commands/mod.rs"]
+mod tui_fidelity_commands;
+
 use harness_testkit::binary_receipt::read_receipt;
 use harness_testkit::tui_fidelity::{AdapterKind, Scenario};
 use harness_testkit::tui_fidelity_runner::{
@@ -40,8 +43,12 @@ fn main() -> ExitCode {
 }
 
 fn execute(arguments: Vec<OsString>) -> Result<(), RunnerError> {
-    let args = parse_compare(arguments).map_err(|detail| RunnerError::Arguments { detail })?;
     let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    if arguments.first().and_then(|value| value.to_str()) != Some("compare") {
+        return tui_fidelity_commands::execute(arguments, &repo_root)
+            .map_err(|detail| RunnerError::Arguments { detail });
+    }
+    let args = parse_compare(arguments).map_err(|detail| RunnerError::Arguments { detail })?;
     let (scenario, reference, harness) = prepare_compare(&args, &repo_root)
         .map_err(|error| record_cli_preflight_failure(&args.evidence_dir, error))?;
     let browser_program = args
