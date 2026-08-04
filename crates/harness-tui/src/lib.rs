@@ -10,6 +10,8 @@ mod clipboard;
 pub mod clipboard_leaf;
 pub mod design_contract;
 pub mod event;
+pub mod gestures;
+pub mod input;
 pub mod keybindings;
 pub mod layout;
 pub mod leaf_actions;
@@ -21,7 +23,9 @@ pub mod overlay;
 pub mod render_test;
 pub mod responsive;
 mod runtime;
+pub mod scheduling;
 mod session_events;
+pub mod shell_geometry;
 pub mod slash;
 pub mod terminal;
 #[cfg(test)]
