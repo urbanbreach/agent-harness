@@ -165,6 +165,11 @@ pub mod video_viewer;
     reason = "task 43 requires terminal_notifications/mod.rs as the public facade"
 )]
 pub mod terminal_notifications;
+#[expect(
+    clippy::mod_module_files,
+    reason = "task 45 requires capability_matrix/mod.rs as the public facade"
+)]
+pub mod capability_matrix;
 
 pub use harness_core::UnwrapOrAbort;
 
