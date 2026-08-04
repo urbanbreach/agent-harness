@@ -57,6 +57,11 @@ mod text;
 pub mod theme;
 pub mod theme_leaf;
 mod time_format;
+#[expect(
+    clippy::mod_module_files,
+    reason = "task 22 requires transcript_identity/mod.rs as the public facade"
+)]
+pub mod transcript_identity;
 pub mod ui;
 
 pub use harness_core::UnwrapOrAbort;
