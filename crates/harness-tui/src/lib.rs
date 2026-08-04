@@ -29,6 +29,11 @@ pub mod composer_atoms;
 )]
 pub mod composer_editing;
 pub mod composer_integration;
+#[expect(
+    clippy::mod_module_files,
+    reason = "task 30 requires dashboard/mod.rs as the public facade"
+)]
+pub mod dashboard;
 pub mod design_contract;
 pub mod event;
 pub mod gestures;
