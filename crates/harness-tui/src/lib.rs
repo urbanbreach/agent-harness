@@ -31,6 +31,7 @@ pub mod composer_editing;
 pub mod design_contract;
 pub mod event;
 pub mod gestures;
+pub mod ghost_suggestions;
 pub mod input;
 pub mod keybindings;
 pub mod layout;
