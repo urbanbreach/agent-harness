@@ -543,6 +543,7 @@ fn collect_referenced_artifacts(
             | EventV1::BackgroundTaskNotification(_)
             | EventV1::StaleDetected(_)
             | EventV1::UserMessageSubmitted(_)
+            | EventV1::PromptAttachmentsSubmitted(_)
             | EventV1::ProviderRequestStarted(_)
             | EventV1::ProviderStreamDelta(_)
             | EventV1::ProviderReasoningDelta(_)

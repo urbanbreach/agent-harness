@@ -305,6 +305,7 @@ impl PrefixState {
             | EventV1::AgentStopped(_)
             | EventV1::BackgroundTaskNotification(_)
             | EventV1::StaleDetected(_)
+            | EventV1::PromptAttachmentsSubmitted(_)
             | EventV1::ProviderStreamDelta(_)
             | EventV1::ProviderReasoningDelta(_)
             | EventV1::AssistantMessageFinished(_)

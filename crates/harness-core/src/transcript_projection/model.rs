@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
 
+use crate::attachment_transport::AttachmentMetadata;
 use crate::event::{EventEnvelopeV1, PermissionDecision, ToolCallMetadata, ToolCallStatus};
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
@@ -70,6 +71,8 @@ pub struct ProjectedMessage {
     pub provenance: ProvenanceRange,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub parts: Vec<ProjectedPart>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attachments: Vec<AttachmentMetadata>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]

@@ -250,6 +250,7 @@ fn event_type_label(event: &EventV1) -> &'static str {
         EventV1::BackgroundTaskNotification(_) => "background_task_notification",
         EventV1::StaleDetected(_) => "stale_detected",
         EventV1::UserMessageSubmitted(_) => "user_message_submitted",
+        EventV1::PromptAttachmentsSubmitted(_) => "prompt_attachments_submitted",
         EventV1::ProviderRequestStarted(_) => "provider_request_started",
         EventV1::ProviderStreamDelta(_) => "provider_stream_delta",
         EventV1::ProviderReasoningDelta(_) => "provider_reasoning_delta",

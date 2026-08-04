@@ -181,6 +181,7 @@ fn event_type_name(event: &EventV1) -> String {
         EventV1::PolicyViolationDetected(_) => "policy_violation_detected",
         EventV1::UiIntentReceived(_) => "ui_intent_received",
         EventV1::UserMessageSubmitted(_) => "user_message_submitted",
+        EventV1::PromptAttachmentsSubmitted(_) => "prompt_attachments_submitted",
         EventV1::WorkspaceSnapshot(_) => "workspace_snapshot",
         EventV1::WorkspaceReverted(_) => "workspace_reverted",
         EventV1::SessionCompaction(_) => "session_compaction",

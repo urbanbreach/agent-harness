@@ -17,6 +17,7 @@ use thiserror::Error;
 use tokio_stream::{self, Stream};
 
 pub mod anthropic;
+pub mod attachment_protocol;
 pub mod cassette;
 pub mod leaf;
 pub mod mock;

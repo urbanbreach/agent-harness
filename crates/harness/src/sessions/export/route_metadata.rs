@@ -98,6 +98,7 @@ fn session_replay_route_metadata(
             | EventV1::BackgroundTaskNotification(_)
             | EventV1::StaleDetected(_)
             | EventV1::UserMessageSubmitted(_)
+            | EventV1::PromptAttachmentsSubmitted(_)
             | EventV1::ProviderStreamDelta(_)
             | EventV1::ProviderReasoningDelta(_)
             | EventV1::ProviderRequestFinished(_)

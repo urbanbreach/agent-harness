@@ -732,6 +732,7 @@ fn event_kind_label(event: &EventV1) -> &'static str {
         EventV1::ProviderStreamDelta(_) => "provider_stream_delta",
         EventV1::ProviderReasoningDelta(_) => "provider_reasoning_delta",
         EventV1::AssistantMessageFinished(_) => "assistant_message_finished",
+        EventV1::PromptAttachmentsSubmitted(_) => "prompt_attachments_submitted",
         EventV1::CompactionRequested(_) => "compaction_requested",
         EventV1::CompactionWritten(_) => "compaction_written",
         EventV1::CompactionApplied(_) => "compaction_applied",
