@@ -74,6 +74,17 @@ fn rejects_timestamp_drift_over_one_frame() {
 }
 
 #[test]
+fn rejects_gross_p95_smoothness_defect() {
+    let reference = TimingTrace::new(vec![0, 33, 66], vec![10, 10, 10]);
+    let candidate = TimingTrace::new(vec![0, 33, 66], vec![20, 20, 20]);
+
+    let error = compare_timing(&reference, &candidate)
+        .expect_err("gross p95 timing regression must be rejected");
+
+    assert!(matches!(error, ComparatorError::Timing { .. }));
+}
+
+#[test]
 fn rejects_stale_hash_after_source_edit() {
     let baseline = hash_artifacts(&artifact_inputs(b"source-v1")).expect("baseline hashes");
     let current = hash_artifacts(&artifact_inputs(b"source-v2")).expect("current hashes");

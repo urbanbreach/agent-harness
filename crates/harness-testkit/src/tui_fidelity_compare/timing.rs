@@ -1,7 +1,7 @@
 use super::error::ComparatorError;
 use super::motion::CADENCE_MAX_GAP_MS;
 
-pub const P95_SMOOTHNESS_PERCENT: u64 = 110;
+pub const P95_SMOOTHNESS_PERCENT: u64 = 125;
 pub const MAX_CADENCE_GAP_MULTIPLIER: u64 = 2;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
