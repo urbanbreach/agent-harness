@@ -155,6 +155,16 @@ pub mod terminal_title;
     reason = "task 44 requires contextual_tips/mod.rs as the public facade"
 )]
 pub mod contextual_tips;
+#[expect(
+    clippy::mod_module_files,
+    reason = "task 40 requires video_viewer/mod.rs as the public facade"
+)]
+pub mod video_viewer;
+#[expect(
+    clippy::mod_module_files,
+    reason = "task 43 requires terminal_notifications/mod.rs as the public facade"
+)]
+pub mod terminal_notifications;
 
 pub use harness_core::UnwrapOrAbort;
 
