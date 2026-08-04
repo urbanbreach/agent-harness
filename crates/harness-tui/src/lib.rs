@@ -175,6 +175,16 @@ pub mod capability_matrix;
     reason = "task 46 requires lifecycle_choreography/mod.rs as the public facade"
 )]
 pub mod lifecycle_choreography;
+#[expect(
+    clippy::mod_module_files,
+    reason = "task 47 requires perf_budgets/mod.rs as the public facade"
+)]
+pub mod perf_budgets;
+#[expect(
+    clippy::mod_module_files,
+    reason = "task 48 requires fidelity_config/mod.rs as the public facade"
+)]
+pub mod fidelity_config;
 
 pub use harness_core::UnwrapOrAbort;
 
