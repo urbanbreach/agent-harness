@@ -170,6 +170,11 @@ pub mod terminal_notifications;
     reason = "task 45 requires capability_matrix/mod.rs as the public facade"
 )]
 pub mod capability_matrix;
+#[expect(
+    clippy::mod_module_files,
+    reason = "task 46 requires lifecycle_choreography/mod.rs as the public facade"
+)]
+pub mod lifecycle_choreography;
 
 pub use harness_core::UnwrapOrAbort;
 
