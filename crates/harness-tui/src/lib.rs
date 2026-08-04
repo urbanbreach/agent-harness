@@ -46,6 +46,16 @@ pub mod dashboard_controls;
 pub mod dashboard_details;
 #[expect(
     clippy::mod_module_files,
+    reason = "task 33 requires dashboard_dispatch/mod.rs as the public facade"
+)]
+pub mod dashboard_dispatch;
+#[expect(
+    clippy::mod_module_files,
+    reason = "task 36 requires dashboard_integration/mod.rs as the public facade"
+)]
+pub mod dashboard_integration;
+#[expect(
+    clippy::mod_module_files,
     reason = "task 32 requires dashboard_peek/mod.rs as the public facade"
 )]
 pub mod dashboard_peek;
