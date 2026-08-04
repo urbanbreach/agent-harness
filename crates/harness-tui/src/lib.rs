@@ -6,8 +6,18 @@
 
 pub mod animation_evidence;
 pub mod app;
+#[expect(
+    clippy::mod_module_files,
+    reason = "task 18 requires attachment_lifecycle/mod.rs as the public facade"
+)]
+pub mod attachment_lifecycle;
 mod clipboard;
 pub mod clipboard_leaf;
+#[expect(
+    clippy::mod_module_files,
+    reason = "completion_controller is a focused public facade"
+)]
+pub mod completion_controller;
 #[expect(
     clippy::mod_module_files,
     reason = "task 14 requires composer_atoms/mod.rs as the public facade"
