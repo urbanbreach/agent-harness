@@ -8,6 +8,11 @@ pub mod animation_evidence;
 pub mod app;
 mod clipboard;
 pub mod clipboard_leaf;
+#[expect(
+    clippy::mod_module_files,
+    reason = "task 14 requires composer_atoms/mod.rs as the public facade"
+)]
+pub mod composer_atoms;
 pub mod design_contract;
 pub mod event;
 pub mod gestures;
