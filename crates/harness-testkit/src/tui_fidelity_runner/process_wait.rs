@@ -11,6 +11,12 @@ use crate::tui_fidelity::{AdapterKind, Viewport};
 
 type PtyChild = Box<dyn portable_pty::Child + Send + Sync>;
 
+#[derive(Clone, Copy)]
+enum FrameReadiness {
+    Visible,
+    Prompt,
+}
+
 #[expect(
     clippy::too_many_arguments,
     reason = "the polling loop owns one PTY lifecycle boundary"
@@ -68,11 +74,69 @@ pub(super) fn wait_for_visible_stable_frame(
     observed: &mut BTreeSet<u32>,
     pid: u32,
 ) -> Result<(), RunnerError> {
+    wait_for_stable_frame(
+        viewport,
+        deadline,
+        adapter,
+        child,
+        output,
+        stream,
+        observed,
+        pid,
+        FrameReadiness::Visible,
+    )
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "prompt readiness observes one PTY lifecycle boundary"
+)]
+pub(super) fn wait_for_prompt_ready(
+    viewport: Viewport,
+    deadline: Instant,
+    adapter: AdapterKind,
+    child: &mut PtyChild,
+    output: &Receiver<Vec<u8>>,
+    stream: &mut Vec<u8>,
+    observed: &mut BTreeSet<u32>,
+    pid: u32,
+) -> Result<(), RunnerError> {
+    wait_for_stable_frame(
+        viewport,
+        deadline,
+        adapter,
+        child,
+        output,
+        stream,
+        observed,
+        pid,
+        FrameReadiness::Prompt,
+    )
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "frame readiness observes one PTY lifecycle boundary"
+)]
+fn wait_for_stable_frame(
+    viewport: Viewport,
+    deadline: Instant,
+    adapter: AdapterKind,
+    child: &mut PtyChild,
+    output: &Receiver<Vec<u8>>,
+    stream: &mut Vec<u8>,
+    observed: &mut BTreeSet<u32>,
+    pid: u32,
+    readiness: FrameReadiness,
+) -> Result<(), RunnerError> {
     let mut previous = None;
     let mut stable_polls = 0_u8;
     loop {
         drain(output, stream);
         collect_descendants(pid, observed);
+        if adapter == AdapterKind::Grok && String::from_utf8_lossy(stream).contains("Skipped") {
+            return Err(RunnerError::SkippedReference);
+        }
         if let Some(status) = child
             .try_wait()
             .map_err(|error| process_error(adapter, "poll semantic state", error))?
@@ -85,7 +149,11 @@ pub(super) fn wait_for_visible_stable_frame(
         let mut parser = vt100::Parser::new(viewport.rows, viewport.cols, 0);
         parser.process(stream);
         let screen = parser.screen().contents();
-        if !screen.trim().is_empty() {
+        let ready = match readiness {
+            FrameReadiness::Visible => !screen.trim().is_empty(),
+            FrameReadiness::Prompt => screen.contains('❯'),
+        };
+        if ready {
             if previous.as_deref() == Some(screen.as_str()) {
                 stable_polls += 1;
                 if stable_polls >= 2 {

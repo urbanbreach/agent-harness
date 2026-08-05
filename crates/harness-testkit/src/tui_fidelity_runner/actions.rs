@@ -46,7 +46,7 @@ pub(super) struct ExitStep {
 
 const GROK_EXIT_STEPS: &[ExitStep] = &[
     ExitStep {
-        bytes: b"\x1b\x15",
+        bytes: b"\x15",
         dwell: Duration::from_millis(100),
     },
     ExitStep {
@@ -164,4 +164,19 @@ const fn mouse_button_code(button: MouseButton) -> u8 {
 
 fn sgr_mouse(code: u8, col: u16, row: u16, suffix: char) -> Vec<u8> {
     format!("\x1b[<{code};{};{}{suffix}", col + 1, row + 1).into_bytes()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn grok_exit_starts_with_ctrl_u_without_escape_toggle() {
+        // Given: the Grok composer remains active after the themes scenario's Esc.
+        // When: the runner requests normal exit.
+        let steps = normal_exit_steps(AdapterKind::Grok);
+
+        // Then: the first byte clears the composer without toggling Esc state.
+        assert_eq!(steps[0].bytes, b"\x15");
+    }
 }
