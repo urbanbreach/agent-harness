@@ -1,7 +1,12 @@
-use std::sync::Arc;
+use std::collections::BTreeSet;
+use std::os::unix::fs::PermissionsExt;
+use std::sync::{Arc, Barrier};
 use std::time::Duration;
 
-use harness_testkit::tui_fidelity_cache::{ReferenceCache, ReferenceCacheInputs};
+use harness_testkit::tui_fidelity_cache::{
+    ReferenceBinaryCache, ReferenceCache, ReferenceCacheInputs,
+};
+use harness_testkit::tui_fidelity_compare::hash_bytes;
 use harness_testkit::tui_fidelity_deadline::{
     CommandSpec, CommandStatus, DeadlineRunner, InterruptFlag, ResourceLimits,
 };
@@ -57,4 +62,53 @@ fn reference_cache_publishes_one_digest_valid_entry_under_concurrency() {
         .expect("cache lookup")
         .expect("published cache entry");
     assert_eq!(entry.artifact_count, 1);
+}
+
+#[test]
+fn reference_binary_cache_stages_distinct_worker_launch_paths() {
+    // Given: one immutable executable shared by concurrently starting workers.
+    let root = tempfile::tempdir().expect("reference root");
+    let source = root.path().join("reference-bin");
+    std::fs::write(&source, b"#!/bin/sh\nprintf '%s\\n' worker\n").expect("source binary");
+    std::fs::set_permissions(&source, std::fs::Permissions::from_mode(0o755))
+        .expect("source executable");
+    let digest = hash_bytes(&std::fs::read(&source).expect("source bytes")).expect("source digest");
+    let cache = Arc::new(ReferenceBinaryCache::new(
+        root.path().join("binary-cache"),
+        source,
+        digest,
+    ));
+    let barrier = Arc::new(Barrier::new(4));
+
+    // When: workers stage and launch the same reference at the same time.
+    let handles = (0..4)
+        .map(|index| {
+            let cache = Arc::clone(&cache);
+            let barrier = Arc::clone(&barrier);
+            let worker_root = root.path().join(format!("worker-{index}"));
+            std::thread::spawn(move || {
+                std::fs::create_dir_all(&worker_root).expect("worker root");
+                barrier.wait();
+                let staged = cache
+                    .stage_for_worker(&worker_root)
+                    .expect("worker-local reference");
+                let output = std::process::Command::new(&staged)
+                    .output()
+                    .expect("staged reference launch");
+                assert!(output.status.success());
+                staged
+            })
+        })
+        .collect::<Vec<_>>();
+    let paths = handles
+        .into_iter()
+        .map(|handle| handle.join().expect("worker launch"))
+        .collect::<BTreeSet<_>>();
+
+    // Then: every launch uses a separate path while retaining identical content.
+    assert_eq!(paths.len(), 4);
+    assert!(paths.iter().all(|path| {
+        hash_bytes(&std::fs::read(path).expect("staged bytes")).expect("staged digest")
+            == cache.digest()
+    }));
 }

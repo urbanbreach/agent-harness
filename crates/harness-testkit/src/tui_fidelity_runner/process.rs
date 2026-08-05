@@ -16,6 +16,7 @@ use super::process_wait::{
 use super::pty_child::PtyChildGuard;
 use super::types::{RunnerTiming, RuntimeBinary};
 use crate::tui_fidelity::{AdapterKind, CheckpointName, Scenario, Viewport};
+use crate::tui_fidelity_cache::ReferenceBinaryCache;
 
 pub(super) struct CapturedCheckpoint {
     pub name: CheckpointName,
@@ -38,11 +39,25 @@ pub(super) fn execute(
     runtime_dir: &Path,
     tracker: &mut CleanupTracker,
 ) -> Result<ProcessCapture, RunnerError> {
+    let launch_path = if adapter == AdapterKind::Grok {
+        ReferenceBinaryCache::new(
+            runtime_dir.join("reference-binary-cache"),
+            &binary.path,
+            binary.sha256.clone(),
+        )
+        .stage_for_worker(runtime_dir)
+        .map_err(|error| RunnerError::Io {
+            path: runtime_dir.to_path_buf(),
+            detail: format!("stage reference binary: {error}"),
+        })?
+    } else {
+        binary.path.clone()
+    };
     let pty_system = native_pty_system();
     let pair = pty_system
         .openpty(pty_size(scenario.viewport))
         .map_err(|error| process_error(adapter, "open PTY", error))?;
-    let mut command = CommandBuilder::new(binary.path.as_os_str());
+    let mut command = CommandBuilder::new(launch_path.as_os_str());
     command.cwd(runtime_dir);
     if let Some(run_root) = runtime_dir.parent() {
         command.env("TUI_FIDELITY_RUN_ROOT", run_root);

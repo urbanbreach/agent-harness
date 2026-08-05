@@ -1,4 +1,7 @@
+mod binary;
 mod files;
+
+pub use binary::ReferenceBinaryCache;
 
 use std::fmt;
 use std::fs;
