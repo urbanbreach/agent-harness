@@ -20,6 +20,7 @@ pub mod tui_fidelity_obligation;
 pub mod tui_fidelity_runner;
 pub mod tui_fidelity_scheduler;
 pub mod tui_fidelity_staging;
+pub mod tui_fidelity_task_gate;
 pub mod tui_fidelity_verify;
 pub mod workspace;
 
