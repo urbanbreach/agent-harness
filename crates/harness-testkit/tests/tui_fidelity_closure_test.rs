@@ -153,6 +153,7 @@ fn closure_fixture() -> ClosureFixture {
             "id": "global.design",
             "source_line": 1,
             "title": "Requirement",
+            "obligation": {"type": "dual_capture"},
         }],
     })
     .to_string();

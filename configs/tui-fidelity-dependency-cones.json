@@ -1,0 +1,128 @@
+{
+  "schema_version": "harness.tui-fidelity.dependency-cones.v1",
+  "cones": [
+    {
+      "paths": [
+        "crates/harness-tui/src/leaf_views/startup.rs",
+        "crates/harness-tui/src/ui_startup_logo.rs"
+      ],
+      "obligations": ["scenario:baseline-startup"]
+    },
+    {
+      "paths": [
+        "crates/harness-tui/src/ui_composer.rs",
+        "crates/harness-tui/src/app/composer.rs"
+      ],
+      "obligations": ["scenario:baseline-draft"]
+    },
+    {
+      "paths": [
+        "crates/harness-tui/src/ui_live_turn_status.rs",
+        "crates/harness-tui/src/app/pending_live.rs"
+      ],
+      "obligations": ["scenario:baseline-stream"]
+    },
+    {
+      "paths": [
+        "crates/harness-tui/src/ui_diff.rs",
+        "crates/harness-tui/src/ui_diff_render.rs",
+        "crates/harness-tui/src/ui_tool_diffs.rs"
+      ],
+      "obligations": ["scenario:baseline-diff"]
+    },
+    {
+      "paths": [
+        "crates/harness-tui/src/app/permissions.rs",
+        "crates/harness-tui/src/ui_permission_dock.rs"
+      ],
+      "obligations": ["scenario:baseline-permission"]
+    },
+    {
+      "paths": ["crates/harness-tui/src/app/question_prompt.rs"],
+      "obligations": ["scenario:baseline-question"]
+    },
+    {
+      "paths": [
+        "crates/harness-tui/src/app/transcript_state.rs",
+        "crates/harness-tui/src/ui_transcript_scrollbar.rs"
+      ],
+      "obligations": ["scenario:baseline-scroll"]
+    },
+    {
+      "paths": [
+        "crates/harness-tui/src/leaf_actions/group_d_dashboard.rs",
+        "crates/harness-tui/src/app/dashboard.rs"
+      ],
+      "obligations": ["scenario:baseline-dashboard"]
+    },
+    {
+      "paths": [
+        "crates/harness-tui/src/leaf_actions/group_e_media.rs",
+        "crates/harness-tui/src/ui_transcript_media.rs"
+      ],
+      "obligations": ["scenario:baseline-media", "scenario:baseline-modal-surfaces"]
+    },
+    {
+      "paths": [
+        "crates/harness-tui/src/theme.rs",
+        "crates/harness-tui/src/ui_overlays/theme_dialog.rs"
+      ],
+      "obligations": ["scenario:baseline-themes"]
+    },
+    {
+      "paths": ["crates/harness-tui/src/mouse.rs"],
+      "obligations": ["scenario:baseline-mouse", "scenario:baseline-dashboard"]
+    },
+    {
+      "paths": ["crates/harness-tui/src/responsive/viewport.rs"],
+      "obligations": ["scenario:baseline-resize"]
+    },
+    {
+      "paths": ["crates/harness-tui/src/terminal/unicode_width.rs"],
+      "obligations": ["scenario:baseline-cjk"]
+    },
+    {
+      "paths": ["crates/harness-tui/src/terminal/capability.rs"],
+      "obligations": [
+        "scenario:baseline-reduced-capabilities",
+        "prefix:global.terminal.",
+        "prefix:global.module-tier."
+      ]
+    },
+    {
+      "paths": [
+        "crates/harness-testkit/src/tui_fidelity_scenarios/baseline/startup.json"
+      ],
+      "obligations": ["scenario:baseline-startup"]
+    },
+    {
+      "paths": ["crates/harness-testkit/src/tui_fidelity_scenarios/baseline/**"],
+      "obligations": ["type:dual_capture"]
+    },
+    {
+      "paths": ["crates/harness-tui/src/**"],
+      "obligations": ["type:dual_capture"]
+    },
+    {
+      "paths": [
+        "crates/harness-core/src/**",
+        "crates/harness/src/**",
+        "crates/harness-tools/src/**",
+        "crates/harness-providers/src/**"
+      ],
+      "obligations": ["type:dual_capture"]
+    },
+    {
+      "paths": [
+        "crates/harness-testkit/src/**",
+        "crates/harness-testkit/tests/**",
+        "configs/**",
+        "scripts/**",
+        "Cargo.toml",
+        "Cargo.lock",
+        "rust-toolchain.toml"
+      ],
+      "obligations": ["*"]
+    }
+  ]
+}

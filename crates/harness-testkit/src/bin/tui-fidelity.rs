@@ -13,9 +13,10 @@ mod tui_fidelity_commands;
 
 use harness_testkit::binary_receipt::read_receipt;
 use harness_testkit::tui_fidelity::{AdapterKind, Scenario};
+use harness_testkit::tui_fidelity_cache::ReferenceCache;
 use harness_testkit::tui_fidelity_runner::{
-    record_preflight_failure, run_compare, RendererConfig, RunnerConfig, RunnerError, RunnerTiming,
-    RuntimeBinary, SourceGuardConfig,
+    record_preflight_failure, run_compare_with_cached_reference, RendererConfig, RunnerConfig,
+    RunnerError, RunnerTiming, RuntimeBinary, SourceGuardConfig,
 };
 
 const STARTUP_SMOKE: &str = include_str!("../../tests/fixtures/tui_fidelity/startup-smoke.json");
@@ -84,7 +85,43 @@ fn execute(arguments: Vec<OsString>) -> Result<(), RunnerError> {
             cleanup_timeout: Duration::from_secs(2),
         },
     };
-    let receipt = run_compare(&scenario, &config)?;
+    let cache_root = env::var_os("TUI_FIDELITY_REFERENCE_CACHE").map(PathBuf::from);
+    let cache_key = env::var("TUI_FIDELITY_REFERENCE_CACHE_KEY").ok();
+    let cache = match (cache_root, cache_key) {
+        (Some(root), Some(key)) => Some((ReferenceCache::new(root), key)),
+        (None, None) => None,
+        (Some(_), None) | (None, Some(_)) => {
+            return Err(RunnerError::Arguments {
+                detail: "reference cache root and key must be provided together".to_owned(),
+            });
+        }
+    };
+    let cached = cache
+        .as_ref()
+        .map(|(cache, key)| cache.load_reference(key))
+        .transpose()
+        .map_err(|error| RunnerError::Arguments {
+            detail: error.to_string(),
+        })?
+        .flatten();
+    let cache_hit = cached.is_some();
+    let receipt = run_compare_with_cached_reference(&scenario, &config, cached)?;
+    if !cache_hit {
+        if let Some((cache, key)) = &cache {
+            let reference = receipt
+                .runtimes
+                .iter()
+                .find(|runtime| runtime.adapter == AdapterKind::Grok)
+                .ok_or_else(|| RunnerError::Arguments {
+                    detail: "comparison receipt has no Grok runtime".to_owned(),
+                })?;
+            cache
+                .publish_reference(key, reference)
+                .map_err(|error| RunnerError::Arguments {
+                    detail: error.to_string(),
+                })?;
+        }
+    }
     println!(
         "tui-fidelity compare PASS: {} runtimes, evidence {}",
         receipt.runtimes.len(),

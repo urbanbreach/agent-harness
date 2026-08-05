@@ -4,7 +4,7 @@ use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
-pub(super) fn descendants(root: u32) -> BTreeSet<u32> {
+pub(crate) fn descendants(root: u32) -> BTreeSet<u32> {
     let mut by_parent = BTreeMap::<u32, Vec<u32>>::new();
     let Ok(entries) = fs::read_dir("/proc") else {
         return BTreeSet::new();
@@ -46,7 +46,7 @@ pub(super) fn descendants(root: u32) -> BTreeSet<u32> {
     found
 }
 
-pub(super) fn terminate_group(pid: u32, timeout: Duration) {
+pub(crate) fn terminate_group(pid: u32, timeout: Duration) {
     signal(&format!("-{pid}"), "-TERM");
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline && process_exists(pid) {
@@ -57,20 +57,20 @@ pub(super) fn terminate_group(pid: u32, timeout: Duration) {
     }
 }
 
-pub(super) fn terminate_pids(pids: &[u32]) {
+pub(crate) fn terminate_pids(pids: &[u32]) {
     for pid in pids {
         signal(&pid.to_string(), "-KILL");
     }
 }
 
-pub(super) fn living(pids: &BTreeSet<u32>) -> Vec<u32> {
+pub(crate) fn living(pids: &BTreeSet<u32>) -> Vec<u32> {
     pids.iter()
         .copied()
         .filter(|pid| process_exists(*pid))
         .collect()
 }
 
-pub(super) fn wait_for_living(pids: &BTreeSet<u32>, timeout: Duration) -> Vec<u32> {
+pub(crate) fn wait_for_living(pids: &BTreeSet<u32>, timeout: Duration) -> Vec<u32> {
     let deadline = Instant::now() + timeout;
     loop {
         let remaining = living(pids);

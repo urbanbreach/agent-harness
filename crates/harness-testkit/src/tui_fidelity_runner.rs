@@ -6,7 +6,7 @@ mod cleanup;
 mod error;
 mod preflight;
 mod process;
-mod process_tree;
+pub(crate) mod process_tree;
 mod process_wait;
 mod pty_child;
 mod renderer;
@@ -19,7 +19,7 @@ mod util;
 
 pub use cleanup::record_preflight_failure;
 pub use error::RunnerError;
-pub use runner::run_compare;
+pub use runner::{run_compare, run_compare_with_cached_reference};
 pub use types::{
     AdapterReceipt, ArtifactDigest, BrowserCapabilities, CheckpointReceipt, CleanupReceipt,
     DualRuntimeReceipt, RendererConfig, RunnerConfig, RunnerTiming, RuntimeBinary,

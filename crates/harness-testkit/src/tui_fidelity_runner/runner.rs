@@ -15,6 +15,14 @@ pub fn run_compare(
     scenario: &Scenario,
     config: &RunnerConfig,
 ) -> Result<DualRuntimeReceipt, RunnerError> {
+    run_compare_with_cached_reference(scenario, config, None)
+}
+
+pub fn run_compare_with_cached_reference(
+    scenario: &Scenario,
+    config: &RunnerConfig,
+    cached_reference: Option<AdapterReceipt>,
+) -> Result<DualRuntimeReceipt, RunnerError> {
     let evidence = EvidenceSession::initialize(&config.evidence_dir)?;
     let mut tracker = CleanupTracker::default();
     if evidence.is_stale() {
@@ -42,7 +50,7 @@ pub fn run_compare(
                 return finish(&evidence, &tracker, Err(error));
             }
         };
-    let result = run_inner(scenario, config, &workspace, &mut tracker);
+    let result = run_inner(scenario, config, &workspace, &mut tracker, cached_reference);
     match workspace.cleanup() {
         Ok(path) => tracker.record_removed(&path),
         Err(error) => tracker.record_error(error.to_string()),
@@ -74,71 +82,69 @@ fn run_inner(
     config: &RunnerConfig,
     workspace: &OwnedRuntimeWorkspace,
     tracker: &mut CleanupTracker,
+    cached_reference: Option<AdapterReceipt>,
 ) -> Result<DualRuntimeReceipt, RunnerError> {
     let before = source_guard::run(config, "source-guard-before.json", tracker)?;
-    let reference_runtime = workspace.adapter_dir(AdapterKind::Grok)?;
-    let reference_result = execute(
-        scenario,
-        config.timing,
-        AdapterKind::Grok,
-        &config.reference,
-        &reference_runtime,
-        tracker,
-    );
+    let reference_receipt = match cached_reference {
+        Some(receipt) => validate_cached_reference(receipt, config)?,
+        None => capture_adapter(scenario, config, workspace, tracker, AdapterKind::Grok)?,
+    };
     let after = source_guard::run(config, "source-guard-after.json", tracker)?;
-    let reference_capture = reference_result?;
-    let harness_runtime = workspace.adapter_dir(AdapterKind::Harness)?;
-    let harness_capture = execute(
-        scenario,
-        config.timing,
-        AdapterKind::Harness,
-        &config.harness,
-        &harness_runtime,
-        tracker,
-    )?;
-    let reference_checkpoints = render(
-        AdapterKind::Grok,
-        &reference_capture,
-        &mut RenderContext {
-            config: &config.renderer,
-            timing: config.timing,
-            evidence_root: &config.evidence_dir,
-            tracker,
-        },
-    )?;
-    let harness_checkpoints = render(
-        AdapterKind::Harness,
-        &harness_capture,
-        &mut RenderContext {
-            config: &config.renderer,
-            timing: config.timing,
-            evidence_root: &config.evidence_dir,
-            tracker,
-        },
-    )?;
-    let receipt = DualRuntimeReceipt {
+    let harness_receipt =
+        capture_adapter(scenario, config, workspace, tracker, AdapterKind::Harness)?;
+    Ok(DualRuntimeReceipt {
         schema_version: RUNNER_RECEIPT_SCHEMA.to_owned(),
         scenario_id: scenario.id.0.clone(),
         terminal_type: "xterm-256color".to_owned(),
-        runtimes: vec![
-            adapter_receipt(
-                AdapterKind::Grok,
-                &config.reference,
-                reference_capture,
-                reference_checkpoints,
-            ),
-            adapter_receipt(
-                AdapterKind::Harness,
-                &config.harness,
-                harness_capture,
-                harness_checkpoints,
-            ),
-        ],
+        runtimes: vec![reference_receipt, harness_receipt],
         source_guard_before: before,
         source_guard_after: after,
         comparison: None,
+    })
+}
+
+fn capture_adapter(
+    scenario: &Scenario,
+    config: &RunnerConfig,
+    workspace: &OwnedRuntimeWorkspace,
+    tracker: &mut CleanupTracker,
+    adapter: AdapterKind,
+) -> Result<AdapterReceipt, RunnerError> {
+    let runtime = workspace.adapter_dir(adapter)?;
+    let binary = match adapter {
+        AdapterKind::Grok => &config.reference,
+        AdapterKind::Harness => &config.harness,
     };
-    Ok(receipt)
+    let capture = execute(scenario, config.timing, adapter, binary, &runtime, tracker)?;
+    let checkpoints = render(
+        adapter,
+        &capture,
+        &mut RenderContext {
+            config: &config.renderer,
+            timing: config.timing,
+            evidence_root: &config.evidence_dir,
+            tracker,
+        },
+    )?;
+    Ok(adapter_receipt(adapter, binary, capture, checkpoints))
+}
+
+fn validate_cached_reference(
+    receipt: AdapterReceipt,
+    config: &RunnerConfig,
+) -> Result<AdapterReceipt, RunnerError> {
+    if receipt.adapter == AdapterKind::Grok
+        && receipt.binary.sha256 == config.reference.sha256
+        && receipt.binary.source_revision == config.reference.source_revision
+    {
+        Ok(receipt)
+    } else {
+        Err(RunnerError::BinaryDigest {
+            path: config.reference.path.clone(),
+            expected: config.reference.sha256.clone(),
+            actual: receipt.binary.sha256,
+        })
+    }
 }
 
 fn finish<T>(

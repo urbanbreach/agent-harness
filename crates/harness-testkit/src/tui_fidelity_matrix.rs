@@ -5,7 +5,9 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+pub use crate::tui_fidelity::Viewport;
 use crate::tui_fidelity_compare::hash_bytes;
+use crate::tui_fidelity_obligation::{CaptureKey, Obligation};
 
 const INVENTORY_SCHEMA: &str = "harness.tui-fidelity.requirement-inventory.v1";
 const MANIFEST_SCHEMA: &str = "harness.tui-fidelity.coverage-manifest.v1";
@@ -24,6 +26,7 @@ pub struct RequirementRecord {
     pub id: String,
     pub source_line: u32,
     pub title: String,
+    pub obligation: Obligation,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -51,13 +54,6 @@ pub struct CoverageRow {
     pub media_mode: String,
     pub failure_path: String,
     pub trials: u8,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Viewport {
-    pub cols: u16,
-    pub rows: u16,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -171,21 +167,30 @@ where
     let mut rows = Vec::with_capacity(manifest.rows.len());
     let mut capture_succeeded = true;
     let mut comparison_passed = true;
+    let mut execution_by_key = BTreeMap::<String, (bool, bool, String)>::new();
     for row in manifest.rows {
         let mut trials = Vec::with_capacity(usize::from(row.trials));
-        for trial in 1..=row.trials {
-            let evidence_dir = evidence_root
-                .join(&row.row_id)
-                .join(format!("trial-{trial}"));
+        let key = CaptureKey::from_row(&row)
+            .canonical_json()
+            .map_err(|error| MatrixError::Invalid(error.to_string()))?;
+        let result = if let Some(cached) = execution_by_key.get(&key) {
+            cached.clone()
+        } else {
+            let evidence_dir = evidence_root.join(&row.row_id).join("trial-1");
             let result = execute_trial(MatrixTrial {
                 row: row.clone(),
-                trial,
+                trial: 1,
                 evidence_dir,
             });
-            let (captured, compared, detail) = match result {
+            let value = match result {
                 Ok(value) => value,
                 Err(error) => (false, false, error.to_string()),
             };
+            execution_by_key.insert(key, value.clone());
+            value
+        };
+        for trial in 1..=row.trials {
+            let (captured, compared, detail) = result.clone();
             capture_succeeded &= captured;
             comparison_passed &= compared;
             trials.push(MatrixTrialReceipt {

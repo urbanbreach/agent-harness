@@ -2,19 +2,26 @@ use std::env;
 use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::time::{Duration, Instant};
 
 use harness_testkit::tui_fidelity_closure::{
     complete_boulder_atomically, verify_closure, ClosureContract, ClosureError,
     ClosureVerificationInput, ReviewReceiptInput,
 };
+use harness_testkit::tui_fidelity_deadline::{
+    CommandSpec, CommandStatus, DeadlineRunner, InterruptFlag, ResourceLimits,
+};
 use harness_testkit::tui_fidelity_matrix::{
     execute_matrix, read_coverage_documents, MatrixError, MatrixTrial,
 };
 
+mod verify;
+mod verify_executor;
+
 pub fn execute(arguments: Vec<OsString>, repo_root: &Path) -> Result<(), String> {
     match arguments.first().and_then(|value| value.to_str()) {
         Some("matrix") => execute_matrix_command(arguments, repo_root),
+        Some("verify") => verify::execute(arguments, repo_root),
         Some("closure-verify") => execute_closure_verify(arguments, repo_root),
         Some("closure-complete") => execute_closure_complete(arguments),
         Some(command) => Err(format!("unknown tui-fidelity command {command}")),
@@ -33,41 +40,56 @@ fn execute_matrix_command(arguments: Vec<OsString>, repo_root: &Path) -> Result<
     let font_family = args.font_family.clone();
     let node_modules = args.node_modules.clone();
     let timeout_ms = args.timeout_ms.to_string();
+    let started = Instant::now();
+    let interrupt = InterruptFlag::install().map_err(|error| error.to_string())?;
     let receipt = execute_matrix(
         manifest,
         report,
         "complete",
         &args.evidence_root,
         |trial: MatrixTrial| {
-            let mut command = Command::new(&executable);
-            command.args([
-                OsStr::new("compare"),
-                OsStr::new("--scenario"),
-                OsStr::new(&trial.row.scenario_id),
-                OsStr::new("--reference-bin"),
-                reference_bin.as_os_str(),
-                OsStr::new("--harness-bin"),
-                harness_bin.as_os_str(),
-                OsStr::new("--evidence-dir"),
-                trial.evidence_dir.as_os_str(),
-                OsStr::new("--font-family"),
-                OsStr::new(&font_family),
-                OsStr::new("--timeout-ms"),
-                OsStr::new(&timeout_ms),
+            let mut command = CommandSpec::new(&executable).args([
+                OsString::from("compare"),
+                OsString::from("--scenario"),
+                OsString::from(&trial.row.scenario_id),
+                OsString::from("--reference-bin"),
+                reference_bin.as_os_str().to_owned(),
+                OsString::from("--harness-bin"),
+                harness_bin.as_os_str().to_owned(),
+                OsString::from("--evidence-dir"),
+                trial.evidence_dir.as_os_str().to_owned(),
+                OsString::from("--font-family"),
+                OsString::from(&font_family),
+                OsString::from("--timeout-ms"),
+                OsString::from(&timeout_ms),
             ]);
             if let Some(browser_bin) = &browser_bin {
-                command.args([OsStr::new("--browser-bin"), browser_bin.as_os_str()]);
+                command = command.args([
+                    OsString::from("--browser-bin"),
+                    browser_bin.as_os_str().to_owned(),
+                ]);
             }
             if let Some(node_modules) = &node_modules {
-                command.args([OsStr::new("--node-modules"), node_modules.as_os_str()]);
+                command = command.args([
+                    OsString::from("--node-modules"),
+                    node_modules.as_os_str().to_owned(),
+                ]);
             }
-            let output = command
-                .output()
-                .map_err(|error| MatrixError::Execution(format!("compare process: {error}")))?;
-            let detail = format_command_output(&output);
-            if output.status.success() {
+            let remaining = Duration::from_secs(120)
+                .checked_sub(started.elapsed())
+                .unwrap_or(Duration::from_millis(1));
+            let output = DeadlineRunner::new(
+                remaining,
+                Duration::from_secs(2),
+                ResourceLimits::verification_default(),
+                interrupt.clone(),
+            )
+            .run(&command)
+            .map_err(|error| MatrixError::Execution(format!("compare process: {error}")))?;
+            let detail = format_deadline_output(&output);
+            if output.status == CommandStatus::Passed {
                 Ok((true, true, detail))
-            } else if detail.contains("comparison:") {
+            } else if output.status == CommandStatus::Failed && detail.contains("comparison:") {
                 Ok((true, false, detail))
             } else {
                 Ok((false, false, detail))
@@ -303,6 +325,15 @@ fn format_command_output(output: &std::process::Output) -> String {
     format!(
         "stdout: {stdout}; stderr: {stderr}; status: {}",
         output.status
+    )
+}
+
+fn format_deadline_output(
+    output: &harness_testkit::tui_fidelity_deadline::CommandReceipt,
+) -> String {
+    format!(
+        "stdout: {}; stderr: {}; status: {:?}; duration_ms: {}",
+        output.stdout, output.stderr, output.status, output.duration_millis
     )
 }
 

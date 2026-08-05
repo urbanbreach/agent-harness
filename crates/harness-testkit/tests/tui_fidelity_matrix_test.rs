@@ -5,7 +5,10 @@
     reason = "owner tests use fail-fast fixture assertions"
 )]
 
-use harness_testkit::tui_fidelity_matrix::{read_coverage_documents, validate_coverage_documents};
+use harness_testkit::tui_fidelity_matrix::{
+    execute_matrix, read_coverage_documents, validate_coverage_documents, CoverageManifest,
+    RequirementInventory,
+};
 
 #[test]
 fn coverage_validation_rejects_duplicate_rows_and_requirements() {
@@ -47,6 +50,41 @@ fn checked_in_coverage_manifest_has_one_row_per_requirement() {
     assert_eq!(report.trial_count, 2_735);
 }
 
+#[test]
+fn matrix_executes_shared_capture_key_once_while_preserving_trial_accounting() {
+    // Given: two requirements with the same execution-effective capture inputs.
+    let inventory_json = inventory_json(&["req-a", "req-b"]);
+    let manifest_json = manifest_json(&[("row-a", "req-a"), ("row-b", "req-b")]);
+    let inventory: RequirementInventory =
+        serde_json::from_str(&inventory_json).expect("inventory fixture");
+    let manifest: CoverageManifest =
+        serde_json::from_str(&manifest_json).expect("manifest fixture");
+    let report =
+        validate_coverage_documents(&inventory_json, &manifest_json).expect("coverage fixture");
+    let evidence = tempfile::tempdir().expect("matrix evidence");
+    let executions = std::cell::Cell::new(0_usize);
+
+    // When: the legacy matrix executor runs the frozen five-trial rows.
+    let receipt = execute_matrix(manifest, report, "synthetic", evidence.path(), |_| {
+        executions.set(executions.get() + 1);
+        Ok((true, true, "passed".to_owned()))
+    })
+    .expect("deduplicated matrix");
+
+    // Then: runtime work occurs once while ten trials remain represented.
+    assert_eq!(inventory.requirements.len(), 2);
+    assert_eq!(executions.get(), 1);
+    assert_eq!(receipt.report.trial_count, 10);
+    assert_eq!(
+        receipt
+            .rows
+            .iter()
+            .map(|row| row.trials.len())
+            .sum::<usize>(),
+        10
+    );
+}
+
 fn inventory_json(ids: &[&str]) -> String {
     serde_json::json!({
         "schema_version": "harness.tui-fidelity.requirement-inventory.v1",
@@ -55,6 +93,7 @@ fn inventory_json(ids: &[&str]) -> String {
             "id": id,
             "source_line": 1,
             "title": id,
+            "obligation": {"type": "dual_capture"},
         })).collect::<Vec<_>>(),
     })
     .to_string()
