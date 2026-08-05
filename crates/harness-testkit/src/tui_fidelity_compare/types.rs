@@ -17,7 +17,9 @@ pub use super::secret_scan::{
     scan_artifacts, scan_directory, ArtifactRoots, SecretFinding, SecretScanResult,
 };
 pub use super::self_compare::reject_self_comparison;
-pub use super::timing::{compare_timing, LatencyDistribution, TimingDefect, TimingTrace};
+pub use super::timing::{
+    compare_timing, LatencyDistribution, TimingDefect, TimingPhase, TimingTrace,
+};
 
 pub type CompareResult = Result<(), ComparatorError>;
 

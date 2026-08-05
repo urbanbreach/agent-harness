@@ -1,8 +1,18 @@
 use super::error::ComparatorError;
-use super::motion::CADENCE_MAX_GAP_MS;
 
 pub const P95_SMOOTHNESS_PERCENT: u64 = 125;
 pub const MAX_CADENCE_GAP_MULTIPLIER: u64 = 2;
+pub const MAX_PHASE_WINDOW_MS: u64 = 500;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TimingPhase {
+    Rest,
+    Mid,
+    Settled,
+}
+
+const REQUIRED_PHASE_ORDER: [TimingPhase; 3] =
+    [TimingPhase::Rest, TimingPhase::Mid, TimingPhase::Settled];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LatencyDistribution {
@@ -29,13 +39,28 @@ impl LatencyDistribution {
 pub struct TimingTrace {
     pub frame_timestamps_ms: Vec<u64>,
     pub latency_ms: LatencyDistribution,
+    pub phase_order: Vec<TimingPhase>,
 }
 
 impl TimingTrace {
     pub fn new(frame_timestamps_ms: Vec<u64>, latency_ms: Vec<u64>) -> Self {
+        let phase_order = if frame_timestamps_ms.len() == REQUIRED_PHASE_ORDER.len() {
+            REQUIRED_PHASE_ORDER.to_vec()
+        } else {
+            Vec::new()
+        };
+        Self::with_phase_order(frame_timestamps_ms, latency_ms, phase_order)
+    }
+
+    pub fn with_phase_order(
+        frame_timestamps_ms: Vec<u64>,
+        latency_ms: Vec<u64>,
+        phase_order: Vec<TimingPhase>,
+    ) -> Self {
         Self {
             frame_timestamps_ms,
             latency_ms: LatencyDistribution::new(latency_ms),
+            phase_order,
         }
     }
 }
@@ -83,8 +108,10 @@ pub fn compare_timing(
         }
     }
     compare_p95(reference, candidate, &mut defects);
-    check_cadence("reference", &reference.frame_timestamps_ms, &mut defects);
-    check_cadence("candidate", &candidate.frame_timestamps_ms, &mut defects);
+    check_phase_order("reference", reference, &mut defects);
+    check_phase_order("candidate", candidate, &mut defects);
+    check_phase_windows("reference", reference, &mut defects);
+    check_phase_windows("candidate", candidate, &mut defects);
     if defects.is_empty() {
         Ok(())
     } else {
@@ -116,13 +143,43 @@ fn compare_p95(reference: &TimingTrace, candidate: &TimingTrace, defects: &mut V
     }
 }
 
-fn check_cadence(side: &str, timestamps: &[u64], defects: &mut Vec<TimingDefect>) {
-    for (index, pair) in timestamps.windows(2).enumerate() {
+fn check_phase_order(_side: &str, trace: &TimingTrace, defects: &mut Vec<TimingDefect>) {
+    if trace.phase_order != REQUIRED_PHASE_ORDER {
+        defects.push(TimingDefect {
+            reason: "phase_order".to_owned(),
+            expected: "rest -> mid -> settled".to_owned(),
+            observed: format!("{} phases", trace.phase_order.len()),
+        });
+    }
+    if trace.frame_timestamps_ms.len() != trace.phase_order.len() {
+        defects.push(TimingDefect {
+            reason: "phase_count".to_owned(),
+            expected: trace.phase_order.len().to_string(),
+            observed: trace.frame_timestamps_ms.len().to_string(),
+        });
+    }
+}
+
+fn check_phase_windows(side: &str, trace: &TimingTrace, defects: &mut Vec<TimingDefect>) {
+    let Some(expected_gap) = trace
+        .frame_timestamps_ms
+        .windows(2)
+        .next()
+        .map(|pair| pair[1].saturating_sub(pair[0]))
+    else {
+        return;
+    };
+    for (index, pair) in trace.frame_timestamps_ms.windows(2).enumerate() {
         let gap = pair[1].saturating_sub(pair[0]);
-        if gap > CADENCE_MAX_GAP_MS {
+        if gap > MAX_PHASE_WINDOW_MS
+            || gap > expected_gap.saturating_mul(MAX_CADENCE_GAP_MULTIPLIER)
+        {
             defects.push(TimingDefect {
-                reason: "cadence_gap".to_owned(),
-                expected: format!("{side} gap <= {CADENCE_MAX_GAP_MS}ms at {index}"),
+                reason: "phase_window".to_owned(),
+                expected: format!(
+                    "{side} phase gap <= {}ms and <= {MAX_PHASE_WINDOW_MS}ms at {index}",
+                    expected_gap.saturating_mul(MAX_CADENCE_GAP_MULTIPLIER)
+                ),
                 observed: format!("{gap}ms"),
             });
         }

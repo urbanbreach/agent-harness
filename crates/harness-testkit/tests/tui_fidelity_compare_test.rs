@@ -15,7 +15,7 @@ use harness_testkit::tui_fidelity_compare::{
     compare_cells, compare_motion, compare_png_bytes, compare_timing, hash_artifacts,
     reject_self_comparison, scan_artifacts, verify_freshness, ArtifactInputs, ArtifactRoots,
     CellSnapshot, ComparatorError, FocusState, IdentityPixelSpan, MotionTrace, PixelRect,
-    TimingTrace, ZOrderEntry,
+    TimingPhase, TimingTrace, ZOrderEntry,
 };
 
 #[test]
@@ -82,6 +82,81 @@ fn rejects_gross_p95_smoothness_defect() {
         .expect_err("gross p95 timing regression must be rejected");
 
     assert!(matches!(error, ComparatorError::Timing { .. }));
+}
+
+#[test]
+fn accepts_declared_75ms_phase_cadence() {
+    // Given: both adapters preserve the three observed phases at the runner's 75ms cadence.
+    let trace = TimingTrace::new(vec![0, 75, 150], vec![10, 10, 10]);
+
+    // When: the timing comparator evaluates the declared cadence.
+    let result = compare_timing(&trace, &trace);
+
+    // Then: a cadence matching the execution contract is accepted.
+    assert!(
+        result.is_ok(),
+        "75ms phase cadence must not hit a fixed 67ms bound"
+    );
+}
+
+#[test]
+fn rejects_reversed_timing_phase_order() {
+    let reference = TimingTrace::with_phase_order(
+        vec![0, 75, 150],
+        vec![10, 10, 10],
+        vec![TimingPhase::Rest, TimingPhase::Mid, TimingPhase::Settled],
+    );
+    let candidate = TimingTrace::with_phase_order(
+        vec![0, 75, 150],
+        vec![10, 10, 10],
+        vec![TimingPhase::Rest, TimingPhase::Settled, TimingPhase::Mid],
+    );
+
+    let error = compare_timing(&reference, &candidate).expect_err("reversed phase must fail");
+
+    assert!(
+        matches!(error, ComparatorError::Timing { defects, .. } if defects.iter().any(|defect| defect.reason == "phase_order"))
+    );
+}
+
+#[test]
+fn rejects_missing_timing_phase() {
+    let reference = TimingTrace::with_phase_order(
+        vec![0, 75, 150],
+        vec![10, 10, 10],
+        vec![TimingPhase::Rest, TimingPhase::Mid, TimingPhase::Settled],
+    );
+    let candidate = TimingTrace::with_phase_order(
+        vec![0, 75],
+        vec![10, 10],
+        vec![TimingPhase::Rest, TimingPhase::Mid],
+    );
+
+    let error = compare_timing(&reference, &candidate).expect_err("missing phase must fail");
+
+    assert!(
+        matches!(error, ComparatorError::Timing { defects, .. } if defects.iter().any(|defect| defect.reason == "phase_order" || defect.reason == "phase_count"))
+    );
+}
+
+#[test]
+fn rejects_excessive_adapter_phase_window() {
+    let reference = TimingTrace::with_phase_order(
+        vec![0, 75, 150],
+        vec![10, 10, 10],
+        vec![TimingPhase::Rest, TimingPhase::Mid, TimingPhase::Settled],
+    );
+    let candidate = TimingTrace::with_phase_order(
+        vec![0, 75, 600],
+        vec![10, 10, 10],
+        vec![TimingPhase::Rest, TimingPhase::Mid, TimingPhase::Settled],
+    );
+
+    let error = compare_timing(&reference, &candidate).expect_err("excessive phase must fail");
+
+    assert!(
+        matches!(error, ComparatorError::Timing { defects, .. } if defects.iter().any(|defect| defect.reason == "phase_window"))
+    );
 }
 
 #[test]

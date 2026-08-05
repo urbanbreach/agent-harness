@@ -384,9 +384,19 @@ fn pixel_spans(
 }
 
 fn timing_trace(runtime: &AdapterReceipt) -> Result<super::timing::TimingTrace, ComparatorError> {
-    Ok(super::timing::TimingTrace::new(
+    let phase_order = runtime
+        .checkpoints
+        .iter()
+        .map(|checkpoint| match checkpoint.name {
+            CheckpointName::Rest => super::timing::TimingPhase::Rest,
+            CheckpointName::Mid => super::timing::TimingPhase::Mid,
+            CheckpointName::Settled => super::timing::TimingPhase::Settled,
+        })
+        .collect();
+    Ok(super::timing::TimingTrace::with_phase_order(
         checkpoint_times(runtime)?,
         relative_input_times(runtime)?,
+        phase_order,
     ))
 }
 
