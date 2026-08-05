@@ -865,9 +865,15 @@ impl DerefMut for AppState {
 
 impl AppState {
     pub fn open_status_dashboard(&mut self) {
-        let viewport = self
+        let frame_area = self
             .last_frame_area
-            .and_then(crate::dashboard_integration::dashboard_viewport)
+            .unwrap_or(Rect::new(0, 0, 100, 36));
+        self.open_status_dashboard_at(frame_area);
+    }
+
+    pub fn open_status_dashboard_at(&mut self, frame_area: Rect) {
+        self.last_frame_area = Some(frame_area);
+        let viewport = crate::dashboard_integration::dashboard_viewport(frame_area)
             .unwrap_or(Rect::new(0, 0, 100, 36));
         let return_focus = self.focus;
         match self.build_dashboard_integration(viewport) {
@@ -951,44 +957,53 @@ impl AppState {
         } else {
             SessionModeSource::InteractiveLive
         };
-        let sessions = events_by_run
-            .into_iter()
-            .map(|(run_id, events)| {
-                let run_name = events.iter().find_map(|event| match &event.payload {
-                    EventV1::RunStarted(data) => Some(data.run_name.clone()),
-                    _ => None,
-                });
-                let workspace_root = events.iter().find_map(|event| match &event.payload {
-                    EventV1::RunStarted(data) => Some(data.workspace_root.clone()),
-                    _ => None,
-                });
-                let parent_session_id = events
-                    .iter()
-                    .find_map(|event| event.lineage_parent_session_id().map(str::to_owned));
-                let last_updated_at = events.iter().rev().find_map(|event| event.ts.clone());
-                DashboardSessionInput::new(
-                    SessionCatalogEntry {
-                        run_id: run_id.clone(),
-                        run_name: Some(
-                            run_name
-                                .map(|name| name.to_string())
-                                .unwrap_or_else(|| run_id.clone()),
-                        ),
-                        status: None,
-                        last_updated_at,
-                        workspace_root,
-                        profile_preset: Some(self.active_profile().to_string()),
-                        provider_model: None,
-                        mode_source,
-                        is_resumable: !self.replay_mode,
-                        resume_disabled_reason: None,
-                        artifact_count: 0,
-                        child_session_count: 0,
-                        parent_session_id,
-                    },
-                    events,
+        let mut sessions_by_run = self
+            .session_history_entries
+            .iter()
+            .map(|entry| {
+                (
+                    entry.catalog.run_id.clone(),
+                    (entry.catalog.clone(), Vec::new()),
                 )
             })
+            .collect::<BTreeMap<_, _>>();
+        for (run_id, events) in events_by_run {
+            let run_name = events.iter().find_map(|event| match &event.payload {
+                EventV1::RunStarted(data) => Some(data.run_name.clone()),
+                _ => None,
+            });
+            let workspace_root = events.iter().find_map(|event| match &event.payload {
+                EventV1::RunStarted(data) => Some(data.workspace_root.clone()),
+                _ => None,
+            });
+            let parent_session_id = events
+                .iter()
+                .find_map(|event| event.lineage_parent_session_id().map(str::to_owned));
+            let last_updated_at = events.iter().rev().find_map(|event| event.ts.clone());
+            let catalog = SessionCatalogEntry {
+                run_id: run_id.clone(),
+                run_name: Some(
+                    run_name
+                        .map(|name| name.to_string())
+                        .unwrap_or_else(|| run_id.clone()),
+                ),
+                status: None,
+                last_updated_at,
+                workspace_root,
+                profile_preset: Some(self.active_profile().to_string()),
+                provider_model: None,
+                mode_source,
+                is_resumable: !self.replay_mode,
+                resume_disabled_reason: None,
+                artifact_count: 0,
+                child_session_count: 0,
+                parent_session_id,
+            };
+            sessions_by_run.insert(run_id, (catalog, events));
+        }
+        let sessions = sessions_by_run
+            .into_values()
+            .map(|(catalog, events)| DashboardSessionInput::new(catalog, events))
             .collect::<Vec<_>>();
         let registry = DashboardReplayRegistry::from_sessions(sessions);
         let rules = DashboardEligibilityRules::default();

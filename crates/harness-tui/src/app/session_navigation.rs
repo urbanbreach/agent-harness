@@ -17,6 +17,7 @@ use super::{
     PostRunHandoffAction, StartupLauncherAction, Tab, UiIntent,
 };
 use crate::keybindings::{self, Action};
+use crate::leaf_actions::group_d_dashboard::{action_for_command, DashboardAction};
 use crate::text::has_trimmed_content;
 
 const SLASH_COMMAND_RESULT_LIMIT: usize = 10;
@@ -285,6 +286,11 @@ impl AppState {
 
     pub fn execute_slash_command(&mut self, command: &str, preserved_draft: Option<String>) {
         self.clear_slash_menu();
+        if action_for_command(command) == Some(DashboardAction::OpenDashboard) {
+            self.restore_slash_draft(preserved_draft);
+            self.open_status_dashboard();
+            return;
+        }
         match command {
             "new" => self.navigate_to_home_shell(preserved_draft.unwrap_or_default()),
             "sessions" => {
@@ -323,10 +329,6 @@ impl AppState {
             "connect" => {
                 self.restore_slash_draft(preserved_draft);
                 self.open_connect_dialog();
-            }
-            "status" | "dashboard" => {
-                self.restore_slash_draft(preserved_draft);
-                self.open_status_dashboard();
             }
             "help" | "feedback" => {
                 self.restore_slash_draft(preserved_draft);
