@@ -59,9 +59,11 @@ pub fn admit(input: &TaskGateInput) -> Result<PathBuf, TaskGateError> {
     receipts::validate_input(input)?;
     let plan_text = storage::read_text(&input.plan)?;
     let plan_sha256 = storage::digest(plan_text.as_bytes())?;
+    let contract_sha256 = plan::contract_sha256(&plan_text)?;
     plan::ensure_open_task(&plan_text, &input.task)?;
     let boulder_json = storage::read_json(&input.boulder)?;
     boulder::validate_active(&boulder_json)?;
+    boulder::validate_plan_contract(&boulder_json, &contract_sha256)?;
     boulder::validate_plan_binding(&boulder_json, &plan_sha256)?;
     boulder::validate_bootstrap(&boulder_json, &input.task)?;
     let revocations = boulder::validate_revocations(input, &boulder_json)?;
@@ -72,6 +74,7 @@ pub fn admit(input: &TaskGateInput) -> Result<PathBuf, TaskGateError> {
         "task": input.task,
         "candidate_sha256": input.candidate_sha256,
         "plan_sha256": plan_sha256,
+        "plan_contract_sha256": contract_sha256,
         "reviewed_plan_sha256": receipts::value_string(&boulder_json, "reviewed_plan_sha256")?,
         "worker_spawn_allowed": false,
         "task_sessions_empty": true,
@@ -90,6 +93,7 @@ pub fn verify(input: &TaskGateInput) -> Result<PathBuf, TaskGateError> {
     receipts::validate_admission(&admission, input)?;
     let plan_text = storage::read_text(&input.plan)?;
     let plan_sha256 = storage::digest(plan_text.as_bytes())?;
+    let contract_sha256 = plan::contract_sha256(&plan_text)?;
     if receipts::value_string(&admission, "plan_sha256")? != plan_sha256 {
         return Err(TaskGateError::Invalid(
             "plan changed after task admission".to_owned(),
@@ -98,6 +102,7 @@ pub fn verify(input: &TaskGateInput) -> Result<PathBuf, TaskGateError> {
     plan::ensure_open_task(&plan_text, &input.task)?;
     let boulder_json = storage::read_json(&input.boulder)?;
     boulder::validate_active(&boulder_json)?;
+    boulder::validate_plan_contract(&boulder_json, &contract_sha256)?;
     boulder::validate_plan_binding(&boulder_json, &plan_sha256)?;
     boulder::validate_revocations(input, &boulder_json)?;
     boulder::validate_dependencies(input)?;
@@ -119,6 +124,7 @@ pub fn verify(input: &TaskGateInput) -> Result<PathBuf, TaskGateError> {
         "task": input.task,
         "candidate_sha256": input.candidate_sha256,
         "plan_sha256": plan_sha256,
+        "plan_contract_sha256": contract_sha256,
         "admission_receipt": input.admission_receipt,
         "aggregate_receipt": input.aggregate_receipt,
         "verification_receipt": input.verification_receipt,
@@ -143,8 +149,14 @@ pub fn complete(input: &TaskGateInput) -> Result<PathBuf, TaskGateError> {
     receipts::validate_gate_receipt(&gate, input)?;
     let original_plan = storage::read_text(&input.plan)?;
     let original_boulder = storage::read_text(&input.boulder)?;
+    let original_boulder_json = storage::read_json(&input.boulder)?;
     let before_sha256 = storage::digest(original_plan.as_bytes())?;
     receipts::validate_current_execution(input, &before_sha256, &gate)?;
+    let contract_sha256 = plan::contract_sha256(&original_plan)?;
+    boulder::validate_active(&original_boulder_json)?;
+    boulder::validate_plan_contract(&original_boulder_json, &contract_sha256)?;
+    boulder::validate_plan_binding(&original_boulder_json, &before_sha256)?;
+    let prior_receipt_sha256 = boulder::prior_receipt_sha256(&original_boulder_json)?;
     let updated_plan = plan::complete_task_checkbox(&original_plan, &input.task)?;
     let after_sha256 = storage::digest(updated_plan.as_bytes())?;
     let completion = serde_json::json!({
@@ -154,20 +166,32 @@ pub fn complete(input: &TaskGateInput) -> Result<PathBuf, TaskGateError> {
         "candidate_sha256": input.candidate_sha256,
         "plan_sha256_before": before_sha256,
         "plan_sha256_after": after_sha256,
+        "raw_plan_sha256_before": before_sha256,
+        "raw_plan_sha256_after": after_sha256,
+        "plan_contract_sha256": contract_sha256,
+        "prior_receipt_sha256": prior_receipt_sha256,
+        "checkbox_only": true,
         "verification_receipt": input.gate_receipt,
         "completed_at_millis": storage::now_millis()?,
     });
+    let completion_bytes = serde_json::to_vec_pretty(&completion)
+        .map_err(|error| TaskGateError::Invalid(error.to_string()))?;
+    let completion_sha256 = storage::digest(&completion_bytes)?;
     storage::write_unique_json(&input.completion_receipt, &completion)?;
     if let Err(error) = storage::atomic_write(&input.plan, updated_plan.as_bytes()) {
         let _ = fs::remove_file(&input.completion_receipt);
         return Err(error);
     }
-    if let Err(error) = boulder::record_plan_transition(
-        &input.boulder,
-        &input.task,
-        &input.completion_receipt,
-        &after_sha256,
-    ) {
+    let transition = boulder::PlanTransition {
+        task: &input.task,
+        receipt: &input.completion_receipt,
+        receipt_sha256: &completion_sha256,
+        raw_before: &before_sha256,
+        raw_after: &after_sha256,
+        contract: &contract_sha256,
+        prior_receipt_sha256: prior_receipt_sha256.as_deref(),
+    };
+    if let Err(error) = boulder::record_plan_transition(&input.boulder, &transition) {
         return rollback(input, &original_plan, &original_boulder, error);
     }
     if input.finalize_closure {

@@ -27,9 +27,35 @@ fn task_gate_admits_verifies_and_completes_only_once() {
     assert!(fs::read_to_string(&fixture.plan)
         .expect("completed plan")
         .contains("- [x] 58. Repair"));
+    let completion_json: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(&fixture.completion_receipt).expect("completion receipt"),
+    )
+    .expect("completion receipt JSON");
     let boulder: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&fixture.boulder).expect("completed Boulder"))
             .expect("completed Boulder JSON");
+    assert_eq!(
+        completion_json["plan_contract_sha256"],
+        boulder["plan_contract_sha256"]
+    );
+    assert_eq!(
+        completion_json["raw_plan_sha256_after"],
+        completion_json["plan_sha256_after"]
+    );
+    assert!(completion_json["raw_plan_sha256_before"].is_string());
+    assert!(completion_json.get("prior_receipt_sha256").is_some());
+    assert_eq!(
+        boulder["raw_plan_hash_chain_head"],
+        boulder["pending_plan_sha256"]
+    );
+    assert_eq!(
+        boulder["plan_contract_sha256"],
+        boulder["works"]["work-1"]["plan_contract_sha256"]
+    );
+    assert_eq!(
+        boulder["raw_plan_hash_chain_head"],
+        boulder["works"]["work-1"]["raw_plan_hash_chain_head"]
+    );
     assert!(boulder["pending_plan_sha256"].as_str().is_some());
     assert!(boulder["task_completion_receipts"]["58"].is_object());
     assert!(boulder["works"]["work-1"]["pending_plan_sha256"]
@@ -163,6 +189,8 @@ impl Fixture {
                 "session_ids": [],
                 "task_sessions": {},
                 "reviewed_plan_sha256": plan_sha,
+                "plan_contract_sha256": plan_sha,
+                "raw_plan_hash_chain_head": plan_sha,
                 "completion_revocation_bindings": bindings,
                 "bootstrap_admission_58": {
                     "status": "admitted",
@@ -177,6 +205,8 @@ impl Fixture {
                         "active_plan": "plan.md",
                         "plan_name": "plan",
                         "session_ids": [],
+                        "plan_contract_sha256": plan_sha,
+                        "raw_plan_hash_chain_head": plan_sha,
                     }
                 },
             }))
