@@ -24,6 +24,7 @@ const TRANSCRIPT_INTEGRATION_SOURCE: &str = include_str!("../src/transcript_inte
 const UI_SOURCE: &str = include_str!("../src/ui.rs");
 const UI_TRANSCRIPT_SOURCE: &str = include_str!("../src/ui_transcript.rs");
 const RUNTIME_SOURCE: &str = include_str!("../src/runtime.rs");
+const MOUSE_SOURCE: &str = include_str!("../src/app/mouse_interaction.rs");
 
 fn user_event(seq: u64, request_id: &str, text: &str) -> EventEnvelopeV1 {
     EventEnvelopeV1 {
@@ -273,4 +274,6 @@ fn live_transcript_reachability_guards_cover_input_mouse_render_and_pager_adapte
     assert!(UI_TRANSCRIPT_SOURCE.contains("transcript_scrollbar_needed"));
     assert!(UI_TRANSCRIPT_SOURCE.contains("transcript_viewer"));
     assert!(TRANSCRIPT_INTEGRATION_SOURCE.contains("ExternalPagerSuspended"));
+    assert!(MOUSE_SOURCE.contains("set_transcript_scroll_from_top_with_max"));
+    assert!(MOUSE_SOURCE.contains("composite.scroll_to"));
 }

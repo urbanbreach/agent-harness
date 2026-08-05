@@ -765,6 +765,15 @@ impl AppState {
 
     fn set_transcript_scroll_from_top_with_max(&mut self, scroll_top: usize, max_scroll: usize) {
         let clamped = scroll_top.min(max_scroll);
+        if let Some(composite) = self.transcript_integration.as_mut() {
+            let target = f64::from(u32::try_from(clamped).unwrap_or(u32::MAX));
+            let _ = composite.scroll_to(
+                target,
+                0,
+                crate::transcript_scroll::MotionPreference::Full,
+            );
+            return;
+        }
         if max_scroll == 0 || clamped >= max_scroll {
             self.transcript_view.follow_mode = true;
             self.transcript_view.transcript_scroll = 0;
