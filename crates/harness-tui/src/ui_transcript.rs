@@ -288,7 +288,7 @@ fn transcript_pane_context<'a>(
     let title = format!(
         "Transcript{}{}",
         if is_focused { " (focused)" } else { "" },
-        if app.transcript_view.follow_mode {
+        if app.transcript_following() {
             " (following)"
         } else {
             ""
@@ -382,8 +382,8 @@ fn render_measured_transcript_pane(
             }
 
             let transcript_scroll = transcript_scroll_offset(
-                app.transcript_view.follow_mode,
-                app.transcript_view.transcript_scroll,
+                app.transcript_following(),
+                app.transcript_scroll_offset(),
                 layout.total_height,
                 viewport.content.height,
             );
@@ -528,8 +528,8 @@ fn build_transcript_selection_snapshot(
             TranscriptSelectionSnapshot {
                 viewport: viewport.content,
                 scroll_top: transcript_scroll_offset(
-                    app.transcript_view.follow_mode,
-                    app.transcript_view.transcript_scroll,
+                    app.transcript_following(),
+                    app.transcript_scroll_offset(),
                     layout.total_height,
                     viewport.content.height,
                 ),
@@ -568,8 +568,8 @@ fn with_transcript_selection_snapshot<R>(
             render_key: app.transcript_selection_cache_key(),
             theme,
             area: transcript_area,
-            follow_mode: app.transcript_view.follow_mode,
-            transcript_scroll: app.transcript_view.transcript_scroll,
+            follow_mode: app.transcript_following(),
+            transcript_scroll: app.transcript_scroll_offset(),
         },
         || build_transcript_selection_snapshot(app, area),
         render,
@@ -796,8 +796,8 @@ pub(crate) fn transcript_scrollbar_hit(
 
     let viewport = transcript_viewport_layout(context.inner_area, true);
     let scroll_top = current_transcript_scroll_top(
-        app.transcript_view.follow_mode,
-        app.transcript_view.transcript_scroll,
+        app.transcript_following(),
+        app.transcript_scroll_offset(),
         max_scroll,
     );
     let geometry = transcript_scrollbar_geometry(viewport, scroll_top, max_scroll)?;
@@ -893,8 +893,8 @@ pub(crate) fn transcript_mouse_target(
                 layout,
                 viewport,
                 transcript_scroll_offset(
-                    app.transcript_view.follow_mode,
-                    app.transcript_view.transcript_scroll,
+                    app.transcript_following(),
+                    app.transcript_scroll_offset(),
                     layout.total_height,
                     viewport.height,
                 ),

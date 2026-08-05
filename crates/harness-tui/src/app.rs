@@ -3351,44 +3351,35 @@ impl AppState {
 
     /// Returns `true` when follow mode is active (scroll pinned to bottom).
     pub fn follow_mode_active(&self) -> bool {
-        self.transcript_view.follow_mode
+        self.transcript_following()
     }
 
     /// Current scroll offset (0 = bottom / most recent content).
     pub fn transcript_scroll_offset(&self) -> usize {
+        if let Some(view) = self.transcript_view_model() {
+            let scroll_top = view
+                .scroll_top
+                .floor()
+                .to_string()
+                .parse::<usize>()
+                .unwrap_or(usize::MAX);
+            return self
+                .transcript_view
+                .last_transcript_max_scroll
+                .get()
+                .saturating_sub(scroll_top);
+        }
         self.transcript_view.transcript_scroll
     }
 
     /// Scroll up (away from bottom) by `viewport` rows, breaking follow mode.
     pub fn scroll_page_up(&mut self, viewport: usize) {
-        if let Some(composite) = self.transcript_integration.as_mut() {
-            let amount = u64::try_from(viewport.max(1)).unwrap_or(u64::MAX);
-            let amount = f64::from(u32::try_from(amount).unwrap_or(u32::MAX));
-            let _ = composite.scroll_by(amount);
-            return;
-        }
-        self.transcript_view.follow_mode = false;
-        self.transcript_view.transcript_scroll = self
-            .transcript_view
-            .transcript_scroll
-            .saturating_add(viewport.max(1));
+        self.scroll_transcript_up(u16::try_from(viewport.max(1)).unwrap_or(u16::MAX));
     }
 
     /// Scroll down (toward bottom) by `viewport` rows. Re-engages follow at 0.
     pub fn scroll_page_down(&mut self, viewport: usize) {
-        if let Some(composite) = self.transcript_integration.as_mut() {
-            let amount = u64::try_from(viewport.max(1)).unwrap_or(u64::MAX);
-            let amount = f64::from(u32::try_from(amount).unwrap_or(u32::MAX));
-            let _ = composite.scroll_by(-amount);
-            return;
-        }
-        self.transcript_view.transcript_scroll = self
-            .transcript_view
-            .transcript_scroll
-            .saturating_sub(viewport.max(1));
-        if self.transcript_view.transcript_scroll == 0 {
-            self.transcript_view.follow_mode = true;
-        }
+        self.scroll_transcript_down(u16::try_from(viewport.max(1)).unwrap_or(u16::MAX));
     }
 
     /// Scroll up by half of `viewport` (rounded up), breaking follow mode.
@@ -3409,21 +3400,29 @@ impl AppState {
 
     /// Jump to the top (oldest content). Breaks follow mode.
     pub fn scroll_goto_top(&mut self) {
-        let max = self.transcript_view.last_transcript_max_scroll.get();
-        self.transcript_view.transcript_scroll = max;
-        self.transcript_view.follow_mode = false;
+        if let Some(composite) = self.transcript_integration.as_mut() {
+            let _ = composite.jump_to_top();
+        } else {
+            let max = self.transcript_view.last_transcript_max_scroll.get();
+            self.transcript_view.transcript_scroll = max;
+            self.transcript_view.follow_mode = false;
+        }
     }
 
     /// Jump to the bottom (newest content). Re-engages follow mode.
     pub fn scroll_goto_bottom(&mut self) {
-        self.transcript_view.transcript_scroll = 0;
-        self.transcript_view.follow_mode = true;
+        if let Some(composite) = self.transcript_integration.as_mut() {
+            let _ = composite.jump_to_bottom();
+        } else {
+            self.transcript_view.transcript_scroll = 0;
+            self.transcript_view.follow_mode = true;
+        }
     }
 
     /// Called when new content arrives. If in follow mode, scroll stays at 0.
     /// If not in follow mode, scroll position is unchanged.
     pub fn follow_mode_content_arrived(&mut self) {
-        if self.transcript_view.follow_mode {
+        if self.transcript_following() {
             self.transcript_view.transcript_scroll = 0;
         }
     }
