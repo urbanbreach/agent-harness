@@ -1024,10 +1024,7 @@ impl AppState {
                 }
             }
             Action::ToggleFollow => {
-                self.transcript_view.follow_mode = !self.transcript_view.follow_mode;
-                if self.transcript_view.follow_mode {
-                    self.transcript_view.transcript_scroll = 0;
-                }
+                self.set_transcript_following(!self.transcript_following());
             }
             Action::OpenStatusDialog => {
                 self.open_status_dashboard();
@@ -1145,7 +1142,9 @@ impl AppState {
                 }
             }
             Action::FirstMessage | Action::MoveBufferStart => {
-                if !self.activities.is_empty() {
+                if self.transcript_view_model().is_some() {
+                    let _ = self.select_transcript_turn_at(0);
+                } else if !self.activities.is_empty() {
                     self.transcript_view.selected_activity_index = 0;
                     self.transcript_view.follow_mode = false;
                     self.details_scroll = 0;
@@ -1153,7 +1152,12 @@ impl AppState {
                 }
             }
             Action::LastMessage | Action::MoveBufferEnd => {
-                if !self.activities.is_empty() {
+                if let Some(last) = self
+                    .transcript_view_model()
+                    .map(|view| view.turns.len().saturating_sub(1))
+                {
+                    let _ = self.select_transcript_turn_at(last);
+                } else if !self.activities.is_empty() {
                     self.transcript_view.selected_activity_index =
                         self.activities.len().saturating_sub(1);
                     self.transcript_view.follow_mode = true;
@@ -1162,7 +1166,13 @@ impl AppState {
                 }
             }
             Action::NextMessage => {
-                if !self.activities.is_empty()
+                if self.transcript_view_model().is_some() {
+                    let next = self
+                        .transcript_view
+                        .selected_activity_index
+                        .saturating_add(1);
+                    let _ = self.select_transcript_turn_at(next);
+                } else if !self.activities.is_empty()
                     && self.transcript_view.selected_activity_index
                         < self.activities.len().saturating_sub(1)
                 {
@@ -1173,7 +1183,10 @@ impl AppState {
                 }
             }
             Action::PreviousMessage => {
-                if self.transcript_view.selected_activity_index > 0 {
+                if self.transcript_view_model().is_some() {
+                    let previous = self.transcript_view.selected_activity_index.saturating_sub(1);
+                    let _ = self.select_transcript_turn_at(previous);
+                } else if self.transcript_view.selected_activity_index > 0 {
                     self.transcript_view.selected_activity_index -= 1;
                     self.transcript_view.follow_mode = false;
                     self.details_scroll = 0;
@@ -1487,25 +1500,25 @@ impl AppState {
             return true;
         }
 
-        if let Some(action) = self.keymap.get_session_action(&key) {
-            self.execute_action(action);
-            return true;
-        }
-
         // Shift+Left/Right: turn nav on transcript focus only (composer uses same
         // keys for selection while Focus::Prompt).
         if key.modifiers == KeyModifiers::SHIFT {
             return match key.code {
                 KeyCode::Left => {
-                    self.previous_activity();
+                    self.execute_action(Action::PreviousMessage);
                     true
                 }
                 KeyCode::Right => {
-                    self.next_activity();
+                    self.execute_action(Action::NextMessage);
                     true
                 }
                 _ => false,
             };
+        }
+
+        if let Some(action) = self.keymap.get_session_action(&key) {
+            self.execute_action(action);
+            return true;
         }
 
         if key.modifiers != KeyModifiers::NONE {
@@ -1523,14 +1536,22 @@ impl AppState {
                 true
             }
             KeyCode::Home => {
-                self.transcript_view.follow_mode = false;
-                self.transcript_view.transcript_scroll =
-                    self.transcript_view.last_transcript_max_scroll.get();
+                if let Some(composite) = self.transcript_integration.as_mut() {
+                    let _ = composite.jump_to_top();
+                } else {
+                    self.transcript_view.follow_mode = false;
+                    self.transcript_view.transcript_scroll =
+                        self.transcript_view.last_transcript_max_scroll.get();
+                }
                 true
             }
             KeyCode::End => {
-                self.transcript_view.follow_mode = true;
-                self.transcript_view.transcript_scroll = 0;
+                if let Some(composite) = self.transcript_integration.as_mut() {
+                    let _ = composite.jump_to_bottom();
+                } else {
+                    self.transcript_view.follow_mode = true;
+                    self.transcript_view.transcript_scroll = 0;
+                }
                 true
             }
             _ => false,

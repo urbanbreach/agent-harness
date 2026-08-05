@@ -262,8 +262,11 @@ impl AppState {
                 self.status_banner = Some(error.to_string());
             }
         }
+        let transcript_area = crate::layout::FrameLayoutPlan::for_app(self, area)
+            .transcript
+            .unwrap_or(area);
         if let Some(composite) = self.transcript_integration.as_mut() {
-            let _ = composite.resize(area);
+            let _ = composite.resize(transcript_area);
         }
     }
 
