@@ -106,7 +106,10 @@ fn render_interactive_dashboard(
     if let Some(details) = layout.details {
         render_dashboard_details(frame, theme, details, dashboard);
     }
-    let focus = format!("focus: {:?}", dashboard.focus());
+    let focus = format!(
+        "focus: {:?} · Tab focus · / search · h help · esc close",
+        dashboard.focus()
+    );
     let footer = Rect::new(
         overlay.x.saturating_add(2),
         overlay.bottom().saturating_sub(2),
