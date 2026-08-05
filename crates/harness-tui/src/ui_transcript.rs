@@ -452,7 +452,8 @@ fn render_integrated_timeline(frame: &mut Frame, app: &AppState, area: Rect) {
         let Some(turn) = view.turns.iter().find(|turn| turn.turn_id() == marker.turn_id) else {
             continue;
         };
-        let interaction = if view.timeline.scroll_top == view.scroll_top.floor() as usize
+        let scroll_top = view.scroll_top.floor().to_string().parse::<usize>();
+        let interaction = if scroll_top == Ok(view.timeline.scroll_top)
             && view
                 .screen
                 .focus_follow()
