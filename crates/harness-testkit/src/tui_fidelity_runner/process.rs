@@ -1,17 +1,17 @@
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::Path;
-use std::sync::mpsc::{self, Receiver};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
+use portable_pty::{native_pty_system, CommandBuilder, MasterPty};
 
 use super::actions::apply_action;
 use super::cleanup::CleanupTracker;
 use super::error::RunnerError;
+use super::process_io::{configure_environment, pty_size, spawn_reader};
 use super::process_wait::{
-    collect_descendants, drain, process_error, request_normal_exit, wait_for_visible_stable_frame,
-    wait_until,
+    collect_descendants, drain, process_error, request_normal_exit, wait_for_prompt_ready,
+    wait_for_visible_stable_frame, wait_until,
 };
 use super::pty_child::PtyChildGuard;
 use super::types::{RunnerTiming, RuntimeBinary};
@@ -92,11 +92,28 @@ pub(super) fn execute(
             .take_writer()
             .map_err(|error| process_error(adapter, "take writer", error))?;
         let output = spawn_reader(reader);
-        let start = Instant::now();
-        let deadline = start + timing.scenario_timeout;
+        let process_start = Instant::now();
+        let deadline = process_start + timing.scenario_timeout;
         let mut stream = Vec::new();
         let mut inputs = Vec::new();
         let mut checkpoints = Vec::new();
+        let readiness_viewport = scenario
+            .checkpoints
+            .first()
+            .map_or(scenario.viewport, |checkpoint| checkpoint.frame.viewport);
+
+        let (child, observed) = guard.parts_mut(adapter)?;
+        wait_for_prompt_ready(
+            readiness_viewport,
+            deadline,
+            adapter,
+            child,
+            &output,
+            &mut stream,
+            observed,
+            pid,
+        )?;
+        let start = Instant::now();
 
         for action in &scenario.actions {
             let (child, observed) = guard.parts_mut(adapter)?;
@@ -215,40 +232,4 @@ pub(super) fn execute(
         });
     }
     result
-}
-
-fn configure_environment(command: &mut CommandBuilder) {
-    for (key, value) in [
-        ("TERM", "xterm-256color"),
-        ("COLORTERM", "truecolor"),
-        ("LANG", "C.UTF-8"),
-        ("LC_ALL", "C.UTF-8"),
-        ("TZ", "UTC"),
-        ("HARNESS_DETERMINISTIC", "1"),
-        ("HARNESS_SEED", "42"),
-    ] {
-        command.env(key, value);
-    }
-}
-
-const fn pty_size(viewport: Viewport) -> PtySize {
-    PtySize {
-        rows: viewport.rows,
-        cols: viewport.cols,
-        pixel_width: 0,
-        pixel_height: 0,
-    }
-}
-
-fn spawn_reader(mut reader: Box<dyn Read + Send>) -> Receiver<Vec<u8>> {
-    let (sender, receiver) = mpsc::channel();
-    thread::spawn(move || {
-        let mut buffer = [0_u8; 4096];
-        while let Ok(count) = reader.read(&mut buffer) {
-            if count == 0 || sender.send(buffer[..count].to_vec()).is_err() {
-                break;
-            }
-        }
-    });
-    receiver
 }

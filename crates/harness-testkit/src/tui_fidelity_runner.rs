@@ -6,6 +6,7 @@ mod cleanup;
 mod error;
 mod preflight;
 mod process;
+mod process_io;
 pub(crate) mod process_tree;
 mod process_wait;
 mod pty_child;
