@@ -97,6 +97,7 @@ fn run_inner(
         scenario_id: scenario.id.0.clone(),
         terminal_type: "xterm-256color".to_owned(),
         runtimes: vec![reference_receipt, harness_receipt],
+        candidate_binding: config.candidate_binding.clone(),
         source_guard_before: before,
         source_guard_after: after,
         comparison: None,

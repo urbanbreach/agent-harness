@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use harness_testkit::tui_fidelity_runner::{
-    RendererConfig, RunnerConfig, RunnerTiming, RuntimeBinary, SourceGuardConfig,
+    CandidateBinding, RendererConfig, RunnerConfig, RunnerTiming, RuntimeBinary, SourceGuardConfig,
 };
 
 pub const STARTUP_SMOKE: &str = include_str!("../fixtures/tui_fidelity/startup-smoke.json");
@@ -25,8 +25,10 @@ pub struct Fixture {
 impl Fixture {
     pub fn new(reference_mode: &str, harness_mode: &str, renderer_mode: &str) -> Self {
         let temp = tempfile::tempdir().expect("fixture tempdir");
-        let reference = write_program(temp.path(), "reference", reference_mode, "reference");
-        let harness = write_program(temp.path(), "harness", harness_mode, "harness");
+        let target = temp.path().join("target/test/debug");
+        fs::create_dir_all(&target).expect("fixture target");
+        let reference = write_program(&target, "reference", reference_mode, "reference");
+        let harness = write_program(&target, "harness", harness_mode, "harness");
         let source_guard = write_source_guard(temp.path());
         let renderer = write_renderer(temp.path(), renderer_mode);
         let browser = write_executable(temp.path(), "browser", "#!/usr/bin/env bash\nexit 0\n");
@@ -37,6 +39,20 @@ impl Fixture {
                 .expect("reference identity"),
             harness: RuntimeBinary::from_path(&harness, "harness-revision")
                 .expect("harness identity"),
+            candidate_binding: CandidateBinding {
+                candidate_sha: "harness-revision".to_owned(),
+                candidate_binary_sha256: RuntimeBinary::from_path(&harness, "harness-revision")
+                    .expect("candidate identity")
+                    .sha256,
+                runner_sha256: "f".repeat(64),
+                target_dir: harness
+                    .parent()
+                    .and_then(Path::parent)
+                    .expect("candidate target")
+                    .to_path_buf(),
+                freshness_relation:
+                    "test fixture current Git HEAD + worktree-local isolated target".to_owned(),
+            },
             source_guard: SourceGuardConfig {
                 program: source_guard,
                 reference_root: temp.path().join("reference-source"),

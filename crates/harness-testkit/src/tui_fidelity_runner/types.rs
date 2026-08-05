@@ -15,6 +15,15 @@ pub struct RuntimeBinary {
     pub sha256: String,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CandidateBinding {
+    pub candidate_sha: String,
+    pub candidate_binary_sha256: String,
+    pub runner_sha256: String,
+    pub target_dir: PathBuf,
+    pub freshness_relation: String,
+}
+
 impl RuntimeBinary {
     pub fn from_path(path: &Path, source_revision: &str) -> Result<Self, RunnerError> {
         Ok(Self {
@@ -55,6 +64,7 @@ pub struct RunnerConfig {
     pub evidence_dir: PathBuf,
     pub reference: RuntimeBinary,
     pub harness: RuntimeBinary,
+    pub candidate_binding: CandidateBinding,
     pub source_guard: SourceGuardConfig,
     pub renderer: RendererConfig,
     pub timing: RunnerTiming,
@@ -102,6 +112,7 @@ pub struct DualRuntimeReceipt {
     pub scenario_id: String,
     pub terminal_type: String,
     pub runtimes: Vec<AdapterReceipt>,
+    pub candidate_binding: CandidateBinding,
     pub source_guard_before: ArtifactDigest,
     pub source_guard_after: ArtifactDigest,
     #[serde(default)]

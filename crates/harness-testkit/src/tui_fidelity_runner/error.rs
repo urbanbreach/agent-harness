@@ -22,6 +22,10 @@ pub enum RunnerError {
         expected: String,
         actual: String,
     },
+    CandidateBinding {
+        path: PathBuf,
+        detail: String,
+    },
     SelfComparison {
         sha256: String,
     },
@@ -122,6 +126,13 @@ impl fmt::Display for RunnerError {
                 "binary digest mismatch for {}: expected {expected}, got {actual}",
                 path.display()
             ),
+            Self::CandidateBinding { path, detail } => {
+                write!(
+                    formatter,
+                    "candidate binary binding rejected for {}: {detail}",
+                    path.display()
+                )
+            }
             Self::SelfComparison { sha256 } => write!(
                 formatter,
                 "reference and harness resolve to the same binary digest {sha256}"

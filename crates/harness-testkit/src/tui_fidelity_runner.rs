@@ -22,8 +22,8 @@ pub use cleanup::record_preflight_failure;
 pub use error::RunnerError;
 pub use runner::{run_compare, run_compare_with_cached_reference};
 pub use types::{
-    AdapterReceipt, ArtifactDigest, BrowserCapabilities, CheckpointReceipt, CleanupReceipt,
-    DualRuntimeReceipt, RendererConfig, RunnerConfig, RunnerTiming, RuntimeBinary,
+    AdapterReceipt, ArtifactDigest, BrowserCapabilities, CandidateBinding, CheckpointReceipt,
+    CleanupReceipt, DualRuntimeReceipt, RendererConfig, RunnerConfig, RunnerTiming, RuntimeBinary,
     SourceGuardConfig,
 };
 

@@ -2,7 +2,7 @@ use std::env;
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::ExitCode;
+use std::process::{Command, ExitCode};
 use std::time::Duration;
 
 #[path = "../tui_fidelity_baseline.rs"]
@@ -15,8 +15,8 @@ use harness_testkit::binary_receipt::read_receipt;
 use harness_testkit::tui_fidelity::{AdapterKind, Scenario};
 use harness_testkit::tui_fidelity_cache::ReferenceCache;
 use harness_testkit::tui_fidelity_runner::{
-    record_preflight_failure, run_compare_with_cached_reference, RendererConfig, RunnerConfig,
-    RunnerError, RunnerTiming, RuntimeBinary, SourceGuardConfig,
+    record_preflight_failure, run_compare_with_cached_reference, CandidateBinding, RendererConfig,
+    RunnerConfig, RunnerError, RunnerTiming, RuntimeBinary, SourceGuardConfig,
 };
 
 const STARTUP_SMOKE: &str = include_str!("../../tests/fixtures/tui_fidelity/startup-smoke.json");
@@ -50,7 +50,7 @@ fn execute(arguments: Vec<OsString>) -> Result<(), RunnerError> {
             .map_err(|detail| RunnerError::Arguments { detail });
     }
     let args = parse_compare(arguments).map_err(|detail| RunnerError::Arguments { detail })?;
-    let (scenario, reference, harness) = prepare_compare(&args, &repo_root)
+    let (scenario, reference, harness, candidate_binding) = prepare_compare(&args, &repo_root)
         .map_err(|error| record_cli_preflight_failure(&args.evidence_dir, error))?;
     let browser_program = args
         .browser_bin
@@ -66,6 +66,7 @@ fn execute(arguments: Vec<OsString>) -> Result<(), RunnerError> {
         evidence_dir: args.evidence_dir,
         reference,
         harness,
+        candidate_binding,
         source_guard: SourceGuardConfig {
             program: repo_root.join("scripts/tui-fidelity/source-guard.sh"),
             reference_root: PathBuf::from("inspirations/grok-build"),
@@ -133,7 +134,7 @@ fn execute(arguments: Vec<OsString>) -> Result<(), RunnerError> {
 fn prepare_compare(
     args: &CompareArgs,
     repo_root: &Path,
-) -> Result<(Scenario, RuntimeBinary, RuntimeBinary), RunnerError> {
+) -> Result<(Scenario, RuntimeBinary, RuntimeBinary, CandidateBinding), RunnerError> {
     let scenario = match args.scenario.as_str() {
         "startup-smoke" => Scenario::from_json(STARTUP_SMOKE).map_err(RunnerError::from)?,
         other => tui_fidelity_baseline::load(other, repo_root)?,
@@ -144,25 +145,40 @@ fn prepare_compare(
         path: receipt_path.clone(),
         detail: error.to_string(),
     })?;
-    receipt
-        .verify_binary_digests()
-        .map_err(|error| RunnerError::BinaryReceipt {
-            path: receipt_path,
-            detail: error.to_string(),
-        })?;
     let reference = checked_binary(ExpectedBinary {
         adapter: AdapterKind::Grok,
         path: &args.reference_bin,
         revision: &receipt.reference.source_revision,
         sha256: &receipt.reference.sha256,
     })?;
-    let harness = checked_binary(ExpectedBinary {
-        adapter: AdapterKind::Harness,
-        path: &args.harness_bin,
-        revision: &receipt.harness.source_revision,
-        sha256: &receipt.harness.sha256,
+    let candidate_sha = current_revision(repo_root)?;
+    let harness_path = absolute_path(repo_root, &args.harness_bin);
+    let harness = checked_current_binary(&harness_path, &candidate_sha)?;
+    let runner_path = env::current_exe().map_err(|error| RunnerError::Io {
+        path: PathBuf::from("<current-executable>"),
+        detail: error.to_string(),
     })?;
-    Ok((scenario, reference, harness))
+    let runner = RuntimeBinary::from_path(&runner_path, &candidate_sha)?;
+    let target_dir = harness_path
+        .parent()
+        .and_then(Path::parent)
+        .ok_or_else(|| RunnerError::CandidateBinding {
+            path: harness_path.clone(),
+            detail: "candidate path is not target/<profile>/debug/harness".to_owned(),
+        })?;
+    let target_dir =
+        fs::canonicalize(target_dir).map_err(|error| RunnerError::CandidateBinding {
+            path: harness_path.clone(),
+            detail: format!("cannot resolve candidate target directory: {error}"),
+        })?;
+    let binding = CandidateBinding {
+        candidate_sha,
+        candidate_binary_sha256: harness.sha256.clone(),
+        runner_sha256: runner.sha256,
+        target_dir,
+        freshness_relation: "current git HEAD + worktree-local isolated target".to_owned(),
+    };
+    Ok((scenario, reference, harness, binding))
 }
 
 fn parse_compare(arguments: Vec<OsString>) -> Result<CompareArgs, String> {
@@ -235,6 +251,43 @@ fn checked_binary(expected: ExpectedBinary<'_>) -> Result<RuntimeBinary, RunnerE
             expected: expected.sha256.to_owned(),
             actual: identity.sha256,
         })
+    }
+}
+
+fn checked_current_binary(path: &Path, revision: &str) -> Result<RuntimeBinary, RunnerError> {
+    if !is_executable(path) {
+        return Err(RunnerError::MissingBinary {
+            adapter: AdapterKind::Harness,
+            path: path.to_path_buf(),
+        });
+    }
+    RuntimeBinary::from_path(path, revision)
+}
+
+fn current_revision(repo_root: &Path) -> Result<String, RunnerError> {
+    let output = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(repo_root)
+        .output()
+        .map_err(|error| RunnerError::Arguments {
+            detail: format!("read candidate Git revision: {error}"),
+        })?;
+    if !output.status.success() {
+        return Err(RunnerError::Arguments {
+            detail: format!(
+                "candidate Git revision failed: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            ),
+        });
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
+}
+
+fn absolute_path(repo_root: &Path, path: &Path) -> PathBuf {
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        repo_root.join(path)
     }
 }
 

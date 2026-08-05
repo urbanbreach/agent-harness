@@ -65,6 +65,27 @@ fn compare_rejects_missing_reference_binary() {
 }
 
 #[test]
+fn compare_rejects_foreign_candidate_binary_before_capture() {
+    // Given: a same-digest Harness binary staged under an older Task 49 cache-shaped path.
+    let mut fixture = Fixture::new("normal", "normal", "normal");
+    let stale_path = fixture
+        .root()
+        .join("home/.cache/agent-harness-task49/candidate-target/debug/harness");
+    std::fs::create_dir_all(stale_path.parent().expect("stale parent")).expect("stale parent");
+    std::fs::copy(&fixture.config.harness.path, &stale_path).expect("stale binary copy");
+    fixture.config.harness.path = stale_path;
+    fixture.config.harness.source_revision = "563efc519c7caa989c54001504b7915a5bfcaf3c".to_owned();
+    let scenario = Scenario::from_json(STARTUP_SMOKE).expect("scenario");
+
+    // When: the runner is given the foreign candidate binary.
+    let error = run_compare(&scenario, &fixture.config).expect_err("foreign binary must fail");
+
+    // Then: binding must reject it before a runtime capture can begin.
+    assert!(matches!(error, RunnerError::CandidateBinding { .. }));
+    assert!(!fixture.config.evidence_dir.join("harness").exists());
+}
+
+#[test]
 fn compare_rejects_same_binary_self_comparison() {
     let mut fixture = Fixture::new("normal", "normal", "normal");
     fixture.config.harness = fixture.config.reference.clone();
