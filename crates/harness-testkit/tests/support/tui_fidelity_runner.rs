@@ -69,12 +69,13 @@ impl Fixture {
 
 fn write_program(root: &Path, name: &str, mode: &str, identity: &str) -> PathBuf {
     let body = match mode {
-        "normal" => "trap 'exit 0' INT\nstty raw -echo\nprintf '\\033[2Jfixture-ready\\r\\n'\nwhile IFS= read -r -n 1 c; do\n  [[ \"$c\" == $'\\003' || \"$c\" == $'\\021' ]] && exit 0\ndone\n",
+        "normal" => "trap 'exit 0' INT\nstty raw -echo\nprintf '\\033[2Jfixture-ready\\r\\n\\033[1;1H❯'\nwhile IFS= read -r -n 1 c; do\n  [[ \"$c\" == $'\\003' || \"$c\" == $'\\021' ]] && exit 0\ndone\n",
         "premature" => "printf 'premature\\n'\nexit 0\n",
         "skipped" => "stty raw -echo\nprintf 'Skipped\\r\\n'\nwhile :; do sleep 1; done\n",
-        "hang" => "stty raw -echo\ntrap '' INT TERM HUP\nprintf 'hanging\\r\\n'\nwhile :; do sleep 1; done\n",
-        "survivor" => "trap 'exit 0' INT\nstty raw -echo\nsetsid bash -c 'trap \"\" HUP INT TERM; while :; do sleep 1; done' &\nprintf 'survivor-ready\\r\\n'\nwhile IFS= read -r -n 1 c; do\n  [[ \"$c\" == $'\\003' || \"$c\" == $'\\021' ]] && exit 0\ndone\n",
-        "cleanup-failure" => "trap 'exit 0' INT\nstty raw -echo\nprintf 'cleanup-failure-ready\\r\\n'\nbuffer=''\nwhile IFS= read -r -n 1 c; do\n  buffer=${buffer}${c}\n  if [[ \"$buffer\" == *'/exit' ]]; then\n    target=${TUI_FIDELITY_RUN_ROOT:-$(dirname \"$PWD\")}\n    cd /\n    rm -rf \"$target\"\n    printf 'blocks recursive directory cleanup\\n' >\"$target\"\n    exit 0\n  fi\ndone\n",
+        "hang" => "stty raw -echo\ntrap '' INT TERM HUP\nprintf 'hanging\\r\\n\\033[1;1H❯'\nwhile :; do sleep 1; done\n",
+        "delayed-prompt" => "trap 'exit 0' INT TERM HUP\nprintf 'booting\\r\\n'\nsleep 0.05\nstty raw -echo\nprintf '\\033[2J\\033[1;1H❯'\nwhile IFS= read -r -n 1 c; do\n  if [[ \"$c\" == $'\\003' || \"$c\" == $'\\021' ]]; then exit 0; fi\ndone\n",
+        "survivor" => "trap 'exit 0' INT\nstty raw -echo\nsetsid bash -c 'trap \"\" HUP INT TERM; while :; do sleep 1; done' &\nprintf 'survivor-ready\\r\\n\\033[1;1H❯'\nwhile IFS= read -r -n 1 c; do\n  [[ \"$c\" == $'\\003' || \"$c\" == $'\\021' ]] && exit 0\ndone\n",
+        "cleanup-failure" => "trap 'exit 0' INT\nstty raw -echo\nprintf 'cleanup-failure-ready\\r\\n\\033[1;1H❯'\nbuffer=''\nwhile IFS= read -r -n 1 c; do\n  buffer=${buffer}${c}\n  if [[ \"$buffer\" == *'/exit' ]]; then\n    target=${TUI_FIDELITY_RUN_ROOT:-$(dirname \"$PWD\")}\n    cd /\n    rm -rf \"$target\"\n    printf 'blocks recursive directory cleanup\\n' >\"$target\"\n    exit 0\n  fi\ndone\n",
         other => panic!("unsupported fixture mode: {other}"),
     };
     write_executable(

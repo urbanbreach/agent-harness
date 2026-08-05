@@ -209,3 +209,40 @@ fn compare_writes_explicit_capture_and_comparison_gate_receipt() {
     }
     assert!(receipt.comparison.is_some());
 }
+
+#[test]
+fn compare_waits_for_prompt_before_sending_first_action() {
+    // Given: both PTYs need time to initialize before accepting scripted input.
+    let fixture = Fixture::new("delayed-prompt", "delayed-prompt", "normal");
+    let scenario = Scenario::from_json(STARTUP_SMOKE).expect("scenario");
+
+    // When: the runner executes the same startup scenario against both adapters.
+    let receipt = run_compare(&scenario, &fixture.config).expect("dual runtime succeeds");
+
+    // Then: the first checkpoint contains the prompt, not an echoed first key.
+    for runtime in &receipt.runtimes {
+        assert!(
+            runtime
+                .input_timestamps_millis
+                .first()
+                .is_some_and(|timestamp| *timestamp < 25),
+            "{} action clock must start after readiness",
+            runtime.adapter.as_str()
+        );
+    }
+    for adapter in ["grok", "harness"] {
+        let ansi = std::fs::read_to_string(
+            fixture
+                .config
+                .evidence_dir
+                .join(adapter)
+                .join("rest/terminal-ansi.txt"),
+        )
+        .expect("checkpoint ANSI stream");
+        assert!(ansi.contains('❯'), "{adapter} prompt must be captured");
+        assert!(
+            !ansi.contains('h'),
+            "{adapter} must not capture pre-ready input"
+        );
+    }
+}
