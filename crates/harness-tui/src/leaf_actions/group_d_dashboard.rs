@@ -32,6 +32,9 @@ pub struct LeafActionResolution {
 /// Group identifier for aggregator wiring (Todo 28).
 pub const GROUP_ID: &str = "D";
 
+/// Canonical slash aliases that enter the interactive dashboard.
+pub const STATUS_COMMANDS: &[&str] = &["status", "dashboard"];
+
 /// Capability IDs covered by this group.
 pub const CAPABILITY_IDS: &[&str] = &["cli.dashboard", "tui.session_status_dashboard"];
 
@@ -50,6 +53,25 @@ pub enum DashboardAction {
     ShowContext,
     /// Show active tasks.
     ShowTasks,
+}
+
+impl DashboardAction {
+    pub const fn is_interactive(self) -> bool {
+        matches!(
+            self,
+            Self::OpenDashboard
+                | Self::ShowSessionStatus
+                | Self::ShowUsage
+                | Self::ShowContext
+                | Self::ShowTasks
+        )
+    }
+}
+
+/// Resolve a slash alias to the interactive dashboard action.
+pub fn action_for_command(command: &str) -> Option<DashboardAction> {
+    STATUS_COMMANDS.contains(&command)
+        .then_some(DashboardAction::OpenDashboard)
 }
 
 /// Resolve a capability ID to its backend owner and availability.
