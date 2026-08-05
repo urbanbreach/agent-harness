@@ -58,7 +58,8 @@ fn signoff_parity_mode_is_fail_closed() {
     let verdict_writer = function_body(&script, "write_signoff_parity_verdict");
     let help_declares = script.contains("signoff-parity")
         && script.contains("Strict fail-closed dual-binary TUI reference parity");
-    let owns_independent_manifest = body.contains("docs/reference/tui-reference-parity-manifest.v1.json")
+    let owns_independent_manifest = body
+        .contains("docs/reference/tui-reference-parity-manifest.v1.json")
         && body.contains("reference_parity_manifest_present")
         && body.contains("write_signoff_parity_verdict")
         && verdict_writer.contains("parity-lane-verdict.txt")

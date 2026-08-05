@@ -55,7 +55,10 @@ fn attachment_event_round_trips_without_raw_content_or_path() {
     assert!(!encoded.contains("secret-pixels"));
     assert!(!encoded.contains("/workspace/private/secret.png"));
     assert_eq!(decoded, event);
-    assert_eq!(first.content_ref.as_str(), redacted_content_ref(Some(path), b"secret-pixels").as_str());
+    assert_eq!(
+        first.content_ref.as_str(),
+        redacted_content_ref(Some(path), b"secret-pixels").as_str()
+    );
 }
 
 #[test]
@@ -103,7 +106,10 @@ fn checkpoint_and_projection_preserve_submission_order() {
         .collect();
     assert_eq!(checkpoint_ids, ["z-last", "a-first"]);
     assert_eq!(projected_ids, ["z-last", "a-first"]);
-    assert_eq!(stable_attachment_order(&[first, second]).expect("stable order"), checkpoint.for_request("req-1").expect("request checkpoint"));
+    assert_eq!(
+        stable_attachment_order(&[first, second]).expect("stable order"),
+        checkpoint.for_request("req-1").expect("request checkpoint")
+    );
 }
 
 #[test]
@@ -126,5 +132,8 @@ fn replay_checkpoint_does_not_read_deleted_source_files() {
     let checkpoint = checkpoint_attachments(&events, 1);
 
     // Then: replay remains deterministic after the source disappears.
-    assert_eq!(checkpoint.for_request("req-1"), Some(&[attachment] as &[AttachmentMetadata]));
+    assert_eq!(
+        checkpoint.for_request("req-1"),
+        Some(&[attachment] as &[AttachmentMetadata])
+    );
 }
