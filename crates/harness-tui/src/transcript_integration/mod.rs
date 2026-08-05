@@ -77,6 +77,42 @@ impl TranscriptComposite {
         self.follow.is_following()
     }
 
+    pub fn set_following(&mut self, following: bool) -> Result<(), TranscriptIntegrationError> {
+        let max = self
+            .layout
+            .as_ref()
+            .map_or(0.0, TranscriptLayout::max_scroll);
+        if following {
+            self.follow.jump_to_bottom();
+            self.scroll_top = max;
+        } else if self.follow.is_following() && max > 0.0 {
+            self.follow.scroll_by(1.0, max)?;
+            self.scroll_top = (max - self.follow.offset()).max(0.0);
+        }
+        self.refresh_view();
+        Ok(())
+    }
+
+    pub fn jump_to_top(&mut self) -> Result<ScrollFrame, TranscriptIntegrationError> {
+        let max = self
+            .layout
+            .as_ref()
+            .map_or(0.0, TranscriptLayout::max_scroll);
+        if max > 0.0 {
+            self.follow.scroll_by(max, max)?;
+        }
+        self.scroll_to(0.0, 0, MotionPreference::Full)
+    }
+
+    pub fn jump_to_bottom(&mut self) -> Result<ScrollFrame, TranscriptIntegrationError> {
+        let max = self
+            .layout
+            .as_ref()
+            .map_or(0.0, TranscriptLayout::max_scroll);
+        self.follow.jump_to_bottom();
+        self.scroll_to(max, 0, MotionPreference::Full)
+    }
+
     pub fn scroll_top(&self) -> f64 {
         self.scroll_top
     }
@@ -227,6 +263,10 @@ impl TranscriptComposite {
 
     pub fn viewer(&self) -> Option<&ViewerState> {
         self.viewer.as_ref()
+    }
+
+    pub fn pager_snapshot(&self) -> Option<&TranscriptSnapshot> {
+        self.pager.as_ref()
     }
 }
 

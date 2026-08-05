@@ -3,9 +3,15 @@ use crate::UnwrapOrAbort;
 use crate::design_contract::LifecycleState;
 use crate::transcript_blocks::{BlockKind, BlockLifecycle, RawDisclosure};
 use crate::transcript_identity::ReplayTurn;
-use crate::transcript_integration::{BlockSeed, TranscriptComposite, TranscriptEvent, TurnSeed};
+use crate::transcript_integration::{
+    BlockSeed, TranscriptComposite, TranscriptEvent, TranscriptIntegrationError, TurnSeed,
+};
 use crate::transcript_timeline::TimelineStatus;
 use crate::prompt_queue_actions::{QueueLifecycle, QueueState};
+use crate::scheduling::FrameNow;
+use crate::transcript_pager::{
+    PagerCommand, PagerExit, PagerStdio, TerminalControl, run_pager,
+};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
@@ -64,9 +70,12 @@ impl AppState {
         };
         let state = QueueState::new(lifecycle).with_draft(self.composer.parity_text());
         let _ = self.composer.slice.set_queue_state(state);
-        let viewport = self
+        let frame_area = self
             .last_frame_area
             .unwrap_or(ratatui::layout::Rect::new(0, 0, 80, 24));
+        let viewport = crate::layout::FrameLayoutPlan::for_app(self, frame_area)
+            .transcript
+            .unwrap_or(frame_area);
         if self.transcript_integration.is_none() {
             self.transcript_integration = TranscriptComposite::new(viewport).ok();
         }
@@ -75,6 +84,73 @@ impl AppState {
             let _ = composite.resize(viewport);
             let _ = composite.replace_events(events);
         }
+    }
+
+    pub fn transcript_following(&self) -> bool {
+        self.transcript_integration
+            .as_ref()
+            .map_or(self.transcript_view.follow_mode, TranscriptComposite::is_following)
+    }
+
+    pub fn transcript_viewer_mode(&self) -> Option<crate::transcript_block_viewer::ViewerMode> {
+        self.transcript_viewer().map(|viewer| viewer.mode())
+    }
+
+    pub(crate) fn set_transcript_following(&mut self, following: bool) {
+        if let Some(composite) = self.transcript_integration.as_mut() {
+            let _ = composite.set_following(following);
+            return;
+        }
+        self.transcript_view.follow_mode = following;
+        if following {
+            self.transcript_view.transcript_scroll = 0;
+        }
+    }
+
+    pub fn select_transcript_turn_at(&mut self, index: usize) -> bool {
+        let Some(turn_id) = self
+            .transcript_view_model()
+            .and_then(|view| view.turns.get(index).map(|turn| turn.turn_id()))
+        else {
+            return false;
+        };
+        self.transcript_view.selected_activity_index = index;
+        self.select_transcript_turn(turn_id)
+    }
+
+    pub fn toggle_selected_transcript_fold(&mut self) -> bool {
+        let Some(block_id) = self.transcript_view_model().and_then(|view| {
+            view.turns
+                .get(self.transcript_view.selected_activity_index)
+                .map(|turn| turn.replay_turn().block_id(0))
+        }) else {
+            return false;
+        };
+        self.transcript_integration
+            .as_mut()
+            .is_some_and(|composite| composite.toggle_fold(block_id).is_ok())
+    }
+
+    pub fn run_transcript_pager<T: TerminalControl>(
+        &mut self,
+        pager_command: &PagerCommand,
+        stdio: PagerStdio,
+        terminal: &mut T,
+    ) -> Result<PagerExit, TranscriptIntegrationError> {
+        let snapshot = self
+            .transcript_integration
+            .as_mut()
+            .ok_or(TranscriptIntegrationError::NoPager)?
+            .suspend_pager()?
+            .clone();
+        let pager_result = run_pager(&snapshot, pager_command, stdio, terminal);
+        let restore_result = self
+            .transcript_integration
+            .as_mut()
+            .ok_or(TranscriptIntegrationError::NoPager)?
+            .restore_pager();
+        restore_result?;
+        pager_result.map_err(Into::into)
     }
 
     pub(crate) fn open_selected_transcript_viewer(&mut self) -> bool {
@@ -376,6 +452,15 @@ impl AppState {
                     self.toast = None;
                 }
             }
+        }
+        if let Some(composite) = self.transcript_integration.as_mut() {
+            let animation_ms = u64::try_from(self.transcript_view.transcript_animation_phase)
+                .unwrap_or(u64::MAX)
+                .saturating_mul(33);
+            let _ = composite.tick_at(FrameNow {
+                animation_ms,
+                flush_ms: animation_ms,
+            });
         }
     }
 
@@ -811,6 +896,10 @@ impl AppState {
     }
 
     pub(in crate::app) fn scroll_transcript_up(&mut self, amount: u16) {
+        if let Some(composite) = self.transcript_integration.as_mut() {
+            let _ = composite.scroll_by(f64::from(amount.max(1)));
+            return;
+        }
         self.transcript_view.follow_mode = false;
         self.transcript_view.transcript_scroll = self
             .transcript_view
@@ -819,6 +908,10 @@ impl AppState {
     }
 
     pub(in crate::app) fn scroll_transcript_down(&mut self, amount: u16) {
+        if let Some(composite) = self.transcript_integration.as_mut() {
+            let _ = composite.scroll_by(-f64::from(amount.max(1)));
+            return;
+        }
         self.transcript_view.transcript_scroll = self
             .transcript_view
             .transcript_scroll
