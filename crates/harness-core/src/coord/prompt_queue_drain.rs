@@ -74,6 +74,7 @@ impl Coordinator {
                     agent_id.to_string(),
                     entry.text.clone(),
                     crate::file_tag::SelectedPromptTags::default(),
+                    Vec::new(),
                     None,
                     None,
                     None,

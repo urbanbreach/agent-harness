@@ -80,6 +80,7 @@ pub(super) async fn handle_ui_intents(
                 selected_file_tags,
                 selected_agent_tags,
                 selected_resource_tags,
+                attachments,
                 launch_metadata,
             } => {
                 let agent_id = live_agent_target.as_ref().and_then(|target| {
@@ -90,8 +91,9 @@ pub(super) async fn handle_ui_intents(
                 });
 
                 if let Some(agent_id) = agent_id {
+                    let attachment_metadata = prompt_attachment_metadata(&attachments)?;
                     let request_id = coordinator
-                        .request_agent_turn_with_model_and_selected_tags(
+                        .request_agent_turn_with_model_and_selected_tags_and_attachments(
                             user_actor.clone(),
                             agent_id,
                             text,
@@ -100,6 +102,7 @@ pub(super) async fn handle_ui_intents(
                                 agents: selected_agent_tags,
                                 resources: selected_resource_tags,
                             },
+                            attachment_metadata,
                             launch_metadata_model_ref(&launch_metadata),
                             Some(launch_metadata_model_settings(&launch_metadata)),
                         )
@@ -417,6 +420,50 @@ pub(super) async fn handle_ui_intents(
         }
     }
     Ok(())
+}
+
+fn prompt_attachment_metadata(
+    attachments: &[harness_tui::composer_integration::SubmissionAttachment],
+) -> Result<Vec<harness_core::attachment_transport::AttachmentMetadata>, String> {
+    let payloads = attachments
+        .iter()
+        .map(|attachment| {
+            let metadata = harness_core::attachment_transport::AttachmentMetadata::from_bytes(
+                attachment.id.get().to_string(),
+                attachment.mime.as_str(),
+                None,
+                &attachment.bytes,
+                None,
+            );
+            harness_providers::attachment_protocol::AttachmentPayload::new(
+                harness_providers::attachment_protocol::AttachmentMetadata::new(
+                    metadata.id.clone(),
+                    metadata.mime.clone(),
+                    metadata.size,
+                    None,
+                    metadata.content_ref.as_str(),
+                ),
+                attachment.bytes.clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+    harness_providers::attachment_protocol::serialize_attachments(
+        &harness_providers::attachment_protocol::AttachmentProtocol::openai(),
+        &payloads,
+    )
+    .map_err(|error| format!("attachment serialization failed: {error}"))?;
+    Ok(payloads
+        .into_iter()
+        .map(|payload| {
+            harness_core::attachment_transport::AttachmentMetadata::from_bytes(
+                payload.metadata.id,
+                payload.metadata.mime,
+                None,
+                &payload.bytes,
+                None,
+            )
+        })
+        .collect())
 }
 
 pub(super) fn foreground_background_success_message(count: usize) -> String {

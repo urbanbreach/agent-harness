@@ -146,6 +146,7 @@ impl AppState {
 
     pub(in crate::app) fn clear_prompt_input(&mut self) {
         self.reset_clear_prompt_confirmation();
+        let _ = self.composer.replace_parity_text("");
         self.composer.prompt_buffer.clear();
         self.composer.prompt_cursor = 0;
         self.composer.selection_anchor = None;
@@ -216,7 +217,8 @@ impl AppState {
 
     pub(in crate::app) fn apply_pending_live_prompt(&mut self, pending_prompt: PendingLivePrompt) {
         if pending_prompt.auto_submit {
-            self.dispatch_submitted_prompt(pending_prompt.text);
+            self.replace_prompt_input(pending_prompt.text);
+            self.dispatch_submitted_prompt();
         } else {
             self.replace_prompt_input(pending_prompt.text);
         }
@@ -274,7 +276,7 @@ impl AppState {
         }
     }
 
-    pub(crate) fn handle_paste(&mut self, text: &str) {
+    pub fn handle_paste(&mut self, text: &str) {
         if self.handle_new_worktree_dialog_paste(text) {
             return;
         }
@@ -424,7 +426,7 @@ impl AppState {
         }
     }
 
-    fn dispatch_submitted_prompt(&mut self, text: String) {
+    fn dispatch_submitted_prompt(&mut self) {
         if self.launch_metadata.model().is_none()
             && self.launch_metadata.provider() == "local"
             && self.launch_metadata.configured_profile().is_some()
@@ -436,6 +438,14 @@ impl AppState {
             );
             return;
         }
+        let submission = match self.composer_submission() {
+            Ok(submission) => submission,
+            Err(error) => {
+                self.status_banner = Some(error.to_string());
+                return;
+            }
+        };
+        let text = submission.text;
         let selected_file_tags = self.selected_file_tags();
         let selected_agent_tags = self.selected_agent_tags();
         let selected_resource_tags = self.selected_resource_tags();
@@ -445,6 +455,7 @@ impl AppState {
             selected_file_tags,
             selected_agent_tags,
             selected_resource_tags,
+            attachments: submission.attachments,
             launch_metadata: self.launch_metadata.clone(),
         });
     }
@@ -576,8 +587,7 @@ impl AppState {
             return;
         }
 
-        let text = self.composer.prompt_buffer.clone();
-        self.dispatch_submitted_prompt(text);
+        self.dispatch_submitted_prompt();
     }
 
     fn apply_backslash_continuation(&mut self) -> bool {

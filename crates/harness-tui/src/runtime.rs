@@ -543,6 +543,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                         let frame_area = ratatui::layout::Rect::new(0, 0, size.width, size.height);
                         app.set_frame_area(frame_area);
                         app.handle_key(key);
+                        app.tick_composer_runtime();
                         true
                     }
                     event::TuiEvent::Paste(text) => {
@@ -550,6 +551,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                         let frame_area = ratatui::layout::Rect::new(0, 0, size.width, size.height);
                         app.set_frame_area(frame_area);
                         app.handle_paste(&text);
+                        app.tick_composer_runtime();
                         true
                     }
                     event::TuiEvent::Mouse(mouse) => {
@@ -587,13 +589,15 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                             ),
                             _ => (None, None, None),
                         };
-                        app.handle_mouse(
+                        let handled = app.handle_mouse(
                             mouse,
                             frame_area,
                             hovered_wheel_target,
                             clicked_operator_sidebar_section,
                             transcript_scrollbar_hit,
-                        )
+                        );
+                        app.tick_composer_runtime();
+                        handled
                     }
                     event::TuiEvent::Resize(_, _) => true,
                     event::TuiEvent::FocusGained => {

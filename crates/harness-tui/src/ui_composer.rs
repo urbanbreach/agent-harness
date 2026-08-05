@@ -306,7 +306,20 @@ fn render_bordered_composer(
         Color::Reset
     };
     let border_style = Style::default().fg(border_fg).bg(surface);
-    let badge = composer_model_badge(app);
+    let composer_view = app.composer_view_model_for_area(area);
+    let mut badge = composer_model_badge(app);
+    if !composer_view.attachments.is_empty() {
+        let labels = composer_view
+            .attachments
+            .iter()
+            .map(|attachment| attachment.label.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        badge.push_str(&format!(" · {labels}"));
+    }
+    if let Some(completion) = composer_view.completion.as_ref() {
+        badge.push_str(&format!(" · {} suggestions", completion.items.len()));
+    }
     let content_lines = context.composer_lines.max(1);
     let strip_height = area
         .height

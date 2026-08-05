@@ -271,6 +271,7 @@ pub(super) fn composer_enter_submits_and_shift_enter_inserts_newline() {
             selected_file_tags: Vec::new(),
             selected_agent_tags: Vec::new(),
             selected_resource_tags: Vec::new(),
+            attachments: Vec::new(),
             launch_metadata: app::LaunchMetadata::default(),
         }]
     );
@@ -368,6 +369,7 @@ pub(super) fn composer_submits_queued_followup_while_streaming() {
                 selected_file_tags: Vec::new(),
                 selected_agent_tags: Vec::new(),
                 selected_resource_tags: Vec::new(),
+                attachments: Vec::new(),
                 launch_metadata: app::LaunchMetadata::default(),
             },
             UiIntent::SubmitPrompt {
@@ -375,6 +377,7 @@ pub(super) fn composer_submits_queued_followup_while_streaming() {
                 selected_file_tags: Vec::new(),
                 selected_agent_tags: Vec::new(),
                 selected_resource_tags: Vec::new(),
+                attachments: Vec::new(),
                 launch_metadata: app::LaunchMetadata::default(),
             },
         ]

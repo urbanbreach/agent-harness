@@ -2,7 +2,7 @@
 use super::*;
 
 impl AppState {
-    fn handle_composer_mouse(&mut self, mouse: MouseEvent, frame_area: Rect) -> bool {
+    pub(crate) fn handle_composer_mouse_event(&mut self, mouse: MouseEvent, frame_area: Rect) -> bool {
         if !matches!(
             mouse.kind,
             MouseEventKind::Down(MouseButton::Left)
@@ -348,7 +348,7 @@ impl AppState {
 
         self.set_frame_area(frame_area);
 
-        if self.handle_composer_mouse(mouse, frame_area) {
+        if self.handle_composer_mouse_event(mouse, frame_area) {
             return true;
         }
 

@@ -143,6 +143,7 @@ pub enum UiIntent {
         selected_file_tags: Vec<harness_core::file_tag::SelectedFileTag>,
         selected_agent_tags: Vec<harness_core::file_tag::SelectedAgentTag>,
         selected_resource_tags: Vec<harness_core::file_tag::SelectedResourceTag>,
+        attachments: Vec<crate::composer_integration::SubmissionAttachment>,
         launch_metadata: LaunchMetadata,
     },
     CompactSession,

@@ -382,6 +382,7 @@ pub enum Command {
         selected_file_tags: Vec<crate::file_tag::SelectedFileTag>,
         selected_agent_tags: Vec<crate::file_tag::SelectedAgentTag>,
         selected_resource_tags: Vec<crate::file_tag::SelectedResourceTag>,
+        attachments: Vec<crate::attachment_transport::AttachmentMetadata>,
         model_ref_override: Option<String>,
         model_settings_override: Option<AgentModelSettings>,
         child_task_metadata: Option<ChildTaskRequestMetadata>,

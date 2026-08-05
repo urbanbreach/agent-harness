@@ -1051,6 +1051,14 @@ impl AppState {
         self.composer.slice.view_model(viewport)
     }
 
+    pub fn composer_view_model_for_area(&self, area: Rect) -> ComposerViewModel {
+        let viewport = ViewportId::ALL
+            .into_iter()
+            .find(|viewport| viewport.dimensions() == (area.width, area.height))
+            .unwrap_or(ViewportId::Standard100x30);
+        self.composer_view_model(viewport)
+    }
+
     pub fn composer_submission(
         &self,
     ) -> Result<ComposerUiIntent, crate::composer_integration::ComposerSliceError> {
@@ -1092,6 +1100,52 @@ impl AppState {
                     lifecycle: self.composer.slice.queue_state().lifecycle,
                 },
             })
+    }
+
+    pub fn composer_set_queue_state(
+        &mut self,
+        state: crate::prompt_queue_actions::QueueState,
+    ) -> Result<(), crate::composer_integration::ComposerSliceError> {
+        self.composer.slice.set_queue_state(state)
+    }
+
+    pub fn composer_request_suggestion(
+        &mut self,
+        context: impl Into<String>,
+    ) -> Result<crate::ghost_suggestions::Request, crate::composer_integration::ComposerSliceError>
+    {
+        self.composer.slice.request_suggestion(context)
+    }
+
+    pub fn composer_advance_suggestion_clock(&self, milliseconds: u64) -> u64 {
+        self.composer.slice.advance_flush(milliseconds)
+    }
+
+    pub fn composer_ready_suggestion(&self) -> Option<crate::ghost_suggestions::Request> {
+        self.composer.slice.ready_suggestion()
+    }
+
+    pub fn composer_apply_suggestion_response(
+        &mut self,
+        request: &crate::ghost_suggestions::Request,
+        text: impl Into<String>,
+    ) -> Result<(), crate::composer_integration::ComposerSliceError> {
+        self.composer.slice.apply_suggestion_response(request, text)
+    }
+
+    pub fn composer_accept_full_suggestion(
+        &mut self,
+    ) -> Result<(), crate::composer_integration::ComposerSliceError> {
+        self.composer.slice.accept_full_suggestion()
+    }
+
+    pub fn handle_composer_mouse(&mut self, mouse: MouseEvent, frame_area: Rect) -> bool {
+        self.handle_composer_mouse_event(mouse, frame_area)
+    }
+
+    pub(crate) fn tick_composer_runtime(&mut self) {
+        let animation_active = self.has_active_animations_for_evidence();
+        let _ = self.composer.slice.schedule_motion(animation_active, true);
     }
 
     pub fn composer_begin_completion(&mut self, trigger: CompletionTrigger) -> CompletionRequest {
@@ -1412,6 +1466,7 @@ impl AppState {
         }
         self.update_transient_state_for_event(&event);
         let trimmed_events = self.projection.ingest_event(event.clone(), historical);
+        self.update_composer_queue_lifecycle(&event);
         self.seed_patch_file_expansions(&event);
         if !historical {
             if let Some(notice) = self.projection.pending_status_notice.take() {
@@ -3219,6 +3274,35 @@ impl AppState {
             }
             self.clear_question_answer_state(&data.permission_id);
         }
+    }
+
+    fn update_composer_queue_lifecycle(&mut self, event: &EventEnvelopeV1) {
+        let lifecycle = if matches!(&event.payload, EventV1::UserMessageSubmitted(_)) {
+            Some(QueueLifecycle::Streaming)
+        } else if matches!(&event.payload, EventV1::ToolCallRequested(_)) {
+            Some(QueueLifecycle::Tool)
+        } else if matches!(&event.payload, EventV1::PermissionRequested(_)) {
+            Some(QueueLifecycle::Waiting)
+        } else if matches!(&event.payload, EventV1::TaskCancelled(_)) {
+            Some(QueueLifecycle::Cancelling)
+        } else if matches!(&event.payload, EventV1::RunFinished(_)) {
+            Some(QueueLifecycle::Completed)
+        } else if matches!(&event.payload, EventV1::RunFailed(_)) {
+            Some(QueueLifecycle::Failed)
+        } else if matches!(&event.payload, EventV1::AssistantMessageFinished(_)) {
+            Some(QueueLifecycle::Idle)
+        } else {
+            None
+        };
+        let Some(lifecycle) = lifecycle else {
+            return;
+        };
+        let mut state = self.composer.slice.queue_state().clone();
+        state.lifecycle = lifecycle;
+        if lifecycle != QueueLifecycle::Cancelling {
+            state.cancel_stage = None;
+        }
+        let _ = self.composer_set_queue_state(state);
     }
 
     fn maybe_auto_exit(&mut self) {

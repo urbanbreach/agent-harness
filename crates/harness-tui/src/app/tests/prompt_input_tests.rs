@@ -183,6 +183,7 @@ pub(super) fn live_bootstrap_auto_submit_echoes_and_emits_first_prompt() {
             selected_file_tags: Vec::new(),
             selected_agent_tags: Vec::new(),
             selected_resource_tags: Vec::new(),
+            attachments: Vec::new(),
             launch_metadata: LaunchMetadata::default(),
         }]
     );
@@ -438,6 +439,7 @@ pub(super) fn submit_prompt_while_turn_streams_echoes_as_queued_and_emits_intent
             selected_file_tags: Vec::new(),
             selected_agent_tags: Vec::new(),
             selected_resource_tags: Vec::new(),
+            attachments: Vec::new(),
             launch_metadata: LaunchMetadata::default(),
         }]
     );

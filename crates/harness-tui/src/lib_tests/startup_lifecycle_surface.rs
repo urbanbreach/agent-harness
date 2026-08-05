@@ -207,6 +207,7 @@ pub(super) fn post_run_handoff_disables_prompt_submission() {
             selected_file_tags: Vec::new(),
             selected_agent_tags: Vec::new(),
             selected_resource_tags: Vec::new(),
+            attachments: Vec::new(),
             launch_metadata: app::LaunchMetadata::default(),
         }]
     );
