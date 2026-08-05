@@ -1,4 +1,20 @@
-use super::TaskGateError;
+use super::{storage, TaskGateError};
+
+const MACHINE_TASKS: [&str; 15] = [
+    "49", "50", "51", "52", "53", "54", "55", "56", "57", "58", "59", "F1", "F2", "F3", "F4",
+];
+
+pub(super) fn contract_sha256(plan: &str) -> Result<String, TaskGateError> {
+    let mut normalized = String::with_capacity(plan.len());
+    for segment in plan.split_inclusive('\n') {
+        let mut normalized_segment = segment.to_owned();
+        if let Some(marker) = machine_task_marker(segment) {
+            normalized_segment.replace_range(marker + 3..marker + 4, " ");
+        }
+        normalized.push_str(&normalized_segment);
+    }
+    storage::digest(normalized.as_bytes())
+}
 
 pub(super) fn ensure_open_task(plan: &str, task: &str) -> Result<(), TaskGateError> {
     let (_, checked) = task_line(plan, task)?;
@@ -48,4 +64,19 @@ fn task_line(plan: &str, task: &str) -> Result<(usize, bool), TaskGateError> {
     Err(TaskGateError::Invalid(format!(
         "task {task} is missing from the reviewed plan"
     )))
+}
+
+fn machine_task_marker(line: &str) -> Option<usize> {
+    let marker = line.find("- [")?;
+    let bytes = line.as_bytes();
+    let checkbox = *bytes.get(marker + 3)?;
+    if !matches!(checkbox, b' ' | b'x' | b'X') || bytes.get(marker + 4) != Some(&b']') {
+        return None;
+    }
+    let task = line
+        .get(marker + 5..)?
+        .split_whitespace()
+        .next()?
+        .trim_end_matches('.');
+    MACHINE_TASKS.contains(&task).then_some(marker)
 }

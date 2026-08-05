@@ -6,6 +6,10 @@ use serde_json::{Map, Value};
 use super::storage;
 use super::{TaskGateError, TaskGateInput};
 
+mod transition;
+
+pub(super) use transition::{prior_receipt_sha256, record_plan_transition, PlanTransition};
+
 pub(super) fn validate_active(value: &Value) -> Result<(), TaskGateError> {
     let object = value
         .as_object()
@@ -58,7 +62,8 @@ pub(super) fn validate_plan_binding(
 ) -> Result<(), TaskGateError> {
     let reviewed = value_string(boulder, "reviewed_plan_sha256")?;
     let pending = boulder.get("pending_plan_sha256").and_then(Value::as_str);
-    if reviewed != plan_sha256 && pending != Some(plan_sha256) {
+    let chain_head = value_string(boulder, "raw_plan_hash_chain_head")?;
+    if reviewed != plan_sha256 && pending != Some(plan_sha256) && chain_head != plan_sha256 {
         return Err(TaskGateError::Invalid(
             "Boulder reviewed plan digest differs from plan".to_owned(),
         ));
@@ -66,55 +71,15 @@ pub(super) fn validate_plan_binding(
     Ok(())
 }
 
-pub(super) fn record_plan_transition(
-    path: &std::path::Path,
-    task: &str,
-    receipt: &std::path::Path,
-    plan_sha256: &str,
+pub(super) fn validate_plan_contract(
+    boulder: &Value,
+    contract_sha256: &str,
 ) -> Result<(), TaskGateError> {
-    let mut boulder = storage::read_json(path)?;
-    validate_active(&boulder)?;
-    let active_work = value_string(&boulder, "active_work_id")?.to_owned();
-    let object = boulder
-        .as_object_mut()
-        .ok_or_else(|| TaskGateError::Invalid("boulder is not an object".to_owned()))?;
-    apply_plan_transition(object, task, receipt, plan_sha256)?;
-    let works = object
-        .get_mut("works")
-        .and_then(Value::as_object_mut)
-        .ok_or_else(|| TaskGateError::Invalid("works is not an object".to_owned()))?;
-    let work = works
-        .get_mut(&active_work)
-        .and_then(Value::as_object_mut)
-        .ok_or_else(|| TaskGateError::Invalid("active work is not an object".to_owned()))?;
-    apply_plan_transition(work, task, receipt, plan_sha256)?;
-    storage::atomic_write_json(path, &boulder)
-}
-
-fn apply_plan_transition(
-    object: &mut Map<String, Value>,
-    task: &str,
-    receipt: &std::path::Path,
-    plan_sha256: &str,
-) -> Result<(), TaskGateError> {
-    object.insert(
-        "pending_plan_sha256".to_owned(),
-        Value::String(plan_sha256.to_owned()),
-    );
-    let receipts = object
-        .entry("task_completion_receipts")
-        .or_insert_with(|| Value::Object(Map::new()))
-        .as_object_mut()
-        .ok_or_else(|| {
-            TaskGateError::Invalid("task_completion_receipts is not an object".to_owned())
-        })?;
-    receipts.insert(
-        task.to_owned(),
-        serde_json::json!({
-            "path": receipt,
-            "plan_sha256": plan_sha256,
-        }),
-    );
+    if value_string(boulder, "plan_contract_sha256")? != contract_sha256 {
+        return Err(TaskGateError::Invalid(
+            "Boulder plan contract digest differs from plan".to_owned(),
+        ));
+    }
     Ok(())
 }
 
@@ -232,7 +197,12 @@ fn validate_mirror_state(
     root: &Map<String, Value>,
     work: &Map<String, Value>,
 ) -> Result<(), TaskGateError> {
-    for field in ["pending_plan_sha256", "task_completion_receipts"] {
+    for field in [
+        "pending_plan_sha256",
+        "plan_contract_sha256",
+        "raw_plan_hash_chain_head",
+        "task_completion_receipts",
+    ] {
         if mirror_value(root, field) != mirror_value(work, field) {
             return Err(TaskGateError::Invalid(format!(
                 "Boulder mirror divergence for {field}"
