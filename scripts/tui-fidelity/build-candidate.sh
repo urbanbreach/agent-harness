@@ -56,4 +56,5 @@ jq -n \
   '{candidate_sha: $candidate_sha, candidate_binary_sha256: $candidate_binary_sha256, runner_sha256: $runner_sha256, target_dir: $target_dir, freshness_relation: $freshness_relation}' \
   >"$tmp_receipt"
 mv -- "$tmp_receipt" "$receipt_path"
+printf 'candidate_sha=%s\nharness_sha256=%s\nrunner_sha256=%s\ntarget_dir=%s\nreceipt=%s\n' \
   "$candidate_sha" "$harness_sha256" "$runner_sha256" "$target_dir" "$receipt_path"
