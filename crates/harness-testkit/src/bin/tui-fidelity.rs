@@ -26,6 +26,7 @@ struct CompareArgs {
     scenario: String,
     reference_bin: PathBuf,
     harness_bin: PathBuf,
+    candidate_receipt: PathBuf,
     evidence_dir: PathBuf,
     browser_bin: Option<PathBuf>,
     font_family: String,
@@ -152,6 +153,17 @@ fn prepare_compare(
         sha256: &receipt.reference.sha256,
     })?;
     let candidate_sha = current_revision(repo_root)?;
+    let candidate_receipt_path = absolute_path(repo_root, &args.candidate_receipt);
+    let candidate_binding = read_candidate_binding(&candidate_receipt_path)?;
+    if candidate_binding.candidate_sha != candidate_sha {
+        return Err(RunnerError::CandidateBinding {
+            path: args.harness_bin.clone(),
+            detail: format!(
+                "candidate receipt SHA {} does not match current Git HEAD {}",
+                candidate_binding.candidate_sha, candidate_sha
+            ),
+        });
+    }
     let harness_path = absolute_path(repo_root, &args.harness_bin);
     let harness = checked_current_binary(&harness_path, &candidate_sha)?;
     let runner_path = env::current_exe().map_err(|error| RunnerError::Io {
@@ -171,24 +183,28 @@ fn prepare_compare(
             path: harness_path.clone(),
             detail: format!("cannot resolve candidate target directory: {error}"),
         })?;
-    let binding = CandidateBinding {
-        candidate_sha,
-        candidate_binary_sha256: harness.sha256.clone(),
-        runner_sha256: runner.sha256,
-        target_dir,
-        freshness_relation: "current git HEAD + worktree-local isolated target".to_owned(),
-    };
-    Ok((scenario, reference, harness, binding))
+    if candidate_binding.candidate_binary_sha256 != harness.sha256
+        || candidate_binding.runner_sha256 != runner.sha256
+        || candidate_binding.target_dir != target_dir
+    {
+        return Err(RunnerError::CandidateBinding {
+            path: harness_path,
+            detail: "candidate receipt does not match fresh binary, runner, or target directory"
+                .to_owned(),
+        });
+    }
+    Ok((scenario, reference, harness, candidate_binding))
 }
 
 fn parse_compare(arguments: Vec<OsString>) -> Result<CompareArgs, String> {
     let mut values = arguments.into_iter();
     if values.next().as_deref() != Some(std::ffi::OsStr::new("compare")) {
-        return Err("usage: tui-fidelity compare --scenario ID --reference-bin PATH --harness-bin PATH --evidence-dir PATH [--browser-bin PATH] [--font-family NAME] [--node-modules PATH] [--timeout-ms N]".to_owned());
+        return Err("usage: tui-fidelity compare --scenario ID --reference-bin PATH --harness-bin PATH --candidate-receipt PATH --evidence-dir PATH [--browser-bin PATH] [--font-family NAME] [--node-modules PATH] [--timeout-ms N]".to_owned());
     }
     let mut scenario = None;
     let mut reference_bin = None;
     let mut harness_bin = None;
+    let mut candidate_receipt = None;
     let mut evidence_dir = None;
     let mut browser_bin = None;
     let mut font_family = "DejaVu Sans Mono".to_owned();
@@ -202,6 +218,7 @@ fn parse_compare(arguments: Vec<OsString>) -> Result<CompareArgs, String> {
             Some("--scenario") => scenario = Some(value.to_string_lossy().into_owned()),
             Some("--reference-bin") => reference_bin = Some(PathBuf::from(value)),
             Some("--harness-bin") => harness_bin = Some(PathBuf::from(value)),
+            Some("--candidate-receipt") => candidate_receipt = Some(PathBuf::from(value)),
             Some("--evidence-dir") => evidence_dir = Some(PathBuf::from(value)),
             Some("--browser-bin") => browser_bin = Some(PathBuf::from(value)),
             Some("--font-family") => font_family = value.to_string_lossy().into_owned(),
@@ -220,11 +237,23 @@ fn parse_compare(arguments: Vec<OsString>) -> Result<CompareArgs, String> {
         scenario: scenario.ok_or("missing --scenario")?,
         reference_bin: reference_bin.ok_or("missing --reference-bin")?,
         harness_bin: harness_bin.ok_or("missing --harness-bin")?,
+        candidate_receipt: candidate_receipt.ok_or("missing --candidate-receipt")?,
         evidence_dir: evidence_dir.ok_or("missing --evidence-dir")?,
         browser_bin,
         font_family,
         node_modules,
         timeout,
+    })
+}
+
+fn read_candidate_binding(path: &Path) -> Result<CandidateBinding, RunnerError> {
+    let bytes = fs::read(path).map_err(|error| RunnerError::BinaryReceipt {
+        path: path.to_path_buf(),
+        detail: error.to_string(),
+    })?;
+    serde_json::from_slice(&bytes).map_err(|error| RunnerError::BinaryReceipt {
+        path: path.to_path_buf(),
+        detail: error.to_string(),
     })
 }
 
