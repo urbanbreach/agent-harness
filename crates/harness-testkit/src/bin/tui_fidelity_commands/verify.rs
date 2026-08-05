@@ -23,10 +23,18 @@ pub(super) fn execute(arguments: Vec<OsString>, repo_root: &Path) -> Result<(), 
         ResourceLimits::unrestricted(),
         interrupt.clone(),
     );
+    let base_sha = git_text(
+        &git,
+        CommandSpec::new("git")
+            .args(["rev-parse", "--verify"])
+            .args([format!("{}^{{commit}}", args.base_sha)])
+            .cwd(repo_root),
+    )?;
     let candidate_sha = git_text(
         &git,
         CommandSpec::new("git")
-            .args(["rev-parse", "HEAD"])
+            .args(["rev-parse", "--verify"])
+            .args([format!("{}^{{commit}}", args.head_sha)])
             .cwd(repo_root),
     )?;
     let (inventory, manifest, _) = read_coverage_documents(&args.inventory, &args.manifest)
@@ -35,7 +43,8 @@ pub(super) fn execute(arguments: Vec<OsString>, repo_root: &Path) -> Result<(), 
         let tracked = git_output(
             &git,
             CommandSpec::new("git")
-                .args(["diff", "--name-status", "-z", "HEAD"])
+                .args(["diff", "--name-status", "-z"])
+                .args([base_sha.as_str(), candidate_sha.as_str()])
                 .cwd(repo_root),
         )?;
         let untracked = git_output(
@@ -96,6 +105,8 @@ pub(super) fn execute(arguments: Vec<OsString>, repo_root: &Path) -> Result<(), 
 
 pub(super) struct VerifyArgs {
     pub profile: VerificationProfile,
+    pub base_sha: String,
+    pub head_sha: String,
     pub inventory: PathBuf,
     pub manifest: PathBuf,
     pub cones: PathBuf,
@@ -113,11 +124,12 @@ fn parse(arguments: Vec<OsString>, repo_root: &Path) -> Result<VerifyArgs, Strin
     let mut values = arguments.into_iter();
     if values.next().as_deref() != Some(OsStr::new("verify")) {
         return Err(
-            "usage: verify --profile changed|all|motion --reference-bin PATH --harness-bin PATH"
-                .to_owned(),
+            "usage: verify --profile changed|all|motion --base-sha SHA --head-sha SHA --reference-bin PATH --harness-bin PATH".to_owned(),
         );
     }
     let mut profile = None;
+    let mut base_sha = None;
+    let mut head_sha = None;
     let mut inventory = repo_root.join("configs/tui-fidelity-requirement-inventory.json");
     let mut manifest = repo_root.join("configs/tui-fidelity-coverage-manifest.json");
     let mut cones = repo_root.join("configs/tui-fidelity-dependency-cones.json");
@@ -139,6 +151,8 @@ fn parse(arguments: Vec<OsString>, repo_root: &Path) -> Result<VerifyArgs, Strin
                     |error: harness_testkit::tui_fidelity_verify::VerifyError| error.to_string(),
                 )?)
             }
+            Some("--base-sha") => base_sha = Some(value.to_string_lossy().into_owned()),
+            Some("--head-sha") => head_sha = Some(value.to_string_lossy().into_owned()),
             Some("--inventory") => inventory = value.into(),
             Some("--manifest") => manifest = value.into(),
             Some("--dependency-cones") => cones = value.into(),
@@ -166,6 +180,8 @@ fn parse(arguments: Vec<OsString>, repo_root: &Path) -> Result<VerifyArgs, Strin
         .as_millis();
     Ok(VerifyArgs {
         profile: profile.ok_or("missing --profile")?,
+        base_sha: base_sha.ok_or("missing --base-sha")?,
+        head_sha: head_sha.ok_or("missing --head-sha")?,
         inventory,
         manifest,
         cones,
@@ -197,4 +213,33 @@ fn git_text(runner: &DeadlineRunner, command: CommandSpec) -> Result<String, Str
     String::from_utf8(git_output(runner, command)?)
         .map(|value| value.trim().to_owned())
         .map_err(|error| error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn verify_parser_accepts_all_typed_profiles_with_revision_bounds() {
+        for profile in ["changed", "all", "motion"] {
+            let arguments = vec![
+                OsString::from("verify"),
+                OsString::from("--profile"),
+                OsString::from(profile),
+                OsString::from("--base-sha"),
+                OsString::from("base"),
+                OsString::from("--head-sha"),
+                OsString::from("head"),
+                OsString::from("--reference-bin"),
+                OsString::from("reference"),
+                OsString::from("--harness-bin"),
+                OsString::from("harness"),
+            ];
+
+            let parsed = parse(arguments, Path::new("/repo")).expect("typed profile arguments");
+            assert_eq!(parsed.base_sha, "base");
+            assert_eq!(parsed.head_sha, "head");
+            assert_eq!(parsed.profile.to_string(), profile);
+        }
+    }
 }
