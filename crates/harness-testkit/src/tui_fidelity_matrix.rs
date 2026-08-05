@@ -1,12 +1,16 @@
+mod bounded;
+mod documents;
+
+pub use bounded::{execute_matrix, execute_matrix_bounded};
+pub use documents::read_coverage_documents;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
 pub use crate::tui_fidelity::Viewport;
-use crate::tui_fidelity_compare::hash_bytes;
 use crate::tui_fidelity_obligation::{CaptureKey, Obligation};
 
 const INVENTORY_SCHEMA: &str = "harness.tui-fidelity.requirement-inventory.v1";
@@ -53,19 +57,20 @@ pub struct CoverageRow {
     pub theme_mode: String,
     pub media_mode: String,
     pub failure_path: String,
-    pub trials: u8,
+    #[serde(rename = "trials", default, skip_serializing)]
+    pub legacy_trial_hint: u8,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CoverageReport {
     pub requirement_count: usize,
     pub row_count: usize,
-    pub trial_count: usize,
+    pub capture_key_count: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct MatrixTrialReceipt {
-    pub trial: u8,
+pub struct MatrixExecutionReceipt {
+    pub capture_key: String,
     pub capture_succeeded: bool,
     pub comparison_passed: bool,
     pub detail: String,
@@ -75,7 +80,7 @@ pub struct MatrixTrialReceipt {
 pub struct MatrixRowReceipt {
     pub row_id: String,
     pub requirement_id: String,
-    pub trials: Vec<MatrixTrialReceipt>,
+    pub execution: MatrixExecutionReceipt,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -89,9 +94,8 @@ pub struct MatrixReceipt {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct MatrixTrial {
+pub struct MatrixExecution {
     pub row: CoverageRow,
-    pub trial: u8,
     pub evidence_dir: PathBuf,
 }
 
@@ -129,107 +133,6 @@ pub fn validate_coverage_documents(
     validate_coverage(&inventory, &manifest)
 }
 
-pub fn read_coverage_documents(
-    inventory_path: &Path,
-    manifest_path: &Path,
-) -> Result<(RequirementInventory, CoverageManifest, CoverageReport), MatrixError> {
-    let inventory_json = read_text(inventory_path)?;
-    let manifest_json = read_text(manifest_path)?;
-    let inventory: RequirementInventory = serde_json::from_str(&inventory_json)
-        .map_err(|error| MatrixError::Json(format!("inventory: {error}")))?;
-    let manifest: CoverageManifest = serde_json::from_str(&manifest_json)
-        .map_err(|error| MatrixError::Json(format!("manifest: {error}")))?;
-    let inventory_sha256 = hash_bytes(inventory_json.as_bytes())
-        .map_err(|error| MatrixError::Invalid(format!("inventory hash: {error}")))?;
-    if manifest.inventory_sha256 != inventory_sha256 {
-        return Err(MatrixError::Invalid(
-            "manifest inventory digest does not match the inventory file".to_owned(),
-        ));
-    }
-    let report = validate_coverage(&inventory, &manifest)?;
-    Ok((inventory, manifest, report))
-}
-
-pub fn execute_matrix<F>(
-    manifest: CoverageManifest,
-    report: CoverageReport,
-    suite: &str,
-    evidence_root: &Path,
-    mut execute_trial: F,
-) -> Result<MatrixReceipt, MatrixError>
-where
-    F: FnMut(MatrixTrial) -> Result<(bool, bool, String), MatrixError>,
-{
-    fs::create_dir_all(evidence_root).map_err(|error| MatrixError::Io {
-        path: evidence_root.to_path_buf(),
-        detail: error.to_string(),
-    })?;
-    let mut rows = Vec::with_capacity(manifest.rows.len());
-    let mut capture_succeeded = true;
-    let mut comparison_passed = true;
-    let mut execution_by_key = BTreeMap::<String, (bool, bool, String)>::new();
-    for row in manifest.rows {
-        let mut trials = Vec::with_capacity(usize::from(row.trials));
-        let key = CaptureKey::from_row(&row)
-            .canonical_json()
-            .map_err(|error| MatrixError::Invalid(error.to_string()))?;
-        let result = if let Some(cached) = execution_by_key.get(&key) {
-            cached.clone()
-        } else {
-            let evidence_dir = evidence_root.join(&row.row_id).join("trial-1");
-            let result = execute_trial(MatrixTrial {
-                row: row.clone(),
-                trial: 1,
-                evidence_dir,
-            });
-            let value = match result {
-                Ok(value) => value,
-                Err(error) => (false, false, error.to_string()),
-            };
-            execution_by_key.insert(key, value.clone());
-            value
-        };
-        for trial in 1..=row.trials {
-            let (captured, compared, detail) = result.clone();
-            capture_succeeded &= captured;
-            comparison_passed &= compared;
-            trials.push(MatrixTrialReceipt {
-                trial,
-                capture_succeeded: captured,
-                comparison_passed: compared,
-                detail,
-            });
-        }
-        rows.push(MatrixRowReceipt {
-            row_id: row.row_id,
-            requirement_id: row.requirement_id,
-            trials,
-        });
-    }
-    let receipt = MatrixReceipt {
-        schema_version: "harness.tui-fidelity.matrix.v1".to_owned(),
-        suite: suite.to_owned(),
-        capture_succeeded,
-        comparison_passed: capture_succeeded && comparison_passed,
-        report,
-        rows,
-    };
-    let receipt_path = evidence_root.join("matrix-receipt.json");
-    let bytes = serde_json::to_vec_pretty(&receipt)
-        .map_err(|error| MatrixError::Json(error.to_string()))?;
-    fs::write(&receipt_path, bytes).map_err(|error| MatrixError::Io {
-        path: receipt_path,
-        detail: error.to_string(),
-    })?;
-    if receipt.comparison_passed {
-        Ok(receipt)
-    } else {
-        Err(MatrixError::Execution(
-            "capture and comparison must both pass for every trial".to_owned(),
-        ))
-    }
-}
-
 fn validate_coverage(
     inventory: &RequirementInventory,
     manifest: &CoverageManifest,
@@ -261,7 +164,7 @@ fn validate_coverage(
     }
     let mut rows = BTreeSet::new();
     let mut mapped = BTreeMap::<String, usize>::new();
-    let mut trial_count = 0;
+    let mut capture_keys = BTreeSet::new();
     for row in &manifest.rows {
         if row.row_id.trim().is_empty() {
             defects.push("row id is empty".to_owned());
@@ -271,6 +174,15 @@ fn validate_coverage(
         }
         if !requirements.contains(&row.requirement_id) {
             defects.push(format!("unmapped requirement_id {}", row.requirement_id));
+        }
+        match CaptureKey::from_row(row).canonical_json() {
+            Ok(key) => {
+                capture_keys.insert(key);
+            }
+            Err(error) => defects.push(format!(
+                "row {} has an invalid capture key: {error}",
+                row.row_id
+            )),
         }
         if row.scenario_id.trim().is_empty() || row.action_path.trim().is_empty() {
             defects.push(format!(
@@ -289,13 +201,9 @@ fn validate_coverage(
         }
         let count = mapped.entry(row.requirement_id.clone()).or_insert(0);
         *count += 1;
-        if row.trials != 5 {
-            defects.push(format!("row {} must contain five trials", row.row_id));
-        }
         if row.viewport.cols == 0 || row.viewport.rows == 0 {
             defects.push(format!("row {} has an empty viewport", row.row_id));
         }
-        trial_count += usize::from(row.trials);
     }
     for requirement in requirements {
         match mapped.get(&requirement).copied() {
@@ -314,17 +222,10 @@ fn validate_coverage(
     Ok(CoverageReport {
         requirement_count: inventory.requirements.len(),
         row_count: manifest.rows.len(),
-        trial_count,
+        capture_key_count: capture_keys.len(),
     })
 }
 
 fn default_path_classification() -> String {
     "native_path".to_owned()
-}
-
-fn read_text(path: &Path) -> Result<String, MatrixError> {
-    fs::read_to_string(path).map_err(|error| MatrixError::Io {
-        path: path.to_path_buf(),
-        detail: error.to_string(),
-    })
 }

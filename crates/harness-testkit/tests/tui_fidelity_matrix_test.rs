@@ -6,8 +6,8 @@
 )]
 
 use harness_testkit::tui_fidelity_matrix::{
-    execute_matrix, read_coverage_documents, validate_coverage_documents, CoverageManifest,
-    RequirementInventory,
+    execute_matrix, execute_matrix_bounded, read_coverage_documents, validate_coverage_documents,
+    CoverageManifest, RequirementInventory,
 };
 
 #[test]
@@ -47,11 +47,11 @@ fn checked_in_coverage_manifest_has_one_row_per_requirement() {
 
     assert_eq!(report.requirement_count, 547);
     assert_eq!(report.row_count, 547);
-    assert_eq!(report.trial_count, 2_735);
+    assert_eq!(report.capture_key_count, 452);
 }
 
 #[test]
-fn matrix_executes_shared_capture_key_once_while_preserving_trial_accounting() {
+fn matrix_executes_shared_capture_key_once_without_counterfeit_repetitions() {
     // Given: two requirements with the same execution-effective capture inputs.
     let inventory_json = inventory_json(&["req-a", "req-b"]);
     let manifest_json = manifest_json(&[("row-a", "req-a"), ("row-b", "req-b")]);
@@ -64,25 +64,66 @@ fn matrix_executes_shared_capture_key_once_while_preserving_trial_accounting() {
     let evidence = tempfile::tempdir().expect("matrix evidence");
     let executions = std::cell::Cell::new(0_usize);
 
-    // When: the legacy matrix executor runs the frozen five-trial rows.
+    // When: the matrix executor runs each derived capture key once.
     let receipt = execute_matrix(manifest, report, "synthetic", evidence.path(), |_| {
         executions.set(executions.get() + 1);
         Ok((true, true, "passed".to_owned()))
     })
     .expect("deduplicated matrix");
 
-    // Then: runtime work occurs once while ten trials remain represented.
+    // Then: runtime work and evidence accounting both occur once per row.
     assert_eq!(inventory.requirements.len(), 2);
     assert_eq!(executions.get(), 1);
-    assert_eq!(receipt.report.trial_count, 10);
-    assert_eq!(
-        receipt
-            .rows
-            .iter()
-            .map(|row| row.trials.len())
-            .sum::<usize>(),
-        10
-    );
+    assert_eq!(receipt.report.capture_key_count, 1);
+    assert_eq!(receipt.rows.len(), 2);
+    assert!(receipt
+        .rows
+        .iter()
+        .all(|row| row.execution.capture_succeeded && row.execution.comparison_passed));
+}
+
+#[test]
+fn bounded_matrix_runs_distinct_capture_keys_concurrently() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Barrier};
+
+    let inventory_json = inventory_json(&["req-a", "req-b"]);
+    let manifest_json = manifest_json_with_scenarios(&[
+        ("row-a", "req-a", "synthetic-a"),
+        ("row-b", "req-b", "synthetic-b"),
+    ]);
+    let _inventory: RequirementInventory =
+        serde_json::from_str(&inventory_json).expect("inventory fixture");
+    let manifest: CoverageManifest =
+        serde_json::from_str(&manifest_json).expect("manifest fixture");
+    let report =
+        validate_coverage_documents(&inventory_json, &manifest_json).expect("coverage fixture");
+    let evidence = tempfile::tempdir().expect("matrix evidence");
+    let active = Arc::new(AtomicUsize::new(0));
+    let maximum = Arc::new(AtomicUsize::new(0));
+    let barrier = Arc::new(Barrier::new(2));
+
+    let receipt = execute_matrix_bounded(manifest, report, "synthetic", evidence.path(), 2, {
+        let active = Arc::clone(&active);
+        let maximum = Arc::clone(&maximum);
+        let barrier = Arc::clone(&barrier);
+        move |_| {
+            let current = active.fetch_add(1, Ordering::SeqCst) + 1;
+            maximum.fetch_max(current, Ordering::SeqCst);
+            barrier.wait();
+            active.fetch_sub(1, Ordering::SeqCst);
+            Ok((true, true, "passed".to_owned()))
+        }
+    })
+    .expect("bounded matrix");
+
+    assert_eq!(maximum.load(Ordering::SeqCst), 2);
+    assert_eq!(receipt.report.capture_key_count, 2);
+    assert_eq!(receipt.rows.len(), 2);
+    assert!(receipt
+        .rows
+        .iter()
+        .all(|row| row.execution.capture_succeeded && row.execution.comparison_passed));
 }
 
 fn inventory_json(ids: &[&str]) -> String {
@@ -100,14 +141,21 @@ fn inventory_json(ids: &[&str]) -> String {
 }
 
 fn manifest_json(rows: &[(&str, &str)]) -> String {
+    let rows = rows
+        .iter()
+        .map(|(row_id, requirement_id)| (*row_id, *requirement_id, "synthetic"));
+    manifest_json_with_scenarios(&rows.collect::<Vec<_>>())
+}
+
+fn manifest_json_with_scenarios(rows: &[(&str, &str, &str)]) -> String {
     serde_json::json!({
         "schema_version": "harness.tui-fidelity.coverage-manifest.v1",
         "reviewed_plan_sha256": "a".repeat(64),
         "inventory_sha256": "b".repeat(64),
-        "rows": rows.iter().map(|(row_id, requirement_id)| serde_json::json!({
+        "rows": rows.iter().map(|(row_id, requirement_id, scenario_id)| serde_json::json!({
             "row_id": row_id,
             "requirement_id": requirement_id,
-            "scenario_id": "synthetic",
+            "scenario_id": scenario_id,
             "action_path": "synthetic-action",
             "path_classification": "native_path",
             "viewport": {"cols": 80, "rows": 24},
