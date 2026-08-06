@@ -223,6 +223,13 @@ fn render_startup_breadcrumb(frame: &mut Frame, app: &AppState, area: Rect, them
         height: 1,
     };
     let text = truncate_plain_text(&startup_breadcrumb_text(app), usize::from(row.width));
+    let text_width = u16::try_from(super::display_width(&text))
+        .unwrap_or(u16::MAX)
+        .min(row.width);
+    let row = Rect {
+        width: text_width,
+        ..row
+    };
     let dim = Style::default()
         .fg(theme.text.tertiary)
         .bg(theme.surface.canvas)
@@ -240,7 +247,10 @@ fn render_startup_breadcrumb(frame: &mut Frame, app: &AppState, area: Rect, them
     } else {
         Line::from(Span::styled(text, dim))
     };
-    frame.render_widget(Paragraph::new(line), row);
+    frame.render_widget(
+        Paragraph::new(line).style(Style::default().bg(theme.surface.canvas)),
+        row,
+    );
 }
 
 pub(super) fn render_live_breadcrumb(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
@@ -958,5 +968,40 @@ mod breadcrumb_token_meta_tests {
             "left breadcrumb retained when meta absent: {packed:?}"
         );
         assert!(!packed.contains("12K / 262K"), "packed={packed:?}");
+    }
+
+    #[test]
+    fn startup_breadcrumb_does_not_dim_trailing_blank_cells() {
+        use ratatui::{
+            backend::TestBackend,
+            style::{Color, Modifier, Style},
+            widgets::Block,
+            Terminal,
+        };
+
+        // Given: the real startup renderer at the standard canary viewport.
+        let app = crate::app::AppState::new_startup(Vec::new(), None);
+        let backend = TestBackend::new(100, 30);
+        let mut terminal = Terminal::new(backend).expect("test backend");
+        let theme = app.theme();
+
+        // When: the live startup shell is rendered.
+        terminal
+            .draw(|frame| {
+                frame.render_widget(
+                    Block::default().style(Style::default().bg(Color::Reset)),
+                    frame.area(),
+                );
+                super::render_startup_breadcrumb(frame, &app, frame.area(), &theme);
+            })
+            .expect("startup render");
+
+        // Then: a cell after the visible breadcrumb retains the canvas style.
+        let text = super::startup_breadcrumb_text(&app);
+        let text_width = u16::try_from(super::super::display_width(&text))
+            .expect("breadcrumb fits standard viewport");
+        let cell = &terminal.backend().buffer()[(text_width + 1, 1)];
+        assert_eq!(cell.bg, Color::Reset);
+        assert!(!cell.modifier.contains(Modifier::DIM));
     }
 }
