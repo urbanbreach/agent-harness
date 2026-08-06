@@ -184,8 +184,8 @@ pub(super) fn execute(
         let exit_deadline = Instant::now() + timing.normal_exit_timeout;
         let (child, observed) = guard.parts_mut(adapter)?;
         lifecycle_phase = "normal_exit_requested";
-        let active = adapter == AdapterKind::Grok
-            && String::from_utf8_lossy(&stream).contains("Starting session");
+        let active =
+            adapter == AdapterKind::Grok && String::from_utf8_lossy(&stream).contains("Starting");
         action_timeline.extend(super::actions::normal_exit_timeline(adapter, active));
         let stepped_exit = request_normal_exit(
             adapter,
