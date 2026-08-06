@@ -73,6 +73,33 @@ pub(super) fn startup_surface_projects_clipboard_capability() {
         assert_eq!(hint_row, warning_row + 1);
         assert!(panel_row > hint_row, "welcome panel overlaps warning at {width}x{height}");
     }
+
+    let loading = render_live_cells(&app, 100, 30);
+    let loading_rows = loading.content.chunks(100).collect::<Vec<_>>();
+    assert_eq!(
+        loading_rows
+            .iter()
+            .position(|row| row.iter().any(|cell| cell.symbol() == "╭")),
+        Some(9)
+    );
+    assert!(!loading
+        .content
+        .iter()
+        .any(|cell| cell.symbol().contains('•')));
+
+    let mut ready_app = app;
+    for _ in 0..4 {
+        ready_app.advance_animation_tick_for_evidence();
+    }
+    let ready = render_live_cells(&ready_app, 100, 30);
+    let ready_rows = ready.content.chunks(100).collect::<Vec<_>>();
+    assert_eq!(
+        ready_rows
+            .iter()
+            .position(|row| row.iter().any(|cell| cell.symbol() == "╭")),
+        Some(7)
+    );
+    assert!(ready.content.iter().any(|cell| cell.symbol().contains('•')));
 }
 
 pub(super) fn startup_typing_moves_to_quick_start_prompt() {
