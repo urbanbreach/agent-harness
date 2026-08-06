@@ -17,6 +17,14 @@ enum FrameReadiness {
     Prompt,
 }
 
+fn prompt_is_ready(adapter: AdapterKind, screen: &str) -> bool {
+    screen.contains('❯')
+        && match adapter {
+            AdapterKind::Grok => !screen.contains("Grok Build") || screen.contains("Enter:"),
+            AdapterKind::Harness => true,
+        }
+}
+
 #[expect(
     clippy::too_many_arguments,
     reason = "the polling loop owns one PTY lifecycle boundary"
@@ -151,7 +159,7 @@ fn wait_for_stable_frame(
         let screen = parser.screen().contents();
         let ready = match readiness {
             FrameReadiness::Visible => !screen.trim().is_empty(),
-            FrameReadiness::Prompt => screen.contains('❯'),
+            FrameReadiness::Prompt => prompt_is_ready(adapter, &screen),
         };
         if ready {
             if previous.as_deref() == Some(screen.as_str()) {
@@ -220,5 +228,23 @@ pub(super) fn process_error(
     RunnerError::Process {
         adapter,
         detail: format!("{operation}: {error}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::prompt_is_ready;
+    use crate::tui_fidelity::AdapterKind;
+
+    #[test]
+    fn grok_welcome_prompt_waits_for_startup_footer() {
+        assert!(!prompt_is_ready(
+            AdapterKind::Grok,
+            "Grok Build  0.2.114\n❯\nStarting session…"
+        ));
+        assert!(prompt_is_ready(
+            AdapterKind::Grok,
+            "Grok Build  0.2.114\n❯\nEnter:send"
+        ));
     }
 }
