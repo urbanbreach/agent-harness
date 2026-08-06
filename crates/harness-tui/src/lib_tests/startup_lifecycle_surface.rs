@@ -72,6 +72,7 @@ pub(super) fn startup_surface_projects_clipboard_capability() {
             .unwrap_or_else(|| panic!("missing welcome panel at {width}x{height}"));
         assert_eq!(hint_row, warning_row + 1);
         assert!(panel_row > hint_row, "welcome panel overlaps warning at {width}x{height}");
+        assert!(rendered[1].contains("worktree"));
     }
 
     let loading = render_live_cells(&app, 100, 30);

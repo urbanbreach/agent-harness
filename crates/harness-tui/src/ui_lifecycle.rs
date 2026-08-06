@@ -193,8 +193,7 @@ fn startup_breadcrumb_text(app: &AppState) -> String {
     if let Some((path, branch)) = label.rsplit_once(':') {
         let branch = branch.trim();
         if !branch.is_empty() && !branch.contains('/') && !branch.contains('\\') {
-            let _ = path;
-            return format!("   {branch} ~");
+            return format!("   {branch} worktree {path}");
         }
     }
     format!("  {label}")
@@ -235,14 +234,12 @@ fn render_startup_breadcrumb(frame: &mut Frame, app: &AppState, area: Rect, them
         .fg(theme.text.tertiary)
         .bg(theme.surface.canvas)
         .add_modifier(Modifier::DIM);
-    let line = if let Some(prefix) = text.strip_suffix(" ~") {
+    let line = if let Some(prefix) = text.strip_prefix("  ") {
         Line::from(vec![
-            Span::styled(prefix.to_string(), dim),
+            Span::styled("  ", Style::default().bg(theme.surface.canvas)),
             Span::styled(
-                " ~",
-                Style::default()
-                    .fg(theme.text.primary)
-                    .bg(theme.surface.canvas),
+                prefix.to_string(),
+                dim,
             ),
         ])
     } else {
