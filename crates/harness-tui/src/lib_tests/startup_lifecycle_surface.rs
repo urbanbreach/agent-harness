@@ -80,7 +80,7 @@ pub(super) fn startup_surface_projects_clipboard_capability() {
         loading_rows
             .iter()
             .position(|row| row.iter().any(|cell| cell.symbol() == "╭")),
-        Some(9)
+        Some(8)
     );
     assert!(!loading
         .content
@@ -97,7 +97,7 @@ pub(super) fn startup_surface_projects_clipboard_capability() {
         ready_rows
             .iter()
             .position(|row| row.iter().any(|cell| cell.symbol() == "╭")),
-        Some(7)
+        Some(6)
     );
     assert!(ready.content.iter().any(|cell| cell.symbol().contains('•')));
 }

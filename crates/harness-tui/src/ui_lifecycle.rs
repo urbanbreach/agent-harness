@@ -433,8 +433,8 @@ fn welcome_panel_area(
         .clamp(20, WELCOME_PANEL_MAX_WIDTH);
     let top_pad = welcome_panel_top_pad(area, clipboard_warning_visible)
         .saturating_add(layout.hero_rect.1)
-        .saturating_add(if loading { 2 } else { 0 })
-        ;
+        .saturating_add(if loading { 1 } else { 0 })
+        .saturating_sub(if loading { 0 } else { 1 });
     let height = if loading {
         WELCOME_PANEL_LOADING_HEIGHT
     } else {
