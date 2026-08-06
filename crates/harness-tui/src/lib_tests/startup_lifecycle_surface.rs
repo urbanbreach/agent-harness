@@ -41,6 +41,40 @@ pub(super) fn startup_surface_renders_primary_actions() {
     );
 }
 
+pub(super) fn startup_surface_projects_clipboard_capability() {
+    let mut app = app::AppState::new_startup(Vec::new(), None);
+    app.set_launch_metadata(
+        app::LaunchMetadata::from_model_ref("worker", "mock:model-1").with_mode_label("Demo"),
+    );
+    crate::runtime::apply_startup_capability_notice(
+        &mut app,
+        crate::runtime::TerminalCapabilityState::absent(),
+    );
+
+    for (width, height) in [(80, 24), (100, 30), (120, 40)] {
+        let buffer = render_live_cells(&app, width, height);
+        let rendered = buffer
+            .content
+            .chunks(width as usize)
+            .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+            .collect::<Vec<_>>();
+        let warning_row = rendered
+            .iter()
+            .position(|row| row.contains("Clipboard may be unreachable."))
+            .unwrap_or_else(|| panic!("missing clipboard warning at {width}x{height}"));
+        let hint_row = rendered
+            .iter()
+            .position(|row| row.contains("Run /doctor for details and fixes."))
+            .unwrap_or_else(|| panic!("missing clipboard hint at {width}x{height}"));
+        let panel_row = rendered
+            .iter()
+            .position(|row| row.contains('╭') && row.contains('─'))
+            .unwrap_or_else(|| panic!("missing welcome panel at {width}x{height}"));
+        assert_eq!(hint_row, warning_row + 1);
+        assert!(panel_row > hint_row, "welcome panel overlaps warning at {width}x{height}");
+    }
+}
+
 pub(super) fn startup_typing_moves_to_quick_start_prompt() {
     let mut app = app::AppState::new_startup(Vec::new(), None);
 
