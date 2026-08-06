@@ -3,11 +3,13 @@ use std::path::Path;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use portable_pty::{native_pty_system, CommandBuilder, MasterPty};
+use portable_pty::{CommandBuilder, MasterPty, native_pty_system};
 
 use super::actions::apply_action;
 use super::cleanup::CleanupTracker;
 use super::error::RunnerError;
+use super::lifecycle_diagnostics::write_failure;
+use super::process_checkpoints::capture as capture_checkpoints;
 use super::process_io::{configure_environment, pty_size, spawn_reader};
 use super::process_wait::{
     collect_descendants, drain, process_error, request_normal_exit, wait_for_prompt_ready,
@@ -37,6 +39,7 @@ pub(super) fn execute(
     adapter: AdapterKind,
     binary: &RuntimeBinary,
     runtime_dir: &Path,
+    evidence_dir: &Path,
     tracker: &mut CleanupTracker,
 ) -> Result<ProcessCapture, RunnerError> {
     let launch_path = if adapter == AdapterKind::Grok {
@@ -82,6 +85,9 @@ pub(super) fn execute(
         detail: "spawned child has no process ID".to_owned(),
     })?;
     let mut guard = PtyChildGuard::new(child, pid, timing.cleanup_timeout);
+    let mut stream = Vec::new();
+    let mut action_timeline = Vec::new();
+    let mut lifecycle_phase = "spawned";
     let result: Result<ProcessCapture, RunnerError> = (|| {
         let reader = pair
             .master
@@ -94,9 +100,7 @@ pub(super) fn execute(
         let output = spawn_reader(reader);
         let process_start = Instant::now();
         let deadline = process_start + timing.scenario_timeout;
-        let mut stream = Vec::new();
         let mut inputs = Vec::new();
-        let mut checkpoints = Vec::new();
         let readiness_viewport = scenario
             .checkpoints
             .first()
@@ -113,6 +117,7 @@ pub(super) fn execute(
             observed,
             pid,
         )?;
+        lifecycle_phase = "prompt_ready";
         let start = Instant::now();
 
         for action in &scenario.actions {
@@ -151,35 +156,34 @@ pub(super) fn execute(
             } else {
                 apply_action(action, adapter, pair.master.as_ref(), writer.as_mut())?;
             }
+            action_timeline.push(serde_json::json!({
+                "kind": action.kind_name(),
+                "at_tick": action.at_tick().0,
+                "elapsed_millis": start.elapsed().as_millis(),
+            }));
             inputs.push(start.elapsed());
         }
-        for checkpoint in &scenario.checkpoints {
-            let (child, observed) = guard.parts_mut(adapter)?;
-            wait_until(
-                checkpoint.at_tick.0,
-                timing.tick,
-                start,
-                deadline,
-                adapter,
-                child,
-                &output,
-                &mut stream,
-                observed,
-                pid,
-            )?;
-            drain(&output, &mut stream);
-            checkpoints.push(CapturedCheckpoint {
-                name: checkpoint.name,
-                viewport: checkpoint.frame.viewport,
-                elapsed: start.elapsed(),
-                stream: stream.clone(),
-            });
-        }
+        let (child, observed) = guard.parts_mut(adapter)?;
+        let checkpoints = capture_checkpoints(
+            scenario,
+            timing.tick,
+            start,
+            deadline,
+            adapter,
+            child,
+            &output,
+            &mut stream,
+            observed,
+            pid,
+        )?;
+        lifecycle_phase = "checkpoints_complete";
         if adapter == AdapterKind::Grok && String::from_utf8_lossy(&stream).contains("Skipped") {
             return Err(RunnerError::SkippedReference);
         }
         let exit_deadline = Instant::now() + timing.normal_exit_timeout;
         let (child, observed) = guard.parts_mut(adapter)?;
+        lifecycle_phase = "normal_exit_requested";
+        action_timeline.extend(super::actions::normal_exit_timeline(adapter));
         let stepped_exit = request_normal_exit(
             adapter,
             writer.as_mut(),
@@ -188,6 +192,11 @@ pub(super) fn execute(
             pid,
             observed,
         )?;
+        lifecycle_phase = if stepped_exit.is_some() {
+            "normal_exit_observed"
+        } else {
+            "normal_exit_waiting"
+        };
         let exit_code = if let Some(code) = stepped_exit {
             code
         } else {
@@ -222,6 +231,19 @@ pub(super) fn execute(
             checkpoints,
         })
     })();
+    if let Err(error) = &result {
+        if let Err(diagnostic_error) = write_failure(
+            evidence_dir,
+            adapter,
+            pid,
+            lifecycle_phase,
+            &action_timeline,
+            &stream,
+            error,
+        ) {
+            tracker.record_error(diagnostic_error.to_string());
+        }
+    }
     let cleanup = guard.cleanup();
     let detected = cleanup.detected_child_pids.clone();
     tracker.record_process(cleanup);

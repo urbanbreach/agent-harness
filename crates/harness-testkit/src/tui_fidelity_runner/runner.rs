@@ -1,13 +1,13 @@
+use super::RUNNER_RECEIPT_SCHEMA;
 use super::cleanup::{CleanupTracker, EvidenceSession};
 use super::error::RunnerError;
 use super::preflight::prepare;
 use super::process::execute;
-use super::renderer::{render, RenderContext};
+use super::renderer::{RenderContext, render};
 use super::runtime_workspace::OwnedRuntimeWorkspace;
 use super::source_guard;
 use super::types::{AdapterReceipt, DualRuntimeReceipt, RunnerConfig, RuntimeBinary};
 use super::util::write_json;
-use super::RUNNER_RECEIPT_SCHEMA;
 use crate::tui_fidelity::{AdapterKind, Scenario};
 use crate::tui_fidelity_compare::compare_capture;
 
@@ -116,7 +116,16 @@ fn capture_adapter(
         AdapterKind::Grok => &config.reference,
         AdapterKind::Harness => &config.harness,
     };
-    let capture = execute(scenario, config.timing, adapter, binary, &runtime, tracker)?;
+    let evidence_dir = config.evidence_dir.join(adapter.as_str());
+    let capture = execute(
+        scenario,
+        config.timing,
+        adapter,
+        binary,
+        &runtime,
+        &evidence_dir,
+        tracker,
+    )?;
     let checkpoints = render(
         adapter,
         &capture,

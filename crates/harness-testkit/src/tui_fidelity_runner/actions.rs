@@ -76,6 +76,27 @@ pub(super) const fn normal_exit_steps(adapter: AdapterKind) -> &'static [ExitSte
     }
 }
 
+pub(super) fn normal_exit_timeline(adapter: AdapterKind) -> Vec<serde_json::Value> {
+    normal_exit_steps(adapter)
+        .iter()
+        .enumerate()
+        .map(|(step, exit)| {
+            let bytes_hex = exit.bytes.iter().fold(String::new(), |mut value, byte| {
+                const HEX: &[u8; 16] = b"0123456789abcdef";
+                value.push(char::from(HEX[usize::from(byte >> 4)]));
+                value.push(char::from(HEX[usize::from(byte & 0x0f)]));
+                value
+            });
+            serde_json::json!({
+                "kind": "normal_exit_step",
+                "step": step,
+                "bytes_hex": bytes_hex,
+                "dwell_millis": exit.dwell.as_millis(),
+            })
+        })
+        .collect()
+}
+
 fn write_bytes(
     writer: &mut dyn Write,
     bytes: &[u8],
