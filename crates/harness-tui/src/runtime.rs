@@ -396,7 +396,9 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
     let mut capabilities = if reusing_terminal {
         preserved_terminal.capabilities
     } else {
-        TerminalCapabilityState::from_environment()
+        let mut capabilities = TerminalCapabilityState::from_environment();
+        capabilities.osc52_clipboard = terminal_session.capabilities.osc52_clipboard;
+        capabilities
     };
 
     if !reusing_terminal {
