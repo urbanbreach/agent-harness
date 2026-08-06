@@ -20,7 +20,10 @@ enum FrameReadiness {
 fn prompt_is_ready(adapter: AdapterKind, screen: &str) -> bool {
     screen.contains('❯')
         && match adapter {
-            AdapterKind::Grok => !screen.contains("Grok Build") || screen.contains("Enter:"),
+            AdapterKind::Grok => {
+                !screen.contains("Grok Build")
+                    || (screen.contains("Grok Build") && !screen.contains("Starting session"))
+            }
             AdapterKind::Harness => true,
         }
 }
@@ -240,11 +243,11 @@ mod tests {
     fn grok_welcome_prompt_waits_for_startup_footer() {
         assert!(!prompt_is_ready(
             AdapterKind::Grok,
-            "Grok Build  0.2.114\n❯\nStarting session…"
+            "Grok Build Beta  0.2.114\n❯\nStarting session…"
         ));
         assert!(prompt_is_ready(
             AdapterKind::Grok,
-            "Grok Build  0.2.114\n❯\nEnter:send"
+            "Grok Build Beta  0.2.114\n❯\nChangelog"
         ));
     }
 }
