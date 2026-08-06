@@ -557,25 +557,23 @@ fn welcome_inner_lines(
             }
             _ => {}
         }
-        if loading {
-            if (3..=6).contains(&idx) {
-                let actions = welcome::welcome_actions();
-                let action = &actions[idx - 3];
-                let label = truncate_plain_text(action.label, inner_width.saturating_sub(text_col));
-                let used = text_col.saturating_add(super::display_width(&label));
-                spans.push(Span::styled(
-                    " ".repeat(text_col.saturating_sub(WELCOME_LOGO_WIDTH)),
-                    muted,
-                ));
-                spans.push(Span::styled(label, body.add_modifier(Modifier::BOLD)));
-                if let Some(shortcut) = action.shortcut {
-                    let shortcut_width = super::display_width(shortcut);
-                    let target = inner_width.saturating_sub(shortcut_width.saturating_add(2));
-                    if used < target {
-                        spans.push(Span::styled(" ".repeat(target - used), muted));
-                    }
-                    spans.push(Span::styled(shortcut, muted));
+        if loading && (3..=6).contains(&idx) {
+            let actions = welcome::welcome_actions();
+            let action = &actions[idx - 3];
+            let label = truncate_plain_text(action.label, inner_width.saturating_sub(text_col));
+            let used = text_col.saturating_add(super::display_width(&label));
+            spans.push(Span::styled(
+                " ".repeat(text_col.saturating_sub(WELCOME_LOGO_WIDTH)),
+                muted,
+            ));
+            spans.push(Span::styled(label, body.add_modifier(Modifier::BOLD)));
+            if let Some(shortcut) = action.shortcut {
+                let shortcut_width = super::display_width(shortcut);
+                let target = inner_width.saturating_sub(shortcut_width.saturating_add(2));
+                if used < target {
+                    spans.push(Span::styled(" ".repeat(target - used), muted));
                 }
+                spans.push(Span::styled(shortcut, muted));
             }
         }
         lines.push(Line::from(spans));
