@@ -58,6 +58,24 @@ const GROK_EXIT_STEPS: &[ExitStep] = &[
         dwell: Duration::ZERO,
     },
 ];
+const GROK_ACTIVE_EXIT_STEPS: &[ExitStep] = &[
+    ExitStep {
+        bytes: b"\x03",
+        dwell: Duration::from_millis(100),
+    },
+    ExitStep {
+        bytes: b"\x15",
+        dwell: Duration::from_millis(100),
+    },
+    ExitStep {
+        bytes: b"/exit\r",
+        dwell: Duration::from_millis(500),
+    },
+    ExitStep {
+        bytes: b"\x03",
+        dwell: Duration::ZERO,
+    },
+];
 const HARNESS_EXIT_STEPS: &[ExitStep] = &[
     ExitStep {
         bytes: b"\x11",
@@ -76,8 +94,19 @@ pub(super) const fn normal_exit_steps(adapter: AdapterKind) -> &'static [ExitSte
     }
 }
 
-pub(super) fn normal_exit_timeline(adapter: AdapterKind) -> Vec<serde_json::Value> {
-    normal_exit_steps(adapter)
+pub(super) const fn normal_exit_steps_for_state(
+    adapter: AdapterKind,
+    active: bool,
+) -> &'static [ExitStep] {
+    match (adapter, active) {
+        (AdapterKind::Grok, true) => GROK_ACTIVE_EXIT_STEPS,
+        (AdapterKind::Grok, false) => GROK_EXIT_STEPS,
+        (AdapterKind::Harness, _) => HARNESS_EXIT_STEPS,
+    }
+}
+
+pub(super) fn normal_exit_timeline(adapter: AdapterKind, active: bool) -> Vec<serde_json::Value> {
+    normal_exit_steps_for_state(adapter, active)
         .iter()
         .enumerate()
         .map(|(step, exit)| {
@@ -199,5 +228,14 @@ mod tests {
 
         // Then: the first byte clears the composer without toggling Esc state.
         assert_eq!(steps[0].bytes, b"\x15");
+    }
+
+    #[test]
+    fn active_grok_exit_cancels_before_clearing_and_exiting() {
+        let steps = normal_exit_steps_for_state(AdapterKind::Grok, true);
+
+        assert_eq!(steps[0].bytes, b"\x03");
+        assert_eq!(steps[1].bytes, b"\x15");
+        assert_eq!(steps[2].bytes, b"/exit\r");
     }
 }

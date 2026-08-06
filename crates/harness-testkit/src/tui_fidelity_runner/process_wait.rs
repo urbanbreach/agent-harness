@@ -4,7 +4,7 @@ use std::sync::mpsc::Receiver;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use super::actions::normal_exit_steps;
+use super::actions::normal_exit_steps_for_state;
 use super::error::RunnerError;
 use super::process_tree::descendants;
 use crate::tui_fidelity::{AdapterKind, Viewport};
@@ -203,8 +203,9 @@ pub(super) fn request_normal_exit(
     deadline: Instant,
     pid: u32,
     observed: &mut BTreeSet<u32>,
+    active: bool,
 ) -> Result<Option<i32>, RunnerError> {
-    for step in normal_exit_steps(adapter) {
+    for step in normal_exit_steps_for_state(adapter, active) {
         writer
             .write_all(step.bytes)
             .and_then(|()| writer.flush())
