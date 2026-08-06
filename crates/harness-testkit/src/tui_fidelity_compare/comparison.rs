@@ -76,7 +76,7 @@ fn compare_semantic(
     ] {
         let expected = read_snapshot(reference, checkpoint)?;
         let actual = read_snapshot(candidate, checkpoint)?;
-        let masks = masks_for(scenario, checkpoint);
+        let masks = masks_for_frames(scenario, checkpoint, &expected.frame, &actual.frame);
         if let Err(error) = super::cells::compare_cells(&expected, &actual, &masks) {
             errors.push(error.to_string());
         }
@@ -105,7 +105,20 @@ fn compare_pixels(
         let candidate_png = artifact_path(candidate, checkpoint, "terminal.png")?;
         let reference_bytes = read_file(&reference_png)?;
         let candidate_bytes = read_file(&candidate_png)?;
-        let spans = pixel_spans(scenario, checkpoint, &reference_bytes)?;
+        let reference_frame = read_snapshot(reference, checkpoint)?.frame;
+        let candidate_frame = read_snapshot(candidate, checkpoint)?.frame;
+        let mut spans = pixel_spans(scenario, checkpoint, &reference_bytes)?;
+        let image = image::load_from_memory_with_format(&reference_bytes, image::ImageFormat::Png)
+            .map_err(|error| ComparatorError::PngDecode {
+                side: "reference".to_owned(),
+                detail: error.to_string(),
+            })?;
+        spans.extend(super::dynamic::dynamic_identity_pixel_spans(
+            &reference_frame,
+            &candidate_frame,
+            image.width(),
+            image.height(),
+        ));
         if let Err(error) =
             super::pixels::compare_png_bytes(&reference_bytes, &candidate_bytes, &spans)
         {
@@ -317,23 +330,33 @@ fn masks_for(scenario: &Scenario, checkpoint: CheckpointName) -> IdentityMaskReg
         .iter()
         .filter(|item| item.checkpoint == checkpoint)
     {
-        let cells = (substitution.rectangle.row
-            ..substitution
-                .rectangle
-                .row
-                .saturating_add(substitution.rectangle.rows))
+        let Some(rectangle) = clipped_rectangle(substitution.rectangle, scenario, checkpoint)
+        else {
+            continue;
+        };
+        let cells = (rectangle.row..rectangle.row.saturating_add(rectangle.rows))
             .flat_map(|row| {
-                (substitution.rectangle.col
-                    ..substitution
-                        .rectangle
-                        .col
-                        .saturating_add(substitution.rectangle.cols))
+                (rectangle.col..rectangle.col.saturating_add(rectangle.cols))
                     .map(move |col| (row, col))
             })
             .collect::<Vec<_>>();
         masks = masks.with_field(substitution.scope.placeholder(), cells);
     }
     masks
+}
+
+fn masks_for_frames(
+    scenario: &Scenario,
+    checkpoint: CheckpointName,
+    reference: &SemanticFrame,
+    candidate: &SemanticFrame,
+) -> IdentityMaskRegistry {
+    let dynamic_cells = super::dynamic::dynamic_identity_cells(reference, candidate);
+    if dynamic_cells.is_empty() {
+        masks_for(scenario, checkpoint)
+    } else {
+        masks_for(scenario, checkpoint).with_field("dynamic_identity", dynamic_cells)
+    }
 }
 
 fn pixel_spans(
@@ -372,15 +395,45 @@ fn pixel_spans(
         .substitutions
         .iter()
         .filter(|item| item.checkpoint == checkpoint)
-        .map(|item: &IdentitySubstitution| {
-            super::pixels::IdentityPixelSpan::from_cell_rect(
+        .filter_map(|item: &IdentitySubstitution| {
+            let rectangle = clipped_rectangle(item.rectangle, scenario, checkpoint)?;
+            Some(super::pixels::IdentityPixelSpan::from_cell_rect(
                 item.scope.placeholder(),
-                item.rectangle,
+                rectangle,
                 cell_width,
                 cell_height,
-            )
+            ))
         })
         .collect())
+}
+
+fn clipped_rectangle(
+    rectangle: crate::tui_fidelity::CellRect,
+    scenario: &Scenario,
+    checkpoint: CheckpointName,
+) -> Option<crate::tui_fidelity::CellRect> {
+    let viewport = scenario
+        .checkpoints
+        .iter()
+        .find(|item| item.name == checkpoint)
+        .map(|item| item.frame.viewport)?;
+    let col_end = u32::from(rectangle.col)
+        .saturating_add(u32::from(rectangle.cols))
+        .min(u32::from(viewport.cols));
+    let row_end = u32::from(rectangle.row)
+        .saturating_add(u32::from(rectangle.rows))
+        .min(u32::from(viewport.rows));
+    let col_start = u32::from(rectangle.col).min(u32::from(viewport.cols));
+    let row_start = u32::from(rectangle.row).min(u32::from(viewport.rows));
+    if col_start >= col_end || row_start >= row_end {
+        return None;
+    }
+    Some(crate::tui_fidelity::CellRect {
+        col: u16::try_from(col_start).ok()?,
+        row: u16::try_from(row_start).ok()?,
+        cols: u16::try_from(col_end - col_start).ok()?,
+        rows: u16::try_from(row_end - row_start).ok()?,
+    })
 }
 
 fn timing_trace(runtime: &AdapterReceipt) -> Result<super::timing::TimingTrace, ComparatorError> {

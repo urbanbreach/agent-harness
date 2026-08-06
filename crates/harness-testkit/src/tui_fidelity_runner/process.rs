@@ -11,13 +11,13 @@ use super::error::RunnerError;
 use super::lifecycle_diagnostics::write_failure;
 use super::process_checkpoints::capture as capture_checkpoints;
 use super::process_io::{configure_environment, pty_size, spawn_reader};
+use super::process_readiness::{wait_for_readiness, wait_for_stable_frame};
 use super::process_wait::{
-    collect_descendants, drain, process_error, request_normal_exit, wait_for_prompt_ready,
-    wait_for_visible_stable_frame, wait_until,
+    collect_descendants, drain, process_error, request_normal_exit, wait_until,
 };
 use super::pty_child::PtyChildGuard;
 use super::types::{RunnerTiming, RuntimeBinary};
-use crate::tui_fidelity::{AdapterKind, CheckpointName, Scenario, Viewport};
+use crate::tui_fidelity::{AdapterKind, CaptureMode, CheckpointName, Scenario, Viewport};
 use crate::tui_fidelity_cache::ReferenceBinaryCache;
 
 pub(super) struct CapturedCheckpoint {
@@ -74,7 +74,7 @@ pub(super) fn execute(
             runtime_dir.join("sessions").to_string_lossy().as_ref(),
         ]);
     }
-    configure_environment(&mut command);
+    configure_environment(&mut command, scenario.terminal_type);
     let child = pair
         .slave
         .spawn_command(command)
@@ -101,13 +101,11 @@ pub(super) fn execute(
         let process_start = Instant::now();
         let deadline = process_start + timing.scenario_timeout;
         let mut inputs = Vec::new();
-        let readiness_viewport = scenario
-            .checkpoints
-            .first()
-            .map_or(scenario.viewport, |checkpoint| checkpoint.frame.viewport);
+        let readiness_viewport = scenario.viewport;
 
         let (child, observed) = guard.parts_mut(adapter)?;
-        wait_for_prompt_ready(
+        wait_for_readiness(
+            scenario.terminal_type,
             readiness_viewport,
             deadline,
             adapter,
@@ -144,7 +142,7 @@ pub(super) fn execute(
                     .first()
                     .map_or(scenario.viewport, |checkpoint| checkpoint.frame.viewport);
                 let (child, observed) = guard.parts_mut(adapter)?;
-                wait_for_visible_stable_frame(
+                wait_for_stable_frame(
                     viewport,
                     deadline,
                     adapter,
@@ -163,6 +161,9 @@ pub(super) fn execute(
                 "elapsed_millis": start.elapsed().as_millis(),
             }));
             inputs.push(start.elapsed());
+        }
+        if scenario.capture_mode == CaptureMode::ActionTail {
+            stream.clear();
         }
         let (child, observed) = guard.parts_mut(adapter)?;
         let checkpoints = capture_checkpoints(

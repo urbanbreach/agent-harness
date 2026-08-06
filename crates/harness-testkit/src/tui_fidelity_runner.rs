@@ -9,6 +9,7 @@ mod preflight;
 mod process;
 mod process_checkpoints;
 mod process_io;
+mod process_readiness;
 pub(crate) mod process_tree;
 mod process_wait;
 mod pty_child;

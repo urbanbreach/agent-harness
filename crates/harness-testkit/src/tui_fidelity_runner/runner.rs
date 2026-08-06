@@ -95,7 +95,7 @@ fn run_inner(
     Ok(DualRuntimeReceipt {
         schema_version: RUNNER_RECEIPT_SCHEMA.to_owned(),
         scenario_id: scenario.id.0.clone(),
-        terminal_type: "xterm-256color".to_owned(),
+        terminal_type: scenario.terminal_type.as_str().to_owned(),
         runtimes: vec![reference_receipt, harness_receipt],
         candidate_binding: config.candidate_binding.clone(),
         source_guard_before: before,

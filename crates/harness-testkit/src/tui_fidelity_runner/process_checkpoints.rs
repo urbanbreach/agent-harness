@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use super::error::RunnerError;
 use super::process::CapturedCheckpoint;
 use super::process_wait::{drain, wait_until};
-use crate::tui_fidelity::{AdapterKind, Scenario, Viewport};
+use crate::tui_fidelity::{AdapterKind, CaptureMode, Scenario, Viewport};
 
 type PtyChild = Box<dyn portable_pty::Child + Send + Sync>;
 
@@ -40,6 +40,9 @@ pub(super) fn capture(
             pid,
         )?;
         drain(output, stream);
+        if scenario.capture_mode == CaptureMode::ActionTail {
+            stream.clear();
+        }
         checkpoints.push(CapturedCheckpoint {
             name: checkpoint.name,
             viewport: checkpoint.frame.viewport,

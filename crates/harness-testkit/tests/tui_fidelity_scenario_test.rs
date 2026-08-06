@@ -8,10 +8,13 @@
 use harness_testkit::parity::catalog::CORE_SCENARIOS;
 use harness_testkit::parity::{IdentityMaskRegistry, SEMANTIC_FRAME_SCHEMA_VERSION};
 use harness_testkit::tui_fidelity::{
-    AdapterKind, CheckpointName, IdentityScope, Scenario, ScenarioAction, ScenarioError,
+    AdapterKind, CaptureMode, CheckpointName, IdentityScope, Scenario, ScenarioAction,
+    ScenarioError,
 };
 
 const STARTUP_SMOKE: &str = include_str!("fixtures/tui_fidelity/startup-smoke.json");
+const CANARY_TERMINAL_QUERY: &str =
+    include_str!("../src/tui_fidelity_scenarios/baseline/canary-terminal-query.json");
 
 #[test]
 fn baseline_current_parity_support_exposes_semantic_frames_and_identity_cells() {
@@ -37,6 +40,18 @@ fn startup_smoke_fixture_validates_for_both_adapter_kinds() {
     // Then: both adapter paths accept the typed contract.
     assert!(grok.is_ok(), "grok validation failed: {grok:?}");
     assert!(harness.is_ok(), "harness validation failed: {harness:?}");
+}
+
+#[test]
+fn canary_terminal_query_uses_action_tail_capture_without_changing_defaults() {
+    // Given: the focused terminal-query canary and the existing startup fixture.
+    let canary = Scenario::from_json(CANARY_TERMINAL_QUERY).expect("canary parses");
+    let default = Scenario::from_json(STARTUP_SMOKE).expect("startup parses");
+
+    // When: their capture contracts are inspected.
+    // Then: only the canary opts into the narrow action-tail surface.
+    assert_eq!(canary.capture_mode, CaptureMode::ActionTail);
+    assert_eq!(default.capture_mode, CaptureMode::FullSession);
 }
 
 #[test]
@@ -112,11 +127,12 @@ fn startup_smoke_fixture_covers_ordered_checkpoints_and_identity_scopes() {
     assert_eq!(
         scopes,
         vec![
-            IdentityScope::ProductLogo,
-            IdentityScope::ProductTitle,
-            IdentityScope::BuildVersion,
+            IdentityScope::WorkspacePath,
             IdentityScope::ProviderName,
-            IdentityScope::AccountName
+            IdentityScope::WorkspacePath,
+            IdentityScope::ProviderName,
+            IdentityScope::WorkspacePath,
+            IdentityScope::ProviderName
         ]
     );
 }

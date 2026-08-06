@@ -82,87 +82,13 @@
   "substitutions": [
     {
       "checkpoint": "rest",
-      "scope": "product_logo",
-      "rectangle": {"col": 2, "row": 1, "cols": 8, "rows": 1},
+      "scope": "workspace_path",
+      "rectangle": {"col": 2, "row": 1, "cols": 98, "rows": 1},
       "source": {
-        "text": "@",
-        "cell_width": 1,
+        "text": "<harness-workspace>",
+        "cell_width": 98,
         "padding_left": 0,
-        "padding_right": 7,
-        "style": {
-          "foreground": {"r": 216, "g": 216, "b": 216},
-          "background": {"r": 18, "g": 18, "b": 18},
-          "bold": true,
-          "dim": false,
-          "italic": false,
-          "underline": false,
-          "inverse": false
-        },
-        "wrapping": "no_wrap"
-      },
-      "target": {
-        "text": "[LOGO]",
-        "cell_width": 6,
-        "padding_left": 0,
-        "padding_right": 2,
-        "style": {
-          "foreground": {"r": 216, "g": 216, "b": 216},
-          "background": {"r": 18, "g": 18, "b": 18},
-          "bold": true,
-          "dim": false,
-          "italic": false,
-          "underline": false,
-          "inverse": false
-        },
-        "wrapping": "no_wrap"
-      }
-    },
-    {
-      "checkpoint": "rest",
-      "scope": "product_title",
-      "rectangle": {"col": 10, "row": 1, "cols": 12, "rows": 1},
-      "source": {
-        "text": "Harness",
-        "cell_width": 7,
-        "padding_left": 0,
-        "padding_right": 5,
-        "style": {
-          "foreground": {"r": 216, "g": 216, "b": 216},
-          "background": {"r": 18, "g": 18, "b": 18},
-          "bold": true,
-          "dim": false,
-          "italic": false,
-          "underline": false,
-          "inverse": false
-        },
-        "wrapping": "no_wrap"
-      },
-      "target": {
-        "text": "[PRODUCT]",
-        "cell_width": 9,
-        "padding_left": 0,
-        "padding_right": 3,
-        "style": {
-          "foreground": {"r": 216, "g": 216, "b": 216},
-          "background": {"r": 18, "g": 18, "b": 18},
-          "bold": true,
-          "dim": false,
-          "italic": false,
-          "underline": false,
-          "inverse": false
-        },
-        "wrapping": "no_wrap"
-      }
-    },
-    {
-      "checkpoint": "mid",
-      "scope": "build_version",
-      "rectangle": {"col": 2, "row": 3, "cols": 12, "rows": 1},
-      "source": {
-        "text": "0.1.0",
-        "cell_width": 5,
-        "padding_left": 0,
-        "padding_right": 7,
+        "padding_right": 0,
         "style": {
           "foreground": {"r": 216, "g": 216, "b": 216},
           "background": {"r": 18, "g": 18, "b": 18},
@@ -175,10 +101,84 @@
         "wrapping": "no_wrap"
       },
       "target": {
-        "text": "[VERSION]",
-        "cell_width": 9,
+        "text": "[WORKSPACE]",
+        "cell_width": 10,
         "padding_left": 0,
-        "padding_right": 3,
+        "padding_right": 88,
+        "style": {
+          "foreground": {"r": 216, "g": 216, "b": 216},
+          "background": {"r": 18, "g": 18, "b": 18},
+          "bold": false,
+          "dim": true,
+          "italic": false,
+          "underline": false,
+          "inverse": false
+        },
+        "wrapping": "no_wrap"
+      }
+    },
+    {
+      "checkpoint": "rest",
+      "scope": "provider_name",
+      "rectangle": {"col": 49, "row": 26, "cols": 46, "rows": 1},
+      "source": {
+        "text": "GPT 5.6 Luna (CLIProxy) (low) · always-approve",
+        "cell_width": 46,
+        "padding_left": 0,
+        "padding_right": 0,
+        "style": {
+          "foreground": {"r": 216, "g": 216, "b": 216},
+          "background": {"r": 18, "g": 18, "b": 18},
+          "bold": false,
+          "dim": false,
+          "italic": false,
+          "underline": false,
+          "inverse": false
+        },
+        "wrapping": "no_wrap"
+      },
+      "target": {
+        "text": "[PROVIDER]",
+        "cell_width": 10,
+        "padding_left": 0,
+        "padding_right": 36,
+        "style": {
+          "foreground": {"r": 216, "g": 216, "b": 216},
+          "background": {"r": 18, "g": 18, "b": 18},
+          "bold": false,
+          "dim": false,
+          "italic": false,
+          "underline": false,
+          "inverse": false
+        },
+        "wrapping": "no_wrap"
+      }
+    },
+    {
+      "checkpoint": "mid",
+      "scope": "workspace_path",
+      "rectangle": {"col": 2, "row": 1, "cols": 98, "rows": 1},
+      "source": {
+        "text": "<harness-workspace>",
+        "cell_width": 98,
+        "padding_left": 0,
+        "padding_right": 0,
+        "style": {
+          "foreground": {"r": 216, "g": 216, "b": 216},
+          "background": {"r": 18, "g": 18, "b": 18},
+          "bold": false,
+          "dim": true,
+          "italic": false,
+          "underline": false,
+          "inverse": false
+        },
+        "wrapping": "no_wrap"
+      },
+      "target": {
+        "text": "[WORKSPACE]",
+        "cell_width": 10,
+        "padding_left": 0,
+        "padding_right": 88,
         "style": {
           "foreground": {"r": 216, "g": 216, "b": 216},
           "background": {"r": 18, "g": 18, "b": 18},
@@ -194,12 +194,12 @@
     {
       "checkpoint": "mid",
       "scope": "provider_name",
-      "rectangle": {"col": 15, "row": 3, "cols": 12, "rows": 1},
+      "rectangle": {"col": 49, "row": 26, "cols": 46, "rows": 1},
       "source": {
-        "text": "local",
-        "cell_width": 5,
+        "text": "GPT 5.6 Luna (CLIProxy) (low) · always-approve",
+        "cell_width": 46,
         "padding_left": 0,
-        "padding_right": 7,
+        "padding_right": 0,
         "style": {
           "foreground": {"r": 216, "g": 216, "b": 216},
           "background": {"r": 18, "g": 18, "b": 18},
@@ -215,7 +215,7 @@
         "text": "[PROVIDER]",
         "cell_width": 10,
         "padding_left": 0,
-        "padding_right": 2,
+        "padding_right": 36,
         "style": {
           "foreground": {"r": 216, "g": 216, "b": 216},
           "background": {"r": 18, "g": 18, "b": 18},
@@ -230,13 +230,13 @@
     },
     {
       "checkpoint": "settled",
-      "scope": "account_name",
-      "rectangle": {"col": 2, "row": 5, "cols": 12, "rows": 1},
+      "scope": "workspace_path",
+      "rectangle": {"col": 2, "row": 1, "cols": 98, "rows": 1},
       "source": {
-        "text": "operator",
-        "cell_width": 8,
+        "text": "<harness-workspace>",
+        "cell_width": 98,
         "padding_left": 0,
-        "padding_right": 4,
+        "padding_right": 0,
         "style": {
           "foreground": {"r": 216, "g": 216, "b": 216},
           "background": {"r": 18, "g": 18, "b": 18},
@@ -249,10 +249,47 @@
         "wrapping": "no_wrap"
       },
       "target": {
-        "text": "[ACCOUNT]",
-        "cell_width": 9,
+        "text": "[WORKSPACE]",
+        "cell_width": 10,
         "padding_left": 0,
-        "padding_right": 3,
+        "padding_right": 88,
+        "style": {
+          "foreground": {"r": 216, "g": 216, "b": 216},
+          "background": {"r": 18, "g": 18, "b": 18},
+          "bold": false,
+          "dim": false,
+          "italic": false,
+          "underline": false,
+          "inverse": false
+        },
+        "wrapping": "no_wrap"
+      }
+    },
+    {
+      "checkpoint": "settled",
+      "scope": "provider_name",
+      "rectangle": {"col": 49, "row": 26, "cols": 46, "rows": 1},
+      "source": {
+        "text": "GPT 5.6 Luna (CLIProxy) (low) · always-approve",
+        "cell_width": 46,
+        "padding_left": 0,
+        "padding_right": 0,
+        "style": {
+          "foreground": {"r": 216, "g": 216, "b": 216},
+          "background": {"r": 18, "g": 18, "b": 18},
+          "bold": false,
+          "dim": false,
+          "italic": false,
+          "underline": false,
+          "inverse": false
+        },
+        "wrapping": "no_wrap"
+      },
+      "target": {
+        "text": "[PROVIDER]",
+        "cell_width": 10,
+        "padding_left": 0,
+        "padding_right": 36,
         "style": {
           "foreground": {"r": 216, "g": 216, "b": 216},
           "background": {"r": 18, "g": 18, "b": 18},

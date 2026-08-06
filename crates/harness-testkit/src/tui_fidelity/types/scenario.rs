@@ -12,6 +12,32 @@ pub enum CheckpointName {
     Settled,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum TerminalType {
+    #[default]
+    #[serde(rename = "xterm-256color")]
+    Xterm256Color,
+    #[serde(rename = "xterm")]
+    Xterm,
+}
+
+impl TerminalType {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Xterm256Color => "xterm-256color",
+            Self::Xterm => "xterm",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CaptureMode {
+    #[default]
+    FullSession,
+    ActionTail,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FrameCapture {
@@ -31,6 +57,7 @@ pub struct Checkpoint {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum IdentityScope {
+    WorkspacePath,
     ProductLogo,
     ProductTitle,
     BuildVersion,
@@ -41,6 +68,7 @@ pub enum IdentityScope {
 impl IdentityScope {
     pub const fn placeholder(self) -> &'static str {
         match self {
+            Self::WorkspacePath => "[WORKSPACE]",
             Self::ProductLogo => "[LOGO]",
             Self::ProductTitle => "[PRODUCT]",
             Self::BuildVersion => "[VERSION]",
@@ -81,6 +109,10 @@ pub struct Scenario {
     pub id: super::geometry::ScenarioId,
     pub adapters: Vec<AdapterKind>,
     pub viewport: Viewport,
+    #[serde(default)]
+    pub terminal_type: TerminalType,
+    #[serde(default)]
+    pub capture_mode: CaptureMode,
     pub actions: Vec<super::action::ScenarioAction>,
     pub checkpoints: Vec<Checkpoint>,
     pub substitutions: Vec<IdentitySubstitution>,

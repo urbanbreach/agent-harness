@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use harness_testkit::tui_fidelity_cache::ReferenceCacheInputs;
-use harness_testkit::tui_fidelity_compare::{hash_bytes, COMPARISON_RECEIPT_SCHEMA};
+use harness_testkit::tui_fidelity_compare::{COMPARISON_RECEIPT_SCHEMA, hash_bytes};
 use harness_testkit::tui_fidelity_deadline::{
     CommandSpec, CommandStatus, DeadlineRunner, InterruptFlag, ResourceLimits,
 };
@@ -20,6 +20,7 @@ pub(super) struct VerifyExecutor {
     executable: PathBuf,
     reference_bin: PathBuf,
     harness_bin: PathBuf,
+    candidate_receipt: PathBuf,
     browser_bin: Option<PathBuf>,
     node_modules: Option<PathBuf>,
     font_family: String,
@@ -54,6 +55,7 @@ impl VerifyExecutor {
             executable: std::env::current_exe().map_err(|error| error.to_string())?,
             reference_bin: args.reference_bin.clone(),
             harness_bin: args.harness_bin.clone(),
+            candidate_receipt: args.candidate_receipt.clone(),
             browser_bin: args.browser_bin.clone(),
             node_modules: args.node_modules.clone(),
             font_family: args.font_family.clone(),
@@ -112,6 +114,8 @@ impl VerifyExecutor {
                 self.reference_bin.as_os_str().to_owned(),
                 "--harness-bin".into(),
                 self.harness_bin.as_os_str().to_owned(),
+                "--candidate-receipt".into(),
+                self.candidate_receipt.as_os_str().to_owned(),
                 "--evidence-dir".into(),
                 capture_root.as_os_str().to_owned(),
                 "--font-family".into(),

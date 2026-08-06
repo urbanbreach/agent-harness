@@ -6,10 +6,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use harness_testkit::tui_fidelity_deadline::{
     CommandSpec, CommandStatus, DeadlineRunner, InterruptFlag, ResourceLimits,
 };
-use harness_testkit::tui_fidelity_dependency_cone::{parse_git_changes, DependencyCones};
+use harness_testkit::tui_fidelity_dependency_cone::{DependencyCones, parse_git_changes};
 use harness_testkit::tui_fidelity_matrix::read_coverage_documents;
 use harness_testkit::tui_fidelity_verify::{
-    build_plan, execute_plan, PlanSelection, VerificationProfile, VerifyConfig,
+    PlanSelection, VerificationProfile, VerifyConfig, build_plan, execute_plan,
 };
 
 use super::verify_executor::VerifyExecutor;
@@ -113,6 +113,7 @@ pub(super) struct VerifyArgs {
     pub evidence_root: PathBuf,
     pub reference_bin: PathBuf,
     pub harness_bin: PathBuf,
+    pub candidate_receipt: PathBuf,
     pub browser_bin: Option<PathBuf>,
     pub node_modules: Option<PathBuf>,
     pub font_family: String,
@@ -136,6 +137,7 @@ fn parse(arguments: Vec<OsString>, repo_root: &Path) -> Result<VerifyArgs, Strin
     let mut evidence_root = repo_root.join(".omo/evidence");
     let mut reference_bin = None;
     let mut harness_bin = None;
+    let mut candidate_receipt = None;
     let mut browser_bin = None;
     let mut node_modules = None;
     let mut font_family = "DejaVu Sans Mono".to_owned();
@@ -159,6 +161,7 @@ fn parse(arguments: Vec<OsString>, repo_root: &Path) -> Result<VerifyArgs, Strin
             Some("--evidence-root") => evidence_root = value.into(),
             Some("--reference-bin") => reference_bin = Some(value.into()),
             Some("--harness-bin") => harness_bin = Some(value.into()),
+            Some("--candidate-receipt") => candidate_receipt = Some(value.into()),
             Some("--browser-bin") => browser_bin = Some(value.into()),
             Some("--node-modules") => node_modules = Some(value.into()),
             Some("--font-family") => font_family = value.to_string_lossy().into_owned(),
@@ -188,6 +191,7 @@ fn parse(arguments: Vec<OsString>, repo_root: &Path) -> Result<VerifyArgs, Strin
         evidence_root,
         reference_bin: reference_bin.ok_or("missing --reference-bin")?,
         harness_bin: harness_bin.ok_or("missing --harness-bin")?,
+        candidate_receipt: candidate_receipt.ok_or("missing --candidate-receipt")?,
         browser_bin,
         node_modules,
         font_family,
@@ -234,6 +238,8 @@ mod tests {
                 OsString::from("reference"),
                 OsString::from("--harness-bin"),
                 OsString::from("harness"),
+                OsString::from("--candidate-receipt"),
+                OsString::from("candidate-receipt"),
             ];
 
             let parsed = parse(arguments, Path::new("/repo")).expect("typed profile arguments");

@@ -2,14 +2,120 @@
   "schema_version": "tui-fidelity-scenario-v1",
   "id": "baseline-startup",
   "adapters": ["grok", "harness"],
-  "viewport": {"cols": 80, "rows": 24},
+  "viewport": {"cols": 100, "rows": 30},
   "actions": [{"wait_for_semantic_state": {"at_tick": 1, "state": "prompt_ready"}}, {"terminal_reply": {"at_tick": 2, "query": "device_attributes", "response": "\u001b[?1;2c"}}],
   "checkpoints": [
-    {"name": "rest", "at_tick": 3, "frame": {"capture_id": "baseline-startup-rest", "viewport": {"cols": 80, "rows": 24}, "state": "rest"}},
-    {"name": "mid", "at_tick": 4, "frame": {"capture_id": "baseline-startup-mid", "viewport": {"cols": 80, "rows": 24}, "state": "working"}},
-    {"name": "settled", "at_tick": 5, "frame": {"capture_id": "baseline-startup-settled", "viewport": {"cols": 80, "rows": 24}, "state": "settled"}}
+    {"name": "rest", "at_tick": 3, "frame": {"capture_id": "baseline-startup-rest", "viewport": {"cols": 100, "rows": 30}, "state": "rest"}},
+    {"name": "mid", "at_tick": 4, "frame": {"capture_id": "baseline-startup-mid", "viewport": {"cols": 100, "rows": 30}, "state": "working"}},
+    {"name": "settled", "at_tick": 5, "frame": {"capture_id": "baseline-startup-settled", "viewport": {"cols": 100, "rows": 30}, "state": "settled"}}
   ],
-  "substitutions": [],
+  "substitutions": [
+    {
+      "checkpoint": "rest",
+      "scope": "workspace_path",
+      "rectangle": {"col": 2, "row": 1, "cols": 98, "rows": 1},
+      "source": {"text": "<harness-workspace>", "cell_width": 98, "padding_left": 0, "padding_right": 0, "style": {"foreground": {"r": 216, "g": 216, "b": 216}, "background": {"r": 18, "g": 18, "b": 18}, "bold": false, "dim": true, "italic": false, "underline": false, "inverse": false}, "wrapping": "no_wrap"},
+      "target": {"text": "[WORKSPACE]", "cell_width": 10, "padding_left": 0, "padding_right": 88, "style": {"foreground": {"r": 216, "g": 216, "b": 216}, "background": {"r": 18, "g": 18, "b": 18}, "bold": false, "dim": true, "italic": false, "underline": false, "inverse": false}, "wrapping": "no_wrap"}
+    },
+    {
+      "checkpoint": "rest",
+      "scope": "product_logo",
+      "rectangle": {"col": 6, "row": 8, "cols": 14, "rows": 7},
+      "source": {"text": "<grok-logo>", "cell_width": 14, "padding_left": 0, "padding_right": 0, "style": {"foreground": {"r": 216, "g": 216, "b": 216}, "background": {"r": 18, "g": 18, "b": 18}, "bold": false, "dim": false, "italic": false, "underline": false, "inverse": false}, "wrapping": "hard_wrap"},
+      "target": {"text": "[LOGO]", "cell_width": 6, "padding_left": 0, "padding_right": 8, "style": {"foreground": {"r": 216, "g": 216, "b": 216}, "background": {"r": 18, "g": 18, "b": 18}, "bold": false, "dim": false, "italic": false, "underline": false, "inverse": false}, "wrapping": "hard_wrap"}
+    },
+    {
+      "checkpoint": "rest",
+      "scope": "product_title",
+      "rectangle": {"col": 23, "row": 8, "cols": 16, "rows": 1},
+      "source": {"text": "Grok Build Beta", "cell_width": 16, "padding_left": 0, "padding_right": 0, "style": {"foreground": {"r": 216, "g": 216, "b": 216}, "background": {"r": 18, "g": 18, "b": 18}, "bold": true, "dim": false, "italic": false, "underline": false, "inverse": false}, "wrapping": "no_wrap"},
+      "target": {"text": "[PRODUCT]", "cell_width": 9, "padding_left": 0, "padding_right": 7, "style": {"foreground": {"r": 216, "g": 216, "b": 216}, "background": {"r": 18, "g": 18, "b": 18}, "bold": true, "dim": false, "italic": false, "underline": false, "inverse": false}, "wrapping": "no_wrap"}
+    },
+    {
+      "checkpoint": "rest",
+      "scope": "build_version",
+      "rectangle": {"col": 32, "row": 8, "cols": 15, "rows": 1},
+      "source": {"text": "0.2.114", "cell_width": 7, "padding_left": 8, "padding_right": 0, "style": {"foreground": {"r": 216, "g": 216, "b": 216}, "background": {"r": 18, "g": 18, "b": 18}, "bold": false, "dim": false, "italic": false, "underline": false, "inverse": false}, "wrapping": "no_wrap"},
+      "target": {"text": "[VERSION]", "cell_width": 9, "padding_left": 0, "padding_right": 6, "style": {"foreground": {"r": 216, "g": 216, "b": 216}, "background": {"r": 18, "g": 18, "b": 18}, "bold": false, "dim": false, "italic": false, "underline": false, "inverse": false}, "wrapping": "no_wrap"}
+    },
+    {
+      "checkpoint": "rest",
+      "scope": "provider_name",
+      "rectangle": {"col": 49, "row": 26, "cols": 46, "rows": 1},
+      "source": {"text": "GPT 5.6 Luna (CLIProxy) (low) · always-approve", "cell_width": 46, "padding_left": 0, "padding_right": 0, "style": {"foreground": {"r": 216, "g": 216, "b": 216}, "background": {"r": 18, "g": 18, "b": 18}, "bold": false, "dim": false, "italic": false, "underline": false, "inverse": false}, "wrapping": "no_wrap"},
+      "target": {"text": "[PROVIDER]", "cell_width": 10, "padding_left": 0, "padding_right": 36, "style": {"foreground": {"r": 216, "g": 216, "b": 216}, "background": {"r": 18, "g": 18, "b": 18}, "bold": false, "dim": false, "italic": false, "underline": false, "inverse": false}, "wrapping": "no_wrap"}
+    },
+    {
+      "checkpoint": "mid",
+      "scope": "workspace_path",
+      "rectangle": {"col": 2, "row": 1, "cols": 98, "rows": 1},
+      "source": {"text": "<harness-workspace>", "cell_width": 98, "padding_left": 0, "padding_right": 0, "style": {"foreground": {"r": 216, "g": 216, "b": 216}, "background": {"r": 18, "g": 18, "b": 18}, "bold": false, "dim": true, "italic": false, "underline": false, "inverse": false}, "wrapping": "no_wrap"},
+      "target": {"text": "[WORKSPACE]", "cell_width": 10, "padding_left": 0, "padding_right": 88, "style": {"foreground": {"r": 216, "g": 216, "b": 216}, "background": {"r": 18, "g": 18, "b": 18}, "bold": false, "dim": true, "italic": false, "underline": false, "inverse": false}, "wrapping": "no_wrap"}
+    },
+    {
+      "checkpoint": "mid",
+      "scope": "product_logo",
+      "rectangle": {"col": 6, "row": 8, "cols": 14, "rows": 7},
+      "source": {"text": "<grok-logo>", "cell_width": 14, "padding_left": 0, "padding_right": 0, "style": {"foreground": {"r": 216, "g": 216, "b": 216}, "background": {"r": 18, "g": 18, "b": 18}, "bold": false, "dim": false, "italic": false, "underline": false, "inverse": false}, "wrapping": "hard_wrap"},
+      "target": {"text": "[LOGO]", "cell_width": 6, "padding_left": 0, "padding_right": 8, "style": {"foreground": {"r": 216, "g": 216, "b": 216}, "background": {"r": 18, "g": 18, "b": 18}, "bold": false, "dim": false, "italic": false, "underline": false, "inverse": false}, "wrapping": "hard_wrap"}
+    },
+    {
+      "checkpoint": "mid",
+      "scope": "product_title",
+      "rectangle": {"col": 23, "row": 8, "cols": 16, "rows": 1},
+      "source": {"text": "Grok Build Beta", "cell_width": 16, "padding_left": 0, "padding_right": 0, "style": {"foreground": {"r": 216, "g": 216, "b": 216}, "background": {"r": 18, "g": 18, "b": 18}, "bold": true, "dim": false, "italic": false, "underline": false, "inverse": false}, "wrapping": "no_wrap"},
+      "target": {"text": "[PRODUCT]", "cell_width": 9, "padding_left": 0, "padding_right": 7, "style": {"foreground": {"r": 216, "g": 216, "b": 216}, "background": {"r": 18, "g": 18, "b": 18}, "bold": true, "dim": false, "italic": false, "underline": false, "inverse": false}, "wrapping": "no_wrap"}
+    },
+    {
+      "checkpoint": "mid",
+      "scope": "build_version",
+      "rectangle": {"col": 32, "row": 8, "cols": 15, "rows": 1},
+      "source": {"text": "0.2.114", "cell_width": 7, "padding_left": 8, "padding_right": 0, "style": {"foreground": {"r": 216, "g": 216, "b": 216}, "background": {"r": 18, "g": 18, "b": 18}, "bold": false, "dim": false, "italic": false, "underline": false, "inverse": false}, "wrapping": "no_wrap"},
+      "target": {"text": "[VERSION]", "cell_width": 9, "padding_left": 0, "padding_right": 6, "style": {"foreground": {"r": 216, "g": 216, "b": 216}, "background": {"r": 18, "g": 18, "b": 18}, "bold": false, "dim": false, "italic": false, "underline": false, "inverse": false}, "wrapping": "no_wrap"}
+    },
+    {
+      "checkpoint": "mid",
+      "scope": "provider_name",
+      "rectangle": {"col": 49, "row": 26, "cols": 46, "rows": 1},
+      "source": {"text": "GPT 5.6 Luna (CLIProxy) (low) · always-approve", "cell_width": 46, "padding_left": 0, "padding_right": 0, "style": {"foreground": {"r": 216, "g": 216, "b": 216}, "background": {"r": 18, "g": 18, "b": 18}, "bold": false, "dim": false, "italic": false, "underline": false, "inverse": false}, "wrapping": "no_wrap"},
+      "target": {"text": "[PROVIDER]", "cell_width": 10, "padding_left": 0, "padding_right": 36, "style": {"foreground": {"r": 216, "g": 216, "b": 216}, "background": {"r": 18, "g": 18, "b": 18}, "bold": false, "dim": false, "italic": false, "underline": false, "inverse": false}, "wrapping": "no_wrap"}
+    },
+    {
+      "checkpoint": "settled",
+      "scope": "workspace_path",
+      "rectangle": {"col": 2, "row": 1, "cols": 98, "rows": 1},
+      "source": {"text": "<harness-workspace>", "cell_width": 98, "padding_left": 0, "padding_right": 0, "style": {"foreground": {"r": 216, "g": 216, "b": 216}, "background": {"r": 18, "g": 18, "b": 18}, "bold": false, "dim": true, "italic": false, "underline": false, "inverse": false}, "wrapping": "no_wrap"},
+      "target": {"text": "[WORKSPACE]", "cell_width": 10, "padding_left": 0, "padding_right": 88, "style": {"foreground": {"r": 216, "g": 216, "b": 216}, "background": {"r": 18, "g": 18, "b": 18}, "bold": false, "dim": true, "italic": false, "underline": false, "inverse": false}, "wrapping": "no_wrap"}
+    },
+    {
+      "checkpoint": "settled",
+      "scope": "product_logo",
+      "rectangle": {"col": 6, "row": 8, "cols": 14, "rows": 7},
+      "source": {"text": "<grok-logo>", "cell_width": 14, "padding_left": 0, "padding_right": 0, "style": {"foreground": {"r": 216, "g": 216, "b": 216}, "background": {"r": 18, "g": 18, "b": 18}, "bold": false, "dim": false, "italic": false, "underline": false, "inverse": false}, "wrapping": "hard_wrap"},
+      "target": {"text": "[LOGO]", "cell_width": 6, "padding_left": 0, "padding_right": 8, "style": {"foreground": {"r": 216, "g": 216, "b": 216}, "background": {"r": 18, "g": 18, "b": 18}, "bold": false, "dim": false, "italic": false, "underline": false, "inverse": false}, "wrapping": "hard_wrap"}
+    },
+    {
+      "checkpoint": "settled",
+      "scope": "product_title",
+      "rectangle": {"col": 23, "row": 8, "cols": 16, "rows": 1},
+      "source": {"text": "Grok Build Beta", "cell_width": 16, "padding_left": 0, "padding_right": 0, "style": {"foreground": {"r": 216, "g": 216, "b": 216}, "background": {"r": 18, "g": 18, "b": 18}, "bold": true, "dim": false, "italic": false, "underline": false, "inverse": false}, "wrapping": "no_wrap"},
+      "target": {"text": "[PRODUCT]", "cell_width": 9, "padding_left": 0, "padding_right": 7, "style": {"foreground": {"r": 216, "g": 216, "b": 216}, "background": {"r": 18, "g": 18, "b": 18}, "bold": true, "dim": false, "italic": false, "underline": false, "inverse": false}, "wrapping": "no_wrap"}
+    },
+    {
+      "checkpoint": "settled",
+      "scope": "build_version",
+      "rectangle": {"col": 32, "row": 8, "cols": 15, "rows": 1},
+      "source": {"text": "0.2.114", "cell_width": 7, "padding_left": 8, "padding_right": 0, "style": {"foreground": {"r": 216, "g": 216, "b": 216}, "background": {"r": 18, "g": 18, "b": 18}, "bold": false, "dim": false, "italic": false, "underline": false, "inverse": false}, "wrapping": "no_wrap"},
+      "target": {"text": "[VERSION]", "cell_width": 9, "padding_left": 0, "padding_right": 6, "style": {"foreground": {"r": 216, "g": 216, "b": 216}, "background": {"r": 18, "g": 18, "b": 18}, "bold": false, "dim": false, "italic": false, "underline": false, "inverse": false}, "wrapping": "no_wrap"}
+    },
+    {
+      "checkpoint": "settled",
+      "scope": "provider_name",
+      "rectangle": {"col": 49, "row": 26, "cols": 46, "rows": 1},
+      "source": {"text": "GPT 5.6 Luna (CLIProxy) (low) · always-approve", "cell_width": 46, "padding_left": 0, "padding_right": 0, "style": {"foreground": {"r": 216, "g": 216, "b": 216}, "background": {"r": 18, "g": 18, "b": 18}, "bold": false, "dim": false, "italic": false, "underline": false, "inverse": false}, "wrapping": "no_wrap"},
+      "target": {"text": "[PROVIDER]", "cell_width": 10, "padding_left": 0, "padding_right": 36, "style": {"foreground": {"r": 216, "g": 216, "b": 216}, "background": {"r": 18, "g": 18, "b": 18}, "bold": false, "dim": false, "italic": false, "underline": false, "inverse": false}, "wrapping": "no_wrap"}
+    }
+  ],
   "expected_exit": {"code": 0},
   "cleanup": {"restore_workspace": true, "preserve_evidence": true, "temporary_paths": ["tmp/tui-fidelity"]}
 }

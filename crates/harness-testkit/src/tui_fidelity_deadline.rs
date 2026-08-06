@@ -61,8 +61,8 @@ pub struct ResourceLimits {
 impl ResourceLimits {
     pub const fn verification_default() -> Self {
         Self {
-            memory_bytes: Some(16 * 1024 * 1024 * 1024),
-            process_count: Some(512),
+            memory_bytes: None,
+            process_count: Some(2048),
         }
     }
 

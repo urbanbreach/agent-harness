@@ -4,11 +4,12 @@ use std::thread;
 
 use portable_pty::{CommandBuilder, PtySize};
 
-use crate::tui_fidelity::Viewport;
+use crate::tui_fidelity::{TerminalType, Viewport};
 
-pub(super) fn configure_environment(command: &mut CommandBuilder) {
+pub(super) fn configure_environment(command: &mut CommandBuilder, terminal_type: TerminalType) {
+    let term = terminal_type.as_str();
     for (key, value) in [
-        ("TERM", "xterm-256color"),
+        ("TERM", term),
         ("COLORTERM", "truecolor"),
         ("LANG", "C.UTF-8"),
         ("LC_ALL", "C.UTF-8"),
