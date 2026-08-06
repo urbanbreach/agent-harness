@@ -176,6 +176,7 @@ fn ctrl_t_cycles_thinking_variant_within_current_profile() {
     live.set_launch_metadata(
         LaunchMetadata::from_model_ref("deep", "default:gpt-5.4-mini")
             .with_available_models(same_profile_variant_options())
+            .with_oauth_authentication()
             .with_mode_label("Demo"),
     );
 
@@ -184,6 +185,7 @@ fn ctrl_t_cycles_thinking_variant_within_current_profile() {
     assert_eq!(live.active_profile(), "deep");
     assert_eq!(live.current_model_label(), "GPT-5.4 Mini · Creative");
     assert_eq!(live.launch_mode_label(), Some("Demo"));
+    assert!(live.launch_metadata().uses_oauth_authentication());
 
     let intents = intents.lock().unwrap_or_abort();
     let UiIntent::SwitchModel {
@@ -196,6 +198,7 @@ fn ctrl_t_cycles_thinking_variant_within_current_profile() {
     assert_eq!(profile, "deep");
     assert_eq!(launch_metadata.variant(), Some("creative"));
     assert_eq!(launch_metadata.reasoning_effort(), Some("high"));
+    assert!(launch_metadata.uses_oauth_authentication());
 }
 
 #[test]

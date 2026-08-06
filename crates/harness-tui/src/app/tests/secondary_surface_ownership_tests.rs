@@ -133,6 +133,23 @@ pub(super) fn status_dashboard_opens_via_dashboard_slash() {
     assert_eq!(app.overlay_stack().top(), Some(OverlayKind::StatusDialog));
 }
 
+pub(super) fn status_dashboard_allows_normal_quit_sequence() {
+    // Given
+    let mut app = AppState::new_live(None, false, None);
+    app.execute_action(Action::OpenStatusDialog);
+
+    // When
+    let quit_key = key_with_modifiers(KeyCode::Char('q'), KeyModifiers::CONTROL);
+    app.handle_key(quit_key);
+    app.handle_key(quit_key);
+
+    // Then
+    assert!(
+        app.should_quit,
+        "status dialog must not swallow Ctrl+Q quit confirmation"
+    );
+}
+
 pub(super) fn status_dashboard_renders_empty_sections_from_app_state() {
     // Given
     let mut app = AppState::new_live(None, false, None);

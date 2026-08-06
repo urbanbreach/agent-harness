@@ -48,7 +48,9 @@ impl AppState {
         }
 
         if self.overlay_stack().top() == Some(OverlayKind::StatusDialog) {
-            if key.code == KeyCode::Esc {
+            if key.code == KeyCode::Char('q') && key.modifiers == KeyModifiers::CONTROL {
+                self.execute_action(Action::Quit);
+            } else if key.code == KeyCode::Esc {
                 self.secondary_surfaces.close_status_dialog();
             }
             self.maybe_auto_exit();

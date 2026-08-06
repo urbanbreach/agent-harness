@@ -436,6 +436,11 @@ impl AppState {
         let mut launch_metadata = LaunchMetadata::from_model_option(selected_model)
             .with_available_models(self.launch_metadata.available_models().to_vec())
             .with_switchable_profiles(self.launch_metadata.switchable_profiles().to_vec());
+        if selected_model.provider == self.launch_metadata.provider()
+            && self.launch_metadata.uses_oauth_authentication()
+        {
+            launch_metadata = launch_metadata.with_oauth_authentication();
+        }
         if let Some(mode_label) = self.launch_metadata.mode_label().map(str::to_owned) {
             launch_metadata = launch_metadata.with_mode_label(mode_label);
         }

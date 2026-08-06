@@ -30,6 +30,8 @@ pub mod theme;
 pub mod theme_leaf;
 mod time_format;
 pub mod ui;
+#[rustfmt::skip]
+pub mod theme_family;
 
 pub use harness_core::UnwrapOrAbort;
 
@@ -43,7 +45,7 @@ pub use app::{ReviewSurface, UiIntent};
 pub use keybindings::{Action, KeyMap};
 pub use layout::FrameLayoutPlan;
 pub use runtime::{
-    close_preserved_terminal_session, run_tui, run_tui_with_options,
-    set_pending_replay_launch_metadata, LiveUpdate, OperatorNoticeLevel, TuiMode, TuiOptions,
+    LiveUpdate, OperatorNoticeLevel, TuiMode, TuiOptions, close_preserved_terminal_session,
+    run_tui, run_tui_with_options, set_pending_replay_launch_metadata,
 };
 pub use theme::{LiveShellLayout, LiveShellTokens, ShellGeometry, ShellGeometryTarget, Theme};

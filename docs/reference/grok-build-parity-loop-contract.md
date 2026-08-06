@@ -1,9 +1,18 @@
-# Harness / Grok Build Parity Loop Contract
+# Harness / Grok Build Parity Loop Contract (Historical)
 
-> **Binding use:** This is the implementation contract for the next autonomous
-> parity loop. It replaces completion claims, stale rollups, and the earlier
-> `docs/grok-build-tui-implementation-prompt.md` contract when they conflict
-> with observed behavior.
+> **Execution status (2026-08-06): retired.** Do not resume this document's
+> ordered autonomous loop or its `.omo` Boulder state. Completion claims from
+> that loop were revoked after stale/disconnected evidence and aggregate
+> verification collapse. Use
+> [`grok-build-ui-difference-catalog.md`](../../grok-build-ui-difference-catalog.md)
+> for bounded UI discrepancy packets. Section 2 reference authority remains
+> binding until catalog prerequisite R0-02 reconciles and updates the checked-in
+> reference contract and manifest together.
+
+> **Historical record:** The remaining text is preserved to explain the former
+> loop's scope, evidence vocabulary, and reference receipt. Its ordered
+> execution and completion instructions are no longer active. Where this
+> historical text conflicts with the retirement notice above, the notice wins.
 >
 > **Stop condition:** Stop only when every required product surface, capability,
 > action, journey, provider path, configuration path, and evidence gate passes
