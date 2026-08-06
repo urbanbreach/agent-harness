@@ -58,10 +58,16 @@ const GROK_EXIT_STEPS: &[ExitStep] = &[
         dwell: Duration::ZERO,
     },
 ];
-const GROK_ACTIVE_EXIT_STEPS: &[ExitStep] = &[ExitStep {
-    bytes: b"\x11",
-    dwell: Duration::from_millis(500),
-}];
+const GROK_ACTIVE_EXIT_STEPS: &[ExitStep] = &[
+    ExitStep {
+        bytes: b"\x11",
+        dwell: Duration::from_millis(100),
+    },
+    ExitStep {
+        bytes: b"\x11",
+        dwell: Duration::from_millis(500),
+    },
+];
 const HARNESS_EXIT_STEPS: &[ExitStep] = &[
     ExitStep {
         bytes: b"\x11",
@@ -221,5 +227,6 @@ mod tests {
         let steps = normal_exit_steps_for_state(AdapterKind::Grok, true);
 
         assert_eq!(steps[0].bytes, b"\x11");
+        assert_eq!(steps[1].bytes, b"\x11");
     }
 }
