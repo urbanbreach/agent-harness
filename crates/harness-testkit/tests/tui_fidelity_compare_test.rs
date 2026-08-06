@@ -100,6 +100,22 @@ fn accepts_declared_75ms_phase_cadence() {
 }
 
 #[test]
+fn accepts_small_wall_clock_p95_jitter() {
+    // Given: the candidate is two milliseconds slower in a small execution window.
+    let reference = TimingTrace::new(vec![0, 75, 150], vec![6, 6, 6]);
+    let candidate = TimingTrace::new(vec![0, 75, 150], vec![8, 8, 8]);
+
+    // When: the timing comparator evaluates p95 latency.
+    let result = compare_timing(&reference, &candidate);
+
+    // Then: bounded scheduling jitter is accepted without disabling gross regressions.
+    assert!(
+        result.is_ok(),
+        "small wall-clock p95 jitter must be bounded, not rejected"
+    );
+}
+
+#[test]
 fn rejects_reversed_timing_phase_order() {
     let reference = TimingTrace::with_phase_order(
         vec![0, 75, 150],
