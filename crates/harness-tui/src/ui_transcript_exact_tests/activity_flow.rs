@@ -102,6 +102,9 @@ pub(crate) fn exact_test_transcript_section_model_keeps_nested_tool_and_error_bl
                 text: "command failed".to_string(),
                 tone: TranscriptToolCallDetailTone::Error,
             }],
+            details_collapsed_by_default: false,
+            details_preview_visible: false,
+            animation_phase: 0,
             expanded: false,
         }
     );

@@ -1,121 +1,90 @@
-use crate::terminal::capability::ColorMode;
-use crate::theme::ColorLevel;
+//! System color-scheme preference detection for auto theme mode.
 
-use super::family::ThemeFamily;
-
-pub use crate::app::theme_preview::SystemAppearance;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AutoMode {
+    Auto,
+    Manual,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ThemeChoice {
-    Explicit(ThemeFamily),
-    Auto,
+pub enum SystemPreference {
+    Dark,
+    Light,
 }
 
-impl ThemeChoice {
-    pub const fn explicit(family: ThemeFamily) -> Self {
-        Self::Explicit(family)
-    }
-
-    pub const fn label(self) -> &'static str {
+impl SystemPreference {
+    pub fn to_family(self) -> super::family::ThemeFamily {
         match self {
-            Self::Explicit(family) => family.label(),
-            Self::Auto => "auto",
-        }
-    }
-
-    pub fn from_label(label: &str) -> Option<Self> {
-        if label.trim().eq_ignore_ascii_case("auto") || label.trim().eq_ignore_ascii_case("system")
-        {
-            Some(Self::Auto)
-        } else {
-            ThemeFamily::from_label(label).map(Self::Explicit)
+            Self::Dark => super::family::ThemeFamily::Dark,
+            Self::Light => super::family::ThemeFamily::Light,
         }
     }
 }
 
-impl Default for ThemeChoice {
+/// Detect the system color-scheme preference from the environment.
+///
+/// Resolution order:
+/// 1. `COLORFGBG` env var: values starting with "0;" indicate a dark background
+///    (light-on-dark), so return `Dark`. Otherwise `Light`.
+/// 2. Fall back to `Dark` (the design contract default).
+pub fn detect_system_preference() -> SystemPreference {
+    match std::env::var("COLORFGBG") {
+        Ok(value) if value.starts_with("0;") => SystemPreference::Dark,
+        Ok(_) => SystemPreference::Light,
+        Err(_) => SystemPreference::Dark,
+    }
+}
+
+pub struct AutoResolver {
+    last_detected: Option<SystemPreference>,
+}
+
+impl AutoResolver {
+    pub fn new() -> Self {
+        Self {
+            last_detected: None,
+        }
+    }
+
+    /// Probe the environment and update the cached preference.
+    /// Returns the freshly-detected preference.
+    pub fn refresh(&mut self) -> SystemPreference {
+        let detected = detect_system_preference();
+        self.last_detected = Some(detected);
+        detected
+    }
+
+    /// Returns the last-detected preference without probing again.
+    pub fn current(&self) -> Option<SystemPreference> {
+        self.last_detected
+    }
+
+    /// Returns the resolved family, probing if no cached preference exists.
+    pub fn resolve(&mut self) -> super::family::ThemeFamily {
+        let pref = self.last_detected.unwrap_or_else(detect_system_preference);
+        self.last_detected = Some(pref);
+        pref.to_family()
+    }
+}
+
+impl Default for AutoResolver {
     fn default() -> Self {
-        Self::Explicit(ThemeFamily::HarnessChat)
+        Self::new()
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct ThemeEnvironment {
-    pub no_color: Option<String>,
-    pub colorterm: Option<String>,
-    pub term: Option<String>,
-    pub colorfgbg: Option<String>,
-    pub appearance: Option<SystemAppearance>,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AutoDetectError {
+    ProbeFailure(String),
 }
 
-impl ThemeEnvironment {
-    pub fn from_env() -> Self {
-        Self {
-            no_color: std::env::var("NO_COLOR").ok(),
-            colorterm: std::env::var("COLORTERM").ok(),
-            term: std::env::var("TERM").ok(),
-            colorfgbg: std::env::var("COLORFGBG").ok(),
-            appearance: None,
+impl std::fmt::Display for AutoDetectError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ProbeFailure(message) => write!(formatter, "auto theme probe failed: {message}"),
         }
-    }
-
-    pub fn from_colorfgbg(value: &str) -> Self {
-        Self {
-            colorfgbg: Some(value.to_owned()),
-            ..Self::default()
-        }
-    }
-
-    pub fn with_color_level(level: ColorLevel) -> Self {
-        match level {
-            ColorLevel::None => Self {
-                no_color: Some(String::from("1")),
-                ..Self::default()
-            },
-            ColorLevel::Basic => Self {
-                term: Some(String::from("xterm")),
-                ..Self::default()
-            },
-            ColorLevel::Ansi256 => Self {
-                term: Some(String::from("xterm-256color")),
-                ..Self::default()
-            },
-            ColorLevel::TrueColor => Self {
-                colorterm: Some(String::from("truecolor")),
-                term: Some(String::from("xterm-256color")),
-                ..Self::default()
-            },
-        }
-    }
-
-    pub fn color_level(&self) -> ColorLevel {
-        if self.no_color.is_some() {
-            return ColorLevel::None;
-        }
-        match ColorMode::from_env(self.colorterm.as_deref(), self.term.as_deref()) {
-            ColorMode::None => ColorLevel::None,
-            ColorMode::Ansi16 => ColorLevel::Basic,
-            ColorMode::Ansi256 => ColorLevel::Ansi256,
-            ColorMode::Truecolor => ColorLevel::TrueColor,
-        }
-    }
-
-    pub fn system_appearance(&self) -> Option<SystemAppearance> {
-        self.appearance
-            .or_else(|| detect_system_appearance(self.colorfgbg.as_deref()))
-    }
-
-    pub fn with_system_appearance(mut self, appearance: SystemAppearance) -> Self {
-        self.appearance = Some(appearance);
-        self
     }
 }
 
-pub fn detect_system_appearance(colorfgbg: Option<&str>) -> Option<SystemAppearance> {
-    let background = colorfgbg?.rsplit(';').next()?.trim();
-    match background.parse::<u8>().ok()? {
-        0..=6 => Some(SystemAppearance::Dark),
-        7..=15 => Some(SystemAppearance::Light),
-        _ => None,
-    }
-}
+impl std::error::Error for AutoDetectError {}

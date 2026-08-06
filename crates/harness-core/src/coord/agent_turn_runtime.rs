@@ -12,6 +12,7 @@ impl Coordinator {
         agent_id: String,
         prompt: String,
         selected_tags: crate::file_tag::SelectedPromptTags,
+        attachments: Vec<crate::attachment_transport::AttachmentMetadata>,
         model_ref_override: Option<String>,
         model_settings_override: Option<AgentModelSettings>,
         child_task_metadata: Option<ChildTaskRequestMetadata>,
@@ -115,6 +116,23 @@ impl Coordinator {
                 text: request.prompt.clone(),
             }),
         )?;
+
+        if !attachments.is_empty() {
+            append_payload_event_with_correlation(
+                self.clock.as_ref(),
+                self.redactor.as_ref(),
+                run_state,
+                actor.clone(),
+                Some(format!("agent:{}", request.agent_id)),
+                Some(request_id.clone()),
+                EventV1::PromptAttachmentsSubmitted(
+                    crate::event::PromptAttachmentsSubmittedEvent {
+                        request_id: request_id.clone().into(),
+                        attachments,
+                    },
+                ),
+            )?;
+        }
 
         if actor.kind == ActorKind::User {
             self.ensure_harness_session_title(&request.prompt).await;

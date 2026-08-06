@@ -28,6 +28,7 @@ pub(super) fn prompt_focus_enter_emits_submit_intent() {
             selected_file_tags: Vec::new(),
             selected_agent_tags: Vec::new(),
             selected_resource_tags: Vec::new(),
+            attachments: Vec::new(),
             launch_metadata: app::LaunchMetadata::default(),
         }
     );

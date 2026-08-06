@@ -41,9 +41,20 @@ pub(super) fn render_live_turn_status(
         .iter()
         .rev()
         .find(|entry| entry.status == ActivityStatus::Streaming);
-    let status = activity.map_or_else(
-        || LiveTurnStatus::waiting(theme),
-        |entry| LiveTurnStatus::from_activity(entry, theme),
+    let question_detail = app
+        .active_permission_view()
+        .filter(|permission| permission.kind.eq_ignore_ascii_case("question"))
+        .and_then(|permission| permission.question_prompts)
+        .and_then(|prompts| prompts.into_iter().next())
+        .map(|prompt| prompt.question);
+    let status = question_detail.as_deref().map_or_else(
+        || {
+            activity.map_or_else(
+                || LiveTurnStatus::waiting(theme),
+                |entry| LiveTurnStatus::from_activity(entry, theme),
+            )
+        },
+        |detail| LiveTurnStatus::waiting_on_answers(theme, Some(detail)),
     );
     let projected_total =
         activity.map(|entry| entry.last_mono_ms.saturating_sub(entry.first_mono_ms));
@@ -123,6 +134,18 @@ impl LiveTurnStatus {
     fn waiting(theme: &Theme) -> Self {
         Self {
             label: "Waiting for response…".to_string(),
+            style: Style::default().fg(theme.text.primary),
+            phase_elapsed_ms: None,
+            spinner_elapsed_ms: None,
+        }
+    }
+
+    fn waiting_on_answers(theme: &Theme, detail: Option<&str>) -> Self {
+        Self {
+            label: detail.map_or_else(
+                || "Waiting on answers".to_string(),
+                |detail| format!("Waiting on answers for {detail}"),
+            ),
             style: Style::default().fg(theme.text.primary),
             phase_elapsed_ms: None,
             spinner_elapsed_ms: None,

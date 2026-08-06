@@ -2,4 +2,5 @@
 
 use crate::slash::SlashCommandLeaf;
 
-pub const LEAF: SlashCommandLeaf = SlashCommandLeaf::new("dashboard", "open_status_dialog", &[]);
+pub const LEAF: SlashCommandLeaf =
+    SlashCommandLeaf::new("dashboard", "open_status_dialog", &["status"]);

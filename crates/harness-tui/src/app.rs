@@ -1,7 +1,7 @@
 // allow: SIZE_OK — TUI app state (session stack + permissions + composer + model switcher + tool output routing)
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::{Deref, DerefMut};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -52,6 +52,7 @@ use harness_core::mcp_oauth::{
     McpOauthTokenExchangeResult, McpRemoteTransportOpenResult,
 };
 use harness_core::perm::{PermissionDecision, PermissionGrantScope};
+use harness_core::proj::{SessionCatalogEntry, SessionModeSource};
 use harness_core::sandbox::{
     LandlockSupport, OsSandboxProfilesSummary, SandboxFsPlanSummary, SandboxPrepareResult,
 };
@@ -70,16 +71,41 @@ use harness_core::workspace_hub::{
 };
 use ratatui::layout::Rect;
 
+use crate::attachment_lifecycle::{
+    Attachment, AttachmentError, AttachmentIngestor, AttachmentPolicy, CancellationToken,
+};
+use crate::completion_controller::{
+    CompletionAcceptance, CompletionItem, CompletionRequest, CompletionTrigger, SelectionDirection,
+};
+use crate::composer_atoms::AttachmentId;
+use crate::composer_integration::{ComposerUiIntent, ComposerViewModel};
+use crate::dashboard::{DashboardEligibilityRules, DashboardReplayRegistry, DashboardSessionInput};
+use crate::dashboard_controls::DashboardControlState;
+use crate::dashboard_details::{DashboardDetails, RosterState as DetailsRosterState};
+use crate::dashboard_integration::{
+    DashboardIntegration, DashboardIntegrationParts, DashboardReturnState,
+};
+use crate::dashboard_peek::DashboardPeek;
+use crate::dashboard_roster::RosterState;
+use crate::design_contract::ViewportId;
 use crate::keybindings::{Action, KeyBinding, KeyMap};
 use crate::overlay::{OverlayKind, OverlayStack, OverlayState};
+use crate::prompt_queue_actions::{QueueAction, QueueError, QueueLifecycle};
 use crate::text::{non_empty_trimmed, trimmed_json_string_field};
-use crate::theme::Theme;
+use crate::theme::{ColorLevel, Theme};
+use crate::theme_family::{
+    deserialize_choice, serialize_choice, AutoResolver, PersistError, ThemeChoice, ThemeFamily,
+    ThemePreview,
+};
+use crate::transcript_identity::{TranscriptFocus, TranscriptScreenMode, TurnId};
+use crate::transcript_integration::{TranscriptComposite, TranscriptViewModel};
 use crate::ui::{
     OperatorSidebarKeyboardTarget, OperatorSidebarKeyboardTargetKind, OperatorSidebarSelection,
     OperatorSidebarSelectionCell, SubagentFooterTarget, TranscriptMouseTarget,
     TranscriptScrollbarHit, TranscriptSelection, TranscriptSelectionCell, WheelTarget,
 };
 use crate::view_model;
+use crate::welcome_surface::{WelcomeHitMap, WelcomeLayout, WelcomeState};
 use crate::{clipboard, ui};
 
 mod activity;
@@ -93,6 +119,7 @@ mod exact_tests;
 mod file_mentions;
 pub mod footer_state;
 mod foreign_import;
+pub mod interaction_reducer;
 mod key_interaction;
 mod lifecycle;
 mod lineage;
@@ -311,7 +338,10 @@ pub struct AppState {
     pub(crate) terminal_panel: TerminalPanelState,
     last_frame_area: Option<Rect>,
     pub(crate) secondary_surfaces: SecondarySurfaceState,
+    dashboard: Option<DashboardIntegration>,
+    dashboard_return_focus: Option<Focus>,
     pub(crate) transcript_view: TranscriptViewState,
+    pub(crate) transcript_integration: Option<TranscriptComposite>,
     pub auto_exit_on_finish: bool,
     pub composer: ComposerState,
     pub prompt_stash: PromptStashState,
@@ -523,6 +553,12 @@ pub struct AppState {
     pub plan_view_selected: usize,
     pub plan_view_preview: Option<String>,
     pub theme_name: String,
+    theme_choice: ThemeChoice,
+    theme_family: ThemeFamily,
+    theme_preview: ThemePreview,
+    auto_theme_resolver: AutoResolver,
+    theme_color_level: ColorLevel,
+    welcome: WelcomeState,
     pub model_options: Vec<ModelOption>,
     pub model_filtered: Vec<usize>,
     pub model_selected: usize,
@@ -585,6 +621,8 @@ pub struct AppState {
 
 impl Default for AppState {
     fn default() -> Self {
+        let auto_theme_resolver = AutoResolver::default();
+        let initial_theme_family = ThemeFamily::Dark;
         Self {
             selected_event_index: 0,
             focus: Focus::default(),
@@ -606,7 +644,10 @@ impl Default for AppState {
             terminal_panel: TerminalPanelState::default(),
             last_frame_area: None,
             secondary_surfaces: SecondarySurfaceState::default(),
+            dashboard: None,
+            dashboard_return_focus: None,
             transcript_view: TranscriptViewState::default(),
+            transcript_integration: None,
             auto_exit_on_finish: false,
             composer: ComposerState::default(),
             prompt_stash: PromptStashState::default(),
@@ -779,7 +820,13 @@ impl Default for AppState {
             file_mention_frecency: BTreeMap::new(),
             continue_disabled_banner: None,
             keymap: KeyMap::default(),
-            theme: Theme::default(),
+            theme: Theme::from_family(initial_theme_family, ColorLevel::TrueColor),
+            theme_choice: ThemeChoice::Auto,
+            theme_family: initial_theme_family,
+            theme_preview: ThemePreview::new(initial_theme_family),
+            auto_theme_resolver,
+            theme_color_level: ColorLevel::TrueColor,
+            welcome: WelcomeState::new(4, false),
             launch_metadata: LaunchMetadata::default(),
             runtime_context_metadata: None,
             session_navigation_stack: Vec::new(),
@@ -817,6 +864,387 @@ impl DerefMut for AppState {
 }
 
 impl AppState {
+    pub fn open_status_dashboard(&mut self) {
+        let frame_area = self.last_frame_area.unwrap_or(Rect::new(0, 0, 100, 36));
+        self.open_status_dashboard_at(frame_area);
+    }
+
+    pub fn open_status_dashboard_at(&mut self, frame_area: Rect) {
+        self.last_frame_area = Some(frame_area);
+        let viewport = crate::dashboard_integration::dashboard_viewport(frame_area)
+            .unwrap_or(Rect::new(0, 0, 100, 36));
+        let return_focus = self.focus;
+        match self.build_dashboard_integration(viewport) {
+            Ok(mut dashboard) => {
+                dashboard.capture_return_state(DashboardReturnState::new(
+                    TranscriptFocus::Transcript,
+                    self.transcript_view.follow_mode,
+                    None,
+                ));
+                self.dashboard = Some(dashboard);
+                self.dashboard_return_focus = Some(return_focus);
+                self.secondary_surfaces.open_status_dialog();
+            }
+            Err(error) => {
+                self.status_banner = Some(format!("dashboard unavailable: {error}"));
+            }
+        }
+    }
+
+    pub fn close_status_dashboard(&mut self) {
+        self.dashboard = None;
+        self.secondary_surfaces.close_status_dialog();
+        if let Some(focus) = self.dashboard_return_focus.take() {
+            self.focus = focus;
+        }
+    }
+
+    pub fn status_dashboard_is_active(&self) -> bool {
+        self.secondary_surfaces.status_dialog_visible() && self.dashboard.is_some()
+    }
+
+    pub fn status_dashboard_focus(&self) -> Option<crate::dashboard_integration::DashboardPane> {
+        self.dashboard.as_ref().map(DashboardIntegration::focus)
+    }
+
+    pub(crate) fn status_dashboard(&self) -> Option<&DashboardIntegration> {
+        self.dashboard.as_ref()
+    }
+
+    pub(crate) fn handle_status_dashboard_key(&mut self, key: KeyEvent) {
+        if key.code == KeyCode::Esc {
+            self.close_status_dashboard();
+            return;
+        }
+        let result = self
+            .dashboard
+            .as_mut()
+            .map(|dashboard| dashboard.handle_key(key));
+        if let Some(Err(error)) = result.as_ref() {
+            self.status_banner = Some(error.to_string());
+        }
+    }
+
+    pub(crate) fn handle_status_dashboard_mouse(&mut self, mouse: MouseEvent) -> bool {
+        let result = self
+            .dashboard
+            .as_mut()
+            .map(|dashboard| dashboard.handle_mouse(mouse));
+        if let Some(Err(error)) = result.as_ref() {
+            self.status_banner = Some(error.to_string());
+        }
+        result.is_some()
+    }
+
+    fn build_dashboard_integration(&self, viewport: Rect) -> Result<DashboardIntegration, String> {
+        let mut events_by_run = BTreeMap::<String, Vec<EventEnvelopeV1>>::new();
+        for event in &self.events {
+            events_by_run
+                .entry(event.run_id.to_string())
+                .or_default()
+                .push(event.clone());
+        }
+
+        let mode_source = if self.replay_mode {
+            SessionModeSource::ReplayOnly
+        } else {
+            SessionModeSource::InteractiveLive
+        };
+        let mut sessions_by_run = self
+            .session_history_entries
+            .iter()
+            .map(|entry| {
+                (
+                    entry.catalog.run_id.clone(),
+                    (entry.catalog.clone(), Vec::new()),
+                )
+            })
+            .collect::<BTreeMap<_, _>>();
+        for (run_id, events) in events_by_run {
+            let run_name = events.iter().find_map(|event| match &event.payload {
+                EventV1::RunStarted(data) => Some(data.run_name.clone()),
+                _ => None,
+            });
+            let workspace_root = events.iter().find_map(|event| match &event.payload {
+                EventV1::RunStarted(data) => Some(data.workspace_root.clone()),
+                _ => None,
+            });
+            let parent_session_id = events
+                .iter()
+                .find_map(|event| event.lineage_parent_session_id().map(str::to_owned));
+            let last_updated_at = events.iter().rev().find_map(|event| event.ts.clone());
+            let catalog = SessionCatalogEntry {
+                run_id: run_id.clone(),
+                run_name: Some(
+                    run_name
+                        .map(|name| name.to_string())
+                        .unwrap_or_else(|| run_id.clone()),
+                ),
+                status: None,
+                last_updated_at,
+                workspace_root,
+                profile_preset: Some(self.active_profile().to_string()),
+                provider_model: None,
+                mode_source,
+                is_resumable: !self.replay_mode,
+                resume_disabled_reason: None,
+                artifact_count: 0,
+                child_session_count: 0,
+                parent_session_id,
+            };
+            sessions_by_run.insert(run_id, (catalog, events));
+        }
+        let sessions = sessions_by_run
+            .into_values()
+            .map(|(catalog, events)| DashboardSessionInput::new(catalog, events))
+            .collect::<Vec<_>>();
+        let registry = DashboardReplayRegistry::from_sessions(sessions);
+        let rules = DashboardEligibilityRules::default();
+        let model = crate::dashboard::build_dashboard_read_model(&registry, &rules)
+            .map_err(|error| error.to_string())?;
+        let selected = model.fallback_selection(None);
+        let roster = RosterState {
+            selected: selected.clone(),
+            ..RosterState::default()
+        };
+        let mut peek = DashboardPeek::new(8.0).map_err(|error| error.to_string())?;
+        if let (Some(selection), Some(view)) = (selected.as_ref(), self.transcript_view_model()) {
+            let _ = peek.replace_from_view(selection, view);
+        }
+        let details = selected.clone().and_then(|selection| {
+            DashboardDetails::new(
+                &registry,
+                &rules,
+                selection.clone(),
+                DetailsRosterState::new(selection, "", 0, ""),
+            )
+            .ok()
+        });
+        let controls = DashboardControlState::new(model.clone(), selected, "")
+            .with_replay_mode(self.replay_mode);
+        DashboardIntegration::new(
+            DashboardIntegrationParts {
+                dashboard: model,
+                roster,
+                peek,
+                details,
+                controls,
+            },
+            viewport,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    fn refresh_status_dashboard(&mut self) {
+        let Some(current) = self.dashboard.as_ref() else {
+            return;
+        };
+        let focus = current.focus();
+        let return_state = current.leave();
+        let viewport = self
+            .last_frame_area
+            .and_then(crate::dashboard_integration::dashboard_viewport)
+            .unwrap_or(Rect::new(0, 0, 100, 36));
+        if let Ok(mut next) = self.build_dashboard_integration(viewport) {
+            next.capture_return_state(return_state);
+            next.set_focus(focus);
+            self.dashboard = Some(next);
+        }
+    }
+
+    pub fn composer_view_model(&self, viewport: ViewportId) -> ComposerViewModel {
+        self.composer.slice.view_model(viewport)
+    }
+
+    pub fn composer_view_model_for_area(&self, area: Rect) -> ComposerViewModel {
+        let viewport = ViewportId::ALL
+            .into_iter()
+            .find(|viewport| viewport.dimensions() == (area.width, area.height))
+            .unwrap_or(ViewportId::Standard100x30);
+        self.composer_view_model(viewport)
+    }
+
+    pub fn composer_submission(
+        &self,
+    ) -> Result<ComposerUiIntent, crate::composer_integration::ComposerSliceError> {
+        self.composer.slice.submit()
+    }
+
+    pub(crate) fn composer_render_text(&self) -> String {
+        let parity_text = self.composer.parity_text();
+        if parity_text.is_empty() && !self.composer.prompt_buffer.is_empty() {
+            self.composer.prompt_buffer.clone()
+        } else {
+            parity_text
+        }
+    }
+
+    pub(crate) fn composer_render_cursor(&self) -> usize {
+        self.composer.parity_cursor()
+    }
+
+    pub fn composer_hit_map(
+        &self,
+        viewport: ViewportId,
+    ) -> crate::composer_integration::ComposerHitMap {
+        self.composer.slice.hit_map(viewport)
+    }
+
+    pub fn composer_queue_state(&self) -> &crate::prompt_queue_actions::QueueState {
+        self.composer.slice.queue_state()
+    }
+
+    pub fn composer_apply_queue_action(&mut self, action: QueueAction) -> Result<(), QueueError> {
+        self.composer
+            .slice
+            .apply_queue_action(action)
+            .map_err(|error| match error {
+                crate::composer_integration::ComposerSliceError::Queue(error) => error,
+                _ => QueueError::Disabled {
+                    action: "composer",
+                    lifecycle: self.composer.slice.queue_state().lifecycle,
+                },
+            })
+    }
+
+    pub fn composer_set_queue_state(
+        &mut self,
+        state: crate::prompt_queue_actions::QueueState,
+    ) -> Result<(), crate::composer_integration::ComposerSliceError> {
+        self.composer.slice.set_queue_state(state)
+    }
+
+    pub fn composer_request_suggestion(
+        &mut self,
+        context: impl Into<String>,
+    ) -> Result<crate::ghost_suggestions::Request, crate::composer_integration::ComposerSliceError>
+    {
+        self.composer.slice.request_suggestion(context)
+    }
+
+    pub fn composer_advance_suggestion_clock(&self, milliseconds: u64) -> u64 {
+        self.composer.slice.advance_flush(milliseconds)
+    }
+
+    pub fn composer_ready_suggestion(&self) -> Option<crate::ghost_suggestions::Request> {
+        self.composer.slice.ready_suggestion()
+    }
+
+    pub fn composer_apply_suggestion_response(
+        &mut self,
+        request: &crate::ghost_suggestions::Request,
+        text: impl Into<String>,
+    ) -> Result<(), crate::composer_integration::ComposerSliceError> {
+        self.composer.slice.apply_suggestion_response(request, text)
+    }
+
+    pub fn composer_accept_full_suggestion(
+        &mut self,
+    ) -> Result<(), crate::composer_integration::ComposerSliceError> {
+        self.composer.slice.accept_full_suggestion()
+    }
+
+    pub fn handle_composer_mouse(&mut self, mouse: MouseEvent, frame_area: Rect) -> bool {
+        self.handle_composer_mouse_event(mouse, frame_area)
+    }
+
+    pub(crate) fn tick_composer_runtime(&mut self) {
+        let animation_active = self.has_active_animations_for_evidence();
+        let _ = self.composer.slice.schedule_motion(animation_active, true);
+    }
+
+    pub fn composer_begin_completion(&mut self, trigger: CompletionTrigger) -> CompletionRequest {
+        self.composer.slice.begin_completion(trigger)
+    }
+
+    pub fn composer_apply_completion_results(
+        &mut self,
+        request: &CompletionRequest,
+        results: Vec<CompletionItem>,
+    ) -> Result<(), crate::composer_integration::ComposerSliceError> {
+        self.composer
+            .slice
+            .apply_completion_results(request, results)
+    }
+
+    pub fn composer_accept_completion_keyboard(
+        &mut self,
+    ) -> Result<CompletionAcceptance, crate::composer_integration::ComposerSliceError> {
+        let acceptance = self.composer.slice.accept_completion_keyboard()?;
+        self.composer.sync_legacy_from_parity();
+        Ok(acceptance)
+    }
+
+    pub fn composer_accept_completion_mouse(
+        &mut self,
+        index: usize,
+    ) -> Result<CompletionAcceptance, crate::composer_integration::ComposerSliceError> {
+        let acceptance = self.composer.slice.accept_completion_mouse(index)?;
+        self.composer.sync_legacy_from_parity();
+        Ok(acceptance)
+    }
+
+    pub fn composer_move_completion(&mut self, direction: SelectionDirection) {
+        self.composer.slice.move_completion(direction);
+    }
+
+    pub fn composer_cancel_completion(&mut self) {
+        self.composer.slice.cancel_completion();
+    }
+
+    pub(crate) fn composer_completion_active(&self) -> bool {
+        !matches!(
+            self.composer.slice.completion().status(),
+            crate::completion_controller::CompletionStatus::Hidden
+        )
+    }
+
+    pub fn composer_attach(
+        &mut self,
+        id: AttachmentId,
+        attachment: Attachment,
+    ) -> Result<(), crate::composer_integration::ComposerSliceError> {
+        self.composer.slice.attach(id, attachment)?;
+        self.composer.sync_legacy_from_parity();
+        Ok(())
+    }
+
+    pub fn composer_ingest_file(
+        &mut self,
+        id: AttachmentId,
+        path: &Path,
+        cancellation: &CancellationToken,
+    ) -> Result<(), AttachmentError> {
+        let root = self
+            .file_mention_workspace_root
+            .as_deref()
+            .ok_or(AttachmentError::RootUnavailable)?;
+        let policy = AttachmentPolicy::new(root)?;
+        let attachment = AttachmentIngestor::new(policy).ingest_file(path, cancellation)?;
+        self.composer_attach(id, attachment)
+            .map_err(|_| AttachmentError::Io {
+                operation: "attaching",
+            })
+    }
+
+    pub fn composer_ingest_clipboard(
+        &mut self,
+        id: AttachmentId,
+        bytes: &[u8],
+        cancellation: &CancellationToken,
+    ) -> Result<(), AttachmentError> {
+        let root = self
+            .file_mention_workspace_root
+            .as_deref()
+            .ok_or(AttachmentError::RootUnavailable)?;
+        let policy = AttachmentPolicy::new(root)?;
+        let attachment = AttachmentIngestor::new(policy).ingest_clipboard(bytes, cancellation)?;
+        self.composer_attach(id, attachment)
+            .map_err(|_| AttachmentError::Io {
+                operation: "attaching",
+            })
+    }
+
     pub fn note_auth_backend_failure(&mut self, message: &str) {
         if self.connect_dialog.visible
             && self.connect_dialog.step == auth_dialog::ConnectDialogStep::Waiting
@@ -865,17 +1293,82 @@ impl AppState {
         &self.theme
     }
 
+    pub fn theme_choice(&self) -> ThemeChoice {
+        self.theme_choice
+    }
+
+    pub fn theme_family(&self) -> ThemeFamily {
+        self.theme_family
+    }
+
+    pub fn persist_theme_choice(&self) -> Result<String, PersistError> {
+        serialize_choice(self.theme_choice)
+    }
+
+    pub fn restore_theme_choice(&mut self, serialized: &str) -> Result<(), PersistError> {
+        let choice = deserialize_choice(serialized)?;
+        self.resolve_theme_choice(choice);
+        self.theme_name = choice.label().to_string();
+        Ok(())
+    }
+
+    pub(crate) fn welcome_state(&self) -> &WelcomeState {
+        &self.welcome
+    }
+
+    pub(crate) fn welcome_layout(&self, area: Rect) -> WelcomeLayout {
+        WelcomeLayout::compute(area.width, area.height)
+    }
+
+    pub(crate) fn welcome_hit_map(&self, area: Rect) -> WelcomeHitMap {
+        const MENU_LABELS: [&str; 4] = ["New worktree", "Resume session", "Changelog", "Quit"];
+        WelcomeHitMap::new(self.welcome_layout(area), &MENU_LABELS)
+    }
+
+    pub(crate) fn set_color_level(&mut self, level: ColorLevel) {
+        if self.theme_color_level == level {
+            return;
+        }
+        self.theme_color_level = level;
+        self.theme = Theme::from_family(self.theme_family, level);
+        self.bump_transcript_render_epoch();
+    }
+
+    fn resolve_theme_choice(&mut self, choice: ThemeChoice) {
+        let family = match choice {
+            ThemeChoice::Dark => ThemeFamily::Dark,
+            ThemeChoice::Light => ThemeFamily::Light,
+            ThemeChoice::Auto => self.auto_theme_resolver.resolve(),
+        };
+        self.theme_choice = choice;
+        self.theme_family = family;
+        self.theme_preview.begin_preview(family);
+        self.theme_preview.commit();
+        self.theme = Theme::from_family(family, self.theme_color_level);
+        self.bump_transcript_render_epoch();
+    }
+
     pub(crate) fn apply_theme_by_name(&mut self, name: &str) {
+        let choice = match name {
+            "default" | "harness-chat" | "harness-dark" => Some(ThemeChoice::Dark),
+            "harness-light" | "light" => Some(ThemeChoice::Light),
+            _ => None,
+        };
+        if let Some(choice) = choice {
+            self.resolve_theme_choice(choice);
+            self.theme_name = name.to_string();
+            return;
+        }
+
         match Theme::by_name(name) {
             Some(theme) => {
-                self.theme = theme;
+                self.theme = theme.for_color_level(self.theme_color_level);
                 self.theme_name = name.to_string();
                 self.bump_transcript_render_epoch();
             }
             None => {
-                self.theme = Theme::default();
+                self.resolve_theme_choice(ThemeChoice::Dark);
                 self.theme_name = "default".to_string();
-                self.bump_transcript_render_epoch();
                 self.status_banner =
                     Some(format!("unknown theme {name:?}; falling back to default"));
             }
@@ -915,6 +1408,7 @@ impl AppState {
         for event in events {
             self.ingest_event(event);
         }
+        self.sync_transcript_integration();
 
         if self.projection.events.is_empty() {
             self.selected_event_index = 0;
@@ -982,7 +1476,9 @@ impl AppState {
             self.note_live_turn_status_timing(&event);
         }
         self.update_transient_state_for_event(&event);
-        let trimmed_events = self.projection.ingest_event(event, historical);
+        let trimmed_events = self.projection.ingest_event(event.clone(), historical);
+        self.update_composer_queue_lifecycle(&event);
+        self.seed_patch_file_expansions(&event);
         if !historical {
             if let Some(notice) = self.projection.pending_status_notice.take() {
                 self.status_banner = Some(notice);
@@ -1025,6 +1521,10 @@ impl AppState {
         self.update_queued_prompt_count();
         if !historical {
             self.maybe_auto_allow_active_permission();
+        }
+        self.sync_transcript_integration();
+        if self.status_dashboard_is_active() {
+            self.refresh_status_dashboard();
         }
         self.maybe_auto_exit();
     }
@@ -2787,6 +3287,35 @@ impl AppState {
         }
     }
 
+    fn update_composer_queue_lifecycle(&mut self, event: &EventEnvelopeV1) {
+        let lifecycle = if matches!(&event.payload, EventV1::UserMessageSubmitted(_)) {
+            Some(QueueLifecycle::Streaming)
+        } else if matches!(&event.payload, EventV1::ToolCallRequested(_)) {
+            Some(QueueLifecycle::Tool)
+        } else if matches!(&event.payload, EventV1::PermissionRequested(_)) {
+            Some(QueueLifecycle::Waiting)
+        } else if matches!(&event.payload, EventV1::TaskCancelled(_)) {
+            Some(QueueLifecycle::Cancelling)
+        } else if matches!(&event.payload, EventV1::RunFinished(_)) {
+            Some(QueueLifecycle::Completed)
+        } else if matches!(&event.payload, EventV1::RunFailed(_)) {
+            Some(QueueLifecycle::Failed)
+        } else if matches!(&event.payload, EventV1::AssistantMessageFinished(_)) {
+            Some(QueueLifecycle::Idle)
+        } else {
+            None
+        };
+        let Some(lifecycle) = lifecycle else {
+            return;
+        };
+        let mut state = self.composer.slice.queue_state().clone();
+        state.lifecycle = lifecycle;
+        if lifecycle != QueueLifecycle::Cancelling {
+            state.cancel_stage = None;
+        }
+        let _ = self.composer_set_queue_state(state);
+    }
+
     fn maybe_auto_exit(&mut self) {
         if self.auto_exit_on_finish
             && self.projection.run_terminal_seen
@@ -2833,32 +3362,35 @@ impl AppState {
 
     /// Returns `true` when follow mode is active (scroll pinned to bottom).
     pub fn follow_mode_active(&self) -> bool {
-        self.transcript_view.follow_mode
+        self.transcript_following()
     }
 
     /// Current scroll offset (0 = bottom / most recent content).
     pub fn transcript_scroll_offset(&self) -> usize {
+        if let Some(view) = self.transcript_view_model() {
+            let scroll_top = view
+                .scroll_top
+                .floor()
+                .to_string()
+                .parse::<usize>()
+                .unwrap_or(usize::MAX);
+            return self
+                .transcript_view
+                .last_transcript_max_scroll
+                .get()
+                .saturating_sub(scroll_top);
+        }
         self.transcript_view.transcript_scroll
     }
 
     /// Scroll up (away from bottom) by `viewport` rows, breaking follow mode.
     pub fn scroll_page_up(&mut self, viewport: usize) {
-        self.transcript_view.follow_mode = false;
-        self.transcript_view.transcript_scroll = self
-            .transcript_view
-            .transcript_scroll
-            .saturating_add(viewport.max(1));
+        self.scroll_transcript_up(u16::try_from(viewport.max(1)).unwrap_or(u16::MAX));
     }
 
     /// Scroll down (toward bottom) by `viewport` rows. Re-engages follow at 0.
     pub fn scroll_page_down(&mut self, viewport: usize) {
-        self.transcript_view.transcript_scroll = self
-            .transcript_view
-            .transcript_scroll
-            .saturating_sub(viewport.max(1));
-        if self.transcript_view.transcript_scroll == 0 {
-            self.transcript_view.follow_mode = true;
-        }
+        self.scroll_transcript_down(u16::try_from(viewport.max(1)).unwrap_or(u16::MAX));
     }
 
     /// Scroll up by half of `viewport` (rounded up), breaking follow mode.
@@ -2879,21 +3411,29 @@ impl AppState {
 
     /// Jump to the top (oldest content). Breaks follow mode.
     pub fn scroll_goto_top(&mut self) {
-        let max = self.transcript_view.last_transcript_max_scroll.get();
-        self.transcript_view.transcript_scroll = max;
-        self.transcript_view.follow_mode = false;
+        if let Some(composite) = self.transcript_integration.as_mut() {
+            let _ = composite.jump_to_top();
+        } else {
+            let max = self.transcript_view.last_transcript_max_scroll.get();
+            self.transcript_view.transcript_scroll = max;
+            self.transcript_view.follow_mode = false;
+        }
     }
 
     /// Jump to the bottom (newest content). Re-engages follow mode.
     pub fn scroll_goto_bottom(&mut self) {
-        self.transcript_view.transcript_scroll = 0;
-        self.transcript_view.follow_mode = true;
+        if let Some(composite) = self.transcript_integration.as_mut() {
+            let _ = composite.jump_to_bottom();
+        } else {
+            self.transcript_view.transcript_scroll = 0;
+            self.transcript_view.follow_mode = true;
+        }
     }
 
     /// Called when new content arrives. If in follow mode, scroll stays at 0.
     /// If not in follow mode, scroll position is unchanged.
     pub fn follow_mode_content_arrived(&mut self) {
-        if self.transcript_view.follow_mode {
+        if self.transcript_following() {
             self.transcript_view.transcript_scroll = 0;
         }
     }

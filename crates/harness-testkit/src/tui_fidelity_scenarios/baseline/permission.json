@@ -1,0 +1,15 @@
+{
+  "schema_version": "tui-fidelity-scenario-v1",
+  "id": "baseline-permission",
+  "adapters": ["grok", "harness"],
+  "viewport": {"cols": 80, "rows": 24},
+  "actions": [{"paste": {"at_tick": 1, "text": "permission probe"}}, {"timed_key": {"at_tick": 2, "key": {"code": "enter", "modifiers": {"shift": false, "alt": false, "ctrl": false, "meta": false}}}}, {"terminal_reply": {"at_tick": 3, "query": "device_attributes", "response": "\u001b[?1;2c"}}],
+  "checkpoints": [
+    {"name": "rest", "at_tick": 4, "frame": {"capture_id": "baseline-permission-rest", "viewport": {"cols": 80, "rows": 24}, "state": "rest"}},
+    {"name": "mid", "at_tick": 5, "frame": {"capture_id": "baseline-permission-mid", "viewport": {"cols": 80, "rows": 24}, "state": "working"}},
+    {"name": "settled", "at_tick": 6, "frame": {"capture_id": "baseline-permission-settled", "viewport": {"cols": 80, "rows": 24}, "state": "settled"}}
+  ],
+  "substitutions": [],
+  "expected_exit": {"code": 0},
+  "cleanup": {"restore_workspace": true, "preserve_evidence": true, "temporary_paths": ["tmp/tui-fidelity"]}
+}

@@ -608,11 +608,11 @@ impl KeyMap {
 
         keymap.bind(
             KeyBinding::new(KeyCode::Tab, KeyModifiers::NONE),
-            Action::TogglePromptFocus,
+            Action::FocusNext,
         );
         keymap.bind(
             KeyBinding::new(KeyCode::BackTab, KeyModifiers::NONE),
-            Action::CycleMode,
+            Action::VariantCycle,
         );
         keymap.bind(
             KeyBinding::new(KeyCode::Tab, KeyModifiers::CONTROL),
@@ -768,19 +768,15 @@ impl KeyMap {
         );
         keymap.bind(
             KeyBinding::new(KeyCode::Char('j'), KeyModifiers::CONTROL),
-            Action::ScrollDown,
+            Action::InsertNewline,
         );
         keymap.bind(
             KeyBinding::new(KeyCode::Enter, KeyModifiers::CONTROL),
-            Action::InterjectPrompt,
+            Action::InsertNewline,
         );
         keymap.bind(
             KeyBinding::new(KeyCode::Enter, KeyModifiers::ALT),
             Action::InsertNewline,
-        );
-        keymap.bind(
-            KeyBinding::new(KeyCode::Char('m'), KeyModifiers::CONTROL),
-            Action::ToggleMultiline,
         );
         keymap.bind(
             KeyBinding::new(KeyCode::Esc, KeyModifiers::NONE),

@@ -2,6 +2,7 @@
 
 pub mod agent;
 pub mod agent_catalog;
+pub mod attachment_transport;
 pub mod auth;
 pub mod auto_fallback;
 pub mod binary_update;

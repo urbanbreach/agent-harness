@@ -1,86 +1,87 @@
-use crate::theme::Theme;
+//! Light and dark theme family variants resolving design-contract roles to truecolor.
 
-use super::bindings::SemanticThemeColors;
-use super::focus::{BorderPalette, FocusPalette};
-use super::glyphs::GlyphPalette;
-use super::palette::Palette;
+use crate::design_contract::ColorRole;
+use crate::design_contract::DESIGN_TOKENS;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ThemeFamily {
-    #[default]
-    HarnessChat,
-    HarnessDark,
-    HarnessLight,
-    HighContrast,
-    TerminalNative,
+    Dark,
+    Light,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct FamilyColor {
+    pub red: u8,
+    pub green: u8,
+    pub blue: u8,
+}
+
+impl FamilyColor {
+    pub fn rgb(&self) -> (u8, u8, u8) {
+        (self.red, self.green, self.blue)
+    }
 }
 
 impl ThemeFamily {
-    pub const ALL: [Self; 5] = [
-        Self::HarnessChat,
-        Self::HarnessDark,
-        Self::HarnessLight,
-        Self::HighContrast,
-        Self::TerminalNative,
-    ];
+    pub fn all() -> [Self; 2] {
+        [Self::Dark, Self::Light]
+    }
 
-    pub const fn label(self) -> &'static str {
+    pub fn label(&self) -> &'static str {
         match self {
-            Self::HarnessChat => "harness-chat",
-            Self::HarnessDark => "harness-dark",
-            Self::HarnessLight => "harness-light",
-            Self::HighContrast => "high-contrast",
-            Self::TerminalNative => "terminal-native",
+            Self::Dark => "dark",
+            Self::Light => "light",
         }
     }
 
-    pub fn from_label(label: &str) -> Option<Self> {
-        match label.trim().to_ascii_lowercase().as_str() {
-            "default" | "harness-chat" | "harness_chat" | "chat" => Some(Self::HarnessChat),
-            "harness-dark" | "harness_dark" | "dark" => Some(Self::HarnessDark),
-            "harness-light" | "harness_light" | "light" => Some(Self::HarnessLight),
-            "high-contrast" | "high_contrast" => Some(Self::HighContrast),
-            "terminal-native" | "terminal_native" | "terminal" => Some(Self::TerminalNative),
-            _ => None,
+    pub fn resolve(&self, role: ColorRole) -> FamilyColor {
+        let (red, green, blue) = dark_rgb(role);
+        if matches!(self, Self::Light) && is_background_role(role) {
+            return FamilyColor {
+                red: 255 - red,
+                green: 255 - green,
+                blue: 255 - blue,
+            };
+        }
+        FamilyColor { red, green, blue }
+    }
+
+    pub fn resolve_all(&self) -> Vec<(ColorRole, FamilyColor)> {
+        ColorRole::ALL
+            .iter()
+            .copied()
+            .map(|role| (role, self.resolve(role)))
+            .collect()
+    }
+}
+
+fn dark_rgb(role: ColorRole) -> (u8, u8, u8) {
+    for token in DESIGN_TOKENS.palette.roles.iter() {
+        if token.role == role {
+            return (token.value.red, token.value.green, token.value.blue);
         }
     }
+    (0, 0, 0)
+}
 
-    pub const fn is_dark(self) -> bool {
-        match self {
-            Self::HarnessChat | Self::HarnessDark | Self::HighContrast | Self::TerminalNative => {
-                true
-            }
-            Self::HarnessLight => false,
-        }
-    }
+fn is_background_role(role: ColorRole) -> bool {
+    matches!(
+        role,
+        ColorRole::Canvas
+            | ColorRole::Shell
+            | ColorRole::Panel
+            | ColorRole::PanelElevated
+            | ColorRole::Overlay
+            | ColorRole::Card
+            | ColorRole::SelectedCard
+            | ColorRole::QuestionSurface
+            | ColorRole::QuestionSelected
+    )
+}
 
-    pub fn theme(self) -> Theme {
-        match self {
-            Self::HarnessChat => Theme::harness_chat(),
-            Self::HarnessDark => Theme::harness_dark(),
-            Self::HarnessLight => Theme::harness_light(),
-            Self::HighContrast => Theme::harness_high_contrast(),
-            Self::TerminalNative => Theme::terminal_native(),
-        }
-    }
-
-    pub fn palette(self) -> Palette {
-        Palette::from_theme(&self.theme())
-    }
-
-    pub fn glyphs(self) -> GlyphPalette {
-        GlyphPalette::from_theme(&self.theme())
-    }
-
-    pub fn borders(self) -> BorderPalette {
-        BorderPalette::from_theme(&self.theme())
-    }
-
-    pub fn focus(self) -> FocusPalette {
-        FocusPalette::from_theme(&self.theme())
-    }
-
-    pub fn semantic(self) -> SemanticThemeColors {
-        SemanticThemeColors::from_theme(&self.theme())
+impl std::fmt::Display for ThemeFamily {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.label())
     }
 }

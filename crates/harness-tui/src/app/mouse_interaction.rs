@@ -2,6 +2,64 @@
 use super::*;
 
 impl AppState {
+    pub(crate) fn handle_composer_mouse_event(
+        &mut self,
+        mouse: MouseEvent,
+        frame_area: Rect,
+    ) -> bool {
+        if !matches!(
+            mouse.kind,
+            MouseEventKind::Down(MouseButton::Left)
+                | MouseEventKind::Up(MouseButton::Left)
+                | MouseEventKind::Drag(MouseButton::Left)
+        ) {
+            return false;
+        }
+        let actual_composer = crate::layout::FrameLayoutPlan::for_app(self, frame_area).composer;
+        if !actual_composer.is_some_and(|area| rect_contains(area, mouse.column, mouse.row)) {
+            return false;
+        }
+        let viewport = crate::design_contract::ViewportId::ALL
+            .into_iter()
+            .find(|viewport| viewport.dimensions() == (frame_area.width, frame_area.height))
+            .unwrap_or(crate::design_contract::ViewportId::Standard100x30);
+        let hit_map = self.composer_hit_map(viewport);
+        if !rect_contains(hit_map.composer_rect, mouse.column, mouse.row) {
+            return false;
+        }
+        let Some(target) = hit_map.hit_test(mouse.column, mouse.row) else {
+            return false;
+        };
+        if !matches!(
+            target,
+            crate::composer_integration::ComposerHitTarget::Shell(
+                crate::shell_geometry::HitTarget::Composer,
+            ) | crate::composer_integration::ComposerHitTarget::Completion(_)
+                | crate::composer_integration::ComposerHitTarget::Attachment(_)
+        ) {
+            return false;
+        }
+
+        if matches!(mouse.kind, MouseEventKind::Up(MouseButton::Left)) {
+            if let crate::composer_integration::ComposerHitTarget::Completion(index) = target {
+                let _ = self.composer_accept_completion_mouse(index);
+                return true;
+            }
+        }
+
+        if let Some(intent) = hit_map.intent_for(mouse) {
+            match intent {
+                crate::app::interaction_reducer::UiIntent::DispatchAction(action) => {
+                    self.execute_action(action);
+                }
+                intent => {
+                    let _ = self.composer.slice.apply_interaction(intent);
+                }
+            }
+        }
+        true
+    }
+
     pub(in crate::app) fn set_transcript_selection(
         &mut self,
         anchor: TranscriptSelectionCell,
@@ -201,10 +259,48 @@ impl AppState {
 
     pub(crate) fn set_frame_area(&mut self, area: Rect) {
         self.last_frame_area = Some(area);
+        if let Some(dashboard) = self.dashboard.as_mut() {
+            let viewport = crate::dashboard_integration::dashboard_viewport(area).unwrap_or(area);
+            if let Err(error) = dashboard.resize(viewport) {
+                self.status_banner = Some(error.to_string());
+            }
+        }
+        let transcript_area = crate::layout::FrameLayoutPlan::for_app(self, area)
+            .transcript
+            .unwrap_or(area);
+        if let Some(composite) = self.transcript_integration.as_mut() {
+            let _ = composite.resize(transcript_area);
+        }
     }
 
     pub(crate) fn last_frame_area(&self) -> Option<Rect> {
         self.last_frame_area
+    }
+
+    fn handle_welcome_mouse(&mut self, frame_area: Rect, mouse: MouseEvent) -> bool {
+        let Some(hit) = self
+            .welcome_hit_map(frame_area)
+            .hit(mouse.column, mouse.row)
+        else {
+            return false;
+        };
+        match hit.region {
+            crate::welcome_surface::WelcomeRegion::Prompt => {
+                self.welcome
+                    .handle(crate::welcome_surface::WelcomeInput::FocusPrompt);
+                self.focus = Focus::Prompt;
+            }
+            crate::welcome_surface::WelcomeRegion::Menu => {
+                self.welcome
+                    .handle(crate::welcome_surface::WelcomeInput::FocusMenu);
+                self.focus = Focus::List;
+            }
+            crate::welcome_surface::WelcomeRegion::StatusBar
+            | crate::welcome_surface::WelcomeRegion::Hero
+            | crate::welcome_surface::WelcomeRegion::Logo
+            | crate::welcome_surface::WelcomeRegion::None => return false,
+        }
+        true
     }
 
     pub(crate) fn handle_mouse(
@@ -237,6 +333,10 @@ impl AppState {
             }
         }
 
+        if self.overlay_stack().top() == Some(OverlayKind::StatusDialog) {
+            return self.handle_status_dashboard_mouse(mouse);
+        }
+
         if self.overlay_stack().blocks_pointer_interaction() {
             let changed = self.transcript_view.transcript_scrollbar_drag.is_some()
                 || self.transcript_view.hovered_transcript_target.is_some()
@@ -254,6 +354,17 @@ impl AppState {
 
         self.set_frame_area(frame_area);
 
+        if self.handle_composer_mouse_event(mouse, frame_area) {
+            return true;
+        }
+
+        if self.startup_shell_visible()
+            && matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))
+            && self.handle_welcome_mouse(frame_area, mouse)
+        {
+            return true;
+        }
+
         match mouse.kind {
             MouseEventKind::Moved => {
                 let hovered_subagent_footer_target =
@@ -270,7 +381,12 @@ impl AppState {
                 self.hovered_subagent_footer_target = hovered_subagent_footer_target;
                 changed
             }
-            MouseEventKind::Down(MouseButton::Right) => false,
+            MouseEventKind::Down(MouseButton::Right) => {
+                let copied = self.copy_active_selection(frame_area);
+                self.clear_transcript_selection();
+                self.clear_operator_sidebar_selection();
+                copied
+            }
             MouseEventKind::Down(MouseButton::Left) => {
                 self.transcript_view.transcript_click_activated_on_down = false;
                 self.hovered_subagent_footer_target =
@@ -350,6 +466,15 @@ impl AppState {
                     self.clear_transcript_selection();
                     self.clear_operator_sidebar_selection();
                     self.toggle_operator_sidebar_section(section);
+                    return true;
+                }
+
+                if let Some(turn_id) =
+                    ui::transcript_timeline_turn_at(self, frame_area, mouse.column, mouse.row)
+                {
+                    self.select_transcript_turn(turn_id);
+                    self.clear_transcript_selection();
+                    self.clear_operator_sidebar_selection();
                     return true;
                 }
 
@@ -640,6 +765,12 @@ impl AppState {
 
     fn set_transcript_scroll_from_top_with_max(&mut self, scroll_top: usize, max_scroll: usize) {
         let clamped = scroll_top.min(max_scroll);
+        if let Some(composite) = self.transcript_integration.as_mut() {
+            let target = f64::from(u32::try_from(clamped).unwrap_or(u32::MAX));
+            let _ =
+                composite.scroll_to(target, 0, crate::transcript_scroll::MotionPreference::Full);
+            return;
+        }
         if max_scroll == 0 || clamped >= max_scroll {
             self.transcript_view.follow_mode = true;
             self.transcript_view.transcript_scroll = 0;

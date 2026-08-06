@@ -1,0 +1,15 @@
+{
+  "schema_version": "tui-fidelity-scenario-v1",
+  "id": "baseline-mouse",
+  "adapters": ["grok", "harness"],
+  "viewport": {"cols": 80, "rows": 24},
+  "actions": [{"mouse": {"at_tick": 1, "button": "left", "phase": "down", "point": {"col": 4, "row": 3}}}, {"drag": {"at_tick": 2, "button": "left", "from": {"col": 4, "row": 3}, "to": {"col": 20, "row": 3}}}, {"wheel": {"at_tick": 3, "direction": "down", "amount": 1, "point": {"col": 30, "row": 5}}}, {"terminal_reply": {"at_tick": 4, "query": "device_attributes", "response": "\u001b[?1;2c"}}],
+  "checkpoints": [
+    {"name": "rest", "at_tick": 5, "frame": {"capture_id": "baseline-mouse-rest", "viewport": {"cols": 80, "rows": 24}, "state": "rest"}},
+    {"name": "mid", "at_tick": 6, "frame": {"capture_id": "baseline-mouse-mid", "viewport": {"cols": 80, "rows": 24}, "state": "working"}},
+    {"name": "settled", "at_tick": 7, "frame": {"capture_id": "baseline-mouse-settled", "viewport": {"cols": 80, "rows": 24}, "state": "settled"}}
+  ],
+  "substitutions": [],
+  "expected_exit": {"code": 0},
+  "cleanup": {"restore_workspace": true, "preserve_evidence": true, "temporary_paths": ["tmp/tui-fidelity"]}
+}

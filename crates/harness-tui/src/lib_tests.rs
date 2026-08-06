@@ -347,6 +347,7 @@ delegate_test!(model_favorite_toggles_and_sorts_first => command_session_surface
 
 mod startup_lifecycle_surface;
 delegate_test!(startup_surface_renders_primary_actions => startup_lifecycle_surface::startup_surface_renders_primary_actions);
+delegate_test!(startup_surface_projects_clipboard_capability => startup_lifecycle_surface::startup_surface_projects_clipboard_capability);
 delegate_test!(startup_typing_moves_to_quick_start_prompt => startup_lifecycle_surface::startup_typing_moves_to_quick_start_prompt);
 delegate_test!(startup_palette_remains_secondary_and_draft_safe => startup_lifecycle_surface::startup_palette_remains_secondary_and_draft_safe);
 delegate_test!(post_run_handoff_renders_next_actions => startup_lifecycle_surface::post_run_handoff_renders_next_actions);

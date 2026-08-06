@@ -530,6 +530,9 @@ fn block_tool_cards_render_subtitle_inline_with_title() {
             text: "┃ agent_worker · req_child · completed · 2 child tool calls".to_string(),
             tone: TranscriptToolCallDetailTone::Secondary,
         }],
+        details_collapsed_by_default: false,
+        details_preview_visible: false,
+        animation_phase: 0,
         expanded: false,
     };
 
@@ -1045,6 +1048,9 @@ pub(crate) fn exact_test_inline_tool_rows_wrap_long_subtitles_cleanly() {
             disclosure_state: None,
         },
         detail_blocks: Vec::new(),
+        details_collapsed_by_default: false,
+        details_preview_visible: false,
+        animation_phase: 0,
         expanded: false,
     };
 

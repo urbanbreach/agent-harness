@@ -1,7 +1,8 @@
 use harness_tui::UnwrapOrAbort;
 use serde_json::Value;
 
-const TUI_SIGNOFF_MANIFEST: &str = include_str!("../../../docs/testing/tui-signoff-manifest.v1.json");
+const TUI_SIGNOFF_MANIFEST: &str =
+    include_str!("../../../docs/testing/tui-signoff-manifest.v1.json");
 
 #[test]
 #[allow(clippy::panic, reason = "test code must panic gracefully")]

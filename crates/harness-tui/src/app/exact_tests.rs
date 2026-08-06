@@ -372,7 +372,7 @@ pub(crate) fn exact_test_apply_auth_backend_result_updates_banner() {
     app.maybe_set_no_provider_banner();
     assert!(app.status_banner.is_some());
 
-    app.apply_auth_backend_result(true);
+    app.apply_auth_backend_result(true, "");
 
     assert!(
         app.status_banner.is_none(),
@@ -385,7 +385,7 @@ pub(crate) fn exact_test_apply_auth_backend_result_failure_shows_error() {
     let mut app = AppState::new_startup(Vec::new(), None);
     app.maybe_set_no_provider_banner();
 
-    app.apply_auth_backend_result(false);
+    app.apply_auth_backend_result(false, "");
 
     assert!(
         app.status_banner
@@ -791,7 +791,7 @@ pub(crate) fn exact_test_select_model_step_shows_models() {
     app.connect_dialog.selected_provider = Some(0);
 
     // act
-    app.apply_connect_dialog_auth_result(true);
+    app.apply_connect_dialog_auth_result(true, "");
 
     // assert
     assert_eq!(
@@ -827,7 +827,7 @@ pub(crate) fn exact_test_select_model_skip_goes_to_success() {
     app.open_connect_dialog();
     app.connect_dialog.step = crate::app::auth_dialog::ConnectDialogStep::Waiting;
     app.connect_dialog.selected_provider = Some(0);
-    app.apply_connect_dialog_auth_result(true);
+    app.apply_connect_dialog_auth_result(true, "");
     app.connect_dialog.selected = 2;
 
     // act
@@ -866,7 +866,7 @@ pub(crate) fn exact_test_select_model_select_goes_to_success() {
     app.open_connect_dialog();
     app.connect_dialog.step = crate::app::auth_dialog::ConnectDialogStep::Waiting;
     app.connect_dialog.selected_provider = Some(0);
-    app.apply_connect_dialog_auth_result(true);
+    app.apply_connect_dialog_auth_result(true, "");
     app.connect_dialog.selected = 0;
 
     // act
@@ -908,7 +908,7 @@ pub(crate) fn exact_test_toast_set_on_auth_success() {
     app.connect_dialog.selected_provider = Some(0);
 
     // act
-    app.apply_connect_dialog_auth_result(true);
+    app.apply_connect_dialog_auth_result(true, "");
 
     // assert
     let toast = app.connect_dialog.toast.as_ref().unwrap_or_abort();
@@ -939,7 +939,7 @@ pub(crate) fn exact_test_toast_set_on_auth_failure() {
     app.connect_dialog.selected_provider = Some(0);
 
     // act
-    app.apply_connect_dialog_auth_result(false);
+    app.apply_connect_dialog_auth_result(false, "");
 
     // assert
     let toast = app.connect_dialog.toast.as_ref().unwrap_or_abort();
@@ -973,7 +973,7 @@ pub(crate) fn exact_test_any_key_closes_dialog_on_success() {
     app.open_connect_dialog();
     app.connect_dialog.step = crate::app::auth_dialog::ConnectDialogStep::Waiting;
     app.connect_dialog.selected_provider = Some(0);
-    app.apply_connect_dialog_auth_result(true);
+    app.apply_connect_dialog_auth_result(true, "");
     assert_eq!(
         app.connect_dialog.step,
         crate::app::auth_dialog::ConnectDialogStep::Success,

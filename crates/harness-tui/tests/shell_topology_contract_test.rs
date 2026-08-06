@@ -389,9 +389,9 @@ fn boundary_viewports_never_clip_composer_or_disclosure() {
         let plan = plan_for(&app, width, height);
 
         // Composer must exist and have at least 3 rows (border + content + border)
-        let composer = plan.composer.unwrap_or_else(|| {
-            panic!("composer must exist at boundary {width}x{height}")
-        });
+        let composer = plan
+            .composer
+            .unwrap_or_else(|| panic!("composer must exist at boundary {width}x{height}"));
         assert!(
             composer.height >= 3,
             "composer must have ≥3 rows at boundary {width}x{height}; got {composer:?}"
@@ -456,10 +456,7 @@ fn boundary_spacer_transitions_at_60_column_cutoff() {
             .disclosure
             .unwrap_or_else(|| panic!("disclosure at 61x{height}"));
         let gap = disclosure.y.saturating_sub(composer.y + composer.height);
-        assert_eq!(
-            gap, 1,
-            "spacer must be 1 at 61x{height}; got gap={gap}"
-        );
+        assert_eq!(gap, 1, "spacer must be 1 at 61x{height}; got gap={gap}");
     }
 }
 

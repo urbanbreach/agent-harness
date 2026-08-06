@@ -22,6 +22,8 @@ use crate::app::{
     TogglesConfig, UiIntent,
 };
 use crate::event::{self, poll};
+use crate::runtime_integration::RuntimeExperience;
+use crate::terminal::ProductionTerminalSession;
 use crate::ui;
 
 const ACTIVE_POLL_INTERVAL: Duration = Duration::from_millis(1_000 / 30);
@@ -108,6 +110,15 @@ impl TerminalCapabilityState {
             pop_keyboard_enhancement: self.keyboard_enhancement,
             leave_alternate_screen: true,
         }
+    }
+}
+
+pub(crate) fn apply_startup_capability_notice(
+    app: &mut AppState,
+    capabilities: TerminalCapabilityState,
+) {
+    if app.startup_shell_visible() && !capabilities.osc52_clipboard && app.status_banner.is_none() {
+        app.set_status_banner(Some("Clipboard may be unreachable.".to_owned()));
     }
 }
 
@@ -374,12 +385,17 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
 
     app.maybe_set_no_provider_banner();
 
+    let mut terminal_session = ProductionTerminalSession::negotiate();
+    let mut experience = RuntimeExperience::new();
+
     let preserved_terminal = recover_mutex_lock(preserved_terminal_session()).clone();
     let reusing_terminal = preserved_terminal.active;
     let mut capabilities = if reusing_terminal {
         preserved_terminal.capabilities
     } else {
-        TerminalCapabilityState::from_environment()
+        let mut capabilities = TerminalCapabilityState::from_environment();
+        capabilities.osc52_clipboard = terminal_session.capabilities.osc52_clipboard;
+        capabilities
     };
 
     if !reusing_terminal {
@@ -438,7 +454,20 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
             let _ = teardown_terminal_session(&mut stdout, capabilities);
             return Err(err);
         }
+        terminal_session.record_setup(
+            true,
+            capabilities.alternate_screen,
+            capabilities.bracketed_paste,
+        );
     }
+
+    apply_startup_capability_notice(&mut app, capabilities);
+
+    app.set_color_level(crate::theme::detect_color_level(
+        std::env::var("NO_COLOR").ok().as_deref(),
+        std::env::var("COLORTERM").ok().as_deref(),
+        std::env::var("TERM").ok().as_deref(),
+    ));
 
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
@@ -464,7 +493,8 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         loop {
             let mut live_updates_pending = false;
             if let Some(update_rx) = live_updates.as_ref() {
-                let drain_state = drain_live_updates(&mut app, update_rx);
+                let drain_state =
+                    drain_live_updates_with_experience(&mut app, update_rx, &mut experience);
                 redraw_requested |= drain_state.changed;
                 if drain_state.disconnected {
                     live_updates = None;
@@ -481,9 +511,11 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                 let size = terminal.size()?;
                 let frame_area = ratatui::layout::Rect::new(0, 0, size.width, size.height);
                 app.set_frame_area(frame_area);
+                experience.tick(&app);
                 crossterm::queue!(terminal.backend_mut(), BeginSynchronizedUpdate)?;
                 terminal.draw(|frame| ui::render_app(frame, &app))?;
                 crossterm::execute!(terminal.backend_mut(), EndSynchronizedUpdate)?;
+                experience.post_flush(terminal.backend_mut());
                 redraw_requested = false;
             }
 
@@ -524,6 +556,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                         let frame_area = ratatui::layout::Rect::new(0, 0, size.width, size.height);
                         app.set_frame_area(frame_area);
                         app.handle_key(key);
+                        app.tick_composer_runtime();
                         true
                     }
                     event::TuiEvent::Paste(text) => {
@@ -531,6 +564,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                         let frame_area = ratatui::layout::Rect::new(0, 0, size.width, size.height);
                         app.set_frame_area(frame_area);
                         app.handle_paste(&text);
+                        app.tick_composer_runtime();
                         true
                     }
                     event::TuiEvent::Mouse(mouse) => {
@@ -568,15 +602,29 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                             ),
                             _ => (None, None, None),
                         };
-                        app.handle_mouse(
+                        let handled = app.handle_mouse(
                             mouse,
                             frame_area,
                             hovered_wheel_target,
                             clicked_operator_sidebar_section,
                             transcript_scrollbar_hit,
-                        )
+                        );
+                        app.tick_composer_runtime();
+                        handled
                     }
                     event::TuiEvent::Resize(_, _) => true,
+                    event::TuiEvent::FocusGained => {
+                        terminal_session.set_focus(true);
+                        terminal_session.restore();
+                        experience.set_focus(true, terminal.backend_mut());
+                        true
+                    }
+                    event::TuiEvent::FocusLost => {
+                        terminal_session.set_focus(false);
+                        terminal_session.suspend();
+                        experience.set_focus(false, terminal.backend_mut());
+                        true
+                    }
                 };
                 if event_changed {
                     redraw_requested = true;
@@ -585,6 +633,8 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         }
         Ok(())
     })();
+
+    experience.cleanup(terminal.backend_mut());
 
     if run_result.is_ok() && preserve_terminal_on_exit {
         *recover_mutex_lock(preserved_terminal_session()) = PreservedTerminalSession {
@@ -598,6 +648,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
 
     *recover_mutex_lock(preserved_terminal_session()) = PreservedTerminalSession::default();
     teardown_terminal_session(terminal.backend_mut(), capabilities)?;
+    terminal_session.finish();
     restore_guard.mark_restored();
 
     run_result
@@ -708,6 +759,15 @@ fn drain_live_updates(
     app: &mut AppState,
     update_rx: &Receiver<LiveUpdate>,
 ) -> LiveUpdateDrainState {
+    let mut experience = RuntimeExperience::new();
+    drain_live_updates_with_experience(app, update_rx, &mut experience)
+}
+
+fn drain_live_updates_with_experience(
+    app: &mut AppState,
+    update_rx: &Receiver<LiveUpdate>,
+    experience: &mut RuntimeExperience,
+) -> LiveUpdateDrainState {
     let mut state = LiveUpdateDrainState::default();
 
     let mut drained = 0usize;
@@ -731,6 +791,7 @@ fn drain_live_updates(
                 {
                     app.set_status_banner(None);
                 }
+                experience.on_event(&event);
                 app.ingest_event(*event);
                 state.changed = true;
             }

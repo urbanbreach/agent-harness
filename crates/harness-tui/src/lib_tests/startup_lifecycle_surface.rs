@@ -41,6 +41,97 @@ pub(super) fn startup_surface_renders_primary_actions() {
     );
 }
 
+pub(super) fn startup_surface_projects_clipboard_capability() {
+    let mut app = app::AppState::new_startup(Vec::new(), None);
+    app.set_launch_metadata(
+        app::LaunchMetadata::from_model_ref("worker", "mock:model-1").with_mode_label("Demo"),
+    );
+    crate::runtime::apply_startup_capability_notice(
+        &mut app,
+        crate::runtime::TerminalCapabilityState::absent(),
+    );
+
+    for (width, height) in [(80, 24), (100, 30), (120, 40)] {
+        let buffer = render_live_cells(&app, width, height);
+        let rendered = buffer
+            .content
+            .chunks(width as usize)
+            .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+            .collect::<Vec<_>>();
+        let warning_row = rendered
+            .iter()
+            .position(|row| row.contains("Clipboard may be unreachable."))
+            .unwrap_or_else(|| panic!("missing clipboard warning at {width}x{height}"));
+        let hint_row = rendered
+            .iter()
+            .position(|row| row.contains("Run /doctor for details and fixes."))
+            .unwrap_or_else(|| panic!("missing clipboard hint at {width}x{height}"));
+        let panel_row = rendered
+            .iter()
+            .position(|row| row.contains('╭') && row.contains('─'))
+            .unwrap_or_else(|| panic!("missing welcome panel at {width}x{height}"));
+        assert_eq!(hint_row, warning_row + 1);
+        assert!(
+            panel_row > hint_row,
+            "welcome panel overlaps warning at {width}x{height}"
+        );
+        assert!(rendered[1].contains("worktree"));
+    }
+
+    let loading = render_live_cells(&app, 100, 30);
+    let loading_rows = loading.content.chunks(100).collect::<Vec<_>>();
+    assert_eq!(
+        loading_rows
+            .iter()
+            .position(|row| row.iter().any(|cell| cell.symbol() == "╭")),
+        Some(8)
+    );
+    assert!(!loading
+        .content
+        .iter()
+        .any(|cell| cell.symbol().contains('•')));
+
+    let mut ready_app = app;
+    for _ in 0..4 {
+        ready_app.advance_animation_tick_for_evidence();
+    }
+    let ready = render_live_cells(&ready_app, 100, 30);
+    let ready_rows = ready.content.chunks(100).collect::<Vec<_>>();
+    assert_eq!(
+        ready_rows
+            .iter()
+            .position(|row| row.iter().any(|cell| cell.symbol() == "╭")),
+        Some(6)
+    );
+    assert!(ready.content.iter().any(|cell| cell.symbol().contains('•')));
+    let ready_warning_row = ready_rows
+        .iter()
+        .position(|row| {
+            row.iter()
+                .map(|cell| cell.symbol())
+                .collect::<String>()
+                .contains("Clipboard")
+        })
+        .unwrap_or_else(|| {
+            let rows = ready_rows
+                .iter()
+                .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+                .collect::<Vec<_>>();
+            panic!("ready warning missing: {rows:?}")
+        });
+    let ready_hint_row = ready_rows
+        .iter()
+        .position(|row| {
+            row.iter()
+                .map(|cell| cell.symbol())
+                .collect::<String>()
+                .contains("doctor")
+        })
+        .unwrap_or_else(|| panic!("ready hint missing: {ready_rows:?}"));
+    assert_eq!(ready_warning_row + 1, ready_hint_row);
+    assert!(ready_hint_row < 6);
+}
+
 pub(super) fn startup_typing_moves_to_quick_start_prompt() {
     let mut app = app::AppState::new_startup(Vec::new(), None);
 
@@ -207,6 +298,7 @@ pub(super) fn post_run_handoff_disables_prompt_submission() {
             selected_file_tags: Vec::new(),
             selected_agent_tags: Vec::new(),
             selected_resource_tags: Vec::new(),
+            attachments: Vec::new(),
             launch_metadata: app::LaunchMetadata::default(),
         }]
     );

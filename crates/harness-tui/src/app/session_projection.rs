@@ -1015,10 +1015,11 @@ impl AppState {
         let runtime_context = self.runtime_provider_context();
 
         if self.startup_shell_visible() {
-            let composer_body = if self.composer.prompt_buffer.is_empty() {
+            let composer_text = self.composer_render_text();
+            let composer_body = if composer_text.is_empty() {
                 runtime_state.composer_hint.clone()
             } else {
-                self.composer.prompt_buffer.clone()
+                composer_text
             };
             return view_model::control_dock_view_model(view_model::ControlDockInput::Startup {
                 runtime_context,
@@ -1056,10 +1057,11 @@ impl AppState {
             );
         }
 
-        let composer_body = if self.composer.prompt_buffer.is_empty() {
+        let composer_text = self.composer_render_text();
+        let composer_body = if composer_text.is_empty() {
             String::new()
         } else {
-            self.composer.prompt_buffer.clone()
+            composer_text
         };
         view_model::control_dock_view_model(view_model::ControlDockInput::Live {
             runtime_context,

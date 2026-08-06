@@ -253,6 +253,33 @@ impl CoordinatorHandle {
             selected_file_tags: selected_tags.files,
             selected_agent_tags: selected_tags.agents,
             selected_resource_tags: selected_tags.resources,
+            attachments: Vec::new(),
+            model_ref_override,
+            model_settings_override,
+            child_task_metadata: None,
+            respond_to,
+        })
+        .await
+    }
+
+    pub async fn request_agent_turn_with_model_and_selected_tags_and_attachments(
+        &self,
+        actor: EventActor,
+        agent_id: impl Into<String>,
+        prompt: impl Into<String>,
+        selected_tags: crate::file_tag::SelectedPromptTags,
+        attachments: Vec<crate::attachment_transport::AttachmentMetadata>,
+        model_ref_override: Option<String>,
+        model_settings_override: Option<AgentModelSettings>,
+    ) -> Result<String, CoordinatorError> {
+        self.request(|respond_to| Command::RequestAgentTurn {
+            actor,
+            agent_id: agent_id.into(),
+            prompt: prompt.into(),
+            selected_file_tags: selected_tags.files,
+            selected_agent_tags: selected_tags.agents,
+            selected_resource_tags: selected_tags.resources,
+            attachments,
             model_ref_override,
             model_settings_override,
             child_task_metadata: None,
@@ -277,6 +304,7 @@ impl CoordinatorHandle {
             selected_file_tags: Vec::new(),
             selected_agent_tags: Vec::new(),
             selected_resource_tags: Vec::new(),
+            attachments: Vec::new(),
             model_ref_override,
             model_settings_override,
             child_task_metadata: Some(child_task_metadata),

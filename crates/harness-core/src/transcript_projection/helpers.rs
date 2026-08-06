@@ -62,6 +62,7 @@ pub(super) fn append_system_part(
         provider: None,
         provenance: ProvenanceRange::from_event(event),
         parts: vec![part],
+        attachments: Vec::new(),
     });
     index
 }
@@ -110,6 +111,7 @@ pub(super) fn ensure_assistant_message(
         provider: None,
         provenance: ProvenanceRange::from_event(event),
         parts: Vec::new(),
+        attachments: Vec::new(),
     });
     request_locations
         .entry(request_id.to_string())

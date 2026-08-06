@@ -13,7 +13,11 @@ import { captureLive } from "./xterm-live-terminal.mjs";
 import { BUILT_IN_REDACTION_RULE_COUNT, compileRedactions, redactEvidence } from "./web-terminal-redaction.mjs";
 import { stripAnsi } from "./strip-ansi.mjs";
 
-const require = createRequire(import.meta.url);
+const require = createRequire(
+  process.env.TUI_FIDELITY_NODE_MODULES
+    ? join(process.env.TUI_FIDELITY_NODE_MODULES, "package.json")
+    : import.meta.url,
+);
 
 const HELP = `web-terminal-visual-qa
 
@@ -170,6 +174,7 @@ async function run(args) {
       fontSize: args.fontSize,
       ...(args.fontFamily ? { fontFamily: args.fontFamily } : {}),
     },
+    ...(cap.capabilities ? { capabilities: cap.capabilities } : {}),
     cleanup: cap.cleanup,
     files: { png: cap.pngBuffer ? pngPath : null, text: textPath, ansi: ansiPath, metadata: metadataPath },
   };

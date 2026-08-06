@@ -131,7 +131,8 @@ pub(super) fn render_document_composer_content(
         .split(body_inner);
     let input_area = rows[1];
     let input_width = usize::from(input_area.width);
-    let placeholder_visible = app.composer.prompt_buffer.is_empty()
+    let composer_text = app.composer_render_text();
+    let placeholder_visible = composer_text.is_empty()
         && matches!(
             context.dock.variant,
             crate::view_model::ControlDockVariant::Startup
@@ -139,10 +140,10 @@ pub(super) fn render_document_composer_content(
     let shell_mode_active = app.shell_mode() && !context.dock.composer_disabled;
     let body = if placeholder_visible {
         context.dock.composer_body.as_str()
-    } else if shell_mode_active && app.composer.prompt_buffer.is_empty() {
+    } else if shell_mode_active && composer_text.is_empty() {
         "run a shell command…"
     } else {
-        app.composer.prompt_buffer.as_str()
+        composer_text.as_str()
     };
     let body_color = if context.dock.composer_disabled {
         theme.status.disabled
@@ -187,7 +188,7 @@ pub(super) fn render_document_composer_content(
         show_cursor.then_some(if placeholder_visible {
             0
         } else {
-            app.composer.prompt_cursor
+            app.composer_render_cursor()
         }),
     );
     if !show_cursor {
@@ -249,8 +250,11 @@ pub(super) fn render_document_composer_content(
 }
 
 fn composer_model_badge(app: &AppState) -> String {
-    let model = app.current_model_base_label();
+    let model = composer_event_model_id(app).unwrap_or_else(|| app.current_model_base_label());
     let mut parts = Vec::new();
+    if let Some(profile) = active_turn_profile_label(app) {
+        parts.push(profile);
+    }
     if !model.is_empty() && model != "-" && !model.eq_ignore_ascii_case("unknown") {
         parts.push(model.to_string());
     } else if !app.composer.prompt_buffer.is_empty() {
@@ -302,7 +306,20 @@ fn render_bordered_composer(
         Color::Reset
     };
     let border_style = Style::default().fg(border_fg).bg(surface);
-    let badge = composer_model_badge(app);
+    let composer_view = app.composer_view_model_for_area(area);
+    let mut badge = composer_model_badge(app);
+    if !composer_view.attachments.is_empty() {
+        let labels = composer_view
+            .attachments
+            .iter()
+            .map(|attachment| attachment.label.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        badge.push_str(&format!(" · {labels}"));
+    }
+    if let Some(completion) = composer_view.completion.as_ref() {
+        badge.push_str(&format!(" · {} suggestions", completion.items.len()));
+    }
     let content_lines = context.composer_lines.max(1);
     let strip_height = area
         .height
@@ -338,11 +355,12 @@ fn render_bordered_composer(
     }
 
     let shell_mode_active = app.shell_mode() && !context.dock.composer_disabled;
-    let placeholder_visible = app.composer.prompt_buffer.is_empty();
+    let composer_text = app.composer_render_text();
+    let placeholder_visible = composer_text.is_empty();
     let body = if placeholder_visible {
         ""
     } else {
-        app.composer.prompt_buffer.as_str()
+        composer_text.as_str()
     };
     let body_color = if context.dock.composer_disabled {
         theme.status.disabled
@@ -377,7 +395,7 @@ fn render_bordered_composer(
         show_cursor.then_some(if placeholder_visible {
             0
         } else {
-            app.composer.prompt_cursor
+            app.composer_render_cursor()
         }),
     );
     if !show_cursor {
@@ -515,7 +533,9 @@ pub(super) fn composer_metadata_candidates(
     dock: &crate::view_model::ControlDockViewModel,
 ) -> Vec<Vec<(String, ComposerMetadataTone)>> {
     let profile = active_turn_profile_label(app).or_else(|| app.current_agent_label());
-    let model = app.current_model_base_label().to_string();
+    let model = composer_event_model_id(app)
+        .map(str::to_owned)
+        .unwrap_or_else(|| app.current_model_base_label().to_string());
     let source = app.current_source_label();
     let tail = app
         .current_model_reasoning_label()
@@ -600,19 +620,37 @@ pub(super) fn composer_metadata_candidates(
     candidates
 }
 
+fn composer_event_model_id(app: &AppState) -> Option<&str> {
+    app.events
+        .iter()
+        .rev()
+        .find_map(|event| match &event.payload {
+            harness_core::event::EventV1::ProviderRequestStarted(payload)
+                if !payload.model_id.trim().is_empty() =>
+            {
+                Some(payload.model_id.as_str())
+            }
+            _ => None,
+        })
+}
+
 fn active_turn_profile_label(app: &AppState) -> Option<String> {
     let hidden_child_request_ids = app.hidden_delegated_child_request_ids_in_current_view();
-    let activity =
-        app.activities
-            .iter()
-            .rev()
-            .filter(|activity| !hidden_child_request_ids.contains(activity.request_id.as_str()))
-            .find(|activity| activity.status == ActivityStatus::Streaming)
-            .or_else(|| {
-                app.activities.iter().rev().find(|activity| {
-                    !hidden_child_request_ids.contains(activity.request_id.as_str())
-                })
-            })?;
+    let activity = app
+        .activities
+        .iter()
+        .rev()
+        .filter(|activity| {
+            activity.request_id.is_empty()
+                || !hidden_child_request_ids.contains(activity.request_id.as_str())
+        })
+        .find(|activity| activity.status == ActivityStatus::Streaming)
+        .or_else(|| {
+            app.activities.iter().rev().find(|activity| {
+                activity.request_id.is_empty()
+                    || !hidden_child_request_ids.contains(activity.request_id.as_str())
+            })
+        })?;
     if !matches!(
         activity.status,
         ActivityStatus::Streaming | ActivityStatus::Queued
@@ -635,13 +673,13 @@ fn composer_metadata_text(
         return String::new();
     }
 
+    let profile = active_turn_profile_label(app)
+        .or_else(|| app.current_agent_label())
+        .unwrap_or_else(|| app.active_profile().to_string());
+
     best_fit_text(
         &[
-            Some(format!(
-                "{} {}",
-                app.active_profile(),
-                app.current_model_label()
-            )),
+            Some(format!("{profile} {}", app.current_model_label())),
             app.launch_mode_label().map(str::to_string),
             Some(dock.primary_summary.clone()),
             Some(app.current_model_label().to_string()),

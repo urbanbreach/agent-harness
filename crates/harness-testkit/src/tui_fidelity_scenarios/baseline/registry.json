@@ -1,0 +1,337 @@
+{
+  "schema_version": "harness.tui-fidelity.baseline-registry.v1",
+  "viewports": [
+    {
+      "id": "canary-40x1",
+      "cols": 40,
+      "rows": 1
+    },
+    {
+      "id": "canary-40x2",
+      "cols": 40,
+      "rows": 2
+    },
+    {
+      "id": "canary-40x3",
+      "cols": 40,
+      "rows": 3
+    },
+    {
+      "id": "canary-40x6",
+      "cols": 40,
+      "rows": 6
+    },
+    {
+      "id": "canary-40x7",
+      "cols": 40,
+      "rows": 7
+    },
+    {
+      "id": "canary-40x8",
+      "cols": 40,
+      "rows": 8
+    },
+    {
+      "id": "canary-40x9",
+      "cols": 40,
+      "rows": 9
+    },
+    {
+      "id": "canary-20x5",
+      "cols": 20,
+      "rows": 5
+    },
+    {
+      "id": "canary-22x5",
+      "cols": 22,
+      "rows": 5
+    },
+    {
+      "id": "compact-40x10",
+      "cols": 40,
+      "rows": 10
+    },
+    {
+      "id": "dense-60x15",
+      "cols": 60,
+      "rows": 15
+    },
+    {
+      "id": "default-80x24",
+      "cols": 80,
+      "rows": 24
+    },
+    {
+      "id": "standard-100x30",
+      "cols": 100,
+      "rows": 30
+    },
+    {
+      "id": "wide-132x40",
+      "cols": 132,
+      "rows": 40
+    },
+    {
+      "id": "large-160x50",
+      "cols": 160,
+      "rows": 50
+    },
+    {
+      "id": "maximum-200x60",
+      "cols": 200,
+      "rows": 60
+    },
+    {
+      "id": "minimum-60x20",
+      "cols": 60,
+      "rows": 20
+    },
+    {
+      "id": "legacy-79x24",
+      "cols": 79,
+      "rows": 24
+    },
+    {
+      "id": "wide-120x40",
+      "cols": 120,
+      "rows": 40
+    },
+    {
+      "id": "tall-120x50",
+      "cols": 120,
+      "rows": 50
+    },
+    {
+      "id": "extra-wide-140x40",
+      "cols": 140,
+      "rows": 40
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "canary-terminal-query",
+      "path": "src/tui_fidelity_scenarios/baseline/canary-terminal-query.json",
+      "state": "canary-static-terminal-query",
+      "owner_source_paths": [
+        "crates/harness-testkit/src/tui_fidelity_runner/actions.rs"
+      ]
+    },
+    {
+      "id": "canary-resize-wait",
+      "path": "src/tui_fidelity_scenarios/baseline/canary-resize-wait.json",
+      "state": "canary-dynamic-resize",
+      "owner_source_paths": [
+        "crates/harness-testkit/src/tui_fidelity_runner/actions.rs"
+      ]
+    },
+    {
+      "id": "canary-terminal-tier",
+      "path": "src/tui_fidelity_scenarios/baseline/canary-terminal-tier.json",
+      "state": "canary-reduced-terminal",
+      "owner_source_paths": [
+        "crates/harness-testkit/src/tui_fidelity_runner/process_io.rs"
+      ]
+    },
+    {
+      "id": "baseline-startup",
+      "path": "src/tui_fidelity_scenarios/baseline/startup.json",
+      "state": "startup",
+      "owner_source_paths": [
+        "crates/harness-tui/src/leaf_views/startup.rs",
+        "crates/harness-tui/src/ui_startup_logo.rs"
+      ]
+    },
+    {
+      "id": "baseline-draft",
+      "path": "src/tui_fidelity_scenarios/baseline/draft.json",
+      "state": "draft",
+      "owner_source_paths": [
+        "crates/harness-tui/src/ui_composer.rs",
+        "crates/harness-tui/src/app/composer.rs"
+      ]
+    },
+    {
+      "id": "baseline-idle",
+      "path": "src/tui_fidelity_scenarios/baseline/idle.json",
+      "state": "idle",
+      "owner_source_paths": [
+        "crates/harness-tui/src/leaf_views/shell.rs",
+        "crates/harness-tui/src/layout.rs"
+      ]
+    },
+    {
+      "id": "baseline-stream",
+      "path": "src/tui_fidelity_scenarios/baseline/stream.json",
+      "state": "stream",
+      "owner_source_paths": [
+        "crates/harness-tui/src/ui_live_turn_status.rs",
+        "crates/harness-tui/src/app/pending_live.rs"
+      ]
+    },
+    {
+      "id": "baseline-tool",
+      "path": "src/tui_fidelity_scenarios/baseline/tool.json",
+      "state": "tool",
+      "owner_source_paths": [
+        "crates/harness-tui/src/app/tool_call.rs",
+        "crates/harness-tui/src/ui_tool_visibility.rs",
+        "crates/harness-tui/src/ui_transcript_tool_render.rs"
+      ]
+    },
+    {
+      "id": "baseline-diff",
+      "path": "src/tui_fidelity_scenarios/baseline/diff.json",
+      "state": "diff",
+      "owner_source_paths": [
+        "crates/harness-tui/src/ui_diff.rs",
+        "crates/harness-tui/src/ui_diff_render.rs",
+        "crates/harness-tui/src/ui_tool_diffs.rs"
+      ]
+    },
+    {
+      "id": "baseline-permission",
+      "path": "src/tui_fidelity_scenarios/baseline/permission.json",
+      "state": "permission",
+      "owner_source_paths": [
+        "crates/harness-tui/src/app/permissions.rs",
+        "crates/harness-tui/src/ui_overlays/permission_modal.rs",
+        "crates/harness-tui/src/ui_permission_dock.rs"
+      ]
+    },
+    {
+      "id": "baseline-question",
+      "path": "src/tui_fidelity_scenarios/baseline/question.json",
+      "state": "question",
+      "owner_source_paths": [
+        "crates/harness-tui/src/app/question_prompt.rs",
+        "crates/harness-tui/src/ui_overlays/permission_modal.rs"
+      ]
+    },
+    {
+      "id": "baseline-queue",
+      "path": "src/tui_fidelity_scenarios/baseline/queue.json",
+      "state": "queue",
+      "owner_source_paths": [
+        "crates/harness-tui/src/app.rs",
+        "crates/harness-tui/src/leaf_actions/group_h_navigation.rs"
+      ]
+    },
+    {
+      "id": "baseline-cancel",
+      "path": "src/tui_fidelity_scenarios/baseline/cancel.json",
+      "state": "cancel",
+      "owner_source_paths": [
+        "crates/harness-tui/src/leaf_actions/action.rs",
+        "crates/harness-tui/src/app/lifecycle.rs"
+      ]
+    },
+    {
+      "id": "baseline-fail",
+      "path": "src/tui_fidelity_scenarios/baseline/fail.json",
+      "state": "fail",
+      "owner_source_paths": [
+        "crates/harness-tui/src/ui_lifecycle.rs",
+        "crates/harness-tui/src/app/lifecycle.rs"
+      ]
+    },
+    {
+      "id": "baseline-recover",
+      "path": "src/tui_fidelity_scenarios/baseline/recover.json",
+      "state": "recover",
+      "owner_source_paths": [
+        "crates/harness-tui/src/ui_lifecycle.rs",
+        "crates/harness-tui/src/leaf_actions/action.rs"
+      ]
+    },
+    {
+      "id": "baseline-complete",
+      "path": "src/tui_fidelity_scenarios/baseline/complete.json",
+      "state": "complete",
+      "owner_source_paths": [
+        "crates/harness-tui/src/ui_lifecycle.rs",
+        "crates/harness-tui/src/ui_live_turn_status.rs"
+      ]
+    },
+    {
+      "id": "baseline-scroll",
+      "path": "src/tui_fidelity_scenarios/baseline/scroll.json",
+      "state": "scroll",
+      "owner_source_paths": [
+        "crates/harness-tui/src/app/transcript_state.rs",
+        "crates/harness-tui/src/ui_transcript_scrollbar.rs"
+      ]
+    },
+    {
+      "id": "baseline-modal-surfaces",
+      "path": "src/tui_fidelity_scenarios/baseline/modal-surfaces.json",
+      "state": "modal_surfaces",
+      "owner_source_paths": [
+        "crates/harness-tui/src/ui_overlays.rs",
+        "crates/harness-tui/src/layout/overlays.rs"
+      ]
+    },
+    {
+      "id": "baseline-dashboard",
+      "path": "src/tui_fidelity_scenarios/baseline/dashboard.json",
+      "state": "dashboard",
+      "owner_source_paths": [
+        "crates/harness-tui/src/leaf_actions/group_d_dashboard.rs",
+        "crates/harness-tui/src/app.rs"
+      ]
+    },
+    {
+      "id": "baseline-media",
+      "path": "src/tui_fidelity_scenarios/baseline/media.json",
+      "state": "media",
+      "owner_source_paths": [
+        "crates/harness-tui/src/leaf_actions/group_e_media.rs",
+        "crates/harness-tui/src/ui_transcript_media.rs"
+      ]
+    },
+    {
+      "id": "baseline-themes",
+      "path": "src/tui_fidelity_scenarios/baseline/themes.json",
+      "state": "themes",
+      "owner_source_paths": [
+        "crates/harness-tui/src/theme.rs",
+        "crates/harness-tui/src/ui_overlays/theme_dialog.rs"
+      ]
+    },
+    {
+      "id": "baseline-mouse",
+      "path": "src/tui_fidelity_scenarios/baseline/mouse.json",
+      "state": "mouse",
+      "owner_source_paths": [
+        "crates/harness-tui/src/mouse.rs",
+        "crates/harness-tui/src/layout.rs"
+      ]
+    },
+    {
+      "id": "baseline-resize",
+      "path": "src/tui_fidelity_scenarios/baseline/resize.json",
+      "state": "resize",
+      "owner_source_paths": [
+        "crates/harness-tui/src/responsive/viewport.rs",
+        "crates/harness-tui/src/layout.rs"
+      ]
+    },
+    {
+      "id": "baseline-cjk",
+      "path": "src/tui_fidelity_scenarios/baseline/cjk.json",
+      "state": "cjk",
+      "owner_source_paths": [
+        "crates/harness-tui/src/terminal/unicode_width.rs",
+        "crates/harness-tui/src/ui_composer.rs"
+      ]
+    },
+    {
+      "id": "baseline-reduced-capabilities",
+      "path": "src/tui_fidelity_scenarios/baseline/reduced-capabilities.json",
+      "state": "reduced_capabilities",
+      "owner_source_paths": [
+        "crates/harness-tui/src/terminal/capability.rs",
+        "crates/harness-tui/src/leaf_actions/group_c_screen_modes.rs"
+      ]
+    }
+  ]
+}

@@ -1,5 +1,5 @@
 use super::auto::{ThemeChoice, ThemeEnvironment};
-use super::fallback::{ResolvedTheme, fallback_theme};
+use super::fallback::{fallback_theme, ResolvedTheme};
 use super::family::ThemeFamily;
 
 impl ThemeChoice {

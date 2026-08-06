@@ -111,6 +111,7 @@ pub enum EventV1 {
     BackgroundTaskNotification(BackgroundTaskNotificationEvent),
     StaleDetected(StaleDetectedEvent),
     UserMessageSubmitted(UserMessageSubmittedEvent),
+    PromptAttachmentsSubmitted(PromptAttachmentsSubmittedEvent),
     ProviderRequestStarted(ProviderRequestStartedEvent),
     ProviderStreamDelta(ProviderStreamDeltaEvent),
     ProviderReasoningDelta(ProviderReasoningDeltaEvent),
@@ -420,6 +421,12 @@ pub struct StaleDetectedEvent {
 pub struct UserMessageSubmittedEvent {
     pub request_id: crate::ids::RequestId,
     pub text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PromptAttachmentsSubmittedEvent {
+    pub request_id: crate::ids::RequestId,
+    pub attachments: Vec<crate::attachment_transport::AttachmentMetadata>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]

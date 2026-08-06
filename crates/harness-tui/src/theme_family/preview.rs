@@ -1,92 +1,98 @@
-use std::collections::BTreeMap;
+//! Preview, commit, and cancel state machine for live theme switching.
 
-use crate::app::theme_preview::SystemAppearance;
-
-use super::auto::{ThemeChoice, ThemeEnvironment};
-use super::fallback::ResolvedTheme;
-use super::persist::store_theme_choice;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ThemePreviewStatus {
-    Committed,
-    Previewing,
-    Cancelled,
+/// The current phase of a live theme preview.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "phase", rename_all = "snake_case")]
+pub enum PreviewState {
+    /// No preview active; `committed` is the live theme.
+    Idle {
+        committed: super::family::ThemeFamily,
+    },
+    /// A candidate is being previewed; `prior` is the committed theme to restore on cancel.
+    Previewing {
+        prior: super::family::ThemeFamily,
+        candidate: super::family::ThemeFamily,
+    },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ThemePreviewState {
-    committed: ThemeChoice,
-    preview: Option<ThemeChoice>,
-    environment: ThemeEnvironment,
-    status: ThemePreviewStatus,
+/// Mutable preview state for live theme switching.
+pub struct ThemePreview {
+    state: PreviewState,
 }
 
-impl ThemePreviewState {
-    pub fn new(committed: ThemeChoice, environment: ThemeEnvironment) -> Self {
+impl ThemePreview {
+    pub fn new(committed: super::family::ThemeFamily) -> Self {
         Self {
-            committed,
-            preview: None,
-            environment,
-            status: ThemePreviewStatus::Committed,
+            state: PreviewState::Idle { committed },
         }
     }
 
-    pub const fn committed_choice(&self) -> ThemeChoice {
-        self.committed
+    pub fn state(&self) -> PreviewState {
+        self.state
     }
 
-    pub const fn preview_choice(&self) -> Option<ThemeChoice> {
-        self.preview
-    }
-
-    pub const fn status(&self) -> ThemePreviewStatus {
-        self.status
-    }
-
-    pub const fn effective_choice(&self) -> ThemeChoice {
-        match self.preview {
-            Some(choice) => choice,
-            None => self.committed,
+    pub fn active(&self) -> super::family::ThemeFamily {
+        match self.state {
+            PreviewState::Idle { committed } => committed,
+            PreviewState::Previewing { candidate, .. } => candidate,
         }
     }
 
-    pub fn effective_theme(&self) -> ResolvedTheme {
-        self.effective_choice().resolve(&self.environment)
-    }
-
-    pub const fn preview(&mut self, choice: ThemeChoice) {
-        self.preview = Some(choice);
-        self.status = ThemePreviewStatus::Previewing;
-    }
-
-    pub const fn cancel(&mut self) -> ThemeChoice {
-        self.preview = None;
-        self.status = ThemePreviewStatus::Cancelled;
-        self.committed
-    }
-
-    pub const fn commit(&mut self) -> ThemeChoice {
-        if let Some(choice) = self.preview {
-            self.committed = choice;
-            self.preview = None;
+    pub fn committed(&self) -> super::family::ThemeFamily {
+        match self.state {
+            PreviewState::Idle { committed } => committed,
+            PreviewState::Previewing { prior, .. } => prior,
         }
-        self.status = ThemePreviewStatus::Committed;
-        self.committed
     }
 
-    pub fn commit_to_keybindings(&mut self, keybindings: &mut BTreeMap<String, String>) {
-        store_theme_choice(keybindings, self.commit());
+    pub fn begin_preview(&mut self, candidate: super::family::ThemeFamily) {
+        self.state = match self.state {
+            PreviewState::Idle { committed } => PreviewState::Previewing {
+                prior: committed,
+                candidate,
+            },
+            PreviewState::Previewing { prior, .. } => PreviewState::Previewing { prior, candidate },
+        };
     }
 
-    pub fn on_system_appearance_change(&mut self, appearance: SystemAppearance) {
-        self.environment.appearance = Some(appearance);
+    pub fn commit(&mut self) -> super::family::ThemeFamily {
+        self.state = match self.state {
+            PreviewState::Idle { committed } => PreviewState::Idle { committed },
+            PreviewState::Previewing { candidate, .. } => PreviewState::Idle {
+                committed: candidate,
+            },
+        };
+        self.committed()
     }
 
-    pub fn set_environment(&mut self, environment: ThemeEnvironment) {
-        self.environment = environment;
+    pub fn cancel(&mut self) -> super::family::ThemeFamily {
+        self.state = match self.state {
+            PreviewState::Idle { committed } => PreviewState::Idle { committed },
+            PreviewState::Previewing { prior, .. } => PreviewState::Idle { committed: prior },
+        };
+        self.committed()
     }
 
-    pub const fn environment(&self) -> &ThemeEnvironment {
-        &self.environment
+    pub fn is_previewing(&self) -> bool {
+        matches!(self.state, PreviewState::Previewing { .. })
     }
 }
+
+/// Errors available to callers that enforce strict preview transitions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PreviewError {
+    AlreadyPreviewing,
+    NoActivePreview,
+}
+
+impl std::fmt::Display for PreviewError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let message = match self {
+            Self::AlreadyPreviewing => "a theme preview is already active",
+            Self::NoActivePreview => "no active theme preview",
+        };
+        formatter.write_str(message)
+    }
+}
+
+impl std::error::Error for PreviewError {}

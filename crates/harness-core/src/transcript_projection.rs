@@ -30,6 +30,8 @@ pub fn project_transcript(
     let mut request_locations = BTreeMap::<String, RequestLocations>::new();
     let mut tool_locations = BTreeMap::<String, PartLocation>::new();
     let mut permission_locations = BTreeMap::<String, PartLocation>::new();
+    let mut pending_attachments =
+        BTreeMap::<String, Vec<crate::attachment_transport::AttachmentMetadata>>::new();
 
     for event in events {
         projection
@@ -208,8 +210,9 @@ pub fn project_transcript(
                 },
             ),
             EventV1::UserMessageSubmitted(payload) => {
+                let request_id = payload.request_id.to_string();
                 let message = ProjectedMessage {
-                    message_id: format!("user:{}:{}", payload.request_id, event.seq),
+                    message_id: format!("user:{request_id}:{}", event.seq),
                     role: ProjectedMessageRole::User,
                     state: ProjectedMessageState::Complete,
                     request_id: Some(payload.request_id.clone()),
@@ -220,13 +223,31 @@ pub fn project_transcript(
                         text: payload.text.clone(),
                         provenance: ProvenanceRange::from_event(event),
                     })],
+                    attachments: pending_attachments.remove(&request_id).unwrap_or_default(),
                 };
                 let index = projection.messages.len();
                 projection.messages.push(message);
                 request_locations
-                    .entry(payload.request_id.to_string())
+                    .entry(request_id)
                     .or_default()
                     .user_message_index = Some(index);
+            }
+            EventV1::PromptAttachmentsSubmitted(payload) => {
+                let request_id = payload.request_id.to_string();
+                if let Some(message_index) = request_locations
+                    .get(&request_id)
+                    .and_then(|locations| locations.user_message_index)
+                {
+                    projection.messages[message_index]
+                        .attachments
+                        .extend(payload.attachments.iter().cloned());
+                    projection.messages[message_index].provenance.extend(event);
+                } else {
+                    pending_attachments
+                        .entry(request_id)
+                        .or_default()
+                        .extend(payload.attachments.iter().cloned());
+                }
             }
             EventV1::ProviderRequestStarted(payload) => {
                 let request_id = provider_turn_request_id(event, payload.request_id.as_str());

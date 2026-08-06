@@ -1,249 +1,125 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum PaletteRole {
-    SurfaceCanvas,
-    SurfaceShell,
-    SurfacePanel,
-    SurfacePanelElevated,
-    SurfaceOverlay,
-    SurfaceCard,
-    SurfaceSelectedCard,
-    BorderSubtle,
-    BorderStrong,
-    BorderFocus,
-    TextPrimary,
-    TextSecondary,
-    TextTertiary,
-    TextAccent,
-    TextInverse,
-    QuestionSurface,
-    QuestionSelected,
-    QuestionPrimary,
-    QuestionAccent,
-    QuestionSecondary,
-    StatusSuccess,
-    StatusWarning,
-    StatusError,
-    StatusInfo,
-    StatusDisabled,
-    MarkdownHeading,
-    MarkdownLink,
-    MarkdownLinkText,
-    MarkdownCode,
-    MarkdownEmph,
-    MarkdownStrong,
-    MarkdownBlockQuote,
-    MarkdownListItem,
-    MarkdownListEnum,
-    MarkdownRule,
-    AgentBuild,
-    AgentPlan,
-    AgentDocs,
-    AgentAsk,
-    ScrollbarTrack,
-    ScrollbarThumb,
-    ScrollbarThumbActive,
-}
+//! Semantic role facade unifying the design contract role families.
 
-impl PaletteRole {
-    pub const ALL: [Self; 42] = [
-        Self::SurfaceCanvas,
-        Self::SurfaceShell,
-        Self::SurfacePanel,
-        Self::SurfacePanelElevated,
-        Self::SurfaceOverlay,
-        Self::SurfaceCard,
-        Self::SurfaceSelectedCard,
-        Self::BorderSubtle,
-        Self::BorderStrong,
-        Self::BorderFocus,
-        Self::TextPrimary,
-        Self::TextSecondary,
-        Self::TextTertiary,
-        Self::TextAccent,
-        Self::TextInverse,
-        Self::QuestionSurface,
-        Self::QuestionSelected,
-        Self::QuestionPrimary,
-        Self::QuestionAccent,
-        Self::QuestionSecondary,
-        Self::StatusSuccess,
-        Self::StatusWarning,
-        Self::StatusError,
-        Self::StatusInfo,
-        Self::StatusDisabled,
-        Self::MarkdownHeading,
-        Self::MarkdownLink,
-        Self::MarkdownLinkText,
-        Self::MarkdownCode,
-        Self::MarkdownEmph,
-        Self::MarkdownStrong,
-        Self::MarkdownBlockQuote,
-        Self::MarkdownListItem,
-        Self::MarkdownListEnum,
-        Self::MarkdownRule,
-        Self::AgentBuild,
-        Self::AgentPlan,
-        Self::AgentDocs,
-        Self::AgentAsk,
-        Self::ScrollbarTrack,
-        Self::ScrollbarThumb,
-        Self::ScrollbarThumbActive,
-    ];
+pub use crate::design_contract::{BorderRole, ColorRole, FocusRole, GlyphRole};
 
-    pub(crate) const fn index(self) -> usize {
-        match self {
-            Self::SurfaceCanvas => 0,
-            Self::SurfaceShell => 1,
-            Self::SurfacePanel => 2,
-            Self::SurfacePanelElevated => 3,
-            Self::SurfaceOverlay => 4,
-            Self::SurfaceCard => 5,
-            Self::SurfaceSelectedCard => 6,
-            Self::BorderSubtle => 7,
-            Self::BorderStrong => 8,
-            Self::BorderFocus => 9,
-            Self::TextPrimary => 10,
-            Self::TextSecondary => 11,
-            Self::TextTertiary => 12,
-            Self::TextAccent => 13,
-            Self::TextInverse => 14,
-            Self::QuestionSurface => 15,
-            Self::QuestionSelected => 16,
-            Self::QuestionPrimary => 17,
-            Self::QuestionAccent => 18,
-            Self::QuestionSecondary => 19,
-            Self::StatusSuccess => 20,
-            Self::StatusWarning => 21,
-            Self::StatusError => 22,
-            Self::StatusInfo => 23,
-            Self::StatusDisabled => 24,
-            Self::MarkdownHeading => 25,
-            Self::MarkdownLink => 26,
-            Self::MarkdownLinkText => 27,
-            Self::MarkdownCode => 28,
-            Self::MarkdownEmph => 29,
-            Self::MarkdownStrong => 30,
-            Self::MarkdownBlockQuote => 31,
-            Self::MarkdownListItem => 32,
-            Self::MarkdownListEnum => 33,
-            Self::MarkdownRule => 34,
-            Self::AgentBuild => 35,
-            Self::AgentPlan => 36,
-            Self::AgentDocs => 37,
-            Self::AgentAsk => 38,
-            Self::ScrollbarTrack => 39,
-            Self::ScrollbarThumb => 40,
-            Self::ScrollbarThumbActive => 41,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum GlyphRole {
-    Streaming,
-    Done,
-    Error,
-    PendingPermission,
-    Queued,
-    Running,
-    Succeeded,
-    Failed,
-    UserMarker,
-    ToolMarker,
-    CardTop,
-    CardMid,
-    CardBottom,
-}
-
-impl GlyphRole {
-    pub const ALL: [Self; 13] = [
-        Self::Streaming,
-        Self::Done,
-        Self::Error,
-        Self::PendingPermission,
-        Self::Queued,
-        Self::Running,
-        Self::Succeeded,
-        Self::Failed,
-        Self::UserMarker,
-        Self::ToolMarker,
-        Self::CardTop,
-        Self::CardMid,
-        Self::CardBottom,
-    ];
-
-    pub(crate) const fn index(self) -> usize {
-        match self {
-            Self::Streaming => 0,
-            Self::Done => 1,
-            Self::Error => 2,
-            Self::PendingPermission => 3,
-            Self::Queued => 4,
-            Self::Running => 5,
-            Self::Succeeded => 6,
-            Self::Failed => 7,
-            Self::UserMarker => 8,
-            Self::ToolMarker => 9,
-            Self::CardTop => 10,
-            Self::CardMid => 11,
-            Self::CardBottom => 12,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum BorderRole {
-    None,
-    Subtle,
-    Strong,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SemanticKind {
+    Palette,
+    Glyph,
+    Border,
     Focus,
 }
 
-impl BorderRole {
-    pub const ALL: [Self; 4] = [Self::None, Self::Subtle, Self::Strong, Self::Focus];
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case", tag = "kind", content = "role")]
+pub enum SemanticRole {
+    Palette(ColorRole),
+    Glyph(GlyphRole),
+    Border(BorderRole),
+    Focus(FocusRole),
+}
 
-    pub(crate) const fn index(self) -> usize {
+impl SemanticRole {
+    pub fn kind(&self) -> SemanticKind {
         match self {
-            Self::None => 0,
-            Self::Subtle => 1,
-            Self::Strong => 2,
-            Self::Focus => 3,
+            Self::Palette(_) => SemanticKind::Palette,
+            Self::Glyph(_) => SemanticKind::Glyph,
+            Self::Border(_) => SemanticKind::Border,
+            Self::Focus(_) => SemanticKind::Focus,
+        }
+    }
+
+    pub fn all() -> Vec<Self> {
+        ColorRole::ALL
+            .into_iter()
+            .map(Self::Palette)
+            .chain(GlyphRole::ALL.into_iter().map(Self::Glyph))
+            .chain(BorderRole::ALL.into_iter().map(Self::Border))
+            .chain(FocusRole::ALL.into_iter().map(Self::Focus))
+            .collect()
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Palette(role) => match role {
+                ColorRole::Canvas => "palette:canvas",
+                ColorRole::Shell => "palette:shell",
+                ColorRole::Panel => "palette:panel",
+                ColorRole::PanelElevated => "palette:panel_elevated",
+                ColorRole::Overlay => "palette:overlay",
+                ColorRole::Card => "palette:card",
+                ColorRole::SelectedCard => "palette:selected_card",
+                ColorRole::BorderSubtle => "palette:border_subtle",
+                ColorRole::BorderStrong => "palette:border_strong",
+                ColorRole::BorderFocus => "palette:border_focus",
+                ColorRole::TextPrimary => "palette:text_primary",
+                ColorRole::TextSecondary => "palette:text_secondary",
+                ColorRole::TextTertiary => "palette:text_tertiary",
+                ColorRole::TextAccent => "palette:text_accent",
+                ColorRole::TextInverse => "palette:text_inverse",
+                ColorRole::StatusSuccess => "palette:status_success",
+                ColorRole::StatusWarning => "palette:status_warning",
+                ColorRole::StatusError => "palette:status_error",
+                ColorRole::StatusInfo => "palette:status_info",
+                ColorRole::StatusDisabled => "palette:status_disabled",
+                ColorRole::QuestionSurface => "palette:question_surface",
+                ColorRole::QuestionSelected => "palette:question_selected",
+                ColorRole::QuestionPrimary => "palette:question_primary",
+                ColorRole::QuestionAccent => "palette:question_accent",
+                ColorRole::QuestionSecondary => "palette:question_secondary",
+                ColorRole::AgentBuild => "palette:agent_build",
+                ColorRole::AgentPlan => "palette:agent_plan",
+                ColorRole::AgentDocs => "palette:agent_docs",
+                ColorRole::AgentAsk => "palette:agent_ask",
+                ColorRole::TerminalPrimary => "palette:terminal_primary",
+                ColorRole::TerminalSecondary => "palette:terminal_secondary",
+                ColorRole::TerminalMuted => "palette:terminal_muted",
+                ColorRole::TerminalError => "palette:terminal_error",
+                ColorRole::TerminalPaletteSection => "palette:terminal_palette_section",
+                ColorRole::TerminalForkAccent => "palette:terminal_fork_accent",
+                ColorRole::DiffAdded => "palette:diff_added",
+                ColorRole::DiffRemoved => "palette:diff_removed",
+                ColorRole::DiffAddedGutter => "palette:diff_added_gutter",
+                ColorRole::DiffRemovedGutter => "palette:diff_removed_gutter",
+                ColorRole::DiffAddedHighlight => "palette:diff_added_highlight",
+                ColorRole::DiffRemovedHighlight => "palette:diff_removed_highlight",
+                ColorRole::DiffHunkHeader => "palette:diff_hunk_header",
+            },
+            Self::Glyph(role) => match role {
+                GlyphRole::Streaming => "glyph:streaming",
+                GlyphRole::Done => "glyph:done",
+                GlyphRole::Error => "glyph:error",
+                GlyphRole::PendingPermission => "glyph:pending_permission",
+                GlyphRole::Queued => "glyph:queued",
+                GlyphRole::Running => "glyph:running",
+                GlyphRole::Succeeded => "glyph:succeeded",
+                GlyphRole::Failed => "glyph:failed",
+                GlyphRole::UserMarker => "glyph:user_marker",
+                GlyphRole::ToolMarker => "glyph:tool_marker",
+                GlyphRole::CardTop => "glyph:card_top",
+                GlyphRole::CardMiddle => "glyph:card_middle",
+                GlyphRole::CardBottom => "glyph:card_bottom",
+            },
+            Self::Border(role) => match role {
+                BorderRole::None => "border:none",
+                BorderRole::Subtle => "border:subtle",
+                BorderRole::Strong => "border:strong",
+                BorderRole::Focus => "border:focus",
+            },
+            Self::Focus(role) => match role {
+                FocusRole::Panel => "focus:panel",
+                FocusRole::SelectedRow => "focus:selected_row",
+                FocusRole::Cursor => "focus:cursor",
+                FocusRole::Permission => "focus:permission",
+                FocusRole::Question => "focus:question",
+            },
         }
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum FocusRole {
-    Focused,
-    Unfocused,
-    Selected,
-    Hovered,
-    Disabled,
-}
-
-impl FocusRole {
-    pub const ALL: [Self; 5] = [
-        Self::Focused,
-        Self::Unfocused,
-        Self::Selected,
-        Self::Hovered,
-        Self::Disabled,
-    ];
-    pub(crate) const fn index(self) -> usize {
-        match self {
-            Self::Focused => 0,
-            Self::Unfocused => 1,
-            Self::Selected => 2,
-            Self::Hovered => 3,
-            Self::Disabled => 4,
-        }
+impl std::fmt::Display for SemanticRole {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.label())
     }
 }
-
-pub use super::bindings::{
-    DiffColors, LifecycleColors, LifecyclePalette, LifecycleState, MediaColors, PermissionColors,
-    SelectionColors, SemanticThemeColors, ToolColors,
-};
-pub use super::focus::{BorderPalette, FocusPalette, FocusStyle};
-pub use super::glyphs::GlyphPalette;
-pub use super::palette::Palette;

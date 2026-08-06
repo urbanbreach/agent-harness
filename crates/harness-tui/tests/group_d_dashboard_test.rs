@@ -47,7 +47,7 @@ fn resolve_session_status_dashboard_names_real_backend_owner() {
     let res = resolve("tui.session_status_dashboard").expect("must resolve");
     assert_eq!(res.capability_id, "tui.session_status_dashboard");
     assert_eq!(res.backend_owner, "crates/harness-tui/src/app.rs");
-    assert_eq!(res.availability, ActionAvailability::Unwired);
+    assert_eq!(res.availability, ActionAvailability::Available);
 }
 
 /// Unavailable backend: resolve returns None for unknown capability.

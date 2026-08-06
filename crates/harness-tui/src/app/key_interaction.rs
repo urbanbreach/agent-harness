@@ -12,6 +12,11 @@ impl AppState {
             return;
         }
 
+        if self.replay_mode && matches!(key.code, KeyCode::Tab | KeyCode::BackTab) {
+            self.focus = Focus::Details;
+            return;
+        }
+
         if self.keymap.leader_pending() {
             self.keymap.set_leader_pending(false);
             if let Some(action) = self.keymap.leader_action(&key) {
@@ -50,8 +55,8 @@ impl AppState {
         if self.overlay_stack().top() == Some(OverlayKind::StatusDialog) {
             if key.code == KeyCode::Char('q') && key.modifiers == KeyModifiers::CONTROL {
                 self.execute_action(Action::Quit);
-            } else if key.code == KeyCode::Esc {
-                self.secondary_surfaces.close_status_dialog();
+            } else {
+                self.handle_status_dashboard_key(key);
             }
             self.maybe_auto_exit();
             return;
@@ -107,6 +112,34 @@ impl AppState {
 
         if self.overlay_stack().top() == Some(OverlayKind::ForeignImportPicker) {
             self.handle_foreign_import_picker_key(&key);
+            self.maybe_auto_exit();
+            return;
+        }
+
+        if self.composer_completion_active() {
+            match key.code {
+                KeyCode::Esc => self.composer_cancel_completion(),
+                KeyCode::Up => self.composer_move_completion(
+                    crate::completion_controller::SelectionDirection::Previous,
+                ),
+                KeyCode::Down => self.composer_move_completion(
+                    crate::completion_controller::SelectionDirection::Next,
+                ),
+                KeyCode::Enter => {
+                    let _ = self.composer_accept_completion_keyboard();
+                }
+                _ => {}
+            }
+            if matches!(
+                key.code,
+                KeyCode::Esc | KeyCode::Up | KeyCode::Down | KeyCode::Enter
+            ) {
+                self.maybe_auto_exit();
+                return;
+            }
+        }
+
+        if self.handle_transcript_viewer_key(key) {
             self.maybe_auto_exit();
             return;
         }
@@ -192,6 +225,15 @@ impl AppState {
         }
 
         if self.focus == Focus::Prompt && self.handle_prompt_transcript_scroll_key(key) {
+            self.maybe_auto_exit();
+            return;
+        }
+
+        if self.focus == Focus::Prompt
+            && key.modifiers == KeyModifiers::CONTROL
+            && key.code == KeyCode::Char('j')
+        {
+            self.execute_action(Action::InsertNewline);
             self.maybe_auto_exit();
             return;
         }
@@ -430,11 +472,7 @@ impl AppState {
     fn cycle_focus_forward(&mut self) {
         if self.replay_mode {
             if !self.session_shell_operator_rail_interactive() {
-                self.focus = if self.focus == Focus::Details && self.terminal_panel_visible() {
-                    Focus::Terminal
-                } else {
-                    Focus::Details
-                };
+                self.focus = Focus::Details;
                 return;
             }
 
@@ -803,6 +841,12 @@ impl AppState {
                     return;
                 }
                 Action::CursorLeft => {
+                    if self.composer.parity_editing_ready()
+                        && self.composer.parity_move_left().is_ok()
+                    {
+                        self.sync_file_mention_overlay();
+                        return;
+                    }
                     if self.composer.prompt_cursor > 0 {
                         self.composer.prompt_cursor -= 1;
                     }
@@ -811,6 +855,12 @@ impl AppState {
                     return;
                 }
                 Action::CursorRight => {
+                    if self.composer.parity_editing_ready()
+                        && self.composer.parity_move_right().is_ok()
+                    {
+                        self.sync_file_mention_overlay();
+                        return;
+                    }
                     if self.composer.prompt_cursor < self.prompt_char_count() {
                         self.composer.prompt_cursor += 1;
                     }
@@ -978,13 +1028,10 @@ impl AppState {
                 }
             }
             Action::ToggleFollow => {
-                self.transcript_view.follow_mode = !self.transcript_view.follow_mode;
-                if self.transcript_view.follow_mode {
-                    self.transcript_view.transcript_scroll = 0;
-                }
+                self.set_transcript_following(!self.transcript_following());
             }
             Action::OpenStatusDialog => {
-                self.secondary_surfaces.open_status_dialog();
+                self.open_status_dashboard();
             }
             Action::CloseReviewSurface if self.focus != Focus::Prompt => {
                 self.close_review_surface();
@@ -1074,7 +1121,11 @@ impl AppState {
                 }
             }
             Action::FocusNext => {
-                self.cycle_focus_forward();
+                if self.replay_mode && !self.session_shell_operator_rail_interactive() {
+                    self.focus = Focus::Details;
+                } else {
+                    self.cycle_focus_forward();
+                }
             }
             Action::FocusPrev => {
                 self.cycle_focus_backward();
@@ -1095,7 +1146,9 @@ impl AppState {
                 }
             }
             Action::FirstMessage | Action::MoveBufferStart => {
-                if !self.activities.is_empty() {
+                if self.transcript_view_model().is_some() {
+                    let _ = self.select_transcript_turn_at(0);
+                } else if !self.activities.is_empty() {
                     self.transcript_view.selected_activity_index = 0;
                     self.transcript_view.follow_mode = false;
                     self.details_scroll = 0;
@@ -1103,7 +1156,12 @@ impl AppState {
                 }
             }
             Action::LastMessage | Action::MoveBufferEnd => {
-                if !self.activities.is_empty() {
+                if let Some(last) = self
+                    .transcript_view_model()
+                    .map(|view| view.turns.len().saturating_sub(1))
+                {
+                    let _ = self.select_transcript_turn_at(last);
+                } else if !self.activities.is_empty() {
                     self.transcript_view.selected_activity_index =
                         self.activities.len().saturating_sub(1);
                     self.transcript_view.follow_mode = true;
@@ -1112,7 +1170,13 @@ impl AppState {
                 }
             }
             Action::NextMessage => {
-                if !self.activities.is_empty()
+                if self.transcript_view_model().is_some() {
+                    let next = self
+                        .transcript_view
+                        .selected_activity_index
+                        .saturating_add(1);
+                    let _ = self.select_transcript_turn_at(next);
+                } else if !self.activities.is_empty()
                     && self.transcript_view.selected_activity_index
                         < self.activities.len().saturating_sub(1)
                 {
@@ -1123,7 +1187,13 @@ impl AppState {
                 }
             }
             Action::PreviousMessage => {
-                if self.transcript_view.selected_activity_index > 0 {
+                if self.transcript_view_model().is_some() {
+                    let previous = self
+                        .transcript_view
+                        .selected_activity_index
+                        .saturating_sub(1);
+                    let _ = self.select_transcript_turn_at(previous);
+                } else if self.transcript_view.selected_activity_index > 0 {
                     self.transcript_view.selected_activity_index -= 1;
                     self.transcript_view.follow_mode = false;
                     self.details_scroll = 0;
@@ -1430,8 +1500,13 @@ impl AppState {
             return false;
         }
 
-        if let Some(action) = self.keymap.get_session_action(&key) {
-            self.execute_action(action);
+        if key.modifiers == KeyModifiers::NONE
+            && matches!(
+                key.code,
+                KeyCode::Char('f') | KeyCode::Char('F') | KeyCode::Char('s') | KeyCode::Char('S')
+            )
+            && self.handle_transcript_timeline_key(key)
+        {
             return true;
         }
 
@@ -1440,15 +1515,20 @@ impl AppState {
         if key.modifiers == KeyModifiers::SHIFT {
             return match key.code {
                 KeyCode::Left => {
-                    self.previous_activity();
+                    self.execute_action(Action::PreviousMessage);
                     true
                 }
                 KeyCode::Right => {
-                    self.next_activity();
+                    self.execute_action(Action::NextMessage);
                     true
                 }
                 _ => false,
             };
+        }
+
+        if let Some(action) = self.keymap.get_session_action(&key) {
+            self.execute_action(action);
+            return true;
         }
 
         if key.modifiers != KeyModifiers::NONE {
@@ -1456,6 +1536,7 @@ impl AppState {
         }
 
         match key.code {
+            KeyCode::Char('v') | KeyCode::Char('V') => self.open_selected_transcript_viewer(),
             KeyCode::PageUp => {
                 self.scroll_transcript_up(10);
                 true
@@ -1465,14 +1546,22 @@ impl AppState {
                 true
             }
             KeyCode::Home => {
-                self.transcript_view.follow_mode = false;
-                self.transcript_view.transcript_scroll =
-                    self.transcript_view.last_transcript_max_scroll.get();
+                if let Some(composite) = self.transcript_integration.as_mut() {
+                    let _ = composite.jump_to_top();
+                } else {
+                    self.transcript_view.follow_mode = false;
+                    self.transcript_view.transcript_scroll =
+                        self.transcript_view.last_transcript_max_scroll.get();
+                }
                 true
             }
             KeyCode::End => {
-                self.transcript_view.follow_mode = true;
-                self.transcript_view.transcript_scroll = 0;
+                if let Some(composite) = self.transcript_integration.as_mut() {
+                    let _ = composite.jump_to_bottom();
+                } else {
+                    self.transcript_view.follow_mode = true;
+                    self.transcript_view.transcript_scroll = 0;
+                }
                 true
             }
             _ => false,
@@ -1487,7 +1576,7 @@ fn action_preempts_text_input(action: Action, _key: KeyEvent) -> bool {
             | Action::SessionChildCycleReverse
             | Action::ToggleTerminalPanel
             | Action::TogglePromptFocus
-    )
+    ) && !matches!(_key.code, KeyCode::Char(' '))
 }
 
 #[cfg(test)]
