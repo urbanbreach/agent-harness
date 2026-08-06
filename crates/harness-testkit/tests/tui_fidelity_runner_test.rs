@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use harness_testkit::parity::semantic_frame_from_vt100_screen;
 use harness_testkit::tui_fidelity::{CheckpointError, CheckpointName, Scenario, ScenarioError};
-use harness_testkit::tui_fidelity_runner::{run_compare, RunnerError};
+use harness_testkit::tui_fidelity_runner::{RunnerError, run_compare};
 
 use support::{Fixture, STARTUP_SMOKE};
 
@@ -154,6 +154,21 @@ fn compare_rejects_timeout_premature_exit_and_forced_kill_completion() {
         run_compare(&scenario, &forced.config).expect_err("forced kill cannot pass"),
         RunnerError::ForcedKillOnly { .. }
     ));
+    let timeline: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(forced.config.evidence_dir.join("grok/action-timeline.json"))
+            .expect("forced Grok action timeline"),
+    )
+    .expect("forced Grok action timeline JSON");
+    assert_eq!(timeline["phase"], "normal_exit_waiting");
+    assert_eq!(timeline["actions"][8]["bytes_hex"], "15");
+    assert_eq!(timeline["actions"][9]["bytes_hex"], "2f657869740d");
+    assert!(
+        forced
+            .config
+            .evidence_dir
+            .join("grok/terminal-ansi.txt")
+            .is_file()
+    );
 }
 
 #[test]
