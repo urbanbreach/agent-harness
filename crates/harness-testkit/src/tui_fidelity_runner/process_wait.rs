@@ -17,11 +17,12 @@ enum FrameReadiness {
     Prompt,
 }
 
-fn prompt_is_ready(adapter: AdapterKind, screen: &str) -> bool {
+fn prompt_is_ready(adapter: AdapterKind, screen: &str, stream: &[u8]) -> bool {
     screen.contains('❯')
         && match adapter {
             AdapterKind::Grok => {
-                !screen.contains("Grok Build")
+                let identity_seen = String::from_utf8_lossy(stream).contains("Grok Build");
+                !identity_seen
                     || (screen.contains("Grok Build") && !screen.contains("Starting session"))
             }
             AdapterKind::Harness => true,
@@ -162,7 +163,7 @@ fn wait_for_stable_frame(
         let screen = parser.screen().contents();
         let ready = match readiness {
             FrameReadiness::Visible => !screen.trim().is_empty(),
-            FrameReadiness::Prompt => prompt_is_ready(adapter, &screen),
+            FrameReadiness::Prompt => prompt_is_ready(adapter, &screen, stream),
         };
         if ready {
             if previous.as_deref() == Some(screen.as_str()) {
@@ -243,11 +244,14 @@ mod tests {
     fn grok_welcome_prompt_waits_for_startup_footer() {
         assert!(!prompt_is_ready(
             AdapterKind::Grok,
-            "Grok Build Beta  0.2.114\n❯\nStarting session…"
+            "Grok Build Beta  0.2.114\n❯\nStarting session…",
+            b"Grok Build"
         ));
         assert!(prompt_is_ready(
             AdapterKind::Grok,
-            "Grok Build Beta  0.2.114\n❯\nChangelog"
+            "Grok Build Beta  0.2.114\n❯\nChangelog",
+            b"Grok Build"
         ));
+        assert!(prompt_is_ready(AdapterKind::Grok, "fixture\n❯", b"fixture"));
     }
 }
