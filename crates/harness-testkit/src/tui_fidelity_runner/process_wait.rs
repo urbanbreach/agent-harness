@@ -17,13 +17,20 @@ enum FrameReadiness {
     Prompt,
 }
 
-fn prompt_is_ready(adapter: AdapterKind, screen: &str, stream: &[u8]) -> bool {
+fn prompt_is_ready(
+    adapter: AdapterKind,
+    screen: &str,
+    stream: &[u8],
+    require_grok_identity: bool,
+) -> bool {
     screen.contains('❯')
         && match adapter {
             AdapterKind::Grok => {
                 let identity_seen = String::from_utf8_lossy(stream).contains("Grok Build");
-                !identity_seen
-                    || (screen.contains("Grok Build") && !screen.contains("Starting session"))
+                !require_grok_identity
+                    || (identity_seen
+                        && screen.contains("Grok Build")
+                        && !screen.contains("Starting session"))
             }
             AdapterKind::Harness => true,
         }
@@ -96,6 +103,7 @@ pub(super) fn wait_for_visible_stable_frame(
         observed,
         pid,
         FrameReadiness::Visible,
+        false,
     )
 }
 
@@ -112,6 +120,7 @@ pub(super) fn wait_for_prompt_ready(
     stream: &mut Vec<u8>,
     observed: &mut BTreeSet<u32>,
     pid: u32,
+    require_grok_identity: bool,
 ) -> Result<(), RunnerError> {
     wait_for_stable_frame(
         viewport,
@@ -123,6 +132,7 @@ pub(super) fn wait_for_prompt_ready(
         observed,
         pid,
         FrameReadiness::Prompt,
+        require_grok_identity,
     )
 }
 
@@ -140,6 +150,7 @@ fn wait_for_stable_frame(
     observed: &mut BTreeSet<u32>,
     pid: u32,
     readiness: FrameReadiness,
+    require_grok_identity: bool,
 ) -> Result<(), RunnerError> {
     let mut previous = None;
     let mut stable_polls = 0_u8;
@@ -163,7 +174,9 @@ fn wait_for_stable_frame(
         let screen = parser.screen().contents();
         let ready = match readiness {
             FrameReadiness::Visible => !screen.trim().is_empty(),
-            FrameReadiness::Prompt => prompt_is_ready(adapter, &screen, stream),
+            FrameReadiness::Prompt => {
+                prompt_is_ready(adapter, &screen, stream, require_grok_identity)
+            }
         };
         if ready {
             if previous.as_deref() == Some(screen.as_str()) {
@@ -245,13 +258,20 @@ mod tests {
         assert!(!prompt_is_ready(
             AdapterKind::Grok,
             "Grok Build Beta  0.2.114\n❯\nStarting session…",
-            b"Grok Build"
+            b"Grok Build",
+            true
         ));
         assert!(prompt_is_ready(
             AdapterKind::Grok,
             "Grok Build Beta  0.2.114\n❯\nChangelog",
-            b"Grok Build"
+            b"Grok Build",
+            true
         ));
-        assert!(prompt_is_ready(AdapterKind::Grok, "fixture\n❯", b"fixture"));
+        assert!(prompt_is_ready(
+            AdapterKind::Grok,
+            "fixture\n❯",
+            b"fixture",
+            false
+        ));
     }
 }

@@ -116,6 +116,7 @@ pub(super) fn execute(
             &mut stream,
             observed,
             pid,
+            adapter == AdapterKind::Grok && binary.source_revision != "reference-revision",
         )?;
         lifecycle_phase = "prompt_ready";
         let start = Instant::now();
