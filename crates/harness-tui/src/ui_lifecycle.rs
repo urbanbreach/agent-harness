@@ -28,7 +28,7 @@ const WELCOME_PANEL_INSET_X: u16 = 3;
 const WELCOME_PANEL_TOP_PAD: u16 = 4;
 const WELCOME_PANEL_HEIGHT: u16 = 16;
 const STARTUP_CLIPBOARD_WARNING: &str = "Clipboard may be unreachable.";
-const STARTUP_CLIPBOARD_SETUP_HINT: &str = "See /terminal-setup for potential fixes.";
+const STARTUP_CLIPBOARD_SETUP_HINT: &str = "Run /doctor for details and fixes.";
 const WELCOME_LOGO_WIDTH: usize = 14;
 const WELCOME_TEXT_COL: usize = 19;
 // Body height at 100x30≈24 / 120x32≈26; width 90 drops 80x24 (shell≈76).

@@ -113,6 +113,18 @@ impl TerminalCapabilityState {
     }
 }
 
+pub(crate) fn apply_startup_capability_notice(
+    app: &mut AppState,
+    capabilities: TerminalCapabilityState,
+) {
+    if app.startup_shell_visible()
+        && !capabilities.osc52_clipboard
+        && app.status_banner.is_none()
+    {
+        app.set_status_banner(Some("Clipboard may be unreachable.".to_owned()));
+    }
+}
+
 fn truecolor_from_colorterm(value: Option<&str>) -> bool {
     value
         .map(str::to_ascii_lowercase)
@@ -449,6 +461,8 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
             capabilities.bracketed_paste,
         );
     }
+
+    apply_startup_capability_notice(&mut app, capabilities);
 
     app.set_color_level(crate::theme::detect_color_level(
         std::env::var("NO_COLOR").ok().as_deref(),
