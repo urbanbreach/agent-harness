@@ -170,7 +170,7 @@ fn render_startup_clipboard_warning(frame: &mut Frame, app: &AppState, area: Rec
         let row = Rect::new(
             area.x,
             area.y
-                .saturating_add(5)
+                .saturating_add(if startup_welcome_loading(app) { 5 } else { 3 })
                 .saturating_add(u16::try_from(offset).unwrap_or(0)),
             area.width,
             1,

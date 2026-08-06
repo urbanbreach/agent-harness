@@ -100,6 +100,32 @@ pub(super) fn startup_surface_projects_clipboard_capability() {
         Some(6)
     );
     assert!(ready.content.iter().any(|cell| cell.symbol().contains('•')));
+    let ready_warning_row = ready_rows
+        .iter()
+        .position(|row| {
+            row.iter()
+                .map(|cell| cell.symbol())
+                .collect::<String>()
+                .contains("Clipboard")
+        })
+        .unwrap_or_else(|| {
+            let rows = ready_rows
+                .iter()
+                .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+                .collect::<Vec<_>>();
+            panic!("ready warning missing: {rows:?}")
+        });
+    let ready_hint_row = ready_rows
+        .iter()
+        .position(|row| {
+            row.iter()
+                .map(|cell| cell.symbol())
+                .collect::<String>()
+                .contains("doctor")
+        })
+        .unwrap_or_else(|| panic!("ready hint missing: {ready_rows:?}"));
+    assert_eq!(ready_warning_row + 1, ready_hint_row);
+    assert!(ready_hint_row < 6);
 }
 
 pub(super) fn startup_typing_moves_to_quick_start_prompt() {
