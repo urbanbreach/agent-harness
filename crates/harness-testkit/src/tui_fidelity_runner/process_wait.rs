@@ -198,18 +198,29 @@ fn wait_for_stable_frame(
 
 pub(super) fn request_normal_exit(
     adapter: AdapterKind,
+    viewport: Viewport,
     writer: &mut dyn Write,
     child: &mut PtyChild,
+    output: &Receiver<Vec<u8>>,
+    stream: &mut Vec<u8>,
     deadline: Instant,
     pid: u32,
     observed: &mut BTreeSet<u32>,
     active: bool,
 ) -> Result<Option<i32>, RunnerError> {
-    for step in normal_exit_steps_for_state(adapter, active) {
+    for (index, step) in normal_exit_steps_for_state(adapter, active)
+        .iter()
+        .enumerate()
+    {
         writer
             .write_all(step.bytes)
             .and_then(|()| writer.flush())
             .map_err(|error| process_error(adapter, "request normal exit", error))?;
+        if active && index == 0 {
+            wait_for_prompt_ready(
+                viewport, deadline, adapter, child, output, stream, observed, pid, true,
+            )?;
+        }
         let step_deadline = std::cmp::min(deadline, Instant::now() + step.dwell);
         loop {
             collect_descendants(pid, observed);

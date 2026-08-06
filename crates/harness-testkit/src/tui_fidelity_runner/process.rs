@@ -189,8 +189,11 @@ pub(super) fn execute(
         action_timeline.extend(super::actions::normal_exit_timeline(adapter, active));
         let stepped_exit = request_normal_exit(
             adapter,
+            scenario.viewport,
             writer.as_mut(),
             child,
+            &output,
+            &mut stream,
             exit_deadline,
             pid,
             observed,
