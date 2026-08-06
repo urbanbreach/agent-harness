@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::tui_fidelity_matrix::{CoverageManifest, RequirementInventory};
 use crate::tui_fidelity_obligation::{
-    deduplicate_obligations, CaptureKey, ObligationType, VerificationKey,
+    CaptureKey, ObligationType, VerificationKey, deduplicate_obligations,
 };
 use crate::tui_fidelity_scheduler::{BoundedScheduler, SchedulerError, SchedulerReport};
 use crate::tui_fidelity_staging::{AttemptPolicy, JobIsolation, StagingArea, StagingError};
@@ -87,8 +87,16 @@ pub struct VerifyConfig {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VerificationStatus {
+    Passed,
+    Failed,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VerificationReceipt {
     pub schema_version: String,
+    pub status: VerificationStatus,
     pub profile: VerificationProfile,
     pub candidate_sha: String,
     pub obligation_count: usize,
@@ -185,55 +193,64 @@ where
         BoundedScheduler::new,
     )?;
     let scheduler_report = scheduler.run(&plan.keys, &staging, execute)?;
-    if scheduler_report.failed > 0 || scheduler_report.cancelled > 0 {
-        return Err(VerifyError::Invalid(format!(
-            "{} failed and {} cancelled verification keys",
-            scheduler_report.failed, scheduler_report.cancelled
-        )));
-    }
-    if started.elapsed() > plan.profile.deadline() {
-        return Err(VerifyError::Invalid(format!(
-            "profile {:?} exceeded {} seconds",
-            plan.profile,
-            plan.profile.deadline().as_secs()
-        )));
-    }
     let key_count = plan.keys.len();
     let obligation_count = plan.obligation_count;
     let profile = plan.profile;
     let candidate_sha = config.candidate_sha.clone();
-    let evidence_path = if profile == VerificationProfile::All {
-        staging.sealed_path()?
-    } else {
-        staging.path().to_path_buf()
-    };
-    let receipt = VerificationReceipt {
+    let receipt_path = staging.path().join("verification-receipt.json");
+    let mut receipt = VerificationReceipt {
         schema_version: "harness.tui-fidelity.verification.v1".to_owned(),
+        status: VerificationStatus::Passed,
         profile,
         candidate_sha,
         obligation_count,
         key_count,
         duration_millis: started.elapsed().as_millis(),
         scheduler: scheduler_report,
-        evidence_path: evidence_path.display().to_string(),
-        sealed: profile == VerificationProfile::All,
+        evidence_path: staging.path().display().to_string(),
+        sealed: false,
     };
-    let receipt_path = staging.path().join("verification-receipt.json");
-    let bytes = serde_json::to_vec_pretty(&receipt)
-        .map_err(|error| VerifyError::Json(error.to_string()))?;
-    std::fs::write(&receipt_path, bytes).map_err(|error| VerifyError::Io {
-        path: receipt_path,
-        detail: error.to_string(),
-    })?;
+    if receipt.scheduler.failed > 0 || receipt.scheduler.cancelled > 0 {
+        receipt.status = VerificationStatus::Failed;
+        write_receipt(&receipt_path, &receipt)?;
+        return Err(VerifyError::Invalid(format!(
+            "{} failed and {} cancelled verification keys",
+            receipt.scheduler.failed, receipt.scheduler.cancelled
+        )));
+    }
+    if started.elapsed() > profile.deadline() {
+        receipt.status = VerificationStatus::Failed;
+        write_receipt(&receipt_path, &receipt)?;
+        return Err(VerifyError::Invalid(format!(
+            "profile {:?} exceeded {} seconds",
+            profile,
+            profile.deadline().as_secs()
+        )));
+    }
     if profile == VerificationProfile::All {
-        let published = staging.seal()?;
-        if published != evidence_path {
+        let published = staging.sealed_path()?;
+        receipt.evidence_path = published.display().to_string();
+        receipt.sealed = true;
+        write_receipt(&receipt_path, &receipt)?;
+        let actual = staging.seal()?;
+        if actual != published {
             return Err(VerifyError::Invalid(
                 "sealed evidence path differs from receipt".to_owned(),
             ));
         }
+    } else {
+        write_receipt(&receipt_path, &receipt)?;
     }
     Ok(receipt)
+}
+
+fn write_receipt(path: &Path, receipt: &VerificationReceipt) -> Result<(), VerifyError> {
+    let bytes =
+        serde_json::to_vec_pretty(receipt).map_err(|error| VerifyError::Json(error.to_string()))?;
+    std::fs::write(path, bytes).map_err(|error| VerifyError::Io {
+        path: path.to_path_buf(),
+        detail: error.to_string(),
+    })
 }
 
 fn motion_requirements(

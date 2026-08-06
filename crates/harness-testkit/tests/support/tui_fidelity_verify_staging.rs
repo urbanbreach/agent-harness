@@ -4,7 +4,7 @@ use std::sync::Arc;
 use harness_testkit::tui_fidelity_scheduler::BoundedScheduler;
 use harness_testkit::tui_fidelity_staging::{AttemptPolicy, KeyState, StagingArea};
 use harness_testkit::tui_fidelity_verify::{
-    build_plan, execute_plan, PlanSelection, VerificationProfile, VerifyConfig,
+    PlanSelection, VerificationProfile, VerifyConfig, build_plan, execute_plan,
 };
 
 use super::fixture::{synthetic_fixture, synthetic_keys};
@@ -160,9 +160,10 @@ fn scheduler_executes_each_deduplicated_key_once_with_bounded_isolation() {
     // Then: exactly three jobs passed and no key executed twice.
     assert_eq!(report.passed, 3);
     assert_eq!(executed.lock().expect("executed keys").len(), 3);
-    assert!(keys
-        .iter()
-        .all(|key| staging.state(key).expect("key state") == KeyState::Passed));
+    assert!(
+        keys.iter()
+            .all(|key| staging.state(key).expect("key state") == KeyState::Passed)
+    );
 }
 
 #[test]
@@ -212,4 +213,52 @@ fn synthetic_fixture_executes_and_publishes_each_profile() {
         assert_eq!(receipt.sealed, profile == VerificationProfile::All);
         assert!(std::path::Path::new(&receipt.evidence_path).is_dir());
     }
+}
+
+#[test]
+fn failed_development_plan_publishes_fail_closed_receipt_before_returning_error() {
+    // Given: a development plan whose first verification key fails and cancels the rest.
+    let (inventory, manifest) = synthetic_fixture();
+    let selected = inventory
+        .requirements
+        .iter()
+        .map(|requirement| requirement.id.clone())
+        .collect::<BTreeSet<_>>();
+    let plan = build_plan(
+        PlanSelection {
+            profile: VerificationProfile::Changed,
+            changed: Some(&selected),
+        },
+        &inventory,
+        &manifest,
+    )
+    .expect("changed plan");
+    let root = tempfile::tempdir().expect("failure evidence");
+
+    // When: execution fails before all required keys can run.
+    let error = execute_plan(
+        &VerifyConfig {
+            candidate_sha: "e".repeat(40),
+            attempt_id: "failed-attempt".to_owned(),
+            evidence_root: root.path().to_path_buf(),
+            workers: Some(1),
+        },
+        &plan,
+        |_key, _isolation| Err("forced verification failure".to_owned()),
+    )
+    .expect_err("failed plan must not report success");
+
+    // Then: the failed state is durable and names the cancelled required work.
+    assert!(error.to_string().contains("failed and"));
+    let staging_root = root
+        .path()
+        .join(format!("staging-{}-failed-attempt", "e".repeat(40)));
+    let receipt_path = staging_root.join("verification-receipt.json");
+    assert!(receipt_path.is_file(), "failed plan must publish a receipt");
+    let receipt: harness_testkit::tui_fidelity_verify::VerificationReceipt =
+        serde_json::from_slice(&std::fs::read(receipt_path).expect("failure receipt"))
+            .expect("failure receipt JSON");
+    assert_eq!(receipt.scheduler.failed, 1);
+    assert_eq!(receipt.scheduler.cancelled, 2);
+    assert!(!receipt.sealed);
 }
