@@ -257,6 +257,60 @@ Evidence owners are final comparison boards `05`, `12`, and `14`–`16`, plus `q
 
 The observation receipt is `crates/harness-tui/tests/fixtures/harness-chat-rgb-observations.json`; the final source inventory records the additional GrokNight roles traced directly from the pinned source and synchronized captures.
 
+### Default `harness-chat` role mapping
+
+`Theme::harness_chat()` constructs this palette directly rather than inheriting
+from `harness-dark`. The mapping is locked exhaustively by
+`harness_chat_maps_every_visible_palette_role_to_groknight_truecolor` and
+`harness_chat_maps_terminal_and_diff_roles_to_groknight_truecolor`.
+
+| Harness role | GrokNight role | Truecolor |
+|---|---|---|
+| `surface.canvas`, `surface.shell`, `surface.panel`, `surface.overlay` | `bg_base` | `#141414` |
+| `surface.panel_elevated` | `bg_dark` | `#1c1c1c` |
+| `surface.card` | `bg_highlight` | `#242424` |
+| `surface.selected_card` | pinned selected user surface | `#555753` |
+| `border.subtle` | `prompt_border` | `#323237` |
+| `border.strong` | `selection_border` | `#3c3c41` |
+| `border.focus` | `prompt_border_active` | `#505058` |
+| `text.primary` | `text_primary` | `#e1e1e1` |
+| `text.secondary` | `gray` | `#6c6c6c` |
+| `text.tertiary` | `gray_dim` | `#585858` |
+| `text.accent` | `accent_thinking` | `#bb9af7` |
+| `text.inverse` | `bg_base` | `#141414` |
+| `question.surface` | `bg_highlight` | `#242424` |
+| `question.selected` | `bg_visual` | `#363636` |
+| `question.primary` | `text_primary` | `#e1e1e1` |
+| `question.accent` | `accent_user` | `#c8c8c8` |
+| `question.secondary` | `gray` | `#6c6c6c` |
+| `status.success` | `accent_success` | `#9ece6a` |
+| `status.warning` | `warning` | `#e0af68` |
+| `status.error` | `accent_error` | `#f7768e` |
+| `status.info` | `running` | `#7dcfff` |
+| `status.disabled` | `gray_dim` | `#585858` |
+| `markdown.heading` | `md_heading_h1` | `#1abc9c` |
+| `markdown.link` | `accent_system` | `#7aa2f7` |
+| `markdown.link_text` | `link_fg` | `#7aa6da` |
+| `markdown.code` | `md_code` | `#3a95ab` |
+| `markdown.emph`, `markdown.strong` | `md_text` | `#c8c8c8` |
+| `markdown.block_quote`, `markdown.list_item`, `markdown.list_enum`, `markdown.rule` | `md_muted` | `#6c6c6c` |
+| `agent.build` | `accent_system` | `#7aa2f7` |
+| `agent.plan` | `accent_verify` | `#bb9af7` |
+| `agent.docs` | `warning` | `#e0af68` |
+| `agent.ask` | `running` | `#7dcfff` |
+| `scrollbar.track` | `scrollbar_bg` | `#111111` |
+| `scrollbar.thumb` | `scrollbar_fg` | `#242424` |
+| `scrollbar.thumb_active` | `prompt_border_active` | `#505058` |
+| `reference_terminal.diff_added`, `diff_added_gutter` | `diff_insert_bg` | `#063806` |
+| `reference_terminal.diff_removed`, `diff_removed_gutter` | `diff_delete_bg` | `#420e14` |
+| `reference_terminal.diff_added_highlight` | `diff_insert_fg` | `#9ece6a` |
+| `reference_terminal.diff_removed_highlight` | `diff_delete_fg` | `#f7768e` |
+| `reference_terminal.diff_hunk_header` | `accent_system` | `#7aa2f7` |
+
+ANSI-256 quantizes these RGB values deterministically. ANSI-16 uses named
+semantic fallbacks, and no-color mode uses the terminal-native reset palette;
+those modes preserve role distinctions without claiming RGB identity.
+
 Capture paths for future color lock:
 
 ```text
