@@ -2,8 +2,8 @@ use super::*;
 use crate::app::{AppState, UiIntent};
 use crate::ui::render_app;
 use crate::UnwrapOrAbort;
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use ratatui::{backend::TestBackend, Terminal};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+use ratatui::{backend::TestBackend, layout::Rect, Terminal};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -247,5 +247,140 @@ fn other_provider_api_key_emits_generic_auth_login() {
             ],
             stdin: Some("secret-key".to_string()),
         }]
+    );
+}
+
+fn waiting_device_auth_app() -> AppState {
+    let mut app = AppState::new_live(None, false, None);
+    app.connect_dialog.visible = true;
+    app.connect_dialog.step = ConnectDialogStep::Waiting;
+    app.connect_dialog.notice =
+        Some("Open https://auth.example.test/device\nEnter code TEST-CODE".to_string());
+    app
+}
+
+#[test]
+fn waiting_device_auth_c_copies_user_code() {
+    // arrange
+    let copied = Arc::new(Mutex::new(None));
+    let captured = Arc::clone(&copied);
+    crate::clipboard::set_copy_override(Some(Box::new(move |text| {
+        *captured.lock().unwrap_or_abort() = Some(text.to_string());
+        Ok(())
+    })));
+    let mut app = waiting_device_auth_app();
+
+    // act
+    app.handle_connect_dialog_key(key(KeyCode::Char('c')));
+    crate::clipboard::set_copy_override(None);
+
+    // assert
+    assert_eq!(
+        copied.lock().unwrap_or_abort().as_deref(),
+        Some("TEST-CODE")
+    );
+    assert_eq!(
+        app.connect_dialog
+            .toast
+            .as_ref()
+            .map(|toast| toast.message.as_str()),
+        Some("Copied authorization code")
+    );
+}
+
+#[test]
+fn waiting_device_auth_c_copies_verification_url_when_code_is_absent() {
+    // arrange
+    let copied = Arc::new(Mutex::new(None));
+    let captured = Arc::clone(&copied);
+    crate::clipboard::set_copy_override(Some(Box::new(move |text| {
+        *captured.lock().unwrap_or_abort() = Some(text.to_string());
+        Ok(())
+    })));
+    let mut app = waiting_device_auth_app();
+    app.connect_dialog.notice = Some("Open https://auth.example.test/device".to_string());
+
+    // act
+    app.handle_connect_dialog_key(key(KeyCode::Char('c')));
+    crate::clipboard::set_copy_override(None);
+
+    // assert
+    assert_eq!(
+        copied.lock().unwrap_or_abort().as_deref(),
+        Some("https://auth.example.test/device")
+    );
+}
+
+#[test]
+fn waiting_device_auth_control_click_is_left_to_the_terminal() {
+    // arrange
+    let mut app = waiting_device_auth_app();
+    let frame = Rect::new(0, 0, 100, 30);
+    let mouse = MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: 24,
+        row: 9,
+        modifiers: KeyModifiers::CONTROL,
+    };
+
+    // act
+    let handled = app.handle_connect_dialog_mouse(mouse, frame);
+
+    // assert
+    assert!(!handled);
+    assert_eq!(app.connect_dialog.pointer_down, None);
+}
+
+#[test]
+fn waiting_device_auth_renders_terminal_hyperlink_for_local_ctrl_click() {
+    // arrange
+    let app = waiting_device_auth_app();
+    let backend = TestBackend::new(100, 30);
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
+
+    // act
+    terminal
+        .draw(|frame| render_app(frame, &app))
+        .unwrap_or_abort();
+
+    // assert
+    let buffer = terminal.backend().buffer();
+    assert!((0..30).any(|y| {
+        (0..100).any(|x| {
+            buffer[(x, y)]
+                .symbol()
+                .contains("\x1b]8;;https://auth.example.test/device")
+        })
+    }));
+}
+
+#[test]
+fn waiting_device_auth_drag_copies_painted_code() {
+    // arrange
+    let copied = Arc::new(Mutex::new(None));
+    let captured = Arc::clone(&copied);
+    crate::clipboard::set_copy_override(Some(Box::new(move |text| {
+        *captured.lock().unwrap_or_abort() = Some(text.to_string());
+        Ok(())
+    })));
+    let mut app = waiting_device_auth_app();
+    let frame = Rect::new(0, 0, 100, 30);
+    let mouse = |kind| MouseEvent {
+        kind,
+        column: 24,
+        row: 10,
+        modifiers: KeyModifiers::NONE,
+    };
+
+    // act
+    app.handle_connect_dialog_mouse(mouse(MouseEventKind::Down(MouseButton::Left)), frame);
+    app.handle_connect_dialog_mouse(mouse(MouseEventKind::Drag(MouseButton::Left)), frame);
+    app.handle_connect_dialog_mouse(mouse(MouseEventKind::Up(MouseButton::Left)), frame);
+    crate::clipboard::set_copy_override(None);
+
+    // assert
+    assert_eq!(
+        copied.lock().unwrap_or_abort().as_deref(),
+        Some("TEST-CODE")
     );
 }

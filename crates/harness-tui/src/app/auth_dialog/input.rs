@@ -1,6 +1,6 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use super::{normalize_custom_provider_id, ConnectDialogStep};
+use super::{normalize_custom_provider_id, AuthToastState, ConnectDialogStep};
 use crate::app::{AppState, UiIntent};
 
 impl AppState {
@@ -12,11 +12,7 @@ impl AppState {
             ConnectDialogStep::CustomProviderId
             | ConnectDialogStep::ApiKeyInput
             | ConnectDialogStep::EnterpriseUrl => self.handle_connect_dialog_input(key),
-            ConnectDialogStep::Waiting => {
-                if key.code == KeyCode::Esc {
-                    self.close_connect_dialog();
-                }
-            }
+            ConnectDialogStep::Waiting => self.handle_connect_dialog_waiting(key),
             ConnectDialogStep::Success | ConnectDialogStep::Error => {
                 if key.code == KeyCode::Char('c') {
                     let provider_label = self
@@ -32,6 +28,63 @@ impl AppState {
             }
         }
         self.maybe_auto_exit();
+    }
+
+    fn handle_connect_dialog_waiting(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Char('c') => self.copy_connect_authorization(),
+            KeyCode::Esc => self.close_connect_dialog(),
+            _ => {}
+        }
+    }
+
+    pub(in crate::app) fn open_connect_authorization_url(&mut self) {
+        let Some(url) = self.connect_dialog.authorization_url().map(str::to_string) else {
+            return;
+        };
+        match harness_core::browser_oidc::launch_browser(&url) {
+            Ok(()) => self.set_connect_authorization_feedback("Opened authorization link", true),
+            Err(error) => self.set_connect_authorization_feedback(error, false),
+        }
+    }
+
+    pub(in crate::app) fn copy_connect_authorization_url(&mut self) {
+        let Some(url) = self.connect_dialog.authorization_url().map(str::to_string) else {
+            return;
+        };
+        self.copy_connect_authorization_detail(&url, "Copied authorization link");
+    }
+
+    pub(in crate::app) fn copy_connect_authorization_code(&mut self) {
+        let Some(code) = self.connect_dialog.authorization_code().map(str::to_string) else {
+            return;
+        };
+        self.copy_connect_authorization_detail(&code, "Copied authorization code");
+    }
+
+    fn copy_connect_authorization(&mut self) {
+        if self.connect_dialog.authorization_code().is_some() {
+            self.copy_connect_authorization_code();
+        } else {
+            self.copy_connect_authorization_url();
+        }
+    }
+
+    fn copy_connect_authorization_detail(&mut self, value: &str, success: &str) {
+        match crate::clipboard::copy(value) {
+            Ok(()) => self.set_connect_authorization_feedback(success, true),
+            Err(error) => self.set_connect_authorization_feedback(
+                format!("clipboard copy failed: {error}"),
+                false,
+            ),
+        }
+    }
+
+    fn set_connect_authorization_feedback(&mut self, message: impl Into<String>, is_success: bool) {
+        self.connect_dialog.toast = Some(AuthToastState {
+            message: message.into(),
+            is_success,
+        });
     }
 
     fn handle_connect_dialog_input(&mut self, key: KeyEvent) {

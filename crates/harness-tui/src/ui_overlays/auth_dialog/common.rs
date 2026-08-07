@@ -18,18 +18,22 @@ pub(super) fn render_panel(
     root: Rect,
     requested_height: u16,
 ) -> Rect {
-    let width = PANEL_WIDTH.min(root.width.saturating_sub(2)).max(1);
-    let height = requested_height.min(root.height.saturating_sub(2)).max(1);
-    let x = root.x + (root.width.saturating_sub(width)) / 2;
-    let max_y = root.y + root.height.saturating_sub(height);
-    let y = (root.y + root.height / 4).min(max_y);
-    let area = Rect::new(x, y, width, height);
+    let area = panel_area(root, requested_height);
     frame.render_widget(Clear, area);
     frame.render_widget(
         Block::default().style(Style::default().bg(theme.surface.panel_elevated)),
         area,
     );
     area
+}
+
+pub(super) fn panel_area(root: Rect, requested_height: u16) -> Rect {
+    let width = PANEL_WIDTH.min(root.width.saturating_sub(2)).max(1);
+    let height = requested_height.min(root.height.saturating_sub(2)).max(1);
+    let x = root.x + (root.width.saturating_sub(width)) / 2;
+    let max_y = root.y + root.height.saturating_sub(height);
+    let y = (root.y + root.height / 4).min(max_y);
+    Rect::new(x, y, width, height)
 }
 
 pub(super) fn horizontal_inset(area: Rect, requested_inset: u16) -> Rect {

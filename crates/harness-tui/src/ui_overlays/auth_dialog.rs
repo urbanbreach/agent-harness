@@ -19,6 +19,7 @@ mod provider_rows;
 #[path = "auth_dialog/select.rs"]
 mod select;
 
+pub(crate) use prompt::waiting_authorization_detail_at;
 pub(super) use prompt_panel::PromptPanel;
 
 pub(super) fn render_auth_dialog_overlay(

@@ -2,6 +2,67 @@
 use super::*;
 
 impl AppState {
+    pub(in crate::app) fn handle_connect_dialog_mouse(
+        &mut self,
+        mouse: MouseEvent,
+        frame_area: Rect,
+    ) -> bool {
+        if !self.connect_dialog.visible
+            || self.connect_dialog.step != auth_dialog::ConnectDialogStep::Waiting
+        {
+            return false;
+        }
+        if mouse.modifiers.contains(KeyModifiers::CONTROL) {
+            self.connect_dialog.pointer_down = None;
+            self.connect_dialog.pointer_dragged = false;
+            return false;
+        }
+        let target = crate::ui::ui_overlays::waiting_authorization_detail_at(
+            &self.connect_dialog,
+            frame_area,
+            mouse.column,
+            mouse.row,
+        );
+        match mouse.kind {
+            MouseEventKind::Down(MouseButton::Left) => {
+                self.connect_dialog.pointer_down = target;
+                self.connect_dialog.pointer_dragged = false;
+                target.is_some()
+            }
+            MouseEventKind::Drag(MouseButton::Left) => {
+                self.connect_dialog.pointer_dragged |= self.connect_dialog.pointer_down.is_some();
+                self.connect_dialog.pointer_down.is_some()
+            }
+            MouseEventKind::Up(MouseButton::Left) => {
+                let Some(pointer_down) = self.connect_dialog.pointer_down.take() else {
+                    return false;
+                };
+                let dragged = std::mem::take(&mut self.connect_dialog.pointer_dragged);
+                if dragged {
+                    match pointer_down {
+                        auth_dialog::AuthorizationDetail::Url => {
+                            self.copy_connect_authorization_url()
+                        }
+                        auth_dialog::AuthorizationDetail::Code => {
+                            self.copy_connect_authorization_code()
+                        }
+                    }
+                } else if target == Some(pointer_down) {
+                    match pointer_down {
+                        auth_dialog::AuthorizationDetail::Url => {
+                            self.open_connect_authorization_url()
+                        }
+                        auth_dialog::AuthorizationDetail::Code => {
+                            self.copy_connect_authorization_code()
+                        }
+                    }
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+
     pub(crate) fn handle_composer_mouse_event(
         &mut self,
         mouse: MouseEvent,
@@ -311,6 +372,9 @@ impl AppState {
         clicked_operator_sidebar_section: Option<OperatorSidebarSection>,
         transcript_scrollbar_hit: Option<TranscriptScrollbarHit>,
     ) -> bool {
+        if self.handle_connect_dialog_mouse(mouse, frame_area) {
+            return true;
+        }
         if self.file_mention_visible {
             let mention_overlay =
                 crate::layout::FrameLayoutPlan::for_app(self, frame_area).slash_overlay;

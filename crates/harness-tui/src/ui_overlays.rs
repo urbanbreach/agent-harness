@@ -31,6 +31,7 @@ mod toggles_menu;
 mod worktree_picker;
 
 use auth_dialog::render_auth_dialog_overlay;
+pub(crate) use auth_dialog::waiting_authorization_detail_at;
 use foreign_import_picker::render_foreign_import_picker_overlay;
 use memory_browser::render_memory_browser_overlay;
 use model_switcher::{model_switcher_overlay_title, render_model_switcher_overlay};

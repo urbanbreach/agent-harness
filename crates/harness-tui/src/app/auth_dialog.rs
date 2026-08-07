@@ -27,6 +27,12 @@ pub enum ConnectDialogStep {
     Error,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AuthorizationDetail {
+    Url,
+    Code,
+}
+
 #[derive(Debug, Clone)]
 pub struct ConnectProviderOption {
     pub id: ProviderId,
@@ -60,6 +66,8 @@ pub struct ConnectDialogState {
     pub selected_model: Option<usize>,
     pub toast: Option<AuthToastState>,
     pub prompt_index: usize,
+    pub(crate) pointer_down: Option<AuthorizationDetail>,
+    pub(crate) pointer_dragged: bool,
 }
 
 impl Default for ConnectDialogState {
@@ -81,6 +89,8 @@ impl Default for ConnectDialogState {
             selected_model: None,
             toast: None,
             prompt_index: 0,
+            pointer_down: None,
+            pointer_dragged: false,
         }
     }
 }
@@ -147,5 +157,21 @@ impl ConnectDialogState {
         if !providers.is_empty() {
             self.providers = providers;
         }
+    }
+
+    pub fn authorization_url(&self) -> Option<&str> {
+        self.authorization_detail("Open ")
+    }
+
+    pub fn authorization_code(&self) -> Option<&str> {
+        self.authorization_detail("Enter code ")
+    }
+
+    fn authorization_detail(&self, prefix: &str) -> Option<&str> {
+        self.notice
+            .as_deref()?
+            .lines()
+            .find_map(|line| line.strip_prefix(prefix))
+            .filter(|value| !value.is_empty())
     }
 }
