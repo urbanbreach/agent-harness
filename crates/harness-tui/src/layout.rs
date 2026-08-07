@@ -5,7 +5,7 @@ use ratatui::{
     text::Line,
 };
 
-use crate::app::AppState;
+use crate::app::{AppState, Focus};
 use crate::design_contract::{ViewportBreakpoint, DESIGN_TOKENS};
 use crate::overlay::OverlayKind;
 use crate::theme::{LiveShellLayout, Theme};
@@ -36,7 +36,7 @@ pub(crate) fn centered_overlay_area(area: Rect, width: u16, height: u16) -> Rect
 const MIN_COMPOSER_LINES: u16 = 1;
 const MAX_COMPOSER_LINES: u16 = 6;
 const PROMPT_MIN_MAX_HEIGHT: u16 = 6;
-const COMPOSER_VISIBLE_TEXT_CHROME: u16 = 5;
+const COMPOSER_VISIBLE_TEXT_CHROME: u16 = 6;
 const LIVE_PROMPT_STANDARD_CHROME_ROWS: u16 = 4;
 const LIVE_PROMPT_DENSE_CHROME_ROWS: u16 = 3;
 const LIVE_PROMPT_MIN_HEIGHT: u16 = 5;
@@ -541,13 +541,6 @@ pub(crate) fn session_shell_layout(
                 .min(shell_area.height.saturating_sub(status_rows));
             let composer_height =
                 live_prompt_block_height(app, content_column, contract, shell, terminal_height)
-                    .saturating_sub(
-                        status_rows
-                            .saturating_add(status_composer_spacer)
-                            .saturating_add(composer_footer_spacer)
-                            .saturating_add(disclosure_height)
-                            .saturating_add(rhythm.bottom_margin_rows),
-                    )
                     .min(shell_area.height);
             let bottom_margin = rhythm.bottom_margin_rows.min(
                 shell_area.height.saturating_sub(
@@ -918,7 +911,11 @@ fn live_prompt_block_height(
     }
 
     if app.active_permission_view().is_none() {
-        let input_height = composer_input_height(&app.composer.prompt_buffer, area.width).max(1);
+        let input_height = if app.focus == Focus::Prompt {
+            composer_input_height(&app.composer.prompt_buffer, area.width).max(1)
+        } else {
+            1
+        };
         return input_height
             .saturating_add(STARTUP_BORDERED_COMPOSER_CHROME_ROWS)
             .min(max_block_height)
@@ -1137,6 +1134,11 @@ mod tests {
 
         assert_eq!(startup_composer_input_height(&text, 75, 18), 6);
         assert_eq!(startup_composer_input_height(&text, 75, 48), 16);
+    }
+
+    #[test]
+    fn composer_input_height_reserves_grok_right_padding() {
+        assert_eq!(composer_input_height("abcde", 10), 2);
     }
 
     #[test]

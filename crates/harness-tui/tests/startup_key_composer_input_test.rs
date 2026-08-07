@@ -21,13 +21,15 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use harness_tui::app::{AppState, Focus, LaunchMetadata, LifecycleShellState, UiIntent};
+use harness_tui::layout::FrameLayoutPlan;
 use harness_tui::leaf_views::{
     ComposerLeafView, FocusOwner, FooterGrammar, InputLeafView, KeyLeafView, StartupLeafView,
     StartupPhase, TranscriptLeafView,
 };
-use harness_tui::render_test::render_to_string;
+use harness_tui::render_test::{render_to_buffer, render_to_string};
 use harness_tui::ui;
 use ratatui::layout::Rect;
+use ratatui::style::Color;
 use std::sync::{Arc, Mutex};
 
 const W: u16 = 120;
@@ -508,6 +510,130 @@ fn input_typing_at_startup_transitions_focus_to_prompt() {
     assert_eq!(
         app.composer.prompt_cursor,
         app.composer.prompt_buffer.chars().count()
+    );
+}
+
+#[test]
+fn input_typed_text_uses_grok_primary_on_canvas() {
+    let mut app = startup_app();
+    for character in "Browser QA draft".chars() {
+        app.handle_key(KeyEvent::new(KeyCode::Char(character), KeyModifiers::NONE));
+    }
+
+    let buffer = render_to_buffer(&app, Rect::new(0, 0, W, H), |app, frame, _area| {
+        ui::render_app(frame, app);
+    });
+    let draft = "Browser QA draft".chars().collect::<Vec<_>>();
+    let draft_cells = buffer
+        .content
+        .windows(draft.len())
+        .find(|cells| {
+            cells
+                .iter()
+                .zip(&draft)
+                .all(|(cell, expected)| cell.symbol().starts_with(*expected))
+        })
+        .expect("typed draft must be rendered in the composer");
+
+    let foregrounds = draft_cells.iter().map(|cell| cell.fg).collect::<Vec<_>>();
+    let backgrounds = draft_cells.iter().map(|cell| cell.bg).collect::<Vec<_>>();
+    assert!(
+        foregrounds
+            .iter()
+            .all(|color| *color == Color::Rgb(225, 225, 225)),
+        "typed draft foregrounds must match Grok primary: {foregrounds:?}"
+    );
+    assert!(
+        backgrounds
+            .iter()
+            .all(|color| *color == Color::Rgb(20, 20, 20)),
+        "typed draft backgrounds must match Grok canvas: {backgrounds:?}"
+    );
+
+    let composer = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, W, H))
+        .dock
+        .expect("startup shell must include a dock")
+        .composer;
+    assert_eq!(buffer[(composer.x, composer.y)].fg, Color::Rgb(80, 80, 88));
+    assert_eq!(
+        buffer[(composer.x + 2, composer.y + 1)].fg,
+        Color::Rgb(200, 200, 200)
+    );
+}
+
+#[test]
+fn unfocused_empty_composer_uses_grok_idle_state() {
+    let mut app = AppState::new_live(None, false, None);
+    app.focus = Focus::Details;
+    let area = Rect::new(0, 0, W, 40);
+    let composer = FrameLayoutPlan::for_app(&app, area)
+        .dock
+        .expect("live shell must include a dock")
+        .composer;
+    let buffer = render_to_buffer(&app, area, |app, frame, _area| {
+        ui::render_app(frame, app);
+    });
+    let input_row = (composer.x..composer.right())
+        .map(|x| buffer[(x, composer.y + 1)].symbol())
+        .collect::<String>();
+
+    assert!(input_row.contains("Build anything"), "{input_row:?}");
+    assert_eq!(buffer[(composer.x, composer.y)].fg, Color::Rgb(50, 50, 55));
+    assert_eq!(
+        buffer[(composer.x + 2, composer.y + 1)].fg,
+        Color::Rgb(65, 65, 65)
+    );
+    assert_eq!(
+        buffer[(composer.x + 4, composer.y + 1)].fg,
+        Color::Rgb(78, 78, 78)
+    );
+}
+
+#[test]
+fn unfocused_draft_uses_grok_dimmed_primary_and_collapses() {
+    let mut app = AppState::new_live(None, false, None);
+    app.composer.prompt_buffer = format!(
+        "FIRST alpha beta gamma delta epsilon zeta eta theta iota kappa {}LAST omega",
+        "middle ".repeat(24)
+    );
+    app.focus = Focus::Prompt;
+    let area = Rect::new(0, 0, 80, 24);
+    let focused_composer = FrameLayoutPlan::for_app(&app, area)
+        .dock
+        .expect("live shell must include a dock")
+        .composer;
+
+    app.focus = Focus::Details;
+    let composer = FrameLayoutPlan::for_app(&app, area)
+        .dock
+        .expect("live shell must include a dock")
+        .composer;
+    let buffer = render_to_buffer(&app, area, |app, frame, _area| {
+        ui::render_app(frame, app);
+    });
+
+    assert!(focused_composer.height > 3, "{focused_composer:?}");
+    assert_eq!(composer.height, 3, "{composer:?}");
+    let input_row = (composer.x..composer.right())
+        .map(|x| buffer[(x, composer.y + 1)].symbol())
+        .collect::<String>();
+    assert!(input_row.contains("FIRST"), "{input_row:?}");
+    assert!(!input_row.contains("LAST"), "{input_row:?}");
+    assert_eq!(
+        buffer[(composer.x + 4, composer.y + 1)].fg,
+        Color::Rgb(155, 155, 155)
+    );
+}
+
+#[test]
+fn live_bordered_composer_reserves_an_inner_input_row() {
+    let app = AppState::new_live(None, false, None);
+    let plan = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, W, 40));
+    let composer = plan.dock.expect("live shell must include a dock").composer;
+
+    assert!(
+        composer.height >= 3,
+        "bordered composer needs top, input, and bottom rows; got {composer:?}"
     );
 }
 
