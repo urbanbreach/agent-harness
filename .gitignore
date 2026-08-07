@@ -49,7 +49,14 @@ crates/harness/harness.json
 /.omo/
 /ATTEMPT/
 **/__pycache__/
-scripts/tui-parity/node_modules/
+
+# UI parity / reference-copy development artifacts
+/task-verification-*.json
+/configs/tui-fidelity-closure-contract.json
+/docs/reference/grok-build-*.md
+**/reference-target/
+**/harness-target/
+**/candidate-copy*/
 
 # Generated Pages site output
 /public/
