@@ -37,6 +37,7 @@ thread_local! {
     static PENDING_LIVE_LAUNCH_METADATA: RefCell<Option<LaunchMetadata>> = const { RefCell::new(None) };
     static PENDING_LIVE_PROMPT_DRAFT: RefCell<Option<String>> = const { RefCell::new(None) };
     static PENDING_LIVE_PROMPT_AUTO_SUBMIT: RefCell<bool> = const { RefCell::new(false) };
+    static PENDING_CONNECT_PROVIDERS: RefCell<Vec<ConnectProviderOption>> = const { RefCell::new(Vec::new()) };
     static PENDING_SETTINGS_PROJECT_CONFIG: RefCell<Option<PendingSettingsProjectConfig>> =
         const { RefCell::new(None) };
 }
@@ -228,7 +229,9 @@ pub fn set_pending_connect_providers(providers: Vec<ConnectProviderOption>) {
     }
     #[cfg(test)]
     {
-        let _ = providers;
+        PENDING_CONNECT_PROVIDERS.with(|slot| {
+            *slot.borrow_mut() = providers;
+        });
     }
 }
 
@@ -236,11 +239,11 @@ pub(super) fn take_pending_connect_providers() -> Vec<ConnectProviderOption> {
     #[cfg(not(test))]
     {
         let lock = PENDING_CONNECT_PROVIDERS.get_or_init(|| Mutex::new(Vec::new()));
-        std::mem::take(&mut *lock.lock().unwrap_or_abort())
+        lock.lock().unwrap_or_abort().clone()
     }
     #[cfg(test)]
     {
-        Vec::new()
+        PENDING_CONNECT_PROVIDERS.with(|slot| slot.borrow().clone())
     }
 }
 
@@ -264,4 +267,38 @@ pub(super) fn take_pending_live_prompt() -> Option<PendingLivePrompt> {
 
 fn non_empty_prompt(prompt: Option<String>) -> Option<String> {
     prompt.filter(|value| has_trimmed_content(value))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::AppState;
+    use harness_core::auth::plugin::AuthMethodSpec;
+    use harness_core::auth::ProviderId;
+
+    fn provider() -> ConnectProviderOption {
+        ConnectProviderOption {
+            id: ProviderId::parse("openai").unwrap_or_abort(),
+            label: "OpenAI".to_string(),
+            description: "API key".to_string(),
+            methods: vec![AuthMethodSpec::ApiKey {
+                label: "API key".to_string(),
+            }],
+            models: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn connect_providers_remain_available_across_app_state_transitions() {
+        // arrange
+        set_pending_connect_providers(vec![provider()]);
+
+        // act
+        let startup = AppState::new_startup(Vec::new(), None);
+        let live = AppState::new_live(None, false, None);
+
+        // assert
+        assert_eq!(startup.connect_dialog.providers.len(), 1);
+        assert_eq!(live.connect_dialog.providers.len(), 1);
+    }
 }
