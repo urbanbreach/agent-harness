@@ -48,14 +48,16 @@ function healSpawnHelper() {
 }
 
 const DEFAULT_FONT_FAMILY = 'Menlo, "DejaVu Sans Mono", "Noto Sans Mono CJK KR", monospace';
+const DEFAULT_TERMINAL_BACKGROUND = '#141414';
 
-function buildPageHtml({ xtermJs, xtermCss, unicodeJs, cols, rows, fontSize, fontFamily }) {
+function buildPageHtml({ xtermJs, xtermCss, unicodeJs, cols, rows, fontSize, fontFamily, terminalBackground }) {
   const resolvedFontFamily = (fontFamily && String(fontFamily).trim()) || DEFAULT_FONT_FAMILY;
+  const resolvedTerminalBackground = terminalBackground || DEFAULT_TERMINAL_BACKGROUND;
   // Escape for embedding in a single-quoted JS string literal.
   const fontFamilyJs = resolvedFontFamily.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
   return `<!doctype html><html><head><meta charset="utf-8"><style>
 ${xtermCss}
-html,body{margin:0;padding:0;background:#0b0e14}
+html,body{margin:0;padding:0;background:#141414}
 #t{padding:8px}
 </style></head><body><div id="t"></div>
 <script>${xtermJs}</script>
@@ -65,8 +67,8 @@ html,body{margin:0;padding:0;background:#0b0e14}
     cols: ${cols}, rows: ${rows}, fontSize: ${fontSize},
     fontFamily: '${fontFamilyJs}',
     allowProposedApi: true, convertEol: false, scrollback: 0,
-    // black=palette index 0: Grok live shell fills with 48;5;0; must match canvas or freezes drift to xterm default #2e3436
-    theme: { background: '#0b0e14', foreground: '#d7dae0', black: '#0b0e14' },
+    // black=palette index 0: keep resets and indexed black aligned with the GrokNight canvas.
+    theme: { background: '${resolvedTerminalBackground}', foreground: '#e1e1e1', black: '${resolvedTerminalBackground}' },
   });
   const unicode = new Unicode11Addon.Unicode11Addon();
   term.loadAddon(unicode);
@@ -129,7 +131,7 @@ function chromeCandidates(explicit) {
   return c.filter((x) => x && (x.includes("/") || x.includes("\\") ? existsSync(x) : true));
 }
 
-async function captureLive({ command, cwd, cols, rows, inputs, dwellMs, keyDelayMs, preDwellMs, chromeBin, fromFile, redactStream, fontSize, fontFamily }) {
+async function captureLive({ command, cwd, cols, rows, inputs, dwellMs, keyDelayMs, preDwellMs, chromeBin, fromFile, redactStream, fontSize, fontFamily, terminalBackground }) {
   healSpawnHelper();
   const puppeteer = require("puppeteer-core");
   const executablePath = chromeCandidates(chromeBin)[0];
@@ -141,7 +143,7 @@ async function captureLive({ command, cwd, cols, rows, inputs, dwellMs, keyDelay
     xtermJs: resolveAsset("@xterm/xterm/lib/xterm.js"),
     xtermCss: resolveAsset("@xterm/xterm/css/xterm.css"),
     unicodeJs: resolveAsset("@xterm/addon-unicode11/lib/addon-unicode11.js"),
-    cols, rows, fontSize: resolvedFontSize, fontFamily: resolvedFontFamily,
+    cols, rows, fontSize: resolvedFontSize, fontFamily: resolvedFontFamily, terminalBackground,
   });
 
   const browser = await puppeteer.launch({
@@ -209,7 +211,7 @@ async function captureLive({ command, cwd, cols, rows, inputs, dwellMs, keyDelay
     await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
 
     const screenText = await page.evaluate(() => window.__screenText());
-    const el = (await page.$(".xterm")) || page;
+    const el = (await page.$(".xterm-screen")) || (await page.$(".xterm")) || page;
     const pngBuffer = await el.screenshot({ type: "png" });
     return { pngBuffer, screenText, rawStream, capabilities, connector: fromFile ? "xterm-replay" : "xterm-node-pty", cleanup: cleanupParts.join("; ") };
   } finally {
