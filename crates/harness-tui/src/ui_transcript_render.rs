@@ -618,7 +618,7 @@ fn build_assistant_part_render_surface(
                 TranscriptRenderSurfaceKind::AssistantReasoning,
                 turn.header.status == ActivityStatus::Streaming,
                 theme.border.subtle,
-                Color::Reset,
+                base_surface,
                 None,
                 None,
                 Vec::new(),
@@ -677,7 +677,7 @@ fn build_assistant_part_render_surface(
                 TranscriptRenderSurfaceKind::AssistantBody,
                 false,
                 assistant_primary_rail_color(turn.header.status, &turn.header.profile_label, theme),
-                Color::Reset,
+                base_surface,
                 None,
                 selection_rows,
                 Vec::new(),
@@ -697,7 +697,7 @@ fn build_assistant_part_render_surface(
                 transcript_surface_render_width(width, kind)
             };
             let render =
-                append_tool_call_section_lines(tool_call, theme, render_width, Color::Reset);
+                append_tool_call_section_lines(tool_call, theme, render_width, base_surface);
             lines = render.lines;
             (
                 kind,
@@ -707,19 +707,19 @@ fn build_assistant_part_render_surface(
                 } else {
                     transcript_nested_rail_color(theme)
                 },
-                Color::Reset,
+                base_surface,
                 Some(render.interaction_rows),
                 None,
                 render.diff_hunk_offsets,
             )
         }
         TranscriptAssistantPart::Error(error) => {
-            append_assistant_error_box(&mut lines, &error.text, theme, width, Color::Reset);
+            append_assistant_error_box(&mut lines, &error.text, theme, width, base_surface);
             (
                 TranscriptRenderSurfaceKind::AssistantError,
                 false,
                 theme.status.error,
-                Color::Reset,
+                base_surface,
                 None,
                 None,
                 Vec::new(),
@@ -804,7 +804,7 @@ fn build_assistant_part_render_surface(
 fn build_footer_only_render_surface(
     turn: &TranscriptTurnSection,
     theme: &Theme,
-    _base_surface: Color,
+    base_surface: Color,
     width: u16,
     assistant_icon: &str,
     assistant_color: Color,
@@ -819,7 +819,7 @@ fn build_footer_only_render_surface(
             &turn.header.profile_label,
             theme,
         ),
-        surface: Color::Reset,
+        surface: base_surface,
         lines: vec![build_assistant_footer_line(
             turn,
             assistant_icon,
@@ -960,7 +960,7 @@ fn build_context_tool_group_render_surface(
     tool_calls: &[&TranscriptToolCallSection],
     theme: &Theme,
     width: u16,
-    _base_surface: Color,
+    base_surface: Color,
     append_footer: bool,
     assistant_icon: &str,
     assistant_color: Color,
@@ -973,7 +973,7 @@ fn build_context_tool_group_render_surface(
     let surface = if command_group {
         theme.reference_terminal.canvas
     } else {
-        Color::Reset
+        base_surface
     };
     let group_expanded = command_group || tool_calls.iter().any(|tool_call| tool_call.expanded);
     let group_disclosure = if command_group || tool_calls.is_empty() {
@@ -1631,7 +1631,7 @@ mod tests {
     };
 
     #[test]
-    fn ordinary_assistant_text_surfaces_do_not_paint_a_full_width_background() {
+    fn ordinary_assistant_text_surfaces_use_themed_base_surface() {
         let mut app = AppState::default();
         let mut entry = super::super::transcript_section_model_test_activity(
             "request-transparent-assistant-text",
@@ -1659,14 +1659,14 @@ mod tests {
         }) {
             assert_eq!(
                 surface.surface,
-                ratatui::style::Color::Reset,
-                "ordinary assistant prose must inherit the terminal background"
+                ratatui::style::Color::Rgb(1, 2, 3),
+                "ordinary assistant prose must use the themed base surface"
             );
         }
     }
 
     #[test]
-    fn assistant_footer_only_surface_does_not_paint_a_full_width_background() {
+    fn assistant_footer_only_surface_uses_themed_base_surface() {
         let mut app = AppState::default();
         app.activities = std::collections::VecDeque::from(vec![
             super::super::transcript_section_model_test_activity(
@@ -1688,7 +1688,7 @@ mod tests {
             "",
         );
 
-        assert_eq!(footer.surface, ratatui::style::Color::Reset);
+        assert_eq!(footer.surface, ratatui::style::Color::Rgb(1, 2, 3));
     }
 
     #[test]
@@ -1741,7 +1741,7 @@ mod tests {
     }
 
     #[test]
-    fn assistant_tool_surfaces_do_not_paint_tool_cards() {
+    fn assistant_tool_surfaces_use_themed_base_surface() {
         fn tool_section(
             id: &str,
             tool_id: &str,
@@ -1838,7 +1838,7 @@ mod tests {
                     | super::super::TranscriptRenderSurfaceKind::AssistantCommandTool
             )
         }) {
-            assert_eq!(surface.surface, ratatui::style::Color::Reset);
+            assert_eq!(surface.surface, ratatui::style::Color::Rgb(1, 2, 3));
             let backgrounds = surface
                 .lines
                 .iter()
@@ -1847,7 +1847,7 @@ mod tests {
                 .collect::<Vec<_>>();
             assert!(
                 backgrounds.iter().all(|background| {
-                    background.is_none() || *background == Some(ratatui::style::Color::Reset)
+                    background.is_none() || *background == Some(ratatui::style::Color::Rgb(1, 2, 3))
                 }),
                 "{backgrounds:?}"
             );
@@ -1855,7 +1855,7 @@ mod tests {
     }
 
     #[test]
-    fn flat_assistant_error_surface_does_not_paint_a_full_width_background() {
+    fn flat_assistant_error_surface_uses_themed_base_surface() {
         let mut app = AppState::default();
         let mut entry = super::super::transcript_section_model_test_activity(
             "request-transparent-assistant-error",
@@ -1882,8 +1882,8 @@ mod tests {
 
         assert_eq!(
             error.surface,
-            ratatui::style::Color::Reset,
-            "flat retry text must inherit the terminal background"
+            ratatui::style::Color::Rgb(1, 2, 3),
+            "flat retry text must use the themed base surface"
         );
     }
 

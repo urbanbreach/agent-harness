@@ -81,12 +81,11 @@ struct DocumentComposerRenderContext<'a> {
 const QUIET_SURFACE_PADDING_X: u16 = 1;
 const QUIET_SURFACE_PADDING_TOP: u16 = 1;
 pub(super) const fn composer_input_surface(theme: &Theme) -> Color {
-    let _ = theme;
-    Color::Reset
+    theme.reference_terminal.canvas
 }
 
 pub(super) const fn composer_input_text(theme: &Theme) -> Color {
-    theme.text.primary
+    theme.reference_terminal.primary
 }
 
 pub(super) const fn composer_input_muted(theme: &Theme) -> Color {
@@ -219,7 +218,7 @@ pub(super) fn render_footer(
 
     if footer_suppressed_by_overlay(app) {
         frame.render_widget(
-            Block::default().style(Style::default().bg(Color::Reset)),
+            Block::default().style(Style::default().bg(theme.surface.canvas)),
             area,
         );
         return;
@@ -884,8 +883,8 @@ fn divided_surface_block<'a>(
         .title_style(panel_style(surface, title_color))
 }
 
-pub(super) fn live_transcript_shell_surface(_theme: &Theme) -> Color {
-    Color::Reset
+pub(super) fn live_transcript_shell_surface(theme: &Theme) -> Color {
+    theme.surface.canvas
 }
 
 pub(super) fn live_anchor_panel_surface(theme: &Theme) -> Color {
@@ -897,20 +896,44 @@ pub(super) fn divided_shell_surface(theme: &Theme) -> Color {
 }
 
 pub(super) fn live_control_dock_surface(theme: &Theme) -> Color {
-    let _ = theme;
-    Color::Reset
+    theme.surface.canvas
+}
+
+#[cfg(test)]
+mod surface_tests {
+    use super::{control_dock_surface, live_control_dock_surface, live_transcript_shell_surface};
+    use crate::theme::Theme;
+    use crate::view_model::ControlDockVariant;
+
+    #[test]
+    fn live_control_dock_uses_themed_canvas() {
+        let theme = Theme::harness_chat();
+
+        assert_eq!(live_control_dock_surface(&theme), theme.surface.canvas);
+        assert_eq!(
+            live_control_dock_surface(&Theme::terminal_native()),
+            ratatui::style::Color::Reset
+        );
+        for variant in [
+            ControlDockVariant::Startup,
+            ControlDockVariant::Live,
+            ControlDockVariant::ReplayReadOnly,
+        ] {
+            assert_eq!(control_dock_surface(&theme, variant), theme.surface.canvas);
+            assert_eq!(
+                control_dock_surface(&Theme::terminal_native(), variant),
+                ratatui::style::Color::Reset
+            );
+        }
+        assert_eq!(live_transcript_shell_surface(&theme), theme.surface.canvas);
+    }
 }
 
 pub(super) fn control_dock_surface(
     theme: &Theme,
-    variant: crate::view_model::ControlDockVariant,
+    _variant: crate::view_model::ControlDockVariant,
 ) -> Color {
-    let _ = theme;
-    match variant {
-        crate::view_model::ControlDockVariant::Startup => Color::Reset,
-        crate::view_model::ControlDockVariant::Live => theme.reference_terminal.canvas,
-        crate::view_model::ControlDockVariant::ReplayReadOnly => Color::Reset,
-    }
+    theme.surface.canvas
 }
 
 pub(super) fn elevated_card_surface(theme: &Theme) -> Color {

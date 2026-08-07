@@ -192,10 +192,9 @@ pub(crate) fn exact_test_subagent_replay_suppresses_parent_replay_dock() {
             .transcript_gutter_y
             .min(transcript.height.saturating_sub(1)),
     );
-    // Transcript base surface is Reset (live_transcript_shell_section renders Reset background).
     assert_eq!(
         terminal.backend().buffer()[(sample_x, sample_y)].bg,
-        ratatui::style::Color::Reset,
+        theme.surface.canvas,
         "subagent replay should use the same transcript surface as the main chat"
     );
 }
