@@ -127,10 +127,18 @@ macro_rules! delegate_test {
 #[path = "tests/toggles_menu_tests.rs"]
 mod toggles_menu_tests;
 
+#[cfg(test)]
+#[path = "tests/theme_runtime_tests.rs"]
+mod theme_runtime_tests;
+
 delegate_test!(toggles_slash_command_opens_command_styled_menu => toggles_menu_tests::toggles_slash_command_opens_command_styled_menu);
 delegate_test!(yolo_toggle_requires_confirmation_and_enables_entries => toggles_menu_tests::yolo_toggle_requires_confirmation_and_enables_entries);
 delegate_test!(toggles_config_preserves_launch_metadata_entries => toggles_menu_tests::toggles_config_preserves_launch_metadata_entries);
 delegate_test!(toggles_menu_sanitizes_config_derived_text => toggles_menu_tests::toggles_menu_sanitizes_config_derived_text);
+delegate_test!(default_app_uses_harness_chat_theme => theme_runtime_tests::default_app_uses_harness_chat_theme);
+delegate_test!(explicit_harness_chat_selection_uses_harness_chat_theme => theme_runtime_tests::explicit_harness_chat_selection_uses_harness_chat_theme);
+delegate_test!(explicit_harness_dark_selection_remains_available => theme_runtime_tests::explicit_harness_dark_selection_remains_available);
+delegate_test!(default_harness_chat_survives_color_level_changes => theme_runtime_tests::default_harness_chat_survives_color_level_changes);
 
 #[test]
 fn compaction_written_status_surfaces_deterministic_fallback() {

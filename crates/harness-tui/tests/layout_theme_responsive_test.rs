@@ -317,7 +317,8 @@ fn theme_switching_resolves_documented_names_only() {
     // arrange
     // act
     // assert
-    assert_eq!(Theme::by_name("default"), Some(Theme::harness_dark()));
+    assert_eq!(Theme::by_name("default"), Some(Theme::harness_chat()));
+    assert_eq!(Theme::by_name("harness-chat"), Some(Theme::harness_chat()));
     assert_eq!(Theme::by_name("harness-dark"), Some(Theme::harness_dark()));
     assert_eq!(
         Theme::by_name("harness-light"),

@@ -8,7 +8,7 @@ impl ThemeChoice {
             Self::Explicit(family) => family,
             Self::Auto => match environment.system_appearance() {
                 Some(super::auto::SystemAppearance::Light) => ThemeFamily::HarnessLight,
-                Some(super::auto::SystemAppearance::Dark) | None => ThemeFamily::HarnessDark,
+                Some(super::auto::SystemAppearance::Dark) | None => ThemeFamily::HarnessChat,
             },
         };
         let base = family.theme();

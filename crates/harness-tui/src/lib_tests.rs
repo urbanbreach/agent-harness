@@ -234,7 +234,7 @@ pub(super) use fixture_helpers::*;
 pub(super) use render_helpers::*;
 use surface_contract_data::*;
 pub(super) use transcript_fixture_helpers::*;
-delegate_test!(harness_dark_theme_is_default => theme_layout::harness_dark_theme_is_default);
+delegate_test!(harness_chat_theme_is_default => theme_layout::harness_chat_theme_is_default);
 delegate_test!(theme_tokens_cover_live_shell_states => theme_layout::theme_tokens_cover_live_shell_states);
 delegate_test!(harness_dark_theme_has_exact_palette => theme_layout::harness_dark_theme_has_exact_palette);
 delegate_test!(command_palette_state_filters_existing_commands => theme_layout::command_palette_state_filters_existing_commands);

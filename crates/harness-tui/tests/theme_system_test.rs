@@ -94,18 +94,20 @@ fn fallback_ladder_has_deterministic_truecolor_to_no_color_matrix() {
         ]
     );
 
-    for level in FALLBACK_LADDER {
-        let environment = ThemeEnvironment::with_color_level(level);
-        let first = ThemeChoice::explicit(ThemeFamily::HarnessDark).resolve(&environment);
-        let second = ThemeChoice::explicit(ThemeFamily::HarnessDark).resolve(&environment);
-        assert_eq!(first, second);
-        for role in PaletteRole::ALL {
-            let color = first.palette.color(role);
-            match level {
-                ColorLevel::TrueColor => assert!(matches!(color, Color::Rgb(..))),
-                ColorLevel::Ansi256 => assert!(matches!(color, Color::Indexed(_))),
-                ColorLevel::Basic | ColorLevel::None => {
-                    assert!(!matches!(color, Color::Rgb(..) | Color::Indexed(_)))
+    for family in [ThemeFamily::HarnessChat, ThemeFamily::HarnessDark] {
+        for level in FALLBACK_LADDER {
+            let environment = ThemeEnvironment::with_color_level(level);
+            let first = ThemeChoice::explicit(family).resolve(&environment);
+            let second = ThemeChoice::explicit(family).resolve(&environment);
+            assert_eq!(first, second);
+            for role in PaletteRole::ALL {
+                let color = first.palette.color(role);
+                match level {
+                    ColorLevel::TrueColor => assert!(matches!(color, Color::Rgb(..))),
+                    ColorLevel::Ansi256 => assert!(matches!(color, Color::Indexed(_))),
+                    ColorLevel::Basic | ColorLevel::None => {
+                        assert!(!matches!(color, Color::Rgb(..) | Color::Indexed(_)))
+                    }
                 }
             }
         }
@@ -165,7 +167,7 @@ fn auto_mode_uses_colorfgbg_system_appearance_and_keeps_auto_choice() {
 
     let mut state =
         ThemePreviewState::new(ThemeChoice::Auto, ThemeEnvironment::from_colorfgbg("15;0"));
-    assert_eq!(state.effective_theme().family, ThemeFamily::HarnessDark);
+    assert_eq!(state.effective_theme().family, ThemeFamily::HarnessChat);
     state.on_system_appearance_change(SystemAppearance::Light);
     assert_eq!(state.committed_choice(), ThemeChoice::Auto);
     assert_eq!(state.effective_theme().family, ThemeFamily::HarnessLight);

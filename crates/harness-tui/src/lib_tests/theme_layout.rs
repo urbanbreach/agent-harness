@@ -1,14 +1,14 @@
 use super::*;
 use crate::UnwrapOrAbort;
 
-pub(super) fn harness_dark_theme_is_default() {
+pub(super) fn harness_chat_theme_is_default() {
     let default = Theme::default();
-    let harness_dark = Theme::harness_dark();
+    let harness_chat = Theme::harness_chat();
 
-    assert_eq!(default.surface, harness_dark.surface);
-    assert_eq!(default.border, harness_dark.border);
-    assert_eq!(default.text, harness_dark.text);
-    assert_eq!(default.status, harness_dark.status);
+    assert_eq!(default.surface, harness_chat.surface);
+    assert_eq!(default.border, harness_chat.border);
+    assert_eq!(default.text, harness_chat.text);
+    assert_eq!(default.status, harness_chat.status);
 }
 
 pub(super) fn theme_tokens_cover_live_shell_states() {

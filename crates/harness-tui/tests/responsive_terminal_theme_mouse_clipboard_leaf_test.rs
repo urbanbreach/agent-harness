@@ -545,7 +545,7 @@ fn theme_auto_mode_detects_truecolor_and_reduced() {
     let no_truecolor_theme = ThemeLeaf::auto_from_env(None, Some("xterm-256color"));
 
     // assert
-    assert_eq!(truecolor_theme.theme, NamedTheme::HarnessDark);
+    assert_eq!(truecolor_theme.theme, NamedTheme::HarnessChat);
     assert_eq!(truecolor_theme.auto_mode, ThemeAutoMode::Auto);
     assert!(!truecolor_theme.reduced_capability);
 
@@ -590,6 +590,14 @@ fn named_themes_have_unique_labels_and_resolve() {
     let unique: std::collections::HashSet<&str> = labels.iter().copied().collect();
     assert_eq!(labels.len(), unique.len());
 
+    assert_eq!(
+        NamedTheme::from_label("default"),
+        Some(NamedTheme::HarnessChat)
+    );
+    assert_eq!(
+        NamedTheme::from_label("harness-chat"),
+        Some(NamedTheme::HarnessChat)
+    );
     assert_eq!(
         NamedTheme::from_label("harness-dark"),
         Some(NamedTheme::HarnessDark)
@@ -819,7 +827,7 @@ fn happy_truecolor_enhanced_mouse_theme_clipboard_semantic_cells_valid() {
     assert!(mouse.click_focus_enabled);
     assert!(mouse.selection_drag_enabled);
 
-    assert_eq!(theme.theme, NamedTheme::HarnessDark);
+    assert_eq!(theme.theme, NamedTheme::HarnessChat);
     assert!(!theme.reduced_capability);
 
     assert!(clipboard.mode.is_available());

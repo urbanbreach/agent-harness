@@ -7,8 +7,10 @@
 /// Named theme identifiers matching the TUI theme catalog.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum NamedTheme {
-    /// Harness dark (default).
+    /// Harness chat (default GrokNight role system).
     #[default]
+    HarnessChat,
+    /// Legacy Harness dark.
     HarnessDark,
     /// Harness light.
     HarnessLight,
@@ -21,7 +23,8 @@ pub enum NamedTheme {
 }
 
 impl NamedTheme {
-    pub const ALL: [Self; 4] = [
+    pub const ALL: [Self; 5] = [
+        Self::HarnessChat,
         Self::HarnessDark,
         Self::HarnessLight,
         Self::HighContrast,
@@ -30,6 +33,7 @@ impl NamedTheme {
 
     pub const fn label(self) -> &'static str {
         match self {
+            Self::HarnessChat => "harness-chat",
             Self::HarnessDark => "harness-dark",
             Self::HarnessLight => "harness-light",
             Self::HighContrast => "high-contrast",
@@ -39,6 +43,7 @@ impl NamedTheme {
 
     pub fn from_label(label: &str) -> Option<Self> {
         match label.trim().to_ascii_lowercase().as_str() {
+            "default" | "harness-chat" | "harness_chat" | "chat" => Some(Self::HarnessChat),
             "harness-dark" | "dark" => Some(Self::HarnessDark),
             "harness-light" | "light" => Some(Self::HarnessLight),
             "high-contrast" | "high_contrast" => Some(Self::HighContrast),
@@ -75,10 +80,10 @@ pub struct ThemeLeaf {
 }
 
 impl ThemeLeaf {
-    /// Default theme: harness-dark, explicit, no reduced capability.
+    /// Default theme: harness-chat, explicit, no reduced capability.
     pub const fn default_theme() -> Self {
         Self {
-            theme: NamedTheme::HarnessDark,
+            theme: NamedTheme::HarnessChat,
             auto_mode: ThemeAutoMode::Explicit,
             reduced_capability: false,
         }
@@ -86,10 +91,10 @@ impl ThemeLeaf {
 
     /// Auto-detect theme from terminal environment (pure; no I/O).
     ///
-    /// When the terminal advertises truecolor, selects HarnessDark with
+    /// When the terminal advertises truecolor, selects HarnessChat with
     /// full color capability. When the terminal is dumb or has no color,
     /// selects HighContrast with reduced capability. Otherwise selects
-    /// HarnessDark with reduced capability (256-color or less).
+    /// HarnessChat with reduced capability (256-color or less).
     pub fn auto_from_env(colorterm: Option<&str>, term: Option<&str>) -> Self {
         let lower_term = term.unwrap_or("").to_ascii_lowercase();
         let is_dumb = lower_term == "dumb";
@@ -104,7 +109,7 @@ impl ThemeLeaf {
             theme: if is_dumb {
                 NamedTheme::HighContrast
             } else {
-                NamedTheme::HarnessDark
+                NamedTheme::HarnessChat
             },
             auto_mode: ThemeAutoMode::Auto,
             reduced_capability: is_dumb || !has_truecolor,
@@ -147,13 +152,13 @@ mod tests {
         let labels: Vec<&str> = NamedTheme::ALL.iter().map(|t| t.label()).collect();
 
         // assert
-        assert_eq!(labels.len(), 4);
+        assert_eq!(labels.len(), 5);
         assert_eq!(
             labels
                 .iter()
                 .collect::<std::collections::HashSet<_>>()
                 .len(),
-            4
+            5
         );
     }
 
@@ -162,6 +167,14 @@ mod tests {
         // arrange
         // act
         // assert
+        assert_eq!(
+            NamedTheme::from_label("default"),
+            Some(NamedTheme::HarnessChat)
+        );
+        assert_eq!(
+            NamedTheme::from_label("harness-chat"),
+            Some(NamedTheme::HarnessChat)
+        );
         assert_eq!(
             NamedTheme::from_label("harness-dark"),
             Some(NamedTheme::HarnessDark)
@@ -196,13 +209,13 @@ mod tests {
     }
 
     #[test]
-    fn default_theme_is_harness_dark_explicit() {
+    fn default_theme_is_harness_chat_explicit() {
         // arrange
         // act
         let leaf = ThemeLeaf::default_theme();
 
         // assert
-        assert_eq!(leaf.theme, NamedTheme::HarnessDark);
+        assert_eq!(leaf.theme, NamedTheme::HarnessChat);
         assert_eq!(leaf.auto_mode, ThemeAutoMode::Explicit);
         assert!(!leaf.reduced_capability);
     }
@@ -214,7 +227,7 @@ mod tests {
         let leaf = ThemeLeaf::auto_from_env(Some("truecolor"), Some("xterm-256color"));
 
         // assert
-        assert_eq!(leaf.theme, NamedTheme::HarnessDark);
+        assert_eq!(leaf.theme, NamedTheme::HarnessChat);
         assert_eq!(leaf.auto_mode, ThemeAutoMode::Auto);
         assert!(!leaf.reduced_capability);
     }

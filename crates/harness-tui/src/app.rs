@@ -820,7 +820,7 @@ impl Default for AppState {
             file_mention_frecency: BTreeMap::new(),
             continue_disabled_banner: None,
             keymap: KeyMap::default(),
-            theme: Theme::from_family(initial_theme_family, ColorLevel::TrueColor),
+            theme: Theme::harness_chat(),
             theme_choice: ThemeChoice::Auto,
             theme_family: initial_theme_family,
             theme_preview: ThemePreview::new(initial_theme_family),
@@ -1307,8 +1307,8 @@ impl AppState {
 
     pub fn restore_theme_choice(&mut self, serialized: &str) -> Result<(), PersistError> {
         let choice = deserialize_choice(serialized)?;
-        self.resolve_theme_choice(choice);
         self.theme_name = choice.label().to_string();
+        self.resolve_theme_choice(choice);
         Ok(())
     }
 
@@ -1330,7 +1330,22 @@ impl AppState {
             return;
         }
         self.theme_color_level = level;
-        self.theme = Theme::from_family(self.theme_family, level);
+        self.theme = match self.theme_name.as_str() {
+            "default" | "harness-chat" => Theme::harness_chat(),
+            "harness-dark" | "dark" => Theme::harness_dark(),
+            "harness-light" | "light" => Theme::harness_light(),
+            "high-contrast" => Theme::harness_high_contrast(),
+            "terminal-native" => Theme::terminal_native(),
+            _ => match self.theme_choice {
+                ThemeChoice::Dark => Theme::harness_dark(),
+                ThemeChoice::Light => Theme::harness_light(),
+                ThemeChoice::Auto => match self.theme_family {
+                    ThemeFamily::Dark => Theme::harness_chat(),
+                    ThemeFamily::Light => Theme::harness_light(),
+                },
+            },
+        }
+        .for_color_level(level);
         self.bump_transcript_render_epoch();
     }
 
@@ -1344,19 +1359,37 @@ impl AppState {
         self.theme_family = family;
         self.theme_preview.begin_preview(family);
         self.theme_preview.commit();
-        self.theme = Theme::from_family(family, self.theme_color_level);
+        self.theme = match choice {
+            ThemeChoice::Dark => Theme::harness_dark(),
+            ThemeChoice::Light => Theme::harness_light(),
+            ThemeChoice::Auto => match family {
+                ThemeFamily::Dark => Theme::harness_chat(),
+                ThemeFamily::Light => Theme::harness_light(),
+            },
+        }
+        .for_color_level(self.theme_color_level);
         self.bump_transcript_render_epoch();
     }
 
     pub(crate) fn apply_theme_by_name(&mut self, name: &str) {
         let choice = match name {
-            "default" | "harness-chat" | "harness-dark" => Some(ThemeChoice::Dark),
+            "default" | "harness-chat" => {
+                self.theme_name = name.to_string();
+                self.theme_choice = ThemeChoice::Auto;
+                self.theme_family = ThemeFamily::Dark;
+                self.theme_preview.begin_preview(ThemeFamily::Dark);
+                self.theme_preview.commit();
+                self.theme = Theme::harness_chat().for_color_level(self.theme_color_level);
+                self.bump_transcript_render_epoch();
+                return;
+            }
+            "harness-dark" | "dark" => Some(ThemeChoice::Dark),
             "harness-light" | "light" => Some(ThemeChoice::Light),
             _ => None,
         };
         if let Some(choice) = choice {
-            self.resolve_theme_choice(choice);
             self.theme_name = name.to_string();
+            self.resolve_theme_choice(choice);
             return;
         }
 
@@ -1367,8 +1400,8 @@ impl AppState {
                 self.bump_transcript_render_epoch();
             }
             None => {
-                self.resolve_theme_choice(ThemeChoice::Dark);
                 self.theme_name = "default".to_string();
+                self.resolve_theme_choice(ThemeChoice::Auto);
                 self.status_banner =
                     Some(format!("unknown theme {name:?}; falling back to default"));
             }

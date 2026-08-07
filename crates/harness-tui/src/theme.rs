@@ -842,7 +842,9 @@ pub struct ReferenceTerminalColors {
     pub primary: Color,
     pub secondary: Color,
     pub muted: Color,
+    pub prompt_border: Color,
     pub prompt_border_active: Color,
+    pub prompt_accent: Color,
     pub active_prompt_surface: Color,
     pub error: Color,
     pub palette_section: Color,
@@ -917,12 +919,36 @@ impl Theme {
         error: [0xE0, 0x6C, 0x75],
     };
 
-    const GROK_TERMINAL_COLORS: ReferenceTerminalColors = ReferenceTerminalColors {
-        canvas: Color::Indexed(0),
-        primary: Color::Indexed(15),
-        secondary: Color::Indexed(7),
-        muted: Color::Indexed(8),
+    pub(crate) const GROK_TERMINAL_COLORS: ReferenceTerminalColors = ReferenceTerminalColors {
+        canvas: rgb(20, 20, 20),
+        primary: rgb(225, 225, 225),
+        secondary: rgb(108, 108, 108),
+        muted: rgb(88, 88, 88),
+        prompt_border: rgb(50, 50, 55),
         prompt_border_active: rgb(0x50, 0x50, 0x58),
+        prompt_accent: rgb(200, 200, 200),
+        active_prompt_surface: rgb(0x26, 0x26, 0x26),
+        error: rgb(247, 118, 142),
+        palette_section: rgb(187, 154, 247),
+        fork_accent: rgb(255, 158, 100),
+        assistant_error: rgb(108, 108, 108),
+        diff_added: rgb(6, 56, 6),
+        diff_removed: rgb(66, 14, 20),
+        diff_added_gutter: rgb(6, 56, 6),
+        diff_removed_gutter: rgb(66, 14, 20),
+        diff_added_highlight: rgb(158, 206, 106),
+        diff_removed_highlight: rgb(247, 118, 142),
+        diff_hunk_header: rgb(122, 162, 247),
+    };
+
+    const HARNESS_DARK_TERMINAL_COLORS: ReferenceTerminalColors = ReferenceTerminalColors {
+        canvas: rgb(20, 20, 20),
+        primary: rgb(225, 225, 225),
+        secondary: rgb(108, 108, 108),
+        muted: rgb(88, 88, 88),
+        prompt_border: rgb(50, 50, 55),
+        prompt_border_active: rgb(0x50, 0x50, 0x58),
+        prompt_accent: rgb(200, 200, 200),
         active_prompt_surface: rgb(0x26, 0x26, 0x26),
         error: rgb(239, 41, 41),
         palette_section: rgb(0xD9, 0x84, 0xD9),
@@ -1305,36 +1331,84 @@ impl Theme {
                 thumb: rgb(0x32, 0x36, 0x3C),
                 thumb_active: rgb(0x60, 0x63, 0x6A),
             },
-            reference_terminal: Self::GROK_TERMINAL_COLORS,
+            reference_terminal: Self::HARNESS_DARK_TERMINAL_COLORS,
             live_shell: Self::HARNESS_DARK_SHELL,
         }
     }
 
     /// Harness chat-shell tokens, anchored by the frozen RGB observation receipt.
     pub fn harness_chat() -> Self {
-        let mut theme = Self::harness_dark();
-        theme.surface.canvas = rgb(20, 20, 20);
-        theme.surface.shell = rgb(20, 20, 20);
-        theme.surface.panel = rgb(20, 20, 20);
-        theme.surface.panel_elevated = rgb(28, 28, 28);
-        theme.surface.overlay = rgb(20, 20, 20);
-        theme.surface.card = rgb(85, 87, 83);
-        theme.surface.selected_card = rgb(85, 87, 83);
-        theme.text.primary = rgb(238, 238, 236);
-        theme.text.secondary = rgb(136, 139, 145);
-        theme.text.tertiary = rgb(136, 139, 145);
-        theme.question_prompt.surface = rgb(36, 36, 36);
-        theme.question_prompt.selected = rgb(54, 54, 54);
-        theme.question_prompt.primary = rgb(225, 225, 225);
-        theme.question_prompt.accent = rgb(200, 200, 200);
-        theme.question_prompt.secondary = rgb(108, 108, 108);
-        theme.status.warning = Color::Yellow;
-        theme.status.disabled = rgb(128, 128, 128);
-        theme.scrollbar.track = rgb(20, 20, 20);
-        theme.scrollbar.thumb = rgb(36, 36, 36);
-        theme.reference_terminal = Self::GROK_TERMINAL_COLORS;
-        theme.live_shell = Self::HARNESS_DARK_SHELL;
-        theme
+        Self {
+            surface: SurfaceColors {
+                canvas: rgb(20, 20, 20),
+                shell: rgb(20, 20, 20),
+                panel: rgb(20, 20, 20),
+                panel_elevated: rgb(28, 28, 28),
+                overlay: rgb(20, 20, 20),
+                card: rgb(36, 36, 36),
+                selected_card: rgb(85, 87, 83),
+            },
+            border: BorderColors {
+                subtle: rgb(50, 50, 55),
+                strong: rgb(60, 60, 65),
+                focus: rgb(80, 80, 88),
+            },
+            text: TextColors {
+                primary: rgb(225, 225, 225),
+                secondary: rgb(108, 108, 108),
+                tertiary: rgb(88, 88, 88),
+                accent: rgb(187, 154, 247),
+                inverse: rgb(20, 20, 20),
+            },
+            question_prompt: QuestionPromptColors {
+                surface: rgb(36, 36, 36),
+                selected: rgb(54, 54, 54),
+                primary: rgb(225, 225, 225),
+                accent: rgb(200, 200, 200),
+                secondary: rgb(108, 108, 108),
+            },
+            status: StatusColors {
+                success: rgb(158, 206, 106),
+                warning: rgb(224, 175, 104),
+                error: rgb(247, 118, 142),
+                info: rgb(125, 207, 255),
+                disabled: rgb(88, 88, 88),
+            },
+            markdown: MarkdownColors {
+                heading: rgb(26, 188, 156),
+                link: rgb(122, 162, 247),
+                link_text: rgb(122, 166, 218),
+                code: rgb(58, 149, 171),
+                emph: rgb(200, 200, 200),
+                strong: rgb(200, 200, 200),
+                block_quote: rgb(108, 108, 108),
+                list_item: rgb(108, 108, 108),
+                list_enum: rgb(108, 108, 108),
+                rule: rgb(108, 108, 108),
+            },
+            agents: AgentColors {
+                build: rgb(122, 162, 247),
+                plan: rgb(187, 154, 247),
+                docs: rgb(224, 175, 104),
+                ask: rgb(125, 207, 255),
+                palette: [
+                    rgb(122, 162, 247),
+                    rgb(187, 154, 247),
+                    rgb(158, 206, 106),
+                    rgb(224, 175, 104),
+                    rgb(255, 158, 100),
+                    rgb(247, 118, 142),
+                    rgb(125, 207, 255),
+                ],
+            },
+            scrollbar: ScrollbarColors {
+                track: rgb(17, 17, 17),
+                thumb: rgb(36, 36, 36),
+                thumb_active: rgb(80, 80, 88),
+            },
+            reference_terminal: Self::GROK_TERMINAL_COLORS,
+            live_shell: Self::HARNESS_DARK_SHELL,
+        }
     }
 
     pub fn harness_light() -> Self {
@@ -1406,7 +1480,7 @@ impl Theme {
                 thumb: rgb(0xC8, 0xC8, 0xC3),
                 thumb_active: rgb(0xA0, 0xA0, 0x9B),
             },
-            reference_terminal: Self::GROK_TERMINAL_COLORS,
+            reference_terminal: Self::HARNESS_DARK_TERMINAL_COLORS,
             live_shell: Self::HARNESS_DARK_SHELL,
         }
     }
@@ -1480,15 +1554,15 @@ impl Theme {
                 thumb: Color::DarkGray,
                 thumb_active: Color::Yellow,
             },
-            reference_terminal: Self::GROK_TERMINAL_COLORS,
+            reference_terminal: Self::HARNESS_DARK_TERMINAL_COLORS,
             live_shell: Self::HARNESS_DARK_SHELL,
         }
     }
 
     pub fn by_name(name: &str) -> Option<Self> {
         match name {
-            "default" | "harness-dark" => Some(Self::harness_dark()),
-            "harness-chat" => Some(Self::harness_chat()),
+            "default" | "harness-chat" => Some(Self::harness_chat()),
+            "harness-dark" | "dark" => Some(Self::harness_dark()),
             "harness-light" | "light" => Some(Self::harness_light()),
             "high-contrast" => Some(Self::harness_high_contrast()),
             "terminal-native" => Some(Self::terminal_native()),
@@ -1498,7 +1572,7 @@ impl Theme {
 
     pub fn from_family(family: ThemeFamily, level: ColorLevel) -> Self {
         let mut theme = match family {
-            ThemeFamily::Dark => Self::harness_dark(),
+            ThemeFamily::Dark => return Self::harness_chat().for_color_level(level),
             ThemeFamily::Light => Self::harness_light(),
         };
         let palette = crate::theme_family::resolve_palette(family, level);
@@ -1541,10 +1615,6 @@ impl Theme {
         theme.agents.plan = color(ColorRole::AgentPlan);
         theme.agents.docs = color(ColorRole::AgentDocs);
         theme.agents.ask = color(ColorRole::AgentAsk);
-        theme.reference_terminal.canvas = color(ColorRole::TerminalPrimary);
-        theme.reference_terminal.primary = color(ColorRole::TerminalPrimary);
-        theme.reference_terminal.secondary = color(ColorRole::TerminalSecondary);
-        theme.reference_terminal.muted = color(ColorRole::TerminalMuted);
         theme.reference_terminal.error = color(ColorRole::TerminalError);
         theme.reference_terminal.palette_section = color(ColorRole::TerminalPaletteSection);
         theme.reference_terminal.fork_accent = color(ColorRole::TerminalForkAccent);
@@ -1662,7 +1732,9 @@ impl Theme {
                 primary: q(self.reference_terminal.primary),
                 secondary: q(self.reference_terminal.secondary),
                 muted: q(self.reference_terminal.muted),
+                prompt_border: q(self.reference_terminal.prompt_border),
                 prompt_border_active: q(self.reference_terminal.prompt_border_active),
+                prompt_accent: q(self.reference_terminal.prompt_accent),
                 active_prompt_surface: q(self.reference_terminal.active_prompt_surface),
                 error: q(self.reference_terminal.error),
                 palette_section: q(self.reference_terminal.palette_section),
@@ -1780,7 +1852,9 @@ impl Theme {
                 primary: high_contrast_fg,
                 secondary: muted_fg,
                 muted: muted_fg,
+                prompt_border: dim_fg,
                 prompt_border_active: muted_fg,
+                prompt_accent: high_contrast_fg,
                 active_prompt_surface: canvas_bg,
                 error: red,
                 palette_section: magenta,
@@ -1895,7 +1969,9 @@ impl Theme {
                 primary: Color::Reset,
                 secondary: Color::Reset,
                 muted: Color::Reset,
+                prompt_border: Color::Reset,
                 prompt_border_active: Color::Reset,
+                prompt_accent: Color::Reset,
                 active_prompt_surface: Color::Reset,
                 error: Color::Red,
                 palette_section: Color::Magenta,
@@ -2048,7 +2124,7 @@ fn transcript_glyphs(preferred: bool) -> TranscriptGlyphs {
 
 impl Default for Theme {
     fn default() -> Self {
-        Self::harness_dark()
+        Self::harness_chat()
     }
 }
 
