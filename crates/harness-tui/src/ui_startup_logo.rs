@@ -110,6 +110,14 @@ mod tests {
     }
 
     #[test]
+    fn shimmer_sweep_changes_logo_highlight_over_time() {
+        let resting = shimmer_opacity(0.9, 0.0);
+        let swept = shimmer_opacity(0.9, 1.0);
+
+        assert!(swept > resting);
+    }
+
+    #[test]
     fn named_terminal_colors_have_visible_animation_states() {
         assert_eq!(animated_color(Color::Gray, Color::White, 0.0), Color::Gray);
         assert_eq!(animated_color(Color::Gray, Color::White, 0.5), Color::White);

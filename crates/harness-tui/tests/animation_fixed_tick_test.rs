@@ -186,8 +186,8 @@ fn startup_idle_app() -> AppState {
         "startup idle fixture must paint the startup shell"
     );
     assert!(
-        !app.has_active_animations_for_evidence(),
-        "startup idle has no phase-driven motion (no welcome shimmer / cursor blink in cells)"
+        app.has_active_animations_for_evidence(),
+        "startup idle must request animation ticks for the welcome shimmer"
     );
     app
 }
@@ -305,43 +305,49 @@ fn tool_running_spinner_fixed_tick_sequence_is_deterministic() {
 }
 
 #[test]
-fn startup_idle_fixed_tick_sequence_is_deterministic() {
+fn startup_logo_fixed_tick_sequence_is_deterministic() {
     // arrange
     // act
     // assert
-    // Given: startup shell with no phase-driven motion (no shimmer / cell cursor blink)
-    let plan = FixedTickPlan::new("startup-idle", 100, 30, 4).with_tick_ms(100);
+    // Given: startup shell with an animated logo and a phase-four content reveal.
+    let plan = FixedTickPlan::new("startup-logo", 100, 30, 5).with_tick_ms(100);
 
-    // When: two independent fixed-tick captures force phase advance anyway
+    // When: two independent fixed-tick captures advance through the reveal.
     let (sequence_a, sequence_b, clock_a) = capture_pair(&plan, startup_idle_app);
 
-    // Then: deterministic, FakeClock advanced, frames stable (idle residual, not motion)
+    // Then: glyph geometry stays stable while the phase-four content reveal is deterministic.
     assert_eq!(sequence_a.schema_version, ANIMATION_FRAME_SEQUENCE_SCHEMA);
-    assert_eq!(sequence_a.surface_id, "startup-idle");
-    assert_eq!(sequence_a.frames.len(), 4);
+    assert_eq!(sequence_a.surface_id, "startup-logo");
+    assert_eq!(sequence_a.frames.len(), 5);
     assert_eq!(sequence_a.frames[0].animation_phase, 0);
-    assert_eq!(sequence_a.frames[3].animation_phase, 3);
-    assert_eq!(sequence_a.frames[3].mono_ms, 300);
-    assert_eq!(clock_a.mono_ms(), 300);
+    assert_eq!(sequence_a.frames[4].animation_phase, 4);
+    assert_eq!(sequence_a.frames[4].mono_ms, 400);
+    assert_eq!(clock_a.mono_ms(), 400);
 
     for frame in &sequence_a.frames {
         assert!(
             spinner_glyphs_in_cells(&frame.cells).is_empty(),
-            "startup idle must not paint braille spinner motion\n{}",
+            "startup logo must not paint braille spinner motion\n{}",
             frame.cells
         );
+        assert!(frame.cells.contains("██╗  ██╗ █████╗ ██████╗"));
+        assert!(frame.cells.contains("╚═╝  ╚═╝╚═╝  ╚═╝"));
     }
     assert_eq!(
         sequence_a.frames[0].cells, sequence_a.frames[1].cells,
-        "startup idle cells must stay stable when phase advances without active motion"
+        "shimmer must change styles without moving logo glyphs"
     );
     assert_eq!(
         sequence_a.frames[0].cells, sequence_a.frames[3].cells,
-        "startup idle must remain stable across the full fixed-tick plan"
+        "logo glyph geometry must remain stable before the content reveal"
+    );
+    assert_ne!(
+        sequence_a.frames[3].cells, sequence_a.frames[4].cells,
+        "phase four must reveal the settled changelog content"
     );
 
     assert_sequences_equal(&sequence_a, &sequence_b)
-        .expect("independent startup-idle captures must be byte-stable");
+        .expect("independent startup-logo captures must be byte-stable");
 }
 
 #[test]

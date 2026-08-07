@@ -26,12 +26,11 @@ mod welcome;
 const LIFECYCLE_COPY_INSET_X: u16 = 3;
 const WELCOME_PANEL_INSET_X: u16 = 3;
 const WELCOME_PANEL_TOP_PAD: u16 = 4;
-const WELCOME_PANEL_LOADING_HEIGHT: u16 = 11;
 const WELCOME_PANEL_READY_HEIGHT: u16 = 16;
 const STARTUP_CLIPBOARD_WARNING: &str = "Clipboard may be unreachable.";
 const STARTUP_CLIPBOARD_SETUP_HINT: &str = "Run /doctor for details and fixes.";
-const WELCOME_LOGO_WIDTH: usize = 14;
-const WELCOME_TEXT_COL: usize = 19;
+const WELCOME_LOGO_WIDTH: usize = 59;
+const WELCOME_ACTION_COL: usize = 18;
 // Body height at 100x30≈24 / 120x32≈26; width 90 drops 80x24 (shell≈76).
 const WELCOME_BORDERED_MIN_WIDTH: u16 = 90;
 const WELCOME_BORDERED_MIN_HEIGHT: u16 = 22;
@@ -41,14 +40,13 @@ const COMPACT_WELCOME_CONTENT_WIDTH: u16 = 51;
 const COMPACT_WELCOME_NARROW_INSET_X: u16 = 5;
 const COMPACT_WELCOME_NARROW_WIDTH: u16 = 70;
 const WELCOME_PANEL_MAX_WIDTH: u16 = 120;
-const WELCOME_LOGO_ROWS: [&str; 7] = [
-    "  ⠷        ⠾",
-    "  ⣿        ⣿",
-    "  ⣿        ⣿",
-    "  ⣿⣶⣶⣶⣶⣶⣶⣶⣿",
-    "  ⣿        ⣿",
-    "  ⣿        ⣿",
-    "  ⢿        ⢿",
+const WELCOME_LOGO_ROWS: [&str; 6] = [
+    "██╗  ██╗ █████╗ ██████╗ ███╗   ██╗███████╗███████╗███████╗",
+    "██║  ██║██╔══██╗██╔══██║████╗  ██║██╔════╝██╔════╝██╔════╝",
+    "███████║███████║██████╔╝██╔██╗ ██║█████╗  ███████╗███████╗",
+    "██╔══██║██╔══██║██╔══██║██║╚██╗██║██╔══╝  ╚════██║╚════██║",
+    "██║  ██║██║  ██║██║  ██║██║ ╚████║███████╗███████╗███████║",
+    "╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝╚══════╝╚══════╝╚══════╝",
 ];
 
 #[derive(Debug, Clone)]
@@ -140,7 +138,7 @@ pub(crate) fn render_startup_lifecycle_flow(
         return;
     }
 
-    let surface = Color::Reset;
+    let surface = theme.surface.canvas;
     frame.render_widget(Block::default().style(Style::default().bg(surface)), area);
     let welcome_layout = app.welcome_layout(area);
     let welcome_hit_map = app.welcome_hit_map(area);
@@ -170,7 +168,7 @@ fn render_startup_clipboard_warning(frame: &mut Frame, app: &AppState, area: Rec
         let row = Rect::new(
             area.x,
             area.y
-                .saturating_add(if startup_welcome_loading(app) { 5 } else { 3 })
+                .saturating_add(3)
                 .saturating_add(u16::try_from(offset).unwrap_or(0)),
             area.width,
             1,
@@ -282,7 +280,9 @@ pub(super) fn render_live_breadcrumb(frame: &mut Frame, app: &AppState, area: Re
                     Span::styled(text[..split].to_string(), dim),
                     Span::styled(
                         meta.to_string(),
-                        Style::default().fg(theme.text.primary).bg(Color::Reset),
+                        Style::default()
+                            .fg(theme.text.primary)
+                            .bg(theme.surface.canvas),
                     ),
                 ])
             },
@@ -409,14 +409,14 @@ fn welcome_panel_top_pad(area: Rect, clipboard_warning_visible: bool) -> u16 {
 }
 
 fn startup_welcome_loading(app: &AppState) -> bool {
-    app.animation_phase_for_evidence() < 4
+    std::env::var_os("HARNESS_DISABLE_ANIMATIONS").is_none()
+        && app.animation_phase_for_evidence() < 4
 }
 
 fn welcome_panel_area(
     area: Rect,
     clipboard_warning_visible: bool,
     layout: &WelcomeLayout,
-    loading: bool,
 ) -> Option<Rect> {
     if area.width < 24 || area.height < 8 || !welcome_bordered_panel_fits(area) {
         return None;
@@ -425,16 +425,9 @@ fn welcome_panel_area(
         .width
         .saturating_sub(WELCOME_PANEL_INSET_X.saturating_mul(2))
         .clamp(20, WELCOME_PANEL_MAX_WIDTH);
-    let top_pad = welcome_panel_top_pad(area, clipboard_warning_visible)
-        .saturating_add(layout.hero_rect.1)
-        .saturating_add(if loading { 1 } else { 0 })
-        .saturating_sub(if loading { 0 } else { 1 });
-    let height = if loading {
-        WELCOME_PANEL_LOADING_HEIGHT
-    } else {
-        WELCOME_PANEL_READY_HEIGHT
-    }
-    .min(area.height.saturating_sub(top_pad).max(8));
+    let top_pad =
+        welcome_panel_top_pad(area, clipboard_warning_visible).saturating_add(layout.hero_rect.1);
+    let height = WELCOME_PANEL_READY_HEIGHT.min(area.height.saturating_sub(top_pad).max(8));
     let x = area.x.saturating_add(area.width.saturating_sub(width) / 2);
     let y = area.y.saturating_add(top_pad);
     Some(Rect::new(x, y, width, height))
@@ -472,10 +465,10 @@ fn welcome_inner_lines(
         .add_modifier(Modifier::DIM);
     let identity = welcome::welcome_identity(theme.live_shell.startup.title);
     let changelog_bullets = welcome::changelog_bullets();
-    let text_col = WELCOME_TEXT_COL;
+    let action_col = WELCOME_ACTION_COL;
     let shortcut_width = 8usize;
     let label_width = inner_width
-        .saturating_sub(text_col)
+        .saturating_sub(action_col)
         .saturating_sub(shortcut_width)
         .saturating_sub(2)
         .max(12);
@@ -496,7 +489,7 @@ fn welcome_inner_lines(
         .spans;
         match idx {
             0 => {
-                let title_text = format!("     {}  ", identity.title);
+                let title_text = format!("   {}  ", identity.title);
                 let version_text = welcome_text_after_logo(
                     &format!("{title_text}{}", identity.version),
                     inner_width,
@@ -513,39 +506,39 @@ fn welcome_inner_lines(
                     spans.push(Span::styled(version_text, title_style));
                 }
             }
-            2 => {
+            1 => {
                 spans.push(Span::styled(
-                    welcome_text_after_logo("     Changelog", inner_width),
+                    welcome_text_after_logo("   Changelog", inner_width),
                     dim_style,
                 ));
+            }
+            2 => {
+                if !loading {
+                    spans.push(Span::styled(
+                        welcome_text_after_logo(
+                            &format!("    • {}", changelog_bullets[0]),
+                            inner_width,
+                        ),
+                        muted,
+                    ));
+                }
+            }
+            3 => {
+                if !loading {
+                    spans.push(Span::styled(
+                        welcome_text_after_logo(
+                            &format!("    • {}", changelog_bullets[1]),
+                            inner_width,
+                        ),
+                        muted,
+                    ));
+                }
             }
             4 => {
                 if !loading {
                     spans.push(Span::styled(
                         welcome_text_after_logo(
-                            &format!("      • {}", changelog_bullets[0]),
-                            inner_width,
-                        ),
-                        muted,
-                    ));
-                }
-            }
-            5 => {
-                if !loading {
-                    spans.push(Span::styled(
-                        welcome_text_after_logo(
-                            &format!("      • {}", changelog_bullets[1]),
-                            inner_width,
-                        ),
-                        muted,
-                    ));
-                }
-            }
-            6 => {
-                if !loading {
-                    spans.push(Span::styled(
-                        welcome_text_after_logo(
-                            &format!("      • {}", changelog_bullets[2]),
+                            &format!("    • {}", changelog_bullets[2]),
                             inner_width,
                         ),
                         muted,
@@ -554,31 +547,7 @@ fn welcome_inner_lines(
             }
             _ => {}
         }
-        if loading && (3..=6).contains(&idx) {
-            let actions = welcome::welcome_actions();
-            let action = &actions[idx - 3];
-            let label = truncate_plain_text(action.label, inner_width.saturating_sub(text_col));
-            let used = text_col.saturating_add(super::display_width(&label));
-            spans.push(Span::styled(
-                " ".repeat(text_col.saturating_sub(WELCOME_LOGO_WIDTH)),
-                muted,
-            ));
-            spans.push(Span::styled(label, body.add_modifier(Modifier::BOLD)));
-            if let Some(shortcut) = action.shortcut {
-                let shortcut_width = super::display_width(shortcut);
-                let target = inner_width.saturating_sub(shortcut_width.saturating_add(2));
-                if used < target {
-                    spans.push(Span::styled(" ".repeat(target - used), muted));
-                }
-                spans.push(Span::styled(shortcut, muted));
-            }
-        }
         lines.push(Line::from(spans));
-    }
-
-    if loading {
-        lines.push(Line::from(Span::styled(" ", muted)));
-        return lines;
     }
 
     lines.push(Line::from(Span::styled(" ", muted)));
@@ -586,7 +555,7 @@ fn welcome_inner_lines(
     for action in welcome::welcome_actions() {
         let label = action.label;
         let shortcut = action.shortcut;
-        let pad = " ".repeat(text_col.min(inner_width));
+        let pad = " ".repeat(action_col.min(inner_width));
         let label_text = truncate_plain_text(label, label_width);
         let label_width_actual = super::display_width(&label_text);
         let mut spans: Vec<Span<'static>> = vec![
@@ -595,7 +564,7 @@ fn welcome_inner_lines(
         ];
         if let Some(shortcut) = shortcut {
             let shortcut_chars = shortcut.chars().count();
-            let used = text_col.min(inner_width) + label_width_actual;
+            let used = action_col.min(inner_width) + label_width_actual;
             let target = inner_width.saturating_sub(shortcut_chars.saturating_add(2));
             if used < target {
                 spans.push(Span::styled(" ".repeat(target.saturating_sub(used)), muted));
@@ -777,12 +746,7 @@ fn render_welcome_panel(
     layout: &WelcomeLayout,
 ) {
     let loading = startup_welcome_loading(app);
-    if let Some(panel) = welcome_panel_area(
-        area,
-        startup_clipboard_warning_visible(app),
-        layout,
-        loading,
-    ) {
+    if let Some(panel) = welcome_panel_area(area, startup_clipboard_warning_visible(app), layout) {
         let surface = theme.surface.canvas;
         let border_color = match app.welcome_state().focus() {
             WelcomeFocus::Prompt => theme.border.focus,
@@ -793,7 +757,7 @@ fn render_welcome_panel(
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(border_color).bg(surface))
             .style(Style::default().bg(surface));
-        let inner = block.inner(panel);
+        let inner = inset_rect(block.inner(panel), 1, 0);
         frame.render_widget(block, panel);
         if inner.width == 0 || inner.height == 0 {
             return;
@@ -905,10 +869,9 @@ fn startup_lifecycle_flow_selection_surface(
         area,
         startup_clipboard_warning_visible(app),
         &welcome_layout,
-        startup_welcome_loading(app),
     ) {
         let block = Block::default().borders(Borders::ALL);
-        let content_area = block.inner(panel);
+        let content_area = inset_rect(block.inner(panel), 1, 0);
         if content_area.width == 0 || content_area.height == 0 {
             return None;
         }
@@ -1043,7 +1006,7 @@ mod breadcrumb_token_meta_tests {
         terminal
             .draw(|frame| {
                 frame.render_widget(
-                    Block::default().style(Style::default().bg(Color::Reset)),
+                    Block::default().style(Style::default().bg(theme.surface.canvas)),
                     frame.area(),
                 );
                 super::render_startup_breadcrumb(frame, &app, frame.area(), &theme);
@@ -1055,7 +1018,7 @@ mod breadcrumb_token_meta_tests {
         let text_width = u16::try_from(super::super::display_width(&text))
             .expect("breadcrumb fits standard viewport");
         let cell = &terminal.backend().buffer()[(text_width + 1, 1)];
-        assert_eq!(cell.bg, Color::Reset);
+        assert_eq!(cell.bg, theme.surface.canvas);
         assert!(!cell.modifier.contains(Modifier::DIM));
     }
 }
