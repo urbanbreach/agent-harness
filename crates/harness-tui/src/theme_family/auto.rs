@@ -25,14 +25,19 @@ impl SystemPreference {
 /// Detect the system color-scheme preference from the environment.
 ///
 /// Resolution order:
-/// 1. `COLORFGBG` env var: values starting with "0;" indicate a dark background
-///    (light-on-dark), so return `Dark`. Otherwise `Light`.
+/// 1. Parse the final `COLORFGBG` field as the background palette index.
 /// 2. Fall back to `Dark` (the design contract default).
 pub fn detect_system_preference() -> SystemPreference {
-    match std::env::var("COLORFGBG") {
-        Ok(value) if value.starts_with("0;") => SystemPreference::Dark,
-        Ok(_) => SystemPreference::Light,
-        Err(_) => SystemPreference::Dark,
+    system_preference_from_colorfgbg(std::env::var("COLORFGBG").ok().as_deref())
+}
+
+fn system_preference_from_colorfgbg(colorfgbg: Option<&str>) -> SystemPreference {
+    let background = colorfgbg
+        .and_then(|value| value.rsplit(';').next())
+        .and_then(|value| value.trim().parse::<u8>().ok());
+    match background {
+        Some(7..=15) => SystemPreference::Light,
+        _ => SystemPreference::Dark,
     }
 }
 
@@ -88,3 +93,20 @@ impl std::fmt::Display for AutoDetectError {
 }
 
 impl std::error::Error for AutoDetectError {}
+
+#[cfg(test)]
+mod tests {
+    use super::{system_preference_from_colorfgbg, SystemPreference};
+
+    #[test]
+    fn colorfgbg_uses_the_final_background_field() {
+        assert_eq!(
+            system_preference_from_colorfgbg(Some("15;0")),
+            SystemPreference::Dark
+        );
+        assert_eq!(
+            system_preference_from_colorfgbg(Some("0;15")),
+            SystemPreference::Light
+        );
+    }
+}
