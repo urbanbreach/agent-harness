@@ -39,6 +39,7 @@ Inputs:
   --cols <n> / --rows <n>  Terminal geometry. Default: 120 x 32.
   --font-size <n>        xterm.js fontSize in CSS px. Default: 15 (freeze receipt may note 14).
   --font-family <css>    xterm.js fontFamily CSS. Default: Menlo, DejaVu Sans Mono, Noto Sans Mono CJK KR, monospace.
+  --terminal-background <#rrggbb>  xterm.js reset background. Default: #141414.
   --dwell-ms <n>         Milliseconds to let the TUI settle after input before capture. Default: 1500.
   --key-delay-ms <n>     Pause between --input tokens. Default: 120.
   --evidence-dir <path>  Directory for terminal.png, terminal.txt, terminal-ansi.txt, metadata.json.
@@ -59,8 +60,13 @@ function parsePositiveInt(name, value) {
   return parsed;
 }
 
+function parseHexColor(name, value) {
+  if (!/^#[0-9a-fA-F]{6}$/.test(value)) throw new Error(`${name} must be a #rrggbb color`);
+  return value.toLowerCase();
+}
+
 function parseArgs(argv) {
-  const args = { cols: 120, rows: 32, fontSize: 15, fontFamily: undefined, dwellMs: 1500, keyDelayMs: 120, preDwellMs: 400, cwd: process.cwd(), browser: true, redactions: [], redactRegexes: [], inputs: [] };
+  const args = { cols: 120, rows: 32, fontSize: 15, fontFamily: undefined, terminalBackground: "#141414", dwellMs: 1500, keyDelayMs: 120, preDwellMs: 400, cwd: process.cwd(), browser: true, redactions: [], redactRegexes: [], inputs: [] };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "--help" || arg === "-h") return { ...args, help: true };
@@ -83,6 +89,7 @@ function parseArgs(argv) {
     else if (arg === "--rows") args.rows = parsePositiveInt(arg, next);
     else if (arg === "--font-size") args.fontSize = parsePositiveInt(arg, next);
     else if (arg === "--font-family") args.fontFamily = next;
+    else if (arg === "--terminal-background") args.terminalBackground = parseHexColor(arg, next);
     else if (arg === "--dwell-ms") args.dwellMs = parsePositiveInt(arg, next);
     else if (arg === "--key-delay-ms") args.keyDelayMs = parsePositiveInt(arg, next);
     else if (arg === "--pre-dwell-ms") args.preDwellMs = parsePositiveInt(arg, next);
@@ -138,11 +145,15 @@ function captureFileRaw(content) {
   return { pngBuffer: null, screenText: stripAnsi(content), rawStream: content, connector: "file-raw", cleanup: "file replay; no process" };
 }
 
+function redactOsc52Payloads(stream) {
+  return stream.replace(/\x1b\]52;([^;]*);[^\x07\x1b]*(\x07|\x1b\\)/g, "\x1b]52;$1;[REDACTED]$2");
+}
+
 async function run(args) {
   const evidenceDir = resolve(args.evidenceDir);
   mkdirSync(evidenceDir, { recursive: true });
   const rules = compileRedactions(args);
-  const redactStream = (s) => redactEvidence(s, rules);
+  const redactStream = (s) => redactEvidence(redactOsc52Payloads(s), rules);
   const fromFile = args.fromFile ? readFileSync(args.fromFile, "utf8") : undefined;
 
   let cap;
@@ -173,6 +184,7 @@ async function run(args) {
       rows: args.rows,
       fontSize: args.fontSize,
       ...(args.fontFamily ? { fontFamily: args.fontFamily } : {}),
+      terminalBackground: args.terminalBackground,
     },
     ...(cap.capabilities ? { capabilities: cap.capabilities } : {}),
     cleanup: cap.cleanup,
@@ -190,6 +202,11 @@ async function selfTest() {
   const cap = await captureRawPty({ command: "printf '\\033[31mRED\\033[0m \\033[32mGREEN\\033[0m 한글ABC'", cwd: process.cwd(), cols: 40, rows: 8, dwellMs: 300 });
   if (!/RED/.test(cap.rawStream) || !cap.rawStream.includes("[31m")) throw new Error("pty did not emit expected ANSI");
   if (!cap.rawStream.includes("한글")) throw new Error("pty dropped CJK bytes");
+  const osc52 = "\x1b]52;c;U0VDUkVU\x07";
+  const safeOsc52 = redactOsc52Payloads(osc52);
+  if (safeOsc52.includes("U0VDUkVU") || !safeOsc52.includes("[REDACTED]")) {
+    throw new Error("OSC52 payload redaction failed");
+  }
   process.stdout.write("self-test PASS: xterm assets resolve; node-pty emits true-color ANSI + CJK\n");
 }
 
