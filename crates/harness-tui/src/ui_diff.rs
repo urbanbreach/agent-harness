@@ -10,7 +10,7 @@ mod ui_diff_model;
 #[path = "ui_diff_render.rs"]
 mod ui_diff_render;
 #[path = "ui_diff_syntax.rs"]
-mod ui_diff_syntax;
+pub(super) mod ui_diff_syntax;
 
 use ui_diff_model::{structured_diff_model_from_patch, structured_diff_stats_from_patch};
 use ui_diff_render::render_structured_diff_model;
@@ -280,6 +280,7 @@ mod tests {
             Some("src/demo.rs"),
             "let value = \"hi\"; let total = 42; // note",
             Some(reference_diff_added_bg(&Theme::default())),
+            crate::theme::ColorLevel::TrueColor,
         )
         .unwrap_or_abort();
 
@@ -333,6 +334,7 @@ mod tests {
                     Some(path),
                     "# heading",
                     Some(reference_diff_added_bg(&Theme::default())),
+                    crate::theme::ColorLevel::TrueColor,
                 )
                 .is_none(),
             )
@@ -353,6 +355,29 @@ mod tests {
             assert!(!is_plain_prose, "{path} should keep normal syntax handling");
         }
         assert!(!extensionless_result);
+    }
+
+    #[test]
+    fn structured_diff_syntax_respects_limited_color_levels() {
+        let chunks = highlight_diff_line_chunks(
+            Some("src/demo.rs"),
+            "let value = 42;",
+            Some(
+                Theme::harness_chat()
+                    .for_color_level(crate::theme::ColorLevel::Ansi256)
+                    .surface
+                    .panel,
+            ),
+            crate::theme::ColorLevel::Ansi256,
+        )
+        .unwrap_or_abort();
+
+        assert!(chunks
+            .iter()
+            .all(|chunk| !matches!(chunk.style.fg, Some(Color::Rgb(_, _, _)))));
+        assert!(chunks
+            .iter()
+            .all(|chunk| !matches!(chunk.style.bg, Some(Color::Rgb(_, _, _)))));
     }
     #[test]
     fn structured_diff_headers_surface_rename_paths() {

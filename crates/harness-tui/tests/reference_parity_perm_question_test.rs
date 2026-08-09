@@ -60,7 +60,11 @@ fn render(app: &AppState) -> String {
 }
 
 fn plan_for(app: &AppState) -> FrameLayoutPlan {
-    FrameLayoutPlan::for_app(app, Rect::new(0, 0, W, H))
+    plan_at(app, W, H)
+}
+
+fn plan_at(app: &AppState, width: u16, height: u16) -> FrameLayoutPlan {
+    FrameLayoutPlan::for_app(app, Rect::new(0, 0, width, height))
 }
 
 fn permission_requested_event(
@@ -189,6 +193,30 @@ fn question_live_app_with_sink() -> (AppState, Arc<Mutex<Vec<UiIntent>>>) {
     (app, intents)
 }
 
+#[test]
+fn permission_and_question_keep_pinned_composer_rects() {
+    let mut permission = live_app();
+    permission.ingest_event(permission_requested_event(
+        1,
+        "perm_geometry",
+        "tool_perm_geometry",
+    ));
+    let mut question = live_app();
+    question.ingest_event(question_permission_requested_event(
+        1,
+        "question_geometry",
+        "tool_question_geometry",
+    ));
+
+    for (width, height, expected) in [
+        (120, 40, Rect::new(2, 34, 116, 3)),
+        (60, 20, Rect::new(1, 16, 58, 3)),
+    ] {
+        assert_eq!(plan_at(&permission, width, height).composer, Some(expected));
+        assert_eq!(plan_at(&question, width, height).composer, Some(expected));
+    }
+}
+
 /// SHELL-PERM / OVL-PERM: permission dock preempts composer, preserves draft, full-width shell.
 #[test]
 fn shell_perm_preempts_composer_preserves_draft_full_width() {
@@ -198,6 +226,7 @@ fn shell_perm_preempts_composer_preserves_draft_full_width() {
     app.composer.prompt_buffer = draft.to_string();
     app.composer.prompt_cursor = draft.chars().count();
     app.focus = Focus::Prompt;
+    let live_plan = plan_for(&app);
 
     // act
     app.ingest_event(permission_requested_event(
@@ -212,6 +241,10 @@ fn shell_perm_preempts_composer_preserves_draft_full_width() {
     assert!(
         plan.operator_sidebar.is_none(),
         "SHELL-PERM: full-width shell (no operator sidebar)"
+    );
+    assert_eq!(
+        plan.composer, live_plan.composer,
+        "SHELL-PERM: permission interaction must not move or resize the composer"
     );
     if let (Some(transcript), Some(composer)) = (plan.transcript, plan.composer) {
         assert_eq!(
@@ -253,6 +286,10 @@ fn shell_perm_preempts_composer_preserves_draft_full_width() {
         "SHELL-PERM: draft preserved under permission dock"
     );
     assert!(
+        rendered.contains(draft),
+        "SHELL-PERM: preserved draft must remain visible in the attached composer\n{rendered}"
+    );
+    assert!(
         app.active_permission().is_some() || app.active_permission_view().is_some(),
         "SHELL-PERM: active permission required"
     );
@@ -267,6 +304,7 @@ fn shell_question_parses_prompts_preserves_draft_no_allow_chrome() {
     app.composer.prompt_buffer = draft.to_string();
     app.composer.prompt_cursor = draft.chars().count();
     app.focus = Focus::Prompt;
+    let live_plan = plan_for(&app);
 
     // act
     app.ingest_event(question_permission_requested_event(
@@ -308,6 +346,14 @@ fn shell_question_parses_prompts_preserves_draft_no_allow_chrome() {
     assert!(
         plan.operator_sidebar.is_none(),
         "SHELL-QUESTION: full-width shell (no operator sidebar)"
+    );
+    assert_eq!(
+        plan.composer, live_plan.composer,
+        "SHELL-QUESTION: question interaction must not move or resize the composer"
+    );
+    assert!(
+        rendered.contains(draft),
+        "SHELL-QUESTION: preserved draft must remain visible in the attached composer\n{rendered}"
     );
     assert!(
         rendered.contains('┃'),

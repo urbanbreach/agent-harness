@@ -433,7 +433,7 @@ fn characterization_current_live_shell_geometry_is_full_width_and_bottom_safe() 
         let composer = plan
             .composer
             .unwrap_or_else(|| panic!("composer at {width}x{height}"));
-        let inset = if width <= 60 { 0 } else { 2 };
+        let inset = if width <= 60 { 1 } else { 2 };
 
         assert_eq!(transcript.x, plan.shell.x);
         assert_eq!(transcript.width, plan.shell.width);

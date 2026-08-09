@@ -33,7 +33,6 @@ pub(super) fn render_status_dialog_overlay(
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(1), Constraint::Min(0)])
         .split(content);
-    render_status_dialog_header(frame, theme, chunks[0]);
     if let Some(dashboard) = app.status_dashboard() {
         render_interactive_dashboard(frame, app, theme, overlay);
         let summary_area = Rect::new(
@@ -49,6 +48,7 @@ pub(super) fn render_status_dialog_overlay(
     } else {
         render_status_dialog_body(frame, theme, chunks[1], status_dialog_body(app, theme));
     }
+    render_status_dialog_header(frame, theme, chunks[0]);
 }
 
 fn render_status_dialog_body(frame: &mut Frame, theme: &Theme, area: Rect, body: Text<'static>) {

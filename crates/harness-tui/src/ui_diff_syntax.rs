@@ -16,6 +16,8 @@ use syntect::highlighting::{
 };
 use syntect::parsing::SyntaxSet;
 
+use crate::theme::{quantize_color, ColorLevel};
+
 use super::super::ui_chrome::{display_width, take_width_prefix, truncate_plain_text};
 
 #[derive(Debug, Clone)]
@@ -108,6 +110,7 @@ pub(super) fn highlight_diff_line_chunks(
     path: Option<&str>,
     text: &str,
     row_bg: Option<Color>,
+    color_level: ColorLevel,
 ) -> Option<Vec<StyledTextChunk>> {
     let path = path?;
     if diff_path_is_plain_prose(path) {
@@ -132,7 +135,7 @@ pub(super) fn highlight_diff_line_chunks(
             .into_iter()
             .map(|(style, content)| StyledTextChunk {
                 text: content.to_string(),
-                style: diff_syntect_style_to_ratatui(style, row_bg),
+                style: diff_syntect_style_to_ratatui(style, row_bg, color_level),
             })
             .collect(),
     )
@@ -162,7 +165,7 @@ fn diff_syntax_highlight_assets() -> &'static DiffSyntaxHighlightAssets {
     })
 }
 
-fn reference_diff_syntect_theme() -> SyntectTheme {
+pub(crate) fn reference_diff_syntect_theme() -> SyntectTheme {
     let mut scopes = Vec::new();
     push_syntect_scope(
         &mut scopes,
@@ -351,15 +354,13 @@ struct DiffSyntaxHighlightAssets {
 fn diff_syntect_style_to_ratatui(
     style: syntect::highlighting::Style,
     row_bg: Option<Color>,
+    color_level: ColorLevel,
 ) -> Style {
-    let mut rendered = Style::default().fg(Color::Rgb(
-        style.foreground.r,
-        style.foreground.g,
-        style.foreground.b,
-    ));
+    let foreground = Color::Rgb(style.foreground.r, style.foreground.g, style.foreground.b);
+    let mut rendered = Style::default().fg(quantize_color(foreground, color_level));
 
     if let Some(row_bg) = row_bg {
-        rendered = rendered.bg(row_bg);
+        rendered = rendered.bg(quantize_color(row_bg, color_level));
     }
     if style.font_style.contains(SyntectFontStyle::BOLD) {
         rendered = rendered.add_modifier(Modifier::BOLD);

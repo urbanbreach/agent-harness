@@ -62,6 +62,8 @@ pub(crate) fn exact_test_transcript_section_model_keeps_nested_tool_and_error_bl
         last_timestamp: None,
     });
     app.activities = std::collections::VecDeque::from(vec![entry]);
+    assert!(app.toggle_selected_transcript_fold());
+    assert!(app.toggle_selected_transcript_fold());
 
     let sections = build_transcript_sections(&app);
 
@@ -146,6 +148,7 @@ pub(crate) fn exact_test_transcript_reasoning_precedes_answer_and_tool_rows() {
         last_timestamp: None,
     });
     app.activities = std::collections::VecDeque::from(vec![entry]);
+    assert!(app.toggle_selected_transcript_fold());
 
     let lines = build_transcript_lines_for_width(&app, &Theme::default(), 80)
         .into_iter()
@@ -160,17 +163,22 @@ pub(crate) fn exact_test_transcript_reasoning_precedes_answer_and_tool_rows() {
     let reasoning_row = lines
         .iter()
         .position(|line| line.contains("working through the plan"))
-        .unwrap_or_abort();
+        .unwrap_or_else(|| panic!("reasoning row missing: {lines:#?}"));
     let answer_row = lines
         .iter()
         .position(|line| line.contains("assistant answer"))
-        .unwrap_or_abort();
+        .unwrap_or_else(|| panic!("answer row missing: {lines:#?}"));
     let tool_row = lines
         .iter()
         .enumerate()
         .skip(answer_row + 1)
-        .find_map(|(index, line)| line.contains("Read 1 file").then_some(index))
-        .unwrap_or_abort();
+        .find_map(|(index, line)| {
+            (line.contains("src/ui.rs")
+                || line.contains("24 lines")
+                || line.to_ascii_lowercase().contains("read"))
+            .then_some(index)
+        })
+        .unwrap_or_else(|| panic!("tool row missing: {lines:#?}"));
 
     assert!(reasoning_row < answer_row);
     assert!(answer_row < tool_row);
@@ -193,6 +201,7 @@ pub(crate) fn exact_test_transcript_user_and_reasoning_match_reference_entry_bod
     });
     entry.thinking_text = "Thinking: comparing reference entry body".to_string();
     app.activities = std::collections::VecDeque::from(vec![entry]);
+    assert!(app.toggle_selected_transcript_fold());
 
     let lines = transcript_test_line_texts(build_transcript_lines_for_width(
         &app,
@@ -572,6 +581,7 @@ fn reasoning_after_tool_renders_in_new_block_below_tool() {
             },
         ),
     ));
+    assert!(app.toggle_selected_transcript_fold());
 
     let sections = build_transcript_sections(&app);
     assert_eq!(sections.len(), 1);

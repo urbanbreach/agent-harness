@@ -140,6 +140,78 @@ fn ingest_completed_turn(app: &mut AppState, request_id: &str, user: &str, assis
     ));
 }
 
+fn completed_turn_events(
+    first_seq: u64,
+    request_id: &str,
+    user: &str,
+    assistant: &str,
+) -> Vec<EventEnvelopeV1> {
+    vec![
+        envelope(
+            first_seq,
+            Some(request_id),
+            EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                request_id: request_id.into(),
+                text: user.to_string(),
+            }),
+        ),
+        envelope(
+            first_seq + 1,
+            Some(request_id),
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: request_id.into(),
+                provider_id: "mock".to_string(),
+                model_id: "model-tx".to_string(),
+                prompt_summary: user.to_string(),
+                request_digest: format!("digest-{request_id}"),
+                metadata: None,
+            }),
+        ),
+        envelope(
+            first_seq + 2,
+            Some(request_id),
+            EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+                request_id: request_id.into(),
+                delta: assistant.to_string(),
+            }),
+        ),
+        envelope(
+            first_seq + 3,
+            Some(request_id),
+            EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+                request_id: request_id.into(),
+                finish_reason: "stop".to_string(),
+                output_digest: Some(format!("digest-out-{request_id}")),
+                usage: None,
+                metadata: None,
+            }),
+        ),
+    ]
+}
+
+fn app_with_deep_history() -> AppState {
+    let mut app = live_app();
+    let events = (0..6_u64)
+        .flat_map(|turn| {
+            let request_id = format!("req_history_{turn}");
+            let user = format!("history prompt {turn}");
+            let assistant =
+                format!("history reply {turn}\nrow a\nrow b\nrow c\nrow d\nturn-{turn}-tail");
+            completed_turn_events(turn * 4 + 1, &request_id, &user, &assistant)
+        })
+        .collect();
+    app.replace_events(events);
+    let _ = render(&app);
+    app
+}
+
+fn submit_text(app: &mut AppState, text: &str) {
+    for character in text.chars() {
+        app.handle_key(KeyEvent::new(KeyCode::Char(character), KeyModifiers::NONE));
+    }
+    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+}
+
 /// SHELL-IDLE: completed-turn live shell keeps full-width transcript + bordered composer.
 /// Freeze capture: TBD (no `run*-idle` freeze yet).
 #[test]
@@ -399,6 +471,259 @@ fn tx_user_message_chrome_is_flat_marker_without_legacy_rail() {
         user_text_col.saturating_sub(user_rail_col),
         2,
         "TX-USER: marker plus one-column space before body text\n{rendered}"
+    );
+}
+
+#[test]
+fn tx_user_long_message_collapses_after_three_visual_rows() {
+    // Given: a submitted prompt that wraps beyond the reference three-row limit.
+    let mut app = live_app();
+    let long_prompt = format!(
+        "{} TAIL_MUST_BE_COLLAPSED",
+        "long user message segment ".repeat(24)
+    );
+    ingest_completed_turn(
+        &mut app,
+        "req_user_long",
+        &long_prompt,
+        "Assistant acknowledges.",
+    );
+
+    // When: the transcript is rendered at the primary reference width.
+    let rendered = render(&app);
+
+    // Then: disclosure is explicit and content beyond row three stays folded.
+    assert!(
+        rendered.contains('…'),
+        "TX-USER: folded prompt needs an ellipsis\n{rendered}"
+    );
+    assert!(
+        !rendered.contains("TAIL_MUST_BE_COLLAPSED"),
+        "TX-USER: content beyond the third visual row must stay folded\n{rendered}"
+    );
+}
+
+#[test]
+fn tx_user_submit_page_flips_new_prompt_to_viewport_top() {
+    // Given: enough completed history to fill more than one transcript viewport.
+    let mut app = app_with_deep_history();
+
+    // When: the user submits a new prompt.
+    submit_text(&mut app, "new turn page flip");
+    let rendered = render(&app);
+    let new_prompt_row = rendered
+        .lines()
+        .position(|line| line.contains("new turn page flip"))
+        .expect("submitted prompt row");
+
+    // Then: the prompt starts at the first transcript content row and the preceding tail is above it.
+    assert_eq!(
+        new_prompt_row, 4,
+        "TX-USER: submitted prompt must land at the transcript top, row={new_prompt_row}\n{rendered}"
+    );
+    assert!(
+        !rendered.contains("turn-5-tail"),
+        "TX-USER: the immediately preceding turn tail must move above the viewport\n{rendered}"
+    );
+}
+
+#[test]
+fn tx_user_page_flip_keeps_prior_turn_reachable_by_scrolling_up() {
+    // Given: a submitted prompt preserved at the top of a deep transcript.
+    let mut app = app_with_deep_history();
+    submit_text(&mut app, "reachability prompt");
+    let preserved = render(&app);
+    assert!(!preserved.contains("turn-5-tail"), "{preserved}");
+
+    // When: the user scrolls far enough toward older transcript content.
+    app.scroll_page_up(24);
+    let scrolled = render(&app);
+
+    // Then: the prior turn remains in scrollback instead of being removed by page flip.
+    assert!(
+        scrolled.contains("turn-5-tail"),
+        "TX-USER: prior turn must remain reachable above the page-flipped prompt\n{scrolled}"
+    );
+}
+
+#[test]
+fn tx_user_page_flip_targets_activated_prompt_before_later_queued_prompt() {
+    // Given: deep history, one active turn, and two queued follow-up prompts.
+    let mut app = app_with_deep_history();
+    app.ingest_event(envelope(
+        25,
+        Some("req_active"),
+        EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+            request_id: "req_active".into(),
+            text: "active prompt".to_string(),
+        }),
+    ));
+    app.ingest_event(envelope(
+        26,
+        Some("req_active"),
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "req_active".into(),
+            provider_id: "mock".to_string(),
+            model_id: "model-tx".to_string(),
+            prompt_summary: "active prompt".to_string(),
+            request_digest: "digest-active".to_string(),
+            metadata: None,
+        }),
+    ));
+    submit_text(&mut app, "queued prompt B");
+    submit_text(&mut app, "queued prompt C");
+    app.ingest_event(envelope(
+        27,
+        Some("req_b"),
+        EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+            request_id: "req_b".into(),
+            text: "queued prompt B".to_string(),
+        }),
+    ));
+    app.ingest_event(envelope(
+        28,
+        Some("req_c"),
+        EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+            request_id: "req_c".into(),
+            text: "queued prompt C".to_string(),
+        }),
+    ));
+    for offset in 0_u64..10 {
+        let request_id = format!("req_later_{offset}");
+        let prompt = format!("later queued prompt {offset}");
+        submit_text(&mut app, &prompt);
+        app.ingest_event(envelope(
+            29 + offset,
+            Some(&request_id),
+            EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                request_id: request_id.clone().into(),
+                text: prompt,
+            }),
+        ));
+    }
+    app.ingest_event(envelope(
+        39,
+        Some("req_active"),
+        EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+            request_id: "req_active".into(),
+            finish_reason: "stop".to_string(),
+            output_digest: None,
+            usage: None,
+            metadata: None,
+        }),
+    ));
+
+    // When: B activates while C remains queued behind it.
+    app.ingest_event(envelope(
+        40,
+        Some("req_b"),
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "req_b".into(),
+            provider_id: "mock".to_string(),
+            model_id: "model-tx".to_string(),
+            prompt_summary: "queued prompt B".to_string(),
+            request_digest: "digest-b".to_string(),
+            metadata: None,
+        }),
+    ));
+    let rendered = render(&app);
+    let prompt_b_row = rendered
+        .lines()
+        .position(|line| line.contains("queued prompt B"))
+        .unwrap_or_else(|| panic!("activated B must remain visible above queued C\n{rendered}"));
+    let prompt_c_row = rendered
+        .lines()
+        .position(|line| line.contains("queued prompt C"))
+        .unwrap_or_else(|| panic!("queued C should remain visible below activated B\n{rendered}"));
+
+    // Then: page flip starts at B, not the latest queued row C.
+    assert!(
+        prompt_b_row < prompt_c_row,
+        "activated B must precede queued C, B={prompt_b_row}, C={prompt_c_row}\n{rendered}"
+    );
+    assert_eq!(
+        prompt_b_row, 4,
+        "later queued rows must not consume B's page flip before B itself overflows\n{rendered}"
+    );
+}
+
+#[test]
+fn tx_user_page_flip_resumes_bottom_follow_after_stream_overflow() {
+    // Given: a newly submitted prompt preserved at the top of a deep transcript.
+    let mut app = app_with_deep_history();
+    submit_text(&mut app, "overflow handoff prompt");
+    let _ = render(&app);
+
+    // When: assistant output grows beyond the preserved viewport.
+    app.ingest_event(envelope(
+        25,
+        Some("req_overflow"),
+        EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+            request_id: "req_overflow".into(),
+            text: "overflow handoff prompt".to_string(),
+        }),
+    ));
+    app.ingest_event(envelope(
+        26,
+        Some("req_overflow"),
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "req_overflow".into(),
+            provider_id: "mock".to_string(),
+            model_id: "model-tx".to_string(),
+            prompt_summary: "overflow handoff prompt".to_string(),
+            request_digest: "digest-overflow".to_string(),
+            metadata: None,
+        }),
+    ));
+    app.ingest_event(envelope(
+        27,
+        Some("req_overflow"),
+        EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+            request_id: "req_overflow".into(),
+            delta: format!("{}STREAM_BOTTOM_SENTINEL", "streaming row\n".repeat(48)),
+        }),
+    ));
+    let rendered = render(&app);
+
+    // Then: the newest stream tail is visible and the one-shot prompt pin is consumed.
+    assert!(
+        rendered.contains("STREAM_BOTTOM_SENTINEL"),
+        "TX-USER: overflow must hand control back to normal bottom follow\n{rendered}"
+    );
+    assert!(
+        !rendered.contains("overflow handoff prompt"),
+        "TX-USER: consumed page flip must not keep the prompt sticky at bottom follow\n{rendered}"
+    );
+}
+
+#[test]
+fn tx_user_first_manual_scroll_moves_from_the_preserved_viewport() {
+    // Given: a submitted prompt preserved at the top of a deep transcript.
+    let mut app = app_with_deep_history();
+    submit_text(&mut app, "manual scroll continuity prompt");
+    let preserved = render(&app);
+    let preserved_row = preserved
+        .lines()
+        .position(|line| line.contains("manual scroll continuity prompt"))
+        .expect("preserved prompt row");
+
+    // When: the user scrolls one row toward older transcript content.
+    app.scroll_page_up(1);
+    let scrolled = render(&app);
+    let scrolled_row = scrolled
+        .lines()
+        .position(|line| line.contains("manual scroll continuity prompt"))
+        .unwrap_or_else(|| {
+            panic!(
+                "prompt remains visible after one-row scroll; preserved_row={preserved_row}\nPRESERVED:\n{preserved}\nSCROLLED:\n{scrolled}"
+            )
+        });
+
+    // Then: movement continues from the visible preserved viewport without jumping.
+    assert_eq!(
+        scrolled_row,
+        preserved_row.saturating_add(1),
+        "TX-USER: first manual scroll must move one row from the preserved viewport\n{scrolled}"
     );
 }
 

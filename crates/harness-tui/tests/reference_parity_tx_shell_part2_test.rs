@@ -690,7 +690,10 @@ fn shell_scroll_page_keys_adjust_transcript_under_full_width() {
             Some(rid),
             EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
                 request_id: rid.into(),
-                delta: format!("Assistant body for {rid}"),
+                delta: (0..12)
+                    .map(|line| format!("Assistant body for {rid}, row {line}"))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
             }),
         ));
         app.ingest_event(envelope(
@@ -706,6 +709,7 @@ fn shell_scroll_page_keys_adjust_transcript_under_full_width() {
         ));
     }
     app.focus = Focus::Details;
+    let _ = render(&app);
     let before = app.transcript_interaction_snapshot();
     assert!(before.follow_mode);
     assert_eq!(before.scroll, 0);
@@ -714,7 +718,9 @@ fn shell_scroll_page_keys_adjust_transcript_under_full_width() {
     app.handle_key(KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE));
     let after_page_up = app.transcript_interaction_snapshot();
     app.handle_key(KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE));
-    let after_page_down = app.transcript_interaction_snapshot();
+    let landed_at_bottom = app.transcript_interaction_snapshot();
+    app.handle_key(KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE));
+    let after_overscroll = app.transcript_interaction_snapshot();
     let plan = harness_tui::FrameLayoutPlan::for_app(&app, Rect::new(0, 0, W, H));
     let rendered = render(&app);
 
@@ -728,12 +734,16 @@ fn shell_scroll_page_keys_adjust_transcript_under_full_width() {
         "SHELL-SCROLL: PageUp must leave follow mode"
     );
     assert_eq!(
-        after_page_down.scroll, 0,
+        landed_at_bottom.scroll, 0,
         "SHELL-SCROLL: PageDown must return to bottom (scroll 0)"
     );
     assert!(
-        after_page_down.follow_mode,
-        "SHELL-SCROLL: PageDown to bottom must restore follow mode"
+        !landed_at_bottom.follow_mode,
+        "SHELL-SCROLL: landing at bottom must remain detached"
+    );
+    assert!(
+        after_overscroll.follow_mode,
+        "SHELL-SCROLL: a clamped PageDown at bottom must restore follow mode"
     );
     assert!(
         plan.operator_sidebar.is_none(),

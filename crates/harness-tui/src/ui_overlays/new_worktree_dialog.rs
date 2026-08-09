@@ -47,7 +47,7 @@ pub(super) fn render_new_worktree_dialog(
     );
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
-            "New Worktree",
+            "Create worktree",
             Style::default()
                 .fg(theme.text.primary)
                 .bg(surface)

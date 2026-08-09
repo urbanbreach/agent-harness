@@ -9,6 +9,17 @@ pub(super) enum ParsedTextBlock {
 }
 
 pub(super) fn parse_fenced_text_blocks(text: &str) -> Option<Vec<ParsedTextBlock>> {
+    parse_fenced_text_blocks_inner(text, false)
+}
+
+pub(super) fn parse_streaming_fenced_text_blocks(text: &str) -> Vec<ParsedTextBlock> {
+    parse_fenced_text_blocks_inner(text, true).unwrap_or_default()
+}
+
+fn parse_fenced_text_blocks_inner(
+    text: &str,
+    include_open_fence: bool,
+) -> Option<Vec<ParsedTextBlock>> {
     let mut blocks = Vec::new();
     let mut plain_lines = Vec::new();
     let mut code_lines = Vec::new();
@@ -48,7 +59,14 @@ pub(super) fn parse_fenced_text_blocks(text: &str) -> Option<Vec<ParsedTextBlock
     }
 
     if in_code {
-        return None;
+        if !include_open_fence {
+            return None;
+        }
+        blocks.push(ParsedTextBlock::Code {
+            language,
+            body: code_lines.join("\n"),
+            raw: raw_lines.join("\n"),
+        });
     }
 
     if !plain_lines.is_empty() {
@@ -78,7 +96,7 @@ fn normalize_fenced_line(line: &str) -> &str {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_fenced_text_blocks, ParsedTextBlock};
+    use super::{parse_fenced_text_blocks, parse_streaming_fenced_text_blocks, ParsedTextBlock};
 
     #[test]
     fn parses_plain_and_fenced_code_blocks() {
@@ -137,6 +155,21 @@ mod tests {
                 body: "+added".to_string(),
                 raw: "  ```diff\n+added\n  ```".to_string(),
             }])
+        );
+    }
+
+    #[test]
+    fn streaming_parser_exposes_open_fence_body() {
+        assert_eq!(
+            parse_streaming_fenced_text_blocks("Before\n```rust\nfn main() {}"),
+            vec![
+                ParsedTextBlock::Plain("Before".to_string()),
+                ParsedTextBlock::Code {
+                    language: Some("rust".to_string()),
+                    body: "fn main() {}".to_string(),
+                    raw: "```rust\nfn main() {}".to_string(),
+                },
+            ]
         );
     }
 }

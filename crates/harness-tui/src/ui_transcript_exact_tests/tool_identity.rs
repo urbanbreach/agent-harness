@@ -163,6 +163,7 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_reference_timestamps_a
         .hit_start;
     let task_hit_layout = MeasuredTranscriptLayout {
         sections: vec![MeasuredTranscriptSection {
+            activity_first_seq: 0,
             top_row: 0,
             leading_gap_height: 0,
             content_height: task_render.lines.len(),

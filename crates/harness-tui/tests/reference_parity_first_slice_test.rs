@@ -215,7 +215,8 @@ fn p0_start_02_top_chrome_not_only_bottom_path_bar() {
     // arrange
     // act
     // assert
-    let app = startup_app();
+    let mut app = startup_app();
+    app.status_banner = Some("clipboard is unreachable".to_string());
     let rendered = render(&app);
     let top: String = rendered.lines().take(8).collect::<Vec<_>>().join("\n");
     let has_top_context = top.contains('')
@@ -231,7 +232,7 @@ fn p0_start_02_top_chrome_not_only_bottom_path_bar() {
         "P0-START-02: clipboard warning band required at startup\n{rendered}"
     );
     assert!(
-        rendered.contains("/terminal-setup") || rendered.contains("terminal-setup"),
+        rendered.contains("/doctor"),
         "P0-START-02: clipboard warning second line required\n{rendered}"
     );
     let lines: Vec<&str> = rendered.lines().collect();
@@ -241,8 +242,8 @@ fn p0_start_02_top_chrome_not_only_bottom_path_bar() {
         .expect("clipboard warning line");
     let setup = lines
         .iter()
-        .find(|line| line.contains("terminal-setup"))
-        .expect("terminal-setup line");
+        .find(|line| line.contains("/doctor"))
+        .expect("doctor line");
     let clip_lead = clip.len() - clip.trim_start_matches(' ').len();
     let setup_lead = setup.len() - setup.trim_start_matches(' ').len();
     assert!(

@@ -58,6 +58,32 @@ fn live_session_composer_is_bottom_anchored() {
 }
 
 #[test]
+fn live_single_line_composer_rect_is_stable_across_idle_draft_and_streaming() {
+    let idle = AppState::new_live(None, false, None);
+    let mut draft = AppState::new_live(None, false, None);
+    draft.composer.prompt_buffer = "single-line draft".to_string();
+    draft.composer.prompt_cursor = draft.composer.prompt_buffer.chars().count();
+    let streaming = live_session_app();
+
+    for (width, height, expected) in [
+        (120, 40, Rect::new(2, 34, 116, 3)),
+        (60, 20, Rect::new(1, 16, 58, 3)),
+    ] {
+        for (state, app) in [
+            ("idle", &idle),
+            ("draft", &draft),
+            ("streaming", &streaming),
+        ] {
+            assert_eq!(
+                plan_for(app, width, height).composer,
+                Some(expected),
+                "{state} composer must keep the pinned rect at {width}x{height}"
+            );
+        }
+    }
+}
+
+#[test]
 fn live_session_sidebar_must_not_reappear_as_primary_chrome_at_width_ge_121() {
     // arrange
     let app = live_session_app();
@@ -181,6 +207,16 @@ fn operator_sidebar_chrome_has_no_persistent_primary_variant() {
         palette_plan.operator_sidebar.is_none(),
         "P0-SHELL-02: palette must not reintroduce primary sidebar chrome"
     );
+    let palette = palette_plan
+        .palette_overlay
+        .expect("P0-SHELL-02: palette must have an overlay rect");
+    let composer = palette_plan
+        .composer
+        .expect("P0-SHELL-02: live shell must retain the composer");
+    assert!(
+        palette.bottom() <= composer.y,
+        "P0-SHELL-02: palette must remain above the composer; palette={palette:?} composer={composer:?}"
+    );
 }
 
 fn live_session_app() -> AppState {
@@ -235,8 +271,8 @@ fn assert_full_width_transcript_above_composer(plan: &FrameLayoutPlan, width: u1
         "transcript must span full shell content width at {width}x{height} (no right-rail reservation); transcript={transcript:?} shell={:?}",
         plan.shell
     );
-    // Freeze-matched composer inset (lead=2). Dense width ≤60 keeps inset 0.
-    let composer_inset = if width <= 60 { 0 } else { 2 };
+    // Freeze-matched composer inset: one cell at 60 columns, two cells otherwise.
+    let composer_inset = if width <= 60 { 1 } else { 2 };
     assert_eq!(
         composer.x,
         plan.shell.x.saturating_add(composer_inset),
@@ -388,13 +424,13 @@ fn boundary_viewports_never_clip_composer_or_disclosure() {
     for &(width, height) in boundary_cases {
         let plan = plan_for(&app, width, height);
 
-        // Composer must exist and have at least 3 rows (border + content + border)
+        // A single-line composer is exactly border + content + border.
         let composer = plan
             .composer
             .unwrap_or_else(|| panic!("composer must exist at boundary {width}x{height}"));
-        assert!(
-            composer.height >= 3,
-            "composer must have ≥3 rows at boundary {width}x{height}; got {composer:?}"
+        assert_eq!(
+            composer.height, 3,
+            "single-line composer must have exactly 3 rows at boundary {width}x{height}; got {composer:?}"
         );
         assert!(
             composer.y + composer.height <= plan.shell.y + plan.shell.height,
@@ -490,16 +526,18 @@ fn boundary_breakpoint_targets_match_theme_contract() {
 fn boundary_composer_inset_transitions_at_60_columns() {
     let app = live_session_app();
 
-    // At ≤60 cols: no horizontal inset (ultra-compact)
+    // At ≤60 cols: the frozen 60x20 shell keeps a one-cell inset.
     let plan_60 = plan_for(&app, 60, 20);
     let composer_60 = plan_60.composer.expect("composer at 60x20");
     assert_eq!(
-        composer_60.x, plan_60.shell.x,
-        "composer must have no inset at 60x20"
+        composer_60.x,
+        plan_60.shell.x + 1,
+        "composer must keep the measured one-cell inset at 60x20"
     );
     assert_eq!(
-        composer_60.width, plan_60.shell.width,
-        "composer must span full shell width at 60x20"
+        composer_60.width,
+        plan_60.shell.width - 2,
+        "composer must keep the measured one-cell inset on both sides at 60x20"
     );
 
     // At >60 cols: horizontal inset of 2 (freeze-matched lead=2)
@@ -546,8 +584,12 @@ fn all_required_viewports_produce_valid_layout_plan() {
             .composer
             .unwrap_or_else(|| panic!("composer at {width}x{height}"));
         assert!(
-            composer.width > 0 && composer.height >= 3,
-            "composer must be valid at {width}x{height}; got {composer:?}"
+            composer.width > 0,
+            "composer must be valid at {width}x{height}"
+        );
+        assert_eq!(
+            composer.height, 3,
+            "single-line composer must have exactly 3 rows at {width}x{height}; got {composer:?}"
         );
         assert!(
             composer.y + composer.height <= plan.shell.y + plan.shell.height,
@@ -612,7 +654,7 @@ fn composer_disclosure_spacer_gap_matches_centralized_contract_at_all_viewports(
     }
 }
 
-/// Composer horizontal inset must be 0 at ultra-compact (≤60 cols) and 2 at
+/// Composer horizontal inset must be 1 at ultra-compact (≤60 cols) and 2 at
 /// every wider required viewport. Locks the centralized
 /// `composer_horizontal_inset` contract via the public seam.
 #[test]
@@ -620,7 +662,7 @@ fn composer_horizontal_inset_matches_centralized_contract_at_all_viewports() {
     let app = live_session_app();
 
     let cases: &[(u16, u16, u16)] = &[
-        (60, 20, 0),
+        (60, 20, 1),
         (79, 24, 2),
         (80, 24, 2),
         (100, 30, 2),

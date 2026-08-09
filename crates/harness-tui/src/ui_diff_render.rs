@@ -263,9 +263,12 @@ fn render_diff_cell(
         diff_marker_style(cell.marker, Some(palette.content_bg), theme),
     ));
     if highlight_syntax {
-        if let Some(chunks) =
-            highlight_diff_line_chunks(syntax_path, &cell.text, Some(palette.content_bg))
-        {
+        if let Some(chunks) = highlight_diff_line_chunks(
+            syntax_path,
+            &cell.text,
+            Some(palette.content_bg),
+            theme.color_level(),
+        ) {
             spans.extend(truncate_styled_chunks(&chunks, text_width));
         } else {
             spans.extend(truncate_diff_segments(
@@ -430,8 +433,13 @@ fn render_stacked_diff_lines(
     let number_width = line_number_width.saturating_add(1) * 2;
     let text_width = width.saturating_sub(number_width + 2);
     let rows = if highlight_syntax {
-        highlight_diff_line_chunks(syntax_path, text, Some(palette.content_bg))
-            .map(|chunks| wrap_styled_chunks(&chunks, text_width))
+        highlight_diff_line_chunks(
+            syntax_path,
+            text,
+            Some(palette.content_bg),
+            theme.color_level(),
+        )
+        .map(|chunks| wrap_styled_chunks(&chunks, text_width))
     } else {
         None
     };
@@ -506,8 +514,13 @@ fn render_stacked_diff_cell_lines(
     let number_width = line_number_width.saturating_add(1) * 2;
     let text_width = width.saturating_sub(number_width + 2);
     let rows = if highlight_syntax {
-        highlight_diff_line_chunks(syntax_path, &cell.text, Some(palette.content_bg))
-            .map(|chunks| wrap_styled_chunks(&chunks, text_width))
+        highlight_diff_line_chunks(
+            syntax_path,
+            &cell.text,
+            Some(palette.content_bg),
+            theme.color_level(),
+        )
+        .map(|chunks| wrap_styled_chunks(&chunks, text_width))
     } else {
         None
     };
@@ -568,25 +581,42 @@ fn render_plain_numbered_diff_cell_lines(
     line_number_width: usize,
     theme: &Theme,
 ) -> Vec<Line<'static>> {
+    let palette = diff_row_palette(cell.marker, theme);
     let number_width = line_number_width.saturating_add(1);
     let text_width = width.saturating_sub(number_width + 1).max(1);
     wrap_plain_text_lines(&cell.text, text_width)
         .into_iter()
         .enumerate()
         .map(|(index, chunk)| {
-            Line::from(vec![
-                Span::styled(prefix.to_string(), transcript_prefix_style(theme)),
+            let spans = vec![
+                Span::styled(
+                    prefix.to_string(),
+                    transcript_prefix_style(theme).bg(palette.gutter_bg),
+                ),
                 Span::styled(
                     if index == 0 {
                         format_line_number(cell.line_number, line_number_width)
                     } else {
                         " ".repeat(number_width)
                     },
-                    Style::default().fg(theme.text.secondary),
+                    Style::default()
+                        .fg(theme.text.secondary)
+                        .bg(palette.gutter_bg),
                 ),
-                Span::raw(" "),
-                Span::styled(chunk, Style::default().fg(theme.text.primary)),
-            ])
+                Span::styled(" ", Style::default().bg(palette.content_bg)),
+                Span::styled(
+                    chunk,
+                    Style::default()
+                        .fg(theme.text.primary)
+                        .bg(palette.content_bg),
+                ),
+            ];
+            pad_diff_row_to_width_with_background(
+                spans,
+                display_width(prefix),
+                width,
+                Some(palette.content_bg),
+            )
         })
         .collect()
 }
