@@ -4,6 +4,7 @@ use crate::design_contract::{
     BorderRole, ColorRole, FocusRole, GlyphRole, LifecycleState, StateColorBinding, TextModifier,
     DESIGN_TOKENS,
 };
+use crate::theme::Theme;
 use crate::transcript_identity::{ReplayTurn, TurnId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -94,20 +95,20 @@ impl TimelineMarker {
         glyph_for(self.glyph_role())
     }
 
-    pub fn style(self, interaction: MarkerInteraction) -> TimelineMarkerStyle {
+    pub fn style(self, interaction: MarkerInteraction, theme: &Theme) -> TimelineMarkerStyle {
         match interaction {
             MarkerInteraction::Normal => {
                 let binding = state_binding(self.style_lifecycle_state());
                 TimelineMarkerStyle {
-                    foreground: color_for(binding.foreground),
-                    background: color_for(binding.background),
+                    foreground: color_for(theme, binding.foreground),
+                    background: color_for(theme, binding.background),
                     border: BorderRole::None,
                     modifier: TextModifier::Normal,
                     glyph: glyph_for(self.glyph_role()),
                 }
             }
-            MarkerInteraction::Active => focus_style(FocusRole::SelectedRow, self.glyph()),
-            MarkerInteraction::Hovered => focus_style(FocusRole::Panel, self.glyph()),
+            MarkerInteraction::Active => focus_style(theme, FocusRole::SelectedRow, self.glyph()),
+            MarkerInteraction::Hovered => focus_style(theme, FocusRole::Panel, self.glyph()),
         }
     }
 
@@ -188,7 +189,7 @@ fn state_binding(state: LifecycleState) -> StateColorBinding {
         )
 }
 
-fn focus_style(role: FocusRole, glyph: &'static str) -> TimelineMarkerStyle {
+fn focus_style(theme: &Theme, role: FocusRole, glyph: &'static str) -> TimelineMarkerStyle {
     let focus = DESIGN_TOKENS
         .focus_styles
         .all
@@ -197,31 +198,67 @@ fn focus_style(role: FocusRole, glyph: &'static str) -> TimelineMarkerStyle {
         .copied();
     let Some(focus) = focus else {
         return TimelineMarkerStyle {
-            foreground: color_for(ColorRole::TextPrimary),
-            background: color_for(ColorRole::Shell),
+            foreground: color_for(theme, ColorRole::TextPrimary),
+            background: color_for(theme, ColorRole::Shell),
             border: BorderRole::None,
             modifier: TextModifier::Normal,
             glyph,
         };
     };
     TimelineMarkerStyle {
-        foreground: color_for(focus.foreground),
-        background: color_for(focus.background),
+        foreground: color_for(theme, focus.foreground),
+        background: color_for(theme, focus.background),
         border: focus.border,
         modifier: focus.modifier,
         glyph,
     }
 }
 
-fn color_for(role: ColorRole) -> Color {
-    DESIGN_TOKENS
-        .palette
-        .roles
-        .iter()
-        .find(|token| token.role == role)
-        .map_or(Color::Reset, |token| {
-            Color::Rgb(token.value.red, token.value.green, token.value.blue)
-        })
+fn color_for(theme: &Theme, role: ColorRole) -> Color {
+    match role {
+        ColorRole::Canvas => theme.surface.canvas,
+        ColorRole::Shell => theme.surface.shell,
+        ColorRole::Panel => theme.surface.panel,
+        ColorRole::PanelElevated => theme.surface.panel_elevated,
+        ColorRole::Overlay => theme.surface.overlay,
+        ColorRole::Card => theme.surface.card,
+        ColorRole::SelectedCard => theme.surface.selected_card,
+        ColorRole::BorderSubtle => theme.border.subtle,
+        ColorRole::BorderStrong => theme.border.strong,
+        ColorRole::BorderFocus => theme.border.focus,
+        ColorRole::TextPrimary => theme.text.primary,
+        ColorRole::TextSecondary => theme.text.secondary,
+        ColorRole::TextTertiary => theme.text.tertiary,
+        ColorRole::TextAccent => theme.text.accent,
+        ColorRole::TextInverse => theme.text.inverse,
+        ColorRole::StatusSuccess => theme.status.success,
+        ColorRole::StatusWarning => theme.status.warning,
+        ColorRole::StatusError => theme.status.error,
+        ColorRole::StatusInfo => theme.status.info,
+        ColorRole::StatusDisabled => theme.status.disabled,
+        ColorRole::QuestionSurface => theme.question_prompt.surface,
+        ColorRole::QuestionSelected => theme.question_prompt.selected,
+        ColorRole::QuestionPrimary => theme.question_prompt.primary,
+        ColorRole::QuestionAccent => theme.question_prompt.accent,
+        ColorRole::QuestionSecondary => theme.question_prompt.secondary,
+        ColorRole::AgentBuild => theme.agents.build,
+        ColorRole::AgentPlan => theme.agents.plan,
+        ColorRole::AgentDocs => theme.agents.docs,
+        ColorRole::AgentAsk => theme.agents.ask,
+        ColorRole::TerminalPrimary => theme.reference_terminal.primary,
+        ColorRole::TerminalSecondary => theme.reference_terminal.secondary,
+        ColorRole::TerminalMuted => theme.reference_terminal.muted,
+        ColorRole::TerminalError => theme.reference_terminal.error,
+        ColorRole::TerminalPaletteSection => theme.reference_terminal.palette_section,
+        ColorRole::TerminalForkAccent => theme.reference_terminal.fork_accent,
+        ColorRole::DiffAdded => theme.reference_terminal.diff_added,
+        ColorRole::DiffRemoved => theme.reference_terminal.diff_removed,
+        ColorRole::DiffAddedGutter => theme.reference_terminal.diff_added_gutter,
+        ColorRole::DiffRemovedGutter => theme.reference_terminal.diff_removed_gutter,
+        ColorRole::DiffAddedHighlight => theme.reference_terminal.diff_added_highlight,
+        ColorRole::DiffRemovedHighlight => theme.reference_terminal.diff_removed_highlight,
+        ColorRole::DiffHunkHeader => theme.reference_terminal.diff_hunk_header,
+    }
 }
 
 fn glyph_for(role: GlyphRole) -> &'static str {

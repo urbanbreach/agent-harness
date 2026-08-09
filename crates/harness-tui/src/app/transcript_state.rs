@@ -8,6 +8,7 @@ use crate::transcript_integration::{
     BlockSeed, TranscriptComposite, TranscriptEvent, TranscriptIntegrationError, TurnSeed,
 };
 use crate::transcript_pager::{run_pager, PagerCommand, PagerExit, PagerStdio, TerminalControl};
+use crate::transcript_scroll::PageFlipState;
 use crate::transcript_timeline::TimelineStatus;
 use crate::UnwrapOrAbort;
 use std::collections::hash_map::DefaultHasher;
@@ -15,6 +16,7 @@ use std::hash::{Hash, Hasher};
 
 #[cfg(test)]
 use super::transcript_cache::TranscriptRenderCache;
+use super::transcript_viewport::MeasuredTranscriptViewport;
 use super::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -85,10 +87,10 @@ impl AppState {
     }
 
     pub fn transcript_following(&self) -> bool {
-        self.transcript_integration.as_ref().map_or(
-            self.transcript_view.follow_mode,
-            TranscriptComposite::is_following,
-        )
+        if self.transcript_view.page_flip.get().scroll_top().is_some() {
+            return false;
+        }
+        self.transcript_view.measured_viewport().is_following()
     }
 
     pub fn transcript_viewer_mode(&self) -> Option<crate::transcript_block_viewer::ViewerMode> {
@@ -96,14 +98,46 @@ impl AppState {
     }
 
     pub(crate) fn set_transcript_following(&mut self, following: bool) {
-        if let Some(composite) = self.transcript_integration.as_mut() {
-            let _ = composite.set_following(following);
+        self.cancel_transcript_page_flip();
+        let viewport = self.transcript_view.measured_viewport();
+        let next = if following {
+            viewport.jump_to_bottom()
+        } else {
+            viewport.scroll_up(1)
+        };
+        self.transcript_view.set_measured_viewport(next);
+    }
+
+    pub(in crate::app) fn begin_transcript_page_flip(&mut self, activity_first_seq: u64) {
+        let current = self.transcript_view.page_flip.get();
+        let next = current.begin(activity_first_seq);
+        if next == current {
             return;
         }
-        self.transcript_view.follow_mode = following;
-        if following {
-            self.transcript_view.transcript_scroll = 0;
-        }
+        self.set_transcript_following(true);
+        self.transcript_view.page_flip.set(next);
+    }
+
+    pub(crate) fn transcript_page_flip_preserving(&self) -> bool {
+        self.transcript_view.page_flip.get().is_preserving()
+    }
+
+    pub(crate) fn transcript_page_flip_state(&self) -> PageFlipState {
+        self.transcript_view.page_flip.get()
+    }
+
+    pub(crate) fn transcript_page_flip_scroll_top(&self) -> Option<usize> {
+        self.transcript_view.page_flip.get().scroll_top()
+    }
+
+    pub(crate) fn set_transcript_page_flip_state(&self, state: PageFlipState) {
+        self.transcript_view.page_flip.set(state);
+    }
+
+    pub(in crate::app) fn cancel_transcript_page_flip(&self) {
+        self.transcript_view
+            .page_flip
+            .set(self.transcript_view.page_flip.get().cancel());
     }
 
     pub fn select_transcript_turn_at(&mut self, index: usize) -> bool {
@@ -118,16 +152,15 @@ impl AppState {
     }
 
     pub fn toggle_selected_transcript_fold(&mut self) -> bool {
-        let Some(block_id) = self.transcript_view_model().and_then(|view| {
-            view.turns
-                .get(self.transcript_view.selected_activity_index)
-                .map(|turn| turn.replay_turn().block_id(0))
-        }) else {
+        let Some(request_id) = self
+            .activities
+            .get(self.transcript_view.selected_activity_index)
+            .map(|activity| activity.request_id.clone())
+        else {
             return false;
         };
-        self.transcript_integration
-            .as_mut()
-            .is_some_and(|composite| composite.toggle_fold(block_id).is_ok())
+        self.toggle_reasoning_expansion(&request_id);
+        true
     }
 
     pub fn run_transcript_pager<T: TerminalControl>(
@@ -217,18 +250,28 @@ impl AppState {
     }
 
     pub(crate) fn select_transcript_turn(&mut self, turn_id: TurnId) -> bool {
-        self.transcript_integration
+        let selected = self
+            .transcript_integration
             .as_mut()
-            .is_some_and(|composite| composite.select_turn(turn_id).is_ok())
+            .is_some_and(|composite| composite.select_turn(turn_id).is_ok());
+        if selected {
+            self.cancel_transcript_page_flip();
+        }
+        selected
     }
 
     pub(crate) fn handle_transcript_timeline_key(&mut self, key: KeyEvent) -> bool {
         let Some(jump) = crate::transcript_timeline::navigation::key_jump(key) else {
             return false;
         };
-        self.transcript_integration
+        let jumped = self
+            .transcript_integration
             .as_mut()
-            .is_some_and(|composite| composite.jump(jump).is_ok())
+            .is_some_and(|composite| composite.jump(jump).is_ok());
+        if jumped {
+            self.cancel_transcript_page_flip();
+        }
+        jumped
     }
 
     pub(crate) fn transcript_thinking_visible(&self) -> bool {
@@ -419,6 +462,9 @@ impl AppState {
     }
 
     fn hash_transcript_render_expansions(&self, hasher: &mut impl Hasher) {
+        for request_id in &self.transcript_view.expanded_reasoning_requests {
+            request_id.hash(hasher);
+        }
         for tool_call_id in &self.transcript_view.expanded_tool_outputs {
             tool_call_id.hash(hasher);
         }
@@ -504,6 +550,24 @@ impl AppState {
 
     pub(crate) fn tool_details_visible(&self) -> bool {
         self.transcript_view.show_tool_details
+    }
+
+    pub(crate) fn reasoning_expanded(&self, request_id: &str) -> bool {
+        self.transcript_view
+            .expanded_reasoning_requests
+            .contains(request_id)
+    }
+
+    fn toggle_reasoning_expansion(&mut self, request_id: &str) {
+        if !self
+            .transcript_view
+            .expanded_reasoning_requests
+            .insert(request_id.to_string())
+        {
+            self.transcript_view
+                .expanded_reasoning_requests
+                .remove(request_id);
+        }
     }
 
     pub(crate) fn generic_tool_output_visible(&self) -> bool {
@@ -637,6 +701,9 @@ impl AppState {
         target: TranscriptMouseTarget,
     ) {
         match target {
+            TranscriptMouseTarget::Reasoning { request_id } => {
+                self.toggle_reasoning_expansion(&request_id);
+            }
             TranscriptMouseTarget::SubagentSession { session_id } => {
                 self.navigate_to_child_session_id(session_id);
             }
@@ -853,13 +920,9 @@ impl AppState {
         }
 
         let max_scroll = self.transcript_view.last_transcript_max_scroll.get();
-        let current_top = if self.transcript_view.follow_mode {
-            max_scroll
-        } else {
-            max_scroll
-                .saturating_sub(self.transcript_view.transcript_scroll)
-                .min(max_scroll)
-        };
+        let current_top = self
+            .transcript_page_flip_scroll_top()
+            .unwrap_or_else(|| max_scroll.saturating_sub(self.transcript_scroll_offset()));
         let anchor = self
             .transcript_view
             .selected_diff_hunk_row
@@ -880,9 +943,8 @@ impl AppState {
         };
 
         self.transcript_view.selected_diff_hunk_row = Some(target);
-        self.transcript_view.follow_mode = false;
         let target_top = target.min(max_scroll);
-        self.transcript_view.transcript_scroll = max_scroll.saturating_sub(target_top);
+        self.set_transcript_scroll_from_top_with_max(target_top, max_scroll);
         true
     }
 
@@ -892,35 +954,81 @@ impl AppState {
     }
 
     pub(in crate::app) fn scroll_transcript_up(&mut self, amount: u16) {
-        if let Some(composite) = self.transcript_integration.as_mut() {
-            let _ = composite.scroll_by(f64::from(amount.max(1)));
+        if let Some(scroll_top) = self.transcript_page_flip_scroll_top() {
+            let max_scroll = self.transcript_view.last_transcript_max_scroll.get();
+            let next = MeasuredTranscriptViewport::detached(scroll_top, max_scroll)
+                .scroll_up(usize::from(amount.max(1)));
+            self.transcript_view.set_measured_viewport(next);
+            self.transcript_view
+                .page_flip
+                .set(self.transcript_view.page_flip.get().detach_at(next.top()));
             return;
         }
-        self.transcript_view.follow_mode = false;
-        self.transcript_view.transcript_scroll = self
+        self.cancel_transcript_page_flip();
+        let next = self
             .transcript_view
-            .transcript_scroll
-            .saturating_add(usize::from(amount.max(1)));
+            .measured_viewport()
+            .scroll_up(usize::from(amount.max(1)));
+        self.transcript_view.set_measured_viewport(next);
     }
 
     pub(in crate::app) fn scroll_transcript_down(&mut self, amount: u16) {
-        if let Some(composite) = self.transcript_integration.as_mut() {
-            let _ = composite.scroll_by(-f64::from(amount.max(1)));
+        if let Some(scroll_top) = self.transcript_page_flip_scroll_top() {
+            let max_scroll = self.transcript_view.last_transcript_max_scroll.get();
+            let next = MeasuredTranscriptViewport::detached(scroll_top, max_scroll)
+                .scroll_down(usize::from(amount.max(1)));
+            self.transcript_view.set_measured_viewport(next);
+            if next.is_following() {
+                self.cancel_transcript_page_flip();
+            } else {
+                self.transcript_view
+                    .page_flip
+                    .set(self.transcript_view.page_flip.get().detach_at(next.top()));
+            }
             return;
         }
-        self.transcript_view.transcript_scroll = self
+        self.cancel_transcript_page_flip();
+        let next = self
             .transcript_view
-            .transcript_scroll
-            .saturating_sub(usize::from(amount.max(1)));
-        if self.transcript_view.transcript_scroll == 0 {
-            self.transcript_view.follow_mode = true;
+            .measured_viewport()
+            .scroll_down(usize::from(amount.max(1)));
+        self.transcript_view.set_measured_viewport(next);
+    }
+
+    pub(in crate::app) fn release_transcript_page_flip(&mut self) {
+        let Some(scroll_top) = self.transcript_page_flip_scroll_top() else {
+            self.cancel_transcript_page_flip();
+            return;
+        };
+        let max_scroll = self.transcript_view.last_transcript_max_scroll.get();
+        self.set_transcript_scroll_from_top_with_max(scroll_top, max_scroll);
+    }
+
+    pub(in crate::app) fn set_transcript_scroll_from_top_with_max(
+        &mut self,
+        scroll_top: usize,
+        max_scroll: usize,
+    ) {
+        let clamped = scroll_top.min(max_scroll);
+        let page_flip = self.transcript_view.page_flip.get();
+        self.transcript_view.record_measured_max_scroll(max_scroll);
+        let next = self.transcript_view.measured_viewport().detach_at(clamped);
+        self.transcript_view.set_measured_viewport(next);
+        if next.is_following() {
+            self.cancel_transcript_page_flip();
+            return;
         }
+
+        self.transcript_view
+            .page_flip
+            .set(page_flip.detach_at(clamped));
     }
 
     pub fn transcript_interaction_snapshot(&self) -> TranscriptInteractionSnapshot {
+        let viewport = self.transcript_view.measured_viewport();
         TranscriptInteractionSnapshot {
-            scroll: self.transcript_view.transcript_scroll,
-            follow_mode: self.transcript_view.follow_mode,
+            scroll: viewport.offset_from_bottom(),
+            follow_mode: viewport.is_following(),
             selected_activity_index: self.transcript_view.selected_activity_index,
             show_tool_details: self.transcript_view.show_tool_details,
             expanded_tool_call_ids: self
@@ -939,7 +1047,10 @@ impl AppState {
 
     pub fn set_selected_activity_index_for_test(&mut self, index: usize) {
         self.transcript_view.selected_activity_index = index;
-        self.transcript_view.follow_mode = false;
+        if self.transcript_view.last_transcript_max_scroll.get() == 0 {
+            self.transcript_view.record_measured_max_scroll(1);
+        }
+        self.set_transcript_following(false);
     }
 }
 

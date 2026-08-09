@@ -1,5 +1,6 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use harness_tui::design_contract::{LifecycleState, ViewportId};
+use harness_tui::theme::{ColorLevel, Theme};
 use harness_tui::transcript_identity::{ReplayTurn, TranscriptIdentity};
 use harness_tui::transcript_timeline::{
     clip_marker_label, geometry_for_rect, geometry_for_viewport, marker_display_width,
@@ -8,6 +9,7 @@ use harness_tui::transcript_timeline::{
 };
 use harness_tui::UnwrapOrAbort;
 use ratatui::layout::Rect;
+use ratatui::style::Color;
 
 fn event_turn(index: u64, status: TimelineStatus, lifecycle: LifecycleState) -> TimelineTurn {
     TimelineTurn::from_replay(
@@ -80,10 +82,54 @@ fn streaming_marker_exposes_distinct_active_and_hover_styles() {
         LifecycleState::Streaming,
     );
 
-    let active = marker.style(MarkerInteraction::Active);
-    let hovered = marker.style(MarkerInteraction::Hovered);
+    let theme = harness_tui::theme::Theme::harness_chat();
+    let active = marker.style(MarkerInteraction::Active, &theme);
+    let hovered = marker.style(MarkerInteraction::Hovered, &theme);
     assert_ne!(active, hovered);
     assert_eq!(active.glyph, marker.glyph());
+}
+
+#[test]
+fn timeline_markers_follow_active_terminal_color_level() {
+    let marker = TimelineMarker::from_replay(
+        ReplayTurn::event(11, 0, 1),
+        TimelineStatus::Streaming,
+        LifecycleState::Streaming,
+    );
+
+    for level in [
+        ColorLevel::TrueColor,
+        ColorLevel::Ansi256,
+        ColorLevel::Basic,
+        ColorLevel::None,
+    ] {
+        let theme = Theme::harness_chat().for_color_level(level);
+        let style = marker.style(MarkerInteraction::Normal, &theme);
+        match level {
+            ColorLevel::TrueColor => {
+                assert!(matches!(style.foreground, Color::Rgb(..)));
+                assert!(matches!(style.background, Color::Rgb(..)));
+            }
+            ColorLevel::Ansi256 => {
+                assert!(matches!(style.foreground, Color::Indexed(_)));
+                assert!(matches!(style.background, Color::Indexed(_)));
+            }
+            ColorLevel::Basic => {
+                assert!(!matches!(
+                    style.foreground,
+                    Color::Rgb(..) | Color::Indexed(_)
+                ));
+                assert!(!matches!(
+                    style.background,
+                    Color::Rgb(..) | Color::Indexed(_)
+                ));
+            }
+            ColorLevel::None => {
+                assert_eq!(style.foreground, Color::Reset);
+                assert_eq!(style.background, Color::Reset);
+            }
+        }
+    }
 }
 
 #[test]

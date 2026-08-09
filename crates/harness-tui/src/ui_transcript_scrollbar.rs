@@ -81,20 +81,33 @@ pub(super) fn render_transcript_more_below_affordance(
     theme: &Theme,
     base_surface: Color,
 ) {
-    if max_scroll == 0 || scroll_top >= max_scroll || content.width == 0 || content.height == 0 {
+    let Some(area) = transcript_more_below_rect(content, scroll_top, max_scroll) else {
         return;
-    }
+    };
 
-    let glyph = TRANSCRIPT_MORE_BELOW_GLYPH;
-    let glyph_width = 1_u16;
-    let x = content
-        .x
-        .saturating_add(content.width.saturating_sub(glyph_width) / 2);
-    let y = content.bottom().saturating_sub(1);
-    let cell = &mut frame.buffer_mut()[(x, y)];
-    cell.set_symbol(glyph);
+    let cell = &mut frame.buffer_mut()[(area.x, area.y)];
+    cell.set_symbol(TRANSCRIPT_MORE_BELOW_GLYPH);
     cell.set_fg(theme.text.secondary);
     cell.set_bg(base_surface);
+}
+
+pub(super) fn transcript_more_below_rect(
+    content: Rect,
+    scroll_top: usize,
+    max_scroll: usize,
+) -> Option<Rect> {
+    if max_scroll == 0 || scroll_top >= max_scroll || content.width == 0 || content.height == 0 {
+        return None;
+    }
+
+    Some(Rect::new(
+        content
+            .x
+            .saturating_add(content.width.saturating_sub(1) / 2),
+        content.bottom().saturating_sub(1),
+        1,
+        1,
+    ))
 }
 
 pub(super) fn transcript_scrollbar_geometry(
@@ -310,5 +323,18 @@ mod tests {
             TRANSCRIPT_MORE_BELOW_GLYPH,
             "bottom-pinned viewport must not paint more-below affordance"
         );
+    }
+
+    #[test]
+    fn more_below_hit_area_matches_the_centered_affordance_cell() {
+        // Given: detached content with more transcript rows below the viewport.
+        let content = Rect::new(4, 2, 19, 12);
+
+        // When: resolving the geometry shared by paint and hit-testing.
+        let area = transcript_more_below_rect(content, 3, 8);
+
+        // Then: the target is the centered cell on the reserved bottom row.
+        assert_eq!(area, Some(Rect::new(13, 13, 1, 1)));
+        assert_eq!(transcript_more_below_rect(content, 8, 8), None);
     }
 }

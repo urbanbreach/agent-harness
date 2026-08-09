@@ -74,8 +74,6 @@ pub(super) fn module_fenced_code_highlighting_uses_syntect_styles_for_known_lang
     let rendered = render_live_lines(&app, 120, 30);
     let buffer = render_live_cells(&app, 120, 30);
     let theme = Theme::default();
-    let (_, _, prose_backgrounds) =
-        row_text_and_palette(&buffer, 120, "Here is a sample:").unwrap_or_abort();
     let rendered_code_row = rendered
         .lines()
         .find(|row| row.contains("let answer = 42;"))
@@ -105,21 +103,15 @@ pub(super) fn module_fenced_code_highlighting_uses_syntect_styles_for_known_lang
             .any(|color| *color != format!("{:?}", theme.text.primary)),
         "known-language highlighting should not fall back to plain transcript color: {row}"
     );
-    assert!(
-        backgrounds[start..end]
-            .iter()
-            .zip(&prose_backgrounds[start..end])
-            .all(|(code_background, prose_background)| code_background == prose_background),
-        "highlighted code should use the same background as surrounding prose: {row}"
-    );
+    assert!(backgrounds[start..end]
+        .iter()
+        .all(|background| *background == theme.markdown.code_background));
 }
 
 pub(super) fn module_fenced_code_highlighting_falls_back_to_plain_text_when_unknown() {
     let app = transcript_code_block_app("totally-unknown-lang");
     let buffer = render_live_cells(&app, 120, 30);
     let theme = Theme::default();
-    let (_, _, prose_backgrounds) =
-        row_text_and_palette(&buffer, 120, "Here is a sample:").unwrap_or_abort();
     let (row, colors, backgrounds) =
         row_text_and_palette(&buffer, 120, "let answer = 42;").unwrap_or_abort();
     let start = row.find("let answer = 42;").unwrap_or_abort();
@@ -133,15 +125,11 @@ pub(super) fn module_fenced_code_highlighting_falls_back_to_plain_text_when_unkn
 
     assert_eq!(
         unique,
-        std::collections::HashSet::from([format!("{:?}", theme.text.primary)])
+        std::collections::HashSet::from([format!("{:?}", theme.markdown.text)])
     );
-    assert!(
-        backgrounds[start..end]
-            .iter()
-            .zip(&prose_backgrounds[start..end])
-            .all(|(code_background, prose_background)| code_background == prose_background),
-        "plain code fallback should use the same background as surrounding prose: {row}"
-    );
+    assert!(backgrounds[start..end]
+        .iter()
+        .all(|background| *background == theme.markdown.code_background));
 }
 
 pub(super) fn module_diff_renderer_uses_stacked_layout_in_narrow_geometries() {

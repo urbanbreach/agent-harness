@@ -17,6 +17,7 @@ pub(super) fn build_transcript_sections(app: &AppState) -> Vec<TranscriptTurnSec
 
     for (visible_index, (activity_index, activity)) in visible_activities.iter().enumerate() {
         turn_sections.push(build_turn_section(BuildTurnSectionArgs {
+            activity_first_seq: activity.first_seq,
             activity,
             queued_user_message: pending_assistant_index
                 .is_some_and(|pending| visible_index > pending),
@@ -33,9 +34,8 @@ pub(super) fn build_transcript_sections(app: &AppState) -> Vec<TranscriptTurnSec
     }
 
     if let Some(latest_assistant_footer_index) = turn_sections
-        .len()
-        .checked_sub(1)
-        .filter(|index| turn_supports_assistant_footer(&turn_sections[*index]))
+        .iter()
+        .rposition(turn_supports_assistant_footer)
     {
         let original_activity_index = visible_activities[latest_assistant_footer_index].0;
         if let Some(turn) = turn_sections.get_mut(latest_assistant_footer_index) {
@@ -94,11 +94,15 @@ fn inject_compaction_events(
 }
 
 fn turn_supports_assistant_footer(turn: &TranscriptTurnSection) -> bool {
-    matches!(turn.header.status, ActivityStatus::Done)
+    matches!(
+        turn.header.status,
+        ActivityStatus::Streaming | ActivityStatus::Done
+    )
 }
 
 fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
     let BuildTurnSectionArgs {
+        activity_first_seq,
         activity,
         queued_user_message,
         is_selected,
@@ -142,9 +146,14 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
 
     let mut body_blocks = Vec::new();
     if !activity.transcript_text.is_empty() {
-        body_blocks.push(TranscriptBodyBlock::RichText(
-            activity.transcript_text.clone(),
-        ));
+        body_blocks.push(match activity.status {
+            ActivityStatus::Streaming => {
+                TranscriptBodyBlock::StreamingRichText(activity.transcript_text.clone())
+            }
+            ActivityStatus::Queued | ActivityStatus::Done | ActivityStatus::Error => {
+                TranscriptBodyBlock::RichText(activity.transcript_text.clone())
+            }
+        });
     }
 
     let ordered_tool_calls = activity
@@ -190,6 +199,7 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
     );
 
     TranscriptTurnSection {
+        activity_first_seq,
         request_id: activity.request_id.clone(),
         user_message,
         show_footer: is_latest && !matches!(activity.status, ActivityStatus::Error),
@@ -198,6 +208,7 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
             .as_deref()
             .map(crate::time_format::wall_clock_12h),
         animation_phase: app.transcript_animation_phase(),
+        reasoning_expanded: app.reasoning_expanded(&activity.request_id),
         header: TranscriptTurnHeader {
             status: activity.status,
             is_selected,
@@ -435,6 +446,7 @@ fn build_ordered_assistant_parts_from_events(
                 saw_turn_event = true;
                 if thinking_visible {
                     saw_reasoning_event = true;
+                    settle_trailing_body(&mut parts);
                     push_sequenced_text_part(
                         &mut parts,
                         &mut next_index,
@@ -493,6 +505,7 @@ fn build_ordered_assistant_parts_from_events(
                         &data.result_summary,
                     );
                 }
+                settle_trailing_body(&mut parts);
             }
             harness_core::event::EventV1::ToolCallRequested(data)
                 if event.correlation_id.as_deref() == Some(activity.request_id.as_str()) =>
@@ -508,6 +521,7 @@ fn build_ordered_assistant_parts_from_events(
                     &mut saw_reasoning_event,
                     &mut saw_body_event,
                 );
+                settle_trailing_body(&mut parts);
                 if let Some(tool_call) = pending_tool_calls.remove(data.tool_call_id.as_str()) {
                     parts.push(SequencedTranscriptAssistantPart {
                         seq: event.seq,
@@ -548,12 +562,18 @@ fn build_ordered_assistant_parts_from_events(
     }
 
     if !saw_body_event && !activity.transcript_text.is_empty() {
+        let body = match activity.status {
+            ActivityStatus::Streaming => {
+                TranscriptBodyBlock::StreamingRichText(activity.transcript_text.clone())
+            }
+            ActivityStatus::Queued | ActivityStatus::Done | ActivityStatus::Error => {
+                TranscriptBodyBlock::RichText(activity.transcript_text.clone())
+            }
+        };
         parts.push(SequencedTranscriptAssistantPart {
             seq: activity.last_seq,
             index: next_index,
-            part: TranscriptAssistantPart::Body(TranscriptBodyBlock::RichText(
-                activity.transcript_text.clone(),
-            )),
+            part: TranscriptAssistantPart::Body(body),
         });
         next_index += 1;
     }
@@ -565,6 +585,10 @@ fn build_ordered_assistant_parts_from_events(
             part: TranscriptAssistantPart::ToolCall(Box::new(tool_call.section)),
         });
         next_index += 1;
+    }
+
+    if !matches!(activity.status, ActivityStatus::Streaming) {
+        settle_all_streaming_bodies(&mut parts);
     }
 
     parts.sort_by_key(|part| (part.seq, part.index));
@@ -639,7 +663,7 @@ fn push_sequenced_text_part(
                 return;
             }
             (
-                TranscriptAssistantPart::Body(TranscriptBodyBlock::RichText(existing)),
+                TranscriptAssistantPart::Body(TranscriptBodyBlock::StreamingRichText(existing)),
                 TranscriptAssistantTextKind::Body,
             ) => {
                 existing.push_str(text);
@@ -657,7 +681,7 @@ fn push_sequenced_text_part(
             })
         }
         TranscriptAssistantTextKind::Body => {
-            TranscriptAssistantPart::Body(TranscriptBodyBlock::RichText(text.to_string()))
+            TranscriptAssistantPart::Body(TranscriptBodyBlock::StreamingRichText(text.to_string()))
         }
     };
     parts.push(SequencedTranscriptAssistantPart {
@@ -666,6 +690,29 @@ fn push_sequenced_text_part(
         part,
     });
     *next_index += 1;
+}
+
+fn settle_trailing_body(parts: &mut [SequencedTranscriptAssistantPart]) {
+    let Some(TranscriptAssistantPart::Body(body)) = parts.last_mut().map(|part| &mut part.part)
+    else {
+        return;
+    };
+    if let TranscriptBodyBlock::StreamingRichText(text) = body {
+        let text = std::mem::take(text);
+        *body = TranscriptBodyBlock::RichText(text);
+    }
+}
+
+fn settle_all_streaming_bodies(parts: &mut [SequencedTranscriptAssistantPart]) {
+    for part in parts {
+        let TranscriptAssistantPart::Body(TranscriptBodyBlock::StreamingRichText(text)) =
+            &mut part.part
+        else {
+            continue;
+        };
+        let text = std::mem::take(text);
+        part.part = TranscriptAssistantPart::Body(TranscriptBodyBlock::RichText(text));
+    }
 }
 
 fn cancel_error_display_text(raw: &str, duration_ms: Option<u64>) -> Option<String> {

@@ -155,6 +155,17 @@ impl TranscriptComposite {
         Ok(frame)
     }
 
+    pub fn detach_at(&mut self, target: f64) -> Result<ScrollFrame, TranscriptIntegrationError> {
+        let max = self
+            .layout
+            .as_ref()
+            .map_or(0.0, TranscriptLayout::max_scroll);
+        let target = target.clamp(0.0, max);
+        self.follow.jump_to_bottom();
+        self.follow.scroll_by(max - target, max)?;
+        self.scroll_to(target, 0, MotionPreference::Full)
+    }
+
     pub fn tick(&mut self, clock: &DualClock) -> LifecycleFrame {
         self.tick_at(clock.snapshot())
     }

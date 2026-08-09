@@ -9,12 +9,15 @@ use crate::app::{AppState, Focus, Tab};
 use crate::layout::FrameLayoutPlan;
 use crate::text::has_trimmed_content;
 
-use super::ui_transcript_layout::MeasuredTranscriptLayout;
+use super::ui_transcript_layout::{MeasuredTranscriptLayout, TranscriptViewportRows};
 use super::ui_transcript_surface::{append_nested_surface_row, append_surface_row};
 use super::WheelTarget;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum TranscriptMouseTarget {
+    Reasoning {
+        request_id: String,
+    },
     SubagentSession {
         session_id: String,
     },
@@ -35,6 +38,81 @@ pub(super) struct TranscriptInteractionRow {
     pub(super) target: TranscriptMouseTarget,
     pub(super) hit_start: u16,
     pub(super) hit_width: u16,
+}
+
+pub(super) struct TranscriptViewportHitMap<'a> {
+    layout: &'a MeasuredTranscriptLayout,
+    viewport: Rect,
+    rows: TranscriptViewportRows,
+}
+
+pub(super) trait TranscriptViewportRowSource {
+    fn viewport_rows(self, viewport: Rect) -> TranscriptViewportRows;
+}
+
+impl TranscriptViewportRowSource for usize {
+    fn viewport_rows(self, viewport: Rect) -> TranscriptViewportRows {
+        TranscriptViewportRows::linear(usize::from(viewport.height), self)
+    }
+}
+
+impl TranscriptViewportRowSource for TranscriptViewportRows {
+    fn viewport_rows(self, _viewport: Rect) -> TranscriptViewportRows {
+        self
+    }
+}
+
+impl<'a> TranscriptViewportHitMap<'a> {
+    pub(super) const fn new(
+        layout: &'a MeasuredTranscriptLayout,
+        viewport: Rect,
+        rows: TranscriptViewportRows,
+    ) -> Self {
+        Self {
+            layout,
+            viewport,
+            rows,
+        }
+    }
+
+    pub(super) fn hit(&self, column: u16, row: u16) -> Option<TranscriptMouseTarget> {
+        if !rect_contains(self.viewport, column, row) {
+            return None;
+        }
+
+        let absolute_row = self
+            .rows
+            .absolute_row(usize::from(row.saturating_sub(self.viewport.y)))?;
+        for section in &self.layout.sections {
+            let section_content_top = section.top_row.saturating_add(section.leading_gap_height);
+            for surface in &section.surfaces {
+                let surface_top = section_content_top.saturating_add(surface.top_offset);
+                let surface_bottom = surface_top.saturating_add(surface.height);
+                if absolute_row < surface_top || absolute_row >= surface_bottom {
+                    continue;
+                }
+
+                let local_row = absolute_row.saturating_sub(surface_top);
+                if let Some(interaction) = surface
+                    .interaction_rows
+                    .as_ref()
+                    .and_then(|targets| targets.get(local_row))
+                    .cloned()
+                    .flatten()
+                {
+                    let local_column = column.saturating_sub(self.viewport.x);
+                    if local_column >= interaction.hit_start
+                        && local_column
+                            < interaction.hit_start.saturating_add(interaction.hit_width)
+                    {
+                        return Some(interaction.target);
+                    }
+                }
+            }
+        }
+
+        None
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -119,43 +197,11 @@ pub(super) fn rect_contains(area: Rect, column: u16, row: u16) -> bool {
 pub(super) fn transcript_mouse_target_at(
     layout: &MeasuredTranscriptLayout,
     viewport: Rect,
-    scroll_top: usize,
+    rows: impl TranscriptViewportRowSource,
     column: u16,
     row: u16,
 ) -> Option<TranscriptMouseTarget> {
-    if !rect_contains(viewport, column, row) {
-        return None;
-    }
-
-    let absolute_row = scroll_top.saturating_add(usize::from(row.saturating_sub(viewport.y)));
-    for section in &layout.sections {
-        let section_content_top = section.top_row.saturating_add(section.leading_gap_height);
-        for surface in &section.surfaces {
-            let surface_top = section_content_top.saturating_add(surface.top_offset);
-            let surface_bottom = surface_top.saturating_add(surface.height);
-            if absolute_row < surface_top || absolute_row >= surface_bottom {
-                continue;
-            }
-
-            let local_row = absolute_row.saturating_sub(surface_top);
-            if let Some(interaction) = surface
-                .interaction_rows
-                .as_ref()
-                .and_then(|targets| targets.get(local_row))
-                .cloned()
-                .flatten()
-            {
-                let local_column = column.saturating_sub(viewport.x);
-                if local_column >= interaction.hit_start
-                    && local_column < interaction.hit_start.saturating_add(interaction.hit_width)
-                {
-                    return Some(interaction.target);
-                }
-            }
-        }
-    }
-
-    None
+    TranscriptViewportHitMap::new(layout, viewport, rows.viewport_rows(viewport)).hit(column, row)
 }
 
 pub(super) fn full_width_interaction_row(

@@ -37,5 +37,5 @@ pub use easing::{
     EasingKind, FractionalScroll, MotionPreference, ScrollFrame, ScrollTransition,
     TransitionRequest,
 };
-pub use follow::{FollowMode, FollowState};
+pub use follow::{FollowMode, FollowState, PageFlipState};
 pub use scrollbar::{ScrollbarDrag, ScrollbarGeometry};

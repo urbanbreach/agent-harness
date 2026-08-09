@@ -11,13 +11,14 @@ pub(super) struct TranscriptToolCardShell {
 
 pub(super) const THINKING_TRACE_LABEL: &str = "Thinking:";
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(super) struct TranscriptLayoutCacheEntry {
     pub(super) app_instance_id: u64,
     pub(super) render_key: u64,
     pub(super) theme: Theme,
     pub(super) width: u16,
     pub(super) base_surface: Color,
+    pub(super) sections: Vec<TranscriptTurnSection>,
     pub(super) layout: MeasuredTranscriptLayout,
 }
 
@@ -36,7 +37,7 @@ pub(in crate::ui) struct TranscriptRenderSurface {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(in crate::ui) enum TranscriptRenderSurfaceKind {
+pub(crate) enum TranscriptRenderSurfaceKind {
     User,
     AssistantReasoning,
     AssistantBody,
@@ -55,6 +56,7 @@ pub(super) struct ToolSectionRender {
 }
 
 pub(super) struct BuildTurnSectionArgs<'a> {
+    pub(super) activity_first_seq: u64,
     pub(super) activity: &'a ActivityEntry,
     pub(super) queued_user_message: bool,
     pub(super) is_selected: bool,
@@ -77,11 +79,13 @@ pub(super) struct TranscriptOrderedToolCallSection {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct TranscriptTurnSection {
+    pub(super) activity_first_seq: u64,
     pub(super) request_id: String,
     pub(super) user_message: Option<TranscriptUserMessageSection>,
     pub(super) show_footer: bool,
     pub(super) footer_timestamp: Option<String>,
     pub(super) animation_phase: usize,
+    pub(super) reasoning_expanded: bool,
     pub(super) header: TranscriptTurnHeader,
     pub(super) body_blocks: Vec<TranscriptBodyBlock>,
     pub(super) tool_calls: Vec<TranscriptToolCallSection>,
@@ -117,6 +121,7 @@ pub(super) struct TranscriptTurnHeader {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum TranscriptBodyBlock {
     RichText(String),
+    StreamingRichText(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

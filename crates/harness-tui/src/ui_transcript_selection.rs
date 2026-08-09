@@ -1,8 +1,6 @@
 // allow: SIZE_OK — TUI transcript rendering (indivisible view model)
 use crate::UnwrapOrAbort;
-#[cfg(test)]
-use std::cell::Cell;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 
 use ratatui::{
     layout::{Alignment, Rect},
@@ -14,11 +12,15 @@ use ratatui::{
 use crate::theme::Theme;
 
 use super::ui_chrome::display_width;
+use super::ui_fenced_text::{
+    parse_fenced_text_blocks, parse_streaming_fenced_text_blocks, ParsedTextBlock,
+};
 use super::ui_lifecycle::LifecycleSelectionSurface;
 use super::ui_markdown::{
     markdown_heading_text, markdown_list_prefix, markdown_rule, parse_inline_markdown_spans,
 };
 use super::ui_markdown_table::try_render_markdown_table_block;
+use super::ui_transcript_mermaid::is_mermaid_language;
 use super::ui_transcript_surface::wrap_surface_spans;
 
 const TRANSCRIPT_SELECTION_RAIL_GLYPH: &str = " ";
@@ -68,11 +70,12 @@ impl SelectionRow {
 #[derive(Debug, Clone)]
 pub(super) struct TranscriptSelectionSnapshot {
     pub(super) viewport: Rect,
-    pub(super) scroll_top: usize,
+    pub(super) visible_rows: Vec<usize>,
     pub(super) rows: Vec<SelectionRow>,
     pub(super) line_texts: Vec<String>,
     pub(super) continues_previous: Vec<bool>,
     pub(super) row_width: usize,
+    pub(super) resolved_selection: Cell<Option<TranscriptSelection>>,
 }
 
 #[derive(Debug, Clone)]
@@ -125,14 +128,15 @@ impl TranscriptSelectionSnapshot {
         }
 
         Some(TranscriptSelectionCell {
-            row: self
-                .scroll_top
-                .saturating_add(usize::from(row.saturating_sub(self.viewport.y))),
+            row: *self
+                .visible_rows
+                .get(usize::from(row.saturating_sub(self.viewport.y)))?,
             column: usize::from(column.saturating_sub(self.viewport.x)),
         })
     }
 
-    pub(super) fn selection_text(&self, selection: TranscriptSelection) -> Option<String> {
+    pub(super) fn selection_text(&self, _selection: TranscriptSelection) -> Option<String> {
+        let selection = self.resolved_selection.get()?;
         let (start, end) = selection.normalized();
         if start == end || self.rows.is_empty() {
             return None;
@@ -203,13 +207,12 @@ impl TranscriptSelectionSnapshot {
 
     #[cfg(test)]
     pub(super) fn visible_rows(&self) -> Vec<String> {
-        self.rows
+        self.visible_rows
             .iter()
-            .skip(self.scroll_top)
-            .take(usize::from(self.viewport.height))
-            .map(|row| {
+            .map(|row_index| {
+                let row = self.rows.get(*row_index);
                 self.line_texts
-                    .get(row.line_index)
+                    .get(row.map_or(0, |row| row.line_index))
                     .cloned()
                     .unwrap_or_default()
             })
@@ -434,6 +437,75 @@ pub(super) fn selection_rows_for_markdownish_text_block(
     rows
 }
 
+pub(super) fn selection_rows_for_rich_text_block(
+    text: &str,
+    color: Color,
+    prefix: &str,
+    theme: &Theme,
+    width: u16,
+    is_streaming: bool,
+) -> Option<Vec<TranscriptSelectionRow>> {
+    let Some(blocks) = text
+        .contains("```")
+        .then(|| {
+            if is_streaming {
+                Some(parse_streaming_fenced_text_blocks(text))
+            } else {
+                parse_fenced_text_blocks(text)
+            }
+        })
+        .flatten()
+    else {
+        return Some(selection_rows_for_markdownish_text_block(
+            text, color, prefix, theme, width,
+        ));
+    };
+
+    let base_style = Style::default().fg(color);
+    let copy_offset = display_width(prefix);
+    let mut rows = Vec::new();
+    for block in blocks {
+        match block {
+            ParsedTextBlock::Plain(plain) => {
+                rows.extend(selection_rows_for_markdownish_text_block(
+                    &plain, color, prefix, theme, width,
+                ));
+                if rows.last().is_some_and(|row| !selection_row_is_blank(row)) {
+                    rows.push(blank_selection_row(width));
+                }
+            }
+            ParsedTextBlock::Code { language, body, .. } => {
+                if is_mermaid_language(language.as_deref())
+                    || matches!(language.as_deref(), Some("diff" | "patch"))
+                {
+                    return None;
+                }
+                if rows.last().is_some_and(|row| !selection_row_is_blank(row)) {
+                    rows.push(blank_selection_row(width));
+                }
+                for line in body.lines() {
+                    rows.extend(selection_rows_for_prefixed_wrapped_spans(
+                        prefix,
+                        base_style,
+                        vec![Span::styled(line.to_string(), base_style)],
+                        width,
+                        copy_offset,
+                    ));
+                }
+                rows.push(blank_selection_row(width));
+                rows.push(blank_selection_row(width));
+            }
+        }
+    }
+    Some(rows)
+}
+
+fn selection_row_is_blank(row: &TranscriptSelectionRow) -> bool {
+    row.cells
+        .iter()
+        .all(|cell| cell.is_empty() || cell.chars().all(char::is_whitespace))
+}
+
 fn selection_rows_for_rendered_table_lines(
     lines: Vec<Line<'static>>,
     width: u16,
@@ -625,11 +697,12 @@ pub(super) fn lifecycle_selection_snapshot(
 
     Some(TranscriptSelectionSnapshot {
         viewport: surface.viewport,
-        scroll_top: 0,
+        visible_rows: (0..height).collect(),
         rows,
         line_texts,
         continues_previous,
         row_width: width,
+        resolved_selection: Cell::new(None),
     })
 }
 
@@ -692,10 +765,13 @@ pub(super) fn render_transcript_selection(
     area: Rect,
     theme: &Theme,
 ) {
-    let Some(selection) = selection else {
+    let Some(_selection) = selection else {
         return;
     };
     let Some(snapshot) = snapshot else {
+        return;
+    };
+    let Some(selection) = snapshot.resolved_selection.get() else {
         return;
     };
     if snapshot.rows.is_empty() {
@@ -713,8 +789,13 @@ pub(super) fn render_transcript_selection(
     let start_row = start.row.min(max_row);
     let end_row = end.row.min(max_row);
 
-    for local_row in 0..visible_height {
-        let absolute_row = snapshot.scroll_top.saturating_add(local_row);
+    for (local_row, absolute_row) in snapshot
+        .visible_rows
+        .iter()
+        .copied()
+        .take(visible_height)
+        .enumerate()
+    {
         if absolute_row < start_row || absolute_row > end_row {
             continue;
         }
@@ -767,4 +848,105 @@ pub(crate) fn reset_transcript_selection_cache_metrics_for_test() {
 #[cfg(test)]
 pub(crate) fn transcript_selection_cache_build_count_for_test() -> usize {
     TRANSCRIPT_SELECTION_CACHE_BUILD_COUNT.with(Cell::get)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fenced_selection_rows_preserve_logical_code_lines_through_rewrap() {
+        // Given: a fenced assistant body whose code line wraps at a narrow width.
+        let Some(rows) = selection_rows_for_rich_text_block(
+            "```rust\nlet value = a_very_long_identifier;\n```",
+            Color::White,
+            "  ",
+            &Theme::default(),
+            16,
+            false,
+        ) else {
+            panic!("ordinary code must remain selectable");
+        };
+
+        // When: the selection model records the rendered rows.
+        let rendered = rows
+            .iter()
+            .map(selection_row_line_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        // Then: only painted code is selectable and wrapped rows retain one logical line.
+        assert!(!rendered.contains("```rust"));
+        assert!(rendered.contains("let value"));
+        assert!(rows.iter().any(|row| row.continues_previous));
+    }
+
+    #[test]
+    fn open_fence_selection_rows_match_streaming_code_body() {
+        let Some(rows) = selection_rows_for_rich_text_block(
+            "Before\n```rust\nlet value = 42;",
+            Color::White,
+            "  ",
+            &Theme::default(),
+            24,
+            true,
+        ) else {
+            panic!("streaming code must remain selectable");
+        };
+        let rendered = rows
+            .iter()
+            .map(selection_row_line_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(rendered.contains("Before"));
+        assert!(rendered.contains("let value = 42;"));
+        assert!(!rendered.contains("```rust"));
+    }
+
+    #[test]
+    fn transformed_fences_fail_closed_for_semantic_selection() {
+        for source in [
+            "```mermaid\ngraph TD\nA --> B\n```",
+            "```diff\n-old\n+new\n```",
+        ] {
+            assert!(selection_rows_for_rich_text_block(
+                source,
+                Color::White,
+                "  ",
+                &Theme::default(),
+                40,
+                false,
+            )
+            .is_none());
+        }
+    }
+
+    #[test]
+    fn unresolved_semantic_selection_does_not_fall_back_to_stale_cells() {
+        // Given: a snapshot whose anchored surface disappeared during reflow.
+        let snapshot = TranscriptSelectionSnapshot {
+            viewport: Rect::new(0, 0, 5, 1),
+            visible_rows: vec![0],
+            rows: vec![SelectionRow {
+                line_index: 0,
+                start_cell: 0,
+                end_cell: 4,
+            }],
+            line_texts: vec!["stale".to_string()],
+            continues_previous: vec![false],
+            row_width: 5,
+            resolved_selection: Cell::new(None),
+        };
+        let stale_selection = TranscriptSelection {
+            anchor: TranscriptSelectionCell { row: 0, column: 0 },
+            focus: TranscriptSelectionCell { row: 0, column: 4 },
+        };
+
+        // When: copy resolves selection text from the reflowed snapshot.
+        let text = snapshot.selection_text(stale_selection);
+
+        // Then: unresolved semantic endpoints fail closed instead of selecting new content.
+        assert_eq!(text, None);
+    }
 }

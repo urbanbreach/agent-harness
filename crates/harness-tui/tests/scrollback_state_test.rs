@@ -196,8 +196,14 @@ fn scroll_down_decreases_offset_and_reengages_at_bottom() {
         "scroll clamps to zero at bottom"
     );
     assert!(
+        !app.follow_mode_active(),
+        "landing at scroll=0 remains detached"
+    );
+
+    app.scroll_page_down(30);
+    assert!(
         app.follow_mode_active(),
-        "reaching scroll=0 re-engages follow mode"
+        "a clamped downward gesture at scroll=0 re-engages follow mode"
     );
 }
 
@@ -287,8 +293,8 @@ fn follow_mode_does_not_move_scroll_when_disengaged() {
     app.follow_mode_content_arrived();
     assert_eq!(
         app.transcript_scroll_offset(),
-        10,
-        "non-follow mode must not move scroll on content arrival"
+        110,
+        "detached content anchor stays fixed while new rows grow below it"
     );
 }
 
@@ -298,6 +304,9 @@ fn follow_mode_round_trip_up_and_back_down() {
     app.record_transcript_max_scroll(300);
 
     app.scroll_page_up(30);
+    assert!(!app.follow_mode_active());
+
+    app.scroll_page_down(30);
     assert!(!app.follow_mode_active());
 
     app.scroll_page_down(30);
@@ -431,8 +440,8 @@ fn viewport_scroll_bounds_never_exceed_max_scroll() {
     app.scroll_page_up(100);
     assert_eq!(
         app.transcript_scroll_offset(),
-        100,
-        "scroll_up accumulates without clamp (renderer clamps display)"
+        50,
+        "measured scroll state clamps to the rendered-row maximum"
     );
 
     app.scroll_goto_top();

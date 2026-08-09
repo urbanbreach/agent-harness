@@ -8,8 +8,6 @@ use super::ui_chrome::elevated_card_surface;
 
 const TRANSCRIPT_BRAILLE_SPINNER_FRAMES: [&str; 8] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧"];
 const TRANSCRIPT_SPINNER_TICK_DIVISOR: usize = 4;
-const TRANSCRIPT_ANIMATION_TICKS_PER_SECOND: u64 = 30;
-const TRANSCRIPT_ACTIVITY_SPINNER_ORIGIN_FRAME: usize = 3;
 const TRANSCRIPT_TOOL_WAVE_SPEED: f32 = 0.15;
 const USER_WAITING_PULSE_SPEED: f32 = 0.08;
 const ANIMATION_PHASE_WRAP: usize = 65_536;
@@ -20,24 +18,25 @@ fn animation_phase_f32(animation_phase: usize) -> f32 {
 }
 
 pub(super) fn transcript_streaming_spinner_frame(animation_phase: usize) -> &'static str {
-    // Freeze the spinner glyph when animations are disabled so PTY/signoff
-    // captures are reproducible across runs.
-    if std::env::var_os("HARNESS_DISABLE_ANIMATIONS").is_some() {
+    transcript_streaming_spinner_frame_with_motion(
+        animation_phase,
+        std::env::var_os("HARNESS_DISABLE_ANIMATIONS").is_none(),
+    )
+}
+
+pub(super) fn transcript_streaming_spinner_frame_with_motion(
+    animation_phase: usize,
+    motion_enabled: bool,
+) -> &'static str {
+    if !motion_enabled {
         return TRANSCRIPT_BRAILLE_SPINNER_FRAMES[0];
     }
     let frame = animation_phase / TRANSCRIPT_SPINNER_TICK_DIVISOR;
     TRANSCRIPT_BRAILLE_SPINNER_FRAMES[frame % TRANSCRIPT_BRAILLE_SPINNER_FRAMES.len()]
 }
 
-pub(super) fn transcript_activity_spinner_frame(elapsed_ms: u64) -> &'static str {
-    let elapsed_ticks = elapsed_ms.saturating_mul(TRANSCRIPT_ANIMATION_TICKS_PER_SECOND) / 1_000;
-    let elapsed_ticks = usize::try_from(elapsed_ticks).unwrap_or(usize::MAX);
-    let origin_ticks = TRANSCRIPT_ACTIVITY_SPINNER_ORIGIN_FRAME * TRANSCRIPT_SPINNER_TICK_DIVISOR;
-    transcript_streaming_spinner_frame(origin_ticks.saturating_add(elapsed_ticks))
-}
-
 pub(super) fn thinking_header_color(theme: &Theme, _surface: Color) -> Color {
-    theme.text.tertiary
+    theme.text.secondary
 }
 
 pub(super) fn transcript_running_tool_marker_color(theme: &Theme, animation_phase: usize) -> Color {
@@ -159,7 +158,8 @@ pub(super) fn transcript_emphasized_surface(theme: &Theme, base_surface: Color) 
 mod tests {
     use super::{
         blend_color, pending_diamond_color, thinking_header_color,
-        transcript_running_tool_marker_color, Theme,
+        transcript_running_tool_marker_color, transcript_streaming_spinner_frame_with_motion,
+        Theme,
     };
     use ratatui::style::Color;
 
@@ -210,14 +210,14 @@ mod tests {
     }
 
     #[test]
-    fn thinking_header_color_uses_muted_transcript_text() {
+    fn thinking_header_color_uses_readable_secondary_text() {
         // arrange
         // act
         // assert
         let theme = Theme::default();
         assert_eq!(
             thinking_header_color(&theme, theme.surface.shell),
-            theme.text.tertiary
+            theme.text.secondary
         );
     }
 
@@ -237,5 +237,17 @@ mod tests {
             pending_diamond_color(&theme, 0),
             pending_diamond_color(&theme, 10)
         );
+    }
+
+    #[test]
+    fn reduced_motion_keeps_active_spinner_static() {
+        // Given: two different shared animation phases.
+        // When: reduced motion resolves their active marker.
+        let first = transcript_streaming_spinner_frame_with_motion(0, false);
+        let later = transcript_streaming_spinner_frame_with_motion(40, false);
+
+        // Then: the active state remains clear without continuous movement.
+        assert_eq!(first, "⠋");
+        assert_eq!(later, first);
     }
 }

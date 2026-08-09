@@ -414,12 +414,15 @@ pub(super) fn submit_prompt_while_turn_streams_echoes_as_queued_and_emits_intent
             metadata: None,
         }),
     ));
-    app.composer.prompt_buffer = "next prompt".to_string();
-    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
+    app.replace_prompt_input("next prompt".to_string());
 
     app.submit_prompt();
 
     assert!(app.composer.prompt_buffer.is_empty());
+    assert!(
+        !app.transcript_page_flip_preserving(),
+        "queued local echo must not move the transcript before the turn activates"
+    );
     assert_eq!(app.activities.len(), 2);
     assert_eq!(
         app.activities
@@ -442,5 +445,52 @@ pub(super) fn submit_prompt_while_turn_streams_echoes_as_queued_and_emits_intent
             attachments: Vec::new(),
             launch_metadata: LaunchMetadata::default(),
         }]
+    );
+
+    app.ingest_event(envelope(
+        3,
+        "req_next",
+        EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+            request_id: "req_next".into(),
+            text: "next prompt".to_string(),
+        }),
+    ));
+    assert_eq!(
+        app.activities.back().map(|activity| activity.status),
+        Some(ActivityStatus::Queued)
+    );
+    assert!(!app.transcript_page_flip_preserving());
+
+    app.ingest_event(envelope(
+        4,
+        "req_active",
+        EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+            request_id: "req_active".into(),
+            finish_reason: "stop".to_string(),
+            output_digest: None,
+            usage: None,
+            metadata: None,
+        }),
+    ));
+    app.ingest_event(envelope(
+        5,
+        "req_next",
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "req_next".into(),
+            provider_id: "default".to_string(),
+            model_id: "gpt-5.4-mini".to_string(),
+            prompt_summary: "next prompt".to_string(),
+            request_digest: "digest-next".to_string(),
+            metadata: None,
+        }),
+    ));
+
+    assert_eq!(
+        app.activities.back().map(|activity| activity.status),
+        Some(ActivityStatus::Streaming)
+    );
+    assert!(
+        app.transcript_page_flip_preserving(),
+        "queued prompt must page-flip when its event activates the turn"
     );
 }

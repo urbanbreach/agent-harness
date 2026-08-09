@@ -105,6 +105,37 @@ fn follow_detaches_on_user_scroll_up_and_reattaches_at_bottom_jump() -> TestResu
 }
 
 #[test]
+fn landing_at_bottom_remains_detached_until_an_overscroll_gesture() -> TestResult {
+    // Given: a viewport detached four rows above the live tail.
+    let mut follow = FollowState::new();
+    follow.scroll_by(4.0, 100.0)?;
+
+    // When: one downward gesture lands exactly at the bottom.
+    follow.scroll_by(-4.0, 100.0)?;
+
+    // Then: landing alone does not opt back into live following.
+    assert!(!follow.is_following());
+    assert_close(follow.offset(), 0.0);
+    Ok(())
+}
+
+#[test]
+fn fully_clamped_downward_overscroll_reattaches_follow() -> TestResult {
+    // Given: a detached viewport that has landed at the bottom.
+    let mut follow = FollowState::new();
+    follow.scroll_by(4.0, 100.0)?;
+    follow.scroll_by(-4.0, 100.0)?;
+
+    // When: the next downward gesture is fully clamped.
+    follow.scroll_by(-1.0, 100.0)?;
+
+    // Then: follow reattaches without another input.
+    assert!(follow.is_following());
+    assert_close(follow.offset(), 0.0);
+    Ok(())
+}
+
+#[test]
 fn page_and_jump_easing_are_deterministic_with_a_fake_clock() -> TestResult {
     // Given: a full-motion page transition and a deterministic animation clock.
     let request = TransitionRequest::new(0.0, 100.0, 0, EasingKind::Page, MotionPreference::Full);

@@ -1,4 +1,5 @@
 use super::*;
+use crate::transcript_scroll::PageFlipState;
 use crate::UnwrapOrAbort;
 
 pub(super) fn space_on_transcript_focus_focuses_prompt_for_typing() {
@@ -109,6 +110,7 @@ pub(super) fn details_drawer_toggles_without_stealing_transcript_state() {
 pub(super) fn mouse_wheel_scrolls_transcript_without_stealing_focus() {
     let mut app = AppState::new_live(None, false, None);
     app.focus = Focus::Prompt;
+    app.transcript_view.last_transcript_max_scroll.set(42);
 
     app.handle_mouse(
         MouseEvent {
@@ -139,6 +141,20 @@ pub(super) fn mouse_wheel_scrolls_transcript_without_stealing_focus() {
         None,
     );
     assert_eq!(app.transcript_view.transcript_scroll, 0);
+    assert!(!app.transcript_view.follow_mode);
+
+    app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::ScrollDown,
+            column: 5,
+            row: 5,
+            modifiers: KeyModifiers::NONE,
+        },
+        TEST_FRAME_AREA,
+        Some(WheelTarget::Transcript),
+        None,
+        None,
+    );
     assert!(app.transcript_view.follow_mode);
     assert_eq!(app.focus, Focus::Prompt);
 }
@@ -150,6 +166,10 @@ pub(super) fn transcript_navigation_keys_match_scroll_expectations() {
 
     app.handle_key(key(KeyCode::PageUp));
     assert_eq!(app.transcript_view.transcript_scroll, 10);
+    assert!(!app.transcript_view.follow_mode);
+
+    app.handle_key(key(KeyCode::PageDown));
+    assert_eq!(app.transcript_view.transcript_scroll, 0);
     assert!(!app.transcript_view.follow_mode);
 
     app.handle_key(key(KeyCode::PageDown));
@@ -167,6 +187,79 @@ pub(super) fn transcript_navigation_keys_match_scroll_expectations() {
     app.handle_key(key(KeyCode::End));
     assert_eq!(app.transcript_view.transcript_scroll, 0);
     assert!(app.transcript_view.follow_mode);
+}
+
+fn detached_resize_app() -> AppState {
+    let mut app = AppState::new_live(None, false, None);
+    for turn in 0..8_u64 {
+        let request_id = format!("req_resize_{turn}");
+        let first_seq = turn * 3 + 1;
+        app.ingest_event(envelope(
+            first_seq,
+            &request_id,
+            EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                request_id: request_id.clone().into(),
+                text: format!("resize prompt {turn}"),
+            }),
+        ));
+        app.ingest_event(envelope(
+            first_seq + 1,
+            &request_id,
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: request_id.clone().into(),
+                provider_id: "mock".to_string(),
+                model_id: "model-resize".to_string(),
+                prompt_summary: format!("resize prompt {turn}"),
+                request_digest: format!("digest-resize-{turn}"),
+                metadata: None,
+            }),
+        ));
+        app.ingest_event(envelope(
+            first_seq + 2,
+            &request_id,
+            EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+                request_id: request_id.clone().into(),
+                delta: format!("resize response {turn}\nrow a\nrow b\nrow c\nRESIZE_TAIL_{turn}"),
+            }),
+        ));
+    }
+    let compact = Rect::new(0, 0, 80, 20);
+    app.set_frame_area(compact);
+    let _ = render_text(&app, compact.width, compact.height);
+    let max_scroll = app.transcript_view.last_transcript_max_scroll.get();
+    assert!(max_scroll > 5, "fixture must provide detached scroll range");
+    app.set_transcript_page_flip_state(PageFlipState::Idle.begin(0).preserve_at(max_scroll));
+    app.scroll_page_up(5);
+    app
+}
+
+pub(super) fn detached_page_flip_reconciles_when_resize_reaches_bottom() {
+    // Given: detached transcript navigation in a compact viewport with scrollable history.
+    let mut app = detached_resize_app();
+
+    // When: reflow into a viewport tall enough to reach the transcript bottom.
+    let expanded = Rect::new(0, 0, 140, 100);
+    app.set_frame_area(expanded);
+    let rendered = render_text(&app, expanded.width, expanded.height);
+
+    // Then: stale detached rows cannot blank the viewport and follow resumes at the tail.
+    assert!(rendered.contains("RESIZE_TAIL_7"), "{rendered}");
+    assert!(app.transcript_page_flip_scroll_top().is_none());
+    assert!(app.transcript_following());
+}
+
+pub(super) fn detached_page_flip_survives_resize_with_remaining_overflow() {
+    // Given: detached transcript navigation in a compact viewport with scrollable history.
+    let mut app = detached_resize_app();
+
+    // When: width changes while the painted transcript still exceeds the viewport.
+    let resized = Rect::new(0, 0, 81, 20);
+    app.set_frame_area(resized);
+    let _ = render_text(&app, resized.width, resized.height);
+
+    // Then: resize keeps manual detachment until the painted viewport reaches the tail.
+    assert!(app.transcript_page_flip_scroll_top().is_some());
+    assert!(!app.transcript_following());
 }
 
 pub(super) fn shift_right_left_on_details_focus_navigates_user_turns() {
@@ -242,6 +335,7 @@ pub(super) fn page_up_down_with_prompt_focus_scrolls_transcript_without_clearing
     app.focus = Focus::Prompt;
     app.composer.prompt_buffer = "draft text".to_string();
     app.composer.prompt_cursor = 10;
+    app.transcript_view.last_transcript_max_scroll.set(42);
 
     app.handle_key(key(KeyCode::PageUp));
     assert_eq!(app.transcript_view.transcript_scroll, 10);
@@ -252,6 +346,9 @@ pub(super) fn page_up_down_with_prompt_focus_scrolls_transcript_without_clearing
 
     app.handle_key(key(KeyCode::PageDown));
     assert_eq!(app.transcript_view.transcript_scroll, 0);
+    assert!(!app.transcript_view.follow_mode);
+
+    app.handle_key(key(KeyCode::PageDown));
     assert!(app.transcript_view.follow_mode);
     assert_eq!(app.focus, Focus::Prompt);
     assert_eq!(app.composer.prompt_buffer, "draft text");
@@ -263,6 +360,7 @@ pub(super) fn ctrl_up_down_with_prompt_focus_scrolls_transcript_by_one_row() {
     app.focus = Focus::Prompt;
     app.composer.prompt_buffer = "draft text".to_string();
     app.composer.prompt_cursor = 10;
+    app.transcript_view.last_transcript_max_scroll.set(42);
 
     app.handle_key(key_with_modifiers(KeyCode::Up, KeyModifiers::CONTROL));
     assert_eq!(app.transcript_view.transcript_scroll, 1);
@@ -275,6 +373,243 @@ pub(super) fn ctrl_up_down_with_prompt_focus_scrolls_transcript_by_one_row() {
     app.handle_key(key_with_modifiers(KeyCode::Down, KeyModifiers::CONTROL));
     assert_eq!(app.transcript_view.transcript_scroll, 1);
     assert_eq!(app.focus, Focus::Prompt);
+}
+
+pub(super) fn active_stream_more_below_click_returns_to_live() {
+    // Given: an active stream detached from a scrollable transcript tail.
+    let mut app = detached_resize_app();
+    let area = Rect::new(0, 0, 80, 20);
+    let _ = render_text(&app, area.width, area.height);
+    let targets = (0..area.height)
+        .flat_map(|row| (0..area.width).map(move |column| (column, row)))
+        .filter(|(column, row)| ui::transcript_return_to_live_hit(&app, area, *column, *row))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        targets.len(),
+        1,
+        "active affordance must expose one painted-cell target"
+    );
+
+    // When: the user clicks the active more-below affordance.
+    let (column, row) = targets[0];
+    let handled = app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        },
+        area,
+        Some(WheelTarget::Transcript),
+        None,
+        None,
+    );
+
+    // Then: the viewport returns to live follow mode immediately.
+    assert!(handled);
+    assert!(app.transcript_following());
+    assert!(app.transcript_page_flip_scroll_top().is_none());
+    assert!(
+        app.transcript_view.transcript_click_activated_on_down,
+        "return-to-live MouseDown must consume the matching MouseUp"
+    );
+
+    let released = app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Up(MouseButton::Left),
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        },
+        area,
+        Some(WheelTarget::Transcript),
+        None,
+        None,
+    );
+    assert!(released);
+    assert!(!app.transcript_view.transcript_click_activated_on_down);
+}
+
+pub(super) fn completed_stream_more_below_affordance_remains_passive() {
+    // Given: detached history after every visible turn has completed.
+    let mut app = detached_resize_app();
+    for activity in &mut app.activities {
+        activity.status = ActivityStatus::Done;
+    }
+    let area = Rect::new(0, 0, 80, 20);
+    let rendered = render_text(&app, area.width, area.height);
+
+    // When: checking every cell of the visible passive affordance surface.
+    let has_target = (0..area.height).any(|row| {
+        (0..area.width).any(|column| ui::transcript_return_to_live_hit(&app, area, column, row))
+    });
+
+    // Then: the completion-state glyph remains visible but never becomes actionable.
+    assert!(
+        rendered.contains('▼'),
+        "completed detached history keeps its passive indicator"
+    );
+    assert!(!has_target);
+}
+
+pub(super) fn detached_measured_viewport_has_no_stale_timeline_targets() {
+    // Given: a measured transcript viewport detached without a page-flip override.
+    let app = detached_resize_app();
+    let area = Rect::new(0, 0, 80, 20);
+    app.cancel_transcript_page_flip();
+    assert!(!app.transcript_following());
+
+    // When: hit-testing every cell through the integrated timeline path.
+    let targets = (0..area.height)
+        .flat_map(|row| (0..area.width).map(move |column| (column, row)))
+        .filter_map(|(column, row)| ui::transcript_timeline_turn_at(&app, area, column, row))
+        .collect::<Vec<_>>();
+
+    // Then: stale live-tail marker geometry cannot remain interactive while detached.
+    assert!(
+        targets.is_empty(),
+        "detached timeline targets were {targets:?}"
+    );
+}
+
+pub(super) fn vanished_selection_anchor_stays_closed_through_mouse_up() {
+    // Given: an active drag whose semantic endpoints were captured from transcript content.
+    let mut app = transcript_selection_test_app_with_text("anchored selection text");
+    let area = TEST_FRAME_AREA;
+    let (column, row, width) = transcript_selection_text_bounds(&app, "anchored selection text");
+    app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        },
+        area,
+        None,
+        None,
+        None,
+    );
+    app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Drag(MouseButton::Left),
+            column: column + width.saturating_sub(1),
+            row,
+            modifiers: KeyModifiers::NONE,
+        },
+        area,
+        None,
+        None,
+        None,
+    );
+    let _ = render_text(&app, area.width, area.height);
+    assert!(app
+        .transcript_view
+        .transcript_selection_anchors
+        .get()
+        .is_some());
+    app.activities[0].first_seq = 100;
+    app.activities[0].transcript_text = "replacement content with unrelated cells".to_string();
+    app.activities[0].revision = app.activities[0].revision.saturating_add(1);
+    app.bump_transcript_render_epoch();
+
+    // When: the pointer is released after the anchored surface disappears.
+    let stale_hit = ui::transcript_selection_cell(&app, area, column, row);
+    app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Up(MouseButton::Left),
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        },
+        area,
+        None,
+        None,
+        None,
+    );
+
+    // Then: stale cells cannot replace the unresolved semantic selection or reach copy.
+    assert_eq!(stale_hit, None);
+    assert!(app.transcript_view.transcript_selection.is_none());
+    assert!(app
+        .transcript_view
+        .transcript_selection_anchors
+        .get()
+        .is_none());
+}
+
+pub(super) fn selection_mouse_up_does_not_activate_underlying_tool_target() {
+    // Given: a transcript selection drag ending over an interactive tool row.
+    let mut app = AppState::new_live(None, false, None);
+    app.ingest_event(envelope(
+        1,
+        "req_selection_mouse_up",
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "req_selection_mouse_up".into(),
+            provider_id: "openai".to_string(),
+            model_id: "gpt-5-codex".to_string(),
+            prompt_summary: "selection release".to_string(),
+            request_digest: "digest-selection-release".to_string(),
+            metadata: None,
+        }),
+    ));
+    app.ingest_event(envelope(
+        2,
+        "req_selection_mouse_up",
+        EventV1::ToolCallRequested(ToolCallRequestedEvent {
+            tool_call_id: "tc_selection_mouse_up".into(),
+            tool_id: "shell.run".to_string(),
+            args_summary: r#"{"cmd":"false"}"#.to_string(),
+            args_digest: "digest-selection-release-args".to_string(),
+            metadata: None,
+        }),
+    ));
+    app.ingest_event(envelope(
+        3,
+        "req_selection_mouse_up",
+        EventV1::ToolCallFinished(ToolCallFinishedEvent {
+            tool_call_id: "tc_selection_mouse_up".into(),
+            status: ToolCallStatus::Failed,
+            output_summary: Some("exit code: 1\nstderr: nope".to_string()),
+            output_digest: None,
+            output_json: None,
+            metadata: None,
+        }),
+    ));
+    let area = TEST_FRAME_AREA;
+    let (column, row) = (0..area.height)
+        .flat_map(|row| (0..area.width).map(move |column| (column, row)))
+        .find(|(column, row)| ui::transcript_mouse_target(&app, area, *column, *row).is_some())
+        .expect("fixture must expose an interactive tool target");
+    let cell = (0..area.height)
+        .flat_map(|row| (0..area.width).map(move |column| (column, row)))
+        .find_map(|(column, row)| ui::transcript_selection_cell(&app, area, column, row))
+        .expect("fixture must expose selectable transcript content");
+    app.set_transcript_selection(cell, cell);
+    app.transcript_view.transcript_selection_dragging = true;
+    assert!(!app
+        .transcript_view
+        .expanded_tool_outputs
+        .contains("tc_selection_mouse_up"));
+
+    // When: the selection gesture releases over that tool target.
+    app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Up(MouseButton::Left),
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        },
+        area,
+        None,
+        None,
+        None,
+    );
+
+    // Then: MouseUp is consumed by selection finalization and never toggles the tool.
+    assert!(!app
+        .transcript_view
+        .expanded_tool_outputs
+        .contains("tc_selection_mouse_up"));
 }
 
 pub(super) fn shift_left_on_prompt_focus_still_selects_chars() {
@@ -470,11 +805,24 @@ pub(super) fn diff_hunk_navigation_advances_and_retreats_between_hunks() {
     assert_eq!(hunk_rows.len(), 2, "expected two navigable diff hunks");
     app.transcript_view.follow_mode = false;
     app.transcript_view.transcript_scroll = app.transcript_view.last_transcript_max_scroll.get();
+    app.set_transcript_page_flip_state(PageFlipState::Idle.begin(0).preserve_at(0));
 
     // act
     app.handle_key(key_with_modifiers(KeyCode::Char('n'), KeyModifiers::ALT));
     let first_hunk = app.selected_diff_hunk_row_for_test().unwrap_or_abort();
     assert!(!app.transcript_view.follow_mode);
+    assert!(
+        !app.transcript_page_flip_preserving(),
+        "diff navigation must cancel the submit-time page flip"
+    );
+    assert_eq!(
+        app.transcript_view
+            .last_transcript_max_scroll
+            .get()
+            .saturating_sub(app.transcript_scroll_offset()),
+        first_hunk.min(app.transcript_view.last_transcript_max_scroll.get()),
+        "diff navigation must move the visible scroll owner to the selected hunk"
+    );
 
     app.handle_key(key_with_modifiers(KeyCode::Char('n'), KeyModifiers::ALT));
     let second_hunk = app.selected_diff_hunk_row_for_test().unwrap_or_abort();
@@ -573,4 +921,46 @@ pub(super) fn clicking_transcript_scrollbar_track_without_thumb_does_not_start_d
     assert!(!app.transcript_scrollbar_dragging());
     assert!(app.transcript_view.follow_mode);
     assert_eq!(app.transcript_view.transcript_scroll, 0);
+}
+
+pub(super) fn identical_local_prompt_echoes_adopt_request_ids_in_submission_order() {
+    let mut app = AppState::new_live(None, false, None);
+    app.set_launch_metadata(
+        LaunchMetadata::from_model_ref("build", "mock:model-test").with_mode_label("Test"),
+    );
+    for _ in 0..2 {
+        for character in "same queued prompt".chars() {
+            app.handle_key(key(KeyCode::Char(character)));
+        }
+        app.handle_key(key(KeyCode::Enter));
+    }
+    assert_eq!(
+        app.activities
+            .iter()
+            .filter(|activity| activity.request_id.is_empty())
+            .count(),
+        2
+    );
+
+    app.ingest_event(envelope(
+        1,
+        "req_first",
+        EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+            request_id: "req_first".into(),
+            text: "same queued prompt".to_string(),
+        }),
+    ));
+    app.ingest_event(envelope(
+        2,
+        "req_second",
+        EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+            request_id: "req_second".into(),
+            text: "same queued prompt".to_string(),
+        }),
+    ));
+
+    assert_eq!(app.activities[0].request_id, "req_first");
+    assert_eq!(app.activities[1].request_id, "req_second");
+    assert_eq!(app.activities[0].first_seq, 1);
+    assert_eq!(app.activities[1].first_seq, 2);
 }

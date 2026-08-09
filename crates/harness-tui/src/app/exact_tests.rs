@@ -26,6 +26,35 @@ pub(crate) fn exact_test_startup_slash_commands_execute_without_menu() {
     );
 }
 
+#[test]
+fn painted_welcome_actions_execute_the_matching_behavior() {
+    let mut worktree = AppState::new_startup(Vec::new(), None);
+    worktree.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    worktree.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    assert!(worktree.new_worktree_dialog.visible);
+
+    let mut resume = AppState::new_startup(Vec::new(), None);
+    resume.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    resume.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+    resume.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    assert!(resume.session_history_visible);
+
+    let mut quit = AppState::new_startup(Vec::new(), None);
+    quit.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    quit.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+    quit.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+    quit.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    assert!(quit.should_quit);
+
+    let mut backward = AppState::new_startup(Vec::new(), None);
+    backward.handle_key(KeyEvent::new(
+        KeyCode::Tab,
+        KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+    ));
+    backward.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    assert!(backward.new_worktree_dialog.visible);
+}
+
 #[cfg(test)]
 pub(crate) fn exact_test_slash_new_preserves_draft_and_returns_home() {
     let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, None);
@@ -362,7 +391,7 @@ pub(crate) fn exact_test_no_provider_banner_shown_when_disconnected() {
     app.maybe_set_no_provider_banner();
     assert_eq!(
         app.status_banner.as_deref(),
-        Some("No provider connected. Run `harness auth login` in a terminal or use /connect to set up a provider.")
+        Some("No provider connected. Use /connect.")
     );
 }
 

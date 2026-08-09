@@ -528,16 +528,24 @@ pub(super) fn thinking_visibility_toggle_hides_and_restores_inline_thinking_rows
     let mut app = rich_transcript_fixture_app();
 
     let initial = render_live_lines(&app, 120, 30);
-    assert!(initial.contains("Drafting a document-like plan"));
+    assert!(initial.contains("Thought"));
+    assert!(!initial.contains("Drafting a document-like plan"));
 
     run_palette_command(&mut app, "collapse thinking");
     let hidden = render_live_lines(&app, 120, 30);
+    assert!(!hidden.contains("Thought"));
     assert!(!hidden.contains("Drafting a document-like plan"));
     assert!(hidden.contains("Found the transcript renderer and the composer chrome."));
 
     run_palette_command(&mut app, "expand thinking");
     let restored = render_live_lines(&app, 120, 30);
-    assert!(restored.contains("Drafting a document-like plan"));
+    assert!(restored.contains("Thought"));
+    assert!(!restored.contains("Drafting a document-like plan"));
+
+    app.transcript_view.selected_activity_index = 0;
+    assert!(app.toggle_selected_transcript_fold());
+    let expanded = render_live_lines(&app, 120, 30);
+    assert!(expanded.contains("Drafting a document-like plan"));
 }
 
 pub(super) fn tool_details_toggle_collapses_successful_tool_payloads() {

@@ -275,5 +275,6 @@ fn live_transcript_reachability_guards_cover_input_mouse_render_and_pager_adapte
     assert!(UI_TRANSCRIPT_SOURCE.contains("transcript_viewer"));
     assert!(TRANSCRIPT_INTEGRATION_SOURCE.contains("ExternalPagerSuspended"));
     assert!(MOUSE_SOURCE.contains("set_transcript_scroll_from_top_with_max"));
-    assert!(MOUSE_SOURCE.contains("composite.scroll_to"));
+    assert!(TRANSCRIPT_STATE_SOURCE.contains("composite.detach_at"));
+    assert!(TRANSCRIPT_INTEGRATION_SOURCE.contains("self.scroll_to(target"));
 }

@@ -180,7 +180,9 @@ fn transcript_layout_cache_invalidates_when_animation_frame_changes() {
         .iter()
         .any(|line| line.contains("⠋ gpt-5.4-mini")));
 
-    app.advance_transcript_animation_phase();
+    for _ in 0..4 {
+        app.advance_transcript_animation_phase();
+    }
 
     let updated_lines = transcript_test_line_texts(build_transcript_lines_for_width(
         &app,
@@ -322,14 +324,14 @@ fn transcript_layout_cache_invalidates_when_theme_changes() {
     let initial_surface = initial_layout.sections[0].surfaces[0].surface;
 
     let mut alternate_theme = *app.theme();
-    alternate_theme.surface.card = Color::Rgb(0x22, 0x33, 0x44);
+    alternate_theme.surface.selected_card = Color::Rgb(0x22, 0x33, 0x44);
     app.set_theme_for_test(alternate_theme);
 
     let updated_layout = build_measured_transcript_layout_for_width(&app, app.theme(), 80);
     let updated_surface = updated_layout.sections[0].surfaces[0].surface;
 
     assert_ne!(initial_surface, updated_surface);
-    assert_eq!(updated_surface, alternate_theme.surface.card);
+    assert_eq!(updated_surface, alternate_theme.surface.selected_card);
 }
 
 #[test]
@@ -1120,6 +1122,7 @@ fn reasoning_summary_renders_as_nested_inset_block() {
     entry.thinking_text = "Matching harness response spacing".to_string();
     app.activities = std::collections::VecDeque::from(vec![entry]);
     app.transcript_view.selected_activity_index = 0;
+    assert!(app.toggle_selected_transcript_fold());
 
     let lines = transcript_test_line_texts(build_transcript_lines_for_width(
         &app,
@@ -1492,6 +1495,7 @@ fn reasoning_to_answer_transition_uses_two_blank_rows() {
     entry.thinking_text = "reasoning".to_string();
     app.activities = std::collections::VecDeque::from(vec![entry]);
     app.transcript_view.selected_activity_index = 0;
+    assert!(app.toggle_selected_transcript_fold());
 
     let lines = transcript_test_line_texts(build_transcript_lines_for_width(
         &app,
@@ -1573,12 +1577,12 @@ fn streaming_reasoning_stops_spinner_when_body_text_arrives() {
         "reasoning spinner should stop once body text arrives mid-turn\n{rendered}"
     );
     assert!(
-        rendered.contains("Thinking"),
-        "reasoning header should show 'Thinking' once body text arrives\n{rendered}"
+        rendered.contains("Thought"),
+        "reasoning header should settle once body text arrives\n{rendered}"
     );
     assert!(
-        rendered.contains("analyzing the problem"),
-        "body text should still render\n{rendered}"
+        !rendered.contains("analyzing the problem"),
+        "settled reasoning should collapse once body text arrives\n{rendered}"
     );
     assert!(
         rendered.contains("Here is my answer"),
@@ -1638,12 +1642,12 @@ fn streaming_reasoning_stops_spinner_when_tool_call_arrives() {
         "reasoning spinner should stop once a tool call arrives mid-turn\n{rendered}"
     );
     assert!(
-        rendered.contains("Thinking"),
-        "reasoning header should show 'Thinking' once a tool call arrives\n{rendered}"
+        rendered.contains("Thought"),
+        "reasoning header should settle once a tool call arrives\n{rendered}"
     );
     assert!(
-        rendered.contains("planning the approach"),
-        "reasoning body text should still render\n{rendered}"
+        !rendered.contains("planning the approach"),
+        "settled reasoning should collapse once a tool call arrives\n{rendered}"
     );
 }
 
@@ -1669,9 +1673,10 @@ fn streaming_reasoning_header_with_title_renders_thinking_colon_title() {
     ));
     let rendered = lines.join("\n");
     assert!(
-        rendered.contains("⠋ Thinking · Planning approach"),
-        "streaming reasoning header should include the extracted title\n{rendered}"
+        rendered.contains("⠋ Thinking…"),
+        "streaming reasoning keeps the quiet reference header\n{rendered}"
     );
+    assert!(rendered.contains("Planning approach"));
     assert!(
         rendered.contains("Detailed analysis"),
         "body should render without the title\n{rendered}"
@@ -1713,8 +1718,8 @@ fn completed_reasoning_header_renders_thinking_with_title() {
         "completed reasoning should not keep the streaming Thinking · title form\n{rendered}"
     );
     assert!(
-        rendered.contains("body text"),
-        "body text should still render\n{rendered}"
+        !rendered.contains("body text"),
+        "finished reasoning should default to collapsed\n{rendered}"
     );
     assert!(
         rendered.contains("Worked for 1.5s."),
@@ -1757,13 +1762,188 @@ fn completed_reasoning_header_without_title_renders_thinking() {
         "completed reasoning should not keep the streaming Thinking label\n{rendered}"
     );
     assert!(
-        rendered.contains("simple reasoning"),
-        "body text should still render\n{rendered}"
+        !rendered.contains("simple reasoning"),
+        "finished reasoning should default to collapsed\n{rendered}"
     );
     assert!(
         rendered.contains("Worked for 1.5s."),
         "completed turn footer should show Worked for duration\n{rendered}"
     );
+}
+
+#[test]
+fn streaming_reasoning_defaults_to_last_three_lines() {
+    // Given: a running reasoning trace longer than the reference preview.
+    let mut app = AppState::default();
+    let mut entry = transcript_section_model_test_activity(
+        "request-streaming-reasoning-preview",
+        ActivityStatus::Streaming,
+        "",
+    );
+    entry.thinking_text = "line one\nline two\nline three\nline four\nline five".to_string();
+    app.activities = std::collections::VecDeque::from(vec![entry]);
+    app.transcript_view.selected_activity_index = 0;
+
+    // When: the trace is rendered without deliberate expansion.
+    let rendered = transcript_test_line_texts(build_transcript_lines_for_width(
+        &app,
+        &Theme::default(),
+        80,
+    ))
+    .join("\n");
+
+    // Then: only the final three lines remain visible behind an ellipsis.
+    assert!(!rendered.contains("line one"));
+    assert!(!rendered.contains("line two"));
+    assert!(rendered.contains('…'));
+    assert!(rendered.contains("line three\n"));
+    assert!(rendered.contains("line four\n"));
+    assert!(rendered.contains("line five"));
+}
+
+#[test]
+fn selected_finished_reasoning_expands_and_collapses_deliberately() {
+    // Given: a finished reasoning trace in its default collapsed state.
+    let mut app = AppState::default();
+    let mut entry = transcript_section_model_test_activity(
+        "request-finished-reasoning-disclosure",
+        ActivityStatus::Done,
+        "Final answer",
+    );
+    entry.thinking_text = "private reasoning body".to_string();
+    entry.thinking_first_mono_ms = Some(100);
+    entry.thinking_last_mono_ms = Some(1_600);
+    app.activities = std::collections::VecDeque::from(vec![entry]);
+    app.transcript_view.selected_activity_index = 0;
+
+    // When: the selected trace is expanded and then collapsed again.
+    let collapsed = transcript_test_line_texts(build_transcript_lines_for_width(
+        &app,
+        &Theme::default(),
+        80,
+    ))
+    .join("\n");
+    let expanded_changed = app.toggle_selected_transcript_fold();
+    let expanded = transcript_test_line_texts(build_transcript_lines_for_width(
+        &app,
+        &Theme::default(),
+        80,
+    ))
+    .join("\n");
+    let collapsed_changed = app.toggle_selected_transcript_fold();
+    let collapsed_again = transcript_test_line_texts(build_transcript_lines_for_width(
+        &app,
+        &Theme::default(),
+        80,
+    ))
+    .join("\n");
+
+    // Then: disclosure changes only the body while the settled duration stays fixed.
+    assert!(!collapsed.contains("private reasoning body"));
+    assert!(expanded_changed);
+    assert!(expanded.contains("private reasoning body"));
+    assert!(expanded.contains("Thought for 1.5s"));
+    assert!(collapsed_changed);
+    assert!(!collapsed_again.contains("private reasoning body"));
+    assert!(collapsed_again.contains("Thought for 1.5s"));
+}
+
+#[test]
+fn ctrl_e_expands_selected_finished_reasoning_from_transcript_focus() {
+    // Given: a collapsed finished trace with keyboard focus on the transcript.
+    let mut app = AppState::default();
+    let mut entry = transcript_section_model_test_activity(
+        "request-keyboard-reasoning-disclosure",
+        ActivityStatus::Done,
+        "Final answer",
+    );
+    entry.thinking_text = "keyboard-expanded reasoning".to_string();
+    entry.thinking_first_mono_ms = Some(100);
+    entry.thinking_last_mono_ms = Some(600);
+    app.activities = std::collections::VecDeque::from(vec![entry]);
+    app.transcript_view.selected_activity_index = 0;
+    app.focus = crate::app::Focus::Details;
+
+    // When: the reference disclosure chord is pressed.
+    app.handle_key(crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Char('e'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    let rendered = transcript_test_line_texts(build_transcript_lines_for_width(
+        &app,
+        &Theme::default(),
+        80,
+    ))
+    .join("\n");
+
+    // Then: the selected trace expands without leaving the transcript surface.
+    assert!(rendered.contains("keyboard-expanded reasoning"));
+    assert_eq!(app.focus, crate::app::Focus::Details);
+}
+
+#[test]
+fn running_reasoning_active_marker_advances_with_shared_phase() {
+    // Given: an active reasoning trace on the first shared animation frame.
+    let mut app = AppState::default();
+    let mut entry = transcript_section_model_test_activity(
+        "request-running-reasoning-accent",
+        ActivityStatus::Streaming,
+        "",
+    );
+    entry.thinking_text = "active reasoning".to_string();
+    app.activities = std::collections::VecDeque::from(vec![entry]);
+    app.transcript_view.selected_activity_index = 0;
+    let before = transcript_test_line_texts(build_transcript_lines_for_width(
+        &app,
+        &Theme::default(),
+        80,
+    ))
+    .into_iter()
+    .find(|line| line.contains("Thinking…"))
+    .unwrap_or_abort();
+
+    // When: the existing fixed-rate transcript clock advances one visible frame.
+    for _ in 0..4 {
+        app.advance_animation_tick_for_evidence();
+    }
+    let after = transcript_test_line_texts(build_transcript_lines_for_width(
+        &app,
+        &Theme::default(),
+        80,
+    ))
+    .into_iter()
+    .find(|line| line.contains("Thinking…"))
+    .unwrap_or_abort();
+
+    // Then: the one-cell active marker moves without a provider delta.
+    assert_ne!(before, after);
+}
+
+#[test]
+fn completed_empty_reasoning_leaves_no_header() {
+    // Given: a completed turn whose only reasoning payload is redacted away.
+    let mut app = AppState::default();
+    let mut entry = transcript_section_model_test_activity(
+        "request-empty-reasoning",
+        ActivityStatus::Done,
+        "Final answer",
+    );
+    entry.thinking_text = "[REDACTED]".to_string();
+    entry.thinking_first_mono_ms = Some(100);
+    entry.thinking_last_mono_ms = Some(100);
+    app.activities = std::collections::VecDeque::from(vec![entry]);
+
+    // When: the settled transcript is rendered.
+    let rendered = transcript_test_line_texts(build_transcript_lines_for_width(
+        &app,
+        &Theme::default(),
+        80,
+    ))
+    .join("\n");
+
+    // Then: no empty Thought/Thinking chrome remains.
+    assert!(!rendered.contains("Thought"));
+    assert!(!rendered.contains("Thinking"));
 }
 
 #[test]
@@ -1875,8 +2055,8 @@ fn reasoning_header_suppresses_empty_redacted_reasoning() {
         "redacted-only reasoning must not use streaming Thinking label\n{rendered}"
     );
     assert!(
-        rendered.contains("Thought for"),
-        "completed redacted-only turns still show Thought for chrome\n{rendered}"
+        !rendered.contains("Thought for"),
+        "redacted-only reasoning must leave no empty Thought chrome\n{rendered}"
     );
 }
 
@@ -1919,7 +2099,9 @@ fn streaming_assistant_footer_spinner_uses_deterministic_braille_frames() {
         &Theme::default(),
         80,
     ));
-    app.advance_transcript_animation_phase();
+    for _ in 0..4 {
+        app.advance_transcript_animation_phase();
+    }
     let second = transcript_test_line_texts(build_transcript_lines_for_width(
         &app,
         &Theme::default(),
@@ -2461,6 +2643,7 @@ fn reasoning_body_plain_text_has_no_dim_modifier() {
     entry.thinking_text = "Plain reasoning text without markdown markers".to_string();
     app.activities = std::collections::VecDeque::from(vec![entry]);
     app.transcript_view.selected_activity_index = 0;
+    assert!(app.toggle_selected_transcript_fold());
 
     let lines = build_transcript_lines_for_width(&app, &Theme::default(), 80);
 
@@ -2502,6 +2685,7 @@ fn reasoning_body_screenshot_text_no_false_positives() {
     entry.thinking_text = screenshot_text.to_string();
     app.activities = std::collections::VecDeque::from(vec![entry]);
     app.transcript_view.selected_activity_index = 0;
+    assert!(app.toggle_selected_transcript_fold());
 
     let lines = build_transcript_lines_for_width(&app, &Theme::default(), 80);
 
@@ -2550,6 +2734,7 @@ fn reasoning_body_markdown_constructs_use_blended_colors() {
     entry.thinking_text = "See `inline_code` and **bold** and *italic*".to_string();
     app.activities = std::collections::VecDeque::from(vec![entry]);
     app.transcript_view.selected_activity_index = 0;
+    assert!(app.toggle_selected_transcript_fold());
 
     let theme = Theme::default();
     let lines = build_transcript_lines_for_width(&app, &theme, 80);

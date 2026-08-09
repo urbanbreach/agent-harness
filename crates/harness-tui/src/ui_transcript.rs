@@ -1,6 +1,6 @@
 // allow: SIZE_OK — TUI transcript rendering (indivisible view model)
 use crate::UnwrapOrAbort;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::path::Path;
 
 use super::*;
@@ -71,13 +71,15 @@ use super::ui_transcript_interaction::{
 };
 use super::ui_transcript_layout::{
     measure_transcript_layout, render_transcript_layout_surfaces,
-    transcript_diff_hunk_rows_for_layout, transcript_layout_lines, MeasuredTranscriptLayout,
-    MeasuredTranscriptSurface,
+    transcript_diff_hunk_rows_for_layout, transcript_layout_lines, transcript_viewport_rows,
+    MeasuredTranscriptLayout, MeasuredTranscriptSurface,
 };
+use super::ui_transcript_page_flip::{transcript_scroll_position, TranscriptScrollPosition};
 use super::ui_transcript_scrollbar::{
     current_transcript_scroll_top, render_transcript_more_below_affordance,
-    render_transcript_scrollbar, transcript_scroll_offset, transcript_scrollbar_geometry,
-    transcript_scrollbar_needed, transcript_viewport_layout, TranscriptScrollbarHit,
+    render_transcript_scrollbar, transcript_more_below_rect, transcript_scroll_offset,
+    transcript_scrollbar_geometry, transcript_scrollbar_needed, transcript_viewport_layout,
+    TranscriptScrollbarHit,
 };
 use super::ui_transcript_selection::{
     blank_selection_row, compact_selection_row, lifecycle_selection_snapshot,
@@ -92,6 +94,7 @@ use super::ui_transcript_style::{
     blend_color, selected_foreground_for_badge, thinking_header_color,
     transcript_emphasized_surface, transcript_nested_rail_color,
     transcript_running_tool_marker_color, transcript_streaming_spinner_frame,
+    transcript_streaming_spinner_frame_with_motion,
 };
 use super::ui_transcript_surface::{
     append_nested_surface_row, append_prebuilt_nested_surface_lines, append_prebuilt_surface_lines,
@@ -160,6 +163,77 @@ use super::ui_transcript_test_helpers::{
 
 thread_local! {
     static TRANSCRIPT_LAYOUT_CACHE: RefCell<Vec<TranscriptLayoutCacheEntry>> = const { RefCell::new(Vec::new()) };
+    #[cfg(test)]
+    static TRANSCRIPT_SECTION_RENDER_COUNT: Cell<usize> = const { Cell::new(0) };
+}
+
+#[cfg(test)]
+fn reset_transcript_section_render_count_for_test() {
+    TRANSCRIPT_SECTION_RENDER_COUNT.with(|count| count.set(0));
+}
+
+#[cfg(test)]
+fn transcript_section_render_count_for_test() -> usize {
+    TRANSCRIPT_SECTION_RENDER_COUNT.with(Cell::get)
+}
+
+fn record_transcript_section_render_for_test() {
+    #[cfg(test)]
+    TRANSCRIPT_SECTION_RENDER_COUNT.with(|count| count.set(count.get().saturating_add(1)));
+}
+
+fn cached_render_surfaces(
+    section: &TranscriptTurnSection,
+    previous: Option<&TranscriptLayoutCacheEntry>,
+) -> Option<Vec<TranscriptRenderSurface>> {
+    let previous = previous?;
+    let index = previous
+        .sections
+        .iter()
+        .position(|candidate| transcript_section_cache_matches(candidate, section))?;
+    previous.layout.sections.get(index).map(|measured| {
+        measured
+            .surfaces
+            .iter()
+            .map(|surface| TranscriptRenderSurface {
+                kind: surface.kind,
+                show_outer_rail: surface.show_outer_rail,
+                rail_glyph: surface.rail_glyph,
+                rail_color: surface.rail_color,
+                surface: surface.surface,
+                lines: surface.lines.clone(),
+                interaction_rows: surface.interaction_rows.clone(),
+                selection_rows: surface.selection_rows.clone(),
+                diff_hunk_offsets: surface.diff_hunk_offsets.clone(),
+                selected_rail: surface.selected_rail,
+            })
+            .collect()
+    })
+}
+
+fn transcript_section_cache_matches(
+    candidate: &TranscriptTurnSection,
+    section: &TranscriptTurnSection,
+) -> bool {
+    if matches!(
+        section.header.status,
+        ActivityStatus::Streaming | ActivityStatus::Queued
+    ) {
+        return candidate == section;
+    }
+
+    candidate.activity_first_seq == section.activity_first_seq
+        && candidate.request_id == section.request_id
+        && candidate.user_message == section.user_message
+        && candidate.show_footer == section.show_footer
+        && candidate.footer_timestamp == section.footer_timestamp
+        && candidate.reasoning_expanded == section.reasoning_expanded
+        && candidate.header == section.header
+        && candidate.body_blocks == section.body_blocks
+        && candidate.tool_calls == section.tool_calls
+        && candidate.thinking == section.thinking
+        && candidate.error == section.error
+        && candidate.assistant_parts == section.assistant_parts
 }
 
 pub(super) fn render_transcript_pane(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
@@ -339,11 +413,6 @@ fn render_measured_transcript_pane(
         render_width,
         empty_surface,
         |layout| {
-            app.transcript_view.last_transcript_max_scroll.set(
-                layout
-                    .total_height
-                    .saturating_sub(usize::from(viewport.content.height)),
-            );
             if layout.sections.is_empty() {
                 if app.active_permission_view().is_some() {
                     render_transcript_scrollbar(
@@ -381,26 +450,31 @@ fn render_measured_transcript_pane(
                 return;
             }
 
-            let transcript_scroll = transcript_scroll_offset(
-                app.transcript_following(),
-                app.transcript_scroll_offset(),
-                layout.total_height,
-                viewport.content.height,
-            );
-            let max_scroll = layout
+            let regular_max = layout
                 .total_height
                 .saturating_sub(usize::from(viewport.content.height));
-            let more_below = max_scroll > 0 && transcript_scroll < max_scroll;
-            let surface_area = if more_below {
-                Rect::new(
-                    viewport.content.x,
-                    viewport.content.y,
-                    viewport.content.width,
-                    viewport.content.height.saturating_sub(1),
-                )
-            } else {
-                viewport.content
-            };
+            app.transcript_view.record_measured_max_scroll(regular_max);
+            let transcript_scroll = transcript_scroll_top(app, layout, viewport.content.height);
+            let TranscriptScrollPosition {
+                top: transcript_scroll,
+                max_scroll,
+                page_flip,
+            } = transcript_scroll_position(
+                app.transcript_page_flip_state(),
+                layout,
+                viewport.content.height,
+                transcript_scroll,
+            );
+            app.set_transcript_page_flip_state(page_flip);
+            app.transcript_view.record_measured_max_scroll(max_scroll);
+            let surface_area = transcript_surface_area(
+                viewport.content,
+                TranscriptScrollPosition {
+                    top: transcript_scroll,
+                    max_scroll,
+                    page_flip,
+                },
+            );
             render_transcript_layout_surfaces(
                 frame,
                 layout,
@@ -438,6 +512,9 @@ fn render_measured_transcript_pane(
 }
 
 fn render_integrated_timeline(frame: &mut Frame, app: &AppState, area: Rect) {
+    if !app.transcript_following() || app.transcript_page_flip_scroll_top().is_some() {
+        return;
+    }
     let Some(view) = app.transcript_view_model() else {
         return;
     };
@@ -469,11 +546,54 @@ fn render_integrated_timeline(frame: &mut Frame, app: &AppState, area: Rect) {
         frame.render_widget(
             Paragraph::new(Line::from(Span::styled(
                 marker.label.clone(),
-                turn.marker.style(interaction).ratatui_style(),
+                turn.marker.style(interaction, app.theme()).ratatui_style(),
             ))),
             marker.rect,
         );
     }
+}
+
+fn transcript_surface_area(viewport: Rect, scroll_position: TranscriptScrollPosition) -> Rect {
+    if scroll_position.max_scroll > 0 && scroll_position.top < scroll_position.max_scroll {
+        return Rect::new(
+            viewport.x,
+            viewport.y,
+            viewport.width,
+            viewport.height.saturating_sub(1),
+        );
+    }
+    viewport
+}
+
+fn transcript_scroll_top(
+    app: &AppState,
+    layout: &MeasuredTranscriptLayout,
+    viewport_height: u16,
+) -> usize {
+    if let Some(scroll_top) = app.transcript_page_flip_scroll_top() {
+        return scroll_top;
+    }
+    let max_scroll = layout
+        .total_height
+        .saturating_sub(usize::from(viewport_height));
+    let viewport = app.transcript_view.measured_viewport();
+    if viewport.is_following() {
+        app.transcript_view.measured_anchor.set(None);
+        return max_scroll;
+    }
+    let scroll_top = app
+        .transcript_view
+        .measured_anchor
+        .get()
+        .and_then(|anchor| layout.resolve_content_anchor(anchor))
+        .unwrap_or_else(|| viewport.top())
+        .min(max_scroll);
+    app.transcript_view
+        .set_resolved_measured_top(scroll_top, max_scroll);
+    app.transcript_view
+        .measured_anchor
+        .set(layout.capture_content_anchor(scroll_top));
+    scroll_top
 }
 
 fn build_transcript_selection_snapshot(
@@ -523,18 +643,28 @@ fn build_transcript_selection_snapshot(
         |layout| {
             let (rows, line_texts, continues_previous) =
                 transcript_selection_rows(layout, render_width);
+            let scroll_position = transcript_scroll_position(
+                app.transcript_page_flip_state(),
+                layout,
+                viewport.content.height,
+                transcript_scroll_top(app, layout, viewport.content.height),
+            );
+            let selection_viewport = transcript_surface_area(viewport.content, scroll_position);
+            let viewport_rows = transcript_viewport_rows(
+                layout,
+                usize::from(selection_viewport.height),
+                scroll_position.top,
+            );
             TranscriptSelectionSnapshot {
-                viewport: viewport.content,
-                scroll_top: transcript_scroll_offset(
-                    app.transcript_following(),
-                    app.transcript_scroll_offset(),
-                    layout.total_height,
-                    viewport.content.height,
-                ),
+                viewport: selection_viewport,
+                visible_rows: (0..usize::from(selection_viewport.height))
+                    .filter_map(|row| viewport_rows.absolute_row(row))
+                    .collect(),
                 rows,
                 line_texts,
                 continues_previous,
                 row_width: render_width,
+                resolved_selection: Cell::new(None),
             }
         },
     ))
@@ -559,6 +689,42 @@ fn with_transcript_selection_snapshot<R>(
         .content
         .width;
 
+    let resolved_selection = if app.startup_shell_visible() || live_empty_state_visible(app) {
+        app.transcript_view
+            .transcript_selection_anchors
+            .get()
+            .is_none()
+            .then(|| app.transcript_selection())
+            .flatten()
+    } else {
+        with_measured_transcript_layout_for_width_on_surface(
+            app,
+            &theme,
+            render_width,
+            context.base_surface,
+            |layout| {
+                app.transcript_selection().and_then(|selection| {
+                    if let Some((anchor, focus)) =
+                        app.transcript_view.transcript_selection_anchors.get()
+                    {
+                        return Some(TranscriptSelection {
+                            anchor: layout.resolve_selection_anchor(anchor)?,
+                            focus: layout.resolve_selection_anchor(focus)?,
+                        });
+                    }
+                    let anchors = (
+                        layout.capture_selection_anchor(selection.anchor)?,
+                        layout.capture_selection_anchor(selection.focus)?,
+                    );
+                    app.transcript_view
+                        .transcript_selection_anchors
+                        .set(Some(anchors));
+                    Some(selection)
+                })
+            },
+        )
+    };
+
     with_cached_transcript_selection_snapshot(
         TranscriptSelectionCacheKey {
             render_width,
@@ -570,7 +736,10 @@ fn with_transcript_selection_snapshot<R>(
             transcript_scroll: app.transcript_scroll_offset(),
         },
         || build_transcript_selection_snapshot(app, area),
-        render,
+        |snapshot| {
+            snapshot.resolved_selection.set(resolved_selection);
+            render(snapshot)
+        },
     )
 }
 
@@ -738,18 +907,38 @@ fn with_measured_transcript_layout_for_width_on_surface<R>(
         }
 
         let sections = build_transcript_sections(app);
+        let previous = cache
+            .borrow()
+            .iter()
+            .rev()
+            .find(|entry| {
+                entry.app_instance_id == app_instance_id
+                    && entry.theme == *theme
+                    && entry.width == width
+                    && entry.base_surface == base_surface
+            })
+            .cloned();
         let layout = measure_transcript_layout(
             &sections,
             theme,
             width,
             base_surface,
-            build_transcript_render_surfaces,
+            |section| section.activity_first_seq,
+            |section, theme, width, base_surface| {
+                cached_render_surfaces(section, previous.as_ref()).unwrap_or_else(|| {
+                    record_transcript_section_render_for_test();
+                    build_transcript_render_surfaces(section, theme, width, base_surface)
+                })
+            },
         );
 
         {
             let mut cache = cache.borrow_mut();
             cache.retain(|entry| {
-                entry.app_instance_id != app_instance_id || entry.render_key == render_key
+                entry.app_instance_id != app_instance_id
+                    || entry.theme != *theme
+                    || entry.width != width
+                    || entry.base_surface != base_surface
             });
             cache.push(TranscriptLayoutCacheEntry {
                 app_instance_id,
@@ -757,6 +946,7 @@ fn with_measured_transcript_layout_for_width_on_surface<R>(
                 theme: *theme,
                 width,
                 base_surface,
+                sections,
                 layout,
             });
             if cache.len() > 4 {
@@ -793,13 +983,57 @@ pub(crate) fn transcript_scrollbar_hit(
     }
 
     let viewport = transcript_viewport_layout(context.inner_area, true);
-    let scroll_top = current_transcript_scroll_top(
-        app.transcript_following(),
-        app.transcript_scroll_offset(),
-        max_scroll,
-    );
+    let scroll_top = app.transcript_page_flip_scroll_top().unwrap_or_else(|| {
+        current_transcript_scroll_top(
+            app.transcript_following(),
+            app.transcript_scroll_offset(),
+            max_scroll,
+        )
+    });
     let geometry = transcript_scrollbar_geometry(viewport, scroll_top, max_scroll)?;
     rect_contains(geometry.lane, column, row).then_some(geometry)
+}
+
+pub(crate) fn transcript_return_to_live_hit(
+    app: &AppState,
+    area: Rect,
+    column: u16,
+    row: u16,
+) -> bool {
+    if !app.active_turn_in_progress() || app.transcript_following() {
+        return false;
+    }
+    let theme = *app.theme();
+    let Some(transcript_area) = resolved_transcript_area(app, area) else {
+        return false;
+    };
+    let context = transcript_pane_context(app, transcript_area, &theme);
+    let full_width = context.inner_area.width;
+    let show_scrollbar = with_measured_transcript_layout_for_width_on_surface(
+        app,
+        &theme,
+        full_width,
+        context.base_surface,
+        |layout| transcript_scrollbar_needed(layout.total_height, context.inner_area),
+    );
+    let viewport = transcript_viewport_layout(context.inner_area, show_scrollbar).content;
+
+    with_measured_transcript_layout_for_width_on_surface(
+        app,
+        &theme,
+        viewport.width,
+        context.base_surface,
+        |layout| {
+            let scroll_position = transcript_scroll_position(
+                app.transcript_page_flip_state(),
+                layout,
+                viewport.height,
+                transcript_scroll_top(app, layout, viewport.height),
+            );
+            transcript_more_below_rect(viewport, scroll_position.top, scroll_position.max_scroll)
+                .is_some_and(|target| rect_contains(target, column, row))
+        },
+    )
 }
 
 pub(crate) fn transcript_selection_cell(
@@ -808,7 +1042,19 @@ pub(crate) fn transcript_selection_cell(
     column: u16,
     row: u16,
 ) -> Option<TranscriptSelectionCell> {
-    with_transcript_selection_snapshot(app, area, |snapshot| snapshot.hit(column, row)).flatten()
+    with_transcript_selection_snapshot(app, area, |snapshot| {
+        if app
+            .transcript_view
+            .transcript_selection_anchors
+            .get()
+            .is_some()
+            && snapshot.resolved_selection.get().is_none()
+        {
+            return None;
+        }
+        snapshot.hit(column, row)
+    })
+    .flatten()
 }
 
 pub(crate) fn transcript_diff_hunk_rows(app: &AppState, area: Rect) -> Vec<usize> {
@@ -887,18 +1133,19 @@ pub(crate) fn transcript_mouse_target(
         render_width,
         context.base_surface,
         |layout| {
-            transcript_mouse_target_at(
+            let scroll_position = transcript_scroll_position(
+                app.transcript_page_flip_state(),
                 layout,
-                viewport,
-                transcript_scroll_offset(
-                    app.transcript_following(),
-                    app.transcript_scroll_offset(),
-                    layout.total_height,
-                    viewport.height,
-                ),
-                column,
-                row,
-            )
+                viewport.height,
+                transcript_scroll_top(app, layout, viewport.height),
+            );
+            let surface_viewport = transcript_surface_area(viewport, scroll_position);
+            let viewport_rows = transcript_viewport_rows(
+                layout,
+                usize::from(surface_viewport.height),
+                scroll_position.top,
+            );
+            transcript_mouse_target_at(layout, surface_viewport, viewport_rows, column, row)
         },
     )
 }
@@ -909,6 +1156,9 @@ pub(crate) fn transcript_timeline_turn_at(
     column: u16,
     row: u16,
 ) -> Option<crate::transcript_identity::TurnId> {
+    if !app.transcript_following() || app.transcript_page_flip_scroll_top().is_some() {
+        return None;
+    }
     app.transcript_view_model()
         .and_then(|view| view.hit_map.hit_test(column, row))
 }
@@ -943,6 +1193,9 @@ pub(crate) fn transcript_selection_row_count(app: &AppState, area: Rect) -> Opti
 mod ui_transcript_exact_tests;
 #[cfg(test)]
 pub(crate) use ui_transcript_exact_tests::*;
+#[cfg(test)]
+#[path = "ui_transcript_streaming_tests.rs"]
+mod streaming_tests;
 #[cfg(test)]
 #[path = "ui_transcript_tests.rs"]
 mod tests;
