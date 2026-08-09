@@ -763,7 +763,7 @@ fn dual_binary_cli_pty_scenario_auto_complete_markers() {
         session_dir.display().to_string(),
     ]);
 
-    let completed = helper.wait_for("ready for next turn", "cli auto scenario completed");
+    let completed = helper.wait_for("Worked for", "cli auto scenario completed");
     helper.wait_success("cli auto scenario PTY child");
 
     if let Some(artifact_dir) = std::env::var_os(ARTIFACT_DIR_ENV).map(PathBuf::from) {
@@ -775,7 +775,7 @@ fn dual_binary_cli_pty_scenario_auto_complete_markers() {
                 "harness tui --scenario golden_path --deterministic --exit-on-finish --session-dir {}",
                 session_dir.display()
             ),
-            "markers": ["ready for next turn"],
+            "markers": ["Worked for"],
             "completed_screen": completed,
         });
         fs::write(
@@ -954,7 +954,8 @@ fn dual_binary_cli_pty_secondary_surface_markers() {
 
     helper.send_ctrl(b'x');
     helper.send_key(b's');
-    let status = helper.wait_for("Status", "cli status dialog");
+    helper.wait_for("Status · Harness dashboard", "cli status dialog");
+    let status = helper.wait_for("No MCP Servers", "cli status operator content");
     let status_screen = helper.screen_text();
     assert!(
         status_screen.contains("MCP")
@@ -994,7 +995,7 @@ fn dual_binary_cli_pty_secondary_surface_markers() {
                 "model": "Ctrl+x m",
                 "toggles": "/toggles"
             },
-            "markers": ["Status", "Select model", "Toggles"],
+            "markers": ["Commands", "Status", "Select model", "Toggles"],
             "status_screen": status,
             "model_screen": model,
             "toggles_screen": toggles,
@@ -1381,9 +1382,10 @@ fn record_resume_picker_and_quit(session_dir: &Path) -> serde_json::Value {
 
 fn quit_helper(helper: &mut SpawnedHarness, screens: &mut Vec<serde_json::Value>) {
     helper.send_ctrl(b'q');
+    helper.send_ctrl(b'q');
     screens.push(json!({
-        "label": "quit via ctrl+q",
-        "marker": "Ctrl+q",
+        "label": "confirm quit via ctrl+q",
+        "marker": "Ctrl+q Ctrl+q",
         "screen": truncate_for_artifact(&helper.screen_text()),
     }));
 }

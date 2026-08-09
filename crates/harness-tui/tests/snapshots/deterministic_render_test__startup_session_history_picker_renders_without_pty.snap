@@ -3,23 +3,23 @@ source: crates/harness-tui/tests/deterministic_render_test.rs
 expression: normalize_volatile_branch(&trim_trailing_snapshot_whitespace(&rendered))
 ---
 
-
+             test-workspace worktree /workspace/agent-harness
 
 
            ┌─ Resume session ───────────────────────────────────────────────────── [✗] ─┐
            │                                                                            │
            │   / to search                                                     All f    │
            │────────────────────────────────────────────────────────────────────────────│
-           │   Projects-workspace                                                       │
-           │     alpha-run                                                       4mo ago│
+           │   Projects-workspace ────────────────────────────────────────────────────  │
+           │      alpha-run                                                   5mo ago   │
            │                                                                            │
            │                                                                            │
            │                                                                            │
            │                                                                            │
            │                                                                            │
-           │                                                                            │
-           │                                                                            │
-           │                                                                            │or this di…
-           │                                                                            │
-           │             ↑↓ nav | e expand | / search | f filter | d delete             │
+           │         ↑↓ nav  |  e expand  |  / search  |  f filter  |  d delete         │
            └────────────────────────────────────────────────────────────────────────────┘
+
+            ╭──────────────────────────────────────────────────────────────────────────╮
+            │ ❯ Build anything                                                         │
+            ╰───────────────────────────────────────────────────────── model-1 · Demo ─╯

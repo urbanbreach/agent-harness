@@ -47,7 +47,7 @@ function healSpawnHelper() {
   }
 }
 
-const DEFAULT_FONT_FAMILY = 'Menlo, "DejaVu Sans Mono", "Noto Sans Mono CJK KR", monospace';
+const DEFAULT_FONT_FAMILY = '"JetBrainsMono Nerd Font", Menlo, "DejaVu Sans Mono", "Noto Sans Mono CJK KR", monospace';
 const DEFAULT_TERMINAL_BACKGROUND = '#141414';
 
 function buildPageHtml({ xtermJs, xtermCss, unicodeJs, cols, rows, fontSize, fontFamily, terminalBackground }) {

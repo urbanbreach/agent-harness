@@ -42,7 +42,6 @@ pub(crate) fn pty_smoke_starts_accepts_input_resizes_and_exits() {
     }
 
     let mut helper = spawn_type_first_startup_helper();
-    helper.wait_for(READY_MARKER);
     helper.wait_for("❯");
     let startup_screen = helper.screen_text();
     assert_no_multi_row_prompt_rail(&startup_screen, "startup");
@@ -59,7 +58,7 @@ pub(crate) fn pty_smoke_starts_accepts_input_resizes_and_exits() {
         .resize(pty_size(MINIMUM_COLS, MINIMUM_ROWS))
         .unwrap_or_abort();
     helper.parser = Parser::new(MINIMUM_ROWS, MINIMUM_COLS, 0);
-    helper.wait_for(READY_MARKER);
+    helper.wait_for("❯");
 
     send_key(helper.writer.as_mut(), 0x10).unwrap_or_abort();
     helper.wait_for("Commands");
@@ -131,7 +130,7 @@ pub(crate) fn pty_permission_overlay_resolves_and_preserves_draft() {
     );
 
     send_bytes(helper.writer.as_mut(), b"\x1b").unwrap_or_abort();
-    helper.wait_for(READY_MARKER);
+    helper.wait_until_absent("Allow Edit");
     let after_resolve = helper.screen_text();
     assert!(
         !after_resolve.contains("Allow Edit"),
@@ -150,16 +149,16 @@ pub(crate) fn pty_status_dialog_opens_without_sidebar_copy() {
     }
 
     let mut helper = spawn_type_first_startup_helper();
-    helper.wait_for(READY_MARKER);
     helper.wait_for("❯");
 
     send_key(helper.writer.as_mut(), 0x18).unwrap_or_abort();
     send_key(helper.writer.as_mut(), b's').unwrap_or_abort();
-    helper.wait_for("Status");
+    helper.wait_for("Status · Harness dashboard");
+    helper.wait_for("No MCP Servers");
     let leader_status = helper.screen_text();
     assert!(
-        leader_status.contains("Status"),
-        "PTY status dialog must show Status header\n{leader_status}"
+        leader_status.contains("Commands") && leader_status.contains("Status · Harness dashboard"),
+        "PTY status dialog must show Commands and Status headers\n{leader_status}"
     );
     assert_no_sidebar_copy(&leader_status, "status dialog via Ctrl+x s");
     assert!(
@@ -171,7 +170,7 @@ pub(crate) fn pty_status_dialog_opens_without_sidebar_copy() {
     );
 
     send_bytes(helper.writer.as_mut(), b"\x1b").unwrap_or_abort();
-    helper.wait_for(READY_MARKER);
+    helper.wait_until_absent("Status · Harness dashboard");
 
     send_key(helper.writer.as_mut(), 0x10).unwrap_or_abort();
     helper.wait_for("Commands");
@@ -179,12 +178,13 @@ pub(crate) fn pty_status_dialog_opens_without_sidebar_copy() {
     helper.writer.flush().unwrap_or_abort();
     helper.wait_for("Open status");
     send_key(helper.writer.as_mut(), b'\r').unwrap_or_abort();
-    helper.wait_for("Status");
+    helper.wait_for("Status · Harness dashboard");
+    helper.wait_for("No MCP Servers");
     let palette_status = helper.screen_text();
     assert_no_sidebar_copy(&palette_status, "status dialog via palette");
 
     send_bytes(helper.writer.as_mut(), b"\x1b").unwrap_or_abort();
-    helper.wait_for(READY_MARKER);
+    helper.wait_until_absent("Status · Harness dashboard");
     exit_via_palette(&mut helper);
 }
 
@@ -197,7 +197,6 @@ pub(crate) fn pty_draft_esc_esc_clears_composer() {
     // Busy-turn Ctrl+C needs a live TaskScheduled stream; helpers do not drive a
     // provider. Continuous-use cancel-adjacent path: Esc Esc clears draft.
     let mut helper = spawn_type_first_startup_helper();
-    helper.wait_for(READY_MARKER);
     helper.wait_for("❯");
 
     helper
@@ -368,6 +367,10 @@ struct SpawnedHelper {
 impl SpawnedHelper {
     fn wait_for(&mut self, needle: &str) {
         wait_for_screen_contains(&mut self.parser, &self.output_rx, needle);
+    }
+
+    fn wait_until_absent(&mut self, needle: &str) {
+        wait_for_screen_absent(&mut self.parser, &self.output_rx, needle);
     }
 
     fn screen_text(&mut self) -> String {
@@ -591,6 +594,31 @@ fn wait_for_screen_contains(parser: &mut Parser, output_rx: &Receiver<Vec<u8>>, 
         if now >= deadline {
             panic!(
                 "PTY wait_for timed out after {MARKER_TIMEOUT:?} waiting for {needle:?}\n{current}"
+            );
+        }
+
+        let wait_timeout = cmp::min(READ_POLL_TIMEOUT, deadline.saturating_duration_since(now));
+        if let Ok(chunk) = output_rx.recv_timeout(wait_timeout) {
+            parser.process(&chunk);
+        }
+    }
+}
+
+#[allow(clippy::panic, reason = "test code must panic gracefully")]
+fn wait_for_screen_absent(parser: &mut Parser, output_rx: &Receiver<Vec<u8>>, needle: &str) {
+    let deadline = Instant::now() + MARKER_TIMEOUT;
+
+    loop {
+        drain_output(parser, output_rx);
+        let current = parser.screen().contents();
+        if !current.contains(needle) {
+            return;
+        }
+
+        let now = Instant::now();
+        if now >= deadline {
+            panic!(
+                "PTY wait_for timed out after {MARKER_TIMEOUT:?} waiting for {needle:?} to disappear\n{current}"
             );
         }
 

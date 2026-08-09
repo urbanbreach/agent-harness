@@ -12,13 +12,6 @@ expression: rendered.as_str()
                                                                                                     
                                                                                                     
                                                                                                     
-                                                                                                    
-                                                                                                    
-                                                                                                    
-                                                                                                    
-                                                                                                    
-                                                                                                    
-                                                                                                    
             ┃                                                                                       
             ┃  Allow Edit to demo.txt?                                                              
             ┃  Draft preserved · keep this draft                                                    
@@ -28,4 +21,11 @@ expression: rendered.as_str()
             ┃  4 (○) No, reject (type to add feedback)                                              
             ┃                                                                                       
                                                                                                     
-            1/4:select  │  Ctrl+o:always-approve  │  Ctrl+c:cancel
+                 1/4:select  │  Ctrl+o:always-approve  │  Ctrl+c:cancel                             
+                                                                                                    
+                                                                                                    
+            ╭──────────────────────────────────────────────────────────────────────────╮            
+            │ ❯ keep this draft                                                        │            
+            ╰──────────────────────────────────────────────────────────────── unknown ─╯            
+                                                                                                    
+            Enter:send  │  Shift+Tab:mode  │  Ctrl+x:shortcuts

@@ -22,6 +22,6 @@ expression: "render_live_lines(&app, 80, 24)"
                                                                                 
                                                                                 
   ╭──────────────────────────────────────────────────────────────────────────╮  
-  │ ❯                                                                        │  
+  │ ❯ Build anything                                                         │  
   ╰──────────────────────────────────────────────────────────── gpt-5-codex ─╯  
-  turn 1 · ready for next turn        Tab focus  ·  ? commands  ·  Ctrl+q quit
+  Shift+Tab:mode  │  Ctrl+x:shortcuts

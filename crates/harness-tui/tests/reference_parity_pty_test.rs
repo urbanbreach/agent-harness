@@ -303,6 +303,11 @@ fn pty_helper_live_complete() {
 }
 
 #[test]
+fn pty_helper_live_markdown() {
+    reference_parity_pty_impl::pty_helper_live_markdown();
+}
+
+#[test]
 fn pty_helper_live_cancel() {
     // arrange
     // act
@@ -324,6 +329,11 @@ fn pty_helper_live_tool() {
     // act
     // assert
     reference_parity_pty_impl::pty_helper_live_tool();
+}
+
+#[test]
+fn pty_helper_live_tool_running() {
+    reference_parity_pty_impl::pty_helper_live_tool_running();
 }
 
 #[test]
@@ -356,6 +366,11 @@ fn pty_helper_live_question_stream() {
     // act
     // assert
     reference_parity_pty_impl::pty_helper_live_question_stream();
+}
+
+#[test]
+fn pty_helper_live_thinking() {
+    reference_parity_pty_impl::pty_helper_live_thinking();
 }
 
 #[test]

@@ -8,8 +8,9 @@ use harness_core::event::{
     ActorKind, EventActor, EventEnvelopeV1, EventV1, PermissionRequestedEvent,
     ProviderReasoningDeltaEvent, ProviderRequestFinishedEvent, ProviderRequestRetryMetadata,
     ProviderRequestStartedEvent, ProviderRequestStartedMetadata, ProviderStreamDeltaEvent,
-    TaskScheduleState, TaskScheduledEvent, ToolCallFinishedEvent, ToolCallRequestedEvent,
-    ToolCallStartedEvent, ToolCallStatus, UserMessageSubmittedEvent, SCHEMA_VERSION,
+    RunStartedEvent, TaskScheduleState, TaskScheduledEvent, ToolCallFinishedEvent,
+    ToolCallRequestedEvent, ToolCallStartedEvent, ToolCallStatus, UserMessageSubmittedEvent,
+    SCHEMA_VERSION,
 };
 use harness_core::proj::{RunStatus, SessionCatalogEntry, SessionModeSource};
 use harness_providers::{CompletionUsage, ProviderErrorCategory};
@@ -73,21 +74,25 @@ const LIVE_DRAFT_HELPER: &str = "pty_helper_live_draft";
 const LIVE_STREAM_HELPER: &str = "pty_helper_live_stream";
 const LIVE_FAIL_HELPER: &str = "pty_helper_live_fail";
 const LIVE_COMPLETE_HELPER: &str = "pty_helper_live_complete";
+const LIVE_MARKDOWN_HELPER: &str = "pty_helper_live_markdown";
 const LIVE_CANCEL_HELPER: &str = "pty_helper_live_cancel";
 const LIVE_RECOVER_HELPER: &str = "pty_helper_live_recover";
 const LIVE_TOOL_HELPER: &str = "pty_helper_live_tool";
+const LIVE_TOOL_RUNNING_HELPER: &str = "pty_helper_live_tool_running";
 const LIVE_DIFF_HELPER: &str = "pty_helper_live_diff";
 const LIVE_SCROLL_HELPER: &str = "pty_helper_live_scroll";
 const QUESTION_OVERLAY_HELPER: &str = "pty_helper_question_overlay";
 const PERMISSION_OVERLAY_HELPER: &str = "reference_parity_pty_helper_permission_overlay";
 const LIVE_PERM_STREAM_HELPER: &str = "pty_helper_live_perm_stream";
 const LIVE_QUESTION_STREAM_HELPER: &str = "pty_helper_live_question_stream";
+const LIVE_THINKING_HELPER: &str = "pty_helper_live_thinking";
 const STREAM_USER_TEXT: &str = "stream parity probe";
 const PERM_STREAM_USER_TEXT: &str = "edit a project file now";
 const QUESTION_STREAM_USER_TEXT: &str = "ask me the parity question";
 const FAIL_USER_TEXT: &str = "fail the parity probe";
 const COMPLETE_USER_TEXT: &str = "complete the parity probe";
 const COMPLETE_ASSISTANT_TEXT: &str = "parity turn complete stream final response rendered cleanly under the shell composer parity turn complete stream final response rendered cleanly under the shell composer parity turn complete stream final response rendered cleanly under the shell composer";
+const MARKDOWN_ASSISTANT_TEXT: &str = "# Release notes\n\n- [x] Theme roles\n- [ ] Visual review\n\n```rust\nlet answer = 42;\n```\n\n> Semantic colors stay capability-safe.";
 // Reference cancellation state (run1-shell-cancel-pinned-v1): empty transcript + draft in composer.
 const CANCEL_USER_TEXT: &str = "cancel the parity probe";
 // Reference recovery state (run1-shell-recover-pinned-v1): same fail state + draft in composer.
@@ -154,8 +159,7 @@ fn install_parity_context_window() {
 const DIFF_PATH_TEXT: &str = "demo.txt";
 // Reference scroll state (run1-shell-scroll-pinned-v1): streaming state with partial response.
 const SCROLL_USER_TEXT: &str = "scroll the parity probe";
-const SCROLL_ASSISTANT_TEXT: &str =
-    "parity turn complete stream final response rendered cleanly under the shell";
+const SCROLL_ASSISTANT_TEXT: &str = "partial streaming row";
 const QUESTION_USER_TEXT: &str = "You MUST use the AskUserQuestion tool (or equivalent question tool) to ask me exactly one multiple-choice question: Which color? Options: Red, Green, Blue. Do not answer yourself. Do not use any other tools.";
 const READY_MARKER: &str = "❯";
 const DRAFT_TEXT: &str = "parity draft";
@@ -580,7 +584,6 @@ pub(crate) fn shell_scroll_pty() {
         return;
     }
     let mut helper = spawn_helper_at(LIVE_SCROLL_HELPER, LIVE_SCROLL_SCENARIO, 120, 40);
-    helper.wait_for(SCROLL_USER_TEXT);
     helper.wait_for(SCROLL_ASSISTANT_TEXT);
     // Reference scroll state: PageUp during streaming to scroll away from follow.
     send_bytes(helper.writer.as_mut(), b"\x1b[5~").unwrap_or_abort();
@@ -597,6 +600,10 @@ pub(crate) fn shell_scroll_pty() {
     assert!(
         screen.contains('❯'),
         "SHELL-SCROLL PTY: composer glyph required\n{screen}"
+    );
+    assert!(
+        screen.contains('▼'),
+        "SHELL-SCROLL PTY: detached overflow requires more-below affordance\n{screen}"
     );
     assert_no_multi_row_prompt_rail(&screen, "SHELL-SCROLL");
     assert_no_sidebar_copy(&screen, "SHELL-SCROLL");
@@ -734,6 +741,7 @@ fn assert_resp_idle_shell_pty(cols: u16, rows: u16, label: &str) {
     }
     let mut helper = spawn_helper_at(IDLE_SHELL_HELPER, IDLE_SHELL_SCENARIO, cols, rows);
     helper.wait_for(READY_MARKER);
+    helper.wait_for("Ctrl+x:shortcuts");
     let screen = helper.screen_text();
     assert!(
         screen.contains('❯'),
@@ -820,7 +828,7 @@ pub(crate) fn pty_helper_idle_shell() {
             run_name: Some("Hello".to_string()),
             status: Some(RunStatus::Finished),
             last_updated_at: Some("2026-07-18T12:00:00Z".to_string()),
-            workspace_root: Some("/home/urbanbreach/Projects/agent-harness".to_string()),
+            workspace_root: Some("/workspace/agent-harness".to_string()),
             profile_preset: Some("build".to_string()),
             provider_model: Some("mock/parity-test".to_string()),
             mode_source: SessionModeSource::InteractiveLive,
@@ -834,7 +842,14 @@ pub(crate) fn pty_helper_idle_shell() {
     run_tui_with_options(TuiOptions {
         mode: TuiMode::Live {
             run_dir: run_dir.path().to_path_buf(),
-            historical_events: Vec::new(),
+            historical_events: vec![parity_envelope(
+                1,
+                None,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "idle-shell".into(),
+                    workspace_root: "/workspace/agent-harness".to_string(),
+                }),
+            )],
             session_history_entries,
             prompt_history_path: None,
             update_rx,
@@ -897,6 +912,15 @@ pub(crate) fn pty_helper_live_question_stream() {
     run_live_with_historical_events(question_stream_events());
 }
 
+pub(crate) fn pty_helper_live_thinking() {
+    if std::env::var(HELPER_SCENARIO_ENV).as_deref() != Ok(LIVE_THINKING_HELPER) {
+        return;
+    }
+    let mut events = question_turn_events();
+    events.truncate(3);
+    run_live_with_historical_events(events);
+}
+
 pub(crate) fn pty_helper_live_fail() {
     if std::env::var(HELPER_SCENARIO_ENV).as_deref() != Ok(LIVE_FAIL_SCENARIO) {
         return;
@@ -909,6 +933,18 @@ pub(crate) fn pty_helper_live_complete() {
         return;
     }
     run_live_with_historical_events(complete_events());
+}
+
+pub(crate) fn pty_helper_live_markdown() {
+    if std::env::var(HELPER_SCENARIO_ENV).as_deref() != Ok(LIVE_MARKDOWN_HELPER) {
+        return;
+    }
+    let mut events = complete_events();
+    events[2].payload = EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+        request_id: "req_complete_pty".into(),
+        delta: MARKDOWN_ASSISTANT_TEXT.to_string(),
+    });
+    run_live_with_historical_events(events);
 }
 
 pub(crate) fn pty_helper_live_cancel() {
@@ -935,6 +971,15 @@ pub(crate) fn pty_helper_live_tool() {
         return;
     }
     run_live_with_historical_events(tool_events());
+}
+
+pub(crate) fn pty_helper_live_tool_running() {
+    if std::env::var(HELPER_SCENARIO_ENV).as_deref() != Ok(LIVE_TOOL_RUNNING_HELPER) {
+        return;
+    }
+    let mut events = tool_events();
+    events.truncate(5);
+    run_live_with_historical_events(events);
 }
 
 pub(crate) fn pty_helper_live_diff() {
@@ -1943,6 +1988,11 @@ fn diff_events() -> Vec<EventEnvelopeV1> {
 
 fn scroll_events() -> Vec<EventEnvelopeV1> {
     let request_id = "req_scroll_pty";
+    let assistant_text = if std::env::var_os("HARNESS_UI05_WIDE_PROBE").is_some() {
+        format!("{SCROLL_ASSISTANT_TEXT} · 한글 あア")
+    } else {
+        SCROLL_ASSISTANT_TEXT.to_string()
+    };
     // Reference scroll state (run1-shell-scroll-pinned-v1): streaming state with
     // partial assistant response visible. TaskScheduled keeps activity Streaming
     // after ProviderRequestFinished seeds total_tokens for the ⇣ download counter.
@@ -1981,7 +2031,7 @@ fn scroll_events() -> Vec<EventEnvelopeV1> {
             Some(request_id),
             EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
                 request_id: request_id.into(),
-                delta: SCROLL_ASSISTANT_TEXT.to_string(),
+                delta: format!("{assistant_text}\n").repeat(37),
             }),
         ),
         parity_envelope(

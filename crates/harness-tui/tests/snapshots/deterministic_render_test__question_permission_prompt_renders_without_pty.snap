@@ -11,11 +11,6 @@ expression: rendered.as_str()
                                                                                                     
                                                                                                     
                                                                                                     
-                                                                                                    
-                                                                                                    
-                                                                                                    
-                                                                                                    
-                                                                                                    
             ┃                                                                                       
             ┃  Pick one                                                                             
             ┃                                                                                       
@@ -23,9 +18,14 @@ expression: rendered.as_str()
             ┃  1 (○) A  Option A                                                                    
             ┃  z (○) Type your answer here                                                          
             ┃                                                                                       
-            ┃  ↑/↓ navigate · y copy                                       Enter:submit             
-            ┃                                                                                       
-            ┃                                                                                       
+            ┃  ↑/↓ navigate · y copy                                      Enter:submit              
             ┃                                                                                       
                                                                                                     
-            Esc:unselect  │  Tab:scrollback  │  Ctrl+c:dismiss
+            Esc:unselect  │  Tab:scrollback  │  Ctrl+c:dismiss                                      
+                                                                                                    
+                                                                                                    
+            ╭──────────────────────────────────────────────────────────────────────────╮            
+            │ ❯ Build anything                                                         │            
+            ╰───────────────────────────────────────────────────────────────────────  ─╯            
+                                                                                                    
+            Shift+Tab:mode  │  Ctrl+x:shortcuts

@@ -71,6 +71,7 @@ node scripts/tui-parity/web-terminal-visual-qa.mjs \
   --cols "$COLS" \
   --rows "$ROWS" \
   --font-size "$FONT_SIZE" \
+  --input "{PageUp}" \
   --dwell-ms "$DWELL_MS" \
   --pre-dwell-ms "$PRE_DWELL_MS" \
   --chrome-bin "$CHROME_BIN" \
@@ -80,7 +81,7 @@ if ! grep -q 'scroll the parity probe' "$EVIDENCE_DIR/terminal.txt"; then
   echo "FAIL: L3 missing user prompt text" >&2
   exit 1
 fi
-if ! grep -q 'parity turn complete' "$EVIDENCE_DIR/terminal.txt"; then
+if ! grep -q 'partial streaming row' "$EVIDENCE_DIR/terminal.txt"; then
   echo "FAIL: L3 missing assistant response text" >&2
   exit 1
 fi
