@@ -305,17 +305,14 @@ fn tool_running_spinner_fixed_tick_sequence_is_deterministic() {
 }
 
 #[test]
-fn startup_logo_fixed_tick_sequence_is_deterministic() {
-    // arrange
-    // act
-    // assert
-    // Given: startup shell with an animated logo and a phase-four content reveal.
+fn startup_logo_remains_static_across_fixed_ticks() {
+    // Given: a startup shell whose decorative content is fully settled.
     let plan = FixedTickPlan::new("startup-logo", 100, 30, 5).with_tick_ms(100);
 
-    // When: two independent fixed-tick captures advance through the reveal.
+    // When: two independent fixed-tick captures advance the scheduler.
     let (sequence_a, sequence_b, clock_a) = capture_pair(&plan, startup_idle_app);
 
-    // Then: glyph geometry stays stable while the phase-four content reveal is deterministic.
+    // Then: the complete startup surface remains static.
     assert_eq!(sequence_a.schema_version, ANIMATION_FRAME_SEQUENCE_SCHEMA);
     assert_eq!(sequence_a.surface_id, "startup-logo");
     assert_eq!(sequence_a.frames.len(), 5);
@@ -330,21 +327,13 @@ fn startup_logo_fixed_tick_sequence_is_deterministic() {
             "startup logo must not paint braille spinner motion\n{}",
             frame.cells
         );
-        assert!(frame.cells.contains("██╗  ██╗ █████╗ ██████╗"));
-        assert!(frame.cells.contains("╚═╝  ╚═╝╚═╝  ╚═╝"));
+        assert!(frame.cells.contains(" ██╗  ██╗"));
+        assert!(frame.cells.contains(" ╚═╝  ╚═╝"));
     }
-    assert_eq!(
-        sequence_a.frames[0].cells, sequence_a.frames[1].cells,
-        "shimmer must change styles without moving logo glyphs"
-    );
-    assert_eq!(
-        sequence_a.frames[0].cells, sequence_a.frames[3].cells,
-        "logo glyph geometry must remain stable before the content reveal"
-    );
-    assert_ne!(
-        sequence_a.frames[3].cells, sequence_a.frames[4].cells,
-        "phase four must reveal the settled changelog content"
-    );
+    assert!(sequence_a
+        .frames
+        .windows(2)
+        .all(|frames| frames[0].cells == frames[1].cells));
 
     assert_sequences_equal(&sequence_a, &sequence_b)
         .expect("independent startup-logo captures must be byte-stable");

@@ -166,6 +166,7 @@ mod tool_output;
 mod transcript_cache;
 mod transcript_state;
 mod transcript_view;
+mod transcript_viewport;
 mod workspace_display;
 mod worktree_picker;
 
@@ -314,8 +315,7 @@ fn rect_contains(area: Rect, column: u16, row: u16) -> bool {
         && row < area.y.saturating_add(area.height)
 }
 
-const NO_PROVIDER_BANNER: &str =
-    "No provider connected. Run `harness auth login` in a terminal or use /connect to set up a provider.";
+const NO_PROVIDER_BANNER: &str = "No provider connected. Use /connect.";
 
 pub struct AppState {
     pub selected_event_index: usize,
@@ -356,6 +356,7 @@ pub struct AppState {
     pub(crate) subagent_actions_session_id: Option<String>,
     pub(crate) hovered_subagent_footer_target: Option<SubagentFooterTarget>,
     pub(crate) pending_subagent_footer_target: Option<SubagentFooterTarget>,
+    pub(crate) hovered_live_turn_stop: bool,
     error_details_visible: bool,
     pub startup_mode: bool,
     starting_session_seed: bool,
@@ -662,6 +663,7 @@ impl Default for AppState {
             subagent_actions_session_id: None,
             hovered_subagent_footer_target: None,
             pending_subagent_footer_target: None,
+            hovered_live_turn_stop: false,
             error_details_visible: false,
             startup_mode: false,
             starting_session_seed: false,
@@ -826,7 +828,7 @@ impl Default for AppState {
             theme_preview: ThemePreview::new(initial_theme_family),
             auto_theme_resolver,
             theme_color_level: ColorLevel::TrueColor,
-            welcome: WelcomeState::new(4, false),
+            welcome: WelcomeState::new(3, false),
             launch_metadata: LaunchMetadata::default(),
             runtime_context_metadata: None,
             session_navigation_stack: Vec::new(),
@@ -1316,12 +1318,34 @@ impl AppState {
         &self.welcome
     }
 
+    pub(crate) fn welcome_dismissed(&self) -> bool {
+        self.welcome.is_dismissed()
+    }
+
+    pub(crate) fn welcome_visible(&self) -> bool {
+        !self.welcome.is_dismissed() && self.composer.prompt_buffer.is_empty()
+    }
+
+    pub(in crate::app) fn dismiss_welcome_for_input(&mut self) {
+        if self.startup_shell_visible() {
+            self.welcome.dismiss_for_input();
+            self.focus = Focus::Prompt;
+        }
+    }
+
     pub(crate) fn welcome_layout(&self, area: Rect) -> WelcomeLayout {
-        WelcomeLayout::compute(area.width, area.height)
+        WelcomeLayout::for_area(
+            (area.x, area.y, area.width, area.height),
+            self.status_banner.as_deref().is_some_and(|banner| {
+                let normalized = banner.to_ascii_lowercase();
+                normalized.contains("clipboard")
+                    && (normalized.contains("unreachable") || normalized.contains("inaccessible"))
+            }),
+        )
     }
 
     pub(crate) fn welcome_hit_map(&self, area: Rect) -> WelcomeHitMap {
-        const MENU_LABELS: [&str; 4] = ["New worktree", "Resume session", "Changelog", "Quit"];
+        const MENU_LABELS: [&str; 3] = ["New worktree", "Resume session", "Quit"];
         WelcomeHitMap::new(self.welcome_layout(area), &MENU_LABELS)
     }
 
@@ -1437,10 +1461,16 @@ impl AppState {
         self.question_prompt.editing = false;
         self.transcript_view.expanded_tool_outputs.clear();
         self.transcript_view.expanded_patch_file_outputs.clear();
+        self.transcript_view.expanded_reasoning_requests.clear();
+        self.cancel_transcript_page_flip();
+        self.live_turn_started_at = None;
+        self.live_turn_phase_started_at = None;
+        self.live_turn_request_id = None;
 
         for event in events {
-            self.ingest_event(event);
+            self.ingest_historical_event(event);
         }
+        self.resume_live_turn_timing_from_projection();
         self.sync_transcript_integration();
 
         if self.projection.events.is_empty() {
@@ -1504,12 +1534,23 @@ impl AppState {
             &event.payload,
             EventV1::RunFinished(_) | EventV1::RunFailed(_)
         );
+        let page_flip_target = (!historical)
+            .then(|| self.transcript_page_flip_activation_target(&event))
+            .flatten();
         if !historical {
             self.continued_live_reopen_surface_active = false;
             self.note_live_turn_status_timing(&event);
         }
         self.update_transient_state_for_event(&event);
         let trimmed_events = self.projection.ingest_event(event.clone(), historical);
+        if !historical {
+            self.retarget_local_transcript_page_flip(&event);
+        }
+        if page_flip_target.is_some() {
+            if let Some(activity_first_seq) = self.transcript_page_flip_activity_first_seq(&event) {
+                self.begin_transcript_page_flip(activity_first_seq);
+            }
+        }
         self.update_composer_queue_lifecycle(&event);
         self.seed_patch_file_expansions(&event);
         if !historical {
@@ -1565,15 +1606,18 @@ impl AppState {
     fn note_live_turn_status_timing(&mut self, event: &EventEnvelopeV1) {
         match &event.payload {
             EventV1::UserMessageSubmitted(data) => {
-                self.begin_live_turn_timing(Some(data.request_id.as_str()));
+                if !self.live_turn_timing_owned_by_other_request(data.request_id.as_str()) {
+                    self.begin_live_turn_timing(Some(data.request_id.as_str()));
+                }
             }
             EventV1::ProviderRequestStarted(data) => {
-                self.begin_live_turn_timing(Some(
-                    event
-                        .correlation_id
-                        .as_deref()
-                        .unwrap_or(data.request_id.as_str()),
-                ));
+                let turn_id = event
+                    .correlation_id
+                    .as_deref()
+                    .unwrap_or(data.request_id.as_str());
+                if !self.live_turn_timing_owned_by_other_request(turn_id) {
+                    self.begin_live_turn_timing(Some(turn_id));
+                }
             }
             EventV1::ProviderReasoningDelta(data) => {
                 let turn_id = event
@@ -1589,7 +1633,7 @@ impl AppState {
                         activity.thinking_text.is_empty() && activity.transcript_text.is_empty()
                     });
                 if starts_thinking {
-                    self.restart_live_turn_phase_timing();
+                    self.restart_live_turn_phase_timing(turn_id);
                 }
             }
             EventV1::ProviderStreamDelta(data) => {
@@ -1604,11 +1648,106 @@ impl AppState {
                     .find_map(|activity| (activity.request_id == turn_id).then_some(activity))
                     .is_none_or(|activity| activity.transcript_text.is_empty());
                 if starts_responding {
-                    self.restart_live_turn_phase_timing();
+                    self.transcript_view
+                        .expanded_reasoning_requests
+                        .remove(turn_id);
+                    self.restart_live_turn_phase_timing(turn_id);
                 }
             }
-            EventV1::ToolCallStarted(_) => self.restart_live_turn_phase_timing(),
+            EventV1::ToolCallRequested(_) => {
+                if let Some(turn_id) = event.correlation_id.as_deref() {
+                    self.transcript_view
+                        .expanded_reasoning_requests
+                        .remove(turn_id);
+                    self.restart_live_turn_phase_timing(turn_id);
+                }
+            }
+            EventV1::ProviderRequestFinished(data) => {
+                let turn_id = event
+                    .correlation_id
+                    .as_deref()
+                    .unwrap_or(data.request_id.as_str());
+                self.transcript_view
+                    .expanded_reasoning_requests
+                    .remove(turn_id);
+            }
+            EventV1::ToolCallStarted(_) => {
+                if let Some(turn_id) = event.correlation_id.as_deref() {
+                    self.restart_live_turn_phase_timing(turn_id);
+                }
+            }
             _ => {}
+        }
+    }
+
+    fn transcript_page_flip_activation_target(&self, event: &EventEnvelopeV1) -> Option<usize> {
+        let hidden = self.hidden_delegated_child_request_ids_in_current_view();
+        match &event.payload {
+            EventV1::UserMessageSubmitted(data) => {
+                if self
+                    .activities
+                    .iter()
+                    .filter(|activity| !hidden.contains(activity.request_id.as_str()))
+                    .any(|activity| activity.status == ActivityStatus::Streaming)
+                {
+                    return None;
+                }
+                self.activities.iter().position(|activity| {
+                    !hidden.contains(activity.request_id.as_str())
+                        && activity.status == ActivityStatus::Queued
+                        && activity
+                            .user_message
+                            .as_ref()
+                            .is_some_and(|message| message.text == data.text)
+                })
+            }
+            EventV1::ProviderRequestStarted(data) => {
+                let turn_id = event
+                    .correlation_id
+                    .as_deref()
+                    .unwrap_or(data.request_id.as_str());
+                self.activities.iter().position(|activity| {
+                    !hidden.contains(activity.request_id.as_str())
+                        && activity.status == ActivityStatus::Queued
+                        && (activity.request_id == turn_id
+                            || activity.request_id == data.request_id.as_str())
+                })
+            }
+            _ => None,
+        }
+    }
+
+    fn transcript_page_flip_activity_first_seq(&self, event: &EventEnvelopeV1) -> Option<u64> {
+        let hidden = self.hidden_delegated_child_request_ids_in_current_view();
+        let activity = match &event.payload {
+            EventV1::UserMessageSubmitted(data) => self
+                .activities
+                .iter()
+                .find(|activity| activity.request_id == data.request_id.as_str()),
+            EventV1::ProviderRequestStarted(data) => {
+                let turn_id = event
+                    .correlation_id
+                    .as_deref()
+                    .unwrap_or(data.request_id.as_str());
+                self.activities.iter().find(|activity| {
+                    activity.request_id == turn_id
+                        || activity.request_id == data.request_id.as_str()
+                })
+            }
+            _ => None,
+        }?;
+        (!hidden.contains(activity.request_id.as_str())).then_some(activity.first_seq)
+    }
+
+    fn retarget_local_transcript_page_flip(&self, event: &EventEnvelopeV1) {
+        let state = self.transcript_page_flip_state();
+        if state.activity_first_seq() != Some(0)
+            || !matches!(&event.payload, EventV1::UserMessageSubmitted(_))
+        {
+            return;
+        }
+        if let Some(activity_first_seq) = self.transcript_page_flip_activity_first_seq(event) {
+            self.set_transcript_page_flip_state(state.retarget(activity_first_seq));
         }
     }
 
@@ -3388,9 +3527,7 @@ impl AppState {
 
     /// Record the maximum scroll offset for the current transcript content.
     pub fn record_transcript_max_scroll(&mut self, max_scroll: usize) {
-        self.transcript_view
-            .last_transcript_max_scroll
-            .set(max_scroll);
+        self.transcript_view.record_measured_max_scroll(max_scroll);
     }
 
     /// Returns `true` when follow mode is active (scroll pinned to bottom).
@@ -3400,20 +3537,16 @@ impl AppState {
 
     /// Current scroll offset (0 = bottom / most recent content).
     pub fn transcript_scroll_offset(&self) -> usize {
-        if let Some(view) = self.transcript_view_model() {
-            let scroll_top = view
-                .scroll_top
-                .floor()
-                .to_string()
-                .parse::<usize>()
-                .unwrap_or(usize::MAX);
+        if let Some(scroll_top) = self.transcript_page_flip_scroll_top() {
             return self
                 .transcript_view
                 .last_transcript_max_scroll
                 .get()
                 .saturating_sub(scroll_top);
         }
-        self.transcript_view.transcript_scroll
+        self.transcript_view
+            .measured_viewport()
+            .offset_from_bottom()
     }
 
     /// Scroll up (away from bottom) by `viewport` rows, breaking follow mode.
@@ -3444,23 +3577,16 @@ impl AppState {
 
     /// Jump to the top (oldest content). Breaks follow mode.
     pub fn scroll_goto_top(&mut self) {
-        if let Some(composite) = self.transcript_integration.as_mut() {
-            let _ = composite.jump_to_top();
-        } else {
-            let max = self.transcript_view.last_transcript_max_scroll.get();
-            self.transcript_view.transcript_scroll = max;
-            self.transcript_view.follow_mode = false;
-        }
+        self.cancel_transcript_page_flip();
+        let next = self.transcript_view.measured_viewport().jump_to_top();
+        self.transcript_view.set_measured_viewport(next);
     }
 
     /// Jump to the bottom (newest content). Re-engages follow mode.
     pub fn scroll_goto_bottom(&mut self) {
-        if let Some(composite) = self.transcript_integration.as_mut() {
-            let _ = composite.jump_to_bottom();
-        } else {
-            self.transcript_view.transcript_scroll = 0;
-            self.transcript_view.follow_mode = true;
-        }
+        self.cancel_transcript_page_flip();
+        let next = self.transcript_view.measured_viewport().jump_to_bottom();
+        self.transcript_view.set_measured_viewport(next);
     }
 
     /// Called when new content arrives. If in follow mode, scroll stays at 0.

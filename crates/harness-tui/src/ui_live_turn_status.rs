@@ -13,8 +13,26 @@ use crate::{
 
 use super::{
     ui_chrome::{display_width, truncate_plain_text},
-    ui_transcript_style::{transcript_activity_spinner_frame, transcript_streaming_spinner_frame},
+    ui_transcript_style::transcript_streaming_spinner_frame,
 };
+
+const STOP_LABEL: &str = "[stop]";
+
+pub(crate) fn live_turn_stop_rect(app: &AppState, frame_area: Rect) -> Option<Rect> {
+    if !app.live_turn_stop_available() || app.active_permission_view().is_some() {
+        return None;
+    }
+    let area = crate::layout::FrameLayoutPlan::for_app(app, frame_area).status?;
+    let width = u16::try_from(display_width(STOP_LABEL)).unwrap_or(u16::MAX);
+    (area.width >= width).then(|| {
+        Rect::new(
+            area.x.saturating_add(area.width.saturating_sub(width)),
+            area.y,
+            width,
+            1,
+        )
+    })
+}
 
 pub(super) fn render_live_turn_status(
     frame: &mut Frame,
@@ -37,10 +55,8 @@ pub(super) fn render_live_turn_status(
     }
 
     let activity = app
-        .activities
-        .iter()
-        .rev()
-        .find(|entry| entry.status == ActivityStatus::Streaming);
+        .runtime_state_activity()
+        .filter(|entry| entry.status == ActivityStatus::Streaming);
     let question_detail = app
         .active_permission_view()
         .filter(|permission| permission.kind.eq_ignore_ascii_case("question"))
@@ -58,9 +74,10 @@ pub(super) fn render_live_turn_status(
     );
     let projected_total =
         activity.map(|entry| entry.last_mono_ms.saturating_sub(entry.first_mono_ms));
-    let phase = status
-        .phase_elapsed_ms
-        .or_else(|| app.live_turn_phase_elapsed_ms())
+    let live_phase_elapsed_ms =
+        activity.and_then(|entry| app.live_turn_phase_elapsed_ms_for(&entry.request_id));
+    let phase = live_phase_elapsed_ms
+        .or(status.phase_elapsed_ms)
         .or(projected_total)
         .map(format_elapsed_ms)
         .unwrap_or_default();
@@ -83,11 +100,10 @@ pub(super) fn render_live_turn_status(
             })
         })
         .map(|tokens| format!(" ⇣{}", format_tokens_short(tokens)));
-    let right = format!("{total}{} [stop]", tokens.unwrap_or_default());
-    let spinner = status.spinner_elapsed_ms.map_or_else(
-        || transcript_streaming_spinner_frame(app.transcript_animation_phase()),
-        transcript_activity_spinner_frame,
-    );
+    let right_meta = format!("{total}{}", tokens.unwrap_or_default());
+    let stop = app.live_turn_stop_available().then_some(STOP_LABEL);
+    let right = stop.map_or_else(|| right_meta.clone(), |stop| format!("{right_meta} {stop}"));
+    let spinner = transcript_streaming_spinner_frame(app.transcript_animation_phase());
     let fixed_left_width =
         display_width(spinner)
             .saturating_add(1)
@@ -113,12 +129,23 @@ pub(super) fn render_live_turn_status(
         ));
     }
     frame.render_widget(Paragraph::new(Line::from(left_spans)), area);
+    let mut right_spans = vec![Span::styled(
+        right_meta,
+        Style::default().fg(theme.text.secondary),
+    )];
+    if let Some(stop) = stop {
+        right_spans.push(Span::raw(" "));
+        right_spans.push(Span::styled(
+            stop,
+            Style::default().fg(if app.live_turn_stop_hovered() {
+                theme.status.error
+            } else {
+                theme.text.secondary
+            }),
+        ));
+    }
     frame.render_widget(
-        Paragraph::new(Span::styled(
-            right,
-            Style::default().fg(theme.text.secondary),
-        ))
-        .alignment(Alignment::Right),
+        Paragraph::new(Line::from(right_spans)).alignment(Alignment::Right),
         area,
     );
 }
@@ -127,7 +154,6 @@ struct LiveTurnStatus {
     label: String,
     style: Style,
     phase_elapsed_ms: Option<u64>,
-    spinner_elapsed_ms: Option<u64>,
 }
 
 impl LiveTurnStatus {
@@ -136,7 +162,6 @@ impl LiveTurnStatus {
             label: "Waiting for response…".to_string(),
             style: Style::default().fg(theme.text.primary),
             phase_elapsed_ms: None,
-            spinner_elapsed_ms: None,
         }
     }
 
@@ -148,7 +173,6 @@ impl LiveTurnStatus {
             ),
             style: Style::default().fg(theme.text.primary),
             phase_elapsed_ms: None,
-            spinner_elapsed_ms: None,
         }
     }
 
@@ -166,7 +190,6 @@ impl LiveTurnStatus {
                 phase_elapsed_ms: activity
                     .request_started_mono_ms
                     .map(|started| activity.last_mono_ms.saturating_sub(started)),
-                spinner_elapsed_ms: None,
             };
         }
 
@@ -178,28 +201,25 @@ impl LiveTurnStatus {
         {
             return Self {
                 label: format!("Run {}", tool.effective_tool_id()),
-                style: Style::default().fg(theme.status.success),
+                style: Style::default().fg(theme.text.accent),
                 phase_elapsed_ms: Some(tool.last_mono_ms.saturating_sub(tool.first_mono_ms)),
-                spinner_elapsed_ms: None,
             };
         }
 
         if !activity.transcript_text.is_empty() {
             return Self {
                 label: "Responding…".to_string(),
-                style: Style::default().fg(theme.text.primary),
+                style: Style::default().fg(theme.text.accent),
                 phase_elapsed_ms: activity.responding_duration_ms(),
-                spinner_elapsed_ms: None,
             };
         }
 
         if !activity.thinking_text.trim().is_empty() {
             let phase_elapsed_ms = activity.thinking_duration_ms();
             return Self {
-                label: "Thinking…".to_string(),
-                style: Style::default().fg(theme.text.primary),
+                label: "Active".to_string(),
+                style: Style::default().fg(theme.text.accent),
                 phase_elapsed_ms,
-                spinner_elapsed_ms: phase_elapsed_ms,
             };
         }
 

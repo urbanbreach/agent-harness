@@ -179,6 +179,12 @@ impl ActivityEntry {
         self.thinking_last_mono_ms = Some(mono_ms);
     }
 
+    pub(in crate::app) fn finish_thinking_mono(&mut self, mono_ms: u64) {
+        if self.thinking_first_mono_ms.is_some() {
+            self.thinking_last_mono_ms = Some(mono_ms);
+        }
+    }
+
     pub(in crate::app) fn bump_revision(&mut self) {
         self.revision = self.revision.saturating_add(1);
     }

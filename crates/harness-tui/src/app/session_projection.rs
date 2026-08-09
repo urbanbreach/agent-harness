@@ -163,7 +163,7 @@ impl SessionProjection {
     }
 
     fn local_prompt_echo_index_for_message(&self, text: &str) -> Option<usize> {
-        self.activities.iter().rposition(|activity| {
+        self.activities.iter().position(|activity| {
             activity.request_id.is_empty()
                 && activity
                     .user_message
@@ -172,10 +172,10 @@ impl SessionProjection {
         })
     }
 
-    fn last_local_prompt_echo_index(&self) -> Option<usize> {
+    fn first_local_prompt_echo_index(&self) -> Option<usize> {
         self.activities
             .iter()
-            .rposition(|activity| activity.request_id.is_empty())
+            .position(|activity| activity.request_id.is_empty())
     }
 
     fn adopt_local_prompt_echo_at(
@@ -198,7 +198,7 @@ impl SessionProjection {
     }
 
     fn adopt_local_prompt_echo(&mut self, request_id: &str, seq: u64) -> Option<usize> {
-        let index = self.last_local_prompt_echo_index()?;
+        let index = self.first_local_prompt_echo_index()?;
         self.adopt_local_prompt_echo_at(index, request_id, seq)
     }
 
@@ -294,7 +294,12 @@ impl SessionProjection {
         let turn_id = Self::canonical_provider_turn_id(event, provider_request_id);
         self.activity_index_for_request(turn_id)
             .or_else(|| self.activity_index_for_request(provider_request_id))
-            .or_else(|| self.adopt_local_prompt_echo(turn_id, event.seq))
+            .or_else(|| {
+                (!self.child_request_agents.contains_key(turn_id)
+                    && !self.child_request_agents.contains_key(provider_request_id))
+                .then(|| self.adopt_local_prompt_echo(turn_id, event.seq))
+                .flatten()
+            })
     }
 
     fn activity_index_for_user_message(
@@ -307,9 +312,25 @@ impl SessionProjection {
             return self.activity_index_for_request(data.request_id.as_str());
         }
 
+        if self
+            .child_request_agents
+            .contains_key(data.request_id.as_str())
+        {
+            return None;
+        }
+
         self.local_prompt_echo_index_for_message(&data.text)
             .and_then(|index| self.adopt_local_prompt_echo_at(index, data.request_id.as_str(), seq))
             .or_else(|| self.adopt_local_prompt_echo(data.request_id.as_str(), seq))
+    }
+
+    fn has_other_streaming_activity_in_request_scope(&self, request_id: &str) -> bool {
+        let agent_id = self.child_request_agents.get(request_id);
+        self.activities.iter().any(|activity| {
+            activity.status == ActivityStatus::Streaming
+                && activity.request_id != request_id
+                && self.child_request_agents.get(activity.request_id.as_str()) == agent_id
+        })
     }
 
     fn remove_duplicate_local_prompt_echo(&mut self, text: &str, keep_index: usize) {

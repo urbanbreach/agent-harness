@@ -60,10 +60,9 @@ impl SessionProjection {
             EventV1::UserMessageSubmitted(data) => {
                 self.note_child_agent_request(event, data.request_id.as_str());
                 if let Some(index) = self.activity_index_for_user_message(data, event.seq) {
-                    let status = if self.activities.iter().any(|activity| {
-                        activity.status == ActivityStatus::Streaming
-                            && activity.request_id != data.request_id.as_str()
-                    }) {
+                    let status = if self
+                        .has_other_streaming_activity_in_request_scope(data.request_id.as_str())
+                    {
                         ActivityStatus::Queued
                     } else {
                         ActivityStatus::Streaming
@@ -80,9 +79,7 @@ impl SessionProjection {
                     }
                 } else {
                     let status = if self
-                        .activities
-                        .iter()
-                        .any(|activity| activity.status == ActivityStatus::Streaming)
+                        .has_other_streaming_activity_in_request_scope(data.request_id.as_str())
                     {
                         ActivityStatus::Queued
                     } else {
@@ -180,6 +177,9 @@ impl SessionProjection {
                 {
                     if let Some(entry) = self.activities.get_mut(index) {
                         entry.status = ActivityStatus::Streaming;
+                        if entry.transcript_text.is_empty() && entry.tool_calls.is_empty() {
+                            entry.finish_thinking_mono(event.mono_ms);
+                        }
                         if entry.first_delta_mono_ms.is_none() {
                             entry.first_delta_mono_ms = Some(event.mono_ms);
                         }
@@ -252,12 +252,8 @@ impl SessionProjection {
                 {
                     let should_mark_done = !self.has_active_turn_task_for_request(turn_id);
                     if let Some(entry) = self.activities.get_mut(index) {
-                        if entry.tool_calls.is_empty()
-                            && entry.transcript_text.is_empty()
-                            && !entry.thinking_text.is_empty()
-                        {
-                            entry.transcript_text = std::mem::take(&mut entry.thinking_text);
-                            entry.bump_revision();
+                        if entry.transcript_text.is_empty() && entry.tool_calls.is_empty() {
+                            entry.finish_thinking_mono(event.mono_ms);
                         }
                         if let Some(error_detail) = provider_error_detail {
                             entry.status = ActivityStatus::Error;
@@ -553,6 +549,9 @@ impl SessionProjection {
                 };
 
                 if let Some(entry) = entry {
+                    if entry.transcript_text.is_empty() && entry.tool_calls.is_empty() {
+                        entry.finish_thinking_mono(event.mono_ms);
+                    }
                     let tool_entry = ToolCallEntry {
                         tool_call_id: data.tool_call_id.to_string(),
                         tool_id: data.tool_id.clone(),

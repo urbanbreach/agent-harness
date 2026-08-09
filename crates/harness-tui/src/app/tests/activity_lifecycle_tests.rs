@@ -37,10 +37,22 @@ pub(super) fn provider_reasoning_delta_populates_thinking_stream_without_overwri
             delta: "Hello world".to_string(),
         }),
     ));
+    app.ingest_event(envelope(
+        4,
+        "req_reasoning",
+        EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+            request_id: "req_reasoning".into(),
+            finish_reason: "done".to_string(),
+            output_digest: Some("digest-reasoning-finish".to_string()),
+            usage: None,
+            metadata: None,
+        }),
+    ));
 
     let activity = app.activities.back().unwrap_or_abort();
     assert_eq!(activity.thinking_text, "Drafting a careful answer.");
     assert_eq!(activity.transcript_text, "Hello world");
+    assert_eq!(activity.thinking_duration_ms(), Some(1));
 }
 
 pub(super) fn provider_request_finished_total_tokens_populates_active_context_usage() {

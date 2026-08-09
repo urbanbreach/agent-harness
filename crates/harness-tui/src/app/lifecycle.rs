@@ -433,7 +433,7 @@ impl AppState {
         prompt_history_path: Option<PathBuf>,
     ) -> Self {
         let mut state = Self::new();
-        state.focus = Focus::List;
+        state.focus = Focus::Prompt;
         state.startup_mode = true;
         state.on_ui_intent = on_ui_intent;
         let session_dir = prompt_history_path
@@ -839,6 +839,14 @@ impl AppState {
                 .any(|a| a.status == ActivityStatus::Streaming && a.usage.is_some())
     }
 
+    pub(crate) fn live_turn_stop_available(&self) -> bool {
+        !self.replay_mode && self.active_interrupt_task_id().is_some()
+    }
+
+    pub(crate) fn live_turn_stop_hovered(&self) -> bool {
+        self.hovered_live_turn_stop
+    }
+
     pub(crate) fn interrupt_confirmation_pending(&self) -> bool {
         let active_task_ids = self.active_interrupt_task_ids();
         self.interrupt_confirmation_pending_for(&active_task_ids)
@@ -886,8 +894,21 @@ impl AppState {
             return false;
         }
 
-        let task_ids = active_task_ids.into_iter().collect();
-        self.emit_ui_intent(UiIntent::InterruptSession { task_ids });
+        self.interrupt_active_turn_with_ids(active_task_ids)
+    }
+
+    pub(in crate::app) fn interrupt_active_turn(&mut self) -> bool {
+        let task_ids = self.active_interrupt_task_ids();
+        self.interrupt_active_turn_with_ids(task_ids)
+    }
+
+    fn interrupt_active_turn_with_ids(&mut self, task_ids: BTreeSet<String>) -> bool {
+        if task_ids.is_empty() {
+            return false;
+        }
+        self.emit_ui_intent(UiIntent::InterruptSession {
+            task_ids: task_ids.into_iter().collect(),
+        });
         self.reset_interrupt_confirmation();
         true
     }
@@ -910,9 +931,69 @@ impl AppState {
         })
     }
 
+    pub(crate) fn live_turn_phase_elapsed_ms_for(&self, request_id: &str) -> Option<u64> {
+        (self.live_turn_request_id.as_deref() == Some(request_id))
+            .then(|| self.live_turn_phase_elapsed_ms())
+            .flatten()
+    }
+
+    pub(in crate::app) fn live_turn_timing_owned_by_other_request(&self, request_id: &str) -> bool {
+        self.runtime_state_activity().is_some_and(|activity| {
+            activity.status == ActivityStatus::Streaming && activity.request_id != request_id
+        })
+    }
+
+    pub(in crate::app) fn resume_live_turn_timing_from_projection(&mut self) {
+        if self.replay_mode {
+            return;
+        }
+        let Some((request_id, total_ms, phase_ms)) =
+            self.runtime_state_activity().and_then(|entry| {
+                (entry.status == ActivityStatus::Streaming).then(|| {
+                    let total_ms = entry.last_mono_ms.saturating_sub(entry.first_mono_ms);
+                    let phase_ms = entry
+                        .tool_calls
+                        .iter()
+                        .rev()
+                        .find(|tool| tool.status == ToolCallDisplayStatus::Running)
+                        .map(|tool| tool.last_mono_ms.saturating_sub(tool.first_mono_ms))
+                        .or_else(|| {
+                            (!entry.transcript_text.is_empty())
+                                .then(|| entry.responding_duration_ms())
+                                .flatten()
+                        })
+                        .or_else(|| {
+                            (!entry.thinking_text.is_empty())
+                                .then(|| entry.thinking_duration_ms())
+                                .flatten()
+                        })
+                        .unwrap_or_else(|| {
+                            entry.request_started_mono_ms.map_or(total_ms, |started| {
+                                entry.last_mono_ms.saturating_sub(started)
+                            })
+                        });
+                    (entry.request_id.clone(), total_ms, phase_ms)
+                })
+            })
+        else {
+            return;
+        };
+        let now = self.now();
+        self.live_turn_request_id = Some(request_id);
+        self.live_turn_started_at = Some(
+            now.checked_sub(Duration::from_millis(total_ms))
+                .unwrap_or(now),
+        );
+        self.live_turn_phase_started_at = Some(
+            now.checked_sub(Duration::from_millis(phase_ms))
+                .unwrap_or(now),
+        );
+    }
+
     pub(in crate::app) fn begin_live_turn_timing(&mut self, request_id: Option<&str>) {
         let now = self.now();
         let is_new_turn = self.live_turn_started_at.is_none()
+            || request_id.is_none()
             || self
                 .live_turn_request_id
                 .as_deref()
@@ -921,14 +1002,14 @@ impl AppState {
         if is_new_turn {
             self.live_turn_started_at = Some(now);
         }
-        if let Some(request_id) = request_id {
-            self.live_turn_request_id = Some(request_id.to_string());
-        }
+        self.live_turn_request_id = request_id.map(str::to_string);
         self.live_turn_phase_started_at = Some(now);
     }
 
-    pub(in crate::app) fn restart_live_turn_phase_timing(&mut self) {
-        self.live_turn_phase_started_at = Some(self.now());
+    pub(in crate::app) fn restart_live_turn_phase_timing(&mut self, request_id: &str) {
+        if self.live_turn_request_id.as_deref() == Some(request_id) {
+            self.live_turn_phase_started_at = Some(self.now());
+        }
     }
 
     #[cfg(test)]
@@ -946,7 +1027,7 @@ impl AppState {
         CLEAR_PROMPT_HINT
     }
 
-    fn runtime_state_activity(&self) -> Option<&ActivityEntry> {
+    pub(crate) fn runtime_state_activity(&self) -> Option<&ActivityEntry> {
         let hidden_child_request_ids = self.hidden_delegated_child_request_ids_in_current_view();
         self.activities
             .iter()
