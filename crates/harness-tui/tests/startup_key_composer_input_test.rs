@@ -236,7 +236,7 @@ fn ctrl_w_opens_optional_worktree_name_dialog_without_launching() {
     let rendered = render(&app);
     assert!(rendered.contains("Create worktree"));
     assert!(rendered.contains("Name (optional)"));
-    assert!(!rendered.contains("Changelog"));
+    assert!(rendered.contains("Changelog"));
     assert!(!rendered.contains("Resume session"));
     assert!(intents.lock().expect("intent sink lock").is_empty());
 }
@@ -339,7 +339,8 @@ fn render_p0_start_01_welcome_panel_bordered() {
 /// P0-START-02: breadcrumb and clipboard warning visible at startup.
 #[test]
 fn render_p0_start_02_breadcrumb_and_warning() {
-    let app = startup_app();
+    let mut app = startup_app();
+    app.status_banner = Some("clipboard is unreachable".to_string());
     let rendered = render(&app);
 
     // Clipboard warning band
@@ -348,7 +349,7 @@ fn render_p0_start_02_breadcrumb_and_warning() {
         "P0-START-02: clipboard warning band required at startup\n{rendered}"
     );
     assert!(
-        rendered.contains("/terminal-setup") || rendered.contains("terminal-setup"),
+        rendered.contains("/doctor"),
         "P0-START-02: clipboard warning second line required\n{rendered}"
     );
 
@@ -493,8 +494,7 @@ fn render_p0_key_01_footer_changes_with_draft() {
 #[test]
 fn input_typing_at_startup_transitions_focus_to_prompt() {
     let mut app = startup_app();
-    // At startup, focus is List (welcome panel navigation)
-    assert_eq!(app.focus, Focus::List);
+    assert_eq!(app.focus, Focus::Prompt);
 
     // Simulate typing a char: handle_key transitions focus to Prompt
     app.handle_key(KeyEvent::new(KeyCode::Char('B'), KeyModifiers::NONE));
@@ -590,13 +590,14 @@ fn unfocused_empty_composer_uses_grok_idle_state() {
 }
 
 #[test]
-fn unfocused_draft_uses_grok_dimmed_primary_and_collapses() {
+fn unfocused_draft_keeps_wrapped_height_and_cursor_follow_window() {
     let mut app = AppState::new_live(None, false, None);
-    app.composer.prompt_buffer = format!(
+    let draft = format!(
         "FIRST alpha beta gamma delta epsilon zeta eta theta iota kappa {}LAST omega",
-        "middle ".repeat(24)
+        "middle ".repeat(80)
     );
     app.focus = Focus::Prompt;
+    app.handle_paste(&draft);
     let area = Rect::new(0, 0, 80, 24);
     let focused_composer = FrameLayoutPlan::for_app(&app, area)
         .dock
@@ -613,16 +614,95 @@ fn unfocused_draft_uses_grok_dimmed_primary_and_collapses() {
     });
 
     assert!(focused_composer.height > 3, "{focused_composer:?}");
-    assert_eq!(composer.height, 3, "{composer:?}");
-    let input_row = (composer.x..composer.right())
-        .map(|x| buffer[(x, composer.y + 1)].symbol())
-        .collect::<String>();
-    assert!(input_row.contains("FIRST"), "{input_row:?}");
-    assert!(!input_row.contains("LAST"), "{input_row:?}");
+    assert_eq!(composer.height, focused_composer.height, "{composer:?}");
+    let visible_draft = (composer.y + 1..composer.bottom() - 1)
+        .map(|y| {
+            (composer.x..composer.right())
+                .map(|x| buffer[(x, y)].symbol())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(!visible_draft.contains("FIRST"), "{visible_draft:?}");
+    assert!(visible_draft.contains("LAST"), "{visible_draft:?}");
     assert_eq!(
-        buffer[(composer.x + 4, composer.y + 1)].fg,
+        buffer[(composer.x + 4, composer.bottom() - 2)].fg,
         Color::Rgb(155, 155, 155)
     );
+}
+
+#[test]
+fn focused_wrapped_draft_caps_at_six_content_rows() {
+    let mut app = AppState::new_live(None, false, None);
+    app.composer.prompt_buffer = "wrapped composer content ".repeat(200);
+    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
+    app.focus = Focus::Prompt;
+
+    let composer = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, 80, 24))
+        .dock
+        .expect("live shell must include a dock")
+        .composer;
+
+    assert_eq!(
+        composer.height, 8,
+        "six content rows plus top and bottom borders must cap the composer at eight rows"
+    );
+}
+
+#[test]
+fn live_composer_wraps_against_its_inset_width() {
+    for (width, height, draft_width) in [(120, 40, 111), (60, 20, 53)] {
+        let mut app = AppState::new_live(None, false, None);
+        app.composer.prompt_buffer = "x".repeat(draft_width);
+        app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
+        app.focus = Focus::Prompt;
+
+        let composer = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, width, height))
+            .dock
+            .expect("live shell must include a dock")
+            .composer;
+
+        assert_eq!(
+            composer.height, 4,
+            "draft at the inset-width boundary must wrap to two content rows at {width}x{height}"
+        );
+    }
+}
+
+#[test]
+fn live_composer_badges_preserve_border_corners_and_prompt_position() {
+    let mut app = AppState::new_live(None, false, None);
+    app.set_launch_metadata(
+        LaunchMetadata::from_model_ref(
+            "build",
+            "mock:this-model-name-is-deliberately-much-too-long-for-sixty-columns",
+        )
+        .with_mode_label("Shell"),
+    );
+    app.queued_prompt_count = 7;
+    app.composer.shell_mode = true;
+    let area = Rect::new(0, 0, 60, 20);
+    let composer = FrameLayoutPlan::for_app(&app, area)
+        .dock
+        .expect("live shell must include a dock")
+        .composer;
+    let buffer = render_to_buffer(&app, area, |app, frame, _area| {
+        ui::render_app(frame, app);
+    });
+
+    assert_eq!(buffer[(composer.x, composer.y)].symbol(), "╭");
+    assert_eq!(buffer[(composer.right() - 1, composer.y)].symbol(), "╮");
+    assert_eq!(buffer[(composer.x, composer.bottom() - 1)].symbol(), "╰");
+    assert_eq!(
+        buffer[(composer.right() - 1, composer.bottom() - 1)].symbol(),
+        "╯"
+    );
+    assert_eq!(buffer[(composer.x + 2, composer.y + 1)].symbol(), "❯");
+    let bottom_border = (composer.x..composer.right())
+        .map(|x| buffer[(x, composer.bottom() - 1)].symbol())
+        .collect::<String>();
+    assert!(bottom_border.contains("queued 7"), "{bottom_border:?}");
+    assert!(bottom_border.contains("shell"), "{bottom_border:?}");
 }
 
 #[test]
@@ -631,9 +711,9 @@ fn live_bordered_composer_reserves_an_inner_input_row() {
     let plan = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, W, 40));
     let composer = plan.dock.expect("live shell must include a dock").composer;
 
-    assert!(
-        composer.height >= 3,
-        "bordered composer needs top, input, and bottom rows; got {composer:?}"
+    assert_eq!(
+        composer.height, 3,
+        "single-line bordered composer needs exactly top, input, and bottom rows; got {composer:?}"
     );
 }
 

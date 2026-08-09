@@ -33,7 +33,7 @@ impl AppState {
             return;
         };
         self.composer.push_undo();
-        self.composer.prompt_buffer = entry.text;
+        self.replace_prompt_input(entry.text);
         self.composer.prompt_cursor = entry.cursor.min(self.prompt_char_count());
         self.composer.selection_anchor = entry.selection_anchor;
         self.composer.prompt_history_index = None;
@@ -105,7 +105,7 @@ impl AppState {
             .min(self.prompt_stash.entries.len() - 1);
         let entry = self.prompt_stash.entries.remove(index);
         self.composer.push_undo();
-        self.composer.prompt_buffer = entry.text;
+        self.replace_prompt_input(entry.text);
         self.composer.prompt_cursor = entry.cursor.min(self.prompt_char_count());
         self.composer.selection_anchor = entry.selection_anchor;
         self.composer.prompt_history_index = None;

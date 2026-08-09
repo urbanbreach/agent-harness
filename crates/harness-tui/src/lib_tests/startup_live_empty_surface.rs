@@ -11,10 +11,7 @@ pub(super) fn startup_shell_shows_profile_provider_and_model_chrome() {
     assert!(rendered.contains("Harness") || rendered.contains('╭'));
     assert!(!rendered.contains("Launch: deep · gpt-5.4"));
     assert!(!rendered.contains("Provider proxy"));
-    assert!(
-        !rendered.contains("gpt-5.4") && !rendered.contains("Deep") && !rendered.contains("Demo"),
-        "freeze bare startup hides model badge when prompt is empty\n{rendered}"
-    );
+    assert!(rendered.contains("gpt-5.4") || rendered.contains("Deep") || rendered.contains("Demo"));
     assert!(rendered.contains('❯'));
     assert!(!rendered.contains("Enter select"));
     assert!(!rendered.contains("Dispatch a new run, reopen live work, or inspect saved history."));

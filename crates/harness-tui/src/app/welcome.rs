@@ -19,12 +19,6 @@ pub(crate) struct LocalNotice {
     pub text: String,
 }
 
-/// Welcome action row: label + optional shortcut hint.
-pub(crate) struct WelcomeAction {
-    pub label: &'static str,
-    pub shortcut: Option<&'static str>,
-}
-
 /// Derive the welcome identity (title + version) from the theme and crate version.
 pub(crate) fn welcome_identity(title: &'static str) -> WelcomeIdentity {
     WelcomeIdentity {
@@ -55,28 +49,6 @@ pub(crate) fn local_notices(app: &AppState) -> Vec<LocalNotice> {
 /// Whether the welcome panel should show a local notices section.
 pub(crate) fn has_local_notices(app: &AppState) -> bool {
     !local_notices(app).is_empty()
-}
-
-/// The canonical welcome action rows.
-pub(crate) fn welcome_actions() -> [WelcomeAction; 4] {
-    [
-        WelcomeAction {
-            label: "New worktree",
-            shortcut: Some("ctrl+w"),
-        },
-        WelcomeAction {
-            label: "Resume session",
-            shortcut: Some("ctrl+s"),
-        },
-        WelcomeAction {
-            label: "Changelog",
-            shortcut: None,
-        },
-        WelcomeAction {
-            label: "Quit",
-            shortcut: Some("ctrl+q"),
-        },
-    ]
 }
 
 /// The canonical changelog bullets.

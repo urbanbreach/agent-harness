@@ -14,7 +14,7 @@ use ratatui::style::Color;
 #[test]
 fn theme_family_contract_exposes_every_role_without_missing_mappings() {
     assert_eq!(ThemeFamily::ALL.len(), 5);
-    assert_eq!(PaletteRole::ALL.len(), 42);
+    assert_eq!(PaletteRole::ALL.len(), 52);
     assert_eq!(GlyphRole::ALL.len(), 13);
     assert_eq!(BorderRole::ALL.len(), 4);
     assert_eq!(FocusRole::ALL.len(), 5);
@@ -100,6 +100,7 @@ fn fallback_ladder_has_deterministic_truecolor_to_no_color_matrix() {
             let first = ThemeChoice::explicit(family).resolve(&environment);
             let second = ThemeChoice::explicit(family).resolve(&environment);
             assert_eq!(first, second);
+            assert_eq!(first.theme.color_level(), level);
             for role in PaletteRole::ALL {
                 let color = first.palette.color(role);
                 match level {

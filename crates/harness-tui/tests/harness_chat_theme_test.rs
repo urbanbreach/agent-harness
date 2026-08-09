@@ -39,8 +39,18 @@ fn harness_chat_maps_every_visible_palette_role_to_groknight_truecolor() {
         Color::Rgb(88, 88, 88),
         Color::Rgb(26, 188, 156),
         Color::Rgb(122, 162, 247),
+        Color::Rgb(157, 124, 216),
+        Color::Rgb(120, 120, 120),
+        Color::Rgb(108, 108, 108),
+        Color::Rgb(90, 90, 90),
+        Color::Rgb(122, 162, 247),
         Color::Rgb(122, 166, 218),
         Color::Rgb(58, 149, 171),
+        Color::Rgb(158, 206, 106),
+        Color::Rgb(200, 200, 200),
+        Color::Rgb(108, 108, 108),
+        Color::Rgb(28, 28, 28),
+        Color::Rgb(200, 200, 200),
         Color::Rgb(200, 200, 200),
         Color::Rgb(200, 200, 200),
         Color::Rgb(108, 108, 108),
@@ -56,6 +66,7 @@ fn harness_chat_maps_every_visible_palette_role_to_groknight_truecolor() {
         Color::Rgb(80, 80, 88),
     ];
 
+    assert_eq!(PaletteRole::ALL.len(), expected.len());
     for (role, expected_color) in PaletteRole::ALL.into_iter().zip(expected) {
         assert_eq!(
             resolved.palette.color(role),
@@ -64,6 +75,44 @@ fn harness_chat_maps_every_visible_palette_role_to_groknight_truecolor() {
             role.label()
         );
     }
+}
+
+#[test]
+fn harness_chat_maps_complete_groknight_markdown_role_set() {
+    let markdown = Theme::harness_chat().markdown;
+
+    assert_eq!(
+        [
+            markdown.heading_h1,
+            markdown.heading_h2,
+            markdown.heading_h3,
+            markdown.heading_h4,
+            markdown.heading_h5,
+            markdown.heading_h6,
+            markdown.code,
+            markdown.task_checked,
+            markdown.task_unchecked,
+            markdown.muted,
+            markdown.code_background,
+            markdown.text,
+            markdown.link_text,
+        ],
+        [
+            Color::Rgb(26, 188, 156),
+            Color::Rgb(122, 162, 247),
+            Color::Rgb(157, 124, 216),
+            Color::Rgb(120, 120, 120),
+            Color::Rgb(108, 108, 108),
+            Color::Rgb(90, 90, 90),
+            Color::Rgb(58, 149, 171),
+            Color::Rgb(158, 206, 106),
+            Color::Rgb(200, 200, 200),
+            Color::Rgb(108, 108, 108),
+            Color::Rgb(28, 28, 28),
+            Color::Rgb(200, 200, 200),
+            Color::Rgb(122, 166, 218),
+        ]
+    );
 }
 
 #[test]

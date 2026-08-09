@@ -127,10 +127,12 @@ impl AppState {
         focus: TranscriptSelectionCell,
     ) {
         self.transcript_view.transcript_selection = Some(TranscriptSelection { anchor, focus });
+        self.transcript_view.transcript_selection_anchors.set(None);
     }
 
     pub(in crate::app) fn clear_transcript_selection(&mut self) {
         self.transcript_view.transcript_selection = None;
+        self.transcript_view.transcript_selection_anchors.set(None);
         self.transcript_view.transcript_selection_dragging = false;
     }
 
@@ -339,8 +341,11 @@ impl AppState {
     }
 
     fn handle_welcome_mouse(&mut self, frame_area: Rect, mouse: MouseEvent) -> bool {
+        let startup_area = crate::layout::FrameLayoutPlan::for_app(self, frame_area)
+            .transcript
+            .unwrap_or(frame_area);
         let Some(hit) = self
-            .welcome_hit_map(frame_area)
+            .welcome_hit_map(startup_area)
             .hit(mouse.column, mouse.row)
         else {
             return false;
@@ -352,8 +357,12 @@ impl AppState {
                 self.focus = Focus::Prompt;
             }
             crate::welcome_surface::WelcomeRegion::Menu => {
-                self.welcome
-                    .handle(crate::welcome_surface::WelcomeInput::FocusMenu);
+                if let Some(index) = hit.item_index {
+                    self.welcome.focus_menu_item(index);
+                } else {
+                    self.welcome
+                        .handle(crate::welcome_surface::WelcomeInput::FocusMenu);
+                }
                 self.focus = Focus::List;
             }
             crate::welcome_surface::WelcomeRegion::StatusBar
@@ -405,11 +414,13 @@ impl AppState {
             let changed = self.transcript_view.transcript_scrollbar_drag.is_some()
                 || self.transcript_view.hovered_transcript_target.is_some()
                 || self.hovered_subagent_footer_target.is_some()
+                || self.hovered_live_turn_stop
                 || self.transcript_view.transcript_selection.is_some()
                 || self.secondary_surfaces.selection.is_some();
             self.transcript_view.transcript_scrollbar_drag = None;
             self.transcript_view.hovered_transcript_target = None;
             self.hovered_subagent_footer_target = None;
+            self.hovered_live_turn_stop = false;
             self.pending_subagent_footer_target = None;
             self.clear_transcript_selection();
             self.clear_operator_sidebar_selection();
@@ -417,6 +428,14 @@ impl AppState {
         }
 
         self.set_frame_area(frame_area);
+
+        if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))
+            && ui::live_turn_stop_rect(self, frame_area)
+                .is_some_and(|area| rect_contains(area, mouse.column, mouse.row))
+        {
+            self.hovered_live_turn_stop = true;
+            return self.interrupt_active_turn();
+        }
 
         if self.handle_composer_mouse_event(mouse, frame_area) {
             return true;
@@ -431,6 +450,8 @@ impl AppState {
 
         match mouse.kind {
             MouseEventKind::Moved => {
+                let hovered_live_turn_stop = ui::live_turn_stop_rect(self, frame_area)
+                    .is_some_and(|area| rect_contains(area, mouse.column, mouse.row));
                 let hovered_subagent_footer_target =
                     ui::subagent_footer_target_at(self, frame_area, mouse.column, mouse.row);
                 let hovered_transcript_target = if hovered_subagent_footer_target.is_none() {
@@ -440,9 +461,11 @@ impl AppState {
                 };
                 let changed = self.transcript_view.hovered_transcript_target
                     != hovered_transcript_target
-                    || self.hovered_subagent_footer_target != hovered_subagent_footer_target;
+                    || self.hovered_subagent_footer_target != hovered_subagent_footer_target
+                    || self.hovered_live_turn_stop != hovered_live_turn_stop;
                 self.transcript_view.hovered_transcript_target = hovered_transcript_target;
                 self.hovered_subagent_footer_target = hovered_subagent_footer_target;
+                self.hovered_live_turn_stop = hovered_live_turn_stop;
                 changed
             }
             MouseEventKind::Down(MouseButton::Right) => {
@@ -453,6 +476,13 @@ impl AppState {
             }
             MouseEventKind::Down(MouseButton::Left) => {
                 self.transcript_view.transcript_click_activated_on_down = false;
+                if ui::transcript_return_to_live_hit(self, frame_area, mouse.column, mouse.row) {
+                    self.transcript_view.transcript_click_activated_on_down = true;
+                    self.scroll_goto_bottom();
+                    self.clear_transcript_selection();
+                    self.clear_operator_sidebar_selection();
+                    return true;
+                }
                 self.hovered_subagent_footer_target =
                     ui::subagent_footer_target_at(self, frame_area, mouse.column, mouse.row);
                 self.pending_subagent_footer_target = self.hovered_subagent_footer_target;
@@ -623,6 +653,8 @@ impl AppState {
                     return true;
                 }
                 let operator_sidebar_was_dragging = self.secondary_surfaces.selection_dragging;
+                let transcript_selection_was_dragging =
+                    self.transcript_view.transcript_selection_dragging;
                 if self.secondary_surfaces.selection_dragging {
                     let sidebar_hit = ui::operator_sidebar_selection_cell(
                         self,
@@ -680,6 +712,10 @@ impl AppState {
                     return true;
                 }
                 if operator_sidebar_was_dragging {
+                    self.transcript_view.transcript_scrollbar_drag = None;
+                    return true;
+                }
+                if transcript_selection_was_dragging {
                     self.transcript_view.transcript_scrollbar_drag = None;
                     return true;
                 }
@@ -794,6 +830,7 @@ impl AppState {
         scrollbar: TranscriptScrollbarHit,
         pointer_row: u16,
     ) {
+        self.release_transcript_page_flip();
         let pointer_offset_y = pointer_row
             .saturating_sub(scrollbar.thumb.y)
             .min(scrollbar.thumb.height.saturating_sub(1));
@@ -825,23 +862,5 @@ impl AppState {
             scroll_top.min(drag.max_scroll),
             drag.max_scroll,
         );
-    }
-
-    fn set_transcript_scroll_from_top_with_max(&mut self, scroll_top: usize, max_scroll: usize) {
-        let clamped = scroll_top.min(max_scroll);
-        if let Some(composite) = self.transcript_integration.as_mut() {
-            let target = f64::from(u32::try_from(clamped).unwrap_or(u32::MAX));
-            let _ =
-                composite.scroll_to(target, 0, crate::transcript_scroll::MotionPreference::Full);
-            return;
-        }
-        if max_scroll == 0 || clamped >= max_scroll {
-            self.transcript_view.follow_mode = true;
-            self.transcript_view.transcript_scroll = 0;
-            return;
-        }
-
-        self.transcript_view.follow_mode = false;
-        self.transcript_view.transcript_scroll = max_scroll.saturating_sub(clamped);
     }
 }

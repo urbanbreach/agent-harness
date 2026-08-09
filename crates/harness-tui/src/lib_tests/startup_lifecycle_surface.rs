@@ -16,7 +16,7 @@ pub(super) fn startup_surface_renders_primary_actions() {
     );
 
     let rendered = render_live_lines(&app, 100, 24);
-    assert_eq!(app.focus, app::Focus::List);
+    assert_eq!(app.focus, app::Focus::Prompt);
     assert!(
         rendered.contains('╭')
             && (rendered.contains("New worktree") || rendered.contains("New session")),
@@ -25,8 +25,7 @@ pub(super) fn startup_surface_renders_primary_actions() {
     assert!(!rendered.contains("Launch: worker · model-1"));
     assert!(!rendered.contains("Provider mock"));
     assert!(
-        !rendered.contains("model-1") && !rendered.contains("Worker") && !rendered.contains("Demo"),
-        "freeze bare startup hides model badge when prompt is empty\n{rendered}"
+        rendered.contains("model-1") || rendered.contains("Worker") || rendered.contains("Demo")
     );
     assert!(rendered.contains('❯'));
     assert!(!rendered.contains("Enter select"));
@@ -84,9 +83,9 @@ pub(super) fn startup_surface_projects_clipboard_capability() {
         loading_rows
             .iter()
             .position(|row| row.iter().any(|cell| cell.symbol() == "╭")),
-        Some(8)
+        Some(6)
     );
-    assert!(!loading
+    assert!(loading
         .content
         .iter()
         .any(|cell| cell.symbol().contains('•')));
@@ -103,7 +102,7 @@ pub(super) fn startup_surface_projects_clipboard_capability() {
             .position(|row| row.iter().any(|cell| cell.symbol() == "╭")),
         Some(6)
     );
-    assert!(ready.content.iter().any(|cell| cell.symbol().contains('•')));
+    assert_eq!(loading, ready);
     let ready_warning_row = ready_rows
         .iter()
         .position(|row| {

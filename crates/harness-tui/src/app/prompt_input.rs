@@ -203,6 +203,9 @@ impl AppState {
     }
 
     pub(in crate::app) fn replace_prompt_input(&mut self, prompt: String) {
+        if !prompt.is_empty() {
+            self.dismiss_welcome_for_input();
+        }
         if self.composer.replace_parity_text(&prompt).is_err() {
             self.composer.prompt_cursor = prompt.chars().count();
             self.composer.prompt_buffer = prompt;
@@ -225,6 +228,9 @@ impl AppState {
     }
 
     pub(in crate::app) fn insert_prompt_char(&mut self, c: char) {
+        if c != '\n' {
+            self.dismiss_welcome_for_input();
+        }
         self.reset_clear_prompt_confirmation();
         self.continued_live_reopen_surface_active = false;
         if c == '/'
@@ -291,6 +297,9 @@ impl AppState {
         }
 
         let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+        if !normalized.is_empty() {
+            self.dismiss_welcome_for_input();
+        }
         self.insert_prompt_text(&normalized);
     }
 
@@ -396,6 +405,13 @@ impl AppState {
         self.transcript_view.selected_activity_index = self.activities.len().saturating_sub(1);
         self.details_scroll = 0;
         self.transcript_view.transcript_scroll = 0;
+        if status == ActivityStatus::Streaming {
+            self.begin_transcript_page_flip(
+                self.activities
+                    .back()
+                    .map_or(0, |activity| activity.first_seq),
+            );
+        }
     }
 
     fn record_submitted_prompt_locally(&mut self, text: String) {

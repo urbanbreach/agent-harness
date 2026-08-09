@@ -296,10 +296,14 @@ pub(super) fn render_footer(
     }
     let key_style = Style::default()
         .fg(theme.reference_terminal.primary)
+        .bg(theme.surface.canvas)
         .add_modifier(Modifier::BOLD);
-    let label_style = Style::default().fg(theme.reference_terminal.secondary);
+    let label_style = Style::default()
+        .fg(theme.reference_terminal.secondary)
+        .bg(theme.surface.canvas);
     let dim_style = Style::default()
         .fg(theme.reference_terminal.secondary)
+        .bg(theme.surface.canvas)
         .add_modifier(Modifier::DIM);
 
     let mut hint_spans: Vec<Span<'static>> = Vec::new();
@@ -337,6 +341,10 @@ pub(super) fn render_footer(
             text_area,
         );
     } else {
+        frame.render_widget(
+            Block::default().style(Style::default().bg(theme.surface.canvas)),
+            area,
+        );
         let mut status_candidates =
             live_footer_status_candidates(app, usize::from(text_area.width), theme);
         let cluster_spans = footer_status_cluster_text(app, theme);
@@ -373,17 +381,21 @@ fn render_startup_reference_footer(frame: &mut Frame, app: &AppState, area: Rect
     if area.width == 0 || area.height == 0 {
         return;
     }
-    let _ = theme;
     let area = Rect {
         x: area.x,
         y: area.y,
         width: area.width.saturating_sub(2).max(1),
         height: area.height,
     };
-    let bold = Style::default().add_modifier(Modifier::BOLD);
-    let normal = Style::default();
-    let dim = Style::default().add_modifier(Modifier::DIM);
-    if !app.composer.prompt_buffer.is_empty() {
+    let bold = Style::default()
+        .fg(theme.reference_terminal.primary)
+        .bg(theme.surface.canvas)
+        .add_modifier(Modifier::BOLD);
+    let normal = Style::default()
+        .fg(theme.reference_terminal.secondary)
+        .bg(theme.surface.canvas);
+    let dim = normal.add_modifier(Modifier::DIM);
+    if !app.composer.prompt_buffer.is_empty() || app.welcome_dismissed() {
         let line = Line::from(vec![
             Span::styled("  ", normal),
             Span::styled("Enter", bold),
@@ -409,19 +421,24 @@ fn render_startup_reference_footer(frame: &mut Frame, app: &AppState, area: Rect
                 && !label.eq_ignore_ascii_case("mock")
         })
         .unwrap_or("Beta");
+    let auth_summary = if !app.launch_metadata().has_provider() {
+        "Provider not connected"
+    } else if app.launch_metadata().uses_oauth_authentication() {
+        "OAuth provider configured"
+    } else {
+        "Provider configured"
+    };
     let line = Line::from(vec![
-        Span::styled(
-            if app.launch_metadata().uses_oauth_authentication() {
-                "Logged in via OAuth"
-            } else {
-                "Logged in with API key"
-            },
-            normal,
-        ),
+        Span::styled(auth_summary, normal),
         Span::styled("  │  ", dim),
         Span::styled(mode.to_string(), normal),
     ]);
-    frame.render_widget(Paragraph::new(line).alignment(Alignment::Right), area);
+    frame.render_widget(
+        Paragraph::new(line)
+            .style(Style::default().bg(theme.surface.canvas))
+            .alignment(Alignment::Right),
+        area,
+    );
 }
 
 fn render_live_footer_row(
@@ -695,23 +712,23 @@ pub(super) fn render_unified_bottom_dock(
         return;
     }
 
+    let active_permission = app.active_permission_view();
     if let Some(status_area) = dock_layout.status {
-        super::ui_live_turn_status::render_live_turn_status(frame, app, status_area, theme);
-    }
-
-    if let Some(permission) = app.active_permission_view() {
-        if permission.question_prompts.is_some() {
-            render_question_permission_with_shell_footer(
-                frame,
-                app,
-                dock_layout.composer,
-                theme,
-                &permission,
-            );
+        if let Some(permission) = active_permission.as_ref() {
+            if permission.question_prompts.is_some() {
+                render_question_permission_with_shell_footer(
+                    frame,
+                    app,
+                    status_area,
+                    theme,
+                    permission,
+                );
+            } else {
+                render_inline_permission_dock(frame, app, status_area, theme, permission);
+            }
         } else {
-            render_inline_permission_dock(frame, app, dock_layout.composer, theme, &permission);
+            super::ui_live_turn_status::render_live_turn_status(frame, app, status_area, theme);
         }
-        return;
     }
 
     if let Some(disclosure_area) = dock_layout.disclosure {
@@ -897,36 +914,6 @@ pub(super) fn divided_shell_surface(theme: &Theme) -> Color {
 
 pub(super) fn live_control_dock_surface(theme: &Theme) -> Color {
     theme.surface.canvas
-}
-
-#[cfg(test)]
-mod surface_tests {
-    use super::{control_dock_surface, live_control_dock_surface, live_transcript_shell_surface};
-    use crate::theme::Theme;
-    use crate::view_model::ControlDockVariant;
-
-    #[test]
-    fn live_control_dock_uses_themed_canvas() {
-        let theme = Theme::harness_chat();
-
-        assert_eq!(live_control_dock_surface(&theme), theme.surface.canvas);
-        assert_eq!(
-            live_control_dock_surface(&Theme::terminal_native()),
-            ratatui::style::Color::Reset
-        );
-        for variant in [
-            ControlDockVariant::Startup,
-            ControlDockVariant::Live,
-            ControlDockVariant::ReplayReadOnly,
-        ] {
-            assert_eq!(control_dock_surface(&theme, variant), theme.surface.canvas);
-            assert_eq!(
-                control_dock_surface(&Theme::terminal_native(), variant),
-                ratatui::style::Color::Reset
-            );
-        }
-        assert_eq!(live_transcript_shell_surface(&theme), theme.surface.canvas);
-    }
 }
 
 pub(super) fn control_dock_surface(
@@ -1367,4 +1354,34 @@ fn render_control_dock_top_divider(
     let surface = control_dock_surface(theme, variant);
     let _ = variant;
     frame.render_widget(Block::default().style(Style::default().bg(surface)), area);
+}
+
+#[cfg(test)]
+mod surface_tests {
+    use super::{control_dock_surface, live_control_dock_surface, live_transcript_shell_surface};
+    use crate::theme::Theme;
+    use crate::view_model::ControlDockVariant;
+
+    #[test]
+    fn live_control_dock_uses_themed_canvas() {
+        let theme = Theme::harness_chat();
+
+        assert_eq!(live_control_dock_surface(&theme), theme.surface.canvas);
+        assert_eq!(
+            live_control_dock_surface(&Theme::terminal_native()),
+            ratatui::style::Color::Reset
+        );
+        for variant in [
+            ControlDockVariant::Startup,
+            ControlDockVariant::Live,
+            ControlDockVariant::ReplayReadOnly,
+        ] {
+            assert_eq!(control_dock_surface(&theme, variant), theme.surface.canvas);
+            assert_eq!(
+                control_dock_surface(&Theme::terminal_native(), variant),
+                ratatui::style::Color::Reset
+            );
+        }
+        assert_eq!(live_transcript_shell_surface(&theme), theme.surface.canvas);
+    }
 }

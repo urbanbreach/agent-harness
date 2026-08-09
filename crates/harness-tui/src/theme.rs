@@ -802,16 +802,48 @@ pub struct StatusColors {
 /// produce the subtle syntax-highlighted look from `generateSubtleSyntax`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MarkdownColors {
-    pub heading: Color,
+    pub heading_h1: Color,
+    pub heading_h2: Color,
+    pub heading_h3: Color,
+    pub heading_h4: Color,
+    pub heading_h5: Color,
+    pub heading_h6: Color,
     pub link: Color,
     pub link_text: Color,
     pub code: Color,
+    pub task_checked: Color,
+    pub task_unchecked: Color,
+    pub muted: Color,
+    pub code_background: Color,
+    pub text: Color,
     pub emph: Color,
     pub strong: Color,
     pub block_quote: Color,
     pub list_item: Color,
     pub list_enum: Color,
     pub rule: Color,
+}
+
+impl MarkdownColors {
+    pub const fn heading(self, level: usize) -> Color {
+        match level {
+            1 => self.heading_h1,
+            2 => self.heading_h2,
+            3 => self.heading_h3,
+            4 => self.heading_h4,
+            5 => self.heading_h5,
+            6 => self.heading_h6,
+            _ => self.heading_h1,
+        }
+    }
+
+    pub const fn heading_modifier(level: usize) -> Modifier {
+        if level == 6 {
+            Modifier::empty()
+        } else {
+            Modifier::BOLD
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -892,6 +924,7 @@ pub struct ThemeTokenFamilies {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Theme {
+    color_level: ColorLevel,
     pub surface: SurfaceColors,
     pub border: BorderColors,
     pub text: TextColors,
@@ -1300,10 +1333,20 @@ impl Theme {
                 disabled: rgb(0x80, 0x80, 0x80),
             },
             markdown: MarkdownColors {
-                heading: rgb(0xD9, 0x84, 0xD9),
+                heading_h1: rgb(0xD9, 0x84, 0xD9),
+                heading_h2: rgb(0x5C, 0x9C, 0xF5),
+                heading_h3: rgb(0xE8, 0xA0, 0xE8),
+                heading_h4: rgb(0x88, 0x8B, 0x91),
+                heading_h5: rgb(0x80, 0x80, 0x80),
+                heading_h6: rgb(0x55, 0x57, 0x53),
                 link: rgb(0xE8, 0xA0, 0xE8),
                 link_text: rgb(0x56, 0xB6, 0xC2),
                 code: rgb(0x7F, 0xD8, 0x8F),
+                task_checked: rgb(0x7F, 0xD8, 0x8F),
+                task_unchecked: rgb(0x88, 0x8B, 0x91),
+                muted: rgb(0x88, 0x8B, 0x91),
+                code_background: rgb(0x12, 0x16, 0x1E),
+                text: rgb(0xC8, 0xC8, 0xC8),
                 emph: rgb(0xE5, 0xC0, 0x7B),
                 strong: rgb(0xD9, 0x84, 0xD9),
                 block_quote: rgb(0xE5, 0xC0, 0x7B),
@@ -1333,6 +1376,7 @@ impl Theme {
             },
             reference_terminal: Self::HARNESS_DARK_TERMINAL_COLORS,
             live_shell: Self::HARNESS_DARK_SHELL,
+            color_level: ColorLevel::TrueColor,
         }
     }
 
@@ -1375,10 +1419,20 @@ impl Theme {
                 disabled: rgb(88, 88, 88),
             },
             markdown: MarkdownColors {
-                heading: rgb(26, 188, 156),
+                heading_h1: rgb(26, 188, 156),
+                heading_h2: rgb(122, 162, 247),
+                heading_h3: rgb(157, 124, 216),
+                heading_h4: rgb(120, 120, 120),
+                heading_h5: rgb(108, 108, 108),
+                heading_h6: rgb(90, 90, 90),
                 link: rgb(122, 162, 247),
                 link_text: rgb(122, 166, 218),
                 code: rgb(58, 149, 171),
+                task_checked: rgb(158, 206, 106),
+                task_unchecked: rgb(200, 200, 200),
+                muted: rgb(108, 108, 108),
+                code_background: rgb(28, 28, 28),
+                text: rgb(200, 200, 200),
                 emph: rgb(200, 200, 200),
                 strong: rgb(200, 200, 200),
                 block_quote: rgb(108, 108, 108),
@@ -1408,6 +1462,7 @@ impl Theme {
             },
             reference_terminal: Self::GROK_TERMINAL_COLORS,
             live_shell: Self::HARNESS_DARK_SHELL,
+            color_level: ColorLevel::TrueColor,
         }
     }
 
@@ -1449,10 +1504,20 @@ impl Theme {
                 disabled: rgb(0xA0, 0xA0, 0xA0),
             },
             markdown: MarkdownColors {
-                heading: rgb(0x7B, 0x2D, 0x8E),
+                heading_h1: rgb(0x7B, 0x2D, 0x8E),
+                heading_h2: rgb(0x1A, 0x5C, 0xB0),
+                heading_h3: rgb(0x7B, 0x2D, 0x8E),
+                heading_h4: rgb(0x5A, 0x5A, 0x5A),
+                heading_h5: rgb(0x7A, 0x7A, 0x7A),
+                heading_h6: rgb(0xA0, 0xA0, 0x9B),
                 link: rgb(0x9C, 0x4A, 0xAE),
                 link_text: rgb(0x1A, 0x6B, 0x8A),
                 code: rgb(0x1A, 0x7F, 0x3D),
+                task_checked: rgb(0x1A, 0x7F, 0x3D),
+                task_unchecked: rgb(0x5A, 0x5A, 0x5A),
+                muted: rgb(0x7A, 0x7A, 0x7A),
+                code_background: rgb(0xEF, 0xEF, 0xEA),
+                text: rgb(0x5A, 0x5A, 0x5A),
                 emph: rgb(0xB8, 0x86, 0x0B),
                 strong: rgb(0x7B, 0x2D, 0x8E),
                 block_quote: rgb(0xB8, 0x86, 0x0B),
@@ -1482,6 +1547,7 @@ impl Theme {
             },
             reference_terminal: Self::HARNESS_DARK_TERMINAL_COLORS,
             live_shell: Self::HARNESS_DARK_SHELL,
+            color_level: ColorLevel::TrueColor,
         }
     }
 
@@ -1523,10 +1589,20 @@ impl Theme {
                 disabled: Color::DarkGray,
             },
             markdown: MarkdownColors {
-                heading: Color::Magenta,
+                heading_h1: Color::Magenta,
+                heading_h2: Color::Blue,
+                heading_h3: Color::Magenta,
+                heading_h4: Color::White,
+                heading_h5: Color::Gray,
+                heading_h6: Color::DarkGray,
                 link: Color::Yellow,
                 link_text: Color::Cyan,
                 code: Color::LightGreen,
+                task_checked: Color::LightGreen,
+                task_unchecked: Color::Gray,
+                muted: Color::Gray,
+                code_background: Color::Black,
+                text: Color::Gray,
                 emph: Color::Yellow,
                 strong: Color::Yellow,
                 block_quote: Color::Yellow,
@@ -1556,6 +1632,7 @@ impl Theme {
             },
             reference_terminal: Self::HARNESS_DARK_TERMINAL_COLORS,
             live_shell: Self::HARNESS_DARK_SHELL,
+            color_level: ColorLevel::TrueColor,
         }
     }
 
@@ -1704,10 +1781,20 @@ impl Theme {
                 disabled: q(self.status.disabled),
             },
             markdown: MarkdownColors {
-                heading: q(self.markdown.heading),
+                heading_h1: q(self.markdown.heading_h1),
+                heading_h2: q(self.markdown.heading_h2),
+                heading_h3: q(self.markdown.heading_h3),
+                heading_h4: q(self.markdown.heading_h4),
+                heading_h5: q(self.markdown.heading_h5),
+                heading_h6: q(self.markdown.heading_h6),
                 link: q(self.markdown.link),
                 link_text: q(self.markdown.link_text),
                 code: q(self.markdown.code),
+                task_checked: q(self.markdown.task_checked),
+                task_unchecked: q(self.markdown.task_unchecked),
+                muted: q(self.markdown.muted),
+                code_background: q(self.markdown.code_background),
+                text: q(self.markdown.text),
                 emph: q(self.markdown.emph),
                 strong: q(self.markdown.strong),
                 block_quote: q(self.markdown.block_quote),
@@ -1749,6 +1836,7 @@ impl Theme {
                 diff_hunk_header: q(self.reference_terminal.diff_hunk_header),
             },
             live_shell: self.live_shell,
+            color_level: level,
         }
     }
 
@@ -1824,10 +1912,20 @@ impl Theme {
                 disabled: dim_fg,
             },
             markdown: MarkdownColors {
-                heading: magenta,
+                heading_h1: magenta,
+                heading_h2: blue,
+                heading_h3: magenta,
+                heading_h4: high_contrast_fg,
+                heading_h5: muted_fg,
+                heading_h6: dim_fg,
                 link: blue,
                 link_text: cyan,
                 code: green,
+                task_checked: green,
+                task_unchecked: muted_fg,
+                muted: muted_fg,
+                code_background: elevated_bg,
+                text: muted_fg,
                 emph: yellow,
                 strong: magenta,
                 block_quote: yellow,
@@ -1869,6 +1967,7 @@ impl Theme {
                 diff_hunk_header: blue,
             },
             live_shell: self.live_shell,
+            color_level: self.color_level,
         }
     }
 
@@ -1885,6 +1984,10 @@ impl Theme {
         // BT.709 luminance: 0.2126R + 0.7152G + 0.0722B
         let luminance = 0.2126 * f32::from(r) + 0.7152 * f32::from(g) + 0.0722 * f32::from(b);
         luminance < 128.0
+    }
+
+    pub const fn color_level(self) -> ColorLevel {
+        self.color_level
     }
 
     /// Terminal-native theme: uses `Color::Reset` for all backgrounds and
@@ -1933,10 +2036,20 @@ impl Theme {
                 disabled: Color::Reset,
             },
             markdown: MarkdownColors {
-                heading: Color::Reset,
+                heading_h1: Color::Reset,
+                heading_h2: Color::Blue,
+                heading_h3: Color::Magenta,
+                heading_h4: Color::Reset,
+                heading_h5: Color::Reset,
+                heading_h6: Color::Reset,
                 link: Color::Blue,
                 link_text: Color::Cyan,
                 code: Color::Cyan,
+                task_checked: Color::Green,
+                task_unchecked: Color::Reset,
+                muted: Color::Reset,
+                code_background: Color::Reset,
+                text: Color::Reset,
                 emph: Color::Reset,
                 strong: Color::Reset,
                 block_quote: Color::Reset,
@@ -1986,6 +2099,7 @@ impl Theme {
                 diff_hunk_header: Color::Blue,
             },
             live_shell: Self::HARNESS_DARK_SHELL,
+            color_level: ColorLevel::Basic,
         }
     }
 
@@ -2003,7 +2117,7 @@ impl Theme {
                 let dark = self.is_dark();
                 self.quantized(level).ansi16_chrome_overrides(dark)
             }
-            ColorLevel::None => Self::terminal_native(),
+            ColorLevel::None => self.quantized(ColorLevel::None),
         }
     }
 

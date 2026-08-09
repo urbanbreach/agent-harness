@@ -7,5 +7,6 @@ mod serialization;
 pub use atom::{AtomId, AtomKind, AttachmentId, ComposerAtom, CursorBoundary, FileMentionId};
 pub use buffer::{AtomBuffer, AtomBufferError, WrappedLine};
 pub use cursor::{AtomBoundary, AtomCursor};
+pub(crate) use grapheme::split_graphemes;
 pub use grapheme::GraphemeCluster;
 pub use serialization::{deserialize, serialize, SerializationError};

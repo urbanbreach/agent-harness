@@ -142,10 +142,6 @@ pub mod theme;
 )]
 pub mod theme_family;
 pub mod theme_leaf;
-#[expect(
-    clippy::mod_module_files,
-    reason = "theme_system preserves the richer token-driven theme contract"
-)]
 pub mod theme_system;
 mod time_format;
 #[expect(

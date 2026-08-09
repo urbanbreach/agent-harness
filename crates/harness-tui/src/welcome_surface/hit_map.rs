@@ -13,20 +13,15 @@ pub struct WelcomeHitMap {
 
 impl WelcomeHitMap {
     pub fn new(layout: WelcomeLayout, menu_labels: &[&str]) -> Self {
-        let item_width = layout.menu_rect.2.saturating_sub(2);
         let menu_item_rects = menu_labels
             .iter()
             .enumerate()
-            .map(|(index, _)| {
-                let y = layout
-                    .menu_rect
-                    .1
-                    .saturating_add(1)
-                    .saturating_add(u16::try_from(index).unwrap_or(u16::MAX));
-                (
-                    index,
-                    (layout.menu_rect.0.saturating_add(1), y, item_width, 1),
-                )
+            .filter_map(|(index, _)| {
+                layout
+                    .action_rects
+                    .get(index)
+                    .copied()
+                    .map(|rect| (index, rect))
             })
             .collect();
         Self {

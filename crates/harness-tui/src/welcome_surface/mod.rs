@@ -6,4 +6,4 @@ pub mod state;
 
 pub use hit_map::{WelcomeHit, WelcomeHitMap};
 pub use layout::{WelcomeLayout, WelcomeRegion};
-pub use state::{InputResult, WelcomeFocus, WelcomeInput, WelcomeState};
+pub use state::{InputResult, WelcomeAction, WelcomeFocus, WelcomeInput, WelcomeState};

@@ -120,7 +120,7 @@ All columns 0-based character indices in the text grid (freeze startup):
 | Composer box width | 116 cells (`╭` col 2 … `╮` col 117); top `─` count = **114** |
 | Composer prompt | `│` col 2, space, `❯` col 4, space, draft text col 6+ |
 | Footer draft left pad | 2 spaces before `Enter:send` |
-| Footer startup | Right-biased; `Logged in with API key` starts ~col 87; `│` at 111; `Beta` at 114 |
+| Footer startup | Right-biased auth/provider summary; connected API-key capture starts `Logged in with API key` ~col 87, with `│` at 111 and `Beta` at 114 |
 
 **Rhythm summary:** outer horizontal inset is small (2–3 cells). Welcome is slightly more inset than the composer. Vertical rhythm is sparse: multi-row blank bands separate breadcrumb / warning / welcome / composer / footer rather than packed card stacks.
 
@@ -168,19 +168,18 @@ Outer box: rows 8–23, cols 3–116, rounded borders.
 | Section label | `Changelog` bold at title column |
 | Changelog bullets | Three lines, each `• ` + sentence; indented under section |
 | Spacer | Empty row |
-| Action rows (4) | Label left (col 23), optional shortcut right (col 108) |
+| Harness action rows (3) | Real Harness actions only; label left (col 23), shortcut right (col 108) |
 | Bottom pad | Empty row before bottom border |
 
-### Action rows (exact labels @ freeze)
+### Action rows
 
 | Label | Shortcut |
 |---|---|
 | `New worktree` | `ctrl+w` |
 | `Resume session` | `ctrl+s` |
-| `Changelog` | *(none shown)* |
 | `Quit` | `ctrl+q` |
 
-Labels and shortcuts use bold labels + normal/dim shortcuts (ANSI intensity). Shortcuts are right-aligned as a column, not trailing immediately after the label.
+Labels and shortcuts use bold labels + normal/dim shortcuts (ANSI intensity). Shortcuts are right-aligned as a column, not trailing immediately after the label. The reference's separate `Changelog` action is omitted because Harness has no corresponding interactive action; the real Harness changelog summary remains in the information region.
 
 ### Logo
 
@@ -288,11 +287,20 @@ from `harness-dark`. The mapping is locked exhaustively by
 | `status.error` | `accent_error` | `#f7768e` |
 | `status.info` | `running` | `#7dcfff` |
 | `status.disabled` | `gray_dim` | `#585858` |
-| `markdown.heading` | `md_heading_h1` | `#1abc9c` |
+| `markdown.heading_h1` | `md_heading_h1` | `#1abc9c` |
+| `markdown.heading_h2` | `md_heading_h2` | `#7aa2f7` |
+| `markdown.heading_h3` | `md_heading_h3` | `#9d7cd8` |
+| `markdown.heading_h4` | `md_heading_h4` | `#787878` |
+| `markdown.heading_h5` | `md_heading_h5` | `#6c6c6c` |
+| `markdown.heading_h6` | `md_heading_h6` | `#5a5a5a` |
 | `markdown.link` | `accent_system` | `#7aa2f7` |
 | `markdown.link_text` | `link_fg` | `#7aa6da` |
 | `markdown.code` | `md_code` | `#3a95ab` |
-| `markdown.emph`, `markdown.strong` | `md_text` | `#c8c8c8` |
+| `markdown.task_checked` | `accent_success` | `#9ece6a` |
+| `markdown.task_unchecked` | `md_text` | `#c8c8c8` |
+| `markdown.muted` | `md_muted` | `#6c6c6c` |
+| `markdown.code_background` | `bg_dark` | `#1c1c1c` |
+| `markdown.text`, `markdown.emph`, `markdown.strong` | `md_text` | `#c8c8c8` |
 | `markdown.block_quote`, `markdown.list_item`, `markdown.list_enum`, `markdown.rule` | `md_muted` | `#6c6c6c` |
 | `agent.build` | `accent_system` | `#7aa2f7` |
 | `agent.plan` | `accent_verify` | `#bb9af7` |
@@ -346,7 +354,7 @@ artifacts/qa-evidence/20260801-grok-chat-shell-parity-final/reference-pinned/sta
 | Breadcrumb | Visible | Visible |
 | Composer border + `❯` | Visible | Visible; text inserted after `❯` |
 | Model badge | Present or blank spacer | Present (`unknown` / `test-model` depending on env) |
-| Footer | Right status (`Logged in with API key │ Beta`) | Left shortcuts: `Enter:send  │  Shift+Tab:mode  │  Ctrl+x:shortcuts` |
+| Footer | Right auth/provider status (`Logged in with API key │ Beta` when connected; `Provider not connected │ Beta` otherwise) | Left shortcuts: `Enter:send  │  Shift+Tab:mode  │  Ctrl+x:shortcuts` |
 
 **Harness must match this choreography.** Keeping the welcome logo while editing is a parity failure (current Harness draft capture).
 
@@ -362,7 +370,7 @@ Only these fields may differ from the reference while preserving geometry:
 | Title text | `Grok Build Beta` | `Harness` (+ channel label if needed) | Same title column; do not push changelog/actions |
 | Version | `0.2.0-dev` | Harness version string | Same relative placement after title |
 | Product strings in actions/docs | Grok-specific copy | Harness-equivalent labels **only when** the action maps to a real Harness capability | Keep row count and shortcut column; drop/replace unmapped actions with documented divergence IDs later |
-| Footer auth wording | `Logged in with API key` | Harness-accurate auth summary | Keep right-bias and `│` segment grammar |
+| Footer auth wording | `Logged in with API key` | Harness-accurate auth/provider summary | Keep right-bias and `│` segment grammar |
 
 **Must not change for identity:** border style, composer anatomy, vertical order, welcome clear-on-type, shortcut footer grammar, padding rhythm.
 
@@ -395,7 +403,7 @@ Structural owners: `crates/harness-tui/tests/reference_parity_tx_shell_test.rs` 
 
 | Region | Contract |
 |--------|----------|
-| User rows | Flat `›` marker; no legacy left rail `┃`; no outer card chrome |
+| User rows | Flat `❯` marker; no legacy left rail `┃`; no outer card chrome |
 | Assistant rows | Rail-free body; footer/meta may show model/status on shell surface |
 | Shared | No sharp corners / card mid-rules as primary transcript chrome |
 

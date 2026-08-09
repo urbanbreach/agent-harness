@@ -854,24 +854,27 @@ impl AppState {
     }
 
     pub(in crate::app) fn select_previous_startup_launcher_action(&mut self) {
-        self.startup_launcher_action = self.startup_launcher_action.previous();
+        self.welcome
+            .handle(crate::welcome_surface::WelcomeInput::MoveUp);
         self.continue_disabled_banner = None;
     }
 
     pub(in crate::app) fn select_next_startup_launcher_action(&mut self) {
-        self.startup_launcher_action = self.startup_launcher_action.next();
+        self.welcome
+            .handle(crate::welcome_surface::WelcomeInput::MoveDown);
         self.continue_disabled_banner = None;
     }
 
     pub(in crate::app) fn execute_startup_launcher_action(&mut self) {
-        match self.startup_launcher_action {
-            StartupLauncherAction::NewSession => self.apply_new_session_launcher_selection(),
-            StartupLauncherAction::ReplaySession => {
-                self.begin_session_history_picker(StartupLauncherAction::ReplaySession);
+        match self.welcome.selected_action() {
+            Some(crate::welcome_surface::WelcomeAction::NewWorktree) => {
+                self.request_new_worktree_session();
             }
-            StartupLauncherAction::ContinueSession => {
+            Some(crate::welcome_surface::WelcomeAction::ResumeSession) => {
                 self.begin_session_history_picker(StartupLauncherAction::ContinueSession);
             }
+            Some(crate::welcome_surface::WelcomeAction::Quit) => self.should_quit = true,
+            None => {}
         }
     }
 

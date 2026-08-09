@@ -5,7 +5,7 @@ use crate::theme::Theme;
 use super::roles::PaletteRole;
 
 impl PaletteRole {
-    pub const LABELS: [&str; 42] = [
+    pub const LABELS: [&str; 52] = [
         "surface.canvas",
         "surface.shell",
         "surface.panel",
@@ -31,10 +31,20 @@ impl PaletteRole {
         "status.error",
         "status.info",
         "status.disabled",
-        "markdown.heading",
+        "markdown.heading_h1",
+        "markdown.heading_h2",
+        "markdown.heading_h3",
+        "markdown.heading_h4",
+        "markdown.heading_h5",
+        "markdown.heading_h6",
         "markdown.link",
         "markdown.link_text",
         "markdown.code",
+        "markdown.task_checked",
+        "markdown.task_unchecked",
+        "markdown.muted",
+        "markdown.code_background",
+        "markdown.text",
         "markdown.emph",
         "markdown.strong",
         "markdown.block_quote",
@@ -57,7 +67,7 @@ impl PaletteRole {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Palette {
-    pub values: [Color; 42],
+    pub values: [Color; 52],
 }
 
 impl Palette {
@@ -97,10 +107,20 @@ impl Palette {
                 status.error,
                 status.info,
                 status.disabled,
-                markdown.heading,
+                markdown.heading_h1,
+                markdown.heading_h2,
+                markdown.heading_h3,
+                markdown.heading_h4,
+                markdown.heading_h5,
+                markdown.heading_h6,
                 markdown.link,
                 markdown.link_text,
                 markdown.code,
+                markdown.task_checked,
+                markdown.task_unchecked,
+                markdown.muted,
+                markdown.code_background,
+                markdown.text,
                 markdown.emph,
                 markdown.strong,
                 markdown.block_quote,

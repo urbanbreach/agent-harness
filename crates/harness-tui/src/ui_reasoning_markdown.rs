@@ -28,7 +28,7 @@ pub(super) fn reasoning_markdown_colors(theme: &Theme, surface: Color) -> Reason
     let blend = |overlay: Color| blend_color(surface, overlay, REASONING_OPACITY);
     ReasoningMarkdownColors {
         base: theme.text.secondary,
-        heading: blend(theme.markdown.heading),
+        heading: blend(theme.markdown.heading_h1),
         link: blend(theme.markdown.link),
         link_text: blend(theme.markdown.link_text),
         code: blend(theme.markdown.code),
@@ -474,7 +474,7 @@ mod tests {
         // assert
         let theme = Theme::default();
         let colors = reasoning_markdown_colors(&theme, theme.surface.shell);
-        assert_ne!(colors.heading, theme.markdown.heading);
+        assert_ne!(colors.heading, theme.markdown.heading_h1);
         assert_ne!(colors.code, theme.markdown.code);
         assert_eq!(colors.base, theme.text.secondary);
     }

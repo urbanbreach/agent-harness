@@ -33,8 +33,7 @@ pub(super) fn render_document_composer_content(
         context.dock.variant,
         crate::view_model::ControlDockVariant::Startup
             | crate::view_model::ControlDockVariant::Live
-    ) && app.active_permission_view().is_none()
-        && app.transcript_pending_permissions().is_empty();
+    );
     if bordered_composer {
         render_bordered_composer(frame, app, area, theme, context);
         return;
@@ -252,38 +251,66 @@ pub(super) fn render_document_composer_content(
     }
 }
 
-fn composer_model_badge(app: &AppState) -> String {
-    let model = composer_event_model_id(app).unwrap_or_else(|| app.current_model_base_label());
-    let mut parts = Vec::new();
+fn composer_model_badge(app: &AppState, extra_identity: &[String], max_width: usize) -> String {
+    let model = app.current_model_base_label();
+    let mut identity = Vec::new();
     if let Some(profile) = active_turn_profile_label(app) {
-        parts.push(profile);
+        identity.push(profile);
     }
     if !model.is_empty() && model != "-" && !model.eq_ignore_ascii_case("unknown") {
-        parts.push(model.to_string());
+        identity.push(model.to_string());
     } else if !app.composer.prompt_buffer.is_empty() {
-        parts.push("unknown".to_string());
+        identity.push("unknown".to_string());
     }
     if let Some(reasoning) = app.current_model_reasoning_label() {
         if !reasoning.is_empty()
-            && !parts
+            && !identity
                 .iter()
                 .any(|part| part.eq_ignore_ascii_case(reasoning) || part.contains(reasoning))
         {
-            parts.push(reasoning.to_string());
+            identity.push(reasoning.to_string());
         }
     }
+    identity.extend(extra_identity.iter().cloned());
+
+    let mut status = Vec::new();
     if app.always_approve_mode() {
-        parts.push("always-approve".to_string());
+        status.push("always-approve".to_string());
     } else if app.session_mode() == crate::app::SessionMode::Plan {
-        parts.push("plan".to_string());
+        status.push("plan".to_string());
+    }
+    if app.shell_mode() {
+        status.push("shell".to_string());
     }
     if app.queued_prompt_count > 0 {
-        parts.push(format!("queued {}", app.queued_prompt_count));
+        status.push(format!("queued {}", app.queued_prompt_count));
     }
     if app.composer.multiline_mode {
-        parts.push("multiline".to_string());
+        status.push("multiline".to_string());
     }
-    parts.join(" · ")
+
+    let identity = identity.join(" · ");
+    let status = status.join(" · ");
+    if identity.is_empty() {
+        return truncate_plain_text(&status, max_width);
+    }
+    if status.is_empty() {
+        return truncate_plain_text(&identity, max_width);
+    }
+
+    let joined = format!("{identity} · {status}");
+    if display_width(&joined) <= max_width {
+        return joined;
+    }
+
+    let status_width = display_width(&status);
+    if status_width >= max_width {
+        return truncate_plain_text(&status, max_width);
+    }
+    let separator = " · ";
+    let identity_width = max_width.saturating_sub(status_width + display_width(separator));
+    let identity = truncate_plain_text(&identity, identity_width);
+    format!("{identity}{separator}{status}")
 }
 
 fn render_bordered_composer(
@@ -303,7 +330,7 @@ fn render_bordered_composer(
     let border_fg = live_composer_border_color(theme, focused);
     let border_style = Style::default().fg(border_fg).bg(surface);
     let composer_view = app.composer_view_model_for_area(area);
-    let mut badge = composer_model_badge(app);
+    let mut extra_identity = Vec::new();
     if !composer_view.attachments.is_empty() {
         let labels = composer_view
             .attachments
@@ -311,11 +338,16 @@ fn render_bordered_composer(
             .map(|attachment| attachment.label.as_str())
             .collect::<Vec<_>>()
             .join(", ");
-        badge.push_str(&format!(" · {labels}"));
+        extra_identity.push(labels);
     }
     if let Some(completion) = composer_view.completion.as_ref() {
-        badge.push_str(&format!(" · {} suggestions", completion.items.len()));
+        extra_identity.push(format!("{} suggestions", completion.items.len()));
     }
+    let badge = composer_model_badge(
+        app,
+        &extra_identity,
+        usize::from(area.width.saturating_sub(5)),
+    );
     let content_lines = context.composer_lines.max(1);
     let strip_height = area
         .height
@@ -399,7 +431,7 @@ fn render_bordered_composer(
         .max(1);
     let max_visible = usize::from(inner.height.min(content_lines).max(1));
     let show_cursor = !context.dock.composer_disabled && focused;
-    let viewport_anchor = if focused && !composer_empty {
+    let viewport_anchor = if !composer_empty {
         app.composer_render_cursor()
     } else {
         0
@@ -568,9 +600,7 @@ pub(super) fn composer_metadata_candidates(
     dock: &crate::view_model::ControlDockViewModel,
 ) -> Vec<Vec<(String, ComposerMetadataTone)>> {
     let profile = active_turn_profile_label(app).or_else(|| app.current_agent_label());
-    let model = composer_event_model_id(app)
-        .map(str::to_owned)
-        .unwrap_or_else(|| app.current_model_base_label().to_string());
+    let model = app.current_model_base_label().to_string();
     let source = app.current_source_label();
     let tail = app
         .current_model_reasoning_label()
@@ -653,20 +683,6 @@ pub(super) fn composer_metadata_candidates(
         ComposerMetadataTone::Secondary,
     )]);
     candidates
-}
-
-fn composer_event_model_id(app: &AppState) -> Option<&str> {
-    app.events
-        .iter()
-        .rev()
-        .find_map(|event| match &event.payload {
-            harness_core::event::EventV1::ProviderRequestStarted(payload)
-                if !payload.model_id.trim().is_empty() =>
-            {
-                Some(payload.model_id.as_str())
-            }
-            _ => None,
-        })
 }
 
 fn active_turn_profile_label(app: &AppState) -> Option<String> {

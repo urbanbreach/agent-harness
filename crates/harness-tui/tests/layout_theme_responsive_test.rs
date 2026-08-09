@@ -298,11 +298,11 @@ fn composer_inset_follows_narrow_viewport_breakpoint() {
     let wide = plan_at(&app, 120, 40).composer.unwrap_or_abort();
 
     // assert
-    // Dense viewports (width <= DENSE_SESSION_MAX_WIDTH) use a 0-column
-    // composer inset; see composer_horizontal_inset + reference fixtures.
+    // Dense viewports (width <= DENSE_SESSION_MAX_WIDTH) keep the measured
+    // one-cell composer inset; see composer_horizontal_inset + reference fixtures.
     assert_eq!(
-        narrow.x, 0,
-        "dense viewports (<=60 cols) use a 0-column composer inset"
+        narrow.x, 1,
+        "dense viewports (<=60 cols) use a one-cell composer inset"
     );
     assert_eq!(wide.x, 2, "wide viewports use a 2-column composer inset");
 }
@@ -717,11 +717,12 @@ fn startup_shell_renders_border_chrome_with_footer_band() {
     );
 }
 
-/// A pending permission reserves the fixed dock geometry without a status band.
+/// A pending permission attaches its fixed tray above the stable composer.
 #[test]
-fn permission_dock_reserves_fixed_geometry_without_status_band() {
+fn permission_dock_attaches_fixed_tray_above_stable_composer() {
     // arrange
     let mut app = idle_live_app();
+    let idle_composer = plan_at(&app, 120, 40).composer;
     app.ingest_event(permission_requested_event(
         1,
         "perm-task14-1",
@@ -742,15 +743,13 @@ fn permission_dock_reserves_fixed_geometry_without_status_band() {
         plan.header.height, 0,
         "permission dock keeps the headerless shell"
     );
-    assert!(
-        plan.status.is_none(),
-        "permission dock paints its own tray; no status band; got {:?}",
-        plan.status
-    );
-    assert!(
-        dock.shell.height >= 11,
-        "permission dock reserves at least the 11-row freeze zone; got {}",
-        dock.shell.height
+    let status = plan
+        .status
+        .expect("permission dock must reserve an attached status tray");
+    assert_eq!(status.height, 11, "permission tray uses the freeze height");
+    assert_eq!(
+        plan.composer, idle_composer,
+        "permission tray must not move or resize the composer"
     );
     assert!(
         dock.composer.width > 0,

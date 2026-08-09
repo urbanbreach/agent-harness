@@ -24,29 +24,18 @@ mod trust_prompt;
 mod welcome;
 
 const LIFECYCLE_COPY_INSET_X: u16 = 3;
-const WELCOME_PANEL_INSET_X: u16 = 3;
-const WELCOME_PANEL_TOP_PAD: u16 = 4;
-const WELCOME_PANEL_READY_HEIGHT: u16 = 16;
 const STARTUP_CLIPBOARD_WARNING: &str = "Clipboard may be unreachable.";
 const STARTUP_CLIPBOARD_SETUP_HINT: &str = "Run /doctor for details and fixes.";
-const WELCOME_LOGO_WIDTH: usize = 59;
+const WELCOME_LOGO_WIDTH: usize = 15;
 const WELCOME_ACTION_COL: usize = 18;
-// Body height at 100x30≈24 / 120x32≈26; width 90 drops 80x24 (shell≈76).
-const WELCOME_BORDERED_MIN_WIDTH: u16 = 90;
-const WELCOME_BORDERED_MIN_HEIGHT: u16 = 22;
-const COMPACT_WELCOME_TOP: u16 = 7;
-const COMPACT_WELCOME_TOP_DENSE: u16 = 8;
-const COMPACT_WELCOME_CONTENT_WIDTH: u16 = 51;
-const COMPACT_WELCOME_NARROW_INSET_X: u16 = 5;
-const COMPACT_WELCOME_NARROW_WIDTH: u16 = 70;
-const WELCOME_PANEL_MAX_WIDTH: u16 = 120;
-const WELCOME_LOGO_ROWS: [&str; 6] = [
-    "██╗  ██╗ █████╗ ██████╗ ███╗   ██╗███████╗███████╗███████╗",
-    "██║  ██║██╔══██╗██╔══██║████╗  ██║██╔════╝██╔════╝██╔════╝",
-    "███████║███████║██████╔╝██╔██╗ ██║█████╗  ███████╗███████╗",
-    "██╔══██║██╔══██║██╔══██║██║╚██╗██║██╔══╝  ╚════██║╚════██║",
-    "██║  ██║██║  ██║██║  ██║██║ ╚████║███████╗███████╗███████║",
-    "╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝╚══════╝╚══════╝╚══════╝",
+const WELCOME_LOGO_ROWS: [&str; 7] = [
+    " ██╗  ██╗",
+    " ██║  ██║",
+    " ██║  ██║",
+    " ███████║",
+    " ██╔══██║",
+    " ██║  ██║",
+    " ╚═╝  ╚═╝",
 ];
 
 #[derive(Debug, Clone)]
@@ -69,6 +58,10 @@ fn lifecycle_surface_copy_area(area: Rect) -> Rect {
         LIFECYCLE_COPY_INSET_X.min(area.width.saturating_sub(1) / 2),
         0,
     )
+}
+
+fn rect_from_tuple((x, y, width, height): (u16, u16, u16, u16)) -> Rect {
+    Rect::new(x, y, width, height)
 }
 
 fn lifecycle_surface_block<'a>(
@@ -140,14 +133,11 @@ pub(crate) fn render_startup_lifecycle_flow(
 
     let surface = theme.surface.canvas;
     frame.render_widget(Block::default().style(Style::default().bg(surface)), area);
-    let welcome_layout = app.welcome_layout(area);
-    let welcome_hit_map = app.welcome_hit_map(area);
-    debug_assert_eq!(welcome_hit_map.layout(), &welcome_layout);
     render_startup_breadcrumb(frame, app, area, theme);
 
-    if app.composer.prompt_buffer.is_empty() {
+    if app.welcome_visible() {
         render_startup_clipboard_warning(frame, app, area, theme);
-        render_welcome_panel(frame, app, area, theme, &welcome_layout);
+        render_welcome_panel(frame, app, area, theme);
     }
 
     // Trust prompt z-order: render on top of the startup content so the
@@ -168,7 +158,7 @@ fn render_startup_clipboard_warning(frame: &mut Frame, app: &AppState, area: Rec
         let row = Rect::new(
             area.x,
             area.y
-                .saturating_add(3)
+                .saturating_add(4)
                 .saturating_add(u16::try_from(offset).unwrap_or(0)),
             area.width,
             1,
@@ -197,15 +187,16 @@ fn startup_breadcrumb_text(app: &AppState) -> String {
     format!("  {label}")
 }
 
-fn live_breadcrumb_text(app: &AppState) -> String {
+fn live_breadcrumb_text(app: &AppState, width: u16) -> String {
+    let prefix = " ".repeat(usize::from(crate::layout::composer_horizontal_inset(width)));
     let label = app.startup_directory_branch_label();
     if let Some((path, branch)) = label.rsplit_once(':') {
         let branch = branch.trim();
         if !branch.is_empty() && !branch.contains('/') && !branch.contains('\\') {
-            return format!("   {branch} {path}");
+            return format!("{prefix} {branch} {path}");
         }
     }
-    format!("  {label}")
+    format!("{prefix}{label}")
 }
 
 pub(super) const LIVE_BREADCRUMB_RESERVE_ROWS: u16 = 2;
@@ -261,7 +252,7 @@ pub(super) fn render_live_breadcrumb(frame: &mut Frame, app: &AppState, area: Re
     };
     let context_meta = breadcrumb_context_meta(app);
     let text = pack_breadcrumb_line(
-        &live_breadcrumb_text(app),
+        &live_breadcrumb_text(app, area.width),
         context_meta.as_deref(),
         usize::from(row.width),
     );
@@ -361,28 +352,6 @@ pub(super) fn live_transcript_area_with_breadcrumb(area: Rect) -> Rect {
     }
 }
 
-const STARTUP_DOCK_ROWS_ESTIMATE: u16 = 5;
-
-fn is_dense_startup_area(area: Rect) -> bool {
-    area.width <= 60
-}
-
-fn estimated_terminal_height(area: Rect) -> u16 {
-    area.height.saturating_add(STARTUP_DOCK_ROWS_ESTIMATE)
-}
-
-fn compact_welcome_top(area: Rect) -> u16 {
-    if is_dense_startup_area(area) {
-        COMPACT_WELCOME_TOP_DENSE
-    } else {
-        COMPACT_WELCOME_TOP
-    }
-}
-
-fn welcome_bordered_panel_fits(area: Rect) -> bool {
-    area.width >= WELCOME_BORDERED_MIN_WIDTH && area.height >= WELCOME_BORDERED_MIN_HEIGHT
-}
-
 fn startup_clipboard_warning_visible(app: &AppState) -> bool {
     app.status_banner
         .as_deref()
@@ -393,44 +362,6 @@ fn startup_banner_is_clipboard_warning(banner: &str) -> bool {
     let normalized = banner.to_ascii_lowercase();
     normalized.contains("clipboard")
         && (normalized.contains("unreachable") || normalized.contains("inaccessible"))
-}
-
-fn welcome_panel_top_pad(area: Rect, clipboard_warning_visible: bool) -> u16 {
-    let terminal_h = estimated_terminal_height(area);
-    let base = if welcome_bordered_panel_fits(area) && terminal_h <= 30 {
-        WELCOME_PANEL_TOP_PAD.saturating_sub(1)
-    } else {
-        WELCOME_PANEL_TOP_PAD
-    };
-    let scaled = base
-        .saturating_add(terminal_h.saturating_sub(30) / 3)
-        .saturating_add(if clipboard_warning_visible { 3 } else { 0 });
-    scaled.min(area.height.saturating_sub(8))
-}
-
-fn startup_welcome_loading(app: &AppState) -> bool {
-    std::env::var_os("HARNESS_DISABLE_ANIMATIONS").is_none()
-        && app.animation_phase_for_evidence() < 4
-}
-
-fn welcome_panel_area(
-    area: Rect,
-    clipboard_warning_visible: bool,
-    layout: &WelcomeLayout,
-) -> Option<Rect> {
-    if area.width < 24 || area.height < 8 || !welcome_bordered_panel_fits(area) {
-        return None;
-    }
-    let width = area
-        .width
-        .saturating_sub(WELCOME_PANEL_INSET_X.saturating_mul(2))
-        .clamp(20, WELCOME_PANEL_MAX_WIDTH);
-    let top_pad =
-        welcome_panel_top_pad(area, clipboard_warning_visible).saturating_add(layout.hero_rect.1);
-    let height = WELCOME_PANEL_READY_HEIGHT.min(area.height.saturating_sub(top_pad).max(8));
-    let x = area.x.saturating_add(area.width.saturating_sub(width) / 2);
-    let y = area.y.saturating_add(top_pad);
-    Some(Rect::new(x, y, width, height))
 }
 
 fn pad_logo_cell(row: &str) -> String {
@@ -446,12 +377,7 @@ fn welcome_text_after_logo(text: &str, inner_width: usize) -> String {
     truncate_plain_text(text, budget)
 }
 
-fn welcome_inner_lines(
-    theme: &Theme,
-    inner_width: usize,
-    app: &AppState,
-    loading: bool,
-) -> Vec<Line<'static>> {
+fn welcome_inner_lines(theme: &Theme, inner_width: usize, app: &AppState) -> Vec<Line<'static>> {
     let surface = theme.surface.canvas;
     let title_style = Style::default()
         .fg(theme.text.primary)
@@ -478,15 +404,10 @@ fn welcome_inner_lines(
 
     for (idx, logo_row) in WELCOME_LOGO_ROWS.iter().enumerate() {
         let logo = pad_logo_cell(logo_row);
-        let mut spans = super::ui_startup_logo::animated_logo_line(
-            idx,
-            WELCOME_LOGO_ROWS.len(),
-            &logo,
-            app.animation_phase_for_evidence(),
-            theme,
-            surface,
-        )
-        .spans;
+        let mut spans = vec![Span::styled(
+            logo,
+            Style::default().fg(theme.text.secondary).bg(surface),
+        )];
         match idx {
             0 => {
                 let title_text = format!("   {}  ", identity.title);
@@ -513,37 +434,31 @@ fn welcome_inner_lines(
                 ));
             }
             2 => {
-                if !loading {
-                    spans.push(Span::styled(
-                        welcome_text_after_logo(
-                            &format!("    • {}", changelog_bullets[0]),
-                            inner_width,
-                        ),
-                        muted,
-                    ));
-                }
+                spans.push(Span::styled(
+                    welcome_text_after_logo(
+                        &format!("    • {}", changelog_bullets[0]),
+                        inner_width,
+                    ),
+                    muted,
+                ));
             }
             3 => {
-                if !loading {
-                    spans.push(Span::styled(
-                        welcome_text_after_logo(
-                            &format!("    • {}", changelog_bullets[1]),
-                            inner_width,
-                        ),
-                        muted,
-                    ));
-                }
+                spans.push(Span::styled(
+                    welcome_text_after_logo(
+                        &format!("    • {}", changelog_bullets[1]),
+                        inner_width,
+                    ),
+                    muted,
+                ));
             }
             4 => {
-                if !loading {
-                    spans.push(Span::styled(
-                        welcome_text_after_logo(
-                            &format!("    • {}", changelog_bullets[2]),
-                            inner_width,
-                        ),
-                        muted,
-                    ));
-                }
+                spans.push(Span::styled(
+                    welcome_text_after_logo(
+                        &format!("    • {}", changelog_bullets[2]),
+                        inner_width,
+                    ),
+                    muted,
+                ));
             }
             _ => {}
         }
@@ -552,25 +467,44 @@ fn welcome_inner_lines(
 
     lines.push(Line::from(Span::styled(" ", muted)));
 
-    for action in welcome::welcome_actions() {
-        let label = action.label;
-        let shortcut = action.shortcut;
-        let pad = " ".repeat(action_col.min(inner_width));
+    for (index, action) in crate::welcome_surface::WelcomeAction::ALL
+        .into_iter()
+        .enumerate()
+    {
+        let selected =
+            app.welcome_state().focus() == crate::welcome_surface::WelcomeFocus::Menu(index);
+        let label = action.label();
+        let shortcut = action.shortcut();
+        let pad_width = action_col.min(inner_width);
+        let pad = if selected && pad_width > 0 {
+            format!("{}›", " ".repeat(pad_width.saturating_sub(1)))
+        } else {
+            " ".repeat(pad_width)
+        };
+        let action_style = if selected {
+            Style::default()
+                .fg(theme.text.accent)
+                .bg(surface)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            body.add_modifier(Modifier::BOLD)
+        };
         let label_text = truncate_plain_text(label, label_width);
         let label_width_actual = super::display_width(&label_text);
         let mut spans: Vec<Span<'static>> = vec![
-            Span::styled(pad, muted),
-            Span::styled(label_text.to_string(), body.add_modifier(Modifier::BOLD)),
+            Span::styled(pad, if selected { action_style } else { muted }),
+            Span::styled(label_text.to_string(), action_style),
         ];
-        if let Some(shortcut) = shortcut {
-            let shortcut_chars = shortcut.chars().count();
-            let used = action_col.min(inner_width) + label_width_actual;
-            let target = inner_width.saturating_sub(shortcut_chars.saturating_add(2));
-            if used < target {
-                spans.push(Span::styled(" ".repeat(target.saturating_sub(used)), muted));
-            }
-            spans.push(Span::styled(shortcut.to_string(), muted));
+        let shortcut_chars = shortcut.chars().count();
+        let used = action_col.min(inner_width) + label_width_actual;
+        let target = inner_width.saturating_sub(shortcut_chars.saturating_add(2));
+        if used < target {
+            spans.push(Span::styled(" ".repeat(target.saturating_sub(used)), muted));
         }
+        spans.push(Span::styled(
+            shortcut.to_string(),
+            if selected { action_style } else { muted },
+        ));
         lines.push(Line::from(spans));
     }
 
@@ -596,14 +530,6 @@ fn welcome_inner_lines(
     lines
 }
 
-fn compact_welcome_inset_x(area_width: u16) -> u16 {
-    if area_width <= COMPACT_WELCOME_CONTENT_WIDTH {
-        return COMPACT_WELCOME_NARROW_INSET_X.min(area_width.saturating_sub(8) / 2);
-    }
-    let spare = area_width.saturating_sub(COMPACT_WELCOME_CONTENT_WIDTH);
-    spare.div_ceil(2).min(area_width.saturating_sub(8) / 2)
-}
-
 fn compact_welcome_lines(
     _theme: &Theme,
     inner_width: usize,
@@ -627,19 +553,24 @@ fn compact_welcome_lines(
         .max(8);
 
     let mut lines = Vec::new();
-    for action in welcome::welcome_actions() {
-        let label = action.label;
-        let shortcut = action.shortcut;
+    for (index, action) in crate::welcome_surface::WelcomeAction::ALL
+        .into_iter()
+        .enumerate()
+    {
+        let selected =
+            app.welcome_state().focus() == crate::welcome_surface::WelcomeFocus::Menu(index);
+        let label = action.label();
+        let shortcut = action.shortcut();
         if lines.len() >= max_lines {
             break;
         }
-        let label_text = truncate_plain_text(label, label_width);
-        let Some(shortcut) = shortcut else {
-            lines.push(Line::from(Span::styled(
-                truncate_plain_text(&label_text, inner_width),
-                body,
-            )));
-            continue;
+        let label_text = if selected {
+            format!(
+                "› {}",
+                truncate_plain_text(label, label_width.saturating_sub(2))
+            )
+        } else {
+            truncate_plain_text(label, label_width)
         };
         let used = label_text.chars().count();
         let target = inner_width.saturating_sub(shortcut.chars().count());
@@ -652,7 +583,14 @@ fn compact_welcome_lines(
             .saturating_add(gap.chars().count())
             .saturating_add(shortcut.chars().count());
         let mut spans = vec![
-            Span::styled(label_text, body),
+            Span::styled(
+                label_text,
+                if selected {
+                    body.fg(_theme.text.accent)
+                } else {
+                    body
+                },
+            ),
             Span::styled(gap, muted),
             Span::styled(shortcut.to_string(), muted),
         ];
@@ -700,28 +638,9 @@ fn compact_welcome_lines(
     lines
 }
 
-fn compact_welcome_content_area(area: Rect) -> Option<Rect> {
-    if area.width < 24 || area.height < 12 {
-        return None;
-    }
-    let top = compact_welcome_top(area).min(area.height.saturating_sub(4));
-    let inset = compact_welcome_inset_x(area.width);
-    let width = COMPACT_WELCOME_CONTENT_WIDTH
-        .min(area.width.saturating_sub(inset))
-        .max(16);
-    let height = area.height.saturating_sub(top).max(1);
-    Some(Rect::new(
-        area.x.saturating_add(inset),
-        area.y.saturating_add(top),
-        width,
-        height,
-    ))
-}
-
 fn render_compact_welcome_body(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
-    let Some(content) = compact_welcome_content_area(area) else {
-        return;
-    };
+    let layout = app.welcome_layout(area);
+    let content = rect_from_tuple(layout.content_rect);
     if content.width == 0 || content.height == 0 {
         return;
     }
@@ -738,15 +657,9 @@ fn render_compact_welcome_body(frame: &mut Frame, app: &AppState, area: Rect, th
     );
 }
 
-fn render_welcome_panel(
-    frame: &mut Frame,
-    app: &AppState,
-    area: Rect,
-    theme: &Theme,
-    layout: &WelcomeLayout,
-) {
-    let loading = startup_welcome_loading(app);
-    if let Some(panel) = welcome_panel_area(area, startup_clipboard_warning_visible(app), layout) {
+fn render_welcome_panel(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
+    let layout = app.welcome_layout(area);
+    if let Some(panel) = layout.panel_rect.map(rect_from_tuple) {
         let surface = theme.surface.canvas;
         let border_color = match app.welcome_state().focus() {
             WelcomeFocus::Prompt => theme.border.focus,
@@ -762,7 +675,7 @@ fn render_welcome_panel(
         if inner.width == 0 || inner.height == 0 {
             return;
         }
-        let lines = welcome_inner_lines(theme, usize::from(inner.width), app, loading);
+        let lines = welcome_inner_lines(theme, usize::from(inner.width), app);
         frame.render_widget(
             Paragraph::new(Text::from(lines)).style(Style::default().bg(surface)),
             inner,
@@ -861,41 +774,32 @@ fn startup_lifecycle_flow_selection_surface(
     area: Rect,
     theme: &Theme,
 ) -> Option<LifecycleSelectionSurface> {
-    if area.width == 0 || area.height == 0 || !app.composer.prompt_buffer.is_empty() {
+    if area.width == 0 || area.height == 0 || !app.welcome_visible() {
         return None;
     }
-    let welcome_layout = app.welcome_layout(area);
-    if let Some(panel) = welcome_panel_area(
-        area,
-        startup_clipboard_warning_visible(app),
-        &welcome_layout,
-    ) {
+    let layout = app.welcome_layout(area);
+    if let Some(panel) = layout.panel_rect.map(rect_from_tuple) {
         let block = Block::default().borders(Borders::ALL);
         let content_area = inset_rect(block.inner(panel), 1, 0);
         if content_area.width == 0 || content_area.height == 0 {
             return None;
         }
-        let text_rows = welcome_inner_lines(
-            theme,
-            usize::from(content_area.width),
-            app,
-            startup_welcome_loading(app),
-        )
-        .into_iter()
-        .enumerate()
-        .map(|(idx, line)| LifecycleSelectableText {
-            row: idx,
-            max_height: 1,
-            line,
-            alignment: Alignment::Left,
-        })
-        .collect();
+        let text_rows = welcome_inner_lines(theme, usize::from(content_area.width), app)
+            .into_iter()
+            .enumerate()
+            .map(|(idx, line)| LifecycleSelectableText {
+                row: idx,
+                max_height: 1,
+                line,
+                alignment: Alignment::Left,
+            })
+            .collect();
         return Some(LifecycleSelectionSurface {
             viewport: content_area,
             text_rows,
         });
     }
-    let content_area = compact_welcome_content_area(area)?;
+    let content_area = rect_from_tuple(layout.content_rect);
     if content_area.width == 0 || content_area.height == 0 {
         return None;
     }
@@ -945,7 +849,7 @@ pub(super) fn live_empty_state_selection_surface(
 
 #[cfg(test)]
 mod breadcrumb_token_meta_tests {
-    use super::{format_breadcrumb_token_count, pack_breadcrumb_line};
+    use super::{format_breadcrumb_token_count, live_breadcrumb_text, pack_breadcrumb_line};
 
     #[test]
     fn format_breadcrumb_token_count_matches_freeze_style() {
@@ -985,6 +889,18 @@ mod breadcrumb_token_meta_tests {
             "left breadcrumb retained when meta absent: {packed:?}"
         );
         assert!(!packed.contains("12K / 262K"), "packed={packed:?}");
+    }
+
+    #[test]
+    fn live_breadcrumb_uses_composer_inset_at_compact_widths() {
+        let app = crate::app::AppState::new_live(None, false, None);
+
+        let compact = live_breadcrumb_text(&app, 60);
+        let wider = live_breadcrumb_text(&app, 79);
+
+        assert!(compact.starts_with(' '));
+        assert!(!compact.starts_with("  "));
+        assert!(wider.starts_with("  "));
     }
 
     #[test]

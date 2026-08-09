@@ -457,6 +457,19 @@ impl AppState {
             return;
         }
 
+        if self.startup_shell_visible() {
+            if self.focus == Focus::Prompt {
+                self.focus = Focus::List;
+                self.welcome
+                    .handle(crate::welcome_surface::WelcomeInput::FocusMenu);
+            } else {
+                self.focus = Focus::Prompt;
+                self.welcome
+                    .handle(crate::welcome_surface::WelcomeInput::FocusPrompt);
+            }
+            return;
+        }
+
         if self.active_review_surface.is_some() && self.focus == Focus::Prompt {
             self.focus = Focus::List;
         } else if (self.active_review_surface.is_some() && self.focus == Focus::Terminal)
@@ -493,6 +506,19 @@ impl AppState {
                     Focus::Details => Focus::List,
                 }
             };
+            return;
+        }
+
+        if self.startup_shell_visible() {
+            if self.focus == Focus::Prompt {
+                self.focus = Focus::List;
+                self.welcome
+                    .handle(crate::welcome_surface::WelcomeInput::FocusMenu);
+            } else {
+                self.focus = Focus::Prompt;
+                self.welcome
+                    .handle(crate::welcome_surface::WelcomeInput::FocusPrompt);
+            }
             return;
         }
 
@@ -565,6 +591,19 @@ impl AppState {
                     Focus::Details => Focus::List,
                 }
             };
+            return;
+        }
+
+        if self.startup_shell_visible() {
+            if self.focus == Focus::Prompt {
+                self.focus = Focus::List;
+                self.welcome
+                    .handle(crate::welcome_surface::WelcomeInput::FocusMenu);
+            } else {
+                self.focus = Focus::Prompt;
+                self.welcome
+                    .handle(crate::welcome_surface::WelcomeInput::FocusPrompt);
+            }
             return;
         }
 
@@ -1526,6 +1565,12 @@ impl AppState {
             };
         }
 
+        if key.modifiers == KeyModifiers::CONTROL
+            && matches!(key.code, KeyCode::Char('e') | KeyCode::Char('E'))
+        {
+            return self.toggle_selected_transcript_fold();
+        }
+
         if let Some(action) = self.keymap.get_session_action(&key) {
             self.execute_action(action);
             return true;
@@ -1546,22 +1591,11 @@ impl AppState {
                 true
             }
             KeyCode::Home => {
-                if let Some(composite) = self.transcript_integration.as_mut() {
-                    let _ = composite.jump_to_top();
-                } else {
-                    self.transcript_view.follow_mode = false;
-                    self.transcript_view.transcript_scroll =
-                        self.transcript_view.last_transcript_max_scroll.get();
-                }
+                self.scroll_goto_top();
                 true
             }
             KeyCode::End => {
-                if let Some(composite) = self.transcript_integration.as_mut() {
-                    let _ = composite.jump_to_bottom();
-                } else {
-                    self.transcript_view.follow_mode = true;
-                    self.transcript_view.transcript_scroll = 0;
-                }
+                self.scroll_goto_bottom();
                 true
             }
             _ => false,

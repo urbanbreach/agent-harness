@@ -1155,10 +1155,7 @@ mod tests {
         // assert
         let (tx, rx) = mpsc::channel();
         let mut app = AppState::new_startup(Vec::new(), None);
-        app.set_status_banner(Some(
-            "No provider connected. Run `harness auth login` in a terminal or use /connect to set up a provider."
-                .to_string(),
-        ));
+        app.set_status_banner(Some("No provider connected. Use /connect.".to_string()));
         tx.send(LiveUpdate::AuthBackendResult {
             success: true,
             message: "auth backend completed".to_string(),

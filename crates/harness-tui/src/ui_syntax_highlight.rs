@@ -1,14 +1,14 @@
 use std::sync::OnceLock;
 
 use ratatui::{
-    style::{Modifier, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
 };
 use syntect::easy::HighlightLines;
 use syntect::highlighting::{FontStyle as SyntectFontStyle, Theme as SyntectTheme};
 use syntect::parsing::SyntaxSet;
 
-use crate::theme::Theme;
+use crate::theme::{quantize_color, Theme};
 
 struct SyntaxHighlightAssets {
     syntax_set: SyntaxSet,
@@ -21,7 +21,7 @@ pub(super) fn render_highlighted_code_block(
     _raw: &str,
     _prefix: &str,
     color: ratatui::style::Color,
-    _theme: &Theme,
+    theme: &Theme,
 ) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
 
@@ -38,14 +38,19 @@ pub(super) fn render_highlighted_code_block(
             if regions.is_empty() {
                 lines.push(Line::from(Span::styled(
                     source_line.to_string(),
-                    Style::default().fg(color),
+                    Style::default()
+                        .fg(color)
+                        .bg(theme.markdown.code_background),
                 )));
             } else {
                 lines.push(Line::from(
                     regions
                         .into_iter()
                         .map(|(style, content)| {
-                            Span::styled(content.to_string(), syntect_style_to_ratatui(style))
+                            Span::styled(
+                                content.to_string(),
+                                syntect_style_to_ratatui(style, theme),
+                            )
                         })
                         .collect::<Vec<_>>(),
                 ));
@@ -60,13 +65,20 @@ pub(super) fn render_highlighted_code_block(
         for source_line in body.lines() {
             lines.push(Line::from(Span::styled(
                 source_line.to_string(),
-                Style::default().fg(color),
+                Style::default()
+                    .fg(color)
+                    .bg(theme.markdown.code_background),
             )));
         }
     }
 
     if body.is_empty() {
-        lines.push(Line::from(Span::styled("", Style::default().fg(color))));
+        lines.push(Line::from(Span::styled(
+            "",
+            Style::default()
+                .fg(color)
+                .bg(theme.markdown.code_background),
+        )));
     }
 
     lines
@@ -77,19 +89,16 @@ fn syntax_highlight_assets() -> &'static SyntaxHighlightAssets {
 
     SYNTAX_ASSETS.get_or_init(|| {
         let syntax_set = SyntaxSet::load_defaults_nonewlines();
-        let theme_set = syntect::highlighting::ThemeSet::load_defaults();
-        let theme = theme_set
-            .themes
-            .get("base16-ocean.dark")
-            .cloned()
-            .or_else(|| theme_set.themes.values().next().cloned())
-            .unwrap_or_default();
+        let theme = super::ui_diff::ui_diff_syntax::reference_diff_syntect_theme();
         SyntaxHighlightAssets { syntax_set, theme }
     })
 }
 
-fn syntect_style_to_ratatui(style: syntect::highlighting::Style) -> Style {
-    let mut rendered = Style::default().fg(syntect_color_to_ratatui(style.foreground));
+fn syntect_style_to_ratatui(style: syntect::highlighting::Style, theme: &Theme) -> Style {
+    let foreground = syntect_color_to_ratatui(style.foreground);
+    let mut rendered = Style::default()
+        .fg(quantize_color(foreground, theme.color_level()))
+        .bg(theme.markdown.code_background);
 
     if style.font_style.contains(SyntectFontStyle::BOLD) {
         rendered = rendered.add_modifier(Modifier::BOLD);
@@ -105,7 +114,7 @@ fn syntect_style_to_ratatui(style: syntect::highlighting::Style) -> Style {
 }
 
 fn syntect_color_to_ratatui(color: syntect::highlighting::Color) -> ratatui::style::Color {
-    ratatui::style::Color::Rgb(color.r, color.g, color.b)
+    Color::Rgb(color.r, color.g, color.b)
 }
 
 #[cfg(test)]

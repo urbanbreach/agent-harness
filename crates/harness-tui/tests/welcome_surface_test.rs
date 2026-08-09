@@ -15,10 +15,10 @@ fn rects(layout: &WelcomeLayout) -> [(u16, u16, u16, u16); 5] {
 
 #[test]
 fn layout_matches_full_and_compact_viewports() {
-    let full = WelcomeLayout::compute(80, 24);
+    let full = WelcomeLayout::compute(120, 32);
     assert!(!full.compact);
-    assert_eq!(full.menu_items_visible, 5);
-    assert_eq!(full.hero_rect.0, (80 - full.hero_rect.2) / 2);
+    assert_eq!(full.menu_items_visible, 3);
+    assert_eq!(full.panel_rect.map(|rect| rect.0), Some(3));
 
     let compact = WelcomeLayout::compute(40, 10);
     assert!(compact.compact);
@@ -34,7 +34,7 @@ fn layout_matches_full_and_compact_viewports() {
 
 #[test]
 fn region_at_identifies_regions_and_gaps() {
-    let layout = WelcomeLayout::compute(80, 24);
+    let layout = WelcomeLayout::compute(120, 32);
     for (region, rect) in layout.all_regions() {
         assert_eq!(layout.region_at(rect.0, rect.1), region);
     }
@@ -43,14 +43,14 @@ fn region_at_identifies_regions_and_gaps() {
 
 #[test]
 fn hit_map_prioritizes_menu_items() {
-    let layout = WelcomeLayout::compute(80, 24);
+    let layout = WelcomeLayout::compute(120, 32);
     let map = WelcomeHitMap::new(
         layout.clone(),
         &["New session", "Open session", "Inspect run"],
     );
-    let item_row = layout.menu_rect.1 + 1;
+    let item_rect = layout.action_rects[0];
     assert_eq!(
-        map.hit(layout.menu_rect.0 + 1, item_row),
+        map.hit(item_rect.0, item_rect.1),
         Some(WelcomeHit {
             region: WelcomeRegion::Menu,
             item_index: Some(0)
@@ -64,6 +64,50 @@ fn hit_map_prioritizes_menu_items() {
         })
     );
     assert_eq!(map.hit(0, 0), None);
+}
+
+#[test]
+fn primary_action_hit_rows_match_reference_paint_rows() {
+    let layout = WelcomeLayout::compute(120, 32);
+
+    assert_eq!(
+        layout
+            .action_rects
+            .iter()
+            .map(|rect| rect.1)
+            .collect::<Vec<_>>(),
+        vec![16, 17, 18]
+    );
+}
+
+#[test]
+fn welcome_dismissal_is_latched_until_reset() {
+    let mut state = WelcomeState::new(3, false);
+
+    state.dismiss_for_input();
+
+    assert!(state.is_dismissed());
+}
+
+#[test]
+fn compact_layout_stays_inside_tiny_viewports() {
+    for (width, height) in [(1, 1), (8, 4), (20, 12)] {
+        let layout = WelcomeLayout::compute(width, height);
+        for (x, y, rect_width, rect_height) in rects(&layout) {
+            assert!(x.saturating_add(rect_width) <= width);
+            assert!(y.saturating_add(rect_height) <= height);
+        }
+        assert!(layout.content_rect.0.saturating_add(layout.content_rect.2) <= width);
+        assert!(layout.content_rect.1.saturating_add(layout.content_rect.3) <= height);
+    }
+}
+
+#[test]
+fn state_focuses_the_clicked_menu_item() {
+    let mut state = WelcomeState::new(3, false);
+
+    assert_eq!(state.focus_menu_item(2), InputResult::FocusChanged);
+    assert_eq!(state.focus(), WelcomeFocus::Menu(2));
 }
 
 #[test]

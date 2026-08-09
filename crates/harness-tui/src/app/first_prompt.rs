@@ -10,7 +10,7 @@ use crate::app::AppState;
 
 /// Whether the welcome panel should be visible (prompt buffer is empty).
 pub(crate) fn welcome_panel_visible(app: &AppState) -> bool {
-    app.composer.prompt_buffer.is_empty()
+    app.welcome_visible()
 }
 
 /// Whether the composer has focus on startup (always true in startup mode).
@@ -31,5 +31,5 @@ pub(crate) fn composer_cursor(app: &AppState) -> usize {
 /// Whether typing has dismissed the welcome panel.
 /// Returns true when the prompt buffer is non-empty (welcome was dismissed by typing).
 pub(crate) fn welcome_dismissed_by_typing(app: &AppState) -> bool {
-    !app.composer.prompt_buffer.is_empty()
+    app.welcome_dismissed()
 }

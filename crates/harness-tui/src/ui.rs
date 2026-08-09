@@ -44,8 +44,8 @@ mod ui_secondary_events_tab;
 #[cfg(test)]
 #[path = "ui_shell_exact_tests.rs"]
 mod ui_shell_exact_tests;
-#[path = "ui_startup_logo.rs"]
-mod ui_startup_logo;
+#[path = "ui_streaming_markdown.rs"]
+mod ui_streaming_markdown;
 #[path = "ui_syntax_highlight.rs"]
 mod ui_syntax_highlight;
 #[path = "ui_terminal.rs"]
@@ -88,6 +88,8 @@ mod ui_transcript_layout;
 mod ui_transcript_mermaid;
 #[path = "ui_transcript_mermaid_art.rs"]
 mod ui_transcript_mermaid_art;
+#[path = "ui_transcript_page_flip.rs"]
+mod ui_transcript_page_flip;
 #[path = "ui_transcript_scrollbar.rs"]
 mod ui_transcript_scrollbar;
 #[path = "ui_transcript_selection.rs"]
@@ -99,6 +101,8 @@ mod ui_transcript_surface;
 #[cfg(test)]
 #[path = "ui_transcript_test_helpers.rs"]
 mod ui_transcript_test_helpers;
+
+pub(crate) use ui_transcript_layout::TranscriptContentAnchor;
 
 use ui_chrome::{
     compact_inline_payload, display_width, elevated_card_surface, interruptive_modal_block,
@@ -119,6 +123,7 @@ use ui_lifecycle::{
     live_empty_state_visible, live_transcript_area_with_breadcrumb, render_live_breadcrumb,
     render_live_empty_state, startup_shell_visible,
 };
+pub(crate) use ui_live_turn_status::live_turn_stop_rect;
 use ui_overlays::render_overlays;
 pub(crate) use ui_secondary::{
     operator_sidebar_keyboard_targets, operator_sidebar_section_hit_target,
@@ -133,6 +138,7 @@ use ui_terminal::render_terminal_panel;
 use ui_transcript::render_transcript_pane;
 pub(crate) use ui_transcript::transcript_diff_hunk_rows;
 pub(crate) use ui_transcript::transcript_mouse_target;
+pub(crate) use ui_transcript::transcript_return_to_live_hit;
 pub(crate) use ui_transcript::transcript_scrollbar_hit;
 #[cfg(test)]
 pub(crate) use ui_transcript::transcript_selection_debug_snapshot;

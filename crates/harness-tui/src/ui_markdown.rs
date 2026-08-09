@@ -167,11 +167,18 @@ pub(super) fn parse_inline_markdown_spans(
 }
 
 pub(super) fn markdown_heading_text(line: &str) -> Option<&str> {
+    markdown_heading(line).map(|(_, text)| text)
+}
+
+fn markdown_heading(line: &str) -> Option<(usize, &str)> {
     let hashes = line.chars().take_while(|ch| *ch == '#').count();
     if !(1..=6).contains(&hashes) {
         return None;
     }
-    line[hashes..].strip_prefix(' ').map(str::trim)
+    line[hashes..]
+        .strip_prefix(' ')
+        .map(str::trim)
+        .map(|text| (hashes, text))
 }
 
 pub(super) fn markdown_rule(line: &str) -> bool {
@@ -189,9 +196,9 @@ pub(super) fn markdown_list_prefix<'a>(
                 "☑ ".to_string(),
                 text,
                 Style::default()
-                    .fg(theme.status.success)
+                    .fg(theme.markdown.task_checked)
                     .add_modifier(Modifier::BOLD),
-                Style::default().fg(theme.text.primary),
+                Style::default().fg(theme.markdown.text),
             ));
         }
     }
@@ -201,8 +208,8 @@ pub(super) fn markdown_list_prefix<'a>(
             return Some((
                 "☐ ".to_string(),
                 text,
-                Style::default().fg(theme.text.secondary),
-                Style::default().fg(theme.text.primary),
+                Style::default().fg(theme.markdown.task_unchecked),
+                Style::default().fg(theme.markdown.text),
             ));
         }
     }
@@ -215,7 +222,7 @@ pub(super) fn markdown_list_prefix<'a>(
                 Style::default()
                     .fg(theme.markdown.list_item)
                     .add_modifier(Modifier::BOLD),
-                Style::default().fg(theme.text.primary),
+                Style::default().fg(theme.markdown.text),
             ));
         }
     }
@@ -230,7 +237,7 @@ pub(super) fn markdown_list_prefix<'a>(
                 Style::default()
                     .fg(theme.markdown.list_enum)
                     .add_modifier(Modifier::BOLD),
-                Style::default().fg(theme.text.primary),
+                Style::default().fg(theme.markdown.text),
             ));
         }
     }
@@ -293,7 +300,7 @@ pub(super) fn append_rich_text_block(
                     &body,
                     &raw,
                     prefix,
-                    color,
+                    theme.markdown.text,
                     theme,
                 );
                 if !lines.is_empty() && !lines.last().is_some_and(|line| line.spans.is_empty()) {
@@ -307,7 +314,7 @@ pub(super) fn append_rich_text_block(
     }
 }
 
-fn append_markdownish_text_block(
+pub(super) fn append_markdownish_text_block(
     lines: &mut Vec<Line<'static>>,
     text: &str,
     color: Color,
@@ -361,7 +368,8 @@ fn append_markdownish_line(
         .saturating_sub(display_width(prefix))
         .max(1);
 
-    if let Some(text) = markdown_heading_text(trimmed) {
+    if let Some((level, text)) = markdown_heading(trimmed) {
+        let heading_color = theme.markdown.heading(level);
         if !lines.is_empty() && !last_line_is_visually_blank(lines) {
             lines.push(Line::default());
         }
@@ -372,9 +380,9 @@ fn append_markdownish_line(
             parse_inline_markdown_spans(
                 text,
                 base_style
-                    .fg(theme.markdown.heading)
-                    .add_modifier(Modifier::BOLD),
-                theme.markdown.heading,
+                    .fg(heading_color)
+                    .add_modifier(crate::theme::MarkdownColors::heading_modifier(level)),
+                heading_color,
                 theme,
             ),
             width,
@@ -627,7 +635,7 @@ mod tests {
         let spans = collect_spans(&lines);
         assert!(
             spans.iter().any(|span| {
-                span.style.fg == Some(theme.markdown.heading)
+                span.style.fg == Some(theme.markdown.heading_h1)
                     && span.style.add_modifier.contains(Modifier::BOLD)
             }),
             "heading should use theme.markdown.heading with BOLD, got: {spans:?}"
@@ -951,7 +959,7 @@ mod tests {
         let spans = collect_spans(&lines);
         assert!(
             spans.iter().any(|span| {
-                span.style.fg == Some(theme.markdown.heading)
+                span.style.fg == Some(theme.markdown.heading_h1)
                     && span.style.add_modifier.contains(Modifier::BOLD)
             }),
             "table header should use theme.markdown.heading with BOLD, got: {spans:?}"

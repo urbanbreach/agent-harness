@@ -6,6 +6,37 @@ pub enum WelcomeFocus {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WelcomeAction {
+    NewWorktree,
+    ResumeSession,
+    Quit,
+}
+
+impl WelcomeAction {
+    pub const ALL: [Self; 3] = [Self::NewWorktree, Self::ResumeSession, Self::Quit];
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::NewWorktree => "New worktree",
+            Self::ResumeSession => "Resume session",
+            Self::Quit => "Quit",
+        }
+    }
+
+    pub const fn shortcut(self) -> &'static str {
+        match self {
+            Self::NewWorktree => "ctrl+w",
+            Self::ResumeSession => "ctrl+s",
+            Self::Quit => "ctrl+q",
+        }
+    }
+
+    pub fn from_index(index: usize) -> Option<Self> {
+        Self::ALL.get(index).copied()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WelcomeInput {
     Select,
     MoveUp,
@@ -29,6 +60,7 @@ pub enum InputResult {
 pub struct WelcomeState {
     focus: WelcomeFocus,
     menu_item_count: usize,
+    dismissed: bool,
     authed: bool,
     model_name: Option<String>,
     workspace_name: Option<String>,
@@ -39,6 +71,7 @@ impl WelcomeState {
         Self {
             focus: WelcomeFocus::Prompt,
             menu_item_count,
+            dismissed: false,
             authed,
             model_name: None,
             workspace_name: None,
@@ -51,6 +84,29 @@ impl WelcomeState {
 
     pub fn menu_item_count(&self) -> usize {
         self.menu_item_count
+    }
+
+    pub fn dismiss_for_input(&mut self) {
+        self.dismissed = true;
+        self.focus = WelcomeFocus::Prompt;
+    }
+
+    pub fn is_dismissed(&self) -> bool {
+        self.dismissed
+    }
+
+    pub fn focus_menu_item(&mut self, index: usize) -> InputResult {
+        if index >= self.menu_item_count {
+            return InputResult::NoOp;
+        }
+        self.change_focus(WelcomeFocus::Menu(index))
+    }
+
+    pub fn selected_action(&self) -> Option<WelcomeAction> {
+        let WelcomeFocus::Menu(index) = self.focus else {
+            return None;
+        };
+        WelcomeAction::from_index(index)
     }
 
     pub fn authed(&self) -> bool {
