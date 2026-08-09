@@ -382,6 +382,7 @@ fn provider_model_change_sets_fallback_status_banner() {
 mod tool_disclosure_tests;
 
 delegate_test!(mouse_click_toggles_transcript_tool_disclosure => tool_disclosure_tests::mouse_click_toggles_transcript_tool_disclosure);
+delegate_test!(context_group_disclosure_preserves_detached_anchor => tool_disclosure_tests::context_group_disclosure_preserves_detached_anchor);
 delegate_test!(mouse_click_toggles_apply_patch_file_disclosure => tool_disclosure_tests::mouse_click_toggles_apply_patch_file_disclosure);
 delegate_test!(apply_patch_default_expansion_skips_deleted_files => tool_disclosure_tests::apply_patch_default_expansion_skips_deleted_files);
 
@@ -522,6 +523,9 @@ fn shell_card_selection_test_app() -> AppState {
             metadata: None,
         }),
     ));
+    app.activate_transcript_mouse_target(TranscriptMouseTarget::Tool {
+        tool_call_id: "tc_shell_card_copy".to_string(),
+    });
     app.transcript_view.selected_activity_index = 0;
     app
 }
