@@ -1349,6 +1349,7 @@ fn assistant_tool_surfaces_keep_same_trailing_gap_as_text_boxes() {
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![activity]);
     app.transcript_view.selected_activity_index = 0;
+    app.toggle_tool_output_for_test("tc-shell-alignment");
 
     let layout = build_measured_transcript_layout_for_width(&app, &Theme::default(), 80);
     let surfaces = &layout.sections[0].surfaces;
@@ -1366,23 +1367,23 @@ fn assistant_tool_surfaces_keep_same_trailing_gap_as_text_boxes() {
     assert_eq!(tool_surface.width, 78);
     let command_row = tool_lines
         .iter()
-        .position(|line| line.contains("$ printf 'bash smoke test ok"))
+        .position(|line| line.contains("Run printf 'bash smoke test ok"))
         .unwrap_or_abort();
     let output_row = tool_lines
         .iter()
         .enumerate()
         .find_map(|(index, line)| {
-            (!line.contains("$ printf") && line.contains("bash smoke test ok")).then_some(index)
+            (!line.contains("Run printf") && line.contains("bash smoke test ok")).then_some(index)
         })
         .unwrap_or_abort();
     let command_column = tool_lines[command_row]
-        .find("$ printf 'bash smoke test ok")
+        .find("Run printf 'bash smoke test ok")
         .unwrap_or_abort();
     let output_column = tool_lines[output_row]
         .find("bash smoke test ok")
         .unwrap_or_abort();
     assert_eq!(output_column, command_column);
-    assert_eq!(tool_interactions[command_row], None);
+    assert!(tool_interactions[command_row].is_some());
     assert_eq!(tool_interactions[output_row], None);
     assert!(
         tool_lines
@@ -1403,33 +1404,30 @@ fn assistant_tool_surfaces_keep_same_trailing_gap_as_text_boxes() {
     let command_row = snapshot
         .rows
         .iter()
-        .position(|line| line.contains("$ printf 'bash smoke test ok"))
+        .position(|line| line.contains("Run printf 'bash smoke test ok"))
         .unwrap_or_abort();
     let output_row = snapshot
         .rows
         .iter()
-        .position(|line| line.contains("bash smoke test ok"))
+        .position(|line| !line.contains("Run printf") && line.contains("bash smoke test ok"))
         .unwrap_or_abort();
-    let copied = transcript_selection_text(
-        &app,
-        area,
-        TranscriptSelection {
-            anchor: TranscriptSelectionCell {
-                row: command_row,
-                column: 0,
-            },
-            focus: TranscriptSelectionCell {
-                row: output_row,
-                column: usize::from(snapshot.viewport.width.saturating_sub(1)),
-            },
+    let selection = TranscriptSelection {
+        anchor: TranscriptSelectionCell {
+            row: command_row,
+            column: 0,
         },
-    )
-    .unwrap_or_abort();
+        focus: TranscriptSelectionCell {
+            row: output_row,
+            column: usize::from(snapshot.viewport.width.saturating_sub(1)),
+        },
+    };
+    app.transcript_view.transcript_selection = Some(selection);
+    let copied = transcript_selection_text(&app, area, selection).unwrap_or_abort();
     assert!(
-        copied.contains("$ printf 'bash smoke test ok"),
+        copied.contains("Run printf 'bash smoke test ok"),
         "copied shell card text should contain the command without rail: {copied:?}"
     );
-    assert!(copied.contains("$ printf 'bash smoke test ok"));
+    assert!(copied.contains("Run printf 'bash smoke test ok"));
     assert!(copied.contains("bash smoke test ok"));
     assert!(!copied.contains('┃'));
 }
@@ -1479,6 +1477,69 @@ fn assistant_tool_surface_spacing_matches_shell_rhythm() {
         0,
         "Reference question state: Thought then Ask are adjacent with no blank between"
     );
+}
+
+#[test]
+fn command_group_counts_all_members_and_discloses_output() {
+    // arrange
+    let mut activity =
+        transcript_section_model_test_activity("request-command-group", ActivityStatus::Done, "");
+    activity.user_message = Some(UserMessageSubmittedEvent {
+        request_id: "request-command-group".into(),
+        text: "run grouped commands".to_string(),
+    });
+    for (tool_call_id, command, status, output) in [
+        (
+            "tc-command-success",
+            "printf success",
+            ToolCallDisplayStatus::Succeeded,
+            "successful output",
+        ),
+        (
+            "tc-command-failure",
+            "printf failure",
+            ToolCallDisplayStatus::Failed,
+            "command failed",
+        ),
+    ] {
+        let mut tool_call = transcript_section_model_test_tool_call(tool_call_id, "bash");
+        tool_call.args_summary = format!(r#"{{"command":"{command}"}}"#);
+        tool_call.status = status;
+        tool_call.output_summary = Some(output.to_string());
+        activity.tool_calls.push(tool_call);
+    }
+    let mut app = AppState::default();
+    app.activities = std::collections::VecDeque::from(vec![activity]);
+    app.transcript_view.selected_activity_index = 0;
+
+    // act
+    let collapsed = transcript_test_line_texts(build_transcript_lines_for_width(
+        &app,
+        &Theme::default(),
+        80,
+    ));
+    app.toggle_tool_output_for_test("tc-command-success");
+    app.toggle_tool_output_for_test("tc-command-failure");
+    let expanded = transcript_test_line_texts(build_transcript_lines_for_width(
+        &app,
+        &Theme::default(),
+        80,
+    ));
+
+    // assert
+    assert!(collapsed
+        .iter()
+        .any(|line| line.contains("Ran 2 commands · 1 failed") && line.contains('▸')));
+    assert!(!collapsed
+        .iter()
+        .any(|line| line.contains("successful output")));
+    assert!(expanded
+        .iter()
+        .any(|line| line.contains("Ran 2 commands · 1 failed") && line.contains('▾')));
+    assert!(expanded
+        .iter()
+        .any(|line| line.contains("successful output")));
+    assert!(!expanded.iter().any(|line| line == "command failed"));
 }
 
 #[test]

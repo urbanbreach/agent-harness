@@ -1102,43 +1102,38 @@ fn build_context_tool_group_render_surface(
     } else {
         base_surface
     };
-    let group_expanded = command_group || tool_calls.iter().any(|tool_call| tool_call.expanded);
-    let group_disclosure = if command_group || tool_calls.is_empty() {
+    let group_expanded = tool_calls.iter().any(|tool_call| tool_call.expanded);
+    let group_disclosure = if tool_calls.is_empty() {
         None
     } else if group_expanded {
         Some(TranscriptToolCallDisclosureState::Expanded)
     } else {
         Some(TranscriptToolCallDisclosureState::Collapsed)
     };
-    let (reads, searches, lists, busy, successful_commands, failed_commands) =
-        tool_calls.iter().fold(
-            (0usize, 0usize, 0usize, false, 0usize, 0usize),
-            |(reads, searches, lists, busy, successful_commands, failed_commands), tool_call| {
-                let (reads, searches, lists) = match tool_call.header.tool_id.as_str() {
-                    "fs.read" | "read" => (reads + 1, searches, lists),
-                    "fs.glob" | "glob" | "fs.grep" | "grep" => (reads, searches + 1, lists),
-                    "fs.ls" | "list" => (reads, searches, lists + 1),
-                    _ => (reads, searches, lists),
-                };
-                let successful_commands = successful_commands
-                    + usize::from(
-                        command_group
-                            && tool_call.header.status == ToolCallDisplayStatus::Succeeded,
-                    );
-                let failed_commands = failed_commands
-                    + usize::from(
-                        command_group && tool_call.header.status == ToolCallDisplayStatus::Failed,
-                    );
-                (
-                    reads,
-                    searches,
-                    lists,
-                    busy || !matches!(tool_call.header.status, ToolCallDisplayStatus::Succeeded),
-                    successful_commands,
-                    failed_commands,
-                )
-            },
-        );
+    let (reads, searches, lists, skills, busy, failed_commands) = tool_calls.iter().fold(
+        (0usize, 0usize, 0usize, 0usize, false, 0usize),
+        |(reads, searches, lists, skills, busy, failed_commands), tool_call| {
+            let (reads, searches, lists, skills) = match tool_call.header.tool_id.as_str() {
+                "fs.read" | "read" => (reads + 1, searches, lists, skills),
+                "fs.glob" | "glob" | "fs.grep" | "grep" => (reads, searches + 1, lists, skills),
+                "fs.ls" | "list" => (reads, searches, lists + 1, skills),
+                "skill" | "skill.load" => (reads, searches, lists, skills + 1),
+                _ => (reads, searches, lists, skills),
+            };
+            let failed_commands = failed_commands
+                + usize::from(
+                    command_group && tool_call.header.status == ToolCallDisplayStatus::Failed,
+                );
+            (
+                reads,
+                searches,
+                lists,
+                skills,
+                busy || !matches!(tool_call.header.status, ToolCallDisplayStatus::Succeeded),
+                failed_commands,
+            )
+        },
+    );
 
     let mut summary = if command_group {
         vec![
@@ -1155,8 +1150,8 @@ fn build_context_tool_group_render_surface(
             Span::styled(
                 format!(
                     "{} command{}",
-                    successful_commands,
-                    if successful_commands == 1 { "" } else { "s" }
+                    tool_calls.len(),
+                    if tool_calls.len() == 1 { "" } else { "s" }
                 ),
                 Style::default().fg(theme.reference_terminal.secondary),
             ),
@@ -1187,6 +1182,12 @@ fn build_context_tool_group_render_surface(
     if !command_group && lists > 0 {
         counts.push(format!("{lists} list{}", if lists == 1 { "" } else { "s" }));
     }
+    if !command_group && skills > 0 {
+        counts.push(format!(
+            "{skills} skill{}",
+            if skills == 1 { "" } else { "s" }
+        ));
+    }
     if !counts.is_empty() {
         let count_style = if command_group {
             Style::default().fg(theme.reference_terminal.error)
@@ -1214,7 +1215,7 @@ fn build_context_tool_group_render_surface(
         transcript_surface_content_width(width, false),
     );
 
-    if group_expanded {
+    if command_group || group_expanded {
         let detail_prefix = if command_group {
             format!("{TRANSCRIPT_SELECTED_RAIL_GLYPH}  ")
         } else {

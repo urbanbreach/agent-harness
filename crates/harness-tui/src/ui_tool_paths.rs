@@ -121,7 +121,16 @@ pub(super) fn tool_id_matches(tool_call: &ToolCallEntry, expected: &[&str]) -> b
 pub(super) fn context_group_tool_id(tool_id: &str) -> bool {
     matches!(
         tool_id,
-        "fs.read" | "read" | "fs.glob" | "glob" | "fs.grep" | "grep" | "fs.ls" | "list"
+        "fs.read"
+            | "read"
+            | "fs.glob"
+            | "glob"
+            | "fs.grep"
+            | "grep"
+            | "fs.ls"
+            | "list"
+            | "skill"
+            | "skill.load"
     )
 }
 
@@ -134,5 +143,19 @@ pub(super) fn join_tool_subtitles(
         (Some(primary), None) => Some(primary),
         (None, Some(secondary)) => Some(secondary),
         (None, None) => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::context_group_tool_id;
+
+    #[test]
+    fn context_groups_include_skill_aliases() {
+        // Given: both shipped spellings of the skill loader.
+        // When: the context-group classifier evaluates them.
+        // Then: either spelling participates in compact context summaries.
+        assert!(context_group_tool_id("skill"));
+        assert!(context_group_tool_id("skill.load"));
     }
 }
