@@ -74,6 +74,99 @@ pub(super) fn mouse_click_toggles_transcript_tool_disclosure() {
         .expanded_tool_outputs
         .contains("tc_shell_toggle"));
 }
+
+pub(super) fn context_group_disclosure_preserves_detached_anchor() {
+    // arrange
+    let mut app = AppState::new_live(None, false, None);
+    app.ingest_event(envelope(
+        1,
+        "req_group_anchor",
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "req_group_anchor".into(),
+            provider_id: "openai".to_string(),
+            model_id: "gpt-5-codex".to_string(),
+            prompt_summary: "Preserve grouped tool anchor".to_string(),
+            request_digest: "digest-group-anchor".to_string(),
+            metadata: None,
+        }),
+    ));
+    for (seq, tool_call_id, tool_id, args_summary) in [
+        (2, "tc_group_read", "read", r#"{"path":"README.md"}"#),
+        (4, "tc_group_skill", "skill", r#"{"name":"frontend"}"#),
+    ] {
+        app.ingest_event(envelope(
+            seq,
+            "req_group_anchor",
+            EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                tool_call_id: tool_call_id.into(),
+                tool_id: tool_id.to_string(),
+                args_summary: args_summary.to_string(),
+                args_digest: format!("digest-{tool_call_id}-args"),
+                metadata: None,
+            }),
+        ));
+        app.ingest_event(envelope(
+            seq + 1,
+            "req_group_anchor",
+            EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                tool_call_id: tool_call_id.into(),
+                status: ToolCallStatus::Succeeded,
+                output_summary: Some("loaded context".to_string()),
+                output_digest: None,
+                output_json: None,
+                metadata: None,
+            }),
+        ));
+    }
+    let body = (1..=80)
+        .map(|line| format!("stable transcript line {line}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    app.ingest_event(envelope(
+        6,
+        "req_group_anchor",
+        EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+            request_id: "req_group_anchor".into(),
+            delta: body,
+        }),
+    ));
+    app.ingest_event(envelope(
+        7,
+        "req_group_anchor",
+        EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+            request_id: "req_group_anchor".into(),
+            finish_reason: "done".to_string(),
+            output_digest: Some("digest-group-anchor-finished".to_string()),
+            usage: None,
+            metadata: None,
+        }),
+    ));
+    let _ = render_text(&app, TEST_FRAME_AREA.width, TEST_FRAME_AREA.height);
+    app.scroll_transcript_up(12);
+    let _ = render_text(&app, TEST_FRAME_AREA.width, TEST_FRAME_AREA.height);
+    let anchor_before = app.transcript_view.measured_anchor.get();
+    let top_before = app.transcript_view.measured_viewport().top();
+    assert!(anchor_before.is_some());
+
+    // act
+    app.activate_transcript_mouse_target(TranscriptMouseTarget::ToolGroup {
+        tool_call_ids: vec!["tc_group_read".to_string(), "tc_group_skill".to_string()],
+    });
+    let _ = render_text(&app, TEST_FRAME_AREA.width, TEST_FRAME_AREA.height);
+
+    // assert
+    assert!(app
+        .transcript_view
+        .expanded_tool_outputs
+        .contains("tc_group_read"));
+    assert!(app
+        .transcript_view
+        .expanded_tool_outputs
+        .contains("tc_group_skill"));
+    assert_eq!(app.transcript_view.measured_anchor.get(), anchor_before);
+    assert!(app.transcript_view.measured_viewport().top() > top_before);
+}
+
 pub(super) fn mouse_click_toggles_apply_patch_file_disclosure() {
     let run_dir = tempfile::tempdir().unwrap_or_abort();
     let artifacts_dir = run_dir.path().join("artifacts");
