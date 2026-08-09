@@ -562,7 +562,43 @@ fn block_tool_cards_render_subtitle_inline_with_title() {
 }
 
 #[test]
-fn shell_tool_cards_render_harness_bash_panel_with_chrome_and_clamping() {
+fn finished_shell_output_stays_collapsed_until_disclosed() {
+    // Given: a finished command with useful output.
+    let theme = Theme::default();
+    let mut tool_call = transcript_section_model_test_tool_call("tc-shell-collapsed", "shell.run");
+    tool_call.args_summary = r#"{"command":"echo hi"}"#.to_string();
+    tool_call.status = ToolCallDisplayStatus::Succeeded;
+    tool_call.output_summary = Some("line 1\nline 2".to_string());
+
+    // When: the transcript builds the normal finished presentation.
+    let section = build_transcript_tool_call_section(
+        &tool_call,
+        &AppState::default(),
+        None,
+        false,
+        false,
+        false,
+        false,
+        None,
+    );
+    let rendered = transcript_test_line_texts(
+        append_tool_call_section_lines(&section, &theme, 96, theme.surface.panel).lines,
+    )
+    .join("\n");
+
+    // Then: the row is flat and its result remains behind explicit disclosure.
+    assert!(section.details_collapsed_by_default);
+    assert_eq!(
+        section.header.disclosure_state,
+        Some(TranscriptToolCallDisclosureState::Collapsed)
+    );
+    assert!(rendered.contains("◆ Run echo hi"), "{rendered}");
+    assert!(!rendered.contains("line 1"), "{rendered}");
+    assert!(!rendered.contains("Click to"), "{rendered}");
+}
+
+#[test]
+fn expanded_shell_tool_renders_output_with_clamping() {
     // arrange
     let theme = Theme::default();
     let mut tool_call = transcript_section_model_test_tool_call("tc-shell-harness", "shell.run");
@@ -582,7 +618,7 @@ fn shell_tool_cards_render_harness_bash_panel_with_chrome_and_clamping() {
         None,
         false,
         false,
-        false,
+        true,
         false,
         None,
     );
@@ -591,11 +627,12 @@ fn shell_tool_cards_render_harness_bash_panel_with_chrome_and_clamping() {
         section.detail_blocks[0],
         TranscriptToolCallDetailBlock::BashPanel {
             command: "echo hi".to_string(),
-            output:
-                "line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\nline 11\nline 12\nline 13\nline 14\nline 15\n…"
-                    .to_string(),
+            output: (1..=20)
+                .map(|line| format!("line {line}"))
+                .collect::<Vec<_>>()
+                .join("\n"),
             description: None,
-            expand_hint: Some("Click to expand".to_string()),
+            expand_hint: Some("Click to collapse".to_string()),
             tone: TranscriptToolCallDetailTone::Primary,
         }
     );
@@ -620,14 +657,10 @@ fn shell_tool_cards_render_harness_bash_panel_with_chrome_and_clamping() {
         !rendered.contains("# Shell"),
         "harness bash panels should not render a fallback title without a workdir description\n{text_lines:#?}"
     );
-    assert!(rendered.contains("$ echo hi"));
+    assert!(rendered.contains("◆ Run echo hi"));
     assert!(!rendered.contains("stdout>"));
-    assert!(rendered.contains("line 15"));
-    assert!(
-        !rendered.contains("line 16"),
-        "output should be clamped at 15 lines"
-    );
-    assert!(rendered.contains("Click to expand"));
+    assert!(rendered.contains("line 20"));
+    assert!(rendered.contains("Click to collapse"));
 }
 
 #[test]
@@ -666,7 +699,7 @@ fn shell_tool_cards_without_workdir_start_with_command_row() {
     );
     let command_row = text_lines
         .iter()
-        .position(|line| line.contains("$ cargo test -p harness-tui"))
+        .position(|line| line.contains("◆ Run cargo test -p harness-tui"))
         .unwrap_or_abort();
     let preceding_content = text_lines[..command_row]
         .iter()
@@ -778,7 +811,7 @@ fn shell_tool_cards_render_workdir_as_reference_running_prefix() {
     })
     .join("\n");
     assert!(rendered.contains("# Running in /workspace/crates/harness-tui"));
-    assert!(rendered.contains("$ pwd"));
+    assert!(rendered.contains("◆ Run pwd"));
     assert!(!rendered.contains("# show cwd"));
 }
 
@@ -854,8 +887,39 @@ fn failed_structured_shell_output_does_not_duplicate_matching_error_summary() {
     assert!(matches!(
         &section.detail_blocks[0],
         TranscriptToolCallDetailBlock::BashPanel { output, tone, .. }
-            if output == "boom" && *tone == TranscriptToolCallDetailTone::Primary
+            if output == "boom" && *tone == TranscriptToolCallDetailTone::Error
     ));
+}
+
+#[test]
+fn collapsed_failed_shell_omits_redundant_command_failed_copy() {
+    // Given: a failed command whose only result repeats its lifecycle state.
+    let theme = Theme::default();
+    let mut tool_call = transcript_section_model_test_tool_call("tc-shell-generic-fail", "bash");
+    tool_call.args_summary = r#"{"command":"false"}"#.to_string();
+    tool_call.status = ToolCallDisplayStatus::Failed;
+    tool_call.output_summary = Some("command failed".to_string());
+
+    // When: the normal collapsed row is rendered.
+    let section = build_transcript_tool_call_section(
+        &tool_call,
+        &AppState::default(),
+        None,
+        false,
+        false,
+        false,
+        false,
+        None,
+    );
+    let rendered = transcript_test_line_texts(
+        append_tool_call_section_lines(&section, &theme, 96, theme.surface.panel).lines,
+    );
+
+    // Then: color and the Failed subtitle carry the state without a duplicate paragraph.
+    assert!(rendered.iter().any(|line| line.contains("Failed")));
+    assert!(!rendered
+        .iter()
+        .any(|line| line.trim().eq_ignore_ascii_case("command failed")));
 }
 
 #[test]

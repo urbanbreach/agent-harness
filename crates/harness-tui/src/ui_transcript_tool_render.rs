@@ -479,12 +479,12 @@ fn append_shell_tool_harness_card(
         });
     let mut header = tool_call.header.clone();
     if let Some((command, description)) = bash_header {
-        let title = description
-            .filter(|value| !value.trim().is_empty())
-            .map(str::to_owned)
-            .unwrap_or_else(|| format!("$ {}", command.trim()));
-        header.title = title;
-        header.subtitle = None;
+        header.title = format!("Run {}", command.trim());
+        if header.subtitle.is_none() {
+            header.subtitle = description
+                .filter(|value| !value.trim().is_empty())
+                .map(str::to_owned);
+        }
     }
 
     let title_style =
@@ -780,6 +780,7 @@ fn append_collapsed_tool_error_summaries(
     base_surface: Color,
     card_shell: Option<TranscriptToolCardShell>,
 ) {
+    let mut rendered = std::collections::BTreeSet::new();
     for detail_block in &tool_call.detail_blocks {
         let text = match detail_block {
             TranscriptToolCallDetailBlock::Message {
@@ -793,10 +794,13 @@ fn append_collapsed_tool_error_summaries(
             } => text,
             _ => continue,
         };
-        let summary = text.lines().map(str::trim).find(|line| !line.is_empty());
-        let Some(summary) = summary else {
+        let summary = text.trim();
+        if summary.is_empty()
+            || collapsed_failure_copy_is_redundant(summary)
+            || !rendered.insert(summary.to_string())
+        {
             continue;
-        };
+        }
         let start = render.lines.len();
         append_tool_call_message_block(
             &mut render.lines,
@@ -809,6 +813,11 @@ fn append_collapsed_tool_error_summaries(
         );
         append_noninteractive_rows(&render.lines, &mut render.interaction_rows, start);
     }
+}
+
+fn collapsed_failure_copy_is_redundant(text: &str) -> bool {
+    let normalized = text.trim().trim_end_matches('.');
+    normalized.eq_ignore_ascii_case("command failed")
 }
 
 fn append_tool_call_message_block(

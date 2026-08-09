@@ -35,12 +35,16 @@ pub(super) fn transcript_surface_leading_gap(
             0
         }
         Some(TranscriptRenderSurfaceKind::AssistantBody)
-            if transcript_surface_is_assistant_tool_like(current)
-                || matches!(
-                    current,
-                    TranscriptRenderSurfaceKind::AssistantReasoning
-                        | TranscriptRenderSurfaceKind::AssistantBody
-                ) =>
+            if transcript_surface_is_assistant_tool_like(current) =>
+        {
+            1
+        }
+        Some(TranscriptRenderSurfaceKind::AssistantBody)
+            if matches!(
+                current,
+                TranscriptRenderSurfaceKind::AssistantReasoning
+                    | TranscriptRenderSurfaceKind::AssistantBody
+            ) =>
         {
             0
         }
